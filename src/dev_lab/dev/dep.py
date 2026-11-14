@@ -58,7 +58,6 @@ failure exactly as it does on a success. The claim is then MEASURED instead of a
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shutil
@@ -76,7 +75,7 @@ from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_local, _dep_pending, _dep_project
+from dev_lab.dev import _dep_cli, _dep_local, _dep_pending, _dep_project
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
@@ -393,24 +392,6 @@ def _change(
         raise _held_refusal(port.name, exc, prefix) from exc
 
 
-def _parser() -> argparse.ArgumentParser:
-    """The door's argv: one target, its extras and overlays, and how a held environment is answered."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    targets = parser.add_mutually_exclusive_group()
-    targets.add_argument('--bootstrap', type=Path)
-    targets.add_argument('--root', type=Path)
-    targets.add_argument('--lock-upgrade', nargs='?', const=Path(), type=Path, metavar='ROOT')
-    parser.add_argument('--sync', action='store_true')
-    parser.add_argument('--extra', action='append')
-    parser.add_argument('--dry-run', action='store_true')
-    parser.add_argument('--upgrade-package', action='append', default=[])
-    parser.add_argument('--local', action='append', default=[], metavar='NAME', help='overlay this sibling for one run')
-    parser.add_argument(
-        '--when-free', action='store_true', help='held: queue it for the first free door run (_dep_pending), exit 0'
-    )
-    return parser
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -423,10 +404,10 @@ def main(
     A sibling declared local (``--local NAME``, or the machine file's ``[dep] local``) is overlaid on the synced
     lock (:mod:`dev_lab.dev._dep_local`); with none declared the sync IS the lock.
     """
-    parser = _parser()
+    parser = _dep_cli.parser(__doc__ or '')
     args = parser.parse_args(argv)
     locking = args.lock_upgrade is not None
-    if why := _argv_error(args, locking=locking):
+    if why := _dep_cli.argv_error(args, locking=locking):
         parser.error(why)
     root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
     python, selected, paths = _dep_project.read_project(root, args.extra)
@@ -478,7 +459,7 @@ def main(
             then=overlay,
         )
     except HeldEnvironmentError as exc:
-        return _held(args, root, prefix, exc)
+        return _dep_cli.held(args, root, prefix, exc)
     if args.bootstrap is not None and not args.dry_run:
         _dep_pending.clear(prefix)  # it ran: a queued request for this environment is answered
     emit(result.render())
@@ -486,31 +467,6 @@ def main(
         record(root, prefix)  # the trees this environment now holds its components at
         _refresh_automode(root, run=run)
     return result.returncode or 0
-
-
-def _argv_error(args: argparse.Namespace, *, locking: bool) -> str:
-    """Why *args* name no change this door makes, else ``''``."""
-    if args.bootstrap is None and not locking and not args.sync and not args.upgrade_package:
-        return 'use --bootstrap PATH, --lock-upgrade [ROOT], --sync, or --upgrade-package NAME'
-    if args.when_free and args.bootstrap is None:
-        return '--when-free queues a --bootstrap PATH only'
-    return ''
-
-
-def _held(args: argparse.Namespace, root: Path, prefix: Path, held: HeldEnvironmentError) -> int:
-    """A held environment: refused (1), or with ``--when-free`` queued for the first free door run (0)."""
-    if not args.when_free or args.dry_run:
-        emit(f'REFUSED: {held}')
-        return 1
-    queued = ['--bootstrap', str(root)]
-    queued += [word for extra in args.extra or () for word in ('--extra', extra)]
-    queued += [word for local in args.local for word in ('--local', local)]
-    path = _dep_pending.request(prefix, queued)
-    emit(
-        f'QUEUED: {held}\nThe request waits in {path}; the first hook launch that finds {prefix} free '
-        'performs it. A long-lived watcher from it exits at its next poll; re-arm it then.'
-    )
-    return 0
 
 
 def _refresh_automode(root: Path, *, run: Callable[..., Any]) -> None:
