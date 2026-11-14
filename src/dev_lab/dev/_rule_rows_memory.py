@@ -14,8 +14,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'under a YYYY/MM/DD path with frontmatter (`name`, `description`) and is never edited, deleted or '
             'moved once written -- a correction is a new entry naming it in `corrects:`, a consolidation one '
             'naming its same-scope sources in `merged_from:`, citing a source file per paragraph -- so a '
-            'change under `**/.claude/memory/**` may only ADD a file, the one move being a task archived into '
-            'memory; no `accessed` field is kept, and the index `<scope>/.claude/memory-index.md` is derived, '
+            'change under `**/.claude/memory/**` may only ADD a file, the moves being a task archived into '
+            'memory and an approved redacting rename (an account-like token in a published name replaced by '
+            '`user` or dropped, same directory, the entry gaining a `renamed` amendment note); no `accessed` '
+            'field is kept, and the index `<scope>/.claude/memory-index.md` is derived, '
             'gitignored and never under `rules/`.'
         ),
         (

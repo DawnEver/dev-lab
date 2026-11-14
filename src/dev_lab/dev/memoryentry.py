@@ -3,8 +3,9 @@
 :mod:`dev_lab.dev.memoryadds` refuses every edit under ``.claude/memory/`` but these, each recognized
 whole by the predicates here (the rulings and the formats are stated in that module's docstring):
 the volatile-field migration (:func:`only_volatile_stripped`), rem's dated manual task list
-(:func:`only_manual_tasks_updated`), a privacy redaction (:func:`only_redacted`) and an approved
-amendment (:func:`only_amended`). An added entry must carry :data:`REQUIRED_KEYS`
+(:func:`only_manual_tasks_updated`), a privacy redaction (:func:`only_redacted`), an approved
+amendment (:func:`only_amended`) and an approved redacting rename
+(:func:`only_renamed_redacting`). An added entry must carry :data:`REQUIRED_KEYS`
 (:func:`shape_problems`) and a merged one must cite (:func:`merged_entry_problems`). Pure text: no git, no files.
 """
 
@@ -25,6 +26,7 @@ __all__ = [
     'MEMORY_DIR',
     'REDACTION_NOTE',
     'REDACTION_ROLES',
+    'RENAME_PLACEHOLDER',
     'REQUIRED_KEYS',
     'VOLATILE_FIELDS',
     'is_memory',
@@ -34,6 +36,7 @@ __all__ = [
     'only_amended',
     'only_manual_tasks_updated',
     'only_redacted',
+    'only_renamed_redacting',
     'only_volatile_stripped',
     'scope_of',
     'shape_problems',
@@ -72,6 +75,12 @@ _NOTE_LINE = re.compile(r'> ' + re.escape(REDACTION_NOTE).replace(re.escape('{da
 # with a past conclusion is still a NEW entry with ``corrects:``: this note is for content that is wrong.
 AMENDMENT_NOTE: Final = 'Amended {day}: {reason} -- approved: "{approved}"'
 _AMEND_LINE = re.compile(r'> Amended \d{4}-\d{2}-\d{2}: \S.*? -- approved: "[^"]*\S[^"]*"')
+# REDACTING-RENAME (user ruling 2026-11-14): an account-like token leaves a published entry's FILE NAME. The
+# new name keeps the directory and suffix, and its stem's ``-`` tokens are the old ones with ONE contiguous
+# run replaced by :data:`RENAME_PLACEHOLDER` or dropped; the entry gains an amendment note whose reason says
+# ``renamed``, and its text is otherwise the old text, a redaction of it or a one-for-one amendment of it.
+RENAME_PLACEHOLDER: Final = 'user'
+_RENAMED = re.compile(r'\brenamed\b', re.IGNORECASE)
 MANUAL_PATH = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
 MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
@@ -144,6 +153,39 @@ def only_redacted(old: str, new: str) -> bool:
         if len(literals) == 1 or not re.fullmatch('.+?'.join(map(re.escape, literals)), was):
             return False
     return True
+
+
+def _redacting_name(old_path: str, new_path: str) -> bool:
+    """*new_path* is *old_path* with one run of its stem's ``-`` tokens replaced by the placeholder or dropped."""
+    old_dir, _, old_name = old_path.rpartition('/')
+    new_dir, _, new_name = new_path.rpartition('/')
+    old_stem, dot, old_suffix = old_name.rpartition('.')
+    new_stem, new_dot, new_suffix = new_name.rpartition('.')
+    if old_dir != new_dir or (dot, old_suffix) != (new_dot, new_suffix) or old_stem == new_stem or not new_stem:
+        return False
+    was, now = old_stem.split('-'), new_stem.split('-')
+    head = next((i for i, (a, b) in enumerate(zip(was, now, strict=False)) if a != b), min(len(was), len(now)))
+    tail = next((i for i, (a, b) in enumerate(zip(was[::-1], now[::-1], strict=False)) if a != b), len(now))
+    tail = min(tail, len(was) - head, len(now) - head)
+    replaced = now[head : len(now) - tail]
+    return len(was) - tail > head and replaced in ([], [RENAME_PLACEHOLDER])
+
+
+def only_renamed_redacting(old_path: str, new_path: str, old: str, new: str) -> bool:
+    """REDACTING-RENAME: a same-directory placeholder rename carrying a new, approved ``renamed`` note.
+
+    The note is the ONE amendment line *new* adds; without it, *new*'s text is *old*'s (blank lines aside), a
+    redaction of it (:func:`only_redacted`), or *new* is a one-for-one amendment of it (:func:`only_amended`).
+    """
+    if not _redacting_name(old_path, new_path):
+        return False
+    old_lines, new_lines = lf(old).splitlines(), lf(new).splitlines()
+    added = [line for line in new_lines if _AMEND_LINE.fullmatch(line) and line not in old_lines]
+    if len(added) != 1 or not _RENAMED.search(added[0]):
+        return False
+    rest = [line for line in new_lines if line != added[0]]
+    unchanged = [line for line in rest if line.strip()] == [line for line in old_lines if line.strip()]
+    return unchanged or only_redacted(old, '\n'.join(rest)) or only_amended(old, new)
 
 
 def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:

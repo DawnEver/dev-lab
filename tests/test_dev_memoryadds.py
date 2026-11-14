@@ -683,3 +683,85 @@ def test_planted_a_frontmatter_completion_admits_nothing_else(repo: Path, note: 
     _write(repo, ENTRY, f'---\n{head}created: 2026-11-13\n---\n# Title\n\n{body}{tail}')
     _commit(repo, 'complete badly', ENTRY)
     assert len(memoryadds.problems_between(repo, base, 'HEAD')) == 1
+
+
+# --- an approved redacting rename: an account-like token leaves a published entry's FILE NAME -----------------
+
+_ACCOUNT = '.claude/memory/2026/10/01/what-jdoe7-measured.md'
+_RENAMED = '.claude/memory/2026/10/01/what-user-measured.md'
+_RENAME_NOTE = _amend_note('renamed to drop an account name from the file name', 'rename them')
+_KEPT = 'The user said: D31 decide it NOT yourself.\nBody.\n'
+
+
+def _published_account_entry(repo: Path, text: str = _WRONG) -> str:
+    _write(repo, _ACCOUNT, text)
+    _commit(repo, 'account', _ACCOUNT)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    return _lane(repo)
+
+
+def _rename(repo: Path, old: str, new: str, text: str) -> None:
+    (repo / new).parent.mkdir(parents=True, exist_ok=True)
+    _git(repo, 'mv', old, new)
+    _write(repo, new, text)
+    _commit(repo, 'rename', new)
+
+
+def _entry(head: str, body: str) -> str:
+    return f'---\nname: an-entry\ndescription: d\n---\n\n{head}{body}'
+
+
+@pytest.mark.parametrize(
+    ('new', 'body'),
+    [
+        (_RENAMED, _KEPT),  # content kept: git sees R
+        ('.claude/memory/2026/10/01/what-measured.md', _KEPT),  # the token run dropped
+        (_RENAMED, 'The user said: D31 decide it yourself.\nBody.\n'),  # a line amended one-for-one
+    ],
+)
+def test_an_approved_redacting_rename_of_a_published_entry_passes(repo: Path, new: str, body: str) -> None:
+    """REDACTING-RENAME: the token run is replaced by ``user`` or dropped, and the entry carries the rename note."""
+    base = _published_account_entry(repo)
+    _rename(repo, _ACCOUNT, new, _entry(f'{_RENAME_NOTE}\n\n', body))
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+def test_a_redacting_rename_git_reads_as_delete_plus_add_passes(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A short entry whose content also changes falls under git's similarity bar: D + A, judged as the rename."""
+    base = _published_account_entry(repo, '---\nname: what-jdoe7-measured\ndescription: d\n---\n\nAt 192.0.2.7.\n')
+    redact = '> ' + memoryentry.REDACTION_NOTE.format(day='2026-11-14')
+    text = f'---\nname: what-jdoe7-measured\ndescription: d\n---\n\n{_RENAME_NOTE}\n{redact}\n\nAt <ip>.\n'
+    _rename(repo, _ACCOUNT, _RENAMED, text)
+    assert 'D\x00' + _ACCOUNT in _git(repo, 'diff', '-M', '-C', '--name-status', '-z', base, 'HEAD')
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+    monkeypatch.setattr('sys.stdin', io.StringIO(f'refs/heads/lane {_git(repo, "rev-parse", "HEAD")} x {"0" * 40}\n'))
+    monkeypatch.chdir(repo)
+    assert memoryadds.main(['push']) == 0
+
+
+@pytest.mark.parametrize(
+    ('new', 'note'),
+    [
+        ('.claude/memory/2026/10/02/what-user-measured.md', _RENAME_NOTE),  # another directory
+        ('.claude/memory/2026/10/01/what-user-found.md', _RENAME_NOTE),  # other words of the name changed
+        ('.claude/memory/2026/10/01/what-someone-measured.md', _RENAME_NOTE),  # not the neutral placeholder
+        ('.claude/memory/2026/10/01/what-jdoe7-measured.txt', _RENAME_NOTE),  # the suffix changed
+        (_RENAMED, ''),  # no approval note
+        (_RENAMED, _amend_note('the quote was mistranslated', 'fix that line')),  # a note not stating the rename
+        (_RENAMED, _amend_note('renamed to drop an account name', '')),  # no user's words
+    ],
+)
+def test_planted_a_rename_outside_the_redacting_rule_is_still_refused(repo: Path, new: str, note: str) -> None:
+    """PLANTED CONTROL: each leg of REDACTING-RENAME is necessary; missing one, the move is refused as before."""
+    base = _published_account_entry(repo)
+    _rename(repo, _ACCOUNT, new, _entry(f'{note}\n\n' if note else '', _KEPT))
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert any('never deleted or moved' in line for line in found), found
+
+
+def test_planted_a_redacting_rename_never_admits_a_narrative_edit(repo: Path) -> None:
+    """PLANTED CONTROL: a valid name and note, but a line added -- the content leg refuses it."""
+    base = _published_account_entry(repo)
+    _rename(repo, _ACCOUNT, _RENAMED, _entry(f'{_RENAME_NOTE}\n\n', _KEPT + 'A new claim.\n'))
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert any('never deleted or moved' in line for line in found), found
