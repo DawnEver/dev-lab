@@ -116,7 +116,11 @@ def test_sync_stops_on_a_conflict_naming_files_and_merges_nothing(tmp_path: Path
 
 
 def test_sync_relocks_the_floated_siblings_and_commits_the_lock_in_the_same_sync(tmp_path: Path) -> None:
-    """User ruling 2026-11-07: merge, then relock. PLANTED CONTROL: a door that moves nothing commits nothing."""
+    """User ruling 2026-11-07: merge, then relock. PLANTED CONTROL: a door that moves nothing commits nothing.
+
+    The render is the next test's. This repo declares ``[tool.dev_lab.integrator]``, so it is a family member and
+    every renderer is due (:func:`dev_lab.dev.famfiles.plan`); the real render needs the ``.venv`` it has not.
+    """
     work = _child(tmp_path)
     commit(work, 'uv.lock', 'lab-commons @ old\n')
     forgesync.sync(work, POLICY)
@@ -128,7 +132,7 @@ def test_sync_relocks_the_floated_siblings_and_commits_the_lock_in_the_same_sync
         (root / 'uv.lock').write_text('lab-commons @ new\n', encoding='utf-8')
         return ('dev-lab', 'lab-commons')
 
-    assert forgesync.relock(work, door=door) == ('dev-lab', 'lab-commons')
+    assert forgesync.relock(work, door=door, render=lambda _root: ()) == ('dev-lab', 'lab-commons')
     assert git_out(work, 'log', '-1', '--format=%s') == forgesync.RELOCK_TITLE
     assert 'Relocked: dev-lab, lab-commons' in git_out(work, 'log', '-1', '--format=%b')
     assert git_out(work, 'status', '--porcelain') == ''
