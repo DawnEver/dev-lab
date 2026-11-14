@@ -333,7 +333,7 @@ def test_drop_host_refuses_an_undeclared_account() -> None:
 
 def test_credential_is_an_exit_of_hpc_through_the_door() -> None:
     assert 'credential' in exits_of('HPC-THROUGH-THE-DOOR', 'dev_lab.dev.hpcaccount')
-    assert 'hpcaccount deploy*|forget|credential' in str(HPC_THROUGH_THE_DOOR['remedy'])
+    assert 'hpcaccount <verb>' in str(HPC_THROUGH_THE_DOOR['remedy'])
 
 
 def test_the_reader_remedy_names_the_door_not_a_hand_edit() -> None:

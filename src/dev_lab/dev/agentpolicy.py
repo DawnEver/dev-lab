@@ -283,6 +283,14 @@ POLICY: Final[tuple[Door, ...]] = (
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
+        _module('hpcaccount', 'retention'),
+        MAIN,
+        "Reading each trusted cluster account's quota (files and blocks) and whether its serve ticks, and running "
+        "that account's own in-flight-aware storage retention through the grant's own login hosts; a dry run "
+        'unless asked to apply.',
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
         _module('hpcaccount', 'credential'),
         MAIN,
         'Placing one minted forge token of a declared login on a trusted cluster account, the token on standard '
