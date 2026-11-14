@@ -84,6 +84,7 @@ from lab_commons.hpc.records import stream_sources
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 
+from dev_lab.dev import retentionrust as _rust
 from dev_lab.dev.forgecarry import read_by
 
 __all__ = [
@@ -242,10 +243,12 @@ def cluster_plan(
     repo: str,
     sources: Iterable[str],
     occupied: Iterable[str] | None = (),
+    checkouts: Iterable[Path] = (),
 ) -> Plan:
     """The plan for one cluster account: ``~/ci`` by the rules above, then its slurm outputs and forge logs.
 
     *occupied* is :func:`slurm_occupied`: those trees are in flight; ``None`` (unreadable) keeps every tree.
+    *checkouts* are the served checkouts, whose rust toolchain pins are kept (:mod:`.retentionrust`).
     """
     ci, sources = home / 'ci', set(sources)
     flying = in_flight(ci, policy, now=now, live=live, occupied=occupied or ())
@@ -285,6 +288,7 @@ def cluster_plan(
     doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in flying]
     doomed.append(Doomed(ci / 'cache.git', 'shared-cache-retired'))
     doomed += _home_rules(home, policy, now)
+    doomed += _rust_rules(home, policy, now, flying=flying if occupied is not None else None, checkouts=checkouts)
     hard = tuple(Doomed(ci / 'runs' / sha, 'quota-pressure') for _, sha in sorted(harder))
     commands = [(_GIT, '--git-dir', str(c), 'worktree', 'prune') for c in _entries(ci / 'cache') if c.is_dir()]
     commands += _uv(policy, ci / 'uv-cache')
@@ -401,6 +405,18 @@ def _home_rules(home: Path, policy: Policy, now: datetime) -> list[Doomed]:
         if p.stat().st_size > policy.log_max_mb * _MB
     ]
     return out
+
+
+def _rust_rules(
+    home: Path, policy: Policy, now: datetime, *, flying: set[str] | None, checkouts: Iterable[Path]
+) -> list[Doomed]:
+    """Unpinned toolchains and stale extracted crate sources (:mod:`.retentionrust`); an unreadable queue pins all."""
+    ci = home / 'ci'
+    trees = [ci / 'trees' / sha for sha in sorted(flying or ()) if (ci / 'trees' / sha).is_dir()]
+    channels = None if flying is None else _rust.pinned_channels(home / '.rustup', [*trees, *checkouts])
+    doomed = [Doomed(p, _rust.RULE_TOOLCHAIN) for p in _rust.unpinned_toolchains(home / '.rustup', channels)]
+    young = timedelta(hours=policy.min_age_hours)
+    return doomed + [Doomed(p, _rust.RULE_REGISTRY) for p in _rust.registry_sources(home / '.cargo', now, young)]
 
 
 def _uv(policy: Policy, *caches: Path) -> list[tuple[str, ...]]:
