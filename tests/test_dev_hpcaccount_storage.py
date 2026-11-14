@@ -48,7 +48,9 @@ def _run(
     def connect(grant: Grant) -> Runner:
         return _account(ticks=ticks, unreachable=grant.user in down, seen=seen[grant.user])
 
-    code = retention_fleet(_FLEET, accounts, apply=apply, say=said.append, connect=connect)
+    code = retention_fleet(
+        _FLEET, accounts, apply=apply, say=said.append, connect=connect, pin=lambda grant, _host: connect(grant)
+    )
     return code, said, seen
 
 
@@ -77,9 +79,35 @@ def test_apply_passes_apply_to_the_accounts_retention() -> None:
 
 def test_an_account_whose_serve_never_ticks_is_named() -> None:
     _, said, _ = _run(ticks='0', accounts=('alice',))
-    assert 'alice: serve tick lines in crontab: 0 -- serve never ticks' in said
+    assert 'alice: serve tick lines in crontab on login01.example: 0 -- serve never ticks' in said
     _, said, _ = _run(ticks='3', accounts=('alice',))  # control: a ticking account carries no warning
-    assert 'alice: serve tick lines in crontab: 3' in said
+    assert 'alice: serve tick lines in crontab on login01.example: 3' in said
+
+
+def test_tick_lines_are_read_on_the_declared_deploy_host_not_the_first_that_answers() -> None:
+    """A crontab belongs to ONE login host: the deploy writes it on ``[deploy] host``.
+
+    Reading it wherever the failover lands reported "never ticks" for a ticking account.
+    PLANTED CONTROL: the failover host's crontab (``0``) is never the one reported.
+    """
+    seen: list[str] = []
+    pinned: list[str] = []
+    said: list[str] = []
+
+    def pin(grant: Grant, host: str) -> Runner:
+        def shell(cmd: str, _stdin: str | None = None) -> str:
+            pinned.append(f'{grant.user}@{host}: {cmd}')
+            return '3'
+
+        return shell
+
+    code = retention_fleet(
+        _FLEET, ('alice',), apply=False, say=said.append, connect=lambda _g: _account(ticks='0', seen=seen), pin=pin
+    )
+    assert code == 0
+    assert 'alice: serve tick lines in crontab on login01.example: 3' in said
+    assert pinned == [f'alice@login01.example: {storage.ticks_command()}']
+    assert not any(cmd.startswith('crontab') for cmd in seen)
 
 
 def test_an_unreachable_cluster_is_one_line_naming_the_door() -> None:
@@ -146,6 +174,7 @@ def _census(*, slow: bool = False) -> tuple[int, list[str], list[str]]:
         census=True,
         say=said.append,
         connect=lambda _g: _census_account(seen, slow=slow),
+        pin=lambda _g, _h: _census_account(seen, slow=slow),
     )
     return code, said, seen
 
@@ -187,9 +216,14 @@ def test_the_timeout_reaches_the_ssh_runner(monkeypatch: pytest.MonkeyPatch) -> 
         got.append(timeout)
         return _census_account([])
 
+    def pinned(_grant: Grant, _host: str, timeout: float) -> Runner:
+        got.append(timeout)
+        return _census_account([])
+
     monkeypatch.setattr(storage, 'runner_for', runner)
+    monkeypatch.setattr(storage, 'on_host', pinned)
     assert storage.main(['--account', 'alice', '--census', '--timeout', '7200']) == 0
-    assert got == [7200.0]
+    assert got == [7200.0, 7200.0]  # the failover runner and the deploy host's pinned one alike
 
 
 def test_census_and_apply_are_exclusive(monkeypatch: pytest.MonkeyPatch) -> None:

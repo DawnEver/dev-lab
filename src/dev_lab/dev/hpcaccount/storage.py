@@ -32,7 +32,7 @@ import tomllib
 from collections.abc import Callable, Sequence
 from typing import Final
 
-from lab_commons.hpc.cluster import Runner, Unreachable, runner_for
+from lab_commons.hpc.cluster import Runner, Unreachable, runner_for, ssh_runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
@@ -82,6 +82,9 @@ CENSUS: Final = (
 )
 #: A remote command's default ceiling: a walk of a home of millions of files on a parallel filesystem is slow.
 TIMEOUT: Final = 3600.0
+
+#: Connects to one named login host of a grant: ``(grant, host) -> runner``.
+Pin = Callable[[Grant, str], Runner]
 
 
 def _sizes(text: str) -> tuple[dict[str, int], list[str]]:
@@ -134,15 +137,22 @@ def retention_command(target: Target, *, apply: bool) -> str:
     return in_checkout(target, ['-m', 'dev_lab.dev.retention', '--cluster', *(['--apply'] if apply else [])])
 
 
-def _one(grant: Grant, shell: Runner, *, apply: bool, census: bool) -> tuple[bool, list[str]]:
+def on_host(grant: Grant, host: str, timeout: float = TIMEOUT) -> Runner:
+    """A runner pinned to *host*: what lives on one login host (its crontab) is read there, never on a failover."""
+    return ssh_runner(f'{grant.user}@{host}', timeout)
+
+
+def _one(grant: Grant, shell: Runner, pin: Pin, *, apply: bool, census: bool) -> tuple[bool, list[str]]:
     target = declared_target(grant, shell)
     if isinstance(target, str):
         return False, [target]
-    ticks = shell(ticks_command(), None).strip().splitlines()
+    # the deploy writes the crontab on its declared host; another login host's crontab says nothing about it
+    ticks = pin(grant, target.host)(ticks_command(), None).strip().splitlines()
     count = ticks[-1] if ticks else '0'
     lines = [f'{grant.user}: quota', *shell(QUOTA, None).rstrip().splitlines()]
     lines.append(
-        f'{grant.user}: serve tick lines in crontab: {count}' + ('' if count != '0' else ' -- serve never ticks')
+        f'{grant.user}: serve tick lines in crontab on {target.host}: {count}'
+        + ('' if count != '0' else ' -- serve never ticks')
     )
     if census:
         lines.append(f'{grant.user}: census (files, path; most files first)')
@@ -161,6 +171,7 @@ def retention_fleet(
     say: Callable[[str], None],
     census: bool = False,
     connect: Callable[[Grant], Runner] = runner_for,
+    pin: Pin = on_host,
 ) -> int:
     """Read (and with *apply* reclaim) each of *accounts*' storage (empty: every grant); 2 when any was refused."""
     fleet = {grant.user: grant for grant in grants}
@@ -173,7 +184,7 @@ def retention_fleet(
     refused = 0
     for user in accounts or sorted(fleet):
         try:
-            ok, lines = _one(fleet[user], connect(fleet[user]), apply=apply, census=census)
+            ok, lines = _one(fleet[user], connect(fleet[user]), pin, apply=apply, census=census)
         except subprocess.TimeoutExpired as slow:
             ok, lines = False, [f'{user}: refused -- {_too_slow(slow)}']
         except Unreachable:
@@ -203,4 +214,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'retention: refused -- {refused}')
         return 2
     connect = functools.partial(runner_for, timeout=args.timeout)
-    return retention_fleet(grants, args.account, apply=args.apply, census=args.census, say=emit, connect=connect)
+    pin = functools.partial(on_host, timeout=args.timeout)
+    return retention_fleet(
+        grants, args.account, apply=args.apply, census=args.census, say=emit, connect=connect, pin=pin
+    )
