@@ -121,7 +121,9 @@ def watch(
                     seen.add(line)
                     say(line)
             if settled(statuses):
-                green = all(s.state == 'success' for s in statuses if s.context.startswith(TESTS))
+                green = _green(statuses)
+                if green is None:
+                    continue
                 if stream or len(shas) > 1:
                     say(f'{sha[:12]} {"green" if green else "red"}')
                 return 0 if green else 1
@@ -192,10 +194,18 @@ def _reds(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
 REQUIRED: Final = (f'{CONTEXT_PREFIX}{BASE}',)
 
 
-def _green(statuses: Sequence[CommitStatus]) -> bool:
-    """Every required context and every posted test status ended in ``success``."""
+def _green(statuses: Sequence[CommitStatus]) -> bool | None:
+    """THE ONE GREEN of both watches: every :data:`REQUIRED` context and every posted test status ended ``success``.
+
+    ``False`` once a posted test status is red; ``None`` while a required context is absent or a test status pends
+    (2026-11-14: the sha watch said ``green`` on ``tests/security`` alone while ``tests/base`` was unclaimed).
+    """
     latest = {s.context: s.state for s in statuses if s.context.startswith(TESTS)}
-    return all(c in latest for c in REQUIRED) and all(state == 'success' for state in latest.values())
+    if any(state in RED for state in latest.values()):
+        return False
+    if all(c in latest for c in REQUIRED) and all(state == 'success' for state in latest.values()):
+        return True
+    return None
 
 
 def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str], None], seen: set[str]) -> bool:
@@ -212,7 +222,7 @@ def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str]
         return False
     statuses = status_list(client, pr.head_sha) if pr.head_sha else ()
     lines = [f'{row.key} {pr.head_sha[:12]} {s.context} {s.state} {s.description}'.rstrip() for s in _reds(statuses)]
-    if _green(statuses):
+    if _green(statuses) is True:
         lines.append(f'{row.key} {pr.head_sha[:12]} green')
     for line in lines:
         _say_once(session, line, say, seen)

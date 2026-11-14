@@ -16,23 +16,23 @@ def _post(forge: StateForge, context: str, state: str) -> None:
 
 def test_watch_ends_when_every_part_is_final() -> None:
     forge, said, ticks = StateForge(), [], iter(range(100))
-    _post(forge, 'tests/linux', 'pending')
+    _post(forge, 'tests/base', 'pending')
 
     def sleep(_s: float) -> None:
-        _post(forge, 'tests/linux', 'success')
+        _post(forge, 'tests/base', 'success')
 
     code = watch(forge, (SHA,), deadline_s=50, every_s=1, say=said.append, clock=lambda: next(ticks), sleep=sleep)
     assert code == 0
-    assert said == ['tests/linux: pending pending', 'tests/linux: success success']
+    assert said == ['tests/base: pending pending', 'tests/base: success success']
     assert {s['state'] for s in forge.statuses[SHA]} == {'pending', 'success'}, 'watch posted nothing'
 
 
 def test_a_red_settles_with_one_and_a_pending_meets_the_deadline() -> None:
     forge = StateForge()
-    _post(forge, 'tests/linux', 'failure')
+    _post(forge, 'tests/base', 'failure')
     assert watch(forge, (SHA,), deadline_s=0, every_s=1, say=lambda _l: None) == 1
     other = StateForge()
-    _post(other, 'tests/linux', 'pending')
+    _post(other, 'tests/base', 'pending')
     assert watch(other, (SHA,), deadline_s=0, every_s=1, say=lambda _l: None, sleep=lambda _s: None) == 3
 
 
@@ -64,3 +64,21 @@ def test_a_part_a_failed_job_posted_error_reads_red_and_a_pending_one_does_not()
     other = StateForge()
     _post(other, 'tests/base@windows', 'pending')
     assert watch(other, (SHA,), deadline_s=0, every_s=1, say=lambda _l: None, sleep=lambda _s: None) == 3
+
+
+def test_a_head_is_not_green_while_its_base_part_is_absent() -> None:
+    """A head is green only by the session watch's one green (:func:`forgewatch._green`).
+
+    A consumer PR, 2026-11-14: ``watch <sha> --stream`` said ``green`` on ``tests/security`` alone, while
+    ``forge merge ready`` read ``tests/base`` UNCLAIMED.
+
+    PLANTED CONTROL: once ``tests/base`` ends in success the same watch settles green.
+    """
+    forge, said = StateForge(), []
+    _post(forge, 'tests/security', 'success')
+    assert watch(forge, (SHA,), deadline_s=0, every_s=1, say=said.append, sleep=lambda _s: None, stream=True) == 3
+    assert f'{SHA[:12]} green' not in said
+    _post(forge, 'tests/base', 'success')
+    said.clear()
+    assert watch(forge, (SHA,), deadline_s=0, every_s=1, say=said.append, stream=True) == 0
+    assert said[-1] == f'{SHA[:12]} green'
