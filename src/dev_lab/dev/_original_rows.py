@@ -447,4 +447,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgedataruns',
     # ORIGINAL: user ruling 2026-11-11, a data repo's tests/base is its consumers' tests; no consumer held it.
     'verifiedby',
+    # ORIGINAL: branch protection vs a declaration, split out of `forge` by concept (2026-11-14); no consumer held it.
+    'forgerule',
 )
