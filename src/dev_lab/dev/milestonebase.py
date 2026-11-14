@@ -17,8 +17,10 @@ version tag is added only on promotion to the trunk or at the user's request. Tw
 * ``VERSION-TAG-NEEDS-APPROVAL`` -- in an agent session (:data:`dev_lab.dev.sessionprs.SESSION_ENV` set), a push
   CREATING a ``v*`` tag on origin is refused unless :data:`APPROVED_ENV` holds the user's own words -- the
   ``--approved "<words>"`` pattern of ``branchset --discard``, through the environment because git passes a hook
-  no flags. A dev tag not ending in ``.dev0`` is refused even approved: hatch-vcs chooses the ``.devN`` distance
-  itself and refuses a custom one, so a milestone is ``vX.Y.Z.dev0`` and the next bumps the patch or minor. A human
+  no flags. The hook cannot tell a tag ``push.followTags`` carried from one the push named, so the refusal names
+  both exits, and :func:`dev_lab.dev.netverb.spelled` pushes with ``--no-follow-tags``. A dev tag not ending in
+  ``.dev0`` is refused even approved: hatch-vcs chooses the ``.devN`` distance itself and refuses a
+  custom one, so a milestone is ``vX.Y.Z.dev0`` and the next bumps the patch or minor. A human
   push and an existing remote tag are not judged.
 """
 
@@ -108,8 +110,9 @@ def _behind(tag: str, branch: str, sha: str) -> str:
 
 def _unapproved(tag: str) -> str:
     return (
-        f'{TAG_RULE}: an agent session creates {tag} on origin only at the user`s request (a version tag marks a '
-        f'milestone or a promotion); rerun the push with {APPROVED_ENV}="<the user`s words>"'
+        f'{TAG_RULE}: an agent session creates {tag} on origin only at the user`s request. Not named by you? '
+        f'push.followTags carried it: push with --no-follow-tags (the netverb door does). Else rerun with '
+        f'{APPROVED_ENV}="<the user`s words>"'
     )
 
 
