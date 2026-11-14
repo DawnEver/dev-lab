@@ -110,3 +110,57 @@ def test_an_account_of_a_role_this_session_does_not_reach_is_refused(monkeypatch
 
 def test_retention_is_an_exit_of_hpc_through_the_door() -> None:
     assert 'retention' in exits_of('HPC-THROUGH-THE-DOOR', 'dev_lab.dev.hpcaccount')
+
+
+_HOME = '/srv/acct'
+_FILES_AT = ((40, '/.cargo/bin'), (900, '/.cache/uv'), (300, '/ci/envs'), (50, '/ci/trees'), (950, '/.cache'))
+_FILES = '\n'.join(f'{n} {_HOME}{p}' for n, p in (*_FILES_AT, (420, '/ci'), (60, '/.cargo'), (1430, '')))
+_KIB_AT = ((8, '/.cargo/bin'), (700, '/.cache/uv'), (200, '/ci/envs'), (10, '/ci/trees'), (720, '/.cache'))
+_BYTES = '\n'.join(f'{n} {_HOME}{p}' for n, p in (*_KIB_AT, (230, '/ci'), (9, '/.cargo'), (959, '')))
+
+
+def _census_account(seen: list[str]) -> Runner:
+    def shell(cmd: str, _stdin: str | None = None) -> str:
+        seen.append(cmd)
+        if '--inodes' in cmd:
+            return _FILES
+        if cmd.startswith('du '):
+            return _BYTES
+        if cmd.startswith('crontab'):
+            return '2'
+        if cmd.startswith('quota'):
+            return _QUOTA
+        return _DEPLOY
+
+    return shell
+
+
+def test_a_census_counts_files_per_directory_and_deletes_nothing() -> None:
+    seen: list[str] = []
+    said: list[str] = []
+    code = retention_fleet(
+        _FLEET, ('alice',), apply=False, census=True, say=said.append, connect=lambda _g: _census_account(seen)
+    )
+    assert code == 0
+    # PLANTED: a census is read-only -- no retention run, no apply, no deletion verb reaches the account
+    assert not any('dev_lab.dev.retention' in cmd or '--apply' in cmd or 'rm ' in cmd for cmd in seen)
+    rows = said[said.index('alice: census (files, KiB, path; most files first)') + 1 :]
+    assert rows[0].split() == ['1430', '959', '~']
+    assert rows[1].split() == ['950', '720', '~/.cache']  # dotdirs are counted
+    assert [row.split()[-1] for row in rows] == [
+        '~',
+        '~/.cache',
+        '~/.cache/uv',
+        '~/ci',
+        '~/ci/envs',
+        '~/.cargo',
+        '~/ci/trees',
+        '~/.cargo/bin',
+    ]
+
+
+def test_census_and_apply_are_exclusive(monkeypatch: pytest.MonkeyPatch) -> None:
+    said: list[str] = []
+    monkeypatch.setattr(storage, 'emit', said.append)
+    with pytest.raises(SystemExit):
+        storage.main(['--account', 'alice', '--census', '--apply'])

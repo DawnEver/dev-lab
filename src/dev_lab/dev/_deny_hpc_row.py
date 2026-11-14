@@ -53,7 +53,7 @@ USAGES: Final[Mapping[str, tuple[tuple[tuple[str, ...], ...], str]]] = {
             ('dev_lab.dev.hpcaccount', 'credential'),
             ('dev_lab.dev.hpcaccount', 'deploy'),
         ),
-        '`hpcaccount deploy*|forget|retention|credential`',
+        '`hpcaccount <verb>`',
     ),
     'verify: push,': (
         (('dev_lab.dev.forge', 'queue'), ('dev_lab.dev.forge', 'run', 'show')),

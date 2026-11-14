@@ -1,4 +1,4 @@
-"""``python -m dev_lab.dev.hpcaccount retention (--account <user>... | --fleet) [--apply]``.
+"""``python -m dev_lab.dev.hpcaccount retention (--account <user>... | --fleet) [--apply|--census]``.
 
 AN ACCOUNT'S STORAGE, READ AND RECLAIMED FROM THE WORKSTATION. Every serve tick runs the account's retention
 (:mod:`dev_lab.dev.retention`, in-flight aware), so a full quota means either the tick is not running or retention
@@ -7,8 +7,13 @@ grant's own login hosts (never an agent's own ssh -- HPC-THROUGH-THE-DOOR):
 
 * the account's quota (``quota -s``: blocks AND files -- files are the binding resource of a cluster home);
 * whether its crontab carries the deploy's tick lines (``# lab-commons-deploy:``), i.e. whether serve ticks at all;
-* the account's OWN ``python -m dev_lab.dev.retention --cluster`` report, run in its declared checkout -- a dry run,
-  or the deletion itself with ``--apply`` -- so what is deleted is decided by the code that serves there.
+* with ``--census`` instead of a retention run, the FILES and KiB of every top-level entry of the home (dotdirs
+  included: the uv cache, toolchains, ``~/ci``) and the :data:`CENSUS_DEEP` largest one level below, most files
+  first -- read only (``du -x``, which counts a hard-linked file once: uv links envs from its cache, so an env
+  costs few files of its own);
+* otherwise the account's OWN ``python -m dev_lab.dev.retention --cluster`` report, run in its declared
+  checkout -- a dry run, or the deletion itself with ``--apply`` -- so what is deleted is decided by the code
+  that serves there.
 
 A verification account needs this session's integrator role, exactly as every verb (HPC-ACCESS-BY-ROLE, through
 :func:`~dev_lab.dev.hpcaccount.division.reached_machine`). An account whose login hosts do not answer is refused in
@@ -32,7 +37,16 @@ from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.spec import MARK
 
-__all__ = ['QUOTA', 'UNREACHABLE', 'retention_command', 'retention_fleet', 'ticks_command']
+__all__ = [
+    'CENSUS_DEEP',
+    'QUOTA',
+    'UNREACHABLE',
+    'census_commands',
+    'census_rows',
+    'retention_command',
+    'retention_fleet',
+    'ticks_command',
+]
 
 #: The account's own quota report, blocks and files; a host without ``quota`` says so instead of failing.
 QUOTA: Final = 'quota -s 2>&1 || echo "quota: not available on this host"'
@@ -40,6 +54,46 @@ QUOTA: Final = 'quota -s 2>&1 || echo "quota: not available on this host"'
 UNREACHABLE: Final = (
     'no login host answered -- the cluster is reached only from its site network: join it (or its VPN), then re-run'
 )
+
+#: The level below the home's own entries.
+_SECOND: Final = 2
+#: How many second-level directories the census lists (every top-level entry is always listed).
+CENSUS_DEEP: Final = 25
+#: The census's two read-only walks of the home: file counts, then KiB, two levels deep, one filesystem.
+_CENSUS: Final = ('du --inodes -x -d 2 ~ 2>/dev/null || true', 'du -k -x -d 2 ~ 2>/dev/null || true')
+
+
+def census_commands() -> tuple[str, str]:
+    """The census's shell lines: ``du`` file counts and KiB of the home, two levels deep; neither writes."""
+    return _CENSUS
+
+
+def _sizes(text: str) -> dict[str, int]:
+    found: dict[str, int] = {}
+    for line in text.splitlines():
+        size, _, path = line.strip().partition(' ')
+        if size.isdigit() and path.strip():
+            found[path.strip()] = int(size)
+    return found
+
+
+def census_rows(files_text: str, kib_text: str) -> list[str]:
+    """``files  KiB  path`` per home entry (the home as ``~``), most files first.
+
+    Every top-level entry is listed, and the :data:`CENSUS_DEEP` largest second-level ones.
+    """
+    files, kib = _sizes(files_text), _sizes(kib_text)
+    if not files:
+        return ['census: du read nothing']
+    home = min(files, key=len)
+
+    def depth(path: str) -> int:
+        return 0 if path == home else path[len(home) :].strip('/').count('/') + 1
+
+    deep = sorted((p for p in files if depth(p) == _SECOND), key=lambda p: -files[p])[:CENSUS_DEEP]
+    keep = sorted([p for p in files if depth(p) < _SECOND] + deep, key=lambda p: (-files[p], p))
+    width = len(str(files[home]))
+    return [f'{files[p]:>{width}}  {kib.get(p, 0):>12}  ~{p[len(home) :]}' for p in keep]
 
 
 def ticks_command() -> str:
@@ -52,7 +106,7 @@ def retention_command(target: Target, *, apply: bool) -> str:
     return in_checkout(target, ['-m', 'dev_lab.dev.retention', '--cluster', *(['--apply'] if apply else [])])
 
 
-def _one(grant: Grant, shell: Runner, *, apply: bool) -> tuple[bool, list[str]]:
+def _one(grant: Grant, shell: Runner, *, apply: bool, census: bool) -> tuple[bool, list[str]]:
     target = declared_target(grant, shell)
     if isinstance(target, str):
         return False, [target]
@@ -62,6 +116,11 @@ def _one(grant: Grant, shell: Runner, *, apply: bool) -> tuple[bool, list[str]]:
     lines.append(
         f'{grant.user}: serve tick lines in crontab: {count}' + ('' if count != '0' else ' -- serve never ticks')
     )
+    if census:
+        lines.append(f'{grant.user}: census (files, KiB, path; most files first)')
+        files_cmd, kib_cmd = census_commands()
+        lines.extend(census_rows(shell(files_cmd, None), shell(kib_cmd, None)))
+        return True, lines
     lines.append(f'{grant.user}: retention {"--apply" if apply else "(dry run)"}')
     lines.extend(shell(retention_command(target, apply=apply), None).rstrip().splitlines())
     return True, lines
@@ -73,6 +132,7 @@ def retention_fleet(
     *,
     apply: bool,
     say: Callable[[str], None],
+    census: bool = False,
     connect: Callable[[Grant], Runner] = runner_for,
 ) -> int:
     """Read (and with *apply* reclaim) each of *accounts*' storage (empty: every grant); 2 when any was refused."""
@@ -86,7 +146,7 @@ def retention_fleet(
     refused = 0
     for user in accounts or sorted(fleet):
         try:
-            ok, lines = _one(fleet[user], connect(fleet[user]), apply=apply)
+            ok, lines = _one(fleet[user], connect(fleet[user]), apply=apply, census=census)
         except Unreachable:
             ok, lines = False, [f'{user}: refused -- {UNREACHABLE}']
         except (RuntimeError, OSError, ValueError, IndexError, tomllib.TOMLDecodeError) as failed:
@@ -103,11 +163,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     who = parser.add_mutually_exclusive_group(required=True)
     who.add_argument('--account', action='append', default=[], help='one account of the fleet (repeatable)')
     who.add_argument('--fleet', action='store_true', help='every [[hpc.grant]] account this session reaches')
-    parser.add_argument('--apply', action='store_true', help="run the account's retention for real; default: dry run")
+    what = parser.add_mutually_exclusive_group()
+    what.add_argument('--apply', action='store_true', help="run the account's retention for real; default: dry run")
+    what.add_argument('--census', action='store_true', help='files and KiB per home directory, read only')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         grants = reached_machine(args.account).grants
     except (PermissionError, LookupError, ValueError) as refused:
         emit(f'retention: refused -- {refused}')
         return 2
-    return retention_fleet(grants, args.account, apply=args.apply, say=emit)
+    return retention_fleet(grants, args.account, apply=args.apply, census=args.census, say=emit)
