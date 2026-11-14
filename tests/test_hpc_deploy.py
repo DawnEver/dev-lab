@@ -389,6 +389,45 @@ def test_the_deploy_writes_this_accounts_own_grant_once(box: Box) -> None:
     assert box.machine.read_text(encoding='utf-8') == before
 
 
+#: A grant in the retired shape: ``hosts`` on the grant, not on its cluster.
+_RETIRED_SHAPE = (
+    '[hpc]\n\n[[hpc.grant]]\nuser = "alice"\nhosts = ["login02.int.cluster"]\nslurm_account = "acct-free"\n'
+)
+
+
+def test_a_grant_in_a_retired_shape_is_migrated_from_the_passed_slice_once(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """FORMATS-MIGRATE-ONCE: a grant this kit refuses is rewritten from the family's passed slice, once.
+
+    It used to read as "already holds a grant", and the next phase died in a traceback. Every other table is kept.
+    PLANTED CONTROL: a current grant is kept untouched (the test above).
+    """
+    box.machine.parent.mkdir(parents=True, exist_ok=True)
+    box.machine.write_text(_RETIRED_SHAPE.replace('[hpc]', '[other]\nkeep = 1\n\n[hpc]'), encoding='utf-8')
+    assert box.run(*DECLARE) == 0
+    table = tomllib.loads(box.machine.read_text(encoding='utf-8'))
+    (grant,) = load_grants(table['hpc']).grants
+    assert grant.account == ('alice', 'acct-free')
+    assert table['other'] == {'keep': 1}
+    assert 'migrated' in capsys.readouterr().out
+    before = box.machine.read_text(encoding='utf-8')
+    assert box.run(*DECLARE) == 0
+    assert box.machine.read_text(encoding='utf-8') == before, 'migrates once'
+
+
+def test_a_grant_in_a_retired_shape_with_no_passed_slice_is_refused_naming_deploy_fleet(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    box.machine.parent.mkdir(parents=True, exist_ok=True)
+    box.machine.write_text(_RETIRED_SHAPE, encoding='utf-8')
+    declare = DECLARE[: DECLARE.index('--grant-table')]
+    assert box.run(*declare) == 2
+    err = capsys.readouterr().err
+    assert 'retired' in err
+    assert 'deploy-fleet' in err
+
+
 def test_a_declared_account_slurm_does_not_associate_is_refused_and_nothing_is_written(
     box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
