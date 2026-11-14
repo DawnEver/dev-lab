@@ -117,15 +117,31 @@ def red_refusal(session: str, *, clients: Callable[[Forge], Client]) -> Stop:
     )
 
 
-def unwatched_refusal(session: str) -> Stop:
-    """Refuse the stop while the session has an open PR on record and no live session watch."""
+#: A session watch, as any interpreter's command line names it (#554: a watch from another checkout counts).
+_SESSION_WATCH: Final = '-m dev_lab.dev.forge watch --session'
+
+
+def _session_watched(session: str, command_lines: Iterable[str]) -> bool:
+    """Whether a live process runs ``forge watch --session <session>``, whatever interpreter path runs it."""
+    for line in command_lines:
+        if _SESSION_WATCH in line and line.split(_SESSION_WATCH, 1)[1].split()[:1] == [session]:
+            return True
+    return False
+
+
+def unwatched_refusal(session: str, *, processes: Callable[[], Iterable[str]] = lambda: ()) -> Stop:
+    """Refuse the stop while the session has an open PR on record and no live session watch.
+
+    A watch counts by its marker or by its command line in *processes* -- from any checkout's interpreter, so a
+    watch kept out of the venv a relock needs still counts (#554).
+    """
     prs = sessionprs.open_rows(session)
-    if not prs or sessionprs.watching(session):
+    if not prs or sessionprs.watching(session) or _session_watched(session, processes()):
         return Stop()
     return Stop(
         block=f'{sessionprs.RULE}: this session has open PRs ({", ".join(row.key for row in prs)}) and nothing '
         'watches them, so no merge or red check would reach you. Arm ONE persistent Monitor running: '
-        f'{sessionprs.watch_session_command(session)}'
+        f'{sessionprs.watch_session_command(session)} (a watch run from any checkout interpreter counts)'
     )
 
 
@@ -156,7 +172,7 @@ def _gate(
         if said.block is None and prs and (red := red_refusal(session, clients=clients or clients_at(root))).block:
             said = red
         if said.block is None and prs:
-            said = unwatched_refusal(session)
+            said = unwatched_refusal(session, processes=processes)
     except (ForgeCallFailed, OSError, ValueError):
         return 0
     if said.block is not None:
