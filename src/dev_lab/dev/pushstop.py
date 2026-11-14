@@ -86,14 +86,15 @@ def stop_refusal(
         elif not settled(statuses):
             pending.append(sha)
     live = list(processes())
-    unwatched = [sha for sha in pending if not watched(sha, live)]
+    unwatched = [sha for sha in pending if not watched(sha, live, root=root)]
     ran_out = deadline_reached(root) if again else frozenset()
     released = [sha for sha in unwatched if sha in ran_out]
     if unwatched := [sha for sha in unwatched if sha not in ran_out]:
         named = ' '.join(sha[:12] for sha in unwatched)
         return Stop(
             block=f'{RULE}: this session pushed {named}, its checks are pending and nothing watches them.\n'
-            f'Arm a Monitor and act on each result before ending the turn: {watch_command(*unwatched)}'
+            f'Arm a Monitor and act on each result before ending the turn: {watch_command(*unwatched)}\n'
+            'A live watch on a newer head that descends from it (the forge synced the branch past it) counts too.'
         )
     if released:
         named = ' '.join(sha[:12] for sha in released)

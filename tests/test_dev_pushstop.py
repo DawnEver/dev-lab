@@ -88,3 +88,29 @@ def test_a_blocked_stop_is_this_sessions_wall_with_its_remedy(tmp_path: Path, mo
     assert json.loads(out.getvalue())['decision'] == 'block'
     [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
     assert (line['rule'], line['remedy_present'], line['session']) == (sessionprs.RULE, True, 's1')
+
+
+def test_a_pushed_head_the_forge_synced_past_is_watched_through_its_descendant(tmp_path: Path) -> None:
+    """A live watch on a DESCENDANT of the pushed head counts as watching it.
+
+    2026-11-14: the forge's integration sync merged into the pushed head; the hook kept demanding a watch on
+    the superseded sha while the new head was watched.
+
+    PLANTED CONTROLS: an unwatched descendant still blocks, and a watched UNRELATED commit does not count.
+    """
+    work, head = _pushed(tmp_path)
+    forge = StateForge()
+    status_post(forge, head, context='tests/base', state='pending', description='queued')
+    git_out(work, 'commit', '--allow-empty', '-m', 'sync merge')
+    child = git_out(work, 'rev-parse', 'HEAD')
+    git_out(work, 'checkout', '-q', '--orphan', 'other')
+    git_out(work, 'commit', '--allow-empty', '-m', 'unrelated')
+    stranger = git_out(work, 'rev-parse', 'HEAD')
+
+    def stop(*lines: str) -> Stop:
+        return stop_refusal(work, 's1', client=forge, processes=lambda: lines, again=False, now=PUSHED_AT + 1)
+
+    assert stop(watch_command(child)).block is None, 'a watched descendant carries the obligation'
+    assert stop().block is not None, 'PLANTED CONTROL: nothing watched still blocks'
+    assert 'descend' in (stop().block or ''), 'the refusal names that a watch on a newer head counts'
+    assert stop(watch_command(stranger)).block is not None, 'PLANTED CONTROL: an unrelated watch is no watch'
