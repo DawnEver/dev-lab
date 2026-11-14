@@ -50,7 +50,7 @@ _ROWS_NAME = 'PROVENANCE'
 
 #: The files of bare names declared :data:`ORIGINAL`, beside the claims: a name claims nothing, so it is no row.
 #: Split by responsibility (the remote doors, memory and rem apart) at the module-size band.
-ORIGINAL_ROWS = ('_original_rows.py', '_original_rows_remote.py', '_original_rows_memory.py')
+ORIGINAL_ROWS = ('_original_rows.py', '_original_rows_forge.py', '_original_rows_remote.py', '_original_rows_memory.py')
 _ORIGINALS_NAME = 'ORIGINAL_MODULES'
 
 #: What a row may say, and only the first of them opens a provenance case. A consumer that DELEGATES

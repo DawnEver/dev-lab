@@ -96,7 +96,7 @@ class SettledHistories:
         the copies share its memo, so what one reads the pass reads once.
         """
         wanted = sorted({sha for sha in shas if sha and sha not in self._memo and sha not in self._kept})
-        if len(wanted) < 2:  # noqa: PLR2004 -- one read gains nothing from a pool
+        if len(wanted) <= 1:  # one read gains nothing from a pool
             for sha in wanted:
                 self(sha)
             return

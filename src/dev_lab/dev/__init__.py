@@ -309,7 +309,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.gatebase` -- the NARROWEST admitted ancestor of HEAD; refs arrive with NO DEFAULT.
 * :mod:`dev_lab.dev.treedirt` -- did the tree MOVE while judged; identity stays with ``content``.
 * :mod:`dev_lab.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
-* :mod:`dev_lab.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
+* :mod:`dev_lab.dev.forge` -- the forge a checkout lives on, from its remote; the HTTPS transport and one API call.
+* :mod:`dev_lab.dev.forgerule` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`dev_lab.dev.forgeprotect` -- ``forge protect plan|check|apply``: ``[tool.dev_lab.protection]`` rendered as a
   GitHub ruleset or a Gitea branch protection per branch role, contexts derived from the rendered workflows.
 * :mod:`dev_lab.dev.forgefailure` -- how a forge answer reads: an answer, transient, a refused call or credential.
@@ -336,6 +337,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgecoalesce` -- one run per coalesced ref and part in flight; the tip waits behind it.
 * :mod:`dev_lab.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`dev_lab.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
+* :mod:`dev_lab.dev.forgephases` -- where a forge read's time went: forge HTTP, git fetch, local git, compute.
 * :mod:`dev_lab.dev.forgehosts` -- one host card per serving host, edited in place on the forge.
 * :mod:`dev_lab.dev.forgepoller` -- ONE POLLER PER REPO: a lease on the hosts issue picks the host that polls.
 * :mod:`dev_lab.dev.forgesettled` -- a commit whose every part is settled is read once, its history kept.

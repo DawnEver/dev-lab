@@ -38,21 +38,19 @@ from typing import Any, ClassVar
 import pytest
 
 from dev_lab.dev import forge as module
-from dev_lab.dev.forge import (
+from dev_lab.dev import forgerule
+from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote, token_for
+from dev_lab.dev.forgerule import (
     APPLIED,
     INERT,
     NOT_APPLIED,
     UNREADABLE,
     Clause,
-    Forge,
     Protection,
-    UnreadableRemote,
     apply_protection,
     assess,
-    forge_from_remote,
     protection_body,
     read_rule,
-    token_for,
 )
 
 _GIT = shutil.which('git') or 'git'
@@ -433,7 +431,7 @@ def test_the_shipped_transport_cannot_speak_another_scheme() -> None:
 
     The connection class cannot open ``file://`` or ``ftp://`` because it speaks exactly one protocol.
     """
-    default = inspect.signature(module.read_rule).parameters['transport'].default
+    default = inspect.signature(forgerule.read_rule).parameters['transport'].default
     assert default is module.forge_transport
     assert isinstance(module.forge_transport('forge.example.org', 0.1), http.client.HTTPSConnection)
     assert isinstance(module.forge_transport('127.0.0.1.example.org:9000', 0.1), http.client.HTTPSConnection)
