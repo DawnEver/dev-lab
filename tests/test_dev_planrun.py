@@ -211,9 +211,9 @@ def test_config_apply_subject_prints_the_candidates_digest_and_applies_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     host = config(tmp_path, [])
-    candidate = tmp_path / 'candidate.toml'
-    candidate.write_text('[ops]\nchanged = true\n', encoding='utf-8')
     before = host.path.read_text(encoding='utf-8')
+    candidate = tmp_path / 'candidate.toml'
+    candidate.write_text(f'# a reviewed change the current code loads (#555)\n{before}', encoding='utf-8')
     argv = ['--config', str(host.path), 'config', 'apply', '--from', str(candidate), '--subject']
     assert ops_main.main(argv) == 0
     assert capsys.readouterr().out.strip() == configdoor.digest(candidate.read_text(encoding='utf-8'))

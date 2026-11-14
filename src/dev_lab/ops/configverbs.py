@@ -51,6 +51,7 @@ def apply(
     try:
         if subject:
             fetched = source_text(config, candidate)
+            configdoor.loadable(fetched.host, config.path.name, load)  # a host that cannot load it has no subject
             emit(configdoor.digest(fetched.host, fetched.family))
             return 0
         redeem_ = redeemer()(configdoor.ACTION) if credential else None

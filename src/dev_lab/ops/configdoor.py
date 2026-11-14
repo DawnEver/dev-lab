@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'ACTION', 'FAMILY_KEY', 'ROUTINE', 'Applied', 'ConfigRefused', 'Family', 'Fetched', 'apply', 'boundary', 'changes',
-    'digest', 'fetch', 'git_with_env', 'local_subject', 'tick',
+    'digest', 'fetch', 'git_with_env', 'loadable', 'local_subject', 'tick',
 ]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
@@ -252,6 +252,28 @@ def _write(path: Path, text: str) -> None:
         raise
 
 
+def loadable(candidate: str, name: str, loads: Callable[[Path], object]) -> None:
+    """Load *candidate* with the CURRENT code, as the live file *name* would be; nothing is written.
+
+    ``config apply`` runs it before it redeems a credential, and ``config apply --subject`` before it prints the
+    subject a preflight compares -- so a host whose code predates a key the candidate declares answers BLOCKED at
+    preflight instead of spending the user's code at run (#555).
+
+    Raises:
+        ConfigRefused: the current code refuses the candidate; the remedy is to upgrade the host first.
+
+    """
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
+        probe = Path(scratch) / name
+        probe.write_text(candidate, encoding='utf-8')
+        try:
+            loads(probe)
+        except (ValueError, TypeError) as bad:
+            msg = (f'the current code refuses the candidate: {bad} -- upgrade first (an ops.upgrade step before this '
+                   f'one, or the bare `ops upgrade` door), then apply')  # fmt: skip
+            raise ConfigRefused(msg) from bad
+
+
 def apply(
     live: Path, candidate: str, *, loads: Callable[[Path], object], checks: Checks, run: Runner,
     redeem: Redeem | None = None, credential: Mapping[str, Any] | None = None, family: Family | None = None,
@@ -272,21 +294,12 @@ def apply(
     changed, guarded = _changed(live, new, family)
     if not changed:
         return Applied((), (), None)
-    if guarded:
-        if credential is None or redeem is None:
-            msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
-            raise ConfigRefused(msg)
+    if guarded and (credential is None or redeem is None):
+        msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
+        raise ConfigRefused(msg)
+    loadable(candidate, live.name, loads)  # BEFORE the credential is spent: a refusal never costs a code (#555)
+    if guarded and credential is not None and redeem is not None:  # both present: refused above otherwise
         redeem(credential, digest(candidate, family))
-    with tempfile.TemporaryDirectory(
-        prefix=TEMP_PREFIX
-    ) as scratch:  # loaded by the current code BEFORE the live file is touched
-        probe = Path(scratch) / live.name
-        probe.write_text(candidate, encoding='utf-8')
-        try:
-            loads(probe)
-        except (ValueError, TypeError) as bad:
-            msg = f'the current code refuses the candidate: {bad}'
-            raise ConfigRefused(msg) from bad
     if changed == (FAMILY_KEY,) and family is not None:  # only the family file moved: the host file stays
         return Applied(changed, guarded, _place(family, now))
     backup = live.with_name(f'{live.name}.bak-{_stamp(now)}')
