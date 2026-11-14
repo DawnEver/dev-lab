@@ -11,6 +11,12 @@
 // that is ONE line naming both shas and the bootstrap door, one walls-ledger line (the shape of
 // dev_lab.dev.walls.record -- the venv may not hold that module either), and exit 0. A missing module from a
 // venv that matches its lock is a real bug: its stderr and exit code pass through untouched.
+//
+// A QUEUED VENV UPDATE RUNS HERE (2026-11-14): `dep --bootstrap ROOT --when-free` that found the venv held left
+// its argv in <venv>/dev-lab-pending-bootstrap.json (dev_lab.dev._dep_pending). This launcher runs from OUTSIDE
+// the venv on every tool call, so it is the first door to see the venv free: it replays the request before its
+// own hook, at most once a minute while the venv stays held. One launcher claims it (an exclusive lock file); its concurrent siblings wait for the claim to go
+// before starting their interpreter, so none runs from a venv mid-update. Still held: dep re-queues and exits 0.
 'use strict';
 const { spawnSync, execFileSync } = require('child_process');
 const crypto = require('crypto');
@@ -33,6 +39,8 @@ if (!python) {
   process.stderr.write(`[hook] skipped ${process.argv.slice(2).join(' ')}: no .venv interpreter\n`);
   process.exit(0);
 }
+
+performPendingUpdate(python);
 
 const args = process.argv.slice(2);
 const run = spawnSync(python, args, { stdio: ['inherit', 'inherit', 'pipe'] });
@@ -95,4 +103,55 @@ function recordWall(root, argv) {
     };
     fs.appendFileSync(path.join(dir, 'walls.jsonl'), `${JSON.stringify(line)}\n`);
   } catch {}
+}
+
+// Whether *file* was written within REPLAY_EVERY_MS: a held venv is asked again at most once a minute, not per hook.
+function recent(file) {
+  try {
+    return Date.now() - fs.statSync(file).mtimeMs < Number(process.env.DEV_LAB_REPLAY_EVERY_MS || 60 * 1000);
+  } catch {
+    return false;
+  }
+}
+
+// Replay a queued `dep --when-free` request of the venv *interpreter* runs from; wait while a sibling replays it.
+function performPendingUpdate(interpreter) {
+  const venv = path.dirname(path.dirname(interpreter));
+  const request = path.join(venv, 'dev-lab-pending-bootstrap.json');
+  const claim = `${request}.claim`;
+  const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  const deadline = Date.now() + 15 * 60 * 1000; // a bootstrap's wall; a claim older than this is a dead claimer's
+  while (fs.existsSync(request) || fs.existsSync(claim)) {
+    if (!fs.existsSync(claim) && recent(request)) return; // asked or re-queued under a minute ago: still held
+    let fd;
+    try {
+      fd = fs.openSync(claim, 'wx');
+    } catch {
+      try {
+        if (Date.now() - fs.statSync(claim).mtimeMs > 15 * 60 * 1000) fs.unlinkSync(claim);
+      } catch {}
+      if (Date.now() > deadline) return;
+      pause(500);
+      continue;
+    }
+    try {
+      fs.closeSync(fd);
+      let argv;
+      try {
+        argv = JSON.parse(fs.readFileSync(request, 'utf8')).argv;
+      } catch {
+        return; // answered by the claimer before us, or unreadable: nothing to replay
+      }
+      if (!Array.isArray(argv)) return;
+      process.stderr.write(`[hook] a queued venv update of ${venv} runs first: dep ${argv.join(' ')}
+`);
+      const done = spawnSync(interpreter, ['-m', 'dev_lab.dev.dep', ...argv.map(String), '--when-free'], {
+        stdio: ['ignore', 2, 2], // a hook's stdout is its answer to Claude Code
+      });
+      if (done.status !== 0) fs.rmSync(request, { force: true }); // ran and failed: said once, not on every call
+      return;
+    } finally {
+      fs.rmSync(claim, { force: true });
+    }
+  }
 }
