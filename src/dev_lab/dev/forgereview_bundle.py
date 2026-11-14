@@ -189,7 +189,10 @@ def _verdict_of(out: Findings, bundle: reviewbundle.Bundle, said: str) -> Verdic
     """The verdict on *out* only when every reviewer ran (``ok``/``skipped``, at least one ``ok``); else a line."""
     statuses = [one.status for one in out.reviewers]
     if not statuses or not set(statuses) <= _RAN or 'ok' not in statuses:
-        kinds = ', '.join(f'{one.name} {one.status}' for one in out.reviewers) or 'none planned'
+        kinds = (
+            '; '.join(f'{one.name} {one.status}' + (f': {one.error}' if one.error else '') for one in out.reviewers)
+            or 'none planned'
+        )
         return f'{said}: not every reviewer returned findings ({kinds}); nothing posted'
     return _rendered(out, bundle)
 
