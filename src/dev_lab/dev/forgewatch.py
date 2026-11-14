@@ -17,6 +17,10 @@ session heard nothing) watches every PR the session opened or pushed, in any rep
 ``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. :func:`unacknowledged_reds` is what
 the ``Stop`` hook (:mod:`dev_lab.dev.pushstop`) refuses on, until a newer head is pushed or
 ``--ack <key> --reason <why>`` records why the red stands.
+
+A WATCH YIELDS ITS VENV (2026-11-14): a watch runs from a venv for hours, so a queued
+``dep --bootstrap --when-free`` (:mod:`dev_lab.dev._dep_pending`) of that venv makes it exit at its next poll
+-- one line ``venv update pending ...: re-arm this watch`` and exit 4 -- instead of holding the update off.
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import sessionprs
+from dev_lab.dev import _dep_pending, sessionprs
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pr_by_head, pr_list
@@ -49,6 +53,7 @@ __all__ = [
     'FLOOR_S',
     'RED',
     'TESTS',
+    'YIELDED',
     'clients_at',
     'main',
     'session_main',
@@ -62,6 +67,17 @@ _NOT_FOUND: Final = 404
 #: The context prefix a part's verdict is posted under.
 TESTS: Final = 'tests/'
 _DEADLINE: Final = 3
+#: The exit code of a watch that yielded its venv to a queued update; its session re-arms it.
+YIELDED: Final = 4
+
+
+def _update_waits() -> str:
+    """The line a watch ends on when an update of the venv it runs from is queued, else ``''``."""
+    if _dep_pending.pending(sys.prefix) is None:
+        return ''
+    return f'venv update pending for {sys.prefix}: this watch exits so it can run; re-arm this watch'
+
+
 #: The default poll period, and the fastest ``--every-seconds`` honours. A verdict is claimed on a serve tick
 #: (5 minutes by default) and takes minutes more, so a faster read only re-reads an unchanged list: on
 #: 2026-11-04 one workstation's watches cost a 2-core Gitea host ~19 status reads a minute at 60 s.
@@ -85,10 +101,14 @@ def watch(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     stream: bool = False,
+    yielding: Callable[[], str] = _update_waits,
 ) -> int:
     """Poll each of *shas*, printing each change, until one settles or *deadline_s* has passed (``--stream``: above)."""
     end, seen = clock() + deadline_s, set()
     while True:
+        if why := yielding():
+            say(why)
+            return YIELDED
         for sha in shas:
             statuses = status_list(client, sha)
             for status in statuses:
@@ -216,6 +236,7 @@ def watch_session(
     deadline_s: float = 4 * 3600.0,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    yielding: Callable[[], str] = _update_waits,
 ) -> int:
     """Report each change on *session*'s open PRs until none is open (0) or *deadline_s* passed (3).
 
@@ -225,7 +246,14 @@ def watch_session(
     sessionprs.watch(session)
     try:
         return _session_loop(
-            session, clients=clients, say=say, every_s=every_s, end=clock() + deadline_s, clock=clock, sleep=sleep
+            session,
+            clients=clients,
+            say=say,
+            every_s=every_s,
+            end=clock() + deadline_s,
+            clock=clock,
+            sleep=sleep,
+            yielding=yielding,
         )
     finally:
         sessionprs.unwatch(session)
@@ -240,9 +268,13 @@ def _session_loop(
     end: float,
     clock: Callable[[], float],
     sleep: Callable[[float], None],
+    yielding: Callable[[], str],
 ) -> int:
     seen = sessionprs.heard(session)
     while True:
+        if why := yielding():
+            say(why)
+            return YIELDED
         live = 0
         for row in (*sessionprs.open_rows(session), *sessionprs.pending_rows(session)):
             try:
