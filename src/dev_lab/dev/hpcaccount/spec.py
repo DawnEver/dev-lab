@@ -211,6 +211,32 @@ def has_grant(path: Path, user: str) -> bool:
     return any(grant.get('user') == user for grant in _hpc_of(path).get('grant', []))
 
 
+def grant_refusal(path: Path) -> str:
+    """Why this kit cannot load the ``[hpc]`` slice of the machine file at *path* (``''``: it loads)."""
+    try:
+        declared_grants(_hpc_of(path))
+    except ValueError as refused:
+        return str(refused)
+    return ''
+
+
+#: A TOML table or array-of-tables header line; group 1 is the table's dotted name.
+_HEADER: Final = re.compile(r'^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
+
+
+def without_hpc(text: str) -> str:
+    """*text* without its ``[hpc]`` slice -- every ``[hpc]``, ``[hpc.*]`` and ``[[hpc.*]]`` table; the rest kept."""
+    kept: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if header := _HEADER.match(line):
+            name = header.group(1)
+            inside = name == 'hpc' or name.startswith('hpc.')
+        if not inside:
+            kept.append(line)
+    return '\n'.join(kept).rstrip('\n') + '\n'
+
+
 def grant_setup(path: Path, user: str) -> tuple[str, ...]:
     """The set-up of *user*'s cluster, as the machine file at *path* declares it -- the cluster's own environment."""
     hpc = _hpc_of(path)
