@@ -22,6 +22,7 @@ from dev_lab.ops import (
     backup,
     breakglass,
     consentverbs,
+    enableunits,
     install,
     judge,
     offsite,
@@ -94,7 +95,15 @@ def install_verb(config: OpsConfig, root: Path) -> int:
         return 2
     for path, state in done.paths.items():
         emit(f'{state:9} {path}')
-    emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in done.next_steps)]))
+    steps = done.next_steps
+    if as_root and root == Path('/'):  # the live host: enable what was rendered (#557); the rest is the operator's
+        units, steps = enableunits.split(steps)
+        failed = enableunits.enable(units)
+        for unit in units:
+            emit(f'{"FAILED" if unit in failed else "enabled":9} {unit}')
+        steps += tuple(f'journalctl --no-pager -u {unit}  (it did not enable)' for unit in failed)
+    if steps:
+        emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in steps)]))
     return 0
 
 
