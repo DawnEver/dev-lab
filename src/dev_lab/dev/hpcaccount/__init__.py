@@ -17,6 +17,9 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   every declared account's own ``deploy``, one log per account.
 * ``forget --repo <url> --row <key> (--account <user>... | --fleet) [--dry-run]``
   (:mod:`~dev_lab.dev.hpcaccount.forget`) runs lab-commons' ``learned forget`` of one row on each account.
+* ``retention (--account <user>... | --fleet) [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.storage`) prints each
+  account's quota (files and blocks), whether its serve ticks, and its OWN in-flight-aware retention report (a dry
+  run, or the deletion with ``--apply``).
 * ``credential <user@host> --login <forge login> [--url <repo url>]`` < token
   (:mod:`~dev_lab.dev.hpcaccount.credential`) places one minted forge token in the account's ``~/.git-credentials``
   and confirms the forge answers as that login.
@@ -46,13 +49,14 @@ __all__ = ['main']
 
 _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
-    '{deploy [...] | deploy-fleet [...] | forget [...] | credential [...] | tick <repo>... | allocate [...]}'
+    '{deploy [...] | deploy-fleet [...] | forget [...] | retention [...] | credential [...] | '
+    'tick <repo>... | allocate [...]}'
 )
 
 
 def main(argv: list[str] | None = None) -> int:
     """Dispatch one verb (``tick`` needs a repo); anything else is refused naming the verbs."""
-    from dev_lab.dev.hpcaccount import allocate, credential, deploy, fleet, forget, tick  # noqa: PLC0415 -- the package imports no verb
+    from dev_lab.dev.hpcaccount import allocate, credential, deploy, fleet, forget, storage, tick  # noqa: PLC0415 -- the package imports no verb
 
     argv = sys.argv[1:] if argv is None else argv
     verb, rest = (argv[0], argv[1:]) if argv else ('', [])
@@ -61,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
         'forget': forget.main,
+        'retention': storage.main,
         'allocate': allocate.allocate,
     }
     if verb in verbs:
