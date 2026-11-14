@@ -392,3 +392,11 @@ def test_a_forge_watch_is_a_run_its_owner_may_stop() -> None:
     assert identify('python.exe -m dev_lab.dev.forge watch --session abc --stream')
     assert identify('python.exe -m dev_lab.dev.forge watch 9fc0cef9a277 --stream')
     assert not identify('python.exe -m dev_lab.dev.forge status show 9fc0cef9a277')
+
+
+def test_a_hung_retry_wrapped_network_verb_is_a_run_this_door_stops() -> None:
+    """The agent holds the WRAPPER's pid, not the hook's (2026-11-13): the wrapper must be stoppable too."""
+    assert identify('sh scripts/hooks/with-retry.sh push origin pr/x')
+    assert identify('/usr/bin/bash C:/repo/scripts/hooks/with-retry.sh fetch origin')
+    assert not identify('sh scripts/hooks/with-venv.sh push')  # planted control: another script is not this wrapper
+    assert not identify('sh scripts/hooks/with-retry.sh')  # no verb: nothing it runs is a network run

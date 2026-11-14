@@ -541,6 +541,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.opsserver` -- the ops door: its fixed verbs on a declared server the integrator deploys.
 * :mod:`dev_lab.dev.remote` -- the one ssh transport both remote doors share: how a command reaches a host.
 * :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
+* :mod:`dev_lab.dev.mainsync` -- a main checkout follows its branch: byte-identical untracked files are no obstacle,
+  a differing one, a tracked change or a divergence refuses by name; then its venv follows.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
 * :mod:`dev_lab.dev.agentpolicy` -- AGENT-POLICY: the one table of agent doors; allow rows, intents, remedies derive.
 * :mod:`dev_lab.dev.forgekeyfile` -- the forge key file `auth export` writes and `auth login --from-file` reads.

@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev.codeplace import main as codeplace_main
-from dev_lab.dev.tmpsweep import census, main, session_report, sweep
+from dev_lab.dev.tmpsweep import census, main, session_report, sweep, tool_text
 from dev_lab.dev.writeroots import Root
 
 _DAY = 86400.0
@@ -130,13 +130,47 @@ _SCRIPTS = frozenset({'.py', '.md'})
 
 
 def test_the_session_report_names_scripts_written_since_the_session_began(planted: dict[str, Path]) -> None:
-    reason = session_report(_roots(planted), _excluded(planted), since=time.time() - 3600, suffixes=_SCRIPTS)
+    mentions = 'cat > fresh.py; echo > loose.py'
+    reason = session_report(
+        _roots(planted), _excluded(planted), since=time.time() - 3600, suffixes=_SCRIPTS, mentions=mentions
+    )
     assert reason is not None
     assert reason.startswith('WRITES-STAY-IN-THE-TREE: ')
     assert 'fresh.py' in reason
     assert 'loose.py' in reason
     assert 'dev-lab-old.py' not in reason
-    assert session_report(_roots(planted), _excluded(planted), since=time.time() + 60, suffixes=_SCRIPTS) is None
+    late = time.time() + 60
+    assert session_report(_roots(planted), _excluded(planted), since=late, suffixes=_SCRIPTS, mentions=mentions) is None
+
+
+def test_a_file_no_tool_call_of_the_session_names_is_not_the_sessions(planted: dict[str, Path]) -> None:
+    """#561: a fresh file another live program wrote (a service's port file) is never laid at the session's door."""
+    (planted['temp'] / 'svc-port.4242.txt').write_text('52583', encoding='utf-8')
+    suffixes = _SCRIPTS | {'.txt'}
+    since = time.time() - 3600
+    reason = session_report(_roots(planted), _excluded(planted), since=since, suffixes=suffixes, mentions='fresh.py')
+    assert reason is not None
+    assert 'fresh.py' in reason  # PLANTED CONTROL: the session's own write is still named
+    assert 'svc-port.4242.txt' not in reason
+    assert 'loose.py' not in reason
+    assert session_report(_roots(planted), _excluded(planted), since=since, suffixes=suffixes, mentions='') is None
+
+
+def test_the_tool_text_is_what_the_sessions_tool_calls_said(tmp_path: Path) -> None:
+    transcript = tmp_path / 't.jsonl'
+    lines = [
+        {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'input': {'command': 'echo x > a.py'}}]}},
+        {'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'b.py is mentioned in prose only'}]}},
+        {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'content': 'c.py from a result'}]}},
+        'not json',
+    ]
+    transcript.write_text('\n'.join(x if isinstance(x, str) else json.dumps(x) for x in lines), encoding='utf-8')
+    said = tool_text(str(transcript))
+    assert 'a.py' in said
+    assert 'b.py' not in said
+    assert 'c.py' not in said
+    assert tool_text(None) == ''
+    assert tool_text(str(tmp_path / 'absent.jsonl')) == ''
 
 
 def test_the_stop_hook_rides_the_stray_census_and_blocks_once(
@@ -145,7 +179,10 @@ def test_the_stop_hook_rides_the_stray_census_and_blocks_once(
     monkeypatch.setattr('dev_lab.dev.tmpsweep.declared', lambda: (_roots(planted), _excluded(planted)))
     checkout = planted['src'] / 'repo'
     (checkout / '.git').mkdir(parents=True)
-    payload = {'hook_event_name': 'Stop', 'cwd': str(checkout)}
+    transcript = planted['src'] / 'session.jsonl'
+    call = {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'input': {'file_path': 'fresh.py'}}]}}
+    transcript.write_text(json.dumps(call), encoding='utf-8')
+    payload = {'hook_event_name': 'Stop', 'cwd': str(checkout), 'transcript_path': str(transcript)}
     assert codeplace_main(['stray'], stdin=io.StringIO(json.dumps(payload))) == 0
     decision = json.loads(capsys.readouterr().out)
     assert decision['decision'] == 'block'
