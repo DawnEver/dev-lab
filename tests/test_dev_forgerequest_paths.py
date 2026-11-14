@@ -126,6 +126,7 @@ def test_a_selection_reads_its_files_in_one_git_process_however_many_it_names(
             reads.append(list(argv))
         return real(argv, *args, **kwargs)
 
+    declared_request(root, sha, TESTS, tuple(names[:1]))  # warm: per-sha reads (pyproject) are cached once
     monkeypatch.setattr(forgerequestpaths._door, 'run', counted)
     declared_request(root, sha, TESTS, tuple(names[:1]))
     one = len(reads)
