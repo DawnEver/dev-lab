@@ -65,11 +65,46 @@ def test_a_branch_with_no_pr_passes() -> None:
     assert _judged(forge, 'pr/x') == []
 
 
-def test_a_closed_old_pr_and_a_new_open_one_pass() -> None:
-    forge = StateForge()
+_HOSTS = pytest.mark.parametrize('host', ['forge.example.org', 'github.com'])
+
+
+@_HOSTS
+def test_a_closed_old_pr_and_a_new_open_one_pass(host: str) -> None:
+    forge = StateForge(Forge(host, 'o', 'r'))
     _close(forge, forge.add_pull('pr/x', _BASE))
     forge.add_pull('pr/x', _BASE)
     assert _judged(forge, 'pr/x') == []
+
+
+@_HOSTS
+def test_an_open_draft_wins_over_an_older_closed_pr_of_the_same_pair(host: str) -> None:
+    """The 2026-11-10 defect: closed #6078 and open draft #6151 of one pair, were refused."""
+    forge = StateForge(Forge(host, 'o', 'r'))
+    _close(forge, forge.add_pull('pr/x', _BASE))
+    draft = forge.add_pull('pr/x', _BASE, draft=True)
+    assert _judged(forge, 'pr/x') == []
+    found = pr_by_head(forge, 'pr/x', _BASE)
+    assert found is not None
+    assert found.number == draft
+
+
+@_HOSTS
+def test_an_open_pr_wins_over_a_newer_closed_one(host: str) -> None:
+    forge = StateForge(Forge(host, 'o', 'r'))
+    kept = forge.add_pull('pr/x', _BASE)
+    _close(forge, forge.add_pull('pr/x', _BASE))
+    found = pr_by_head(forge, 'pr/x', _BASE)
+    assert found is not None
+    assert found.number == kept
+
+
+def test_the_pair_lookup_alone_answered_the_closed_pr_planted_control() -> None:
+    """PLANTED CONTROL: gitea's pair route, read alone, answers the closed PR: the refusal."""
+    forge = StateForge()
+    closed = forge.add_pull('pr/x', _BASE)
+    _close(forge, closed)
+    forge.add_pull('pr/x', _BASE, draft=True)
+    assert forge.call('GET', f'{forge.repo}/pulls/integrate%2Fmain/pr/x')['number'] == closed
 
 
 def test_a_closed_pr_into_another_base_does_not_judge_the_branch() -> None:
@@ -94,14 +129,15 @@ def test_an_unreadable_forge_refuses_naming_it() -> None:
     assert 'the forge cannot be read' in found[0]
 
 
-def test_the_guard_asks_one_question_per_branch_however_many_prs_closed() -> None:
+def test_the_guard_asks_a_bounded_question_per_branch_however_many_prs_closed() -> None:
+    """The pair route; for a pair with a PR, one open page and the first recently-updated closed page."""
     forge = StateForge()
     for n in range(120):
         _close(forge, forge.add_pull(f'pr/old{n}', _BASE))
     _close(forge, forge.add_pull('pr/x', _BASE))
     lines = _line('pr/x') + _line('pr/y')
     assert len(refusals(Path(), lines, integration=_BASE, client=lambda: forge)) == 1
-    assert len(forge.asked) == 2
+    assert len(forge.asked) == 4
 
 
 @pytest.mark.parametrize('host', ['forge.example.org', 'github.com'])
