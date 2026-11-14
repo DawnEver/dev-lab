@@ -3,7 +3,7 @@
 THE RULE (user rulings 2026-10-31, the four-layer plan). A memory entry is immutable once written: a
 correction is a NEW entry naming the old one in ``corrects:``, and a consolidation is a NEW entry naming
 its sources in ``merged_from:``. So a change touching ``**/.claude/memory/**`` may only ADD a file.
-Three shapes are not narrative edits:
+Four shapes are not narrative edits:
 
 * a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is how a
   closed task becomes history, and it is the one rename into memory;
@@ -11,7 +11,12 @@ Three shapes are not narrative edits:
   (:data:`dev_lab.dev.memoryentry.VOLATILE_FIELDS`) a reader used to rewrite on every read. A change
   whose ONLY difference is those lines is that migration and nothing else;
 * rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
-  rewrite task text or turn narrative memory into a task list. Both versions must match the format.
+  rewrite task text or turn narrative memory into a task list. Both versions must match the format;
+* an approved redacting rename (REDACTING-RENAME, user ruling 2026-11-14) -- the one move WITHIN memory: an
+  account-like token leaves a published entry's file name, in the same directory, one run of the name's
+  ``-`` tokens replaced by ``user`` or dropped, and the entry gains an amendment note whose reason says
+  ``renamed`` (:func:`dev_lab.dev.memoryentry.only_renamed_redacting`). Git reads it as ``R`` or, when the
+  text changed too, as ``D`` + ``A``; both are judged as the rename (:func:`_without_redacting_renames`).
 
 The task-list protocol is authored by rem 2.2.0, ``scripts/task-engine.js`` functions ``handleAdd``
 and ``handleMark``. This classifier recognizes that version's complete output, not arbitrary Markdown.
@@ -54,6 +59,7 @@ from dev_lab.dev.memoryentry import (
     only_amended,
     only_manual_tasks_updated,
     only_redacted,
+    only_renamed_redacting,
     only_volatile_stripped,
     shape_problems,
 )
@@ -105,7 +111,32 @@ def _changes(root: Path, *spec: str) -> list[tuple[str, str, str]]:
     return rows
 
 
+def _without_redacting_renames(
+    root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
+    """*rows* without the memory moves that are admitted redacting renames, as ``R`` or as ``D`` + ``A``."""
+
+    def admitted(old: str, new: str) -> bool:
+        before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
+        return only_renamed_redacting(old, new, before, after)
+
+    renamed = {(old, new) for status, old, new in rows if status == 'R' and is_memory(old) and admitted(old, new)}
+    gone = [old for status, old, _ in rows if status == 'D' and is_memory(old)]
+    for new in (new for status, _, new in rows if status == 'A' and is_memory(new)):
+        old = next((old for old in gone if admitted(old, new)), None)
+        if old is not None:
+            gone.remove(old)
+            renamed.add((old, new))
+    olds, news = {old for old, _ in renamed}, {new for _, new in renamed}
+    return [
+        (status, old, new)
+        for status, old, new in rows
+        if not ((status in 'RD' and old in olds) or (status in 'RA' and new in news))
+    ]
+
+
 def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
+    rows = _without_redacting_renames(root, old_rev, new_rev, rows)
     added = {new for status, _, new in rows if status in 'AC'}
 
     def exists(path: str) -> bool:
