@@ -96,12 +96,18 @@ def config_source(live: Mapping[str, Any] | None = None) -> str:
     """The config source's forge URL: the ``origin`` of the clone the machine file's ``[devhost]`` names.
 
     Raises:
-        ValueError: the machine file is not a render (no ``[devhost] source``), or that clone has no ``origin``.
+        ValueError: the machine file is not a render (no ``[devhost] source``), the source is relative (it would
+            follow the CWD to another clone, #556), or that clone has no ``origin``.
 
     """
     own = (machineconfig.machine() if live is None else live).get(OWN_TABLE, {})
     if not own.get('source'):
         msg = f'the machine file has no [{OWN_TABLE}] source: render it (devhost render --host NAME --from CLONE)'
+        raise ValueError(msg)
+    if not Path(own['source']).is_absolute():
+        msg = (f"the machine file's [{OWN_TABLE}] source {own['source']!r} is relative, so it would resolve against "
+               f"the current directory and read another clone's origin: re-render it with an absolute clone -- "
+               f"devhost render --host {own.get('host') or 'NAME'} --from <absolute clone> --write")  # fmt: skip
         raise ValueError(msg)
     url = git_out(Path(own['source']), 'remote', 'get-url', 'origin')
     if not url:
@@ -122,7 +128,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     if channels := declared.get('dev', {}).get('channels'):
         layered = _merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     local = {k: v for k, v in live.items() if k not in layered and k != OWN_TABLE}
-    own = {OWN_TABLE: {'host': host, 'source': clone.as_posix()}}
+    own = {OWN_TABLE: {'host': host, 'source': clone.resolve().as_posix()}}  # absolute: never the reader's CWD (#556)
     header = (
         f'# RENDERED by python -m dev_lab.dev.devhost render --host {host}: edit the sources, not this file.\n'
         f'# family.toml sha256:{_digest(family_file)}; hosts/{host}.toml sha256:{_digest(host_file)}; '

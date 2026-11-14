@@ -364,3 +364,25 @@ def test_the_channels_verb_refuses_a_malformed_declaration(tmp_path: Path, capsy
     captured = capsys.readouterr()
     assert captured.out == ''
     assert 'channels' in captured.err
+
+
+def test_a_relative_from_renders_an_absolute_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """#556: ``--from .`` once rendered ``source = "."``, so the config source followed whatever the CWD was."""
+    clone = _clone(tmp_path)
+    monkeypatch.chdir(clone.parent)
+    rendered = tomllib.loads(devhost.render(Path(clone.name), 'ws', tomllib.loads(LOCAL)))
+    assert rendered['devhost']['source'] == clone.resolve().as_posix()
+
+
+def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path: Path) -> None:
+    """#556: a relative ``[devhost] source`` resolves against the CWD; it is refused, never read from another clone."""
+    with pytest.raises(ValueError, match=r'relative.*devhost render --host G --from <absolute clone> --write'):
+        devhost.config_source({'devhost': {'host': 'G', 'source': '.'}})
+    # the control: an absolute clone with an origin is its origin
+    clone = _clone(tmp_path)
+    subprocess.run(['git', 'init', '-q', str(clone)], check=True)  # noqa: S607
+    subprocess.run(['git', '-C', str(clone), 'remote', 'add', 'origin', 'https://forge.example/t/hc.git'], check=True)  # noqa: S607
+    assert (
+        devhost.config_source({'devhost': {'host': 'G', 'source': clone.as_posix()}})
+        == 'https://forge.example/t/hc.git'
+    )
