@@ -449,4 +449,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'verifiedby',
     # ORIGINAL: branch protection vs a declaration, split out of `forge` by concept (2026-11-14); no consumer held it.
     'forgerule',
+    # ORIGINAL: a forge read's busy seconds per phase (2026-11-13, the 170 s queue); no consumer measured it.
+    'forgephases',
 )
