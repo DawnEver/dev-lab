@@ -51,7 +51,12 @@ __all__ = [
 ]
 
 #: The account's own quota report, blocks and files; a host without ``quota`` says so instead of failing.
-QUOTA: Final = 'quota -s 2>&1 || echo "quota: not available on this host"'
+QUOTA: Final = (
+    '( for tool in "mmlsquota --block-size auto" "quota -s" "lfs quota -h $HOME"; do '
+    'command -v "${tool%% *}" >/dev/null 2>&1 || continue; '
+    'out=$($tool 2>&1) && [ -n "$out" ] && { echo "quota by ${tool%% *}:"; echo "$out"; exit 0; }; '
+    'done; echo "quota: none of mmlsquota, quota, lfs answered on this host" )'
+)
 #: The remedy of a cluster whose login hosts do not answer: it is reached only from its own network.
 UNREACHABLE: Final = (
     'no login host answered -- the cluster is reached only from its site network: join it (or its VPN), then re-run'
@@ -61,19 +66,35 @@ UNREACHABLE: Final = (
 _SECOND: Final = 2
 #: How many second-level directories the census lists (every top-level entry is always listed).
 CENSUS_DEEP: Final = 25
-#: The census's ONE read-only walk of the home: file counts two levels deep, one filesystem.
-CENSUS: Final = 'du --inodes -x -d 2 ~ 2>/dev/null || true'
+#: The census's ONE read-only walk of the home, file counts two levels deep on one filesystem: ``du --inodes``,
+#: or -- where the cluster's ``du`` lacks it -- one ``find -xdev`` aggregated by its first two path components.
+#: A ``# `` line is a note (why the fallback ran, or why the walk read nothing), printed as the census's cause.
+CENSUS: Final = (
+    'out=$(du --inodes -x -d 2 "$HOME" 2>/dev/null); rc=$?; '
+    'if [ -n "$out" ]; then echo "$out"; '
+    '[ "$rc" -eq 0 ] || echo "# du rc=$rc: some directories were unreadable, so their counts are partial"; '
+    'else err=$(du --inodes -x -d 0 "$HOME" 2>&1 >/dev/null | head -n 1); '
+    'echo "# du --inodes unavailable (rc=$rc): $err"; '
+    'find "$HOME" -xdev 2>/dev/null | awk -v h="$HOME" '
+    '\'{ n[h]++; r = substr($0, length(h) + 2); if (r == "") next; k = split(r, a, "/"); '
+    'n[h "/" a[1]]++; if (k > 1) n[h "/" a[1] "/" a[2]]++ } END { for (p in n) print n[p], p }\'; '
+    'echo "# find rc=$?"; fi'
+)
 #: A remote command's default ceiling: a walk of a home of millions of files on a parallel filesystem is slow.
 TIMEOUT: Final = 3600.0
 
 
-def _sizes(text: str) -> dict[str, int]:
+def _sizes(text: str) -> tuple[dict[str, int], list[str]]:
     found: dict[str, int] = {}
+    notes: list[str] = []
     for line in text.splitlines():
-        size, _, path = line.strip().partition(' ')
+        if line.startswith('# '):
+            notes.append(line[2:].strip())
+            continue
+        size, _, path = line.strip().partition('	') if '	' in line else line.strip().partition(' ')
         if size.isdigit() and path.strip():
             found[path.strip()] = int(size)
-    return found
+    return found, notes
 
 
 def census_rows(files_text: str) -> list[str]:
@@ -81,9 +102,10 @@ def census_rows(files_text: str) -> list[str]:
 
     Every top-level entry is listed, and the :data:`CENSUS_DEEP` largest second-level ones.
     """
-    files = _sizes(files_text)
+    files, notes = _sizes(files_text)
     if not files:
-        return ['census: du read nothing']
+        return [f'census: the walk read nothing -- {"; ".join(notes) or "no output and no note"}']
+    head = [f'census: {note}' for note in notes if not note.startswith('find rc=0')]
     home = min(files, key=len)
 
     def depth(path: str) -> int:
@@ -92,7 +114,7 @@ def census_rows(files_text: str) -> list[str]:
     deep = sorted((p for p in files if depth(p) == _SECOND), key=lambda p: -files[p])[:CENSUS_DEEP]
     keep = sorted([p for p in files if depth(p) < _SECOND] + deep, key=lambda p: (-files[p], p))
     width = len(str(files[home]))
-    return [f'{files[p]:>{width}}  ~{p[len(home) :]}' for p in keep]
+    return [*head, *(f'{files[p]:>{width}}  ~{p[len(home) :]}' for p in keep)]
 
 
 def _too_slow(slow: subprocess.TimeoutExpired) -> str:
