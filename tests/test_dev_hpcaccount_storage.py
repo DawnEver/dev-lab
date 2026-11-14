@@ -123,7 +123,7 @@ _FILES = '\n'.join(f'{n} {_HOME}{p}' for n, p in (*_FILES_AT, (420, '/ci'), (60,
 def _census_account(seen: list[str], *, slow: bool = False) -> Runner:
     def shell(cmd: str, _stdin: str | None = None) -> str:
         seen.append(cmd)
-        if cmd.startswith('du '):
+        if cmd == storage.CENSUS:
             if slow:
                 raise subprocess.TimeoutExpired(cmd, 3600)
             return _FILES
@@ -155,7 +155,7 @@ def test_a_census_counts_files_per_directory_in_one_walk_and_deletes_nothing() -
     assert code == 0
     # PLANTED: a census is read-only -- no retention run, no apply, no deletion verb reaches the account
     assert not any('dev_lab.dev.retention' in cmd or '--apply' in cmd or 'rm ' in cmd for cmd in seen)
-    assert [cmd for cmd in seen if cmd.startswith('du ')] == [storage.CENSUS]  # ONE walk of the home
+    assert [cmd for cmd in seen if 'du --inodes' in cmd] == [storage.CENSUS]  # ONE walk of the home
     rows = said[said.index('alice: census (files, path; most files first)') + 1 :]
     assert rows[0].split() == ['1430', '~']
     assert rows[1].split() == ['950', '~/.cache']  # dotdirs are counted
@@ -197,3 +197,30 @@ def test_census_and_apply_are_exclusive(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(storage, 'emit', said.append)
     with pytest.raises(SystemExit):
         storage.main(['--account', 'alice', '--census', '--apply'])
+
+
+def test_du_tab_separated_output_is_read() -> None:
+    """GNU du separates the count and the path with a TAB; a space-only split read nothing."""
+    rows = storage.census_rows(f'7\t{_HOME}/a\n10\t{_HOME}\n')
+    assert [row.split() for row in rows] == [['10', '~'], ['7', '~/a']]
+
+
+def test_a_walk_without_du_inodes_falls_back_to_one_find_and_says_so() -> None:
+    assert 'du --inodes' in storage.CENSUS
+    assert 'find "$HOME" -xdev' in storage.CENSUS  # the portable fallback: one walk, files only
+    assert not any(verb in storage.CENSUS for verb in (' rm ', '-delete', '-exec'))  # PLANTED: still read only
+    note = '# du --inodes unavailable (rc=1): du: unrecognized option'
+    rows = storage.census_rows(f'{note}\n7\t{_HOME}/a\n10\t{_HOME}\n')
+    assert rows[0] == f'census: {note[2:]}'
+    assert [row.split() for row in rows[1:]] == [['10', '~'], ['7', '~/a']]
+
+
+def test_a_census_that_read_nothing_names_the_remote_cause() -> None:
+    rows = storage.census_rows('# find rc=1: find: permission denied\n')
+    assert rows == ['census: the walk read nothing -- find rc=1: find: permission denied']
+
+
+def test_quota_tries_each_filesystem_tool_and_names_the_one_that_answered() -> None:
+    order = [storage.QUOTA.index(tool) for tool in ('mmlsquota', 'quota -s', 'lfs quota')]
+    assert order == sorted(order)
+    assert 'quota by' in storage.QUOTA
