@@ -9,9 +9,10 @@ steps an operator runs on purpose.
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable, Sequence
 from typing import Final
+
+from lab_commons import launch
 
 __all__ = ['enable', 'split']
 
@@ -29,7 +30,7 @@ def split(steps: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 
 def _run(argv: list[str]) -> int:
-    return subprocess.run(argv, check=False).returncode
+    return launch.run(argv, check=False).returncode
 
 
 def enable(units: Sequence[str], *, run: Runner = _run) -> tuple[str, ...]:
