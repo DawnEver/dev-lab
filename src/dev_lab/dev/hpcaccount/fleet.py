@@ -16,7 +16,9 @@ THE ROLE IS THE WORKSTATION'S (user rulings 2026-11-09): each grant's ``role`` a
 role`` differs, naming both. A grant role the table does not name is refused here, before any ssh.
 
 Then it starts ONE detached ``ssh -o BatchMode=yes <user>@<declared host>`` that runs that account's own
-``python -m dev_lab.dev.hpcaccount deploy`` in ``~/<root>/dev-lab`` and writes everything it prints to one log
+``python -m dev_lab.dev.hpcaccount deploy`` in ``~/<root>/dev-lab`` -- after the kit's own tick has
+refreshed that checkout (:func:`refresh_kit`), so a fix to the deploy reaches an account that never ticks --
+and writes everything it prints to one log
 per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat.
 """
 
@@ -45,7 +47,7 @@ from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.remote import detached, ssh_argv
 from dev_lab.dev.venvpath import venv_interpreter
 
-__all__ = ['KIND', 'Target', 'declared_target', 'deploy_fleet', 'in_checkout', 'main', 'remote_argv']
+__all__ = ['KIND', 'Target', 'declared_target', 'deploy_fleet', 'in_checkout', 'main', 'refresh_kit', 'remote_argv']
 
 #: The dated-log kind every account's log is written under.
 KIND: Final = 'deploy-fleet'
@@ -128,13 +130,26 @@ def remote_argv(grant: Grant, target: Target, division: Division | None = None) 
     The deploy is passed its declared ``[hpc]`` slice (:func:`grant_slice`); with *division*, also the role and its
     table.
     """
-    python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
-    command = f'cd {PurePosixPath("~", target.root, KIT)} && {python} -m dev_lab.dev.hpcaccount deploy'
-    command += f' --grant-table {shlex.quote(json.dumps(grant_slice(grant), sort_keys=True))}'
+    deploy = ['-m', 'dev_lab.dev.hpcaccount', 'deploy', '--grant-table', json.dumps(grant_slice(grant), sort_keys=True)]
     if division is not None and (role := division.role_of(grant.user)):
-        table = json.dumps(dict(division.roles[role]), sort_keys=True)
-        command += f' --fleet-role {shlex.quote(role)} --role-table {shlex.quote(table)}'
+        deploy += ['--fleet-role', role, '--role-table', json.dumps(dict(division.roles[role]), sort_keys=True)]
+    command = f'{refresh_kit(grant, target)} ; {in_checkout(target, deploy)}'
     return ssh_argv(f'{grant.user}@{target.host}', command, batch=True)
+
+
+def refresh_kit(grant: Grant, target: Target) -> str:
+    """The shell line that brings *target*'s kit to its declared tip BEFORE the deploy runs, and records the sha.
+
+    A dead account cannot heal itself: its kit moves only on its own cron tick, which never runs, so a fix to
+    ``deploy`` would never reach it. The step is the kit's OWN tick (:mod:`dev_lab.dev.hpcaccount.tick`, the one
+    writer of the host checkout), never a second refresh; in the grant's ``setup`` environment, as the cron line
+    runs it (:func:`dev_lab.dev.hpcaccount.spec.tick_command`). The deploy follows whatever the tick exits: a
+    research kit refreshes, then refuses to serve.
+    """
+    kit = PurePosixPath('~', target.root, KIT)
+    recorded = f'echo "[deploy-fleet] kit at $(git -C {kit} rev-parse HEAD)"'
+    tick = f'{in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
+    return f'bash -lc {shlex.quote("; ".join([*grant.setup, tick]))}' if grant.setup else tick
 
 
 def _serving_twice(grants: Sequence[Grant], accounts: Sequence[str], division: Division | None) -> list[str]:
