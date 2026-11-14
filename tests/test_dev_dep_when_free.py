@@ -93,8 +93,8 @@ def _fake_venv(root: Path) -> tuple[Path, Path]:
     return root / '.venv', log
 
 
-def _launch(root: Path, every_ms: int) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(root), 'DEV_LAB_REPLAY_EVERY_MS': str(every_ms)}
+def _launch(root: Path, replay_every_s: float) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(root), 'DEV_LAB_REPLAY_EVERY_MS': str(round(replay_every_s * 1000))}
     return subprocess.run(
         [str(node_path()), str(LAUNCHER), '-c', 'print("hook ran")'],
         capture_output=True, text=True, encoding='utf-8', env=env, cwd=root, check=False,
@@ -107,12 +107,12 @@ def test_the_hook_launcher_performs_a_queued_update_before_its_hook(tmp_path) ->
     assert (plain.returncode, plain.stdout.strip()) == (0, 'hook ran'), plain.stderr
     assert not log.exists(), 'PLANTED CONTROL: nothing queued, nothing replayed'
     _dep_pending.request(prefix, ['--bootstrap', str(tmp_path)])
-    fresh = _launch(tmp_path, 60_000)
+    fresh = _launch(tmp_path, 60.0)
     assert fresh.stdout.strip() == 'hook ran', fresh.stderr
     assert not log.exists(), 'a request asked under a minute ago is not replayed on every hook'
     old = time.time() - 120
     os.utime(prefix / _dep_pending.PENDING, (old, old))
-    done = _launch(tmp_path, 60_000)
+    done = _launch(tmp_path, 60.0)
     assert (done.returncode, done.stdout.strip()) == (0, 'hook ran'), done.stderr
     calls = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
     assert calls == [['--bootstrap', str(tmp_path), '--when-free']]

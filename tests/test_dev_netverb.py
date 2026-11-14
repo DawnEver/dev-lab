@@ -423,7 +423,9 @@ def _tagged_pushing_repo(tmp_path: Path) -> Path:
 def _remote_tags(tmp_path: Path) -> str:
     git = shutil.which('git') or 'git'
     bare = tmp_path / 'origin.git'
-    return subprocess.run([git, '-C', str(bare), 'tag'], capture_output=True, text=True, check=True).stdout
+    return subprocess.run(
+        [git, '-C', str(bare), 'tag'], capture_output=True, text=True, encoding='utf-8', check=True
+    ).stdout
 
 
 def test_a_branch_push_through_the_door_carries_no_tag_followtags_would_have(tmp_path: Path) -> None:
