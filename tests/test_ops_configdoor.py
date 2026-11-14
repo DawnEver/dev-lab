@@ -112,3 +112,24 @@ def test_a_failed_self_check_restores_the_previous_file(tmp_path: Path) -> None:
 
 def test_changes_names_keys_added_removed_and_changed() -> None:
     assert changes({'a': {'b': 1, 'c': 2}}, {'a': {'b': 1, 'd': 3}}) == ('a.c', 'a.d')
+
+
+def test_a_candidate_the_current_code_refuses_spends_no_credential(tmp_path: Path) -> None:
+    """#555: the load check runs BEFORE the credential is redeemed, so a code is never spent on a refusal."""
+    live = _live(tmp_path)
+    candidate = LIVE.replace('status *"]', 'status *", "/usr/bin/journalctl --no-pager -u gitea"]')
+    spent: list[str] = []
+
+    def refuses(_path: Path) -> object:
+        msg = "[ops] has unknown keys ['status']"
+        raise ValueError(msg)
+
+    with pytest.raises(ConfigRefused, match='upgrade first'):
+        apply(live, candidate, loads=refuses, checks={}, run=_green,
+              redeem=lambda _c, asked: spent.append(asked), credential={})  # fmt: skip
+    assert spent == []
+    assert live.read_text(encoding='utf-8') == LIVE
+    # the control: a candidate the code loads redeems exactly once
+    apply(live, candidate, loads=_ok, checks={}, run=_green,
+          redeem=lambda _c, asked: spent.append(asked), credential={})  # fmt: skip
+    assert spent == [digest(candidate)]

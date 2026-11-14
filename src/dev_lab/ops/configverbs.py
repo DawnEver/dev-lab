@@ -51,6 +51,9 @@ def apply(
     try:
         if subject:
             fetched = source_text(config, candidate)
+            configdoor.loadable(  # a host that cannot load it has no subject; loading needs no alert environment
+                fetched.host, config.path.name, lambda path: load(path, alerts=False)
+            )
             emit(configdoor.digest(fetched.host, fetched.family))
             return 0
         redeem_ = redeemer()(configdoor.ACTION) if credential else None
