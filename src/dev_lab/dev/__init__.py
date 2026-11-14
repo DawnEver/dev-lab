@@ -361,6 +361,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   store cleanup its host owns.
 * :mod:`dev_lab.dev.retention` -- the storage retention pass serve runs every tick, and its quota alarm.
 * :mod:`dev_lab.dev.retentionplan` -- what retention deletes: a tree or env once nothing in flight needs it.
+* :mod:`dev_lab.dev.retentionrust` -- the rust rules of retention: unpinned toolchains and stale extracted crates.
 * :mod:`dev_lab.dev.diskusage` -- an account's quota (`mmlsquota`) or a disk's usage, and what one path holds.
 * :mod:`dev_lab.dev.artefacts` -- the artefact store: declared outputs packed once, the backend
   chosen by size, one shared library whose every writer cleans only its own runs.

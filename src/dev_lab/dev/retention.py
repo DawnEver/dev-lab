@@ -188,7 +188,10 @@ def _plan_for(root: Path, policy: Policy, *, cluster: bool, home: Path, now: dat
         mine = [p.name for p, state, _ in runs(home / 'ci') if state.get('repo') == repo]
         sources = carry_sources(root, mine, _origin_tips(root))
         occupied = slurm_occupied()
-        return cluster_plan(home, policy, now=now, live=live, repo=repo, sources=sources, occupied=occupied)
+        checkouts = [c for c in root.parent.iterdir() if c.is_dir()]  # the served checkouts, side by side
+        return cluster_plan(
+            home, policy, now=now, live=live, repo=repo, sources=sources, occupied=occupied, checkouts=checkouts
+        )
     return workstation_plan([main_checkout(root)], policy, now=now)
 
 

@@ -91,6 +91,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'breakglass',
     'retention',
     'retentionplan',
+    # ORIGINAL: no rule kept a rust toolchain by its pins; 135 k files per account sat in unpinned ones.
+    'retentionrust',
     'diskusage',
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'pushgate',
