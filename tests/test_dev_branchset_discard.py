@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev.branchset import BranchSet, discard
+from dev_lab.dev.branchfate import discard
+from dev_lab.dev.branchset import BranchSet
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
 
 _GIT = shutil.which('git') or 'git'
