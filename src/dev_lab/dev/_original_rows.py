@@ -164,6 +164,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'stopsignatures',
     'stopapproved',
     'proctable',
+    # ORIGINAL: the agent background-shell sweep, a session's shell lives fifty minutes (demand 2026-11-15).
+    'shellreaper',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
     'servelanes',

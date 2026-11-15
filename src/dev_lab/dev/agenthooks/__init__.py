@@ -139,6 +139,7 @@ def run_engine(
     hint: bool = False,
     live_run: bool = True,
     metrics_root: Path | None = None,
+    background: bool = False,
 ) -> str | None:
     """THE ONE RUNNER. Drive the engine AT *engine* over one Bash command; the reason, or ``None``.
 
@@ -173,6 +174,8 @@ def run_engine(
             PROBE of which rule owns a shape passes ``False``: the probing suite is itself a run in the
             checkout it probes, so the state row would answer for every shape it covers (a downstream cutover,
             2026-10-25). The payload key carrying it is one the tool never sends, so no agent command can.
+        background: send the call as ``run_in_background``, as the tool does for a background shell; a
+            ``when: 'background'`` row binds only then.
         metrics_root: the checkout a refusal of this probe is logged in; ``None`` logs none. A probe is a
             test or a ``--check``, never an agent refused: guard suites probing a real checkout's rules
             once wrote one refusal per row per suite into its live log (P0 baseline, 2026-10-26).
@@ -193,7 +196,7 @@ def run_engine(
             raise EngineNotReadable(msg)
     payload = {
         'tool_name': tool,
-        'tool_input': {'command': command},
+        'tool_input': {'command': command, **({'run_in_background': True} if background else {})},
         'cwd': str(cwd) if cwd is not None else '',
         **({'agent_id': agent_id} if agent_id is not None else {}),
         **({} if live_run else {LIVE_RUN_ABSENT: True}),
@@ -227,6 +230,7 @@ def decide(
     agent_id: str | None = None,
     hint: bool = False,
     metrics_root: Path | None = None,
+    background: bool = False,
 ) -> str | None:
     """Run THE WHEEL'S OWN copy of a shipped engine over one Bash command; the reason, or ``None``.
 
@@ -245,6 +249,7 @@ def decide(
         hint: ask for the hint a ``severity: hint`` row speaks instead of a refusal.
         engine: which SHIPPED engine to run, by name.
         metrics_root: as :func:`run_engine`'s.
+        background: as :func:`run_engine`'s.
 
     Returns:
         What :func:`run_engine` returns for the shipped engine of that name.
@@ -254,7 +259,15 @@ def decide(
 
     """
     return run_engine(
-        engine_path(engine), command, rules, cwd=cwd, tool=tool, agent_id=agent_id, hint=hint, metrics_root=metrics_root
+        engine_path(engine),
+        command,
+        rules,
+        cwd=cwd,
+        tool=tool,
+        agent_id=agent_id,
+        hint=hint,
+        metrics_root=metrics_root,
+        background=background,
     )
 
 
