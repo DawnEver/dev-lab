@@ -174,10 +174,17 @@ def poll_once(*, clients: Callable[[Forge], Client], now: float | None = None) -
     started = time.time() if now is None else now
     covers: list[str] = []
     for session in sessions():
+        # what this poll reads: a PR recorded while it runs is covered by the next poll, never by this beat
+        polled = {row.key for row in sessionprs.open_rows(session)}
+        polled |= {sessionprs.Row(row.forge, row.branch).key for row in sessionprs.pending_rows(session)}
         poll_session(
             session, clients=clients, say=lambda line, s=session: deliver(s, line), seen=sessionprs.heard(session)
         )
-        covers += [row.key for row in sessionprs.open_rows(session) if row.at <= started]
+        covers += [
+            row.key
+            for row in sessionprs.open_rows(session)
+            if row.key in polled or sessionprs.Row(row.forge, row.branch).key in polled
+        ]
     beat = {'pid': os.getpid(), 'created': creation_stamp(os.getpid()), 'at': started, 'covers': sorted(covers)}
     _beat().parent.mkdir(parents=True, exist_ok=True)
     _beat().write_text(json.dumps(beat), encoding='utf-8')
