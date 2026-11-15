@@ -244,7 +244,7 @@ def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], obj
     built = dataclasses.replace(built, journal=None)  # the held entry owns this write, not the journal
     first = _decided(built, post)
     if first is None:
-        url = attach(built, directory / post.record).url if post.record else ''
+        url = attach(built, directory / post.record, root=root).url if post.record else ''
         status_post(
             built, post.sha, context=post.context, state=post.state, description=post.description, target_url=url
         )

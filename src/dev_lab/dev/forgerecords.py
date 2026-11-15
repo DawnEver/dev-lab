@@ -10,10 +10,14 @@ closed so it never sits in anybody's queue; a status's ``target_url`` points at 
 CLEANUP IS DERIVED, NOT DECLARED PER RECORD (:func:`prune`). A record is kept while its sha is still
 someone's business: the tip of any ``origin`` branch (a lane, the integration branch, the trunk), or
 one of the newest ``--keep-trunk`` first-parent commits of the trunk. Everything else is deleted --
-a sha nobody can push or cite any more needs no evidence on the server. A compute UNIT RESULT
+a sha nobody can push or cite any more needs no evidence on the server -- and a kept sha's row (a part, or
+an OS row ``base@windows``) keeps only its newest :data:`RECORDS_PER_ROW`, so re-runs and local verifies
+never grow the home. A compute UNIT RESULT
 (:mod:`dev_lab.dev.forgeunit`) shares the home and is a cache, not evidence: only the newest
 ``[retention] unit_results`` of them stay (:class:`dev_lab.dev.retentionplan.Policy`, the one policy).
-``forge serve`` runs the prune on its tick, at most once per :data:`PRUNE_EVERY` (:func:`serve_prune`).
+``forge serve`` runs the prune on its tick, at most once per :data:`PRUNE_EVERY` (:func:`serve_prune`), and
+sounds STORAGE at :data:`ALARM_AT` of the forge's cap; an upload to a FULL home prunes it first
+(:func:`attach`), so the cap refuses a post only when every record on the home is live.
 
 ONE STORE, TWO FORGES. Gitea keeps the records as attachments of the closed :data:`RECORDS_TITLE`
 issue; GitHub, which has no issue attachments, keeps them as assets of ONE prerelease tagged
@@ -46,11 +50,14 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgework import GITHUB, Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.partrows import is_row
 
 __all__ = [
+    'ALARM_AT',
     'DEFAULT_KEEP_TRUNK',
     'GITHUB_ASSET_CAP',
     'PRUNE_EVERY',
+    'RECORDS_PER_ROW',
     'RECORDS_TAG',
     'RECORDS_TITLE',
     'UNIT_RESULT',
@@ -98,7 +105,16 @@ PRUNE_EVERY: Final = timedelta(hours=6)
 #: How many first-parent trunk commits keep their records by default.
 DEFAULT_KEEP_TRUNK: Final = 20
 
-_RECORD_NAME: Final = re.compile(r'^run-(?P<sha>[0-9a-f]{40})-[a-z]+-[^/]+\.json\.gz$')
+#: How many records one sha's row keeps, newest first: a re-run or a local verify supersedes the older one, so
+#: the home grows with shas and never with re-runs (2026-11-15: one sha held a record per verify).
+RECORDS_PER_ROW: Final = 2
+
+#: The share of :data:`GITHUB_ASSET_CAP` at which the serve tick sounds :data:`~dev_lab.dev.forgealarm.STORAGE`.
+ALARM_AT: Final = 0.8
+
+#: ``run-<sha>-<row>-<req>.json.gz``; the row is a part or an OS-qualified row (``base@windows``), judged by
+#: :func:`dev_lab.dev.partrows.is_row` -- 2026-11-15: a ``[a-z]+`` part read no row record, and none was pruned.
+_RECORD_NAME: Final = re.compile(r'^run-(?P<sha>[0-9a-f]{40})-(?P<row>[^-/]+)-[^/]+\.json\.gz$')
 #: A compute unit result (:func:`dev_lab.dev.forgeunit.result_name`), whatever archive it was posted as.
 UNIT_RESULT: Final = re.compile(r'^unit-(?P<unit>[0-9a-f]{64})-(?P<result>[0-9a-f]{64})\.tar\.[a-z]+$')
 _TRACKING: Final = 'refs/remotes/origin/'
@@ -117,10 +133,16 @@ def _attachment(raw: Mapping[str, Any]) -> Attachment:
     return Attachment(int(raw['id']), raw['name'], raw.get('browser_download_url') or '')
 
 
+def _sha_row(name: str) -> tuple[str, str] | None:
+    """The ``(sha, row)`` a record's file name carries, or ``None`` for a file that is not a run record."""
+    found = _RECORD_NAME.match(name)
+    return (found['sha'], found['row']) if found and is_row(found['row']) else None
+
+
 def sha_of(name: str) -> str | None:
     """The sha a record's file name carries, or ``None`` for a file that is not a run record."""
-    found = _RECORD_NAME.match(name)
-    return found['sha'] if found else None
+    found = _sha_row(name)
+    return found[0] if found else None
 
 
 @dataclass(frozen=True)
@@ -178,25 +200,65 @@ def listing(client: Client) -> tuple[Attachment, ...]:
     return tuple(sorted((_attachment(item) for item in raw), key=lambda item: item.id))
 
 
-def attach(client: Client, path: Path) -> Attachment:
+def _cap(client: Client) -> int | None:
+    """How many assets the records home can hold: GitHub's release cap; ``None`` where the forge sets none."""
+    return GITHUB_ASSET_CAP if client.backend is GITHUB else None
+
+
+def attach(client: Client, path: Path, *, root: Path | None = None) -> Attachment:
     """Upload *path* to the records home; returns the attachment (its ``url`` is the status target).
 
     IDEMPOTENT BY NAME, AND A RESULT'S NAME IS ITS HASH (:func:`dev_lab.dev.forgeoutbox.content_name`): an
     asset already stored under *path*'s name is returned and nothing is sent, and the write's probe finds an
     upload whose answer was lost, so one upload is never stored twice.
+
+    A FULL HOME IS PRUNED, NEVER A REFUSED POST (:func:`_make_room`): at the forge's cap the home is pruned
+    once and the upload goes on; :class:`RecordsHomeFull` only when nothing on it is prunable. *root* is the
+    checkout whose ``origin`` refs say which shas are live; without one only what needs no liveness goes.
     """
     store = cast('_Store', _store(client, create=True))  # create=True always yields a home
     found = pages(client, store.assets, {})
     held = next((raw for raw in found if raw.get('name') == path.name), None)
     if held is not None:
         return _attachment(held)
-    if store.upload_host is not None and len(found) >= GITHUB_ASSET_CAP:
+    cap = _cap(client)
+    if cap is not None and len(found) >= cap:
+        held_now = sorted(map(_attachment, found), key=lambda item: item.id)
+        _make_room(client, store, held_now, path, root=root, cap=cap)
+    return _upload(client, store, path.name, path.read_bytes())
+
+
+def _make_room(
+    client: Client, store: _Store, found: Sequence[Attachment], path: Path, *, root: Path | None, cap: int
+) -> None:
+    """Prune a full home in one bounded pass (the listing in hand) so *path* fits; refuse by name if nothing goes.
+
+    The live shas are *root*'s fetched ``origin`` refs (:func:`kept_shas`); with no checkout, or a fetch
+    that fails, every sha on the home counts as live -- superseded records and spare unit results still go.
+    The sha being posted is always live.
+    """
+    present = {sha for item in found if (sha := sha_of(item.name)) is not None}
+    keep: set[str] = set(present)
+    if root is not None:
+        try:
+            fetch_origin(root)
+            keep = set(kept_shas(root, trunk=load_policy(root).trunk, keep_trunk=DEFAULT_KEEP_TRUNK))
+        except (OSError, ValueError) as failed:
+            emit(f'[records] liveness unread ({failed}); pruning only superseded records', err=True)
+    keep |= {sha} if (sha := sha_of(path.name)) is not None else set()
+    doomed = _doomed(found, keep, unit_results=_budget(section('retention')), per_row=RECORDS_PER_ROW)
+    if len(found) - len(doomed) >= cap:
+        judged = 'its origin refs' if root is not None else 'no checkout, so every sha on it'
         msg = (
-            f'the records home of {client.forge.repo} holds {len(found)} assets, the forge maximum: run '
-            '`python -m dev_lab.dev.forge records prune`, then publish again (the status stays queued)'
+            f'the records home of {client.forge.repo} holds {len(found)} assets, the forge maximum, and every '
+            f'record on it is live (judged by {judged}; the newest {RECORDS_PER_ROW} per row): delete idle origin '
+            f'branches or prune with a smaller `--keep-trunk` (`python -m dev_lab.dev.forge records prune '
+            f'--keep-trunk N` from the checkout), then publish again (the status stays queued)'
         )
         raise RecordsHomeFull(msg)
-    return _upload(client, store, path.name, path.read_bytes())
+    for item in doomed:
+        client.call('DELETE', f'{store.delete}{item.id}')
+    emit(f'[records] the home was full: deleted {len(doomed)} prunable asset(s) before the upload', err=True)
 
 
 def _upload(client: Client, store: _Store, name: str, content: bytes) -> Attachment:
@@ -263,20 +325,46 @@ def kept_shas(root: Path, *, trunk: str, keep_trunk: int) -> frozenset[str]:
     return frozenset(tips) | frozenset(history)
 
 
-def prune(client: Client, keep: Collection[str], *, unit_results: int, dry_run: bool = False) -> tuple[Attachment, ...]:
-    """Delete every run record whose sha is not in *keep*, and every unit result but the newest *unit_results*.
+def _doomed(
+    found: Sequence[Attachment], keep: Collection[str], *, unit_results: int, per_row: int
+) -> tuple[Attachment, ...]:
+    """What a prune deletes of *found*, oldest first; anything not named here stays.
+
+    Records of shas not in *keep*, each kept sha's row's records but the newest *per_row*, and every unit
+    result but the newest *unit_results*.
+    """
+    units = [item for item in found if UNIT_RESULT.match(item.name)]
+    stale = {item.id for item in units[: max(len(units) - unit_results, 0)]}
+    rows: dict[tuple[str, str], list[int]] = {}
+    for item in found:
+        key = _sha_row(item.name)
+        if key is None:
+            continue
+        if key[0] not in keep:
+            stale.add(item.id)
+        else:
+            rows.setdefault(key, []).append(item.id)
+    for ids in rows.values():
+        stale.update(sorted(ids)[: max(len(ids) - per_row, 0)])
+    return tuple(item for item in found if item.id in stale)
+
+
+def prune(
+    client: Client,
+    keep: Collection[str],
+    *,
+    unit_results: int,
+    per_row: int = RECORDS_PER_ROW,
+    dry_run: bool = False,
+) -> tuple[Attachment, ...]:
+    """Delete what :func:`_doomed` names: dead shas' records, superseded rows, unit results over budget.
 
     Returns what was (or, dry, would be) deleted, oldest first. Any other file on the home is never touched.
     """
     store = _store(client, create=False)
     if store is None:
         return ()
-    found = listing(client)
-    units = [item for item in found if UNIT_RESULT.match(item.name)]
-    stale = {item.id for item in units[: max(len(units) - unit_results, 0)]}
-    doomed = tuple(
-        item for item in found if item.id in stale or ((sha := sha_of(item.name)) is not None and sha not in keep)
-    )
+    doomed = _doomed(listing(client), keep, unit_results=unit_results, per_row=per_row)
     if not dry_run:
         for item in doomed:
             client.call('DELETE', f'{store.delete}{item.id}')
@@ -317,11 +405,20 @@ def serve_prune(
     try:
         keep = kept_shas(root, trunk=trunk or load_policy(root).trunk, keep_trunk=DEFAULT_KEEP_TRUNK)
         doomed = prune(client, keep, unit_results=_budget(section('retention') if table is None else table))
+        cap = _cap(client)
+        held = len(listing(client)) if cap is not None else 0
     except (ForgeCallFailed, OSError, ValueError) as failed:
         alarm(Alarm(STORAGE, repo, 'the records prune failed', str(failed)))
         return ()
     for item in doomed:
         say(f'[records] deleted {item.name}')
+    if cap is not None and held >= cap * ALARM_AT:
+        body = (
+            f'after the prune {held} assets are live, {ALARM_AT:.0%} of the cap: at the cap an upload prunes '
+            'first and refuses only when every record is live. Delete idle origin branches, or prune with a '
+            'smaller `--keep-trunk` (`python -m dev_lab.dev.forge records prune --keep-trunk N`).'
+        )
+        alarm(Alarm(STORAGE, repo, f'the records home holds {held} of {cap} assets', body, about='records'))
     return doomed
 
 
@@ -331,9 +428,12 @@ def _parser() -> argparse.ArgumentParser:
     listed = verbs.add_parser('list', help='every run record attached on the forge')
     listed.add_argument('--json', action='store_true', help='print the attachments as JSON')
     pruned = verbs.add_parser(
-        'prune', help='delete records whose sha is no live tip and no recent trunk commit, and unit results over budget'
+        'prune',
+        help='delete records whose sha is no live tip and no recent trunk commit, superseded records of a row, '
+        'and unit results over budget',
     )
     pruned.add_argument('--keep-trunk', type=int, default=DEFAULT_KEEP_TRUNK, help='first-parent trunk commits kept')
+    pruned.add_argument('--keep-per-row', type=int, default=RECORDS_PER_ROW, help='newest records kept per sha row')
     pruned.add_argument('--dry-run', action='store_true', help='name what would be deleted; delete nothing')
     for verb, says in (('get', 'print it; nothing when absent'), ('put', 'replace it with stdin'), ('rm', 'delete it')):
         named = verbs.add_parser(verb, help=f'one mutable named file on the records home: {says}')
@@ -378,7 +478,9 @@ def main(
             return 0
         fetch(root)
         keep = kept_shas(root, trunk=load_policy(root).trunk, keep_trunk=args.keep_trunk)
-        doomed = prune(client, keep, unit_results=_budget(section('retention')), dry_run=args.dry_run)
+        doomed = prune(
+            client, keep, unit_results=_budget(section('retention')), per_row=args.keep_per_row, dry_run=args.dry_run
+        )
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
