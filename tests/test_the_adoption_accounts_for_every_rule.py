@@ -138,7 +138,6 @@ _ENFORCED = {
         guard('tests/_arch_corpus.py'),
         guard('tests/test_dev_memoryadds.py'),
     ),
-    'MODULE-SIZE-ALARM': (guard('tests/test_arch_module_size_alarm.py'),),
     'RETIRED-NAMES-REGISTERED': (guard('tests/test_arch_retired_spellings.py'), guard('tests/_arch_corpus.py')),
     'NAMED-SETS-NOT-COUNTS': (
         guard('tests/test_arch_module_size_alarm.py'),

@@ -29,15 +29,30 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import pytest
+from lab_commons.hpc.testcells import TestCell
 from lab_commons.launch import run
+from lab_commons.outcomes import Cell, Reason, Status
 
 from dev_lab.dev import cjk
+from dev_lab.dev.family import is_member
+from dev_lab.dev.famtests import modulealarm
 from dev_lab.dev.rules import ALWAYS_ON, tracked_files
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
-__all__ = ['append_rows', 'candidates', 'check_no_cjk', 'cjk_pattern', 'exclude_pathspecs', 'rows']
+__all__ = [
+    'append_rows',
+    'assert_required_collected',
+    'candidates',
+    'check_no_cjk',
+    'cjk_pattern',
+    'exclude_pathspecs',
+    'required_ids',
+    'resource_nodes',
+    'rows',
+    'run_checks',
+]
 
 _GIT_TIMEOUT_S: Final = 60
 _GIT: Final = shutil.which('git') or 'git'
@@ -92,7 +107,11 @@ def check_no_cjk(root: Path) -> None:
 
 
 #: Rule ID -> the check this plugin runs for it over the repo root.
-_CHECKS: Final[dict[str, Callable[[Path], None]]] = {'NO-CJK-IN-TRACKED-SOURCE': check_no_cjk}
+_LAYOUT_RULE: Final = 'MODULE-SIZE-ALARM'
+_CHECKS: Final[dict[str, Callable[[Path], None]]] = {
+    'NO-CJK-IN-TRACKED-SOURCE': check_no_cjk,
+    _LAYOUT_RULE: modulealarm.check,
+}
 
 
 def rows() -> dict[str, Callable[[Path], None]]:
@@ -104,11 +123,59 @@ def rows() -> dict[str, Callable[[Path], None]]:
     return {rule: _CHECKS[rule] for rule in sorted(ALWAYS_ON)}
 
 
+def _applicable(root: Path) -> dict[str, Callable[[Path], None]]:
+    checks = rows()
+    if not is_member(root):
+        checks.pop(_LAYOUT_RULE)
+    return checks
+
+
+def _identity(rule: str) -> str:
+    return f'::family::{rule}'
+
+
+def required_ids(root: Path) -> tuple[str, ...]:
+    """Exact required pytest identities for a declared family checkout; no claim for other inputs."""
+    return tuple(_identity(rule) for rule in _applicable(root)) if is_member(root) else ()
+
+
+def assert_required_collected(root: Path, ids: Sequence[str]) -> None:
+    """Reject a family collection whose plugin did not actually supply every required item."""
+    if missing := set(required_ids(root)) - set(ids):
+        message = (
+            f'required family checks missing from collection: {sorted(missing)}; '
+            'enable the installed dev_lab_family pytest plugin (remove plugin-disable flags or '
+            'PYTEST_DISABLE_PLUGIN_AUTOLOAD), then recollect before producing a complete part'
+        )
+        raise ValueError(message)
+
+
+def resource_nodes(root: Path, ids: Sequence[str]) -> list[str]:
+    """Business resource membership only; the complete manifest still retains required checks as base."""
+    required = set(required_ids(root))
+    return [node for node in ids if node not in required]
+
+
+def run_checks(root: Path) -> dict[str, TestCell]:
+    """Execute the same checks for non-pytest family producers, retaining their individual evidence."""
+    if not is_member(root):
+        return {}
+    cells = {}
+    for rule, check in _applicable(root).items():
+        try:
+            check(root)
+        except (AssertionError, OSError, ValueError, RuntimeError) as exc:
+            cells[_identity(rule)] = TestCell(Cell(Status.REJECTED, reason=Reason('assertion', str(exc))))
+        else:
+            cells[_identity(rule)] = TestCell(Cell(Status.OK))
+    return cells
+
+
 class FamilyItem(pytest.Item):
     """One always-on row, run against the session's repo root."""
 
     def __init__(self, *, name: str, parent: pytest.Session, check: Callable[[Path], None], root: Path) -> None:
-        super().__init__(name=name, parent=parent)
+        super().__init__(name=name, parent=parent, nodeid='::' + name)
         self._check = check
         self._root = root
 
@@ -137,5 +204,5 @@ def append_rows(session: pytest.Session, config: pytest.Config, items: list[pyte
         return
     items.extend(
         FamilyItem.from_parent(session, name=f'family::{rule}', check=check, root=root)
-        for rule, check in rows().items()
+        for rule, check in _applicable(root).items()
     )
