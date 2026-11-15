@@ -76,6 +76,7 @@ __all__ = [
     'FAMILY_STRAY_ROOTS',
     'PRUNED_NAMES',
     'SCRATCH_MAX_AGE_DAYS',
+    'TASK_ROOT',
     'Placement',
     'PlacementNotDeclared',
     'StrayCensusUnreadable',
@@ -90,6 +91,7 @@ __all__ = [
     'refuse_write',
     'stray_files',
     'stray_refusal',
+    'task_note',
 ]
 
 #: The file suffixes that are SOURCE CODE -- a language a machine executes or compiles.
@@ -131,6 +133,10 @@ FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
 
 #: Where an untracked file may sit in every repo: the family's scratch home, nothing else.
 FAMILY_STRAY_ROOTS: tuple[str, ...] = (FAMILY_HOMES['one-off experiment, probe or verification'],)
+
+#: Where the user's task command (``/rem:task open``) writes ``<slug>/TASK.md`` and ``JOURNAL.md``: its folder,
+#: not a stray. An untracked one is NAMED by :func:`task_note`; the session bound to it commits it.
+TASK_ROOT = '.claude/tasks/'
 
 #: The family default for ``max_age_days`` (:mod:`dev_lab.dev.scratch` reads it off the placement).
 SCRATCH_MAX_AGE_DAYS = 3.0
@@ -270,6 +276,15 @@ def stray_files(root: Path, *, stray_roots: Iterable[str], pruned_paths: Iterabl
         StrayCensusUnreadable: git could not list the untracked files of *root*.
 
     """
+    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths, TASK_ROOT))
+    return sorted(
+        rel
+        for rel in _untracked(root)
+        if not rel.startswith(allowed) and not PRUNED_NAMES.intersection(rel.split('/')[:-1])
+    )
+
+
+def _untracked(root: Path) -> list[str]:
     done = launch.run(
         ['git', '-C', str(root), 'ls-files', '--others', '--exclude-standard', '-z'],
         capture_output=True,
@@ -281,12 +296,17 @@ def stray_files(root: Path, *, stray_roots: Iterable[str], pruned_paths: Iterabl
     if done.returncode != 0:
         msg = f'git could not list the untracked files of {root}: {done.stderr.strip()}'
         raise StrayCensusUnreadable(msg)
-    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths))
-    return sorted(
-        rel
-        for rel in filter(None, done.stdout.split('\0'))
-        if not rel.startswith(allowed) and not PRUNED_NAMES.intersection(rel.split('/')[:-1])
-    )
+    return list(filter(None, done.stdout.split('\0')))
+
+
+def task_note(root: Path) -> str | None:
+    """One informational line per untracked task folder under :data:`TASK_ROOT`; ``None`` when there is none.
+
+    The task command writes the folder into the checkout the user ran it in; it is not a stray and never blocks.
+    """
+    slugs = dict.fromkeys(rel[len(TASK_ROOT) :].split('/')[0] for rel in _untracked(root) if rel.startswith(TASK_ROOT))
+    tail = 'was opened here and is not yet committed: the session bound to it commits it on its own branch'
+    return '\n'.join(f'task {slug} {tail}' for slug in slugs) or None
 
 
 def declared_strays(root: Path) -> list[str]:
@@ -379,9 +399,9 @@ def _stray_hook(payload: object) -> int:
     if root is None:
         return 0
     try:
-        reason = stray_refusal(root)
+        reason, note = stray_refusal(root), task_note(root)
     except StrayCensusUnreadable as exc:
-        reason = f'STRAY-FILE-REFUSED: the stray census could not be read: {exc}'
+        reason, note = f'STRAY-FILE-REFUSED: the stray census could not be read: {exc}', None
     roots, excluded = tmpsweep.declared()  # WRITES-STAY-IN-THE-TREE: what the session left outside the checkout
     since = time.time() - tmpsweep.REPORT_WINDOW_S
     mentions = tmpsweep.tool_text(payload.get('transcript_path'))
@@ -390,7 +410,9 @@ def _stray_hook(payload: object) -> int:
     )
     reason = '\n'.join(one for one in (reason, outside) if one) or None
     if reason is not None:
-        emit(json.dumps({'decision': 'block', 'reason': reason}))
+        emit(json.dumps({'decision': 'block', 'reason': '\n'.join(one for one in (reason, note) if one)}))
+    elif note is not None:
+        emit(json.dumps({'systemMessage': note}))
     return 0
 
 
@@ -406,8 +428,9 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     mode = (argv or [None])[0]
     if mode == 'stray-check':
         reason = stray_refusal(Path.cwd())
-        if reason is not None:
-            emit(reason)
+        for said in (reason, task_note(Path.cwd())):
+            if said is not None:
+                emit(said)
         return 1 if reason is not None else 0
     try:
         payload = json.load(stdin or sys.stdin)
