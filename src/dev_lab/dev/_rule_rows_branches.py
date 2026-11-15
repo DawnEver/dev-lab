@@ -117,8 +117,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PR-HEAD-IS-CURRENT',
         (
-            'A push creating or updating a `pr/*` branch is refused at pre-push when its tip does not contain '
-            '`origin/<integration>` fetched afresh (a fetch that fails refuses with its reason), or when its lock '
+            'A push creating or updating a `pr/*` branch is refused at pre-push when its tip lacks more than the one '
+            'lag window (`locklag.LAG_LIMIT`) of first-parent commits of `origin/<integration>` fetched afresh '
+            '(a fetch that fails refuses with its reason), or when its lock '
             'pins a floated sibling past the one lag window `lock/lag` reads (`locklag.within_window`); '
             '`forge pr ready` refuses on the same '
             'judgement and on uncommitted tracked changes. Each refusal names `forge sync`, which merges '

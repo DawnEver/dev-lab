@@ -22,7 +22,7 @@
 #                 (tests/<part>, or tests/<part>@<os> off its own runner)
 #   absent-parts  always: `jobparts absent --event` posts pending (absent) on every expected row no job settled
 #   security      `forge security run --pr N`: tests/security
-#   head-gates    `forge headgate run --pr N`: session-branch, pr-current, lock/fresh, lock/lag -- the pre-push rows'
+#   head-gates    `forge headgate run --pr N`: session-branch, pr-current, lock/lag -- the pre-push rows'
 #                 own judges, posted by the forge (user ruling 2026-11-07: a family check never depends on a
 #                 consumer's hook); merge-ready requires session-branch and pr-current. Gitea's serve tick posts them
 #   merge-ready   after the parts, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
@@ -81,12 +81,23 @@ description = "the pull request this run is, for a PR the job token opened (cont
 type = "string"
 default = ""
 
+# A measurement is not a part or a PR run. Both fields are required together and validated by jobmeasure.
+["ci.yml".on.workflow_dispatch.inputs.measurement_paths]
+description = "MEASUREMENT only: JSON array of repository-relative test file or node selectors"
+type = "string"
+default = ""
+
+["ci.yml".on.workflow_dispatch.inputs.measurement_sha]
+description = "MEASUREMENT only: exact 40-hex SHA that the dispatched ref must check out"
+type = "string"
+default = ""
+
 # A NEW PUSH CANCELS ITS PR'S SUPERSEDED RUN, and nothing else: a PR's runs share ci-pr-<number>; a push to
 # integrate/main, the nightly run and a merge's smoke each take their own run_id, so none is ever cancelled -- not
 # even while PENDING, which Actions cancels in a shared group whatever cancel-in-progress says.
 ["ci.yml".concurrency]
-group = "ci-${{ (github.event_name == 'pull_request' || inputs.pr != '') && format('pr-{0}', github.event.pull_request.number || inputs.pr) || github.run_id }}"
-cancel-in-progress = "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
+group = "ci-${{ inputs.measurement_paths == '' && inputs.measurement_sha == '' && (github.event_name == 'pull_request' || inputs.pr != '') && format('pr-{0}', github.event.pull_request.number || inputs.pr) || github.run_id }}"
+cancel-in-progress = "${{ inputs.measurement_paths == '' && inputs.measurement_sha == '' && (github.event_name == 'pull_request' || inputs.pr != '') }}"
 
 ["ci.yml".permissions]
 contents = "read"
@@ -101,6 +112,20 @@ FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # th
 PARTS_EVENT = "${{ (github.event_name == 'push' || inputs.smoke || inputs.pr != '') && 'pull_request' || github.event_name }}"
 # The PR this run is: the event's, else the dispatched one's (continue.yml); empty outside a PR.
 PR_NUMBER = "${{ github.event.pull_request.number || inputs.pr }}"
+
+# ciworkflows isolates every other job and makes only this expanded setup's checkout credential-free.
+["ci.yml".jobs.measurement]
+name = "MEASUREMENT (selected tests, not a part)"
+if = "${{ github.event_name == 'workflow_dispatch' && (inputs.measurement_paths != '' || inputs.measurement_sha != '') }}"
+runs-on = "ubuntu-latest"
+permissions = { contents = "read" }
+env = { MEASUREMENT_PATHS = "${{ inputs.measurement_paths }}", MEASUREMENT_SHA = "${{ inputs.measurement_sha }}", MEASUREMENT_PR = "${{ inputs.pr }}", MEASUREMENT_SMOKE = "${{ inputs.smoke }}" }
+steps = [
+    { use-steps = "setup" },
+    { name = "Install the normal measurement hooks", run = "uv run --no-sync python -m dev_lab.dev.hook_install --repo . --install" },
+    { id = "measurement", name = "Measure the exact requested selection", run = "uv run --no-sync python -m dev_lab.dev.jobmeasure" },
+    { name = "Retain measurement evidence, including incomplete output", if = "${{ always() && steps.measurement.outputs.artifacts != '' }}", uses = "actions/upload-artifact@v4", with = { name = "measurement-${{ github.run_id }}-${{ github.run_attempt }}", path = "${{ steps.measurement.outputs.artifacts }}/receipt.json\n${{ steps.measurement.outputs.artifacts }}/stdout.log\n${{ steps.measurement.outputs.artifacts }}/verify.log", if-no-files-found = "warn" } },
+]
 
 ["ci.yml".jobs.parts]
 env = { GITHUB_TOKEN = "${{ github.token }}" }

@@ -16,6 +16,7 @@ __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'ab_bench',
+    'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
     'envseat',
@@ -91,6 +92,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'breakglass',
     'retention',
     'retentionplan',
+    # ORIGINAL: no rule kept a rust toolchain by its pins; 135 k files per account sat in unpinned ones.
+    'retentionrust',
     'diskusage',
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'pushgate',
@@ -167,6 +170,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: user ruling 2026-10-30, a resource a repo produces no part for.
     'unproduced',
     'hostrefresh',
+    # ORIGINAL: no gate read a task ledger; the opt-in task-bound row (user ruling 2026-11-14) is new.
+    'taskgate',
+    # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
+    'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees',
     # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.

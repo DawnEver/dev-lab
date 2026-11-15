@@ -24,6 +24,7 @@ a subagent never pushes.
 | `python -m dev_lab.dev.forge watch <sha>... [--deadline-minutes M]` | Read-only: prints each `tests/<part>` status change until the first listed sha is final (exit 0 green, 1 red) or the deadline (exit 3). |
 | `python -m dev_lab.dev.hpcaccount deploy-fleet [--account U]... [--dry-run]` | For each `[[hpc.grant]]` account, reads that account's own `[deploy]` host and root through any of its login hosts, then starts, detached over `ssh -o BatchMode=yes`, its own `hpcaccount deploy` on THAT host, one log per account under `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/`. An account outside the grants refuses the whole run; one with no `[deploy]` host, or a host outside its grant, is refused by name while the rest deploy. |
 | `python -m dev_lab.dev.hpcaccount forget --repo URL --row KEY (--fleet \| --account U...) [--dry-run]` | Runs lab-commons' `learned forget` of one row on each named `[[hpc.grant]]` account (or all), through the grant's own login hosts, in its declared checkout; prints forgotten (with the backup) / absent / refused per account, and the rest still run. `--dry-run` only reads each row. An account outside the grants refuses the whole run. |
+| `python -m dev_lab.dev.hpcaccount retention (--fleet \| --account U...) [--apply]` | Prints each named `[[hpc.grant]]` account's quota (files and blocks), how many serve tick lines its crontab carries (0: serve never ticks), and that account's OWN `dev_lab.dev.retention --cluster` report from its declared checkout, through the grant's own login hosts; `--apply` runs the deletion, which only that in-flight-aware code decides. An unreachable cluster is one line naming the door (its site network or VPN). |
 | `python -m dev_lab.dev.hpcaccount credential U@HOST --login L --host-config FILE [--url REPO] < token`; `... credential U@HOST --drop-host H` | Places one minted forge token of a declared login (`[hpc.roles.*] reader`, or `[ops.forge.accounts]` of FILE, the forge host's reviewed config read by the loader `config apply` uses; the account's role reader when it names one) on a `[[hpc.grant]]` account, through the grant's own key-only connection; the token on stdin, never argv. The forge is FILE's (`[ops.caddy] sites`): `--url` must be on it, default the login's first declared repo; any other host is refused before connecting. The line is staged alone, the forge's `auth role` must answer as `L` with git reading only the staged file, and only then is `~/.git-credentials` rewritten -- backup `~/.git-credentials.bak-<ts>` (0600) first, only that forge's line replaced, umask 077, atomic `mv`; a refusal discards the stage and leaves the store untouched. `--drop-host H` removes exactly H's line, same backup. Output names the token only by a sha256 prefix. |
 
 The raw verbs (`git branch -D`, `git worktree remove --force`, `rm -rf`, `taskkill`, a raw `scancel`) stay unallowed.
@@ -47,8 +48,19 @@ that repo's `[tool.dev_lab.policy]`, never in a hand-written module.
 ## Two clients
 
 `dev_lab.dev.autodoors` renders `POLICY`; `script_doors(root)` adds the repo's tracked `scripts/**.py`
-with a `__main__` guard and the shell doors it names (`shell_doors=`, `--shell-door`). Both clients are
-rendered from these:
+with a `__main__` guard and the shell doors it names (`shell_doors=`, `--shell-door`), and `cli_doors(root)` adds
+the repo's own read-only CLI verbs, declared as data (decision 2026-11-15; never hand rows in its settings):
+
+```toml
+[tool.dev_lab.cli_doors]
+acts = ["press"]  # this CLI's act verbs, refused as doors
+doors = [{argv = ["consumer", "vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."}]
+```
+
+Each `argv` renders as the door `python -m <argv...>`. A bare module, or an element with a space, glob or leading
+dash, is refused; so is a prefix ending in an act (`ActDeclaredAsDoor`): the repo's `acts`, or always one of
+`REFUSED_ACTS` (press, set-value, close, kill, delete, push). `[tool.dev_lab.doors]` is a different table: it maps a
+deny rule's ID to the command that repo offers as its exit. Both clients are rendered from these:
 
 - **Claude Code**: one NARROW `Bash(...)` row per door and interpreter layout, e.g.
   `Bash(.venv/Scripts/python.exe -m dev_lab.dev.worktrees *)` and its `.venv/bin/python` twin. Never the
@@ -85,9 +97,32 @@ printed by name; it always exits 0.
 Entries are intent, never a command or module spelling (`spelled_commands`); the exact commands are the narrow
 rows above. `leaks` scans every committed kit text for a host shape and for each fleet fact this machine holds.
 
+## Stopping an explicitly approved controller
+
+For an otherwise unrecognized orchestration process, use the same stop door with all three identity inputs:
+`python -m dev_lab.dev.stoprun --pid PID --approved-created STAMP --approved-command-sha256 HASH --approved-user-words "ACTUAL USER WORDS" [--dry-run]`.
+Capture `STAMP` through `lab_commons.liveness.creation_stamp` and SHA256 the complete UTF-8 command line
+from `lab_commons.census.processes`, without normalization. The words attest actual prior user authorization;
+a matching hash does not prove ownership. Select the actual Python controller, not its waiting venv launcher.
+Never reuse stale identity values or widen a project regex to get this one process through.
+
+Explicit identity is not a lifecycle override. A recognized run or orphan-role root must use its ordinary
+`--pid` door, with no approved arguments. A serve or special orphan role inside the proved bounded subtree
+also refuses before any stop, preserving its producer notes, parent checks and claim-release policy. An
+ordinary queued gate child remains allowed; an excluded older-PPID foreign branch never enters this scope.
+
+The mode refuses incomplete inputs, self/ancestors, unreadable identities and any preflight mismatch before
+stopping anything. It excludes impossible old-PPID edges, stops and confirms the controller first, then
+rechecks only the original proved members. An unchanged child may legitimately reparent after its original
+parent was proved stopped by this call; its new parent never expands the scope. Observed growth or another
+uncertainty returns exit 3 with partial progress and no further kill. Inspect the remaining processes and use
+their recognized run door or obtain a new exact approval. This is a bounded, non-atomic stop of the original
+snapshot, not a guarantee against every process another process might spawn between observations. The normal
+signature/orphan mode retains its existing children-first behavior and serve-release grace.
+
 ## Adopting
 
-1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)))`, re-render
+1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)), cli=cli_doors(root))`, re-render
    `.claude/settings.json` with `permissions_block`, and drop any declared row that now duplicates a door row.
 2. Run `python -m dev_lab.dev.autodoors --repo . [--shell-door <path>] --write` and commit
    `.codex/rules/family-doors.rules`; without `--write` it exits 1 when the file is stale.

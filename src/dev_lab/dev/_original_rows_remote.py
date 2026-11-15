@@ -22,6 +22,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'remote',
     # ORIGINAL: hpcaccount's forget verb (2026-11-10), one learned row off a cluster account; no consumer held it.
     'forget',
+    # ORIGINAL: 2026-11-14, an account's quota, tick lines and own retention read from the workstation.
+    'storage',
     # ORIGINAL: user ruling 2026-11-12, an agent places a minted forge token on a key-only account.
     'credential',
     # ORIGINAL: 2026-11-12, its stage-verify-replace core shared with a workstation's own placement door.

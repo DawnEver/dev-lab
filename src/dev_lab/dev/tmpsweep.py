@@ -5,7 +5,9 @@ entries), read by three callers --
 
 * the ``Stop`` hook the stray census already rides (``python -m dev_lab.dev.codeplace stray``) REPORTS the scripts
   and notes written into a root within :data:`REPORT_WINDOW_S` (:func:`session_report`), blocking the stop once;
-  it never deletes -- one Stop hook, two placement questions, so no second wiring;
+  it never deletes -- one Stop hook, two placement questions, so no second wiring. A file counts only when one of
+  the SESSION'S OWN tool calls names it (:func:`tool_text`): a shared temp dir also holds what other live programs
+  write (a service's port file), and laying that at the session's door asks it to break that program (#561);
 * the command (``python -m dev_lab.dev.tmpsweep``) prints the census; ``--apply`` removes what :func:`sweep`
   admits, for a person or a scheduled task to run;
 * :func:`sweep` itself, which removes an entry only when its root is a ``temp`` root, its name is OURS
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import json
 import os
 import shutil
 import sys
@@ -43,7 +46,17 @@ from dev_lab.dev.writeroots import (
     write_prone_roots,
 )
 
-__all__ = ['MAX_AGE_DAYS', 'REPORT_WINDOW_S', 'Entry', 'census', 'declared', 'main', 'session_report', 'sweep']
+__all__ = [
+    'MAX_AGE_DAYS',
+    'REPORT_WINDOW_S',
+    'Entry',
+    'census',
+    'declared',
+    'main',
+    'session_report',
+    'sweep',
+    'tool_text',
+]
 
 #: The age past which a ``temp`` root's entry is swept.
 MAX_AGE_DAYS: Final = 7.0
@@ -160,14 +173,46 @@ def sweep(
     return removed, kept
 
 
+def tool_text(transcript: str | None) -> str:
+    """Every input the session's tool calls carried, read from its transcript; ``''`` when there is none.
+
+    Only ``tool_use`` inputs count: prose and tool RESULTS name files the session did not write.
+    """
+    if not transcript:
+        return ''
+    try:
+        lines = Path(transcript).read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return ''
+    said: list[str] = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        message = record.get('message') if isinstance(record, dict) else None
+        content = message.get('content') if isinstance(message, dict) else None
+        if isinstance(content, list):
+            said.extend(
+                json.dumps(item.get('input'))
+                for item in content
+                if isinstance(item, dict) and item.get('type') == 'tool_use'
+            )
+    return '\n'.join(said)
+
+
 def session_report(
-    roots: Iterable[Root], excluded: Iterable[Path], *, since: float, suffixes: Collection[str]
+    roots: Iterable[Root], excluded: Iterable[Path], *, since: float, suffixes: Collection[str], mentions: str
 ) -> str | None:
-    """The ``WRITES-STAY-IN-THE-TREE`` report: *suffixes* files written into a root after *since*, or ``None``."""
+    """The ``WRITES-STAY-IN-THE-TREE`` report, or ``None``: *suffixes* files the session wrote into a root.
+
+    A file counts when it was written after *since* AND the session's own tool calls (*mentions*,
+    :func:`tool_text`) name it -- a file nothing of the session named is another program's.
+    """
     found = [
         entry.path.as_posix()
         for entry in census(roots, excluded)
-        if entry.mtime >= since and entry.path.suffix.lower() in suffixes
+        if entry.mtime >= since and entry.path.suffix.lower() in suffixes and entry.path.name in mentions
     ]
     if not found:
         return None

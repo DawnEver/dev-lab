@@ -52,6 +52,10 @@ def _module(name: str, *verbs: str) -> tuple[str, ...]:
     return ('python', '-m', f'dev_lab.dev.{name}', *verbs)
 
 
+def _desktop(verb: str) -> tuple[str, ...]:
+    return ('python', '-m', 'lab_commons.desktop', verb)
+
+
 _FORGE_WRITE: Final = 'FORGE-WRITE-VIA-CLI'
 
 #: THE TABLE. Ordered as a reader looks for a door: the local verdict and housekeeping, the forge's read side, its
@@ -76,6 +80,10 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(_module('family', 'join'), MAIN, 'Making a repo a family member: clone, record, protect, set its secret.'),
     Door(_module('famfiles'), SUBAGENT, "Rendering the family project files of a checkout from the kit's one source."),
     Door(_module('autodoors'), SUBAGENT, "Rendering this checkout's door rules for each agent client."),
+    # The desktop tool's READ verbs (user ruling 2026-11-14 E6); its acts (press, set-value, close) stay prompted.
+    Door(_desktop('windows'), SUBAGENT, 'Read-only: the top-level desktop windows, listed.'),
+    Door(_desktop('capture'), SUBAGENT, 'Read-only: an image of one desktop window, captured.'),
+    Door(_desktop('controls'), SUBAGENT, "Read-only: one desktop window's control tree, listed."),
     Door(
         _module('hook_install', '--install'),
         SUBAGENT,
@@ -280,6 +288,14 @@ POLICY: Final[tuple[Door, ...]] = (
         MAIN,
         "Forgetting one stale row of each trusted cluster account's learned memory table, backed up beside itself, "
         "through the grant's own login hosts; a dry run only reads what each account holds.",
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
+        _module('hpcaccount', 'retention'),
+        MAIN,
+        "Reading each trusted cluster account's quota (files and blocks) and whether its serve ticks, and running "
+        "that account's own in-flight-aware storage retention through the grant's own login hosts; a dry run "
+        'unless asked to apply.',
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(

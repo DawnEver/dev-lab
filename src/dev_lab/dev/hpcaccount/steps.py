@@ -17,7 +17,7 @@ from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
-from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab
+from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
 
 __all__ = ['Step', 'Tools', 'build', 'crontab', 'declared', 'login', 'update']
 
@@ -109,7 +109,12 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
     if not builds.install:
         emit(f'  {repo.name} declares no [tool.lab_commons.hpc] install; refused', err=True)
         return 2
-    env = {'UV_PYTHON': spec.python, 'UV_PYTHON_PREFERENCE': 'only-managed', 'UV_CACHE_DIR': str(home / 'ci/uv-cache')}
+    env = {
+        'UV_PYTHON': spec.python,
+        'UV_PYTHON_PREFERENCE': 'only-managed',
+        'UV_CACHE_DIR': str(uv_cache(home)),
+        'UV_LINK_MODE': 'hardlink',
+    }
     inputs = builds.dependency_inputs or ('pyproject.toml', 'uv.lock')
     env_key = _key(step, checkout, inputs, builds.install, spec.python, *builds.needs)
     stamp = checkout / '.venv' / '.lab-deploy-env'

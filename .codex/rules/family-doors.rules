@@ -65,6 +65,24 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "lab_commons.desktop", "windows"],
+    decision = "allow",
+    justification = "Read-only: the top-level desktop windows, listed.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "lab_commons.desktop", "capture"],
+    decision = "allow",
+    justification = "Read-only: an image of one desktop window, captured.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "lab_commons.desktop", "controls"],
+    decision = "allow",
+    justification = "Read-only: one desktop window's control tree, listed.",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hook_install", "--install"],
     decision = "allow",
     justification = "Installing or refreshing the kit git hooks in a checkout of this repository.",
@@ -284,6 +302,12 @@ prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hpcaccount", "forget"],
     decision = "allow",
     justification = "Forgetting one stale row of each trusted cluster account's learned memory table, backed up beside itself, through the grant's own login hosts; a dry run only reads what each account holds.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hpcaccount", "retention"],
+    decision = "allow",
+    justification = "Reading each trusted cluster account's quota (files and blocks) and whether its serve ticks, and running that account's own in-flight-aware storage retention through the grant's own login hosts; a dry run unless asked to apply.",
 )
 
 prefix_rule(

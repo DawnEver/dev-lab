@@ -65,6 +65,7 @@ from dev_lab.dev import (
     forgetidy,
     forgetry,
     forgewatch,
+    issuekind,
     metrics,
     pradmit,
     prcontinue,
@@ -74,11 +75,13 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
+    taskgate,
 )
 from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest, client_for
+from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
 
 if TYPE_CHECKING:
@@ -181,6 +184,7 @@ def _parser() -> argparse.ArgumentParser:
     create = _verb(issue, 'create')
     create.add_argument('--title', required=True)
     create.add_argument('--body', default='')
+    create.add_argument('--kind', required=True, choices=KINDS, help='an issue is a need, defect or decision')
     comment = _verb(issue, 'comment')
     comment.add_argument('number', type=int)
     comment.add_argument('--body', required=True)
@@ -223,7 +227,7 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit),
         ('issue', 'view'): lambda: client.issue_view(args.number),
-        ('issue', 'create'): lambda: client.issue_create(args.title, args.body),
+        ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
         ('pr', 'create'): lambda: client.pr_create(
@@ -273,6 +277,18 @@ def _refused(
     return None
 
 
+def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
+    """An opened PR or issue is appended to the bound rem task's journal (:func:`taskgate.record`)."""
+    if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
+        return
+    if (
+        isinstance(result, (PullRequest, Issue))
+        and (url := result.url)
+        and (said := taskgate.record(root, args.noun, url, env=env, read=taskgate.reader_for(env, Path.home())))
+    ):
+        emit(f'[forge] {said}', err=True)  # the task names its own PRs and issues
+
+
 def issue_and_pr(
     argv: Sequence[str] | None = None,
     *,
@@ -304,6 +320,7 @@ def issue_and_pr(
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
+    _record_in_task(args, result, root, os.environ if env is None else env)
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
         data = [dataclasses.asdict(item) for item in items]

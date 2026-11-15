@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -81,7 +82,7 @@ def test_a_blocked_stop_is_this_sessions_wall_with_its_remedy(tmp_path: Path, mo
     monkeypatch.setattr(pushstop, 'pushed_by', lambda _root, _session: set())
     monkeypatch.setattr(pushstop.sessionprs, 'open_rows', lambda _session: ['x'])
     monkeypatch.setattr(pushstop, 'red_refusal', lambda _session, **_k: Stop())
-    monkeypatch.setattr(pushstop, 'unwatched_refusal', lambda _session: Stop(block=block))
+    monkeypatch.setattr(pushstop, 'unwatched_refusal', lambda _session, **_k: Stop(block=block))
     out = io.StringIO()
     payload = {'session_id': 's1', 'cwd': str(tmp_path)}
     assert pushstop._gate(payload, lambda: (), None, lambda _forge: None, out) == 0
@@ -114,3 +115,18 @@ def test_a_pushed_head_the_forge_synced_past_is_watched_through_its_descendant(t
     assert stop().block is not None, 'PLANTED CONTROL: nothing watched still blocks'
     assert 'descend' in (stop().block or ''), 'the refusal names that a watch on a newer head counts'
     assert stop(watch_command(stranger)).block is not None, 'PLANTED CONTROL: an unrelated watch is no watch'
+
+
+def test_a_session_watch_from_any_checkouts_interpreter_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#554: a live ``forge watch --session`` counts by its argv, whatever interpreter (any checkout) runs it."""
+    monkeypatch.setattr(pushstop.sessionprs, 'open_rows', lambda _session: [SimpleNamespace(key='forge/o/r#1')])
+    monkeypatch.setattr(pushstop.sessionprs, 'watching', lambda _session: False)  # no marker: an older kit's watch
+    other = '/elsewhere/other-checkout/.venv/bin/python -m dev_lab.dev.forge watch --session s1 --stream'
+    assert pushstop.unwatched_refusal('s1', processes=lambda: [other]).block is None
+    # planted controls: an unrelated python process, and another session's watch, do not count
+    unrelated = ['/elsewhere/.venv/bin/python -m dev_lab.dev.forge queue', 'python -m http.server']
+    refused = pushstop.unwatched_refusal('s1', processes=lambda: unrelated).block
+    assert refused is not None
+    assert 'any checkout' in refused
+    another = ['/x/python -m dev_lab.dev.forge watch --session s2 --stream']
+    assert pushstop.unwatched_refusal('s1', processes=lambda: another).block is not None

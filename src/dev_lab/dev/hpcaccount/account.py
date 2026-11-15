@@ -23,7 +23,7 @@ from lab_commons.log import emit
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forgeauth import UNREACHABLE_EXIT
 from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
-from dev_lab.dev.hpcaccount.spec import Deployment, has_grant, render_grant
+from dev_lab.dev.hpcaccount.spec import Deployment, grant_refusal, has_grant, render_grant, without_hpc
 from dev_lab.dev.hpcaccount.steps import Step
 
 __all__ = ['UNREACHED', 'ApiCheck', 'RoleCheck', 'auth_check', 'credentials', 'grant', 'reader', 'role_of']
@@ -176,12 +176,14 @@ def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
     """
     emit("[grant] this account's own [hpc] slice")
     user = step.read([*step.tools.id, '-un']).stdout.strip()
-    if has_grant(path, user):
+    retired = grant_refusal(path) if has_grant(path, user) else ''
+    if has_grant(path, user) and not retired:
         emit(f'  {user} already holds a grant in {path}')
         return 0
     if table is None:
+        held = f'holds a grant this kit refuses ({retired})' if retired else f'holds no grant for {user}'
         emit(
-            f'deploy refused: {path} holds no grant for {user} and none was passed: deploy it through deploy-fleet '
+            f'deploy refused: {path} {held} and none was passed: deploy it through deploy-fleet '
             '(the family declaration is the one source of a grant)',
             err=True,
         )
@@ -196,10 +198,12 @@ def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
         return 2
     text = render_grant(table)
     if step.dry:
-        emit(f'  [dry-run] write to {path}:{text}')
+        emit(f'  [dry-run] {"replace the [hpc] slice of" if retired else "write to"} {path}:{text}')
         return 0
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as out:
-        out.write(text)
-    emit(f'  wrote the grant of {user} ({rows[0]["slurm_account"]}) to {path}')
+    held = path.read_text(encoding='utf-8') if path.is_file() else ''
+    # FORMATS-MIGRATE-ONCE: a refused slice is rewritten from the passed declaration; every other table is kept
+    path.write_text((without_hpc(held) if retired else held) + text, encoding='utf-8')
+    done = f'migrated the grant of {user} in {path}: the file held {retired}' if retired else 'wrote the grant'
+    emit(f'  {done} ({user}, {rows[0]["slurm_account"]}) to {path}')
     return 0

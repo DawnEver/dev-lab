@@ -315,10 +315,12 @@ def post_push(
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
-    """``python -m dev_lab.dev.branchprune {delete B... | delete-tag T... --approved W | sweep | post-push}``."""
+    """``python -m dev_lab.dev.branchprune {delete B... [--approved W] | delete-tag T... --approved W | sweep}``."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.branchprune', description=main.__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
-    verbs.add_parser('delete').add_argument('branches', nargs='+')
+    deleted = verbs.add_parser('delete', help='a branch whose content is held elsewhere (--approved: or by a tag)')
+    deleted.add_argument('branches', nargs='+')
+    deleted.add_argument('--approved', default='', help="the user's own words approving a tag-held delete")
     tagged = verbs.add_parser('delete-tag', help='a tag the integration branch or trunk holds, user-approved')
     tagged.add_argument('tags', nargs='+')
     tagged.add_argument('--approved', default='', help="the user's own words approving the delete")
@@ -336,7 +338,9 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
         client = client_for(root)
         session = os.environ.get(ENV, '')
         if args.verb == 'delete':
-            return delete(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
+            return delete(
+                root, args.branches, approved=args.approved, client=client, session=session, fetch=fetch_origin, say=say
+            )
         if args.verb == 'delete-tag':
             return delete_tags(
                 root, args.tags, approved=args.approved, client=client, session=session, fetch=fetch_origin, say=say

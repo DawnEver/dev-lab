@@ -57,6 +57,7 @@ from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 _ROOT = Path(__file__).resolve().parents[1]
 #: A PR's run: the pull_request event, or ci.yml dispatched with the PR's number (continue.yml).
 _PR_RUN = "(github.event_name == 'pull_request' || inputs.pr != '')"
+_NO_MEASURE = "inputs.measurement_paths == '' && inputs.measurement_sha == ''"
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
 _GITHUB_BASE = {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review-again.yml'}
@@ -103,7 +104,7 @@ def test_the_lifecycle_runs_on_pull_request_and_never_on_pull_request_target(tmp
     ci = _base_ci(tmp_path)
     assert set(ci['on']) == {'push', 'pull_request', 'workflow_dispatch', 'schedule'}
     assert 'pull_request_target' not in render(ci), "a fork's code would run with this repository's secrets"
-    assert ci['jobs']['review']['if'] == _guarded(
+    assert ci['jobs']['review']['if'] == _ci_guarded(
         f"${{{{ always() && {_PR_RUN} && needs.merge-ready.outputs.due == 'true' }}}}"
     ), 'review is the last gate: it runs only once merge-ready called the head due'
 
@@ -113,6 +114,7 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
     assert ci['permissions'] == {'contents': 'read'}
     granted = {name: job.get('permissions', {}) for name, job in ci['jobs'].items()}
     assert granted == {
+        'measurement': {'contents': 'read'},
         'parts': {},
         'part': {'contents': 'write', 'statuses': 'write'},
         # actions: read -- jobparts.run_jobs lists the run's concluded jobs so a failed part reads error, not absent
@@ -140,12 +142,12 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_decides_before_the_r
     assert f'dev_lab.dev.jobparts matrix --runners hosted {event}' in computed['run'], 'the rows follow the event'
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
-    assert jobs['absent-parts']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
+    assert jobs['absent-parts']['if'].startswith(_ci_prefix() + 'always()')
     assert set(jobs['merge-ready']['needs']) == {'security', 'head-gates', 'part', 'absent-parts'}, (
         'a merge waits on its parts; the review runs after the decision'
     )
     assert jobs['review']['needs'] == ['merge-ready']
-    assert jobs['merge-ready']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
+    assert jobs['merge-ready']['if'].startswith(_ci_prefix() + 'always()')
     ready, dispatch = jobs['merge-ready']['steps'][-2:]
     assert 'forge merge ready --pr' in ready['run']
     assert '"; merged") echo "merged=true" >> "$GITHUB_OUTPUT"' in ready['run']
@@ -214,6 +216,7 @@ def _evaluated(rendered: str, event: str, *, smoke: bool | None = None, pr: str 
     """
     expression = rendered.removeprefix('${{').removesuffix('}}')
     python = expression.replace('&&', ' and ').replace('||', ' or ')
+    python = python.replace('inputs.measurement_paths', "''").replace('inputs.measurement_sha', "''")
     for name, short in (('github.event_name', 'event_name'), ('inputs.smoke', 'smoke'), ('inputs.pr', 'pr')):
         python = python.replace(name, short)
     names: dict[str, str | bool | None] = {'event_name': event, 'smoke': smoke, 'pr': pr}
@@ -254,7 +257,7 @@ def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_p
     assert steps['pending']['if'] == (
         "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/integrate/main' }}"
     ), 'a smoke run never asks pending, so its pending output is empty'
-    assert ci['jobs']['promote']['if'] == _guarded("${{ needs.parts.outputs.pending == 'true' }}"), (
+    assert ci['jobs']['promote']['if'] == _ci_guarded("${{ needs.parts.outputs.pending == 'true' }}"), (
         'empty is never true'
     )
     dispatch = ci['jobs']['merge-ready']['steps'][-1]['run']
@@ -271,9 +274,10 @@ def test_a_new_push_cancels_only_its_own_prs_superseded_run(tmp_path: Path) -> N
     ci = _base_ci(tmp_path)
     group, cancel = ci['concurrency']['group'], ci['concurrency']['cancel-in-progress']
     assert group == (
-        f"ci-${{{{ {_PR_RUN} && format('pr-{{0}}', github.event.pull_request.number || inputs.pr) || github.run_id }}}}"
+        f"ci-${{{{ {_NO_MEASURE} && {_PR_RUN} && format('pr-{{0}}', github.event.pull_request.number || inputs.pr)"
+        ' || github.run_id }}'
     ), "a PR's dispatched run (continue.yml) shares its PR's group"
-    assert cancel == f'${{{{ {_PR_RUN} }}}}'
+    assert cancel == f'${{{{ {_NO_MEASURE} && {_PR_RUN} }}}}'
     cancels = {event: _evaluated(cancel, event) for event in set(ci['on'])}
     assert cancels == {'pull_request': True, 'push': False, 'schedule': False, 'workflow_dispatch': False}, (
         'PLANTED CONTROL: an integrate/main push, the nightly run and a merge smoke are never cancelled'
@@ -297,8 +301,8 @@ def test_a_dispatch_naming_a_pr_is_that_pr_s_run(tmp_path: Path) -> None:
     jobs = ci['jobs']
     for name in ('security', 'head-gates', 'merge-ready', 'review'):
         guard = jobs[name]['if']
-        assert guard.startswith(_guarded('${{ x }}').removesuffix('x) }}')), name
-        own = guard.removeprefix(_guarded('${{ x }}').removesuffix('x) }}')).removesuffix(') }}')
+        assert guard.startswith(_ci_prefix()), name
+        own = guard.removeprefix(_ci_prefix()).removesuffix(')) }}')
         own = own.replace('always() && ', '').replace(" && needs.merge-ready.outputs.due == 'true'", '')
         assert own == _PR_RUN, name
         assert _evaluated(own, 'pull_request') is True, name
@@ -352,7 +356,7 @@ def test_a_tip_main_already_holds_runs_no_part_no_absent_and_no_promote(tmp_path
     assert 'dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' in steps['pending']['run']
     assert steps['matrix']['if'] == "${{ steps.pending.outputs.pending != 'false' }}"
     assert ci['jobs']['parts']['outputs']['pending'] == '${{ steps.pending.outputs.pending }}'
-    assert ci['jobs']['part']['if'] == _guarded("${{ needs.parts.outputs.matrix != '' }}")
+    assert ci['jobs']['part']['if'] == _ci_guarded("${{ needs.parts.outputs.matrix != '' }}")
     assert "needs.parts.outputs.matrix != ''" in ci['jobs']['absent-parts']['if']
     assert 'pending' in ci['jobs']['promote']['if']
 
@@ -368,10 +372,13 @@ def test_after_promote_the_nightly_job_sweeps_every_branch_integration_now_conta
 
 def test_a_shared_step_list_is_declared_once_and_expanded_in_every_job(tmp_path: Path) -> None:
     ci = _base_ci(tmp_path)
-    setups = [job['steps'][:3] for name, job in ci['jobs'].items() if name != 'review']
+    setups = [job['steps'][:3] for name, job in ci['jobs'].items() if name not in ('review', 'measurement')]
     assert ci['jobs']['review']['steps'][0] == setups[0][0], 'the review checks the head out as DATA, no setup'
     assert all(steps == setups[0] for steps in setups)
     assert setups[0][0]['with'] == {'ref': '${{ env.HEAD_SHA }}', 'fetch-depth': 0}
+    measured = ci['jobs']['measurement']['steps'][:3]
+    assert measured[1:] == setups[0][1:]
+    assert measured[0] == {**setups[0][0], 'with': {**setups[0][0]['with'], 'persist-credentials': False}}
     assert '_steps' not in workflows(tmp_path)
     shared = {'a': [{'run': 'x'}]}
     assert expand({'jobs': {'j': {'steps': [{USE_STEPS: 'a'}, {'run': 'z'}]}}}, shared) == {
@@ -484,7 +491,7 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     ci = workflows(tmp_path)['ci.yml']
     job = ci['jobs']['part-live']
     assert job['runs-on'] == 'ubuntu-latest'
-    assert job['if'] == _guarded(
+    assert job['if'] == _ci_guarded(
         "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
     )
     assert job['name'] == 'tests/live'
@@ -514,6 +521,35 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     assert not [name for name in workflows(tmp_path)['ci.yml']['jobs'] if name.startswith('part-')], (
         'PLANTED CONTROL: nothing declared, no hosted job'
     )
+
+
+_SETUP_HOSTED = """
+[tool.lab_commons.tests]
+resources = ["linux", "live"]
+
+[tool.dev_lab.parts]
+hosted = { linux = { setup = "sudo apt-get install -y xvfb" }, live = { tasks = ["live"], setup = "make x" } }
+
+[tool.dev_lab.ci."ci.yml"]
+"""
+
+
+def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pull_request(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(_SETUP_HOSTED, encoding='utf-8')
+    jobs = workflows(tmp_path)['ci.yml']['jobs']
+    linux, live = jobs['part-linux'], jobs['part-live']
+    assert linux['if'] == _guarded("${{ needs.parts.outputs.matrix != '' }}"), 'no secret: it runs on a PR too'
+    assert live['if'] == _guarded(
+        "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
+    ), 'PLANTED CONTROL: a secret keeps it full-run only'
+    setup, produce = linux['steps'][-2:]
+    assert setup == {'name': 'Set up tests/linux', 'run': 'sudo apt-get install -y xvfb'}
+    assert produce['run'].endswith('jobparts produce linux')
+    assert not any('env' in step or 'credential' in step.get('run', '') for step in linux['steps']), 'no key store'
+    runs = [step.get('run', '') for step in live['steps']]
+    assert runs.index('make x') < next(i for i, run in enumerate(runs) if run.endswith('jobparts produce live'))
+    assert _forgets_keys(live)
+    assert {'part-linux', 'part-live'} <= set(jobs['absent-parts']['needs'])
 
 
 def _forgets_keys(job: dict[str, Any]) -> bool:
@@ -1424,6 +1460,15 @@ def _guarded(expression: str) -> str:
     return ready_only({'on': {'pull_request': {}}, 'jobs': {'job': {'if': expression}}})['jobs']['job']['if']
 
 
+def _ci_guarded(expression: str) -> str:
+    """The original CI predicate, AND-ed with measurement isolation and the unchanged draft policy."""
+    return _guarded(f'${{{{ ({_NO_MEASURE}) && ({_bare(expression)}) }}}}')
+
+
+def _ci_prefix() -> str:
+    return _ci_guarded('${{ x }}').removesuffix('x)) }}')
+
+
 #: The PR actions that bring work to run: a new head, or a PR becoming ready. Any other action joining a
 #: cancel-in-progress group cancels the live run for nothing (F-6adfea8621bf).
 _BRINGS_WORK = frozenset({'opened', 'synchronize', 'reopened', 'ready_for_review'})
@@ -1494,7 +1539,7 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
         for job_name, job in workflow['jobs'].items():
             assert _bare(job['if']).startswith(f'({READY_ONLY})'), f'{name} {job_name}: a draft runs it'
     if forge == 'github':
-        assert _bare(rendered['ci.yml']['jobs']['merge-ready']['if']).endswith("inputs.pr != ''))")
+        assert rendered['ci.yml']['jobs']['merge-ready']['if'] == _ci_guarded(f'${{{{ always() && {_PR_RUN} }}}}')
     assert all(READY_ONLY not in render(w) for name, w in rendered.items() if name not in triggered)
     assert _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'draft': False, 'title': 'feat: x'}})
     assert _guard_holds(READY_ONLY, {'action': 'ready_for_review', 'pull_request': {'draft': False, 'title': 'x'}})
@@ -1515,7 +1560,7 @@ def test_the_review_job_s_posted_status_is_judged_again_in_the_same_run(tmp_path
     again = jobs['merge-rejudge']
     assert again['needs'] == ['review']
     assert "needs.review.result != 'skipped'" in again['if'], 'only after the review job ran'
-    assert again['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}')), 'a failed review is judged too'
+    assert again['if'].startswith(_ci_prefix() + 'always()'), 'a failed review is judged too'
     assert again['steps'] == jobs['merge-ready']['steps'], 'one source for the decision step'
     assert again['permissions'] == jobs['merge-ready']['permissions']
     assert again['env'] == jobs['merge-ready']['env']

@@ -72,7 +72,6 @@ __all__ = [
     'FLEET',
     'IDLE',
     'INTEGRATION',
-    'ISSUE_KINDS',
     'LEASE',
     'NEEDS',
     'NONDETERMINISM',
@@ -103,10 +102,6 @@ RUN: Final = 'run'
 STARVED: Final = 'starved'
 #: An integration row this host created or changed on the forge (:mod:`dev_lab.dev.integrator`).
 INTEGRATION: Final = 'integration'
-#: The kinds kept as ONE forge issue per alarm, titled ``<kind>: <subject>``
-#: (:func:`dev_lab.dev.forgeservesteps.raise_once` refuses any other) --
-#: so ``forge tidy`` knows them as machine-kept.
-ISSUE_KINDS: Final = (INTEGRATION, STARVED)
 #: A host deleted merged idle origin branches, or failed to (:mod:`dev_lab.dev.branchprune`).
 PRUNED: Final = 'pruned'
 #: An UNMERGED origin branch sat idle past the declared grace; never deleted (:mod:`dev_lab.dev.branchprune`).
