@@ -21,7 +21,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import walls
 from dev_lab.dev.codeplace import PlacementNotDeclared, checkout_root, declared_placement
-from dev_lab.dev.sessionprs import SESSION_ENV, session_of, valid
+from dev_lab.dev.native_session import session_of, valid
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -247,7 +247,7 @@ def _clear(rest: list[str], root: Path) -> int:
         _keep(root, session, args.keep)
     left = args.names or (session_entries(root, session) if session else None)
     if left is None:
-        emit(f'no scratch snapshot for this session ({SESSION_ENV}): name the entries to clear')
+        emit('no scratch snapshot for this native session: name the entries to clear')
         return 2
     kept = {_name(name) for name in args.keep}
     names = [name for name in left if _name(name) not in kept]
