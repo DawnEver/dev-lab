@@ -27,7 +27,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   strip, the anchored summary line, the collected count and the truncation vocabulary. Every reader
   answers ``None`` for a line never printed, never ``0``. NOT RE-EXPORTED.
 * :mod:`dev_lab.dev.reports` — what those readings MEAN for a verify step: the exit-code table,
-  the shortfalls, and the two-sided skip ratchet a project declares in ``allowed_skips``.
+  the shortfalls, and the skip ratchet applied to each step's evidence.
+* :mod:`dev_lab.dev.skipallowance` — the skips a project may live with: ``allowed_skips`` read as node-id
+  prefixes, refused on both sides (undeclared, stale or vanished) and capped by a share ceiling.
 * :mod:`dev_lab.dev.verify` — the family's ONE entry point that PRODUCES one:
   ``python -m dev_lab.dev.verify`` runs ruff, ruff format and pytest, tees them into a log under
   ``<output>/<yy>/<mm>/<dd>/verify/`` (:func:`dev_lab.dev.datedlog.output_dir`), and prints a stamped
@@ -168,6 +170,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   record's shape.
 * :mod:`dev_lab.dev.jobparts` -- the same parts produced by workflow jobs: the matrix of parts and runners,
   one producer per part, and ``absent`` (pending, since when) for every part no job settled.
+* :mod:`dev_lab.dev.native_session` -- the native harness's session identity, validated against one catalog and
+  independent of worktree provenance and authorization.
+* :mod:`dev_lab.dev.jobmeasure` -- a pinned Actions MEASUREMENT of selected tests through verify: a receipt
+  indexing the verify log's proof, never a part, never posted.
 * :mod:`dev_lab.dev.workstationverdict` -- the one exception to VERDICTS-FROM-THE-FORGE: a declared
   workstation posts its full part; a producer dedupes by content key and spot-checks workstation records.
 * :mod:`dev_lab.dev.verdictstore` -- the run-records store read by content key (tree, env key, part): a PASS
@@ -522,6 +528,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.planrunpreflight` -- every door of a plan checked on its hosts before the code is spent.
 * :mod:`dev_lab.dev.planremote` -- the hosts a plan runs on: the held session, else key-only ssh.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
+* :mod:`dev_lab.dev.stopsignatures` -- what that door recognises: built-in and declared run signatures,
+  declared orphan roles, and a multiprocessing worker proven orphaned from the table.
+* :mod:`dev_lab.dev.stopapproved` -- an explicitly user-approved controller stopped by exact identity,
+  controller first, its bounded original subtree rechecked before every stop.
+* :mod:`dev_lab.dev.proctable` -- the process table the stop doors read and its walks: subtree, ancestors,
+  whose session a pid descends from, and the pids no door may stop.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
 * :mod:`dev_lab.dev.journaldoor` -- the PreToolUse door: a task journal append citing an ignored path is
   refused before it is written.
