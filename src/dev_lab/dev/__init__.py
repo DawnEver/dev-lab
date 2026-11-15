@@ -334,6 +334,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgestuck` -- STUCK-RUN-CANCEL: ``forge cancel-stuck <sha>`` scancels only its stuck forge tasks.
 * :mod:`dev_lab.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
+* :mod:`dev_lab.dev.forgerecordkeep` -- what a records prune keeps: record names, live shas, the selection.
 * :mod:`dev_lab.dev.forgeunit` -- compute units on the forge: shared results (first wins), a unit offered as a Job.
 * :mod:`dev_lab.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``[priority] hosts`` entry matches.
 * :mod:`dev_lab.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
