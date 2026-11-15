@@ -820,3 +820,152 @@ def test_a_failed_stop_reports_partial_and_does_not_continue_into_children() -> 
     assert code == 3
     assert attempts == [30]
     assert 'partial' in '\n'.join(lines).lower()
+
+
+@pytest.mark.parametrize('dry_run', [False, True])
+@pytest.mark.parametrize(
+    ('command', 'signatures'),
+    [
+        ('python -m dev_lab.dev.forge serve', ()),
+        ('python -m dev_lab.dev.forge watch abc --stream', ()),
+        ('python -m dev_lab.dev.verify -- tests/a.py', ()),
+        ('python scripts/gate/runner.py measure tests/a.py', ()),
+        ('python -m pytest tests/a.py', ()),
+        ('sh scripts/hooks/with-retry.sh push origin pr/x', ()),
+        ('python output/registered_controller.py', (r'registered_controller\.py',)),
+    ],
+)
+def test_an_approval_cannot_replace_a_registered_roots_ordinary_lifecycle(command, signatures, dry_run) -> None:
+    scene = _ApprovedScene()
+    scene.table[30] = (1, command)
+    code, lines = scene.stop(signatures=signatures, dry_run=dry_run)
+    assert code == 3
+    assert scene.killed == []
+    assert 'ordinary' in '\n'.join(lines).lower()
+    assert '--pid 30' in '\n'.join(lines)
+
+
+def test_an_approval_cannot_replace_the_serve_note_and_claim_release_grace(tmp_path) -> None:
+    scene = _ApprovedScene()
+    scene.table[30] = (1, 'python -m dev_lab.dev.forge serve')
+    assert scene.stop(notes=tmp_path)[0] == 3
+    assert scene.killed == []
+    assert not was_stopped(31, root=tmp_path)
+
+    # Its ordinary door still records the producer and releases the serve through its grace.
+    waits = []
+
+    def released(pid, _seconds) -> bool:
+        waits.append(pid)
+        return True
+
+    code, lines = door.stop(
+        30,
+        dict(scene.table),
+        dry_run=False,
+        kill=scene.kill,
+        born=scene.born,
+        gone=released,
+        notes=tmp_path,
+    )
+    assert code == 0
+    assert scene.killed == [32, 31]
+    assert waits == [30]
+    assert was_stopped(31, root=tmp_path)
+    assert 30 in scene.table
+    assert 'released its claim' in '\n'.join(lines)
+
+
+@pytest.mark.parametrize('ledger', ['held', 'unreadable'])
+def test_approval_cannot_bypass_the_declared_orphan_claim_boundary(ledger) -> None:
+    scene = _ApprovedScene()
+    scene.table[30] = (1, _DESIGNER)
+    reads = []
+
+    def claims() -> set[int]:
+        reads.append(True)
+        if ledger == 'unreadable':
+            msg = 'box ledger is unreadable'
+            raise OSError(msg)
+        return {31}
+
+    code, lines = scene.stop(orphans=_ORPHANS, claimed=claims)
+    assert code == 3
+    assert scene.killed == []
+    assert reads == []  # Explicit identity never substitutes for the existing orphan/claim door.
+    assert '--pid 30' in '\n'.join(lines)
+
+    code, lines = door.stop(
+        30,
+        dict(scene.table),
+        dry_run=False,
+        kill=scene.kill,
+        born=scene.born,
+        orphans=_ORPHANS,
+        claimed=claims,
+    )
+    assert code == 3
+    assert scene.killed == []
+    assert reads == [True]
+    assert 'ledger' in '\n'.join(lines) if ledger == 'unreadable' else 'box claim' in '\n'.join(lines)
+
+
+@pytest.mark.parametrize(
+    ('command', 'orphans'),
+    [
+        ('python scratch/temporary_controller.py', ()),
+        ('python orphan_service.py', (r'orphan_service\.py',)),
+        (_WORKER, ()),
+    ],
+)
+def test_approval_cannot_replace_a_registered_orphan_roles_existing_checks(command, orphans) -> None:
+    scene = _ApprovedScene()
+    scene.table[30] = (40, command)  # Its real parent is alive, so an orphan-shaped command proves nothing.
+    code, lines = scene.stop(orphans=orphans, claimed=_none_claimed)
+    assert code == 3
+    assert scene.killed == []
+    assert '--pid 30' in '\n'.join(lines)
+
+
+def test_a_proven_orphaned_worker_uses_its_existing_door_not_the_approval_override() -> None:
+    scene = _ApprovedScene()
+    scene.table[30] = (90, _WORKER)
+    scene.table.pop(40)
+    assert scene.stop()[0] == 3
+    assert scene.killed == []
+    assert door.stop(30, dict(scene.table), dry_run=False, kill=scene.kill, born=scene.born)[0] == 0
+    assert scene.killed == [32, 31, 30]
+
+
+@pytest.mark.parametrize(
+    ('command', 'orphans'),
+    [
+        ('python -m dev_lab.dev.forge serve', ()),
+        (_DESIGNER, _ORPHANS),
+        ('python orphan_service.py', (r'orphan_service\.py',)),
+        (_WORKER, ()),
+    ],
+)
+def test_a_proved_child_with_a_special_lifecycle_blocks_approval_before_the_controller_stops(command, orphans) -> None:
+    scene = _ApprovedScene()
+    scene.table[31] = (30, command)
+    code, lines = scene.stop(orphans=orphans, claimed=_none_claimed)
+    assert code == 3
+    assert scene.killed == []
+    assert '--pid 31' in '\n'.join(lines)
+
+
+def test_a_queued_ordinary_gate_child_is_not_a_special_lifecycle_and_remains_stoppable() -> None:
+    scene = _ApprovedScene()
+    assert identify(scene.table[31][1])
+    assert scene.stop()[0] == 0
+    assert scene.killed == [30, 32, 31]
+
+
+def test_special_roles_on_excluded_old_ppid_foreign_branches_do_not_expand_the_approved_scope() -> None:
+    scene = _ApprovedScene()
+    scene.table |= {25: (30, 'python -m dev_lab.dev.forge serve'), 26: (25, _DESIGNER)}
+    scene.created |= {25: 80, 26: 103}
+    assert scene.stop(orphans=_ORPHANS)[0] == 0
+    assert scene.killed == [30, 32, 31]
+    assert {25, 26, 40} <= scene.table.keys()
