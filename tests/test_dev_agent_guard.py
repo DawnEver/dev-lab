@@ -613,10 +613,10 @@ def _venv_with_dev_lab_at(root: Path, installed: str, locked: str) -> dict[str, 
     }
 
 
-def _bind(env: dict[str, str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _bind(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [_SHELL, '-c', agent_wiring.TASKBIND_COMMAND],
-        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=cwd, check=False,
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, check=False,
     )  # fmt: skip
 
 
@@ -641,7 +641,10 @@ def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path
     env.pop('CLAUDE_CODE_SESSION_ID', None)
     env.pop('CLAUDE_PROJECT_DIR', None)
     env['CODEX_THREAD_ID'] = 'native-codex'
-    done = _bind(env, cwd=tmp_path)
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-m', 'dev_lab.dev.hpcaccount.session', 'bind'],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=tmp_path, check=False,
+    )  # fmt: skip
     assert done.returncode == 0, done.stderr
     assert '-m dev_lab.dev.dep --bootstrap' in done.stderr
     [wall] = [
