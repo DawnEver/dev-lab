@@ -4,12 +4,15 @@ User ruling 2026-11-07, reversing part of toolchain plan P3 (``githooks/base.tom
 branches, and the forge's later ``integration`` alarm and lock freshness status came after the harm. So ONE
 judgement (:func:`judge`) refuses a head when either holds:
 
-* BEHIND -- ``origin/<integration>``, fetched afresh (that one ref), is not an ancestor of the head. A fetch that
-  fails refuses with the network's reason, never passes unchecked;
+* BEHIND -- the head lacks more than :data:`~dev_lab.dev.locklag.LAG_LIMIT` first-parent commits of
+  ``origin/<integration>``, fetched afresh (that one ref). A fetch that fails refuses with the network's reason, never
+  passes unchecked. The window is the one ``lock/lag`` reads (DECISION 14): an exact-contains rule, measured
+  2026-11-15 on a repo landing a commit every few minutes, went stale on four heads in a row before review could
+  start, and review waits on this gate (REVIEW IS THE LAST GATE), so no PR there could ever be reviewed;
 * STALE -- the head's lock pins a floated sibling (dev-lab, lab-commons, ...) more than
   :data:`~dev_lab.dev.locklag.LAG_LIMIT` commits behind its line: :func:`dev_lab.dev.locklag.within_window`, the
   ONE window the forge's ``lock/lag`` also reads (DECISION 14) -- exact heads made every landing stale every
-  dependent PR. The repo's OWN integration stays exact-contains (BEHIND).
+  dependent PR. The repo's own integration is read through the same window (BEHIND).
 
 Both name the one remedy, :data:`SYNC` (``forge sync`` merges integration and relocks the floated siblings in the
 same sync, :mod:`dev_lab.dev.forgesync`). The judgement is read at three doors: the forge's ``pr-current`` status on
@@ -35,7 +38,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.lockcheck import LOCK
-from dev_lab.dev.locklag import within_window
+from dev_lab.dev.locklag import LAG_LIMIT, within_window
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.sessionbranch import MACHINE_BRANCHES
 
@@ -92,14 +95,21 @@ def fetch_ref(root: Path, branch: str) -> str | None:
     return None if report.ok else report.remedy
 
 
-def behind(root: Path, sha: str, integration: str, *, fetch: Fetch = fetch_ref) -> str | None:
-    """Why *sha* does not hold ``origin/<integration>``'s current tip, or ``None`` when it does."""
+def behind(root: Path, sha: str, integration: str, *, fetch: Fetch = fetch_ref, window: int = LAG_LIMIT) -> str | None:
+    """Why *sha* lacks more than *window* first-parent commits of ``origin/<integration>``, or ``None``."""
     if (why := fetch(root, integration)) is not None:
         return f'{RULE}: origin/{integration} could not be fetched, so {sha[:12]} cannot be judged current: {why}'
     tip = f'refs/remotes/origin/{integration}'
-    if _git(root, 'merge-base', '--is-ancestor', tip, sha).returncode == 0:
+    counted = _git(root, 'rev-list', '--count', '--first-parent', f'{sha}..{tip}')
+    if counted.returncode != 0:
+        return f'{RULE}: {sha[:12]} cannot be measured against origin/{integration}: {counted.stderr.strip()}'
+    missing = int(counted.stdout.strip() or '0')
+    if missing <= window:
         return None
-    return f'{RULE}: {sha[:12]} does not contain origin/{integration}; run `{SYNC}`, then push again'
+    return (
+        f'{RULE}: {sha[:12]} lacks {missing} commits of origin/{integration}, past the window of {window}; '
+        f'run `{SYNC}`, then push again'
+    )
 
 
 def lock_stale(root: Path, sha: str, *, read: Read = within_window) -> str | None:
@@ -111,20 +121,36 @@ def lock_stale(root: Path, sha: str, *, read: Read = within_window) -> str | Non
     return f'{RULE}: the lock of {sha[:12]} is stale: {"; ".join(found)}; run `{SYNC}`, then push again'
 
 
-def judge(root: Path, sha: str, integration: str, *, fetch: Fetch = fetch_ref, read: Read = within_window) -> list[str]:
+def judge(
+    root: Path,
+    sha: str,
+    integration: str,
+    *,
+    fetch: Fetch = fetch_ref,
+    read: Read = within_window,
+    window: int = LAG_LIMIT,
+) -> list[str]:
     """Every reason *sha* is not current against *integration*: BEHIND first, then STALE."""
-    return [why for why in (behind(root, sha, integration, fetch=fetch), lock_stale(root, sha, read=read)) if why]
+    reasons = (behind(root, sha, integration, fetch=fetch, window=window), lock_stale(root, sha, read=read))
+    return [why for why in reasons if why]
 
 
 def head_refusals(
-    root: Path, sha: str, branch: str, integration: str, *, fetch: Fetch = fetch_ref, read: Read = within_window
+    root: Path,
+    sha: str,
+    branch: str,
+    integration: str,
+    *,
+    fetch: Fetch = fetch_ref,
+    read: Read = within_window,
+    window: int = LAG_LIMIT,
 ) -> list[str]:
     """:func:`judge` on *branch* at *sha*; nothing where the rule does not apply (a machine branch, a non-``pr/``).
 
     The one entry both the pre-push row (:func:`refusals`) and the forge's status (:mod:`~dev_lab.dev.forgeheadgate`)
     call, so the two never disagree on which heads are judged.
     """
-    return judge(root, sha, integration, fetch=fetch, read=read) if judged(branch) else []
+    return judge(root, sha, integration, fetch=fetch, read=read, window=window) if judged(branch) else []
 
 
 def judged(branch: str) -> bool:
@@ -132,7 +158,9 @@ def judged(branch: str) -> bool:
     return branch.startswith('pr/') and branch not in MACHINE_BRANCHES
 
 
-def refusals(root: Path, lines: str, *, fetch: Fetch = fetch_ref, read: Read = within_window) -> list[str]:
+def refusals(
+    root: Path, lines: str, *, fetch: Fetch = fetch_ref, read: Read = within_window, window: int = LAG_LIMIT
+) -> list[str]:
     """:func:`judge` over every created or updated branch git's pre-push *lines* name, machine branches aside."""
     found: list[str] = []
     for fields in (line.split() for line in lines.splitlines()):
@@ -146,12 +174,18 @@ def refusals(root: Path, lines: str, *, fetch: Fetch = fetch_ref, read: Read = w
         except (ValueError, OSError, subprocess.CalledProcessError) as exc:
             found.append(f'{RULE}: {fields[1][:12]} declares no readable integrator: {exc}')
             continue
-        found += head_refusals(root, fields[1], branch, integration, fetch=fetch, read=read)
+        found += head_refusals(root, fields[1], branch, integration, fetch=fetch, read=read, window=window)
     return found
 
 
 def ready_refusals(
-    root: Path, client: Client, pull: PullRequest, *, fetch: Fetch = fetch_ref, read: Read = within_window
+    root: Path,
+    client: Client,
+    pull: PullRequest,
+    *,
+    fetch: Fetch = fetch_ref,
+    read: Read = within_window,
+    window: int = LAG_LIMIT,
 ) -> list[str]:
     """Why PR *pull* may not be marked ready: :func:`judge` on its head as origin holds it -- never the local tree.
 
@@ -163,7 +197,7 @@ def ready_refusals(
     del client  # the head is read off the PR record; the forge itself is not asked again
     if (why := fetch(root, pull.head)) is not None:
         return [f'{RULE}: the head {pull.head} could not be fetched: {why}']
-    return judge(root, pull.head_sha, pull.base, fetch=fetch, read=read)
+    return judge(root, pull.head_sha, pull.base, fetch=fetch, read=read, window=window)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
