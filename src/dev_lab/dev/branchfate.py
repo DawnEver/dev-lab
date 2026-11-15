@@ -20,8 +20,9 @@ gives each local branch and linked tree still standing exactly ONE verdict, with
   pinned to the sha that was bundled. A step that fails keeps the rest and is a ``FAILED`` line naming why; the
   next run retries it.
 
-``python -m dev_lab.dev.branchset --apply`` is the door; the ``SessionStart`` reclaim (:mod:`dev_lab.dev.reclaimrun`)
-runs it in the background.
+THE ONE LANE THE USER NAMES is :func:`discard` (``branchset --discard <branch> --approved "<words>"``, ruling
+2026-11-13): it needs no abandonment, only the user's words. ``python -m dev_lab.dev.branchset --apply`` is the
+door; the ``SessionStart`` reclaim (:mod:`dev_lab.dev.reclaimrun`) runs it in the background.
 """
 
 from __future__ import annotations
@@ -33,14 +34,17 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.checkout import git_out, worktrees
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.reclaim import QUIET_S, index_age_s, locked_trees, occupancy, removed_approved, runtime_of
 from dev_lab.dev.worktree_archive import archive_home, save_work
 
-__all__ = ['ABANDONED_S', 'Fate', 'judge', 'preserve', 'settle']
+if TYPE_CHECKING:
+    from dev_lab.dev.branchset import BranchSet
+
+__all__ = ['ABANDONED_S', 'Fate', 'discard', 'judge', 'preserve', 'settle']
 
 #: How long UNMERGED work must sit untouched (index and tip) before it counts as abandoned: sessions pause
 #: overnight and lanes wait on long forge runs, so the 1 h live-session window that suffices for MERGED trees is
@@ -225,3 +229,50 @@ def settle(
         done += 1
         out.append(f'{verdict} {fate.label} ({fate.sha[:10]})  archived at {saved}, cleaned up')
     return tuple(out)
+
+
+def discard(
+    root: Path, branchset: BranchSet, branch: str, approved: str, *, quiet_s: float = QUIET_S
+) -> tuple[int, str]:
+    """Drop ONE lane the user approved: its worktree, then its local branch; ``(exit code, the one line)``.
+
+    *approved* is the user's own words, echoed into the line so the record says who decided. Refused (exit 1,
+    nothing touched): no approval, a declared branch (trunk or session), no local branch of that name, the main
+    checkout's branch, a live session (:func:`dev_lab.dev.reclaim.removed_approved`).
+    """
+    ref = f'refs/heads/{branch}'
+    sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
+    trees = worktrees(root)
+    held = [path for path, name in trees or () if name == branch]
+    if why := _discard_refusal(root, branchset, branch, approved, sha=sha, trees=trees):
+        return 1, f'refused  {branch}  ({why})'
+    for tree in held:
+        if why := removed_approved(root, tree, quiet_s=quiet_s):
+            return 1, f'refused  {branch}  ({tree}: {why})'
+    if git_out(root, 'update-ref', '-d', ref, sha) is None:
+        return 1, f'FAILED   {branch}  (its worktree is gone; the branch delete at {sha[:10]} failed)'
+    where = f'worktree {held[0]} and ' if held else ''
+    return 0, f'discarded {where}local {branch} ({sha[:10]}) -- approved: "{approved.strip()}"'
+
+
+def _discard_refusal(
+    root: Path,
+    branchset: BranchSet,
+    branch: str,
+    approved: str,
+    *,
+    sha: str,
+    trees: tuple[tuple[Path, str], ...] | None,
+) -> str:
+    """Why :func:`discard` touches nothing, read before any delete; ``''`` when it may go on."""
+    if not approved.strip():
+        return '--approved "<the user words>" is required: the user decides a discard'
+    if branch in branchset.declared:
+        return 'declared in [tool.dev_lab.branchset]: the trunk and sessions are never discarded'
+    if not sha:
+        return 'no local branch of that name; origin is never discarded here'
+    if trees is None:
+        return f'git could not list the worktrees of {root}'
+    if trees and trees[0][1] == branch:
+        return f'the main checkout holds it at {trees[0][0]}'
+    return ''
