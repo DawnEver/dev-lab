@@ -267,16 +267,52 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
         'hosted = { live = { tasks = ["live"], secrets = ["K"] } }',
         'hosted = { live = { secrets = ["K"], setup = "x" } }',
         'hosted = { live = { tasks = ["live"] } }\nunproduced = ["live"]',
+        'hosted = { live = {} }',
+        'hosted = { live = { setup = "" } }',
+        'hosted = { live = { setup = ["apt-get install x"] } }',
+        'hosted = { live = { setup = "x", runner = "ubuntu-latest" } }',
     ],
 )
 def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_part_is_refused(
     declaration: str,
 ) -> None:
     text = f'[tool.lab_commons.tests]\nresources = ["live"]\n[tool.dev_lab.parts]\n{declaration}\n'
-    with pytest.raises(platformparts.UndeclaredPart):
+    with pytest.raises(platformparts.UndeclaredPart, match=r"part '(live|femm)'") as refused:
         jobparts.hosted_parts(text)
+    assert 'setup = "<shell command>"' in str(refused.value), 'the refusal names the fix: the accepted shape'
     assert jobparts.hosted_parts(HOSTED) == {'live': jobparts.Hosted(('live',))}
     assert jobparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
+
+
+SETUP_ONLY = """
+[tool.lab_commons.tests]
+resources = ["linux", "live"]
+
+[tool.dev_lab.parts]
+hosted = { linux = { setup = "sudo apt-get install -y xvfb" }, live = { tasks = ["live"] } }
+"""
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push'])
+def test_a_secretless_hosted_part_runs_on_every_event_and_one_with_secrets_stays_off_pull_requests(
+    tmp_path: Path, event: str
+) -> None:
+    """Secrets are the ONLY reason a hosted part skips a pull request; a setup alone withholds nothing.
+
+    PLANTED CONTROL: ``live`` names a task (a secret) and still has no pull request row.
+    """
+    assert jobparts.hosted_parts(SETUP_ONLY) == {
+        'linux': jobparts.Hosted(setup='sudo apt-get install -y xvfb'),
+        'live': jobparts.Hosted(('live',)),
+    }
+    (tmp_path / 'pyproject.toml').write_text(SETUP_ONLY, encoding='utf-8')
+    carrying = {'': ['t::a', 't::x', 't::l'], 'linux': ['t::x'], 'live': ['t::l']}
+    rows = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event)['include']
+    hosted = {row['part']: row for row in rows if row['part'] in {'linux', 'live'}}
+    assert hosted['linux'] == {'part': 'linux', 'runs-on': 'ubuntu-latest', 'secrets': []}
+    assert ('live' in hosted) is (event != 'pull_request'), 'PLANTED CONTROL: a secret keeps it off a PR'
+    generic = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event, hosted=True)['include']
+    assert 'linux' not in [row['part'] for row in generic], 'its own job, with its setup, produces it'
 
 
 def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:

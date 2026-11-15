@@ -523,6 +523,35 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     )
 
 
+_SETUP_HOSTED = """
+[tool.lab_commons.tests]
+resources = ["linux", "live"]
+
+[tool.dev_lab.parts]
+hosted = { linux = { setup = "sudo apt-get install -y xvfb" }, live = { tasks = ["live"], setup = "make x" } }
+
+[tool.dev_lab.ci."ci.yml"]
+"""
+
+
+def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pull_request(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(_SETUP_HOSTED, encoding='utf-8')
+    jobs = workflows(tmp_path)['ci.yml']['jobs']
+    linux, live = jobs['part-linux'], jobs['part-live']
+    assert linux['if'] == _guarded("${{ needs.parts.outputs.matrix != '' }}"), 'no secret: it runs on a PR too'
+    assert live['if'] == _guarded(
+        "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
+    ), 'PLANTED CONTROL: a secret keeps it full-run only'
+    setup, produce = linux['steps'][-2:]
+    assert setup == {'name': 'Set up tests/linux', 'run': 'sudo apt-get install -y xvfb'}
+    assert produce['run'].endswith('jobparts produce linux')
+    assert not any('env' in step or 'credential' in step.get('run', '') for step in linux['steps']), 'no key store'
+    runs = [step.get('run', '') for step in live['steps']]
+    assert runs.index('make x') < next(i for i, run in enumerate(runs) if run.endswith('jobparts produce live'))
+    assert _forgets_keys(live)
+    assert {'part-linux', 'part-live'} <= set(jobs['absent-parts']['needs'])
+
+
 def _forgets_keys(job: dict[str, Any]) -> bool:
     """Whether *job* stops its key cache AFTER the step that sets it, on every outcome (``always()``)."""
     names = [step.get('run', '') for step in job['steps']]

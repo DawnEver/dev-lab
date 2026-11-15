@@ -47,8 +47,9 @@ WHO PRODUCES IS THE FORGE'S DATA (:attr:`~dev_lab.dev._forgebackends.Backend.pro
 a repo whose review is a producer its forge does not wire is refused at render (:func:`placed`). The judge host is
 wired on both forges, and ADVISORY: its verdict never gates a merge (:data:`~dev_lab.dev._forgebackends.ADVISORY`).
 
-A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
-the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
+A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix ``part`` job
+(:func:`dev_lab.dev.jobparts.hosted_jobs`): the one place a repo's
+``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
 THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins
 (dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
