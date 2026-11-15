@@ -161,3 +161,27 @@ def test_every_forge_pr_verb_an_agent_is_told_to_run_is_a_door() -> None:
     assert told - doors_ == set()
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
     assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge pr view 3', g) for g in globs)
+
+
+_DESKTOP_READS = ('windows', 'capture', 'controls')
+_DESKTOP_ACTS = ('press', 'set-value', 'close')
+
+
+def test_the_desktop_tool_read_verbs_are_doors_and_its_acts_stay_prompted() -> None:
+    """User ruling 2026-11-14 E6: the desktop tool's READ verbs run unprompted in both clients; acts stay prompted.
+
+    PLANTED CONTROL: no rendered Claude row or Codex rule names an act verb, and a bare-module row (which would
+    admit every verb) is absent.
+    """
+    rows = claude_rows()
+    text = codex_rules()
+    for verb in _DESKTOP_READS:
+        for head in INTERPRETERS:
+            assert f'Bash({head} -m lab_commons.desktop {verb} *)' in rows
+        assert f'"-m", "lab_commons.desktop", "{verb}"' in text
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
+    for verb in _DESKTOP_ACTS:
+        command = f'{INTERPRETERS[0]} -m lab_commons.desktop {verb} --window x'
+        assert not any(fnmatchcase(command, pattern) for pattern in globs), verb
+        assert f'"lab_commons.desktop", "{verb}"' not in text
+    assert not any(row.endswith('-m lab_commons.desktop *)') for row in rows)

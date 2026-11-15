@@ -65,6 +65,24 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "lab_commons.desktop", "windows"],
+    decision = "allow",
+    justification = "Read-only: the top-level desktop windows, listed.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "lab_commons.desktop", "capture"],
+    decision = "allow",
+    justification = "Read-only: an image of one desktop window, captured.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "lab_commons.desktop", "controls"],
+    decision = "allow",
+    justification = "Read-only: one desktop window's control tree, listed.",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.hook_install", "--install"],
     decision = "allow",
     justification = "Installing or refreshing the kit git hooks in a checkout of this repository.",
