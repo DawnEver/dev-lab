@@ -210,3 +210,90 @@ def test_the_reader_is_pure_over_its_argument() -> None:
     tree = ast.parse('a = approx(1.0)\nb = pytest.approx(2.0)\nc = other(3.0)\n')
     assert len(approx_calls(tree)) == 2
     assert approx_calls(ast.parse('a = 1\n')) == ()
+
+
+@pytest.mark.parametrize('bar', sorted(BARS))
+@pytest.mark.parametrize(
+    ('binding', 'callee'),
+    [('from pytest import approx as close', 'close'), ('import pytest as checks', 'checks.approx')],
+)
+@pytest.mark.parametrize('arguments', ['1.0', '1.0, rel=1e-9', '1.0, rel=1e-9, abs=0.0', '1.0, 1e-9, 0.0'])
+def test_an_actual_pytest_import_alias_keeps_the_declared_bar(
+    bar: str, binding: str, callee: str, arguments: str, tmp_path: Path
+) -> None:
+    """Real imported aliases cannot erase sites or the distinction between the two existing bars."""
+    path = _plant(tmp_path, 'test_alias.py', f'{binding}\nresult = {callee}({arguments})\n')
+    scan = take_scan([path], root=tmp_path, bar=bar)
+    has_floor = 'abs=' in arguments or arguments == '1.0, 1e-9, 0.0'
+    offender = not has_floor and (bar == 'unconditional' or 'rel=' in arguments)
+    assert scan.files_read == 1
+    assert scan.calls_seen == 1, 'an actual imported pytest alias is still one tolerance site'
+    assert scan.offenders == (('test_alias.py:2',) if offender else ())
+
+
+@pytest.mark.parametrize(
+    'source',
+    [
+        'from pytest import approx as close\ndef evaluate(close):\n    return close(1.0, rel=1e-9)\n',
+        'import pytest as checks\ndef evaluate(checks):\n    return checks.approx(1.0, rel=1e-9)\n',
+        'import geometry as checks\nresult = checks.approx(1.0, rel=1e-9)\n',
+        'from geometry import approx\nresult = approx(1.0, rel=1e-9)\n',
+        'def approx(value, **kwargs):\n    return value\nresult = approx(1.0, rel=1e-9)\n',
+        'from pytest import approx as close\nclose = lambda value, **kwargs: value\nresult = close(1.0, rel=1e-9)\n',
+    ],
+)
+def test_a_non_pytest_callable_or_local_shadow_is_not_a_tolerance_site(source: str, tmp_path: Path) -> None:
+    """Matching an arbitrary final name would convict legitimate non-pytest functions."""
+    path = _plant(tmp_path, 'test_other.py', source)
+    scan = take_scan([path], root=tmp_path, bar='unconditional')
+    assert scan.files_read == 1
+    assert scan.calls_seen == 0
+    assert scan.offenders == ()
+
+
+def test_a_nested_function_keeps_an_unshadowed_imported_pytest_alias(tmp_path: Path) -> None:
+    """Lexical shadow handling must not erase the lawful enclosing binding."""
+    path = _plant(
+        tmp_path,
+        'test_nested.py',
+        'from pytest import approx as close\ndef evaluate(value):\n    return close(value, rel=1e-9)\n',
+    )
+    scan = take_scan([path], root=tmp_path, bar='ratio')
+    assert scan.calls_seen == 1
+    assert scan.offenders == ('test_nested.py:3',)
+
+
+def test_the_expression_predicate_still_drives_the_actual_alias_scanner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refactor must not leave the shipped predicate controls testing an unused second implementation."""
+    path = _plant(tmp_path, 'test_alias.py', 'from pytest import approx as close\nresult = close(1.0, rel=1e-9)\n')
+    monkeypatch.setattr('dev_lab.dev.famtests.approxfloors.is_approx', lambda _func: False)
+    assert take_scan([path], root=tmp_path, bar='ratio').calls_seen == 0
+
+
+@pytest.mark.parametrize('bar', sorted(BARS))
+@pytest.mark.parametrize('failure', ['syntax', 'missing', 'unicode'])
+def test_an_unreadable_corpus_member_cannot_hide_behind_surviving_floors(
+    bar: str, failure: str, tmp_path: Path
+) -> None:
+    """Each real I/O/parse failure is fatal even when the remaining corpus would satisfy both floors."""
+    good = _plant(tmp_path, 'test_good.py', 'import pytest\nresult = pytest.approx(1.0, rel=1e-9, abs=0.0)\n')
+    _bound(take_scan([good], root=tmp_path, bar=bar))
+    bad = tmp_path / 'test_unreadable.py'
+    if failure == 'syntax':
+        bad.write_text('def (\n', encoding='utf-8')
+        cause = 'SyntaxError'
+    elif failure == 'unicode':
+        bad.write_bytes(b'\xff\xfe\x80\n')
+        cause = 'UnicodeDecodeError'
+    else:
+        assert not bad.exists(), 'a genuinely missing file exercises OSError without platform permission tricks'
+        cause = 'FileNotFoundError'
+    with pytest.raises(AssertionError) as caught:
+        take_scan([good, bad], root=tmp_path, bar=bar)
+    message = str(caught.value)
+    assert bad.name in message
+    assert cause in message
+    assert 'Door:' in message
+    assert 'take_scan' in message
