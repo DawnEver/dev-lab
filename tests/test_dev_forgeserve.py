@@ -244,6 +244,9 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeservesteps, 'idle_drafts', drafts or (lambda *_a, **_k: []))  # reads open PRs (D53)
     monkeypatch.setattr(forgeservesteps, 'late_reviews', lambda *_a, **_k: [])  # reads open PRs too (backlog)
+    monkeypatch.setattr(
+        forgeservesteps, 'orphans', lambda *_a, **_k: []
+    )  # reads open PRs: tests/test_dev_forgeorphan.py
     monkeypatch.setattr(forgeservesteps, 'ready_when_current', lambda *_a, **_k: [])  # its own tests
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(
