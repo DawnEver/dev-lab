@@ -29,7 +29,11 @@ WHERE IT RUNS -- two family hook rows, so no route past it is left:
   draft its author may still edit or delete. The branch is named by HEAD's manifest, else -- a first adoption --
   by the commit's own staged one; with neither, nothing is published yet;
 * ``push`` (pre-push): every pushed ref's range since its merge-base with ``origin/<integration>``
-  (:func:`problems_between`), so a commit made with the hook bypassed still reds before it leaves.
+  (:func:`problems_between`), so a commit made with the hook bypassed still reds before it leaves. A memory
+  blob an ``origin`` ref already holds is published there, not added by the range, and is not judged again.
+
+An archived task directory (a ``TASK.md`` declaring ``kind: task``) is ONE entry: the files beside its TASK.md
+need no frontmatter of their own.
 """
 
 from __future__ import annotations
@@ -74,6 +78,7 @@ _ZERO = '0' * 40
 _EMPTY_TREE: Final = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: the base before a first push
 _REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
 _TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
+_KIND_TASK = re.compile(r'\A---\r?\n(?:.*\r?\n)*?kind:[ \t]*task[ \t]*\r?\n(?:.*\r?\n)*?---')
 
 
 class MemoryAddsError(RuntimeError):
@@ -116,7 +121,8 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
     for status, old, new in rows:
         if status in 'AC' and is_memory(new):
             text = _git(root, 'show', f'{new_rev}:{new}')
-            out.extend((*shape_problems(new, text), *merged_entry_problems(new, text, exists)))
+            shape = () if _in_archived_task(root, new_rev, new) else shape_problems(new, text)
+            out.extend((*shape, *merged_entry_problems(new, text, exists)))
         elif status == 'R' and is_memory(new) and not is_memory(old):
             if not _TASK.search(old):
                 out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
@@ -146,9 +152,53 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
 
 
 def problems_between(root: Path, base: str, head: str) -> tuple[str, ...]:
-    """What the commits of *head* since its merge-base with *base* do to memory beyond adding to it."""
+    """What the commits of *head* since its merge-base with *base* do to memory beyond adding to it.
+
+    A memory path *head* holds byte-identical to an ``origin`` ref is published, not this range's: never re-judged.
+    """
     since = _git(root, 'merge-base', base, head).strip()
-    return _judge(root, since, head, _changes(root, f'{since}...{head}'))
+    rows = _changes(root, f'{since}...{head}')
+    published = _published(root, head, rows)
+    return _judge(root, since, head, [row for row in rows if row[0] not in 'ACM' or row[2] not in published])
+
+
+def _in_archived_task(root: Path, rev: str, path: str) -> bool:
+    """*path* sits beside a ``TASK.md`` declaring ``kind: task``: one archived task is ONE entry (rem's model).
+
+    That TASK.md carries the name and description; the journal and other files beside it need none of their own.
+    """
+    folder, _, name = path.rpartition('/')
+    if name == 'TASK.md' or not folder:
+        return False
+    code, text, _ = _run(root, 'show', f'{rev}:{folder}/TASK.md')
+    return code == 0 and _KIND_TASK.search(text) is not None
+
+
+def _published(root: Path, head: str, rows: list[tuple[str, str, str]]) -> set[str]:
+    """Memory paths whose blob in *head* is byte-identical to the one some ``origin`` ref holds.
+
+    Such a path was judged where it was published; a range that carries it (a merge-base fallen back past an
+    integration merge commit, #6602) neither adds nor edits it.
+    """
+    paths = sorted({new for status, _, new in rows if status in 'ACM' and is_memory(new)})
+    refs = _git(root, 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin').split()
+    if not paths or not refs:
+        return set()
+    queries = [f'{rev}:{path}' for rev in (head, *refs) for path in paths]
+    done = _door.run(
+        [_GIT, '-C', str(root), 'cat-file', '--batch-check=%(objectname)'],
+        input='\n'.join(queries).encode('utf-8'),
+        capture_output=True,
+        check=False,
+        timeout=_GIT_TIMEOUT_S,
+    )
+    if done.returncode != 0:
+        msg = f'git cat-file --batch-check failed: {done.stderr.decode("utf-8", "replace").strip()}'
+        raise MemoryAddsError(msg)
+    blobs = [line.split()[0] for line in done.stdout.decode('utf-8', 'replace').splitlines()]
+    ours = dict(zip(paths, blobs[: len(paths)], strict=True))
+    held = {(paths[i % len(paths)], blob) for i, blob in enumerate(blobs[len(paths) :])}
+    return {path for path, blob in ours.items() if (path, blob) in held}
 
 
 def pending(root: Path) -> tuple[str, ...]:
