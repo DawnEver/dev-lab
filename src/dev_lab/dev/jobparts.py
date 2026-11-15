@@ -29,14 +29,19 @@ nothing else -- no self-hosted runner, workstation or cluster. A part no hosted 
 KEPT, for a consumer's unified run to select, and is OFF THE GATE (:func:`off_gate`): it has no row, so nothing posts
 it absent, and ``integrate promote`` on GitHub waives it.
 
-A PART FED BY A SECRET (user decision 2026-10-30). A part whose resource no hosted runner has can still run
-hosted when repository secrets supply it: the ai-lab TASKS whose key bundles it needs (:mod:`dev_lab.dev.taskkeys`,
-2026-11-05). The repo declares that ONCE, in its pyproject::
+A PART WITH ITS OWN SETUP (user decision 2026-10-30; a secretless setup 2026-11-15). A part whose resource no
+hosted runner has can still run hosted when a SETUP command installs it, or repository secrets supply it: the ai-lab
+TASKS whose key bundles it needs (:mod:`dev_lab.dev.taskkeys`, 2026-11-05). The repo declares that ONCE, in its
+pyproject -- each entry ``setup``, ``tasks`` or both::
 
     [tool.dev_lab.parts]
-    hosted = { live = { tasks = ["live"] } }
+    hosted = { live = { tasks = ["live"] }, linux = { setup = "sudo apt-get install -y xvfb" } }
 
-It gets ONE linux row, on a full run only (as macos, D84), carrying its bundles' secret NAMES
+Its job runs on the part's own hosted runner (:func:`hosted_runner`), the setup step before the produce step. A
+part naming no task names no secret and runs on EVERY event, a pull request included: secrets are the only reason a
+part's row is withheld from one.
+
+A part naming tasks gets ONE row, on a full run only (as macos, D84), carrying its bundles' secret NAMES
 (:func:`hosted_parts`, each :func:`~dev_lab.dev.taskkeys.secret_name`). The generic matrix job never runs it:
 :func:`hosted_jobs` renders it its own job, in which ONE setup step alone has the bundles in its environment and
 pipes each to ai-lab's loader on stdin -- never argv, never echoed -- before the part is produced. The render names
@@ -112,8 +117,11 @@ ABSENT: Final = 'absent: no job settled this part'
 
 _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
 
-#: The ``if`` of a hosted part's job: a FULL run's (the parts job's event is not the PR's set, as macos, D84;
-#: a merge's smoke takes the PR's set, D48-1A), never one main already holds (an empty matrix).
+#: The ``if`` of a secretless hosted part's job: every run that has a matrix, a pull request's included.
+_ANY_RUN: Final = "${{ needs.parts.outputs.matrix != '' }}"
+
+#: The ``if`` of a hosted part's job naming secrets: a FULL run's (the parts job's event is not the PR's set, as
+#: macos, D84; a merge's smoke takes the PR's set, D48-1A), never one main already holds (an empty matrix).
 _FULL_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
 
 
@@ -134,9 +142,10 @@ _FORGET_KEYS: Final = {
 
 @dataclass(frozen=True)
 class Hosted:
-    """A part run hosted because secrets supply its resource: the ai-lab tasks whose key bundles it loads."""
+    """A part run in its own hosted job: the ai-lab tasks whose key bundles it loads, and its ``setup`` command."""
 
-    tasks: tuple[str, ...]
+    tasks: tuple[str, ...] = ()
+    setup: str = ''
 
     @property
     def secrets(self) -> tuple[str, ...]:
@@ -144,18 +153,26 @@ class Hosted:
         return tuple(secret_name(task) for task in self.tasks)
 
 
-def _malformed(name: str, entry: object, produced: set[str]) -> bool:
-    """Whether hosted *entry* of part *name* is not a produced resource naming exactly its ai-lab ``tasks``."""
-    if name not in produced or not isinstance(entry, dict) or set(entry) != {'tasks'}:
-        return True
-    tasks = entry['tasks']
+_ENTRY_KEYS: Final = frozenset({'tasks', 'setup'})
+
+
+def _malformed(name: str, entry: object, produced: set[str]) -> str:
+    """Why hosted *entry* of part *name* is refused; ``''``: a produced resource naming a setup, tasks or both."""
+    if name not in produced:
+        return 'not a produced resource'
+    if not isinstance(entry, dict) or not entry or not set(entry) <= _ENTRY_KEYS:
+        return f'not a table of {sorted(_ENTRY_KEYS)} naming at least one'
+    setup = entry.get('setup', 'x')
+    if not isinstance(setup, str) or not setup.strip():
+        return 'setup is not a non-empty string'
+    tasks = entry.get('tasks', ['x'])
     if not isinstance(tasks, list) or not tasks or not all(isinstance(one, str) for one in tasks):
-        return True
+        return 'tasks is not a non-empty list of strings'
     try:
-        [secret_name(task) for task in tasks]
-    except ValueError:
-        return True
-    return False
+        [secret_name(task) for task in entry.get('tasks', [])]
+    except ValueError as error:
+        return str(error)
+    return ''
 
 
 def hosted_parts(text: str) -> dict[str, Hosted]:
@@ -164,21 +181,27 @@ def hosted_parts(text: str) -> dict[str, Hosted]:
     value = parts.get('hosted', {})
     resources = set(read_vocabulary(text).resources)
     produced = resources - set(parts.get('unproduced', []))
-    if not isinstance(value, dict) or any(_malformed(name, entry, produced) for name, entry in value.items()):
-        msg = (
-            f'[tool.dev_lab.parts] hosted = {value!r}: each a produced resource of {sorted(resources)} '
-            '= { tasks = ["<ai-lab task>", ...] }'
-        )
+    shape = (
+        f'each key a produced resource of {sorted(produced)} = '
+        '{ setup = "<shell command>", tasks = ["<ai-lab task>", ...] }, at least one of the two'
+    )
+    if not isinstance(value, dict):
+        msg = f'[tool.dev_lab.parts] hosted = {value!r} is not a table: write {shape}'
         raise UndeclaredPart(msg)
-    return {name: Hosted(tuple(entry['tasks'])) for name, entry in value.items()}
+    for name, entry in value.items():
+        if why := _malformed(name, entry, produced):
+            msg = f'[tool.dev_lab.parts] hosted part {name!r} = {entry!r}: {why}; write {shape}'
+            raise UndeclaredPart(msg)
+    return {name: Hosted(tuple(entry.get('tasks', ())), entry.get('setup', '')) for name, entry in value.items()}
 
 
 def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dict[str, Any]:
     """*workflow* with one ``part-<name>`` job per *declared* part, cut from its matrix ``part`` job. PURE.
 
-    The job is the ``part`` job at one part: push-only, on linux, its setup step inserted before the produce step
-    with the bundles in THAT step's environment only, and an ``always()`` step after it stopping their cache, so
-    a part that fails forgets them as one that passes; ``absent-parts`` waits for it. A workflow without the
+    The job is the ``part`` job at one part, on :func:`hosted_runner`: its ``setup`` command, then -- for a part
+    naming tasks -- a push-only key step with the bundles in THAT step's environment only, before the produce
+    step, and an ``always()`` step after it stopping their cache, so a part that fails forgets them as one that
+    passes. A part naming no task runs on every event. ``absent-parts`` waits for it. A workflow without the
     ``part`` job, or nothing declared, is returned as is.
     """
     jobs = workflow.get('jobs', {})
@@ -188,17 +211,28 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     added = {}
     for name, part in sorted(declared.items()):
         one = json.loads(template.replace('${{ matrix.part }}', name))
-        loads = (
-            f"""printf '%s' "${secret_name(task)}" | uv run --no-sync {shlex.join(loader('python', task))}"""
-            for task in part.tasks
-        )
-        setup = {
-            'name': f'Set up tests/{name} from its key bundles',
-            'run': ' && '.join((_MEMORY_STORE, *loads)),
-            'env': {secret: f'${{{{ secrets.{secret} }}}}' for secret in part.secrets},
+        before = [{'name': f'Set up tests/{name}', 'run': part.setup}] if part.setup else []
+        after = []
+        if part.tasks:
+            loads = (
+                f"""printf '%s' "${secret_name(task)}" | uv run --no-sync {shlex.join(loader('python', task))}"""
+                for task in part.tasks
+            )
+            before.append(
+                {
+                    'name': f'Set up tests/{name} from its key bundles',
+                    'run': ' && '.join((_MEMORY_STORE, *loads)),
+                    'env': {secret: f'${{{{ secrets.{secret} }}}}' for secret in part.secrets},
+                }
+            )
+            after.append(_FORGET_KEYS)
+        steps = [*one['steps'][:-1], *before, one['steps'][-1], *after]
+        added[f'part-{name}'] = {
+            **one,
+            'if': _FULL_ONLY if part.tasks else _ANY_RUN,
+            'runs-on': hosted_runner(name),
+            'steps': steps,
         }
-        steps = [*one['steps'][:-1], setup, one['steps'][-1], _FORGET_KEYS]
-        added[f'part-{name}'] = {**one, 'if': _FULL_ONLY, 'runs-on': HOSTED_RUNNERS['linux'], 'steps': steps}
     out = dict(jobs)
     if 'absent-parts' in out:
         needs = out['absent-parts'].get('needs', [])
@@ -248,8 +282,13 @@ def runner_for(part: str) -> str | None:
     return None
 
 
+def hosted_runner(part: str) -> str:
+    """The ``runs-on`` of a declared hosted *part*'s own job: its :func:`runner_for`, else linux's."""
+    return runner_for(part) or HOSTED_RUNNERS['linux']
+
+
 def off_gate(parts: Iterable[str], declared: Mapping[str, Hosted]) -> frozenset[str]:
-    """The *parts* no Actions job produces: neither *declared* secret-hosted nor with a hosted runner."""
+    """The *parts* no Actions job produces: neither *declared* hosted nor with a hosted runner."""
     return frozenset(part for part in parts if part not in declared and runner_for(row_part(part)) is None)
 
 
@@ -261,11 +300,12 @@ def systems_for(event: str) -> tuple[str, ...]:
 def rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str, Any]]:
     """*part*'s matrix rows: one per OS of *event* when it runs hosted and names no OS, else its one runner.
 
-    A *declared* hosted part has one linux row carrying its secrets' names, and none on a pull request.
+    A *declared* hosted part has one :func:`hosted_runner` row carrying its secrets' names (its own job's mark),
+    and none on a pull request when it names any.
     """
     if part in declared:
-        row = {'part': part, 'runs-on': HOSTED_RUNNERS['linux'], 'secrets': list(declared[part].secrets)}
-        return [] if event == 'pull_request' else [row]
+        row = {'part': part, 'runs-on': hosted_runner(part), 'secrets': list(declared[part].secrets)}
+        return [] if event == 'pull_request' and row['secrets'] else [row]
     home = runner_for(part)
     if home is None:
         return []
@@ -285,8 +325,9 @@ def matrix(
 
     A part needing a resource the checkout declares ``unproduced`` has no row (:mod:`dev_lab.dev.unproduced`).
     Each part has its :func:`runner_for` row, plus one per further OS of *event* when it names none (:func:`rows`).
-    *hosted* keeps only the rows the generic job produces on a GitHub-hosted runner -- a row carrying secrets has
-    its own job (:func:`hosted_jobs`) -- and :func:`absent` then names the rest.
+    *hosted* keeps only the rows the generic job produces on a GitHub-hosted runner -- a declared hosted row
+    (it carries ``secrets``, maybe none) has its own job (:func:`hosted_jobs`) -- and :func:`absent` then names
+    the rest.
     """
     pyproject = root / 'pyproject.toml'
     text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
