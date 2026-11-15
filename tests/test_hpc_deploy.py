@@ -793,8 +793,9 @@ def test_a_research_deploy_asks_only_to_read(box: Box, capsys: pytest.CaptureFix
 
     PLANTED CONTROL: the same refusing API on a verification account still refuses, naming the scopes.
     """
+    assert box.run(*DECLARE) == 0
     box.refused_api['dev-lab'] = 'a tick needs a token with the scopes repository (read and write)'
-    assert box.run(*DECLARE) == 2
+    assert box.run() == 2
     assert 'repository (read and write)' in capsys.readouterr().err, 'the planted control: verification refuses'
     _as_role(box, deploy_spec.RESEARCH)
     box.calls.unlink(missing_ok=True)
