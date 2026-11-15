@@ -15,7 +15,8 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev.milestonebase import APPROVED_ENV, BASE_RULE, TAG_RULE, milestone_version, refusals
-from dev_lab.dev.sessionprs import SESSION_ENV
+
+SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
 _GIT = shutil.which('git') or 'git'
 _ZERO = '0' * 40

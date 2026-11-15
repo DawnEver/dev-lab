@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import taskgate
-from dev_lab.dev.sessionprs import SESSION_ENV
+
+SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
 AGENT = {SESSION_ENV: '1d9000bd-6cd0-42ab-873f-102cd963e53d'}
 

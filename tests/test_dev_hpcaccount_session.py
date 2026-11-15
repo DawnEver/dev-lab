@@ -190,7 +190,7 @@ def test_a_host_reaching_nothing_is_refused_even_with_the_credential(verifier: P
 
 
 def test_the_production_verifier_reads_this_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(hpcsession.SESSION_ENV, raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
     assert hpcsession.roles() == frozenset(), 'no session id in the environment: no role, nothing read'
     assert time.time() > 0
 

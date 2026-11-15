@@ -65,6 +65,35 @@ def test_identity_refusals_do_not_echo_an_invalid_private_value() -> None:
     assert private_value not in str(refused.value)
 
 
+@pytest.mark.parametrize('value', ['é_9.-', '𐐀' * 128, 'Ⅳ²', 'a' * 128])
+def test_native_identity_preserves_unicode_and_the_exact_code_point_limit(value: str) -> None:
+    assert _native().session_of({_CODEX: value}) == value
+
+
+@pytest.mark.parametrize('value', ['𐐀' * 129, 'valid\n', 'e\u0301', 'x\u200b', 'role:integrator'])
+def test_identity_grammar_does_not_normalize_or_accept_hidden_suffixes(value: str) -> None:
+    with pytest.raises(ValueError, match='Door:'):
+        _native().session_of({_CODEX: value})
+
+
+def test_auxiliary_metadata_cannot_hide_a_second_harness() -> None:
+    with pytest.raises(ValueError, match='ambiguous native session'):
+        _native().session_of({_CLAUDE: _ID, 'CODEX_SESSION_ID': 'auxiliary'})
+    assert _native().session_of({_CODEX: _ID, 'CODEX_SESSION_ID': 'auxiliary'}) == _ID
+
+
+@pytest.mark.parametrize('contents', [None, '{', '{}', '[]'])
+def test_a_missing_or_corrupt_identity_catalog_never_turns_into_a_human_bypass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contents: str | None
+) -> None:
+    native = _native()
+    monkeypatch.setattr(native, '__file__', str(tmp_path / 'native_session.py'))
+    if contents is not None:
+        (tmp_path / 'native_session.json').write_text(contents, encoding='utf-8')
+    with pytest.raises(ValueError, match=r'native session catalog.*Door:'):
+        native.session_of({})
+
+
 def test_the_pr_door_records_the_codex_thread_in_its_own_existing_journal() -> None:
     opened = sessionprs.record_opened(FORGE, 7, branch='pr/native', sha='a' * 40, env={_CODEX: _ID})
     assert opened is not None, 'a successful native Codex PR must not disappear from session tracking'
