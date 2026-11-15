@@ -34,7 +34,6 @@ from dev_lab.dev.forgemergeready import READY, ready
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_job import review_run
-from dev_lab.dev.forgeservesteps import raise_once
 from dev_lab.dev.forgework import ACTIONS_BOT, Client
 
 _NOW = datetime(2026, 11, 1, 12, tzinfo=UTC)
@@ -136,10 +135,8 @@ def test_a_stale_draft_raises_one_integration_alarm_and_a_fresh_one_none(tmp_pat
     assert f'#{number}' in found.subject
     assert f'pr ready {number}' in found.body
     assert 'by a ' in found.body, 'names its author'
-    paged: list[object] = []
-    for _tick in range(2):
-        raise_once(forge, 'integration', alarms(tmp_path, forge, 'integrate/main', 'o/r', now=_NOW), alarm=paged.append)
-    assert len(paged) == 1
+    again = alarms(tmp_path, forge, 'integrate/main', 'o/r', now=_NOW)
+    assert [one.subject for one in again] == [found.subject], 'one subject per tick: the card dedupes'
     mark_ready(forge, number, root=Path(), judge=_current)
     assert alarms(tmp_path, forge, 'integrate/main', 'o/r', now=_NOW) == []
 

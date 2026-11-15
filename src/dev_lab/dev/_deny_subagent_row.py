@@ -97,7 +97,7 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[1]} -m dev_lab.dev.forge sync',
         f'{VENV_PYTHONS[1]} -m dev_lab.dev.forge sync --help',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr close-landedness 3',
-        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x --kind need',
         'gh workflow list -R o/r',
     ),
 }

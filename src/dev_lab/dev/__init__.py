@@ -343,6 +343,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgesettled` -- a commit whose every part is settled is read once, its history kept.
 * :mod:`dev_lab.dev.forgeprovides` -- what a host provides (machine-file ``[capabilities]``); no live host
   having a part's need-set is named.
+* :mod:`dev_lab.dev.issuekind` -- an issue is a need, defect or decision; routine notices live on the host card.
 * :mod:`dev_lab.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
 * :mod:`dev_lab.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`dev_lab.dev.forgesupersede` -- NEWEST-HEAD-ONLY: a superseded or landed run drained, settled ``superseded by``.

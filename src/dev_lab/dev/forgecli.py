@@ -65,6 +65,7 @@ from dev_lab.dev import (
     forgetidy,
     forgetry,
     forgewatch,
+    issuekind,
     metrics,
     pradmit,
     prcontinue,
@@ -80,6 +81,7 @@ from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest, client_for
+from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
 
 if TYPE_CHECKING:
@@ -182,6 +184,7 @@ def _parser() -> argparse.ArgumentParser:
     create = _verb(issue, 'create')
     create.add_argument('--title', required=True)
     create.add_argument('--body', default='')
+    create.add_argument('--kind', required=True, choices=KINDS, help='an issue is a need, defect or decision')
     comment = _verb(issue, 'comment')
     comment.add_argument('number', type=int)
     comment.add_argument('--body', required=True)
@@ -224,7 +227,7 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit),
         ('issue', 'view'): lambda: client.issue_view(args.number),
-        ('issue', 'create'): lambda: client.issue_create(args.title, args.body),
+        ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
         ('pr', 'create'): lambda: client.pr_create(
