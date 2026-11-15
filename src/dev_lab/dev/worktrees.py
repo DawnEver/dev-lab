@@ -21,22 +21,34 @@ let the removal delete five worktrees' ignored ``output/``. So:
 * a directory under ``.claude/worktrees/`` that git does not register: judged the same way, then deleted.
 * every main-checkout session start, and every merge, checkout and push in any tree, runs it in the background
   (:mod:`dev_lab.dev.reclaimrun`), logged.
+* ``--prune`` under a Claude Code hook payload (:func:`hook_payload`) never runs inline: INCIDENT 2026-11-12, old
+  worktrees still carry a retired SessionStart row running it synchronously (6+ min over 108 trees), so it detaches
+  that same locked, batched background reclaim of the main checkout and returns at once.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import json
+import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Final, TextIO
 
 from lab_commons.log import emit
 
+from dev_lab.dev import reclaimrun
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
 from dev_lab.dev.checkout import authority_for, worktrees
 from dev_lab.dev.reclaim import blockers, reclaim
 from dev_lab.dev.worktree_archive import archive
 
-__all__ = ['blockers', 'main', 'prune']
+__all__ = ['HOOK_READ_S', 'blockers', 'hook_payload', 'main', 'prune']
+
+#: The longest a ``--prune`` waits on a piped stdin for a hook payload before running as a person's door.
+HOOK_READ_S: Final = 1.0
 
 
 def prune(
@@ -63,7 +75,27 @@ def prune(
     return reclaim(root, holders(root, branchset), occupied=occupied, apply=False)
 
 
-def main(argv: list[str] | None = None) -> int:
+def hook_payload(stdin: TextIO, *, wait_s: float = HOOK_READ_S) -> dict[str, object] | None:
+    """The Claude Code hook payload on *stdin* (a JSON object naming ``hook_event_name``); ``None`` otherwise.
+
+    A terminal is never a hook. A pipe is read on a daemon thread for at most *wait_s*, so a stdin left open
+    and empty (an agent's shell) costs that bound and reads as no hook.
+    """
+    with contextlib.suppress(AttributeError, ValueError, OSError):
+        if stdin.isatty():
+            return None
+    box: list[str] = []
+    reader = threading.Thread(target=lambda: box.append(stdin.read()), daemon=True)
+    reader.start()
+    reader.join(wait_s)
+    try:
+        payload = json.loads(box[0]) if box else None
+    except ValueError:
+        return None
+    return payload if isinstance(payload, dict) and 'hook_event_name' in payload else None
+
+
+def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """List worktrees and leftovers; ``--prune`` removes the clean ones. Exit 1 on a failure, 2 when unread."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.worktrees', description=main.__doc__)
     parser.add_argument('--root', type=Path, default=Path.cwd())
@@ -85,6 +117,12 @@ def main(argv: list[str] | None = None) -> int:
         for line in (line for one in done for line in one.lines()):
             emit(line)
         return 0 if all(one.safe for one in done) else 1
+    if args.prune and (payload := hook_payload(stdin or sys.stdin)) is not None:
+        root = reclaimrun.repo_main(Path(str(payload.get('cwd') or args.root)))
+        with contextlib.suppress(OSError):  # a hook never blocks or fails the session it serves
+            if root is not None:
+                reclaimrun.detach(root)
+        return 0
     lines = prune(args.root.resolve(), apply=args.prune)
     if lines is None:
         emit(f'git could not read the worktrees of {args.root}; nothing was touched')
