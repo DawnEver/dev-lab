@@ -86,6 +86,7 @@ from dev_lab.dev.forgefailure import (
     retried,
 )
 from dev_lab.dev.forgememo import ReadMemo
+from dev_lab.dev.forgepages import issues
 from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
@@ -95,7 +96,6 @@ __all__ = [
     'GITEA_ACTIONS_LOGIN',
     'GITHUB',
     'GITHUB_HOST',
-    'ISSUE_PAGE',
     'Backend',
     'Client',
     'Comment',
@@ -115,10 +115,6 @@ _INTEGRATION: Final = 'Resource not accessible by integration'
 #: How many redirects a download follows: GitHub's artifact zip answers one, to a signed storage URL.
 _REDIRECTS: Final = 3
 _OCTETS: Final = 'application/octet-stream'
-
-
-#: One page of an issue listing: Gitea serves at most 50 per page, GitHub 100.
-ISSUE_PAGE: Final = 50
 
 
 @dataclass
@@ -359,20 +355,8 @@ class Client:
             raise
 
     def issue_list(self, *, state: str = 'open', limit: int = 30) -> tuple[Issue, ...]:
-        """Up to *limit* issues in *state*, pull requests excluded (GitHub lists both under ``issues``).
-
-        Read page by page (:data:`ISSUE_PAGE` each, the size both forges serve): a forge caps one page
-        below a large *limit*, so a single request silently returned only the first page.
-        """
-        size = min(limit, ISSUE_PAGE)
-        found: list[Issue] = []
-        for page in range(1, limit // size + 2):
-            query = self.backend.list_query.format(state=state, limit=size) + f'&page={page}'
-            listed = self.call('GET', f'{self.repo}/issues?{query}')
-            found += [_issue(raw) for raw in listed if not is_pull(raw)]
-            if len(listed) < size or len(found) >= limit:
-                break
-        return tuple(found[:limit])
+        """Issues in *state* among the first *limit* rows, read page by page (:func:`forgepages.issues`)."""
+        return issues(self.call, f'{self.repo}/issues?{self.backend.list_query}', state, limit)
 
     def issue_view(self, number: int) -> Issue:
         """One issue."""
