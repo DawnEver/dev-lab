@@ -18,16 +18,15 @@ from lab_commons.proc import pid_alive
 
 from dev_lab.dev import stoprun as door
 from dev_lab.dev.servelock import was_stopped
-from dev_lab.dev.stoprun import (
+from dev_lab.dev.stoprules import (
     SignaturesNotDeclared,
     declared_orphans,
     declared_signatures,
     identify,
     orphaned_worker,
-    process_table,
-    stop,
     subtree,
 )
+from dev_lab.dev.stoprun import process_table, stop
 
 _TABLE = {
     10: (1, 'python -m dev_lab.dev.verify tests/a.py', 100.0),

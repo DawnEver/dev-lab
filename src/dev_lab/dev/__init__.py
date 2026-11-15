@@ -172,6 +172,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   distinct from part acceptance and promotion.
 * :mod:`dev_lab.dev.skipallowance` -- declared skip prefixes, stale subjects and whole-selection share policy,
   independent of process execution and step-evidence reports.
+* :mod:`dev_lab.dev.stoprules` -- declared run signatures, orphan roles and process-tree refusal policy;
+  the stop door retains actual stopping and exact-approved-controller execution.
 * :mod:`dev_lab.dev.workstationverdict` -- the one exception to VERDICTS-FROM-THE-FORGE: a declared
   workstation posts its full part; a producer dedupes by content key and spot-checks workstation records.
 * :mod:`dev_lab.dev.verdictstore` -- the run-records store read by content key (tree, env key, part): a PASS
