@@ -43,7 +43,7 @@ import lab_commons.launch as _door
 from lab_commons.census import processes
 from lab_commons.log import emit
 
-from dev_lab.dev import checkoutfollow, devhost, hook_install, liverun
+from dev_lab.dev import checkoutfollow, devhost, familyrepos, hook_install, liverun
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
 from dev_lab.dev.reclaimrun import detach_argv
@@ -224,6 +224,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         if args.background or args.session_start:
             if due(root):
                 detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)])
+            if args.session_start and (where := familyrepos.notice()):
+                emit(where)  # every session starts knowing where the family's checkouts live
             if args.session_start and (declared := devhost.notice()):
                 emit(declared)  # first: an unfilled install home is this machine's first work
             if args.session_start and (notice := behind_notice(root)):

@@ -58,11 +58,13 @@ from lab_commons.hpc.retired import RETIRED
 from dev_lab.dev._deny_commithooks_row import COMMIT_HOOKS_RUN
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
+from dev_lab.dev._deny_familyrepo_row import FAMILY_REPO_IS_CHECKED_OUT
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
+from dev_lab.dev._deny_machinefile_row import MACHINE_FILE_IS_RENDERED
 from dev_lab.dev._deny_push_rows import PUSH_ROWS
 from dev_lab.dev._deny_remote_row import REMOTE_WRITE
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
@@ -98,6 +100,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     SUBAGENT_NO_PUSH,
     CONSENT_CODE_FROM_THE_USER,
+    MACHINE_FILE_IS_RENDERED,
     COMMIT_HOOKS_RUN,
     {
         'id': 'BARE-TEST-INVOCATION',
@@ -315,6 +318,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'git worktree lock .claude/worktrees/probe',
         ),
     },
+    # Before WORKTREES-STAY-INSIDE: a clone of a repo this machine already has is THAT refusal, wherever it lands.
+    FAMILY_REPO_IS_CHECKED_OUT,
     WORKTREES_STAY_INSIDE,
     BARE_INTERPRETER,
     BARE_PYTHON,

@@ -543,7 +543,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
   while a PR of the session is red and unacknowledged.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
-* :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
+* :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;
+  drift named key by key with its owning layer; ``local set|unset``, the one door into the local layer.
+* :mod:`dev_lab.dev.machineguard` -- MACHINE-FILE-IS-RENDERED: the refusal of any write onto the machine file but
+  its doors.
+* :mod:`dev_lab.dev.familyrepos` -- FAMILY-REPO-IS-CHECKED-OUT: ``[repos]`` against the family's ``[family_repos]``:
+  listed at SessionStart, census in ``devhost drift``, a clone of a checked-out family repo refused.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
 * :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.
 * :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.

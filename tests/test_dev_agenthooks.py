@@ -233,11 +233,12 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
         agent = 'scan-agent' if rule.scope == 'subagent' else None
         for command in rule.refuses:
             checked += 1
-            if rule.when == 'live-run':
-                # No run is live in a scan tree: the row must stay SILENT (its live half is test_dev_liverun's).
+            if rule.when is not None:
+                # A conditional row is SILENT where its condition fails: no run is live in a scan tree, and no machine
+                # file declares a forge.example repo (live halves: test_dev_liverun, test_dev_familyrepos).
                 decided = agenthooks.decide(command, rules)
                 if decided is not None and decided.startswith(f'{rule.id}:'):
-                    wrong.append(f'{rule.id}: fired with no live run on {command!r}')
+                    wrong.append(f'{rule.id}: fired with its condition ({rule.when}) unmet on {command!r}')
                 continue
             # A hint row is SAID, unless a sibling refusal fires on the same command and wins (`git clone`).
             hint = rule.severity == 'hint'
