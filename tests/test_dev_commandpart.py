@@ -7,10 +7,12 @@ from typing import Any
 
 import pytest
 from _forge_fake import make_repo, run_git
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import commandpart
 from dev_lab.dev.cjk import CJK_RANGES
-from dev_lab.dev.platformparts import part_context
+from dev_lab.dev.famtests.alwayson import required_ids
+from dev_lab.dev.platformparts import part_context, part_of
 from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit, producing
 
 _SHA = 'a' * 40
@@ -133,8 +135,10 @@ def test_a_non_pytest_command_must_execute_the_same_family_guards(tmp_path: Path
     monkeypatch.setenv(PRODUCING_VAR, producing(part_context('base'), _SHA)[PRODUCING_VAR])
     assert commandpart.main(['--root', str(root), 'base', '--', 'npm', 'test']) == ProducerExit.FAIL
     assert started == [], 'a failed family guard must stop the external command'
-    assert posted
-    assert all(cell['status'] != 'ok' for record in posted for cell in record['cells'].values())
+    (record,) = posted
+    assert set(record['cells']) == set(required_ids(root))
+    assert {cell['status'] for cell in record['cells'].values()} == {'ok', 'rejected'}
+    assert part_of(record).result is Conclusion.FAIL
 
 
 def test_the_program_is_resolved_on_path_so_a_windows_cmd_shim_runs(tmp_path: Path, monkeypatch) -> None:
