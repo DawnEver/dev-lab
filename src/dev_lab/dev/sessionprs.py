@@ -14,7 +14,7 @@ output was piped away, and a push after ``cd`` into another repository -- all si
 * a push records itself where it RAN: the family ``pre-push`` row ``session-prs`` reads git's own ref lines in
   the repository git is pushing (:func:`record_pushed`); a push to the declared integration or trunk branch is
   no PR and records nothing;
-* the session is :data:`SESSION_ENV`; absent or invalid, nothing is recorded;
+* the session is the validated native harness identity; invalid identity is reported loudly;
 * the ``PostToolUse`` hook (:func:`main`) only tells the agent to arm the watch, or WARNS when a push or a create
   left the session no open PR on record (:func:`said_after`);
 * ``forge watch --session <id> --stream`` (:mod:`dev_lab.dev.forgewatch`) reads it, and marks a PR
@@ -45,6 +45,7 @@ from lab_commons import home as _home
 from lab_commons.liveness import creation_stamp, still_the_same_process
 from lab_commons.log import emit
 
+from dev_lab.dev import native_session
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.refspec import pushed_refs
@@ -55,7 +56,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     'RULE',
-    'SESSION_ENV',
     'Row',
     'ack',
     'close',
@@ -72,9 +72,7 @@ __all__ = [
     'resolve',
     'rows',
     'said_after',
-    'session_of',
     'unwatch',
-    'valid',
     'watch',
     'watch_session_command',
     'watching',
@@ -83,14 +81,8 @@ __all__ = [
 #: The rule this record serves (``dev_lab.dev.rules``).
 RULE: Final = 'SESSION-HEARS-ITS-PRS'
 
-#: The variable naming the agent session a door runs for; Claude Code sets it on every shell it spawns.
-SESSION_ENV: Final = 'CLAUDE_CODE_SESSION_ID'
-
 #: The directory, under the machine home, holding one record per session.
 SESSIONS: Final = 'sessions'
-
-#: A session id is a file name here: anything else is refused rather than escaped.
-_SESSION: Final = re.compile(r'^[\w.-]{1,128}$')
 
 
 @dataclass(frozen=True)
@@ -120,19 +112,8 @@ def watch_session_command(session: str) -> str:
     return f'{running_interpreter()} -m dev_lab.dev.forge watch --session {session} --stream'
 
 
-def valid(session: str) -> bool:
-    """Whether *session* is an id this record keeps a file for."""
-    return bool(_SESSION.match(session))
-
-
-def session_of(env: Mapping[str, str] | None = None) -> str:
-    """The session :data:`SESSION_ENV` names in *env* (the process's by default), or ``''`` when none is valid."""
-    session = (os.environ if env is None else env).get(SESSION_ENV, '')
-    return session if valid(session) else ''
-
-
 def _path(session: str) -> Path | None:
-    return _home.home() / SESSIONS / f'{session}.json' if valid(session) else None
+    return _home.home() / SESSIONS / f'{session}.json' if native_session.valid(session) else None
 
 
 def _row(raw: dict) -> Row | None:
@@ -195,7 +176,7 @@ def _put(session: str, row: Row, *, drop: str = '') -> Row:
 
 def record_pr(session: str, forge: Forge, number: int, *, branch: str = '', sha: str = '') -> Row | None:
     """Record that *session* opened PR *number* of *forge* (from *branch*); a branch row it was becomes it."""
-    if not valid(session):
+    if not native_session.valid(session):
         return None
     table = rows(session)
     pending = Row(forge, branch).key
@@ -210,7 +191,7 @@ def record_push(session: str, forge: Forge, branch: str, sha: str, *, at: float 
 
     A push of a PR the watch already reported merged or closed opens nothing: a new PR is recorded by number.
     """
-    if not valid(session) or not branch:
+    if not native_session.valid(session) or not branch:
         return None
     when = time.time() if at is None else at
     for row in rows(session).values():
@@ -237,7 +218,7 @@ def ended(forge: Forge, number: int, done: str = 'merged') -> tuple[str, ...]:
     """
     found = sorted((_home.home() / SESSIONS).glob('*.json')) if (_home.home() / SESSIONS).is_dir() else []
     closed: list[str] = []
-    for session in (path.stem for path in found if valid(path.stem)):
+    for session in (path.stem for path in found if native_session.valid(path.stem)):
         row = rows(session).get(Row(forge, number=number).key)
         if row is not None and is_open(row):
             close(session, row, done)
@@ -251,11 +232,12 @@ def ack(session: str, row: Row, sha: str, reason: str) -> Row:
 
 
 def _loud(what: str, env: Mapping[str, str] | None) -> str:
-    """The session to record *what* for, or ``''``; a set but invalid :data:`SESSION_ENV` is SAID on stderr."""
-    named = (os.environ if env is None else env).get(SESSION_ENV, '')
-    if named and not valid(named):
-        emit(f'[{RULE}] {what} NOT recorded: {SESSION_ENV}={named!r} is not a session id', err=True)
-    return session_of(env)
+    """Record failures loudly without undoing a PR API write that already succeeded."""
+    try:
+        return native_session.session_of(env)
+    except ValueError as failed:
+        emit(f'[{RULE}] {what} NOT recorded: {failed}', err=True)
+        return ''
 
 
 def record_opened(
@@ -270,7 +252,7 @@ def record_opened(
         return None
     try:
         return record_pr(session, forge, number, branch=branch, sha=sha)
-    except OSError as failed:
+    except (OSError, ValueError) as failed:
         emit(f'[{RULE}] {what} NOT recorded for session {session}: {failed}', err=True)
         return None
 
@@ -385,7 +367,7 @@ def said_after(command: str, session: str) -> str | None:
         return (
             f'{RULE}: WARNING -- this command pushes or opens a PR, yet session {session} has no open PR on record, '
             'so no merge or red check will reach you. The doors record one (`forge pr create`, the family pre-push '
-            f'row `session-prs`) only when {SESSION_ENV} is set and the repository runs the family hooks.'
+            'row `session-prs`) only in a native agent session when the repository runs the family hooks.'
         )
     keys = ', '.join(row.key for row in open_now)
     return (
@@ -409,7 +391,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     tool_input = payload.get('tool_input') if isinstance(payload, dict) else None
     command = tool_input.get('command') if isinstance(tool_input, dict) else None
     session = str(payload.get('session_id') or '')
-    if not isinstance(command, str) or not valid(session):
+    if not isinstance(command, str) or not native_session.valid(session):
         return 0
     if (said := said_after(command, session)) is not None:
         emit(json.dumps({'hookSpecificOutput': {'hookEventName': 'PostToolUse', 'additionalContext': said}}))

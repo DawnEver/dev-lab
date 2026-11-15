@@ -32,7 +32,7 @@ def _post(forge: StateForge, sha: str, context: str, state: str) -> None:
 def _opened(forge: StateForge, capsys: pytest.CaptureFixture[str], session: str = 's1', *, sha: str = SHA) -> int:
     """A PR the session opened: the door records it, and the PostToolUse hook names the watch to arm."""
     number = forge.add_pull('pr/x', 'main', sha=sha)
-    assert sessionprs.record_opened(FORGE, number, branch='pr/x', sha=sha, env={sessionprs.SESSION_ENV: session})
+    assert sessionprs.record_opened(FORGE, number, branch='pr/x', sha=sha, env={'CLAUDE_CODE_SESSION_ID': session})
     payload = {
         'hook_event_name': 'PostToolUse',
         'session_id': session,

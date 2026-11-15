@@ -37,7 +37,7 @@ THIS SESSION'S LEFTOVERS ONLY (``snapshot`` at SessionStart, ``stop`` at Stop, b
 state, keyed by session id; the stop blocks once on an entry new since then -- nothing else ever cleared one,
 so they piled up across sessions -- and never on one that predates the session or another session made.
 ``clear --keep NAME`` acknowledges one; ``clear`` with no names takes this session's entries
-(``CLAUDE_CODE_SESSION_ID``), anything else only by name.
+(the canonical native harness identity), anything else only by name.
 """
 
 from __future__ import annotations

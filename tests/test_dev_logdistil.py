@@ -63,7 +63,7 @@ PARSE_SHAPES: dict[str, str] = {
     '_CSI': '\x1b[31mFAILED\x1b[0m tests/test_a.py::\x1b[1mtest_b\x1b[0m - assert 0',
     '_FAILED_NODE': 'FAILED tests/test_units.py::test_a_bare_float_is_refused - AssertionError',
     '_INTERRUPTED': '!!!!!!! Interrupted: 3 errors during collection !!!!!!!',
-    '_SKIPPED': 'SKIPPED tests/test_vendor.py::test_a - needs the vendor',
+    'SKIPPED': 'SKIPPED tests/test_vendor.py::test_a - needs the vendor',
     '_SUMMARY': '=========== 3 failed, 304 passed, 2 xfailed in 14.8s ===========',
     'node down': '[gw3] node down: Not properly terminated',
 }
@@ -86,7 +86,9 @@ NOISE_LINES = 120_000
 
 
 def source_shapes() -> set[str]:
-    """Every parse shape the pytest read consults, out of the AST of BOTH modules it now spans.
+    """Every parse shape the pytest read consults, out of the AST of every module it now spans.
+
+    THREE MODULES SINCE 2026-11-15: the skip allowance left ``reports.py`` for ``skipallowance.py``.
 
     THREE KINDS, because the parse has three. A module-level name bound to a ``re.compile(...)``
     call; a bare substring tested with ``in`` against the pytest text; and every element of
@@ -101,7 +103,7 @@ def source_shapes() -> set[str]:
     by the corpus emptying.
     """
     found: set[str] = set()
-    for name in ('reports.py', 'pytestout.py'):
+    for name in ('reports.py', 'pytestout.py', 'skipallowance.py'):
         tree = ast.parse((ROOT / 'src' / 'dev_lab' / 'dev' / name).read_text(encoding='utf-8'))
         for node in tree.body:
             if not isinstance(node, ast.Assign | ast.AnnAssign):

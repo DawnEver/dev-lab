@@ -1,7 +1,7 @@
 """A SESSION COMMITS UNDER ITS TASK: a repo that declares it refuses an agent's commit or push with no task bound.
 
 User ruling 2026-11-14 (a pilot in one very large repo; opt-in, never a family default): in a repo declaring
-``[tool.dev_lab.task] required = true``, an agent session (:data:`dev_lab.dev.sessionprs.SESSION_ENV` set) commits
+``[tool.dev_lab.task] required = true``, a native agent session commits
 and pushes only while an OPEN rem task is bound to its working tree. A human commit is not judged.
 
 LAYERING. rem owns the task ledger (TASK.md, JOURNAL.md, the binding rule); this module only READS it, through rem's
@@ -33,7 +33,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.sessionprs import SESSION_ENV
+from dev_lab.dev.native_session import session_of
 
 __all__ = [
     'HOOK_ID',
@@ -132,7 +132,7 @@ def bound_task(root: Path, read: Reader) -> str | None:
 
 def refusal(root: Path, *, env: Mapping[str, str], read: Reader) -> str | None:
     """Why an agent's commit or push in *root* is refused, or ``None``: required, and no open task bound."""
-    if not required(root) or not env.get(SESSION_ENV):
+    if not required(root) or not session_of(env):
         return None
     try:
         task = bound_task(root, read)
@@ -150,14 +150,14 @@ def refusal(root: Path, *, env: Mapping[str, str], read: Reader) -> str | None:
 
 def record(root: Path, kind: str, url: str, *, env: Mapping[str, str], read: Reader) -> str | None:
     """Append ``<kind> opened: <url>`` to the bound task's journal through rem; the line said, or ``None``."""
-    if not required(root) or not env.get(SESSION_ENV):
-        return None
     try:
+        if not required(root) or not session_of(env):
+            return None
         task = bound_task(root, read)
         if task is None:
             return None
         status, said = read(root, ['log', f'{kind} opened: {url}', '--task', task])
-    except TaskUnreadable as unread:
+    except (TaskUnreadable, ValueError) as unread:
         return f'{RULE}: not recorded in the task journal: {unread}'
     return said if status == 0 else f'{RULE}: task.js log exited {status}: {said}'
 

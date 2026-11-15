@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import agent_guard, agent_wiring, agenthooks, hook_adoption
+from dev_lab.dev import agent_guard, agent_wiring, agenthooks, hook_adoption, native_session
 from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, Remedy, UnremediedRule
@@ -635,6 +635,91 @@ def test_a_stale_venv_names_its_fix_and_records_the_wall(tmp_path: Path) -> None
         for raw in path.read_text(encoding='utf-8').splitlines()
     ]
     assert (wall['rule'], wall['remedy_present'], wall['session']) == ('VENV-FOLLOWS-THE-LOCK', True, 'planted')
+
+
+def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path: Path) -> None:
+    env = _venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40)
+    env.pop('CLAUDE_CODE_SESSION_ID', None)
+    env.pop('CLAUDE_PROJECT_DIR', None)
+    env['CODEX_THREAD_ID'] = 'native-codex'
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-m', 'dev_lab.dev.hpcaccount.session', 'bind'],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=tmp_path, check=False,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr
+    assert '-m dev_lab.dev.dep --bootstrap' in done.stderr
+    [wall] = [
+        json.loads(raw)
+        for path in tmp_path.glob('output/logs/*/*/*/walls/walls.jsonl')
+        for raw in path.read_text(encoding='utf-8').splitlines()
+    ]
+    assert (wall['rule'], wall['remedy_present'], wall['session']) == ('VENV-FOLLOWS-THE-LOCK', True, 'native-codex')
+
+
+@pytest.mark.parametrize(
+    ('value', 'accepted'),
+    [
+        ('é_9.-', True),
+        ('𐐀' * 128, True),
+        ('Ⅳ²', True),
+        ('a' * 128, True),
+        ('𐐀' * 129, False),
+        ('valid\n', False),
+        ('e\u0301', False),
+        ('x\u200b', False),
+        ('role:integrator', False),
+    ],
+)
+def test_the_installed_node_launcher_and_python_share_the_exact_native_identity_grammar(
+    tmp_path: Path, value: str, *, accepted: bool
+) -> None:
+    agent_guard.install_guard(tmp_path)
+    env = {**os.environ, 'CODEX_THREAD_ID': value}
+    for field in ('CLAUDE_CODE_SESSION_ID', 'CLAUDE_PROJECT_DIR', 'CODEX_SESSION_ID'):
+        env.pop(field, None)
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+    )
+    if accepted:
+        assert native_session.session_of({'CODEX_THREAD_ID': value}) == value
+        assert done.returncode == 0, done.stderr
+        assert 'no .venv interpreter' in done.stderr
+    else:
+        with pytest.raises(ValueError, match='Door:'):
+            native_session.session_of({'CODEX_THREAD_ID': value})
+        assert done.returncode == 1
+        assert 'native session' in done.stderr
+        assert 'Door:' in done.stderr
+        assert value not in done.stderr
+
+
+@pytest.mark.parametrize('contents', [None, '{', '{}', '[]'])
+def test_the_installed_launcher_refuses_a_missing_or_corrupt_identity_companion(
+    tmp_path: Path, contents: str | None
+) -> None:
+    agent_guard.install_guard(tmp_path)
+    catalog = (tmp_path / agent_wiring.LAUNCHER_REL).with_name('native_session.json')
+    if contents is None:
+        catalog.unlink()
+    else:
+        catalog.write_text(contents, encoding='utf-8')
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+    )
+    assert done.returncode == 1
+    assert 'native session catalog' in done.stderr
+    assert 'Door:' in done.stderr
 
 
 def test_a_missing_module_from_a_current_venv_is_reported_as_itself(tmp_path: Path) -> None:
