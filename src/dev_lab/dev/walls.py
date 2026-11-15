@@ -39,6 +39,7 @@ from lab_commons.log import emit
 from dev_lab.dev import metrics
 from dev_lab.dev.datedlog import date_parts
 from dev_lab.dev.disclosure import DETAILS_PREFIX
+from dev_lab.dev.native_session import session_of
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -63,9 +64,6 @@ LOG_KIND: Final = 'walls'
 UNKNOWN: Final = 'unknown'
 #: Hex characters of a command's sha256 kept on a line: enough to tell two commands apart, never the command.
 DIGEST_CHARS: Final = 16
-#: The tool's own session id, in the environment of every command an agent runs (a git hook's included).
-SESSION_ENV: Final = 'CLAUDE_CODE_SESSION_ID'
-
 #: A tool's error text that is a REFUSAL rather than an ordinary failure.
 _DENIAL: Final = re.compile(r'(?i)\b(?:hook error|denied|refused|blocked|not permitted|not allowed)\b')
 #: A rule id as the family spells one (``WORKTREES-STAY-INSIDE``).
@@ -94,7 +92,7 @@ def has_remedy(text: str) -> bool:
 
 
 def _session(session: str | None) -> str:
-    return session if session is not None else os.environ.get(SESSION_ENV, '')
+    return session if session is not None else session_of()
 
 
 def _append(root: Path, line: dict[str, object]) -> Path:

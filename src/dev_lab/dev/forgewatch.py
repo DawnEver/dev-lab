@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_pending, sessionprs, taskgate
+from dev_lab.dev import _dep_pending, native_session, sessionprs, taskgate
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pr_by_head, pr_list
@@ -355,8 +355,8 @@ def session_main(argv: Sequence[str] | None = None, *, clients: Callable[[Forge]
     )
     parser.add_argument('--reason', default='', help='why the red stands (required with --ack)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if not sessionprs.valid(args.session):
-        parser.error(f'--session {args.session!r} is not a session id')
+    if not native_session.valid(args.session):
+        parser.error('--session is not a session id. Door: supply the actual native harness identity.')
     if args.ack and not args.reason.strip():
         parser.error('--ack: --reason must say why the red stands')
     made = clients or clients_at(Path.cwd())

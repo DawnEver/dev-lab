@@ -190,7 +190,7 @@ def test_a_host_reaching_nothing_is_refused_even_with_the_credential(verifier: P
 
 
 def test_the_production_verifier_reads_this_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(hpcsession.SESSION_ENV, raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
     assert hpcsession.roles() == frozenset(), 'no session id in the environment: no role, nothing read'
     assert time.time() > 0
 
@@ -206,3 +206,31 @@ def test_the_prompt_hook_binds_from_the_harness_payload_and_never_fails(
     payload = {'session_id': _SESSION, 'prompt': f'task: {_TASK}', 'cwd': str(tmp_path)}
     assert hpcsession.main(['bind'], stdin=io.StringIO(json.dumps(payload))) == 0
     assert hpcsession.bound_task(_SESSION) == task
+
+
+@pytest.mark.parametrize('field', ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'])
+def test_a_native_session_needs_its_own_valid_signed_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    monkeypatch.setenv(field, _SESSION)
+    assert hpcsession.held(home=tmp_path, now=_NOW, table=_TABLE) == frozenset()
+    _credential(tmp_path)
+    assert hpcsession.held(home=tmp_path, now=_NOW, table=_TABLE) == {'integrator'}
+    assert hpcsession.holder(home=tmp_path, now=_NOW, table=_TABLE) == f'session {_SESSION}'
+
+
+def test_another_sessions_signed_credential_does_not_authorize_the_codex_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv('CODEX_THREAD_ID', _SESSION)
+    _credential(tmp_path, subject='another-session')
+    assert hpcsession.held(home=tmp_path, now=_NOW, table=_TABLE) == frozenset()
+
+
+def test_the_role_request_uses_the_actual_codex_thread_without_creating_a_credential(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv('CODEX_THREAD_ID', _SESSION)
+    assert hpcsession.main(['request', '--hours', '24']) == 0
+    request = json.loads(capsys.readouterr().out)
+    assert request == {'action': hpcsession.ACTION, 'subject': _SESSION, 'ttl': 24 * 3600}

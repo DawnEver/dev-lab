@@ -23,6 +23,43 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+// Facts are shared with Python and installed unchanged beside this launcher.
+function nativeSession(env) {
+  let catalog;
+  try {
+    catalog = JSON.parse(fs.readFileSync(path.join(__dirname, 'native_session.json'), 'utf8'));
+    if (!Number.isInteger(catalog.max_length) || catalog.max_length <= 0 ||
+        typeof catalog.punctuation !== 'string' || !Array.isArray(catalog.harnesses) ||
+        !catalog.harnesses.length || !catalog.harnesses.every((row) =>
+          typeof row.primary === 'string' && Array.isArray(row.auxiliary) &&
+          row.auxiliary.every((field) => typeof field === 'string'))) throw new Error('schema');
+  } catch {
+    throw new Error('native session catalog is missing or invalid. Door: restore the declared dev-lab installation.');
+  }
+  const declared = catalog.harnesses.filter((row) =>
+    [row.primary, ...row.auxiliary].some((field) => Object.hasOwn(env, field)));
+  if (!declared.length) return '';
+  if (declared.length !== 1) {
+    throw new Error('ambiguous native session harnesses. Door: run from exactly one native agent harness.');
+  }
+  const primary = declared[0].primary;
+  const value = env[primary];
+  const chars = typeof value === 'string' ? Array.from(value) : [];
+  if (!chars.length || chars.length > catalog.max_length || !chars.every((char) =>
+      /^[\p{L}\p{N}]$/u.test(char) || catalog.punctuation.includes(char))) {
+    throw new Error(`native session ${primary} is not a session id or is missing. Door: restore the native harness identity.`);
+  }
+  return value;
+}
+
+let session;
+try {
+  session = nativeSession(process.env);
+} catch (failed) {
+  process.stderr.write(`[hook] ${failed.message}\n`);
+  process.exit(1);
+}
+
 const roots = [process.env.CLAUDE_PROJECT_DIR || process.cwd()];
 try {
   const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
@@ -98,7 +135,7 @@ function recordWall(root, argv) {
       command_sha256: crypto.createHash('sha256').update(argv.join(' ')).digest('hex').slice(0, 16),
       remedy_present: true,
       rule: 'VENV-FOLLOWS-THE-LOCK',
-      session: process.env.CLAUDE_CODE_SESSION_ID || '',
+      session,
       ts: now.toISOString(),
     };
     fs.appendFileSync(path.join(dir, 'walls.jsonl'), `${JSON.stringify(line)}\n`);
