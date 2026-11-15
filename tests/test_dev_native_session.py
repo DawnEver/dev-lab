@@ -97,7 +97,11 @@ def test_a_missing_or_corrupt_identity_catalog_never_turns_into_a_human_bypass(
 def test_the_pr_door_records_the_codex_thread_in_its_own_existing_journal() -> None:
     opened = sessionprs.record_opened(FORGE, 7, branch='pr/native', sha='a' * 40, env={_CODEX: _ID})
     assert opened is not None, 'a successful native Codex PR must not disappear from session tracking'
-    assert [row.number for row in sessionprs.rows(_ID)] == [7]
+    [(key, recorded)] = sessionprs.rows(_ID).items()
+    assert key == f'{FORGE.identity}#7'
+    assert recorded == opened
+    assert (recorded.forge, recorded.number, recorded.branch, recorded.sha) == (FORGE, 7, 'pr/native', 'a' * 40)
+    assert sessionprs.rows('another-native-session') == {}
 
 
 def test_the_same_pr_door_does_not_invent_an_agent_for_an_ordinary_process() -> None:
