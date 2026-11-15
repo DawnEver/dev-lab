@@ -48,8 +48,19 @@ that repo's `[tool.dev_lab.policy]`, never in a hand-written module.
 ## Two clients
 
 `dev_lab.dev.autodoors` renders `POLICY`; `script_doors(root)` adds the repo's tracked `scripts/**.py`
-with a `__main__` guard and the shell doors it names (`shell_doors=`, `--shell-door`). Both clients are
-rendered from these:
+with a `__main__` guard and the shell doors it names (`shell_doors=`, `--shell-door`), and `cli_doors(root)` adds
+the repo's own read-only CLI verbs, declared as data (decision 2026-11-15; never hand rows in its settings):
+
+```toml
+[tool.dev_lab.cli_doors]
+acts = ["press"]  # this CLI's act verbs, refused as doors
+doors = [{argv = ["consumer", "vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."}]
+```
+
+Each `argv` renders as the door `python -m <argv...>`. A bare module, or an element with a space, glob or leading
+dash, is refused; so is a prefix ending in an act (`ActDeclaredAsDoor`): the repo's `acts`, or always one of
+`REFUSED_ACTS` (press, set-value, close, kill, delete, push). `[tool.dev_lab.doors]` is a different table: it maps a
+deny rule's ID to the command that repo offers as its exit. Both clients are rendered from these:
 
 - **Claude Code**: one NARROW `Bash(...)` row per door and interpreter layout, e.g.
   `Bash(.venv/Scripts/python.exe -m dev_lab.dev.worktrees *)` and its `.venv/bin/python` twin. Never the
@@ -88,7 +99,7 @@ rows above. `leaks` scans every committed kit text for a host shape and for each
 
 ## Adopting
 
-1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)))`, re-render
+1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)), cli=cli_doors(root))`, re-render
    `.claude/settings.json` with `permissions_block`, and drop any declared row that now duplicates a door row.
 2. Run `python -m dev_lab.dev.autodoors --repo . [--shell-door <path>] --write` and commit
    `.codex/rules/family-doors.rules`; without `--write` it exits 1 when the file is stale.
