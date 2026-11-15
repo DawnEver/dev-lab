@@ -288,6 +288,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'jobparts',
     # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
     'jobmeasure',
+    'native_session',  # ORIGINAL: one validated native harness identity, apart from worktree provenance (2026-11-15)
     'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
     'planrunpreflight',  # ORIGINAL: split from planrun: every door checked before the code is spent (2026-11-13)
