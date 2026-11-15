@@ -7,6 +7,7 @@ character is written into this file; the planted one is built with :func:`chr` f
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -207,3 +208,63 @@ def test_the_plugin_imports_nothing_from_dev_lab_at_load() -> None:
     )
     out = subprocess.run([sys.executable, '-c', code], capture_output=True, check=True, timeout=120, encoding='utf-8')
     assert out.stdout.strip() == '[]'
+
+
+def test_the_required_identity_catalog_matches_actual_collected_items(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git_repo(
+        pytester.path,
+        {
+            'pyproject.toml': '[tool.lab_commons.tests]\nresources = []\n'
+            '[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n',
+            'test_x.py': 'def test_x():\n    pass\n',
+            'conftest.py': 'import json\nfrom pathlib import Path\n'
+            'def pytest_collection_finish(session):\n'
+            '    Path("collected.json").write_text(json.dumps([item.nodeid for item in session.items]))\n',
+        },
+    )
+    result = _run(pytester, monkeypatch, '--collect-only')
+    assert result.ret == 0
+    actual = json.loads((pytester.path / 'collected.json').read_text(encoding='utf-8'))
+    required = set(alwayson.required_ids(pytester.path))
+    assert required == set(actual) - {'test_x.py::test_x'}
+    assert len(required) == len(alwayson.rows())
+    alwayson.assert_required_collected(pytester.path, actual)
+
+
+def test_outer_collection_proof_refuses_each_missing_identity_and_names_the_door(tmp_path: Path) -> None:
+    _git_repo(
+        tmp_path,
+        {'pyproject.toml': '[tool.dev_lab.layout]\nmodule_unit = "raw"\nmodule_limit = 600\n'},
+    )
+    required = list(alwayson.required_ids(tmp_path))
+    assert required
+    for absent in required:
+        partial = [node for node in required if node != absent]
+        with pytest.raises(ValueError, match='required') as refused:
+            alwayson.assert_required_collected(tmp_path, partial)
+        assert absent in str(refused.value)
+        assert 'plugin' in str(refused.value).lower()
+
+
+def test_resource_projection_uses_exact_catalog_identity_and_preserves_business_order(tmp_path: Path) -> None:
+    _git_repo(
+        tmp_path,
+        {'pyproject.toml': '[tool.dev_lab.layout]\nmodule_unit = "raw"\nmodule_limit = 600\n'},
+    )
+    required = list(alwayson.required_ids(tmp_path))
+    assert required
+    business = ['test_x.py::test_first', 'test_family.py::test_family_identity', 'test_x.py::test_first']
+    carrying = [business[0], *required, *business[1:]]
+    assert alwayson.resource_nodes(tmp_path, carrying) == business
+    assert carrying == [business[0], *required, *business[1:]], 'projection must not mutate the complete manifest'
+
+
+@pytest.mark.parametrize('git', [False, True])
+def test_outer_proof_does_not_advertise_nonfamily_inputs_as_family_qualification(tmp_path: Path, *, git: bool) -> None:
+    if git:
+        _git_repo(tmp_path, {'README.md': 'An ordinary non-family repository.\n'})
+    assert not alwayson.required_ids(tmp_path)
+    alwayson.assert_required_collected(tmp_path, [])
+    assert alwayson.resource_nodes(tmp_path, ['test_x.py::test_x']) == ['test_x.py::test_x']
