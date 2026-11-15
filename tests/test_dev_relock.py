@@ -616,7 +616,7 @@ def _sibling(tmp_path: Path) -> Callable[..., str]:
             text=True,
             encoding='utf-8',
             check=True,
-            env={**os.environ, 'GIT_COMMITTER_DATE': f'{at} +0000', 'GIT_AUTHOR_DATE': f'{at} +0000'},
+            env={**os.environ, 'GIT_COMMITTER_DATE': f'@{at} +0000', 'GIT_AUTHOR_DATE': f'@{at} +0000'},
         ).stdout.strip()
 
     git('init', '-q', '-b', 'integrate/main')
@@ -657,7 +657,11 @@ def test_the_lag_ages_the_first_parent_landing_never_a_merged_commit(tmp_path: P
 
 def _git_run(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [shutil.which('git') or 'git', '-C', str(cwd), *argv], capture_output=True, text=True, check=False
+        [shutil.which('git') or 'git', '-C', str(cwd), *argv],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
     )
 
 
