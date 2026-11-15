@@ -170,6 +170,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: user ruling 2026-10-30, a resource a repo produces no part for.
     'unproduced',
     'hostrefresh',
+    # ORIGINAL: no gate read a task ledger; the opt-in task-bound row (user ruling 2026-11-14) is new.
+    'taskgate',
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.

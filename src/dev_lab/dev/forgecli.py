@@ -75,6 +75,7 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
+    taskgate,
 )
 from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
@@ -276,6 +277,18 @@ def _refused(
     return None
 
 
+def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
+    """An opened PR or issue is appended to the bound rem task's journal (:func:`taskgate.record`)."""
+    if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
+        return
+    if (
+        isinstance(result, (PullRequest, Issue))
+        and (url := result.url)
+        and (said := taskgate.record(root, args.noun, url, env=env, read=taskgate.reader_for(env, Path.home())))
+    ):
+        emit(f'[forge] {said}', err=True)  # the task names its own PRs and issues
+
+
 def issue_and_pr(
     argv: Sequence[str] | None = None,
     *,
@@ -307,6 +320,7 @@ def issue_and_pr(
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
+    _record_in_task(args, result, root, os.environ if env is None else env)
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
         data = [dataclasses.asdict(item) for item in items]
