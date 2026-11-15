@@ -6,7 +6,7 @@ fleet -- anything else is refused before any ssh.
 
 WHERE AN ACCOUNT SERVES IS ITS OWN DECLARATION, never this machine's guess: its machine file's ``[deploy]``
 ``host`` and ``root`` (:mod:`dev_lab.dev.hpcaccount.spec`, the table its cron line was written from). Login hosts
-share the home, so one read through any of the grant's hosts (:func:`lab_commons.hpc.cluster.runner_for`)
+share the home, so one read through any of the grant's hosts (:func:`dev_lab.dev.hpcaccount.transport.grant_runner`)
 answers (:func:`declared_target`), with its ``role`` (:mod:`dev_lab.dev.hpcaccount.spec`: only a verification account
 serves), printed per account. An account with no ``[deploy]``, or whose host is not one of its grant's
 login hosts, is refused by name and the others still deploy (exit 2).
@@ -15,7 +15,8 @@ THE ROLE IS THE WORKSTATION'S (user rulings 2026-11-09): each grant's ``role`` a
 (:mod:`dev_lab.dev.hpcaccount.division`) are passed to the account's deploy, which refuses when its own ``[deploy]
 role`` differs, naming both. A grant role the table does not name is refused here, before any ssh.
 
-Then it starts ONE detached ``ssh -o BatchMode=yes <user>@<declared host>`` that runs that account's own
+Then it runs, through the one transport (:mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held session when
+one is live, else ONE detached ``ssh -o BatchMode=yes <user>@<declared host>``), that account's own
 ``python -m dev_lab.dev.hpcaccount deploy`` in ``~/<root>/dev-lab`` -- after the kit's own tick has
 refreshed that checkout (:func:`refresh_kit`), so a fix to the deploy reaches an account that never ticks --
 and writes everything it prints to one log
@@ -36,18 +37,18 @@ from typing import IO, Any, Final
 
 from lab_commons import home as _home
 from lab_commons.config import CONFIG_ENV
-from lab_commons.hpc.cluster import Runner, runner_for
+from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
+from dev_lab.dev.hpcaccount.transport import describe, grant_runner, start
 from dev_lab.dev.machinehome import default_layout
-from dev_lab.dev.remote import detached, ssh_argv
 from dev_lab.dev.venvpath import venv_interpreter
 
-__all__ = ['KIND', 'Target', 'declared_target', 'deploy_fleet', 'in_checkout', 'main', 'refresh_kit', 'remote_argv']
+__all__ = ['KIND', 'Target', 'declared_target', 'deploy_command', 'deploy_fleet', 'in_checkout', 'main', 'refresh_kit']
 
 #: The dated-log kind every account's log is written under.
 KIND: Final = 'deploy-fleet'
@@ -61,8 +62,8 @@ _MACHINE_HOME, _CONFIG_UNDER_HOME = default_layout()
 _MACHINE_FILE: Final = f'"${{{CONFIG_ENV}:-${{{_home.HOME_ENV}:-$HOME/{_MACHINE_HOME}}}/{_CONFIG_UNDER_HOME}}}"'
 _READ_DEPLOY: Final = f'f={_MACHINE_FILE}; echo "# $f"; ' + 'sed -n \'/^\\[deploy\\]/,/^\\[/p\' "$f" 2>/dev/null; true'
 
-#: Starts one detached process: ``(argv, log) -> None``.
-Launch = Callable[[Sequence[str], IO[Any]], object]
+#: Runs one deploy on a dest: ``(dest, command, log) -> object`` (:func:`dev_lab.dev.hpcaccount.transport.start`).
+Launch = Callable[[str, str, IO[Any]], object]
 
 
 @dataclass(frozen=True)
@@ -124,8 +125,8 @@ def grant_slice(grant: Grant) -> dict[str, Any]:
     return {'reach': [grant.role], 'clusters': {grant.cluster_name: cluster}, 'grant': [row]}
 
 
-def remote_argv(grant: Grant, target: Target, division: Division | None = None) -> list[str]:
-    """The ssh argv that runs *grant*'s own deploy on its DECLARED host, never prompting (:mod:`dev_lab.dev.remote`).
+def deploy_command(grant: Grant, target: Target, division: Division | None = None) -> str:
+    """The shell line that runs *grant*'s own deploy on its DECLARED host (:mod:`dev_lab.dev.hpcaccount.transport`).
 
     The deploy is passed its declared ``[hpc]`` slice (:func:`grant_slice`); with *division*, also the role and its
     table.
@@ -133,8 +134,7 @@ def remote_argv(grant: Grant, target: Target, division: Division | None = None) 
     deploy = ['-m', 'dev_lab.dev.hpcaccount', 'deploy', '--grant-table', json.dumps(grant_slice(grant), sort_keys=True)]
     if division is not None and (role := division.role_of(grant.user)):
         deploy += ['--fleet-role', role, '--role-table', json.dumps(dict(division.roles[role]), sort_keys=True)]
-    command = f'{refresh_kit(grant, target)} ; {in_checkout(target, deploy)}'
-    return ssh_argv(f'{grant.user}@{target.host}', command, batch=True)
+    return f'{refresh_kit(grant, target)} ; {in_checkout(target, deploy)}'
 
 
 def refresh_kit(grant: Grant, target: Target) -> str:
@@ -175,8 +175,8 @@ def deploy_fleet(
     home: Path,
     dry_run: bool,
     say: Callable[[str], None],
-    connect: Callable[[Grant], Runner] = runner_for,
-    launch: Launch = detached,
+    connect: Callable[[Grant], Runner] = grant_runner,
+    launch: Launch = start,
     division: Division | None = None,
 ) -> int:
     """Start each account's deploy on its declared host; 2 when any account was refused."""
@@ -211,13 +211,13 @@ def deploy_fleet(
             say(target)
             refused += 1
             continue
-        argv = remote_argv(grant, target, division)
+        dest, command = f'{grant.user}@{target.host}', deploy_command(grant, target, division)
         path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
         role = (division.role_of(user) if division else '') or target.role or 'role undeclared'
-        say(f'{user} ({role}): {"would start" if dry_run else "started"} {shlex.join(argv)}  log {path}')
+        say(f'{user} ({role}): {"would start" if dry_run else "started"} {describe(dest, command)}  log {path}')
         if not dry_run:
             with path.open('a', encoding='utf-8') as log:
-                launch(argv, log)
+                launch(dest, command, log)
     return 2 if refused else 0
 
 

@@ -32,13 +32,14 @@ import tomllib
 from collections.abc import Callable, Sequence
 from typing import Final
 
-from lab_commons.hpc.cluster import Runner, Unreachable, runner_for, ssh_runner
+from lab_commons.hpc.cluster import Runner, Unreachable
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.spec import MARK
+from dev_lab.dev.hpcaccount.transport import grant_runner, host_runner
 
 __all__ = [
     'CENSUS_DEEP',
@@ -139,7 +140,7 @@ def retention_command(target: Target, *, apply: bool) -> str:
 
 def on_host(grant: Grant, host: str, timeout: float = TIMEOUT) -> Runner:
     """A runner pinned to *host*: what lives on one login host (its crontab) is read there, never on a failover."""
-    return ssh_runner(f'{grant.user}@{host}', timeout)
+    return host_runner(f'{grant.user}@{host}', timeout)
 
 
 def _one(grant: Grant, shell: Runner, pin: Pin, *, apply: bool, census: bool) -> tuple[bool, list[str]]:
@@ -170,7 +171,7 @@ def retention_fleet(
     apply: bool,
     say: Callable[[str], None],
     census: bool = False,
-    connect: Callable[[Grant], Runner] = runner_for,
+    connect: Callable[[Grant], Runner] = grant_runner,
     pin: Pin = on_host,
 ) -> int:
     """Read (and with *apply* reclaim) each of *accounts*' storage (empty: every grant); 2 when any was refused."""
@@ -213,7 +214,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (PermissionError, LookupError, ValueError) as refused:
         emit(f'retention: refused -- {refused}')
         return 2
-    connect = functools.partial(runner_for, timeout=args.timeout)
+    connect = functools.partial(grant_runner, timeout=args.timeout)
     pin = functools.partial(on_host, timeout=args.timeout)
     return retention_fleet(
         grants, args.account, apply=args.apply, census=args.census, say=emit, connect=connect, pin=pin

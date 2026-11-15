@@ -13,7 +13,7 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.allocate`) writes, prints or deletes the ONE expiring allocation record on the forge
   (:mod:`lab_commons.hpc.allocation`); the forge's own submits read it (:mod:`dev_lab.dev.forgeslurm`).
 
-* ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpcaccount.fleet`) starts, detached over ssh,
+* ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpcaccount.fleet`) starts, over the transport,
   every declared account's own ``deploy``, one log per account.
 * ``forget --repo <url> --row <key> (--account <user>... | --fleet) [--dry-run]``
   (:mod:`~dev_lab.dev.hpcaccount.forget`) runs lab-commons' ``learned forget`` of one row on each account.
@@ -23,6 +23,9 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 * ``credential <user@host> --login <forge login> [--url <repo url>]`` < token
   (:mod:`~dev_lab.dev.hpcaccount.credential`) places one minted forge token in the account's ``~/.git-credentials``
   and confirms the forge answers as that login.
+* Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
+  session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
+  naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.
 
 WHICH ACCOUNTS A SESSION MAY TOUCH (HPC-ACCESS-BY-ROLE, user correction 2026-11-12): every verb loads through
 :func:`~dev_lab.dev.hpcaccount.division.reached_machine` -- the grants this machine's ``[hpc] reach`` holds, plus the
