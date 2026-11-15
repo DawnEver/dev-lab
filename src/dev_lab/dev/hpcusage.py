@@ -36,6 +36,7 @@ from typing import Any, Final
 from lab_commons.hpc.budget import ledger_command, spent_and_committed
 from lab_commons.hpc.cluster import Runner, runner_for
 from lab_commons.hpc.grants import Grant, load_grants
+from lab_commons.log import emit
 
 from dev_lab.dev.diskusage import Usage, parse_mmlsquota, parse_quota
 from dev_lab.dev.forgestuck import parse_duration
@@ -313,7 +314,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stderr.write(f'hpcusage: no [[hpc.grant]] read from the machine file ({why}); declare them there\n')
         return 2
     out = report(grants, today=datetime.now(UTC).date(), connect=runner_for)
-    sys.stdout.write(json.dumps(out, sort_keys=True) + '\n')
+    emit(json.dumps(out, sort_keys=True))
     return 0
 
 

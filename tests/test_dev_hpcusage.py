@@ -116,7 +116,11 @@ def test_the_card_renders_the_table_with_values_escaped() -> None:
 # Planted controls: an unreachable grant is listed unread WITH its reason, never dropped; a free grant carries no
 # budget; a second grant of one login on one cluster is not read twice (its jobs would count twice).
 
-QUOTA_TEXT = 'Disk quotas for user x:\n     /dev/x 5000 0 10000 0 300 0 1000 0\n'
+QUOTA_TEXT = (
+    'Disk quotas for user x (uid 1):\n'
+    '     Filesystem  blocks   quota   limit   grace   files   quota   limit   grace\n'
+    '     /dev/x 5000 10000 10000 300 1000 1000\n'
+)
 LEDGER = 'COMPLETED|4|60|36000000\nRUNNING|8|600|0\n'
 
 
