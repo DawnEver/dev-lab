@@ -37,6 +37,13 @@ RETIRED_SPELLINGS: Final = {
         'user ruling 2026-11-06: the review is a one-shot independent acceptance with advice; only security blocks',
     ),
     **dict.fromkeys(
+        ('lock/fresh', 'LOCK_CONTEXT', 'LOCK_REMEDY', 'lock_verdict'),
+        (
+            'lock/lag (dev_lab.dev.forgeheadgate), with lockcheck.unrendered folded into it',
+            'user ruling 2026-11-14 (issue #575): one lock freshness fact on a PR head, never two',
+        ),
+    ),
+    **dict.fromkeys(
         (
             'forgereview_rounds',
             'forgereview_judge',

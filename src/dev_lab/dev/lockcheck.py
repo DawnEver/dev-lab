@@ -22,11 +22,11 @@ THE PIN IS THE FORGE'S ALONE (user rulings 2026-10-22 and 2026-10-24); FRESHNESS
 HEADS is also read when a ``pr/*`` head is published or marked ready (user ruling 2026-11-07,
 :mod:`dev_lab.dev.prcurrent` through :func:`dev_lab.dev.locklag.within_window`). The forge judges the PIN in
 the repo's own suite (:mod:`dev_lab.dev.famtests.lockpin`, at the checked-out ``HEAD``), and a PR head's
-freshness against its base as a status (:mod:`dev_lab.dev.forgeheadgate`;
-a PR never chases the lock). The serve tick keeps integration at the newest
-resolution itself through a relock pull request (:mod:`dev_lab.dev.relock`), reading :func:`stale` -- the one
-staleness reading, of the lock, of the toolchain against :func:`newest_stable` and of the uv pin against
-:func:`newest_uv` --
+lock as ONE status, ``lock/lag`` (:mod:`dev_lab.dev.forgeheadgate`): it renders from its manifest
+(:func:`unrendered`) and pins no floated sibling past the window -- a PR never chases the lock.
+The serve tick keeps integration at the newest resolution itself through a relock pull request
+(:mod:`dev_lab.dev.relock`), reading :func:`stale` -- the one staleness reading, of the lock, of the toolchain
+against :func:`newest_stable` and of the uv pin against :func:`newest_uv` --
 and a lane takes it with ``forge sync``.
 """
 
@@ -47,13 +47,15 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 __all__ = [
-    'DOOR', 'FRESHENED', 'LOCK', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'UV_PIN', 'UV_RELEASES', 'lock_problems',
-    'mount_submodules', 'newest_stable', 'newest_uv', 'pin_stable', 'pin_uv', 'refreshable', 'stale',
-    'toolchain_problems', 'unreasoned_holds', 'uv_version',
+    'DOOR', 'FRESHENED', 'LOCK', 'NOT_RENDERED', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'UV_PIN', 'UV_RELEASES',
+    'lock_problems', 'mount_submodules', 'newest_stable', 'newest_uv', 'pin_stable', 'pin_uv', 'refreshable', 'stale',
+    'toolchain_problems', 'unreasoned_holds', 'unrendered', 'uv_version',
 ]  # fmt: skip
 
 #: The lockfile every family repo commits.
 LOCK: Final = 'uv.lock'
+#: How every :func:`unrendered` sentence for a lock its manifest no longer renders begins.
+NOT_RENDERED: Final = f'{LOCK} does not render from pyproject.toml'
 #: The Rust toolchain pin every repository committing Rust carries at its root.
 TOOLCHAIN: Final = 'rust-toolchain.toml'
 
@@ -82,6 +84,8 @@ REMEDY: Final = (
 RESOLVE_TIMEOUT_S: Final = 600.0
 
 #: The change lines ``uv lock --dry-run`` prints, one per package it would move.
+#: What ``uv lock --check`` says of a lock its manifest no longer renders.
+_OUTDATED: Final = 'needs to be updated'
 _CHANGE: Final = re.compile(r'^(?:Update|Add|Remove)\s+\S.*$', re.MULTILINE)
 _QUOTED: Final = re.compile(r'"([^"\n]*)"|\'([^\'\n]*)\'')
 _NAME: Final = re.compile(r'^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*(?:\[[^\]]*\])?\s*(?P<rest>.*)$')
@@ -178,6 +182,36 @@ def mount_submodules(root: Path, tree: Path) -> None:
 def _dry_run(tree: Path) -> Report:
     uv = shutil.which('uv') or 'uv'
     return run_network_verb([uv, 'lock', '--upgrade', '--dry-run'], cwd=tree, timeout=RESOLVE_TIMEOUT_S)
+
+
+def _lock_check(tree: Path) -> Report:
+    """``uv lock --check``; an attempt that found the lock out of date is the answer, so it is never retried."""
+    uv = shutil.which('uv') or 'uv'
+    return run_network_verb(
+        [uv, 'lock', '--check'],
+        cwd=tree,
+        timeout=RESOLVE_TIMEOUT_S,
+        before_retry=lambda attempt: _OUTDATED not in attempt.output,
+    )
+
+
+def unrendered(tree: Path, *, check: Callable[[Path], Report] = _lock_check) -> str | None:
+    """Why *tree*'s :data:`LOCK` does not render from its ``pyproject.toml``, or ``None`` when it does.
+
+    The lock's VALIDITY, not its freshness: a manifest edit left unrelocked. A check that could not run is a
+    sentence beginning :data:`UNRESOLVED`, so it refuses rather than admits.
+    """
+    try:
+        report = check(tree)
+    except OSError as why:
+        return f'{UNRESOLVED}: {why}'
+    if report.ok:
+        return None
+    output = report.attempts[-1].output if report.attempts else ''
+    tail = ' | '.join(line.strip() for line in output.strip().splitlines()[-2:])
+    if _OUTDATED in output:
+        return f'{NOT_RENDERED}: run `{DOOR}`, then commit {LOCK} ({tail})'
+    return f'{UNRESOLVED} ({report.remedy}): {tail}'
 
 
 def _rustup_check() -> Report:

@@ -22,7 +22,7 @@
 #                 (tests/<part>, or tests/<part>@<os> off its own runner)
 #   absent-parts  always: `jobparts absent --event` posts pending (absent) on every expected row no job settled
 #   security      `forge security run --pr N`: tests/security
-#   head-gates    `forge headgate run --pr N`: session-branch, pr-current, lock/fresh, lock/lag -- the pre-push rows'
+#   head-gates    `forge headgate run --pr N`: session-branch, pr-current, lock/lag -- the pre-push rows'
 #                 own judges, posted by the forge (user ruling 2026-11-07: a family check never depends on a
 #                 consumer's hook); merge-ready requires session-branch and pr-current. Gitea's serve tick posts them
 #   merge-ready   after the parts, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
