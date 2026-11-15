@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from lab_commons.census import Process
 
 from dev_lab.dev import shellreaper
 from dev_lab.dev.agent_wiring import REAPER_COMMAND, WIRING
+from dev_lab.dev.shelllife import Grants
 from dev_lab.dev.shellreaper import shell_roots, sweep
 
 _CLAUDE = r'C:\tools\claude-code\bin\claude.exe'
@@ -31,7 +33,7 @@ def _p(pid: int, ppid: int, exe: str, cmd: str, age: float | None) -> Process:
     return Process(pid=pid, ppid=ppid, executable=exe, command_line=cmd, age_s=age)
 
 
-def _shell(pid: int, cmd: str, age: float, ppid: int = 100) -> Process:
+def _shell(pid: int, cmd: str, age: float | None, ppid: int = 100) -> Process:
     return _p(pid, ppid, _BASH, _HARNESS.format(cmd=cmd), age)
 
 
@@ -44,16 +46,15 @@ def _table(*extra: Process) -> list[Process]:
     ]
 
 
-def _sweep(procs: list[Process], **kw: object) -> tuple[list[int], list[str]]:
+def _sweep(
+    procs: list[Process],
+    *,
+    claimed: Callable[[], set[int]] = set,
+    spares: tuple[str, ...] = (),
+    grants: Grants = lambda _id, _when: None,
+) -> tuple[list[int], list[str]]:
     killed: list[int] = []
-    options: dict[str, object] = {
-        'claimed': set,
-        'spares': (),
-        'kill': killed.append,
-        'born': lambda _p: 1,
-        'grants': lambda _id, _when: None,
-    }
-    lines = sweep(procs, **(options | kw))  # type: ignore[arg-type]
+    lines = sweep(procs, claimed=claimed, spares=spares, kill=killed.append, born=lambda _p: 1, grants=grants)
     return killed, lines
 
 
@@ -130,7 +131,7 @@ def test_a_harness_shell_whose_session_ended_is_still_an_agent_shell() -> None:
 
 
 def test_an_unknown_age_is_never_stopped() -> None:
-    assert _sweep(_table(_shell(200, 'sleep 1d', None)))[0] == []  # type: ignore[arg-type]
+    assert _sweep(_table(_shell(200, 'sleep 1d', None)))[0] == []
 
 
 def test_the_hook_detaches_one_sweep_per_interval_and_never_blocks(

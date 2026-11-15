@@ -166,6 +166,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'proctable',
     # ORIGINAL: the agent background-shell sweep, a session's shell lives fifty minutes (demand 2026-11-15).
     'shellreaper',
+    # ORIGINAL: the launch-time bound of a background shell and its user grant (ruling 2026-11-15).
+    'shelllife',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
     'servelanes',
@@ -213,6 +215,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'units',
     'verdict',
     'remedypaths',
+    # ORIGINAL: tracked layout readings and the shared hard directory band (2026-11-15).
+    'modulealarm',
     # ORIGINAL, for `dep_observe`'s reason read the other way round: this is the VERDICT half whose
     # readings are `depversions`'s, so the consumer file it would supersede is the one this lane
     # EXISTS to write next -- a per-repo copy of `test_dependencies_take_the_latest.py` that reads a

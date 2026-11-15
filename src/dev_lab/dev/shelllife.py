@@ -28,6 +28,8 @@ import time
 from collections.abc import Callable
 from typing import Final
 
+from lab_commons.log import emit
+
 from dev_lab.dev._deny_background_row import BACKGROUND_BOUNDED, DEFAULT_LIFETIME_S
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.disclosure import details_for
@@ -120,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.parse_args(argv)
     refused = admission(sys.stdin.read(), time.time())
     if refused:
-        sys.stdout.write(refused + '\n')
+        emit(refused)
         return 1
     return 0
 

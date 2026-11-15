@@ -26,7 +26,7 @@ BACKGROUND_BOUNDED: dict[str, object] = {
     'hazard': f'a background shell outlives its purpose and its session; the reaper stops one at {_MINUTES} '
     'unless the user granted more.',
     'remedy': f"Start the line with timeout {_MINUTES} <command> (compound: timeout {_MINUTES} bash -c '<line>'). "
-    'Longer: ask the user for the code; once they approve, python -m dev_lab.ops.consent grant <request.json> '
+    'Longer: ask the user for the code; once they approve, {python} -m dev_lab.ops.consent grant <request.json> '
     '--code <code> (a longer bound names the request).',
     'needs': None,
     'refuses': (

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from dev_lab.dev.shelllife import ACTION, GRANT_VAR, admission, granted_bound, subject_of
+from dev_lab.dev.shelllife import ACTION, GRANT_VAR, Grants, admission, granted_bound, subject_of
 from dev_lab.ops.consent.actions import ACTIONS
 
 _ID = '0f0e0d0c-0b0a-4908-8706-050403020100'
@@ -15,7 +15,7 @@ _NOW = 1_800_000_000.0
 _CMD = 'python -m dev_lab.dev.forge watch --stream'
 
 
-def _grants(table: dict[str, tuple[str, float]]):  # noqa: ANN202 -- a planted Grants
+def _grants(table: dict[str, tuple[str, float]]) -> Grants:
     return lambda grant_id, _when: table.get(grant_id)
 
 
