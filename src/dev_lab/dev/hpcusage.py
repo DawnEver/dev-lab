@@ -311,7 +311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         grants = declared()
     except (OSError, RuntimeError, ValueError) as why:
-        sys.stderr.write(f'hpcusage: no [[hpc.grant]] read from the machine file ({why}); declare them there\n')
+        emit(f'hpcusage: no [[hpc.grant]] read from the machine file ({why}); declare them there', err=True)
         return 2
     out = report(grants, today=datetime.now(UTC).date(), connect=runner_for)
     emit(json.dumps(out, sort_keys=True))
