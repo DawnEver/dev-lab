@@ -21,6 +21,17 @@ one is live, else ONE detached ``ssh -o BatchMode=yes <user>@<declared host>``),
 refreshed that checkout (:func:`refresh_kit`), so a fix to the deploy reaches an account that never ticks --
 and writes everything it prints to one log
 per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat.
+
+THE ACCOUNT RENDERS ITS OWN LAYER FIRST (user ruling 2026-11-15: FAMILY -> ACCOUNT -> LOCAL, one road). Its machine
+file is the render of the config source's ``family.toml`` and ``hosts/<cluster>-<user>.toml``
+(:mod:`dev_lab.dev.accounthost`), and that render runs ON the account, so it runs here, between the kit's tick and
+the deploy (:func:`render_command`): the account clones or fast-forwards the config source (THIS workstation's
+``[devhost]`` clone's origin, :class:`ConfigSource`) with its stored reader credential -- none stored for that forge
+is refused naming ``hpcaccount credential`` -- prints ``devhost drift`` (what the render changes), then
+``devhost render --write`` (the old file backed up under ``~/.cache/dev-lab/<yy>/<mm>/<dd>/devhost``). A failed
+render stops that account's deploy. Before any ssh, an account whose grant names no cluster, whose
+``<cluster>-<user>`` the family file declares no grant for, or whose ``hosts/<cluster>-<user>.toml`` this
+workstation's clone lacks, is refused by name (:func:`layer_refusal`).
 """
 
 from __future__ import annotations
@@ -30,25 +41,33 @@ import json
 import shlex
 import sys
 import tomllib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import IO, Any, Final
+from urllib.parse import urlsplit
 
+from lab_commons import config as machineconfig
 from lab_commons import home as _home
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
+from dev_lab.dev import accounthost
+from dev_lab.dev.credstore import STORE, valid_host
 from dev_lab.dev.datedlog import dated_log
+from dev_lab.dev.devhost import OWN_TABLE, config_source, host_file
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
 from dev_lab.dev.hpcaccount.transport import describe, grant_runner, start
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.venvpath import venv_interpreter
 
-__all__ = ['KIND', 'Target', 'declared_target', 'deploy_command', 'deploy_fleet', 'in_checkout', 'main', 'refresh_kit']
+__all__ = [
+    'KIND', 'ConfigSource', 'Target', 'account_host', 'config_source_of', 'declared_target', 'deploy_command',
+    'deploy_fleet', 'in_checkout', 'layer_refusal', 'main', 'refresh_kit', 'render_command',
+]  # fmt: skip
 
 #: The dated-log kind every account's log is written under.
 KIND: Final = 'deploy-fleet'
@@ -103,6 +122,81 @@ def declared_target(grant: Grant, shell: Runner) -> Target | str:
     return Target(named[0], root, deploy.get('role', ''))
 
 
+@dataclass(frozen=True)
+class ConfigSource:
+    """The config source an account renders from: this workstation's clone (its files) and that clone's origin."""
+
+    clone: Path
+    url: str
+
+
+def config_source_of(live: Mapping[str, Any]) -> ConfigSource:
+    """The workstation's config source, from its machine file's ``[devhost]`` (:func:`devhost.config_source`).
+
+    Raises:
+        ValueError: the machine file is not a render, or its clone's ``origin`` is absent or not an https url.
+
+    """
+    url = config_source(live)
+    if urlsplit(url).scheme != 'https' or not valid_host(urlsplit(url).hostname or ''):
+        msg = f'the config source {url} is not an https forge url: an account reads it with its stored reader token'
+        raise ValueError(msg)
+    return ConfigSource(Path(live[OWN_TABLE]['source']), url)
+
+
+def account_host(grant: Grant) -> str:
+    """The host-file name of *grant*'s account: ``<cluster>-<user>`` (:mod:`dev_lab.dev.accounthost`)."""
+    return f'{grant.cluster_name}-{grant.user}'
+
+
+def layer_refusal(grant: Grant, source: ConfigSource) -> str:
+    """Why *grant*'s account cannot render its layer from *source*; ``''`` when it can. Read here, before any ssh."""
+    name, family_file = account_host(grant), source.clone / 'family.toml'
+    if not grant.cluster_name:
+        return f'{grant.user}: refused -- its [[hpc.grant]] names no cluster, so it has no account file to render'
+    family = tomllib.loads(family_file.read_text(encoding='utf-8')) if family_file.is_file() else {}
+    if accounthost.grant_of(name, family) is None:
+        return (
+            f'{grant.user}: refused -- {family_file} declares no [[hpc.grant]] with cluster {grant.cluster_name!r} '
+            f'and user {grant.user!r}: declare the grant in the family file'
+        )
+    if not (source.clone / host_file(name)).is_file():
+        return (
+            f'{grant.user}: refused -- {source.clone} has no {host_file(name)}: declare the account file there '
+            '(dev_lab.dev.accounthost)'
+        )
+    return ''
+
+
+def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
+    """The shell line that renders *grant*'s machine file ON its account from the config source's clone there.
+
+    The clone is ``~/<root>/<config repo>``, fetched with the account's stored credential (refused, naming the door
+    that places one, when none is stored for the forge); ``devhost drift`` prints what the render changes, then
+    ``devhost render --write`` replaces the file, its old copy backed up. In the grant's ``setup`` environment.
+    """
+    forge = urlsplit(source.url).hostname or ''
+    clone = f'"$HOME/{PurePosixPath(target.root, PurePosixPath(urlsplit(source.url).path).stem)}"'
+    backups = f'"$HOME/{_BASE}/$(date -u +%y/%m/%d)/devhost"'
+    credential = (
+        f"grep -qs '@{forge}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
+        f'~/{STORE}: place one with python -m dev_lab.dev.hpcaccount credential {grant.user}@{target.host} --login '
+        f"<reader> --host-config <config source clone>'; exit 2; }}"
+    )
+    fetch = (
+        f'if [ -d {clone}/.git ]; then git -C {clone} pull -q --ff-only; '
+        f'else git clone -q {shlex.quote(source.url)} {clone}; fi'
+    )
+    name = account_host(grant)
+    drift = in_checkout(target, ['-m', 'dev_lab.dev.devhost', 'drift'])
+    render = in_checkout(target, ['-m', 'dev_lab.dev.devhost', 'render', '--host', name, '--write'])
+    steps = [
+        'export GIT_TERMINAL_PROMPT=0', credential, fetch, f'echo "[render] {name}: what the render changes"',
+        f'{{ {drift} ; true; }}', f'{render} --from {clone} --backups {backups}',
+    ]  # fmt: skip
+    return f'( {" && ".join([*grant.setup, *steps])} )'
+
+
 def in_checkout(target: Target, argv: Sequence[str]) -> str:
     """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv."""
     python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
@@ -125,16 +219,17 @@ def grant_slice(grant: Grant) -> dict[str, Any]:
     return {'reach': [grant.role], 'clusters': {grant.cluster_name: cluster}, 'grant': [row]}
 
 
-def deploy_command(grant: Grant, target: Target, division: Division | None = None) -> str:
+def deploy_command(grant: Grant, target: Target, source: ConfigSource, division: Division | None = None) -> str:
     """The shell line that runs *grant*'s own deploy on its DECLARED host (:mod:`dev_lab.dev.hpcaccount.transport`).
 
-    The deploy is passed its declared ``[hpc]`` slice (:func:`grant_slice`); with *division*, also the role and its
-    table.
+    After the kit's tick the account renders its own layer from *source* (:func:`render_command`); only a render that
+    succeeds deploys. The deploy is passed its declared ``[hpc]`` slice (:func:`grant_slice`); with *division*, also
+    the role and its table.
     """
     deploy = ['-m', 'dev_lab.dev.hpcaccount', 'deploy', '--grant-table', json.dumps(grant_slice(grant), sort_keys=True)]
     if division is not None and (role := division.role_of(grant.user)):
         deploy += ['--fleet-role', role, '--role-table', json.dumps(dict(division.roles[role]), sort_keys=True)]
-    return f'{refresh_kit(grant, target)} ; {in_checkout(target, deploy)}'
+    return f'{refresh_kit(grant, target)} ; {render_command(grant, target, source)} && {in_checkout(target, deploy)}'
 
 
 def refresh_kit(grant: Grant, target: Target) -> str:
@@ -168,11 +263,26 @@ def _serving_twice(grants: Sequence[Grant], accounts: Sequence[str], division: D
     return sorted({user for user in users if users.count(user) > 1 and serves(user)})
 
 
+def _target(
+    grant: Grant, source: ConfigSource, division: Division | None, connect: Callable[[Grant], Runner]
+) -> Target | str:
+    """Where *grant*'s account deploys; else why it is refused (its role, its layer, then its declared host)."""
+    if division is not None and (why := division.refusal(grant.user)):
+        return f'{why}; refused'
+    if why := layer_refusal(grant, source):
+        return why
+    try:
+        return declared_target(grant, connect(grant))
+    except (RuntimeError, OSError, tomllib.TOMLDecodeError) as failed:
+        return f'{grant.user}: refused -- its [deploy] could not be read: {failed}'
+
+
 def deploy_fleet(
     grants: Sequence[Grant],
     accounts: Sequence[str],
     *,
     home: Path,
+    source: ConfigSource,
     dry_run: bool,
     say: Callable[[str], None],
     connect: Callable[[Grant], Runner] = grant_runner,
@@ -199,19 +309,12 @@ def deploy_fleet(
     refused = 0
     for user in accounts or sorted(fleet):
         grant = fleet[user]
-        if division is not None and (why := division.refusal(user)):
-            say(f'{why}; refused')
-            refused += 1
-            continue
-        try:
-            target = declared_target(grant, connect(grant))
-        except (RuntimeError, OSError, tomllib.TOMLDecodeError) as failed:
-            target = f'{user}: refused -- its [deploy] could not be read: {failed}'
+        target = _target(grant, source, division, connect)
         if isinstance(target, str):
             say(target)
             refused += 1
             continue
-        dest, command = f'{grant.user}@{target.host}', deploy_command(grant, target, division)
+        dest, command = f'{grant.user}@{target.host}', deploy_command(grant, target, source, division)
         path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
         role = (division.role_of(user) if division else '') or target.role or 'role undeclared'
         say(f'{user} ({role}): {"would start" if dry_run else "started"} {describe(dest, command)}  log {path}')
@@ -229,9 +332,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         machine = reached_machine(args.account)
+        source = config_source_of(machineconfig.machine())
     except (PermissionError, LookupError, ValueError) as refused:
         emit(f'deploy-fleet: refused -- {refused}')
         return 2
     return deploy_fleet(
-        machine.grants, args.account, home=Path.home(), dry_run=args.dry_run, say=emit, division=division_of(machine)
+        machine.grants,
+        args.account,
+        home=Path.home(),
+        source=source,
+        dry_run=args.dry_run,
+        say=emit,
+        division=division_of(machine),
     )
