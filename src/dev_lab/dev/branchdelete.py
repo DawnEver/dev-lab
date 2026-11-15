@@ -6,7 +6,9 @@ AN AGENT'S DELETION IS LOSSLESS-DELETE (user ruling 2026-10-21): never a raw pus
 :data:`DOOR`, which after a fresh fetch deletes a branch only when every commit on it is on integration or on
 another live origin branch or open PR head (:func:`judge` names that container) or, by CONTENT, when no file its
 own commits wrote is identical on integration, generated files aside -- a branch of forge sync merges holds no
-work -- and otherwise refuses naming the commits and the files carrying unlanded content.
+work -- and otherwise refuses naming the commits and the files carrying unlanded content. A refused branch goes
+only APPROVED (user ruling 2026-11-15): the user's own words, and a tag on origin holding its tip -- a lane rebased
+onto integration leaves its old commits on the lane alone, and the tag keeps them, so still nothing is lost.
 The delete is a lease on the judged sha through the network door, recorded as one
 :data:`DELETED_EVENT` line and a ``pruned`` alarm naming the ``Lab-Session`` and the container.
 
@@ -65,8 +67,9 @@ ORIGIN: Final = 'refs/remotes/origin/'
 
 #: The ``event`` of the one structured line each LOSSLESS-DELETE writes.
 DELETED_EVENT: Final = 'lab_commons.forge.branch-delete'
-#: The door an agent deletes a remote branch through (PUSH-REMOTE-DELETE's remedy names it).
-DOOR: Final = 'python -m dev_lab.dev.branchprune delete <branch>...'
+#: The door an agent deletes a remote branch through (PUSH-REMOTE-DELETE's remedy names it); ``--approved`` lets a
+#: branch whose commits are on it alone go when a tag on origin holds its tip.
+DOOR: Final = 'python -m dev_lab.dev.branchprune delete <branch>... [--approved "<the user`s words>"]'
 #: The door an agent deletes a remote TAG through: lossless when a declared branch holds its commit, and approved.
 TAG_DOOR: Final = 'python -m dev_lab.dev.branchprune delete-tag <tag>... --approved "<the user`s words>"'
 #: Its refusals, each said once, here.
@@ -177,27 +180,61 @@ def delete(
     session: str,
     fetch: Callable[[Path], None],
     say: Callable[[str], None],
+    approved: str = '',
     push: Callable[[Path, str, str], str] = _push_delete,
     alarm: Callable[[Alarm], object] = sound,
+    remote_tags: Callable[[Path], dict[str, str]] | None = None,
 ) -> int:
-    """LOSSLESS-DELETE each of *branches* after a fresh fetch; 0 when every one was deleted, else 1."""
+    """LOSSLESS-DELETE each of *branches* after a fresh fetch; 0 when every one was deleted, else 1.
+
+    A branch refused for commits on it alone goes when *approved* (the user's own words, echoed into the record)
+    and a tag on origin holds its tip (:func:`_held_by_tag`); a protected branch never does.
+    """
     fetch(root)
     policy = load_policy(root)
     heads = {pr.head: pr.number for pr in pr_list(client)}
+    tags: dict[str, str] | None = None
     failed = 0
     for branch in branches:
         found = judge(root, policy, branch, open_heads=heads)
+        if found.lost and approved.strip():
+            tags = (remote_tags or _remote_tags)(root) if tags is None else tags
+            found = _held_by_tag(root, found, tags, approved.strip())
         why = found.refused or push(root, branch, found.sha)
         if why:
             say(why if found.refused else f'{branch}: the delete failed: {why}')
             failed += 1
             continue
         record = {'event': DELETED_EVENT, 'ref': branch, 'sha': found.sha, 'container': found.container}
-        say(json.dumps(record | {'session': session or None}))
+        words = {'approved': approved.strip()} if found.lost else {}
+        say(json.dumps(record | {'session': session or None} | words))
         body = f'{branch} at {found.sha[:12]}, held by {found.container}; by session {session or "none"}'
         alarm(Alarm(PRUNED, client.forge.repo, f'{branch} deleted (lossless)', body))
         say(f'{branch}: deleted at {found.sha[:12]} -- held by {found.container}')
     return 1 if failed else 0
+
+
+def _remote_tags(root: Path) -> dict[str, str]:
+    """``{tag: peeled commit sha}`` of every tag on origin, through the network door."""
+    report = run_network_verb([_GIT, 'ls-remote', '--tags', 'origin'], cwd=root, timeout=120)
+    if not report.ok:
+        raise OSError(report.remedy)
+    lines = (line.partition('	') for line in report.attempts[-1].output.splitlines())
+    pairs = [(ref.strip().removeprefix('refs/tags/'), sha.strip()) for sha, _, ref in lines]
+    peeled = {name.removesuffix('^{}'): sha for name, sha in pairs if name.endswith('^{}')}  # annotated: its commit
+    return {name: sha for name, sha in pairs if not name.endswith('^{}')} | peeled
+
+
+def _held_by_tag(root: Path, found: Verdict, tags: dict[str, str], approved: str) -> Verdict:
+    """*found* (refused: commits on the branch alone) held by the first of origin's *tags* whose commit holds its tip.
+
+    FAILS CLOSED: a tag's commit not fetched here holds nothing.
+    """
+    for name, commit in sorted(tags.items()):
+        if git_out(root, 'merge-base', '--is-ancestor', found.sha, commit) is not None:
+            return Verdict(found.branch, found.sha, container=f'tag {name}; approved: "{approved}"', lost=found.lost)
+    why = f'{found.refused}; approved, but no tag on origin holds it (tag its tip first: nothing may be lost)'
+    return Verdict(found.branch, found.sha, lost=found.lost, refused=why)
 
 
 def _remote_tag(root: Path, tag: str) -> tuple[str, str]:

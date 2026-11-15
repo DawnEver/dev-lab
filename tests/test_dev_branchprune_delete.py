@@ -258,3 +258,57 @@ def test_a_tag_delete_without_the_users_words_is_refused_touching_nothing(tmp_pa
     assert code == 1
     assert _tag_on_origin(work, 'v0.1.0')
     assert any('--approved' in line for line in said)
+
+
+def _approved_delete(work: Path, forge: StateForge, *branches: str, approved: str) -> tuple[int, list[str]]:
+    said: list[str] = []
+    code = delete(
+        work,
+        branches,
+        approved=approved,
+        client=forge,
+        session=SESSION,
+        fetch=fetch_origin,
+        say=said.append,
+        alarm=lambda _: None,
+    )
+    return code, said
+
+
+def test_an_approved_branch_whose_tip_a_tag_holds_is_deleted_and_an_untagged_one_is_kept(tmp_path: Path) -> None:
+    """With the user's words and a tag on origin holding its tip, a lane the content judge refuses goes.
+
+    A lane rebased onto integration leaves its old commits on the lane alone; the tag keeps them, so nothing is
+    lost. PLANTED control: an untagged lane beside it, approved too, is kept.
+    """
+    _, work = clone_pair(tmp_path)
+    tagged = advance(work, 'lane/old', 'o.txt', 'o\n')
+    _tag(work, 'archive/old', tagged)
+    advance(work, 'lane/bare', 'b.txt', 'b\n')
+    code, said = _approved_delete(work, StateForge(), 'lane/old', 'lane/bare', approved='delete the old branches')
+    assert code == 1
+    assert not _on_origin(work, 'lane/old')
+    assert _on_origin(work, 'lane/bare')
+    assert any('held by tag archive/old' in line and 'delete the old branches' in line for line in said), said
+    assert any('lane/bare: refused' in line and 'no tag on origin holds it' in line for line in said), said
+
+
+def test_an_unlanded_branch_without_the_users_words_stays_refused_though_a_tag_holds_it(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    _tag(work, 'archive/old', advance(work, 'lane/old', 'o.txt', 'o\n'))
+    code, _, _ = _delete(work, StateForge(), 'lane/old')
+    assert code == 1
+    assert _on_origin(work, 'lane/old')
+
+
+def test_the_users_words_never_delete_the_integration_branch_or_an_open_pr_head(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    head = advance(work, 'pr/x', 'x.txt', 'x\n')
+    _tag(work, 'archive/x', head)
+    forge = StateForge()
+    forge.add_pull('pr/x', 'integrate/main')
+    code, said = _approved_delete(work, forge, 'pr/x', 'integrate/main', approved='delete everything')
+    assert code == 1
+    assert _on_origin(work, 'pr/x')
+    assert _on_origin(work, 'integrate/main')
+    assert sum('never deleted' in line for line in said) == 2
