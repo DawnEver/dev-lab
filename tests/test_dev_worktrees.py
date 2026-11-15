@@ -8,12 +8,17 @@ directory holding files, an EMPTY one, and a landed tree whose ``output/logs`` i
 
 from __future__ import annotations
 
+import io
+import json
 import os
 import shutil
 import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
+from dev_lab.dev import reclaimrun, worktrees
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
 from dev_lab.dev.worktrees import main, prune
 
@@ -85,3 +90,36 @@ def test_a_landed_tree_goes_with_what_git_does_not_track_and_its_outputs_go_home
     assert (work / 'output' / 'logs' / 'result.txt').read_text(encoding='utf-8') == 'keep me', 'moved home first'
     assert (home / 'staged' / 'new.txt').is_file()
     assert main(['--root', str(work), '--prune']) == 0
+
+
+def _slow_prune(*_: object, **__: object) -> tuple[str, ...]:
+    time.sleep(30)
+    return ()
+
+
+def test_a_hook_invoked_prune_detaches_and_returns_at_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hook-invoked ``--prune`` detaches the background reclaim of the MAIN checkout and returns at once.
+
+    INCIDENT 2026-11-12: old worktrees still carry an inline ``worktrees --prune`` SessionStart row (6+ min over
+    108 trees), and every session started in one hung. The planted prune would take 30 s.
+    """
+    work = _planted(tmp_path)
+    started: list[Path] = []
+    monkeypatch.setattr(worktrees, 'prune', _slow_prune)
+    monkeypatch.setattr(reclaimrun, 'detach', lambda root, **_: started.append(root))
+    payload = json.dumps({'hook_event_name': 'SessionStart', 'cwd': str(work / '.claude' / 'worktrees' / 'done')})
+    t0 = time.monotonic()
+    assert main(['--prune'], stdin=io.StringIO(payload)) == 0
+    assert time.monotonic() - t0 < 10.0
+    assert started == [work.resolve()]
+
+
+def test_without_a_hook_payload_the_prune_runs_inline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CONTROL: a person's ``--prune`` (no payload) still prunes in the foreground and detaches nothing."""
+    work = _planted(tmp_path)
+    ran: list[Path] = []
+    started: list[Path] = []
+    monkeypatch.setattr(worktrees, 'prune', lambda root, **_: ran.append(root) or ())
+    monkeypatch.setattr(reclaimrun, 'detach', lambda root, **_: started.append(root))
+    assert main(['--prune', '--root', str(work)], stdin=io.StringIO('')) == 0
+    assert (ran, started) == ([work.resolve()], [])

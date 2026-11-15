@@ -86,6 +86,7 @@ from dev_lab.dev.forgefailure import (
     retried,
 )
 from dev_lab.dev.forgememo import ReadMemo
+from dev_lab.dev.forgepages import issues
 from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
@@ -354,10 +355,8 @@ class Client:
             raise
 
     def issue_list(self, *, state: str = 'open', limit: int = 30) -> tuple[Issue, ...]:
-        """Issues in *state*, pull requests excluded (GitHub lists both under ``issues``)."""
-        query = self.backend.list_query.format(state=state, limit=limit)
-        listed = self.call('GET', f'{self.repo}/issues?{query}')
-        return tuple(_issue(raw) for raw in listed if not is_pull(raw))
+        """Issues in *state* among the first *limit* rows, read page by page (:func:`forgepages.issues`)."""
+        return issues(self.call, f'{self.repo}/issues?{self.backend.list_query}', state, limit)
 
     def issue_view(self, number: int) -> Issue:
         """One issue."""

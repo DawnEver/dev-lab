@@ -15,6 +15,7 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
+    'callorigins',  # extracted in-kit lexical binding owner for reflection and tolerance scanners
     'ab_bench',
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
@@ -289,6 +290,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'jobparts',
     # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
     'jobmeasure',
+    'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
     'native_session',  # ORIGINAL: one validated native harness identity, apart from worktree provenance (2026-11-15)
     'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
@@ -300,6 +302,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pushwatch',
     'pushstop',
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
+    'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
+    'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
     'venvfollow',
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',
