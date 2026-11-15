@@ -16,6 +16,7 @@ from dev_lab.dev.codeplace import (
     FAMILY_CODE_ROOTS,
     FAMILY_HOMES,
     FAMILY_STRAY_ROOTS,
+    TASK_ROOT,
     PlacementNotDeclared,
     StrayCensusUnreadable,
     declared_misplaced,
@@ -27,6 +28,7 @@ from dev_lab.dev.codeplace import (
     refuse_write,
     stray_files,
     stray_refusal,
+    task_note,
 )
 from dev_lab.dev.disclosure import problems
 from dev_lab.dev.famtests import noreflection
@@ -295,3 +297,42 @@ def test_a_stray_under_a_code_root_is_a_file_meant_and_its_one_remedy_is_git_add
     assert reason is not None
     assert 'git add src/new_module.py' in reason.splitlines()[1]
     assert 'scratch/' not in reason.splitlines()[1]
+
+
+# -- the task command owns its folder: an untracked task is named once, never refused ---------------------------
+
+
+def test_an_untracked_task_is_named_once_and_never_refused_while_a_root_stray_still_is(tmp_path) -> None:
+    _repo(tmp_path)
+    _plant(tmp_path, f'{TASK_ROOT}plecs-alignment/TASK.md')
+    _plant(tmp_path, f'{TASK_ROOT}plecs-alignment/JOURNAL.md')
+    assert declared_strays(tmp_path) == []
+    assert stray_refusal(tmp_path) is None
+    note = task_note(tmp_path)
+    assert note is not None
+    assert note.count('plecs-alignment') == 1
+    assert 'not yet committed' in note
+    assert 'output/logs' not in note
+    _plant(tmp_path, 'status.txt')  # the planted control: a genuine stray is still refused
+    assert declared_strays(tmp_path) == ['status.txt']
+
+
+def test_a_tracked_task_is_silent(tmp_path) -> None:
+    _repo(tmp_path)
+    _plant(tmp_path, f'{TASK_ROOT}done/TASK.md')
+    launch.run(['git', '-C', str(tmp_path), 'add', f'{TASK_ROOT}done/TASK.md'], check=True)
+    assert task_note(tmp_path) is None
+    assert stray_refusal(tmp_path) is None
+
+
+def test_the_stop_hook_names_an_open_task_without_blocking_and_the_commit_row_passes(tmp_path, monkeypatch) -> None:
+    _repo(tmp_path)
+    _plant(tmp_path, f'{TASK_ROOT}x/TASK.md')
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        main(['stray'], stdin=io.StringIO(json.dumps({'hook_event_name': 'Stop', 'cwd': str(tmp_path)})))
+    said = json.loads(out.getvalue())
+    assert 'decision' not in said
+    assert 'task x was opened here' in said['systemMessage']
+    monkeypatch.chdir(tmp_path)
+    assert main(['stray-check']) == 0
