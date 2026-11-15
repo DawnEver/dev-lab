@@ -220,7 +220,7 @@ def test_the_timeout_reaches_the_ssh_runner(monkeypatch: pytest.MonkeyPatch) -> 
         got.append(timeout)
         return _census_account([])
 
-    monkeypatch.setattr(storage, 'runner_for', runner)
+    monkeypatch.setattr(storage, 'grant_runner', runner)
     monkeypatch.setattr(storage, 'on_host', pinned)
     assert storage.main(['--account', 'alice', '--census', '--timeout', '7200']) == 0
     assert got == [7200.0, 7200.0]  # the failover runner and the deploy host's pinned one alike

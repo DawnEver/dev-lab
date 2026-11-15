@@ -3,7 +3,7 @@
 PLACES ONE MINTED FORGE TOKEN ON A KEY-ONLY CLUSTER ACCOUNT (user ruling 2026-11-12: agents place tokens
 themselves). The token is read from THIS process's stdin, never argv; everything printed names it only by a sha256
 prefix. It reaches the account as the remote command's STDIN, through the grant's own key-only connection
-(:func:`lab_commons.hpc.cluster.runner_for`: one shared connection per host, paced) -- the door every other
+(:func:`dev_lab.dev.hpcaccount.transport.grant_runner`: one shared connection per host, paced) -- the door every other
 ``hpcaccount`` verb uses; no new kind of connection.
 
 THE FORGE IS THE HOST CONFIG'S. The forge accounts have ONE source: the forge host's reviewed config
@@ -34,7 +34,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from lab_commons.hpc.cluster import Runner, runner_for
+from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
@@ -51,6 +51,7 @@ from dev_lab.dev.credstore import (
 )
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleet import declared_target, in_checkout
+from dev_lab.dev.hpcaccount.transport import grant_runner
 
 __all__ = [
     'declared_logins',
@@ -99,7 +100,7 @@ def place_credential(
     grants: Sequence[Grant],
     division: Division,
     say: Callable[[str], None],
-    connect: Callable[[Grant], Runner] = runner_for,
+    connect: Callable[[Grant], Runner] = grant_runner,
     stamp: str = '',
 ) -> int:
     """Stage *token* as *login* on *account*, verify the forge answers as *login*, then replace; 2 on refusal."""
@@ -140,7 +141,7 @@ def drop_host(
     host: str,
     grants: Sequence[Grant],
     say: Callable[[str], None],
-    connect: Callable[[Grant], Runner] = runner_for,
+    connect: Callable[[Grant], Runner] = grant_runner,
     stamp: str = '',
 ) -> int:
     """Remove exactly *host*'s line of *account*'s ``~/.git-credentials``, after a backup; 2 on refusal."""
