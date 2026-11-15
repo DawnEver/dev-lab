@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import tomllib
 from pathlib import Path
 from typing import Any, Final, cast
@@ -100,6 +101,7 @@ __all__ = [
     'drift',
     'expand',
     'follow_checks',
+    'measurement_isolated',
     'merge',
     'placed',
     'ready_only',
@@ -217,6 +219,40 @@ def ready_only(workflow: dict[str, Any]) -> dict[str, Any]:
     return {**workflow, 'jobs': {name: guarded(job) for name, job in workflow['jobs'].items()}}
 
 
+def measurement_isolated(workflow: dict[str, Any]) -> dict[str, Any]:
+    """A measurement dispatch cannot run ANY normal job, including a consumer-added job. PURE.
+
+    Applied after shared setup expansion so every consumer retains its own environment profile,
+    while this job alone leaves no checkout credential for tested code to inherit.
+    """
+    if 'measurement' not in workflow.get('jobs', {}):
+        return workflow
+    guard = "inputs.measurement_paths == '' && inputs.measurement_sha == ''"
+    jobs = {}
+    for name, job in workflow['jobs'].items():
+        if name == 'measurement':
+            if job.get('permissions') != {'contents': 'read'}:
+                msg = 'measurement requires exactly contents: read, never status or merge authority'
+                raise ValueError(msg)
+            environments = [job.get('env', {}), *(step.get('env', {}) for step in job['steps'])]
+            if any({'GITHUB_TOKEN', 'GH_TOKEN'} & set(env) for env in environments) or re.search(
+                r'\$\{\{[^}]*\bsecrets\.', json.dumps(job)
+            ):
+                msg = 'measurement setup may not receive forge tokens or family secrets'
+                raise ValueError(msg)
+            steps = [
+                {**step, 'with': {**step.get('with', {}), 'persist-credentials': False}}
+                if step.get('uses', '').startswith('actions/checkout@')
+                else step
+                for step in job['steps']
+            ]
+            jobs[name] = {**job, 'steps': steps}
+        else:
+            own = f' && ({_bare(job["if"])})' if 'if' in job else ''
+            jobs[name] = {**job, 'if': f'${{{{ ({guard}){own} }}}}'}
+    return {**workflow, 'jobs': jobs}
+
+
 def needs(job: dict[str, Any]) -> set[str]:
     """The jobs *job* ``needs``: Actions takes one name or a list."""
     named = job.get('needs', [])
@@ -331,7 +367,8 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         merged = merge(base.get(name, {}), layer)
         forge = merged.pop(FORGE_KEY, 'github')
         merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
-        workflow = ready_only(hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted))
+        expanded = hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted)
+        workflow = ready_only(measurement_isolated(expanded))
         if 'jobs' in workflow and not workflow['jobs']:
             continue  # every job reviewed on the runner, in a judge repo: nothing to render
         if workflow.pop(NIGHTLY_KEY, False):

@@ -97,6 +97,29 @@ printed by name; it always exits 0.
 Entries are intent, never a command or module spelling (`spelled_commands`); the exact commands are the narrow
 rows above. `leaks` scans every committed kit text for a host shape and for each fleet fact this machine holds.
 
+## Stopping an explicitly approved controller
+
+For an otherwise unrecognized orchestration process, use the same stop door with all three identity inputs:
+`python -m dev_lab.dev.stoprun --pid PID --approved-created STAMP --approved-command-sha256 HASH --approved-user-words "ACTUAL USER WORDS" [--dry-run]`.
+Capture `STAMP` through `lab_commons.liveness.creation_stamp` and SHA256 the complete UTF-8 command line
+from `lab_commons.census.processes`, without normalization. The words attest actual prior user authorization;
+a matching hash does not prove ownership. Select the actual Python controller, not its waiting venv launcher.
+Never reuse stale identity values or widen a project regex to get this one process through.
+
+Explicit identity is not a lifecycle override. A recognized run or orphan-role root must use its ordinary
+`--pid` door, with no approved arguments. A serve or special orphan role inside the proved bounded subtree
+also refuses before any stop, preserving its producer notes, parent checks and claim-release policy. An
+ordinary queued gate child remains allowed; an excluded older-PPID foreign branch never enters this scope.
+
+The mode refuses incomplete inputs, self/ancestors, unreadable identities and any preflight mismatch before
+stopping anything. It excludes impossible old-PPID edges, stops and confirms the controller first, then
+rechecks only the original proved members. An unchanged child may legitimately reparent after its original
+parent was proved stopped by this call; its new parent never expands the scope. Observed growth or another
+uncertainty returns exit 3 with partial progress and no further kill. Inspect the remaining processes and use
+their recognized run door or obtain a new exact approval. This is a bounded, non-atomic stop of the original
+snapshot, not a guarantee against every process another process might spawn between observations. The normal
+signature/orphan mode retains its existing children-first behavior and serve-release grace.
+
 ## Adopting
 
 1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)), cli=cli_doors(root))`, re-render

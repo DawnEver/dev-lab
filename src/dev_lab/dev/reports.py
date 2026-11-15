@@ -1,7 +1,7 @@
-"""What each verify step REPORTED, read out of the text it printed. Pure functions, no processes.
+"""What each verify step reported: text witnesses and optional exact recorded cells. No processes.
 
 SPLIT OUT OF :mod:`dev_lab.dev.verify` at a real seam rather than at a line count. Everything
-here is a pure function of a string and an integer; everything there launches a process, writes a
+here is a pure function of its supplied evidence; everything there launches a process, writes a
 log or stamps a verdict. The consequence is the one that matters: the measured pytest output that
 motivates this whole layer can be tested as a STRING CONSTANT, and the case that produced it --
 ``consumer_c``, 2026-09-15, 307 collected, 3 collection errors, ZERO run, and a ``307 passed``-shaped
@@ -68,12 +68,20 @@ import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from lab_commons.file_io import read_toml
+from lab_commons.hpc.testcells import conclude, merged
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.pytestout import collected_count, markers_in, summary_counts
+from dev_lab.dev.test_outcomes import skipped_nodes
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    from lab_commons.hpc.testcells import TestCell
 
 __all__ = [
     'SKIP_CEILING',
@@ -218,9 +226,14 @@ def read_ruff(name: str, returncode: int) -> StepReport:
 
 
 def _skip_shortfall(
-    counts: dict[str, int], text: str, allowed: tuple[str, ...], *, complete_skip_census: bool
+    counts: dict[str, int],
+    text: str,
+    allowed: tuple[str, ...],
+    *,
+    complete_skip_census: bool,
+    recorded: frozenset[str] | None = None,
 ) -> tuple[str, ...]:
-    r"""The skip ratchet, BOTH directions, plus the ceiling and the naming floor.
+    r"""The skip ratchet, BOTH directions, and the per-stage naming floor.
 
     Pure over its arguments so the planted controls drive THIS function rather than a re-implemented
     agreement with it. Every reason names the specific NODE IDS on its side of the ratchet: a count
@@ -237,7 +250,7 @@ def _skip_shortfall(
     complete suite census, so a selected invocation never checks it. :func:`stale_declarations` is
     the arm that binds without a run at all.
     """
-    found = _SKIPPED.findall(text)
+    found = _SKIPPED.findall(text) if recorded is None else list(recorded)
     observed = {node.replace('\\', '/') for node in found}
     allowed = tuple(prefix.replace('\\', '/') for prefix in allowed)
     named = len(found)
@@ -257,14 +270,29 @@ def _skip_shortfall(
         )
     if complete_skip_census:
         reasons.extend(_stale_skips(observed, allowed))
-    accounted = sum(counts.values())
-    if total_skipped and accounted and total_skipped / accounted > SKIP_CEILING:
-        reasons.append(
-            f'{total_skipped} of {accounted} accounted test(s) were skipped, above the '
-            f'{SKIP_CEILING:.0%} ceiling: past it the allowance has stopped being a list of known '
-            f'holes and has become the way the suite is run'
-        )
     return tuple(reasons)
+
+
+def _executed_count(counts: dict[str, int]) -> int:
+    """Count accounted executions, never items excluded by the selector or stage split."""
+    return sum(counts.get(word, 0) for word in (*_OUTCOME_WORDS, 'skipped'))
+
+
+def _skip_ceiling(stages: Iterable[dict[str, int]]) -> tuple[str, ...]:
+    """Judge the unchanged share ceiling once over the whole executed selection."""
+    total_skipped, accounted = 0, 0
+    for counts in stages:
+        total_skipped += counts.get('skipped', 0)
+        accounted += _executed_count(counts)
+    if total_skipped and accounted and total_skipped / accounted > SKIP_CEILING:
+        return (
+            (
+                f'{total_skipped} of {accounted} accounted test(s) were skipped, above the '
+                f'{SKIP_CEILING:.0%} ceiling: past it the allowance has stopped being a list of known '
+                f'holes and has become the way the suite is run'
+            ),
+        )
+    return ()
 
 
 def _stale_skips(observed: set[str], allowed: tuple[str, ...]) -> tuple[str, ...]:
@@ -366,17 +394,35 @@ def _names(path: Path, node: str) -> bool:
     return all(part.split('[', 1)[0] in defined for part in node.split('::'))
 
 
-def _summary_shortfall(counts: dict[str, int], text: str, failures: tuple[str, ...]) -> tuple[str, ...]:
+def _summary_shortfall(
+    counts: dict[str, int], text: str, failures: tuple[str, ...], *, recorded_count: int | None = None
+) -> tuple[str, ...]:
     """Every non-skip way a summary line describes a run that cannot settle. Pure over its arguments."""
     reasons: list[str] = []
     if counts.get('error'):
         reasons.append(f'{counts["error"]} test(s) errored, and an errored test produced no outcome to attribute')
     named = counts.get('failed', 0)
-    if named != len(failures):
+    if recorded_count is None and named != len(failures):
         reasons.append(
             f'the summary names {named} failure(s) and the output names {len(failures)} node id(s); '
             f'a FAIL that cannot say which test was red is the refusal a count pin is'
         )
+    if recorded_count is not None:
+        accounted = _executed_count(counts)
+        if accounted != recorded_count:
+            reasons.append(
+                f'the summary accounts for {accounted} test(s) but the stage records contain {recorded_count}'
+            )
+        # Strict XPASS is counted as failed; non-strict XPASS as xpassed.
+        # A skipped test may additionally be a decided unmarked-skip miss.
+        # Their semantics remain TestCell.red's, not a second pytest classifier.
+        at_least = named + counts.get('xpassed', 0)
+        at_most = at_least + counts.get('skipped', 0)
+        if not at_least <= len(failures) <= at_most:
+            reasons.append(
+                f'the summary reports {named} failed and {counts.get("xpassed", 0)} xpassed '
+                f'but records contain {len(failures)} decided misses (at most {at_most}, including skips)'
+            )
     if not any(counts.get(word) for word in _OUTCOME_WORDS):
         reasons.append('no test produced a pass or fail outcome, so the run executed nothing it could be judged on')
     if (collected := collected_count(text)) is not None and (total := sum(counts.values())) < collected:
@@ -388,9 +434,21 @@ def _summary_shortfall(counts: dict[str, int], text: str, failures: tuple[str, .
 
 
 def read_pytest(
-    text: str, *, returncode: int, allowed_skips: tuple[str, ...] = (), complete_skip_census: bool = True
+    text: str,
+    *,
+    returncode: int,
+    allowed_skips: tuple[str, ...] = (),
+    complete_skip_census: bool = True,
+    cells: Mapping[str, TestCell] | None = None,
+    flaky: frozenset[str] = frozenset(),
 ) -> StepReport:
-    """The report for the pytest step, from what it PRINTED and what it exited with.
+    """Read pytest's text/exit witnesses and, when supplied, its exact canonical cells.
+
+    ``cells=None`` is the independent text-log method. Live callers supply recorded
+    cells explicitly, even when empty: identities and decisions then come only
+    from TestCell.red/conclude, never from whitespace-delimited text. Summary
+    totals must account for exactly those cells; text still independently guards
+    truncation, collection, exit status and skip allowance/census.
 
     THE ORDER OF THE QUESTIONS IS THE DESIGN. It does not ask "did something pass"; it asks what
     could have cut the run short, and only a text with no such reason is allowed to settle. That
@@ -416,9 +474,44 @@ def read_pytest(
     * ``collected N`` with fewer than N accounted for, or any exit code other than 0 or 1;
     * a skip on either side of *allowed_skips*, or a skip share above :data:`SKIP_CEILING`.
     """
-    failures = tuple(dict.fromkeys(match.group(1) for line in text.splitlines() if (match := _FAILED_NODE.match(line))))
+    report = _read_stage(
+        text,
+        returncode=returncode,
+        allowed_skips=allowed_skips,
+        complete_skip_census=complete_skip_census,
+        cells=cells,
+        flaky=flaky,
+    )
+    ceiling = _skip_ceiling((summary_counts(text) or {},))
+    if ceiling:
+        return StepReport(name='pytest', truncated=(*report.truncated, *ceiling))
+    return report
+
+
+def _read_stage(
+    text: str,
+    *,
+    returncode: int,
+    allowed_skips: tuple[str, ...],
+    complete_skip_census: bool,
+    cells: Mapping[str, TestCell] | None,
+    flaky: frozenset[str],
+) -> StepReport:
+    """Read stage witnesses; the public selection owner applies its whole-run skip ceiling."""
+    failures = (
+        tuple(dict.fromkeys(match.group(1) for line in text.splitlines() if (match := _FAILED_NODE.match(line))))
+        if cells is None
+        else tuple(node for node, one in cells.items() if one.red)
+    )
     counts = summary_counts(text)
     truncated: list[str] = []
+    if cells is None and flaky:
+        truncated.append('flaky recorded identities were supplied without their cells')
+    elif cells is not None and conclude(cells.values(), flaky) is Conclusion.INCONCLUSIVE:
+        truncated.append(
+            'recorded stage cells did not conclude: '
+            f'undecided={tuple(node for node, one in cells.items() if one.met is None)}, flaky={tuple(sorted(flaky))}'
+        )
 
     if banner := _INTERRUPTED.search(text):
         truncated.append(f'pytest was interrupted: {banner.group(0).strip("! ").strip()}')
@@ -431,8 +524,18 @@ def read_pytest(
     if counts is None:
         truncated.append('pytest printed no parsable summary line, so there is nothing to read a result out of')
     else:
-        truncated.extend(_summary_shortfall(counts, text, failures))
-        truncated.extend(_skip_shortfall(counts, text, allowed_skips, complete_skip_census=complete_skip_census))
+        truncated.extend(
+            _summary_shortfall(counts, text, failures, recorded_count=None if cells is None else len(cells))
+        )
+        truncated.extend(
+            _skip_shortfall(
+                counts,
+                text,
+                allowed_skips,
+                complete_skip_census=complete_skip_census,
+                recorded=None if cells is None else skipped_nodes(cells),
+            )
+        )
     if returncode in _PYTEST_EXITS:
         truncated.append(_PYTEST_EXITS[returncode])
     elif returncode not in (0, 1):
@@ -444,7 +547,11 @@ def read_pytest(
 
 
 def read_stages(
-    stages: tuple[tuple[str, int], ...], *, allowed_skips: tuple[str, ...] = (), complete_skip_census: bool = True
+    stages: tuple[tuple[str, int], ...],
+    *,
+    allowed_skips: tuple[str, ...] = (),
+    complete_skip_census: bool = True,
+    stage_cells: tuple[tuple[Mapping[str, TestCell], frozenset[str]], ...] | None = None,
 ) -> StepReport:
     """ONE pytest report over the selection's stages (:mod:`dev_lab.dev.serialpass`): ``(text, returncode)`` each.
 
@@ -452,21 +559,62 @@ def read_stages(
     nothing (exit 5, no outcome) is dropped while another ran, since the split emptied it and not the
     selection -- and the reports are unioned. The STALE skip side needs the whole census, so it is judged
     once over every stage's skips rather than per stage, where each half would call the other's skips stale.
+    The share ceiling likewise belongs to the whole executed selection, excluding deselections.
     """
+    if stage_cells is not None and len(stage_cells) != len(stages):
+        msg = f'pytest stage evidence has {len(stage_cells)} entries for {len(stages)} stages'
+        raise ValueError(msg)
+    if not stages:
+        return StepReport(name='pytest', truncated=('no pytest stage ran',))
     if len(stages) == 1:
         text, code = stages[0]
+        cells, flaky = (None, frozenset()) if stage_cells is None else stage_cells[0]
         return read_pytest(
-            text, returncode=code, allowed_skips=allowed_skips, complete_skip_census=complete_skip_census
+            text,
+            returncode=code,
+            allowed_skips=allowed_skips,
+            complete_skip_census=complete_skip_census,
+            cells=cells,
+            flaky=flaky,
         )
-    ran = [(text, code) for text, code in stages if not _ran_nothing(text, code)] or list(stages[:1])
+    ran = [
+        index
+        for index, (text, code) in enumerate(stages)
+        if not (
+            _ran_nothing(text, code)
+            and (stage_cells is None or (not stage_cells[index][0] and not stage_cells[index][1]))
+        )
+    ] or [0]
     reports = [
-        read_pytest(text, returncode=code, allowed_skips=allowed_skips, complete_skip_census=False)
-        for text, code in ran
+        _read_stage(
+            stages[index][0],
+            returncode=stages[index][1],
+            allowed_skips=allowed_skips,
+            complete_skip_census=False,
+            cells=None if stage_cells is None else stage_cells[index][0],
+            flaky=frozenset() if stage_cells is None else stage_cells[index][1],
+        )
+        for index in ran
     ]
-    observed = {node.replace('\\', '/') for text, _ in ran for node in _SKIPPED.findall(text)}
+    observed = {
+        node.replace('\\', '/')
+        for index in ran
+        for node in (
+            _SKIPPED.findall(stages[index][0]) if stage_cells is None else skipped_nodes(stage_cells[index][0])
+        )
+    }
     allowed = tuple(prefix.replace('\\', '/') for prefix in allowed_skips)
     stale = _stale_skips(observed, allowed) if complete_skip_census else ()
-    truncated = tuple(dict.fromkeys([*(r for one in reports for r in one.truncated), *stale]))
+    global_shortfall = ()
+    if stage_cells is not None:
+        cells, disagreed = merged(stage_cells[index][0] for index in ran)
+        flaky = disagreed | frozenset(node for index in ran for node in stage_cells[index][1])
+        if conclude(cells.values(), flaky) is Conclusion.INCONCLUSIVE:
+            global_shortfall = (f'recorded run cells did not conclude; flaky identities: {tuple(sorted(flaky))}',)
+    ceiling = _skip_ceiling(summary_counts(stages[index][0]) or {} for index in ran)
+    truncated = tuple(
+        dict.fromkeys([*(r for one in reports for r in one.truncated), *stale, *global_shortfall, *ceiling])
+    )
     if truncated:
         return StepReport(name='pytest', truncated=truncated)
     failures = tuple(dict.fromkeys(f for one in reports for f in one.failures))

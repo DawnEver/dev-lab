@@ -48,7 +48,7 @@ from dev_lab.dev.reports import (
 )
 from dev_lab.dev.selection import census_scope
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
-from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, outcomes_dir
+from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, OutcomeReadError, RetiredOutcomes, outcomes_dir, read_cells
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verifybox import (
@@ -322,6 +322,36 @@ def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec:
     return Verdict(tree=tree, env=env, selector=selector, result=result, log=log)
 
 
+def _recorded_pytest_report(
+    directory: Path,
+    stages: tuple[tuple[str, int], ...],
+    *,
+    allowed: tuple[str, ...],
+    complete_census: bool,
+) -> StepReport:
+    """Bind each executed stage to its own exact Record evidence, never to a text fallback."""
+    try:
+        read_cells(directory)  # validate the whole layout, including unknown/mixed stages
+        expected_stages = ('parallel', 'serial')[: len(stages)]
+        actual_stages = (
+            tuple(sorted(one.name for one in directory.iterdir() if one.is_dir())) if directory.is_dir() else ()
+        )
+        stage_cells = tuple(read_cells(directory / name) for name in expected_stages)
+    except (OutcomeReadError, RetiredOutcomes) as error:
+        return StepReport(name='pytest', truncated=(f'pytest recorded evidence is unreadable: {error}',))
+    if actual_stages != expected_stages:
+        return StepReport(
+            name='pytest',
+            truncated=(f'pytest recorded stages {actual_stages} disagree with executed stages {expected_stages}',),
+        )
+    return read_stages(
+        stages,
+        allowed_skips=allowed,
+        complete_skip_census=complete_census,
+        stage_cells=stage_cells,
+    )
+
+
 def run_verify(
     root: Path,
     pytest_args: tuple[str, ...] = (),
@@ -388,7 +418,6 @@ def run_verify(
             stamp = {
                 durations.LEDGER_TREE_VAR: tree_address(root),
                 durations.LEDGER_ENV_VAR: verdict_env(root),
-                OUTCOMES_DIR_VAR: str(live),
                 **coverage_env(root, path),
             }
             head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
@@ -396,8 +425,19 @@ def run_verify(
             covered = [*head, *coverage_args(root, path), *pytest_args]
             seen = path.with_suffix('.serial-seen')
             argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
+            (live / 'parallel').mkdir()
             codes = [
-                _tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'parallel', SEEN_ENV: str(seen)})
+                _tee(
+                    argv,
+                    cwd=root,
+                    handle=handle,
+                    extra_env={
+                        **stamp,
+                        OUTCOMES_DIR_VAR: str(live / 'parallel'),
+                        STAGE_ENV: 'parallel',
+                        SEEN_ENV: str(seen),
+                    },
+                )
             ]
             learn_ended(root, pytest, record)
             cut = ended_in_the_box(record)
@@ -405,7 +445,19 @@ def run_verify(
                 handle.write(SERIAL_BANNER)
                 appended = [*covered, '--cov-append', *serial_width()]
                 argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
-                codes.append(_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'serial'}))
+                (live / 'serial').mkdir()
+                codes.append(
+                    _tee(
+                        argv,
+                        cwd=root,
+                        handle=handle,
+                        extra_env={
+                            **stamp,
+                            OUTCOMES_DIR_VAR: str(live / 'serial'),
+                            STAGE_ENV: 'serial',
+                        },
+                    )
+                )
                 cut += ended_in_the_box(record)
     finally:
         shutil.move(live, outcomes_dir(path))
@@ -414,10 +466,11 @@ def run_verify(
     stages = [distil_log(path, banner=_PYTEST_BANNER, until=SERIAL_BANNER)]
     stages += [distil_log(path, banner=SERIAL_BANNER) for _ in codes[1:]]
     complete_census, scope_refusal = census_scope(pytest_args)
-    report = read_stages(
+    report = _recorded_pytest_report(
+        outcomes_dir(path),
         tuple((one.text, code) for one, code in zip(stages, codes, strict=True)),
-        allowed_skips=allowed,
-        complete_skip_census=complete_census,
+        allowed=allowed,
+        complete_census=complete_census,
     )
     report = replace(report, truncated=(*report.truncated, *scope_refusal, *vanished, *cut))
     reports.append(functools.reduce(lambda done, stage: stage.annotate(done), stages, report))
