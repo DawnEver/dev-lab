@@ -390,7 +390,7 @@ GIT_NETWORK_VERBS: Final = ('push', 'fetch', 'pull', 'clone', 'ls-remote', 'subm
 #: of a git dependency failed on auth and the re-run passed). ``pip`` is one only as ``pip install|sync|compile``.
 UV_NETWORK_VERBS: Final = ('sync', 'lock', 'add', 'remove', 'pip')
 
-#: Cargo dependency operations that can reach registries or Git. Build/test admission is not this door.
+#: Cargo dependency operations that can reach registries or Git. Admitting a build or a test run is not this door.
 CARGO_NETWORK_VERBS: Final = ('update', 'fetch', 'generate-lockfile')
 
 #: A verb that is a network verb only with one of these second words.
