@@ -392,7 +392,7 @@ def deploy(
     setup: list[str] = []  # the grant's setup lines: every tick runs inside them
     artefacts = '[artefacts] the rclone remote, where a repo declares one'
     phases = (
-        lambda: credentials(step, spec, home, check),
+        lambda: credentials(step, spec, home, check, serves=serves),
         lambda: reader(spec, home, role or role_of, semantics=semantics),
         lambda: grant(step, path, args.grant_table),
         lambda: _declare(step, spec, path),
