@@ -305,6 +305,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
     'venvfollow',
+    'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
