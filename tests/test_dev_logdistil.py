@@ -41,10 +41,10 @@ from dev_lab.dev.verifysteps import _PYTEST_BANNER, PYTEST_ARGS, _tee
 BANNER = _PYTEST_BANNER
 
 #: Every shape :func:`~dev_lab.dev.reports.read_pytest` consults, mapped to a line that carries
-#: it. RE-MEASURED 2026-09-19 by reading BOTH modules the parse now spans: ``reports.py`` keeps the
-#: verdict-facing shapes, and :mod:`dev_lab.dev.pytestout` holds the readers plus the truncation
-#: vocabulary. The VALUES are what the distillation has to keep, and the KEYS are checked against the
-#: two modules' own source below, so this cannot drift into a list of shapes somebody remembered.
+#: it. The parse spans three current owners: ``reports.py`` keeps the verdict-facing evidence shapes,
+#: :mod:`dev_lab.dev.pytestout` holds the readers plus the truncation vocabulary, and
+#: :mod:`dev_lab.dev.skipallowance` owns the skip recognizer. The VALUES are what distillation must keep,
+#: and the KEYS are checked against all three owners' source, not a remembered list of shapes.
 #:
 #: EACH TRUNCATION MARKER IS ITS OWN ROW, because the whole point of the set is that a marker names
 #: WHICH way a run died; a single row standing for eight would be the count pin this file refuses
@@ -86,7 +86,7 @@ NOISE_LINES = 120_000
 
 
 def source_shapes() -> set[str]:
-    """Every parse shape the pytest read consults, out of the AST of BOTH modules it now spans.
+    """Every parse shape the pytest read consults, from all three actual evidence/policy owners.
 
     THREE KINDS, because the parse has three. A module-level name bound to a ``re.compile(...)``
     call; a bare substring tested with ``in`` against the pytest text; and every element of
@@ -95,13 +95,14 @@ def source_shapes() -> set[str]:
     still answering a clean set. All three are shapes a line has to survive the distillation to be
     seen by, so all three belong in the same set.
 
-    READING BOTH FILES IS THE FIX RATHER THAN A WIDENING. This scan read ``reports.py`` alone, and
+    READING THE ACTUAL OWNERS IS THE FIX RATHER THAN A WIDENING. This scan read ``reports.py`` alone, and
     when the readers moved to ``pytestout`` it went on reporting a tidy four-shape set for a parse
     that consults sixteen -- the vacuous-green shape, arrived at by the subject moving rather than
-    by the corpus emptying.
+    by the corpus emptying. The later skip-policy move retains the same skip shape in its sole
+    current owner, so that owner must participate rather than deleting its representative.
     """
     found: set[str] = set()
-    for name in ('reports.py', 'pytestout.py'):
+    for name in ('reports.py', 'pytestout.py', 'skipallowance.py'):
         tree = ast.parse((ROOT / 'src' / 'dev_lab' / 'dev' / name).read_text(encoding='utf-8'))
         for node in tree.body:
             if not isinstance(node, ast.Assign | ast.AnnAssign):
@@ -136,7 +137,7 @@ class TestTheShapeSetIsARatchet:
         assert_floor(len(live), floor=SHAPE_FLOOR, what='pytest parse shape')
         assert_floor_still_binds(len(live), floor=SHAPE_FLOOR, headroom=SHAPE_HEADROOM, what='pytest parse shape')
         assert live == set(PARSE_SHAPES), (
-            f'consulted by reports.py and with no representative line here: {sorted(live - set(PARSE_SHAPES))} '
+            f'consulted by pytest readers with no representative here: {sorted(live - set(PARSE_SHAPES))} '
             f'-- add one and prove it survives the distillation, or the filter is narrower than the '
             f'parser and a line it drops is a verdict nobody can read. Represented here and no longer '
             f'consulted: {sorted(set(PARSE_SHAPES) - live)} -- delete it in the same edit that removed '
