@@ -767,3 +767,56 @@ def test_complete_approval_cli_passes_the_exact_identity_and_user_words_to_the_o
     assert actual.created == 100
     assert actual.command_sha256 == approved.command_sha256
     assert actual.user_words == words
+
+
+def test_an_unreadable_empty_command_is_not_an_identity_even_when_its_empty_hash_matches() -> None:
+    scene = _ApprovedScene()
+    scene.table[30] = (1, '')
+    assert scene.stop()[0] == 3
+    assert scene.killed == []
+
+
+def test_a_fresh_census_error_before_stopping_refuses_without_a_kill() -> None:
+    scene = _ApprovedScene()
+
+    def unreadable() -> dict:
+        msg = 'process census is unreadable'
+        raise OSError(msg)
+
+    scene.fresh = unreadable
+    code, lines = scene.stop()
+    assert code == 3
+    assert scene.killed == []
+    assert 'unreadable' in '\n'.join(lines)
+
+
+def test_a_census_error_after_stopping_the_controller_reports_partial() -> None:
+    scene = _ApprovedScene()
+
+    def unreadable_after_stop() -> dict:
+        if scene.killed:
+            msg = 'process census is unreadable'
+            raise OSError(msg)
+        return dict(scene.table)
+
+    scene.fresh = unreadable_after_stop
+    code, lines = scene.stop()
+    assert code == 3
+    assert scene.killed == [30]
+    assert 'partial' in '\n'.join(lines).lower()
+
+
+def test_a_failed_stop_reports_partial_and_does_not_continue_into_children() -> None:
+    scene = _ApprovedScene()
+    attempts = []
+
+    def denied(pid) -> None:
+        attempts.append(pid)
+        msg = 'process stop refused'
+        raise PermissionError(msg)
+
+    scene.kill = denied
+    code, lines = scene.stop()
+    assert code == 3
+    assert attempts == [30]
+    assert 'partial' in '\n'.join(lines).lower()
