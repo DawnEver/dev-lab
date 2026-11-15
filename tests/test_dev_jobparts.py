@@ -92,6 +92,30 @@ def test_a_family_manifest_requires_actual_guard_nodes_even_when_plugin_loading_
         jobparts.pytest_collector(root, arguments)('')
 
 
+def test_required_family_checks_do_not_acquire_the_union_of_resource_probe_markers(tmp_path: Path, monkeypatch) -> None:
+    root = make_repo(tmp_path, 'https://forge.example.org/team/app.git')
+    (root / 'pyproject.toml').write_text(
+        '[tool.lab_commons.tests]\nresources = ["windows", "linux"]\n'
+        '[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n',
+        encoding='utf-8',
+    )
+    (root / 'test_subject.py').write_text(
+        'import pytest\n\ndef test_plain():\n    pass\n\n@pytest.mark.windows\ndef test_windows():\n    pass\n',
+        encoding='utf-8',
+    )
+    run_git(root, 'add', '.')
+    run_git(root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.org', 'commit', '-qm', 'fixture')
+    monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
+    collect = jobparts.pytest_collector(root, ('-p', 'dev_lab.pytest_family'))
+    plain, windows = 'test_subject.py::test_plain', 'test_subject.py::test_windows'
+    required = set(collect('')) - {plain, windows}
+    assert required, 'the actual collection must retain its required family checks'
+    owned = localpart.owners(root, 'HEAD', (), collect)
+    assert owned[plain] == 'base'
+    assert owned[windows] == 'windows'
+    assert {owned[node] for node in required} == {'base'}, 'required checks are not a business resource union'
+
+
 @pytest.mark.parametrize(
     ('part', 'runs_on'),
     [
