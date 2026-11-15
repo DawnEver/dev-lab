@@ -543,6 +543,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
   while a PR of the session is red and unacknowledged.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
+* :mod:`dev_lab.dev.sessionpoll` -- SESSION-HEARS-ITS-PRS: one read of a session's PRs, its reds and its one green.
+* :mod:`dev_lab.dev.prwatcher` -- SESSION-HEARS-ITS-PRS: one machine watcher, per-session inboxes, the Stop gate's beat.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
 * :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.

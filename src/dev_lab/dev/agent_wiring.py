@@ -96,6 +96,11 @@ PUSHWATCH_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_la
 #: to arm, or warns when the session has no open PR on record.
 SESSIONPRS_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.sessionprs'
 
+#: SESSION-HEARS-ITS-PRS through ONE machine watcher (:mod:`dev_lab.dev.prwatcher`, dev-lab#581): every session start
+#: detaches the watcher unless one runs; each prompt surfaces the session's unread PR events and marks them read.
+PRWATCHER_START_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.prwatcher session-start'
+PRWATCHER_INBOX_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.prwatcher inbox'
+
 #: PUSHED-HEAD-IS-WATCHED, the ``Stop`` half (:mod:`dev_lab.dev.pushstop`, ruling 2026-11-04): a turn does not end
 #: while a head the session pushed is pending with no live watcher, or red (refused once).
 PUSHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushstop'
@@ -184,6 +189,7 @@ WIRING: Final = (
     Wire('PostToolUseFailure', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True),
     Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
     Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.hpcaccount.session bind', on_shells=False),
+    Wire('UserPromptSubmit', PRWATCHER_INBOX_COMMAND, 'dev_lab.dev.prwatcher inbox', on_shells=False),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False),
@@ -197,6 +203,7 @@ WIRING: Final = (
     Wire('SessionStart', FORGEAUTH_COMMAND, 'dev_lab.dev.forgeauthnotice', on_shells=False),
     Wire('SessionStart', SCRATCHSNAP_COMMAND, 'dev_lab.dev.scratch snapshot', on_shells=False),
     Wire('SessionStart', AUTOMODE_COMMAND, 'dev_lab.dev.automode session-start', on_shells=False),
+    Wire('SessionStart', PRWATCHER_START_COMMAND, 'dev_lab.dev.prwatcher session-start', on_shells=False),
 )
 
 #: Wires the family once installed and no longer does, as ``(event, marker)``: a re-install removes them, so an old

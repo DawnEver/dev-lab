@@ -67,7 +67,7 @@ def test_a_part_a_failed_job_posted_error_reads_red_and_a_pending_one_does_not()
 
 
 def test_a_head_is_not_green_while_its_base_part_is_absent() -> None:
-    """A head is green only by the session watch's one green (:func:`forgewatch._green`).
+    """A head is green only by the session watch's one green (:func:`sessionpoll.green`).
 
     A consumer PR, 2026-11-14: ``watch <sha> --stream`` said ``green`` on ``tests/security`` alone, while
     ``forge merge ready`` read ``tests/base`` UNCLAIMED.
