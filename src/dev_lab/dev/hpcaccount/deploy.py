@@ -62,10 +62,10 @@ import shutil
 import socket
 import sys
 import tempfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.config import config_path
@@ -76,6 +76,7 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
+from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
 from dev_lab.dev.hpcaccount.spec import (
     DEFAULT_PYTHON,
@@ -87,7 +88,6 @@ from dev_lab.dev.hpcaccount.spec import (
     cron_lines,
     grant_setup,
     load,
-    login_hosts,
     parse_repo,
     render,
     role_refusal,
@@ -349,28 +349,6 @@ def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink) -> 
     return 2
 
 
-def _host_refusal(spec: Deployment, path: Path, short: str, *, serves: bool, table: Mapping[str, Any] | None) -> str:
-    """Why this node may not run *spec*'s deploy (``''``: it may).
-
-    A serving account is pinned to ONE node, because cron is per node. An account that never serves installs no
-    cron line, so any of its grant's login hosts -- an alias round-robining over several nodes too -- is its host.
-    """
-    if short == spec.host:
-        return ''
-    if not serves:
-        hosts = login_hosts(path, table)
-        if spec.host in hosts:
-            return ''
-        return (
-            f'[deploy] host {spec.host} ({path}) is neither this node ({short}) nor a login host of the grant '
-            f'{sorted(hosts)}; a {spec.role} account installs no cron, so declare --host as one of those'
-        )
-    return (
-        f'this account serves from {spec.host} ([deploy] host in {path}); this is {short}. '
-        f'cron is per node: ssh to {spec.host} and run it there.'
-    )
-
-
 def deploy(
     argv: Sequence[str],
     *,
@@ -394,7 +372,7 @@ def deploy(
     serves = bool(semantics.get('serves', False))
     short = hostname.split('.', 1)[0]
     emit(f'[host] account {os.environ.get("USER") or os.environ.get("USERNAME", "?")} on {short}')
-    if why := _host_refusal(spec, path, short, serves=serves, table=args.grant_table):
+    if why := host_refusal(spec, path, short, serves=serves, table=args.grant_table):
         emit(f'deploy refused: {why}', err=True)
         return 2
     path_env = os.pathsep.join([*tick_dirs(home)[:2], os.environ.get('PATH', '')])
