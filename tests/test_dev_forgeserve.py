@@ -244,6 +244,9 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeservesteps, 'idle_drafts', drafts or (lambda *_a, **_k: []))  # reads open PRs (D53)
     monkeypatch.setattr(forgeservesteps, 'late_reviews', lambda *_a, **_k: [])  # reads open PRs too (backlog)
+    monkeypatch.setattr(
+        forgeservesteps, 'orphans', lambda *_a, **_k: []
+    )  # reads open PRs: tests/test_dev_forgeorphan.py
     monkeypatch.setattr(forgeservesteps, 'ready_when_current', lambda *_a, **_k: [])  # its own tests
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(
@@ -1186,7 +1189,7 @@ def test_a_finished_box_run_learns_its_peak_wall_and_measured_cpu(monkeypatch, t
         learn=lambda *a, **k: learnt.append((a, k)),
     )  # fmt: skip
     ((root, done, run), how) = learnt[0]
-    assert (root, done.platform, run.peak_mem_gb, run.cpu_s, how) == (tmp_path, 'windows', 3.5, 45.0, {'killed': False})
+    assert (root, done.platform, run.peak_mem_gb, run.cpu_s, how) == (tmp_path, 'windows', 3.5, 45.0, {'ended': 'exit'})
     assert run.wall_s > 0
 
 
@@ -1224,7 +1227,7 @@ def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatc
     _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learnt.append((a, k)))
     declared = forgeproduce.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
     ((_root, _item, run), how) = learnt[0]
-    assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'killed': True})
+    assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'ended': 'memory'})
 
 
 def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Path) -> None:

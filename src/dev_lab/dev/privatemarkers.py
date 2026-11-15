@@ -187,14 +187,16 @@ _ZERO = re.compile(r'^0+$')
 def pushed_messages(root: Path, ref_lines: str) -> list[tuple[str, str]]:
     """``(sha, message)`` of every commit a push publishes, from git's pre-push *ref_lines* on stdin.
 
-    An existing remote ref: ``<remote sha>..<local sha>``; a new one: the local sha minus every remote-tracking
-    ref -- what no remote holds yet. A deletion publishes nothing.
+    The local sha minus the ref's remote sha (an existing ref) and minus every remote-tracking ref -- what no
+    remote holds yet. A commit another remote ref already published (integration's, merged by a sync) is public
+    already: refusing this push cannot un-publish it, and judging it refused every sync of an older branch.
+    A deletion publishes nothing.
     """
     found: dict[str, str] = {}
     for line in ref_lines.splitlines():
         match line.split():
             case [_, local, _, remote] if not _ZERO.match(local):
-                span = [local, '--not', '--remotes'] if _ZERO.match(remote) else [f'{remote}..{local}']
+                span = [local, '--not', '--remotes', *(() if _ZERO.match(remote) else (remote,))]
             case _:
                 continue
         argv = ['git', 'log', '--format=%H%x00%B%x1e', *span]

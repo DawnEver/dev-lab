@@ -41,10 +41,10 @@ from dev_lab.dev.verifysteps import _PYTEST_BANNER, PYTEST_ARGS, _tee
 BANNER = _PYTEST_BANNER
 
 #: Every shape :func:`~dev_lab.dev.reports.read_pytest` consults, mapped to a line that carries
-#: it. The parse spans three current owners: ``reports.py`` keeps the verdict-facing evidence shapes,
-#: :mod:`dev_lab.dev.pytestout` holds the readers plus the truncation vocabulary, and
-#: :mod:`dev_lab.dev.skipallowance` owns the skip recognizer. The VALUES are what distillation must keep,
-#: and the KEYS are checked against all three owners' source, not a remembered list of shapes.
+#: it. RE-MEASURED 2026-09-19 by reading BOTH modules the parse now spans: ``reports.py`` keeps the
+#: verdict-facing shapes, and :mod:`dev_lab.dev.pytestout` holds the readers plus the truncation
+#: vocabulary. The VALUES are what the distillation has to keep, and the KEYS are checked against the
+#: two modules' own source below, so this cannot drift into a list of shapes somebody remembered.
 #:
 #: EACH TRUNCATION MARKER IS ITS OWN ROW, because the whole point of the set is that a marker names
 #: WHICH way a run died; a single row standing for eight would be the count pin this file refuses
@@ -63,7 +63,7 @@ PARSE_SHAPES: dict[str, str] = {
     '_CSI': '\x1b[31mFAILED\x1b[0m tests/test_a.py::\x1b[1mtest_b\x1b[0m - assert 0',
     '_FAILED_NODE': 'FAILED tests/test_units.py::test_a_bare_float_is_refused - AssertionError',
     '_INTERRUPTED': '!!!!!!! Interrupted: 3 errors during collection !!!!!!!',
-    '_SKIPPED': 'SKIPPED tests/test_vendor.py::test_a - needs the vendor',
+    'SKIPPED': 'SKIPPED tests/test_vendor.py::test_a - needs the vendor',
     '_SUMMARY': '=========== 3 failed, 304 passed, 2 xfailed in 14.8s ===========',
     'node down': '[gw3] node down: Not properly terminated',
 }
@@ -86,7 +86,9 @@ NOISE_LINES = 120_000
 
 
 def source_shapes() -> set[str]:
-    """Every parse shape the pytest read consults, from all three actual evidence/policy owners.
+    """Every parse shape the pytest read consults, out of the AST of every module it now spans.
+
+    THREE MODULES SINCE 2026-11-15: the skip allowance left ``reports.py`` for ``skipallowance.py``.
 
     THREE KINDS, because the parse has three. A module-level name bound to a ``re.compile(...)``
     call; a bare substring tested with ``in`` against the pytest text; and every element of
@@ -95,11 +97,10 @@ def source_shapes() -> set[str]:
     still answering a clean set. All three are shapes a line has to survive the distillation to be
     seen by, so all three belong in the same set.
 
-    READING THE ACTUAL OWNERS IS THE FIX RATHER THAN A WIDENING. This scan read ``reports.py`` alone, and
+    READING BOTH FILES IS THE FIX RATHER THAN A WIDENING. This scan read ``reports.py`` alone, and
     when the readers moved to ``pytestout`` it went on reporting a tidy four-shape set for a parse
     that consults sixteen -- the vacuous-green shape, arrived at by the subject moving rather than
-    by the corpus emptying. The later skip-policy move retains the same skip shape in its sole
-    current owner, so that owner must participate rather than deleting its representative.
+    by the corpus emptying.
     """
     found: set[str] = set()
     for name in ('reports.py', 'pytestout.py', 'skipallowance.py'):

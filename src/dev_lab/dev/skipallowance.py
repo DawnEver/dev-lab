@@ -1,4 +1,7 @@
-"""Skip declarations, stale subjects and whole-selection share policy. No processes.
+"""WHICH SKIPS A PROJECT MAY LIVE WITH: ``[tool.dev_lab.verify] allowed_skips``, both sides, and its ceiling.
+
+Split from :mod:`dev_lab.dev.reports` (2026-11-15, module-size band) along the seam its docstring
+already drew: the reports read what a step printed; this is the declaration a skip is judged against.
 
 THE SKIP ALLOWANCE IS A TWO-SIDED RATCHET, and it is the part of this module with the most rope.
 A skip is not an outcome (:class:`~dev_lab.dev.verdict.Proof` says so in its own words): it is a
@@ -58,7 +61,6 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.file_io import read_toml
@@ -66,29 +68,35 @@ from lab_commons.file_io import read_toml
 from dev_lab.dev.family import declared_table
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from pathlib import Path
 
 __all__ = [
-    'OUTCOME_WORDS',
+    'SKIPPED',
     'SKIP_CEILING',
     'MalformedAllowance',
     'declared_skips',
-    'executed_count',
     'skip_ceiling',
     'skip_shortfall',
-    'skipped_in',
     'stale_declarations',
     'stale_skips',
     'vanished_shortfall',
 ]
 
+#: The most of a run that may be skipped before nothing can settle, whatever was declared. A RATIO
+#: rather than a count, so it means the same thing to a 40-test repo and a 3000-test one -- and a
+#: ratio between two operating points is the shape ``taste.md`` requires of an escape hatch. A tenth
+#: is this family's number: past it the declaration has stopped being a list of known holes and has
+#: become the way the suite is run.
 SKIP_CEILING: Final = 0.10
 
-
-OUTCOME_WORDS: Final[tuple[str, ...]] = ('passed', 'failed', 'error', 'xfailed', 'xpassed')
-
-
-_SKIPPED = re.compile(r'^SKIPPED +(\S+\.py(?:::\S+)?)', re.MULTILINE)
+#: One short-summary skip line, in the shape ``--no-fold-skipped`` prints it: the NODE ID, then the
+#: reason. THE NODE ID SHAPE IS PART OF THE PATTERN AND NOT DECORATION, because a consumer's
+#: ``addopts`` may carry ``-s``: a test's own stdout then lands in the same log, and a line somebody
+#: PRINTED that happens to begin with the word would otherwise be read as a skip nobody declared.
+#: Every node id pytest builds names a ``.py`` path, optionally followed by ``::`` parts, so that is
+#: what is required here; the reason is not captured at all, because nothing an allowance declares
+#: is about it.
+SKIPPED = re.compile(r'^SKIPPED +(\S+\.py(?:::\S+)?)', re.MULTILINE)
 
 
 class MalformedAllowance(ValueError):
@@ -161,7 +169,7 @@ def skip_shortfall(
     complete suite census, so a selected invocation never checks it. :func:`stale_declarations` is
     the arm that binds without a run at all.
     """
-    found = _SKIPPED.findall(text) if recorded is None else list(recorded)
+    found = SKIPPED.findall(text) if recorded is None else list(recorded)
     observed = {node.replace('\\', '/') for node in found}
     allowed = tuple(prefix.replace('\\', '/') for prefix in allowed)
     named = len(found)
@@ -184,21 +192,12 @@ def skip_shortfall(
     return tuple(reasons)
 
 
-def executed_count(counts: dict[str, int]) -> int:
-    """Count accounted executions, never items excluded by the selector or stage split."""
-    return sum(counts.get(word, 0) for word in (*OUTCOME_WORDS, 'skipped'))
-
-
-def skip_ceiling(stages: Iterable[dict[str, int]]) -> tuple[str, ...]:
-    """Judge the unchanged share ceiling once over the whole executed selection."""
-    total_skipped, accounted = 0, 0
-    for counts in stages:
-        total_skipped += counts.get('skipped', 0)
-        accounted += executed_count(counts)
-    if total_skipped and accounted and total_skipped / accounted > SKIP_CEILING:
+def skip_ceiling(skipped: int, accounted: int) -> tuple[str, ...]:
+    """Judge the unchanged share ceiling once over the whole executed selection's *skipped* of *accounted*."""
+    if skipped and accounted and skipped / accounted > SKIP_CEILING:
         return (
             (
-                f'{total_skipped} of {accounted} accounted test(s) were skipped, above the '
+                f'{skipped} of {accounted} accounted test(s) were skipped, above the '
                 f'{SKIP_CEILING:.0%} ceiling: past it the allowance has stopped being a list of known '
                 f'holes and has become the way the suite is run'
             ),
@@ -303,8 +302,3 @@ def _names(path: Path, node: str) -> bool:
         if isinstance(inner, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
     }
     return all(part.split('[', 1)[0] in defined for part in node.split('::'))
-
-
-def skipped_in(text: str) -> list[str]:
-    """Text-only skip names; live identity remains with recorded cells."""
-    return _SKIPPED.findall(text)

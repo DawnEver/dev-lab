@@ -27,7 +27,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   strip, the anchored summary line, the collected count and the truncation vocabulary. Every reader
   answers ``None`` for a line never printed, never ``0``. NOT RE-EXPORTED.
 * :mod:`dev_lab.dev.reports` — what those readings MEAN for a verify step: the exit-code table,
-  the shortfalls, and the two-sided skip ratchet a project declares in ``allowed_skips``.
+  the shortfalls, and the skip ratchet applied to each step's evidence.
+* :mod:`dev_lab.dev.skipallowance` — the skips a project may live with: ``allowed_skips`` read as node-id
+  prefixes, refused on both sides (undeclared, stale or vanished) and capped by a share ceiling.
 * :mod:`dev_lab.dev.verify` — the family's ONE entry point that PRODUCES one:
   ``python -m dev_lab.dev.verify`` runs ruff, ruff format and pytest, tees them into a log under
   ``<output>/<yy>/<mm>/<dd>/verify/`` (:func:`dev_lab.dev.datedlog.output_dir`), and prints a stamped
@@ -168,12 +170,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   record's shape.
 * :mod:`dev_lab.dev.jobparts` -- the same parts produced by workflow jobs: the matrix of parts and runners,
   one producer per part, and ``absent`` (pending, since when) for every part no job settled.
-* :mod:`dev_lab.dev.jobmeasure` -- exact-SHA selected-test workflow measurements with retained receipts,
-  distinct from part acceptance and promotion.
-* :mod:`dev_lab.dev.skipallowance` -- declared skip prefixes, stale subjects and whole-selection share policy,
-  independent of process execution and step-evidence reports.
-* :mod:`dev_lab.dev.stoprules` -- declared run signatures, orphan roles and process-tree refusal policy;
-  the stop door retains actual stopping and exact-approved-controller execution.
+* :mod:`dev_lab.dev.native_session` -- the native harness's session identity, validated against one catalog and
+  independent of worktree provenance and authorization.
+* :mod:`dev_lab.dev.jobmeasure` -- a pinned Actions MEASUREMENT of selected tests through verify: a receipt
+  indexing the verify log's proof, never a part, never posted.
 * :mod:`dev_lab.dev.workstationverdict` -- the one exception to VERDICTS-FROM-THE-FORGE: a declared
   workstation posts its full part; a producer dedupes by content key and spot-checks workstation records.
 * :mod:`dev_lab.dev.verdictstore` -- the run-records store read by content key (tree, env key, part): a PASS
@@ -453,6 +453,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
 * :mod:`dev_lab.dev.pradmit` -- PR advice: ONE-SESSION-ONE-PR and NO-STACKED-PRS told at ``pr create``, never a refusal.
 * :mod:`dev_lab.dev.forgedraft` -- DRAFT-UNTIL-READY: ``pr create`` opens a draft; ``pr ready|draft <N>``; idle alarm.
+* :mod:`dev_lab.dev.forgeorphan` -- an open PR still 24 h with no live owner is labelled ``owner:integrator``.
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
@@ -480,6 +481,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
+* :mod:`dev_lab.dev.branchfate` -- TWO-FATES: every local branch and worktree is kept for a named live owner, or
+  archived losslessly (bundle, uncommitted work, manifest) and cleaned up by ``branchset --apply``; none lingers.
 * :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
 * :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
@@ -526,6 +529,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.planrunpreflight` -- every door of a plan checked on its hosts before the code is spent.
 * :mod:`dev_lab.dev.planremote` -- the hosts a plan runs on: the held session, else key-only ssh.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
+* :mod:`dev_lab.dev.stopsignatures` -- what that door recognises: built-in and declared run signatures,
+  declared orphan roles, and a multiprocessing worker proven orphaned from the table.
+* :mod:`dev_lab.dev.stopapproved` -- an explicitly user-approved controller stopped by exact identity,
+  controller first, its bounded original subtree rechecked before every stop.
+* :mod:`dev_lab.dev.proctable` -- the process table the stop doors read and its walks: subtree, ancestors,
+  whose session a pid descends from, and the pids no door may stop.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
 * :mod:`dev_lab.dev.journaldoor` -- the PreToolUse door: a task journal append citing an ignored path is
   refused before it is written.
@@ -534,8 +543,6 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
   while a PR of the session is red and unacknowledged.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
-* :mod:`dev_lab.dev.native_session` -- validated native harness identity shared with installed Node hooks;
-  separate from worktree provenance and signed role authorization.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
 * :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.

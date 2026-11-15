@@ -38,18 +38,10 @@ from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
-from dev_lab.dev.reports import (
-    StepReport,
-    read_ruff,
-    read_stages,
-)
+from dev_lab.dev.reports import StepReport, read_ruff, read_stages
 from dev_lab.dev.selection import census_scope
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
-from dev_lab.dev.skipallowance import (
-    declared_skips,
-    stale_declarations,
-    vanished_shortfall,
-)
+from dev_lab.dev.skipallowance import declared_skips, stale_declarations, vanished_shortfall
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, OutcomeReadError, RetiredOutcomes, outcomes_dir, read_cells
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from dev_lab.dev.verdictenv import verdict_env

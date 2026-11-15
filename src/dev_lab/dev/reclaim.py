@@ -50,6 +50,8 @@ __all__ = [
     'Lease',
     'blockers',
     'declared_generated',
+    'index_age_s',
+    'locked_trees',
     'orphan_reason',
     'reclaim',
     'reclaimable',
@@ -97,7 +99,7 @@ def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | N
     return tuple(p for p in paths if not any(fnmatch.fnmatchcase(p, glob) for glob in generated))
 
 
-def _index_age_s(tree: Path) -> float | None:
+def index_age_s(tree: Path) -> float | None:
     """Seconds since *tree*'s index last changed; ``None`` when it has none to read."""
     index = (git_out(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index') or '').strip()
     try:
@@ -146,7 +148,8 @@ class Lease:
         return not self.reason
 
 
-def _locked(root: Path) -> frozenset[Path] | None:
+def locked_trees(root: Path) -> frozenset[Path] | None:
+    """The resolved paths of every ``git worktree lock``-ed tree of *root*; ``None`` when git could not answer."""
     out = git_out(root, 'worktree', 'list', '--porcelain')
     if out is None:
         return None
@@ -224,7 +227,7 @@ def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str
         return 'locked (git worktree unlock first)'
     if unsaved := _unsaved(tree, judge.generated):
         return unsaved
-    age = _index_age_s(tree)
+    age = index_age_s(tree)
     if age is not None and age < judge.quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
     if not _landed(tree, branch, holders):
@@ -304,7 +307,7 @@ def reclaimable(
     as landed: the trunk's authority and every declared session (``dev_lab.dev.branchset.holders``).
     """
     trees = worktrees(root)
-    locked = _locked(root)
+    locked = locked_trees(root)
     orphans = orphan_directories(root, home=home)
     if trees is None or locked is None or orphans is None:
         return None
@@ -383,7 +386,7 @@ def removed_approved(root: Path, tree: Path, *, quiet_s: float = QUIET_S) -> str
     """
     if refused := repository_at(root, tree):
         return refused
-    if (age := _index_age_s(tree)) is not None and age < quiet_s:
+    if (age := index_age_s(tree)) is not None and age < quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
     if unmoved := home_outputs(root, tree):
         return unmoved

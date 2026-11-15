@@ -20,13 +20,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'MERGE-OR-DELETE',
         (
             'A merged branch is DELETED and an unmerged one is MERGED, no third state: an `archive/*` tag or '
-            'untracked rename hides work and is debt like an undeclared branch -- `branchset` lists it, deletes it '
-            'when a declared branch holds its tip, else names it to merge; a worktree is a lease for one task, so '
-            'a tree unlocked, unoccupied, with no TRACKED change and its content landed on the trunk or a declared '
-            'session is reclaimed by `branchset --apply` and the session debris hook, each kept tree listed with '
-            'its reason: what git does not track goes with it, its run outputs moved home and verified first.'
+            'untracked rename hides work and is debt -- `branchset` lists it, deletes it when a declared branch '
+            'holds its tip, else names it to merge. A worktree is a lease for one task: `branchset --apply` (also run '
+            'at session start) reclaims a landed clean tree, and gives every other local branch or tree one of two '
+            'fates (ruling 2026-11-15) -- kept for a NAMED live owner, else archived losslessly and cleaned up '
+            '(`dev_lab.dev.reclaim`, `dev_lab.dev.branchfate`).'
         ),
-        ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py'),
+        ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py', 'tests/test_dev_branchfate.py'),
     ),
     (
         'RECURSIVE-DELETE',

@@ -52,6 +52,12 @@ def test_the_longest_spelling_wins_so_a_finding_names_the_right_tree() -> None:
     assert classify_text('nothing here', SIBLINGS) is None
 
 
+def test_a_name_running_on_into_more_letters_is_another_word() -> None:
+    """``consumer-added`` names no sibling; a hyphenated compound of the whole name still does (PLANTED CONTROL)."""
+    assert classify_text('including a consumer-added job', SIBLINGS) is None
+    assert classify_text('``consumer-a-native`` is one distribution', SIBLINGS) == 'consumer-a'
+
+
 def test_a_unit_and_a_mime_type_are_path_shaped_and_are_not_paths(tmp_path: Path) -> None:
     """THE EXTENSION IS LOAD-BEARING: without it the reading swallows `A/m` and `application/json`."""
     for text in ('A/m', 'rad/s', 'application/json', 'refs/remotes/origin', 'feat/second'):

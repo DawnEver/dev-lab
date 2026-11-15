@@ -64,9 +64,7 @@ from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
 from dev_lab.dev.runcache import cache_path, cached, remember
 from dev_lab.dev.selection import is_targeted
-from dev_lab.dev.skipallowance import (
-    MalformedAllowance,
-)
+from dev_lab.dev.skipallowance import MalformedAllowance
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verdictstore import ContentKey, Found

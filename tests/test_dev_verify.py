@@ -52,12 +52,7 @@ from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
 from dev_lab.dev.platformparts import part_context, part_of
 from dev_lab.dev.producer import OUTCOME_VAR, PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, producing, release_reason
-from dev_lab.dev.reports import (
-    StepReport,
-    read_pytest,
-    read_ruff,
-    read_stages,
-)
+from dev_lab.dev.reports import StepReport, read_pytest, read_ruff, read_stages
 from dev_lab.dev.runcache import CachedRun, record, runs
 from dev_lab.dev.skipallowance import SKIP_CEILING, MalformedAllowance, declared_skips, stale_declarations
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, outcomes_dir, read_cells
@@ -640,7 +635,7 @@ class TestTheVanishedSubjectArm:
     def test_the_arm_needs_no_run_at_all(self, tmp_path: Path) -> None:
         """It reads the tree, which is why it binds on an invocation that selected one test.
 
-        ``_skip_shortfall``'s stale arm is gated on a COMPLETE suite census -- a selected run cannot
+        ``skipallowance.skip_shortfall``'s stale arm is gated on a COMPLETE suite census -- a selected run cannot
         judge another test's allowance retired -- so without this the hole is open on every targeted
         invocation, which is most of them.
         """
@@ -1765,6 +1760,27 @@ def test_a_selection_learns_its_whole_tree_peak_and_a_memory_kill_grows_it(tmp_p
     verifybox.learn_ended(tmp_path, ['tests'], record)
     assert verifybox.selection_mem_gb('https://g/w.git', files, 1) == pytest.approx(3 * learned.BOX_HEADROOM, abs=1e-6)
     verifybox.learn_ended(tmp_path, ['tests'], None)  # a step the box did not run teaches nothing
+
+
+def test_planted_an_unfinished_selection_teaches_no_peak(tmp_path: Path, monkeypatch) -> None:
+    """O53: a run the box's WALL cut (or any ending but exit/memory) stopped mid-climb -- its peak is no price.
+
+    THE INCIDENT (2026-11-12): a timed-out measurement's peak was learned as the selection's need, and
+    every later light measure of the tree was refused for memory it was never shown to need. PLANTED CONTROL: the
+    same record ending ``exit`` teaches its peak.
+    """
+    monkeypatch.setattr(verifybox, '_repo', lambda _root: 'https://g/cut.git')
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    files = verifybox.selection_files(tmp_path, ['tests'])
+    producer = verifybox.selection_producer(files)
+    record = tmp_path / 'o.json'
+    write_ended(record, box.ProcessEnd(1, 'wall', 30 * GB, 1.0, 10.0, 'fake', 'k', None))
+    verifybox.learn_ended(tmp_path, ['tests'], record)
+    assert learned.run_of('https://g/cut.git', producer, ()) is None
+    write_ended(record, box.ProcessEnd(0, 'exit', 3 * GB, 1.0, 10.0, 'fake', 'k', None))
+    verifybox.learn_ended(tmp_path, ['tests'], record)
+    assert learned.run_of('https://g/cut.git', producer, ()).peak_mem_gb == pytest.approx(3.0, abs=1e-9)  # GB
 
 
 def test_a_refused_selection_names_the_offer_to_another_host(tmp_path: Path, monkeypatch) -> None:

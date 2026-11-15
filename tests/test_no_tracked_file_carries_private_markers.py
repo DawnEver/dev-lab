@@ -194,6 +194,25 @@ def test_a_new_branch_push_judges_only_the_commits_no_remote_holds(tmp_path: Pat
     assert privatemarkers.pushed_messages(tmp_path, f'refs/heads/x {head} refs/heads/x {"0" * 40}\n')
 
 
+def test_an_existing_ref_push_never_judges_a_commit_another_remote_ref_already_published(tmp_path: Path) -> None:
+    """Syncing a PR branch with integration pushes integration's commits, which origin already holds.
+
+    A message already public under any remote ref cannot be un-published by refusing this push, so only the
+    commits no remote holds are judged. PLANTED CONTROL: the same marker commit, held by no remote, is judged.
+    """
+    base, marked = _committed_repo(tmp_path, 'fix: reached secrethost today')
+
+    def git(*args: str) -> str:
+        return _door.run(['git', *args], cwd=tmp_path, check=True, capture_output=True).stdout.decode().strip()
+
+    git('commit', '-q', '--allow-empty', '-m', 'merge: the sync')
+    head = git('rev-parse', 'HEAD')
+    line = f'refs/heads/x {head} refs/heads/x {base}\n'
+    assert marked in dict(privatemarkers.pushed_messages(tmp_path, line)), 'CONTROL: no remote holds it yet'
+    git('update-ref', 'refs/remotes/origin/integrate/main', marked)
+    assert list(dict(privatemarkers.pushed_messages(tmp_path, line))) == [head]
+
+
 def test_a_pr_body_with_a_marker_is_refused_by_the_create_door(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

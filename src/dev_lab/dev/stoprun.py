@@ -3,9 +3,8 @@
 Generalised 2026-10-04 from a consumer's process-tree killer (its ``--pid`` mode) (AUTO-MODE-RUNS-THE-DOORS):
 an agent stopping its OWN superseded run was refused as a raw ``taskkill /T /F``. The door replaces the
 raw kill with a checked one: the NORMAL path REFUSES unless the pid's command line is a run it can identify
-(:data:`~dev_lab.dev.stoprules.RUN_SIGNATURES` -- the family verify, a gate runner, pytest, a ``forge serve`` --
-plus any the repo declares), and then stops that pid's subtree only, children first, never an ancestor or a sibling.
-Local only.
+(:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest, a ``forge serve`` -- plus any the repo
+declares), and then stops that pid's subtree only, children first, never an ancestor or a sibling. Local only.
 
 An explicitly user-approved, otherwise unrecognized controller has a separate identity mode:
 ``--approved-created STAMP --approved-command-sha256 HASH --approved-user-words WORDS``. All three are
@@ -41,7 +40,7 @@ signature, RAW-PROCESS-KILL forbade ``taskkill``, and the memory they held kept 
 * NO BOX CLAIM is held by it or a descendant (:func:`lab_commons.box.ledger.holdings`; a Designer a claim
   was handed over to is that claim's, and is released through its own door). An unreadable ledger refuses;
 * its command line is a DECLARED vendor tool, a ``scratch/`` script or a multiprocessing spawn/forkserver
-  worker (:data:`~dev_lab.dev.stoprules.BUILTIN_ORPHANS`)::
+  worker (:data:`BUILTIN_ORPHANS`)::
 
       [tool.dev_lab.stoprun]
       orphans = ["designer.exe.* --process-link", "JobSystem.exe -s "]
@@ -61,71 +60,40 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import hashlib
 import os
-import re
 import shutil
 import signal
+import sqlite3
 import sys
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.box.ledger import holdings
-from lab_commons.census import processes
 from lab_commons.liveness import CreationClock, creation_stamp
 from lab_commons.log import emit
-from lab_commons.proc import descendants, pid_alive
+from lab_commons.proc import pid_alive
 
-from dev_lab.dev import stoprules
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.proctable import INIT, Proc, process_table, subtree, unstoppable, whose
 from dev_lab.dev.servelock import note_stopped
+from dev_lab.dev.stopapproved import ApprovedRun, stop_approved
+from dev_lab.dev.stopsignatures import (
+    BUILTIN_ORPHANS,
+    SERVE,
+    TABLE,
+    declared_orphans,
+    declared_signatures,
+    orphan_role,
+    why_stoppable,
+)
 
-__all__ = [
-    'SERVE_GRACE_S',
-    'ApprovedRun',
-    'main',
-    'process_table',
-    'repo_root',
-    'stop',
-]
-
+__all__ = ['SERVE_GRACE_S', 'main', 'repo_root', 'stop']
 
 #: How long a serve whose producers were stopped may take to release its claim and exit, in seconds.
 SERVE_GRACE_S: Final = 60.0
-
-
-def process_table() -> dict[int, stoprules.Proc]:
-    """``{pid: (ppid, cmdline)}`` for every process, from the one census (:mod:`lab_commons.census`)."""
-    return {one.pid: (one.ppid, one.command_line) for one in processes()}
-
-
-@dataclass(frozen=True)
-class ApprovedRun:
-    """The caller's explicit user authorization and exact root identity, not proof of ownership.
-
-    Select the actual Python controller, not a venv launcher that merely waits for it. All facts
-    are mandatory and single-use observations: execution rechecks them, even after a dry run.
-    """
-
-    created: int
-    command_sha256: str
-    user_words: str
-
-    def __post_init__(self) -> None:
-        """Reject an incomplete authorization before any process is observed or stopped."""
-        if type(self.created) is not int or self.created <= 0:
-            msg = 'approved created must be a positive exact integer creation stamp'
-            raise ValueError(msg)
-        if not isinstance(self.command_sha256, str) or re.fullmatch(r'[0-9a-f]{64}', self.command_sha256) is None:
-            msg = 'approved command_sha256 must name the exact complete command line as lowercase SHA256'
-            raise ValueError(msg)
-        if not isinstance(self.user_words, str) or not self.user_words.strip():
-            msg = 'approved user_words must contain the actual explicit user authorization'
-            raise ValueError(msg)
 
 
 def repo_root(start: Path) -> Path:
@@ -137,6 +105,52 @@ def repo_root(start: Path) -> Path:
 def _claimed() -> set[int]:
     """The pids holding a claim in this machine's box ledger now."""
     return {held.pid for held in holdings()}
+
+
+def _orphan_refusal(
+    pid: int,
+    table: Mapping[int, Proc],
+    orphans: tuple[str, ...],
+    claimed: Callable[[], set[int]],
+    born: CreationClock,
+) -> str | None:
+    """Why *pid* is NOT a stoppable orphan, or ``None`` when it is (the module docstring's three conditions)."""
+    cmdline = table[pid][1]
+    if not orphan_role(cmdline, orphans):
+        builtin = ', '.join(repr(sig.pattern) for sig in BUILTIN_ORPHANS)
+        return f'no orphan signature either (built-in {builtin} or {TABLE} orphans)'
+    ppid = table[pid][0]
+    if ppid > INIT and ppid in table:  # POSIX reparents an orphan to init: its parent is gone
+        parent, child = born(ppid), born(pid)
+        if parent is None or child is None or parent <= child:
+            return f'its parent {ppid} is alive ({table[ppid][1][:120]!r}) -- stop that run instead'
+    try:
+        held = claimed() & set(subtree(table, pid))
+    except (OSError, sqlite3.Error) as exc:
+        return f'the box ledger could not be read, so a claim cannot be ruled out: {exc}'
+    if held:
+        return f'{sorted(held)} holds a box claim -- release it through the door that took it'
+    return None
+
+
+#: The exit every refusal ends with: the two ways forward, never a bare "refused".
+EXIT: Final = (
+    'exit: ask the user to stop it, or -- when it is a run of this repo -- declare its command line as a regex in '
+    '`{table} signatures = [...]` of {manifest}'
+)
+
+
+def _refusal(table: Mapping[int, Proc], pid: int, why: str, me: int, manifest: str) -> list[str]:
+    """The refusal of *pid*: what it is, who started it, whose it is, and the exit."""
+    ppid = table[pid][0]
+    parent = f'{ppid} {table[ppid][1][:120]!r}' if ppid in table else f'{ppid} (gone)'
+    return [
+        f'refused: {pid} matches no run signature (built-in or {TABLE}) and {why}',
+        f'what: {table[pid][1][:200]!r}',
+        f'parent: {parent}',
+        f'whose: {whose(table, pid, me)}',
+        EXIT.format(table=TABLE, manifest=manifest),
+    ]
 
 
 def _kill(pid: int) -> None:
@@ -162,150 +176,9 @@ def _gone(pid: int, seconds: float) -> bool:
     return True
 
 
-def _command_hash(command: str) -> str:
-    return hashlib.sha256(command.encode('utf-8')).hexdigest()
-
-
-@dataclass
-class _ApprovedTree:
-    """One bounded original process snapshot and the parents this invocation proved stopped."""
-
-    root: int
-    table: Mapping[int, stoprules.Proc]
-    members: frozenset[int]
-    stamps: dict[int, int | None]
-    stopped: set[int]
-
-    @classmethod
-    def capture(
-        cls,
-        pid: int,
-        table: Mapping[int, stoprules.Proc],
-        approved: ApprovedRun,
-        born: CreationClock,
-        *,
-        signatures: tuple[str, ...],
-        orphans: tuple[str, ...],
-    ) -> _ApprovedTree:
-        """Reuse the process owner's refuted-edge closure, then require positive identity proof."""
-        stamps: dict[int, int | None] = {}
-
-        def observed(member: int) -> int | None:
-            if member not in stamps:
-                stamps[member] = born(member)
-            return stamps[member]
-
-        if observed(pid) != approved.created or _command_hash(table[pid][1]) != approved.command_sha256:
-            msg = 'approved root creation stamp or complete command identity disagrees'
-            raise ValueError(msg)
-        if stoprules.why_stoppable(table, pid, signatures, born) is not None:
-            raise ValueError(stoprules.ordinary_lifecycle_door(pid))
-        rows = {member: (row[1], row[0]) for member, row in table.items()}
-        members = descendants(pid, rows, observed)
-        if any(type(observed(member)) is not int or observed(member) <= 0 for member in members):
-            msg = 'an approved subtree member has no readable creation stamp'
-            raise ValueError(msg)
-        if any(not table[member][1].strip() for member in members):
-            msg = 'an approved subtree member has no readable complete command'
-            raise ValueError(msg)
-        for member in members:
-            command = table[member][1]
-            if (
-                stoprules.SERVE.search(command)
-                or stoprules.orphan_role(command, orphans)
-                or stoprules.orphaned_worker(table, member, born) is not None
-            ):
-                raise ValueError(stoprules.ordinary_lifecycle_door(member))
-        return cls(pid, dict(table), members, stamps, set())
-
-    def changed(self, fresh: Callable[[], Mapping[int, stoprules.Proc]], born: CreationClock) -> str | None:
-        """Refuse an unreadable fresh census rather than killing against an old observation."""
-        try:
-            return self._changed(fresh(), born)
-        except OSError as exc:
-            return f'the fresh process identity is unreadable: {exc}'
-
-    def _changed(self, current: Mapping[int, stoprules.Proc], born: CreationClock) -> str | None:
-        """The exact original members remain; only a proved stopped parent licenses reparenting."""
-        for member in self.members - self.stopped:
-            if member not in current:
-                return f'original member {member} disappeared before its identity could be proved'
-            if never := stoprules.never(member, current):
-                return never
-            if born(member) != self.stamps[member] or _command_hash(current[member][1]) != _command_hash(
-                self.table[member][1]
-            ):
-                return f'original member {member} changed creation stamp or complete command'
-            parent = self.table[member][0]
-            if current[member][0] != parent and parent not in self.stopped:
-                return f'original member {member} changed parent while its proved parent was not stopped'
-        current_rows = {member: (row[1], row[0]) for member, row in current.items()}
-        # Keep only the ORIGINAL proved edges through stopped/reparented members. Never walk a
-        # new parent. These virtual rows diagnose growth; they never authorize an extra kill.
-        current_rows.update({member: (row[1], row[0]) for member, row in self.table.items() if member in self.members})
-        growth = (
-            descendants(
-                self.root,
-                current_rows,
-                lambda member: self.stamps[member] if member in self.stopped else born(member),
-            )
-            - self.members
-        )
-        if growth:
-            return (
-                f'additional processes below the recorded parent identities: {sorted(growth)}; '
-                'no new member is authorized. Inspect them and use their recognized run door or a new exact approval'
-            )
-        return None
-
-
-def _stop_approved(
-    pid: int,
-    table: Mapping[int, stoprules.Proc],
-    approved: ApprovedRun,
-    *,
-    dry_run: bool,
-    born: CreationClock,
-    fresh: Callable[[], Mapping[int, stoprules.Proc]],
-    kill: Callable[[int], None],
-    gone: Callable[[int, float], bool],
-    signatures: tuple[str, ...],
-    orphans: tuple[str, ...],
-) -> tuple[int, list[str]]:
-    """Cut the actual controller first; every later uncertainty reports partial, never atomic success."""
-    try:
-        tree = _ApprovedTree.capture(pid, table, approved, born, signatures=signatures, orphans=orphans)
-    except (ValueError, OSError) as exc:
-        return 3, [f'refused: {exc}']
-    if why := tree.changed(fresh, born):
-        return 3, [f'refused: {why}']
-    lines = ['user-authorized exact controller identity; this assertion is not session ownership proof']
-    order = [pid, *(member for member in stoprules.subtree(table, pid) if member != pid and member in tree.members)]
-    for member in order:
-        if why := tree.changed(fresh, born):
-            prefix = 'partial: stopped no further process' if tree.stopped else 'refused'
-            return 3, [*lines, f'{prefix}: {why}']
-        if dry_run:
-            lines.append(
-                f'would stop {member} created={tree.stamps[member]} command_sha256={_command_hash(table[member][1])}'
-            )
-            continue
-        try:
-            kill(member)
-            exited = gone(member, 2.0)
-        except OSError as exc:
-            return 3, [*lines, f'partial: stopping {member} was not confirmed: {exc}; no further kill']
-        if not exited:
-            return 3, [*lines, f'partial: stop requested for {member}, but exit was not confirmed; no further kill']
-        tree.stopped.add(member)
-        lines.append(f'stopped {member} created={tree.stamps[member]} command_sha256={_command_hash(table[member][1])}')
-    why = tree.changed(fresh, born)
-    return (3, [*lines, f'partial: the original stop sequence ended, but {why}']) if why else (0, lines)
-
-
 def stop(
     pid: int,
-    table: Mapping[int, stoprules.Proc],
+    table: Mapping[int, Proc],
     *,
     dry_run: bool,
     kill: Callable[[int], None] = _kill,
@@ -318,13 +191,13 @@ def stop(
     me: int | None = None,
     manifest: str = 'the repo`s pyproject.toml',
     approved: ApprovedRun | None = None,
-    fresh: Callable[[], Mapping[int, stoprules.Proc]] = process_table,
+    fresh: Callable[[], Mapping[int, Proc]] = process_table,
 ) -> tuple[int, list[str]]:
     """Stop *pid*'s subtree if it is an identifiable run or a stoppable orphan. ``(exit code, lines)``; 3 refused."""
-    if never := stoprules.never(pid, table):
+    if never := unstoppable(pid, table):
         return 3, [f'refused: {never}']
     if approved is not None:
-        return _stop_approved(
+        return stop_approved(
             pid,
             table,
             approved,
@@ -336,10 +209,10 @@ def stop(
             signatures=signatures,
             orphans=orphans,
         )
-    matched = stoprules.why_stoppable(table, pid, signatures, born)
+    matched = why_stoppable(table, pid, signatures, born)
     if matched is None:
-        if why := stoprules.orphan_refusal(pid, table, orphans, claimed, born):
-            return 3, stoprules.refusal(table, pid, why, os.getpid() if me is None else me, manifest)
+        if why := _orphan_refusal(pid, table, orphans, claimed, born):
+            return 3, _refusal(table, pid, why, os.getpid() if me is None else me, manifest)
         lines = [f'an orphan: its parent is gone and it holds no box claim: {table[pid][1][:120]!r}']
     else:
         lines = [f'matched signature {matched!r}']
@@ -350,7 +223,7 @@ def stop(
 
 def _stop_identified_subtree(
     pid: int,
-    table: Mapping[int, stoprules.Proc],
+    table: Mapping[int, Proc],
     matched: str | None,
     lines: list[str],
     *,
@@ -361,13 +234,13 @@ def _stop_identified_subtree(
     born: CreationClock,
 ) -> tuple[int, list[str]]:
     """The existing signature/orphan behavior: children first, with the serve release grace."""
-    serve = matched == stoprules.SERVE.pattern
+    serve = matched == SERVE.pattern
     # Each member's creation stamp as the snapshot saw it: a pid recycled during the serve grace is not ours.
-    stamps = {member: born(member) for member in stoprules.subtree(table, pid)} if not dry_run else {}
+    stamps = {member: born(member) for member in subtree(table, pid)} if not dry_run else {}
     if serve and not dry_run:
         for child in (p for p, (ppid, *_) in table.items() if ppid == pid and p != pid):
             note_stopped(child, root=notes)
-    for member in stoprules.subtree(table, pid):
+    for member in subtree(table, pid):
         if serve and member == pid and not dry_run and gone(pid, SERVE_GRACE_S):
             lines.append(f'serve {pid} released its claim and exited')
             continue
@@ -406,8 +279,8 @@ def main(argv: list[str] | None = None) -> int:
         args.pid,
         process_table(),
         dry_run=args.dry_run,
-        signatures=stoprules.declared_signatures(root),
-        orphans=stoprules.declared_orphans(root),
+        signatures=declared_signatures(root),
+        orphans=declared_orphans(root),
         manifest=str(root / 'pyproject.toml'),
         approved=approved,
     )

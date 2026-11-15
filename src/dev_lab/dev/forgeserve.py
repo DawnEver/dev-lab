@@ -41,7 +41,7 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read
   The tick TAKES a local part's box claim before it claims the part, and the producer adopts it: the one
   admission is the tick's, so a started part is never box-refused and a refused one posts nothing.
 * RUNNING -- each cluster run in flight here, at its learned demand
-  (:func:`~lab_commons.compute.learned.cluster_demand`).
+  (:func:`dev_lab.dev.forgedemand.part_demand`).
 
 SEVERAL LOCAL PARTS AT ONCE, ONE THREAD EACH, and why that shape: ``produce`` already owns one child --
 its stream, its beats, its renewals, its release -- and is blocking, so N admitted parts are N calls of
@@ -121,7 +121,6 @@ import lab_commons.launch as _door
 from lab_commons.box import Holding, holdings
 from lab_commons.box.machine import provided
 from lab_commons.box.providers import inventory
-from lab_commons.compute.learned import cluster_demand
 from lab_commons.compute.model import Supply
 from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
@@ -144,6 +143,7 @@ from dev_lab.dev.forgealarm import (
     sound,
 )
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
+from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import card_host, card_owners, read_cards, recording
 from dev_lab.dev.forgeintent import reattach
@@ -253,7 +253,7 @@ def serve(
         say(line)
     ceiling = standing.ceiling_gb if standing is not None else None  # a demand above it is never admitted
     host_rounds = Rounds(
-        root, repo, alarm, runs, slurm=slurm, say=say, sized=cluster_demand(repo, ceiling_gb=ceiling),
+        root, repo, alarm, runs, slurm=slurm, say=say, sized=part_demand(repo, ceiling_gb=ceiling),
         supplied=functools.partial(supplied, name=name, standing=standing),
         holding=(lambda: ()) if seat is not None else holding,
         ticking={
