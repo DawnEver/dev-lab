@@ -180,8 +180,8 @@ id = "closed-pr"
 run = ["python", "-m", "dev_lab.dev.closedpush"]
 always_run = true
 
-# PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07): a pr/* head holds origin/<integration>'s
-# current tip and a lock fresh against the floated siblings' heads; the remedy is `forge sync`. EARLY FEEDBACK only:
+# PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07): a pr/* head lacks at most the lag window of
+# origin/<integration>'s first-parent commits and holds a lock fresh against the floated siblings' heads; the remedy is `forge sync`. EARLY FEEDBACK only:
 # the forge posts the same judgement as the `pr-current` status on every PR head and the merge requires it
 # (dev_lab.dev.forgeheadgate, user ruling 2026-11-07), so a stale or missing shim never disarms it.
 [[pre-push]]
