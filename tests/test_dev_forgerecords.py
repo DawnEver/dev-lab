@@ -15,17 +15,16 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from dev_lab.dev import forgerecords
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgealarm import STORAGE
+from dev_lab.dev.forgerecordkeep import RECORDS_PER_ROW, kept_shas, sha_of
 from dev_lab.dev.forgerecords import (
     RECORDS_TITLE,
     attach,
-    kept_shas,
     listing,
     prune,
     read_named,
     records_issue,
     remove_named,
     replace_named,
-    sha_of,
 )
 from dev_lab.dev.forgework import GITHUB
 from dev_lab.dev.retentionplan import Policy
@@ -215,10 +214,11 @@ def test_the_listing_reads_every_page_so_prune_sees_every_record(server) -> None
     PLANTED CONTROL: a dead record on the SECOND page is listed and pruned.
     """
     answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
-    first = [_asset(i, f'run-{LIVE}-linux-r{i}.json.gz') for i in range(1, 51)]
+    live = {f'{i:040x}' for i in range(1, 51)}  # one record per live sha, so no row is superseded
+    first = [_asset(i, f'run-{i:040x}-linux-r1.json.gz') for i in range(1, 51)]
     answer('GET', '/repos/o/r/releases/9/assets', (200, first), (200, [_asset(51, f'run-{DEAD}-linux-r1.json.gz')]))
     built = client(Forge('github.com', 'o', 'r'), Loopback(server))
-    assert [a.id for a in prune(built, {LIVE}, unit_results=1, dry_run=True)] == [51]
+    assert [a.id for a in prune(built, live, unit_results=1, dry_run=True)] == [51]
 
 
 def _full_github(names: list[str]) -> None:
@@ -294,7 +294,7 @@ def test_attach_to_a_full_home_prunes_the_dead_and_superseded_records_then_uploa
     answer('POST', '/repos/o/r/releases/9/assets', (201, _asset(cap + 1, record.name)))
     built = client(Forge('github.com', 'o', 'r'), Loopback(server))
     assert attach(built, record, root=tmp_path).id == cap + 1
-    per_row = forgerecords.RECORDS_PER_ROW
+    per_row = RECORDS_PER_ROW
     assert _deleted() == list(range(1, cap - per_row + 1)), 'the dead, and the live row down to its newest'
 
 
@@ -310,7 +310,7 @@ def test_attach_without_a_checkout_still_prunes_what_needs_no_liveness(server, t
     answer('POST', '/repos/o/r/releases/9/assets', (201, _asset(cap + 1, record.name)))
     built = client(Forge('github.com', 'o', 'r'), Loopback(server))
     assert attach(built, record).id == cap + 1
-    per_row = forgerecords.RECORDS_PER_ROW
+    per_row = RECORDS_PER_ROW
     assert _deleted() == list(range(cap - 4, cap + 1 - per_row)), 'only the superseded records of the one row'
 
 

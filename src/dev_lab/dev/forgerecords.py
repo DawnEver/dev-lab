@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import re
 import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -38,33 +37,28 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, cast
 
-import lab_commons.launch as _door
 from lab_commons.config import config_path, section
 from lab_commons.hpc.allocation import RECORD as ALLOCATION
 from lab_commons.log import emit
 
 from dev_lab.dev._forge_journal import Durable, Probe
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, forge_transport
+from dev_lab.dev.forge import Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgealarm import STORAGE, Alarm
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages
+from dev_lab.dev.forgerecordkeep import DEFAULT_KEEP_TRUNK, RECORDS_PER_ROW, doomed_of, kept_shas, sha_of
 from dev_lab.dev.forgework import GITHUB, Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.partrows import is_row
 
 __all__ = [
     'ALARM_AT',
-    'DEFAULT_KEEP_TRUNK',
     'GITHUB_ASSET_CAP',
     'PRUNE_EVERY',
-    'RECORDS_PER_ROW',
     'RECORDS_TAG',
     'RECORDS_TITLE',
-    'UNIT_RESULT',
     'Attachment',
     'RecordsHomeFull',
     'attach',
-    'kept_shas',
     'listing',
     'main',
     'prune',
@@ -74,7 +68,6 @@ __all__ = [
     'remove_named',
     'replace_named',
     'serve_prune',
-    'sha_of',
 ]
 
 #: The one issue every run record of a repository is attached to.
@@ -102,22 +95,8 @@ class RecordsHomeFull(ValueError):
 #: How often ``forge serve`` prunes the records home: the one statement of the interval.
 PRUNE_EVERY: Final = timedelta(hours=6)
 
-#: How many first-parent trunk commits keep their records by default.
-DEFAULT_KEEP_TRUNK: Final = 20
-
-#: How many records one sha's row keeps, newest first: a re-run or a local verify supersedes the older one, so
-#: the home grows with shas and never with re-runs (2026-11-15: one sha held a record per verify).
-RECORDS_PER_ROW: Final = 2
-
 #: The share of :data:`GITHUB_ASSET_CAP` at which the serve tick sounds :data:`~dev_lab.dev.forgealarm.STORAGE`.
 ALARM_AT: Final = 0.8
-
-#: ``run-<sha>-<row>-<req>.json.gz``; the row is a part or an OS-qualified row (``base@windows``), judged by
-#: :func:`dev_lab.dev.partrows.is_row` -- 2026-11-15: a ``[a-z]+`` part read no row record, and none was pruned.
-_RECORD_NAME: Final = re.compile(r'^run-(?P<sha>[0-9a-f]{40})-(?P<row>[^-/]+)-[^/]+\.json\.gz$')
-#: A compute unit result (:func:`dev_lab.dev.forgeunit.result_name`), whatever archive it was posted as.
-UNIT_RESULT: Final = re.compile(r'^unit-(?P<unit>[0-9a-f]{64})-(?P<result>[0-9a-f]{64})\.tar\.[a-z]+$')
-_TRACKING: Final = 'refs/remotes/origin/'
 
 
 @dataclass(frozen=True)
@@ -131,18 +110,6 @@ class Attachment:
 
 def _attachment(raw: Mapping[str, Any]) -> Attachment:
     return Attachment(int(raw['id']), raw['name'], raw.get('browser_download_url') or '')
-
-
-def _sha_row(name: str) -> tuple[str, str] | None:
-    """The ``(sha, row)`` a record's file name carries, or ``None`` for a file that is not a run record."""
-    found = _RECORD_NAME.match(name)
-    return (found['sha'], found['row']) if found and is_row(found['row']) else None
-
-
-def sha_of(name: str) -> str | None:
-    """The sha a record's file name carries, or ``None`` for a file that is not a run record."""
-    found = _sha_row(name)
-    return found[0] if found else None
 
 
 @dataclass(frozen=True)
@@ -246,7 +213,7 @@ def _make_room(
         except (OSError, ValueError) as failed:
             emit(f'[records] liveness unread ({failed}); pruning only superseded records', err=True)
     keep |= {sha} if (sha := sha_of(path.name)) is not None else set()
-    doomed = _doomed(found, keep, unit_results=_budget(section('retention')), per_row=RECORDS_PER_ROW)
+    doomed = doomed_of(found, keep, unit_results=_budget(section('retention')), per_row=RECORDS_PER_ROW)
     if len(found) - len(doomed) >= cap:
         judged = 'its origin refs' if root is not None else 'no checkout, so every sha on it'
         msg = (
@@ -302,53 +269,6 @@ def replace_named(client: Client, name: str, content: bytes) -> Attachment:
     return _upload(client, cast('_Store', _store(client, create=True)), name, content)
 
 
-def _git(root: Path, *args: str) -> str:
-    return _door.run(
-        [_GIT, '-C', str(root), *args],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=True,
-        timeout=_GIT_TIMEOUT_S,
-    ).stdout
-
-
-def kept_shas(root: Path, *, trunk: str, keep_trunk: int) -> frozenset[str]:
-    """Every ``origin`` branch tip, plus the newest *keep_trunk* first-parent commits of ``origin/<trunk>``.
-
-    Read from the remote-tracking refs, so the caller fetches first; nothing here touches the network.
-    """
-    tips = _git(root, 'for-each-ref', '--format=%(objectname)', _TRACKING).split()
-    trunk_ref = f'{_TRACKING}{trunk}'
-    known = _git(root, 'for-each-ref', '--format=%(refname)', trunk_ref).split()
-    history = _git(root, 'rev-list', '--first-parent', f'-{keep_trunk}', trunk_ref).split() if known else []
-    return frozenset(tips) | frozenset(history)
-
-
-def _doomed(
-    found: Sequence[Attachment], keep: Collection[str], *, unit_results: int, per_row: int
-) -> tuple[Attachment, ...]:
-    """What a prune deletes of *found*, oldest first; anything not named here stays.
-
-    Records of shas not in *keep*, each kept sha's row's records but the newest *per_row*, and every unit
-    result but the newest *unit_results*.
-    """
-    units = [item for item in found if UNIT_RESULT.match(item.name)]
-    stale = {item.id for item in units[: max(len(units) - unit_results, 0)]}
-    rows: dict[tuple[str, str], list[int]] = {}
-    for item in found:
-        key = _sha_row(item.name)
-        if key is None:
-            continue
-        if key[0] not in keep:
-            stale.add(item.id)
-        else:
-            rows.setdefault(key, []).append(item.id)
-    for ids in rows.values():
-        stale.update(sorted(ids)[: max(len(ids) - per_row, 0)])
-    return tuple(item for item in found if item.id in stale)
-
-
 def prune(
     client: Client,
     keep: Collection[str],
@@ -357,14 +277,14 @@ def prune(
     per_row: int = RECORDS_PER_ROW,
     dry_run: bool = False,
 ) -> tuple[Attachment, ...]:
-    """Delete what :func:`_doomed` names: dead shas' records, superseded rows, unit results over budget.
+    """Delete what :func:`~dev_lab.dev.forgerecordkeep.doomed_of` names: dead, superseded, over budget.
 
     Returns what was (or, dry, would be) deleted, oldest first. Any other file on the home is never touched.
     """
     store = _store(client, create=False)
     if store is None:
         return ()
-    doomed = _doomed(listing(client), keep, unit_results=unit_results, per_row=per_row)
+    doomed = doomed_of(listing(client), keep, unit_results=unit_results, per_row=per_row)
     if not dry_run:
         for item in doomed:
             client.call('DELETE', f'{store.delete}{item.id}')
