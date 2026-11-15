@@ -56,9 +56,11 @@ __all__ = [
     'YIELDED',
     'clients_at',
     'main',
+    'poll_session',
     'session_main',
     'settled',
     'unacknowledged_reds',
+    'update_waits',
     'watch',
     'watch_session',
 ]
@@ -71,7 +73,7 @@ _DEADLINE: Final = 3
 YIELDED: Final = 4
 
 
-def _update_waits() -> str:
+def update_waits() -> str:
     """The line a watch ends on when an update of the venv it runs from is queued, else ``''``."""
     if _dep_pending.pending(sys.prefix) is None:
         return ''
@@ -101,7 +103,7 @@ def watch(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     stream: bool = False,
-    yielding: Callable[[], str] = _update_waits,
+    yielding: Callable[[], str] = update_waits,
 ) -> int:
     """Poll each of *shas*, printing each change, until one settles or *deadline_s* has passed (``--stream``: above)."""
     end, seen = clock() + deadline_s, set()
@@ -246,7 +248,7 @@ def watch_session(
     deadline_s: float = 4 * 3600.0,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
-    yielding: Callable[[], str] = _update_waits,
+    yielding: Callable[[], str] = update_waits,
 ) -> int:
     """Report each change on *session*'s open PRs until none is open (0) or *deadline_s* passed (3).
 
@@ -285,13 +287,7 @@ def _session_loop(
         if why := yielding():
             say(why)
             return YIELDED
-        live = 0
-        for row in (*sessionprs.open_rows(session), *sessionprs.pending_rows(session)):
-            try:
-                live += _poll(session, row, clients(row.forge), say, seen)
-            except (ForgeCallFailed, ValueError) as failed:
-                live += 1  # an unreadable PR is still open: read again next poll
-                _say_once(session, f'{row.key} unreadable: {failed}'.splitlines()[0], say, seen)
+        live = poll_session(session, clients=clients, say=say, seen=seen)
         if not live:
             say(f'session {session}: no open PR left')
             return 0
@@ -299,6 +295,23 @@ def _session_loop(
             say(f'session {session}: deadline, {live} PR(s) still open')
             return _DEADLINE
         sleep(every_s)
+
+
+def poll_session(
+    session: str, *, clients: Callable[[Forge], Client], say: Callable[[str], None], seen: set[str]
+) -> int:
+    """ONE read of every open or pending PR of *session*, saying each change not in *seen*; how many are still open.
+
+    The session watch and the machine watcher (:mod:`dev_lab.dev.prwatcher`) both poll through it.
+    """
+    live = 0
+    for row in (*sessionprs.open_rows(session), *sessionprs.pending_rows(session)):
+        try:
+            live += _poll(session, row, clients(row.forge), say, seen)
+        except (ForgeCallFailed, ValueError) as failed:
+            live += 1  # an unreadable PR is still open: read again next poll
+            _say_once(session, f'{row.key} unreadable: {failed}'.splitlines()[0], say, seen)
+    return live
 
 
 def unacknowledged_reds(session: str, *, clients: Callable[[Forge], Client]) -> list[str]:

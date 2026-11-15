@@ -12,7 +12,8 @@ forge for each one's checks (:func:`stop_refusal`):
   pushes a newer head or records why the red stands (``forge watch --session <id> --ack <key> --reason <why>``);
   a red head that is no session PR's -- an integration head the session merely pushed -- is not blocked on;
 * an open PR of the session with no live ``forge watch --session`` (:func:`dev_lab.dev.sessionprs.watching`)
-  refuses it EVERY time, naming the Monitor command to arm (:func:`unwatched_refusal`, 2026-11-12);
+  and no fresh machine-watcher beat covering it (:func:`dev_lab.dev.prwatcher.heard`, dev-lab#581) refuses it
+  EVERY time, naming the watcher door and the Monitor command to arm (:func:`unwatched_refusal`, 2026-11-12);
 * a head with no ``tests/*`` status :data:`GRACE_S` after its push has nothing to watch (review F-05c3ae4cb27f);
 * a pending head whose ``forge watch`` ran to its deadline is released on a repeated stop, with a note;
 * a green head, a session that pushed nothing, or a forge that cannot answer ends the turn. Always exits 0.
@@ -30,7 +31,7 @@ from typing import TYPE_CHECKING, Final, TextIO
 from lab_commons.census import processes as census
 from lab_commons.log import emit
 
-from dev_lab.dev import sessionprs, walls
+from dev_lab.dev import prwatcher, sessionprs, walls
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgewatch import TESTS, clients_at, settled, unacknowledged_reds
@@ -136,12 +137,14 @@ def unwatched_refusal(session: str, *, processes: Callable[[], Iterable[str]] = 
     watch kept out of the venv a relock needs still counts (#554).
     """
     prs = sessionprs.open_rows(session)
-    if not prs or sessionprs.watching(session) or _session_watched(session, processes()):
+    if not prs or prwatcher.heard(session) or sessionprs.watching(session) or _session_watched(session, processes()):
         return Stop()
     return Stop(
         block=f'{sessionprs.RULE}: this session has open PRs ({", ".join(row.key for row in prs)}) and nothing '
-        'watches them, so no merge or red check would reach you. Arm ONE persistent Monitor running: '
-        f'{sessionprs.watch_session_command(session)} (a watch run from any checkout interpreter counts)'
+        'watches them, so no merge or red check would reach you. Start the machine watcher (it covers a new PR at '
+        f'its next poll, within {prwatcher.POLL_S:g} s): {running_interpreter()} -m dev_lab.dev.prwatcher start -- '
+        f'or arm ONE persistent Monitor running: {sessionprs.watch_session_command(session)} '
+        '(a watch run from any checkout interpreter counts)'
     )
 
 
