@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -134,9 +135,18 @@ def _identity(rule: str) -> str:
     return f'::family::{rule}'
 
 
-def required_ids(root: Path) -> tuple[str, ...]:
-    """Exact required pytest identities for a declared family checkout; no claim for other inputs."""
+def _catalog_ids(root: Path) -> tuple[str, ...]:
     return tuple(_identity(rule) for rule in _applicable(root)) if is_member(root) else ()
+
+
+def required_ids(root: Path) -> tuple[str, ...]:
+    """Exact required identities after fresh family Git-root proof; no claim for other inputs."""
+    if not is_member(root):
+        return ()
+    if _toplevel(root) != root.resolve():
+        refused = _git_refusal('the declared family root is not the readable git toplevel')
+        raise refused
+    return _catalog_ids(root)
 
 
 def assert_required_collected(root: Path, ids: Sequence[str]) -> None:
@@ -151,8 +161,8 @@ def assert_required_collected(root: Path, ids: Sequence[str]) -> None:
 
 
 def resource_nodes(root: Path, ids: Sequence[str]) -> list[str]:
-    """Business resource membership only; the complete manifest still retains required checks as base."""
-    required = set(required_ids(root))
+    """Identity projection, not qualification; collectors must separately prove their complete manifest."""
+    required = set(_catalog_ids(root))
     return [node for node in ids if node not in required]
 
 
@@ -186,23 +196,63 @@ class FamilyItem(pytest.Item):
         return self._root, None, f'family row {self.name}'
 
 
+def _git_refusal(reason: str) -> ValueError:
+    return ValueError(
+        f'git identity of the declared family checkout cannot be established: {reason}; '
+        'repair git checkout/access, then recollect before producing complete qualification'
+    )
+
+
 def _toplevel(root: Path) -> Path | None:
     try:
         out = _git(root, 'rev-parse', '--show-toplevel')
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        if is_member(root):
+            refused = _git_refusal(f'{type(exc).__name__}: {exc}')
+            raise refused from exc
         return None
-    return Path(out.stdout.decode('utf-8').strip()).resolve() if out.returncode == 0 else None
+    if out.returncode != 0:
+        if is_member(root):
+            refused = _git_refusal(f'exit {out.returncode}: {out.stderr.decode("utf-8", "replace").strip()}')
+            raise refused
+        return None
+    try:
+        text = out.stdout.decode('utf-8').strip()
+        top = Path(text).resolve() if text else None
+    except (UnicodeError, OSError, ValueError) as exc:
+        if is_member(root):
+            refused = _git_refusal(str(exc))
+            raise refused from exc
+        return None
+    if top is None and is_member(root):
+        refused = _git_refusal('git returned an empty toplevel')
+        raise refused
+    return top
+
+
+def _unreadable_root(_root: Path, *, reason: str) -> None:
+    raise ValueError(reason)
 
 
 def append_rows(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
     """Append one item per row when the session is rooted at a git toplevel.
 
     Called at collection by :mod:`dev_lab.pytest_family`, the ``pytest11`` entry point.
+    A declared family with unreadable Git retains failed runtime items, never an empty guard set.
     """
     root = Path(config.rootpath).resolve()
-    if _toplevel(root) != root:
-        return
+    if is_member(root):
+        try:
+            required_ids(root)
+        except ValueError as exc:
+            checks = dict.fromkeys(_applicable(root), partial(_unreadable_root, reason=str(exc)))
+        else:
+            checks = _applicable(root)
+    else:
+        if _toplevel(root) != root:
+            return
+        checks = _applicable(root)
     items.extend(
-        FamilyItem.from_parent(session, name=f'family::{rule}', check=check, root=root)
-        for rule, check in _applicable(root).items()
+        FamilyItem.from_parent(session, name=_identity(rule).removeprefix('::'), check=check, root=root)
+        for rule, check in checks.items()
     )
