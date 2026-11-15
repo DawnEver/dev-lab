@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from importlib import import_module
 from types import ModuleType
 from typing import TYPE_CHECKING
@@ -10,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 from _forge_state import FORGE
 
-from dev_lab.dev import sessionprs, taskgate, walls
+from dev_lab.dev import sessionprs, taskbinding, taskgate, walls
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -110,7 +112,7 @@ def test_the_same_pr_door_does_not_invent_an_agent_for_an_ordinary_process() -> 
 
 def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
-    refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, read=lambda *_: (0, '(none)'))
+    refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a')
     assert refusal is not None
     assert taskgate.RULE in refusal
     assert '/rem:task open' in refusal
@@ -118,7 +120,12 @@ def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
 
 def test_a_real_bound_task_still_admits_the_native_codex_session(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
-    assert taskgate.refusal(tmp_path, env={_CODEX: _ID}, read=lambda *_: (0, 'native-task')) is None
+    task = tmp_path / '.claude' / 'tasks' / 'native-task'
+    task.mkdir(parents=True)
+    (task / 'TASK.md').write_text('---\nauthority: a1\nstatus: open\n---\n', encoding='utf-8')
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
+    assert taskbinding.bind({'session_id': _ID, 'prompt': 'task: native-task'}, root=tmp_path) == 'native-task@a1'
+    assert taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a') is None
 
 
 def test_wall_records_carry_the_codex_thread_not_an_empty_claude_identity(

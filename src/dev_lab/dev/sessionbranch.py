@@ -52,6 +52,7 @@ a guard that cannot judge (no branch set at that tip) refuses.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -70,6 +71,7 @@ from dev_lab.dev.componentbump import LANE as COMPONENT_LANE
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
+from dev_lab.dev.taskbinding import head_for, session_task, slug_of
 
 __all__ = [
     'HOOK_ID',
@@ -229,14 +231,24 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
     return found
 
 
-def rename_remedy(branch: str) -> str:
+def rename_remedy(branch: str, task: str | None = None) -> str:
     """The ONE exit for a feature on a local branch origin does not hold: rename it to its ``pr/`` name, push that.
 
     ``fix/x`` becomes ``pr/x`` (the namespace dropped, the feature kept), so P6 and P2 name the same command
-    and the first remedy never walks into the second refusal (2026-11-02, dev-lab #68).
+    and the first remedy never walks into the second refusal (2026-11-02, dev-lab #68). A session bound to task
+    *task* (a slug, :mod:`dev_lab.dev.taskbinding`) gets its task's head ``pr/<task>/x`` instead (D5, 2026-11-15).
     """
-    feature = branch.split('/', 1)[-1]
-    return f'rename it and push: `git branch -m {branch} pr/{feature}` then `push -u origin pr/{feature}`'
+    target = f'pr/{branch.split("/", 1)[-1]}' if task is None else head_for(task, branch.rsplit('/', 1)[-1])
+    return f'rename it and push: `git branch -m {branch} {target}` then `push -u origin {target}`'
+
+
+def _bound_slug() -> str | None:
+    """The slug of the task this process's session is bound to, or ``None`` (none, or no readable session)."""
+    try:
+        task = session_task(os.environ)
+    except ValueError:
+        return None
+    return None if task is None else slug_of(task)
 
 
 def _undeclared(declared: BranchSet, branch: str) -> list[str]:
@@ -248,7 +260,7 @@ def _undeclared(declared: BranchSet, branch: str) -> list[str]:
     return [
         (
             f'{P6}: origin holds only the declared branches ({names}) and the ephemeral namespaces ({globs}), '
-            f'not {branch}; {rename_remedy(branch)}'
+            f'not {branch}; {rename_remedy(branch, _bound_slug())}'
         )
     ]
 
@@ -260,7 +272,8 @@ def _misnamed(root: Path, local: str, target: str) -> list[str]:
         return []
     if named.startswith(_HEADS):
         branch = named[len(_HEADS) :]
-        exit_text = rename_remedy(branch) if target.startswith('pr/') else f'push `git push origin {branch}`'
+        own = f'push `git push origin {branch}`'
+        exit_text = rename_remedy(branch, _bound_slug()) if target.startswith('pr/') else own
         return [f'{P2}: the local branch {branch} is published only as {branch}, not {target}; {exit_text}']
     if target in MACHINE_BRANCHES:
         return []

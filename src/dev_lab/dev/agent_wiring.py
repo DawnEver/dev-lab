@@ -146,9 +146,9 @@ AUTOMODE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab
 #: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
 PRESSURE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hostalarm hook'
 
-#: A SESSION WORKS ON A TASK BY THE USER'S WORD (:mod:`dev_lab.dev.hpcaccount.session`, ruling 2026-11-13): a prompt
+#: A SESSION WORKS ON A TASK BY THE USER'S WORD (:mod:`dev_lab.dev.taskbinding`, rulings 2026-11-13, D5): a prompt
 #: whose first line is ``task: <slug>`` binds the session to that task, so it holds the role the task was granted.
-TASKBIND_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hpcaccount.session bind'
+TASKBIND_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.taskbinding bind'
 
 #: WALLS-ARE-RECORDED (:mod:`dev_lab.dev.walls`, ruling 2026-11-13): after a shell call, a denial in its error text
 #: that no family emit path recorded (a classifier's, a tool's own) is an unremedied wall in the session's ledger.
@@ -193,7 +193,7 @@ WIRING: Final = (
     # https://code.claude.com/docs/en/hooks; PostToolUse alone never sees a failed call's error text.
     Wire('PostToolUseFailure', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True),
     Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
-    Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.hpcaccount.session bind', on_shells=False),
+    Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.taskbinding bind', on_shells=False),
     Wire('UserPromptSubmit', PRWATCHER_INBOX_COMMAND, 'dev_lab.dev.prwatcher inbox', on_shells=False),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
@@ -215,4 +215,7 @@ WIRING: Final = (
 
 #: Wires the family once installed and no longer does, as ``(event, marker)``: a re-install removes them, so an old
 #: settings file is not left running a hook the wiring retired (no-backward-compatibility).
-RETIRED_WIRING: Final = (('PostToolUse', 'dev_lab.dev.codeplace stray'),)
+RETIRED_WIRING: Final = (
+    ('PostToolUse', 'dev_lab.dev.codeplace stray'),
+    ('UserPromptSubmit', 'dev_lab.dev.hpcaccount.session bind'),
+)

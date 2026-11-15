@@ -35,7 +35,8 @@
 # the forge cannot see (an untracked stray file) is a post-commit hint.
 
 # SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
-# [tool.dev_lab.task] required = true, an agent session commits only while rem binds an open task to its tree. Opt-in;
+# [tool.dev_lab.task] required = true, an agent session commits only while its USER bound it to an open task
+# (`task: <slug>` prompt, dev_lab.dev.taskbinding; D5 2026-11-15), and a pr/ branch only under pr/<task>/. Opt-in;
 # a repo that does not declare it is never judged.
 [[pre-commit]]
 id = "task-bound"
@@ -137,7 +138,8 @@ id = "memory-adds"
 run = ["python", "-m", "dev_lab.dev.memoryadds", "commit"]
 
 # SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
-# [tool.dev_lab.task] required = true, an agent session pushes only while rem binds an open task to its tree. Opt-in;
+# [tool.dev_lab.task] required = true, an agent session pushes only while its USER bound it to an open task
+# (`task: <slug>` prompt, dev_lab.dev.taskbinding; D5 2026-11-15), and a pr/ branch only under pr/<task>/. Opt-in;
 # a repo that does not declare it is never judged.
 [[pre-push]]
 id = "task-bound"
