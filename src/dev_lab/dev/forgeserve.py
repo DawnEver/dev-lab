@@ -286,9 +286,7 @@ def serve(
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     pressed(root, repo, who=name, say=say, alarm=alarm)
     if ticked.pending and not claimed and not left:
-        refused = '; '.join(ticked.refused) or 'nothing was claimed'
-        named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
-        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
+        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', ticked.idle()))
     card(claimed)
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
         repo_wide(root, repo, remembering(client), name, cards, clock=clock, say=say, alarm=alarm)
