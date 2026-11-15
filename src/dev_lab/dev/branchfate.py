@@ -9,10 +9,10 @@ gives each local branch and linked tree still standing exactly ONE verdict, with
 
 * ``owned``: it has a LIVE OWNER and is kept, listed with that owner -- a process works in the tree (the removal
   lock, :func:`dev_lab.dev.reclaim.occupancy`), a ``git worktree lock``, a host runtime lives in it
-  (:func:`dev_lab.dev.reclaim.runtime_of`), a session touched it within *quiet_s* (its index, or its tip's commit
-  -- the window reclaim already reads as a live session), or -- unlanded -- origin carries the branch: its open PR
-  or pushed lane is origin's to judge (:mod:`dev_lab.dev.branchprune` deletes it once the PR is gone, and the
-  next run here finds it ownerless);
+  (:func:`dev_lab.dev.reclaim.runtime_of`), a session touched its index or tip within the window -- *quiet_s*
+  (reclaim's live-session hour) for MERGED work, :data:`ABANDONED_S` for UNMERGED work -- or, unlanded, origin
+  carries the branch: its open PR or pushed lane is origin's to judge (:mod:`dev_lab.dev.branchprune` deletes it
+  once the PR is gone, and the next run here finds it ownerless);
 * ``merged`` / ``abandoned``: no owner. It is PRESERVED LOSSLESSLY first -- a verified ``git bundle`` of the tip,
   the tree's uncommitted tracked work and untracked files (:func:`dev_lab.dev.worktree_archive.save_work`), and a
   ``manifest.json`` with every file's sha256, under the checkout's ``archive-to`` directory -- then the tree is
@@ -40,7 +40,13 @@ from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.reclaim import QUIET_S, index_age_s, locked_trees, occupancy, removed_approved, runtime_of
 from dev_lab.dev.worktree_archive import archive_home, save_work
 
-__all__ = ['Fate', 'judge', 'preserve', 'settle']
+__all__ = ['ABANDONED_S', 'Fate', 'judge', 'preserve', 'settle']
+
+#: How long UNMERGED work must sit untouched (index and tip) before it counts as abandoned: sessions pause
+#: overnight and lanes wait on long forge runs, so the 1 h live-session window that suffices for MERGED trees is
+#: far too short here. 24 h -- the same value as the orphaned-PR age of the integrator hand-off (``ORPHAN_AGE``),
+#: stated here rather than imported.
+ABANDONED_S: Final = 24 * 3600.0
 
 #: The verdict words, padded so every line's subject starts in one column.
 _OWNED: Final = 'owned    '
@@ -72,7 +78,8 @@ def _tip_age_s(root: Path, sha: str) -> float | None:
     return time.time() - int(out) if out.isdigit() else None
 
 
-def _owner(root: Path, fate: Fate, *, occupied: Callable[[Path], bool], quiet_s: float, locked: frozenset[Path],
+def _owner(root: Path, fate: Fate, *, occupied: Callable[[Path], bool], quiet_s: float, abandoned_s: float,
+           locked: frozenset[Path],
            runtimes: Mapping[str, Mapping[str, Any]]) -> str:  # fmt: skip
     """Who keeps *fate* alive, in words; ``''`` when nobody does."""
     tree = fate.tree
@@ -84,8 +91,9 @@ def _owner(root: Path, fate: Fate, *, occupied: Callable[[Path], bool], quiet_s:
         if occupied(tree):
             return 'live -- a process works in, executes from or reads it'
     ages = [_tip_age_s(root, fate.sha), index_age_s(tree) if tree is not None else None]
-    if (age := min((a for a in ages if a is not None), default=None)) is not None and age < quiet_s:
-        return f'live session -- touched {age / 60:.0f} min ago'
+    window = quiet_s if fate.merged else max(quiet_s, abandoned_s)
+    if (age := min((a for a in ages if a is not None), default=None)) is not None and age < window:
+        return f'live session -- touched {age / 3600:.1f} h ago, quiet less than {window / 3600:g} h'
     on_origin = fate.branch != _DETACHED and _sha(root, f'refs/remotes/origin/{fate.branch}')
     if on_origin and not fate.merged:
         return 'on origin -- its PR or lane is judged there (branchprune)'
@@ -99,6 +107,7 @@ def judge(
     *,
     occupied: Callable[[Path], bool] | None = None,
     quiet_s: float = QUIET_S,
+    abandoned_s: float = ABANDONED_S,
     runtimes: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[Fate, ...] | None:
     """Every linked tree and every undeclared local branch of *root*, judged; ``None`` when git could not answer.
@@ -122,7 +131,9 @@ def judge(
             continue
         merged = any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in holders)
         fate = Fate(branch, sha, tree, '', merged)
-        owner = _owner(root, fate, occupied=is_occupied, quiet_s=quiet_s, locked=locked, runtimes=hosts)
+        owner = _owner(
+            root, fate, occupied=is_occupied, quiet_s=quiet_s, abandoned_s=abandoned_s, locked=locked, runtimes=hosts
+        )
         fates.append(Fate(branch, sha, tree, owner, merged))
     return tuple(fates)
 
@@ -180,6 +191,7 @@ def settle(
     *,
     occupied: Callable[[Path], bool] | None = None,
     quiet_s: float = QUIET_S,
+    abandoned_s: float = ABANDONED_S,
     limit: int | None = None,
     runtimes: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[str, ...] | None:
@@ -187,7 +199,9 @@ def settle(
 
     *limit* bounds the cleanups per run; the rest are ``deferred`` to the next.
     """
-    fates = judge(root, holders, declared, occupied=occupied, quiet_s=quiet_s, runtimes=runtimes)
+    fates = judge(
+        root, holders, declared, occupied=occupied, quiet_s=quiet_s, abandoned_s=abandoned_s, runtimes=runtimes
+    )
     if fates is None:
         return None
     out: list[str] = []

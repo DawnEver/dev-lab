@@ -7,17 +7,19 @@ a live process, a live session and an origin-owned lane are kept and touched in 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
-from dev_lab.dev.branchfate import settle
+from dev_lab.dev.branchfate import ABANDONED_S, settle
 from dev_lab.dev.branchset import BranchSet, apply_local
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
 
 _GIT = shutil.which('git') or 'git'
 _DECLARED = BranchSet(trunk='main', sessions=frozenset())
-_NOBODY = {'occupied': lambda _path: False, 'runtimes': {}}
+_NOBODY = {'occupied': lambda _path: False, 'runtimes': {}, 'abandoned_s': 0}
 
 
 def _run(cwd: Path, *args: str) -> str:
@@ -40,6 +42,23 @@ def _lane(work: Path, tmp_path: Path, name: str, *, dirty: bool = False, untrack
         (tree / 'base.txt').write_text('uncommitted tracked work', encoding='utf-8')
     if untracked:
         (tree / 'notes.md').write_text('untracked scratch', encoding='utf-8')
+    return tree
+
+
+def _quiet_lane(work: Path, tmp_path: Path, name: str, hours: float) -> Path:
+    """An unmerged lane whose tip commit and index were last touched *hours* ago."""
+    tree = tmp_path / name.replace('/', '-')
+    _run(work, 'worktree', 'add', '-q', '-b', name, str(tree))
+    then = time.time() - hours * 3600
+    (tree / 'lane.txt').write_text(name, encoding='utf-8')
+    _run(tree, 'add', 'lane.txt')
+    env = {**os.environ, 'GIT_COMMITTER_DATE': f'@{int(then)} +0000', 'GIT_AUTHOR_DATE': f'@{int(then)} +0000'}
+    subprocess.run(
+        [_GIT, 'commit', '-q', '-m', name], cwd=tree, check=True, capture_output=True, text=True,
+        encoding='utf-8', env=env, timeout=60,
+    )  # fmt: skip
+    index = Path(_run(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index').strip())
+    os.utime(index, (then, then))
     return tree
 
 
@@ -111,7 +130,7 @@ def test_owned_states_are_kept_with_their_owner_and_never_archived(tmp_path: Pat
     def occupied(path: Path) -> bool:
         return path.resolve() == busy.resolve()
 
-    lines = settle(work, ('refs/remotes/origin/main',), quiet_s=0, occupied=occupied, runtimes={}) or ()
+    lines = settle(work, ('refs/remotes/origin/main',), quiet_s=0, abandoned_s=0, occupied=occupied, runtimes={}) or ()
     live = settle(work, ('refs/remotes/origin/main',), quiet_s=3600, occupied=occupied, runtimes={}) or ()
 
     owned = {line.split()[1]: line for line in lines if line.startswith('owned')}
@@ -129,10 +148,28 @@ def test_owned_states_are_kept_with_their_owner_and_never_archived(tmp_path: Pat
 def test_apply_local_gives_every_local_branch_one_of_two_fates(tmp_path: Path) -> None:
     work = plant_checkout(tmp_path, trunk='main').work
     _run(work, 'branch', 'landed')
-    _lane(work, tmp_path, 'lane/idle')
+    _quiet_lane(work, tmp_path, 'lane/idle', hours=25)
 
     lines = apply_local(work, _DECLARED, occupied=lambda _path: False, quiet_s=0) or ()
 
     assert any(line.startswith('deleted  local   landed') for line in lines), lines
     assert any(line.startswith('abandoned lane/idle') for line in lines), lines
     assert _heads(work) == {'main'}
+
+
+def test_unmerged_work_is_abandoned_only_after_a_day_of_quiet(tmp_path: Path) -> None:
+    """PLANTED BOTH SIDES of ABANDONED_S: 23 h quiet is still a paused session; 25 h is abandoned."""
+    assert ABANDONED_S == 24 * 3600
+    work = plant_checkout(tmp_path, trunk='main').work
+    paused = _quiet_lane(work, tmp_path, 'lane/paused', hours=23)
+    gone = _quiet_lane(work, tmp_path, 'lane/gone', hours=25)
+
+    lines = settle(work, ('refs/remotes/origin/main',), occupied=lambda _path: False, runtimes={}) or ()
+
+    owned = [line for line in lines if line.startswith('owned') and 'lane/paused' in line]
+    assert owned, lines
+    assert 'quiet less than 24 h' in owned[0]
+    assert any(line.startswith('abandoned lane/gone') for line in lines), lines
+    assert paused.exists()
+    assert not gone.exists()
+    assert len(_archives(work)) == 1
