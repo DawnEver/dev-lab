@@ -7,7 +7,8 @@ WHY A SCOPE AND NOT A NEW ENGINE. The hook payload carries ``agent_id`` only ins
 
 WHAT IT REFUSES: publishing is the main session's. So a subagent may not push (directly or through
 the retry wrapper), run any door the policy table gives the main session alone (``actor == MAIN`` in
-:data:`dev_lab.dev.agentpolicy.POLICY`: a PR's lifecycle, ``forge sync``, ``integrate promote``, ...),
+:data:`dev_lab.dev.agentpolicy.POLICY`: a PR's lifecycle, ``integrate promote``, ...;
+``forge sync`` is NOT one: it merges and commits locally and never pushes),
 and may not skip the hooks (``SKIP=``, PowerShell ``$env:SKIP =``, ``--no-verify``).
 A full tier is not this row's: it refuses EVERYONE outside the forge's producer, at the runner
 (VERDICTS-FROM-THE-FORGE, :func:`dev_lab.dev.producer.full_suite_refusal`). A targeted ``measure``
@@ -69,7 +70,7 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
     'scope': 'subagent',
     'hazard': 'publishing is the main session`s, and a skipped hook publishes what nobody checked.',
     'remedy': 'Commit on your lane and hand the commit SHA back to the main session, which merges and pushes; '
-    'a targeted measure of the tests you touched is yours.',
+    'measure the tests you touched: {python} -m dev_lab.dev.verify -- <paths>.',
     'needs': None,
     'refuses': (
         'git push origin HEAD',
@@ -78,7 +79,6 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git push origin HEAD',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr create --head pr/x --base integrate/main --title x',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr ready 12',
-        f'{VENV_PYTHONS[1]} -m dev_lab.dev.forge sync',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.integrate promote abc123',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr breakglass 9 --reason x',
         'gh workflow disable ci.yml -R o/r',
@@ -94,8 +94,10 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.netverb -- git fetch origin',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr view 12',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge queue',
+        f'{VENV_PYTHONS[1]} -m dev_lab.dev.forge sync',
+        f'{VENV_PYTHONS[1]} -m dev_lab.dev.forge sync --help',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr close-landedness 3',
-        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x',
+        f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x --kind need',
         'gh workflow list -R o/r',
     ),
 }

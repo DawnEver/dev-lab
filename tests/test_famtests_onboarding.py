@@ -121,11 +121,10 @@ def test_a_rendered_family_file_without_its_render_input_declared_is_a_gap() -> 
     """
     present = {'AGENTS.md', 'uv.lock', '.gitignore', '.claude/hooks/deny-rules.json'}
     gaps = ' '.join(onboarding_gaps(_COMPLETE, present.__contains__, 'origin/x'))
-    assert '[tool.dev_lab.render] deltas' in gaps
+    assert 'deltas' not in gaps, 'deltas is optional: a repo without the module has no per-file overrides'
     assert '[tool.dev_lab.render] adoption' in gaps
     declared = _COMPLETE + '[tool.dev_lab.render]\ndeltas = "tests/_famconfig.py"\nadoption = "scripts/deny_rules.py"\n'
     assert onboarding_gaps(declared, present.__contains__, 'origin/x') == []
     only_gitignore = {'AGENTS.md', 'uv.lock', '.gitignore'}
     left = ' '.join(onboarding_gaps(_COMPLETE, only_gitignore.__contains__, 'origin/x'))
-    assert 'deltas' in left
-    assert 'adoption' not in left
+    assert onboarding_gaps(_COMPLETE, only_gitignore.__contains__, 'origin/x') == [], left

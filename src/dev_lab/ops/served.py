@@ -8,6 +8,7 @@ and a malformed App are refused here, once, for every role.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from dev_lab.dev.forge import forge_of_url
@@ -15,7 +16,7 @@ from dev_lab.dev.forge import forge_of_url
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['served', 'served_by']
+__all__ = ['app_of_forge', 'credential_files', 'served', 'served_by']
 
 
 def served(repos: tuple[str, ...], tokens: Mapping[str, str], where: str) -> None:
@@ -46,7 +47,10 @@ def _app_entry(app: Mapping[str, Any]) -> bool:
 def served_by(
     repos: tuple[str, ...], tokens: Mapping[str, str], apps: Mapping[str, Mapping[str, Any]], where: str
 ) -> None:
-    """:func:`served` over a token OR an App per forge: a forge named by both, or an App not ``{app_id, key_file}``."""
+    """:func:`served` over a token OR an App per forge, also refusing a forge named by both or by a bad App.
+
+    An App is ``{app_id, key_file}``; a GitHub token is dropped on read (:mod:`dev_lab.ops.configupgrade`).
+    """
     if twice := sorted(set(tokens) & set(apps)):
         msg = f'{where} forge {", ".join(twice)} names both a token and an app: one identity per forge'
         raise ValueError(msg)
@@ -55,3 +59,14 @@ def served_by(
             msg = f'{where[:-1]}.apps] {host} must be {{app_id = <positive integer>, key_file = "<path>"}}: {app}'
             raise ValueError(msg)
     served(repos, {**tokens, **dict.fromkeys(apps, '')}, where)
+
+
+def credential_files(tokens: Mapping[str, str], apps: Mapping[str, Mapping[str, Any]]) -> tuple[str, ...]:
+    """Every file a role reads a credential from: its token files and its Apps' key files, sorted."""
+    return tuple(sorted({*tokens.values(), *(str(app['key_file']) for app in apps.values())}))
+
+
+def app_of_forge(apps: Mapping[str, Mapping[str, Any]], url: str) -> tuple[int, Path] | None:
+    """``(app_id, key_file)`` of the App a role acts as on *url*'s forge, else ``None`` (a token forge)."""
+    found = apps.get(forge_of_url(url).host)
+    return None if found is None else (int(found['app_id']), Path(str(found['key_file'])))

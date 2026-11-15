@@ -20,6 +20,8 @@ WHO OPENS IT, the same function on both forges:
 * GitHub: the ``continue.yml`` workflow on a push to any other branch runs ``forge pr continue --head <branch>
   --sha <sha>`` (:func:`main`). A PR the job token opens starts no workflow, so the job then dispatches ci.yml on
   the branch with the PR's number (``workflow_dispatch``, ``-f pr=<N>``): that run is the PR's, at its head sha.
+  An integration branch with no ``pyproject.toml`` -- a repo's first adoption -- declares nothing, so nothing
+  continues and the job exits 0, saying so.
 
 A person or agent runs ``python -m dev_lab.dev.forge pr continue [--head <branch> --sha <sha>]``.
 """
@@ -161,6 +163,11 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
     root = Path.cwd() if cwd is None else cwd
     try:
         policy = load_policy(root)
+        if git_out(root, 'ls-tree', '--name-only', f'origin/{policy.integration}', '--', 'pyproject.toml') == '':
+            emit(
+                f'[forge] pr continue: origin/{policy.integration} declares nothing (first adoption); nothing continues'
+            )
+            return 0
         forge = client or client_for(root)
         if args.head:
             if args.head in {policy.integration, policy.trunk}:

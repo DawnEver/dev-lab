@@ -51,6 +51,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev.actionsartifact import ArtifactRefused, run_member, upload
@@ -201,7 +202,7 @@ def prepare(
         written.parent.mkdir(parents=True, exist_ok=True)
         written.write_bytes(data)
         return f'{said} written to {written} for the upload step to attach as artifact {ARTIFACT}'
-    with tempfile.TemporaryDirectory(prefix='review-bundle-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-bundle-') as scratch:
         tree = Path(scratch) / 'tree'
         tree.mkdir()
         (tree / BUNDLE_FILE).write_bytes(data)

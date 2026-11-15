@@ -7,6 +7,8 @@ head with a part still handed (not settled: read every tick) and a pending claim
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import TYPE_CHECKING
 
 from lab_commons.hpc.needsets import BASE
@@ -71,3 +73,30 @@ def test_one_reader_reads_a_commit_once_settled_or_not() -> None:
     read(SHA)
     read(SHA)
     assert _reads(forge) == 1
+
+
+def test_prefetch_reads_each_unheld_history_once_concurrently_and_serves_it_after() -> None:
+    """Independent status GETs run at once; each sha is read once and then answered from the memo.
+
+    PLANTED CONTROL: a sha already held is never read again by a prefetch.
+    """
+    reads: list[str] = []
+    inside, peak, lock = [0], [0], threading.Lock()
+
+    def read(_client: object, sha: str) -> tuple[()]:
+        with lock:
+            inside[0] += 1
+            peak[0] = max(peak[0], inside[0])
+        time.sleep(0.05)
+        with lock:
+            inside[0] -= 1
+            reads.append(sha)
+        return ()
+
+    history = SettledHistories(StateForge(), read=read)
+    history('held')
+    history.prefetch(['a', 'b', 'c', 'held', 'a'])
+    assert sorted(reads) == ['a', 'b', 'c', 'held']
+    assert peak[0] > 1, 'independent reads ran one at a time'
+    assert history('b') == ()
+    assert sorted(reads) == ['a', 'b', 'c', 'held'], 'a prefetched history was read again'

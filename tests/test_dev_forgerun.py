@@ -59,7 +59,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart, PartRefusal, part_context
-from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
+from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owner_of, release_reason
 
 SHA = 'c' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -374,7 +374,7 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        release_reason(ProducerExit.INCONCLUSIVE, outage=False),
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None),
     )
     assert routed == [{'sha': SHA}], 'its reported reds are real reds: an inconclusive record is still routed'
 
@@ -396,7 +396,7 @@ def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> N
     assert _tick(store, _Unbuilt(home / 'r')) is None, 'released and dropped'
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)} {log}',
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).replace(' class=', f' {log} class='),
     )
     assert forgerunstate.live('https://f/o/r.git') == ()
     _start(home, store)
@@ -444,18 +444,13 @@ def _plant_schema_1() -> dict[str, Any]:
 
 
 @pytest.mark.usefixtures('home')
-def test_a_live_schema_1_run_is_adopted_losslessly_and_written_back_at_this_schema() -> None:
-    """A tool redeployed under a live run adopts it: every field carried, the old job name kept as an alias."""
+def test_a_live_schema_1_run_is_refused_by_name_with_the_remedy_and_left_in_place() -> None:
+    """FORMATS-MIGRATE-ONCE: an older schema is never read; the file is named, its remedy given, and kept."""
     raw = _plant_schema_1()
-    (run,) = forgerunstate.live(raw['repo_url'])
-    carried = {key: value for key, value in dataclasses.asdict(run).items() if key in raw and key != 'schema'}
-    as_read = {k: tuple(v) if isinstance(v, list) else v for k, v in raw.items() if k != 'schema'}
-    assert carried == as_read
-    assert run.schema == forgerunstate.SCHEMA
-    assert run.job_aliases == (f'run-{raw["sha"][:12]}',), 'jobs sbatched under schema 1 bear the sha-only name'
     (path,) = forgerunstate.directory().glob('*.json')
-    assert json.loads(path.read_text(encoding='utf-8'))['schema'] == forgerunstate.SCHEMA, 'written back'
-    assert forgerunstate.live(raw['repo_url']) == (run,), 'deterministic: a second read of the upgraded file agrees'
+    with pytest.raises(forgerunstate.ForeignSchema, match=r'schema 1.*squeue --me'):
+        forgerunstate.live(raw['repo_url'])
+    assert json.loads(path.read_text(encoding='utf-8')) == raw, 'a refused file is not rewritten'
 
 
 def test_a_new_run_has_no_job_alias(home: Path) -> None:
@@ -1033,7 +1028,10 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
+    assert post['description'].startswith(
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).removesuffix(' class=environment')
+    ), post['description']
+    assert owner_of('error', post['description']) is Owner.ENVIRONMENT
 
 
 def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_failure_is_retried(
@@ -1071,7 +1069,10 @@ def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_fai
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
+    assert post['description'].startswith(
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).removesuffix(' class=environment')
+    ), post['description']
+    assert owner_of('error', post['description']) is Owner.ENVIRONMENT
     assert cause in post['description']
 
 

@@ -59,7 +59,7 @@ from pathlib import Path
 from lab_commons.log import emit
 
 from dev_lab.dev._deny_rows import retired_row
-from dev_lab.dev.agent_guard import RULES_REL
+from dev_lab.dev.agent_wiring import RULES_REL
 from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, rules_by_id
 
 __all__ = [

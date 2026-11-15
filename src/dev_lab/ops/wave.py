@@ -1,4 +1,4 @@
-"""A BREAK-GLASS WAVE: the window one TOTP code opens, and the audit report it leaves behind.
+"""A BREAK-GLASS WAVE: the window one cluster code opens, and the audit report it leaves behind.
 
 User rulings 2026-11-03: the user works in waves, and a single code relayed by an agent is not bound to the PR the
 human saw. So a code OPENS a wave (bounded by a duration and, optionally, a merge cap); merges inside it need no
@@ -36,6 +36,8 @@ class Merge:
     at: float
     #: The fingerprint of the ssh key that asked for it (:mod:`dev_lab.ops.sshkey`).
     key: str = ''
+    #: The head's test state at merge time (:func:`dev_lab.ops.breakglass.tests_at`): passed, red or untested.
+    tests: str = ''
 
 
 @dataclass
@@ -53,6 +55,10 @@ class Wave:
     summarized: float | None = None
     #: The fingerprint of the ssh key that opened it (:mod:`dev_lab.ops.sshkey`).
     key: str = ''
+    #: The id of the ``breakglass.wave`` consent credential that opened it: every merge is audited under it.
+    consent: str = ''
+    #: ``<repo>#<pr>`` of each PR the sweep held back for its own consent, so each is logged once per wave.
+    held_back: list[str] = field(default_factory=list)
 
     def state(self, now: float) -> str:
         """``open``, ``expired`` (closing is due), ``audit`` (closed, unacknowledged) or ``acknowledged``."""
@@ -75,7 +81,7 @@ def held(state: Path) -> list[Wave]:
     for path in sorted(_dir(state).glob('*.json')):
         data: dict[str, Any] = json.loads(path.read_text(encoding='utf-8'))
         data['merges'] = [Merge(**merge) for merge in data.get('merges', [])]
-        if 'reminded' in data:  # upgrade on read: that format alerted on close, so a closed wave was summarized
+        if 'reminded' in data:  # OLD-SHAPE-READER: that format alerted on close, so a closed wave was summarized
             del data['reminded']
             data['summarized'] = data.get('closed')
         found.append(Wave(**data))
@@ -96,10 +102,15 @@ def report(state: Path, wave: Wave) -> str:
     lines = [
         f'# Break-glass wave {wave.id}',
         '',
-        f'- opened {_iso(wave.opened)} by key {wave.key or "unknown"}, ended {_iso(wave.closed or wave.expires)}, '
+        f'- opened {_iso(wave.opened)} by key {wave.key or "unknown"} under consent {wave.consent or "unknown"}, '
+        f'ended {_iso(wave.closed or wave.expires)}, '
         f'{len(wave.merges)} merge(s)' + ('' if wave.merges else ': no merge'),
         '',
-        *(f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head} by key {m.key or "unknown"}: {m.reason}' for m in wave.merges),
+        *(
+            f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head} by key {m.key or "unknown"}: {m.reason} '
+            f'(tests: {m.tests or "unrecorded"})'
+            for m in wave.merges
+        ),
         '',
         f'Acknowledge: `python -m dev_lab.dev.forge breakglass ack {wave.id}`.',
     ]

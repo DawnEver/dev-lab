@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from typing import NoReturn
 
@@ -15,10 +16,10 @@ from lab_commons.hpc.testcells import TestCell
 from lab_commons.hpc.tree import NotSubmitted
 from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Status
 
-from dev_lab.dev import localpart, platformparts
+from dev_lab.dev import localpart, platformparts, producer
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import CommitStatus, state_for
-from dev_lab.dev.producer import ProducerExit
+from dev_lab.dev.producer import Owner, ProducerExit, owned, release_reason
 from dev_lab.dev.verdictenv import verdict_env_record
 
 SHA = 'a' * 40
@@ -99,6 +100,49 @@ def test_the_description_round_trips_through_a_status() -> None:
     assert problems == ()
     _, claimed = platformparts.parts_of([CommitStatus('tests/base', 'pending', 'claim machine=G', '')])
     assert 'not a settled part' in claimed[0]
+
+
+def _posted(*parts: platformparts.Part) -> list[CommitStatus]:
+    return [CommitStatus(platformparts.part_context(one.platform), one.state, one.description(), '') for one in parts]
+
+
+def test_the_env_and_policy_round_trip_and_key_the_fact() -> None:
+    """CONTRACT 1: (part, env, policy) is one fact: ANOTHER env keeps the first post, the SAME replaces it.
+
+    PLANTED CONTROL: were env not in the key, the later PASS would be the only fact and the FAIL lost.
+    """
+    fail_a = platformparts.Part(BASE, 'full', Conclusion.FAIL, ran=3, env='aaaaaaaa', policy='11111111')
+    pass_b = dataclasses.replace(fail_a, result=Conclusion.PASS, env='bbbbbbbb')
+    history = _posted(fail_a, pass_b)
+    assert platformparts.facts_of(history) == {fail_a.fact: fail_a, pass_b.fact: pass_b}
+    assert platformparts.parts_of(history)[0] == {BASE: pass_b}, 'unpinned: the latest post, as before'
+    assert platformparts.parts_of(history, policy='11111111')[0] == {BASE: fail_a}, 'a FAIL of the policy outranks'
+    assert platformparts.parts_of(history, policy='22222222')[0] == {}, 'another policy is no fact of this one'
+    again = [*history, *_posted(dataclasses.replace(pass_b, env='aaaaaaaa'))]
+    assert platformparts.parts_of(again, policy='11111111')[0][BASE].result is Conclusion.PASS
+
+
+def test_a_declared_required_part_stands_even_unposted_and_a_part_names_its_env() -> None:
+    """CONTRACT 2: *required* is the declaration's, not what was posted; under a policy a part names its env."""
+    passed = platformparts.Part(BASE, 'full', Conclusion.PASS, ran=3, env='aaaaaaaa', policy='11111111')
+    assert platformparts.standing(_posted(passed), head=SHA, policy='11111111').result is Conclusion.PASS
+    missing = platformparts.standing(_posted(passed), head=SHA, required=frozenset({'jmag'}), policy='11111111')
+    assert missing.result is Conclusion.INCONCLUSIVE
+    assert any('missing the required jmag part' in problem for problem in missing.problems)
+    nameless = _posted(dataclasses.replace(passed, env=''))
+    assert platformparts.standing(nameless, head=SHA, policy='11111111').result is Conclusion.INCONCLUSIVE
+
+
+def test_the_required_parts_are_read_from_the_commits_declaration(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    (repo / 'pyproject.toml').write_text('[tool.dev_lab.parts]\nrequired = ["jmag"]\n', encoding='utf-8')
+    run_git(repo, 'add', 'pyproject.toml')
+    run_git(repo, 'commit', '-q', '-m', 'declare')
+    assert platformparts.required_at(repo, git_out(repo, 'rev-parse', 'HEAD')) == {BASE, 'jmag'}
+    (repo / 'pyproject.toml').write_text('[tool.dev_lab.parts]\nrequired = ["No Part"]\n', encoding='utf-8')
+    run_git(repo, 'commit', '-q', '-am', 'bad')
+    with pytest.raises(platformparts.UndeclaredPart, match='required names no part'):
+        platformparts.required_at(repo, git_out(repo, 'rev-parse', 'HEAD'))
 
 
 def test_a_commits_parts_are_derived_from_what_its_parts_hand_to() -> None:
@@ -315,7 +359,7 @@ def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path:
 
     record = local(reported)
     assert record['cells'] == {node: one.to_plain() for node, one in reported.items()}
-    assert {key: record[key] for key in ('env', 'resolved')} == verdict_env_record(tmp_path), (
+    assert {key: record[key] for key in ('env', 'resolved', 'policy')} == verdict_env_record(tmp_path), (
         'it names what it ran against'
     )
     probed = localpart.local_record(
@@ -352,6 +396,32 @@ def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, mon
     assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == ProducerExit.UNREACHABLE
 
 
+def test_a_local_part_the_forge_refused_declares_why_to_its_job(tmp_path: Path, monkeypatch) -> None:
+    """A post the forge refused is declared to the part's job, so its row names the forge's reason.
+
+    LIVE 2026-11-13 (dev-lab 6cc2d023..cdb5439b): the records home was full, so every ``tests/base`` read only
+    "producer exited 1 (FAIL) but posted no part" -- the cause sat in the job log.
+
+    PLANTED CONTROL: a post the forge accepts declares nothing.
+    """
+    outcome = tmp_path / 'outcome'
+    monkeypatch.setenv(producer.OUTCOME_VAR, str(outcome))
+    monkeypatch.setattr(localpart, 'post', lambda *_a: 'posted tests/base')
+    assert localpart.post_local(tmp_path, _record({'t::a': 'ok'}), tmp_path / 'runs') == 'posted tests/base'
+    assert not outcome.exists(), 'control: an accepted post declares nothing'
+
+    def full(*_a: object) -> NoReturn:
+        msg = 'RecordsHomeFull(the records home of dev-lab holds 1000 assets)'
+        raise PostFailed(msg)
+
+    monkeypatch.setattr(localpart, 'post', full)
+    assert 'not posted' in localpart.post_local(tmp_path, _record({'t::a': 'ok'}), tmp_path / 'runs')
+    said = producer.outage_said(outcome.read_text(encoding='utf-8'))
+    assert said is not None
+    assert 'RecordsHomeFull' in said
+    assert said.endswith(f'class={Owner.STATUS_PUBLISHING}')
+
+
 def test_a_part_posts_the_state_its_conclusion_names_and_an_error_status_is_no_part() -> None:
     """Plan A1.9: the ``tests/<part>`` state is ``forgestatus.state_for`` of the part's Conclusion."""
     for result in (Conclusion.PASS, Conclusion.FAIL):
@@ -375,3 +445,36 @@ def test_a_runs_log_prefix_names_its_part_and_its_short_sha() -> None:
     """Two runs of one part at once write to one serve.log: the prefix tells their lines apart by sha."""
     assert platformparts.run_tag('base', '46754ff8' + '0' * 32) == '[base@46754ff8]'
     assert platformparts.run_tag('base', 'a' * 40) != platformparts.run_tag('base', 'b' * 40)
+
+
+def _passing_base() -> CommitStatus:
+    part = platformparts.Part(platform=BASE, scope='full', result=Conclusion.PASS, ran=3)
+    return CommitStatus(platformparts.part_context(BASE), part.state, part.description(), '')
+
+
+def test_an_environment_error_is_not_the_authors_red_and_never_a_pass() -> None:
+    """Contract 6: a non-code error leaves the commit INCONCLUSIVE (blocks main), named as not the author's."""
+    broke = CommitStatus('tests/jmag', 'error', release_reason(ProducerExit.INCONCLUSIVE, outage=None), '')
+    read = platformparts.standing([_passing_base(), broke], head='h')
+    assert read.result is Conclusion.INCONCLUSIVE, 'never a PASS, never the author FAIL'
+    assert any("not the author's (class=environment)" in one for one in read.problems), read.problems
+
+
+def test_a_licence_outage_reads_as_vendor_licence_not_a_fail() -> None:
+    outage = release_reason(ProducerExit.UNREACHABLE, outage=Owner.VENDOR_LICENCE)
+    read = platformparts.standing([_passing_base(), CommitStatus('tests/jmag', 'error', outage, '')], head='h')
+    assert read.result is Conclusion.INCONCLUSIVE
+    assert any('class=vendor-licence' in one for one in read.problems), read.problems
+
+
+def test_a_code_failure_is_the_authors_red() -> None:
+    """PLANTED: a real FAIL part, and the commit's own defect posted as error class=code, both read FAIL."""
+    part = platformparts.Part(platform='jmag', scope='full', result=Conclusion.FAIL, ran=3)
+    red = CommitStatus('tests/jmag', part.state, part.description(), '')
+    assert platformparts.standing([_passing_base(), red], head='h').result is Conclusion.FAIL
+    refused = CommitStatus('tests/jmag', 'error', owned(Owner.CODE, 'refused at this commit: no such need'), '')
+    read = platformparts.standing([_passing_base(), refused], head='h')
+    assert read.result is Conclusion.FAIL
+    assert any("the author's red (class=code)" in one for one in read.problems)
+    waived = platformparts.standing([_passing_base(), refused], head='h', waived=frozenset({'jmag'}))
+    assert waived.result is Conclusion.PASS, 'CONTROL: a waived part is not read'

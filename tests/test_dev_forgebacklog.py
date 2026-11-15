@@ -15,7 +15,6 @@ from _forge_state import StateForge
 
 from dev_lab.dev import forgebacklog
 from dev_lab.dev.forgebacklog import DEFAULT_WAIT, alarms
-from dev_lab.dev.forgeservesteps import raise_once
 
 _NOW = datetime(2026, 11, 3, 12, tzinfo=UTC)
 _SHA = 'b' * 40
@@ -56,10 +55,8 @@ def test_a_head_waiting_past_the_bound_raises_naming_the_pr_the_wait_and_the_rem
     assert 'waited 9h' in found.body
     assert shown in found.body
     assert f'forge status list {_SHA}' in found.body
-    paged: list[object] = []
-    for _tick in range(2):
-        raise_once(forge, 'integration', alarms(forge, 'integrate/main', 'o/r', now=_NOW), alarm=paged.append)
-    assert len(paged) == 1
+    again = alarms(forge, 'integrate/main', 'o/r', now=_NOW)
+    assert [one.subject for one in again] == [found.subject], 'one subject per tick: the card dedupes'
 
 
 def test_the_bound_is_the_repos_declared_review_wait(tmp_path: Path) -> None:

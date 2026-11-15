@@ -296,7 +296,7 @@ def _settle(
     again), else settled as superseded -- the newer tip is the candidate now.
     """
     if ran:
-        reason = f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)}: ended without a record'
+        reason = release_reason(ProducerExit.INCONCLUSIVE, outage=None, detail=': ended without a record')
     elif (tip := tip_of(root, run.ref)) == run.sha:
         reason = f'{RETRYABLE} -- never submitted; claimable again'
     else:

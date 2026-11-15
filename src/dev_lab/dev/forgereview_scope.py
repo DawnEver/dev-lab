@@ -39,6 +39,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.temp import TEMP_PREFIX
+
 from dev_lab.dev.blobfetch import fetch_blobs, git, is_partial
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgereview_command import ReviewPending
@@ -310,7 +312,7 @@ def gather(
     batch is still running (:class:`~dev_lab.dev.forgereview_command.ReviewPending`) does not stop the slices after
     it: each submits its own, and the first pending is raised once all have run.
     """
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         given = Path(scratch) / 'principles.json'
         given.write_text(json.dumps(payload()), encoding='utf-8')
         body = Path(scratch) / 'pr-body.md'

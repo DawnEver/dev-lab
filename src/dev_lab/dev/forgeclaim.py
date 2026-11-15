@@ -19,10 +19,19 @@ serves the linux part as a cluster run advanced by ``forge serve`` (:mod:`dev_la
 any other box runs its platform's declared producer here. The cluster pulls its own work (design
 2026-10-11, the cluster is one more forge serve host).
 
-THE RACE IS DECIDED BY THE FORGE'S ORDER. After posting, the claimant re-reads every post on the
-commit: among the live claims since the context's last settled status, the EARLIEST (lowest id)
-holds it. Two machines claiming at once both read the same order, so exactly one proceeds and every
-other claimant stands down without producing. A status post is not compare-and-swap; this is.
+THE HOLDER IS A PURE FUNCTION OF THE STATUS HISTORY (:func:`assess`). Neither forge offers compare-and-swap
+on a status, so a claim is post-then-reread and every reader replays the same history: the claim posts since
+the context's last settled status, in the forge's order (status id), each at the forge time it was posted.
+The first claim takes the job; a post of ANOTHER owner takes it only if the holder's lease had lapsed by
+the forge clock at that post's own time, else it lost and counts for nothing; a post of the holder's OWNER
+(machine, login, hpc -- the claim's identity) renews it. Two machines claiming at once both read the same
+order, so exactly one holds and every loser withdraws: it posts nothing further and never publishes a
+result. A stale retake while the lease is live is refused the same way, and an old owner's renewal after
+another took over is a loser's post.
+
+A RESULT IS PUBLISHED ONLY BY THE HOLDER, AND ONCE (:func:`publish`). Immediately before posting it, the
+publisher re-reads the history: a context already settled is a no-op (the first result stands, as the
+outbox's :func:`~dev_lab.dev.forgeoutbox.flush` keeps it), and a claim that no longer holds posts nothing.
 
 A LEASE IS JUDGED ON THE FORGE'S CLOCK. ``until`` is the forge's time (the ``Date`` of its answer,
 :func:`forge_now`) plus the lease, and expiry is judged against that same clock -- a host whose clock
@@ -58,7 +67,7 @@ from lab_commons.hpc.shell import FULL
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import ClusterPart, part_context
-from dev_lab.dev.producer import RETRYABLE
+from dev_lab.dev.producer import RETRYABLE, Owner, owned
 
 __all__ = [
     'CLAIMABLE',
@@ -76,6 +85,8 @@ __all__ = [
     'assess',
     'claim',
     'forge_now',
+    'holder',
+    'publish',
     'refuse',
     'serving',
     'this_machine',
@@ -206,21 +217,39 @@ def this_machine() -> str:
 def assess(history: Sequence[CommitStatus], context: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:
     """Where the job posted in *context* stands on a commit whose every post is *history* (oldest first).
 
-    *now* is the FORGE's time. Returns the state and the claim holding it (``None`` when nobody holds it).
+    *now* is the FORGE's time. Returns the state and the claim holding it (``None`` when nobody holds it); the
+    holder is :func:`holder`'s, and it is :data:`MINE` exactly when *me* is its owner.
     """
     posts = [status for status in history if status.context == context]
     if posts and posts[-1].state != 'pending':  # a claim released by an outage is open again
         return (OPEN if posts[-1].description.startswith(RETRYABLE) else DONE), None
     settled = max((index for index, status in enumerate(posts) if status.state != 'pending'), default=-1)
-    claims = [found for status in posts[settled + 1 :] if (found := Claim.parse(status.description)) is not None]
-    if not claims:
+    held = holder(posts[settled + 1 :], now=now)
+    if held is None:
         return OPEN, None
-    live = [found for found in claims if found.until > now]
-    if live and live[0].same_owner(me):  # mine: my latest renewal says how long it still holds
-        return MINE, max((found for found in live if found.same_owner(me)), key=lambda found: found.until)
-    if live:
-        return CLAIMED, live[0]
-    return STALE, claims[-1]
+    if held.until <= now:
+        return STALE, held
+    return (MINE if held.same_owner(me) else CLAIMED), held
+
+
+def holder(posts: Sequence[CommitStatus], *, now: datetime) -> Claim | None:
+    """The claim holding a job whose claim posts since its last settled status are *posts* (forge order).
+
+    Replayed post by post (module docstring): the first claim takes it; another owner takes it only when the
+    holder's lease had lapsed by the forge time of that post (*now* for a post the forge dated none), else it
+    lost; the holder's owner renews it -- its latest progress, its longest lease.
+    """
+    held: Claim | None = None
+    for status in posts:
+        found = Claim.parse(status.description)
+        if found is None:
+            continue
+        at = status.created or now
+        if held is None or (not found.same_owner(held) and held.until <= at):
+            held = found
+        elif found.same_owner(held):
+            held = dataclasses.replace(found, until=max(found.until, held.until))
+    return held
 
 
 def forge_now(client: Client) -> datetime:
@@ -244,17 +273,33 @@ def forge_now(client: Client) -> datetime:
 def claim(client: Client, work: Work, me: Claim) -> Work:
     """Post *me* as the claim on *work*, then re-read the forge's order; the work as it now stands.
 
-    Its state is :data:`MINE` when this claim holds, else whoever's earlier claim won the race. The
-    same call RENEWS an owner's lease: a renewal is a claim like any other, and it holds only while no
-    earlier live claim of another owner stands.
+    Its state is :data:`MINE` when this claim holds, else whoever won the race (:func:`holder`). The same
+    call RENEWS a lease when *me* is the holder's owner; another owner takes only a lapsed lease.
     """
     status_post(client, work.sha, context=work.context, state='pending', description=me.description())
-    state, holder = assess(status_history(client, work.sha), work.context, me=me, now=forge_now(client))
-    return dataclasses.replace(work, state=state, holder=holder)
+    state, held = assess(status_history(client, work.sha), work.context, me=me, now=forge_now(client))
+    return dataclasses.replace(work, state=state, holder=held)
+
+
+def publish(client: Client, work: Work, me: Claim, *, state: str, description: str, target_url: str = '') -> bool:
+    """Post *work*'s RESULT only while *me* holds it and nothing settled it yet; whether it was posted.
+
+    The history is re-read immediately before the post (module docstring): a settled context makes a second
+    result a no-op, and a claim that lost or lapsed to another withdraws. The read and the post are two calls,
+    so a retake landing between them is the one race left (``docs-src/dev/architecture.md``, contract 3).
+    """
+    history = status_history(client, work.sha)
+    posts = [status for status in history if status.context == work.context]
+    if posts and posts[-1].state != 'pending':
+        return False
+    if assess(history, work.context, me=me, now=forge_now(client))[0] != MINE:
+        return False
+    status_post(client, work.sha, context=work.context, state=state, description=description, target_url=target_url)
+    return True
 
 
 def refuse(client: Client, work: Work, why: str) -> Work:
     """Settle *work*'s part ``error`` on its own commit, naming *why*: the commit's owner reads it there, once."""
-    description = f'{REFUSED_AT_COMMIT} {why}'[:DESCRIPTION_LIMIT]
+    description = owned(Owner.CODE, f'{REFUSED_AT_COMMIT} {why}')
     status_post(client, work.sha, context=work.context, state='error', description=description)
     return dataclasses.replace(work, state=DONE)

@@ -142,11 +142,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'request = urllib.request.Request(url, data=data, method=method)',
     ): 'the URL is the FORGE_URL the job declares API, an https endpoint the workflow declares, never user input',
     (
-        'src/dev_lab/dev/reviewcode.py',
-        'S310',
-        'with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as reply:',
-    ): 'opens only the request built above from the FORGE_URL the job declares',
-    (
         'src/dev_lab/ops/giteaadmin.py',
         'S310',
         'request = urllib.request.Request(url, data=data, headers=headers, method=method)',
@@ -214,7 +209,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/hpcaccount/__init__.py',
         'PLC0415',
-        'from dev_lab.dev.hpcaccount import allocate, deploy, fleet, forget, tick',
+        'from dev_lab.dev.hpcaccount import allocate, credential, deploy, fleet, forget, storage, tick',
     ): 'the package imports no verb: each verb imports the package, so a top-level import would be a cycle',
     (
         'src/dev_lab/dev/servelock.py',
@@ -328,13 +323,13 @@ ALLOWED: Final[dict[Site, str]] = {
     ): 'the serve tick gates every open PR head in turn; one head whose gate raises (git, network, a corrupt '
     'tree) is one line for that head and must not end the tick for the others',
     (
-        'src/dev_lab/dev/forgemerge.py',
+        'src/dev_lab/dev/forgemergeready.py',
         'BLE001',
         'except Exception as error:',
     ): 'the merge tick judges every open PR in turn; one PR whose judgement raises (a git timeout, a forge '
     'call, a corrupt tree) is an error status on that PR and must not end the tick for the PRs after it',
     (
-        'src/dev_lab/dev/forgemerge.py',
+        'src/dev_lab/dev/forgemergeready.py',
         'BLE001',
         'except Exception as unposted:',
     ): 'posting the error status of a PR that could not be judged may itself fail for any reason; the cause '

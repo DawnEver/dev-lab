@@ -1,4 +1,4 @@
-"""THE OPS ACCESS ACCOUNT: an agent troubleshoots a host with its ssh key AND the user's TOTP code, sudo narrowed.
+"""THE OPS ACCESS ACCOUNT: an agent troubleshoots a host with its ssh key AND the user's cluster code, sudo narrowed.
 
 PAM_OATH, NOT libpam-google-authenticator: google-authenticator keeps the secret in ``~/.google_authenticator``,
 a file the logged-in account itself owns -- so the agent the code is meant to gate could read the secret once and
@@ -11,10 +11,10 @@ targets, which a host reached by jumping through this one needs -- a PAM include
 only (every other account skips it), and a sudoers line naming exactly the declared commands. :func:`ensure_include`
 puts that include above ``@include common-auth`` in the sshd PAM stack, refusing a stack of any other shape.
 
-ONE TOTP SECRET PER HOST (user ruling 2026-11-04): the code the user types comes from ONE Authenticator entry per host,
-so pam_oath's users file is DERIVED from the host's one secret (:func:`secret_file`: ``[ops.access] totp``, else the
-consent issuer's) -- by install, and by :func:`enrol` (first-ever enrolment only) or :func:`adopt` (a secret the
-user's phone already holds, placed on another host) -- never generated independently.
+ONE TOTP SECRET PER CLUSTER (user ruling 2026-11-04): the code the user types is the CLUSTER code, one Authenticator
+entry for every ops host, so pam_oath's users file is DERIVED from the host's copy of it (:func:`secret_file`:
+``[ops.access] totp``, else the consent issuer's) -- by install, and by :func:`enrol` (first-ever enrolment only) or
+:func:`adopt` (a secret the user's phone already holds, placed on another host) -- never generated independently.
 """
 
 from __future__ import annotations
@@ -25,7 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from dev_lab.ops.config import Access, OpsConfig
+from dev_lab.ops.config import OpsConfig
+from dev_lab.ops.consentrole import Access
 from dev_lab.ops.totp import DIGITS, STEP, TotpRefused, uri, write_private
 from dev_lab.ops.totp import adopt as adopt_secret
 from dev_lab.ops.totp import enrol as enrol_secret
@@ -198,7 +199,7 @@ def enrol(config: OpsConfig, *, force: bool = False) -> str:
     role, path = _role(config), Path(secret_file(config))
     if path.is_file() and path.read_text(encoding='utf-8').strip() and not force:
         msg = (
-            f"{path} already holds the host's TOTP secret: the existing enrolment is reused (install derives "
+            f"{path} already holds the cluster's TOTP secret: the existing enrolment is reused (install derives "
             f'{role.oath} from it); --force replaces it for every role on this host'
         )
         raise TotpRefused(msg)
