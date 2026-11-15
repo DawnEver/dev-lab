@@ -158,6 +158,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'injectedtext',
     # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun',
+    # ORIGINAL: split from stoprun along its concepts (2026-11-15, module-size band); nothing else replaced.
+    'stopsignatures',
+    'stopapproved',
+    'proctable',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
     'servelanes',
@@ -185,6 +189,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'profile',
     'quantity_values',
     'reports',
+    # ORIGINAL: the skip allowance split from reports (2026-11-15, module-size band).
+    'skipallowance',
     'reportplace',
     'rules',
     'supersede',
@@ -280,6 +286,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
     'jobparts',
+    # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
+    'jobmeasure',
     'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
     'planrunpreflight',  # ORIGINAL: split from planrun: every door checked before the code is spent (2026-11-13)
