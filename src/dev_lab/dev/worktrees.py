@@ -2,9 +2,8 @@
 
 User rulings 2026-10-04 (AUTO-MODE-RUNS-THE-DOORS): local cleanup is a checked door an agent may run
 unattended and nothing here pushes or touches origin. User ruling 2026-10-25: the work is what git TRACKS;
-everything else (scratch, untracked, ignored) goes with the tree. User ruling 2026-11-09: run outputs route to the
-main checkout, so a tree holding any is a writer defect, kept and named; ``--home-outputs NAME`` is the deliberate
-keep, moving that tree's outputs home, verified, before it goes.
+everything else (scratch, untracked, ignored) goes with the tree. User ruling 2026-11-12: reclaiming useless trees
+is a REQUIRED part of the workflow, so a reclaimable tree's run outputs move home, verified, before it goes.
 ``--archive NAME`` is the
 step before a deliberate removal (:mod:`dev_lab.dev.worktree_archive`): it moves the tree's outputs home,
 saves its work, and reports whether removing it loses anything -- it removes nothing itself.
@@ -16,11 +15,12 @@ let the removal delete five worktrees' ignored ``output/``. So:
 * a worktree is a LEASE on a branch for one task, and the decision is ONE function,
   :func:`dev_lab.dev.reclaim.reclaimable`: a linked tree goes only when it is unlocked, no TRACKED file is
   changed (staged or not), its content is LANDED on the trunk or a declared session (``git cherry``, or a
-  squash merge whose origin ref is gone) and no process occupies it. With no run outputs it is deleted and
-  pruned; a named ``--home-outputs`` tree has them moved home and VERIFIED first -- chained, never after a
-  ``;``; its branch then goes through ``branchset --apply``.
+  squash merge whose origin ref is gone) and no process occupies it. Its run outputs are moved home and
+  VERIFIED first -- chained, never after a ``;`` -- then it is deleted and pruned; its branch then goes
+  through ``branchset --apply``.
 * a directory under ``.claude/worktrees/`` that git does not register: judged the same way, then deleted.
-* every main-checkout session start runs it in the background (:mod:`dev_lab.dev.reclaimrun`), logged.
+* every main-checkout session start, and every merge, checkout and push in any tree, runs it in the background
+  (:mod:`dev_lab.dev.reclaimrun`), logged.
 """
 
 from __future__ import annotations
@@ -44,11 +44,8 @@ def prune(
     *,
     apply: bool,
     occupied: Callable[[Path], bool] | None = None,
-    move_home: frozenset[str] = frozenset(),
 ) -> tuple[str, ...] | None:
     """One line per linked worktree and orphan directory; with *apply*, reclaim them. ``None``: unreadable.
-
-    *move_home* names the trees whose run outputs move home before they go (:func:`dev_lab.dev.reclaim.reclaim`).
 
     The decision is :func:`dev_lab.dev.reclaim.reclaimable`. In a repo that declares its branch set the
     holders are its trunk and sessions, and *apply* runs :func:`dev_lab.dev.branchset.apply_local`, so a
@@ -60,9 +57,9 @@ def prune(
         trees = worktrees(root)
         if not trees:
             return None
-        return reclaim(root, (authority_for(root, trees[0][1]),), occupied=occupied, apply=apply, move_home=move_home)
+        return reclaim(root, (authority_for(root, trees[0][1]),), occupied=occupied, apply=apply)
     if apply:
-        return apply_local(root, branchset, occupied=occupied, move_home=move_home)
+        return apply_local(root, branchset, occupied=occupied)
     return reclaim(root, holders(root, branchset), occupied=occupied, apply=False)
 
 
@@ -73,14 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--prune',
         action='store_true',
-        help='reclaim landed, unoccupied worktrees with no tracked change and no run outputs; never origin',
-    )
-    parser.add_argument(
-        '--home-outputs',
-        action='append',
-        default=[],
-        metavar='NAME',
-        help='with --prune: move the run outputs of worktree NAME home, verified, then reclaim it',
+        help='reclaim landed, unoccupied worktrees with no tracked change, run outputs moved home; never origin',
     )
     parser.add_argument(
         '--archive',
@@ -95,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         for line in (line for one in done for line in one.lines()):
             emit(line)
         return 0 if all(one.safe for one in done) else 1
-    lines = prune(args.root.resolve(), apply=args.prune, move_home=frozenset(args.home_outputs))
+    lines = prune(args.root.resolve(), apply=args.prune)
     if lines is None:
         emit(f'git could not read the worktrees of {args.root}; nothing was touched')
         return 2

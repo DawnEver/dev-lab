@@ -17,7 +17,7 @@ from typing import Any, cast
 
 import pytest
 
-from dev_lab.dev import forgeservesteps, relock
+from dev_lab.dev import forgeservesteps, locklag, relock
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
@@ -383,7 +383,7 @@ def test_a_declared_cadence_is_read_at_the_tip(world: tuple[Path, Path, str]) ->
     at = _relocked_fully(world)
     manifest = '[project]\nname = "x"\nversion = "0"\n[tool.dev_lab.relock]\nthird_party_every = "1 h"\n'
     _commit(world, 'build: hourly third-party relock', {'pyproject.toml': manifest})
-    assert '(full, 1 move(s))' in _carry(world[0], _Forge(), now=at + 3600, resolve=_stale)
+    assert '(full, 1 move(s))' in _carry(world[0], _Forge(), now=at + 3600, resolve=_stale, rerender=lambda _tree: ())
 
 
 # --- refusals and seams kept from the single-shot relock -----------------------------------------------------
@@ -515,14 +515,14 @@ def test_a_tree_without_its_venv_is_refused_not_rendered_with_this_interpreter(t
 
 def test_rerender_runs_every_due_renderer_with_the_trees_interpreter_and_names_a_failure(tmp_path: Path) -> None:
     """PLANTED CONTROL: a tree with no generated file runs nothing, so it needs no interpreter at all."""
-    assert rerender(tmp_path, run=lambda _argv, _tree: 1) == ()
+    assert not any(line.endswith(': rendered') for line in rerender(tmp_path, run=lambda _argv, _tree: 1))
     (tmp_path / '.claude' / 'hooks').mkdir(parents=True)
     (tmp_path / '.claude' / 'hooks' / 'deny-commands.js').write_text('x\n', encoding='utf-8')
     python = tmp_path / '.venv' / 'bin' / 'python'
     python.parent.mkdir(parents=True)
     python.write_text('', encoding='utf-8')
     ran: list[list[str]] = []
-    assert rerender(tmp_path, run=lambda argv, _tree: ran.append(argv) or 0) == ('agent_guard',)
+    assert 'agent_guard: rendered' in rerender(tmp_path, run=lambda argv, _tree: ran.append(argv) or 0)
     assert ran == [[str(python), '-m', 'dev_lab.dev.agent_guard', '--install', '--repo', str(tmp_path)]]
     with pytest.raises(RelockFailed, match='the renderer agent_guard exited 4'):
         rerender(tmp_path, run=lambda _argv, _tree: 4)
@@ -629,3 +629,24 @@ def test_the_lag_count_is_the_lines_commits_past_the_pin(tmp_path: Path) -> None
     assert _commits_behind(url, 'integrate/main', git('rev-parse', 'HEAD')) == 0
     with pytest.raises(RelockFailed, match='is not on'):
         _commits_behind(url, 'integrate/main', 'e' * 40)
+
+
+def test_a_lag_count_never_fetches_lazily_from_the_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pin the treeless fetch does not hold must fail locally, never start git's lazy promisor fetch.
+
+    A lazy fetch is a GRANDCHILD network process: a timeout kills the local git, the grandchild keeps the pipe
+    open, and the pre-push hook waited hours (2026-11-13). Only the one declared fetch reaches the network.
+    """
+    seen: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs.get('env')
+        seen.append((argv, dict(env) if isinstance(env, dict) else {}))
+        return subprocess.CompletedProcess(argv, 0, stdout='0\n', stderr='')
+
+    monkeypatch.setattr(locklag._door, 'run', run)
+    monkeypatch.setattr(locklag, 'run_network_verb', lambda *_a, **_k: SimpleNamespace(ok=True, remedy=''))
+    assert locklag._commits_behind('https://forge.example/t/sib.git', 'integrate/main', 'a' * 40) == 0
+    local = [(argv, env) for argv, env in seen if 'init' not in argv]
+    assert local, 'the local graph reads ran'
+    assert all(env.get('GIT_NO_LAZY_FETCH') == '1' for _argv, env in local)

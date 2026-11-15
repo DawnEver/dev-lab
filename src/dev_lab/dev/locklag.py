@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.gitenv import unlocated
@@ -23,12 +24,18 @@ from dev_lab.dev.lockcheck import LOCK, UNRESOLVED
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.relock import SHORT, RelockFailed, floated
 
-__all__ = ['LAG_LIMIT', 'floating_lag', 'within_window']
+__all__ = ['LAG_LIMIT', 'LOCAL_ONLY', 'floating_lag', 'within_window']
 
 #: Commits a lock may pin a floated sibling behind that sibling's line and still be current enough. The relock pull
 #: request follows every sibling push within a serve tick or two, so a carried lock lags a handful of commits at
 #: most; twenty is about a working day of sibling merges -- past it, the relock is not carrying.
 LAG_LIMIT: Final = 20
+
+#: The graph reads after the one fetch stay LOCAL: a pin the treeless fetch does not hold must fail here, never start
+#: git's lazy promisor fetch. That fetch is a grandchild network process: a timeout kills the local git, the
+#: grandchild keeps the pipe open, and a pre-push hook waited hours for it (2026-11-13). ``GIT_NO_LAZY_FETCH``
+#: needs git 2.45.
+LOCAL_ONLY: Final = {'GIT_NO_LAZY_FETCH': '1'}
 
 
 def _commits_behind(url: str, branch: str, sha: str) -> int:
@@ -37,12 +44,12 @@ def _commits_behind(url: str, branch: str, sha: str) -> int:
     A treeless fetch into a throwaway bare repository: the commit graph alone, never a checkout. A *sha* the line
     does not contain (a rewritten line) cannot be counted, and raises.
     """
-    with tempfile.TemporaryDirectory(prefix='lock-lag-') as bare:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}lock-lag-') as bare:
 
         def git(*argv: str) -> subprocess.CompletedProcess[str]:
             return _door.run(
                 [_GIT, '-C', bare, *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
-                check=False, timeout=_GIT_TIMEOUT_S, env=unlocated(),
+                check=False, timeout=_GIT_TIMEOUT_S, env={**unlocated(), **LOCAL_ONLY},
             )  # fmt: skip
 
         git('init', '--quiet', '--bare')

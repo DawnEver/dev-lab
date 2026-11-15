@@ -1,10 +1,13 @@
 """THE ISSUER'S SSH FORCECOMMAND: one JSON line in, the answer out (``python -m dev_lab.ops --config X consent serve``).
 
 A line is ``{"verb": "issue", "request": {...}, "code": "..."}``, ``{"verb": "issue-plan", "plan": {...}, "code":
-"..."}`` or ``{"verb": "register", "credential": {...}, "amount": n}``. ``issue`` answers the credential's JSON,
-``issue-plan`` the JSON list of one credential per grant; ``register`` the campaign's remaining cap (empty for a
-single credential). A refusal raises :class:`~dev_lab.ops.consent.credential.ConsentRefused`; its message never
-carries the code.
+"..."}``, ``{"verb": "register", "credential": {...}, "amount": n}``, ``{"verb": "spent", "ids": [...]}`` or
+``{"verb": "fetch-unspent", "plan": "<digest>"}``.
+``issue`` answers the credential's JSON, ``issue-plan`` the JSON list of one credential per grant; ``register`` the
+campaign's remaining cap (empty for a single credential); ``spent`` the JSON list of those ids whose use the ledger
+records; ``fetch-unspent`` the JSON list of the plan's granted, never-used, live credentials, as issued
+(:meth:`~dev_lab.ops.consent.issuer.Issuer.unspent`: no code, never a new grant). A refusal raises
+:class:`~dev_lab.ops.consent.credential.ConsentRefused`; its message never carries the code.
 """
 
 from __future__ import annotations
@@ -37,5 +40,9 @@ def handle(issuer: Issuer, line: str) -> str:
         amount = data.get('amount', 1)
         left = issuer.register(data.get('credential'), amount)
         return '' if left is None else str(left)
-    msg = 'verb must be issue, issue-plan or register'
+    if verb == 'fetch-unspent':
+        return json.dumps(issuer.unspent(data.get('plan')), sort_keys=True)
+    if verb == 'spent':
+        return json.dumps(issuer.spent(data.get('ids')))
+    msg = 'verb must be issue, issue-plan, register, spent or fetch-unspent'
     raise ConsentRefused(msg)

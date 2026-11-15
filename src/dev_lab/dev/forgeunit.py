@@ -43,6 +43,7 @@ from lab_commons.compute.store import Nondeterministic, Result, ResultStore
 from lab_commons.compute.unit import Engine, Environment, Unit, environment_here
 from lab_commons.config import config_path
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.artefactpack import pack, unpack
 from dev_lab.dev.artefacts import load_config, resolve, store_for
@@ -85,7 +86,7 @@ class ForgeResults:
         posted = self._posted(unit_hash)
         if not posted:
             return None
-        with tempfile.TemporaryDirectory() as scratch:
+        with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
             archive = Path(scratch) / 'result'
             archive.write_bytes(self.client.download(posted[0][0]))
             return unpack(archive, dest)
@@ -107,7 +108,7 @@ class ForgeResults:
             )
             self.alarm(alarm)
             raise Nondeterministic(alarm.body)
-        with tempfile.TemporaryDirectory() as scratch:
+        with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
             files = sorted(p for p in result.path.rglob('*') if p.is_file())
             attach(
                 self.client,
@@ -227,7 +228,7 @@ def offering(
         if env is not None and env.sha != sha:
             msg = f'unit {unit_hash[:12]} runs our code at {env.sha[:12]}; a Job at {sha[:12]} cannot run it'
             raise ValueError(msg)
-        with tempfile.TemporaryDirectory() as scratch:
+        with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
             tree = Path(scratch) / 'bundle'
             (tree / 'files').mkdir(parents=True)
             (tree / MANIFEST).write_text(json.dumps(_manifest(unit), sort_keys=True), encoding='utf-8')
@@ -274,7 +275,7 @@ def main(
     except UndeclaredRequest as refused:
         emit(f'[unit] refused: {refused}', err=True)
         return 2
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         archive = resolve(job.bundle.manifest(), Path(scratch), client=built, repo=built.forge.repo)
         unit, files = _unit_of(unpack(archive, Path(scratch) / 'bundle'))
         if unit.unit_hash(files) != job.unit_hash:

@@ -21,10 +21,14 @@ Three questions are asked of it, all through local refs (fetch first; the remote
   ``archive/*`` tag (MERGE-OR-DELETE: a tag nobody reads is not a place to keep work), and whether it may be
   DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
   first. ``python -m dev_lab.dev.branchset [--root R]`` prints this list; it deletes nothing.
+* :func:`discard` -- ``--discard <branch> --approved "<the user's words>"``: the door for ONE UNLANDED lane the user
+  approved dropping (user ruling 2026-11-13). It removes the lane's worktree (outputs moved home first) and its local
+  branch, pinned to the sha it saw; it refuses a declared branch, the main checkout's branch, a live session, a
+  name with no local branch, and an empty approval. Origin is never touched.
 
-The live set is judged by the forge alone (:mod:`dev_lab.dev.forgeheadgate`), never a test. Remote deletion is a human
-decision expressed as DATA: ``prune_merged`` (default ``false``) is what lets the forge prune merged origin
-branches (:mod:`dev_lab.dev.branchprune`); an agent never deletes a remote ref by hand.
+The live set is judged by the forge alone (:mod:`dev_lab.dev.forgeheadgate`), never a test. ``prune_merged`` (default
+``false``) lets the forge prune merged origin branches (:mod:`dev_lab.dev.branchprune`); an agent never deletes a remote
+ref by hand, only through :data:`ORIGIN_DOOR` (LOSSLESS-DELETE), which ``--apply`` names on every landed origin row.
 """
 
 from __future__ import annotations
@@ -42,15 +46,16 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
-from dev_lab.dev.checkout import authority_for, git_out, origin_branches
+from dev_lab.dev.checkout import authority_for, git_out, origin_branches, worktrees
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.reclaim import QUIET_S, reclaim
+from dev_lab.dev.reclaim import QUIET_S, reclaim, removed_approved
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'ARCHIVE_PREFIX',
     'EPHEMERAL_OFF',
     'FAMILY_EPHEMERAL',
+    'ORIGIN_DOOR',
     'BranchSet',
     'BranchSetKeyRetired',
     'BranchSetNotDeclared',
@@ -63,6 +68,7 @@ __all__ = [
     'census',
     'checked_out',
     'declared_branchset',
+    'discard',
     'holders',
     'main',
     'merge_candidates',
@@ -218,8 +224,9 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     )
 
 
-def _local_branches(root: Path) -> tuple[str, ...] | None:
-    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/')
+def _short_refs(root: Path, prefix: str) -> tuple[str, ...] | None:
+    """The sorted short names of the refs under *prefix*, or ``None`` when git could not answer."""
+    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', prefix)
     return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
 
 
@@ -231,7 +238,7 @@ def _unpushed(root: Path, branch: str) -> int | None:
 def census(root: Path, branchset: BranchSet) -> Census | None:
     """The undeclared branches of *root*, or ``None`` when git could not answer -- never a clean read."""
     remote = origin_branches(root, protected=frozenset({'HEAD'}))
-    local = _local_branches(root)
+    local = _short_refs(root, 'refs/heads/')
     if remote is None or local is None:
         return None
     debt: list[str] = []
@@ -258,16 +265,15 @@ def holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:
     return tuple(refs)
 
 
-def _archive_tags(root: Path) -> tuple[str, ...] | None:
-    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', f'refs/tags/{ARCHIVE_PREFIX}')
-    return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
+ORIGIN_DOOR: Final = 'python -m dev_lab.dev.branchprune delete'
+"""The agent's exit for a landed origin branch: LOSSLESS-DELETE re-judges it after a fresh fetch, then lease-deletes."""
 
 
 def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] | None:
     """Every undeclared branch (local, origin) and parked tag, and whether its tip is held by a declared one."""
     remote = origin_branches(root, protected=frozenset({'HEAD'}))
-    local = _local_branches(root)
-    parked = _archive_tags(root)
+    local = _short_refs(root, 'refs/heads/')
+    parked = _short_refs(root, f'refs/tags/{ARCHIVE_PREFIX}')
     if remote is None or local is None or parked is None:
         return None
     held_by = holders(root, branchset)
@@ -299,23 +305,24 @@ def apply_local(
     occupied: Callable[[Path], bool] | None = None,
     limit: int | None = None,
     quiet_s: float = QUIET_S,
-    move_home: frozenset[str] = frozenset(),
 ) -> tuple[str, ...] | None:
     """THE LOCAL CLEANUP DOOR: delete every deletable LOCAL candidate; one line per branch. ``None``: unread.
 
     User ruling 2026-10-04: local cleanup is a door, but a push or a REMOTE deletion is never automatic.
-    So an origin candidate is only LISTED, with the command a human runs. Each local delete follows a
+    So an origin candidate is only LISTED: a landed one with :data:`ORIGIN_DOOR`, the LOSSLESS-DELETE door an agent
+    runs (ruling 2026-10-21; it lives in :mod:`dev_lab.dev.branchdelete`, which imports this module, so the door is
+    named rather than called), an unlanded one with ``(merge first)``. Each local delete follows a
     FRESH ``merge-base --is-ancestor`` and is pinned to the sha that check saw (``update-ref -d <ref>
     <sha>``), so a branch that moved in between is kept, never lost. A declared branch, a branch with
     commits origin lacks, and a branch checked out in ANY worktree (clean or not -- ruling 2026-10-04:
     a tree is committed or cleared first) are never touched -- so every RECLAIMABLE worktree goes FIRST
     (:func:`dev_lab.dev.reclaim.reclaim`: clean, landed on a holder, unlocked, unoccupied), which is what
     frees its branch for the delete below; every kept tree is listed with its reason. *limit* bounds the trees
-    removed per run, *quiet_s* how long a tree's index must be still, and *move_home* the trees whose run outputs
-    are moved home before they go (:func:`dev_lab.dev.reclaim.reclaim`).
+    removed per run and *quiet_s* how long a tree's index must be still; a tree's run outputs move home, verified,
+    before it goes (:func:`dev_lab.dev.reclaim.reclaim`).
     """
     held_by = holders(root, branchset)
-    trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s, move_home=move_home)
+    trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s)
     rows = merge_candidates(root, branchset)
     if rows is None or trees is None:
         return None
@@ -323,7 +330,7 @@ def apply_local(
     out: list[str] = list(trees)
     for row in rows:
         if row.where == 'origin':
-            hint = f'(human: git push origin --delete {row.name})' if row.deletable else '(merge first)'
+            hint = f'(agent: {ORIGIN_DOOR} {row.name})' if row.deletable else '(merge first)'
             out.append(f'listed   origin  {row.name}  {hint}')
             continue
         if row.where == 'tag':
@@ -341,6 +348,53 @@ def apply_local(
             done = git_out(root, 'update-ref', '-d', ref, sha) is not None
             out.append(f'{"deleted " if done else "FAILED  "} local   {row.name}  ({sha[:10]})')
     return tuple(out)
+
+
+def discard(
+    root: Path, branchset: BranchSet, branch: str, approved: str, *, quiet_s: float = QUIET_S
+) -> tuple[int, str]:
+    """Drop ONE lane the user approved: its worktree, then its local branch; ``(exit code, the one line)``.
+
+    *approved* is the user's own words, echoed into the line so the record says who decided. Refused (exit 1,
+    nothing touched): no approval, a declared branch (trunk or session), no local branch of that name, the main
+    checkout's branch, a live session (:func:`dev_lab.dev.reclaim.removed_approved`).
+    """
+    ref = f'refs/heads/{branch}'
+    sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
+    trees = worktrees(root)
+    held = [path for path, name in trees or () if name == branch]
+    if why := _discard_refusal(root, branchset, branch, approved, sha=sha, trees=trees):
+        return 1, f'refused  {branch}  ({why})'
+    for tree in held:
+        if why := removed_approved(root, tree, quiet_s=quiet_s):
+            return 1, f'refused  {branch}  ({tree}: {why})'
+    if git_out(root, 'update-ref', '-d', ref, sha) is None:
+        return 1, f'FAILED   {branch}  (its worktree is gone; the branch delete at {sha[:10]} failed)'
+    where = f'worktree {held[0]} and ' if held else ''
+    return 0, f'discarded {where}local {branch} ({sha[:10]}) -- approved: "{approved.strip()}"'
+
+
+def _discard_refusal(
+    root: Path,
+    branchset: BranchSet,
+    branch: str,
+    approved: str,
+    *,
+    sha: str,
+    trees: tuple[tuple[Path, str], ...] | None,
+) -> str:
+    """Why :func:`discard` touches nothing, read before any delete; ``''`` when it may go on."""
+    if not approved.strip():
+        return '--approved "<the user words>" is required: the user decides a discard'
+    if branch in branchset.declared:
+        return f'declared in {_TABLE}: the trunk and sessions are never discarded'
+    if not sha:
+        return 'no local branch of that name; origin is never discarded here'
+    if trees is None:
+        return f'git could not list the worktrees of {root}'
+    if trees and trees[0][1] == branch:
+        return f'the main checkout holds it at {trees[0][0]}'
+    return ''
 
 
 def _drop_tag(root: Path, row: Candidate, holders: tuple[str, ...]) -> str:
@@ -364,10 +418,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--apply',
         action='store_true',
-        help='reclaim landed worktrees, then delete deletable LOCAL branches; origin is listed only',
+        help='reclaim landed worktrees, then delete deletable LOCAL branches; origin gets its agent door',
     )
+    parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
+    parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
     args = parser.parse_args(argv)
     root = args.root
+    if args.discard:
+        code, line = discard(root, declared_branchset(root), args.discard, args.approved)
+        emit(line)
+        return code
     if args.apply:
         lines = apply_local(root, declared_branchset(root))
         if lines is None:

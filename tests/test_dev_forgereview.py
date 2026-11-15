@@ -282,6 +282,10 @@ def _can(_argv: Sequence[str], _root: Path) -> str | None:
     return None  # every fake command can start
 
 
+def _no_spend(*_: object) -> None:
+    """No spend report: a fake runtime's interpreter (``py``) may be a real one on this host, never run it."""
+
+
 def test_a_host_without_the_commands_interpreter_or_module_says_why_and_posts_nothing(tmp_path: Path) -> None:
     """Checked BEFORE the claim: the line names why, nothing is posted on the head, and the command never ran."""
     interpreter = sys.executable
@@ -329,7 +333,7 @@ def test_a_host_value_this_host_does_not_declare_is_skipped_unposted(tmp_path: P
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     command = FakeCommand()
-    kw = {'base': 'integrate/main', 'run': command, 'ready': _can, 'host': 'box'}
+    kw = {'base': 'integrate/main', 'run': command, 'ready': _can, 'host': 'box', 'spend': _no_spend}
     lines = review_tick(work, forge, declared, runtimes=host, **kw)
     assert '[runtimes.ai_lab] python' in lines[0]
     assert command.ran == []
@@ -364,7 +368,7 @@ def test_a_host_that_cannot_run_the_review_leaves_the_head_to_a_capable_host(tmp
     forge, number = _forge(head)
     declared = Review(command=('{runtimes.ai_lab.python}', '--range', RANGE_FIELD))
     command = FakeCommand()
-    kw = {'base': 'integrate/main', 'run': command}
+    kw = {'base': 'integrate/main', 'run': command, 'spend': _no_spend}
     review_tick(work, forge, declared, ready=_can, host='A', **kw)
     assert _posted(forge, head) == []
     review_tick(work, forge, declared, ready=_can, host='B', runtimes={'ai_lab': {'python': 'py'}}, **kw)
@@ -720,11 +724,10 @@ def _status(context: str, state: str, description: str) -> CommitStatus:
     return CommitStatus(context, state, description, '', 1, ACTIONS_BOT)  # the forge posted it (D11)
 
 
-def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_path: Path) -> None:
-    """``failure`` (a security finding), an unposted review and a live claim wait; the rest merge.
+def test_the_review_status_is_never_a_part_and_never_waits_the_merge(tmp_path: Path) -> None:
+    """The review is ADVISORY (user rulings 2026-11-11/12): every review state merges; all but ``success`` reported.
 
-    PLANTED controls: a FAIL in a real part context does fail the standing; every review state but ``success``
-    waits the merge, even in a repo that declares no review command (user ruling 2026-10-31).
+    PLANTED controls: a FAIL in a real part context does fail the standing; a forge-posted success reports nothing.
     """
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
@@ -737,20 +740,26 @@ def test_the_review_status_is_never_a_part_but_its_failure_waits_the_merge(tmp_p
     work, head = _work(tmp_path)
     policy = dataclasses.replace(_LANE_POLICY, pr_merges_since='0' * 40)
 
-    def ready(*review: tuple[str, str]) -> bool:
+    def ready(*review: tuple[str, str]) -> tuple[bool, str | None]:
         statuses = (passed, secured, *gated, *(_status(REVIEW_CONTEXT, state, said) for state, said in review))
-        return decide(
+        found = decide(
             work, policy, branch='pr/x', number=1, head=head, statuses=statuses, reviewed=status_gate(github_posted)
-        ).ready
+        )
+        return found.ready, found.review
 
-    assert not ready(('failure', 'security finding(s) F-1: fix them'))
-    assert not ready()
-    assert not ready(('pending', f'{CLAIMED} A at 2026-10-26T09:00:00+00:00, reviewing'))
-    assert ready(('success', 'reviewed: advice 1 HIGH, 0 MEDIUM, 0 LOW; none blocks'))
-    assert not ready(('error', 'the review command failed (OSError)')), 'a status never waives the review'
+    for review in (
+        (('failure', 'security finding(s) F-1: fix them'),),
+        (),
+        (('pending', f'{CLAIMED} A at 2026-10-26T09:00:00+00:00, reviewing'),),
+        (('error', 'the review command failed (OSError)'),),
+    ):
+        merges, reported = ready(*review)
+        assert merges, review
+        assert reported is not None, review
+    assert ready(('success', 'reviewed: advice 1 HIGH, 0 MEDIUM, 0 LOW; none blocks')) == (True, None)
 
 
-def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> None:
+def test_a_review_hold_is_reported_until_it_is_released_and_never_waits(tmp_path: Path) -> None:
     """The hold is its OWN context, never a description prefix.
 
     PLANTED controls: released, it merges; the review context saying the hold's words holds nothing.
@@ -761,9 +770,10 @@ def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> N
     over = NEEDS_MAINTAINER
     held = (_status(HOLD_CONTEXT, 'pending', over), _status(REVIEW_CONTEXT, 'success', 'reviewed'), passed)
     found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held, reviewed=status_gate(github_posted))
-    assert not found.ready
-    assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
-    assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
+    assert not any(HOLD_CONTEXT in line for line in found.missing), found.missing
+    assert found.review is not None
+    assert HOLD_CONTEXT in found.review
+    assert standing(held, head='h').result is Conclusion.PASS, 'the hold is never a part'
     secured = _status('tests/security', 'success', 'nothing found')  # the security merge condition, met
     gated = tuple(_status(gate, 'success', 'holds') for gate in GATES)  # the push-row gates, met
     released = (

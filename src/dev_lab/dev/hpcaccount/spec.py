@@ -23,8 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
+from lab_commons.hpc.grants import declared_grants
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
 
 __all__ = [
@@ -51,6 +53,7 @@ __all__ = [
     'tick_dirs',
     'tick_environment',
     'ticked',
+    'uv_cache',
 ]
 
 #: Every crontab line this tool owns ends with this comment plus the repo's name.
@@ -195,28 +198,53 @@ def _list(values: Sequence[str]) -> str:
     return '[' + ', '.join(_toml(v) for v in values) + ']'
 
 
-def render_grant(grant: Mapping[str, Any]) -> str:
-    """*grant* as the ``[[hpc.grant]]`` table :mod:`lab_commons.hpc.grants` reads."""
-    rows = ''.join(
-        f'{key} = {_list(value) if isinstance(value, list) else value if isinstance(value, int) else _toml(value)}\n'
-        for key, value in grant.items()
-    )
-    return f'\n[[hpc.grant]]\n{rows}'
+def render_grant(table: Mapping[str, Any]) -> str:
+    """*table* (an ``[hpc]`` slice) as the machine-file text :mod:`lab_commons.hpc.grants` reads."""
+    return '\n' + dumps({'hpc': dict(table)})
 
 
-def _grant_of(path: Path, user: str) -> dict[str, Any] | None:
-    raw = tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
-    return next((grant for grant in raw.get('hpc', {}).get('grant', []) if grant.get('user') == user), None)
+def _hpc_of(path: Path) -> dict[str, Any]:
+    return (tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
 
 
 def has_grant(path: Path, user: str) -> bool:
-    """Whether the machine file at *path* already grants *user* a share."""
-    return _grant_of(path, user) is not None
+    """Whether the machine file at *path* already grants *user*."""
+    return any(grant.get('user') == user for grant in _hpc_of(path).get('grant', []))
+
+
+def grant_refusal(path: Path) -> str:
+    """Why this kit cannot load the ``[hpc]`` slice of the machine file at *path* (``''``: it loads)."""
+    try:
+        declared_grants(_hpc_of(path))
+    except ValueError as refused:
+        return str(refused)
+    return ''
+
+
+#: A TOML table or array-of-tables header line; group 1 is the table's dotted name.
+_HEADER: Final = re.compile(r'^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
+
+
+def without_hpc(text: str) -> str:
+    """*text* without its ``[hpc]`` slice -- every ``[hpc]``, ``[hpc.*]`` and ``[[hpc.*]]`` table; the rest kept."""
+    kept: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if header := _HEADER.match(line):
+            name = header.group(1)
+            inside = name == 'hpc' or name.startswith('hpc.')
+        if not inside:
+            kept.append(line)
+    return '\n'.join(kept).rstrip('\n') + '\n'
 
 
 def grant_setup(path: Path, user: str) -> tuple[str, ...]:
-    """The ``setup`` lines of *user*'s grant in the machine file at *path* -- the cluster's own environment."""
-    return tuple((_grant_of(path, user) or {}).get('setup', ()))
+    """The set-up of *user*'s cluster, as the machine file at *path* declares it -- the cluster's own environment."""
+    hpc = _hpc_of(path)
+    if not any(grant.get('user') == user for grant in hpc.get('grant', [])):
+        return ()
+    grants, _ = declared_grants(hpc)
+    return next((grant.setup for grant in grants if grant.user == user), ())
 
 
 def parse_repo(text: str) -> Repo:
@@ -295,7 +323,19 @@ def tick_environment(home: Path, slurm: Sequence[str] = (), setup: Sequence[str]
 
     The ONE definition of that environment: the cron line runs it, and the deploy proves the tick's git in it.
     """
-    return '; '.join([f'PATH={":".join(tick_dirs(home, slurm))}', *setup])
+    cache = shlex.quote(str(uv_cache(home)))
+    exported = f'export UV_CACHE_DIR={cache} UV_LINK_MODE=hardlink'
+    return '; '.join([f'PATH={":".join(tick_dirs(home, slurm))}', exported, *setup])
+
+
+def uv_cache(home: Path) -> Path:
+    """The account's ONE uv cache: every uv the kit runs there shares it, and every env hardlinks from it.
+
+    It lives under the forge's ``ci`` root, on the same filesystem as the envs it links into, so a hardlink
+    never falls back to a copy. uv's own default (``~/.cache/uv``) is retired: a second cache doubled an
+    account's files (census 2026-11-14), and retention removes it (:func:`dev_lab.dev.retentionplan`).
+    """
+    return home / 'ci' / 'uv-cache'
 
 
 def tick_dirs(home: Path, slurm: Sequence[str] = ()) -> list[str]:

@@ -2,7 +2,7 @@
 
 User rulings 2026-11-03: a local agent session may run it, only under the user's authorization. Since 2026-11-07 that
 authorization is a ``breakglass.wave`` CONSENT CREDENTIAL (:mod:`dev_lab.ops.consent`) the user granted with their
-Authenticator code at the issuer: it opens a WAVE (:mod:`dev_lab.ops.wave`) bounded by its signed params; merges
+cluster code at the issuer: it opens a WAVE (:mod:`dev_lab.ops.wave`) bounded by its signed params; merges
 inside it need none, and this server -- never the client -- sends the wave's summary through the configuration's
 ``[alerts]`` when it ends.
 The client is ``forge pr breakglass`` / ``forge breakglass open|close|ack|status``
@@ -12,8 +12,9 @@ whose key authorizes nothing by itself.
 EVERY FORGE OF THE FAMILY (user ruling 2026-11-04). Each served repo is reached on ITS forge -- Gitea or GitHub, the
 backend its URL's host selects (:class:`ClientForge` over :mod:`dev_lab.dev.forgework`) -- as that forge's ONE
 break-glass identity (``[ops.breakglass.tokens]``). The repo's integration branch is read from its declaration on the
-forge (:func:`dev_lab.dev.reviewgate.manifest_at` at the default branch), so a repo this host never clones is served
-as well as one it promotes. The identity must be able to bypass the branch's protection: on GitHub a user the
+forge (:func:`dev_lab.dev.reviewgate.manifest_at` at the PR's BASE branch, the one the merge lands on -- never the
+default branch, which may be a data commit that declares nothing), so a repo this host never clones is served as well
+as one it promotes. The identity must be able to bypass the branch's protection: on GitHub a user the
 ruleset lists as a bypass actor (or a repository admin where classic protection does not enforce on administrators);
 on Gitea an account the protection's merge whitelist admits, or an admin.
 
@@ -27,9 +28,12 @@ One request is one JSON line with an ``action``:
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
-  declared integration branch, or whose head is not the one shown; then comment, merge at that head with a
+  declared integration branch, or whose head is not the one shown -- NEVER for its tests (user ruling 2026-11-11: the
+  wave waives them too): unrun, pending or red, it merges, and its test state at merge time (:func:`tests_at`) is
+  named in the comment, the audit line and the wave's summary; then comment, merge at that head with a
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
-  owes), audit; the merge that reaches the cap ends the wave;
+  owes), audit ``(repo, pr, head, reason)`` under the id of the consent credential that opened the wave -- the
+  wave's one grant has no subject, so each use is tied to it here; the merge that reaches the cap ends the wave;
 * ``close`` -- end the open wave; ``ack {id?, by}`` -- record who acknowledged an audit (the oldest unacknowledged
   when no id), no code;
 * ``status`` -- every wave's state; :meth:`Server.tick` (a timer) ends an expired wave and resends a summary no
@@ -44,29 +48,37 @@ the summary goes once however often the tick runs. Refusals, failures and a lock
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from lab_commons.log import emit
 
 from dev_lab.dev.breakglass import BREAK_GLASS
 from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgemerge import merge
+from dev_lab.dev.forgemergecall import merge
+from dev_lab.dev.forgemergewaits import parts_wait
+from dev_lab.dev.forgepulls import pr_list
+from dev_lab.dev.forgesecurity import security_wait
+from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, Transport, forge_transport
-from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
+from dev_lab.dev.reviewgate import manifest_at
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
 from dev_lab.ops.config import Breakglass, OpsConfig
+from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.statelock import exclusive
+from dev_lab.ops.wavesweep import Pull, integration_at, sweep
 
-__all__ = ['BreakglassRefused', 'ClientForge', 'Forge', 'Server', 'merge_message']
+__all__ = ['BreakglassRefused', 'ClientForge', 'ConsentWanted', 'Forge', 'Server', 'merge_message']
 
 _HOUR = 3600.0
 
@@ -75,15 +87,43 @@ class BreakglassRefused(RuntimeError):
     """The request was refused; the message is what the client prints."""
 
 
+class ConsentWanted(BreakglassRefused):
+    """The PR touches a boundary key (or its labels cannot be read): it lands only by its own consent."""
+
+
+def _consent_stands(forge: Forge, pr: int) -> None:
+    """Refuse PR *pr* while it carries :data:`LABEL`, or when its labels cannot be read (fail closed)."""
+    try:
+        carried = forge.labels(pr)
+    except (ForgeCallFailed, KeyError, TypeError, ValueError) as unread:
+        msg = f'#{pr} labels cannot be read, so it may touch a boundary key: {str(unread).splitlines()[0]}'
+        raise ConsentWanted(msg) from unread
+    if LABEL in carried:
+        msg = f'#{pr} is labelled {LABEL}: it touches a boundary key and lands only by its own consent'
+        raise ConsentWanted(msg)
+
+
 class Forge(Protocol):
     """The forge calls the role makes, on one repository, as the break-glass identity."""
 
-    def declaration(self) -> str:
-        """The repository's ``pyproject.toml`` at its default branch; raises ``ValueError`` when it cannot be read."""
+    def declaration(self, ref: str) -> str:
+        """The repository's ``pyproject.toml`` at *ref*; raises ``ValueError`` when it cannot be read."""
         ...
 
     def pull(self, number: int) -> tuple[str, str, str]:
         """``(state, base, head_sha)`` of PR *number*."""
+        ...
+
+    def statuses(self, head: str) -> Sequence[CommitStatus]:
+        """The commit statuses *head* carries, newest first."""
+        ...
+
+    def open_pulls(self) -> Sequence[Pull]:
+        """Every open PR (:mod:`dev_lab.ops.wavesweep` lands the green ones of an open wave)."""
+        ...
+
+    def labels(self, number: int) -> tuple[str, ...]:
+        """The labels PR *number* carries now."""
         ...
 
     def comment(self, number: int, body: str) -> None:
@@ -102,27 +142,76 @@ class ClientForge:
         """Reach *url*'s repository through *transport* (the network by default)."""
         self._client = Client(forge_of_url(url), token, transport=transport)
 
-    def declaration(self) -> str:
-        """The ``pyproject.toml`` at the repository's default branch, as the forge holds it."""
-        try:
-            default = str(self._client.call('GET', self._client.repo)['default_branch'])
-        except (ForgeCallFailed, KeyError, TypeError) as unread:
-            msg = f'the default branch of {self._client.repo} cannot be read: {unread}'
-            raise DeclarationUnread(msg) from unread
-        return manifest_at(self._client, default)
+    def declaration(self, ref: str) -> str:
+        """The ``pyproject.toml`` at *ref*, as the forge holds it (:func:`dev_lab.dev.reviewgate.manifest_at`)."""
+        return manifest_at(self._client, ref)
 
     def pull(self, number: int) -> tuple[str, str, str]:
         """``(state, base, head_sha)`` of PR *number*."""
         found = self._client.pr_view(number)
         return found.state, found.base, found.head_sha
 
+    def statuses(self, head: str) -> Sequence[CommitStatus]:
+        """The commit statuses *head* carries (:func:`dev_lab.dev.forgestatus.status_list`)."""
+        return status_list(self._client, head)
+
+    def open_pulls(self) -> Sequence[Pull]:
+        """Every open PR (:func:`dev_lab.dev.forgepulls.pr_list`)."""
+        return [Pull(one.number, one.base, one.head_sha, one.draft) for one in pr_list(self._client)]
+
+    def labels(self, number: int) -> tuple[str, ...]:
+        """The labels PR *number* carries, read fresh (both backends' pull JSON lists them by name)."""
+        return self._client.pr_view(number).labels
+
     def comment(self, number: int, body: str) -> None:
         """Comment on PR *number*."""
         self._client.issue_comment(number, body)
 
     def merge(self, number: int, *, head: str, message: str) -> None:
-        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemerge.merge`, either backend); the branch is kept."""
+        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemergecall.merge`, either backend); branch kept."""
         merge(self._client, number, head=head, message=message, delete_branch=False)
+
+
+def tests_at(posted: Sequence[CommitStatus], head: str) -> str:
+    """*head*'s test state at merge time: ``passed``, ``red: <contexts>; <why>`` or ``untested: <why>``.
+
+    User ruling 2026-11-11: break-glass waives the tests as well as the review -- the open wave is the authorization
+    -- so this never refuses; it names what was waived, for the audit and the notice. The reading is merge-ready's
+    own (:func:`dev_lab.dev.forgesecurity.security_wait`, :func:`dev_lab.dev.forgemergewaits.parts_wait`).
+    """
+    waits = [wait for wait in (security_wait(posted), parts_wait(head, posted)) if wait is not None]
+    if not waits:
+        return 'passed'
+    latest = {one.context: one.state for one in reversed(posted)}  # newest first: the newest write wins
+    red = [ctx for ctx, state in latest.items() if state in {'failure', 'error'} and ctx.startswith('tests/')]
+    return f'red: {", ".join(red)}; {"; ".join(waits)}' if red else f'untested: {"; ".join(waits)}'
+
+
+def _merged(tests: str) -> str:
+    """How a merge names its test state: ``merged``, ``merged red (<contexts>)`` or ``merged untested``."""
+    if tests == 'passed':
+        return 'merged'
+    if tests.startswith('red: '):
+        return f'merged red ({tests.removeprefix("red: ").split("; ")[0]})'
+    return 'merged untested'
+
+
+def _installation_token(url: str, app_id: int, key_file: Path) -> str:
+    return installation(forge_of_url(url), app_id, key_file)[1]
+
+
+def credential(
+    role: Breakglass, url: str, *, secret: Callable[[str], str],
+    mint: Callable[[str, int, Path], str] = _installation_token,
+) -> str:  # fmt: skip
+    """The token break-glass presents on *url*'s forge: *mint* its App's installation token, else *secret* its file.
+
+    On a forge with an App (GitHub) the token is minted per wave by :func:`dev_lab.dev.forgeapp.installation`, the
+    ONE minting code; a token forge (Gitea) reads its declared file.
+    """
+    if (app := app_of_forge(role.apps, url)) is not None:
+        return mint(url, *app)
+    return secret(role.token_file(url))
 
 
 def merge_message(pr: int, integration: str, reason: str, wave: str) -> str:
@@ -268,7 +357,7 @@ class Server:
             raise BreakglassRefused(str(refused)) from refused
         now = self.now()
         stamp = datetime.fromtimestamp(now, UTC).strftime('%Y%m%dT%H%M%SZ')
-        opened = waves.Wave(stamp, now, now + hours * _HOUR, cap, key=self.key)
+        opened = waves.Wave(stamp, now, now + hours * _HOUR, cap, key=self.key, consent=granted.id)
         waves.save(self.state, opened)
         said = f'wave {opened.id} open for {hours:g} h' + (f', at most {cap} merge(s)' if cap else '')
         self._audit({'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap,
@@ -282,12 +371,15 @@ class Server:
             raise BreakglassRefused(msg)
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
         forge, integration = self._admit(asked)
-        forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}. Reason: {reason}')
+        tests = tests_at(forge.statuses(head), head)
+        forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
+                          f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
         forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))
-        held.merges.append(waves.Merge(repo, pr, head, reason, self.now(), self.key))
+        held.merges.append(waves.Merge(repo, pr, head, reason, self.now(), self.key, tests))
         waves.save(self.state, held)
-        said = f'merged {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
-        self._audit({'wave': held.id, 'outcome': 'merged', 'repo': repo, 'pr': pr, 'head': head, 'reason': reason})
+        said = f'{_merged(tests)} {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
+        self._audit({'wave': held.id, 'outcome': 'merged', 'consent': held.consent, 'repo': repo, 'pr': pr,
+                     'head': head, 'reason': reason, 'tests': tests})  # fmt: skip
         if held.full():
             self._close(held)
             said += f'; the cap of {held.max_merges} ended the wave'
@@ -302,20 +394,21 @@ class Server:
             msg = f'a reason of at least {self.role.min_reason} characters is required'
             raise BreakglassRefused(msg)
         forge = self.forge_for(url)
-        try:
-            integration = policy_from(forge.declaration(), f'{asked.repo}:pyproject.toml').integration
-        except ValueError as unread:
-            raise BreakglassRefused(str(unread)) from unread
         state, base, found = forge.pull(asked.pr)
         if state != 'open':
             msg = f'#{asked.pr} is {state}, not open'
             raise BreakglassRefused(msg)
+        try:
+            integration = integration_at(forge, base, asked.repo)
+        except ValueError as unread:
+            raise BreakglassRefused(str(unread)) from unread
         if base != integration:
             msg = f'#{asked.pr} targets {base}, not the integration branch {integration}'
             raise BreakglassRefused(msg)
         if found != asked.head:
             msg = f'#{asked.pr} head is {found[:12]}, not the {asked.head[:12]} you were shown: re-run the verb'
             raise BreakglassRefused(msg)
+        _consent_stands(forge, asked.pr)
         return forge, integration
 
     def _close_verb(self, _asked: None) -> str:
@@ -340,10 +433,31 @@ class Server:
         return '\n'.join(listed) or 'no wave'
 
     def tick(self) -> str:
-        """The timer's step, under the role lock: end an expired wave; resend each summary no channel delivered."""
+        """The timer's step, under the role lock: land what is green, end an expired wave, resend unsent summaries.
+
+        An open wave lands each green, non-draft PR it serves (:mod:`dev_lab.ops.wavesweep`) through :meth:`_merge`.
+        """
         with exclusive(self.state):
-            self._current()
+            landed = sweep(self.role.repos, self.forge_for, wave=self._open_id, land=self._sweep_land,
+                           refused=BreakglassRefused)  # fmt: skip
             for wave in waves.held(self.state):
                 if wave.closed is not None:
                     self._summarize(wave)
-            return self._status(None)
+            return '\n'.join([*landed, self._status(None)])
+
+    def _sweep_land(self, asked: requests.Merge) -> str | None:
+        """:meth:`_merge` for the sweep; a PR held for its own consent is ``None``, logged once per wave."""
+        try:
+            return self._merge(asked)
+        except ConsentWanted as wanted:
+            held = self._current()
+            if held is not None and (seen := f'{asked.repo}#{asked.pr}') not in held.held_back:
+                held.held_back.append(seen)
+                waves.save(self.state, held)
+                emit(f'[breakglass] wave {held.id}: {seen} skipped: {wanted}', err=True)
+                self._audit({'wave': held.id, 'outcome': f'skipped: {wanted}', 'repo': asked.repo, 'pr': asked.pr})
+            return None
+
+    def _open_id(self) -> str | None:
+        held = self._current()
+        return None if held is None else held.id

@@ -58,7 +58,6 @@ failure exactly as it does on a success. The claim is then MEASURED instead of a
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shutil
@@ -76,7 +75,7 @@ from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_local, _dep_project
+from dev_lab.dev import _dep_cli, _dep_local, _dep_pending, _dep_project
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
@@ -405,20 +404,11 @@ def main(
     A sibling declared local (``--local NAME``, or the machine file's ``[dep] local``) is overlaid on the synced
     lock (:mod:`dev_lab.dev._dep_local`); with none declared the sync IS the lock.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    targets = parser.add_mutually_exclusive_group()
-    targets.add_argument('--bootstrap', type=Path)
-    targets.add_argument('--root', type=Path)
-    targets.add_argument('--lock-upgrade', nargs='?', const=Path(), type=Path, metavar='ROOT')
-    parser.add_argument('--sync', action='store_true')
-    parser.add_argument('--extra', action='append')
-    parser.add_argument('--dry-run', action='store_true')
-    parser.add_argument('--upgrade-package', action='append', default=[])
-    parser.add_argument('--local', action='append', default=[], metavar='NAME', help='overlay this sibling for one run')
+    parser = _dep_cli.parser(__doc__ or '')
     args = parser.parse_args(argv)
     locking = args.lock_upgrade is not None
-    if args.bootstrap is None and not locking and not args.sync and not args.upgrade_package:
-        parser.error('use --bootstrap PATH, --lock-upgrade [ROOT], --sync, or --upgrade-package NAME')
+    if why := _dep_cli.argv_error(args, locking=locking):
+        parser.error(why)
     root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
     python, selected, paths = _dep_project.read_project(root, args.extra)
     prefix = root / '.venv'
@@ -469,8 +459,9 @@ def main(
             then=overlay,
         )
     except HeldEnvironmentError as exc:
-        emit(f'REFUSED: {exc}')
-        return 1
+        return _dep_cli.held(args, root, prefix, exc)
+    if args.bootstrap is not None and not args.dry_run:
+        _dep_pending.clear(prefix)  # it ran: a queued request for this environment is answered
     emit(result.render())
     if syncing and not args.dry_run and not result.returncode:
         record(root, prefix)  # the trees this environment now holds its components at

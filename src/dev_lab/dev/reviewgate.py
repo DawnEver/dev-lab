@@ -1,11 +1,12 @@
-"""REVIEW-IS-REQUIRED: the ONE predicate of whether a head is reviewed -- for the merge and for Break-Glass alike.
+"""The ONE predicate of whether a head is reviewed: a REPORT, never a merge condition.
 
-User ruling 2026-10-31, "every PR must get a review". A head is reviewed when, and only when, its latest
+The review is ADVISORY on both forges (user rulings 2026-11-11/12; it replaced the 2026-10-31 "every PR must get a
+review" gate): it runs and posts, and the merge decision (:mod:`dev_lab.dev.forgemerge`) reports this
+predicate's answer, never wait on it. A head is reviewed when, and only when, its latest
 :data:`~dev_lab.dev.forgecontexts.REVIEW_CONTEXT` is ``success`` and no
 :data:`~dev_lab.dev.forgecontexts.HOLD_CONTEXT` is pending. Every other state -- absent, a claim still reviewing,
 an ``error``, a ``failure`` (a security finding) -- is not a review, and :func:`review_missing` names it. A review
-that DID NOT RUN is waived at the merge from its recorded cause (:mod:`dev_lab.dev.reviewcap`), never by a status
-(ai-lab #3 and dev-lab #5 were auto-merged with ``tests/review=error`` when a status could waive it).
+that DID NOT RUN leaves its recorded cause (:mod:`dev_lab.dev.reviewcap`) in the merge message.
 
 WHO POSTED A SUCCESS COUNTS ONLY WHERE THE FORGE VETS AUTHORS (:func:`forge_posted`; user ruling 2026-11-06,
 "Gitea is safe; vetting is for GitHub", extended to review statuses the same day). GitHub
@@ -23,12 +24,12 @@ import base64
 import contextlib
 import os
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
+from urllib.parse import quote
 
 from dev_lab.dev._forgebackends import ACTIONS_BOT, GITEA, GITHUB
 from dev_lab.dev.forgecontexts import HOLD_CONTEXT, JUDGE_CHECK, REVIEW_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgestatus import status_post
 
 if TYPE_CHECKING:
@@ -48,13 +49,10 @@ __all__ = [
     'VERDICT_STATES',
     'DeclarationUnread',
     'RunsUnread',
-    'app_missing',
     'app_verdicts',
     'forge_posted',
     'github_posted',
-    'head_reviews',
     'job_run_url',
-    'judge_missing',
     'manifest_at',
     'post_review',
     'posted_verdicts',
@@ -97,21 +95,35 @@ class RunsUnread(ValueError):
     """The forge's runs at a head could not be read: whether its review run concluded success is undecided."""
 
 
-def manifest_at(client: Client, ref: str) -> str:
-    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it -- never a working tree.
+class RepoReader(Protocol):
+    """What :func:`manifest_at` asks of a client: its repository path and one forge call."""
+
+    @property
+    def repo(self) -> str: ...
+
+    def call(self, method: str, path: str, /) -> object: ...
+
+
+def manifest_at(client: RepoReader, ref: str) -> str:
+    """The repo's ``pyproject.toml`` text at *ref*, as the forge holds it -- never a working tree (:func:`file_at`)."""
+    return file_at(client, 'pyproject.toml', ref)
+
+
+def file_at(client: RepoReader, path: str, ref: str) -> str:
+    """The text of *path* at *ref* in the client's repo, as the forge holds it -- never a working tree.
 
     Raises:
         DeclarationUnread: the file is absent at *ref*, cannot be read, or the answer carries no content.
 
     """
     try:
-        answer: Any = client.call('GET', f'{client.repo}/contents/pyproject.toml?ref={ref}')
+        answer: Any = client.call('GET', f'{client.repo}/contents/{quote(path)}?ref={ref}')
     except ForgeCallFailed as failed:
-        msg = f'pyproject.toml at {ref} cannot be read: {failed}'
+        msg = f'{path} at {ref} cannot be read: {failed}'
         raise DeclarationUnread(msg) from failed
     content = answer.get('content') if isinstance(answer, dict) else None
     if not content:
-        msg = f'pyproject.toml at {ref}: the forge answered no content'
+        msg = f'{path} at {ref}: the forge answered no content'
         raise DeclarationUnread(msg)
     return base64.b64decode(content).decode()
 
@@ -210,7 +222,7 @@ def post_review(client: Client, head: str, *, state: str, description: str, targ
 
 
 def status_gate(posted: Callable[[CommitStatus], bool]) -> Reviewed:
-    """The serve-mode gate: :func:`review_missing` over a head's statuses, *posted* telling the forge's own post."""
+    """The serve-mode reading: :func:`review_missing` over a head's statuses, *posted* telling the forge's own post."""
     return lambda statuses: review_missing(statuses, posted)
 
 
@@ -219,24 +231,6 @@ def _hold_missing(statuses: Sequence[CommitStatus]) -> str | None:
     if hold is not None and hold.state != 'success':
         return f'{HOLD_CONTEXT} is {hold.state}: {hold.description}'
     return None
-
-
-def head_reviews(client: Client, head: str) -> list[dict[str, Any]]:
-    """Every PR review on every pull request whose head the forge says *head* is, as the forge lists them.
-
-    Gitea answers ONE pull (``commits/{sha}/pull``, 404 when none), GitHub a list (``commits/{sha}/pulls``).
-    """
-    if client.backend is GITHUB:
-        listed: Any = client.call('GET', f'{client.repo}/commits/{head}/pulls')
-    else:
-        try:
-            listed = [client.call('GET', f'{client.repo}/commits/{head}/pull')]
-        except ForgeCallFailed as failed:
-            if failed.final != _NOT_FOUND:
-                raise
-            listed = []
-    numbers = [int(pull['number']) for pull in listed or [] if isinstance(pull, dict) and pull.get('number')]
-    return [row for number in numbers for row in pages(client, f'{client.repo}/pulls/{number}/reviews', {})]
 
 
 def standing_verdicts(reviews: Sequence[Mapping[str, Any]], *, login: str, head: str) -> list[Mapping[str, Any]]:
@@ -252,24 +246,6 @@ def standing_verdicts(reviews: Sequence[Mapping[str, Any]], *, login: str, head:
     ]  # fmt: skip
 
 
-def judge_missing(
-    statuses: Sequence[CommitStatus], reviews: Sequence[Mapping[str, Any]], *, head: str, judge: str
-) -> str | None:
-    """The judge-mode gate: why *head* is not reviewed by the DECLARED *judge* login, or ``None`` when it is.
-
-    Reviewed when the latest standing verdict review (:func:`standing_verdicts`) *judge* left AT *head* is
-    :data:`APPROVED` and no hold is pending. Another login's approval, one at an older head, a dismissed or stale
-    one, or a later ``REQUEST_CHANGES`` waits.
-    """
-    verdicts = standing_verdicts(reviews, login=judge, head=head)
-    latest = max(verdicts, key=lambda row: int(row.get('id') or 0), default=None)
-    if latest is None:
-        return f'no verdict review by the judge {judge!r} at {head[:12]}: the judge reviews a prepared bundle'
-    if latest.get('state') != APPROVED:
-        return f'the judge {judge!r} requested changes at {head[:12]}'
-    return _hold_missing(statuses)
-
-
 def app_verdicts(client: Client, head: str) -> list[dict[str, Any]]:
     """Every :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` check run GitHub lists at *head*, whoever posted it."""
     if client.backend is not GITHUB:
@@ -278,30 +254,6 @@ def app_verdicts(client: Client, head: str) -> list[dict[str, Any]]:
     listed: Any = client.call('GET', f'{client.repo}/commits/{head}/check-runs?check_name={JUDGE_CHECK}&per_page=100')
     runs = listed.get('check_runs') if isinstance(listed, dict) else None
     return [row for row in runs or [] if isinstance(row, dict)]
-
-
-def app_missing(
-    statuses: Sequence[CommitStatus], runs: Sequence[Mapping[str, Any]], *, head: str, app_id: int
-) -> str | None:
-    """The App-judge gate: why *head* carries no approving check run FROM App *app_id*, or ``None`` when it does.
-
-    Only a run whose ``app.id`` IS the declared App counts: a same-named run from another App or from Actions is no
-    verdict. Its latest completed run at *head* decides: ``success`` approves (then the hold is read), anything else
-    waits; a run still in progress is no verdict yet.
-    """
-    own = [
-        row for row in runs
-        if row.get('name') == JUDGE_CHECK and row.get('head_sha') == head and row.get('status') == 'completed'
-        and (row.get('app') or {}).get('id') == app_id
-    ]  # fmt: skip
-    latest = max(own, key=lambda row: int(row.get('id') or 0), default=None)
-    if latest is None:
-        others = sorted({str((row.get('app') or {}).get('slug') or '?') for row in runs if row not in own})
-        foreign = f' (ignored: {JUDGE_CHECK} from {", ".join(others)})' if others else ''
-        return f'no {JUDGE_CHECK} verdict by the judge App {app_id} at {head[:12]}{foreign}'
-    if latest.get('conclusion') != 'success':
-        return f'the judge App {app_id} concluded {latest.get("conclusion")!r} at {head[:12]}: changes requested'
-    return _hold_missing(statuses)
 
 
 def review_missing(statuses: Sequence[CommitStatus], posted: Callable[[CommitStatus], bool]) -> str | None:
