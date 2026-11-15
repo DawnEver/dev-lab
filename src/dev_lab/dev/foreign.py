@@ -138,9 +138,9 @@ def classify_text(text: str, siblings: tuple[str, ...]) -> str | None:
         The sibling named, or ``None``.
 
     """
-    lowered = text.lower()
     for name in siblings:
-        if name.lower() in lowered:
+        # A WHOLE name, not a substring: a sibling's name running on into more letters is another word (2026-11-15).
+        if re.search(rf'(?<!\w){re.escape(name)}(?!\w)', text, re.IGNORECASE):
             return name
     return None
 
