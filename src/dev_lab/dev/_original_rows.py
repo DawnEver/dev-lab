@@ -15,6 +15,7 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
+    'callorigins',  # extracted in-kit lexical binding owner for reflection and tolerance scanners
     'ab_bench',
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
