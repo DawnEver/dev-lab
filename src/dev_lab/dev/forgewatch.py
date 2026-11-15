@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_pending, sessionprs
+from dev_lab.dev import _dep_pending, sessionprs, taskgate
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pr_by_head, pr_list
@@ -376,9 +376,19 @@ def session_main(argv: Sequence[str] | None = None, *, clients: Callable[[Forge]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``forge watch <sha>... [--deadline-minutes M] [--every-seconds S] [--stream]``; ``--session``: the PRs'."""
-    if any(word.startswith('--session') for word in (sys.argv[1:] if argv is None else argv)):
+    """``forge watch <sha>... [--deadline-minutes M] [--every-seconds S] [--stream]``; ``--session``: the PRs'.
+
+    ``--task <slug>`` watches the heads of every PR the task's rem journal records (:mod:`dev_lab.dev.taskgate`).
+    """
+    words = list(sys.argv[1:] if argv is None else argv)
+    if any(word.startswith('--session') for word in words):
         return session_main(argv)
+    if '--task' in words:
+        try:
+            argv = taskgate.watch_argv(words, lambda: client_for(Path.cwd()))
+        except (taskgate.TaskUnreadable, ForgeCallFailed) as failed:
+            emit(f'watch: {failed}', err=True)
+            return 2
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge watch', description=main.__doc__)
     parser.add_argument('sha', nargs='+')
     parser.add_argument('--deadline-minutes', type=float, default=120.0)
