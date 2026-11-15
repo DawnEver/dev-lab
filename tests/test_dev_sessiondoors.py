@@ -35,7 +35,7 @@ SESSION = 's1'
 
 @pytest.fixture
 def in_session(monkeypatch: pytest.MonkeyPatch) -> str:
-    monkeypatch.setenv(sessionprs.SESSION_ENV, SESSION)
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', SESSION)
     return SESSION
 
 
@@ -89,7 +89,7 @@ def test_a_create_whose_record_fails_says_so_and_still_opens_the_pr(
 def test_an_invalid_session_id_is_said_not_swallowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv(sessionprs.SESSION_ENV, '../escape')
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', '../escape')
     StateForge().pr_create('a', '', head='pr/a', base='main', draft=False)
     assert 'is not a session id' in capsys.readouterr().err
 
@@ -127,11 +127,11 @@ def test_a_deletion_and_a_push_outside_a_session_record_nothing(tmp_path: Path) 
     other = _repo(tmp_path, 'other')
     _pre_push(other, f'refs/heads/pr/x {SHA} refs/heads/pr/x {"0" * 40}')
     assert sessionprs.rows(SESSION) == {}
-    os.environ[sessionprs.SESSION_ENV] = SESSION
+    os.environ['CLAUDE_CODE_SESSION_ID'] = SESSION
     try:
         _pre_push(other, f'(delete) {"0" * 40} refs/heads/pr/x {SHA}')
     finally:
-        del os.environ[sessionprs.SESSION_ENV]
+        del os.environ['CLAUDE_CODE_SESSION_ID']
     assert sessionprs.rows(SESSION) == {}
 
 
@@ -160,7 +160,7 @@ def test_a_push_or_create_leaving_no_open_pr_on_record_is_a_warning() -> None:
     said = _hook('git -C ../lab-commons push origin pr/y')
     assert said is not None
     assert 'WARNING' in said
-    assert sessionprs.SESSION_ENV in said
+    assert 'native agent session' in said
     assert _hook('git status && ls') is None, 'PLANTED CONTROL: a command that neither pushes nor creates is silent'
 
 

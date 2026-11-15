@@ -379,6 +379,14 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
         launcher.write_text(launcher_source(), encoding='utf-8')
         actions.append(f'launcher installed: {launcher}')
 
+    catalog = launcher.with_name('native_session.json')
+    catalog_bytes = _LAUNCHER_SHIPPED.with_name('native_session.json').read_bytes()
+    if catalog.exists() and catalog.read_bytes() == catalog_bytes:
+        actions.append(f'native session catalog already present: {catalog}')
+    else:
+        catalog.write_bytes(catalog_bytes)
+        actions.append(f'native session catalog installed: {catalog}')
+
     settings_path = repo / SETTINGS_REL
     before: dict[str, Any] = {}
     if settings_path.exists():

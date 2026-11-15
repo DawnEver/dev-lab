@@ -200,7 +200,7 @@ always_run = true
 refs = '^refs/heads/pr/'
 
 # SESSION-HEARS-ITS-PRS (2026-11-12): a push records its branches and heads as the agent session's
-# (CLAUDE_CODE_SESSION_ID) in the repository git is pushing, from git's own ref lines -- never from a shell line's
+# (the canonical native harness identity) in the repository git is pushing, from git's own ref lines -- never from a shell line's
 # working directory (dev_lab.dev.sessionprs.record_pushed). Records, says a failure, exits 0 always.
 [[pre-push]]
 id = "session-prs"
