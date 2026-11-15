@@ -190,13 +190,17 @@ def selection_producer(files: Sequence[str]) -> str:
 
 
 def learn_ended(root: Path, argv: Sequence[str], record: Path | None) -> None:
-    """Keep what the box measured of this selection's whole tree; a memory kill is a floor that grows."""
+    """Keep what the box measured of this selection's whole tree, by how it ended.
+
+    ``record_run`` prices only an exit and a memory kill (a floor that grows): a run the wall cut stopped
+    mid-climb teaches nothing, so it never refuses the next measure for memory it was never shown to need.
+    """
     ended = None if record is None else read_ended(record)
     if not isinstance(ended, ProcessEnd) or ended.peak_mem_bytes <= 0:
         return
     run = learned.Run(ended.peak_mem_bytes / GB, ended.cpu_s, max(ended.wall_s, 1e-3))
     producer = selection_producer(selection_files(root, argv))
-    learned.record_run(_repo(root), producer, (), run, killed=ended.reason == 'memory')
+    learned.record_run(_repo(root), producer, (), run, ended=ended.reason)
 
 
 def claimed_width(argv: Sequence[str], cpu: str | None, *, xdist: bool) -> list[str]:
