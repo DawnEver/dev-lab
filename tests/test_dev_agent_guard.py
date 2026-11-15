@@ -613,10 +613,10 @@ def _venv_with_dev_lab_at(root: Path, installed: str, locked: str) -> dict[str, 
     }
 
 
-def _bind(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _bind(env: dict[str, str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [_SHELL, '-c', agent_wiring.TASKBIND_COMMAND],
-        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, check=False,
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=cwd, check=False,
     )  # fmt: skip
 
 
@@ -634,6 +634,22 @@ def test_a_stale_venv_names_its_fix_and_records_the_wall(tmp_path: Path) -> None
         for raw in path.read_text(encoding='utf-8').splitlines()
     ]
     assert (wall['rule'], wall['remedy_present'], wall['session']) == ('VENV-FOLLOWS-THE-LOCK', True, 'planted')
+
+
+def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path: Path) -> None:
+    env = _venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40)
+    env.pop('CLAUDE_CODE_SESSION_ID', None)
+    env.pop('CLAUDE_PROJECT_DIR', None)
+    env['CODEX_THREAD_ID'] = 'native-codex'
+    done = _bind(env, cwd=tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert '-m dev_lab.dev.dep --bootstrap' in done.stderr
+    [wall] = [
+        json.loads(raw)
+        for path in tmp_path.glob('output/logs/*/*/*/walls/walls.jsonl')
+        for raw in path.read_text(encoding='utf-8').splitlines()
+    ]
+    assert (wall['rule'], wall['remedy_present'], wall['session']) == ('VENV-FOLLOWS-THE-LOCK', True, 'native-codex')
 
 
 def test_a_missing_module_from_a_current_venv_is_reported_as_itself(tmp_path: Path) -> None:
