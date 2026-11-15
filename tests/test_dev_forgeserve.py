@@ -40,6 +40,7 @@ from dev_lab.dev import (
     forgeservesteps,
     forgeship,
     forgesubmit,
+    hpcdigest,
     metrics,
     prlanded,
 )
@@ -165,7 +166,7 @@ def _client(_root: Path) -> SimpleNamespace:
     return SimpleNamespace(answered=format_datetime(FORGE_NOW, usegmt=True), whoami=lambda: 'alice')
 
 
-def _serve(
+def _serve(  # noqa: PLR0915 -- one fake per serve seam, each a line
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     ticked: TickReport,
@@ -187,6 +188,7 @@ def _serve(
     retain=lambda _root, **_kw: None,
     observe=None,
     drafts=None,
+    digest=lambda *_a, **_k: None,
     prune=lambda _root, _client, **_kw: (),
     close_landed=lambda *_a, **_k: None,
     sweep=lambda *_a, **_k: 0,
@@ -242,6 +244,7 @@ def _serve(
         return proc
 
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
+    monkeypatch.setattr(hpcdigest, 'step', digest)  # sends: tests/test_dev_hpcdigest.py
     monkeypatch.setattr(forgeservesteps, 'idle_drafts', drafts or (lambda *_a, **_k: []))  # reads open PRs (D53)
     monkeypatch.setattr(forgeservesteps, 'late_reviews', lambda *_a, **_k: [])  # reads open PRs too (backlog)
     monkeypatch.setattr(
@@ -1063,8 +1066,9 @@ def test_a_host_not_holding_the_poller_lease_claims_and_publishes_but_never_poll
         records_prune=lambda *_a, **_k: ran.append('records') or (),
         issue_tidy=lambda *_a: ran.append('tidy') or [],
         observe=lambda *_a, **_k: ran.append('observe') or [],
+        digest=lambda *_a, **_k: ran.append('digest'),
     )
-    assert ran == []
+    assert ran == [], 'a non-poller tick never sends the HPC digest'
     assert len(reviewed) == 1, 'the review is not repo-wide: a capable non-poller runs it'
     assert cards, 'its card is still published'
     assert report.published, 'its outbox is still flushed'
@@ -1084,8 +1088,9 @@ def test_planted_control_the_lease_holder_runs_every_repo_wide_step(monkeypatch,
         issue_tidy=lambda *_a: ran.append('tidy') or [],
         observe=lambda *_a, **_k: ran.append('observe') or [],
         drafts=lambda *_a, **_k: ran.append('drafts') or [],
+        digest=lambda *_a, **_k: ran.append('digest'),
     )
-    assert ran == ['close', 'sweep', 'prune', 'records', 'tidy', 'observe', 'drafts']
+    assert ran == ['close', 'sweep', 'prune', 'records', 'tidy', 'observe', 'drafts', 'digest']
 
 
 def test_every_repo_wide_step_reads_through_one_pass_memo_and_the_review_through_none(

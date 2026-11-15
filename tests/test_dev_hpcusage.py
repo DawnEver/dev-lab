@@ -10,6 +10,7 @@ import pytest
 from lab_commons.hpc.slurm import Node, Quota, Snapshot
 
 from dev_lab.dev import forgeslurm, hpcusage
+from dev_lab.dev.diskusage import Usage
 from dev_lab.dev.forgehosts import HostCard
 
 #: Recorded shape of ``sacct -n -P -o JobID,JobName,State,AllocCPUS,CPUTimeRAW,TotalCPU,ReqMem,MaxRSS``.
@@ -92,6 +93,13 @@ def test_a_tick_reads_sacct_once_for_both_the_budget_and_the_card(
     assert [c for c in calls if c.startswith('sacct')] == [hpcusage.COMMAND]
     assert standing.usage == {'0123456789ab': 12.0, 'fedcba987654': 1.0}
     assert standing.facts['usage'] == _summary()
+    assert standing.facts['quota_use'] is None, 'an unread quota is no fraction (the daily digest says n/a)'
+
+
+def test_the_quota_use_is_each_ceiling_as_a_fraction_and_none_where_unread() -> None:
+    assert hpcusage.quota_use(Usage(50, 100, 300, 1000)) == {'bytes': 0.5, 'files': 0.3}
+    assert hpcusage.quota_use(Usage(50, 100, None, None)) == {'bytes': 0.5, 'files': None}
+    assert hpcusage.quota_use(None) is None
 
 
 def test_the_card_renders_the_table_with_values_escaped() -> None:

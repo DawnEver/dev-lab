@@ -406,6 +406,7 @@ class SlurmCluster:
             'qos': qos,
             'partitions': {name: part.max_minutes for name, part in snapshot.partitions.items() if part.up},
             'storage': storage_text(usage),
+            'quota_use': hpcusage.quota_use(usage),  # the daily digest's (dev_lab.dev.hpcdigest)
             'untagged': sum(s.usage[''].tasks for s, _ in read if '' in s.usage),  # hpc.slurm.stream_of
         }
         day = hpcusage.parse(shell(hpcusage.COMMAND, None))  # the ONE sacct read: the budget's and the card's

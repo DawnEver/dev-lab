@@ -326,6 +326,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'uvfollow',  # uv follows the version its pin needs, through the route it was installed by, new here
     'hpcusage',  # an HPC account's last day read from sacct, new here
+    'hpcdigest',  # every HPC account's day folded into one daily message on the alert channels, new here
     'security',
     # ORIGINAL: the blobless-clone prefetch and the review-code classification are
     # forge mechanisms new to the family; no consumer held one.

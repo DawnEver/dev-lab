@@ -21,10 +21,11 @@ import re
 from dataclasses import dataclass
 from typing import Any, Final
 
+from dev_lab.dev.diskusage import Usage
 from dev_lab.dev.forgestuck import parse_duration
 from dev_lab.dev.slurmkilled import size_mb
 
-__all__ = ['COMMAND', 'FIELDS', 'STATES', 'Day', 'Job', 'parse', 'table']
+__all__ = ['COMMAND', 'FIELDS', 'STATES', 'Day', 'Job', 'parse', 'quota_use', 'table']
 
 #: The ``sacct -o`` fields :func:`parse` reads, in its order.
 FIELDS: Final = 'JobID,JobName,State,AllocCPUS,CPUTimeRAW,TotalCPU,ReqMem,MaxRSS'
@@ -147,6 +148,17 @@ class Day:
                 if j.state == 'OUT_OF_MEMORY'
             ],
         }
+
+
+def quota_use(usage: Usage | None) -> dict[str, float | None] | None:
+    """The account's quota as fractions used -- ``bytes`` and ``files`` (``None`` unread); ``None`` when unread."""
+    if usage is None:
+        return None
+    files = usage.files / usage.files_limit if usage.files is not None and usage.files_limit else None
+    return {
+        'bytes': round(usage.used / usage.limit, 4) if usage.limit else None,
+        'files': None if files is None else round(files, 4),
+    }
 
 
 _MARKDOWN: Final = re.compile(r'([\\`*_{}\[\]()#+!|~])')

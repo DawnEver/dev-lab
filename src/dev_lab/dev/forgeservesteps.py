@@ -16,7 +16,7 @@ from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
-from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, retention
+from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, hpcdigest, retention
 from dev_lab.dev.branchdelete import serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
@@ -279,6 +279,10 @@ def repo_wide(
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
     relock(root, repo, client(root), say=say, alarm=alarm)
     data_runs(root, say=say, alarm=alarm)  # a data PR this checkout consumes runs its tests here
+    try:
+        hpcdigest.step(cards, say=say, now=clock())  # once a UTC day, where [hpc_digest] is declared
+    except (OSError, ValueError) as why:
+        say(f'[serve] ALARM the hpc digest did not run, retried next poller tick: {why}')
     try:
         drift_step(root, repo, say=say, alarm=alarm, now=clock())
     except (OSError, ValueError) as why:
