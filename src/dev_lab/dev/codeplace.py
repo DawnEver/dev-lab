@@ -384,7 +384,10 @@ def _stray_hook(payload: object) -> int:
         reason = f'STRAY-FILE-REFUSED: the stray census could not be read: {exc}'
     roots, excluded = tmpsweep.declared()  # WRITES-STAY-IN-THE-TREE: what the session left outside the checkout
     since = time.time() - tmpsweep.REPORT_WINDOW_S
-    outside = tmpsweep.session_report(roots, excluded, since=since, suffixes=CODE_SUFFIXES | {'.md', '.txt'})
+    mentions = tmpsweep.tool_text(payload.get('transcript_path'))
+    outside = tmpsweep.session_report(
+        roots, excluded, since=since, suffixes=CODE_SUFFIXES | {'.md', '.txt'}, mentions=mentions
+    )
     reason = '\n'.join(one for one in (reason, outside) if one) or None
     if reason is not None:
         emit(json.dumps({'decision': 'block', 'reason': reason}))

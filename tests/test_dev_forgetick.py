@@ -64,7 +64,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetick import tick
 from dev_lab.dev.forgewait import NEVER_FITS, Box
 from dev_lab.dev.lanepolicy import Policy
-from dev_lab.dev.producer import ProducerExit, release_reason
+from dev_lab.dev.producer import Owner, ProducerExit, release_reason
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
@@ -133,8 +133,8 @@ def test_a_stale_local_claim_is_retaken_by_anyone_serving_the_platform() -> None
 
 def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None:
     """PLANTED CONTROL: the same ``error`` state released for any other reason stays done."""
-    outage = CommitStatus('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE, outage=True), '', 2)
-    inconclusive = CommitStatus('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE, outage=False), '', 2)
+    outage = CommitStatus('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE, outage=Owner.NETWORK), '', 2)
+    inconclusive = CommitStatus('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE, outage=None), '', 2)
     assert _assess([_pending(ME, 1), outage]) == (OPEN, None)
     assert _assess([_pending(ME, 1), inconclusive]) == (DONE, None)
 

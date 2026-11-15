@@ -13,11 +13,19 @@ import json
 from pathlib import Path
 
 import pytest
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import agenthooks
 from dev_lab.dev.codeplace import main
+from dev_lab.dev.famtests import tempprefix
 from dev_lab.dev.hook_adoption import HookAdoption, render
-from dev_lab.dev.writeroots import Root, excluded_paths, refuse_outside_tree, write_prone_roots
+from dev_lab.dev.writeroots import (
+    Root,
+    excluded_paths,
+    owned_globs,
+    refuse_outside_tree,
+    write_prone_roots,
+)
 
 
 @pytest.fixture
@@ -185,3 +193,25 @@ def test_a_shell_write_into_a_root_is_refused(rules: Path, command: str) -> None
 def test_reads_the_harness_dir_and_the_checkout_are_unaffected(rules: Path, command: str) -> None:
     reason = agenthooks.decide(command, rules)
     assert reason is None or 'WRITES-STAY-IN-THE-TREE' not in reason, (command, reason)
+
+
+#: Measured 2026-11-11: 492 ``.py`` files under ``src/``; set below it with room for ordinary deletion.
+_SRC_FLOOR = 400
+
+
+def test_every_temp_entry_the_family_creates_carries_the_one_prefix() -> None:
+    """ONLY OUR OWN IS SWEPT, so every temp entry we make must be recognisable as ours."""
+    root = Path(__file__).resolve().parents[1]
+    tempprefix.assert_every_temp_entry_carries_the_prefix(base=root, roots=[root / 'src'], floor=_SRC_FLOOR)
+
+
+def test_an_unprefixed_temp_call_is_found(tmp_path: Path) -> None:
+    """The planted control of the scan above."""
+    tempprefix.assert_the_scan_finds_a_planted_call(tmp_path=tmp_path)
+
+
+def test_owned_globs_are_the_prefix_plus_the_declared_ones() -> None:
+    assert owned_globs({}) == (f'{TEMP_PREFIX}*',)
+    assert owned_globs({'owned': ['pytest-of-*']}) == (f'{TEMP_PREFIX}*', 'pytest-of-*')
+    with pytest.raises(ValueError, match='owned'):
+        owned_globs({'owned': 'pytest-of-*'})

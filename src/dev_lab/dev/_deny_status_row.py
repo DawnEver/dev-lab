@@ -2,11 +2,11 @@
 
 The release of ``tests/review-hold`` is the RECORD that the forge reviewed the head: only the forge's own round
 releases it (D11). A raw ``forge status post`` on that context releases with no review behind it, so it is
-refused -- and a session's post never counts anyway, since the gate reads the status's forge-recorded creator.
+refused -- and a session's post never counts anyway, since the reading checks the status's forge-recorded creator.
 
-``tests/review`` is a merge condition too: its ``failure`` is an open security finding, cleared only by the forge's
-review run again once it is fixed (``forge review again <pr>``). A raw post on ``tests/review`` would clear it with
-no review behind it, so the pattern refuses both contexts.
+``tests/review`` is ADVISORY (user rulings 2026-11-11/12), yet still the forge's record: its ``failure`` reports an
+open security finding, cleared only by the forge's review run again once it is fixed (``forge review again <pr>``).
+A raw post on ``tests/review`` would forge that record with no review behind it, so the pattern refuses both contexts.
 
 ``tests/security`` is a merge condition too: its ``success`` is posted by the serve step, or -- for a head whose
 own new exemptions cover its findings -- by the release door, which RECORDS its host, reason and exemption delta
@@ -28,8 +28,8 @@ STATUS_VIA_DOORS: dict[str, object] = {
     'matches': 'argument',
     'hazard': 'a raw post on tests/review-hold, tests/review or tests/security releases a head with no review or '
     'reason behind it.',
-    'remedy': "Use the door that records why: re-run the forge's review of the head; "
-    'forge review again <pr>; forge security release <pr> --why "<reason>".',
+    'remedy': "Use the door that records why: re-run the forge's review of the head, "
+    '{python} -m dev_lab.dev.forge review again <pr>; or forge security release <pr> --why "<reason>".',
     'needs': None,
     'refuses': (
         'python -m dev_lab.dev.forge status post abc123 --context tests/review-hold --state success',

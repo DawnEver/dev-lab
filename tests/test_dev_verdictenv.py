@@ -51,5 +51,20 @@ def test_a_checkout_naming_no_project_keeps_every_line(tmp_path: Path) -> None:
 def test_the_record_states_the_key_and_the_lines_it_was_taken_over(tmp_path: Path) -> None:
     root = _root(tmp_path)
     record = verdictenv.verdict_env_record(root, _manifest('1'))
-    assert record == {'env': env_key((INTERPRETER, *DEPS)), 'resolved': [INTERPRETER, *DEPS]}
+    assert record == {
+        'env': env_key((INTERPRETER, *DEPS)),
+        'resolved': [INTERPRETER, *DEPS],
+        'policy': verdictenv.verdict_policy((root / 'pyproject.toml').read_text(encoding='utf-8'), ''),
+    }
     assert verdictenv.verdict_env(root) == verdictenv.verdict_env_record(root)['env'], 'one reading, one key'
+
+
+def test_the_policy_moves_with_the_test_declaration_and_the_lock_and_nothing_else() -> None:
+    """PLANTED both ways: a test table or the lock changes it; an unrelated table does not."""
+    base = '[project]\nname = "x"\n[tool.lab_commons.tests]\nproduce = ["a"]\n'
+    policy = verdictenv.verdict_policy(base, 'lock-1')
+    assert verdictenv.verdict_policy(base + '[tool.ruff]\nline-length = 9\n', 'lock-1') == policy
+    assert verdictenv.verdict_policy(base.replace('"a"', '"b"'), 'lock-1') != policy
+    assert verdictenv.verdict_policy(base + '[tool.dev_lab.parts]\nrequired = ["jmag"]\n', 'lock-1') != policy
+    assert verdictenv.verdict_policy(base, 'lock-2') != policy
+    assert len(policy) == verdictenv.POLICY_CHARS

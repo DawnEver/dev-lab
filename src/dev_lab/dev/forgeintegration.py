@@ -2,7 +2,7 @@
 
 A child branch is an ``origin`` branch the schedule's one rule classes (``classes_by_ref``) or the head
 of an open pull request on ``origin`` (fetched as ``pull/N/head``). PRs are opened on the forge only; on GitHub
-the same merge decision is a workflow job's (:func:`dev_lab.dev.forgemerge.ready`). The tick never writes a child;
+the same merge decision is a workflow job's (:func:`dev_lab.dev.forgemergeready.ready`). The tick never writes a child;
 it REPORTS on it -- and, where ``[tool.dev_lab.integrator] pr_merges_since`` is declared, asks the forge to
 MERGE a PR that is green, clean and audit-passing (:mod:`dev_lab.dev.forgemerge`), saying in its comment
 what is missing otherwise. Per child branch, against ``origin/<integration>`` and with no
@@ -58,7 +58,8 @@ from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
-from dev_lab.dev.forgemerge import CI_MERGER, EXTERNAL, ci_merges, judged, merge
+from dev_lab.dev.forgemerge import CI_MERGER, EXTERNAL, ci_merges, judged
+from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
     Marker,
@@ -244,8 +245,9 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     """Merge PR *child* through the forge when nothing is missing; *said* with the outcome added as a line.
 
     Only where ``pr_merges_since`` is declared and the forge is gitea (GitHub merges natively on the same decision,
-    :func:`dev_lab.dev.forgemerge.ready`); an already-merged child is left alone. A repo that declares the CI merger
-    (:func:`~dev_lab.dev.forgemerge.ci_merges`) is merged by its Gitea job on the same decision: here it is only said.
+    :func:`dev_lab.dev.forgemergeready.ready`); an already-merged child is left alone. A repo that declares the CI
+    merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) is merged by its Gitea job on the same decision: here it is
+    only said.
     """
     if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
         return said

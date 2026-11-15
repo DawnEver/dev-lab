@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,7 +50,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.githooks.runner import FOREIGN_INTERPRETER_ENV
-from dev_lab.dev.githooks.table import hook_table
+from dev_lab.dev.githooks.table import ADVISORY, hook_table
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 
@@ -76,7 +77,9 @@ __all__ = [
     'hooks_dir',
     'install',
     'report_installation',
+    'rewire',
     'shim',
+    'unwired',
 ]
 
 #: The verdict for ONE stage.
@@ -210,20 +213,17 @@ def _sh_quote(text: str) -> str:
 
 
 def shim(stage: str, fallback: str | None = None) -> str:
-    """The ``.git/hooks/<stage>`` file: this checkout's venv, else the installer's interpreter, else PASS.
+    """The ``.git/hooks/<stage>`` file: this checkout's venv, else the main checkout's, else a family one, else REFUSE.
 
-    A hook never blocks a commit or push because the checkout has no venv (user ruling 2026-10-22):
-    the shim falls back to *fallback* (default: the interpreter running the install, recorded in the
-    file) when it can import lab_commons, and runs only the rows that need nothing of the repo's own
-    environment. With no lab_commons interpreter anywhere it says so in one line and exits 0; the
-    forge runs every row anyway.
-
-    The one exception is a MERGE commit (a ``MERGE_HEAD`` in the git dir; user ruling 2026-11-10):
-    there the shim refuses and names the remedy, because a merge message cannot be amended later and
-    the forge's MERGE-RESOLUTION-DECLARED would then force a history rewrite.
+    A linked worktree with no venv of its own runs its hooks on the MAIN checkout's venv; failing that, on
+    *fallback* (default: the interpreter running the install, recorded in the file) when it can import
+    lab_commons. Either runs only the rows that need nothing of this tree's own environment. With no interpreter
+    anywhere the commit or push is REFUSED naming the bootstrap and install doors: a commit no hook judged was
+    made silently, and a message or a marker it carried cannot be taken back once pushed.
     """
     candidates = ' '.join('/'.join(parts) for parts in CANDIDATE_RELATIVE_PATHS)
     recorded = Path(fallback if fallback is not None else sys.executable).as_posix()
+    mains = ' '.join(f'"$main/{"/".join(parts)}"' for parts in CANDIDATE_RELATIVE_PATHS)
     return (
         '#!/bin/sh\n'
         f'{SHIM_MARKER} -- installed by `{INSTALL_COMMAND}`; the hooks are declared in TOML\n'
@@ -234,20 +234,35 @@ def shim(stage: str, fallback: str | None = None) -> str:
         f'    exec "$top/$rel" -m dev_lab.dev.githooks run {stage} "$@"\n'
         '  fi\n'
         'done\n'
+        'main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")\n'
         f'fallback={_sh_quote(recorded)}\n'
-        'if [ -x "$fallback" ] && "$fallback" -c "import dev_lab.dev.githooks" >/dev/null 2>&1; then\n'
-        f'  {FOREIGN_INTERPRETER_ENV}=1 exec "$fallback" -m dev_lab.dev.githooks run {stage} "$@"\n'
-        'fi\n'
-        'if [ -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then\n'
-        f'  echo "[githooks] {stage}: no venv in $top, no lab_commons interpreter, and a MERGE is in progress;'
-        ' refused -- a merge message cannot be amended later. Bootstrap the venv'
-        ' (python -m dev_lab.dev.dep --bootstrap $top), install the hooks'
-        f' ({INSTALL_COMMAND}), then commit again." >&2\n'
-        '  exit 1\n'
-        'fi\n'
-        f'echo "[githooks] {stage}: no venv in $top, no lab_commons interpreter; '
-        'hooks skipped (the forge runs them)." >&2\n'
-        'exit 0\n'
+        f'for found in {mains} "$fallback"; do\n'
+        '  if [ -x "$found" ] && "$found" -c "import dev_lab.dev.githooks" >/dev/null 2>&1; then\n'
+        f'    {FOREIGN_INTERPRETER_ENV}=1 exec "$found" -m dev_lab.dev.githooks run {stage} "$@"\n'
+        '  fi\n'
+        'done\n'
+        f'{_no_interpreter(stage)}'
+    )
+
+
+#: The door that creates a checkout's venv, run by any interpreter that imports dev_lab.
+_BOOTSTRAP: Final = (
+    'python -m dev_lab.dev.dep --bootstrap $top (with any interpreter that imports dev_lab, e.g. a sibling venv)'
+)
+
+
+def _no_interpreter(stage: str) -> str:
+    """The shim's last lines when nothing could run *stage*: a judged stage is refused; each says the door."""
+    if stage in ADVISORY:
+        return (
+            f'echo "[githooks] {stage}: no venv in $top or $main, no lab_commons interpreter; nothing ran. This'
+            f' checkout needs its own venv: {_BOOTSTRAP}, then {INSTALL_COMMAND}." >&2\n'
+            'exit 0\n'
+        )
+    return (
+        f'echo "[githooks] {stage}: no venv in $top or $main, no lab_commons interpreter; refused -- no hook would'
+        f' judge it. Bootstrap the venv ({_BOOTSTRAP}), install the hooks ({INSTALL_COMMAND}), then try again." >&2\n'
+        'exit 1\n'
     )
 
 
@@ -340,6 +355,30 @@ def install(repo: Path) -> InstallReport:
         msg = f'the shims were written and {after.hooks_dir} is still unprotected: {listing}'
         raise HookInstallError(msg)
     return after
+
+
+def rewire(repo: Path) -> str:
+    """HOOKS-FOLLOW-THE-KIT: :func:`install` when a declared shim is absent or stale; what was done, ``''`` for nothing.
+
+    A stale or predecessor shim never reaches the current hook table, so no hook of the table can replace it:
+    the follow (:mod:`dev_lab.dev.venvfollow`) does, unprompted. It never raises -- a FOREIGN hook is reported,
+    never overwritten -- because it runs inside a session start or a git verb it must not block.
+    """
+    if not unwired(repo):
+        return ''
+    try:
+        done = install(repo)
+    except (HookInstallError, subprocess.SubprocessError, OSError, ValueError) as exc:
+        return f'hooks {repo}: not reinstalled -- {exc}'
+    return f'hooks {repo}: reinstalled ({done.verdict})'
+
+
+def unwired(repo: Path) -> bool:
+    """*repo* declares a hook stage whose shim is absent or stale; ``False`` where git or the table cannot answer."""
+    try:
+        return hook_installation(repo).verdict == UNPROTECTED
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return False
 
 
 def _retire(repo: Path, path: Path) -> None:

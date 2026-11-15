@@ -7,6 +7,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 - `integrate/main` coordinates; `main` moves only by `integrate promote`, when every part is a full PASS.
 - `.claude/rules/**` in each repo holds hard constraints only and is read on every turn; these pages hold the
   mechanism and are read when you do the thing.
+- The rules of the whole design -- repo kinds, contracts, constitution -- are [the family architecture](architecture.md).
 - New here, or arriving from the old local-gate model: read [Migrating a workstation](migrate.md) first.
 
 ## The pages
@@ -15,6 +16,8 @@ How the family's repositories are developed: who writes code, who proves it, and
 |---|---|
 | [Onboarding a repo](./onboarding.md) | Every declaration a new repo supplies, in one call and one table |
 | [Migrating a workstation](./migrate.md) | Start here if you used to run the gate before a push: what to stop, and the five commands that replace it |
+| [The family architecture](./architecture.md) | The normative spec: repo kinds, branch flow, HPC, consent, six contracts and their gaps, the constitution |
+| [Development architecture and topology](./topology.md) | The map: repo family, branch flow, forges and identities, hosts, consent, config files, setup and rotation |
 | [The three participants](./the-three-participants.md) | Who does what: the human, the authors, the producers, the forge and the integrator |
 | [The verdict model](./verdict-model.md) | What a verdict is, the tiers, and which destination needs which forge parts |
 | [Testing discipline](./testing-discipline.md) | The lightweight/heavy partition, xfail never skip, one test session per box |
@@ -39,6 +42,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [One branch per session](./branch-set.md) | The declared branch set, merge-or-delete, and the push-time check |
 | [Auto mode runs the doors](./auto-doors.md) | Local cleanup and run stops are checked doors both clients allow unprompted |
 | [Refusals](./refusals.md) | Every deny refusal is a clause, a door and a pointer; the full text of each row |
+| [Every wall teaches](./feedback.md) | The feedback layers, the wall ledger, and closing a gap before the task |
 | [Project files](./project-files.md) | Every project file is rendered from a family base plus a delta, or owned by the repo; hooks and CI are TOML |
 
 ## How a consuming repo uses these pages

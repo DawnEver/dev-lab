@@ -36,6 +36,7 @@ from dev_lab.dev.hook_install import (
     report_installation,
     shim,
 )
+from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 
 _GIT = shutil.which('git') or 'git'
 _LAYER = '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
@@ -274,13 +275,13 @@ def test_no_venv_commits_through_the_recorded_interpreter_and_skips_repo_rows(re
     assert 'no_such_repo_module' not in done.stderr
 
 
-def test_no_interpreter_anywhere_still_commits_with_one_line(repo: Path, tmp_path: Path) -> None:
+def test_no_interpreter_anywhere_refuses_the_commit_in_one_line(repo: Path, tmp_path: Path) -> None:
     _install_with(repo, (tmp_path / 'gone' / 'python').as_posix())
     done = _commit(repo)
-    assert done.returncode == 0, done.stderr
+    assert done.returncode != 0
     lines = [line for line in done.stderr.splitlines() if '[githooks]' in line]
-    assert len(lines) == 2  # pre-commit and commit-msg: one line each
-    assert all('no lab_commons interpreter' in line for line in lines)
+    assert len(lines) == 1  # pre-commit refuses; commit-msg never runs
+    assert 'no lab_commons interpreter; refused' in lines[0]
 
 
 def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path) -> None:
@@ -325,10 +326,12 @@ def test_a_retire_that_fails_leaves_the_new_shim_written_beside_the_slot(
 _SH = shutil.which('sh')
 
 
-def _run_shim_without_interpreter(repo: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+def _run_shim_without_interpreter(
+    repo: Path, tmp_path: Path, stage: str = 'pre-commit'
+) -> subprocess.CompletedProcess[str]:
     assert _SH is not None, 'no sh on PATH: the hook shims cannot run on this box'
-    script = tmp_path / 'pre-commit'
-    script.write_text(shim('pre-commit', (tmp_path / 'gone' / 'python').as_posix()), encoding='utf-8', newline='\n')
+    script = tmp_path / stage
+    script.write_text(shim(stage, (tmp_path / 'gone' / 'python').as_posix()), encoding='utf-8', newline='\n')
     return subprocess.run(
         [_SH, str(script)], cwd=repo, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False
     )
@@ -347,16 +350,50 @@ def test_a_merge_commit_without_any_interpreter_is_refused_and_names_the_remedy(
     assert 'dev_lab.dev.hook_install --install' in done.stderr
 
 
-def test_a_plain_commit_without_any_interpreter_still_skips(repo: Path, tmp_path: Path) -> None:
-    """PLANTED CONTROL: with no merge in progress the shim passes, as ruled 2026-10-22."""
+def test_a_plain_commit_without_any_interpreter_is_refused_and_names_the_remedy(repo: Path, tmp_path: Path) -> None:
+    """A commit no hook judged is never made silently: refused, naming the bootstrap and install doors."""
     done = _run_shim_without_interpreter(repo, tmp_path)
+    assert done.returncode == 1
+    assert 'hooks skipped' not in done.stderr
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr
+    assert 'dev_lab.dev.hook_install --install' in done.stderr
+
+
+def test_a_checkout_without_any_interpreter_is_told_the_bootstrap_door_and_not_refused(
+    repo: Path, tmp_path: Path
+) -> None:
+    """An advisory stage refuses nothing (the checkout is done), so it exits 0 -- and names the venv's door.
+
+    2026-11-13: a new worktree said "hooks skipped" and agents improvised a PYTHONPATH.
+    """
+    done = _run_shim_without_interpreter(repo, tmp_path, 'post-checkout')
+    assert done.returncode == 0
+    assert 'refused' not in done.stderr
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr
+    assert 'dev_lab.dev.hook_install --install' in done.stderr
+
+
+def test_a_worktree_without_a_venv_runs_its_hooks_on_the_main_checkouts_interpreter(repo: Path, tmp_path: Path) -> None:
+    """PLANTED CONTROL for the refusal above: the main checkout's venv is found before anything is refused."""
+    subprocess.run([_GIT, '-C', str(repo), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run([_GIT, '-C', str(repo), '-c', 'user.email=a@example.com', '-c', 'user.name=a', 'commit', '-qm', 'b'],
+                   check=True, capture_output=True)  # fmt: skip
+    tree = tmp_path / 'tree'
+    subprocess.run(
+        [_GIT, '-C', str(repo), 'worktree', 'add', '-q', '--detach', str(tree)], check=True, capture_output=True
+    )
+    fake = repo.joinpath(*CANDIDATE_RELATIVE_PATHS[-1])
+    fake.parent.mkdir(parents=True)
+    fake.write_text('#!/bin/sh\necho "main interpreter: $*" >&2\n', encoding='utf-8', newline='\n')
+    fake.chmod(0o755)
+    done = _run_shim_without_interpreter(tree, tmp_path)
     assert done.returncode == 0, done.stderr
-    assert 'hooks skipped' in done.stderr
+    assert 'main interpreter: -m dev_lab.dev.githooks run pre-commit' in done.stderr
 
 
-def test_a_shim_without_the_merge_refusal_is_stale_and_replaced(repo: Path) -> None:
+def test_a_shim_without_the_main_checkout_probe_is_stale_and_replaced(repo: Path) -> None:
     current = shim('pre-commit')
-    old = '\n'.join(line for line in current.splitlines() if 'MERGE_HEAD' not in line) + '\n'
+    old = '\n'.join(line for line in current.splitlines() if '$main' not in line) + '\n'
     assert old != current
     directory = hooks_dir(repo)
     directory.mkdir(parents=True, exist_ok=True)
@@ -364,3 +401,25 @@ def test_a_shim_without_the_merge_refusal_is_stale_and_replaced(repo: Path) -> N
     assert {s.stage: s.status for s in hook_installation(repo).stages}['pre-commit'] == STALE
     install(repo)
     assert {s.status for s in hook_installation(repo).stages} == {INSTALLED}
+
+
+def test_rewire_reinstalls_a_retired_shim_unprompted_and_then_costs_nothing(repo: Path) -> None:
+    """HOOKS-FOLLOW-THE-KIT: a predecessor shim never reaches the current table, so the follow replaces it."""
+    directory = hooks_dir(repo)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / 'post-merge').write_text(
+        '#!/bin/sh\n# lab_commons.dev.githooks shim\nexec python -m lab_commons.dev.githooks run post-merge\n',
+        encoding='utf-8',
+    )
+    assert 'reinstalled' in hook_install.rewire(repo)
+    assert hook_installation(repo).verdict == PROTECTED
+    assert hook_install.rewire(repo) == '', 'PLANTED CONTROL: live shims are left alone and reported as nothing'
+
+
+def test_rewire_never_overwrites_a_foreign_hook_and_never_raises(repo: Path) -> None:
+    directory = hooks_dir(repo)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / 'pre-push').write_text('#!/bin/sh\necho mine\n', encoding='utf-8')
+    said = hook_install.rewire(repo)
+    assert 'not reinstalled' in said
+    assert (directory / 'pre-push').read_text(encoding='utf-8') == '#!/bin/sh\necho mine\n'

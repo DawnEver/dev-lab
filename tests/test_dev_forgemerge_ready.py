@@ -10,15 +10,18 @@ import pytest
 from _forge_state import StateForge
 from test_dev_forgemerge import _MANIFEST, _work
 
-from dev_lab.dev import forgecli, forgemerge
+from dev_lab.dev import forgecli, forgemerge, forgemergecall, forgemergeready
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
-from dev_lab.dev.forgemerge import EXTERNAL, READY, judged, ready
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgemerge import EXTERNAL, judged
+from dev_lab.dev.forgemergeready import READY, ready
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED
 from dev_lab.dev.forgereview_claim import UNREVIEWED_STATUS
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, Client, PullRequest
-from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.lanepolicy import UNDECLARED_INTEGRATION, load_policy
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.reviewcap import unreviewed_line
 
 _INTEGRATOR = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
@@ -61,13 +64,21 @@ def test_a_green_pr_is_posted_ready_once_and_a_stale_red_decision_is_never_read_
     assert MERGE_READY_CONTEXT in NOT_PARTS, 'the decision is never a part'
 
 
-def test_a_pr_missing_a_condition_is_posted_failure_naming_it(tmp_path: Path) -> None:
+def test_a_pr_only_waiting_on_a_check_is_posted_pending_naming_it(tmp_path: Path) -> None:
     """PLANTED CONTROL: the same PR with tests/security green is ready (the test above)."""
     work, forge, number, head = _pr(tmp_path, green=False)
     ready(work, forge, number)
     state, description = _merge_ready(forge, head)
-    assert state == 'failure'
+    assert state == 'pending'
     assert description.startswith('waits on: its security check: tests/security is not yet judged')
+
+
+def test_a_pr_whose_check_is_red_is_posted_failure(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the pending test above: a terminal red is no wait."""
+    work, forge, number, head = _pr(tmp_path, green=False)
+    status_post(forge, head, context='tests/security', state='failure', description='a finding')
+    ready(work, forge, number)
+    assert _merge_ready(forge, head)[0] == 'failure'
 
 
 def test_a_pr_into_another_branch_than_integration_is_never_ready(tmp_path: Path) -> None:
@@ -76,10 +87,31 @@ def test_a_pr_into_another_branch_than_integration_is_never_ready(tmp_path: Path
     assert _merge_ready(forge, head) == ('failure', 'waits on: a PR into integrate/main, not main')
 
 
+def test_a_checkout_declaring_no_integrator_still_judges_a_pr_into_the_family_integration(tmp_path: Path) -> None:
+    """cc-market #11: the PR that ADDS the table was judged from a base lacking it -- a wall with no exit."""
+    work, forge, number, head = _pr(tmp_path, manifest=_MANIFEST)
+    said = ready(work, forge, number)
+    state, description = _merge_ready(forge, head)
+    assert state == 'success', description
+    assert UNDECLARED_INTEGRATION in description
+    assert 'could not be judged' not in said
+
+
+def test_a_checkout_declaring_no_integrator_refuses_a_pr_into_another_branch_naming_the_exit(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the test above: only the family's integration name is judged undeclared."""
+    work, forge, number, head = _pr(tmp_path, base='main', manifest=_MANIFEST)
+    assert forgemergeready.main(['ready', '--pr', str(number)], cwd=work, client=forge) == 0
+    state, description = _merge_ready(forge, head)
+    assert state == 'failure'
+    assert 'names no integration branch' in description
+    assert 'declare [tool.dev_lab.integrator] integration = "integrate/main"' in description
+    assert 'ValueError' not in description
+
+
 def test_the_merge_noun_is_the_forge_cli_door(tmp_path: Path) -> None:
     work, forge, number, head = _pr(tmp_path)
-    assert forgecli.NOUNS['merge'] is forgemerge.main
-    assert forgemerge.main(['ready', '--pr', str(number)], cwd=work, client=forge) == 0
+    assert forgecli.NOUNS['merge'] is forgemergeready.main
+    assert forgemergeready.main(['ready', '--pr', str(number)], cwd=work, client=forge) == 0
     assert _merge_ready(forge, head)[0] == 'success'
 
 
@@ -100,15 +132,15 @@ def test_on_github_a_created_pr_asks_for_native_auto_merge_as_a_merge_commit_and
     hub = _Asked(
         Forge('github.com', 'o', 'r'), {'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'}, 'POST /graphql': {'data': {}}}
     )
-    assert 'auto-merge enabled' in forgemerge.auto_merge(hub, 7)
+    assert 'auto-merge enabled' in forgemergecall.auto_merge(hub, 7)
     method, path, body = hub.sent[-1]
     assert (method, path, body['variables']) == ('POST', '/graphql', {'id': 'PR_n7'})
     assert 'enablePullRequestAutoMerge' in body['query']
     assert 'mergeMethod: MERGE' in body['query']
     hub.answers['POST /graphql'] = {'errors': [{'message': 'Auto merge is not allowed for this repository'}]}
-    assert 'NOT enabled -- Auto merge is not allowed' in forgemerge.auto_merge(hub, 7)
+    assert 'NOT enabled -- Auto merge is not allowed' in forgemergecall.auto_merge(hub, 7)
     tea = _Asked(Forge('forge.example.org', 'o', 'r'), {})
-    assert 'serve tick merges it' in forgemerge.auto_merge(tea, 7)
+    assert 'serve tick merges it' in forgemergecall.auto_merge(tea, 7)
     assert tea.sent == []
 
 
@@ -132,7 +164,7 @@ def test_with_no_pr_the_door_judges_every_open_pr_into_integration(tmp_path: Pat
     work, forge, _number, head = _pr(tmp_path)
     elsewhere = 'e' * 40
     forge.add_pull('pr/y', 'main', sha=elsewhere)
-    assert forgemerge.main(['ready'], cwd=work, client=forge) == 0
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 0
     assert _merge_ready(forge, head)[0] == 'success'
     assert [one for one in status_list(forge, elsewhere) if one.context == MERGE_READY_CONTEXT] == []
 
@@ -157,7 +189,7 @@ def test_on_github_a_ready_pr_is_merged_by_the_job_posting_ready_pinned_to_the_j
     work, forge, number, head = _hub_pr(tmp_path)
     hub = _Asked(_HUB, {'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'},
                         'POST /graphql': {'errors': [{'message': 'Pull request is in unstable status'}]}})  # fmt: skip
-    assert 'NOT enabled -- Pull request is in unstable status' in forgemerge.auto_merge(hub, 7)
+    assert 'NOT enabled -- Pull request is in unstable status' in forgemergecall.auto_merge(hub, 7)
     said = ready(work, forge, number)
     assert _merge_ready(forge, head) == ('success', f'{READY} ({MESSAGES_NOT_DECLARED})')  # no message row declared
     [(merged, body)] = forge.merges
@@ -188,11 +220,106 @@ def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_
         return found
 
     monkeypatch.setattr(forge, 'pr_view', moved)
-    said = ready(work, forge, number)
+    with pytest.raises(forgemergeready.NotMerged, match='NOT merged'):
+        ready(work, forge, number)
     assert forge.merges == []
     assert forge.deleted_refs == []
-    assert 'NOT merged' in said
     assert _merge_ready(forge, head)[0] == 'success'
+
+
+def _refusing_deletes(forge: StateForge, monkeypatch: pytest.MonkeyPatch, code: int, said: str) -> None:
+    """*forge* answers every ref DELETE with *code* saying *said*; every other call as before."""
+    real = forge.call
+
+    def call(method: str, path: str, body: object = None, durable: object = None) -> object:
+        if method == 'DELETE' and '/git/refs/heads/' in path:
+            refusal = Attempt(1, code, f'{{"message": "{said}"}}', Diagnosis.FORGE_REFUSED)
+            raise ForgeCallFailed(Report(('DELETE', 'ref'), (refusal,), 1))
+        return real(method, path, body, durable)
+
+    monkeypatch.setattr(forge, 'call', call)
+
+
+@pytest.mark.parametrize(('code', 'said'), [(422, 'Reference does not exist'), (404, 'Not Found')])
+def test_a_merged_pr_whose_head_branch_is_already_gone_is_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int, said: str
+) -> None:
+    """cc-market #12 (2026-11-13): GitHub merged it and auto-deleted the head; already gone is the delete done.
+
+    The door's delete got 422 and said NOT merged, exiting non-zero -- a declaration that lies.
+    """
+    work, forge, number, _head = _hub_pr(tmp_path)
+    _refusing_deletes(forge, monkeypatch, code, said)
+    line = ready(work, forge, number)
+    assert line.endswith('; merged')
+    assert 'NOT merged' not in line
+    assert [one[0] for one in forge.merges] == [number]
+
+
+def test_a_head_branch_delete_refused_for_another_reason_still_surfaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED CONTROL: a 422 that is not "already gone" raises from the merge call and is named by the door.
+
+    The door says it as merged, because the forge holds the PR merged.
+    """
+    work, forge, number, _head = _hub_pr(tmp_path)
+    _refusing_deletes(forge, monkeypatch, 422, 'Reference update failed')
+    with pytest.raises(ForgeCallFailed, match='Reference update failed'):
+        forgemergecall.merge(forge, number, head=forge.pr_view(number).head_sha, message='t', delete_branch=True)
+    forge.pulls[number] |= {'state': 'open', 'merged': False}
+    line = ready(work, forge, number)
+    assert '; merged, but after it:' in line
+    assert 'Reference update failed' in line
+    assert 'NOT merged' not in line
+
+
+def test_a_failed_merge_call_on_a_pr_the_forge_holds_merged_is_said_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before NOT merged is said, the PR's state is read: the forge's word, never the failed call's.
+
+    PLANTED CONTROL: the moved-head test above, whose PR stays unmerged, is still NOT merged.
+    """
+    work, forge, number, _head = _hub_pr(tmp_path)
+
+    def lost_answer(_client: Client, n: int, **_kwargs: object) -> None:
+        forge.pulls[n] |= {'state': 'closed', 'merged': True}  # the merge landed; its answer did not
+        raise ForgeCallFailed(Report(('PUT', 'merge'), (Attempt(1, 502, 'Bad Gateway', Diagnosis.TRANSIENT),), 3))
+
+    monkeypatch.setattr(forgemergeready, 'merge', lost_answer)
+    line = ready(work, forge, number)
+    assert '; merged, but after it:' in line
+    assert 'NOT merged' not in line
+
+
+def test_a_ready_pr_the_forge_refuses_to_merge_fails_the_tick_and_the_prs_after_it_are_still_judged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """hosts-config #25 (2026-11-13): green, posted ready, never merged -- and the scheduled job still exited 0.
+
+    PLANTED CONTROL: the second PR, which the forge merges, is merged in the same tick.
+    """
+    work, forge, first, head = _hub_pr(tmp_path)
+    second = forge.add_pull('pr/y', 'integrate/main', sha=head)
+    real, calls = forgemergeready.merge, []
+
+    def refusing(client: Client, number: int, **kwargs: object) -> None:
+        calls.append(number)
+        if number == first:
+            raise ForgeCallFailed(
+                Report(('PUT', 'merge'), (Attempt(1, 405, 'User not allowed to merge PR', Diagnosis.UNCLASSIFIED),), 1)
+            )
+        real(client, number, **kwargs)
+
+    monkeypatch.setattr(forgemergeready, 'merge', refusing)
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 2
+    assert calls == [first, second], 'the refusal never stops the tick'
+    assert [one[0] for one in forge.merges] == [second]
+    assert _merge_ready(forge, head)[0] == 'success', 'the decision stands; only the merge was refused'
+    err = capsys.readouterr().err
+    assert f'#{first} ' in err
+    assert 'NOT merged' in err
 
 
 def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -201,7 +328,7 @@ def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monk
     stuck = 'b' * 40
     second = forge.add_pull('pr/y', 'integrate/main', sha=stuck)
     third = forge.add_pull('pr/z', 'integrate/main', sha=head)
-    judged, real = [], forgemerge.ready
+    judged, real = [], forgemergeready.ready
 
     def flaky(root: Path, client: Client, number: int) -> str:
         judged.append(number)
@@ -209,8 +336,8 @@ def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monk
             raise subprocess.TimeoutExpired(['git', 'cat-file', '--batch'], 120)
         return real(root, client, number)
 
-    monkeypatch.setattr(forgemerge, 'ready', flaky)
-    assert forgemerge.main(['ready'], cwd=work, client=forge) == 2, 'a failed judgement still fails the tick'
+    monkeypatch.setattr(forgemergeready, 'ready', flaky)
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 2, 'a failed judgement still fails the tick'
     assert judged == [first, second, third]
     [said] = [one for one in status_list(forge, stuck) if one.context == MERGE_READY_CONTEXT]
     assert (said.state, said.description) == (
@@ -260,12 +387,15 @@ def test_on_gitea_a_review_that_did_not_run_is_ready_warned_never_waiting_on_pen
         assert state == 'success'
         assert 'WARNED -- Unreviewed: no reviewer returned findings (a unsupported)' in description
     else:
-        assert state == 'failure'
-        assert description.startswith(f'waits on: its review: tests/review is pending: {UNREVIEWED_STATUS}')
+        assert state == 'success'  # no waiver, yet the advisory review never holds
+        assert 'WARNED -- its advisory review: tests/review is pending: not reviewed' in description
 
 
-def test_a_high_finding_never_holds_the_merge_and_a_security_one_does(tmp_path: Path) -> None:
-    """User ruling 2026-11-06: findings are advice. PLANTED CONTROL: a security finding's failure holds the merge."""
+def test_no_review_finding_holds_the_merge_and_a_security_one_is_reported(tmp_path: Path) -> None:
+    """User rulings 2026-11-06 and 2026-11-11/12: the review is advice; even its security finding merges WARNED.
+
+    The scanner's ``tests/security`` (forgesecurity) is the deterministic gate, not the AI review.
+    """
     work, forge, number, head = _hub_pr(tmp_path)
     ready(work, forge, number)
     assert _merge_ready(forge, head)[0] == 'success', 'a success carrying HIGH advice is ready'
@@ -273,20 +403,24 @@ def test_a_high_finding_never_holds_the_merge_and_a_security_one_does(tmp_path: 
     work, forge, number, head = _hub_pr(tmp_path / 'security')
     status_post(forge, head, context='tests/review', state='failure', description='security finding(s) F-1')
     ready(work, forge, number)
-    assert _merge_ready(forge, head)[0] == 'failure'
-    assert forge.merges == []
+    state, description = _merge_ready(forge, head)
+    assert state == 'success'
+    assert 'WARNED -- its advisory review: tests/review is failure: security finding(s) F-1' in description
+    assert forge.merges != []
 
 
-def test_a_unreviewed_status_without_a_trusted_record_is_no_waiver(tmp_path: Path) -> None:
-    """PLANTED CONTROL: the same status, its record pasted by the PR author: the review still holds it."""
+def test_a_unreviewed_status_without_a_trusted_record_is_no_waiver_yet_never_holds(tmp_path: Path) -> None:
+    """The record pasted by the PR author waives nothing (no ``Unreviewed:`` line), yet the advisory review merges."""
     work, forge, number, head = _hub_pr(tmp_path)
     status_post(forge, head, context='tests/review', state='pending', description=f'{UNREVIEWED_STATUS} budget')
     forge.login = 'a'
     forge.issue_comment(number, unreviewed_line('review budget reached: 11.00/10.00 USD'))
     forge.login = 'github-actions[bot]'
     ready(work, forge, number)
-    assert _merge_ready(forge, head)[0] == 'failure'
-    assert forge.merges == []
+    state, description = _merge_ready(forge, head)
+    assert state == 'success'
+    assert 'Unreviewed:' not in description
+    assert 'its advisory review' in description
 
 
 @pytest.mark.parametrize('how', ['non-writer', 'fork'])
@@ -324,7 +458,7 @@ def test_gitea_vets_no_author_so_the_serve_tick_has_no_external_pr(tmp_path: Pat
 def test_on_gitea_a_review_success_counts_whoever_posted_it(tmp_path: Path, poster: str) -> None:
     """User ruling 2026-11-06, "Gitea is safe; vetting is for GitHub": an agent's or the serve's success counts.
 
-    PLANTED CONTROL: the same success posted by the same non-bot login on GitHub waits on the review.
+    PLANTED CONTROL: the same success posted by a non-bot login on GitHub is reported as no review (never waits).
     """
     work, forge, number, head = _pr(tmp_path)
     forge.login = poster
@@ -336,8 +470,9 @@ def test_on_gitea_a_review_success_counts_whoever_posted_it(tmp_path: Path, post
     hub.login = 'serve-host'
     status_post(hub, hub_head, context='tests/review', state='success', description='reviewed abc: advice; none blocks')
     found = judged(hub_work, hub, load_policy(hub_work), branch='pr/x', number=hub_number, head=hub_head)
-    assert not found.ready
-    assert any('tests/review' in one for one in found.missing)
+    assert found.ready
+    assert found.review is not None
+    assert 'tests/review' in found.review
 
 
 def test_a_ready_status_without_a_message_row_says_messages_are_not_declared(tmp_path: Path) -> None:

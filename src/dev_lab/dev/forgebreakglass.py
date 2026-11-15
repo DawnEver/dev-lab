@@ -25,7 +25,7 @@ from typing import Any, Final
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import remote
+from dev_lab.dev import remote, sessionprs
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgework import Client, client_for
@@ -41,7 +41,9 @@ Send = Callable[[Mapping[str, Any], dict[str, Any]], tuple[int, str]]
 def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
     """Send *request* as one JSON line to *table*'s ``endpoint`` over ``ssh -T``; ``(exit status, its output)``."""
     identity = str(table['identity']) if table.get('identity') else None
-    return remote.piped(str(table['endpoint']), json.dumps(request) + '\n', identity=identity, timeout_s=180)
+    known_hosts = str(table['known_hosts']) if table.get('known_hosts') else None
+    line = json.dumps(request) + '\n'
+    return remote.piped(str(table['endpoint']), line, identity=identity, known_hosts=known_hosts, timeout_s=180)
 
 
 def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
@@ -107,4 +109,7 @@ def merge_main(
     repo = forge_from_remote(root).identity  # host/owner/name: never typed, never ambiguous across forges
     emit(f'BREAK-GLASS {repo}#{pull.number} [{pull.state}] {pull.title}: {pull.head} -> {pull.base} at {pull.head_sha}')
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
-    return _answer(send, config, request)
+    code = _answer(send, config, request)
+    if code == 0:
+        sessionprs.ended(forge_from_remote(root), pull.number)  # SESSION-HEARS-ITS-PRS: the merging door records
+    return code

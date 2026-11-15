@@ -24,9 +24,20 @@ declares it as a row of its own, naming both exits through :func:`staged_scratch
 * the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age_days`` and prints
   NOTHING when there are none -- a reminder that never blocks and costs no tokens when clean.
 
-THE CLI, so a consumer needs no ``scripts/`` adopter: ``pending`` (every one-off, oldest first) and
-``discard <paths>`` (delete one-offs; anything outside scratch, or its README, is refused and nothing
-is deleted).
+THE CLI, so a consumer needs no ``scripts/`` adopter: ``list`` (every untracked top-level entry, its size
+and age, oldest first), ``discard <paths>`` (delete one-off files; anything outside scratch, or its README,
+is refused and nothing is deleted) and ``clear [NAME ...] [--keep NAME ...] --yes`` -- THE door for emptying
+scratch, named by RECURSIVE-DELETE: it deletes the named UNTRACKED top-level entries (this session's when none
+is named), never a tracked file and never outside scratch, refuses the whole clear when a link or junction
+inside an entry points out of scratch, and clears the read-only/hidden attributes Windows sets so a nested
+``.git`` deletes. It works on a main checkout: git decides what is deletable, not the kind of checkout.
+
+THIS SESSION'S LEFTOVERS ONLY (``snapshot`` at SessionStart, ``stop`` at Stop, both wired by
+:mod:`dev_lab.dev.agent_wiring`): the start records the checkout's untracked entries under the machine-local
+state, keyed by session id; the stop blocks once on an entry new since then -- nothing else ever cleared one,
+so they piled up across sessions -- and never on one that predates the session or another session made.
+``clear --keep NAME`` acknowledges one; ``clear`` with no names takes this session's entries
+(``CLAUDE_CODE_SESSION_ID``), anything else only by name.
 """
 
 from __future__ import annotations
@@ -34,40 +45,51 @@ from __future__ import annotations
 import json
 import sys
 import time
-from collections.abc import Iterable
 from pathlib import Path
-from typing import TextIO
+from typing import TYPE_CHECKING
 
 from lab_commons import launch
 from lab_commons.log import emit
 
-from dev_lab.dev.codeplace import (
-    PRUNED_NAMES,
-    PlacementNotDeclared,
-    checkout_root,
-    declared_placement,
+from dev_lab.dev._scratch_clear import (
+    _SECONDS_PER_DAY,
+    _SHOWN,
+    SCRATCH_README,
+    SESSION_DIR,
+    ScratchEscape,
+    _clear,
+    _hook,
+    clear_scratch,
+    session_entries,
+    snapshot,
+    untracked_scratch,
 )
+from dev_lab.dev.codeplace import PRUNED_NAMES, PlacementNotDeclared, checkout_root, declared_placement
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from typing import TextIO
 
 __all__ = [
     'SCRATCH_README',
+    'SESSION_DIR',
     'ScratchCommitted',
+    'ScratchEscape',
     'assert_scratch_never_committed',
+    'clear_scratch',
     'discard_scratch',
     'main',
     'overdue_declared',
     'overdue_scratch',
     'pending_scratch',
     'scratch_reminder',
+    'session_entries',
+    'snapshot',
     'staged_scratch',
+    'untracked_scratch',
 ]
 
-_SECONDS_PER_DAY = 86400.0
-#: How many one-offs the notice names before it elides the rest.
-_SHOWN = 20
-_VERBS = frozenset({'pending', 'discard', 'remind', 'check'})
-
-#: The ONE tracked file under scratch: it anchors the directory and states the two exits.
-SCRATCH_README = 'README.md'
+_VERBS = frozenset({'list', 'discard', 'clear', 'remind', 'check', 'snapshot', 'stop'})
 #: The two exits, spelled once for every refusal and notice that names them.
 _EXITS = (
     'PROMOTE it into src/ with tests, or DELETE it (python -m dev_lab.dev.scratch discard <path>); '
@@ -190,7 +212,7 @@ def _remind(stdin: TextIO | None) -> int:
 
 
 def _verb(mode: str, rest: list[str], root: Path) -> int:
-    """``pending``, ``discard <paths>`` and ``check <paths>`` over the checkout *root*."""
+    """``list``, ``discard <paths>``, ``clear`` and ``check <paths>`` over the checkout *root*."""
     try:
         placement = declared_placement(root)
     except PlacementNotDeclared as exc:
@@ -203,10 +225,11 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
         if found:
             emit(f'SCRATCH-IS-NEVER-COMMITTED: {", ".join(found)} staged; unstage (git restore --staged). {_EXITS}')
         return 1 if found else 0
-    if mode == 'pending':
-        for rel, age in pending_scratch(root / placement.scratch, root=root):
-            emit(f'{age:7.1f}d  {rel}')
-        return 0
+    if mode == 'list':
+        for rel, size, age in untracked_scratch(root):
+            emit(f'{size:>14,}  {age:7.1f}d  {rel}')
+    if mode in {'list', 'clear'}:
+        return _clear(rest, root) if mode == 'clear' else 0
     try:
         for rel in discard_scratch(rest, root=root):
             emit(f'discarded {rel}')
@@ -217,15 +240,17 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """``python -m dev_lab.dev.scratch {pending | discard <paths> | remind | check <paths>}``.
+    """``python -m dev_lab.dev.scratch {list | discard | clear | remind | check | stop}``.
 
-    Exit 0 on success and from ``remind`` always; 1 from ``check`` on a staged one-off; 2 on a usage
-    error or a refused ``discard``.
+    Exit 0 on success and from ``remind`` and ``stop`` always; 1 from ``check`` on a staged one-off; 2 on a
+    usage error, a refused ``discard`` or ``clear``, or a ``clear`` without ``--yes``.
     """
     mode, *rest = argv or [None]
     if mode not in _VERBS:
-        emit(f'usage: python -m dev_lab.dev.scratch {{{" | ".join(sorted(_VERBS))}}} [paths]')
+        emit(f'usage: python -m dev_lab.dev.scratch {{{" | ".join(sorted(_VERBS))}}} [args]')
         return 2
+    if mode in {'snapshot', 'stop'}:
+        return _hook(mode, stdin)
     return _remind(stdin) if mode == 'remind' else _verb(mode, rest, Path.cwd())
 
 

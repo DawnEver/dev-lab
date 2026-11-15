@@ -72,6 +72,7 @@ from lab_commons.config import config_path
 from lab_commons.hpc.declared import REFUSALS
 from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
@@ -131,6 +132,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--role', default='', help='declare: the role name (verification serves; research never)')
     parser.add_argument('--fleet-role', default='', help="deploy-fleet: the workstation's role for this account")
     parser.add_argument('--role-table', type=json.loads, help="deploy-fleet: the role's [hpc.roles] table, JSON")
+    parser.add_argument(
+        '--grant-table', type=json.loads, help="deploy-fleet: this account's slice of the declared [hpc], JSON"
+    )
     parser.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     parser.add_argument('--remove', action='store_true', help='delete the marked crontab lines only')
     return parser
@@ -211,7 +215,7 @@ def _serve_git(step: Step, home: Path, path: Path, slurm: Sequence[str], setup: 
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     loaded = grant_setup(path, user)
     environment = tick_environment(home, slurm, loaded)
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         why = _proves([*step.tools.sh, f'{environment}; exec git "$@"', 'git'], Path(scratch))
     if not why:
         emit(f'  git in `{environment}`: merge-tree --write-tree runs')
@@ -390,7 +394,7 @@ def deploy(
     phases = (
         lambda: credentials(step, spec, home, check),
         lambda: reader(spec, home, role or role_of, semantics=semantics),
-        lambda: grant(step, spec, path, hostname),
+        lambda: grant(step, path, args.grant_table),
         lambda: _declare(step, spec, path),
         lambda: _serve_git(step, home, path, slurm, setup),
         lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),

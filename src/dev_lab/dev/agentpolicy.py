@@ -26,11 +26,12 @@ in that repo's ``[tool.dev_lab.policy]`` (:mod:`dev_lab.dev.repopolicy`), never 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Final
 
-from dev_lab.dev.doorrows import allow_rows
+from dev_lab.dev._policy_door import ACTORS, MAIN, SUBAGENT, USER, Door
 
+#: The row shape (:class:`Door`, the actors) lives in :mod:`dev_lab.dev._policy_door`; this module is its one
+#: public face, so every reader imports both from here.
 __all__ = [
     'ACTORS',
     'MAIN',
@@ -42,43 +43,6 @@ __all__ = [
     'module_verbs',
 ]
 
-#: The main session: it publishes (MAIN-SESSION-PUBLISHES) and changes forge state.
-MAIN: Final = 'main'
-#: Any agent, the main session's subagents included.
-SUBAGENT: Final = 'subagent'
-#: The user alone: no agent is allowed it, whatever mode the client runs in.
-USER: Final = 'user'
-ACTORS: Final = (MAIN, SUBAGENT, USER)
-
-_RUNNERS: Final = ('python', 'git', 'sh', 'gh')
-
-
-@dataclass(frozen=True, slots=True)
-class Door:
-    """One door: its argv prefix, who may run it, what it is for (one string), and the deny row it answers."""
-
-    argv: tuple[str, ...]
-    actor: str
-    intent: str
-    deny: str | None = None
-
-    def __post_init__(self) -> None:
-        """Refuse an unknown actor or runner, an empty intent, and an allowed door with no argv."""
-        if self.actor not in ACTORS:
-            msg = f'{self.argv}: actor {self.actor!r} is none of {ACTORS}'
-            raise ValueError(msg)
-        if self.argv and self.argv[0] not in _RUNNERS:
-            msg = f'{self.argv}: runner {self.argv[0]!r} is none of {_RUNNERS}'
-            raise ValueError(msg)
-        if not self.intent.strip():
-            msg = f'{self.argv}: no intent -- say what the door is for, once'
-            raise ValueError(msg)
-
-    @property
-    def allow_lines(self) -> tuple[str, ...]:
-        """The ``permissions.allow`` rows: none for the user's doors or a door-less intent; git also as ``-C``."""
-        return () if self.actor == USER or not self.argv else allow_rows(self.argv)
-
 
 def _forge(*verbs: str) -> tuple[str, ...]:
     return ('python', '-m', 'dev_lab.dev.forge', *verbs)
@@ -86,6 +50,10 @@ def _forge(*verbs: str) -> tuple[str, ...]:
 
 def _module(name: str, *verbs: str) -> tuple[str, ...]:
     return ('python', '-m', f'dev_lab.dev.{name}', *verbs)
+
+
+def _desktop(verb: str) -> tuple[str, ...]:
+    return ('python', '-m', 'lab_commons.desktop', verb)
 
 
 _FORGE_WRITE: Final = 'FORGE-WRITE-VIA-CLI'
@@ -112,6 +80,10 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(_module('family', 'join'), MAIN, 'Making a repo a family member: clone, record, protect, set its secret.'),
     Door(_module('famfiles'), SUBAGENT, "Rendering the family project files of a checkout from the kit's one source."),
     Door(_module('autodoors'), SUBAGENT, "Rendering this checkout's door rules for each agent client."),
+    # The desktop tool's READ verbs (user ruling 2026-11-14 E6); its acts (press, set-value, close) stay prompted.
+    Door(_desktop('windows'), SUBAGENT, 'Read-only: the top-level desktop windows, listed.'),
+    Door(_desktop('capture'), SUBAGENT, 'Read-only: an image of one desktop window, captured.'),
+    Door(_desktop('controls'), SUBAGENT, "Read-only: one desktop window's control tree, listed."),
     Door(
         _module('hook_install', '--install'),
         SUBAGENT,
@@ -131,8 +103,14 @@ POLICY: Final[tuple[Door, ...]] = (
         'Opening one held login session to a key and authenticator-code host, answered with the one-time code the '
         'user supplied in this conversation for it, within the machine ceiling on its hours; never an invented, '
         'stored, logged or reused code.',
+        deny='HPC-THROUGH-THE-DOOR',
     ),
-    Door(_module('sshhold', 'run'), MAIN, 'Running one command on a login session the user authenticated, audited.'),
+    Door(
+        _module('sshhold', 'run'),
+        MAIN,
+        'Running one command on a login session the user authenticated, audited.',
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
     Door(
         _module('sshhold', 'credential'),
         MAIN,
@@ -168,7 +146,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         _forge('pr', 'ready'),
         MAIN,
-        'Marking a draft pull request ready for review once its tree is clean and its head current.',
+        'Marking a draft pull request ready for review once its pushed head is current, from any checkout.',
         _FORGE_WRITE,
     ),
     Door(
@@ -208,9 +186,10 @@ POLICY: Final[tuple[Door, ...]] = (
         _forge('pr', 'breakglass'),
         MAIN,
         'A Break-Glass merge into the integration branch inside a wave the user opened with a one-time code, '
-        "only after the pull request's current head is pushed and its base, base on windows and security test "
-        'statuses are all posted green, carried by a commit trailer that states the reason, so every use stays in '
-        'the history it bypassed (integrator ruling 2026-11-08: a merge follows a verified push).',
+        "at the pull request's current head, past its review AND its tests -- unrun, pending or red (user ruling "
+        '2026-11-11: the tests are the slowest step) -- with the test state at merge time named in the PR comment, '
+        'the audit and the wave summary, and carried by a commit trailer that states the reason, so every use '
+        'stays in the history it bypassed.',
     ),
     Door(
         _forge('breakglass', 'open'),
@@ -221,7 +200,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         ('python', '-m', 'dev_lab.ops.consent', 'grant'),
         MAIN,
-        'Granting one consent credential with the authenticator code the user supplied in this conversation for '
+        'Granting one consent credential with the cluster code the user supplied in this conversation for '
         'it (user ruling 2026-11-08: only the user provides the code, the agent runs the grant); never an '
         'invented, stored, logged or reused code.',
     ),
@@ -247,13 +226,14 @@ POLICY: Final[tuple[Door, ...]] = (
         "Cancelling the forge's own test jobs of one commit that are confirmed stuck: busy at full CPU with no "
         'new test result for longer than a multiple of their measured duration. Never any other job.',
     ),
-    # ---- publishing
     Door(
         _forge('sync'),
-        MAIN,
-        "Merging the integration branch into this session's own branches through the forge door, with the relock "
-        'of the floated siblings and the re-render of every generated family file it brings.',
+        SUBAGENT,
+        "Merging the integration branch into this agent's own branch through the forge door, with the relock of "
+        'the floated siblings and the re-render of every generated family file it brings, committed locally and '
+        'never pushed: publishing the result stays with the main session.',
     ),
+    # ---- publishing
     Door(
         (),
         MAIN,
@@ -276,6 +256,12 @@ POLICY: Final[tuple[Door, ...]] = (
         MAIN,
         'Deleting a remote branch only when every commit on it is already on the integration branch or on '
         'another live branch or open pull request; never a force push and never a lossy delete.',
+    ),
+    Door(
+        _module('branchprune', 'delete-tag'),
+        MAIN,
+        'Deleting a remote tag the user approved in their own words, only when its commit is on the integration '
+        'branch or the trunk; never a lossy delete.',
     ),
     Door(
         ('gh', 'workflow', 'enable'),
@@ -302,6 +288,22 @@ POLICY: Final[tuple[Door, ...]] = (
         MAIN,
         "Forgetting one stale row of each trusted cluster account's learned memory table, backed up beside itself, "
         "through the grant's own login hosts; a dry run only reads what each account holds.",
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
+        _module('hpcaccount', 'retention'),
+        MAIN,
+        "Reading each trusted cluster account's quota (files and blocks) and whether its serve ticks, and running "
+        "that account's own in-flight-aware storage retention through the grant's own login hosts; a dry run "
+        'unless asked to apply.',
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
+        _module('hpcaccount', 'credential'),
+        MAIN,
+        'Placing one minted forge token of a declared login on a trusted cluster account, the token on standard '
+        "input and replacing only that forge's stored line, through the grant's own login hosts, then confirming "
+        'the forge answers as that login (user ruling 2026-11-12).',
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(

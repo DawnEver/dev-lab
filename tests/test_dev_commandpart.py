@@ -81,3 +81,23 @@ def test_a_command_that_cannot_start_is_unreachable_in_one_line(tmp_path: Path, 
 def test_no_command_is_refused_naming_the_shape(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
         commandpart.main(['--root', str(tmp_path), 'base', '--'])
+
+
+def test_the_program_is_resolved_on_path_so_a_windows_cmd_shim_runs(tmp_path: Path, monkeypatch) -> None:
+    """On Windows ``npm`` is ``npm.cmd``: a bare name cannot be started (WinError 2), so the door resolves it first.
+
+    PLANTED: the launched argv[0] is the resolved path while the cell keeps the command as written.
+    """
+    started: list[list[str]] = []
+    posted = _wired(tmp_path, monkeypatch, code=0)
+    wired_run = commandpart._door.run
+
+    def run(argv: list[str], **kwargs: object) -> object:
+        started.append(list(argv))
+        return wired_run(argv, **kwargs)
+
+    monkeypatch.setattr(commandpart._door, 'run', run)
+    monkeypatch.setattr(commandpart.shutil, 'which', lambda name: f'C:/node/{name}.cmd' if name == 'npm' else None)
+    assert commandpart.main(['--root', str(tmp_path), 'base', '--', 'npm', 'test']) == ProducerExit.PASS
+    assert started[-1] == ['C:/node/npm.cmd', 'test']
+    assert list(posted[0]['cells']) == ['npm test']

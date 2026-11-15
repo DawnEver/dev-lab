@@ -5,7 +5,9 @@
 
 WHAT A STAGE HANDS A HOOK IS GIT'S OWN CONTRACT, read here once:
 
-* ``pre-commit`` -- the STAGED paths (``git diff --cached``, added/copied/modified/renamed). A hook
+* ``pre-commit`` -- the STAGED paths (``git diff --cached``, added/copied/modified/renamed); during a merge, only
+  the paths whose staged content differs from EVERY parent -- the merge's own content (a resolution), never a
+  file it merely brings in from the other side (user ruling 2026-11-13: whole-tree checks are the forge's). A hook
   selects among them with ``files``/``exclude``, gets them appended when ``pass_files``, and is skipped
   when it selects none unless ``always_run``. A hook that changes the working tree FAILS, so a
   formatter's rewrite is seen and staged by a person rather than committed unseen. Nothing is stashed:
@@ -13,7 +15,8 @@ WHAT A STAGE HANDS A HOOK IS GIT'S OWN CONTRACT, read here once:
 * ``commit-msg`` -- git's one argument, the message file, appended to every hook's ``run``.
 * ``pre-push`` -- git's ref lines (``<local ref> <local sha> <remote ref> <remote sha>``) read from
   stdin ONCE and piped to every hook's stdin; a hook with ``refs`` runs only when a pushed remote ref
-  matches and sees only those lines. Paths are the ones the pushed commits change, selected as above.
+  matches and sees only those lines. Paths are the ones the pushed commits change -- a merge commit counts only
+  its own content (git's dense combined diff), and a commit the remote already holds counts nothing.
 * ``post-commit`` -- no input; ADVISORY (``table.ADVISORY``): the commit is made, so the stage exits 0
   whatever its rows do.
 
@@ -38,10 +41,11 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import metrics
+from dev_lab.dev import metrics, walls
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
+    'PUSH_URL_ENV',
     'ZERO_SHA',
     'PushLine',
     'parse_push_lines',
@@ -111,24 +115,47 @@ def _git(root: Path, *args: str) -> str:
 
 
 def staged_paths(root: Path) -> tuple[str, ...]:
-    """The paths a commit would add or change -- deletions name no file a hook could read."""
-    out = _git(root, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z')
+    """The paths a commit would add or change -- deletions name no file a hook could read.
+
+    During a merge (``MERGE_HEAD``), a path counts only when it differs from HEAD AND from every merged head: what
+    the merge itself writes, never what one side already held.
+    """
+    found = _diff_names(root, '--cached')
+    for parent in _merge_heads(root):
+        theirs = set(_diff_names(root, '--cached', parent))
+        found = tuple(path for path in found if path in theirs)
+    return found
+
+
+def _diff_names(root: Path, *args: str) -> tuple[str, ...]:
+    out = _git(root, 'diff', *args, '--name-only', '--diff-filter=ACMR', '-z')
     return tuple(path for path in out.split('\0') if path)
 
 
+def _merge_heads(root: Path) -> tuple[str, ...]:
+    """The heads an in-progress merge brings in (git's ``MERGE_HEAD`` file, one per line); none outside a merge."""
+    path = Path(_git(root, 'rev-parse', '--git-path', 'MERGE_HEAD').strip())
+    path = path if path.is_absolute() else root / path
+    return tuple(path.read_text(encoding='utf-8').split()) if path.is_file() else ()
+
+
 def pushed_paths(root: Path, lines: Sequence[PushLine], remote: str) -> tuple[str, ...]:
-    """The paths the pushed commits change: from the remote's sha when it has one, else what *remote* lacks."""
+    """The paths the pushed commits change: commits the remote lacks, a merge counting only its own content.
+
+    ``--cc`` (dense combined diff) names a merge's path only when it differs from every parent, so a merge of the
+    integration branch into a lane carries none of integration's files. The remote's old sha and its
+    remote-tracking refs bound the walk: a commit already published is not this push's.
+    """
     found: dict[str, None] = {}
     for line in lines:
         if line.deleted:
             continue
-        if line.remote_sha != ZERO_SHA and _has_commit(root, line.remote_sha):
-            out = _git(root, 'diff', '--name-only', '--diff-filter=ACMR', '-z', line.remote_sha, line.local_sha)
-        else:
-            exclude = [f'--remotes={remote}'] if remote else []
-            out = _git(
-                root, 'log', '--name-only', '--diff-filter=ACMR', '-z', '--format=', line.local_sha, '--not', *exclude
-            )
+        known = [line.remote_sha] if line.remote_sha != ZERO_SHA and _has_commit(root, line.remote_sha) else []
+        exclude = [f'--remotes={remote}'] if remote else []
+        out = _git(
+            root, 'log', '--cc', '--name-only', '--diff-filter=ACMR', '-z', '--format=', line.local_sha, '--not',
+            *known, *exclude,
+        )  # fmt: skip
         found.update(dict.fromkeys(path.strip() for path in out.split('\0') if path.strip()))
     return tuple(found)
 
@@ -239,9 +266,16 @@ def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequen
     if os.environ.get(FOREIGN_INTERPRETER_ENV) != '1':
         return chosen
     for hook in chosen:
-        if not needs_only_lab_commons(hook):
+        if hook.bootstraps:
+            emit(
+                f'[githooks] {stage}: this checkout has no venv -- {hook.id} bootstraps it in the background; '
+                f'until it lands (or if it never does) run: {Path(sys.executable).as_posix()} -m dev_lab.dev.dep '
+                f'--bootstrap {root.as_posix()}',
+                err=True,
+            )
+        elif not needs_only_lab_commons(hook):
             _note(f'[githooks] {stage} {hook.id}: skipped -- needs the repo venv, which this checkout lacks')
-    return tuple(hook for hook in chosen if needs_only_lab_commons(hook))
+    return tuple(hook for hook in chosen if needs_only_lab_commons(hook) or hook.bootstraps)
 
 
 def _report(stage: str, hook_id: str, code: int, output: str) -> int:
@@ -284,7 +318,7 @@ def run_stage(
     paths: tuple[str, ...] = ()
     if stage == 'pre-commit':
         paths = staged_paths(root)
-    failed: list[str] = []
+    failed: dict[str, str] = {}
     for hook in selected_hooks:
         lines = push
         if hook.refs is not None:
@@ -300,19 +334,33 @@ def run_stage(
             continue
         hook_stdin = ''.join(f'{line.line}\n' for line in lines) if stage == 'pre-push' else None
         argvs = _argvs(hook, stage, git_args, chosen)
-        if _report(stage, hook.id, *_run_hook(hook, argvs, root, hook_stdin, runner, env=env or {})):
-            failed.append(hook.id)
+        code, output = _run_hook(hook, argvs, root, hook_stdin, runner, env=_stage_env(stage, git_args, env))
+        if _report(stage, hook.id, code, output):
+            failed[hook.id] = output
     _log(root, stage, failed, push)
-    return _verdict(stage, failed)
+    return _verdict(stage, list(failed))
 
 
-def _log(root: Path, stage: str, failed: Sequence[str], push: Sequence[PushLine] = ()) -> None:
+#: The URL git pushes to (its second pre-push argument), handed to every pre-push hook; a hook's argv cannot carry it.
+PUSH_URL_ENV: Final = 'DEV_LAB_PUSH_URL'
+
+
+def _stage_env(stage: str, git_args: Sequence[str], env: Mapping[str, str] | None) -> dict[str, str]:
+    """*env*, plus at pre-push :data:`PUSH_URL_ENV`."""
+    pushed = {PUSH_URL_ENV: git_args[1]} if stage == 'pre-push' and len(git_args) > 1 else {}
+    return {**(env or {}), **pushed}
+
+
+def _log(root: Path, stage: str, failed: Mapping[str, str], push: Sequence[PushLine] = ()) -> None:
     """The stage's metrics (:mod:`dev_lab.dev.metrics`): one refusal per failed hook, and every pre-push as a push.
+
+    A refusal goes through :func:`dev_lab.dev.walls.refused`, so it is this session's wall too: the failed hook's
+    *failed* output (``hook id -> output``) is what says whether it named a door.
 
     A push line names the branch and tip it publishes (the first ref it does not delete): a branch's first push
     is where its edit starts.
     """
-    refused = () if stage in ADVISORY else failed
+    refused = {} if stage in ADVISORY else failed
     if stage != 'pre-push' and not refused:
         return
     repo = metrics.repo_of(root)
@@ -326,8 +374,8 @@ def _log(root: Path, stage: str, failed: Sequence[str], push: Sequence[PushLine]
             vcs_ref_head_name=branch,
             vcs_ref_head_revision=head.local_sha if head else '',
         )
-    for hook_id in refused:
-        metrics.record(metrics.REFUSAL, root=root, repo=repo, rule=hook_id, reason=stage)
+    for hook_id, output in refused.items():
+        walls.refused(root, repo=repo, rule=hook_id, reason=stage, remedy=walls.has_remedy(output))
 
 
 def _verdict(stage: str, failed: Sequence[str]) -> int:

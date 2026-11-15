@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev._forgebackends import GITHUB
@@ -199,7 +200,7 @@ def judge_one(
 ) -> Verdict | str | None:  # fmt: skip
     """The verdict on *pull*'s head, a line when nothing can be posted yet (retried), ``None`` with no pointer."""
     said = f'#{pull.number} {pull.head_sha[:12]}'
-    with tempfile.TemporaryDirectory(prefix='review-judge-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-judge-') as scratch:
         where = Path(scratch)
         try:
             bundle = trusted_bundle(client, review, pull, where)

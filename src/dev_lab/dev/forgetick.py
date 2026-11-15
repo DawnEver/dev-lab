@@ -108,7 +108,8 @@ from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgerecords import read_named
-from dev_lab.dev.forgerequest import declared_request, remind, request_authors
+from dev_lab.dev.forgerequest import declared_request
+from dev_lab.dev.forgerequesthost import remind, request_authors
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
 from dev_lab.dev.forgesettled import SettledHistories

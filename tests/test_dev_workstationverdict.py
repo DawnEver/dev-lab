@@ -30,7 +30,7 @@ from dev_lab.dev.workstationverdict import Facts, posting_refusal
 
 SHA, OLD = 'a' * 40, 'c' * 40
 TREE, OTHER_TREE = 't' * 40, 'u' * 40
-ENV = 'env-now'
+ENV = 'e0e0e0e0'  # an env key is hex: a status description carries it (dev_lab.dev.partfacts)
 SERVE = {'repos': ['consumer'], 'parts': 'every'}
 STRIKE_FILE = f'workstation-strike-BOXALPHA-{"0" * 32}.json'
 CLEAN = Facts(part='base@windows', full=True, declared='', revoked='', dirt=(), pushed=True, stale='')
@@ -265,7 +265,9 @@ def test_a_hit_is_cited_through_the_status_door_naming_its_record() -> None:
         'success',
         'u/' + _found().attachment.name,
     )
-    assert status.description == f'scope=full ran=1 hands=- cited from {OLD[:12]}: same tree', 'the reuse is visible'
+    assert status.description == f'scope=full ran=1 hands=- env={ENV} cited from {OLD[:12]}: same tree', (
+        'the reuse is visible'
+    )
     (part,) = parts_of(status_list(forge, SHA))[0].values()
     assert part.cited == OLD[:12], 'a cited part reads back as a settled part naming the sha it ran at'
     assert 'CITED' in line

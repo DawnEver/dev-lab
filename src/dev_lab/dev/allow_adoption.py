@@ -94,6 +94,7 @@ from typing import Any, Final
 
 from dev_lab.dev._allow_settings import BASH, ROW, block_problems, live_bash_rows, merged_permissions
 from dev_lab.dev._allow_settings import promised_command as _promised
+from dev_lab.dev.agentpolicy import Door
 from dev_lab.dev.autodoors import claude_rows
 from dev_lab.dev.doorrows import literal_rows
 from dev_lab.dev.floors import assert_floor, assert_floor_still_binds
@@ -261,6 +262,8 @@ class AllowAdoption:
     #: The repo's script doors: pass ``dev_lab.dev.autodoors.script_doors(root)`` so the rows are
     #: derived from the tracked tree -- the same list the Codex rules are rendered from.
     scripts: tuple[str, ...] = ()
+    #: The repo's declared CLI doors: pass ``dev_lab.dev.autodoors.cli_doors(root)``, the Codex rules' list too.
+    cli: tuple[Door, ...] = ()
 
     def __post_init__(self) -> None:
         """Refuse an unnamed repo, a duplicated declared row, and a declared row already derived."""
@@ -273,7 +276,7 @@ class AllowAdoption:
             msg = f'{self.app_name} declares {repeated} more than once; a deletion could not say which one went.'
             raise UnarguedAllow(msg)
         literal = {line for entry in entries for line in literal_rows(entry)}
-        restated = sorted(literal & (set(derived_entries(self.adoption)) | set(claude_rows(self.scripts))))
+        restated = sorted(literal & (set(derived_entries(self.adoption)) | set(claude_rows(self.scripts, self.cli))))
         if restated:
             msg = (
                 f'{self.app_name} declares {restated}, which its own remedies already derive. A declared copy '
@@ -290,7 +293,7 @@ def allow_entries(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) 
     remedy's ``--pid`` row under the stoprun door was the same road listed twice. Every interpreter glob is
     rendered as one literal row per layout (:func:`dev_lab.dev.doorrows.literal_rows`).
     """
-    doors = list(claude_rows(allow.scripts))
+    doors = list(claude_rows(allow.scripts, allow.cli))
     derived = [row for row in derived_entries(allow.adoption, rules) if not _covered(row, doors)]
     declared = [line for row in allow.declared for line in literal_rows(row.entry.strip())]
     return (*derived, *doors, *declared)
@@ -308,7 +311,7 @@ def provenance(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> 
     RAW-PROCESS-KILL" and "declared: the docs preview server" are two different repairs, and an
     entry with no provenance is the hand edit this module exists to remove.
     """
-    out = {entry: f'family door: {why}' for entry, why in claude_rows(allow.scripts).items()}
+    out = {entry: f'family door: {why}' for entry, why in claude_rows(allow.scripts, allow.cli).items()}
     out.update(
         {entry: f'derived from {", ".join(ids)}' for entry, ids in derived_entries(allow.adoption, rules).items()}
     )
