@@ -8,8 +8,11 @@ tick's integration step (:func:`take`) hands such a PR to the integrator, on the
   (:func:`dev_lab.dev.labsession.sessions`, the one ownership record); a session is live when its
   ``forge watch --session`` runs (:func:`dev_lab.dev.sessionprs.watching`). A new head, or a live owner, is
   never taken.
-* TAKEN -- the PR gets the label :data:`LABEL` and one comment naming why. The label IS the idempotency key: a
-  labelled PR is never commented again, and a second host's tick writes nothing.
+* TAKEN -- the PR gets the label :data:`LABEL` and one comment naming why, carrying the head it was taken at in a
+  hidden marker. The label IS the idempotency key: a labelled PR is never commented again, and a second host's
+  tick writes nothing.
+* HANDED BACK -- liveness is per machine, so a session working elsewhere may look dead here. When a labelled
+  PR's head moves past the head it was taken at, its owner pushed: the tick removes the label and says so once.
 * LISTED -- every open labelled PR is an ``integration`` alarm on the host card each tick (``forge queue``), and
   ``python -m dev_lab.dev.forgeorphan`` (:func:`main`) prints the integrator's orphaned PRs. The integrator
   merges or closes it; removing the label hands it back.
@@ -18,6 +21,7 @@ tick's integration step (:func:`take`) hands such a PR to the integrator, on the
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
@@ -29,8 +33,8 @@ from lab_commons.log import emit
 from dev_lab.dev import forgedraft, sessionprs
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgelabels import add_label, ensure_labels
-from dev_lab.dev.forgepulls import pr_list
+from dev_lab.dev.forgelabels import add_label, ensure_labels, remove_label
+from dev_lab.dev.forgepulls import comment_list, pr_list
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import load_policy
@@ -38,12 +42,18 @@ from dev_lab.dev.lanepolicy import load_policy
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
 
-__all__ = ['LABEL', 'ORPHAN_AGE', 'alarms', 'labels_of', 'main', 'orphaned', 'take', 'taken']
+__all__ = [
+    'LABEL', 'ORPHAN_AGE', 'PUSH_RELEASES', 'alarms', 'labels_of', 'main', 'orphaned', 'release', 'take', 'taken',
+]  # fmt: skip
 
 #: How long an open PR's head may stand still, with no live owner, before the integrator takes it.
 ORPHAN_AGE: Final = timedelta(hours=24)
 #: The label that hands a PR to the integrator: the one place the integrator reads.
 LABEL: Final = 'owner:integrator'
+#: What the take comment promises its owner: the one way back.
+PUSH_RELEASES: Final = 'push to this branch and the label comes off'
+#: The hidden marker a take comment records the taken head in.
+_TAKEN_AT: Final = re.compile(r'<!-- orphan-taken-at ([0-9a-f]{7,64}) -->')
 
 
 def labels_of(client: Client, number: int) -> tuple[str, ...]:
@@ -66,7 +76,8 @@ def _why(pull: PullRequest, owners: Sequence[str], age: timedelta) -> str:
     return (
         f'The integrator takes #{pull.number} `{pull.head}` (label `{LABEL}`): its head `{pull.head_sha[:12]}` has '
         f'not moved for {hours} h (bound {ORPHAN_AGE}) and no owning session is live [{who}]. MERGE-OR-DELETE: '
-        f'the integrator merges or closes it; removing the label hands it back.'
+        f'the integrator merges or closes it. Its owner: {PUSH_RELEASES}.'
+        f'\n<!-- orphan-taken-at {pull.head_sha} -->'
     )
 
 
@@ -94,13 +105,39 @@ def take(
     return lines
 
 
+def _taken_at(client: Client, number: int) -> str | None:
+    """The head the newest take comment on PR *number* recorded; ``None`` when it has none."""
+    found = [m[1] for c in comment_list(client, number) if (m := _TAKEN_AT.search(c.body))]
+    return found[-1] if found else None
+
+
+def release(client: Client, base: str) -> list[str]:
+    """Hand back every labelled PR into *base* whose head moved past the head it was taken at; one line each."""
+    lines = []
+    for pull in pr_list(client):
+        if pull.base != base or LABEL not in labels_of(client, pull.number):
+            continue
+        at = _taken_at(client, pull.number)
+        if at is None or at == pull.head_sha:
+            continue
+        remove_label(client, pull.number, LABEL)
+        client.issue_comment(
+            pull.number,
+            f'Handed back: the head moved from `{at[:12]}` to `{pull.head_sha[:12]}` after the integrator took it, '
+            f'so its owner is working on it; label `{LABEL}` removed.',
+        )
+        lines.append(f'#{pull.number} {pull.head} handed back: its head moved')
+    return lines
+
+
 def taken(client: Client, base: str) -> list[PullRequest]:
     """Every open PR into *base* the integrator holds (labelled :data:`LABEL`)."""
     return [pull for pull in pr_list(client) if pull.base == base and LABEL in labels_of(client, pull.number)]
 
 
 def alarms(root: Path, client: Client, base: str, repo: str, *, now: datetime) -> list[Alarm]:
-    """Take the orphans (:func:`take`), then one ``integration`` alarm per PR the integrator holds."""
+    """Hand back the moved (:func:`release`), take the orphans (:func:`take`), then alarm per PR held."""
+    release(client, base)
     take(root, client, base, now=now)
     return [
         Alarm(
