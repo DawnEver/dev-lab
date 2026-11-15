@@ -32,7 +32,8 @@ def test_the_cli_door_refuses_an_issue_without_a_kind_naming_the_three(capsys) -
     assert '--kind' in capsys.readouterr().err
     with pytest.raises(SystemExit):
         parser.parse_args(['issue', 'create', '--title', 'x', '--kind', 'notice'])
-    assert "'need', 'defect', 'decision'" in capsys.readouterr().err
+    err = capsys.readouterr().err  # argparse quotes choices on 3.13, not on 3.12
+    assert all(kind in err for kind in ('need', 'defect', 'decision'))
     assert parser.parse_args(['issue', 'create', '--title', 'x', '--kind', 'defect']).kind == 'defect'
 
 
