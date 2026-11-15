@@ -53,16 +53,13 @@ from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
 from dev_lab.dev.platformparts import part_context, part_of
 from dev_lab.dev.producer import OUTCOME_VAR, PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, producing, release_reason
 from dev_lab.dev.reports import (
-    SKIP_CEILING,
-    MalformedAllowance,
     StepReport,
-    declared_skips,
     read_pytest,
     read_ruff,
     read_stages,
-    stale_declarations,
 )
 from dev_lab.dev.runcache import CachedRun, record, runs
+from dev_lab.dev.skipallowance import SKIP_CEILING, MalformedAllowance, declared_skips, stale_declarations
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, outcomes_dir, read_cells
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verdict import Verdict

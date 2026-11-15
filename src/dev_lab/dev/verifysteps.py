@@ -40,14 +40,16 @@ from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
 from dev_lab.dev.reports import (
     StepReport,
-    declared_skips,
     read_ruff,
     read_stages,
-    stale_declarations,
-    vanished_shortfall,
 )
 from dev_lab.dev.selection import census_scope
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
+from dev_lab.dev.skipallowance import (
+    declared_skips,
+    stale_declarations,
+    vanished_shortfall,
+)
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, OutcomeReadError, RetiredOutcomes, outcomes_dir, read_cells
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from dev_lab.dev.verdictenv import verdict_env
@@ -374,10 +376,10 @@ def run_verify(
 
     The skip allowance is read BEFORE any step launches, so a declaration nobody can parse is
     refused against a tree that has not yet spent twenty minutes being tested -- and so is an entry
-    whose SUBJECT has left the checkout (:func:`~dev_lab.dev.reports.stale_declarations`), which
+    whose SUBJECT has left the checkout (:func:`~dev_lab.dev.skipallowance.stale_declarations`), which
     is the one side of the ratchet a selected invocation can still judge.
 
-    THE SEAT IS TAKEN AFTER :func:`~dev_lab.dev.reports.declared_skips` AND NOT BEFORE: an
+    THE SEAT IS TAKEN AFTER :func:`~dev_lab.dev.skipallowance.declared_skips` AND NOT BEFORE: an
     unparseable declaration is refused against a tree that has not yet queued for anything.
 
     THE LOG IS READ BACK STREAMED AND IS NEVER RESIDENT, which is why the last two lines go through

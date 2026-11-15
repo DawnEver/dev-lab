@@ -170,6 +170,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   one producer per part, and ``absent`` (pending, since when) for every part no job settled.
 * :mod:`dev_lab.dev.jobmeasure` -- exact-SHA selected-test workflow measurements with retained receipts,
   distinct from part acceptance and promotion.
+* :mod:`dev_lab.dev.skipallowance` -- declared skip prefixes, stale subjects and whole-selection share policy,
+  independent of process execution and step-evidence reports.
 * :mod:`dev_lab.dev.workstationverdict` -- the one exception to VERDICTS-FROM-THE-FORGE: a declared
   workstation posts its full part; a producer dedupes by content key and spot-checks workstation records.
 * :mod:`dev_lab.dev.verdictstore` -- the run-records store read by content key (tree, env key, part): a PASS

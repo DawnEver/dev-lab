@@ -62,11 +62,11 @@ from dev_lab.dev.lockwait import lock_wait_arg
 from dev_lab.dev.logref import UnverifiableLog
 from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
-from dev_lab.dev.reports import (
-    MalformedAllowance,
-)
 from dev_lab.dev.runcache import cache_path, cached, remember
 from dev_lab.dev.selection import is_targeted
+from dev_lab.dev.skipallowance import (
+    MalformedAllowance,
+)
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verdictstore import ContentKey, Found
@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     a CLI tool whose stdout IS the product. No module in ``lab_commons`` calls ``print``, and this
     one does not become the first.
 
-    A :class:`~dev_lab.dev.reports.MalformedAllowance` is turned into a one-line refusal here
+    A :class:`~dev_lab.dev.skipallowance.MalformedAllowance` is turned into a one-line refusal here
     rather than allowed to reach the terminal as a traceback: the reader of that message is the
     person who typed the declaration, and a stack trace tells them about this module instead. It
     exits INCONCLUSIVE, because nothing was measured.
