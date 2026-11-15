@@ -5,7 +5,9 @@ layers, one way, each fact in one place:
 
 1. FAMILY (``family.toml``): every fact all machines share -- machine-file tables as they are read
    (``[hpc]``, ``[ai_lab]``, ``[consent]``, ``[breakglass]``, ``[ssh]`` ...) and the shared ``[dev]`` keys;
-2. HOST (``hosts/<name>.toml``): one machine's facts -- ``[dev]`` and the :data:`MACHINE_TABLES` it reads;
+2. HOST (``hosts/<name>.toml``): one machine's facts -- ``[dev]`` and the :data:`MACHINE_TABLES` it reads; for an
+   HPC ACCOUNT (``hosts/<cluster>-<user>.toml``, :mod:`dev_lab.dev.accounthost`) its own ``[deploy]``,
+   ``[schedule]``, ``[hpc.paging]`` and ``[capabilities]``, with ``[deploy] role`` derived from its family grant;
 3. LOCAL: what stays on the machine -- every table of the live file neither layer declares (``[repos]`` paths,
    personal ``[user]`` preferences), preserved by the render, never invented. Credentials are in no layer: a path
    may be declared, a value never.
@@ -47,6 +49,7 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
+from dev_lab.dev import accounthost
 from dev_lab.dev._machinefile import dumps, render_value
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
@@ -124,6 +127,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     vendors = declared.get('dev', {}).get('vendors', {})
     seats = {name: {'seats': vendor['seats']} for name, vendor in vendors.items() if vendor.get('seats')}
     layered = _merge(layered, {'capabilities': seats} if seats else {})
+    layered = _merge(layered, accounthost.derived(host, family) if accounthost.is_account(declared) else {})
     layered = _merge(layered, {'hpc': {'reach': hpc_reach(declared.get('dev', {}))}} if 'hpc' in layered else {})
     if channels := declared.get('dev', {}).get('channels'):
         layered = _merge(layered, {CHANNELS_TABLE: {'channels': channels}})
