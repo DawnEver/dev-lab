@@ -140,6 +140,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'logref',
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset',
+    'branchfate',  # TWO-FATES: each local branch/tree is merged-and-cleaned or archived-and-cleaned (2026-11-15)
     'family',
     # ORIGINAL: the family member list's check, its forge reading and its serve watch are new (2026-11-09).
     'members',

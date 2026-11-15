@@ -24,9 +24,12 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'when a declared branch holds its tip, else names it to merge; a worktree is a lease for one task, so '
             'a tree unlocked, unoccupied, with no TRACKED change and its content landed on the trunk or a declared '
             'session is reclaimed by `branchset --apply` and the session debris hook, each kept tree listed with '
-            'its reason: what git does not track goes with it, its run outputs moved home and verified first.'
+            'its reason: what git does not track goes with it, its run outputs moved home and verified first. '
+            'TWO-FATES (ruling 2026-11-15): every other local branch or tree is kept for a NAMED live owner (a '
+            'process, a lock, a runtime, a session active within the window, or -- unlanded -- origin carrying it), '
+            'else bundled, its uncommitted work saved with a sha256 manifest, and cleaned up by the same door.'
         ),
-        ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py'),
+        ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py', 'tests/test_dev_branchfate.py'),
     ),
     (
         'RECURSIVE-DELETE',

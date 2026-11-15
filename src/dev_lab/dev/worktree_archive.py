@@ -54,7 +54,17 @@ from dev_lab.dev.liverun import describe, occupants
 if TYPE_CHECKING:
     from dev_lab.dev.liverun import Census
 
-__all__ = ['ARCHIVE_TO', 'OUTPUTS', 'Archived', 'archive', 'home_outputs', 'outputs_held', 'volume']
+__all__ = [
+    'ARCHIVE_TO',
+    'OUTPUTS',
+    'Archived',
+    'archive',
+    'archive_home',
+    'home_outputs',
+    'outputs_held',
+    'save_work',
+    'volume',
+]
 
 #: The family default of what a worktree's runs produce and the main checkout keeps (``docs-src/dev/output-tree``).
 OUTPUTS: Final = ('output/logs',)
@@ -118,12 +128,18 @@ def _declared(main: Path) -> tuple[tuple[str, ...], str]:
     return tuple(outputs), target
 
 
+def archive_home(main: Path) -> Path:
+    """Where *main* keeps saved work: its declared ``[tool.dev_lab.worktrees] archive-to`` (:data:`ARCHIVE_TO`)."""
+    return main / _declared(main)[1]
+
+
 def _in_venv(path: Path, top: Path) -> bool:
     """Whether *path* lies in a virtual environment below *top* (a directory holding ``pyvenv.cfg``)."""
     return any((parent / _VENV_MARK).is_file() for parent in (path, *path.parents) if parent.is_relative_to(top))
 
 
-def _save(tree: Path, saved: Path) -> None:
+def save_work(tree: Path, saved: Path) -> None:
+    """Save *tree*'s HEAD (``HEAD.txt``), uncommitted tracked work (``dirty.patch``) and untracked files in *saved*."""
     saved.mkdir(parents=True, exist_ok=True)
     head = (git_out(tree, 'rev-parse', 'HEAD') or '').strip()
     branch = (git_out(tree, 'branch', '--show-current') or '').strip() or '(detached)'
@@ -202,7 +218,7 @@ def archive(main: Path, name: str, *, census: Census = processes, today: date | 
         return Archived(name, saved, refused=f'the tree is live:\n{describe(live)}')
     if volume(tree) != volume(main):
         return Archived(name, saved, refused='the tree is on another volume, where a move is a copy')
-    _save(tree, saved)
+    save_work(tree, saved)
     moved, identical, renamed, conflicts = _move(main, tree, name, outputs)
     return Archived(
         name,

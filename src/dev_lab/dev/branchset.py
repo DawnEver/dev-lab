@@ -46,6 +46,7 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
+from dev_lab.dev.branchfate import settle
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches, worktrees
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reclaim import QUIET_S, reclaim, removed_approved
@@ -319,7 +320,9 @@ def apply_local(
     (:func:`dev_lab.dev.reclaim.reclaim`: clean, landed on a holder, unlocked, unoccupied), which is what
     frees its branch for the delete below; every kept tree is listed with its reason. *limit* bounds the trees
     removed per run and *quiet_s* how long a tree's index must be still; a tree's run outputs move home, verified,
-    before it goes (:func:`dev_lab.dev.reclaim.reclaim`).
+    before it goes (:func:`dev_lab.dev.reclaim.reclaim`). LAST, TWO-FATES (:func:`dev_lab.dev.branchfate.settle`,
+    ruling 2026-11-15): every local branch and tree still standing is kept for a named live owner, or archived
+    losslessly and cleaned up -- none lingers.
     """
     held_by = holders(root, branchset)
     trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s)
@@ -347,7 +350,8 @@ def apply_local(
         else:
             done = git_out(root, 'update-ref', '-d', ref, sha) is not None
             out.append(f'{"deleted " if done else "FAILED  "} local   {row.name}  ({sha[:10]})')
-    return tuple(out)
+    fates = settle(root, held_by, branchset.declared, occupied=occupied, quiet_s=quiet_s, limit=limit)
+    return None if fates is None else (*out, *fates)
 
 
 def discard(
@@ -418,7 +422,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--apply',
         action='store_true',
-        help='reclaim landed worktrees, then delete deletable LOCAL branches; origin gets its agent door',
+        help=(
+            'reclaim landed worktrees, delete landed LOCAL branches, archive then clean every ownerless one; '
+            'origin gets its agent door'
+        ),
     )
     parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
     parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
