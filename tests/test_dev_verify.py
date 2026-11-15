@@ -224,7 +224,9 @@ class TestExactRecordedStageEvidence:
         assert report.truncated
 
 
-@pytest.mark.parametrize('evidence', ['absent', 'corrupt', 'truncated', 'extra', 'flaky', 'green-versus-failed'])
+@pytest.mark.parametrize(
+    'evidence', ['absent', 'corrupt', 'truncated', 'extra', 'flaky', 'green-versus-failed', 'unexecuted-stage']
+)
 def test_live_verify_refuses_missing_corrupt_extra_flaky_or_contradictory_records(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, evidence: str
 ) -> None:
@@ -245,6 +247,10 @@ def test_live_verify_refuses_missing_corrupt_extra_flaky_or_contradictory_record
             elif evidence != 'absent':
                 recorder = CellRecorder(path)
                 recorder.record(node, TestCell(Cell(Status.OK)))
+                if evidence == 'unexecuted-stage':
+                    CellRecorder(live.parent / 'serial' / 'cells.jsonl').record(
+                        'tests/test_planted.py::test_not_executed', TestCell(Cell(Status.OK))
+                    )
                 if evidence == 'extra':
                     recorder.record('tests/test_planted.py::test_extra', TestCell(Cell(Status.OK)))
                 elif evidence == 'flaky':
@@ -836,6 +842,13 @@ class TestThePlantedControl:
             if 'pytest' in command:
                 assert extra_env is not None
             text = output if 'pytest' in command else 'All checks passed!\n'
+            if 'pytest' in command:
+                _record_passes(extra_env, 20 if '1 skipped' in output else 3)
+                if '1 skipped' in output:
+                    CellRecorder(Path(extra_env[OUTCOMES_DIR_VAR]) / 'cells.jsonl').record(
+                        'tests/test_selected.py::test_a',
+                        TestCell(Cell(Status.NOT_APPLICABLE, reason=Reason('not_applicable', 'unavailable'))),
+                    )
             handle.write(text)
             handle.flush()
             return 0
@@ -888,6 +901,7 @@ class TestThePlantedControl:
             launched.append(tuple(command))
             if 'pytest' in command:
                 assert extra_env is not None
+                _record_passes(extra_env)
             handle.write('1 passed in 0.1s\n')
             handle.flush()
             return 0
@@ -1289,6 +1303,14 @@ def _unboxed(_root: Path, argv: list[str], **_k: object) -> tuple[list[str], Pat
     return argv, None
 
 
+def _record_passes(extra_env: dict[str, str], count: int = 1) -> None:
+    """A planted passing process writes the same real Record as the live plugin."""
+    recorder = CellRecorder(Path(extra_env[OUTCOMES_DIR_VAR]) / 'cells.jsonl')
+    stage = extra_env[serialpass.STAGE_ENV]
+    for index in range(count):
+        recorder.record(f'tests/test_planted.py::test_{stage}_{index}', TestCell(Cell(Status.OK)))
+
+
 #: Every verify run writes into the output tree, so a planted repo declares its root.
 _OUTPUT: Final = '[tool.dev_lab.parts]\noutput = "out/logs"\n'
 
@@ -1319,6 +1341,8 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
 
     def tee(command: list[str], *, handle: io.TextIOBase, **_where: object) -> int:
         is_pytest = 'pytest' in command
+        if is_pytest and pytest_text == '1 passed in 0.1s\n':
+            _record_passes(_where['extra_env'])
         handle.write(pytest_text if is_pytest else '')
         return pytest_code if is_pytest else 0
 
@@ -1822,6 +1846,8 @@ def test_the_pytest_step_writes_a_coverage_report_to_the_output_tree_and_never_g
         launched.append((tuple(command), dict(extra_env or {})))
         if 'pytest' in command and extra_env and extra_env.get(serialpass.STAGE_ENV) == 'parallel':
             Path(extra_env[serialpass.SEEN_ENV]).write_text('x', encoding='utf-8')
+        if 'pytest' in command:
+            _record_passes(extra_env)
         handle.write('1 passed in 0.1s\n')
         handle.flush()
         return 0
@@ -1849,6 +1875,8 @@ def test_planted_a_verify_run_writes_nothing_under_dot_verify(tmp_path, monkeypa
     (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
 
     def step(_command, *, handle, **_where: object) -> int:
+        if 'pytest' in _command:
+            _record_passes(_where['extra_env'])
         handle.write('1 passed in 0.1s\n')
         return 0
 
@@ -1877,7 +1905,9 @@ def test_per_test_cells_are_written_outside_the_tree_during_the_session_and_land
             live = Path(extra_env[OUTCOMES_DIR_VAR])
             during.append(live)
             live.mkdir(parents=True, exist_ok=True)
-            (live / f'cells-gw{len(during)}.jsonl').write_text('{}\n', encoding='utf-8')
+            CellRecorder(live / f'cells-gw{len(during)}.jsonl').record(
+                'tests/test_planted.py::test_one', TestCell(Cell(Status.OK))
+            )
         handle.write('1 passed in 0.1s\n')
         return 0
 
@@ -1887,7 +1917,9 @@ def test_per_test_cells_are_written_outside_the_tree_during_the_session_and_land
     assert during
     assert all(not live.resolve().is_relative_to(tmp_path.resolve()) for live in during), during
     (log,) = (tmp_path / 'out/logs' / '/'.join(date_parts()) / 'verify').glob('verify-*.log')
-    assert sorted(p.name for p in outcomes_dir(log).iterdir()) == ['cells-gw1.jsonl']
+    assert sorted(p.relative_to(outcomes_dir(log)).as_posix() for p in outcomes_dir(log).rglob('*.jsonl')) == [
+        'parallel/cells-gw1.jsonl'
+    ]
     assert not any(live.exists() for live in during)
 
 

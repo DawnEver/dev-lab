@@ -6,6 +6,7 @@ removed: then no serial stage runs at all, so the split is the marker's doing an
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -140,3 +141,34 @@ def test_real_nonstrict_xpass_is_a_recorded_failure_even_when_pytest_exits_zero(
     verdict = verifysteps.run_verify(tmp_path, ('test_planted.py',), hooks=False)
     assert verdict.result.outcome is Conclusion.FAIL, verdict.result
     assert verdict.result.failures == ('test_planted.py::test_expected_to_reject',)
+
+
+@pytest.mark.parametrize('case', ['allowed-not-applicable', 'resource-retry', 'undeclared', 'stale'])
+def test_real_whitespace_skip_identity_keeps_the_exact_allowance_and_semantic_cell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    identity = 'same prefix - [skip value]'
+    node = f'test_planted.py::test_skips[{identity}]'
+    mark = 'femm' if case == 'resource-retry' else 'not_applicable'
+    allowed = [] if case == 'undeclared' else [node]
+    if case == 'stale':
+        allowed.append('test_planted.py::test_skips[same prefix - [other value]]')
+    (tmp_path / 'test_planted.py').write_text(
+        'import pytest\n\n@pytest.mark.parametrize("value", range(10))\n'
+        'def test_passes(value):\n    assert value >= 0\n\n'
+        f'@pytest.mark.{mark}\n@pytest.mark.parametrize("value", [0], ids={[identity]!r})\n'
+        'def test_skips(value):\n    pytest.skip("question does not apply or resource unavailable")\n',
+        encoding='utf-8',
+    )
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.parts]\noutput = "out/logs"\n'
+        f'[tool.dev_lab.verify]\nallowed_skips = {json.dumps(allowed)}\n'
+        '[tool.lab_commons.tests]\nresources = ["femm"]\n'
+        '[tool.pytest.ini_options]\nmarkers = ["femm: declared resource"]\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    verdict = verifysteps.run_verify(tmp_path, hooks=False)
+    expected = Conclusion.PASS if case == 'allowed-not-applicable' else Conclusion.INCONCLUSIVE
+    assert verdict.result.outcome is expected, verdict.result
