@@ -387,3 +387,55 @@ def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path:
         devhost.config_source({'devhost': {'host': 'G', 'source': clone.as_posix()}})
         == 'https://forge.example/t/hc.git'
     )
+
+
+# An HPC ACCOUNT is the third host kind (user ruling 2026-11-15): `hosts/<cluster>-<user>.toml` holds only what is
+# true of that account alone; its grant (role, slurm account) and its cluster stay in the family file.
+ACCOUNT = """\
+[deploy]
+host = "login01"
+root = "src"
+python = "3.13"
+repos = [{ name = "dev-lab", url = "https://forge.example/o/dev-lab.git", ref = "integrate/main" }]
+
+[schedule]
+tick_minutes = 15
+
+[hpc.paging]
+page_cpus = 8
+page_mem_gb = 20
+
+[capabilities.solverx]
+"""
+
+
+def _account(tmp_path: Path, text: str = ACCOUNT, name: str = 'c-u1') -> Path:
+    clone = _clone(tmp_path)
+    _write(clone, f'hosts/{name}.toml', text)
+    return clone
+
+
+def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> None:
+    clone = _account(tmp_path)
+    assert check_host(clone / 'hosts/c-u1.toml', clone / 'family.toml') == []
+    rendered = tomllib.loads(devhost.render(clone, 'c-u1', {}))
+    assert rendered['deploy']['role'] == 'research', 'the role is the family grant, derived, never restated'
+    assert rendered['hpc']['paging'] == {'page_cpus': 8, 'page_mem_gb': 20}
+    assert rendered['hpc']['grant'][0]['user'] == 'u1', 'the family grants ride along unchanged'
+
+
+@pytest.mark.parametrize(
+    ('name', 'text', 'named'),
+    [
+        ('c-u9', ACCOUNT, 'no family grant'),
+        ('c-u1', ACCOUNT.replace('root = "src"', 'root = "src"\nrole = "research"'), 'deploy.role'),
+        ('c-u1', ACCOUNT + '\n[[hpc.grant]]\nuser = "u1"\n', 'hpc.grant'),
+        ('c-u1', ACCOUNT + '\n[consent]\nendpoint = "consent@forge.example"\n', 'restates'),
+        ('c-u1', ACCOUNT + '\n[bogus]\nx = 1\n', 'bogus'),
+        ('c-u1', ACCOUNT.replace('repos = [', 'repo = ['), 'deploy'),
+    ],
+)
+def test_an_account_file_defect_is_refused_by_name(tmp_path: Path, name: str, text: str, named: str) -> None:
+    clone = _account(tmp_path, text, name)
+    found = check_host(clone / f'hosts/{name}.toml', clone / 'family.toml')
+    assert any(named in line for line in found), found
