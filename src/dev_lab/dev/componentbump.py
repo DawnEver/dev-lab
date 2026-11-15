@@ -37,6 +37,7 @@ from typing import Final, Protocol
 import lab_commons.launch as _door
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.components import Component, components_of
 from dev_lab.dev.forge import fetch_origin
@@ -221,7 +222,7 @@ class GitProduct:
 
     def open_lane(self, path: str, sha: str, message: str) -> bool:
         """Create :data:`LANE` moving *path* to *sha*, only if absent; ``False`` when another host won."""
-        with tempfile.TemporaryDirectory() as scratch:
+        with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
             env = {**os.environ, 'GIT_INDEX_FILE': str(Path(scratch) / 'index')}
             self._git('read-tree', self.base, env=env)
             self._git('update-index', '--add', '--cacheinfo', f'{_GITLINK},{sha},{path}', env=env)

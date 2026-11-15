@@ -13,6 +13,7 @@ import pytest
 from _forge_fake import git_out, run_git
 from lab_commons.hpc.retired import MOVED_TABLES
 
+from dev_lab.dev import forgerequestpaths
 from dev_lab.dev.forgerequest import (
     TESTS,
     UndeclaredRequest,
@@ -99,3 +100,38 @@ def test_a_request_at_a_sha_whose_manifest_the_kit_retires_is_refused_by_name(re
     old = git_out(root, 'rev-parse', 'HEAD')
     with pytest.raises(UndeclaredRequest, match=r'retired'):
         declared_request(root, old, TESTS, ('tests/test_a.py',))
+
+
+def test_a_selection_reads_its_files_in_one_git_process_however_many_it_names(
+    repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED (measured 2026-11-13): ``forge queue`` spent ~120 s of its 170 s in 1,033 sequential git children.
+
+    Each named file cost a ``cat-file -e`` and a ``show`` (~0.1 s each on Windows), so 53 request issues paid
+    ~800 processes while the forge answered its 25 HTTP calls in 5 s. A selection is read as ONE batch; the
+    control is that the count stays flat as the selection grows, and a missing file is still refused by name.
+    """
+    root, sha = repo
+    names = [f'tests/test_n{i}.py' for i in range(6)]
+    for name in names:
+        (root / name).write_text('import pytest\n\n@pytest.mark.linux\ndef test_x():\n    pass\n', encoding='utf-8')
+    run_git(root, 'add', '-A')
+    run_git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'more')
+    sha = git_out(root, 'rev-parse', 'HEAD')
+    reads: list[list[str]] = []
+    real = forgerequestpaths._door.run
+
+    def counted(argv: list[str], *args: object, **kwargs: object) -> object:
+        if 'cat-file' in argv or 'show' in argv:
+            reads.append(list(argv))
+        return real(argv, *args, **kwargs)
+
+    declared_request(root, sha, TESTS, tuple(names[:1]))  # warm: per-sha reads (pyproject) are cached once
+    monkeypatch.setattr(forgerequestpaths._door, 'run', counted)
+    declared_request(root, sha, TESTS, tuple(names[:1]))
+    one = len(reads)
+    reads.clear()
+    declared_request(root, sha, TESTS, tuple(names))
+    assert len(reads) == one, reads
+    with pytest.raises(UndeclaredRequest, match=r'tests/test_gone.py.*does not exist'):
+        declared_request(root, sha, TESTS, (*names, 'tests/test_gone.py'))

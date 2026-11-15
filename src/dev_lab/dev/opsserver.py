@@ -16,6 +16,13 @@ the regenerable; :mod:`dev_lab.ops.disk`) -- the forge host's disk alarm names t
 login asks the key AND the user's one-time code, so the ssh runs attached to this terminal
 (:func:`dev_lab.dev.remote.ssh_argv` ``batch=False``);
 ``--dry-run`` prints the line and runs nothing.
+
+``card`` IS THE ONE VERB WITH NO SSH (user ruling 2026-11-13: debugging a host must not need the user's one-time
+code). It reads the server's status card -- what its supervisor wrote after its last cycle
+(:mod:`dev_lab.supervise.card`, served by ``[ops.status]``) -- from the ``status`` URL its ``[[server]]`` table
+declares, over HTTPS, and renders it; server ``all`` reads every server declaring one. Exit 0 every card read and
+fresh, 1 a card unreachable, not a card, or STALE (no cycle for :data:`~dev_lab.supervise.card.STALE_CYCLES`
+intervals), 2 refused (nothing asked).
 """
 
 from __future__ import annotations
@@ -25,6 +32,8 @@ import re
 import shlex
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import PurePosixPath
 from typing import Any, Final
 
@@ -34,8 +43,11 @@ from lab_commons.log import emit
 from dev_lab.dev.remote import run, ssh_argv
 from dev_lab.dev.venvpath import venv_interpreter
 from dev_lab.ops.disk import DEFAULT_GITEA_DATA, DEFAULT_JOURNAL_MAX_MB
+from dev_lab.supervise import card
+from dev_lab.supervise.transport import fetch_json, https_only
 
 __all__ = [
+    'ALL',
     'DEFAULT_CONFIG',
     'DEFAULT_ROOT',
     'DISK_VERBS',
@@ -57,7 +69,11 @@ UNIT_VERBS: Final = {
     'logs': 'journalctl --no-pager -n 200 -u',
 }
 DISK_VERBS: Final = ('disk', 'clean')
-VERBS: Final = (*UNIT_VERBS, 'daemon-reload', 'install', *DISK_VERBS)
+VERBS: Final = (*UNIT_VERBS, 'daemon-reload', 'install', *DISK_VERBS, 'card')
+#: The server name ``card`` reads every declared card under; no ``[[server]]`` may take it.
+ALL: Final = 'all'
+_CARD_TIMEOUT_S: Final = 15
+_CARD_TRIES: Final = 3
 _DATA: Final = re.compile(r'/[A-Za-z0-9/_.-]+')
 _JOURNAL_FLOOR_MB: Final = 50
 _UNIT: Final = re.compile(r'[A-Za-z0-9@_.-]+')
@@ -74,6 +90,7 @@ class Server:
     config: str = DEFAULT_CONFIG
     gitea_data: str = DEFAULT_GITEA_DATA
     journal_max_mb: int = DEFAULT_JOURNAL_MAX_MB
+    status: str = ''
 
 
 def declared_servers(file: Mapping[str, Any]) -> dict[str, Server]:
@@ -83,6 +100,9 @@ def declared_servers(file: Mapping[str, Any]) -> dict[str, Server]:
         if not row.get('name') or not row.get('target'):
             msg = f'a [[server]] table needs name and target: {row}'
             raise ValueError(msg)
+        if row['name'] == ALL:
+            msg = f'a [[server]] may not be named {ALL!r}: `card` reads every server under that name'
+            raise ValueError(msg)
         out[row['name']] = Server(
             row['name'],
             row['target'],
@@ -90,6 +110,7 @@ def declared_servers(file: Mapping[str, Any]) -> dict[str, Server]:
             row.get('config', DEFAULT_CONFIG),
             row.get('gitea_data', DEFAULT_GITEA_DATA),
             row.get('journal_max_mb', DEFAULT_JOURNAL_MAX_MB),
+            row.get('status', ''),
         )
     return out
 
@@ -101,6 +122,9 @@ def remote_line(server: Server, verb: str, unit: str | None) -> str:
             msg = f'{verb} takes one systemd unit name, got {unit!r}'
             raise ValueError(msg)
         return f'sudo {UNIT_VERBS[verb]} {shlex.quote(unit)}'
+    if verb not in VERBS or verb == 'card':
+        msg = f'{verb} is no ssh verb of the ops account'
+        raise ValueError(msg)
     if unit is not None:
         msg = f'{verb} takes no unit'
         raise ValueError(msg)
@@ -120,13 +144,59 @@ def remote_line(server: Server, verb: str, unit: str | None) -> str:
     return f'{door} {verb} --gitea-data {server.gitea_data} --journal-max-mb {mb}'
 
 
+#: ``url -> (status, parsed body or None, detail)``: one HTTPS GET.
+Fetch = Callable[[str], tuple[int, object, str]]
+
+
+def _https_get(url: str) -> tuple[int, object, str]:
+    """GET *url* over HTTPS only, retried on no answer or a 5xx (:data:`_CARD_TRIES` tries)."""
+    answer: tuple[int, object, str] = (0, None, 'not asked')
+    for _ in range(_CARD_TRIES):
+        answer = fetch_json(https_only, url, _CARD_TIMEOUT_S)
+        if 0 < answer[0] < HTTPStatus.INTERNAL_SERVER_ERROR:
+            break
+    return answer
+
+
+def _one_card(server: Server, fetch: Fetch, now: datetime) -> int:
+    """Read and render *server*'s card: 0 fresh, 1 unreachable, not a card, or stale."""
+    status, body, detail = fetch(server.status)
+    if status != HTTPStatus.OK or not isinstance(body, dict):
+        emit(f'{server.name}: unreachable -- {server.status} answered {status or "nothing"} ({detail})')
+        return 1
+    try:
+        emit(card.render(server.name, body, now))
+    except (ValueError, KeyError, TypeError) as bad:
+        emit(f'{server.name}: {server.status} served no status card ({bad})')
+        return 1
+    return 1 if card.is_stale(body, now) else 0
+
+
+def _cards(servers: Mapping[str, Server], name: str, fetch: Fetch, now: datetime) -> int:
+    """``card``: every declared card for :data:`ALL`, else *name*'s; refuse a server declaring none."""
+    chosen = [server for server in servers.values() if server.status] if name == ALL else [servers[name]]
+    if not chosen or not all(server.status for server in chosen):
+        emit(
+            f'opsserver: refused -- {name!r} declares no status card: add status = "https://<host><[ops.status] path>" '
+            'to its [[server]] table, then run python -m dev_lab.dev.opsserver <server> card',
+            err=True,
+        )
+        return 2
+    return max(_one_card(server, fetch, now) for server in chosen)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     file: Callable[[], Mapping[str, Any]] = machine,
     runner: Callable[[Sequence[str]], int] = lambda line: run(line, timeout_s=_TIMEOUT_S),
+    fetch: Fetch = _https_get,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
-    """Run one fixed verb on one declared server. Exit 2 refused (nothing ran), else the ssh's own code."""
+    """Run one fixed verb on one declared server. Exit 2 refused (nothing ran), else the ssh's own code.
+
+    ``card`` asks no ssh: see the module docstring for its exits.
+    """
     parser = argparse.ArgumentParser(prog='dev_lab.dev.opsserver', description=__doc__.splitlines()[0])
     parser.add_argument('server')
     parser.add_argument('verb', choices=VERBS)
@@ -134,6 +204,8 @@ def main(
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args(argv)
     servers = declared_servers(file())
+    if args.verb == 'card' and (args.server == ALL or args.server in servers) and args.unit is None:
+        return _cards(servers, args.server, fetch, clock())
     if args.server not in servers:
         emit(f'opsserver: refused -- {args.server!r} is not a declared [[server]] ({sorted(servers)})', err=True)
         return 2

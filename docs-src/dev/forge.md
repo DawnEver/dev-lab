@@ -153,11 +153,11 @@ What every host still reads, kept small:
   packages, the Rust toolchain, the uv pin) wait for `[tool.dev_lab.relock] third_party_every` (default `1 day`),
   and an in-house relock before then moves only the sibling names. It merges like any other, and its parts run only
   the tests whose footprint imports a moved distribution (`dev_lab.dev.lockreach`); a lane takes it with `forge sync`. Every open PR head into integration
-  carries a `lock/fresh` status (`dev_lab.dev.forgeheadgate`, once per head sha). A PR never chases the lock
-  (user ruling 2026-10-28): a move its merge-base with integration lags too -- a sibling or dist published after it
-  branched -- is the relock pull request's to carry, so only the head's OWN moves (a lock older than its base's, a
-  `pyproject.toml` change not relocked) are refused. `failure` reads
-  ``stale uv.lock: run `<venv python> -m dev_lab.dev.dep --lock-upgrade [ROOT]`, then commit uv.lock (<moves>)``. By hand, one
+  carries ONE lock status, `lock/lag` (`dev_lab.dev.forgeheadgate`; issue #575): `failure` when its `uv.lock` does
+  not render from its own `pyproject.toml` (`dev_lab.dev.lockcheck.unrendered`, `uv lock --check`, once per head
+  sha), or pins a floated sibling past the lag window (`dev_lab.dev.locklag`). It is an alarm, never a gate. A PR
+  never chases the lock (user ruling 2026-10-28): a lock behind its siblings' heads but within the window is the
+  relock pull request's to carry. By hand, one
   upgrades through the door `<venv python> -m dev_lab.dev.dep --lock-upgrade
   [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
   fixes, tests and commits. A
@@ -644,6 +644,11 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
 THE ONE EXPLANATION; every refusal remedy, alarm and rule that mentions a forge 401 points here.
 
 - The 2026-10-21 observation was a refused first attempt followed by success and an `OAUTH_USER` username.
+- Its cause, measured 2026-11-12: Git Credential Manager's generic provider stores a Gitea OAuth ACCESS token
+  (username `OAUTH_USER`, plus a `refresh_token.<host>` entry). Gitea expires it after `[oauth2]
+  ACCESS_TOKEN_EXPIRATION_TIME` (default 1 h); git presents it, gets 401, rejects it, and GCM mints a new one
+  from the refresh token for the retry. The cure is one non-expiring personal access token per Gitea host
+  (`auth login`); `auth status` exits 1 while a Gitea host holds an `OAUTH_USER` credential.
   Its former explanation as proven expiry/refresh was an inference, not evidence of the credential store's
   capabilities. A 401 or that username cannot authorize erasing a secret.
 - The API client never issues `git credential reject`. Generic, unknown, opaque or ambiguous helper/provider
@@ -685,13 +690,21 @@ replaced atomically, self-checked, and restored on a failed check. Grant the lin
 
 ## Making the forge's machine accounts
 
-A machine account (a read-only reader for every server that pulls code) and each of its per-host tokens are made only
-through `python -m dev_lab.ops --config <file> forge account ensure --login <L> --read <owner/repo>...` and
-`... forge token mint --login <L> --name <N> --scope read:repository [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`),
-which the `ops` account runs through its fixed sudo line. Each use redeems a single-use `ops.forge.account` /
-`ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it). `ensure` makes a
-restricted login if absent and grants exactly Read, reporting drift; `mint` prints the token once to stdout, refuses
-a non-`read:*` scope for a login in `[ops.forge] read_only` and an existing name without `--rotate`. Every use is
+A machine account is declared once, `[ops.forge.accounts] <login> = {role = "read"|"write"|"review"|"breakglass", repos = [...]}`,
+one role per login (a reader for every server that pulls code, a writer for the hosts that post verdicts, a reviewer
+for the judge, a break-glass merger for the consent host). It and each of its per-host tokens are made only through
+`python -m dev_lab.ops --config <file> forge account ensure --login <L>` and
+`... forge token mint --login <L> --name <N> --scope <S> [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`), which the
+`ops` account runs through its fixed sudo line. `ensure` reads the role and repositories from the declaration, so an
+undeclared login is refused before a consent is spent. Each use redeems a single-use `ops.forge.account` /
+`ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it;
+:mod:`dev_lab.ops.forgerequests`); an account's digest names (login, role, repos), so a role widened after consent
+is refused. `ensure` makes a restricted login if absent and grants exactly the role's permission
+(`ROLE_GRANTS`: read -> read; write and review -> write, because Gitea posts a commit status only for a code writer,
+so a reviewer's limit is its token's scopes; breakglass -> admin, a REPOSITORY admin on exactly its declared
+repos, because only an admin merges past branch protection), reporting drift; `mint` prints the token once to stdout, refuses a
+non-`read:*` scope for a `read` login, any scope outside `read:repository,write:repository,read:user` for a
+`breakglass` login, and an existing name without `--rotate`. Every use is
 audited to `[ops.forge] log` without the token. A routine round of one login's per-host tokens costs one code, not
 one per host: `... forge token mint-batch --login <L> --item <NAME>:<SCOPE>... [--rotate <NAME>]...` redeems ONE
 single-use `ops.forge.tokens` credential whose subject is the digest of the login and every item in order (so a

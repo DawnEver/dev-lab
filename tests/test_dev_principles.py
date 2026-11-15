@@ -21,11 +21,50 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
     assert [one.id for one in PRINCIPLES] == [
         'first-principles', 'no-historical-baggage', 'occams-razor', 'single-source-of-truth',
         'layered-decoupling', 'names-match-behaviour', 'no-backward-compatibility', 'progressive-disclosure',
-        'keep-valuable-options',
+        'keep-valuable-options', 'every-wall-teaches', 'no-barrier-fan-out',
     ]  # fmt: skip
-    kept = PRINCIPLES[-1]
+    kept = PRINCIPLES[-3]
     assert kept.name == 'Keep every valuable parameter and option'
     assert kept.statement.startswith('Generality is a requirement: keep every parameter and option')
+
+
+def test_a_reference_match_adds_an_option_and_the_razors_never_remove_capability() -> None:
+    """User ruling 2026-11-12: a vendor match is ADDED as a choice, never substituted for the native one."""
+    by_id = {one.id: one.statement for one in PRINCIPLES}
+    kept = by_id['keep-valuable-options']
+    for clause in (
+        'ADDS a selectable option',
+        'never replaces or deletes the alternative',
+        'numerical method choices are options even with no current caller',
+    ):
+        assert clause in kept
+    assert by_id['occams-razor'].endswith('never a capability.')
+    assert by_id['no-historical-baggage'].endswith('never a capability.')
+
+
+def test_every_wall_teaches_names_the_gap_and_the_loop() -> None:
+    """User ruling 2026-11-13: a wall with no named cause and door is a mechanism gap, closed before the task."""
+    wall = {one.id: one for one in PRINCIPLES}['every-wall-teaches']
+    for clause in (
+        'names its cause and its door',
+        'is a mechanism gap',
+        'comes before the task',
+        'Never route around a wall or hand the user a command.',
+        'docs-src/dev/feedback.md',
+    ):
+        assert clause in wall.statement
+
+
+def test_no_barrier_fan_out_lands_each_item_without_waiting() -> None:
+    """User ruling 2026-11-13: parallel items land as each finishes; no join on the slowest unless truly needed."""
+    fan = {one.id: one for one in PRINCIPLES}['no-barrier-fan-out']
+    for clause in (
+        'each landed the moment it is done',
+        'nothing waits for the slowest sibling',
+        'unless a step truly needs every result',
+        'docs-src/dev/fanout.md',
+    ):
+        assert clause in fan.statement
 
 
 def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) -> None:

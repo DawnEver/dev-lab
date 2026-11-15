@@ -10,20 +10,15 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from _forge_state import StateForge
 
 from dev_lab.dev.branchset import branchset_from
-from dev_lab.dev.breakglass import notices, unreviewed
+from dev_lab.dev.breakglass import notices
 from dev_lab.dev.componentbump import LANE
-from dev_lab.dev.forgestatus import status_post
-from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.metrics import BYPASS, HAND_ACTION, read
-from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
 from dev_lab.dev.sessionbranch import MACHINE_BRANCHES, P2, P3, P5, P6, refusals
 
@@ -397,7 +392,7 @@ def test_break_glass_admits_a_direct_push_only_when_every_new_commit_names_its_r
         (repo / f'hot{n}.txt').write_text('x\n', encoding='utf-8')
         _git(repo, 'add', '.')
         _git(repo, 'commit', '-m', message)
-    found = _judged(repo, _reviewed)
+    found = _judged(repo)
     assert (not found) is admitted, found
     assert [line['lab.rule.id'] for line in read(BYPASS, root=repo)] == (['session-branch'] if admitted else [])
     if not admitted:
@@ -407,17 +402,10 @@ def test_break_glass_admits_a_direct_push_only_when_every_new_commit_names_its_r
         assert _remote(repo, 'int/line') == before
 
 
-def _reviewed(_root: Path, _head: str) -> str | None:
-    return None  # the forge holds a posted review of every head
-
-
-def _judged(repo: Path, reviewed: Callable[[Path, str], str | None]) -> list[str]:
-    """The pre-push refusals of pushing ``int/line``, *reviewed* standing in for the forge's review of a head.
-
-    The hook runs in a subprocess whose origin is a bare path with no forge, so a Break-Glass push is judged here.
-    """
+def _judged(repo: Path) -> list[str]:
+    """The pre-push refusals of pushing ``int/line``, judged in-process (the hook's subprocess has no forge)."""
     tip, remote = _git(repo, 'rev-parse', 'int/line'), _remote(repo, 'int/line')
-    return refusals(repo, f'refs/heads/int/line {tip} refs/heads/int/line {remote}\n', reviewed=reviewed)
+    return refusals(repo, f'refs/heads/int/line {tip} refs/heads/int/line {remote}\n')
 
 
 def _glass_merge(repo: Path) -> str:
@@ -432,27 +420,17 @@ def _glass_merge(repo: Path) -> str:
     return _git(repo, 'rev-parse', 'pr/hot')
 
 
-def test_break_glass_refuses_to_land_a_pr_head_with_no_posted_review(repo: Path) -> None:
-    """User ruling 2026-10-31 "every PR must get a review": #11 and #3 landed by Break-Glass unreviewed.
+def test_break_glass_lands_a_pr_head_whose_review_is_missing(repo: Path) -> None:
+    """The review is ADVISORY (user rulings 2026-11-11/12): a missing review never holds a Break-Glass push.
 
-    The emergency is the forge's MERGE, never the review: the head needs a review the FORGE posted (D11: a session's
-    takeover is advisory). PLANTED CONTROL: the same merge, its head reviewed, is admitted.
+    PLANTED CONTROL: the same merge with no Break-Glass trailer is refused (P5).
     """
     _forge_merges_declared(repo)
-    head = _glass_merge(repo)
-    asked: list[str] = []
-
-    def unreviewed(_root: Path, sha: str) -> str:
-        asked.append(sha)
-        return 'tests/review is not posted yet: the head is not reviewed'
-
-    (found,) = _judged(repo, unreviewed)
-    assert asked == [head], 'the reviewed head of a merge is the PR head it lands'
-    assert P5 in found
-    assert head[:12] in found
-    assert "re-run the forge's review" in found
-    assert read(BYPASS, root=repo) == [], 'a refused push records no bypass'
-    assert _judged(repo, _reviewed) == []
+    _glass_merge(repo)
+    assert _judged(repo) == []
+    assert [one['lab.action'] for one in read(HAND_ACTION, root=repo)] == ['break-glass']
+    _git(repo, 'commit', '--allow-empty', '-m', 'fix: plain')
+    assert any(P5 in one for one in _judged(repo))
 
 
 def test_every_break_glass_commit_past_the_declared_start_is_one_notice_naming_its_reason(repo: Path) -> None:
@@ -592,35 +570,18 @@ def test_every_admitted_break_glass_commit_is_one_hand_action_naming_branch_sha_
     (repo / 'bare.txt').write_text('x\n', encoding='utf-8')
     _git(repo, 'add', 'bare.txt')
     _git(repo, 'commit', '-m', 'fix: no trailer')
-    assert _judged(repo, _reviewed) != []
+    assert _judged(repo) != []
     assert read(HAND_ACTION, root=repo) == [], 'a refused push carried nothing onto the branch'
     _git(repo, 'checkout', '-q', '-B', 'int/line', glass)  # drop the refused commit
     (repo / 'two.txt').write_text('x\n', encoding='utf-8')
     _git(repo, 'add', 'two.txt')
     _git(repo, 'commit', '-m', 'fix: hot two\n\nBreak-Glass: auto-merge broken')
     second = _git(repo, 'rev-parse', 'HEAD')
-    assert _judged(repo, _reviewed) == []
+    assert _judged(repo) == []
     assert [
         (one['lab.action'], one.get('vcs.ref.head.name', ''), one['vcs.ref.head.revision'], one['lab.reason'])
         for one in read(HAND_ACTION, root=repo)
     ] == [('break-glass', 'pr/hot', glass, 'forge down'), ('break-glass', '', second, 'auto-merge broken')]
-
-
-def test_a_head_is_reviewed_only_by_a_posted_successful_review_with_no_hold_pending() -> None:
-    """``error``, ``takeover pending`` and a claim are not a review; the forge's (its Actions ghost) ``success`` is."""
-    forge = StateForge()
-    forge.login = GITEA_ACTIONS_LOGIN  # the job token: Gitea records its Actions ghost as the creator
-    head = 'a' * 40
-    _, run = forge.add_run(head)
-    assert 'not posted' in unreviewed(forge, head, base=_BASE)
-    for state, description in (('pending', 'claimed by h, reviewing'), ('error', 'the review command failed')):
-        status_post(forge, head, context=REVIEW_CONTEXT, state=state, description=description)
-        assert description in unreviewed(forge, head, base=_BASE)
-    status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='over the cap')
-    status_post(forge, head, context=REVIEW_CONTEXT, state='success', description='0 findings', target_url=run)
-    assert 'over the cap' in unreviewed(forge, head, base=_BASE), 'a hold not yet released is not a review'
-    status_post(forge, head, context=HOLD_CONTEXT, state='success', description='released: review reviewed this head')
-    assert unreviewed(forge, head, base=_BASE) is None
 
 
 def test_a_local_fix_branch_pushed_as_pr_gets_the_same_one_rename_remedy(repo: Path) -> None:

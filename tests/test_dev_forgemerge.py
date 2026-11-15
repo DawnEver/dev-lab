@@ -19,7 +19,8 @@ from test_dev_githook_scripts import _plant_checker
 from dev_lab.dev import forgeintegration, forgemessages
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import Ticked, tick
-from dev_lab.dev.forgemerge import FORGE_PULL, Decision, decide, merge, merge_message
+from dev_lab.dev.forgemerge import FORGE_PULL, Decision, decide, merge_message
+from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import ACTIONS_BOT
@@ -133,6 +134,62 @@ def test_a_pr_whose_parts_are_absent_or_pending_waits(tmp_path: Path) -> None:
             reviewed=status_gate(github_posted),
         )
         assert any(one.startswith('its test parts: ') for one in found.missing), (part, found.missing)
+
+
+_CHECK = 'check / check (pull_request)'
+_CHECKED = dataclasses.replace(POLICY, merge_checks=(_CHECK,))
+
+
+def _checked(work: Path, head: str, raw: list[dict[str, object]]) -> Decision:
+    return decide(
+        work, _CHECKED, branch='pr/x', number=4, head=head, statuses=_statuses(raw), reviewed=status_gate(github_posted)
+    )
+
+
+def test_a_repo_declaring_its_merge_check_merges_on_that_check_alone(tmp_path: Path) -> None:
+    """User ruling 2026-11-12: a repo with no serve host declares the forge check its merge waits on.
+
+    Its head carries no ``tests/base``, no ``tests/security`` and no head gates -- nothing posts them -- and it is
+    ready on the declared check's ``success``. PLANTED CONTROL: the same head with that check red or missing waits.
+    """
+    work, head = _work(tmp_path)
+    review = [r for r in _green() if r['context'] == 'tests/review']
+    check = {'id': 9, 'context': _CHECK, 'status': 'success', 'description': 'Successful in 22s'}
+    assert _checked(work, head, [*review, check]).ready, _checked(work, head, [*review, check]).missing
+    red = _checked(work, head, [*review, {**check, 'status': 'failure', 'description': 'Failure'}])
+    assert not red.ready, 'PLANTED CONTROL: a red declared check holds the merge'
+    assert not red.waiting
+    assert any(one.startswith(f'its merge checks: {_CHECK} FAILED (failure)') for one in red.missing), red.missing
+    absent = _checked(work, head, review)
+    assert not absent.ready, 'PLANTED CONTROL: a missing declared check holds the merge'
+    assert absent.waiting
+    assert any(f'{_CHECK} is not yet posted' in one for one in absent.missing), absent.missing
+
+
+def test_a_declared_check_whose_job_failed_reads_failed_and_a_running_one_reads_pending(tmp_path: Path) -> None:
+    """claude-code-config #6 (2026-11-13): a job that ended with no record read "is pending", so everyone waited.
+
+    PLANTED CONTROL both ways: the ``error`` a failed job posts says FAILED and is not waiting; a ``pending`` says
+    pending and waits.
+    """
+    work, head = _work(tmp_path)
+    review = [r for r in _green() if r['context'] == 'tests/review']
+    error = {'id': 9, 'context': _CHECK, 'status': 'error', 'description': "unreachable: cannot run 'npm'"}
+    failed = _checked(work, head, [*review, error])
+    assert not failed.waiting
+    assert any(f"{_CHECK} FAILED (error): unreachable: cannot run 'npm'" in one for one in failed.missing)
+    running = _checked(work, head, [*review, {**error, 'status': 'pending', 'description': 'running'}])
+    assert running.waiting
+    assert any(f'{_CHECK} is pending: running' in one for one in running.missing), running.missing
+    assert not any('FAILED' in one for one in running.missing)
+
+
+def test_a_declared_merge_check_is_not_satisfied_by_the_serve_parts(tmp_path: Path) -> None:
+    """Every serve-posted status green is no stand-in for the declared check: it still waits on it."""
+    work, head = _work(tmp_path)
+    found = _checked(work, head, _green())
+    assert not found.ready
+    assert any(one.startswith('its merge checks: ') for one in found.missing), found.missing
 
 
 def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_path: Path) -> None:
@@ -405,8 +462,8 @@ def test_a_unreviewed_review_with_red_tests_does_not_merge(tmp_path: Path) -> No
     assert not any(one.startswith('its review: ') for one in found.missing), found.missing
 
 
-def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
-    """PLANTED CONTROL: a security finding with no waiver recorded waits on the review, unwarned."""
+def test_a_review_finding_with_no_waiver_never_blocks_and_is_reported(tmp_path: Path) -> None:
+    """The review is ADVISORY (user rulings 2026-11-11/12): no waiver needed; the decision reports it, unwaived."""
     work, head = _work(tmp_path)
     raw = [
         {**r, 'status': 'failure', 'description': 'security finding(s) F-1'} if r['context'] == 'tests/review' else r
@@ -417,7 +474,8 @@ def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
             work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(statuses),
             reviewed=status_gate(github_posted),
         )  # fmt: skip
-        assert any(one.startswith('its review: ') for one in found.missing), found.missing
+        assert found.ready, found.missing
+        assert found.review is not None
         assert not found.unreviewed
         assert 'Unreviewed' not in found.message
 

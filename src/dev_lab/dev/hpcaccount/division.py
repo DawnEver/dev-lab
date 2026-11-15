@@ -15,17 +15,21 @@ table, which ``deploy-fleet`` reads and passes to each account's deploy::
 A declared ``[hpc.roles]`` REPLACES the defaults whole (never merged), so the file names every role it uses. The
 reader is per role, so one shared read-only login is the same value on each role, and a role may still differ.
 
-lab-commons' :func:`lab_commons.hpc.grants.load_grants` refuses keys it does not know (a grant's ``role``, the
-``roles`` table), so :func:`split_hpc` hands it only its own keys until lab-commons carries them.
+lab-commons' :func:`lab_commons.hpc.grants.load_grants` carries each grant's ``role`` and the ``roles`` table
+uninterpreted, and keeps only the grants this machine REACHES (HPC-ACCESS-BY-ROLE); :func:`division_of` reads the
+division off what it loaded, and :func:`reached_machine` is every verb's one load, refusing an unreached account by
+the rule's own message.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-__all__ = ['DEFAULT_ROLES', 'ROLE_KEYS', 'Division', 'account_role', 'load_division', 'split_hpc']
+from lab_commons.hpc.grants import Machine, load_grants
+
+__all__ = ['DEFAULT_ROLES', 'ROLE_KEYS', 'Division', 'account_role', 'division_of', 'load_division', 'reached_machine']
 
 #: The role table when the workstation declares none: verification serves and is reported; research is refused
 #: a writer.
@@ -93,8 +97,24 @@ def account_role(role: str, fleet_role: str, passed: Mapping[str, Any] | None) -
     return DEFAULT_ROLES[role]
 
 
-def split_hpc(hpc: Mapping[str, Any]) -> tuple[dict[str, Any], Division]:
-    """``(the [hpc] table lab-commons reads, the division)``: the division's keys taken out of the first."""
-    grants = [{key: value for key, value in grant.items() if key != 'role'} for grant in hpc.get('grant', [])]
-    table = {key: value for key, value in hpc.items() if key != 'roles'}
-    return {**table, 'grant': grants}, load_division(hpc)
+def division_of(machine: Machine) -> Division:
+    """The division of the grants *machine* reaches, and its ``[hpc.roles]`` table (the defaults when undeclared)."""
+    return Division(
+        grant_roles={grant.user: grant.role for grant in machine.grants},
+        roles=_roles(dict(machine.roles) if machine.roles else None),
+    )
+
+
+def reached_machine(accounts: Sequence[str] = ()) -> Machine:
+    """The machine's reached grants, each of *accounts* checked among them.
+
+    Raises:
+        lab_commons.hpc.grants.AccessRefused: an account another role reaches, or a machine reaching none.
+        LookupError: an account no grant declares.
+        ValueError: the ``[hpc]`` declaration is refused.
+
+    """
+    machine = load_grants()
+    for user in accounts:
+        machine.grant(user)
+    return machine

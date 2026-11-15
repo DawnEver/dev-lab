@@ -6,13 +6,17 @@ docs-only head) read ``pending`` forever, and a pending refusal was never releas
 
 from __future__ import annotations
 
+import io
+import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
+import pytest
 from _branch_repos import clone_pair
 from _forge_fake import git_out
 from _forge_state import StateForge
 
-from dev_lab.dev import pushwatch
+from dev_lab.dev import pushstop, pushwatch, sessionprs, walls
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.pushstop import GRACE_S, Stop, stop_refusal
 from dev_lab.dev.pushwatch import watch_command
@@ -70,3 +74,59 @@ def test_a_pending_head_whose_watch_reached_its_deadline_is_released_on_the_repe
     assert released.note is not None
     assert head[:12] in released.note
     assert 'deadline' in released.note
+
+
+def test_a_blocked_stop_is_this_sessions_wall_with_its_remedy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """WALLS-ARE-RECORDED: the pushed-head block reaches the ledger through the one choke point."""
+    block = f'{sessionprs.RULE}: this session has open PRs (x) and nothing watches them.\nArm ONE Monitor running: w'
+    monkeypatch.setattr(pushstop, 'pushed_by', lambda _root, _session: set())
+    monkeypatch.setattr(pushstop.sessionprs, 'open_rows', lambda _session: ['x'])
+    monkeypatch.setattr(pushstop, 'red_refusal', lambda _session, **_k: Stop())
+    monkeypatch.setattr(pushstop, 'unwatched_refusal', lambda _session, **_k: Stop(block=block))
+    out = io.StringIO()
+    payload = {'session_id': 's1', 'cwd': str(tmp_path)}
+    assert pushstop._gate(payload, lambda: (), None, lambda _forge: None, out) == 0
+    assert json.loads(out.getvalue())['decision'] == 'block'
+    [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present'], line['session']) == (sessionprs.RULE, True, 's1')
+
+
+def test_a_pushed_head_the_forge_synced_past_is_watched_through_its_descendant(tmp_path: Path) -> None:
+    """A live watch on a DESCENDANT of the pushed head counts as watching it.
+
+    2026-11-14: the forge's integration sync merged into the pushed head; the hook kept demanding a watch on
+    the superseded sha while the new head was watched.
+
+    PLANTED CONTROLS: an unwatched descendant still blocks, and a watched UNRELATED commit does not count.
+    """
+    work, head = _pushed(tmp_path)
+    forge = StateForge()
+    status_post(forge, head, context='tests/base', state='pending', description='queued')
+    git_out(work, 'commit', '--allow-empty', '-m', 'sync merge')
+    child = git_out(work, 'rev-parse', 'HEAD')
+    git_out(work, 'checkout', '-q', '--orphan', 'other')
+    git_out(work, 'commit', '--allow-empty', '-m', 'unrelated')
+    stranger = git_out(work, 'rev-parse', 'HEAD')
+
+    def stop(*lines: str) -> Stop:
+        return stop_refusal(work, 's1', client=forge, processes=lambda: lines, again=False, now=PUSHED_AT + 1)
+
+    assert stop(watch_command(child)).block is None, 'a watched descendant carries the obligation'
+    assert stop().block is not None, 'PLANTED CONTROL: nothing watched still blocks'
+    assert 'descend' in (stop().block or ''), 'the refusal names that a watch on a newer head counts'
+    assert stop(watch_command(stranger)).block is not None, 'PLANTED CONTROL: an unrelated watch is no watch'
+
+
+def test_a_session_watch_from_any_checkouts_interpreter_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#554: a live ``forge watch --session`` counts by its argv, whatever interpreter (any checkout) runs it."""
+    monkeypatch.setattr(pushstop.sessionprs, 'open_rows', lambda _session: [SimpleNamespace(key='forge/o/r#1')])
+    monkeypatch.setattr(pushstop.sessionprs, 'watching', lambda _session: False)  # no marker: an older kit's watch
+    other = '/elsewhere/other-checkout/.venv/bin/python -m dev_lab.dev.forge watch --session s1 --stream'
+    assert pushstop.unwatched_refusal('s1', processes=lambda: [other]).block is None
+    # planted controls: an unrelated python process, and another session's watch, do not count
+    unrelated = ['/elsewhere/.venv/bin/python -m dev_lab.dev.forge queue', 'python -m http.server']
+    refused = pushstop.unwatched_refusal('s1', processes=lambda: unrelated).block
+    assert refused is not None
+    assert 'any checkout' in refused
+    another = ['/x/python -m dev_lab.dev.forge watch --session s2 --stream']
+    assert pushstop.unwatched_refusal('s1', processes=lambda: another).block is not None

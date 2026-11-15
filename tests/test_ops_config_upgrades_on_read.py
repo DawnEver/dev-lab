@@ -1,4 +1,4 @@
-"""A pre-#311 ``[ops.breakglass]`` is UPGRADED ON READ (FORMATS-UPGRADE-ON-READ), never refused.
+"""A pre-#311 ``[ops.breakglass]`` is UPGRADED ON READ (owed a migration: FORMATS-MIGRATE-ONCE), never refused.
 
 forge-a1, 2026-11-08: ``ops upgrade`` self-checks the host's CURRENT config with the NEW code. #311 moved the wave
 window, the merge cap and the code lockout out of ``[ops.breakglass]`` into the consent credential and the issuer, so
@@ -12,11 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.ops.config import _BREAKGLASS_MOVED, load
+from dev_lab.ops.config import load
+from dev_lab.ops.configupgrade import BREAKGLASS_MOVED
 
 #: The host's values for the keys #311 moved; the keys themselves are named once, by the loader that upgrades them.
 _MOVED_VALUES = ('"/etc/breakglass/totp"', '24.0', '20', '5', '15.0')
-_MOVED = ''.join(f'{key} = {value}\n' for key, value in zip(_BREAKGLASS_MOVED, _MOVED_VALUES, strict=True))
+_MOVED = ''.join(f'{key} = {value}\n' for key, value in zip(BREAKGLASS_MOVED, _MOVED_VALUES, strict=True))
 
 _OLD = """
 [ops]
@@ -26,13 +27,13 @@ repos = []
 [ops.breakglass]
 account = "breakglass"
 keys = ["ssh-ed25519 AAAA agent"]
-repos = ["https://github.com/owner/alpha.git"]
+repos = ["https://gitea.example/owner/alpha.git"]
 state = "/var/lib/forge-breakglass"
 log = "/var/log/forge-breakglass/audit.log"
 {moved}wave_hours_max = 24.0
 max_merges_max = 100
 [ops.breakglass.tokens]
-"github.com" = "/etc/forge-breakglass/github-token"
+"gitea.example" = "/etc/forge-breakglass/gitea-token"
 """
 
 

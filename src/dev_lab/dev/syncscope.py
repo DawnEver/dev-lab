@@ -62,6 +62,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from enum import Enum
+from importlib import metadata
 from typing import Final
 
 __all__ = [
@@ -214,8 +215,9 @@ def extras(text: str) -> dict[str, frozenset[str]]:
     incident: read literally the extra contains one distribution -- the project -- and what it
     actually installs is six other extras that a reader has to go and look up. Expanded here, once,
     so no caller has to know the trick. A reference to a FOREIGN distribution's extras
-    (``lab-commons[dev]``) contributes that distribution and stops: what its own extras pull in is
-    its manifest's business and is not in this text.
+    (``dev-lab[test]``) contributes that distribution PLUS what those extras declare, transitively,
+    read from its INSTALLED metadata (:func:`_kit_extras`) -- the family declares its test tools only
+    that way (user ruling 2026-11-05). A foreign distribution that is not installed contributes itself.
 
     Raises:
         UnknownExtraError: a self-reference names an extra this manifest does not declare.
@@ -275,6 +277,31 @@ def _expand(name: str, raw: dict[str, tuple[str, ...]], me: str, seen: set[str])
                 out |= _expand(inner, raw, me, seen)
         else:
             out.add(dist)
+            out |= _kit_extras(dist, _spec_extras(spec), set())
+    return out
+
+
+_EXTRA_MARKER: Final = re.compile(r"""\bextra\s*==\s*['"](?P<extra>[^'"]+)['"]""")
+
+
+def _kit_extras(dist: str, wanted: tuple[str, ...], seen: set[tuple[str, str]]) -> set[str]:
+    """What *dist*'s extras *wanted* install, transitively, from its ``Requires-Dist`` metadata."""
+    try:
+        requires = metadata.requires(dist) or []
+    except metadata.PackageNotFoundError:
+        return set()
+    out: set[str] = set()
+    for extra in wanted:
+        if (dist, extra) in seen:
+            continue
+        seen.add((dist, extra))
+        for req in requires:
+            spec, _, marker = req.partition(';')
+            match = _EXTRA_MARKER.search(marker)
+            if not match or canon(match['extra']) != extra or not (inner := _spec_name(spec)):
+                continue
+            out.add(inner)
+            out |= _kit_extras(inner, _spec_extras(spec), seen)
     return out
 
 

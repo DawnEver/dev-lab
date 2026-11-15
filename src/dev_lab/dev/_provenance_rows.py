@@ -74,6 +74,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # THREE implementations existed -- consumer-a `scripts/repo/docs.py`, consumer-b `scripts/docs.py`,
     # consumer-c `scripts/pdoc`. The table stayed with each repo, so this is adoption, not a move.
     'docsite': ('adopted_by', 'scripts/repo/docs.py'),
+    # the shared-temp prefix scan (2026-11-11): each consumer's temp test names its facts and delegates here.
+    'tempprefix': ('adopted_by', 'tests/test_temp.py'),
     # SUPERSEDES consumer-b's `scripts/durations.py`, which is the LEDGER half and nothing else -- the
     # verdict taken on it stays in that repo's `test_slow_is_discovered_by_the_wall.py`, which is
     # therefore NOT named here: it holds `WALL_SECONDS`, `SLOW_BAR`, `FAST_CEILING`, the ledger floor

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 from dev_lab.dev import forgeservesteps, hostalarm
-from dev_lab.dev.agent_guard import PRESSURE_COMMAND, WIRING
+from dev_lab.dev.agent_wiring import PRESSURE_COMMAND, WIRING
 from dev_lab.dev.forgealarm import PRESSURE, Alarm, sound
 from dev_lab.supervise import hostalarms
 from dev_lab.supervise.alert import Delivery

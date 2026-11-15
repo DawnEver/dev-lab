@@ -34,7 +34,15 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 
-__all__ = ['OUTCOMES_DIR_VAR', 'CellRecorder', 'RetiredOutcomes', 'outcomes_dir', 'read_cells']
+__all__ = [
+    'OUTCOMES_DIR_VAR',
+    'CellRecorder',
+    'OutcomeReadError',
+    'RetiredOutcomes',
+    'outcomes_dir',
+    'read_cells',
+    'skipped_nodes',
+]
 
 #: How a runner hands this run's directory to the pytest it launches.
 OUTCOMES_DIR_VAR: Final = 'LAB_COMMONS_OUTCOMES_DIR'
@@ -47,6 +55,23 @@ _RETIRED_STEM: Final = 'outcomes'
 
 class RetiredOutcomes(ValueError):
     """A run directory of the retired word files: regenerable, so refused -- re-run."""
+
+
+class OutcomeReadError(ValueError):
+    """Recorded evidence is unreadable or mixes incompatible run/stage layouts; no result may rest on it."""
+
+
+def skipped_nodes(cells: Mapping[str, TestCell]) -> frozenset[str]:
+    """Project the skip origins already classified by the existing pytest adapter.
+
+    No raw report is classified here. These are the canonical reason kinds that
+    judged() records for its skip arm; expected rejections are not pytest skips.
+    """
+    return frozenset(
+        node
+        for node, one in cells.items()
+        if one.cell.reason is not None and one.cell.reason.kind in {'resource', 'not_applicable', 'xfail_not_skip'}
+    )
 
 
 def outcomes_dir(log: Path) -> Path:
@@ -103,7 +128,49 @@ class CellRecorder:
             self._record.append(Event(FLAKY, node, data={'cell': one.cell.to_plain(), 'why': str(why)}))
 
 
+def _layout_error(message: str) -> None:
+    raise OutcomeReadError(message)
+
+
 def read_cells(directory: Path) -> tuple[dict[str, TestCell], frozenset[str]]:
+    """Read one flat recorder directory or the declared parallel/serial stages of one run.
+
+    The Record codec is unchanged. Unknown/nested stages and a mixture of root
+    records with stage records are refused, not recursively searched or upgraded.
+    """
+    if not directory.is_dir():
+        return {}, frozenset()
+    try:
+        stages = sorted(path for path in directory.iterdir() if path.is_dir())
+        if not stages:
+            return _flat_cells(directory)
+        unknown = [path.name for path in stages if path.name not in {'parallel', 'serial'}]
+        if unknown:
+            msg = f'{directory}: unknown outcome stage directories {unknown}; re-run the verify'
+            _layout_error(msg)
+        if any(directory.glob(f'{_STEM}*.jsonl')):
+            msg = f'{directory}: mixed flat and stage outcome records; re-run the verify'
+            _layout_error(msg)
+        # Retired root records remain refused even when current stages exist.
+        _flat_cells(directory)
+        sources, flaky = [], set()
+        for stage in stages:
+            if any(path.is_dir() for path in stage.iterdir()):
+                msg = f'{stage}: nested outcome stage layout; re-run the verify'
+                _layout_error(msg)
+            cells, one_flaky = _flat_cells(stage)
+            sources.append(cells)
+            flaky.update(one_flaky)
+        cells, disagreed = merged(sources)
+        return cells, frozenset(flaky | disagreed)
+    except (RetiredOutcomes, OutcomeReadError):
+        raise
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        msg = f'{directory}: unreadable outcome Record ({type(error).__name__}: {error}); re-run the verify'
+        raise OutcomeReadError(msg) from error
+
+
+def _flat_cells(directory: Path) -> tuple[dict[str, TestCell], frozenset[str]]:
     """``(cells, flaky ids)`` over every process's Record in *directory*; absent reads as none.
 
     Raises:

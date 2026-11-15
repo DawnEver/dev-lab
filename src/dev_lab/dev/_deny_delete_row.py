@@ -10,6 +10,8 @@ is regenerable scratch: system temp, or a path inside an ``output/`` tree (no ``
 
 from __future__ import annotations
 
+from dev_lab.dev.venvpath import PYTHON_SLOT
+
 __all__ = ['RECURSIVE_DELETE']
 
 #: A shell TOKEN: a quoted string or a bare word.
@@ -69,9 +71,10 @@ RECURSIVE_DELETE: dict[str, object] = {
     'matches': 'command',
     'hazard': 'a raw recursive delete judges deletability by hand; on 2026-10-27 one took a MAIN checkout.',
     'remedy': (
-        'Worktrees and branches: <venv python> -m dev_lab.dev.branchset --apply (keeps real work). A throwaway '
-        'tree: <venv python> -m dev_lab.dev.worktrees --scratch <name> <sha>, later --discard <name>. Else ask the '
-        'user. Scratch under system temp or output/ is not refused.'
+        f'scratch/: {PYTHON_SLOT} -m dev_lab.dev.scratch clear --yes. Landed lanes: dev_lab.dev.branchset --apply; '
+        'throwaway tree: dev_lab.dev.worktrees --scratch <name> <sha>, --discard <name>. Approved unlanded: '
+        'dev_lab.dev.branchset --discard <branch> --approved "<words>". Else (never a worktree) '
+        'ask the user. Temp, output/ not refused.'
     ),
     'needs': None,
     'refuses': (
