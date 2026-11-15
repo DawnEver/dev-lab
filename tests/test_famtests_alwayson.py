@@ -77,6 +77,21 @@ def test_no_item_outside_a_git_checkout(pytester: pytest.Pytester, monkeypatch: 
     _run(pytester, monkeypatch).assert_outcomes(passed=1)
 
 
+def test_a_family_without_layout_policy_gets_a_failed_guard_not_a_collection_error(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git_repo(
+        pytester.path,
+        {
+            'pyproject.toml': '[tool.lab_commons.tests]\nresources = []\n',
+            'test_x.py': 'def test_x():\n    pass\n',
+        },
+    )
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=2, failed=1)
+    result.stdout.fnmatch_lines(['*layout*policy*'])
+
+
 def test_the_plugin_is_an_entry_point() -> None:
     """Installed is enforced: the plugin rides pytest's own entry-point autoload, not a consumer file."""
     project = tomllib.loads((_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
