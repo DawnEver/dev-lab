@@ -172,6 +172,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   one producer per part, and ``absent`` (pending, since when) for every part no job settled.
 * :mod:`dev_lab.dev.native_session` -- the native harness's session identity, validated against one catalog and
   independent of worktree provenance and authorization.
+* :mod:`dev_lab.dev.forgepages` -- a forge listing read page by page up to the caller's limit.
 * :mod:`dev_lab.dev.jobmeasure` -- a pinned Actions MEASUREMENT of selected tests through verify: a receipt
   indexing the verify log's proof, never a part, never posted.
 * :mod:`dev_lab.dev.workstationverdict` -- the one exception to VERDICTS-FROM-THE-FORGE: a declared

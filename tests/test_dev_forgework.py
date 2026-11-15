@@ -35,6 +35,7 @@ from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr, pr_close
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgememo import ReadMemo
+from dev_lab.dev.forgepages import ISSUE_PAGE
 from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.forgework import (
     ACTIONS_BOT,
@@ -118,8 +119,28 @@ def test_the_token_is_the_git_credential_and_a_token_variable_is_never_read(tmp_
 
 
 @pytest.mark.parametrize(('forge', 'host', 'root', 'auth'), CASES)
+def test_issue_list_reads_page_after_page_until_a_short_one(server, forge, host, root, auth) -> None:
+    """A forge serves one page of ISSUE_PAGE: a larger limit reads on until a page comes back short.
+
+    PLANTED CONTROL: the third page is never asked for once the second is short.
+    """
+    del host, auth
+    size = ISSUE_PAGE
+    base = '?state=open&type=issues&limit=' if forge.host != 'github.com' else '?state=open&per_page='
+    full = [{**_ISSUE, 'number': n} for n in range(size)]
+    _answer('GET', f'{root}/issues{base}{size}&page=1', (200, full))
+    _answer('GET', f'{root}/issues{base}{size}&page=2', (200, [_ISSUE]))
+    listed = _client(forge, _Loopback(server)).issue_list(limit=3 * size)
+    assert len(listed) == size + 1
+    asked = [r['path'] for r in _Recorder.received]
+    assert not any(path.endswith('&page=3') for path in asked), 'CONTROL: a short page ends the read'
+
+
+@pytest.mark.parametrize(('forge', 'host', 'root', 'auth'), CASES)
 def test_issue_list_reads_open_issues_and_drops_pull_requests(server, forge, host, root, auth) -> None:
-    query = '?state=open&type=issues&limit=30' if forge.host != 'github.com' else '?state=open&per_page=30'
+    query = (
+        '?state=open&type=issues&limit=30&page=1' if forge.host != 'github.com' else '?state=open&per_page=30&page=1'
+    )
     _answer('GET', f'{root}/issues{query}', (200, [_ISSUE, {**_PR, 'pull_request': {}}]))
     transport = _Loopback(server)
     assert _client(forge, transport).issue_list() == (_NORMAL_ISSUE,)
