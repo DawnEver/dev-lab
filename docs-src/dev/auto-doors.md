@@ -49,17 +49,32 @@ that repo's `[tool.dev_lab.policy]`, never in a hand-written module.
 
 `dev_lab.dev.autodoors` renders `POLICY`; `script_doors(root)` adds the repo's tracked `scripts/**.py`
 with a `__main__` guard and the shell doors it names (`shell_doors=`, `--shell-door`), and `cli_doors(root)` adds
-the repo's own read-only CLI verbs, declared as data (decision 2026-11-15; never hand rows in its settings):
+the repo's own CLI verbs, declared as data (decisions 2026-11-15; never hand rows in its settings):
 
 ```toml
+[project.scripts]
+consumer = "consumer.__main__:main"  # THE module: the one source, never retyped below
+
 [tool.dev_lab.cli_doors]
-acts = ["press"]  # this CLI's act verbs, refused as doors
-doors = [{argv = ["consumer", "vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."}]
+acts = ["press"]  # this CLI's verbs that stay prompted, refused as doors
+doors = [
+    {verb = ["vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."},
+    {verb = ["case", "run"], why = "Runs one case; writes only its output tree.", act = true},
+]
 ```
 
-Each `argv` renders as the door `python -m <argv...>`. A bare module, or an element with a space, glob or leading
-dash, is refused; so is a prefix ending in an act (`ActDeclaredAsDoor`): the repo's `acts`, or always one of
-`REFUSED_ACTS` (press, set-value, close, kill, delete, push). `[tool.dev_lab.doors]` is a different table: it maps a
+Each row renders the door `python -m <module> <verb...>`. The module is the repo's `[project.scripts]` target
+`<package>.__main__:main` (`cli_modules`): any other target is refused (a `python -m` door runs a package's
+`__main__`), and with several modules a row names its `script = "<name>"`. A row holds verbs only; the retired
+`argv` key is refused with its migration. Refused by name: no verb (a bare module admits every verb), an element
+with a space, glob or leading dash, an unknown key, and a prefix ending in an act (`ActDeclaredAsDoor`): the repo's
+`acts`, or always one of `REFUSED_ACTS` (press, set-value, close, kill, delete, push).
+
+A row is READ-ONLY unless it says `act = true`. An act row is a writing verb the repo admits explicitly
+(DECLARATION-LIES): its one intent is `Acts (writes): <why>` in the allow row, the Codex rule and the classifier
+intent alike, and a `why` claiming read-only is refused. Every declared row is a `subagent` door; a main-only row
+cannot be declared here, since `SUBAGENT-NO-PUSH` derives only from `POLICY`. Verbs are declared, not enumerated
+from the CLI's parser: the render never imports a consumer's code. `[tool.dev_lab.doors]` is a different table: it maps a
 deny rule's ID to the command that repo offers as its exit. Both clients are rendered from these:
 
 - **Claude Code**: one NARROW `Bash(...)` row per door and interpreter layout, e.g.
@@ -82,7 +97,8 @@ them in git history (user ruling 2026-10-23). `dev_lab.dev.automode` renders
 `{"autoMode": {"environment": ["$defaults", ...], "allow": ["$defaults", ...]}}` from:
 
 1. **The repo's declaration** (committed, host-free): `INTENTS`, every agent door's one string of
-   `POLICY`, the repo's own standing intents as prose in `[tool.dev_lab.policy] intents` (the retired
+   `POLICY`, the repo's own standing intents as prose in `[tool.dev_lab.policy] intents` and its CLI doors' intents
+   (`[tool.dev_lab.cli_doors]`, the same row as their allow rows) (the retired
    `[tool.dev_lab.automode] declares` is refused by name), and the repo's `origin` and branch set.
 2. **The machine's fleet sources**: the synced workstation registry `hosts.json` (its path in the machine file's
    `[workstation] registry`), each workstation with its computer, address and roles; and the machine file's
@@ -122,7 +138,8 @@ signature/orphan mode retains its existing children-first behavior and serve-rel
 
 ## Adopting
 
-1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)), cli=cli_doors(root))`, re-render
+1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)), cli=cli_doors(root))` -- the same
+   call in every repo; what differs is only that repo's pyproject, re-render
    `.claude/settings.json` with `permissions_block`, and drop any declared row that now duplicates a door row.
 2. Run `python -m dev_lab.dev.autodoors --repo . [--shell-door <path>] --write` and commit
    `.codex/rules/family-doors.rules`; without `--write` it exits 1 when the file is stale.
