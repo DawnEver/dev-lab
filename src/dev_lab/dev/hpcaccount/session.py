@@ -9,7 +9,7 @@ declares ``[hpc] session_reach = { integrator = ["verification"] }`` and ``[hpc]
 THE ROLE IS NEVER SELF-CLAIMED. It is a consent credential of :mod:`dev_lab.ops.consent` the user grants with one
 TOTP code, held by one of two identities:
 
-* a SESSION -- :data:`ACTION`, subject = ``$CLAUDE_CODE_SESSION_ID``, a day at most;
+* a SESSION -- :data:`ACTION`, subject = the canonical native harness identity, a day at most;
 * a TASK -- :data:`TASK_ACTION`, subject = the task id ``<slug>@<authority>``, a week at most. A task is a directory
   ``.claude/tasks/<slug>/`` of the checkout whose ``TASK.md`` the user's own task-open wrote with the ``authority``
   minted then: a task closed and reopened under the same slug is a new id, so an old grant never carries over.
@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -48,7 +47,7 @@ from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev.consentguard import state_dir
-from dev_lab.dev.sessionprs import SESSION_ENV
+from dev_lab.dev.native_session import session_of, valid
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.client import public_key
 from dev_lab.ops.consent.credential import ConsentRefused, verify
@@ -110,7 +109,7 @@ def bind(payload: Mapping[str, Any], *, home: Path | None = None, root: Path | N
     """
     session, prompt = str(payload.get('session_id') or ''), str(payload.get('prompt') or '')
     found = BIND_PROMPT.match(prompt)
-    if not found or not re.fullmatch(r'[\w.-]+', session):
+    if not found or not valid(session):
         return None
     try:
         where = _checkout_root(Path(str(payload.get('cwd') or '.'))) if root is None else root
@@ -125,7 +124,7 @@ def bind(payload: Mapping[str, Any], *, home: Path | None = None, root: Path | N
 
 def bound_task(session: str, *, home: Path | None = None) -> str | None:
     """The task the user bound *session* to, or ``None``."""
-    if not re.fullmatch(r'[\w.-]+', session):
+    if not valid(session):
         return None
     try:
         record = json.loads(_binding(session, home).read_text(encoding='utf-8'))
@@ -145,7 +144,7 @@ def holder(
 
     No session id, no issuer key, or no credential verifying for this session or the task the user bound it to: None.
     """
-    session = os.environ.get(SESSION_ENV, '') if session is None else session
+    session = session_of() if session is None else session
     if not session:
         return None
     try:
@@ -187,7 +186,7 @@ def roles() -> frozenset[str]:
 def request(session: str, hours: float | None = None, *, task: str | None = None) -> dict[str, Any]:
     """The consent request granting the role to *task* (a task id) if given, else to *session*, for *hours*."""
     if task is None and not session:
-        msg = f'no session id (${SESSION_ENV}): the integrator role is granted to one session or task, never a machine'
+        msg = 'no native session id: the integrator role is granted to one session or task, never a machine'
         raise ValueError(msg)
     action, subject = (ACTION, session) if task is None else (TASK_ACTION, task)
     ttl = ACTIONS[action].default_ttl if hours is None else hours * 3600
@@ -219,7 +218,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     if args.verb == 'bind':
         return _hook(stdin or sys.stdin)
-    session = os.environ.get(SESSION_ENV, '')
+    session = session_of()
     if args.verb == 'status':
         task = bound_task(session) if session else None
         found = holder(session=session)

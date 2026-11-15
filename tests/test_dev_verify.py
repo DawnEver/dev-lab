@@ -52,17 +52,9 @@ from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
 from dev_lab.dev.platformparts import part_context, part_of
 from dev_lab.dev.producer import OUTCOME_VAR, PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, producing, release_reason
-from dev_lab.dev.reports import (
-    SKIP_CEILING,
-    MalformedAllowance,
-    StepReport,
-    declared_skips,
-    read_pytest,
-    read_ruff,
-    read_stages,
-    stale_declarations,
-)
+from dev_lab.dev.reports import StepReport, read_pytest, read_ruff, read_stages
 from dev_lab.dev.runcache import CachedRun, record, runs
+from dev_lab.dev.skipallowance import SKIP_CEILING, MalformedAllowance, declared_skips, stale_declarations
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, outcomes_dir, read_cells
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verdict import Verdict
@@ -643,7 +635,7 @@ class TestTheVanishedSubjectArm:
     def test_the_arm_needs_no_run_at_all(self, tmp_path: Path) -> None:
         """It reads the tree, which is why it binds on an invocation that selected one test.
 
-        ``_skip_shortfall``'s stale arm is gated on a COMPLETE suite census -- a selected run cannot
+        ``skipallowance.skip_shortfall``'s stale arm is gated on a COMPLETE suite census -- a selected run cannot
         judge another test's allowance retired -- so without this the hole is open on every targeted
         invocation, which is most of them.
         """
