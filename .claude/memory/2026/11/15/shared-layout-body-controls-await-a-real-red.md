@@ -17,6 +17,8 @@ The agreed typed declaration is [tool.dev_lab.layout] with mandatory module_unit
 
 The exact line-boundary plants are 299/300/301 CODE, 599/600/601 RAW and 798/799/800 RAW. Inclusive 799 is the equivalent expression of an original first-refused value of 800; the test must not accidentally accept 800. Prose/comment-heavy Python independently distinguishes CODE from RAW, and LF/CRLF/no-final-newline cases pin logical RAW line meaning. A RAW length check does not claim to certify Python syntax; a CODE parse failure is a named refusal rather than a smaller count.
 
+Before the first hosted run, a separate normal tests-only follow-up makes the fixture write exact UTF-8 bytes. Text-mode writing on Windows can translate an explicitly supplied CRLF again, changing the very input whose line semantics the control is supposed to pin. This is static fixture correction, not an observed engine failure or a weakened oracle; all expected line counts and assertions remain unchanged.
+
 Real staged Git fixtures plant direct-folder 25/26 cases independently in source, tests, scripts and a newly authored tree, plus a legitimate many-subfolder case. Directory MUST=25 is the one shared constraint, not a TOML override. Depth five remains a recorded watch reading and is not converted into a hard limit or a demand to flatten concepts.
 
 The result contract exposes expected/read/unread identities and module/folder/depth readings. An equal-count substituted identity set must refuse; missing tracked members and an actual source-open failure must not disappear behind a large clean population. Untracked material is not evidence of the commit being judged. No fixture copies the implementation's scanner or constructs a fake passing engine.

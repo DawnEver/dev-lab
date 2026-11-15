@@ -34,7 +34,7 @@ def _repo(root: Path, files: dict[str, str], *, policy: str | None = None) -> Pa
     for name, body in files.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body, encoding='utf-8')
+        path.write_bytes(body.encode('utf-8'))
     subprocess.run([_GIT, 'init', '-q'], cwd=root, check=True, timeout=60)
     subprocess.run([_GIT, 'add', '--', '.'], cwd=root, check=True, timeout=60)
     return root
