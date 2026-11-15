@@ -41,6 +41,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'spec',
     'steps',
     'tick',
+    # ORIGINAL: 2026-11-15, every remote hpcaccount step rides the dest's held session when live, else key-only ssh.
+    'transport',
     # ORIGINAL: the integrator as a session role, verified offline from its consent credential (2026-11-12).
     'session',
 )

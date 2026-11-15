@@ -9,7 +9,7 @@ from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev.hpcaccount.division import load_division
-from dev_lab.dev.hpcaccount.fleet import _READ_DEPLOY, Target, declared_target, deploy_fleet, remote_argv
+from dev_lab.dev.hpcaccount.fleet import _READ_DEPLOY, Target, declared_target, deploy_command, deploy_fleet
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -41,7 +41,7 @@ def _run(
         dry_run=False,
         say=said.append,
         connect=lambda grant: lambda _cmd, _stdin=None: deploy[grant.user],
-        launch=lambda argv, _log: started.append(list(argv)),
+        launch=lambda dest, command, _log: started.append([dest, command]),
     )
     return code, started, said
 
@@ -49,7 +49,7 @@ def _run(
 def test_each_account_deploys_on_its_own_declared_host(tmp_path: Path) -> None:
     code, started, said = _run(tmp_path, ('alice', 'bob'))
     assert code == 0
-    assert [argv[5] for argv in started] == ['alice@login02.example', 'bob@login01.example']
+    assert [argv[0] for argv in started] == ['alice@login02.example', 'bob@login01.example']
     assert 'cd ~/work/dev-lab' in started[1][-1], "bob's declared root"
     assert {p.name for p in tmp_path.rglob('*.log')} == {'alice.log', 'bob.log'}
     assert not any('refused' in line for line in said)
@@ -58,7 +58,7 @@ def test_each_account_deploys_on_its_own_declared_host(tmp_path: Path) -> None:
 def test_an_account_with_no_declared_host_is_refused_and_the_rest_deploy(tmp_path: Path) -> None:
     code, started, said = _run(tmp_path)
     assert code == 2
-    assert [argv[5] for argv in started] == ['alice@login02.example', 'bob@login01.example']
+    assert [argv[0] for argv in started] == ['alice@login02.example', 'bob@login01.example']
     assert any(line.startswith('carol: refused') and '[deploy] host' in line for line in said)
 
 
@@ -80,10 +80,10 @@ def test_an_undeclared_account_is_refused_and_nothing_starts(tmp_path: Path) -> 
 def test_the_workstations_role_and_table_are_passed_to_each_deploy() -> None:
     """User rulings 2026-11-09: the workstation is the source of the division."""
     division = load_division({'grant': [{'user': 'alice', 'role': 'research'}, {'user': 'bob'}]})
-    argv = remote_argv(_FLEET[0], Target('login02.example', 'src'), division)
+    argv = [deploy_command(_FLEET[0], Target('login02.example', 'src'), division)]
     assert '--fleet-role research --role-table ' in argv[-1]
     assert '{"read_only": true, "serves": false}' in argv[-1]
-    assert '--fleet-role' not in remote_argv(_FLEET[1], Target('login01.example', 'work'), division)[-1]
+    assert '--fleet-role' not in deploy_command(_FLEET[1], Target('login01.example', 'work'), division)
 
 
 def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path: Path) -> None:
@@ -100,17 +100,16 @@ def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path
         dry_run=False,
         say=said.append,
         connect=lambda grant: lambda _cmd, _stdin=None: _DEPLOY[grant.user],
-        launch=lambda argv, _log: started.append(list(argv)),
+        launch=lambda dest, command, _log: started.append([dest, command]),
         division=division,
     )
     assert code == 2
-    assert [argv[5] for argv in started] == ['alice@login02.example']
+    assert [argv[0] for argv in started] == ['alice@login02.example']
     assert any(line.startswith('bob:') and "'gone'" in line for line in said)
 
 
-def test_the_remote_runs_the_accounts_own_deploy_never_prompting() -> None:
-    argv = remote_argv(_FLEET[0], Target('login02.example', 'src'))
-    assert argv[:3] == ['ssh', '-o', 'BatchMode=yes']
+def test_the_remote_runs_the_accounts_own_deploy() -> None:
+    argv = [deploy_command(_FLEET[0], Target('login02.example', 'src'))]
     assert 'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount deploy' in argv[-1]
     assert '--grant-table' in argv[-1], 'the declared slice is the one source of the grant the deploy writes'
 
@@ -129,7 +128,7 @@ def _two_grants(tmp_path: Path, role: str, accounts: tuple[str, ...]) -> tuple[i
         dry_run=True,
         say=said.append,
         connect=lambda grant: lambda _cmd, _stdin=None: _DEPLOY[grant.user],
-        launch=lambda _argv, _log: None,
+        launch=lambda _dest, _command, _log: None,
     )
     return code, said
 
@@ -157,7 +156,7 @@ def test_a_declared_short_host_resolves_to_its_grant_login_host(tmp_path: Path) 
     """A machine file's ``login01`` IS the grant's ``login01.example``: the full name is what is dialled."""
     code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "login01"\n'})
     assert code == 0
-    assert [argv[5] for argv in started] == ['bob@login01.example']
+    assert [argv[0] for argv in started] == ['bob@login01.example']
     assert not any('refused' in line for line in said)
 
 
@@ -181,7 +180,7 @@ def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
         dry_run=False,
         say=said.append,
         connect=lambda _grant: lambda _cmd, _stdin=None: '[deploy]\nhost = "login01"\n',
-        launch=lambda argv, _log: started.append(list(argv)),
+        launch=lambda dest, command, _log: started.append([dest, command]),
     )
     assert code == 2
     assert started == []
@@ -227,7 +226,7 @@ def test_the_remote_refreshes_the_accounts_kit_before_it_deploys() -> None:
     records the sha it reached, and only then deploys -- whatever that tick exits (a research kit refreshes, then
     refuses to serve). PLANTED CONTROL: the account's own declared root still names both steps.
     """
-    command = remote_argv(_FLEET[0], Target('login02.example', 'src'))[-1]
+    command = deploy_command(_FLEET[0], Target('login02.example', 'src'))
     refresh = command.index('-m dev_lab.dev.hpcaccount tick dev-lab')
     recorded = command.index('rev-parse HEAD')
     deployed = command.index('-m dev_lab.dev.hpcaccount deploy')
@@ -239,6 +238,6 @@ def test_the_remote_refreshes_the_accounts_kit_before_it_deploys() -> None:
 def test_the_refresh_runs_in_the_grants_environment() -> None:
     """A grant's ``setup`` (a module load the cluster's git needs) wraps the refresh, as it wraps the cron tick."""
     grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', setup=('module load git-x',))
-    command = remote_argv(grant, Target('login02.example', 'src'))[-1]
+    command = deploy_command(grant, Target('login02.example', 'src'))
     assert command.index('module load git-x') < command.index('tick dev-lab')
-    assert 'module load git-x' not in remote_argv(_FLEET[0], Target('login02.example', 'src'))[-1]
+    assert 'module load git-x' not in deploy_command(_FLEET[0], Target('login02.example', 'src'))
