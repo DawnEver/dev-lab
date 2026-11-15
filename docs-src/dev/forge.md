@@ -153,11 +153,11 @@ What every host still reads, kept small:
   packages, the Rust toolchain, the uv pin) wait for `[tool.dev_lab.relock] third_party_every` (default `1 day`),
   and an in-house relock before then moves only the sibling names. It merges like any other, and its parts run only
   the tests whose footprint imports a moved distribution (`dev_lab.dev.lockreach`); a lane takes it with `forge sync`. Every open PR head into integration
-  carries a `lock/fresh` status (`dev_lab.dev.forgeheadgate`, once per head sha). A PR never chases the lock
-  (user ruling 2026-10-28): a move its merge-base with integration lags too -- a sibling or dist published after it
-  branched -- is the relock pull request's to carry, so only the head's OWN moves (a lock older than its base's, a
-  `pyproject.toml` change not relocked) are refused. `failure` reads
-  ``stale uv.lock: run `<venv python> -m dev_lab.dev.dep --lock-upgrade [ROOT]`, then commit uv.lock (<moves>)``. By hand, one
+  carries ONE lock status, `lock/lag` (`dev_lab.dev.forgeheadgate`; issue #575): `failure` when its `uv.lock` does
+  not render from its own `pyproject.toml` (`dev_lab.dev.lockcheck.unrendered`, `uv lock --check`, once per head
+  sha), or pins a floated sibling past the lag window (`dev_lab.dev.locklag`). It is an alarm, never a gate. A PR
+  never chases the lock (user ruling 2026-10-28): a lock behind its siblings' heads but within the window is the
+  relock pull request's to carry. By hand, one
   upgrades through the door `<venv python> -m dev_lab.dev.dep --lock-upgrade
   [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
   fixes, tests and commits. A
