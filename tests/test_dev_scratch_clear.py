@@ -15,7 +15,8 @@ from lab_commons import home, launch
 
 from dev_lab.dev import walls
 from dev_lab.dev.scratch import SCRATCH_README, ScratchEscape, clear_scratch, main, untracked_scratch
-from dev_lab.dev.sessionprs import SESSION_ENV
+
+SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
 
 @pytest.fixture(autouse=True)

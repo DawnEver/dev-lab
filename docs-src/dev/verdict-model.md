@@ -58,8 +58,8 @@ posted, no review or merge runs, and no `tests/base` or promotion qualification 
 When the wrapper produced a directory output, the always-on-failure upload names exactly three files in that
 directory, never the directory recursively: `receipt.json`, raw child `stdout.log`, and, when proved, `verify.log`.
 Other files placed there by tested code are not uploaded. With no directory output, upload is skipped.
-The wrapper retains its runner output channel; the child receives none of the Actions output/environment/path/
-state/summary control-file variables. Ordinary commit metadata remains available. This is an environment authority
+The wrapper retains its runner output channel; the child receives none of the Actions control-file variables
+(`GITHUB_OUTPUT`, `GITHUB_ENV`, `GITHUB_PATH`, `GITHUB_STATE`, `GITHUB_STEP_SUMMARY`). Ordinary commit metadata remains available. This is an environment authority
 boundary, not an operating-system sandbox for hostile same-user code. The receipt labels itself `MEASUREMENT` and
 indexes the actual canonical tree/environment/selector proof and exit code. No environment dump, credential,
 workspace, Git directory or cache is uploaded. Missing, corrupt, ambiguous or identity-mismatched evidence stays
