@@ -224,6 +224,63 @@ class TestExactRecordedStageEvidence:
         assert report.truncated
 
 
+@pytest.mark.parametrize('recorded', [False, True], ids=['text-only', 'recorded'])
+@pytest.mark.parametrize(
+    ('census', 'settles', 'share'),
+    [
+        (((1, 4, 95),), False, '4 of 5'),
+        (((1, 4, 95), (95, 0, 5)), True, None),
+        (((1, 4, 195), (88, 7, 105)), False, '11 of 100'),
+        (((1, 4, 195), (89, 6, 105)), True, None),
+    ],
+    ids=['deselection-cannot-dilute', 'split-global-four-percent', 'global-eleven-percent', 'exact-ten-percent'],
+)
+def test_skip_ceiling_uses_the_whole_executed_selection_not_deselected_items_or_stage_share(
+    tmp_path: Path,
+    *,
+    recorded: bool,
+    census: tuple[tuple[int, int, int], ...],
+    settles: bool,
+    share: str | None,
+) -> None:
+    """Opposite controls: neither a deselection nor the serial split changes the original 10% bar."""
+    stages, evidence = [], []
+    for stage, (passed, skipped, deselected) in enumerate(census):
+        directory = tmp_path / f'stage-{stage}'
+        recorder = CellRecorder(directory / 'cells.jsonl')
+        for index in range(passed):
+            recorder.record(f'tests/test_pass.py::test_{stage}_{index}', TestCell(Cell(Status.OK)))
+        lines = []
+        for index in range(skipped):
+            node = f'tests/test_skip.py::test_{stage}_{index}'
+            recorder.record(node, TestCell(Cell(Status.NOT_APPLICABLE, reason=Reason('not_applicable', 'known'))))
+            lines.append(f'SKIPPED {node} - known')
+        counts = [(passed, 'passed'), (skipped, 'skipped'), (deselected, 'deselected')]
+        lines.append(', '.join(f'{count} {word}' for count, word in counts if count) + ' in 0.1s')
+        stages.append(('\n'.join(lines) + '\n', 0))
+        evidence.append(read_cells(directory))
+    if len(stages) == 1:
+        cells, flaky = evidence[0]
+        report = read_pytest(
+            stages[0][0],
+            returncode=0,
+            allowed_skips=('tests/test_skip.py',),
+            cells=cells if recorded else None,
+            flaky=flaky,
+        )
+    else:
+        report = read_stages(
+            tuple(stages),
+            allowed_skips=('tests/test_skip.py',),
+            stage_cells=tuple(evidence) if recorded else None,
+        )
+    assert not report.truncated if settles else report.truncated, report
+    assert report.failures == ()
+    if share is not None:
+        assert share in ' '.join(report.truncated), report.truncated
+        assert f'above the {SKIP_CEILING:.0%} ceiling' in ' '.join(report.truncated)
+
+
 @pytest.mark.parametrize(
     'evidence', ['absent', 'corrupt', 'truncated', 'extra', 'flaky', 'green-versus-failed', 'unexecuted-stage']
 )
