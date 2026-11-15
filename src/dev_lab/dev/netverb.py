@@ -65,6 +65,7 @@ from dev_lab.dev.bounded import run_bounded
 from dev_lab.dev.pushwatch import arm_line, pushed_head
 
 __all__ = [
+    'CARGO_NETWORK_VERBS',
     'DEFAULT_ATTEMPTS',
     'DEFAULT_BACKOFF_S',
     'GIT_NETWORK_VERBS',
@@ -389,6 +390,9 @@ GIT_NETWORK_VERBS: Final = ('push', 'fetch', 'pull', 'clone', 'ls-remote', 'subm
 #: of a git dependency failed on auth and the re-run passed). ``pip`` is one only as ``pip install|sync|compile``.
 UV_NETWORK_VERBS: Final = ('sync', 'lock', 'add', 'remove', 'pip')
 
+#: Cargo dependency operations that can reach registries or Git. Build/test admission is not this door.
+CARGO_NETWORK_VERBS: Final = ('update', 'fetch', 'generate-lockfile')
+
 #: A verb that is a network verb only with one of these second words.
 _SUBVERBS: Final = {'submodule': frozenset({'update'}), 'pip': frozenset({'install', 'sync', 'compile'})}
 
@@ -397,9 +401,10 @@ _SUBVERBS: Final = {'submodule': frozenset({'update'}), 'pip': frozenset({'insta
 _VALUED: Final = {
     'git': frozenset({'-C', '-c', '--git-dir', '--work-tree', '--namespace'}),
     'uv': frozenset({'--directory', '--project', '--python', '-p', '--config-file', '--cache-dir', '--color'}),
+    'cargo': frozenset({'--config', '--color', '-Z'}),
 }
 
-_PROGRAMS: Final = {'git': GIT_NETWORK_VERBS, 'uv': UV_NETWORK_VERBS}
+_PROGRAMS: Final = {'git': GIT_NETWORK_VERBS, 'uv': UV_NETWORK_VERBS, 'cargo': CARGO_NETWORK_VERBS}
 
 
 def _program(word: str) -> str:
@@ -414,7 +419,11 @@ def is_network_verb(argv: Sequence[str]) -> bool:
     if verbs is None:
         return False
     words, index = list(argv[1:]), 0
+    if program == 'cargo' and words and words[0].startswith('+'):
+        words = words[1:]  # rustup's explicit toolchain; preserve the original argv for execution
     while index < len(words) and words[index].startswith('-'):
+        if program == 'cargo' and words[index] in {'--help', '-h', '--version', '-V', '--list'}:
+            return False
         index += 2 if words[index] in _VALUED[program] else 1
     words = [word for word in words[index:] if not word.startswith('-')]
     if not words or words[0] not in verbs:
@@ -467,7 +476,8 @@ def spelled(command: Sequence[str]) -> list[str]:
     msg = (
         f'netverb: {first!r} is not a network verb -- spell it '
         f'`python -m dev_lab.dev.netverb -- git push ...` (or `-- {"|".join(GIT_NETWORK_VERBS)} ...`, '
-        f'`-- uv {"|".join(UV_NETWORK_VERBS)} ...`)'
+        f'`-- uv {"|".join(UV_NETWORK_VERBS)} ...`, '
+        f'`-- cargo {"|".join(CARGO_NETWORK_VERBS)} ...`)'
     )
     raise NotANetworkVerb(msg)
 
