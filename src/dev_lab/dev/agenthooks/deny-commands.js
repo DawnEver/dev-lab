@@ -483,6 +483,22 @@ function liveRunRefusal(target, sessionRoot) {
     `${remedyPython(sessionRoot)} -m dev_lab.dev.liverun --tree ${target} answers.`;
 }
 
+/* `when: 'background'`: `python -m dev_lab.dev.shelllife --admit` judges the line on stdin -- exit 0 admitted, exit 1
+ * prints the refusal. '' admits; null is nobody to ask (no interpreter, no kit, a crash), and the row's pattern decides. */
+function lifetimeRefusal(cmd, sessionRoot) {
+  const python = venvPython(sessionRoot);
+  if (!python) return null;
+  const done = spawnSync(python, ['-m', 'dev_lab.dev.shelllife', '--admit'], {
+    input: cmd,
+    encoding: 'utf8',
+    timeout: 15000,
+    windowsHide: true,
+  });
+  if (done.status === 0) return '';
+  const said = String(done.stdout || '').trim();
+  return done.status === 1 && said ? said : null;
+}
+
 /* ================================ A ROW THAT STILL ADMITS A FAMILY SIBLING CLONE ================================
  *
  * `admits: 'family-sibling-clone'` (WORKTREES-STAY-INSIDE): every family checkout lives BESIDE its siblings, so
@@ -627,6 +643,18 @@ for (const rule of rules) {
   }
   if (hit && rule.admits === 'family-sibling-clone' && familySiblingClone(cmd, input.cwd)) continue;
   let liveReason = '';
+  // A 'background' row binds only on a Bash call the agent runs in the background (BACKGROUND-SHELL-IS-BOUNDED),
+  // and there the session's interpreter judges it (a longer life needs the USER's grant); the pattern only without one.
+  if (rule.when === 'background') {
+    const background = input.tool_name === 'Bash' && input.tool_input.run_in_background === true;
+    const asked = background ? lifetimeRefusal(cmd, sessionRoot) : null;
+    if (asked !== null) {
+      liveReason = asked;
+      hit = asked !== '';
+    } else {
+      hit = hit && background;
+    }
+  }
   if (hit && rule.when === 'live-run') {
     // A PROBE judging which rule owns a shape sets this (run_engine(live_run=False)): its own suite is a
     // run in the checkout it probes. The tool never sends the key, so no agent command can set it.

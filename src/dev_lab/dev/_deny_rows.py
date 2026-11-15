@@ -55,6 +55,7 @@ from __future__ import annotations
 
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev._deny_background_row import BACKGROUND_BOUNDED
 from dev_lab.dev._deny_commithooks_row import COMMIT_HOOKS_RUN
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
@@ -96,6 +97,7 @@ NETWORK_VERB_PATTERN = (
 
 DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
+    BACKGROUND_BOUNDED,
     SUBAGENT_NO_PUSH,
     CONSENT_CODE_FROM_THE_USER,
     COMMIT_HOOKS_RUN,

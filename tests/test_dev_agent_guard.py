@@ -315,6 +315,8 @@ _DEVHOSTSTOP = {'type': 'command', 'command': agent_wiring.DEVHOSTSTOP_COMMAND}
 #: WALLS-ARE-RECORDED (ruling 2026-11-13): the foreign-denial reader after every shell call; the stop at every stop.
 _WALLSPOST = {'type': 'command', 'command': agent_wiring.WALLSPOST_COMMAND}
 _WALLSSTOP = {'type': 'command', 'command': agent_wiring.WALLSSTOP_COMMAND}
+#: A SESSION'S BACKGROUND SHELL LIVES FIFTY MINUTES (demand 2026-11-15): a detached, rate-limited sweep at every stop.
+_REAPER = {'type': 'command', 'command': agent_wiring.REAPER_COMMAND}
 
 
 def test_the_install_wires_the_stray_census_once_at_stop() -> None:
@@ -332,6 +334,7 @@ def test_the_install_wires_the_stray_census_once_at_stop() -> None:
         {'hooks': [_SCRATCHSTOP]},
         {'hooks': [_DEVHOSTSTOP]},
         {'hooks': [_WALLSSTOP]},
+        {'hooks': [_REAPER]},
     ]
     assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}, {'hooks': [_TASKBIND]}, {'hooks': [_PRINBOX]}]
     assert 'dev_lab.dev.codeplace stray' in agent_wiring.STRAY_COMMAND
@@ -372,6 +375,7 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
         {'hooks': [_SCRATCHSTOP]},
         {'hooks': [_DEVHOSTSTOP]},
         {'hooks': [_WALLSSTOP]},
+        {'hooks': [_REAPER]},
     ]
     assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
 
@@ -393,6 +397,7 @@ def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census()
         {'hooks': [_SCRATCHSTOP]},
         {'hooks': [_DEVHOSTSTOP]},
         {'hooks': [_WALLSSTOP]},
+        {'hooks': [_REAPER]},
     ]
 
 

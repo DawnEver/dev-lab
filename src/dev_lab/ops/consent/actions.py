@@ -81,5 +81,8 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         # user's own task-open minted). A session inherits it only while the USER's prompt bound it to that task
         # (dev_lab.dev.hpcaccount.session). A week at most: a task outlives its sessions, never its re-consent.
         Action('task.integrator', {}, SINGLE, 3 * _DAY, 7 * _DAY, boundary=True),
+        # One agent background shell may live ``minutes`` past the 50-minute default (user ruling 2026-11-15); subject =
+        # the SHA-256 of the command after its ``timeout`` prefix. The ttl is the window to LAUNCH it, not its life.
+        Action('shell.lifetime', {'minutes': int}, SINGLE, 1 * _HOUR, 1 * _DAY, boundary=False),
     )
 })  # fmt: skip
