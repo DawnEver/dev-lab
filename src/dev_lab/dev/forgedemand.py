@@ -10,6 +10,8 @@ a CACHE of the forge: every host prices a selection from the same numbers.
 A forge that cannot be read is not a refusal: the cache stands as last folded, and the caller is told how
 many records were folded (0). At most *limit* new records are read per call, newest first, so a host that
 was away a month pays a bounded download and catches up over its next calls.
+
+:func:`part_demand` is what a cluster part CLAIMS of its account: one light task, never above the heavy bar.
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.compute import learned
+from lab_commons.compute.measured import HEAVY_SHARE
+from lab_commons.compute.model import Demand
 
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import unprompted_client
@@ -27,9 +31,11 @@ from dev_lab.dev.forgerecords import listing
 from dev_lab.dev.platformparts import origin_url
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from dev_lab.dev.forgework import Client
 
-__all__ = ['LIMIT', 'refresh', 'refresh_checkout']
+__all__ = ['LIMIT', 'part_demand', 'refresh', 'refresh_checkout']
 
 #: The most records one call downloads.
 LIMIT: Final = 20
@@ -67,3 +73,26 @@ def refresh_checkout(root: Path, *, limit: int = LIMIT) -> int:
     except OSError:  # no origin, an unreadable remote or no credential: no forge, never a crashed run
         return 0
     return refresh(repo, client, limit=limit)
+
+
+def part_demand(repo_url: str, *, ceiling_gb: float | None) -> Callable[[frozenset[str]], Demand]:
+    """``needs -> Demand`` a cluster part claims: ``cluster_demand``, its ``mem_gb`` held to the heavy bar.
+
+    The bar is ``HEAVY_SHARE`` of *ceiling_gb* (``None``: no ceiling, nothing held).
+
+    THE DERIVATION: the claim is ONE TASK's ask, so an account that cannot hold one task never claims the part. A
+    file whose task asks above ``HEAVY_SHARE x ceiling`` is HEAVY by definition (``Measured.heavy``) and is packed
+    alone at its own floor, so no light task asks above that bar -- it is the most one light task can need. A
+    ``slurm|`` row priced above it carries a heavy file the run's plan had not named yet (dev-lab #586: a 209.6 GB
+    file learned mid-run asked 314.4 GB, held to the 309.8 GB ceiling, so only an idle account admitted it).
+    """
+    asked = learned.cluster_demand(repo_url, ceiling_gb=ceiling_gb)
+    if ceiling_gb is None:
+        return asked
+    bar = HEAVY_SHARE * ceiling_gb
+
+    def ask(needs: frozenset[str]) -> Demand:
+        demand = asked(needs)
+        return Demand({**demand, 'mem_gb': min(demand['mem_gb'], bar)})
+
+    return ask

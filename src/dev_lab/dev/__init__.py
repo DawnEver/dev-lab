@@ -456,6 +456,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
 * :mod:`dev_lab.dev.pradmit` -- PR advice: ONE-SESSION-ONE-PR and NO-STACKED-PRS told at ``pr create``, never a refusal.
 * :mod:`dev_lab.dev.forgedraft` -- DRAFT-UNTIL-READY: ``pr create`` opens a draft; ``pr ready|draft <N>``; idle alarm.
+* :mod:`dev_lab.dev.forgeorphan` -- an open PR still 24 h with no live owner is labelled ``owner:integrator``.
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
@@ -483,6 +484,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
+* :mod:`dev_lab.dev.branchfate` -- TWO-FATES: every local branch and worktree is kept for a named live owner, or
+  archived losslessly (bundle, uncommitted work, manifest) and cleaned up by ``branchset --apply``; none lingers.
 * :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
 * :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
