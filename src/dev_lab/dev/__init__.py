@@ -19,6 +19,9 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
 NOT RE-EXPORTED says one thing, stated once here instead of at each site: that module's own names
 are too unqualified to survive being flattened into a namespace this wide.
 
+* :mod:`dev_lab.dev.callorigins` -- the shared lexical callable-origin reader used by the reflection
+  and tolerance guards; each supplies its own builtin vocabulary and policy. NOT RE-EXPORTED.
+
 * :mod:`dev_lab.dev.content` — a CONTENT address over the measured paths, the half of a verdict
   that a ``HEAD``-shaped stamp cannot supply; :mod:`lab_commons.envkey` keys the environment, the other half.
 * :mod:`dev_lab.dev.logref` — the log a verdict carries, and the reader that re-derives it.
