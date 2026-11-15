@@ -124,7 +124,7 @@ steps = [
     { use-steps = "setup" },
     { name = "Install the normal measurement hooks", run = "uv run --no-sync python -m dev_lab.dev.hook_install --repo . --install" },
     { id = "measurement", name = "Measure the exact requested selection", run = "uv run --no-sync python -m dev_lab.dev.jobmeasure" },
-    { name = "Retain measurement evidence, including incomplete output", if = "${{ always() }}", uses = "actions/upload-artifact@v4", with = { name = "measurement-${{ github.run_id }}-${{ github.run_attempt }}", path = "${{ steps.measurement.outputs.artifacts }}", if-no-files-found = "warn" } },
+    { name = "Retain measurement evidence, including incomplete output", if = "${{ always() && steps.measurement.outputs.artifacts != '' }}", uses = "actions/upload-artifact@v4", with = { name = "measurement-${{ github.run_id }}-${{ github.run_attempt }}", path = "${{ steps.measurement.outputs.artifacts }}/receipt.json\n${{ steps.measurement.outputs.artifacts }}/stdout.log\n${{ steps.measurement.outputs.artifacts }}/verify.log", if-no-files-found = "warn" } },
 ]
 
 ["ci.yml".jobs.parts]

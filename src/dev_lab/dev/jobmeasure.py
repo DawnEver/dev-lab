@@ -127,7 +127,22 @@ def run(root: Path, sha: str, raw: str, env: Mapping[str, str]) -> int:
         save()
         directory = output_dir(root, 'verify')
         before = set(directory.glob('*.log'))
-        child = {k: v for k, v in env.items() if k not in (PRODUCING_VAR, OUTCOME_VAR, 'GITHUB_TOKEN', 'GH_TOKEN')}
+        child = {
+            k: v
+            for k, v in env.items()
+            if k
+            not in (
+                PRODUCING_VAR,
+                OUTCOME_VAR,
+                'GITHUB_TOKEN',
+                'GH_TOKEN',
+                'GITHUB_OUTPUT',
+                'GITHUB_ENV',
+                'GITHUB_PATH',
+                'GITHUB_STATE',
+                'GITHUB_STEP_SUMMARY',
+            )
+        }
         with (artifact / 'stdout.log').open('w', encoding='utf-8') as handle:
             done = _door.run([sys.executable, '-m', 'dev_lab.dev.verify', '--', *selectors],
                              cwd=root, env=child, stdout=handle, stderr=subprocess.STDOUT, check=False)  # fmt: skip

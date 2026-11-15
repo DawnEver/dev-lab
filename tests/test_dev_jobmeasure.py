@@ -4,6 +4,7 @@ import importlib
 import json
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 from _forge_fake import git_out, run_git
@@ -32,6 +33,13 @@ def committed(tmp_path) -> tuple[Path, str, dict[str, str]]:
 
 def _owner() -> ModuleType:
     return importlib.import_module('dev_lab.dev.jobmeasure')
+
+
+def _measurement_upload() -> dict[str, Any]:
+    job = workflows(Path(__file__).parents[1])['ci.yml']['jobs']['measurement']
+    uploads = [step for step in job['steps'] if step.get('uses') == 'actions/upload-artifact@v4']
+    assert len(uploads) == 1
+    return uploads[0]
 
 
 @pytest.mark.parametrize('selector', ['tests/test_a.py', 'tests/test_a.py::test_a', 'tests/test_a.py::test_a[x y]'])
@@ -116,15 +124,40 @@ def test_generated_measurement_has_no_part_status_or_merge_authority() -> None:
     assert '${{' not in command
     assert 'jobparts' not in command
     assert ' --part' not in command
-    assert any(
-        step.get('uses') == 'actions/upload-artifact@v4' and step.get('if') == '${{ always() }}'
-        for step in job['steps']
-    )
+    assert _measurement_upload()['if'] == "${{ always() && steps.measurement.outputs.artifacts != '' }}"
     for name, normal in ci['jobs'].items():
         if name != 'measurement':
             assert "inputs.measurement_paths == ''" in normal['if'], name
             assert "inputs.measurement_sha == ''" in normal['if'], name
     assert "inputs.measurement_paths == ''" in ci['concurrency']['cancel-in-progress']
+
+
+def test_upload_names_only_the_three_evidence_files_and_never_an_empty_directory() -> None:
+    upload = _measurement_upload()
+    base = '${{ steps.measurement.outputs.artifacts }}'
+    assert upload['with']['path'].splitlines() == [
+        f'{base}/receipt.json',
+        f'{base}/stdout.log',
+        f'{base}/verify.log',
+    ]
+    assert upload['if'] == "${{ always() && steps.measurement.outputs.artifacts != '' }}"
+
+
+def test_a_stray_file_or_nested_cache_cannot_enter_the_uploaded_artifact(tmp_path: Path) -> None:
+    names = ('receipt.json', 'stdout.log', 'verify.log', 'stray-private.txt', 'cache/private.bin')
+    for name in names:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('planted private content' if 'private' in name else 'evidence', encoding='utf-8')
+    selected = set()
+    for line in _measurement_upload()['with']['path'].splitlines():
+        path = Path(line.replace('${{ steps.measurement.outputs.artifacts }}', tmp_path.as_posix()))
+        # The two forms actually emitted here: a direct file, or a recursively uploaded directory.
+        if path.is_dir():
+            selected.update(p.relative_to(tmp_path).as_posix() for p in path.rglob('*') if p.is_file())
+        elif path.is_file():
+            selected.add(path.relative_to(tmp_path).as_posix())
+    assert selected == {'receipt.json', 'stdout.log', 'verify.log'}
 
 
 @pytest.mark.parametrize(('code', 'result'), [(0, 'pass'), (1, 'fail'), (3, 'inconclusive')])
@@ -205,6 +238,39 @@ def test_invalid_unvalidated_inputs_are_not_copied_to_an_artifact(committed) -> 
     assert _owner().run(root, 'unvalidated-sensitive-value', '[]', env) == 3
     receipt = next(output_dir(root, 'measurement').glob('*/receipt.json')).read_text()
     assert 'unvalidated-sensitive-value' not in receipt
+
+
+def test_runner_command_files_belong_to_the_wrapper_not_its_verification_child(committed, monkeypatch) -> None:
+    root, sha, env = committed
+    owner = _owner()
+    commands = ('GITHUB_OUTPUT', 'GITHUB_ENV', 'GITHUB_PATH', 'GITHUB_STATE', 'GITHUB_STEP_SUMMARY')
+    original = 'wrapper owns this file\n'
+    for command in commands:
+        target = root / command
+        target.write_text(original, encoding='utf-8')
+        env[command] = str(target)
+
+    def child(argv, **kwargs: object) -> SimpleNamespace:
+        assert argv[1:] == ['-m', 'dev_lab.dev.verify', '--', 'tests/test_a.py']
+        child_env = kwargs['env']
+        assert isinstance(child_env, dict)
+        assert child_env['GITHUB_SHA'] == sha, 'ordinary commit metadata is not a runner control file'
+        for command in commands:
+            if target := child_env.get(command):
+                Path(target).write_text('child takes over the runner channel\n', encoding='utf-8')
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(owner, 'validate', lambda *_: ('tests/test_a.py',))
+    monkeypatch.setattr(owner, 'run_key', lambda *_: SimpleNamespace(tree='tree', env='env', selector='selector'))
+    monkeypatch.setattr(owner._door, 'run', child)
+    assert owner.run(root, sha, '["tests/test_a.py"]', env) == 3, 'no log still cannot become PASS'
+    artifact = next(output_dir(root, 'measurement').iterdir())
+    assert (root / 'GITHUB_OUTPUT').read_text().splitlines() == [
+        original.strip(),
+        f'artifacts={artifact.as_posix()}',
+    ]
+    for command in commands[1:]:
+        assert (root / command).read_text() == original
 
 
 @pytest.mark.parametrize('plant', ['permission', 'secret', 'token'])

@@ -103,11 +103,11 @@
         },
         {
           "name": "Retain measurement evidence, including incomplete output",
-          "if": "${{ always() }}",
+          "if": "${{ always() && steps.measurement.outputs.artifacts != '' }}",
           "uses": "actions/upload-artifact@v4",
           "with": {
             "name": "measurement-${{ github.run_id }}-${{ github.run_attempt }}",
-            "path": "${{ steps.measurement.outputs.artifacts }}",
+            "path": "${{ steps.measurement.outputs.artifacts }}/receipt.json\n${{ steps.measurement.outputs.artifacts }}/stdout.log\n${{ steps.measurement.outputs.artifacts }}/verify.log",
             "if-no-files-found": "warn"
           }
         }

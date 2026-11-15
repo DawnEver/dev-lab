@@ -55,8 +55,12 @@ memory, waiting or wall default. Its checkout persists no credential; its permis
 A setup carrying a forge token, family secret or write permission is refused rather than inherited. No part is
 posted, no review or merge runs, and no `tests/base` or promotion qualification is implied by a green measurement.
 
-The always-uploaded `measurement-<run>-<attempt>` artifact contains only the dated measurement directory: its
-`receipt.json`, raw child `stdout.log`, and, when proved, `verify.log`. The receipt labels itself `MEASUREMENT` and
+When the wrapper produced a directory output, the always-on-failure upload names exactly three files in that
+directory, never the directory recursively: `receipt.json`, raw child `stdout.log`, and, when proved, `verify.log`.
+Other files placed there by tested code are not uploaded. With no directory output, upload is skipped.
+The wrapper retains its runner output channel; the child receives none of the Actions output/environment/path/
+state/summary control-file variables. Ordinary commit metadata remains available. This is an environment authority
+boundary, not an operating-system sandbox for hostile same-user code. The receipt labels itself `MEASUREMENT` and
 indexes the actual canonical tree/environment/selector proof and exit code. No environment dump, credential,
 workspace, Git directory or cache is uploaded. Missing, corrupt, ambiguous or identity-mismatched evidence stays
 inconclusive, including an exit-zero child with no usable log. A stopped child leaves its initial incomplete
