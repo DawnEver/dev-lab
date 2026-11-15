@@ -87,7 +87,7 @@ def test_the_migration_closes_only_open_notices_each_with_one_pointer() -> None:
 
 def test_the_migration_verb_defaults_to_a_dry_run(monkeypatch, capsys, tmp_path) -> None:
     forge, _numbers = _seeded()
-    monkeypatch.setattr('dev_lab.dev.forgework.client_for', lambda _root: forge)
+    monkeypatch.setattr('dev_lab.dev.issuekind.client_for', lambda _root: forge)
     assert issuekind.main(['retire-notices', '--root', str(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert out.count('would close #') == 2
