@@ -1,0 +1,20 @@
+---
+name: An authorized controller stop needs process identity not a wider regex
+description: Tests-first checkpoint for an explicitly user-authorized exact controller identity, with no production implementation or semantic RED claimed before hosted qualification.
+metadata:
+  type: project
+---
+
+This local branch starts at 5deb7e6a8d001ae3e70b3c4710809b819bda7e99. The consumer's queued Python qualification controller matches no stoprun signature. Its first warm selection genuinely exhausted the normal 20-minute admission queue without executing a test; later selections were still queued. A broader project regex, changing the active consumer manifest, raw killing a process, or stopping another run is not the remedy. The user-authorized task is a narrow explicit process-identity door, not a claim that a command hash proves ownership.
+
+This checkpoint adds only tests and this memory. Production src/dev_lab/dev/stoprun.py remains byte-identical to 5deb, Git blob 57056dfb51b8e0cb6ca890ac800fcb446ac0c4f8. No environment, dependency, provider, consumer source or consumer manifest was changed.
+
+The plants specify ApprovedRun with a positive exact integer creation stamp, the SHA256 of the complete command line, and nonempty actual user words. The CLI requires all three inputs together. Self and ancestors remain forbidden. A root mismatch, unreadable identity or preexisting changed subtree must refuse before any kill. None is not proof of equality. Older foreign children retaining a reused PPID, and their descendants, are excluded; equal creation stamps retain a legitimate fast spawn.
+
+The explicit mode stops the verified actual Python controller before its current run, so killing a child cannot start the next file. Every remaining original member must retain its exact creation stamp and command. A child whose original parent was proved stopped by this call may be legitimately reparented on POSIX; a changed edge while its parent is still live is not licensed. Growth or any subsequent uncertainty must stop further kills and report partial completion, never atomic or complete success. A failed controller stop does not authorize killing its children. The normal signature mode's original controls remain unchanged.
+
+The complete file includes a real planted Python controller plus child and an independent bystander. The script records its actual Python PID rather than assuming a venv launcher's PID is the controller. Cleanup is limited to processes this test created, with the child creation stamp checked before emergency cleanup. These processes are fixtures, never a vendor or a global reaper.
+
+Local canonical verification was attempted through python -m dev_lab.dev.verify --lock-wait '20 min' -- tests/test_dev_stoprun.py. The first draft exposed static annotation/import issues, not semantic RED, and its never-admitted verify was stopped through the recognized stoprun signature before editing. After correcting the static issues, the next request passed lint and all 1154-file formatting checks but could not admit its unchanged 1 GB claim: about 0.01455 GB was available. Its log is output/logs/26/11/15/verify/verify-20261115T075252Z.log. The parent explicitly authorized cancellation rather than another unproductive local wait. Exact process census and birth stamps proved the four-member verify tree, official dry-run named only those members, and official stoprun stopped them. The outer request terminated with exit 1: INTERRUPTED, zero pytest executions, not a semantic RED or PASS. Final added CLI and atomic fixture-publication plants have only static checks locally.
+
+Final Ruff and formatting checks on the test file pass. The next supported step is normal publication by the parent and the existing generated Actions MEASUREMENT job selecting the complete tests/test_dev_stoprun.py. Only a real hosted RED authorizes implementing the production change. There is no push, dispatch, test-budget override, wider signature or production implementation in this checkpoint.

@@ -14,8 +14,18 @@ from pathlib import Path
 import pytest
 from _forge_state import StateForge
 
-from dev_lab.dev.locklag import within_window
-from dev_lab.dev.prcurrent import RULE, SYNC, behind, fetch_ref, lock_stale, ready_refusals, refusals
+from dev_lab.dev.locklag import LAG_LIMIT, within_window
+from dev_lab.dev.prcurrent import (
+    RULE,
+    SYNC,
+    behind,
+    fetch_ref,
+    head_refusals,
+    judge,
+    lock_stale,
+    ready_refusals,
+    refusals,
+)
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
 
 _GIT = shutil.which('git') or 'git'
@@ -68,19 +78,43 @@ def _line(work: Path, branch: str = 'pr/x', sha: str | None = None) -> str:
     return f'refs/heads/{branch} {tip} refs/heads/{branch} {_ZERO}\n'
 
 
-def test_a_head_behind_integration_is_refused_naming_sync_and_once_synced_passes(repo: Path) -> None:
-    (why,) = refusals(repo, _line(repo), fetch=fetch_ref, read=_fresh)
+def test_a_head_behind_integration_past_the_window_is_refused_naming_sync_and_once_synced_passes(repo: Path) -> None:
+    (why,) = refusals(repo, _line(repo), fetch=fetch_ref, read=_fresh, window=0)
     assert RULE in why
-    assert 'does not contain origin/int/line' in why
+    assert 'lacks 1 commits of origin/int/line, past the window of 0' in why
     assert SYNC in why
     _git(repo, 'merge', '--no-edit', 'origin/int/line')
-    assert refusals(repo, _line(repo), fetch=fetch_ref, read=_fresh) == [], 'PLANTED CONTROL: synced, it lands'
+    assert refusals(repo, _line(repo), fetch=fetch_ref, read=_fresh, window=0) == [], 'PLANTED CONTROL: synced'
+
+
+def test_a_head_within_the_window_passes_and_one_commit_past_it_is_refused(repo: Path) -> None:
+    """Integration moves on while the head's tests run: within the window that is current enough.
+
+    PLANTED CONTROL: the same head one commit past the window is refused.
+    """
+    head = _git(repo, 'rev-parse', 'HEAD')
+    assert behind(repo, head, 'int/line', window=1) is None
+    assert behind(repo, head, 'int/line', window=0) is not None, 'CONTROL'
+
+
+def test_the_window_counts_integrations_first_parent_line_not_what_it_merged(repo: Path) -> None:
+    """A PR merged into integration counts as one commit, however many the PR held."""
+    _git(repo, 'checkout', '-b', 'pr/other', 'origin/int/line')
+    for n in range(3):
+        _git(repo, 'commit', '--allow-empty', '-m', f'feat: other {n}')
+    _git(repo, 'checkout', '-B', 'int/line', 'origin/int/line')
+    _git(repo, 'merge', '--no-ff', '--no-edit', 'pr/other')
+    _git(repo, 'push', 'origin', 'int/line')
+    _git(repo, 'checkout', 'pr/x')
+    head = _git(repo, 'rev-parse', 'HEAD')
+    assert behind(repo, head, 'int/line', window=2) is None
+    assert behind(repo, head, 'int/line', window=1) is not None, 'CONTROL: two first-parent commits behind'
 
 
 def test_the_behind_check_reads_origin_afresh_never_a_stale_remote_ref(repo: Path) -> None:
     """The local origin/int/line is rewound to the head's base: only the fetch shows the head is behind."""
     _git(repo, 'update-ref', 'refs/remotes/origin/int/line', 'pr/x~1')
-    assert behind(repo, _git(repo, 'rev-parse', 'HEAD'), 'int/line') is not None
+    assert behind(repo, _git(repo, 'rev-parse', 'HEAD'), 'int/line', window=0) is not None
 
 
 def test_a_failed_fetch_refuses_with_the_networks_reason(repo: Path) -> None:
@@ -124,28 +158,36 @@ def test_a_machine_branch_and_a_deletion_are_not_judged(repo: Path) -> None:
     machine = _line(repo, RELOCK_BRANCH)
     deletion = f'(delete) {_ZERO} refs/heads/pr/x {_git(repo, "rev-parse", "HEAD")}\n'
     assert refusals(repo, machine + deletion, fetch=fetch_ref, read=_lagging) == []
-    assert len(refusals(repo, _line(repo), fetch=fetch_ref, read=_lagging)) == 2
+    assert len(refusals(repo, _line(repo), fetch=fetch_ref, read=_lagging, window=0)) == 2
 
 
-def test_ready_is_refused_on_a_dirty_tree_then_on_a_stale_head_and_passes_once_current(repo: Path) -> None:
+def test_ready_judges_the_pushed_head_never_the_local_tree_and_passes_once_current(repo: Path) -> None:
+    """User ruling 2026-11-13: ready is a forge call -- a dirty checkout (the 11-12 ``M uv.lock``) has no say."""
     forge = StateForge()
     _git(repo, 'push', 'origin', 'pr/x')
     number = forge.add_pull('pr/x', 'int/line', title='WIP: x', sha=_git(repo, 'rev-parse', 'HEAD'))
-    (repo / 'pyproject.toml').write_text(_DECL + '# edit\n', encoding='utf-8')
-    (why,) = ready_refusals(repo, forge, forge.pr_view(number), read=_fresh)
-    assert 'uncommitted changes' in why
-    _git(repo, 'checkout', '--', 'pyproject.toml')
-    (why,) = ready_refusals(repo, forge, forge.pr_view(number), read=_fresh)
-    assert 'does not contain origin/int/line' in why
+    (repo / 'uv.lock').write_text('an unrelated local edit\n', encoding='utf-8')
+    (why,) = ready_refusals(repo, forge, forge.pr_view(number), read=_fresh, window=0)
+    assert 'past the window of 0' in why, 'a stale head still refuses'
+    assert 'uncommitted' not in why
+    _git(repo, 'checkout', '--', 'uv.lock')
     _git(repo, 'merge', '--no-edit', 'origin/int/line')
     _git(repo, 'push', 'origin', 'pr/x')
     forge.pulls[number]['head']['sha'] = _git(repo, 'rev-parse', 'HEAD')
     (why,) = ready_refusals(repo, forge, forge.pr_view(number), read=_lagging)
     assert _LAG in why
     assert ready_refusals(repo, forge, forge.pr_view(number), read=_fresh) == [], 'PLANTED CONTROL'
+    (repo / 'uv.lock').write_text('an unrelated local edit\n', encoding='utf-8')
+    assert ready_refusals(repo, forge, forge.pr_view(number), read=_fresh) == [], 'a dirty checkout readies too'
 
 
 def test_pr_current_reads_the_lock_lag_window_never_exact_heads() -> None:
     """DECISION 14: one source for current enough -- the default lock reading IS ``lock/lag``'s window."""
     for judged_by in (lock_stale, refusals, ready_refusals):
         assert inspect.signature(judged_by).parameters['read'].default is within_window, judged_by.__name__
+
+
+def test_pr_current_reads_the_one_lag_window_for_integration_too() -> None:
+    """DECISION 14: the integration window is ``lock/lag``'s, read at every door."""
+    for judged_by in (behind, judge, head_refusals, refusals, ready_refusals):
+        assert inspect.signature(judged_by).parameters['window'].default == LAG_LIMIT, judged_by.__name__

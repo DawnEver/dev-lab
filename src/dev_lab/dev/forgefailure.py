@@ -21,14 +21,18 @@ that wait is past :data:`RATE_WAIT_CAP_S` -- an attempt before the reset is refu
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev import forge as _forge
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
+
+if TYPE_CHECKING:
+    from dev_lab.dev.forge import Connection, Transport
 
 __all__ = [
     'HTTP_ERROR_FLOOR',
@@ -40,8 +44,10 @@ __all__ = [
     'ForgeCallFailed',
     'diagnose',
     'pause',
+    'permission_refused',
     'rate_limited',
     'retried',
+    'within',
 ]
 
 #: Statuses below this are answers; at or above it the call failed.
@@ -55,6 +61,51 @@ UNAUTHENTICATED: Final = 401
 
 #: The status a forge answers a rate limit with when it does not answer 429 (GitHub's primary limit).
 _FORBIDDEN: Final = 403
+
+#: How a forge words a CREDENTIAL fault in a 401/403 body; a 403 without one, from an account ``GET /user``
+#: authenticates, is the account lacking the right (2026-11-10: a push-only account read ``branch_protections``).
+_CREDENTIAL_WORDS: Final = ('invalid username', 'password or token', 'failed to authenticate', 'bad credentials')
+
+#: The remedy of a permission refusal: the account answered, so only another account or a grant changes it.
+_PERMISSION_REMEDY: Final = (
+    'the stored credential authenticates (GET /user answered), but this account lacks the right to this call -- '
+    'retrying cannot change it; run it as an admin account, or grant this account that permission'
+)
+
+
+#: How much of a failed answer's body an :class:`~dev_lab.dev.netverb.Attempt` keeps: enough for GitHub's
+#: ``errors`` list after its ``message`` (a 422's cause), so the JSON still parses and :func:`_reason` can read it.
+_BODY_KEPT: Final = 2000
+
+
+def _error(one: object) -> str:
+    """One entry of a body's ``errors``: GitHub writes a string, or an object with a ``message`` or a ``code``."""
+    if isinstance(one, dict):
+        return str(one.get('message') or ' '.join(str(one[k]) for k in ('resource', 'field', 'code') if k in one))
+    return str(one)
+
+
+def _reason(output: str) -> str:
+    """The forge's own ``message`` and every entry of its ``errors`` from an answered body, else the body as it came.
+
+    The body is the forge's answer, never the request: no header or credential reaches it.
+    """
+    try:
+        body = json.loads(output)
+    except ValueError:
+        return output.strip()
+    if not isinstance(body, dict):
+        return output.strip()
+    errors = body.get('errors') or ()
+    named = [_error(one) for one in (errors if isinstance(errors, list) else [errors])]
+    return '; '.join([str(body.get('message', output)).strip(), *named])
+
+
+def permission_refused(status: int, text: str) -> bool:
+    """A 403 that names no credential fault -- asked only once ``GET /user`` has authenticated the credential."""
+    lowered = text.lower()
+    return status == _FORBIDDEN and not any(word in lowered for word in _CREDENTIAL_WORDS)
+
 
 #: The status that is a rate limit whatever else the answer says.
 _TOO_MANY: Final = 429
@@ -88,6 +139,25 @@ class BudgetSpent(TimeoutError):
     """The caller's time budget ran out before a forge call could start: never retried, as waiting cannot clear it."""
 
 
+def within(
+    transport: Transport, deadline: float, what: str, budget_s: float, *, now: Callable[[], float] = time.monotonic
+) -> Transport:
+    """*transport*, each connection's wait cut to what is left before *deadline*; none opened past it.
+
+    Past *deadline* (on *now*'s clock) the connection is never opened: :class:`BudgetSpent` names *what* spent its
+    *budget_s*, and :func:`retried` re-raises it rather than retrying.
+    """
+
+    def opened(host: str, timeout: float) -> Connection:
+        left = deadline - now()
+        if left <= 0:
+            msg = f'{what} spent its {budget_s:g} s read budget before asking {host}'
+            raise BudgetSpent(msg)
+        return transport(host, min(timeout, left))
+
+    return opened
+
+
 class ForgeCallFailed(OSError):
     """A forge call that did not succeed within the bound; :attr:`report` is netverb's report of it."""
 
@@ -98,12 +168,18 @@ class ForgeCallFailed(OSError):
         *credential_kept*: the store cannot refresh, so the refused credential was kept -- retried and measured.
         A rate limit says nothing about the credential, so its message adds nothing.
         """
-        last = report.attempts[-1].returncode if report.attempts else 0
+        attempt = report.attempts[-1] if report.attempts else None
+        last = attempt.returncode if attempt else 0
         said = _forge.AUTH_TRANSIENT
-        if _credential_refused(report):
+        if attempt is not None and attempt.diagnosis is Diagnosis.PERMISSION_REFUSED:
+            said = f'{_PERMISSION_REMEDY}; the forge said: {_reason(attempt.output)}'
+        elif _credential_refused(report):
             said = _forge.AUTH_GONE if credential_gone else _forge.AUTH_KEPT if credential_kept else _forge.AUTH_REMEDY
         auth = last in _forge.AUTH_REFUSED and report.diagnosis is not Diagnosis.RATE_LIMITED
-        super().__init__(f'{report.remedy}. {said}' if auth else report.remedy)
+        message = f'{report.remedy}. {said}' if auth else report.remedy
+        if attempt is not None and attempt.diagnosis is Diagnosis.FORGE_REFUSED and not auth:
+            message += f'; the forge answered {last}: {_reason(attempt.output)}'
+        super().__init__(message)
         self.report = report
 
     @property
@@ -112,11 +188,19 @@ class ForgeCallFailed(OSError):
         return _credential_refused(self.report)
 
     @property
+    def permission(self) -> bool:
+        """Whether the forge answered that this ACCOUNT lacks a grant (:attr:`Diagnosis.PERMISSION_REFUSED`)."""
+        last = self.report.attempts[-1] if self.report.attempts else None
+        return last is not None and last.diagnosis is Diagnosis.PERMISSION_REFUSED
+
+    @property
     def final(self) -> int | None:
         """The HTTP status when the forge refused THIS CALL for good, else ``None`` (a later attempt may land).
 
         Final is an answered refusal (:attr:`~dev_lab.dev.netverb.Diagnosis.FORGE_REFUSED`, e.g. a 405 on
         merging a merged PR) that is not a refused CREDENTIAL: that one is the box's fault, not the call's.
+        A PERMISSION refusal is not final either: the account lacks a grant, and the same call lands once it is
+        granted, so a queued post stays queued for it (never dropped).
         """
         last = self.report.attempts[-1] if self.report.attempts else None
         if last is None or last.diagnosis is not Diagnosis.FORGE_REFUSED or self.credential_refused:
@@ -209,7 +293,7 @@ def retried(
             answer = Answer(0, str(exc).encode())
         if answer.ok:
             return answer
-        text = answer.payload.decode(errors='replace')[:300]
+        text = answer.payload.decode(errors='replace')[:_BODY_KEPT]
         made.append(Attempt(index, answer.status or 1, text, read(answer, text)))
         wait = pause(made[-1].diagnosis, answer.headers, now())
         if not made[-1].retryable or wait is None or index == DEFAULT_ATTEMPTS:

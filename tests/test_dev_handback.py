@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import walls
 from dev_lab.dev.disclosure import details_for, problems
 from dev_lab.dev.handback import INTERACTIVE_ONLY, handed_commands, main, refusal
 
@@ -122,3 +123,12 @@ def test_the_refusal_fits_the_budget_and_points_at_the_list_instead_of_inlining_
     assert problems(reason, 'refusal') == []
     assert 'gcloud auth login' not in reason
     assert reason.splitlines()[-1] == details_for('AGENT-RUNS-ITS-OWN-COMMANDS')
+
+
+def test_a_blocked_stop_is_this_sessions_wall_with_its_remedy(tmp_path: Path) -> None:
+    """WALLS-ARE-RECORDED: the block reaches the ledger through the one choke point; a let-through records none."""
+    _run({'last_assistant_message': 'Done, all green.', 'cwd': str(tmp_path), 'session_id': 's'})
+    assert not walls.ledger(tmp_path).exists()
+    _run({'last_assistant_message': 'Please run `git push origin main`.', 'cwd': str(tmp_path), 'session_id': 's'})
+    [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present'], line['session']) == ('AGENT-RUNS-ITS-OWN-COMMANDS', True, 's')

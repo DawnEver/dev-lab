@@ -39,7 +39,9 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import datadeps
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
+from dev_lab.dev.labsession import trailers
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.lockcheck import LOCK
 from dev_lab.dev.relock import RelockFailed, door_upgrade, rerender, siblings
@@ -55,8 +57,10 @@ CONFIG_KEY: Final = 'labSyncFrom'
 
 _ORIGIN: Final = 'origin/'
 
+#: The file a data pin's relock rewrites (:mod:`dev_lab.dev.datadeps`).
+PYPROJECT: Final = 'pyproject.toml'
 #: The subject of the commit a sync's relock lands as.
-RELOCK_TITLE: Final = 'build(deps): relock the floated siblings to their current heads'
+RELOCK_TITLE: Final = 'build(deps): relock the floated siblings and data pins to their current heads'
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -153,6 +157,12 @@ def sync(root: Path, policy: Policy, refs: Sequence[str] | None = None) -> tuple
 
     Returns the plan and the refs actually merged. A dirty tree is refused before anything is read.
     """
+    if (pending := _git(root, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).returncode == 0:
+        msg = (
+            f'a merge of {pending.stdout.strip()[:10]} is in progress and uncommitted (an earlier run was killed '
+            'mid-commit?): Remedy: git commit --no-edit to conclude it, or git merge --abort, then rerun forge sync'
+        )
+        raise ValueError(msg)
     if _git(root, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
         msg = 'the tree has uncommitted changes: commit them first, a merge must start from a commit'
         raise ValueError(msg)
@@ -163,12 +173,11 @@ def sync(root: Path, policy: Policy, refs: Sequence[str] | None = None) -> tuple
     for ref, tried in found.trials:
         if tried.behind == 0:
             continue
-        done = _git(root, 'merge', '--no-ff', '--no-edit', ref)
+        done = _git(root, 'merge', '--no-ff', '--no-commit', ref)
+        if done.returncode == 0:
+            done = _hooked(root, 'commit', '-q', '--no-edit', *_trailer_args())
         if done.returncode != 0:
-            _git(root, 'merge', '--abort')
-            why = (done.stderr or done.stdout).strip()
-            msg = f'git merge {ref} failed after a clean trial and was aborted (merged so far: {merged}): {why}'
-            raise OSError(msg)
+            raise OSError(_failed_merge(root, ref, merged, done))
         merged.append(ref)
     return found, tuple(merged)
 
@@ -193,6 +202,7 @@ def relock(
     *,
     door: Callable[[Path], Sequence[str]] = relock_floating,
     render: Callable[[Path], Sequence[str]] = rerender,
+    data: Callable[[Path], Sequence[str]] = datadeps.relock,
 ) -> tuple[str, ...]:
     """Relock *root*'s floated siblings (*door*); when the lock moved, re-*render* and commit both; the moved names.
 
@@ -208,12 +218,13 @@ def relock(
         raise RelockFailed(msg)
     clean = _touched(root)
     try:
-        names = tuple(door(root))
-        if not names or not _git(root, 'status', '--porcelain', '--', LOCK).stdout.strip():
+        names = (*door(root), *data(root))
+        moved = {row[3:] for row in _git(root, 'status', '--porcelain', '--', LOCK, PYPROJECT).stdout.splitlines()}
+        if not names or not moved:
             return ()
         rendered = tuple(render(root))
         # ONLY what the door and the renderers wrote: they never stage, so a path staged meanwhile is someone else's.
-        wrote = sorted(({path for _, path in _touched(root) - clean} - set(_staged(root))) | {LOCK})
+        wrote = sorted(({path for _, path in _touched(root) - clean} - set(_staged(root))) | moved)
         body = '\n'.join([f'Relocked: {", ".join(names)}', *([f'Rendered: {", ".join(rendered)}'] if rendered else [])])
         if (done := _git(root, 'add', '--', *wrote)).returncode != 0 or (
             done := _commit(root, wrote, RELOCK_TITLE, body)
@@ -232,13 +243,41 @@ def _staged(root: Path) -> tuple[str, ...]:
 
 
 def _commit(root: Path, paths: Sequence[str], *message: str) -> subprocess.CompletedProcess[str]:
-    """``git commit --only -- <paths>``: exactly *paths*, whatever else the index holds.
+    """``git commit --only -- <paths>``: exactly *paths*, whatever else the index holds."""
+    message_args = (arg for line in message for arg in ('-m', line))
+    return _hooked(root, 'commit', '-q', *message_args, *_trailer_args(), '--only', '--', *paths)
 
-    NO TIMEOUT: a local commit runs the repo's own commit hooks, which the hook runner itself runs unbounded
-    (:mod:`dev_lab.dev.githooks.runner`); acme-consumer's exceed 30 s (2026-11-07), so any ceiling here is a guess.
+
+def _hooked(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """``git <args>`` for a command that runs the repo's commit hooks: NO TIMEOUT.
+
+    The hook runner itself runs them unbounded (:mod:`dev_lab.dev.githooks.runner`); acme-consumer's exceed 30 s
+    (2026-11-07) and a sync's merge commit died on the fixed 30 s (2026-11-13), so any ceiling here is a guess.
     """
-    argv = [_GIT, 'commit', '-q', *(arg for line in message for arg in ('-m', line)), '--only', '--', *paths]
+    argv = [_GIT, *args]
     return _door.run(argv, cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
+
+
+def _failed_merge(root: Path, ref: str, merged: Sequence[str], done: subprocess.CompletedProcess[str]) -> str:
+    """One line naming the state a failed merge of *ref* left: aborted when uncommitted, else what HEAD holds."""
+    why = ' '.join((done.stderr or done.stdout).split()) or f'exit {done.returncode}'
+    so_far = f'merged so far: {", ".join(merged) or "nothing"}'
+    if _git(root, 'rev-parse', '-q', '--verify', 'MERGE_HEAD').returncode != 0:
+        head = _git(root, 'rev-parse', '--short', 'HEAD').stdout.strip()
+        return f'git merge {ref} exited {done.returncode} but no merge is pending; HEAD is {head} ({so_far}): {why}'
+    _git(root, 'merge', '--abort')
+    return (
+        f'git merge {ref} was NOT committed (exit {done.returncode}) and was aborted ({so_far}): {why}. '
+        f'Remedy: fix what the commit hooks refused, then rerun forge sync'
+    )
+
+
+def _trailer_args() -> list[str]:
+    """``--trailer`` for each session trailer (:func:`~dev_lab.dev.labsession.trailers`).
+
+    A sync's commits are the session's and carry it whether or not the commit-msg hook is installed (it replaces).
+    """
+    return [arg for line in trailers() for arg in ('--trailer', line)]
 
 
 def _touched(root: Path) -> frozenset[tuple[bool, str]]:
@@ -289,8 +328,8 @@ def main(
         fetch(root)
         found, merged = sync(root, policy)
         relocked = () if found.conflicting else relock(root, door=door)
-    except (OSError, ValueError) as exc:
-        emit(f'[sync] refused: {exc}', err=True)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        emit(f'[sync] refused: {" ".join(str(exc).split())}', err=True)
         return 2
     for line in _render(found):
         emit(line)

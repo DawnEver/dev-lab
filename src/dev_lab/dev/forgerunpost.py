@@ -22,7 +22,7 @@ from dev_lab.dev.forgerunstate import Killed, Run, save
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import part_context, run_tag
-from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
+from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owned, release_reason
 from dev_lab.supervise.notice import Context
 
 if TYPE_CHECKING:
@@ -61,7 +61,7 @@ def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None])
                 context=Context(sha=run.sha),
             )
         )
-        return f'declared outputs missing: {why}'[:DESCRIPTION_MAX]
+        return owned(Owner.CODE, f'declared outputs missing: {why}')
     if isinstance(why, OutputBudgetRefused):  # terminal: an unchanged oversized output is never retried
         alarm(
             Alarm(
@@ -72,7 +72,7 @@ def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None])
                 context=Context(sha=run.sha),
             )
         )
-        return f'output budget refused: {why}'[:DESCRIPTION_MAX]
+        return owned(Owner.CODE, f'output budget refused: {why}')
     if isinstance(why, OutputIntegrityRefused):  # terminal: sealed bytes and their index disagree
         alarm(
             Alarm(
@@ -83,18 +83,18 @@ def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None])
                 context=Context(sha=run.sha),
             )
         )
-        return f'output integrity refused: {why}'[:DESCRIPTION_MAX]
+        return owned(Owner.ENVIRONMENT, f'output integrity refused: {why}')
     if isinstance(why, RetiredTable):  # fixed AT THE SHA: no retry publishes it, so it settles once
         alarm(
             Alarm(
                 RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', str(why), context=Context(sha=run.sha)
             )
         )
-        return f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)}: {why}'[:DESCRIPTION_MAX]
+        return release_reason(ProducerExit.INCONCLUSIVE, outage=None, detail=f': {why}')
     if isinstance(why, NoRoom):  # a fact about this HOST: the part stays open to every host (forgeclaim.assess)
-        return f'{RETRYABLE} -- this host had no room: {why}'[:DESCRIPTION_MAX]
+        return owned(Owner.SCHEDULING, f'{RETRYABLE} -- this host had no room: {why}')
     log = next((word for word in str(why).split() if word.startswith('log=')), '')  # the build log, named
-    return f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)} {log}'.strip()
+    return release_reason(ProducerExit.INCONCLUSIVE, outage=None, detail=f' {log}' if log else '')
 
 
 def step(run: Run, **changes: object) -> Run:

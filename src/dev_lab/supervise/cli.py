@@ -21,11 +21,12 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
+from dev_lab.supervise import card
 from dev_lab.supervise.component import Registry, load_components
 from dev_lab.supervise.components import COMPONENTS
 from dev_lab.supervise.config import load_config
-from dev_lab.supervise.daemon import Definition, Loop, definition_signature, serve
-from dev_lab.supervise.loop import CycleResult, run_cycle
+from dev_lab.supervise.daemon import Definition, Loop, definition_signature, interval, serve
+from dev_lab.supervise.loop import CycleResult, enabled_components, run_cycle
 from dev_lab.supervise.policy import now
 from dev_lab.supervise.process import manager_for
 from dev_lab.supervise.report import digest, record, summary
@@ -184,6 +185,29 @@ def _definition(project: Path, config: dict[str, Any]) -> Definition:
     return lambda: definition_signature(project, paths)
 
 
+def _publish(
+    args: argparse.Namespace, config: dict[str, Any], registry: Registry, result: CycleResult, at: datetime
+) -> None:
+    """Rewrite the status card (:mod:`dev_lab.supervise.card`) when ``--card`` names one; a failed write is said."""
+    if not args.card:
+        return
+    path = Path(args.card)
+    found = card.card(
+        result,
+        at,
+        components=enabled_components(registry, config),
+        interval_s=interval(config),
+        previous=card.read(path),
+        installed=card.installed_sha(),
+        upgrade=card.last_audit(Path(args.card_audit)) if args.card_audit else None,
+        memory=card.own_memory(),
+    )
+    try:
+        card.write(path, found)
+    except OSError as exc:
+        emit(f'supervise: the status card {path} was not written ({exc})', err=True, flush=True)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one of the supervisor's verbs.
 
@@ -199,6 +223,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--project', default='.', help="the target's directory")
     parser.add_argument('--config', default='', help='the configuration file, when it is not under the target')
     parser.add_argument('--dry-run', action='store_true', help='resolve and gate, but act on nothing')
+    parser.add_argument('--card', default='', help='rewrite the status card here after every cycle')
+    parser.add_argument('--card-audit', default='', help='the auto-upgrade audit whose last line the card carries')
     args = parser.parse_args(argv)
 
     config, registry, store, project = _context(args)
@@ -208,7 +234,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     manager = manager_for(str(config.get('process', {}).get('manager', 'systemd')))
     if args.verb == 'check':
-        result = run_cycle(registry, store, config, project, manager, clock=now(), dry_run=args.dry_run)
+        at = now()
+        result = run_cycle(registry, store, config, project, manager, clock=at, dry_run=args.dry_run)
+        _publish(args, config, registry, result, at)
         emit(summary(result))
         return 0 if result.status == 'healthy' else 1
 
@@ -225,6 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     def append(result: CycleResult, at: datetime) -> None:
         _append_bounded(journal, json.dumps(record(result, at)) + '\n')
+        _publish(args, config, registry, result, at)
 
     degraded = serve(loop, on_cycle=append)
     return 0 if degraded == 0 else 1

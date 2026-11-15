@@ -530,3 +530,17 @@ def test_what_an_apply_frees_is_named_freed_and_the_generic_name_is_gone() -> No
     assert 'Freed' in retention.__all__
     with pytest.raises(AttributeError):
         _ = importlib.import_module(retention.__name__).Outcome
+
+
+def test_a_tree_touched_between_plan_and_remove_is_kept_and_an_idle_one_goes(home: Path) -> None:
+    """PLANTED CONTROL for the plan/remove race: a1 turns active after planning (a build's ``touch .lab-ci``)."""
+    plan = _plan(home)
+    assert _doomed(plan)['a1'] == _doomed(plan)['a2'] == 'tree-not-in-flight'
+    (home / 'ci' / 'trees' / 'a1' / '.lab-ci').mkdir()  # touched NOW, after the plan doomed it
+    lines: list[str] = []
+    apply(plan, POLICY, usage=None, dry_run=False, say=lines.append, run=_no_run)
+    assert (home / 'ci' / 'trees' / 'a1').is_dir()
+    assert not (home / 'ci' / 'trees' / 'a2').exists()
+    kept = [json.loads(line) for line in lines if 'kept' in json.loads(line)]
+    assert kept == [{'event': retention.EVENT, 'path': str(home / 'ci' / 'trees' / 'a1'),
+                     'rule': 'tree-not-in-flight', 'kept': 'became active'}]  # fmt: skip

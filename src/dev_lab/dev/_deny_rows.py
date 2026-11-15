@@ -55,6 +55,7 @@ from __future__ import annotations
 
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev._deny_commithooks_row import COMMIT_HOOKS_RUN
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
@@ -62,6 +63,7 @@ from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
+from dev_lab.dev._deny_push_rows import PUSH_ROWS
 from dev_lab.dev._deny_remote_row import REMOTE_WRITE
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
@@ -96,6 +98,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     SUBAGENT_NO_PUSH,
     CONSENT_CODE_FROM_THE_USER,
+    COMMIT_HOOKS_RUN,
     {
         'id': 'BARE-TEST-INVOCATION',
         # `uv\s+run\s+pytest` used to stand here as a third alternative. It is GONE because the
@@ -222,63 +225,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'git diff --cached --stat',
         ),
     },
-    {
-        'id': 'PUSH-FORCE',
-        # `+<ref>` is the refspec spelling of the same force (MAIN-SESSION-PUBLISHES opened `push origin *`).
-        'pattern': r'\bpush\b[^\n]*\s(?:--force\b|--force-with-lease\b|-f\b|\+\S)',
-        'matches': 'argument',
-        'hazard': 'rewriting a shared ref invalidates every verdict taken '
-        'against the old tree; --force-with-lease included.',
-        'remedy': 'Land the change FORWARD as a new commit on your own lane, then push without the force flag.',
-        'needs': None,
-        'refuses': (
-            'git push --force origin main',
-            'git push origin main --force-with-lease',
-            'sh scripts/hooks/with-retry.sh push -f origin HEAD',
-            'git -C ../sib push origin +main',
-        ),
-        'permits': (
-            'sh scripts/hooks/with-retry.sh push origin HEAD',
-            'git commit -m "force a rebuild"',
-            'sh scripts/hooks/with-retry.sh push origin lane/a+b',
-        ),
-    },
-    {
-        'id': 'PUSH-REMOTE-DELETE',
-        'pattern': r'\bpush\b[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
-        'matches': 'argument',
-        'hazard': 'a raw remote delete can lose commits held nowhere else.',
-        'remedy': '`{python} -m dev_lab.dev.branchprune delete <branch>` (LOSSLESS-DELETE).',
-        'needs': None,
-        'refuses': (
-            'git push origin --delete lane/x',
-            'git -C ../sib push origin :lane/x',
-            'sh scripts/hooks/with-retry.sh push origin -d lane/x',
-            'git push --prune origin',
-            'git push --mirror origin',
-        ),
-        'permits': (
-            'sh scripts/hooks/with-retry.sh push origin HEAD:refs/heads/lane/x',
-            'sh scripts/hooks/with-retry.sh push origin main',
-            'git branch -d lane/x',
-            f'{VENV_PYTHONS[0]} -m dev_lab.dev.branchprune delete lane/x',
-        ),
-    },
-    {
-        'id': 'PUSH-NO-VERIFY',
-        'pattern': r'\bpush\b[^\n]*--no-verify\b',
-        'matches': 'argument',
-        'hazard': '`--no-verify` skips the pre-push hooks (admission, the trunk proof), so the push publishes what '
-        'no hook checked.',
-        'remedy': 'Push without the flag (no hook runs a test; the forge produces the part after the push), '
-        'and to check a change first measure what you touched: {remedy}',
-        'needs': 'verdict-entry-point',
-        'refuses': ('git push --no-verify origin HEAD', 'sh scripts/hooks/with-retry.sh push origin HEAD --no-verify'),
-        'permits': (
-            'sh scripts/hooks/with-retry.sh push origin HEAD',
-            'git commit --no-verify -m "x"',
-        ),
-    },
+    *PUSH_ROWS,
     {
         'id': 'NETWORK-VERB',
         # Every verb `dev_lab.dev.netverb.is_network_verb` recognises, git's `-C`/`-c` options included.

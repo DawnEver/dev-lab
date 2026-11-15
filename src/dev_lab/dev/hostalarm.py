@@ -4,7 +4,7 @@ The host's alarm state (:mod:`dev_lab.supervise.hostalarms`, measured by :mod:`d
 reaches three readers, all from :func:`~dev_lab.supervise.hostalarms.notice` -- one model, rendered per reader:
 
 * THE AGENT (``hook``): a Claude Code ``PostToolUse`` (shell tools) and ``UserPromptSubmit`` hook
-  (:data:`dev_lab.dev.agent_guard.WIRING`) injects each alarm as additional context -- ONE reminder per alarm
+  (:data:`dev_lab.dev.agent_wiring.WIRING`) injects each alarm as additional context -- ONE reminder per alarm
   per session per :data:`REMIND_EVERY`, so an agent on a pressed host hears it and is not drowned by it;
 * the COMMIT (``check``): the ``host-pressure`` post-commit row prints the same lines -- a secondary channel;
 * THE HUMANS (:func:`step`, each ``forge serve`` tick): the host is measured and each alarm is sounded as a

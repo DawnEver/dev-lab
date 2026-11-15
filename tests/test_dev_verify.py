@@ -43,7 +43,7 @@ from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.records import read_record
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.testcells import TestCell
-from lab_commons.outcomes import Cell, Conclusion, Record, Status
+from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Record, Status
 
 from dev_lab.dev import forgerequest, localpart, platformparts, serialpass, verify, verifybox, verifysteps
 from dev_lab.dev.datedlog import UndeclaredOutput, date_parts
@@ -51,7 +51,7 @@ from dev_lab.dev.inflight import RunKey, seat
 from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
 from dev_lab.dev.platformparts import part_context, part_of
-from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, producing, release_reason
+from dev_lab.dev.producer import OUTCOME_VAR, PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, producing, release_reason
 from dev_lab.dev.reports import (
     SKIP_CEILING,
     MalformedAllowance,
@@ -59,9 +59,11 @@ from dev_lab.dev.reports import (
     declared_skips,
     read_pytest,
     read_ruff,
+    read_stages,
     stale_declarations,
 )
 from dev_lab.dev.runcache import CachedRun, record, runs
+from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, outcomes_dir, read_cells
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.dev.verdict import Verdict
 from dev_lab.dev.verify import EXIT_CODES, project_root
@@ -70,6 +72,260 @@ from dev_lab.dev.verifysteps import _tee as tee_step
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
+
+
+class TestExactRecordedStageEvidence:
+    """Live identity comes from existing cells; text remains an independent completeness witness."""
+
+    @staticmethod
+    def cells(directory: Path, entries: dict[str, TestCell]) -> tuple[dict[str, TestCell], frozenset[str]]:
+        recorder = CellRecorder(directory / 'cells.jsonl')
+        for node, cell in entries.items():
+            recorder.record(node, cell)
+        return read_cells(directory)
+
+    def test_all_twenty_five_assertion_identities_survive_whitespace_and_summary_delimiters(
+        self, tmp_path: Path
+    ) -> None:
+        failed = tuple(f'tests/test_a.py::test_case[same prefix {i} - [nested value]]' for i in range(25))
+        entries = {
+            node: TestCell(Cell(Status.REJECTED, reason=Reason('assertion', 'real residual'))) for node in failed
+        }
+        entries.update({f'tests/test_a.py::test_pass[{i}]': TestCell(Cell(Status.OK)) for i in range(71)})
+        cells, flaky = self.cells(tmp_path, entries)
+        text = '\n'.join(f'FAILED {node} - AssertionError: real residual' for node in failed)
+        text += '\n25 failed, 71 passed in 1.0s\n'
+        report = read_pytest(text, returncode=1, cells=cells, flaky=flaky)
+        assert report.truncated == ()
+        assert set(report.failures) == set(failed)
+        assert set(report.reported) == {'pytest', *failed}
+
+    def test_known_empty_records_are_not_the_log_only_none_option(self) -> None:
+        assert read_pytest('1 passed in 0.1s\n', returncode=0, cells=None).truncated == ()
+        assert read_pytest('1 passed in 0.1s\n', returncode=0, cells={}).truncated
+
+    @pytest.mark.parametrize(('summary', 'code'), [('1 failed', 1), ('1 xpassed', 0)])
+    def test_a_strict_or_nonstrict_xpass_is_the_same_decided_miss(self, summary: str, code: int) -> None:
+        node = 'tests/test_a.py::test_expected[white space - [x]]'
+        cell = TestCell(Cell(Status.OK), Expectation(Status.REJECTED, 'tracked failure'))
+        report = read_pytest(f'{summary} in 0.1s\n', returncode=code, cells={node: cell})
+        assert report.truncated == ()
+        assert report.failures == (node,)
+
+    def test_an_expected_rejection_is_not_a_failure(self) -> None:
+        node = 'tests/test_a.py::test_known'
+        cell = TestCell(
+            Cell(Status.REJECTED, reason=Reason('assertion', 'residual')), Expectation(Status.REJECTED, 'known')
+        )
+        report = read_pytest('1 xfailed in 0.1s\n', returncode=0, cells={node: cell})
+        assert report.truncated == ()
+        assert report.failures == ()
+
+    @pytest.mark.parametrize('status', [Status.ERROR, Status.TIMEOUT, Status.UNAVAILABLE])
+    def test_a_retryable_cell_is_not_a_decided_failure_or_pass(self, status: Status) -> None:
+        cell = TestCell(Cell(status, reason=Reason('runtime', 'unfinished')))
+        report = read_pytest('1 passed in 0.1s\n', returncode=0, cells={'tests/a.py::test_a': cell})
+        assert report.truncated
+        assert report.failures == ()
+
+    def test_a_declared_text_skip_cannot_hide_the_recorded_unmarked_skip_rejection(self) -> None:
+        node = 'tests/test_a.py::test_skips'
+        cells = {f'tests/test_a.py::test_pass[{i}]': TestCell(Cell(Status.OK)) for i in range(10)}
+        cells[node] = TestCell(Cell(Status.REJECTED, reason=Reason('xfail_not_skip', 'undeclared skip')))
+        report = read_pytest(
+            f'SKIPPED {node} - no resource marker\n10 passed, 1 skipped in 0.1s\n',
+            returncode=0,
+            allowed_skips=(node,),
+            cells=cells,
+        )
+        assert report.truncated == ()
+        assert report.failures == (node,)
+
+    @pytest.mark.parametrize('total', [0, 2])
+    def test_missing_or_extra_records_refuse_even_a_clean_text_summary(self, total: int) -> None:
+        cells = {f'tests/test_a.py::test_a[{i}]': TestCell(Cell(Status.OK)) for i in range(total)}
+        assert read_pytest('1 passed in 0.1s\n', returncode=0, cells=cells).truncated
+
+    @pytest.mark.parametrize(('summary', 'code'), [('1 failed', 1), ('1 xpassed', 0)])
+    def test_a_red_summary_cannot_be_overruled_by_all_green_records(self, summary: str, code: int) -> None:
+        report = read_pytest(
+            f'{summary} in 0.1s\n', returncode=code, cells={'tests/a.py::test_a': TestCell(Cell(Status.OK))}
+        )
+        assert report.truncated
+
+    def test_printed_failure_names_do_not_replace_real_record_identity(self) -> None:
+        actual = 'tests/a.py::test_a[actual white space - [x]]'
+        cell = TestCell(Cell(Status.REJECTED, reason=Reason('assertion', 'actual residual')))
+        report = read_pytest(
+            'FAILED tests/fake.py::test_fake - printed stdout\n1 failed in 0.1s\n', returncode=1, cells={actual: cell}
+        )
+        assert report.truncated == ()
+        assert report.failures == (actual,)
+        green = read_pytest(
+            'FAILED tests/fake.py::test_fake - printed stdout\n1 passed in 0.1s\n',
+            returncode=0,
+            cells={actual: TestCell(Cell(Status.OK))},
+        )
+        assert green.truncated == ()
+        assert green.failures == ()
+
+    @pytest.mark.parametrize(
+        'text',
+        [
+            'collected 2 items\n1 passed in 0.1s\n',
+            '1 passed in 0.1s\n!!!! Interrupted: KeyboardInterrupt !!!!\n',
+            '1 passed, 1 error in 0.1s\n',
+            '[gw0] node down: Not properly terminated\n1 passed in 0.1s\n',
+            '',
+        ],
+    )
+    def test_complete_cells_do_not_erase_original_text_truncation_guards(self, text: str) -> None:
+        report = read_pytest(text, returncode=0, cells={'tests/a.py::test_a': TestCell(Cell(Status.OK))})
+        assert report.truncated
+
+    def test_flaky_evidence_never_turns_green_and_never_falls_back_to_text(self) -> None:
+        node = 'tests/a.py::test_a'
+        assert read_pytest(
+            '1 passed in 0.1s\n', returncode=0, cells={node: TestCell(Cell(Status.OK))}, flaky=frozenset({node})
+        ).truncated
+        assert read_pytest('1 passed in 0.1s\n', returncode=0, cells=None, flaky=frozenset({node})).truncated
+
+    def test_stage_evidence_is_positional_and_not_a_whole_run_map_repeated_per_stage(self) -> None:
+        a, b = 'tests/a.py::test_a[space - [a]]', 'tests/a.py::test_a[space - [b]]'
+        red = TestCell(Cell(Status.REJECTED, reason=Reason('assertion', 'residual')))
+        stages = (('1 failed in 0.1s\n', 1), ('1 failed in 0.1s\n', 1))
+        report = read_stages(stages, stage_cells=(({a: red}, frozenset()), ({b: red}, frozenset())))
+        assert report.truncated == ()
+        assert set(report.failures) == {a, b}
+        with pytest.raises(ValueError, match='stage'):
+            read_stages(stages, stage_cells=(({a: red}, frozenset()),))
+
+    def test_cross_stage_disagreement_cannot_be_lost_by_concluding_stages_separately(self) -> None:
+        node = 'tests/a.py::test_a[shared identity]'
+        expected = Expectation(Status.REJECTED, 'known failure')
+        first = TestCell(Cell(Status.OK))
+        second = TestCell(Cell(Status.REJECTED, reason=Reason('assertion', 'other decision')), expected)
+        report = read_stages(
+            (('1 passed in 0.1s\n', 0), ('1 xfailed in 0.1s\n', 0)),
+            stage_cells=(({node: first}, frozenset()), ({node: second}, frozenset())),
+        )
+        assert report.truncated
+
+    def test_an_empty_split_is_not_a_pass_and_an_exit_five_stage_cannot_hide_cells(self) -> None:
+        assert read_stages((), stage_cells=()).truncated
+        node = 'tests/a.py::test_a'
+        report = read_stages(
+            (('1 deselected in 0.1s\n', 5), ('1 passed in 0.1s\n', 0)),
+            stage_cells=(
+                ({node: TestCell(Cell(Status.OK))}, frozenset()),
+                ({'tests/a.py::test_b': TestCell(Cell(Status.OK))}, frozenset()),
+            ),
+        )
+        assert report.truncated
+
+
+@pytest.mark.parametrize('recorded', [False, True], ids=['text-only', 'recorded'])
+@pytest.mark.parametrize(
+    ('census', 'settles', 'share'),
+    [
+        (((1, 4, 95),), False, '4 of 5'),
+        (((1, 4, 95), (95, 0, 5)), True, None),
+        (((1, 4, 195), (88, 7, 105)), False, '11 of 100'),
+        (((1, 4, 195), (89, 6, 105)), True, None),
+    ],
+    ids=['deselection-cannot-dilute', 'split-global-four-percent', 'global-eleven-percent', 'exact-ten-percent'],
+)
+def test_skip_ceiling_uses_the_whole_executed_selection_not_deselected_items_or_stage_share(
+    tmp_path: Path,
+    *,
+    recorded: bool,
+    census: tuple[tuple[int, int, int], ...],
+    settles: bool,
+    share: str | None,
+) -> None:
+    """Opposite controls: neither a deselection nor the serial split changes the original 10% bar."""
+    stages, evidence = [], []
+    for stage, (passed, skipped, deselected) in enumerate(census):
+        directory = tmp_path / f'stage-{stage}'
+        recorder = CellRecorder(directory / 'cells.jsonl')
+        for index in range(passed):
+            recorder.record(f'tests/test_pass.py::test_{stage}_{index}', TestCell(Cell(Status.OK)))
+        lines = []
+        for index in range(skipped):
+            node = f'tests/test_skip.py::test_{stage}_{index}'
+            recorder.record(node, TestCell(Cell(Status.NOT_APPLICABLE, reason=Reason('not_applicable', 'known'))))
+            lines.append(f'SKIPPED {node} - known')
+        counts = [(passed, 'passed'), (skipped, 'skipped'), (deselected, 'deselected')]
+        lines.append(', '.join(f'{count} {word}' for count, word in counts if count) + ' in 0.1s')
+        stages.append(('\n'.join(lines) + '\n', 0))
+        evidence.append(read_cells(directory))
+    if len(stages) == 1:
+        cells, flaky = evidence[0]
+        report = read_pytest(
+            stages[0][0],
+            returncode=0,
+            allowed_skips=('tests/test_skip.py',),
+            cells=cells if recorded else None,
+            flaky=flaky,
+        )
+    else:
+        report = read_stages(
+            tuple(stages),
+            allowed_skips=('tests/test_skip.py',),
+            stage_cells=tuple(evidence) if recorded else None,
+        )
+    assert not report.truncated if settles else report.truncated, report
+    assert report.failures == ()
+    if share is not None:
+        assert share in ' '.join(report.truncated), report.truncated
+        assert f'above the {SKIP_CEILING:.0%} ceiling' in ' '.join(report.truncated)
+
+
+@pytest.mark.parametrize(
+    'evidence', ['absent', 'corrupt', 'truncated', 'extra', 'flaky', 'green-versus-failed', 'unexecuted-stage']
+)
+def test_live_verify_refuses_missing_corrupt_extra_flaky_or_contradictory_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, evidence: str
+) -> None:
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_planted.py').write_text('def test_one():\n    pass\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
+    node = 'tests/test_planted.py::test_one'
+
+    def step(_command, *, handle, extra_env=None, **_where: object) -> int:
+        if extra_env:
+            live = Path(extra_env[OUTCOMES_DIR_VAR])
+            live.mkdir(parents=True, exist_ok=True)
+            path = live / 'cells.jsonl'
+            if evidence == 'corrupt':
+                path.write_text('{}\n', encoding='utf-8')
+            elif evidence == 'truncated':
+                path.write_text('{"kind":', encoding='utf-8')
+            elif evidence != 'absent':
+                recorder = CellRecorder(path)
+                recorder.record(node, TestCell(Cell(Status.OK)))
+                if evidence == 'unexecuted-stage':
+                    CellRecorder(live.parent / 'serial' / 'cells.jsonl').record(
+                        'tests/test_planted.py::test_not_executed', TestCell(Cell(Status.OK))
+                    )
+                if evidence == 'extra':
+                    recorder.record('tests/test_planted.py::test_extra', TestCell(Cell(Status.OK)))
+                elif evidence == 'flaky':
+                    recorder.record(
+                        node, TestCell(Cell(Status.REJECTED, reason=Reason('assertion', 'second decision')))
+                    )
+        if evidence == 'green-versus-failed':
+            handle.write(f'FAILED {node} - assertion\n1 failed in 0.1s\n')
+            return 1
+        handle.write('1 passed in 0.1s\n')
+        return 0
+
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, '_tee', step)
+    verdict = verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
+    assert verdict.result.outcome is Conclusion.INCONCLUSIVE, verdict.result
+
 
 #: A red run. The short summary NAMES the three, which is what lets a FAIL be actionable.
 FAILING = """=========================== short test summary info ============================
@@ -643,6 +899,13 @@ class TestThePlantedControl:
             if 'pytest' in command:
                 assert extra_env is not None
             text = output if 'pytest' in command else 'All checks passed!\n'
+            if 'pytest' in command:
+                _record_passes(extra_env, 20 if '1 skipped' in output else 3)
+                if '1 skipped' in output:
+                    CellRecorder(Path(extra_env[OUTCOMES_DIR_VAR]) / 'cells.jsonl').record(
+                        'tests/test_selected.py::test_a',
+                        TestCell(Cell(Status.NOT_APPLICABLE, reason=Reason('not_applicable', 'unavailable'))),
+                    )
             handle.write(text)
             handle.flush()
             return 0
@@ -695,6 +958,7 @@ class TestThePlantedControl:
             launched.append(tuple(command))
             if 'pytest' in command:
                 assert extra_env is not None
+                _record_passes(extra_env)
             handle.write('1 passed in 0.1s\n')
             handle.flush()
             return 0
@@ -1096,6 +1360,14 @@ def _unboxed(_root: Path, argv: list[str], **_k: object) -> tuple[list[str], Pat
     return argv, None
 
 
+def _record_passes(extra_env: dict[str, str], count: int = 1) -> None:
+    """A planted passing process writes the same real Record as the live plugin."""
+    recorder = CellRecorder(Path(extra_env[OUTCOMES_DIR_VAR]) / 'cells.jsonl')
+    stage = extra_env[serialpass.STAGE_ENV]
+    for index in range(count):
+        recorder.record(f'tests/test_planted.py::test_{stage}_{index}', TestCell(Cell(Status.OK)))
+
+
 #: Every verify run writes into the output tree, so a planted repo declares its root.
 _OUTPUT: Final = '[tool.dev_lab.parts]\noutput = "out/logs"\n'
 
@@ -1126,6 +1398,8 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
 
     def tee(command: list[str], *, handle: io.TextIOBase, **_where: object) -> int:
         is_pytest = 'pytest' in command
+        if is_pytest and pytest_text == '1 passed in 0.1s\n':
+            _record_passes(_where['extra_env'])
         handle.write(pytest_text if is_pytest else '')
         return pytest_code if is_pytest else 0
 
@@ -1402,10 +1676,10 @@ def test_a_selections_width_is_the_machines_cores_narrowed_by_its_memory(cores, 
 _ORDER_DEPENDENT: Final = """
 seen = []
 
-def test_a_writes():
+def test_a_writes() -> None:
     seen.append('a')
 
-def test_b_reads_what_a_wrote():
+def test_b_reads_what_a_wrote() -> None:
     assert seen == ['a'], 'order-dependent: passes only after test_a in the same process'
 """
 
@@ -1601,10 +1875,35 @@ def test_a_box_with_no_room_releases_a_producers_claim_claimable(
     key = RunKey(tree='t', env='e', selector='verify')
     code, lines = verify._judge(tmp_path, (), key, tmp_path / 'runs.jsonl', wait_s=0.0, post=post)
     assert code == (ProducerExit.UNREACHABLE if producer else ProducerExit.INCONCLUSIVE)
-    assert release_reason(code, outage=producer).startswith(RETRYABLE) is producer, (
+    assert release_reason(code, outage=Owner.NETWORK if producer else None).startswith(RETRYABLE) is producer, (
         'serve re-queues exactly the capacity release'
     )
     assert 'planted-holder' in lines[0], 'the one line names the capacity reason'
+
+
+def test_a_planted_outage_never_reaches_the_serve_record_running_these_tests(tmp_path: Path) -> None:
+    """A test's declared outage is the test's own: the record ``forge serve`` handed THIS run stays untouched.
+
+    Live 2026-11-13: integrate/main 61560e40's tests/base read ``unreachable: the box is held: not admitted:
+    planted-holder holds every core class=scheduling``. No box was held: the producer case above called
+    :func:`~dev_lab.dev.producer.unreachable`, which wrote its planted refusal into the inherited
+    :data:`OUTCOME_VAR` -- the real record of the serve running the suite. PLANTED CONTROL: the same environment
+    DOES carry the record to a child that declares an outage, so the untouched file is the isolation's.
+    """
+    real = tmp_path / 'serve-outcome.txt'
+    env = os.environ | {OUTCOME_VAR: str(real)}
+    declare = 'from dev_lab.dev.producer import Owner, unreachable; unreachable("control", Owner.SCHEDULING)'
+    subprocess.run([sys.executable, '-c', declare], env=env, check=False, timeout=120)
+    assert 'control' in real.read_text(encoding='utf-8'), 'the control: the record reaches a declaring child'
+    real.unlink()
+    done = subprocess.run(
+        [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', __file__, '-k', 'a_box_with_no_room_releases'],
+        cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True, encoding='utf-8',
+        timeout=600, check=False,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert '2 passed' in done.stdout, done.stdout
+    assert not real.exists(), f'a test wrote the real serve record: {real.read_text(encoding="utf-8")!r}'
 
 
 # ------------------------------------------------------------------ the coverage REPORT (never a gate)
@@ -1625,6 +1924,8 @@ def test_the_pytest_step_writes_a_coverage_report_to_the_output_tree_and_never_g
         launched.append((tuple(command), dict(extra_env or {})))
         if 'pytest' in command and extra_env and extra_env.get(serialpass.STAGE_ENV) == 'parallel':
             Path(extra_env[serialpass.SEEN_ENV]).write_text('x', encoding='utf-8')
+        if 'pytest' in command:
+            _record_passes(extra_env)
         handle.write('1 passed in 0.1s\n')
         handle.flush()
         return 0
@@ -1652,6 +1953,8 @@ def test_planted_a_verify_run_writes_nothing_under_dot_verify(tmp_path, monkeypa
     (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
 
     def step(_command, *, handle, **_where: object) -> int:
+        if 'pytest' in _command:
+            _record_passes(_where['extra_env'])
         handle.write('1 passed in 0.1s\n')
         return 0
 
@@ -1661,6 +1964,41 @@ def test_planted_a_verify_run_writes_nothing_under_dot_verify(tmp_path, monkeypa
     assert not (tmp_path / '.verify').exists()
     (log,) = (tmp_path / 'out/logs' / '/'.join(date_parts()) / 'verify').glob('verify-*.log')
     assert '1 passed' in log.read_text(encoding='utf-8')
+
+
+def test_per_test_cells_are_written_outside_the_tree_during_the_session_and_land_beside_the_log(
+    tmp_path, monkeypatch
+) -> None:
+    """A consumer's session may guard its live output tree against writes; verify's own cells must not trip it.
+
+    PLANTED: the pytest step writes a cell where the door points it; were that under the checkout, the first
+    assertion says so, and were it not moved after the run, the second does.
+    """
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / 'pyproject.toml').write_text(_OUTPUT, encoding='utf-8')
+    during: list[Path] = []
+
+    def step(command, *, handle, extra_env=None, **_where: object) -> int:
+        if 'pytest' in command and extra_env:
+            live = Path(extra_env[OUTCOMES_DIR_VAR])
+            during.append(live)
+            live.mkdir(parents=True, exist_ok=True)
+            CellRecorder(live / f'cells-gw{len(during)}.jsonl').record(
+                'tests/test_planted.py::test_one', TestCell(Cell(Status.OK))
+            )
+        handle.write('1 passed in 0.1s\n')
+        return 0
+
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, '_tee', step)
+    verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
+    assert during
+    assert all(not live.resolve().is_relative_to(tmp_path.resolve()) for live in during), during
+    (log,) = (tmp_path / 'out/logs' / '/'.join(date_parts()) / 'verify').glob('verify-*.log')
+    assert sorted(p.relative_to(outcomes_dir(log)).as_posix() for p in outcomes_dir(log).rglob('*.jsonl')) == [
+        'parallel/cells-gw1.jsonl'
+    ]
+    assert not any(live.exists() for live in during)
 
 
 def test_the_coverage_total_is_read_from_the_markdown_report(tmp_path: Path) -> None:
@@ -1711,3 +2049,37 @@ def test_planted_an_UNDECLARED_output_root_is_refused_naming_the_key(tmp_path: P
     """No default root: a repo that declares none is told the key, never handed another repo's answer."""
     with pytest.raises(UndeclaredOutput, match=r'\[tool\.dev_lab\.parts\] output'):
         verifysteps.coverage_report(tmp_path, tmp_path / 'verify-x.log')
+
+
+def test_each_failed_step_in_the_summary_names_its_door_and_a_failed_test_its_log(tmp_path: Path) -> None:
+    """2026-11-13: ``failed: hooks-installed`` carried no cause and no door."""
+    log = tmp_path / 'run.log'
+    lines = verify.failure_lines(('hooks-installed', 'ruff check .', 'tests/a.py::test_a'), log)
+    assert 'dev_lab.dev.hook_install --install' in lines[0]
+    assert 'ruff check --fix' in lines[1]
+    assert lines[2] == f'  failed: tests/a.py::test_a -- its output: {log.as_posix()}'
+
+
+def test_an_unstaged_edit_to_any_tracked_file_moves_the_run_key(tmp_path: Path) -> None:
+    """2026-11-13: a cited FAIL was reused for "the same tree" while a tracked file held unstaged edits.
+
+    The address covered ``src``, ``tests`` and ``pyproject.toml`` only, so an edit to any other tracked file (a
+    conftest at the root, a Makefile, a rendered hook) read as the tree already judged.
+    PLANTED CONTROL: the untouched tree keys the same twice, and restoring the bytes restores the key.
+    """
+    git = shutil.which('git') or 'git'
+    for args in (('init', '-q'), ('config', 'user.email', 'a@b.c'), ('config', 'user.name', 'a')):
+        subprocess.run([git, '-C', str(tmp_path), *args], check=True, timeout=60)
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_a.py').write_text('def test_a(): pass\n', encoding='utf-8')
+    (tmp_path / 'conftest.py').write_text('X = 1\n', encoding='utf-8')
+    subprocess.run([git, '-C', str(tmp_path), 'add', '.'], check=True, timeout=60)
+    subprocess.run([git, '-C', str(tmp_path), 'commit', '-q', '-m', 'x'], check=True, timeout=60)
+    clean = verify.run_key(tmp_path, ('a',))
+    assert verify.run_key(tmp_path, ('a',)) == clean, 'the control: an untouched tree keys the same'
+    (tmp_path / 'conftest.py').write_text('X = 2\n', encoding='utf-8')
+    assert verify.run_key(tmp_path, ('a',)).tree != clean.tree, 'an unstaged tracked edit kept the judged key'
+    (tmp_path / 'conftest.py').write_text('X = 1\n', encoding='utf-8')
+    assert verify.run_key(tmp_path, ('a',)) == clean
+    (tmp_path / 'conftest.py').unlink()
+    assert verify.run_key(tmp_path, ('a',)).tree != clean.tree, 'a deleted tracked file kept the judged key'

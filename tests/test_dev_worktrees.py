@@ -1,10 +1,9 @@
-"""The LOCAL worktree door on a real repository: a landed tree goes with what git IGNORES (ruling 2026-10-27).
+"""The LOCAL worktree door on a real repository: a landed tree goes with what git does not TRACK (ruling 2026-11-12).
 
-Planted refusals: a modified tracked file, a staged file, a HEAD on no remote branch, and an untracked
-not-ignored file (it exists nowhere else). Planted removals: a tree with ignored artefacts (a cache, ``.venv``,
-a build-written ``__version__.py``), an unregistered directory holding files, and an EMPTY one. A tree with
-run outputs in its ``output/logs`` is a writer defect, kept and named (user ruling 2026-11-09) unless named by
-``--home-outputs``, which moves them home and then reclaims it.
+Planted refusals: a modified tracked file, a staged file, a HEAD on no remote branch (holding an untracked file:
+the CONTROL that it is the unlanded HEAD that keeps it). Planted removals: a tree with ignored artefacts (a cache,
+``.venv``, a build-written ``__version__.py``), a landed tree with an untracked not-ignored file, an unregistered
+directory holding files, an EMPTY one, and a landed tree whose ``output/logs`` is moved home, verified, first.
 """
 
 from __future__ import annotations
@@ -19,8 +18,8 @@ from dev_lab.dev.famtests.visibility import commit, plant_checkout
 from dev_lab.dev.worktrees import main, prune
 
 _GIT = shutil.which('git') or 'git'
-_BLOCKED = ('modified', 'staged', 'wip', 'untracked', 'ignored')
-_GONE = ('done', 'leftover', 'empty')
+_BLOCKED = ('modified', 'staged', 'wip')
+_GONE = ('done', 'leftover', 'empty', 'untracked', 'ignored')
 
 
 def _run(cwd: Path, *args: str) -> None:
@@ -50,6 +49,7 @@ def _planted(tmp_path: Path) -> Path:
     (home / 'ignored' / 'output' / 'logs' / 'result.txt').write_text('keep me', encoding='utf-8')
     _run(work, 'worktree', 'add', '-b', 'wip', str(home / 'wip'), 'origin/main')
     commit(home / 'wip', 'wip.txt')
+    (home / 'wip' / 'scratch.txt').write_text('CONTROL: kept because unlanded', encoding='utf-8')
     (home / 'leftover').mkdir()
     (home / 'leftover' / 'note.txt').write_text('agent output', encoding='utf-8')
     (home / 'empty' / 'nested').mkdir(parents=True)
@@ -73,7 +73,7 @@ def test_the_census_touches_nothing(tmp_path: Path) -> None:
     assert (work / '.claude' / 'worktrees' / 'empty').is_dir()
 
 
-def test_a_landed_tree_goes_with_what_git_ignores_and_an_untracked_file_keeps_it(tmp_path: Path) -> None:
+def test_a_landed_tree_goes_with_what_git_does_not_track_and_its_outputs_go_home(tmp_path: Path) -> None:
     work = _planted(tmp_path)
     home = work / '.claude' / 'worktrees'
     lines = prune(work, apply=True) or ()
@@ -82,15 +82,6 @@ def test_a_landed_tree_goes_with_what_git_ignores_and_an_untracked_file_keeps_it
     for name in _BLOCKED:
         assert (home / name).is_dir(), f'{name} must be refused'
         assert any(line.startswith('kept') and name in line for line in lines)
-    assert (home / 'ignored' / 'output' / 'logs' / 'result.txt').is_file(), 'a writer defect is not copied'
-    assert not (work / 'output').exists(), 'nothing went home unasked'
-    assert any('ignored' in line and 'fix the writer' in line for line in lines), lines
+    assert (work / 'output' / 'logs' / 'result.txt').read_text(encoding='utf-8') == 'keep me', 'moved home first'
     assert (home / 'staged' / 'new.txt').is_file()
     assert main(['--root', str(work), '--prune']) == 0
-
-
-def test_home_outputs_moves_a_named_trees_outputs_home_then_reclaims_it(tmp_path: Path) -> None:
-    work = _planted(tmp_path)
-    assert main(['--root', str(work), '--prune', '--home-outputs', 'ignored']) == 0
-    assert not (work / '.claude' / 'worktrees' / 'ignored').exists()
-    assert (work / 'output' / 'logs' / 'result.txt').read_text(encoding='utf-8') == 'keep me', 'moved home first'

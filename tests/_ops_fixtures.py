@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from dev_lab.ops.config import OpsConfig, load
+from dev_lab.ops.consent.credential import public_text
 from dev_lab.ops.consent.issuer import keygen
 from dev_lab.ops.totp import STEP, code_at
 
@@ -53,13 +54,19 @@ ALPHA, MIRROR = 'gitea.example/owner/alpha', 'github.com/owner/alpha'
 def config(tmp: Path, repos: list[str], *, extra: str = '', glass: tuple[str, ...] = GLASS) -> OpsConfig:
     """An ``[ops]`` config under *tmp* with promote, break-glass and the consent issuer, its secret and key made.
 
-    Break-glass serves *glass*, with one token file per forge host they name (``<tmp>/token-<host>``).
+    Break-glass serves *glass*: one token file per Gitea host they name (``<tmp>/token-<host>``), and on GitHub the
+    ops App (``<tmp>/app-github.com.pem``) -- GitHub refuses a standing token.
     """
     hosts = sorted({url.split('/')[2] for url in glass})
-    tokens = ''.join(f'"{host}" = "{(tmp / f"token-{host}").as_posix()}"\n' for host in hosts)
+    tokens = ''.join(f'"{host}" = "{(tmp / f"token-{host}").as_posix()}"\n' for host in hosts if host != 'github.com')
+    apps = ''.join(
+        f'"{host}" = {{app_id = 4242, key_file = "{(tmp / f"app-{host}.pem").as_posix()}"}}\n'
+        for host in hosts
+        if host == 'github.com'
+    )
     served = ', '.join(f'"{url}"' for url in glass)
     (tmp / 'totp').write_text(RFC_KEY + '\n', encoding='utf-8')
-    keygen(tmp / 'consent.key', force=True)
+    published = public_text(keygen(tmp / 'consent.key', force=True).public_key())
     home = (tmp / 'home').as_posix()
     listed = ', '.join(f'"{url}"' for url in repos)
     text = f"""
@@ -80,11 +87,16 @@ log = "{(tmp / 'audit.log').as_posix()}"
 {extra}
 [ops.breakglass.tokens]
 {tokens}
+[ops.breakglass.apps]
+{apps}
 [ops.consent]
 account = "consent"
 totp = "{(tmp / 'totp').as_posix()}"
 key = "{(tmp / 'consent.key').as_posix()}"
 state = "{(tmp / 'consent-state').as_posix()}"
+[ops.consent_client]
+endpoint = "consent@localhost"
+public_key = "{published}"
 """
     path = tmp / 'supervise.toml'
     path.write_text(text, encoding='utf-8')

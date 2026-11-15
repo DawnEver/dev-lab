@@ -17,7 +17,9 @@
 #
 # What each stage hands a hook is git's own contract: pre-commit selects among the STAGED paths;
 # commit-msg appends the message file to `run`; pre-push pipes git's ref lines to stdin and selects
-# among the paths those pushes change. The checks below report and never rewrite a file.
+# among the paths those pushes change. A merge counts only its OWN content (a path differing from every
+# parent), never a file it brings in (user ruling 2026-11-13): a hook checks, and a formatter rewrites, only
+# what the commit changes; whole-tree checks are the forge's. The checks below report and never rewrite a file.
 #
 # WHAT RUNS HERE (toolchain plan P3, user-approved 2026-10-23; amended by the user ruling of 2026-11-07): a local
 # row is an irreversible-harm check, a second-scale format check, or -- since 2026-11-07 -- the CURRENCY of a pr/*
@@ -26,11 +28,19 @@
 # dev_lab.dev.famtests.ephemeralrefs, dev_lab.dev.scratch), the branch set (dev_lab.dev.famtests.branchset,
 # dev_lab.dev.branchprune), the lock PIN (dev_lab.dev.famtests.lockpin) and PR advice (`forge pr create`,
 # dev_lab.dev.pradmit, never a refusal). THE 2026-11-07 RULING reverses P3's "no local behind bound or lock
-# freshness": agents kept pushing stale pr/* heads, and the forge's integration alarm and lock/fresh status came
+# freshness": agents kept pushing stale pr/* heads, and the forge's integration alarm and lock freshness status came
 # after the harm. So the `pr-current` row (PR-HEAD-IS-CURRENT, dev_lab.dev.prcurrent) refuses a pr/* push whose
 # tip lacks origin/<integration> (fetched afresh) or whose lock pins a floated sibling past the lag
 # window (dev_lab.dev.locklag.within_window, the one window lock/lag reads), naming `forge sync`; `forge pr ready` reads the same judgement. A finding
 # the forge cannot see (an untracked stray file) is a post-commit hint.
+
+# SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
+# [tool.dev_lab.task] required = true, an agent session commits only while rem binds an open task to its tree. Opt-in;
+# a repo that does not declare it is never judged.
+[[pre-commit]]
+id = "task-bound"
+run = ["python", "-m", "dev_lab.dev.taskgate"]
+always_run = true
 
 [[pre-commit]]
 id = "check-added-large-files"
@@ -126,6 +136,14 @@ run = ["python", "-m", "dev_lab.dev.mergeresolution"]
 id = "memory-adds"
 run = ["python", "-m", "dev_lab.dev.memoryadds", "commit"]
 
+# SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
+# [tool.dev_lab.task] required = true, an agent session pushes only while rem binds an open task to its tree. Opt-in;
+# a repo that does not declare it is never judged.
+[[pre-push]]
+id = "task-bound"
+run = ["python", "-m", "dev_lab.dev.taskgate"]
+always_run = true
+
 # The session-branch invariants at push, local reads only (dev_lab.dev.sessionbranch): a declared session branch
 # or the trunk is published from that very local branch (PUBLISH-IS-THE-LOCAL-REF), by fast-forward
 # (SESSION-HISTORY-ONLY-GROWS), and the integration branch by audited merges (INTEGRATION-IS-MERGES-ONLY);
@@ -144,6 +162,16 @@ id = "session-branch"
 run = ["python", "-m", "dev_lab.dev.sessionbranch"]
 always_run = true
 
+# BASE-HOLDS-THE-MILESTONE and VERSION-TAG-NEEDS-APPROVAL (dev_lab.dev.milestonebase, user ruling 2026-11-13): a
+# pushed branch contains the newest milestone, the highest v<major>.<minor>.<patch>[.devN] tag on origin/<integration>
+# or origin/<trunk>, a local-only stray ignored (remedy
+# `forge sync`), and an agent session creates a v* tag on origin only with the user's words in DEV_LAB_TAG_APPROVED,
+# and a dev tag only as .dev0 (hatch-vcs refuses .devN, N != 0). Local reads only.
+[[pre-push]]
+id = "milestone-base"
+run = ["python", "-m", "dev_lab.dev.milestonebase"]
+always_run = true
+
 # NO-PUSH-ONTO-A-CLOSED-PR (dev_lab.dev.closedpush): a branch whose PR into the integration branch the forge
 # closed UNMERGED, with no open PR for it, takes no new push -- no PR would carry it. A merged PR's branch passes:
 # the forge opens its continuation (dev_lab.dev.prcontinue). An unreadable forge refuses.
@@ -152,8 +180,8 @@ id = "closed-pr"
 run = ["python", "-m", "dev_lab.dev.closedpush"]
 always_run = true
 
-# PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07): a pr/* head holds origin/<integration>'s
-# current tip and a lock fresh against the floated siblings' heads; the remedy is `forge sync`. EARLY FEEDBACK only:
+# PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07): a pr/* head lacks at most the lag window of
+# origin/<integration>'s first-parent commits and holds a lock fresh against the floated siblings' heads; the remedy is `forge sync`. EARLY FEEDBACK only:
 # the forge posts the same judgement as the `pr-current` status on every PR head and the merge requires it
 # (dev_lab.dev.forgeheadgate, user ruling 2026-11-07), so a stale or missing shim never disarms it.
 [[pre-push]]
@@ -170,6 +198,23 @@ id = "pr-notices"
 run = ["python", "-m", "dev_lab.dev.branchnotices", "--push"]
 always_run = true
 refs = '^refs/heads/pr/'
+
+# SESSION-HEARS-ITS-PRS (2026-11-12): a push records its branches and heads as the agent session's
+# (CLAUDE_CODE_SESSION_ID) in the repository git is pushing, from git's own ref lines -- never from a shell line's
+# working directory (dev_lab.dev.sessionprs.record_pushed). Records, says a failure, exits 0 always.
+[[pre-push]]
+id = "session-prs"
+run = ["python", "-m", "dev_lab.dev.sessionprs", "--push"]
+always_run = true
+refs = '^refs/heads/'
+
+# RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12: clearing useless worktrees is REQUIRED): every push, from
+# any tree, detaches a background reclaim of the main checkout (dev_lab.dev.reclaimrun --background: per-repo lock,
+# bounded batch, exit 0 always), so it never delays or fails the push. Merge and checkout run it below.
+[[pre-push]]
+id = "reclaim"
+run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
+always_run = true
 
 # post-commit is ADVISORY (githooks.table.ADVISORY): the commit is made, and no row can change its exit status.
 
@@ -195,13 +240,28 @@ always_run = true
 
 # VENV-FOLLOWS-THE-LOCK (user ruling 2026-11-04): a merge or checkout that moved pyproject.toml/uv.lock detaches a
 # re-bootstrap of this checkout's venv (dev_lab.dev.venvfollow); an unchanged lock costs one hash, a live run skips.
-# Both stages are ADVISORY: the merge or checkout is done.
+# Both stages are ADVISORY: the merge or checkout is done. `bootstraps`: a checkout with NO venv (a new worktree) runs
+# it on the interpreter the shim found, so the venv is created rather than every row skipped.
 [[post-merge]]
 id = "venv-follows-lock"
 run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
 always_run = true
+bootstraps = true
 
 [[post-checkout]]
 id = "venv-follows-lock"
 run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
+always_run = true
+bootstraps = true
+
+# RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12): a merge or checkout that lands detaches the same background
+# reclaim as a push (the pre-push row above); ADVISORY, and reclaimrun exits 0 always.
+[[post-merge]]
+id = "reclaim"
+run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
+always_run = true
+
+[[post-checkout]]
+id = "reclaim"
+run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
 always_run = true

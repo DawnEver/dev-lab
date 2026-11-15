@@ -171,6 +171,25 @@ def test_an_empty_test_tree_refuses_rather_than_auditing_clean(repo: Path) -> No
         mergeaudit.audit(repo, head, roots=('nothing_here',))
 
 
+def test_a_repo_that_declares_no_test_roots_has_nothing_to_audit(tmp_path: Path) -> None:
+    """``test_roots = []`` is a DECLARATION (a config-only repo gated by its declared checks), not a broken scan.
+
+    PLANTED: the same merge audited under a declared root that holds nothing still refuses (the test above).
+    """
+    repo = tmp_path
+    _git(repo, 'init', '-q', '-b', 'main')
+    _git(repo, 'config', 'user.email', 't@t')
+    _git(repo, 'config', 'user.name', 't')
+    _commit(repo, {'hosts/a.toml': 'x = 1\n', 'pyproject.toml': '[project]\nname = "c"\n'}, 'base')
+    _git(repo, 'checkout', '-q', '-b', 'lane')
+    _commit(repo, {'src/m.py': 'X = 3\n'}, 'lane')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(repo, {'src/n.py': 'Y = 1\n'}, 'main')
+    _git(repo, 'merge', '-q', '-m', 'merge', 'lane')
+    head = _git(repo, 'rev-parse', 'HEAD')
+    assert mergeaudit.audit(repo, head, roots=()) == ()
+
+
 def _pending_merge_dropping_b(repo: Path) -> None:
     """A merge in progress whose resolution deleted the lane's test -- the planted LOST."""
     _git(repo, 'checkout', '-q', '-b', 'lane')

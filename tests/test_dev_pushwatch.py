@@ -135,7 +135,7 @@ def test_forge_pr_create_prints_the_monitor_command_for_the_pr_head(tmp_path: Pa
     forge = StateForge()
     monkeypatch.setattr(forgecli, 'client_for', lambda *_a, **_k: forge)
     monkeypatch.setattr(forgecli.pradmit, 'create_advice', lambda *_a, **_k: ())
-    monkeypatch.setattr(forgecli.forgemerge, 'auto_merge', lambda *_a: 'auto-merge enabled')
+    monkeypatch.setattr(forgecli.forgemergecall, 'auto_merge', lambda *_a: 'auto-merge enabled')
     monkeypatch.setattr(forgecli.branchnotices, 'report', lambda *_a, **_k: '')
     argv = ['pr', 'create', '--title', 't', '--head', 'pr/w', '--base', 'integrate/main']
     assert forgecli.issue_and_pr(argv, cwd=work, env={}) == 0
@@ -196,16 +196,15 @@ def test_a_stop_is_refused_while_a_pushed_head_is_pending_and_unwatched_naming_t
     assert _stop(work, forge, []) is None
 
 
-def test_a_red_pushed_head_refuses_the_stop_once_and_names_where_to_read_it(tmp_path: Path) -> None:
+def test_a_red_pushed_head_that_is_no_session_pr_does_not_refuse_the_stop(tmp_path: Path) -> None:
+    """A red blocks only on a PR of the session (SESSION-HEARS-ITS-PRS, tests/test_dev_sessionwatch.py)."""
     work, head = _work(tmp_path)
     _hook(work, 'git push origin HEAD')
     forge = StateForge()
+    _post(forge, head, 'tests/base', 'pending')
+    assert _stop(work, forge, []) is not None, 'PLANTED CONTROL: the same head pending and unwatched is refused'
     _post(forge, head, 'tests/base', 'failure')
-    block = _stop(work, forge, [])
-    assert block is not None
-    assert head[:12] in block['reason']
-    assert 'forge status list' in block['reason']
-    assert _stop(work, forge, [], again=True) is None, 'a red may need the user: refused once, never a loop'
+    assert _stop(work, forge, []) is None
 
 
 def test_a_session_that_pushed_nothing_or_a_forge_that_cannot_answer_ends_the_turn(tmp_path: Path) -> None:

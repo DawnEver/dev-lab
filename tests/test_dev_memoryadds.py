@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import memoryadds
+from dev_lab.dev import memoryadds, memoryentry
 
 _GIT = shutil.which('git') or 'git'
 ENTRY = '.claude/memory/2026/10/01/an-entry.md'
@@ -149,13 +149,13 @@ def test_manual_refusal_names_the_versioned_task_format_and_remedy(repo: Path) -
 def test_scoped_manual_task_format_preserves_crlf_operations(prefix: str) -> None:
     before = MANUAL_HEAD + MANUAL_FIRST
     after = before.replace('- [ ]', '- [x]') + '\n' + MANUAL_NEXT
-    assert memoryadds._only_manual_tasks_updated(prefix + MANUAL, before.replace('\n', '\r\n'), after)
+    assert memoryentry.only_manual_tasks_updated(prefix + MANUAL, before.replace('\n', '\r\n'), after)
 
 
 @pytest.mark.parametrize('path', [ENTRY, MANUAL.replace('manual.md', 'narrative.md'), MANUAL.replace('/11/', '/99/')])
 def test_a_task_shaped_body_cannot_make_another_memory_path_mutable(path: str) -> None:
     before = MANUAL_HEAD + MANUAL_FIRST
-    assert not memoryadds._only_manual_tasks_updated(path, before, before + '\n' + MANUAL_NEXT)
+    assert not memoryentry.only_manual_tasks_updated(path, before, before + '\n' + MANUAL_NEXT)
 
 
 @pytest.mark.parametrize('change', ['edit', 'delete', 'rename'])
@@ -205,7 +205,7 @@ def test_a_privacy_redaction_of_a_published_entry_is_not_an_edit(repo: Path) -> 
         repo,
         ENTRY,
         '---\nname: an-entry\ndescription: d\n---\n\n> '
-        + memoryadds.REDACTION_NOTE.format(day='2026-11-09')
+        + memoryentry.REDACTION_NOTE.format(day='2026-11-09')
         + '\n\nThe forge is at <ip> on host <host>.\nBody.\n',
     )
     _commit(repo, 'redact', ENTRY)
@@ -225,7 +225,7 @@ def test_planted_a_redaction_note_never_admits_a_narrative_edit(repo: Path, body
     _commit(repo, 'site', ENTRY)
     _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
     base = _lane(repo)
-    note = '> ' + memoryadds.REDACTION_NOTE.format(day='2026-11-09')
+    note = '> ' + memoryentry.REDACTION_NOTE.format(day='2026-11-09')
     _write(repo, ENTRY, f'---\nname: an-entry\ndescription: d\n---\n\n{note}\n\n{body}')
     _commit(repo, 'redact and rewrite', ENTRY)
     found = memoryadds.problems_between(repo, base, 'HEAD')
@@ -266,19 +266,19 @@ CITED = (
 
 
 def test_a_merged_entry_that_cites_every_paragraph_in_one_scope_passes() -> None:
-    assert memoryadds.merged_entry_problems('src/x/.claude/memory/2026/10/31/m.md', CITED) == ()
+    assert memoryentry.merged_entry_problems('src/x/.claude/memory/2026/10/31/m.md', CITED) == ()
 
 
 def test_a_merged_entry_with_an_uncited_paragraph_is_refused() -> None:
     text = CITED + '\nA claim with no source.\n'
-    found = memoryadds.merged_entry_problems('.claude/memory/2026/10/31/m.md', text)
+    found = memoryentry.merged_entry_problems('.claude/memory/2026/10/31/m.md', text)
     assert len(found) == 1
     assert 'A claim with no source' in found[0]
 
 
 def test_a_merged_entry_reaching_into_another_scope_is_refused() -> None:
     text = CITED.replace('2026/10/02/b.md]', 'src/y/.claude/memory/2026/10/02/b.md]')
-    found = memoryadds.merged_entry_problems('src/x/.claude/memory/2026/10/31/m.md', text)
+    found = memoryentry.merged_entry_problems('src/x/.claude/memory/2026/10/31/m.md', text)
     assert any('src/y/.claude/memory/2026/10/02/b.md' in line for line in found), found
 
 
@@ -342,7 +342,7 @@ def test_a_crlf_entry_stripped_to_lf_is_still_only_the_strip(repo: Path) -> None
 
 
 def test_a_merged_source_missing_at_the_base_is_refused() -> None:
-    found = memoryadds.merged_entry_problems('.claude/memory/2026/10/31/m.md', CITED, exists=lambda p: 'a.md' in p)
+    found = memoryentry.merged_entry_problems('.claude/memory/2026/10/31/m.md', CITED, exists=lambda p: 'a.md' in p)
     assert found == (
         (
             '.claude/memory/2026/10/31/m.md: merged_from 2026/10/02/b.md does not exist at the base '
@@ -497,3 +497,189 @@ def test_planted_a_draft_entry_turning_into_a_task_list_is_still_refused(repo: P
     _write(repo, rel, MANUAL_HEAD + MANUAL_FIRST)
     _git(repo, 'add', '--', rel)
     assert memoryadds.pending(repo)
+
+
+def _fresh_origin(repo: Path, *, uncited: bool) -> str:
+    """A repo whose origin holds NO integration ref yet: the push that founds the repo creates it."""
+    _git(repo, 'update-ref', '-d', 'refs/remotes/origin/integrate/main')
+    rel = '.claude/memory/2026/10/31/m.md'
+    _write(repo, rel, CITED + ('\nUncited.\n' if uncited else ''))
+    head = _commit(repo, 'founding memory', rel)
+    return f'refs/heads/integrate/main {head} refs/heads/integrate/main {"0" * 40}\n'
+
+
+def test_the_push_that_founds_a_repo_is_judged_from_the_empty_tree(repo: Path) -> None:
+    """No published entry exists before the first push, so the whole pushed history is adds -- judged as adds."""
+    assert memoryadds.pushed(repo, _fresh_origin(repo, uncited=False)) == ()
+
+
+def test_planted_a_founding_push_adding_an_uncited_merged_entry_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: with no integration ref the adds are still judged, never waved through."""
+    found = memoryadds.pushed(repo, _fresh_origin(repo, uncited=True))
+    assert len(found) == 1, found
+    assert 'Uncited' in found[0]
+
+
+_WRONG = '---\nname: an-entry\ndescription: d\n---\n\nThe user said: D31 decide it NOT yourself.\nBody.\n'
+
+
+def _amend_note(reason: str = 'the quote was mistranslated', approved: str = 'fix that line') -> str:
+    return '> ' + memoryentry.AMENDMENT_NOTE.format(day='2026-11-13', reason=reason, approved=approved)
+
+
+def test_an_approved_amendment_corrects_a_published_entry_in_place(repo: Path) -> None:
+    """The exceptional case: a published line is WRONG (a fact, a mistranslation, a forbidden character).
+
+    It is corrected in place when the entry carries the amendment note -- its reason and the user's words
+    approving it -- and every other change replaces a line one-for-one: nothing is added or removed.
+    """
+    _write(repo, ENTRY, _WRONG)
+    _commit(repo, 'wrong', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    base = _lane(repo)
+    _write(
+        repo,
+        ENTRY,
+        f'---\nname: an-entry\ndescription: d\n---\n\n{_amend_note()}\n\n'
+        'The user said: D31 decide it yourself.\nBody.\n',
+    )
+    _commit(repo, 'amend', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    ('note', 'body'),
+    [
+        (None, 'The user said: D31 decide it yourself.\nBody.\n'),  # no note: an edit
+        ('reason-only', 'The user said: D31 decide it yourself.\nBody.\n'),  # no approval quoted
+        ('full', 'The user said: D31 decide it yourself.\n'),  # a line removed
+        ('full', 'The user said: D31 decide it yourself.\nBody.\nA new claim.\n'),  # a line added
+    ],
+)
+def test_planted_an_amendment_needs_its_note_its_approval_and_one_for_one_lines(
+    repo: Path, note: str | None, body: str
+) -> None:
+    """PLANTED CONTROL: without the note, without the user's words, or with lines added/removed, it is an edit."""
+    _write(repo, ENTRY, _WRONG)
+    _commit(repo, 'wrong', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    base = _lane(repo)
+    head = {None: '', 'reason-only': _amend_note(approved='') + '\n\n', 'full': _amend_note() + '\n\n'}[note]
+    _write(repo, ENTRY, f'---\nname: an-entry\ndescription: d\n---\n\n{head}{body}')
+    _commit(repo, 'amend badly', ENTRY)
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert len(found) == 1, found
+
+
+# --- a first adoption: HEAD carries no manifest yet ------------------------------------------------------------
+
+
+def _bare(tmp_path: Path) -> Path:
+    _git(tmp_path, 'init', '-q', '-b', 'integrate/main')
+    _git(tmp_path, 'config', 'user.email', 't@t')
+    _git(tmp_path, 'config', 'user.name', 't')
+    _write(tmp_path, 'README.md', 'r\n')
+    _commit(tmp_path, 'before the family', 'README.md')
+    return tmp_path
+
+
+def test_a_first_adoption_commit_is_judged_by_its_own_staged_manifest(tmp_path: Path) -> None:
+    """HEAD has no pyproject.toml: the commit's OWN staged manifest names the integration branch."""
+    repo = _bare(tmp_path)
+    _write(repo, 'pyproject.toml', "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n")
+    _write(repo, '.claude/memory/2026/11/13/adopted.md', '---\nname: adopted\ndescription: d\n---\n\nA.\n')
+    _git(repo, 'add', '--', 'pyproject.toml', '.claude/memory/2026/11/13/adopted.md')
+    assert memoryadds.pending(repo) == ()
+
+
+def test_a_commit_with_no_manifest_anywhere_is_judged_without_one(tmp_path: Path) -> None:
+    """Neither HEAD nor the index has a manifest: nothing names an integration branch, and memory is still judged."""
+    repo = _bare(tmp_path)
+    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nBody.\n')
+    _commit(repo, 'an entry', ENTRY)
+    _write(repo, '.claude/memory/2026/11/13/new.md', '---\nname: new\ndescription: d\n---\n\nN.\n')
+    _git(repo, 'add', '--', '.claude/memory/2026/11/13/new.md')
+    assert memoryadds.pending(repo) == ()
+    _git(repo, 'rm', '-q', '--', ENTRY)
+    assert any('never deleted' in line for line in memoryadds.pending(repo)), 'PLANTED CONTROL: a deletion still reds'
+
+
+@pytest.mark.parametrize('where', ['staged', 'head'])
+def test_a_manifest_naming_no_integration_branch_is_still_refused(tmp_path: Path, where: str) -> None:
+    """PLANTED control: a manifest that exists -- at HEAD, or staged by the first adoption -- must name the branch."""
+    repo = _bare(tmp_path)
+    _write(repo, 'pyproject.toml', "[project]\nname = 'x'\n")
+    if where == 'head':
+        _commit(repo, 'a manifest without the table', 'pyproject.toml')
+    else:
+        _git(repo, 'add', '--', 'pyproject.toml')
+    with pytest.raises(ValueError, match='names no integration branch'):
+        memoryadds.pending(repo)
+
+
+# --- the shape of an added entry, and the amendment that completes a published one -----------------------------
+
+
+@pytest.mark.parametrize(
+    ('text', 'missing'),
+    [
+        ('---\ncreated: 2026-11-13\n---\n# X\n', 'name, description'),  # 2026-11-13: committed, caught only later
+        ('---\nname: x\n---\n# X\n', 'description'),
+        ('# no frontmatter at all\n', 'name, description'),
+    ],
+)
+def test_planted_an_added_entry_without_name_or_description_is_refused_at_commit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, text: str, missing: str
+) -> None:
+    """PLANTED CONTROL: the shape the dated-memory test reads, refused when the entry is ADDED, not later.
+
+    The clean twin (name and description declared) is ``test_a_lane_that_only_adds_memory_passes``.
+    """
+    rel = '.claude/memory/2026/11/13/half.md'
+    _write(repo, rel, text)
+    _git(repo, 'add', '--', rel)
+    monkeypatch.chdir(repo)
+    found = memoryadds.pending(repo)
+    assert len(found) == 1, found
+    assert rel in found[0], found
+    assert f'declares no {missing}' in found[0], found
+    assert memoryadds.main(['commit']) == 1
+
+
+_HEADLESS = '---\ncreated: 2026-11-13\n---\n# Title\n\nBody line.\n'
+
+
+def _published(repo: Path) -> str:
+    _write(repo, ENTRY, _HEADLESS)
+    _commit(repo, 'headless', ENTRY)
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    return _lane(repo)
+
+
+def test_an_approved_amendment_may_add_the_missing_required_frontmatter(repo: Path) -> None:
+    """2026-11-13: the user approved completing a published entry's frontmatter; one-for-one could not add a key."""
+    base = _published(repo)
+    note = _amend_note('added the name/description frontmatter the memory shape requires', '\u540c\u610f\u8865\u5168')
+    _write(
+        repo, ENTRY, f'---\nname: an-entry\ndescription: d\ncreated: 2026-11-13\n---\n# Title\n\nBody line.\n{note}\n'
+    )
+    _commit(repo, 'complete', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    ('note', 'head', 'body'),
+    [
+        ('approved', 'name: an-entry\ndescription: d\n', 'Body line.\nA new claim.\n'),  # a key AND a body line added
+        ('approved', 'name: an-entry\ndescription: d\n', 'Body line changed.\n'),  # a key AND a body line rewritten
+        ('approved', 'name: an-entry\ndescription: d\nowner: me\n', 'Body line.\n'),  # a key nothing requires
+        ('', 'name: an-entry\ndescription: d\n', 'Body line.\n'),  # no approved note
+    ],
+)
+def test_planted_a_frontmatter_completion_admits_nothing_else(repo: Path, note: str, head: str, body: str) -> None:
+    """PLANTED CONTROL: beside the added required keys, every other line stays exactly as published."""
+    base = _published(repo)
+    tail = f'{_amend_note()}\n' if note else ''
+    _write(repo, ENTRY, f'---\n{head}created: 2026-11-13\n---\n# Title\n\n{body}{tail}')
+    _commit(repo, 'complete badly', ENTRY)
+    assert len(memoryadds.problems_between(repo, base, 'HEAD')) == 1

@@ -1,0 +1,5 @@
+# A GitHub repo that declares the base CI with no layer of its own.
+[project]
+name = "plain"
+
+[tool.dev_lab.ci."ci.yml"]

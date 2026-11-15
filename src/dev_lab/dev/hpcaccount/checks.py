@@ -22,7 +22,7 @@ Measured 2026-10-12 deploying three accounts on one cluster: every one of these 
   ``git merge-tree --write-tree`` (git >= 2.38); cron's ``/usr/bin/git`` can be older (Ada 2026-10-17:
   2.31.1, every tick refused with merge-tree's usage). The floor is PROVEN on a toy repository, never read
   from ``--version`` -- a vendor build's version string is not the capability.
-* THE GRANT (:func:`grant_of`). A tick on a cluster needs this account's own ``[[hpc.grant]]``
+* THE GRANT (:func:`association_refusal`). A tick on a cluster needs this account's own ``[[hpc.grant]]``
   (:mod:`lab_commons.hpc.grants`): the user from ``id -un``, the account and its CPU limit from
   ``sacctmgr``, this host, and the partitions the deployment declares (a partition list is a choice,
   not a fact Slurm can answer).
@@ -35,20 +35,20 @@ import shlex
 import shutil
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 import lab_commons.launch as _door
 
 from dev_lab.dev._dep_project import follow_pin
-from dev_lab.dev.hpcaccount.spec import Deployment, tick_dirs
+from dev_lab.dev.hpcaccount.spec import tick_dirs
 from dev_lab.dev.lockcheck import uv_version
 
 __all__ = [
     'INSTALLERS',
     'LOGIN_MARK',
     'MERGE_TREE_GIT',
+    'association_refusal',
     'follow_uv',
-    'grant_of',
     'login_files',
     'login_line',
     'merge_tree_refusal',
@@ -171,33 +171,14 @@ def tool_plan(needs: Iterable[str], *, found: Callable[[str], bool]) -> tuple[li
     return installs, refused
 
 
-def grant_of(user: str, sacct: str, *, spec: Deployment, host: str) -> dict[str, Any] | str:
-    """The account's ``[[hpc.grant]]`` from ``sacctmgr -nP show assoc ... format=account,grptres``; else why not."""
-    if not spec.partitions:
-        return (
-            'declare the partitions its grant may use: --partition <name> (repeatable; partitions = [...] in [deploy])'
-        )
-    limits: dict[str, str] = {}
-    for line in sacct.splitlines():
-        account, _, tres = line.strip().partition('|')
-        if account:
-            limits.setdefault(account, tres)
-    if not limits:
+def association_refusal(user: str, sacct: str, slurm_account: str) -> str | None:
+    """Why *slurm_account* is not one of *user*'s Slurm associations (``sacctmgr -nP show assoc``); ``None``: it is."""
+    accounts = {line.strip().partition('|')[0] for line in sacct.splitlines()} - {''}
+    if not accounts:
         return f'no Slurm association for {user} (sacctmgr show assoc): the cluster has given this account none'
-    if spec.slurm_account:
-        if spec.slurm_account not in limits:
-            return f"[deploy] slurm_account {spec.slurm_account!r} is not one of {user}'s: {', '.join(limits)}"
-        account = spec.slurm_account
-    elif len(limits) > 1:
-        return f'{user} has several Slurm accounts ({", ".join(limits)}): declare one with --slurm-account <account>'
-    else:
-        (account,) = limits
-    return {
-        'user': user,
-        'hosts': [host],
-        'slurm_account': account,
-        'partitions': list(spec.partitions),
-    }
+    if slurm_account not in accounts:
+        return f"the declared slurm_account {slurm_account!r} is not one of {user}'s: {', '.join(sorted(accounts))}"
+    return None
 
 
 def follow_uv() -> str:

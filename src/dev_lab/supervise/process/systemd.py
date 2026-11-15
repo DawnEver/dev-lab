@@ -28,6 +28,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.box import Refused, command, read_ended
 from lab_commons.compute.model import Demand
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.supervise.notify import NOTIFY_SOCKET
 from dev_lab.supervise.process.base import Ran
@@ -107,7 +108,7 @@ def subprocess_runner(argv: list[str], timeout: int, cwd: str | None) -> Ran:
     # the journal names a pid, and the pid is gone by the time anybody reads it.
     environment = {key: value for key, value in os.environ.items() if key != NOTIFY_SOCKET}
     try:
-        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        with tempfile.TemporaryFile(prefix=TEMP_PREFIX) as out, tempfile.TemporaryFile(prefix=TEMP_PREFIX) as err:
             done = _door.run(argv, stdout=out, stderr=err, timeout=timeout, cwd=cwd, check=False, env=environment)
             out.seek(0)
             err.seek(0)
@@ -284,7 +285,7 @@ class SystemdProcessManager:
         queue = CAPPED_QUEUE_S if within is None else max(0, within - timeout - _GRACE)
         demand = Demand(cpu=CAPPED_CPU, mem_gb=ceiling_gb(memory_max))
         what = f'supervise: {" ".join(argv)}'[:120]
-        with tempfile.TemporaryDirectory(prefix='lab-supervise-box-') as scratch:
+        with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}lab-supervise-box-') as scratch:
             record = Path(scratch) / 'outcome.json'
             boxed = command(argv, demand, timeout, queue, key=f'supervise:{argv[0]}', what=what, outcome=record)
             return judged(self.runner(boxed, timeout + queue + _GRACE, cwd), record)

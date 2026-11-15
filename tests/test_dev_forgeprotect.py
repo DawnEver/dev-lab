@@ -6,16 +6,19 @@ planted control is a declaration or a live rule that must NOT read as clean.
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, INTEGRATOR, FakeGitea, FakeGitHub, refused
 
-from dev_lab.dev import forgeprotect
+from dev_lab.dev import _protect_gitea, forgeprotect
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeprotect import INTEGRATION, TRUNK, apply, declaration_from, plan, required_contexts, targets
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 GITHUB = Forge('github.com', 'owner', 'alpha')
 GITEA = Forge('gitea.example', 'owner', 'alpha')
@@ -32,7 +35,7 @@ JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
         (GITEA_TEXT + '[tool.dev_lab.protection]\nextra = 1\n', 'unknown key'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\npromote = ["p"]\n', 'names no breakglass'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = "b"\nwho = 1\n', 'unknown'),
-        (GITEA_TEXT + '[tool.dev_lab.protection]\napprovals = 1\n', 'nobody posts an approving review'),
+        (GITEA_TEXT + '[tool.dev_lab.protection]\napprovals = 1\n', 'the judge is advisory'),
         (GITEA_TEXT + JUDGED + '[tool.dev_lab.protection]\napprovals = -1\n', 'below zero'),
     ],
 )
@@ -42,9 +45,9 @@ def test_a_declaration_that_cannot_mean_anything_is_refused(text: str, said: str
         declaration_from(text, 'pyproject.toml')
 
 
-def test_the_approver_is_the_declared_judge_and_one_approval_its_default() -> None:
+def test_a_judge_reviewed_repo_requires_no_approval_since_the_judge_is_advisory() -> None:
     integration, trunk = targets(GITEA_TEXT + JUDGED, 'p', GITEA)
-    assert (integration.approvals, integration.approver) == (1, 'review-bot')
+    assert (integration.approvals, integration.approver) == (0, '')
     assert (trunk.approvals, trunk.approver) == (0, '')
 
 
@@ -58,10 +61,23 @@ def test_the_branches_and_identities_come_from_their_one_declaration() -> None:
     assert (integration.role, integration.branch, integration.bypass, integration.pushers) == (
         INTEGRATION,
         'next',
-        'breakglass-bot',
+        ('breakglass-bot',),
         (),
     )
     assert (trunk.role, trunk.branch, trunk.pushers) == (TRUNK, 'main', ('promote-bot',))  # fmt: skip
+
+
+def test_a_one_branch_repo_has_one_rule_and_it_is_the_integration_rule() -> None:
+    """A repo whose trunk IS its integration branch takes its changes by pull request merge: that is its one rule.
+
+    PLANTED: rendering the trunk's rule too would write two rules for one branch, and the trunk's (no pull request
+    merge, the base part required) would refuse every merge the forge decided.
+    """
+    one = GITEA_TEXT.replace('integration = "integrate/main"', 'trunk = "main"\nintegration = "main"')
+    (rule,) = targets(one, 'p', GITEA)
+    assert (rule.role, rule.branch, rule.via_pull_request, rule.pushers) == (INTEGRATION, 'main', True, ())
+    assert rule.contexts == required_contexts(one, 'p', GITEA)[INTEGRATION]
+    assert len(targets(GITEA_TEXT, 'p', GITEA)) == 2, 'PLANTED CONTROL: two branches keep two rules'
 
 
 def test_a_forge_the_declaration_does_not_name_is_refused() -> None:
@@ -95,12 +111,25 @@ def test_the_trunk_never_requires_a_hand_part() -> None:
     assert {'tests/base', 'tests/base@windows'} <= set(trunk), 'PLANTED CONTROL'
 
 
-def test_a_served_forge_requires_its_tests_and_never_the_review_status() -> None:
-    """User ruling 2026-11-05: the merge decision enforces the review itself; a capped review merges WARNED."""
+def test_a_served_forge_requires_nothing_on_integration_and_its_base_on_the_trunk() -> None:
+    """User ruling 2026-11-12 (RED-INTEGRATION-MERGES): the serve host decides integration; only the trunk is green."""
     assert required_contexts(GITEA_TEXT, 'p', GITEA) == {
-        INTEGRATION: ('tests/base', 'tests/security'),
+        INTEGRATION: (),
         TRUNK: ('tests/base',),
     }
+
+
+def test_a_repo_declaring_its_merge_checks_requires_them_on_integration() -> None:
+    """User ruling 2026-11-12: the declared merge check is the forge's own refusal too, so no web-UI merge skips it.
+
+    PLANTED CONTROL: a repo declaring none requires nothing there (the served rule above).
+    """
+    check = 'check / check (pull_request)'
+    declared = GITEA_TEXT.replace(
+        'integration = "integrate/main"', f'integration = "integrate/main"\nmerge_checks = ["{check}"]'
+    )
+    assert required_contexts(declared, 'p', GITEA)[INTEGRATION] == (check,)
+    assert required_contexts(GITEA_TEXT, 'p', GITEA)[INTEGRATION] == ()
 
 
 def test_a_judged_repo_requires_no_review_status() -> None:
@@ -111,7 +140,8 @@ def test_a_judged_repo_requires_no_review_status() -> None:
 def test_a_workflow_on_the_other_forge_is_not_this_forge_s_context() -> None:
     """GitHub's ci.yml posts ``tests/merge-ready`` on GitHub only; a Gitea mirror of the repo is served."""
     text = GITHUB_TEXT + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = "b"\n'
-    assert required_contexts(text, 'p', GITEA)[INTEGRATION] == ('tests/base', 'tests/security')
+    assert required_contexts(text, 'p', GITEA)[INTEGRATION] == ()
+    assert required_contexts(text, 'p', GITHUB)[INTEGRATION] == ('tests/merge-ready',)  # PLANTED CONTROL
 
 
 # -- GitHub: rulesets ------------------------------------------------------------------------------------------------
@@ -235,7 +265,7 @@ _HAND_SET = {
     'main': {'enable_push': True, 'enable_push_whitelist': True,
              'push_whitelist_usernames': ['user-a-admin', 'promote-bot'], 'enable_merge_whitelist': True,
              'merge_whitelist_usernames': ['user-a-admin'], 'enable_force_push': False,
-             'enable_bypass_allowlist': False, 'block_admin_merge_override': False, 'required_approvals': 0},
+             'enable_bypass_allowlist': False, 'block_admin_merge_override': True, 'required_approvals': 0},
     'integrate/main': {'enable_push': False, 'enable_bypass_allowlist': True,
                        'bypass_allowlist_usernames': ['breakglass-bot'], 'block_on_rejected_reviews': True,
                        'dismiss_stale_approvals': True, 'required_approvals': 0},
@@ -248,7 +278,7 @@ def test_gitea_names_every_hand_set_difference_and_apply_removes_them() -> None:
     steps = {step.subject: step.lines for step in plan(forge, GITEA, wanted)}
     trunk = steps['trunk main: branch protection differs -> update']
     assert "push_whitelist_usernames: live=['promote-bot', 'user-a-admin'] declared=['promote-bot']" in trunk
-    assert 'block_admin_merge_override: live=False declared=True' in trunk
+    assert 'block_admin_merge_override: live=True declared=False' in trunk
     integration = steps['integration integrate/main: branch protection differs -> update']
     assert any(line.startswith('status_check_contexts: the forge did not answer') for line in integration)
     assert apply(forge, GITEA, wanted) == []
@@ -263,7 +293,7 @@ def test_gitea_creates_an_absent_rule_and_reads_its_nulls_as_empty_lists() -> No
     assert len(plan(forge, GITEA, wanted)) == 2  # FLOOR: an empty forge is never clean
     assert apply(forge, GITEA, wanted) == []
     integration = forge.protections['integrate/main']
-    assert (integration['enable_push'], integration['approvals_whitelist_username']) == (False, ['review-bot'])
+    assert (integration['enable_push'], integration['approvals_whitelist_username']) == (False, [])
     assert forge.protections['main']['merge_whitelist_usernames'] == []
 
 
@@ -279,6 +309,39 @@ def test_gitea_leaves_a_rule_for_an_undeclared_branch_alone() -> None:
     assert forge.protections['release/*'] == {'enable_push': False}
 
 
+def test_gitea_without_an_admin_reads_what_a_reader_may_and_names_the_rest_unanswered() -> None:
+    held = FakeGitea()
+    apply(held, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    reader = FakeGitea(protections=held.protections, admin=False)
+    steps = plan(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    # PLANTED CONTROL: a forge holding the declaration exactly is still never "as declared" to a reader.
+    assert len(steps) == 2
+    assert all(_protect_gitea.READ_IN_PART in step.subject for step in steps)
+    lines = [line for step in steps for line in step.lines]
+    assert any(line.startswith('bypass_allowlist_usernames: the forge did not answer') for line in lines)
+    assert not any(line.startswith('status_check_contexts') for line in lines)  # read, and as declared
+
+
+def test_gitea_without_an_admin_names_a_readable_drift_and_an_unprotected_branch() -> None:
+    reader = FakeGitea(protections={'main': {'enable_status_check': False, 'required_approvals': 0}}, admin=False)
+    steps = {step.subject: step.lines for step in plan(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))}
+    trunk = next(lines for subject, lines in steps.items() if subject.startswith('trunk main'))
+    assert 'enable_status_check: live=False declared=True' in trunk
+    assert any(subject.startswith('integration integrate/main: branch protection absent') for subject in steps)
+
+
+def test_gitea_without_an_admin_refuses_to_write_and_names_the_host_door() -> None:
+    reader = FakeGitea(admin=False)
+    with pytest.raises(PermissionError, match=re.escape('forge protect apply --repo owner/alpha')):
+        apply(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    assert reader.writes == []
+
+
+def test_gitea_any_other_refusal_of_the_list_still_raises() -> None:
+    with pytest.raises(ForgeCallFailed):
+        plan(FakeGitea(down=True), GITEA, targets(GITEA_TEXT, 'p', GITEA))
+
+
 def test_the_door_is_the_forge_noun() -> None:
     assert NOUNS['protect'] is forgeprotect.main
 
@@ -288,35 +351,74 @@ def test_the_door_is_the_forge_noun() -> None:
 APP_JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_app = 5619495\n'
 
 
-def test_an_app_judged_integration_requires_the_apps_check_from_that_app_and_no_approval() -> None:
+def test_a_judged_repo_requires_no_judge_check_and_no_approval_on_either_forge() -> None:
+    """User ruling 2026-11-11: the judge is advisory on both forges -- it reviews, and no rule waits on it."""
+    hub, _ = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
+    assert (hub.judge_app, hub.approvals, hub.approver) == (0, 0, '')
+    tea, _ = targets(GITEA_TEXT + JUDGED, 'p', GITEA)
+    assert (tea.judge_app, tea.approvals, tea.approver) == (0, 0, '')
+    for text in (GITEA_TEXT + JUDGED, GITHUB_TEXT + APP_JUDGED):
+        with pytest.raises(ValueError, match='the judge is advisory'):
+            declaration_from(text + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
+
+
+def test_github_bypasses_every_declared_actor_an_app_beside_the_admin_role() -> None:
+    """The ops App and the admin role are both bypass actors: ``breakglass`` may be a list, rendered in order."""
+    text = INTEGRATOR + '[tool.dev_lab.protection.forges."github.com"]\nbreakglass = ["app:4242", "role:admin"]\n'
     forge = FakeGitHub()
-    wanted = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
-    integration, trunk = wanted
-    assert (integration.judge_app, integration.approvals, integration.approver, trunk.judge_app) == (5619495, 0, '', 0)
-    assert apply(forge, GITHUB, wanted) == []
-    ruleset = next(one for one in forge.rulesets.values() if one['name'] == 'dev-lab integration')
-    (checks,) = [rule['parameters']['required_status_checks'] for rule in ruleset['rules']
-                 if rule['type'] == 'required_status_checks']  # fmt: skip
-    assert {'context': 'review/judge', 'integration_id': 5619495} in checks
-    assert plan(forge, GITHUB, wanted) == []
+    apply(forge, GITHUB, targets(text, 'p', GITHUB))
+    actors = [(one['actor_type'], one['actor_id']) for one in next(iter(forge.rulesets.values()))['bypass_actors']]
+    assert actors == [('Integration', 4242), ('RepositoryRole', 5)]
+    assert plan(forge, GITHUB, targets(text, 'p', GITHUB)) == []
 
 
-def test_the_judge_check_required_from_another_app_is_drift() -> None:
-    """PLANTED: the same context name, required from any other App, is not the declared judge."""
-    forge = FakeGitHub()
-    wanted = targets(GITHUB_TEXT + APP_JUDGED, 'p', GITHUB)
-    apply(forge, GITHUB, wanted)
-    ruleset = next(one for one in forge.rulesets.values() if one['name'] == 'dev-lab integration')
-    for rule in ruleset['rules']:
-        for check in rule.get('parameters', {}).get('required_status_checks', ()):
-            if check['context'] == 'review/judge':
-                check['integration_id'] = 1
-    (step,) = plan(forge, GITHUB, wanted)
-    assert 'review/judge@5619495' in ' '.join(step.lines)
+def test_gitea_refuses_more_than_one_bypass_login() -> None:
+    text = INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = ["a-bot", "b-bot"]\n'
+    with pytest.raises(ValueError, match='one login'):
+        plan(FakeGitea(), GITEA, targets(text, 'p', GITEA))
 
 
-def test_an_app_judge_takes_no_approval_and_never_renders_on_gitea() -> None:
-    with pytest.raises(ValueError, match='the App posts a check'):
-        declaration_from(GITHUB_TEXT + APP_JUDGED + '[tool.dev_lab.protection]\napprovals = 1\n', 'p')
-    with pytest.raises(ValueError, match='no GitHub App'):
-        plan(FakeGitea(), GITEA, targets(GITEA_TEXT + APP_JUDGED, 'p', GITEA))
+# -- a refused write says why ------------------------------------------------------------------------------------------
+
+#: GitHub's answer to a ruleset requiring a check from an App not installed on the repository (2026-11-11).
+INVALID_APP = (
+    '{"message":"Validation Failed","errors":["Invalid rule \'required_status_checks\': Invalid parameter '
+    'required_status_checks: Invalid integration ids"],'
+    '"documentation_url":"https://docs.github.com/rest/repos/rules#create-a-repository-ruleset","status":"422"}'
+)
+
+
+def test_a_refused_write_names_the_app_a_target_requires_a_check_from() -> None:
+    failed = ForgeCallFailed(Report(('POST', 'x'), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
+    wanted = [replace(one, judge_app=5619495) for one in targets(GITHUB_TEXT, 'p', GITHUB)]
+    text = ' '.join(forgeprotect.refusal(failed, wanted))
+    assert '422' in text
+    assert 'Invalid integration ids' in text
+    assert '5619495' in text
+    assert 'install' in text
+
+
+def test_a_refusal_without_an_app_fault_names_no_app() -> None:
+    failed = ForgeCallFailed(
+        Report(('POST', 'x'), (Attempt(1, 422, '{"message":"nope"}', Diagnosis.FORGE_REFUSED),), 3)
+    )
+    lines = forgeprotect.refusal(failed, targets(GITHUB_TEXT, 'p', GITHUB))
+    assert 'nope' in '\n'.join(lines)
+    assert 'install' not in '\n'.join(lines)
+
+
+def test_a_final_refusal_s_message_carries_the_status_and_every_error_the_forge_named() -> None:
+    failed = ForgeCallFailed(Report(('POST', 'x'), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
+    assert 'the forge answered 422: Validation Failed' in str(failed)
+    assert 'Invalid integration ids' in str(failed)
+
+
+def test_a_rejected_review_never_blocks_and_the_admin_can_still_merge_by_hand() -> None:
+    """A review only advises (2026-11-11) and an administrator keeps a hand rescue (2026-11-13).
+
+    PLANTED: every rendered Gitea rule must say False for both, on the trunk and on integration.
+    """
+    for target in targets(GITEA_TEXT, 'p', GITEA):
+        rule = _protect_gitea.body(target)
+        assert rule['block_on_rejected_reviews'] is False, target
+        assert rule['block_admin_merge_override'] is False, target

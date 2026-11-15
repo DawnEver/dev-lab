@@ -1,4 +1,4 @@
-"""``branchset --apply``: the LOCAL door (ruling 2026-10-04), planted on both sides; origin is listed only."""
+"""``branchset --apply``: the LOCAL door (ruling 2026-10-04), planted on both sides; origin rows name their door."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ def test_apply_deletes_merged_local_branches_only_and_never_touches_origin(tmp_p
     _run(work, 'push', '-q', 'origin', 'landed')
     _run(work, 'switch', '-q', '-c', 'open')
     commit(work, 'open.txt')
+    _run(work, 'push', '-q', 'origin', 'open')
     _run(work, 'switch', '-q', 'main')
     _run(work, 'branch', 'feat/session')
     _run(work, 'branch', 'busy')
@@ -36,10 +37,16 @@ def test_apply_deletes_merged_local_branches_only_and_never_touches_origin(tmp_p
     assert any(line.startswith('deleted  local   landed') for line in lines)
     assert any(line.startswith('kept     local   open') for line in lines)
     assert any(line.startswith('kept     local   busy') for line in lines)
-    assert any(line.startswith('listed   origin  landed') and 'human' in line for line in lines)
+    door = 'python -m dev_lab.dev.branchprune delete'
+    origin = {line.split()[2]: line for line in lines if line.startswith('listed   origin')}
+    assert origin['landed'].endswith(f'(agent: {door} landed)'), 'a landed origin branch names the LOSSLESS-DELETE door'
+    assert origin['open'].endswith('(merge first)'), 'planted: an unlanded origin branch is never offered for delete'
+    assert not any('human' in line for line in lines), 'no exit is left only a human can take'
     heads = set(_run(work, 'branch', '--format=%(refname:short)').split())
     assert heads == {'main', 'open', 'feat/session', 'busy'}
-    assert 'refs/heads/landed' in _run(work, 'ls-remote', '--heads', 'origin'), 'the door never deletes on origin'
+    remote = _run(work, 'ls-remote', '--heads', 'origin')
+    assert 'refs/heads/landed' in remote, 'the local door never deletes on origin'
+    assert 'refs/heads/open' in remote, 'planted: an unlanded origin branch is never deleted'
 
 
 def test_an_archive_tag_is_a_branch_left_behind_merged_ones_go_open_ones_are_merged(tmp_path: Path) -> None:
