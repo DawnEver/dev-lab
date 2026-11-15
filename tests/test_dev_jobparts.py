@@ -28,6 +28,49 @@ resources = ["femm", "windows"]
 """
 
 
+@pytest.mark.parametrize('code', [1, 2, 3, 4, -9])
+def test_a_failed_collection_cannot_publish_a_partial_matrix(tmp_path: Path, monkeypatch, capsys, code: int) -> None:
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    partial = 'tests/test_ok.py::test_ok\nERROR tests/test_broken.py - ImportError\n'
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=code, stdout=partial, stderr=''),
+    )
+    with pytest.raises(ValueError, match='collection'):
+        jobparts.main(['matrix', '--root', str(tmp_path)])
+    assert capsys.readouterr().out == '', 'a failed collection must not become a complete workflow manifest'
+
+
+@pytest.mark.parametrize(
+    ('code', 'output', 'expected'),
+    [(0, 'tests/test_ok.py::test_ok\n', ['tests/test_ok.py::test_ok']), (0, '', []), (5, 'no tests collected\n', [])],
+)
+def test_a_complete_or_empty_collection_retains_its_original_ids(
+    tmp_path: Path, monkeypatch, code, output, expected
+) -> None:
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=code, stdout=output, stderr=''),
+    )
+    assert jobparts.pytest_collector(tmp_path)('windows') == expected
+
+
+def test_a_no_tests_exit_with_partial_ids_is_not_an_empty_collection(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=5,
+            stdout='tests/test_ok.py::test_ok\n',
+            stderr='',
+        ),
+    )
+    with pytest.raises(ValueError, match='collection'):
+        jobparts.pytest_collector(tmp_path)('')
+
+
 @pytest.mark.parametrize(
     ('part', 'runs_on'),
     [

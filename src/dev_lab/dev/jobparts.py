@@ -67,7 +67,7 @@ from typing import TYPE_CHECKING, Any, Final
 import lab_commons.launch as _door
 from lab_commons.compute.probe import OS_NAMES
 from lab_commons.hpc.needsets import BASE, need_sets, read_vocabulary
-from lab_commons.hpc.shell import parse_ids
+from lab_commons.hpc.shell import parse_collection_errors, parse_ids
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
@@ -116,6 +116,9 @@ PULL_REQUEST_SYSTEMS: Final = ('linux', 'windows')
 ABSENT: Final = 'absent: no job settled this part'
 
 _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
+
+#: Pytest's documented exit status for a completed collection selecting no tests.
+_NO_TESTS_COLLECTED: Final = 5
 
 #: The ``if`` of a secretless hosted part's job: every run that has a matrix, a pull request's included.
 _ANY_RUN: Final = "${{ needs.parts.outputs.matrix != '' }}"
@@ -263,7 +266,17 @@ def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str
         argv = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', '--color=no']
         command = [*argv, *(['-m', expression] if expression else []), *arguments]
         done = _door.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
-        return parse_ids(done.stdout)
+        ids = parse_ids(done.stdout)
+        errors = parse_collection_errors(done.stdout + '\n' + done.stderr)
+        empty = done.returncode == _NO_TESTS_COLLECTED and not ids and not errors
+        if errors or (done.returncode != 0 and not empty):
+            msg = (
+                f'pytest collection failed with exit {done.returncode} for marker {expression!r}; '
+                f'{len(ids)} partial node(s) cannot define a complete part manifest. '
+                f'Rerun {shlex.join(command)} in the checkout and repair collection before producing parts.'
+            )
+            raise ValueError(msg)
+        return ids
 
     return collect
 
