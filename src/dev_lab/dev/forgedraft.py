@@ -26,8 +26,8 @@ A DRAFT NEVER STALLS SILENTLY -- a session that has not read this rule would not
 * ``forge pr create`` prints the exact next step on stdout (:func:`opened_line`);
 * a draft head carries ``tests/merge-ready`` ``pending`` naming the ready door (:func:`waiting`);
 * a draft whose head is older than :data:`STALE_DRAFT` raises ONE ``integration`` alarm (:func:`alarms`, raised by
-  the serve's integration step through :func:`dev_lab.dev.forgeservesteps.raise_once`, which keeps one issue per
-  alarm, so it pages once), naming the PR, its author and session and the ready door; marking ready closes it.
+  the serve's integration step onto the host card, never an issue), naming the PR, its author and session and the
+  ready door; marking ready stops deriving it.
 
 ``python -m dev_lab.dev.forge pr ready <N>`` / ``pr draft <N>`` (:func:`main`) move a PR between the two.
 
@@ -189,8 +189,8 @@ def pushed(client: Client, sha: str) -> datetime:
 def alarms(root: Path, client: Client, base: str, repo: str, *, now: datetime) -> list[Alarm]:
     """One ``integration`` alarm per open draft into *base* whose head is older than :data:`STALE_DRAFT`.
 
-    Keyed by the head sha: :func:`~dev_lab.dev.forgeservesteps.raise_once` keeps one issue for it and pages once,
-    and closes it once the PR is ready, pushed again or gone. Every draft head also gets :func:`waiting`.
+    Keyed by the head sha; it is derived no more once the PR is ready, pushed again or gone.
+    Every draft head also gets :func:`waiting`.
     """
     out = []
     for pull in pr_list(client):
