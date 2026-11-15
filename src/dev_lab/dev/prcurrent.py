@@ -1,7 +1,7 @@
 """PR-HEAD-IS-CURRENT: a ``pr/*`` head holds integration's tip and a lock fresh against the floating heads.
 
 User ruling 2026-11-07, reversing part of toolchain plan P3 (``githooks/base.toml``): agents kept pushing stale
-branches, and the forge's later ``integration`` alarm and ``lock/fresh`` status came after the harm. So ONE
+branches, and the forge's later ``integration`` alarm and lock freshness status came after the harm. So ONE
 judgement (:func:`judge`) refuses a head when either holds:
 
 * BEHIND -- ``origin/<integration>``, fetched afresh (that one ref), is not an ancestor of the head. A fetch that
