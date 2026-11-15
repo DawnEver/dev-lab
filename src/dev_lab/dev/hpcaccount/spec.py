@@ -44,6 +44,7 @@ __all__ = [
     'has_grant',
     'host_serve_argv',
     'load',
+    'login_hosts',
     'merge_crontab',
     'parse_repo',
     'render',
@@ -205,6 +206,12 @@ def render_grant(table: Mapping[str, Any]) -> str:
 
 def _hpc_of(path: Path) -> dict[str, Any]:
     return (tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
+
+
+def login_hosts(path: Path, table: Mapping[str, Any] | None) -> frozenset[str]:
+    """Every login host a cluster declares -- in the passed ``[hpc]`` slice *table*, else the machine file at *path*."""
+    hpc = table if table is not None else _hpc_of(path)
+    return frozenset(host for cluster in hpc.get('clusters', {}).values() for host in cluster.get('hosts', ()))
 
 
 def has_grant(path: Path, user: str) -> bool:

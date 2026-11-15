@@ -43,11 +43,11 @@ _DEPLOY = '[deploy]\nhost = "login1.example"\nroot = "src"\n'
 _STAMP = '20261112T120000Z'
 
 
-def _account(*, answers: str, seen: list[tuple[str, str | None]]) -> Runner:
+def _account(*, answers: str, seen: list[tuple[str, str | None]], deployed: str = _DEPLOY) -> Runner:
     def shell(cmd: str, stdin: str | None = None) -> str:
         seen.append((cmd, stdin))
         if 'sed -n' in cmd:
-            return _DEPLOY
+            return deployed
         if 'auth role' in cmd:
             return json.dumps({'login': answers, 'push': True, 'admin': False})
         if cmd.startswith('umask 077 && f='):
@@ -64,6 +64,8 @@ def _run(
     answers: str = 'forge-ci',
     url: str = '',
     division: Division = _DIVISION,
+    grants: tuple[Grant, ...] = _FLEET,
+    deployed: str = _DEPLOY,
 ) -> tuple[int, list[str], list[tuple[str, str | None]], list[str]]:
     seen: list[tuple[str, str | None]] = []
     said: list[str] = []
@@ -71,10 +73,10 @@ def _run(
 
     def connect(grant: Grant) -> Runner:
         connected.append(grant.user)
-        return _account(answers=answers, seen=seen)
+        return _account(answers=answers, seen=seen, deployed=deployed)
 
     code = place_credential(
-        account, login=login, token=_MINTED, url=url, forge=_FORGE, grants=_FLEET, division=division,
+        account, login=login, token=_MINTED, url=url, forge=_FORGE, grants=grants, division=division,
         say=said.append, connect=connect, stamp=_STAMP,
     )  # fmt: skip
     return code, said, seen, connected
@@ -370,3 +372,19 @@ def test_the_local_shell_writes_a_staged_line_with_lf_only(tmp_path: Path) -> No
     target = tmp_path / 'staged'
     local_shell(f'IFS= read -r line && printf "%s\\n" "$line" > "{target.as_posix()}"', 'a-line\n')
     assert target.read_bytes() == b'a-line\n'
+
+
+def test_a_research_account_deployed_behind_its_login_alias_takes_its_credential() -> None:
+    """A research account records the grant's alias as its [deploy] host (no node pin: it installs no cron).
+
+    PLANTED CONTROL: the node it happened to land on is not a login host of the grant and is refused.
+    """
+    aliased = (Grant(user='alice', hosts=('login.example',), slurm_account='acct', role='research'),)
+    division = Division(grant_roles={'alice': 'research'})
+    alias = '[deploy]\nhost = "login.example"\nroot = "src"\n'
+    code, said, _, _ = _run('alice@login.example', grants=aliased, division=division, deployed=alias)
+    assert code == 0, said
+    node = '[deploy]\nhost = "login04"\nroot = "src"\n'
+    code, said, _, _ = _run('alice@login.example', grants=aliased, division=division, deployed=node)
+    assert code == 2
+    assert 'login04' in said[-1]

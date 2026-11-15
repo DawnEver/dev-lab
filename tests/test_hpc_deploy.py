@@ -939,3 +939,45 @@ def test_an_account_role_other_than_the_workstations_is_refused_naming_both(
     err = capsys.readouterr().err
     assert "'verification'" in err
     assert "'research'" in err
+
+
+def _alias_declare(role: str) -> tuple[str, ...]:
+    """A declaration whose ``--host`` is the grant's login ALIAS, one DNS name round-robining over several nodes."""
+    aliased = Grant(
+        user='alice', hosts=('login.example',), slurm_account='acct-free', partitions=('shortq', 'defq'),
+        role=role, cluster_name='int',
+    )  # fmt: skip
+    return (
+        '--host', 'login.example', *LAB, '--repo', f'alpha={URL}/alpha.git@trunk',
+        '--partition', 'shortq', '--partition', 'defq', '--role', role,
+        '--grant-table', json.dumps(grant_slice(aliased)),
+    )  # fmt: skip
+
+
+def test_a_research_deploy_through_the_login_alias_passes_on_any_node_and_records_the_alias(box: Box) -> None:
+    """A research account installs no cron line, so it needs no node pin: its host is the grant's alias."""
+    assert box.run(*_alias_declare(deploy_spec.RESEARCH), host='login04.int.cluster') == 0
+    assert deploy_spec.load(box.machine).host == 'login.example'
+    assert box.run(host='login07.int.cluster') == 0, 'the alias landed on another node: still the same account'
+
+
+def test_a_verification_deploy_through_the_login_alias_keeps_the_node_pin(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL: cron is per node, so a serving account still refuses, naming the node it is on."""
+    assert box.run(*_alias_declare('verification'), host='login04.int.cluster') == 2
+    err = capsys.readouterr().err
+    assert 'this is login04' in err
+    assert 'login.example' in err
+    assert not box.machine.exists()
+
+
+def test_a_research_deploy_naming_a_host_outside_its_grant_is_refused(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL: the waiver is for the grant's own login hosts, never an arbitrary name."""
+    argv = list(_alias_declare(deploy_spec.RESEARCH))
+    argv[1] = 'elsewhere.example'
+    assert box.run(*argv, host='login04.int.cluster') == 2
+    assert 'elsewhere.example' in capsys.readouterr().err
+    assert not box.machine.exists()
