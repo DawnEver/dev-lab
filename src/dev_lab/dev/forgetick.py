@@ -41,7 +41,7 @@ its selection, :func:`~lab_commons.compute.learned.selection_gb` at the ids it i
 admission and the box's enforced claim are one number -- and ONE CLAIM: given *reserve*, a local part's box
 claim is taken before the part is claimed, and its producer adopts it (:mod:`dev_lab.dev.forgetake`).
 A CLUSTER part asks what its
-last Slurm run measured (:func:`~lab_commons.compute.learned.cluster_demand`).
+last Slurm run measured (:func:`dev_lab.dev.forgedemand.part_demand`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 
 A WAIT IS ANSWERED, BOUNDED AND SEEN (:mod:`dev_lab.dev.forgewait`). Given its *box*, a tick tells every part
@@ -66,7 +66,7 @@ from typing import Any
 
 from lab_commons.box import Capacity
 from lab_commons.box.providers import box_engine
-from lab_commons.compute.learned import box_demand, cluster_demand, learned, request_demand
+from lab_commons.compute.learned import box_demand, learned, request_demand
 from lab_commons.compute.model import (
     REQUEST,
     Candidate,
@@ -103,6 +103,7 @@ from dev_lab.dev.forgeclaim import (
     this_machine,
     this_seat,
 )
+from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeorigin import vouched
@@ -347,7 +348,7 @@ def _demand_of(
     """
     repo_url = origin_url(root)
     if cluster:
-        asked = cluster_demand(repo_url)
+        asked = part_demand(repo_url, ceiling_gb=None)
         return lambda _wanted, needed: asked(needed)
     free = (room or _box_now()).resources
 
