@@ -33,11 +33,11 @@ def _ran(name):
 
 
 {mark}
-def test_alone():
+def test_alone() -> None:
     _ran('alone')
 
 
-def test_shared():
+def test_shared() -> None:
     _ran('shared')
 """
 
@@ -97,3 +97,46 @@ def test_the_stale_skip_side_is_judged_over_both_stages() -> None:
     assert reports.read_stages((ran, skipped), allowed_skips=allowed).truncated == ()
     stale = reports.read_stages((ran, ran), allowed_skips=allowed).truncated
     assert any('NOT skipped' in reason for reason in stale)
+
+
+def test_real_serial_and_parallel_failures_keep_their_whole_legal_parameter_identities(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / 'tests').mkdir()
+    ids = ['same prefix - [left value]', 'same prefix - [right value]']
+    (tmp_path / 'tests' / 'test_planted.py').write_text(
+        'import pytest\n\n'
+        f'@pytest.mark.parametrize("value", [0, 1], ids={ids!r})\n'
+        'def test_shared(value):\n    assert value < 0\n\n'
+        f'@pytest.mark.{SERIAL_MARK}\n'
+        f'@pytest.mark.parametrize("value", [0, 1], ids={ids!r})\n'
+        'def test_alone(value):\n    assert value < 0\n',
+        encoding='utf-8',
+    )
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.pytest.ini_options]\naddopts = "--strict-markers"\n[tool.dev_lab.parts]\noutput = "out/logs"\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    verdict = verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
+    assert verdict.result.outcome is Conclusion.FAIL, verdict.result
+    assert set(verdict.result.failures) == {
+        f'tests/test_planted.py::{name}[{identity}]' for name in ('test_shared', 'test_alone') for identity in ids
+    }
+
+
+def test_real_nonstrict_xpass_is_a_recorded_failure_even_when_pytest_exits_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / 'test_planted.py').write_text(
+        'import pytest\n\n@pytest.mark.xfail(reason="known residual", strict=False)\n'
+        'def test_expected_to_reject():\n    assert True\n',
+        encoding='utf-8',
+    )
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
+    monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
+    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    verdict = verifysteps.run_verify(tmp_path, ('test_planted.py',), hooks=False)
+    assert verdict.result.outcome is Conclusion.FAIL, verdict.result
+    assert verdict.result.failures == ('test_planted.py::test_expected_to_reject',)
