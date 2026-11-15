@@ -12,19 +12,50 @@ ask; a step carries the ``MaxRSS`` and, for a job killed inside a step, the ``OU
 ``cpu_efficiency`` is TotalCPU / CPUTimeRAW over FINISHED jobs only -- a running job's TotalCPU is not yet
 accounted, so counting it would read as waste -- and ``None`` when no finished job allocated a core-second.
 ``forge_share`` is the forge's fraction of the day's core-hours (job names ``run-<sha12>-<part>``).
+
+THE READ DOOR (2026-11-15): ``python -m dev_lab.dev.hpcusage report --json`` prints every declared
+``[[hpc.grant]]``'s day as JSON (:func:`report`) for a reader outside dev-lab -- the agents dashboard's collector,
+which knows no Slurm and stores what it is handed. Each login (cluster and user) is read ONCE over its own login
+hosts: this module's :data:`COMMAND`, its quota (:data:`QUOTA_COMMAND`, as fractions of each ceiling) and, for a
+billed grant, its budget's ledger (:mod:`lab_commons.hpc.budget`). A login that cannot be read is listed
+``read: false`` with its reason, never dropped. Read only: nothing is stored, sent or scheduled here.
 """
 
 from __future__ import annotations
 
+import argparse
 import html
+import json
 import re
+import sys
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from typing import Any, Final
 
+from lab_commons.hpc.budget import ledger_command, spent_and_committed
+from lab_commons.hpc.cluster import Runner, runner_for
+from lab_commons.hpc.grants import Grant, load_grants
+
+from dev_lab.dev.diskusage import Usage, parse_mmlsquota, parse_quota
 from dev_lab.dev.forgestuck import parse_duration
 from dev_lab.dev.slurmkilled import size_mb
 
-__all__ = ['COMMAND', 'FIELDS', 'STATES', 'Day', 'Job', 'parse', 'table']
+__all__ = [
+    'COMMAND',
+    'FIELDS',
+    'QUOTA_COMMAND',
+    'REPORT_SCHEMA',
+    'STATES',
+    'Day',
+    'Job',
+    'declared',
+    'main',
+    'parse',
+    'quota_use',
+    'report',
+    'table',
+]
 
 #: The ``sacct -o`` fields :func:`parse` reads, in its order.
 FIELDS: Final = 'JobID,JobName,State,AllocCPUS,CPUTimeRAW,TotalCPU,ReqMem,MaxRSS'
@@ -189,3 +220,102 @@ def table(summary: object) -> str:
             for j in oom
         ]
     return '\n'.join(lines)
+
+
+#: The account's quota, read where its login lands: GPFS first, else Linux ``quota -w``.
+QUOTA_COMMAND: Final = (
+    '/usr/lpp/mmfs/bin/mmlsquota 2>/dev/null || mmlsquota 2>/dev/null || quota -w 2>/dev/null || true'
+)
+#: The :func:`report` shape's version: a reader refuses one it does not know.
+REPORT_SCHEMA: Final = 1
+#: A reason is one line of at most this many characters.
+_WHY: Final = 160
+#: What :func:`report` carries of a :meth:`Day.summary`: numbers only, never a job's name.
+_REPORTED: Final = ('jobs', 'core_hours', 'cpu_efficiency', 'states', 'forge_share')
+
+
+def quota_use(usage: Usage | None) -> dict[str, float | None] | None:
+    """The account's quota as fractions used -- ``bytes`` and ``files`` (``None`` unread); ``None`` when unread."""
+    if usage is None:
+        return None
+    files = usage.files / usage.files_limit if usage.files is not None and usage.files_limit else None
+    return {
+        'bytes': round(usage.used / usage.limit, 4) if usage.limit else None,
+        'files': None if files is None else round(files, 4),
+    }
+
+
+def _budget(run: Runner, grant: Grant, today: date) -> dict[str, Any] | None:
+    """A billed grant's budget: spent and committed core-hours against its total, and how much of its window is gone."""
+    budget = grant.budget
+    if not grant.billed or budget is None:
+        return None
+    since, until = date.fromisoformat(budget.since), date.fromisoformat(budget.until)
+    spent, committed = spent_and_committed(run(ledger_command(grant, today=today), None))
+    return {
+        'core_hours': budget.core_hours,
+        'spent': round(spent, 1),
+        'committed': round(committed, 1),
+        'since': budget.since,
+        'until': budget.until,
+        'window': round(min(max((today - since).days / (until - since).days, 0.0), 1.0), 4),
+    }
+
+
+def _read(grants: Sequence[Grant], today: date, connect: Callable[[Grant], Runner]) -> dict[str, Any]:
+    """One login's day: *grants* share its cluster and user; the first names it, the first billed one its budget."""
+    first = grants[0]
+    head = {'cluster': first.cluster_name, 'account': first.user, 'slurm_account': first.slurm_account}
+    head['role'] = first.role
+    try:
+        run = connect(first)
+        summary = parse(run(COMMAND, None)).summary()
+        quota = run(QUOTA_COMMAND, None)
+        billed = next((g for g in grants if g.billed and g.budget is not None), None)
+        return {
+            **head,
+            'read': True,
+            **{key: summary[key] for key in _REPORTED},
+            'quota': quota_use(parse_mmlsquota(quota) or parse_quota(quota)),
+            'budget': None if billed is None else _budget(run, billed, today),
+        }
+    except (OSError, RuntimeError, ValueError) as why:  # unreachable, refused by role, a session it does not hold
+        return {**head, 'read': False, 'why': ' '.join(str(why).split())[:_WHY] or type(why).__name__}
+
+
+def report(grants: Sequence[Grant], *, today: date, connect: Callable[[Grant], Runner] = runner_for) -> dict[str, Any]:
+    """Every login of *grants* read once (:func:`_read`), in declaration order, under :data:`REPORT_SCHEMA`."""
+    logins: dict[tuple[str, str], list[Grant]] = {}
+    for grant in grants:
+        logins.setdefault((grant.cluster_name, grant.user), []).append(grant)
+    return {
+        'schema': REPORT_SCHEMA,
+        'window_hours': 24,
+        'grants': [_read(group, today, connect) for group in logins.values()],
+    }
+
+
+def declared() -> Sequence[Grant]:
+    """The declared ``[[hpc.grant]]`` tables of this machine."""
+    return load_grants().grants
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m dev_lab.dev.hpcusage report --json``: every declared grant's day; exit 2 when none can be read."""
+    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcusage', description=(__doc__ or '').splitlines()[0])
+    sub = parser.add_subparsers(dest='verb', required=True)
+    verb = sub.add_parser('report', help="every declared grant's last day, quota and budget")
+    verb.add_argument('--json', action='store_true', required=True, help='the report as one JSON object')
+    parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    try:
+        grants = declared()
+    except (OSError, RuntimeError, ValueError) as why:
+        sys.stderr.write(f'hpcusage: no [[hpc.grant]] read from the machine file ({why}); declare them there\n')
+        return 2
+    out = report(grants, today=datetime.now(UTC).date(), connect=runner_for)
+    sys.stdout.write(json.dumps(out, sort_keys=True) + '\n')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
