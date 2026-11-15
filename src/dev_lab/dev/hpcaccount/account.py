@@ -56,14 +56,16 @@ def _store_mode(store: Path) -> int | None:
     return stat.S_IMODE(store.stat().st_mode) if os.name == 'posix' else 0o600  # modes are POSIX's
 
 
-def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
+def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck, *, serves: bool) -> int:
     """Refuse (2) unless git can read every repo and the forge API answers what a tick needs on each served one.
 
     Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81); an unserved
     one is only cloned and fetched, so an anonymous ``git ls-remote`` -- no credential helper -- must succeed.
+    An account whose role never *serves* (research) ticks nothing, so no repo there needs the tick's scopes:
+    ``git ls-remote`` is its whole check (a server holds only a read token).
     """
     emit('[credentials] git credential helper and the forge API per served repo; git ls-remote per repo')
-    served = [repo for repo in spec.repos if repo.serve]
+    served = [repo for repo in spec.repos if repo.serve and serves]
     helper = step.read([*step.tools.git, 'config', '--global', '--get', 'credential.helper']).stdout.strip()
     store = home / '.git-credentials'
     if served and (problem := store_problem(helper, store, mode=_store_mode(store))):
@@ -79,6 +81,9 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
     if denied:
         emit(f'deploy refused: no read access to {", ".join(denied)}; {_CREDENTIAL_REMEDY}', err=True)
         return 2
+    if not serves:
+        emit(f'  {spec.role} account: not served here: read access only, no forge API scopes asked')
+        return 0
     checked = {repo.name: why for repo in served if (why := api(repo.url, home))}
     unreachable = {name: why for name, why in checked.items() if why.startswith(UNREACHED)}
     refused = {name: why for name, why in checked.items() if name not in unreachable}

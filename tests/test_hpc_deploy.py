@@ -788,6 +788,36 @@ def test_a_research_account_carries_no_serve_line_and_its_deploy_removes_the_mar
     assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'
 
 
+def test_a_research_deploy_asks_only_to_read(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
+    """A research account never serves, so a token without tick scopes is no refusal (2026-11-15).
+
+    PLANTED CONTROL: the same refusing API on a verification account still refuses, naming the scopes.
+    """
+    box.refused_api['dev-lab'] = 'a tick needs a token with the scopes repository (read and write)'
+    assert box.run(*DECLARE) == 2
+    assert 'repository (read and write)' in capsys.readouterr().err, 'the planted control: verification refuses'
+    _as_role(box, deploy_spec.RESEARCH)
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 0
+    out = capsys.readouterr().out
+    assert 'not served here: read access only' in out
+    assert 'git ls-remote' in box.logged(), 'read access is still checked'
+
+
+def test_a_research_deploy_without_read_access_is_still_refused(
+    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert box.run(*DECLARE) == 0
+    _as_role(box, deploy_spec.RESEARCH)
+    monkeypatch.setenv('FAKE_GIT_DENY', '/beta.git')
+    capsys.readouterr()
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 2
+    assert 'no read access to beta' in capsys.readouterr().err
+    assert 'clone' not in box.logged()
+    assert 'fetch' not in box.logged()
+
+
 def test_an_undeclared_role_is_refused_naming_the_key_and_nothing_changes(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
