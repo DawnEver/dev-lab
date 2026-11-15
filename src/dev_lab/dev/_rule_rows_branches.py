@@ -117,10 +117,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PR-HEAD-IS-CURRENT',
         (
-            'A push creating or updating a `pr/*` branch is refused at pre-push when its tip lacks more than the one '
-            'lag window (`locklag.LAG_LIMIT`) of first-parent commits of `origin/<integration>` fetched afresh '
+            'A push creating or updating a `pr/*` branch is refused at pre-push when its tip lacks a first-parent '
+            'landing of `origin/<integration>` (fetched afresh) older than the one TIME window `locklag.LAG_WINDOW` '
             '(a fetch that fails refuses with its reason), or when its lock '
-            'pins a floated sibling past the one lag window `lock/lag` reads (`locklag.within_window`); '
+            'pins a floated sibling past the one lag window `lock/lag` reads (`locklag.within_window`), or when '
+            'the pushing venv does not hold what that lock pins (`prcurrent.kit_stale`, naming the bootstrap door); '
             '`forge pr ready` refuses on the same '
             'judgement and on uncommitted tracked changes. Each refusal names `forge sync`, which merges '
             'integration and relocks the floated siblings in one sync (user ruling 2026-11-07; `prcurrent`).'

@@ -194,7 +194,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.lockcheck` -- the PIN reading (half of PIN + FRESHNESS): a commit commits ``uv.lock`` and
   every hold below the newest declares its reason; judged on the forge by ``famtests.lockpin``, relocked by ``relock``.
 * :mod:`dev_lab.dev.relock` -- the serve tick relocks a stale integration lock through ONE pull request.
-* :mod:`dev_lab.dev.locklag` -- how far a lock's floated siblings lag their line: moved at all, and by how many commits
+* :mod:`dev_lab.dev.locklag` -- how far a lock's floated siblings lag their line, in TIME: one window for every door
 * :mod:`dev_lab.dev.drift` -- the serve tick alarms a lock pin left behind its dependency, or a host off its lock.
 * :mod:`dev_lab.dev.forgeheadgate` -- ``session-branch``, ``pr-current`` and ``lock/lag``
   statuses on every open PR head, each naming its fix; the merge requires the first two.
@@ -503,8 +503,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.branchreview` -- the ONE review record per branch: its PRs, oldest first, and every carried
   finding's disposition; what a continuation's review is scoped by and carries (``forge review carry``).
 * :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: a ``pr/*`` push or ``pr ready`` is refused when the head
-  lacks more than the lag window of ``origin/<integration>``'s first-parent commits or its lock pins a floated
-  sibling past the lag window; the remedy is ``forge sync``.
+  lacks an ``origin/<integration>`` landing older than the TIME lag window or its lock pins a floated sibling past
+  it (remedy ``forge sync``); the push is also refused when the pushing venv does not hold what that lock pins.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; it is the
   command line of ``delete`` and ``sweep``, and a workstation's ``PostToolUse`` hook detaches ``sweep --local``.

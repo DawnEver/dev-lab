@@ -59,7 +59,7 @@ def test_unlocated_drops_every_repository_locator() -> None:
 
 def test_the_lock_lag_read_leaves_the_caller_non_bare(caller: Path, upstream: tuple[Path, str]) -> None:
     repo, sha = upstream
-    assert locklag._commits_behind(str(repo), 'main', sha) == 0
+    assert locklag._behind(str(repo), 'main', sha).landings == 0
     assert _bare(caller) == 'false'
 
 
