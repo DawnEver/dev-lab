@@ -683,3 +683,81 @@ def test_planted_a_frontmatter_completion_admits_nothing_else(repo: Path, note: 
     _write(repo, ENTRY, f'---\n{head}created: 2026-11-13\n---\n# Title\n\n{body}{tail}')
     _commit(repo, 'complete badly', ENTRY)
     assert len(memoryadds.problems_between(repo, base, 'HEAD')) == 1
+
+
+_JOURNAL = '.claude/memory/2026/11/14/task-landed/JOURNAL.md'
+_TASK_MD = '.claude/memory/2026/11/14/task-landed/TASK.md'
+_TASK_TEXT = '---\nname: task-landed\ndescription: d\nkind: task\n---\n\nT.\n'
+
+
+def _published_elsewhere(repo: Path, *files: tuple[str, str]) -> str:
+    """Upstream takes *files* by a merge commit; the lane carries the same blobs without that tip (#6602)."""
+    base = _git(repo, 'rev-parse', 'HEAD')
+    _git(repo, 'switch', '-q', '-c', 'pr', base)
+    for rel, text in files:
+        _write(repo, rel, text)
+    _commit(repo, 'pr adds', *(rel for rel, _ in files))
+    _git(repo, 'switch', '-q', 'integrate/main')
+    _git(repo, 'merge', '-q', '--no-ff', '-m', 'take pr', 'pr')
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    _git(repo, 'switch', '-q', '-c', 'lane', base)
+    for rel, text in files:
+        _write(repo, rel, text)
+    return _commit(repo, 'lane carries the same blobs', *(rel for rel, _ in files))
+
+
+def _push(repo: Path, head: str) -> tuple[str, ...]:
+    return memoryadds.pushed(repo, f'refs/heads/lane {head} refs/heads/lane {"0" * 40}\n')
+
+
+def test_a_byte_identical_published_entry_in_the_pushed_range_is_not_judged_again(repo: Path) -> None:
+    """#6602: the merge-base fell back past a merge commit; a blob origin already holds is published, not added."""
+    head = _published_elsewhere(repo, ('.claude/memory/2026/11/14/headless.md', _HEADLESS))
+    assert _push(repo, head) == ()
+
+
+def test_planted_a_new_misshapen_entry_beside_a_published_one_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: the published blob passes; a genuinely new headless entry in the same range does not."""
+    _published_elsewhere(repo, ('.claude/memory/2026/11/14/headless.md', _HEADLESS))
+    rel = '.claude/memory/2026/11/14/new.md'
+    _write(repo, rel, _HEADLESS)
+    found = _push(repo, _commit(repo, 'new headless', rel))
+    assert len(found) == 1, found
+    assert rel in found[0], found
+
+
+def test_planted_a_published_path_whose_blob_differs_is_still_judged(repo: Path) -> None:
+    """PLANTED CONTROL: same path, other bytes -- not what origin holds, so it is this range's add."""
+    rel = '.claude/memory/2026/11/14/headless.md'
+    _published_elsewhere(repo, (rel, '---\nname: h\ndescription: d\n---\n\nH.\n'))
+    _write(repo, rel, _HEADLESS)
+    found = _push(repo, _commit(repo, 'rewrite', rel))
+    assert len(found) == 1, found
+    assert rel in found[0], found
+
+
+def test_an_archived_task_journal_needs_no_frontmatter_of_its_own(repo: Path) -> None:
+    """rem: an archived task is ONE entry; TASK.md carries name, description, kind: task."""
+    _lane(repo)
+    _write(repo, _TASK_MD, _TASK_TEXT)
+    _write(repo, _JOURNAL, '# Journal\n\n- step\n')
+    assert _push(repo, _commit(repo, 'archive a task', _TASK_MD, _JOURNAL)) == ()
+
+
+def test_the_issue_6602_journal_published_by_a_merge_commit_passes(repo: Path) -> None:
+    head = _published_elsewhere(repo, (_TASK_MD, _TASK_TEXT), (_JOURNAL, '# J\n'))
+    assert _push(repo, head) == ()
+
+
+@pytest.mark.parametrize('task', ['---\nname: t\ndescription: d\n---\n\nT.\n', None])
+def test_planted_a_journal_beside_no_task_md_of_kind_task_is_still_refused(repo: Path, task: str | None) -> None:
+    """PLANTED CONTROL: without a TASK.md declaring ``kind: task`` the directory is no task; each file is an entry."""
+    _lane(repo)
+    paths = [_JOURNAL]
+    _write(repo, _JOURNAL, '# Journal\n')
+    if task is not None:
+        _write(repo, _TASK_MD, task)
+        paths.append(_TASK_MD)
+    found = _push(repo, _commit(repo, 'no task', *paths))
+    assert len(found) == 1, found
+    assert _JOURNAL in found[0], found
