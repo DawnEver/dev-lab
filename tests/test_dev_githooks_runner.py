@@ -70,6 +70,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     # LOCAL KEEPS IRREVERSIBLE HARM AND SECOND-SCALE CHECKS (toolchain plan P3): history that only grows,
     # the published ref. The lock pin and freshness, the branch set and PR admission are the forge's.
     assert {hook.id for hook in table['pre-push']} == {
+        'task-bound',
         'memory-adds',
         'session-branch',
         'milestone-base',
@@ -89,6 +90,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'merge-resolution',
     }
     assert {hook.id for hook in table['pre-commit']} == {
+        'task-bound',
         'check-added-large-files',
         'check-ast',
         'check-case-conflict',
@@ -145,6 +147,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
     )
     pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]
     assert pre_push == [
+        'task-bound',
         'memory-adds',
         'session-branch',
         'milestone-base',
