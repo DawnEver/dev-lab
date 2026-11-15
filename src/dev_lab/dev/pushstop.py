@@ -34,9 +34,10 @@ from lab_commons.log import emit
 from dev_lab.dev import prwatcher, sessionprs, walls
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgewatch import TESTS, clients_at, settled, unacknowledged_reds
+from dev_lab.dev.forgewatch import clients_at, settled, unacknowledged_reds
 from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.pushwatch import RULE, deadline_reached, pushed_at, pushed_by, watch_command, watched
+from dev_lab.dev.sessionpoll import TESTS
 from dev_lab.dev.venvpath import running_interpreter
 
 if TYPE_CHECKING:

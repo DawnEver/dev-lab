@@ -29,7 +29,6 @@ import argparse
 import re
 import sys
 import time
-import urllib.parse
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -37,13 +36,11 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import _dep_pending, native_session, sessionprs, taskgate
-from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgepulls import pr_by_head, pr_list
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, PullRequest, client_for, stored_client
-from dev_lab.dev.platformparts import BASE
+from dev_lab.dev.forgework import Client, client_for, stored_client
 from dev_lab.dev.pushwatch import record_deadline
+from dev_lab.dev.sessionpoll import TESTS, green, poll_session, pull_of, reds
 
 if TYPE_CHECKING:
     from dev_lab.dev.forge import Forge
@@ -51,12 +48,9 @@ if TYPE_CHECKING:
 __all__ = [
     'EVERY_S',
     'FLOOR_S',
-    'RED',
-    'TESTS',
     'YIELDED',
     'clients_at',
     'main',
-    'poll_session',
     'session_main',
     'settled',
     'unacknowledged_reds',
@@ -65,9 +59,6 @@ __all__ = [
     'watch_session',
 ]
 
-_NOT_FOUND: Final = 404
-#: The context prefix a part's verdict is posted under.
-TESTS: Final = 'tests/'
 _DEADLINE: Final = 3
 #: The exit code of a watch that yielded its venv to a queued update; its session re-arms it.
 YIELDED: Final = 4
@@ -123,12 +114,12 @@ def watch(
                     seen.add(line)
                     say(line)
             if settled(statuses):
-                green = _green(statuses)
-                if green is None:
+                is_green = green(statuses)
+                if is_green is None:
                     continue
                 if stream or len(shas) > 1:
-                    say(f'{sha[:12]} {"green" if green else "red"}')
-                return 0 if green else 1
+                    say(f'{sha[:12]} {"green" if is_green else "red"}')
+                return 0 if is_green else 1
         if clock() >= end:
             named = ' '.join(sha[:12] for sha in shas)
             say(f'{named} deadline' if stream else f'watch: {named} not settled by the deadline')
@@ -136,8 +127,6 @@ def watch(
         sleep(every_s)
 
 
-#: The states a check reads red in, on both forges.
-RED: Final = frozenset({'failure', 'error'})
 #: The session watch's poll period and floor: each open PR costs two reads per poll, and GitHub allows 5000 an hour.
 SESSION_EVERY_S: Final = 90.0
 SESSION_FLOOR_S: Final = 60.0
@@ -153,90 +142,6 @@ def clients_at(root: Path) -> Callable[[Forge], Client]:
         return made[forge]
 
     return client
-
-
-def _branch(client: Client, name: str) -> dict | None:
-    """The forge's record of branch *name*; ``None`` when it is gone."""
-    try:
-        return client.call('GET', f'{client.repo}/branches/{urllib.parse.quote(name, safe="/")}')
-    except ForgeCallFailed as failed:
-        if failed.report.attempts and failed.report.attempts[-1].returncode == _NOT_FOUND:
-            return None
-        raise
-
-
-def _pull(session: str, row: sessionprs.Row, client: Client) -> tuple[sessionprs.Row, PullRequest | None]:
-    """*row*'s PR as the forge holds it, ``None`` when it has none.
-
-    A branch row is resolved to its open PR, else to its newest PR into the default branch in any state (a
-    merge no watch saw); with none, a protected or gone branch can never have one and the row is closed with
-    the reason, while a live lane branch stays pending (:func:`~dev_lab.dev.sessionprs.pending_rows`).
-    """
-    if row.number:
-        return row, client.pr_view(row.number)
-    found = [pr for pr in pr_list(client) if pr.head == row.branch]
-    pr = max(found, key=lambda one: one.number) if found else None
-    if pr is None:
-        pr = pr_by_head(client, row.branch, str(client.call('GET', client.repo)['default_branch']))
-    if pr is not None:
-        return sessionprs.resolve(session, row, pr.number), pr
-    branch = _branch(client, row.branch)
-    if branch is None:
-        return sessionprs.close(session, row, 'closed', reason='the branch is gone and no PR had it as head'), None
-    if branch.get('protected'):
-        return sessionprs.close(session, row, 'closed', reason='a protected branch, never a PR head'), None
-    return row, None
-
-
-def _reds(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
-    return [status for status in statuses if status.state in RED]
-
-
-#: The contexts a head is never green without: the base test part, whatever else has already ended.
-REQUIRED: Final = (f'{CONTEXT_PREFIX}{BASE}',)
-
-
-def _green(statuses: Sequence[CommitStatus]) -> bool | None:
-    """THE ONE GREEN of both watches: every :data:`REQUIRED` context and every posted test status ended ``success``.
-
-    ``False`` once a posted test status is red; ``None`` while a required context is absent or a test status pends
-    (2026-11-14: the sha watch said ``green`` on ``tests/security`` alone while ``tests/base`` was unclaimed).
-    """
-    latest = {s.context: s.state for s in statuses if s.context.startswith(TESTS)}
-    if any(state in RED for state in latest.values()):
-        return False
-    if all(c in latest for c in REQUIRED) and all(state == 'success' for state in latest.values()):
-        return True
-    return None
-
-
-def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str], None], seen: set[str]) -> bool:
-    """Say each new change on *row*; whether it is still open."""
-    row, pr = _pull(session, row, client)
-    if pr is None:
-        if row.done:
-            _say_once(session, f'{row.key} {row.done}: {row.reason}', say, seen)
-        return False
-    if pr.merged or pr.state == 'closed':
-        done = 'merged' if pr.merged else 'closed'
-        sessionprs.close(session, row, done)
-        _say_once(session, f'{row.key} {done}', say, seen)
-        return False
-    statuses = status_list(client, pr.head_sha) if pr.head_sha else ()
-    lines = [f'{row.key} {pr.head_sha[:12]} {s.context} {s.state} {s.description}'.rstrip() for s in _reds(statuses)]
-    if _green(statuses) is True:
-        lines.append(f'{row.key} {pr.head_sha[:12]} green')
-    for line in lines:
-        _say_once(session, line, say, seen)
-    return True
-
-
-def _say_once(session: str, line: str, say: Callable[[str], None], seen: set[str]) -> None:
-    """Say *line* unless this session already heard it (persisted: a re-armed watch repeats nothing)."""
-    if line not in seen:
-        seen.add(line)
-        sessionprs.hear(session, line)
-        say(line)
 
 
 def watch_session(
@@ -297,23 +202,6 @@ def _session_loop(
         sleep(every_s)
 
 
-def poll_session(
-    session: str, *, clients: Callable[[Forge], Client], say: Callable[[str], None], seen: set[str]
-) -> int:
-    """ONE read of every open or pending PR of *session*, saying each change not in *seen*; how many are still open.
-
-    The session watch and the machine watcher (:mod:`dev_lab.dev.prwatcher`) both poll through it.
-    """
-    live = 0
-    for row in (*sessionprs.open_rows(session), *sessionprs.pending_rows(session)):
-        try:
-            live += _poll(session, row, clients(row.forge), say, seen)
-        except (ForgeCallFailed, ValueError) as failed:
-            live += 1  # an unreadable PR is still open: read again next poll
-            _say_once(session, f'{row.key} unreadable: {failed}'.splitlines()[0], say, seen)
-    return live
-
-
 def unacknowledged_reds(session: str, *, clients: Callable[[Forge], Client]) -> list[str]:
     """``<pr url> <sha12> <context> <state>`` per red check on a session PR head no reason was recorded for.
 
@@ -322,10 +210,10 @@ def unacknowledged_reds(session: str, *, clients: Callable[[Forge], Client]) -> 
     said = []
     for recorded in sessionprs.open_rows(session):
         client = clients(recorded.forge)
-        row, pr = _pull(session, recorded, client)
+        row, pr = pull_of(session, recorded, client)
         if pr is None or pr.merged or pr.state == 'closed' or not pr.head_sha or pr.head_sha in row.acks:
             continue
-        said += [f'{pr.url} {pr.head_sha[:12]} {s.context} {s.state}' for s in _reds(status_list(client, pr.head_sha))]
+        said += [f'{pr.url} {pr.head_sha[:12]} {s.context} {s.state}' for s in reds(status_list(client, pr.head_sha))]
     return said
 
 
@@ -345,7 +233,7 @@ def _ack(session: str, key: str, reason: str, clients: Callable[[Forge], Client]
     if len(found) != 1:
         emit(f'watch: {key!r} names {len(found)} PR(s) of session {session}; give the key it prints', err=True)
         return 2
-    row, pr = _pull(session, found[0], clients(found[0].forge))
+    row, pr = pull_of(session, found[0], clients(found[0].forge))
     if pr is None or not pr.head_sha or row.done:
         emit(f'watch: {row.key} has no open PR head to acknowledge', err=True)
         return 2

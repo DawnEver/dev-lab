@@ -299,6 +299,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pushwatch',
     'pushstop',
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
+    'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
     'venvfollow',
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)

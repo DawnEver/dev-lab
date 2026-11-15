@@ -6,7 +6,7 @@ at every stop. So one watcher per machine does the polling, outside any harness:
 
 * ``run`` holds the machine lock (:func:`held`; a second ``run`` exits 1, a dead holder's lock is taken over) and
   every :data:`POLL_S` reads every open or pending PR of every session recorded on this machine
-  (:mod:`dev_lab.dev.sessionprs`, through :func:`dev_lab.dev.forgewatch.poll_session`), appends each change the
+  (:mod:`dev_lab.dev.sessionprs`, through :func:`dev_lab.dev.sessionpoll.poll_session`), appends each change the
   session has not heard to that session's INBOX (``sessions/<id>.inbox.jsonl`` in the machine home, beside the
   record it caches -- the forge's statuses stay the truth), and writes the BEAT: its pid, the time and every PR
   key it covered. It exits :data:`YIELDED` when an update of its venv is queued; the next start re-runs it;
@@ -35,9 +35,10 @@ from lab_commons import home as _home
 from lab_commons.liveness import creation_stamp, still_the_same_process
 from lab_commons.log import emit
 
-from dev_lab.dev import sessionprs
-from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, poll_session, update_waits
+from dev_lab.dev import native_session, sessionprs
+from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, update_waits
 from dev_lab.dev.reclaimrun import detach_argv
+from dev_lab.dev.sessionpoll import poll_session
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -130,7 +131,7 @@ def held() -> Iterator[bool]:
 def sessions() -> tuple[str, ...]:
     """Every session with a PR record on this machine."""
     found = _home.home() / sessionprs.SESSIONS
-    return tuple(sorted(p.stem for p in found.glob('*.json') if sessionprs.valid(p.stem))) if found.is_dir() else ()
+    return tuple(sorted(p.stem for p in found.glob('*.json') if native_session.valid(p.stem))) if found.is_dir() else ()
 
 
 def _inbox(session: str) -> Path:
@@ -151,7 +152,7 @@ def deliver(session: str, line: str, *, at: float | None = None) -> None:
 
 def take_unread(session: str) -> list[str]:
     """*session*'s inbox lines not yet read, oldest first; they are marked read."""
-    if not sessionprs.valid(session):
+    if not native_session.valid(session):
         return []
     try:
         lines = _inbox(session).read_text(encoding='utf-8').splitlines()
