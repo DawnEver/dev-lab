@@ -538,8 +538,8 @@ def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pu
     (tmp_path / 'pyproject.toml').write_text(_SETUP_HOSTED, encoding='utf-8')
     jobs = workflows(tmp_path)['ci.yml']['jobs']
     linux, live = jobs['part-linux'], jobs['part-live']
-    assert linux['if'] == _guarded("${{ needs.parts.outputs.matrix != '' }}"), 'no secret: it runs on a PR too'
-    assert live['if'] == _guarded(
+    assert linux['if'] == _ci_guarded("${{ needs.parts.outputs.matrix != '' }}"), 'no secret: it runs on a PR too'
+    assert live['if'] == _ci_guarded(
         "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
     ), 'PLANTED CONTROL: a secret keeps it full-run only'
     setup, produce = linux['steps'][-2:]
