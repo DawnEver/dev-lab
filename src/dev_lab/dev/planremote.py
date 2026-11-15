@@ -17,7 +17,7 @@ from typing import Final, Protocol
 import lab_commons.launch as _door
 
 from dev_lab.dev import remote as ssh_remote
-from dev_lab.dev import sshhold, sshholdstate
+from dev_lab.dev import sshholdrun, sshholdstate, sshholdwire
 
 __all__ = ['HeldRemote', 'Remote', 'SshRemote', 'remote_for']
 
@@ -44,27 +44,27 @@ class HeldRemote:
     dest: str
 
     def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
-        """Run *command* on the held connection; *stdin* rides it as heredoc DATA (:func:`.sshhold.stdin_script`)."""
-        return sshhold.run_command(self.dest, command, stdin=stdin)
+        """Run *command* on the held connection; *stdin* rides it as heredoc DATA (:func:`.sshholdrun.stdin_script`)."""
+        return sshholdrun.run_command(self.dest, command, stdin=stdin)
 
     def put(self, path: str, text: str) -> None:
         """Write *text* through the held channel as heredoc DATA; audited as the path and a sha256 prefix only."""
         session = sshholdstate.read_session(self.dest)
         if session is None:
             msg = f'no held session for {self.dest}'
-            raise sshhold.HoldRefused(msg)
+            raise sshholdwire.HoldRefused(msg)
         end = f'__PLANRUN_PUT_{secrets.token_hex(8)}'
         script = f"{_put_command(path)} <<'{end}'\n{text.rstrip()}\n{end}"
         try:
-            reply = sshhold.request(session, {'verb': 'run', 'command': script, 'timeout_s': _PUT_S}, _PUT_S + 30)
+            reply = sshholdwire.request(session, {'verb': 'run', 'command': script, 'timeout_s': _PUT_S}, _PUT_S + 30)
         except OSError as gone:
             msg = f'the holder of {self.dest} is gone ({gone}); open a new session'
-            raise sshhold.HoldRefused(msg) from gone
+            raise sshholdwire.HoldRefused(msg) from gone
         digest = hashlib.sha256(text.encode()).hexdigest()[:12]
         sshholdstate.audit('put', self.dest, command=path, status=reply.get('status'), sha256=digest)
         if 'error' in reply or reply.get('status'):
             msg = f'{self.dest}: could not write {path}: {reply.get("error") or reply.get("output", "").strip()}'
-            raise sshhold.HoldRefused(msg)
+            raise sshholdwire.HoldRefused(msg)
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,7 @@ class SshRemote:
         output, status = self._ssh(_put_command(path), text.encode('utf-8'))
         if status:
             msg = f'{self.dest}: could not write {path} ({status}): {output.strip()}'
-            raise sshhold.HoldRefused(msg)
+            raise sshholdwire.HoldRefused(msg)
 
 
 def _put_command(path: str) -> str:

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tomllib
 from pathlib import Path
 
 import pytest
+from _ops_fixtures import git
 
 from dev_lab.dev import devhost, devschema
 from dev_lab.ops.configcheck import check_family, check_host
@@ -291,3 +293,97 @@ def test_render_write_refuses_a_render_that_does_not_parse(tmp_path: Path, monke
     assert devhost.main([*argv, str(tmp_path / 'backups')]) == 2
     assert machine.read_bytes() == before
     assert not (tmp_path / 'backups').exists()
+
+
+CHANNELS = HOST.replace('os = "windows"\n', 'os = "windows"\nchannels = { "bridge-x" = "user-x" }\n')
+
+
+def test_declared_channels_render_as_the_agent_table_and_read_back(tmp_path: Path) -> None:
+    clone = _clone(tmp_path, CHANNELS)
+    assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
+    rendered = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+    assert rendered['agent'] == {'channels': {'bridge-x': 'user-x'}}
+    assert devhost.declared_channels(rendered) == {'bridge-x': 'user-x'}
+    assert devhost.drift(rendered) == []
+
+
+def test_a_machine_declaring_no_channel_grants_none(tmp_path: Path) -> None:
+    rendered = _rendered_machine(tmp_path)
+    assert 'agent' not in rendered, 'no declaration renders no table, never an empty grant'
+    assert devhost.declared_channels(rendered) == {}
+    assert devhost.declared_channels(tomllib.loads(LOCAL)) == {}
+
+
+@pytest.mark.parametrize(
+    'channels',
+    [
+        '"bridge-x"',
+        '{ "bridge-x" = 1 }',
+        '{ "bridge-x" = ["user-x"] }',
+        '{ "bridge-x" = "" }',
+        '{ "" = "user-x" }',
+        '{ "bridge-x" = { user = "user-x" } }',
+    ],
+)
+def test_a_channel_declaration_that_is_not_source_to_user_strings_is_refused(tmp_path: Path, channels: str) -> None:
+    clone = _clone(tmp_path, HOST.replace('os = "windows"\n', f'os = "windows"\nchannels = {channels}\n'))
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert [line for line in found if 'channels' in line], found
+    live = {'agent': {'channels': tomllib.loads(f'c = {channels}')['c']}}
+    with pytest.raises(ValueError, match='channels'):
+        devhost.declared_channels(live)
+
+
+def test_channels_are_one_machine_fact_never_the_family(tmp_path: Path) -> None:
+    family = FAMILY.replace('[dev]\n', '[dev]\nchannels = { "b" = "u" }\n')
+    found = check_family(_write(tmp_path, 'family.toml', family))
+    assert any('channels' in line for line in found), found
+
+
+def test_the_channels_verb_prints_the_declaration_as_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(LOCAL + '\n[agent]\nchannels = { "bridge-x" = "123456" }\n', encoding='utf-8')
+    assert devhost.main(['--machine', str(machine), 'channels', '--json']) == 0
+    assert json.loads(capsys.readouterr().out) == {'bridge-x': '123456'}
+
+
+def test_the_channels_verb_prints_an_empty_object_when_nothing_is_declared(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(LOCAL, encoding='utf-8')
+    assert devhost.main(['--machine', str(machine), 'channels', '--json']) == 0
+    assert json.loads(capsys.readouterr().out) == {}
+    assert devhost.main(['--machine', str(tmp_path / 'absent.toml'), 'channels', '--json']) == 0
+    assert json.loads(capsys.readouterr().out) == {}
+
+
+def test_the_channels_verb_refuses_a_malformed_declaration(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(LOCAL + '\n[agent]\nchannels = { "bridge-x" = 1 }\n', encoding='utf-8')
+    assert devhost.main(['--machine', str(machine), 'channels', '--json']) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert 'channels' in captured.err
+
+
+def test_a_relative_from_renders_an_absolute_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """#556: ``--from .`` once rendered ``source = "."``, so the config source followed whatever the CWD was."""
+    clone = _clone(tmp_path)
+    monkeypatch.chdir(clone.parent)
+    rendered = tomllib.loads(devhost.render(Path(clone.name), 'ws', tomllib.loads(LOCAL)))
+    assert rendered['devhost']['source'] == clone.resolve().as_posix()
+
+
+def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path: Path) -> None:
+    """#556: a relative ``[devhost] source`` resolves against the CWD; it is refused, never read from another clone."""
+    with pytest.raises(ValueError, match=r'relative.*devhost render --host G --from <absolute clone> --write'):
+        devhost.config_source({'devhost': {'host': 'G', 'source': '.'}})
+    # the control: an absolute clone with an origin is its origin
+    clone = _clone(tmp_path)
+    git(tmp_path, 'init', '-q', str(clone))
+    git(clone, 'remote', 'add', 'origin', 'https://forge.example/t/hc.git')
+    assert (
+        devhost.config_source({'devhost': {'host': 'G', 'source': clone.as_posix()}})
+        == 'https://forge.example/t/hc.git'
+    )

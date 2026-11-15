@@ -9,9 +9,8 @@ only TUNES them, once, as data in its pyproject -- absent, the defaults below ap
     request_max_age_days = 14      # close an open request issue (`forge:request`) older than this
     work_max_idle_days = 14        # close an open WORK issue not updated for longer than this
 
-A WORK issue is one no machinery keeps: not a hosts issue, not an ``area:`` issue, not a request, not an
-alarm kept as an issue (``<kind>: ...``, :data:`dev_lab.dev.forgealarm.ISSUE_KINDS`), and carrying no
-hidden marker. A comment, a claim or an edit updates it, so only an issue nobody touched goes.
+A WORK issue is one no machinery keeps: not a hosts issue, not an ``area:`` issue, not a request, and carrying
+no hidden marker. A comment, a claim or an edit updates it, so only an issue nobody touched goes.
 
 A RETIRED MARKER IS ALWAYS DELETED, with no knob: a comment on an open issue carrying a hidden marker whose
 kind no :class:`~dev_lab.dev.forgepulls.Marker` member names was written by a writer that no longer
@@ -44,7 +43,6 @@ from lab_commons.compute.model import Schedule
 from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forgealarm import ISSUE_KINDS
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_ORIGIN, is_hosts
@@ -56,7 +54,7 @@ from dev_lab.dev.forgework import Client, Comment, client_for
 __all__ = ['Closing', 'Hygiene', 'apply', 'load_hygiene', 'main', 'plan', 'retired_markers', 'tidy']
 
 _AREA_PREFIX: Final = title_of('')
-_MACHINE_PREFIXES: Final = (_AREA_PREFIX, *(f'{kind}: ' for kind in ISSUE_KINDS))
+_MACHINE_PREFIXES: Final = (_AREA_PREFIX,)
 _LIVE_KINDS: Final = frozenset(str(kind) for kind in Marker)
 
 

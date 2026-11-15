@@ -115,20 +115,42 @@ def test_the_remote_runs_the_accounts_own_deploy_never_prompting() -> None:
     assert '--grant-table' in argv[-1], 'the declared slice is the one source of the grant the deploy writes'
 
 
-def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp_path: Path) -> None:
+def _two_grants(tmp_path: Path, role: str, accounts: tuple[str, ...]) -> tuple[int, list[str]]:
     said: list[str] = []
-    twice = (*_FLEET, Grant(user='alice', hosts=('other.example',), slurm_account='acct'))
+    twice = (
+        Grant(user='alice', hosts=_HOSTS, slurm_account='free', role=role),
+        Grant(user='alice', hosts=('other.example',), slurm_account='cost', role=role),
+        *_FLEET[1:],
+    )
     code = deploy_fleet(
         twice,
-        (),
+        accounts,
         home=tmp_path,
-        dry_run=False,
+        dry_run=True,
         say=said.append,
         connect=lambda grant: lambda _cmd, _stdin=None: _DEPLOY[grant.user],
         launch=lambda _argv, _log: None,
     )
-    assert code == 2
-    assert any("['alice'] hold more than one" in line for line in said)
+    return code, said
+
+
+def test_a_research_account_may_hold_several_grants(tmp_path: Path) -> None:
+    """A research account never serves (no tick), so two allocations on it are two grants, not two deploy hosts."""
+    _code, said = _two_grants(tmp_path, 'research', ())
+    assert not any('hold more than one' in line for line in said)
+
+
+def test_another_accounts_grants_never_refuse_the_selected_account(tmp_path: Path) -> None:
+    """Deploying bob is not refused because alice -- not deployed -- serves under two grants."""
+    code, said = _two_grants(tmp_path, 'verification', ('bob',))
+    assert code == 0
+    assert not any('hold more than one' in line for line in said)
+
+
+def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp_path: Path) -> None:
+    code, said = _two_grants(tmp_path, 'verification', ())
+    assert code == 2  # the control: a SERVING account with two grants has two tick hosts
+    assert any("['alice'] serve under more than one [[hpc.grant]]" in line and '--account' in line for line in said)
 
 
 def test_a_declared_short_host_resolves_to_its_grant_login_host(tmp_path: Path) -> None:
@@ -196,3 +218,27 @@ def test_a_refusal_names_the_file_it_looked_in() -> None:
     grant = Grant(user='carol', hosts=_HOSTS, slurm_account='acct')
     why = declared_target(grant, lambda _cmd, _stdin=None: '# /srv/u/machine/config.toml\n')
     assert why == 'carol: refused -- no [deploy] host in /srv/u/machine/config.toml; deploy it once by hand'
+
+
+def test_the_remote_refreshes_the_accounts_kit_before_it_deploys() -> None:
+    """A dead account cannot heal itself: its kit only moves on its own tick, which never runs.
+
+    So the remote first runs the kit's OWN tick (the one step that refreshes the host checkout, under its lock),
+    records the sha it reached, and only then deploys -- whatever that tick exits (a research kit refreshes, then
+    refuses to serve). PLANTED CONTROL: the account's own declared root still names both steps.
+    """
+    command = remote_argv(_FLEET[0], Target('login02.example', 'src'))[-1]
+    refresh = command.index('-m dev_lab.dev.hpcaccount tick dev-lab')
+    recorded = command.index('rev-parse HEAD')
+    deployed = command.index('-m dev_lab.dev.hpcaccount deploy')
+    assert refresh < recorded < deployed
+    assert command.count('cd ~/src/dev-lab') == 2
+    assert 'tick dev-lab ;' in command or 'tick dev-lab;' in command, 'a refused tick never stops the deploy'
+
+
+def test_the_refresh_runs_in_the_grants_environment() -> None:
+    """A grant's ``setup`` (a module load the cluster's git needs) wraps the refresh, as it wraps the cron tick."""
+    grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', setup=('module load git-x',))
+    command = remote_argv(grant, Target('login02.example', 'src'))[-1]
+    assert command.index('module load git-x') < command.index('tick dev-lab')
+    assert 'module load git-x' not in remote_argv(_FLEET[0], Target('login02.example', 'src'))[-1]

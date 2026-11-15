@@ -6,13 +6,14 @@ planted control is a declaration or a live rule that must NOT read as clean.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import Any
 
 import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, INTEGRATOR, FakeGitea, FakeGitHub, refused
 
-from dev_lab.dev import forgeprotect
+from dev_lab.dev import _protect_gitea, forgeprotect
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -264,7 +265,7 @@ _HAND_SET = {
     'main': {'enable_push': True, 'enable_push_whitelist': True,
              'push_whitelist_usernames': ['user-a-admin', 'promote-bot'], 'enable_merge_whitelist': True,
              'merge_whitelist_usernames': ['user-a-admin'], 'enable_force_push': False,
-             'enable_bypass_allowlist': False, 'block_admin_merge_override': False, 'required_approvals': 0},
+             'enable_bypass_allowlist': False, 'block_admin_merge_override': True, 'required_approvals': 0},
     'integrate/main': {'enable_push': False, 'enable_bypass_allowlist': True,
                        'bypass_allowlist_usernames': ['breakglass-bot'], 'block_on_rejected_reviews': True,
                        'dismiss_stale_approvals': True, 'required_approvals': 0},
@@ -277,7 +278,7 @@ def test_gitea_names_every_hand_set_difference_and_apply_removes_them() -> None:
     steps = {step.subject: step.lines for step in plan(forge, GITEA, wanted)}
     trunk = steps['trunk main: branch protection differs -> update']
     assert "push_whitelist_usernames: live=['promote-bot', 'user-a-admin'] declared=['promote-bot']" in trunk
-    assert 'block_admin_merge_override: live=False declared=True' in trunk
+    assert 'block_admin_merge_override: live=True declared=False' in trunk
     integration = steps['integration integrate/main: branch protection differs -> update']
     assert any(line.startswith('status_check_contexts: the forge did not answer') for line in integration)
     assert apply(forge, GITEA, wanted) == []
@@ -306,6 +307,39 @@ def test_gitea_leaves_a_rule_for_an_undeclared_branch_alone() -> None:
     forge = FakeGitea(protections={'release/*': {'enable_push': False}})
     apply(forge, GITEA, targets(GITEA_TEXT, 'p', GITEA))
     assert forge.protections['release/*'] == {'enable_push': False}
+
+
+def test_gitea_without_an_admin_reads_what_a_reader_may_and_names_the_rest_unanswered() -> None:
+    held = FakeGitea()
+    apply(held, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    reader = FakeGitea(protections=held.protections, admin=False)
+    steps = plan(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    # PLANTED CONTROL: a forge holding the declaration exactly is still never "as declared" to a reader.
+    assert len(steps) == 2
+    assert all(_protect_gitea.READ_IN_PART in step.subject for step in steps)
+    lines = [line for step in steps for line in step.lines]
+    assert any(line.startswith('bypass_allowlist_usernames: the forge did not answer') for line in lines)
+    assert not any(line.startswith('status_check_contexts') for line in lines)  # read, and as declared
+
+
+def test_gitea_without_an_admin_names_a_readable_drift_and_an_unprotected_branch() -> None:
+    reader = FakeGitea(protections={'main': {'enable_status_check': False, 'required_approvals': 0}}, admin=False)
+    steps = {step.subject: step.lines for step in plan(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))}
+    trunk = next(lines for subject, lines in steps.items() if subject.startswith('trunk main'))
+    assert 'enable_status_check: live=False declared=True' in trunk
+    assert any(subject.startswith('integration integrate/main: branch protection absent') for subject in steps)
+
+
+def test_gitea_without_an_admin_refuses_to_write_and_names_the_host_door() -> None:
+    reader = FakeGitea(admin=False)
+    with pytest.raises(PermissionError, match=re.escape('forge protect apply --repo owner/alpha')):
+        apply(reader, GITEA, targets(GITEA_TEXT, 'p', GITEA))
+    assert reader.writes == []
+
+
+def test_gitea_any_other_refusal_of_the_list_still_raises() -> None:
+    with pytest.raises(ForgeCallFailed):
+        plan(FakeGitea(down=True), GITEA, targets(GITEA_TEXT, 'p', GITEA))
 
 
 def test_the_door_is_the_forge_noun() -> None:
@@ -377,3 +411,14 @@ def test_a_final_refusal_s_message_carries_the_status_and_every_error_the_forge_
     failed = ForgeCallFailed(Report(('POST', 'x'), (Attempt(1, 422, INVALID_APP, Diagnosis.FORGE_REFUSED),), 3))
     assert 'the forge answered 422: Validation Failed' in str(failed)
     assert 'Invalid integration ids' in str(failed)
+
+
+def test_a_rejected_review_never_blocks_and_the_admin_can_still_merge_by_hand() -> None:
+    """A review only advises (2026-11-11) and an administrator keeps a hand rescue (2026-11-13).
+
+    PLANTED: every rendered Gitea rule must say False for both, on the trunk and on integration.
+    """
+    for target in targets(GITEA_TEXT, 'p', GITEA):
+        rule = _protect_gitea.body(target)
+        assert rule['block_on_rejected_reviews'] is False, target
+        assert rule['block_admin_merge_override'] is False, target

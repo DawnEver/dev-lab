@@ -25,7 +25,7 @@ from typing import Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev import sshhold, sshholdstate
+from dev_lab.dev import sshhold, sshholdrun, sshholdstate, sshholdwire
 
 _ANSWER_ENV: Final = 'SSHHOLD_ANSWER'
 _PROBE_S: Final = 120.0
@@ -76,7 +76,7 @@ class Holder:
         """Run *command*: ``{'output', 'status'}``, or ``{'error', 'fatal': True}`` once the stream is lost."""
         nonce = secrets.token_hex(8)
         try:
-            self.child.stdin.write(sshhold.frame(command, nonce).encode('utf-8'))
+            self.child.stdin.write(sshholdwire.frame(command, nonce).encode('utf-8'))
             self.child.stdin.flush()
         except OSError:
             return self._ended()
@@ -89,7 +89,7 @@ class Holder:
             if chunk is None:
                 return self._ended()
             got += chunk
-            if (done := sshhold.split_marker(got.decode('utf-8', 'replace'), nonce)) is not None:
+            if (done := sshholdwire.split_marker(got.decode('utf-8', 'replace'), nonce)) is not None:
                 return {'output': done[0], 'status': done[1]}
         why = f'no reply within {timeout_s:g} s; the session is closed (a half-read stream cannot be trusted)'
         return {'error': why, 'fatal': True}
@@ -130,7 +130,9 @@ def _answer(conn: socket.socket, token: str, holder: Holder) -> tuple[dict[str, 
     if verb == 'close':
         return {'ok': True}, True
     if verb == 'run':
-        reply = holder.exchange(str(asked.get('command', '')), float(asked.get('timeout_s', sshhold.DEFAULT_TIMEOUT_S)))
+        reply = holder.exchange(
+            str(asked.get('command', '')), float(asked.get('timeout_s', sshholdrun.DEFAULT_TIMEOUT_S))
+        )
         return reply, bool(reply.get('fatal', False))
     return {'error': f'unknown verb {verb!r}'}, False
 

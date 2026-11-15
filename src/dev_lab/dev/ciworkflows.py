@@ -47,8 +47,9 @@ WHO PRODUCES IS THE FORGE'S DATA (:attr:`~dev_lab.dev._forgebackends.Backend.pro
 a repo whose review is a producer its forge does not wire is refused at render (:func:`placed`). The judge host is
 wired on both forges, and ADVISORY: its verdict never gates a merge (:data:`~dev_lab.dev._forgebackends.ADVISORY`).
 
-A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
-the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
+A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix ``part`` job
+(:func:`dev_lab.dev.jobparts.hosted_jobs`): the one place a repo's
+``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
 THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins
 (dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
@@ -62,6 +63,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import tomllib
 from pathlib import Path
 from typing import Any, Final, cast
@@ -74,13 +76,12 @@ from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
-from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 __all__ = [
     'BASE_PATH',
     'BY_FORGE',
-    'FAMILY_INTEGRATION',
     'FORGE_KEY',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
@@ -99,6 +100,8 @@ __all__ = [
     'declared_forge',
     'drift',
     'expand',
+    'follow_checks',
+    'measurement_isolated',
     'merge',
     'placed',
     'ready_only',
@@ -124,9 +127,6 @@ LIGHT: Final = 'light'
 
 #: In any base or layer string, the repo's declared integration branch (``[tool.dev_lab.integrator]``), at render.
 INTEGRATION_PLACEHOLDER: Final = '@integration@'
-#: The integration branch a pyproject declaring no ``[tool.dev_lab.integrator]`` renders: the family's.
-FAMILY_INTEGRATION: Final = 'integrate/main'
-
 #: The key of a step that stands for a named list of :data:`SHARED`.
 USE_STEPS: Final = 'use-steps'
 #: The directory each forge's Actions runs its workflows from.
@@ -217,6 +217,40 @@ def ready_only(workflow: dict[str, Any]) -> dict[str, Any]:
         return {**job, 'if': f'${{{{ ({READY_ONLY}){own} }}}}'}
 
     return {**workflow, 'jobs': {name: guarded(job) for name, job in workflow['jobs'].items()}}
+
+
+def measurement_isolated(workflow: dict[str, Any]) -> dict[str, Any]:
+    """A measurement dispatch cannot run ANY normal job, including a consumer-added job. PURE.
+
+    Applied after shared setup expansion so every consumer retains its own environment profile,
+    while this job alone leaves no checkout credential for tested code to inherit.
+    """
+    if 'measurement' not in workflow.get('jobs', {}):
+        return workflow
+    guard = "inputs.measurement_paths == '' && inputs.measurement_sha == ''"
+    jobs = {}
+    for name, job in workflow['jobs'].items():
+        if name == 'measurement':
+            if job.get('permissions') != {'contents': 'read'}:
+                msg = 'measurement requires exactly contents: read, never status or merge authority'
+                raise ValueError(msg)
+            environments = [job.get('env', {}), *(step.get('env', {}) for step in job['steps'])]
+            if any({'GITHUB_TOKEN', 'GH_TOKEN'} & set(env) for env in environments) or re.search(
+                r'\$\{\{[^}]*\bsecrets\.', json.dumps(job)
+            ):
+                msg = 'measurement setup may not receive forge tokens or family secrets'
+                raise ValueError(msg)
+            steps = [
+                {**step, 'with': {**step.get('with', {}), 'persist-credentials': False}}
+                if step.get('uses', '').startswith('actions/checkout@')
+                else step
+                for step in job['steps']
+            ]
+            jobs[name] = {**job, 'steps': steps}
+        else:
+            own = f' && ({_bare(job["if"])})' if 'if' in job else ''
+            jobs[name] = {**job, 'if': f'${{{{ ({guard}){own} }}}}'}
+    return {**workflow, 'jobs': jobs}
 
 
 def needs(job: dict[str, Any]) -> set[str]:
@@ -333,7 +367,8 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         merged = merge(base.get(name, {}), layer)
         forge = merged.pop(FORGE_KEY, 'github')
         merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
-        workflow = ready_only(hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted))
+        expanded = hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted)
+        workflow = ready_only(measurement_isolated(expanded))
         if 'jobs' in workflow and not workflow['jobs']:
             continue  # every job reviewed on the runner, in a judge repo: nothing to render
         if workflow.pop(NIGHTLY_KEY, False):
@@ -342,6 +377,30 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)
         out[name] = (WORKFLOW_DIRS[forge], cast('dict[str, Any]', _named(workflow, integration)))
+    return follow_checks(out)
+
+
+def follow_checks(rendered: dict[str, tuple[Path, dict[str, Any]]]) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """*rendered* with each ``workflow_run`` trigger following the CHECK workflows rendered beside it. PURE.
+
+    A check workflow is one a PR runs (a ``pull_request``-family event) in the same forge directory; the trigger
+    names exactly those, so a repo without the Review workflow fires its merger on its own checks. With none, the
+    ``workflow_run`` trigger is dropped and the workflow's other triggers (the schedule) stand.
+    """
+    out = dict(rendered)
+    for name, (where, workflow) in rendered.items():
+        run = workflow.get('on', {}).get('workflow_run')
+        if run is None:
+            continue
+        checks = sorted(
+            other['name']
+            for key, (there, other) in rendered.items()
+            if key != name and there == where and any(e.startswith('pull_request') for e in other.get('on', {}))
+        )
+        on = {event: value for event, value in workflow['on'].items() if event != 'workflow_run'}
+        if checks:
+            on = {'workflow_run': {'workflows': checks, **run}, **on}
+        out[name] = (where, {**workflow, 'on': on})
     return out
 
 

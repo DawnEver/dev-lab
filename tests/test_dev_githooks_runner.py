@@ -7,6 +7,7 @@ whose refs were not pushed.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -14,8 +15,16 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import walls
 from dev_lab.dev.githooks import main as githooks_main
-from dev_lab.dev.githooks.runner import PUSH_URL_ENV, ZERO_SHA, parse_push_lines, resolve, run_stage
+from dev_lab.dev.githooks.runner import (
+    FOREIGN_INTERPRETER_ENV,
+    PUSH_URL_ENV,
+    ZERO_SHA,
+    parse_push_lines,
+    resolve,
+    run_stage,
+)
 from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
 from dev_lab.dev.metrics import PUSH, REFUSAL, read
 
@@ -61,8 +70,10 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     # LOCAL KEEPS IRREVERSIBLE HARM AND SECOND-SCALE CHECKS (toolchain plan P3): history that only grows,
     # the published ref. The lock pin and freshness, the branch set and PR admission are the forge's.
     assert {hook.id for hook in table['pre-push']} == {
+        'task-bound',
         'memory-adds',
         'session-branch',
+        'milestone-base',
         'closed-pr',
         'pr-current',
         'pr-notices',
@@ -79,6 +90,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'merge-resolution',
     }
     assert {hook.id for hook in table['pre-commit']} == {
+        'task-bound',
         'check-added-large-files',
         'check-ast',
         'check-case-conflict',
@@ -135,8 +147,10 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
     )
     pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]
     assert pre_push == [
+        'task-bound',
         'memory-adds',
         'session-branch',
+        'milestone-base',
         'closed-pr',
         'pr-current',
         'pr-notices',
@@ -345,6 +359,22 @@ def test_a_refusing_stage_logs_one_refusal_per_hook_and_a_push_is_counted(repo: 
     assert len(read(PUSH, root=repo)) == 1
 
 
+def test_a_refusing_hook_is_a_wall_whose_remedy_is_read_off_its_own_output(repo: Path) -> None:
+    """WALLS-ARE-RECORDED: a one-line failure names no door; one that says what to do does."""
+    said = {'bare': 'no', 'told': 'cz: the subject is not conventional.\nWrite `feat(x): y`.'}
+
+    def fail(argv: list[str], _cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
+        return 1, said[argv[0]]
+
+    hooks = (Hook(stage='commit-msg', id='bare', run=('bare',)), Hook(stage='commit-msg', id='told', run=('told',)))
+    assert run_stage('commit-msg', ['.git/COMMIT_EDITMSG'], root=repo, hooks=hooks, runner=fail) == 1
+    ledger = walls.ledger(repo).read_text(encoding='utf-8').splitlines()
+    assert [(json.loads(one)['rule'], json.loads(one)['remedy_present']) for one in ledger] == [
+        ('bare', False),
+        ('told', True),
+    ]
+
+
 def test_a_push_names_the_branch_and_tip_it_pushes(repo: Path) -> None:
     """P0 metrics: a branch's first push is where its edit starts, so every push line names its branch."""
     sha = 'a' * 40
@@ -363,3 +393,86 @@ def test_every_pre_push_hook_is_told_the_url_git_pushes_to(repo: Path) -> None:
     url = 'https://example.com/o/r.git'
     assert run_stage('pre-push', ['origin', url], root=repo, stdin=stdin, hooks=(hook,), runner=seen) == 0
     assert seen.env == {PUSH_URL_ENV: url}
+
+
+def _merge_in_flight(repo: Path) -> None:
+    """``lane`` merging ``main``: upstream brings ``up.py``; ``both.py`` conflicts and is resolved by hand."""
+    for name in ('both.py', 'mine.py'):
+        (repo / name).write_text('x = 0\n', encoding='utf-8')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'seed', '--no-verify')
+    _git(repo, 'checkout', '-qb', 'lane')
+    (repo / 'both.py').write_text('x = 1\n', encoding='utf-8')
+    (repo / 'mine.py').write_text('x = 1\n', encoding='utf-8')
+    _git(repo, 'commit', '-qam', 'lane', '--no-verify')
+    _git(repo, 'checkout', '-q', 'main')
+    (repo / 'both.py').write_text('x = 2\n', encoding='utf-8')
+    (repo / 'up.py').write_text('x = 2  \n', encoding='utf-8')  # upstream's own business, not the merge's
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'upstream', '--no-verify')
+    _git(repo, 'checkout', '-q', 'lane')
+    done = subprocess.run([_GIT, '-C', str(repo), 'merge', '--no-edit', 'main'], capture_output=True, check=False)
+    assert done.returncode, 'the planted conflict'
+    (repo / 'both.py').write_text('x = 3\n', encoding='utf-8')
+    _git(repo, 'add', 'both.py')
+
+
+def test_a_merge_commit_hands_a_hook_only_the_paths_the_merge_itself_changes(repo: Path) -> None:
+    """User ruling 2026-11-13: never the files the merge only brings in. PLANTED CONTROL: the resolution arrives."""
+    _merge_in_flight(repo)
+    seen = _Recorder()
+    py = Hook(stage='pre-commit', id='py', run=('tool',), files=r'\.py$', pass_files=True)
+    assert run_stage('pre-commit', root=repo, hooks=(py,), runner=seen) == 0
+    assert [argv[1:] for argv, _ in seen.calls] == [['both.py']]
+
+
+def test_a_merge_with_no_content_of_its_own_runs_no_path_hook(repo: Path) -> None:
+    _merge_in_flight(repo)
+    _git(repo, 'checkout', '-q', 'lane', '--', 'both.py')  # resolve to the lane's side: the merge adds nothing
+    seen = _Recorder()
+    py = Hook(stage='pre-commit', id='py', run=('tool',), files=r'\.py$', pass_files=True)
+    assert run_stage('pre-commit', root=repo, hooks=(py,), runner=seen) == 0
+    assert seen.calls == []
+
+
+def test_a_pushed_merge_hands_a_pre_push_hook_only_its_own_and_the_lanes_paths(repo: Path) -> None:
+    """The upstream commit is already on the remote: its ``up.py`` is not the push's. PLANTED CONTROL: lane paths."""
+    _merge_in_flight(repo)
+    _git(repo, 'commit', '-qm', 'merge', '--no-verify')
+    tip = _git(repo, 'rev-parse', 'HEAD').strip()
+    seed = _git(repo, 'rev-parse', 'main~1').strip()
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', 'main')
+    _git(repo, 'update-ref', 'refs/remotes/origin/lane', seed)
+    line = f'refs/heads/lane {tip} refs/heads/lane {seed}\n'
+    seen = _Recorder()
+    py = Hook(stage='pre-push', id='py', run=('tool',), files=r'\.py$', pass_files=True)
+    assert run_stage('pre-push', ('origin', 'url'), root=repo, stdin=line, hooks=(py,), runner=seen) == 0
+    assert sorted(seen.calls[0][0][1:]) == ['both.py', 'mine.py']
+
+
+def test_under_a_foreign_interpreter_a_bootstrapping_row_runs_and_names_the_door(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """2026-11-13: a new worktree had no venv, every row skipped, and the venv never came.
+
+    PLANTED control: beside it a repo-venv row is still skipped.
+    """
+    monkeypatch.setenv(FOREIGN_INTERPRETER_ENV, '1')
+    seen = _Recorder()
+    follow = Hook(
+        stage='post-checkout', id='venv-follows-lock', run=('python', '-m', 'x'), always_run=True, bootstraps=True
+    )
+    other = Hook(stage='post-checkout', id='reclaim', run=('python', '-m', 'y'), always_run=True)
+    assert run_stage('post-checkout', root=repo, hooks=(follow, other), runner=seen) == 0
+    assert [argv[-1] for argv, _ in seen.calls] == ['x']
+    said = capsys.readouterr().err
+    assert 'this checkout has no venv -- venv-follows-lock bootstraps it' in said
+    assert f'-m dev_lab.dev.dep --bootstrap {repo.as_posix()}' in said
+
+
+def test_the_base_venv_follow_rows_bootstrap_a_checkout_with_no_venv() -> None:
+    table = merge(base_rows(), {})
+    stages = ('post-checkout', 'post-merge')
+    rows = [hook for stage in stages for hook in table[stage] if hook.id == 'venv-follows-lock']
+    assert len(rows) == 2
+    assert all(hook.bootstraps for hook in rows)

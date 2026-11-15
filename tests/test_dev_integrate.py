@@ -199,3 +199,43 @@ def test_pending_says_whether_the_trunk_still_lacks_the_sha_so_a_promoted_tip_ru
     run_git(repo, 'branch', '-f', 'main', tip)
     assert integrate.main(['pending', tip], cwd=repo, fetch=lambda _: None) == 0
     assert capsys.readouterr().out.strip() == 'pending=false'
+
+
+GITHUB = Forge('github.com', 'o', 'r')
+
+
+@pytest.mark.parametrize(
+    ('env', 'moved'),
+    [
+        pytest.param({}, False, id='a-session-is-not-the-promoter'),
+        pytest.param({'GITHUB_ACTIONS': 'true', 'GITHUB_TOKEN': 'job'}, True, id='planted-the-promote-job'),
+    ],
+)
+def test_on_github_only_the_promote_job_moves_the_trunk_and_no_push_the_ruleset_refuses_is_suggested(
+    server, tmp_path: Path, *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], env, moved
+) -> None:
+    """The ruleset admits main's push from the nightly promote job alone: a session's promote decides, moves nothing.
+
+    PLANTED: the same passing decision inside the GitHub Actions promote job fast-forwards the local trunk.
+    """
+    bare, repo = clone_pair(tmp_path)
+    tip = advance(repo, 'integrate/main', 'f.txt', 'f\n')
+    run_git(repo, 'checkout', '-q', '--detach')
+    run_git(repo, 'branch', '-f', 'main', 'origin/main')
+    before = git_out(repo, 'rev-parse', 'main')
+    monkeypatch.setattr(integrate, 'decide', lambda _root, _client, _policy, sha: integrate.Promotion('promote', sha))
+    for name in ('GITHUB_ACTIONS', 'GITEA_ACTIONS', 'GITHUB_TOKEN'):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    built = client(GITHUB, Loopback(server))
+    assert integrate.main(['promote', tip], cwd=repo, client=built, fetch=lambda _: None) == 0
+    said = capsys.readouterr().out
+    assert git_out(repo, 'rev-parse', 'main') == (tip if moved else before)
+    assert git_out(bare, 'rev-parse', 'main') != tip, 'promote never pushes'
+    if moved:
+        assert 'publish it: git push origin main' in said
+    else:
+        assert 'git push' not in said
+        assert 'nightly promote job' in said
+        assert 'gh run list --workflow ci.yml --event schedule' in said

@@ -30,6 +30,8 @@ __all__ = [
     'STRAY_COMMAND',
     'SWEEP_COMMAND',
     'VENVFOLLOW_COMMAND',
+    'WALLSPOST_COMMAND',
+    'WALLSSTOP_COMMAND',
     'WIRING',
     'Wire',
 ]
@@ -134,6 +136,18 @@ AUTOMODE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab
 #: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
 PRESSURE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hostalarm hook'
 
+#: A SESSION WORKS ON A TASK BY THE USER'S WORD (:mod:`dev_lab.dev.hpcaccount.session`, ruling 2026-11-13): a prompt
+#: whose first line is ``task: <slug>`` binds the session to that task, so it holds the role the task was granted.
+TASKBIND_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hpcaccount.session bind'
+
+#: WALLS-ARE-RECORDED (:mod:`dev_lab.dev.walls`, ruling 2026-11-13): after a shell call, a denial in its error text
+#: that no family emit path recorded (a classifier's, a tool's own) is an unremedied wall in the session's ledger.
+WALLSPOST_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.walls post-tool'
+
+#: Its ``Stop`` half, for the main session and every subagent: a wall that named no door and that no ``walls close``
+#: answers refuses the stop once, naming the gap loop (``docs-src/dev/feedback.md``).
+WALLSSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.walls stop'
+
 
 @dataclass(frozen=True, slots=True)
 class Wire:
@@ -153,8 +167,9 @@ class Wire:
 #: The engine and the journal door before every shell call; the pushed-head reminder, the landed sweep and the
 #: host-pressure reminder after every one (the reminder on each prompt too); the STRAY-FILE-REFUSED census ONCE, at
 #: stop -- a stray is the state a turn leaves, the PreToolUse refusals stop a misplaced write as it is made, and a
-#: census after every shell call repeated the same block (2026-11-03 audit); the hand-back check at every stop, the
-#: main session's and each subagent's; the pushed-head gate and the scratch census at the main session's stop; the
+#: census after every shell call repeated the same block (2026-11-03 audit); the hand-back check and the wall
+#: ledger's stop at every stop, the main session's and each subagent's, the ledger's foreign-denial reader after
+#: every shell call, succeeded or failed; the pushed-head gate and the scratch census at the main session's stop; the
 #: background reclaim at session start.
 WIRING: Final = (
     Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
@@ -163,13 +178,20 @@ WIRING: Final = (
     Wire('PostToolUse', SESSIONPRS_COMMAND, 'dev_lab.dev.sessionprs', on_shells=True),
     Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
     Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
+    Wire('PostToolUse', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True),
+    # PostToolUseFailure: a documented hook event ("After a tool call fails") --
+    # https://code.claude.com/docs/en/hooks; PostToolUse alone never sees a failed call's error text.
+    Wire('PostToolUseFailure', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True),
     Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
+    Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.hpcaccount.session bind', on_shells=False),
     Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
     Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False),
     Wire('Stop', SCRATCHSTOP_COMMAND, 'dev_lab.dev.scratch stop', on_shells=False),
     Wire('Stop', DEVHOSTSTOP_COMMAND, 'dev_lab.dev.devhost stop', on_shells=False),
+    Wire('Stop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False),
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
+    Wire('SubagentStop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
     Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),
     Wire('SessionStart', FORGEAUTH_COMMAND, 'dev_lab.dev.forgeauthnotice', on_shells=False),

@@ -32,9 +32,7 @@ from dev_lab.dev import forge as _forge
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
 
 if TYPE_CHECKING:
-    import http.client
-
-    from dev_lab.dev.forge import Transport
+    from dev_lab.dev.forge import Connection, Transport
 
 __all__ = [
     'HTTP_ERROR_FLOOR',
@@ -150,7 +148,7 @@ def within(
     *budget_s*, and :func:`retried` re-raises it rather than retrying.
     """
 
-    def opened(host: str, timeout: float) -> http.client.HTTPConnection:
+    def opened(host: str, timeout: float) -> Connection:
         left = deadline - now()
         if left <= 0:
             msg = f'{what} spent its {budget_s:g} s read budget before asking {host}'

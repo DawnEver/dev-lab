@@ -63,6 +63,7 @@ from dev_lab.dev._rule_rows_b import ALWAYS_ON as _ALWAYS_ON_IDS
 from dev_lab.dev._rule_rows_b import ROWS as _ROWS_B
 from dev_lab.dev._rule_rows_branches import ROWS as _ROWS_BRANCHES
 from dev_lab.dev._rule_rows_citations import ROWS as _ROWS_CITATIONS
+from dev_lab.dev._rule_rows_feedback import ROWS as _ROWS_FEEDBACK
 from dev_lab.dev._rule_rows_memory import ROWS as _ROWS_MEMORY
 from dev_lab.dev._rule_rows_pr_flow import ROWS as _ROWS_PR_FLOW
 from dev_lab.dev.profile import RepoProfile
@@ -315,7 +316,7 @@ def _build(rows: Iterable[tuple[str, str, tuple[str | tuple[str, str], ...]]]) -
 #: Rows are the number -- nothing here states a count, because a count is blind to which row moved
 #: and the honest repair when it disagrees is to edit the digit.
 RULES: Final[tuple[Rule, ...]] = _build(
-    ROWS + _ROWS_MEMORY + _ROWS_B + _ROWS_CITATIONS + _ROWS_PR_FLOW + _ROWS_BRANCHES
+    ROWS + _ROWS_MEMORY + _ROWS_B + _ROWS_CITATIONS + _ROWS_PR_FLOW + _ROWS_FEEDBACK + _ROWS_BRANCHES
 )
 
 #: The rules dev-lab enforces in EVERY repo through the ``pytest11`` plugin

@@ -16,7 +16,7 @@ from lab_commons.hpc.testcells import TestCell
 from lab_commons.hpc.tree import NotSubmitted
 from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Status
 
-from dev_lab.dev import localpart, platformparts
+from dev_lab.dev import localpart, platformparts, producer
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import CommitStatus, state_for
 from dev_lab.dev.producer import Owner, ProducerExit, owned, release_reason
@@ -394,6 +394,32 @@ def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, mon
 
     monkeypatch.setattr(platformparts, 'flush', down)
     assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == ProducerExit.UNREACHABLE
+
+
+def test_a_local_part_the_forge_refused_declares_why_to_its_job(tmp_path: Path, monkeypatch) -> None:
+    """A post the forge refused is declared to the part's job, so its row names the forge's reason.
+
+    LIVE 2026-11-13 (dev-lab 6cc2d023..cdb5439b): the records home was full, so every ``tests/base`` read only
+    "producer exited 1 (FAIL) but posted no part" -- the cause sat in the job log.
+
+    PLANTED CONTROL: a post the forge accepts declares nothing.
+    """
+    outcome = tmp_path / 'outcome'
+    monkeypatch.setenv(producer.OUTCOME_VAR, str(outcome))
+    monkeypatch.setattr(localpart, 'post', lambda *_a: 'posted tests/base')
+    assert localpart.post_local(tmp_path, _record({'t::a': 'ok'}), tmp_path / 'runs') == 'posted tests/base'
+    assert not outcome.exists(), 'control: an accepted post declares nothing'
+
+    def full(*_a: object) -> NoReturn:
+        msg = 'RecordsHomeFull(the records home of dev-lab holds 1000 assets)'
+        raise PostFailed(msg)
+
+    monkeypatch.setattr(localpart, 'post', full)
+    assert 'not posted' in localpart.post_local(tmp_path, _record({'t::a': 'ok'}), tmp_path / 'runs')
+    said = producer.outage_said(outcome.read_text(encoding='utf-8'))
+    assert said is not None
+    assert 'RecordsHomeFull' in said
+    assert said.endswith(f'class={Owner.STATUS_PUBLISHING}')
 
 
 def test_a_part_posts_the_state_its_conclusion_names_and_an_error_status_is_no_part() -> None:

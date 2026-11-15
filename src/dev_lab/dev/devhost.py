@@ -14,8 +14,10 @@ A host file restating a family key is refused (:func:`check`). ``[dev]`` (:data:
 (the account roles the machine may reach, rendered as ``[hpc] reach``), ``ref`` (the dev-lab ref followed),
 ``forges`` (forge host -> account names), ``os``,
 ``resources`` (:data:`RESOURCES`; :func:`usable` is the part this user holds), ``vendors.<name>`` (:data:`VENDOR`),
-``detect`` (vendor -> install-home glob patterns, family-wide). ``[dev]`` is not rendered itself; a vendor's
-``seats > 0`` renders as ``[capabilities.<vendor>] seats``, its one consumer-facing copy.
+``detect`` (vendor -> install-home glob patterns, family-wide),
+``channels`` (session channel source -> user, host-only; rendered as ``[agent] channels``, read by
+:func:`declared_channels`). ``[dev]`` is not rendered itself; a vendor's ``seats > 0`` renders as
+``[capabilities.<vendor>] seats``, its one consumer-facing copy.
 
 Install homes are found ON each machine: ``detect`` globs the family's patterns locally and prints the host-file
 lines to propose through a pull request; a vendor with seats and no ``home`` is named by the drift notice.
@@ -47,10 +49,13 @@ from lab_commons.log import emit
 
 from dev_lab.dev._machinefile import dumps, render_value
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.devschema import fill_remedy, hpc_reach, unfilled
+from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
-__all__ = ['OWN_TABLE', 'RENDER_DOOR', 'declared', 'detect', 'drift', 'main', 'notice', 'render', 'stop_block']
+__all__ = [
+    'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'detect', 'drift', 'host_file',
+    'main', 'notice', 'render', 'stop_block',
+]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
 OWN_TABLE: Final = 'devhost'
@@ -78,8 +83,37 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
+def host_file(host: str) -> str:
+    """Where *host*'s declaration lives in the config source, relative to its root."""
+    return f'hosts/{host}.toml'
+
+
 def _sources(clone: Path, host: str) -> tuple[Path, Path]:
-    return clone / 'family.toml', clone / 'hosts' / f'{host}.toml'
+    return clone / 'family.toml', clone / host_file(host)
+
+
+def config_source(live: Mapping[str, Any] | None = None) -> str:
+    """The config source's forge URL: the ``origin`` of the clone the machine file's ``[devhost]`` names.
+
+    Raises:
+        ValueError: the machine file is not a render (no ``[devhost] source``), the source is relative (it would
+            follow the CWD to another clone, #556), or that clone has no ``origin``.
+
+    """
+    own = (machineconfig.machine() if live is None else live).get(OWN_TABLE, {})
+    if not own.get('source'):
+        msg = f'the machine file has no [{OWN_TABLE}] source: render it (devhost render --host NAME --from CLONE)'
+        raise ValueError(msg)
+    if not Path(own['source']).is_absolute():
+        msg = (f"the machine file's [{OWN_TABLE}] source {own['source']!r} is relative, so it would resolve against "
+               f"the current directory and read another clone's origin: re-render it with an absolute clone -- "
+               f"devhost render --host {own.get('host') or 'NAME'} --from <absolute clone> --write")  # fmt: skip
+        raise ValueError(msg)
+    url = git_out(Path(own['source']), 'remote', 'get-url', 'origin')
+    if not url:
+        msg = f'{own["source"]} has no origin remote: the config source is unknown here'
+        raise ValueError(msg)
+    return url.strip()
 
 
 def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
@@ -91,14 +125,32 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     seats = {name: {'seats': vendor['seats']} for name, vendor in vendors.items() if vendor.get('seats')}
     layered = _merge(layered, {'capabilities': seats} if seats else {})
     layered = _merge(layered, {'hpc': {'reach': hpc_reach(declared.get('dev', {}))}} if 'hpc' in layered else {})
+    if channels := declared.get('dev', {}).get('channels'):
+        layered = _merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     local = {k: v for k, v in live.items() if k not in layered and k != OWN_TABLE}
-    own = {OWN_TABLE: {'host': host, 'source': clone.as_posix()}}
+    own = {OWN_TABLE: {'host': host, 'source': clone.resolve().as_posix()}}  # absolute: never the reader's CWD (#556)
     header = (
         f'# RENDERED by python -m dev_lab.dev.devhost render --host {host}: edit the sources, not this file.\n'
         f'# family.toml sha256:{_digest(family_file)}; hosts/{host}.toml sha256:{_digest(host_file)}; '
         f'this machine keeps {sorted(local)}.\n\n'
     )
     return header + dumps({**layered, **local, **own})
+
+
+def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:
+    """Return this machine's session channels: source -> the user whose messages through it ARE the machine's user.
+
+    Read from the machine file's ``[agent] channels`` (the render of the host file's ``[dev] channels``). Empty when
+    none is declared: an undeclared channel or user carries no authority.
+
+    Raises:
+        ValueError: the table is not non-empty source strings to non-empty user strings -- never read past.
+
+    """
+    channels = (machineconfig.machine() if live is None else live).get(CHANNELS_TABLE, {}).get('channels', {})
+    if defects := channel_defects(channels, f'[{CHANNELS_TABLE}].channels'):
+        raise ValueError('; '.join(defects))
+    return dict(channels)
 
 
 def _branch(checkout: str) -> str | None:
@@ -231,6 +283,16 @@ def _detect(source: Path | None) -> int:
     return 0
 
 
+def _channels(live: Mapping[str, Any]) -> int:
+    try:
+        channels = declared_channels(live)
+    except ValueError as malformed:
+        emit(f'refused: {malformed}', err=True)
+        return 2
+    emit(json.dumps(channels, sort_keys=True))
+    return 0
+
+
 def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -> int:
     own = live.get(OWN_TABLE, {})
     host, clone = args.host or own.get('host'), _source(args.clone, own)
@@ -254,12 +316,14 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``drift`` (read only; exit 1 on drift), ``render`` (``--write`` backs up first), ``detect``, ``stop``."""
+    """``drift`` (read only; exit 1 on drift), ``render`` (``--write`` backs up), ``detect``, ``stop``, ``channels``."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('drift', help='report where the machine file departs from its render')
     verbs.add_parser('stop', help='the Stop hook: block once per session while an install home is unfilled')
+    telling = verbs.add_parser('channels', help="print this machine's declared session channels (source -> user)")
+    telling.add_argument('--json', action='store_true', required=True, help='as one JSON object ({} when undeclared)')
     finding = verbs.add_parser('detect', help="print the host-file lines for this machine's vendor install homes")
     finding.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     making = verbs.add_parser('render', help='render the machine file from the family and host files')
@@ -272,6 +336,8 @@ def main(argv: list[str] | None = None) -> int:
     live = _read(path) if path.is_file() else {}
     if args.verb == 'stop':
         return _stop(path, live)
+    if args.verb == 'channels':
+        return _channels(live)
     if args.verb == 'drift':
         return _drift(path, live)
     if args.verb == 'detect':

@@ -13,7 +13,10 @@ import pytest
 from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.autodoors import (
     CODEX_RULES_REL,
+    REFUSED_ACTS,
+    ActDeclaredAsDoor,
     claude_rows,
+    cli_doors,
     codex_rules,
     doors,
     main,
@@ -161,3 +164,91 @@ def test_every_forge_pr_verb_an_agent_is_told_to_run_is_a_door() -> None:
     assert told - doors_ == set()
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
     assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge pr view 3', g) for g in globs)
+
+
+_DESKTOP_READS = ('windows', 'capture', 'controls')
+_DESKTOP_ACTS = ('press', 'set-value', 'close')
+
+
+def test_the_desktop_tool_read_verbs_are_doors_and_its_acts_stay_prompted() -> None:
+    """User ruling 2026-11-14 E6: the desktop tool's READ verbs run unprompted in both clients; acts stay prompted.
+
+    PLANTED CONTROL: no rendered Claude row or Codex rule names an act verb, and a bare-module row (which would
+    admit every verb) is absent.
+    """
+    rows = claude_rows()
+    text = codex_rules()
+    for verb in _DESKTOP_READS:
+        for head in INTERPRETERS:
+            assert f'Bash({head} -m lab_commons.desktop {verb} *)' in rows
+        assert f'"-m", "lab_commons.desktop", "{verb}"' in text
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
+    for verb in _DESKTOP_ACTS:
+        command = f'{INTERPRETERS[0]} -m lab_commons.desktop {verb} --window x'
+        assert not any(fnmatchcase(command, pattern) for pattern in globs), verb
+        assert f'"lab_commons.desktop", "{verb}"' not in text
+    assert not any(row.endswith('-m lab_commons.desktop *)') for row in rows)
+
+
+_CLI_TABLE = """
+[tool.dev_lab.cli_doors]
+acts = ["press"]
+doors = [
+    {argv = ["consumer", "vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."},
+    {argv = ["consumer", "vendor", "stalled"], why = "Read-only: whether the vendor tool waits on a dialog."},
+]
+"""
+
+
+def _declare(tmp_path: Path, table: str) -> Path:
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "consumer"\n' + table, encoding='utf-8')
+    return tmp_path
+
+
+def test_a_consumer_declares_its_read_only_cli_verbs_and_both_clients_render_them(tmp_path: Path) -> None:
+    """DECISION 2026-11-15: a consumer's read-only CLI verbs are DATA in its pyproject, rendered like every door.
+
+    PLANTED CONTROL: a sibling verb of the same CLI (an act) and the bare module stay unadmitted.
+    """
+    cli = cli_doors(_declare(tmp_path, _CLI_TABLE))
+    assert [door.argv for door in cli] == [
+        ('python', '-m', 'consumer', 'vendor', 'windows'),
+        ('python', '-m', 'consumer', 'vendor', 'stalled'),
+    ]
+    rows = claude_rows(cli=cli)
+    text = codex_rules(cli=cli)
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
+    for verb in ('windows', 'stalled'):
+        for head in INTERPRETERS:
+            assert f'Bash({head} -m consumer vendor {verb} *)' in rows
+        assert f'"-m", "consumer", "vendor", "{verb}"' in text
+    for refused in ('vendor press --window x', 'vendor close x', 'serve'):
+        assert not any(fnmatchcase(f'{INTERPRETERS[0]} -m consumer {refused}', g) for g in globs), refused
+    windows = f'Bash({INTERPRETERS[0]} -m consumer vendor windows *)'
+    assert rows[windows] == "Read-only: the vendor tool's windows, listed."
+    assert cli_doors(_declare(tmp_path, '')) == (), 'no table, no doors'
+
+
+@pytest.mark.parametrize(('acts', 'verb'), [('["rerun"]', 'rerun'), ('[]', 'press'), ('[]', 'kill'), ('[]', 'push')])
+def test_a_declared_cli_door_that_names_an_act_is_refused_by_name(tmp_path: Path, acts: str, verb: str) -> None:
+    """An act is never a door: the repo's own `acts` list, and the fixed refusal list whatever the repo declares."""
+    row = f'{{argv = ["consumer", "vendor", "{verb}"], why = "x"}}'
+    table = f'[tool.dev_lab.cli_doors]\nacts = {acts}\ndoors = [{row}]\n'
+    assert (verb in REFUSED_ACTS) == (acts == '[]'), 'the repo-declared act is outside the fixed list'
+    with pytest.raises(ActDeclaredAsDoor, match=verb):
+        cli_doors(_declare(tmp_path, table))
+
+
+@pytest.mark.parametrize('argv', ['["consumer"]', '["consumer", "vendor *"]', '["consumer", "a b"]'])
+def test_a_cli_door_that_would_admit_more_than_its_verb_is_refused(tmp_path: Path, argv: str) -> None:
+    """A bare module admits every verb; a glob or a space widens the row."""
+    table = f'[tool.dev_lab.cli_doors]\ndoors = [{{argv = {argv}, why = "x"}}]\n'
+    with pytest.raises(ValueError, match='cli_doors'):
+        cli_doors(_declare(tmp_path, table))
+
+
+def test_the_renderer_reads_the_declaration_from_the_repo(tmp_path: Path) -> None:
+    work = plant_checkout(tmp_path, trunk='main').work
+    _declare(work, _CLI_TABLE)
+    assert main(['--repo', str(work), '--write']) == 0
+    assert '"consumer", "vendor", "windows"' in (work / CODEX_RULES_REL).read_text(encoding='utf-8')

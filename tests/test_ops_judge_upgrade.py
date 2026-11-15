@@ -11,7 +11,7 @@ import pytest
 
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.ops import __main__ as door
-from dev_lab.ops import installpaths, judge, upgrade
+from dev_lab.ops import hostverbs, installpaths, judge, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.install import install
 from dev_lab.ops.installpaths import under
@@ -93,7 +93,7 @@ def test_the_judge_runs_one_pass_and_a_failing_repo_does_not_stop_the_next(tmp_p
 def test_the_judge_verb_alerts_a_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     host = _config(tmp_path, _judge_table(tmp_path))
     alerts: list[str] = []
-    monkeypatch.setattr(door, '_alert', lambda _c, title, _d: alerts.append(title))
+    monkeypatch.setattr(hostverbs, 'alert', lambda _c, title, _d: alerts.append(title))
     monkeypatch.setattr(judge, '_subprocess', lambda argv: 1 if BETA in argv else 0)
     assert door.main(['--config', str(host.path), 'judge']) == 1
     assert alerts == [f'judge FAILED {BETA}']

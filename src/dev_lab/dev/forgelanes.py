@@ -18,7 +18,7 @@ import lab_commons.launch as _door
 from dev_lab.dev.branchdelete import landed
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
-from dev_lab.dev.forgemerge import auto_merge
+from dev_lab.dev.forgemergecall import auto_merge
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
@@ -93,7 +93,7 @@ def open_lanes(
     content integration lacks (:func:`dev_lab.dev.branchdelete.landed`), with no open PR (*open_heads*). THE relock
     branch opens its own (:func:`dev_lab.dev.relock.carry`), and a lane whose PR was closed UNMERGED is its
     owner's "do not land": never reopened, only said. The title is the head's newest subject; on GitHub the PR
-    is put on auto-merge (:func:`dev_lab.dev.forgemerge.auto_merge`), as ``forge pr create`` does.
+    is put on auto-merge (:func:`dev_lab.dev.forgemergecall.auto_merge`), as ``forge pr create`` does.
     """
     try:
         declared = declared_branchset(root)

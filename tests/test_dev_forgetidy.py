@@ -68,7 +68,7 @@ def test_tidy_deletes_machine_duplicates_closes_the_rest_and_leaves_humans_alone
         'idle': 'closed',
         'touched': 'open',
         'old_red': 'open',
-        'alarm': 'open',
+        'alarm': 'closed',  # a retired notice is ordinary idle work now (ruling 2026-11-14)
         'marked': 'open',
     }
     *kept, summary = [c['body'] for c in forge.comments[named['home']]]
@@ -96,6 +96,7 @@ def test_a_dry_run_writes_nothing() -> None:
         'would delete comment 1 on',
         'would delete',
         'would delete',
+        'would close',
         'would close',
         'would close',
         'would close',

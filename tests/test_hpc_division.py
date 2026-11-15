@@ -8,8 +8,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from lab_commons.hpc.grants import Grant, Machine
 
-from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, account_role, load_division, split_hpc
+from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, account_role, division_of, load_division
 
 _GRANT = {'hosts': ['login01.example'], 'slurm_account': 'acct'}
 
@@ -44,11 +45,15 @@ def test_an_undeclared_grant_role_is_undeclared_not_refused() -> None:
     assert load_division(hpc).refusal('acct-a') is None
 
 
-def test_split_hands_lab_commons_only_the_keys_it_reads() -> None:
-    grants, division = split_hpc(_hpc(roles={'research': {'serves': False}}))
-    assert set(grants) == {'grant'}
-    assert all('role' not in grant for grant in grants['grant'])
-    assert isinstance(division, Division)
+def test_the_division_is_read_off_the_grants_the_machine_reaches() -> None:
+    """lab-commons carries each grant's role and the role table; PLANTED CONTROL: no table ships the defaults."""
+    grants = (Grant(user='acct-b', hosts=('login01.example',), slurm_account='acct', role='research'),)
+    roles = {'research': {'serves': False, 'read_only': True}}
+    division = division_of(Machine(session=None, grants=grants, roles=roles))
+    assert division.role_of('acct-b') == 'research'
+    assert division.role_of('acct-a') == ''
+    assert dict(division.roles) == roles
+    assert division_of(Machine(session=None, grants=grants)).roles == DEFAULT_ROLES
 
 
 def test_an_unknown_role_key_is_refused() -> None:

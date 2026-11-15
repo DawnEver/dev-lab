@@ -76,18 +76,18 @@ reads its standing locally -- its supply, the last day's core-hours, partitions 
 (:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
 other waits. After it, a run whose ref moved on is SUPERSEDED (pending withdrawn, started drained -- and a drained
 task is judged by the same stall watch as any other, below); on the poller,
-a part no host admits waiting past its class's bound keeps one ``starved`` forge issue (:func:`raise_once`),
+a part no host admits waiting past its class's bound raises a ``starved`` alarm,
 read across every host card; and this host's CARD is published on the forge
 (:mod:`dev_lab.dev.forgehosts`):
 who it is, what it serves, its supply, what it holds with progress, and the queue as it saw it.
 
 THE FORGE PROMPTS THE INTEGRATOR: the repo's poller derives the integration queue
-(:func:`dev_lab.dev.integrator.observe`) and keeps ONE ``integration`` forge issue per row that asks
-for action (:func:`raise_once`): two hosts racing for the lease still write one issue, and only the host
-that creates or changes it pages. No host OWNS integration: whoever holds the lease derives it. The same
-tick runs the behind/conflict report on every child branch (:func:`dev_lab.dev.forgeintegration.tick`),
-and a child conflicting with integration or past the lane policy's ``behind_max`` joins those rows as one
-more ``integration`` issue.
+(:func:`dev_lab.dev.integrator.observe`) and raises ONE ``integration`` alarm per row that asks for action -- on the
+host card, the event stream ``forge queue`` prints, never an issue (user ruling 2026-11-14: the issue tracker holds
+only needs, defects and decisions). No host OWNS integration: whoever holds the lease derives it. The same tick runs
+the behind/conflict report on every child branch (:func:`dev_lab.dev.forgeintegration.tick`), and a child
+conflicting with integration or past the lane policy's ``behind_max`` joins those rows as one more ``integration``
+alarm.
 
 RUNNING IS NOT HEALTHY: every tick on a cluster seat cancels this account's forge tasks whose stream stopped
 past their bound, whatever their run (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.stalled`; Ada 2026-10-24..26,

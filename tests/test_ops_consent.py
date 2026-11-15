@@ -16,8 +16,7 @@ from _ops_fixtures import NOW, RFC_KEY, code
 from lab_commons.home import HOME_ENV
 
 from dev_lab.dev.consentguard import refuse_write, state_dir
-from dev_lab.ops import __main__ as ops_main
-from dev_lab.ops import consentverbs
+from dev_lab.ops import consentverbs, redeemverbs
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.actions import ACTIONS
@@ -295,11 +294,11 @@ def test_a_host_that_is_not_the_issuer_redeems_at_the_issuer_over_its_endpoint(
             return 2, str(refused)
 
     monkeypatch.setattr(consentverbs, 'remote_register', lambda table: remote_register(table, send=send))
-    monkeypatch.setattr(ops_main.time, 'time', lambda: host.clock[0])
+    monkeypatch.setattr(redeemverbs.time, 'time', lambda: host.clock[0])
     judge = _judge_host(host.tmp, _client(host))
     assert judge.consent is None
     credential = host.issue(WAVE)
-    redeem_wave = ops_main._redeemer(judge)('breakglass.wave')
+    redeem_wave = redeemverbs.redeemer(judge)('breakglass.wave')
     assert redeem_wave(credential, None).action == 'breakglass.wave'
     assert sent == [('consent@issuer', '/srv/ops/ssh/consent_known_hosts')]
     with pytest.raises(ConsentRefused, match='already used'):  # registered AT the issuer: its ledger refuses a reuse
@@ -308,5 +307,5 @@ def test_a_host_that_is_not_the_issuer_redeems_at_the_issuer_over_its_endpoint(
 
 def test_a_host_with_neither_issuer_nor_client_table_names_the_key_to_set(host: Host) -> None:
     with pytest.raises(ConsentRefused, match=r'\[ops\.consent_client\] endpoint'):
-        ops_main._redeemer(_judge_host(host.tmp, ''))
-    ops_main._redeemer(_judge_host(host.tmp, _client(host)))  # the control
+        redeemverbs.redeemer(_judge_host(host.tmp, ''))
+    redeemverbs.redeemer(_judge_host(host.tmp, _client(host)))  # the control

@@ -50,7 +50,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.githooks.runner import FOREIGN_INTERPRETER_ENV
-from dev_lab.dev.githooks.table import hook_table
+from dev_lab.dev.githooks.table import ADVISORY, hook_table
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 
@@ -241,9 +241,27 @@ def shim(stage: str, fallback: str | None = None) -> str:
         f'    {FOREIGN_INTERPRETER_ENV}=1 exec "$found" -m dev_lab.dev.githooks run {stage} "$@"\n'
         '  fi\n'
         'done\n'
+        f'{_no_interpreter(stage)}'
+    )
+
+
+#: The door that creates a checkout's venv, run by any interpreter that imports dev_lab.
+_BOOTSTRAP: Final = (
+    'python -m dev_lab.dev.dep --bootstrap $top (with any interpreter that imports dev_lab, e.g. a sibling venv)'
+)
+
+
+def _no_interpreter(stage: str) -> str:
+    """The shim's last lines when nothing could run *stage*: a judged stage is refused; each says the door."""
+    if stage in ADVISORY:
+        return (
+            f'echo "[githooks] {stage}: no venv in $top or $main, no lab_commons interpreter; nothing ran. This'
+            f' checkout needs its own venv: {_BOOTSTRAP}, then {INSTALL_COMMAND}." >&2\n'
+            'exit 0\n'
+        )
+    return (
         f'echo "[githooks] {stage}: no venv in $top or $main, no lab_commons interpreter; refused -- no hook would'
-        ' judge it. Bootstrap the venv (python -m dev_lab.dev.dep --bootstrap $top), install the hooks'
-        f' ({INSTALL_COMMAND}), then try again." >&2\n'
+        f' judge it. Bootstrap the venv ({_BOOTSTRAP}), install the hooks ({INSTALL_COMMAND}), then try again." >&2\n'
         'exit 1\n'
     )
 

@@ -135,7 +135,7 @@ def test_forge_pr_create_prints_the_monitor_command_for_the_pr_head(tmp_path: Pa
     forge = StateForge()
     monkeypatch.setattr(forgecli, 'client_for', lambda *_a, **_k: forge)
     monkeypatch.setattr(forgecli.pradmit, 'create_advice', lambda *_a, **_k: ())
-    monkeypatch.setattr(forgecli.forgemerge, 'auto_merge', lambda *_a: 'auto-merge enabled')
+    monkeypatch.setattr(forgecli.forgemergecall, 'auto_merge', lambda *_a: 'auto-merge enabled')
     monkeypatch.setattr(forgecli.branchnotices, 'report', lambda *_a, **_k: '')
     argv = ['pr', 'create', '--title', 't', '--head', 'pr/w', '--base', 'integrate/main']
     assert forgecli.issue_and_pr(argv, cwd=work, env={}) == 0

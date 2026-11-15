@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Final, TextIO
 from lab_commons.census import processes as census
 from lab_commons.log import emit
 
-from dev_lab.dev import sessionprs
+from dev_lab.dev import sessionprs, walls
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgewatch import TESTS, clients_at, settled, unacknowledged_reds
@@ -86,14 +86,15 @@ def stop_refusal(
         elif not settled(statuses):
             pending.append(sha)
     live = list(processes())
-    unwatched = [sha for sha in pending if not watched(sha, live)]
+    unwatched = [sha for sha in pending if not watched(sha, live, root=root)]
     ran_out = deadline_reached(root) if again else frozenset()
     released = [sha for sha in unwatched if sha in ran_out]
     if unwatched := [sha for sha in unwatched if sha not in ran_out]:
         named = ' '.join(sha[:12] for sha in unwatched)
         return Stop(
             block=f'{RULE}: this session pushed {named}, its checks are pending and nothing watches them.\n'
-            f'Arm a Monitor and act on each result before ending the turn: {watch_command(*unwatched)}'
+            f'Arm a Monitor and act on each result before ending the turn: {watch_command(*unwatched)}\n'
+            'A live watch on a newer head that descends from it (the forge synced the branch past it) counts too.'
         )
     if released:
         named = ' '.join(sha[:12] for sha in released)
@@ -116,15 +117,31 @@ def red_refusal(session: str, *, clients: Callable[[Forge], Client]) -> Stop:
     )
 
 
-def unwatched_refusal(session: str) -> Stop:
-    """Refuse the stop while the session has an open PR on record and no live session watch."""
+#: A session watch, as any interpreter's command line names it (#554: a watch from another checkout counts).
+_SESSION_WATCH: Final = '-m dev_lab.dev.forge watch --session'
+
+
+def _session_watched(session: str, command_lines: Iterable[str]) -> bool:
+    """Whether a live process runs ``forge watch --session <session>``, whatever interpreter path runs it."""
+    for line in command_lines:
+        if _SESSION_WATCH in line and line.split(_SESSION_WATCH, 1)[1].split()[:1] == [session]:
+            return True
+    return False
+
+
+def unwatched_refusal(session: str, *, processes: Callable[[], Iterable[str]] = lambda: ()) -> Stop:
+    """Refuse the stop while the session has an open PR on record and no live session watch.
+
+    A watch counts by its marker or by its command line in *processes* -- from any checkout's interpreter, so a
+    watch kept out of the venv a relock needs still counts (#554).
+    """
     prs = sessionprs.open_rows(session)
-    if not prs or sessionprs.watching(session):
+    if not prs or sessionprs.watching(session) or _session_watched(session, processes()):
         return Stop()
     return Stop(
         block=f'{sessionprs.RULE}: this session has open PRs ({", ".join(row.key for row in prs)}) and nothing '
         'watches them, so no merge or red check would reach you. Arm ONE persistent Monitor running: '
-        f'{sessionprs.watch_session_command(session)}'
+        f'{sessionprs.watch_session_command(session)} (a watch run from any checkout interpreter counts)'
     )
 
 
@@ -155,10 +172,11 @@ def _gate(
         if said.block is None and prs and (red := red_refusal(session, clients=clients or clients_at(root))).block:
             said = red
         if said.block is None and prs:
-            said = unwatched_refusal(session)
+            said = unwatched_refusal(session, processes=processes)
     except (ForgeCallFailed, OSError, ValueError):
         return 0
     if said.block is not None:
+        walls.refused_text(root, said.block, reason='stop', session=session)
         answer = {'decision': 'block', 'reason': said.block}
     elif said.note is not None:
         answer = {'systemMessage': said.note}

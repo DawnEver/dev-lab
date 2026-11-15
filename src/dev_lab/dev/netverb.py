@@ -426,8 +426,29 @@ class NotANetworkVerb(ValueError):
     """The command after ``--`` is no network verb (:func:`is_network_verb`)."""
 
 
+def _no_followed_tags(words: list[str]) -> list[str]:
+    """A ``git push`` pinned to ``--no-follow-tags`` right after the verb; any other command unchanged.
+
+    WHO DECIDED TO PUSH A TAG (wall 2026-11-13): with ``push.followTags`` on, a branch push carried
+    another session's milestone tag and VERSION-TAG-NEEDS-APPROVAL refused a tag the pusher never
+    named. The pre-push hook cannot tell a followed tag from a named one -- git hands it identical
+    ref lines -- so the door decides: a tag goes only when the push names it (a refspec, ``--tags``),
+    and a ``--follow-tags`` typed after the verb still wins, git reading its options in order.
+    """
+    if not words or _program(words[0]) != 'git':
+        return words
+    index = 1
+    while index < len(words) and words[index].startswith('-'):
+        index += 2 if words[index] in _VALUED['git'] else 1
+    if words[index : index + 1] != ['push']:
+        return words
+    return [*words[: index + 1], '--no-follow-tags', *words[index + 1 :]]
+
+
 def spelled(command: Sequence[str]) -> list[str]:
-    """The argv to run: a leading ``--`` dropped, and ``git`` prepended to a bare git network verb.
+    """The argv to run: ``--`` dropped, ``git`` prepended to a bare git verb, a push held to its named tags.
+
+    A push is pinned to ``--no-follow-tags`` (:func:`_no_followed_tags`).
 
     Only the separator in front is dropped; a later ``--`` is git's own pathspec separator.
 
@@ -439,9 +460,9 @@ def spelled(command: Sequence[str]) -> list[str]:
     if words[:1] == ['--']:
         words = words[1:]
     if words[:1] == ['git'] or is_network_verb(words):
-        return words
+        return _no_followed_tags(words)
     if is_network_verb(['git', *words]):
-        return ['git', *words]
+        return _no_followed_tags(['git', *words])
     first = ' '.join(words[:2]) if words else '<nothing>'
     msg = (
         f'netverb: {first!r} is not a network verb -- spell it '

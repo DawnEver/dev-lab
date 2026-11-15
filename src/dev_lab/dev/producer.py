@@ -67,6 +67,7 @@ __all__ = [
     'full_suite_refusal',
     'licence_outage',
     'outage_env',
+    'outage_said',
     'owned',
     'owner_of',
     'producing',
@@ -198,6 +199,26 @@ def unreachable(why: str, owner: Owner = Owner.NETWORK) -> int:
     if target := os.environ.get(OUTCOME_VAR):
         Path(target).write_text(f'unreachable: {CLASS_FIELD}{owner} {why}\n', encoding='utf-8')
     return ProducerExit.UNREACHABLE
+
+
+def outage_said(text: str) -> str | None:
+    """The ``error`` description a declaration :func:`unreachable` wrote reads as, ``None`` when *text* is none.
+
+    ``unreachable: <why> class=<owner>``: the why first, so a cut description keeps it; an unknown owner is
+    :attr:`Owner.NETWORK`, as :func:`declared_outage` reads it.
+    """
+    found = _DECLARED.match(text.strip())
+    if found is None:
+        return None
+    try:
+        owner = Owner(found['owner'])
+    except ValueError:
+        owner = Owner.NETWORK
+    return owned(owner, f'unreachable: {found["why"]}')
+
+
+#: What :func:`unreachable` writes: ``unreachable: class=<owner> <why>``.
+_DECLARED: Final = re.compile(r'unreachable: class=(?P<owner>[a-z-]+) (?P<why>.*)', re.DOTALL)
 
 
 def licence_outage(why: str) -> int:

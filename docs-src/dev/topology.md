@@ -102,7 +102,14 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
   (`promote`, Gitea). Branches come from `[tool.dev_lab.integrator]`, required contexts from the rendered workflows
   (`required_contexts`); no approval is ever required (the judge is advisory).
 - `python -m dev_lab.dev.forge protect plan|check|apply` renders it onto the forge (`dev_lab.dev.forgeprotect`).
-  `apply` is an administrator's verb, run from a workstation after reading `plan`; CI never runs it.
+  `plan`/`check` need no admin: a fact the credential cannot read is said unanswered, never "as declared" (Gitea
+  shows a reader only a branch's protected flag, approvals and contexts). `apply` from a workstation is GitHub's
+  (an admin of the repo); CI never runs it. A self-hosted Gitea's protection is applied by its forge host, never a
+  human admin login: `python -m dev_lab.ops --config <supervise.toml> forge protect plan|apply --repo <owner/name>
+  --ref <sha>` reads the declaration at that commit from the forge itself, renders it with this one renderer and
+  writes it as the site admin, behind one single-use `ops.forge.protect` consent whose subject is the digest of the
+  repo, the ref and the rendered protection (`--subject` prints it with no code, so `planrun preflight` checks it);
+  an undeclared repo (`[ops.forge.accounts]`) is refused before the forge is asked (`dev_lab.ops.forgeprotection`).
 - Who produces is the forge's data (`_forgebackends.Backend.producers`, user rulings 2026-11-11): a GitHub repo is
   gated and promoted by its Actions jobs alone -- no forge serve host, cluster or workstation; a part no
   hosted runner produces (a heavy test) is kept and off its gate (`jobparts.off_gate`). Gitea wires every producer.
@@ -118,7 +125,7 @@ declares (`dev_lab.ops.config.load`).
 
 | host role | tables it declares | what it runs |
 |---|---|---|
-| forge host | `[ops]`, `[ops.promote]`, `[ops.breakglass]` (+ `.tokens`, `.apps`), `[ops.consent]`, `[ops.backup]` (export), `[ops.forge]` (+ `.accounts.*`), `[ops.caddy]`, `[ops.access]`, `[ops.supervise]`, `[ops.upgrade]`, `[ops.config]` | the Gitea, promotion, the break-glass server and its `tick`, the consent issuer, backup export, the reverse proxy allowlist, supervision |
+| forge host | `[ops]`, `[ops.promote]`, `[ops.breakglass]` (+ `.tokens`, `.apps`), `[ops.consent]`, `[ops.backup]` (export), `[ops.forge]` (+ `.accounts.*`), `[ops.caddy]`, `[ops.status]`, `[ops.access]`, `[ops.supervise]`, `[ops.upgrade]`, `[ops.config]` | the Gitea, promotion, the break-glass server and its `tick`, the consent issuer, backup export, the reverse proxy allowlist, supervision |
 | backup host | `[ops.backup]` (pull, `.offsite`), `[ops.supervise]`, `[ops.access]`, `[ops.upgrade]`, `[ops.config]` | backup pull and offsite copy, mirrors, a health probe of the forge host |
 | judge host | `[ops.judge]` (+ `.tokens`, `.apps`), `[ops.access]`, `[ops.upgrade]`, `[ops.config]` | `forge review judge` per declared repo on its schedule |
 | serve host (workstation) | the machine file's `[serve]`, `[capabilities.*]` | `forge serve` (claims shas, posts parts) -- [the forge](forge.md), [adding a workstation](adding-a-workstation.md) |
@@ -130,6 +137,22 @@ declares (`dev_lab.ops.config.load`).
   sudo narrowed to exactly the listed `commands` (`dev_lab.ops.access`).
 - `ops upgrade` installs dev-lab at the tip of `[ops.upgrade] ref` with the family pins of THAT commit's lock,
   self-checks, and rolls back on failure (`dev_lab.ops.upgrade`).
+- `[ops.upgrade] follow = "<branch>"` (boundary: set only by a consented `config apply`) makes the host follow
+  that branch with no code per upgrade: a root timer (`schedule`, an `OnCalendar`, default every 15 min) runs
+  `ops upgrade --follow`, which installs a moved tip by the same path, refuses one that is not a first-parent
+  fast-forward from the installed sha, and audits every attempt (`dev_lab.ops.upgradefollow`). Absent: consented
+  upgrades only.
+
+### 4.1 A host's status card: read without ssh
+
+A host declaring `[ops.status]` (`file`, the card; `site`, the Caddy site; `path`, default `/dev-lab/status.json`;
+boundary keys) has its supervisor rewrite one JSON card after every cycle -- each enabled component up/down, its
+memory against its cgroup cap, every metric (disk free, a queue depth a probe declares), the last error, the
+installed dev-lab sha, the last auto-upgrade audit line (`dev_lab.supervise.card`). Install serves that one file
+read-only behind the `[ops.caddy] allow` list (`dev_lab.ops.caddy.status_routed`; it needs `[ops.caddy]` and
+`[ops.supervise]`). A workstation reads it with no ssh and no cluster code: the machine file's `[[server]]`
+declares `status = "https://<host><path>"`, and `python -m dev_lab.dev.opsserver <server|all> card` renders it --
+exit 1 for a card unreachable or STALE (no rewrite for 3 intervals), 2 for a server declaring none.
 
 ## 5. Consent: one code per shown plan
 
@@ -140,14 +163,37 @@ declares (`dev_lab.ops.config.load`).
   verifiers hold the public key; clients hold nothing. A credential is signed for ONE action of the registry
   (`dev_lab.ops.consent.actions`) and ONE subject (a digest), and an irreversible action registers its single use
   online.
-- A plan (`{"host", "grants": [...]}`, at most `MAX_GRANTS` = 16) is shown to the user with its digest
-  (`python -m dev_lab.ops.consent plan <plan.json>`); one cluster code from the user buys one credential per grant AND opens
-  the host session. A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
+- A plan (`{"hosts": [...], "grants": [{"host", "action", "subject", ...}]}`, each grant on one of the plan's hosts; at most `[ops.consent] max_grants` grants -- default 16, refused by the
+  issuer before the code) is shown to the user with its digest (`python -m dev_lab.ops.consent plan <plan.json>`);
+  one cluster code from the user buys one credential per grant AND opens every host's session (5.1). A plan changed after it was shown has another digest and is refused (`dev_lab.ops.consent.plan`).
 - `sshhold` holds that session: one authentication per work session, every later command rides it
-  (`python -m dev_lab.dev.sshhold open <dest> --hours H --plan <plan.json> --digest <D>`, `run`, `close`,
-  `status`; `--jump <bastion>` for a host behind a bastion that shares the TOTP secret). The code reaches ssh only
+  (`python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D>`, `run`, `close`,
+  `status`; a host behind a bastion that shares the TOTP secret is routed by the machine file's
+  `[ssh] jump = {"<dest>" = "<bastion>"}`, per host, else `--jump <bastion>`). The code reaches ssh only
   through `SSH_ASKPASS`, never argv, disk or a log (`dev_lab.dev.sshhold`).
 - A code is the user's own, typed for THIS plan; no host step needing one runs without it.
+- A round needs no extra code for what the plan can carry: an `ops.forge.protect` subject and an `ops.config`
+  subject (`planrun subject --config <host name>`: `hosts/<name>.toml` and its family file read from the config
+  source through the forge client; a steps-file `config_host`) are derived on the workstation
+  (`python -m dev_lab.dev.planrun subject`, the host's own renderer), and an upgrade is the plan step
+  `ops upgrade --sha <tip> --credential` (`ops.upgrade`, subject = the declared ref's tip; idempotent).
+- `consent plan` groups the grants by host and action under a `boundary:` summary of the grants that change a
+  security boundary (the registry row's `boundary`).
+
+### 5.1 One plan, several hosts, one code
+
+The cluster shares ONE TOTP secret, each verifier (pam_oath per host, the issuer) accepts a code once, and a
+credential verifies OFFLINE on any host holding the issuer's public key (its use registers online at the issuer). So:
+
+1. The plan names `hosts: [...]` and each grant its `host`, one of them -- a grant naming another host is refused;
+   the digest covers both, so the user approves where each grant runs (`dev_lab.ops.consent.plan`). The old
+   `{"host", "grants"}` shape is refused by name with its one-time migration, never upgraded on read.
+2. `sshhold open --plan` grants first (the issuer), then opens every host's session concurrently with the same code,
+   each started inside ONE TOTP step of it; a host that fails or misses the window is reported, never retried with
+   the code, and is re-opened alone with a new code (`dev_lab.dev.sshhold.open_planned`). Granting spends nothing.
+3. `grant_plan` checks the session host is one of the plan's hosts; `planrun` runs each step on its grant's host,
+   first asking every pending host to answer -- one that does not stops the run before any step, so no grant on
+   another host is spent -- and resumes per plan digest; `recover` stays per plan digest.
 
 ## 6. Break-glass waves
 
@@ -236,7 +282,7 @@ Its review model keys and the family spend cap arrive as ONE consent plan of thr
 3. `install` -- it refuses while the keys_file is declared but not placed, and names step 2.
 
 A step whose OUTPUT is the secret (a `forge token mint`) declares `"stdout_local": "<relative name>"` (no `..`): the
-output goes owner-only to `outputs/<name>` under this machine's private consent state (`planrun.stdout_path`, never a
+output goes owner-only to `outputs/<name>` under this machine's private consent state (`planrunsteps.stdout_path`, never a
 checkout) and the run prints only `wrote <path> (sha256 <12 hex>, <n> bytes)`; a failed step prints its exit status
 and `output withheld`, and writes nothing.
 

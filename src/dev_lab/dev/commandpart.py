@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -61,7 +62,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         head = _door.run(
             ['git', 'rev-parse', 'HEAD'], cwd=args.root, capture_output=True, text=True, encoding='utf-8', check=True
         )
-        code = _door.run(command, cwd=args.root, check=False).returncode
+        # Resolved on PATH first: on Windows `npm` is `npm.cmd`, which a bare name cannot start (WinError 2).
+        program = shutil.which(command[0]) or command[0]
+        code = _door.run([program, *command[1:]], cwd=args.root, check=False).returncode
     except (OSError, subprocess.CalledProcessError) as cannot:
         emit(f'commandpart: unreachable -- cannot run {command[0]!r} here: {cannot}', err=True)
         return unreachable(f'cannot run {command[0]!r}: {cannot}', Owner.ENVIRONMENT)

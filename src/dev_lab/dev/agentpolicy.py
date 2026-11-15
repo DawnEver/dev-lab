@@ -52,6 +52,10 @@ def _module(name: str, *verbs: str) -> tuple[str, ...]:
     return ('python', '-m', f'dev_lab.dev.{name}', *verbs)
 
 
+def _desktop(verb: str) -> tuple[str, ...]:
+    return ('python', '-m', 'lab_commons.desktop', verb)
+
+
 _FORGE_WRITE: Final = 'FORGE-WRITE-VIA-CLI'
 
 #: THE TABLE. Ordered as a reader looks for a door: the local verdict and housekeeping, the forge's read side, its
@@ -76,6 +80,10 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(_module('family', 'join'), MAIN, 'Making a repo a family member: clone, record, protect, set its secret.'),
     Door(_module('famfiles'), SUBAGENT, "Rendering the family project files of a checkout from the kit's one source."),
     Door(_module('autodoors'), SUBAGENT, "Rendering this checkout's door rules for each agent client."),
+    # The desktop tool's READ verbs (user ruling 2026-11-14 E6); its acts (press, set-value, close) stay prompted.
+    Door(_desktop('windows'), SUBAGENT, 'Read-only: the top-level desktop windows, listed.'),
+    Door(_desktop('capture'), SUBAGENT, 'Read-only: an image of one desktop window, captured.'),
+    Door(_desktop('controls'), SUBAGENT, "Read-only: one desktop window's control tree, listed."),
     Door(
         _module('hook_install', '--install'),
         SUBAGENT,
@@ -138,7 +146,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         _forge('pr', 'ready'),
         MAIN,
-        'Marking a draft pull request ready for review once its tree is clean and its head current.',
+        'Marking a draft pull request ready for review once its pushed head is current, from any checkout.',
         _FORGE_WRITE,
     ),
     Door(
@@ -218,13 +226,14 @@ POLICY: Final[tuple[Door, ...]] = (
         "Cancelling the forge's own test jobs of one commit that are confirmed stuck: busy at full CPU with no "
         'new test result for longer than a multiple of their measured duration. Never any other job.',
     ),
-    # ---- publishing
     Door(
         _forge('sync'),
-        MAIN,
-        "Merging the integration branch into this session's own branches through the forge door, with the relock "
-        'of the floated siblings and the re-render of every generated family file it brings.',
+        SUBAGENT,
+        "Merging the integration branch into this agent's own branch through the forge door, with the relock of "
+        'the floated siblings and the re-render of every generated family file it brings, committed locally and '
+        'never pushed: publishing the result stays with the main session.',
     ),
+    # ---- publishing
     Door(
         (),
         MAIN,
@@ -247,6 +256,12 @@ POLICY: Final[tuple[Door, ...]] = (
         MAIN,
         'Deleting a remote branch only when every commit on it is already on the integration branch or on '
         'another live branch or open pull request; never a force push and never a lossy delete.',
+    ),
+    Door(
+        _module('branchprune', 'delete-tag'),
+        MAIN,
+        'Deleting a remote tag the user approved in their own words, only when its commit is on the integration '
+        'branch or the trunk; never a lossy delete.',
     ),
     Door(
         ('gh', 'workflow', 'enable'),
@@ -273,6 +288,14 @@ POLICY: Final[tuple[Door, ...]] = (
         MAIN,
         "Forgetting one stale row of each trusted cluster account's learned memory table, backed up beside itself, "
         "through the grant's own login hosts; a dry run only reads what each account holds.",
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
+        _module('hpcaccount', 'retention'),
+        MAIN,
+        "Reading each trusted cluster account's quota (files and blocks) and whether its serve ticks, and running "
+        "that account's own in-flight-aware storage retention through the grant's own login hosts; a dry run "
+        'unless asked to apply.',
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(

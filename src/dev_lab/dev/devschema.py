@@ -12,8 +12,9 @@ from typing import Any, Final
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'CPU_SHARES', 'DETECT_DOOR', 'HELPERS', 'MACHINE_TABLES', 'RESOURCES', 'RETIRED_KEYS', 'SCHEMA', 'UNFILLED',
-    'VENDOR', 'HomeUnfilled', 'check', 'check_family', 'fill_remedy', 'home_of', 'hpc_reach', 'unfilled', 'usable',
+    'CHANNELS_TABLE', 'CPU_SHARES', 'DETECT_DOOR', 'HELPERS', 'HOST_ONLY', 'MACHINE_TABLES', 'RESOURCES',
+    'RETIRED_KEYS', 'SCHEMA', 'SSH', 'SSH_HOLD', 'UNFILLED', 'VENDOR', 'HomeUnfilled', 'channel_defects', 'check',
+    'check_family', 'fill_remedy', 'home_of', 'hpc_reach', 'ssh_defects', 'unfilled', 'usable',
 ]  # fmt: skip
 
 #: Retired ``[dev]`` keys, each with its remedy (refused by name, never read).
@@ -29,8 +30,14 @@ VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': st
 #: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
 SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
-    'helpers': dict,
+    'helpers': dict, 'channels': dict,
 }  # fmt: skip
+#: ``[dev]`` keys that are one machine's facts and never the family's: ``channels`` -- session channel source ->
+#: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority).
+HOST_ONLY: Final = ('channels',)
+#: The machine-file table ``[dev] channels`` renders into, as ``[agent] channels``: its consumer is the agent session
+#: (the harness and its channel plugins), not the dev tooling, so the table is named for who reads it.
+CHANNELS_TABLE: Final = 'agent'
 #: The git credential helpers a ``[dev] helpers.<forge host>`` may declare: ``store`` -- that host reads ONLY
 #: ``~/.git-credentials`` (a narrowly scoped bot token), every other host keeps the machine's own helper.
 HELPERS: Final = ('store',)
@@ -48,6 +55,12 @@ UNFILLED: Final = 'FILL-ON-THIS-MACHINE'
 REQUIRED: Final = ('ref',)
 #: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys).
 MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation')
+#: The machine file's ``[ssh]`` table as a host file declares it (rendered by :func:`dev_lab.dev.devhost.render`,
+#: read by :mod:`dev_lab.dev.sshhold`): ``jump`` -- destination -> bastion, the declared per-host route; ``hold`` --
+#: :data:`SSH_HOLD`.
+SSH: Final = {'jump': dict, 'hold': dict}
+#: ``[ssh.hold]``: the session ceiling and the idle limit.
+SSH_HOLD: Final = {'max_hours': (int, float), 'idle_minutes': (int, float)}
 #: The door that finds this machine's vendor install homes.
 DETECT_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost detect'
 
@@ -85,6 +98,35 @@ def _resources(table: Mapping[str, Any], where: str) -> list[str]:
     return found
 
 
+def channel_defects(channels: object, where: str) -> list[str]:
+    """Defects of a channel declaration: it must map non-empty source strings to non-empty user strings."""
+    if not isinstance(channels, Mapping):
+        return [f'{where} must be a table of channel source -> user name']
+    return [
+        f'{where}.{source!r} = {user!r}: source and user must be non-empty strings'
+        for source, user in channels.items()
+        if not (isinstance(source, str) and source and isinstance(user, str) and user)
+    ]
+
+
+def ssh_defects(ssh: object, where: str = 'ssh') -> list[str]:
+    """Defects of an ``[ssh]`` table: only :data:`SSH` keys; ``jump`` maps destinations to bastions, both non-empty."""
+    if not isinstance(ssh, Mapping):
+        return [f'{where} must be a table']
+    found = _typed(ssh, SSH, where)
+    jump = ssh.get('jump')
+    if isinstance(jump, dict):
+        found += [
+            f'{where}.jump.{dest!r} = {bastion!r}: destination and bastion must be non-empty strings'
+            for dest, bastion in jump.items()
+            if not (isinstance(dest, str) and dest and isinstance(bastion, str) and bastion)
+        ]
+    hold = ssh.get('hold')
+    if isinstance(hold, dict):
+        found += _typed(hold, SSH_HOLD, f'{where}.hold')
+    return found
+
+
 def _shape(table: Mapping[str, Any], where: str) -> list[str]:
     """Defects of one ``[dev]`` table (host or family) by itself."""
     found = [f'{where}.{key} is {remedy}' for key, remedy in RETIRED_KEYS.items() if key in table]
@@ -99,6 +141,8 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
         for host, helper in helpers.items()
         if helper not in HELPERS
     ]
+    if 'channels' in table:
+        found += channel_defects(table['channels'], f'{where}.channels')
     found += _named_lists(table, 'detect', where, 'glob patterns')
     found += _resources(table, where)
     vendors = table.get('vendors') if isinstance(table.get('vendors'), dict) else {}
@@ -130,8 +174,10 @@ def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> l
 
 
 def check_family(family: Mapping[str, Any]) -> list[str]:
-    """Defects of the family file's ``[dev]`` by itself."""
-    return _shape(family.get('dev', {}), '[dev]')
+    """Defects of the family file's ``[dev]`` by itself, and a key only a host may declare."""
+    dev = family.get('dev', {})
+    host_only = [f'[dev].{key} is one machine fact; it lives in that host file' for key in HOST_ONLY if key in dev]
+    return host_only + _shape(dev, '[dev]')
 
 
 def hpc_reach(dev: Mapping[str, Any]) -> list[str]:

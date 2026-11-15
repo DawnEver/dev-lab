@@ -197,3 +197,40 @@ def test_a_label_the_forge_cannot_read_is_a_skip_not_a_merge(tmp_path, capsys) -
     host.server.tick()
     assert _merged(host) == [8]
     assert '#7 skipped' in capsys.readouterr().err
+
+
+# --- the wave reads its waits from forgemergewaits (the merge split, dev-lab #493) --------------------------
+
+
+def _current(*statuses: CommitStatus) -> tuple[CommitStatus, ...]:
+    return (*statuses, CommitStatus(PR_CURRENT_CONTEXT, 'success', 'holds integrate/main', ''))
+
+
+def test_a_pending_test_part_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
+    pending = 'e' * 40
+    statuses = _current(CommitStatus('tests/base', 'pending', 'running', ''), GREEN[1])
+    host = _host(tmp_path, [Pull(7, 'integrate/main', pending, draft=False)], {pending: statuses})
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [], 'a part still running waits (forgemergewaits.parts_wait), never lands'
+
+
+def test_a_head_without_its_security_check_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
+    unchecked = 'f' * 40
+    host = _host(tmp_path, [Pull(7, 'integrate/main', unchecked, draft=False)], {unchecked: _current(GREEN[0])})
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [], 'no tests/security posted: the wave waits'
+
+
+def test_an_unproduced_hand_part_does_not_hold_a_green_base_back(tmp_path) -> None:
+    """User ruling 2026-11-10: a hand part is never a merge condition -- the wave reads parts_wait, which says so.
+
+    Its planted control is :func:`test_a_pending_test_part_is_not_merged`: the HOSTED part still waits.
+    """
+    handed = '1' * 40
+    statuses = _current(CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=windows:2', ''), GREEN[1])
+    host = _host(tmp_path, [Pull(7, 'integrate/main', handed, draft=False)], {handed: statuses})
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [7]

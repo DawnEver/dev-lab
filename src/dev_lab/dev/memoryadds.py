@@ -8,13 +8,12 @@ Three shapes are not narrative edits:
 * a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is how a
   closed task becomes history, and it is the one rename into memory;
 * the one-shot four-layer migration, which removes only the volatile frontmatter fields
-  (:data:`VOLATILE_FIELDS`) a reader used to rewrite on every read. A change whose ONLY difference is
-  those lines is that migration and nothing else;
+  (:data:`dev_lab.dev.memoryentry.VOLATILE_FIELDS`) a reader used to rewrite on every read. A change
+  whose ONLY difference is those lines is that migration and nothing else;
 * the one-time TRANSLATION of CJK an entry holds (user ruling 2026-11-12: the whole repository, except
-  designated Chinese documents, is English, memory included). :func:`only_translated` admits a change that
-  adds :data:`TRANSLATION_NOTE` and rewrites ONLY lines that held CJK, leaving none behind; every line with
-  no CJK stays byte-identical, so no narrative edit rides along. Rewriting into a ``-corrected`` entry
-  was not chosen: it would leave the CJK in the original, which ``NO-CJK-IN-TRACKED-SOURCE`` refuses;
+  designated Chinese documents, is English, memory included):
+  :func:`dev_lab.dev.memoryentry.only_translated` admits a change that adds its note and rewrites ONLY
+  lines that held CJK, leaving none behind;
 * rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
   rewrite task text or turn narrative memory into a task list. Both versions must match the format.
 
@@ -31,7 +30,8 @@ WHERE IT RUNS -- two family hook rows, so no route past it is left:
 
 * ``commit`` (commit-msg, EVERY commit, a merge included): the INDEX against HEAD, so a plain commit and
   a merge's resolution are read alike (:func:`pending`); an entry not yet on ``origin/<integration>`` is a
-  draft its author may still edit or delete;
+  draft its author may still edit or delete. The branch is named by HEAD's manifest, else -- a first adoption --
+  by the commit's own staged one; with neither, nothing is published yet;
 * ``push`` (pre-push): every pushed ref's range since its merge-base with ``origin/<integration>``
   (:func:`problems_between`), so a commit made with the hook bypassed still reds before it leaves.
 """
@@ -41,62 +41,44 @@ from __future__ import annotations
 import re
 import shutil
 import sys
-from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.hpc.declared import pyproject_at
 from lab_commons.log import emit
 
-from dev_lab.dev.cjk import find_cjk
-from dev_lab.dev.lanepolicy import policy_at
+from dev_lab.dev.lanepolicy import policy_at, policy_from
+from dev_lab.dev.memoryentry import (
+    AMENDMENT_NOTE,
+    MANUAL_PATH,
+    MANUAL_ROW,
+    is_memory,
+    merged_entry_problems,
+    only_amended,
+    only_manual_tasks_updated,
+    only_redacted,
+    only_translated,
+    only_volatile_stripped,
+    shape_problems,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
 __all__ = [
-    'TRANSLATION_NOTE',
-    'VOLATILE_FIELDS',
     'MemoryAddsError',
     'main',
-    'merged_entry_problems',
-    'only_translated',
     'pending',
     'problems_between',
 ]
-
-#: Frontmatter fields the migration strips: per-read bookkeeping, never content.
-VOLATILE_FIELDS = ('accessed', 'tier', 'count')
 
 _GIT = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S = 120
 _ZERO = '0' * 40
 _EMPTY_TREE: Final = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: the base before a first push
 _REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
-_MEMORY = '.claude/memory/'
 _TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
-_FRONTMATTER = re.compile(r'\A---\n(.*?)\n---(?:\n|\Z)', re.DOTALL)
-_MERGED_FROM = re.compile(r'^merged_from:\s*(.*)$', re.MULTILINE)
-_VOLATILE = re.compile(rf'^(?:{"|".join(VOLATILE_FIELDS)}):')
-_CITATION = re.compile(r'[\w./-]*[\w-]\.(?:md|py|rs|mjs|js|ts|toml|json|txt|yaml|yml|csv)\b')
-REDACTION_NOTE: Final = 'Redacted {day}: site markers removed (public repo).'
-# A redaction swaps a site span for a placeholder token or one of these neutral role phrases -- nothing else.
-REDACTION_ROLES: Final = (
-    "the private consumer's",
-    'the private consumer repo',
-    'the private consumer',
-    "the second private consumer's",
-    'the second private consumer',
-    'an optimisation consumer',
-    "the integrator workstation's",
-    'the integrator workstation',
-)
-_PLACEHOLDER = re.compile('|'.join([r'<[a-z][a-z0-9-]*>', *(re.escape(role) for role in REDACTION_ROLES)]))
-_NOTE_LINE = re.compile(r'> ' + re.escape(REDACTION_NOTE).replace(re.escape('{day}'), r'\d{4}-\d{2}-\d{2}'))
-TRANSLATION_NOTE: Final = 'Translated {day}: CJK rendered as faithful English (NO-CJK-IN-TRACKED-SOURCE).'
-_TRANSLATION_LINE = re.compile(r'> ' + re.escape(TRANSLATION_NOTE).replace(re.escape('{day}'), r'\d{4}-\d{2}-\d{2}'))
-_MANUAL = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
-_MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
 
 class MemoryAddsError(RuntimeError):
@@ -114,128 +96,6 @@ def _git(root: Path, *args: str) -> str:
         msg = f'git {" ".join(args)} failed: {err}'
         raise MemoryAddsError(msg)
     return out
-
-
-def _is_memory(path: str) -> bool:
-    return _MEMORY in f'/{path}'
-
-
-def _scope(path: str) -> str:
-    return f'/{path}'.split(f'/{_MEMORY}', 1)[0].lstrip('/')
-
-
-def _lf(text: str) -> str:
-    return text.replace('\r\n', '\n')
-
-
-def _only_volatile_stripped(old: str, new: str) -> bool:
-    old, new = _lf(old), _lf(new)
-    match = _FRONTMATTER.match(old)
-    if match is None or old == new:
-        return False
-    head = '\n'.join(line for line in match.group(1).splitlines() if not _VOLATILE.match(line))
-    return f'---\n{head}\n---\n' + old[match.end() :] == new
-
-
-def _only_redacted(old: str, new: str) -> bool:
-    """A privacy redaction: the note is added and every other changed line only swaps spans for placeholders."""
-    after_lines = _lf(new).splitlines()
-    if not any(_NOTE_LINE.fullmatch(line) for line in after_lines):
-        return False
-    before = [line for line in _lf(old).splitlines() if line.strip()]
-    after = [line for line in after_lines if line.strip() and not _NOTE_LINE.fullmatch(line)]
-    if len(before) != len(after):
-        return False
-    for was, now in zip(before, after, strict=True):
-        if was == now:
-            continue
-        literals = _PLACEHOLDER.split(now)
-        if len(literals) == 1 or not re.fullmatch('.+?'.join(map(re.escape, literals)), was):
-            return False
-    return True
-
-
-def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:
-    """Recognize rem task-engine's dedicated list, not a filename exemption for prose."""
-    match = _MANUAL.search(path)
-    if match is None:
-        return None
-    day = '-'.join(match.groups())
-    try:
-        date.fromisoformat(day)
-    except ValueError:
-        return None
-    header = f'---\nname: manual-{day}\ndescription: Manual tasks created on {day}\nmetadata:\n  type: project\n---\n'
-    text = _lf(text)
-    if not text.startswith(header):
-        return None
-    lines = [line for line in text[len(header) :].splitlines() if line]
-    if len(lines) % 2:
-        return None
-    rows = []
-    ids: set[str] = set()
-    for task, module in zip(lines[::2], lines[1::2], strict=True):
-        row = _MANUAL_ROW.fullmatch(task)
-        if (
-            row is None
-            or row[2] in ids
-            or row[3] != day.replace('-', '')
-            or row[4] != day
-            or re.fullmatch(r' {6}module: \S.*', module) is None
-        ):
-            return None
-        ids.add(row[2])
-        rows.append((row[1], task[5:], module))
-    return rows
-
-
-def only_translated(old: str, new: str) -> bool:
-    """The one-time CJK translation: the note is added, only CJK-bearing lines change, and no CJK remains."""
-    after_lines = _lf(new).splitlines()
-    if find_cjk(new) or not find_cjk(old) or not any(_TRANSLATION_LINE.fullmatch(line) for line in after_lines):
-        return False
-    before = [line for line in _lf(old).splitlines() if line.strip()]
-    after = [line for line in after_lines if line.strip() and not _TRANSLATION_LINE.fullmatch(line)]
-    if len(before) != len(after):
-        return False
-    return all(was == now or find_cjk(was) for was, now in zip(before, after, strict=True))
-
-
-def _only_manual_tasks_updated(path: str, old: str, new: str) -> bool:
-    before, after = _manual_rows(path, old), _manual_rows(path, new)
-    if before is None or after is None or len(after) < len(before):
-        return False
-    return all(a[1:] == b[1:] for a, b in zip(before, after[: len(before)], strict=True))
-
-
-def merged_entry_problems(path: str, text: str, exists: Callable[[str], bool] | None = None) -> tuple[str, ...]:
-    """Why the entry at *path* (repo-relative) fails as a merge.
-
-    *exists* says a source is at the base or added by the same change.
-    """
-    text = _lf(text)
-    match = _FRONTMATTER.match(text)
-    sources = _MERGED_FROM.search(match.group(1)) if match else None
-    if sources is None:
-        return ()
-    scope = _scope(path)
-    home = f'{scope}/{_MEMORY}' if scope else _MEMORY
-    out: list[str] = []
-    for source in re.findall(r'[^\s\[\],\'"]+', sources.group(1)):
-        full = source if _is_memory(source) else home + source
-        if '..' in source or _scope(full) != scope:
-            out.append(f'{path}: merged_from {source} is not a memory file of the scope {home}')
-        elif exists is not None and not exists(full):
-            out.append(f'{path}: merged_from {source} does not exist at the base ({full})')
-    in_fence = False
-    for paragraph in re.split(r'\n\s*\n', text[match.end() :]):
-        lines = [line for line in paragraph.strip().splitlines() if line.strip()]
-        fences = sum(line.lstrip().startswith('```') for line in lines)
-        prose = not in_fence and fences == 0 and lines and not all(line.startswith('#') for line in lines)
-        in_fence ^= fences % 2 == 1
-        if prose and not _CITATION.search(paragraph):
-            out.append(f'{path}: a merged paragraph cites no source file: "{lines[0][:60]}"')
-    return tuple(out)
 
 
 def _changes(root: Path, *spec: str) -> list[tuple[str, str, str]]:
@@ -259,27 +119,34 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
 
     out: list[str] = []
     for status, old, new in rows:
-        if status in 'AC' and _is_memory(new):
-            out.extend(merged_entry_problems(new, _git(root, 'show', f'{new_rev}:{new}'), exists))
-        elif status == 'R' and _is_memory(new) and not _is_memory(old):
+        if status in 'AC' and is_memory(new):
+            text = _git(root, 'show', f'{new_rev}:{new}')
+            out.extend((*shape_problems(new, text), *merged_entry_problems(new, text, exists)))
+        elif status == 'R' and is_memory(new) and not is_memory(old):
             if not _TASK.search(old):
                 out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
-        elif status == 'M' and _is_memory(old):
+        elif status == 'M' and is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
             if not (
-                _only_volatile_stripped(before, after)
-                or _only_manual_tasks_updated(old, before, after)
-                or _only_redacted(before, after)
+                only_volatile_stripped(before, after)
+                or only_manual_tasks_updated(old, before, after)
+                or only_redacted(before, after)
+                or only_amended(before, after)
                 or only_translated(before, after)
             ):
-                remedy = 'a memory entry is immutable -- write a new entry with `corrects:` instead'
-                if _MANUAL.search(old):
+                remedy = (
+                    'a memory entry is immutable -- write a new entry with `corrects:` instead; a line that is WRONG '
+                    'is corrected in place only with the user-approved note `> '
+                    + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='<why>', approved="<the user's words>")
+                    + '` and lines replaced one-for-one, or only the missing name/description frontmatter added'
+                )
+                if MANUAL_PATH.search(old):
                     remedy += (
                         '; rem 2.2.0 task-list format/operation check failed: append tasks or toggle checkboxes '
                         'without changing existing task text, module or order'
                     )
                 out.append(f'{old}: {remedy}')
-        elif status in 'DRT' and _is_memory(old):
+        elif status in 'DRT' and is_memory(old):
             out.append(f'{old}: a memory entry is never deleted or moved ({status})')
     return tuple(out)
 
@@ -295,11 +162,26 @@ def pending(root: Path) -> tuple[str, ...]:
     if _run(root, 'rev-parse', '--verify', '-q', 'HEAD')[0] != 0:
         return ()
     tree = _git(root, 'write-tree').strip()
-    rows = _published_only(root, tree, _not_as_upstream_holds(root, tree, _changes(root, 'HEAD', tree)))
+    into = _integration(root, tree)
+    rows = _published_only(root, tree, into, _not_as_upstream_holds(root, tree, into, _changes(root, 'HEAD', tree)))
     return _judge(root, 'HEAD', tree, rows)
 
 
-def _published_only(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+def _integration(root: Path, tree: str) -> str | None:
+    """The integration branch HEAD's manifest names, else the staged *tree*'s -- a first adoption's own.
+
+    ``None`` when neither carries a ``pyproject.toml``: nothing names a branch, so nothing is published yet. A
+    manifest that exists and names no branch is refused (:func:`~dev_lab.dev.lanepolicy.policy_from`).
+    """
+    for rev in ('HEAD', tree):
+        if text := pyproject_at(root, rev):
+            return policy_from(text, f'{rev}:pyproject.toml').integration
+    return None
+
+
+def _published_only(
+    root: Path, tree: str, into: str | None, rows: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
     """*rows* without edits, deletions and moves of a memory entry not yet on ``origin/<integration>``.
 
     Immutability starts when an entry is PUBLISHED: one added in an unpushed range is still a draft, and its
@@ -308,21 +190,23 @@ def _published_only(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> 
     task-format and injection rules hold for drafts too. An entry the integration ref holds stays judged;
     without that ref nothing is a draft.
     """
-    ref = f'origin/{policy_at(root, "HEAD").integration}'
-    if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
+    ref = f'origin/{into}'
+    if into is None or _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
         return rows
 
     def draft(status: str, old: str, new: str) -> bool:
-        if status not in 'MDRT' or not _is_memory(old) or _MANUAL.search(old) or _MANUAL.search(new):
+        if status not in 'MDRT' or not is_memory(old) or MANUAL_PATH.search(old) or MANUAL_PATH.search(new):
             return False
-        if status in 'MRT' and _MANUAL_ROW.search(_git(root, 'show', f'{tree}:{new}')):
+        if status in 'MRT' and MANUAL_ROW.search(_git(root, 'show', f'{tree}:{new}')):
             return False
         return _run(root, 'cat-file', '-e', f'{ref}:{old}')[0] != 0
 
     return [(status, old, new) for status, old, new in rows if not draft(status, old, new)]
 
 
-def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+def _not_as_upstream_holds(
+    root: Path, tree: str, into: str | None, rows: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
     """*rows* without the paths staged EXACTLY as ``MERGE_HEAD`` or ``origin/<integration>`` holds them.
 
     Such a path is a change judged where it was made, not an edit by this commit -- two shapes, both measured
@@ -336,7 +220,7 @@ def _not_as_upstream_holds(root: Path, tree: str, rows: list[tuple[str, str, str
     A path staged as neither is still this commit's, and is judged.
     """
     differs: set[str] | None = None
-    for ref in ('MERGE_HEAD', f'origin/{policy_at(root, "HEAD").integration}'):
+    for ref in ('MERGE_HEAD', *(() if into is None else (f'origin/{into}',))):
         if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
             continue
         against = set(_git(root, 'diff', '--no-renames', '--name-only', '-z', ref, tree).split('\0')) - {''}
@@ -383,9 +267,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not problems:
         return 0
     lines = [
-        f'memory-adds: {args[0]} REFUSED -- it edits, deletes or moves memory (MEMORY-SHAPE).',
+        (
+            f'memory-adds: {args[0]} REFUSED -- it edits, deletes or moves memory, or adds a misshapen entry '
+            '(MEMORY-SHAPE).'
+        ),
         *(f'memory-adds:   {line}' for line in problems),
-        'memory-adds: Remedy: restore each entry as it was; a correction is a NEW entry with `corrects:`.',
+        (
+            'memory-adds: Remedy: restore each entry as it was; a correction is a NEW entry with `corrects:`; '
+            'an added entry declares its name and description.'
+        ),
     ]
     emit('\n'.join(lines), err=True)
     return 1

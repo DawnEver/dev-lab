@@ -16,7 +16,7 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   base part's rows the promotion event runs (``tests/base`` and, where workflows fan
   parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on -- and NO other part: a part a
   declared resource derives (``tests/windows``) is a hand part, tested later and never a merge condition (user ruling
-  2026-11-10, :func:`dev_lab.dev.forgemerge.hand_parts`);
+  2026-11-10, :func:`dev_lab.dev.forgemergewaits.hand_parts`);
 * NO APPROVAL AND NO JUDGE CHECK is ever required: the judge's verdict is ADVISORY on every forge
   (:data:`~dev_lab.dev._forgebackends.ADVISORY`, user ruling 2026-11-11), so ``approvals`` above 0 is refused;
 * what THIS table declares, once, is the rest -- per forge host, the ONE bypass identity (break-glass) and the
@@ -32,7 +32,10 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
 ``python -m dev_lab.dev.forge protect plan|check|apply`` renders the declaration onto the repository's forge
 (:mod:`dev_lab.dev._protect_github`, :mod:`dev_lab.dev._protect_gitea`): ``plan`` prints every difference, ``check``
 exits 1 on any, ``apply`` writes them and re-reads -- an administrator's verb, never CI's: the job token cannot and
-must not change the rules that judge it.
+must not change the rules that judge it. ``plan`` and ``check`` need no admin: a fact the credential cannot read is
+said unanswered (a difference, never "as declared"). On a self-hosted Gitea no workstation credential applies at
+all: the forge host does, behind one consent (``python -m dev_lab.ops ... forge protect``,
+:mod:`dev_lab.ops.forgeprotection`).
 """
 
 from __future__ import annotations
@@ -268,6 +271,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         for line in refusal(failed, wanted):
             emit(line, err=True)
         return 1
+    except PermissionError as refused:  # a read credential's plan: the forge host writes (_protect_gitea)
+        emit(f'[protect] {refused}', err=True)
+        return 2
     emit(f'[protect] {client.forge.identity}: ' + (f'{len(steps)} difference(s)' if steps else 'as declared'))
     for line in render(steps):
         emit(f'  {line}')

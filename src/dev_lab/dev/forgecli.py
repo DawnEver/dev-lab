@@ -43,7 +43,8 @@ from dev_lab.dev import (
     forgeintegration,
     forgeissue,
     forgelabel,
-    forgemerge,
+    forgemergecall,
+    forgemergeready,
     forgenotice,
     forgeoutbox,
     forgeprotect,
@@ -64,6 +65,7 @@ from dev_lab.dev import (
     forgetidy,
     forgetry,
     forgewatch,
+    issuekind,
     metrics,
     pradmit,
     prcontinue,
@@ -73,11 +75,13 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
+    taskgate,
 )
 from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest, client_for
+from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
 
 if TYPE_CHECKING:
@@ -99,7 +103,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'queue': forgequeue.main,
     'sync': forgesync.main,
     'integration': forgeintegration.main,
-    'merge': forgemerge.main,
+    'merge': forgemergeready.main,
     'notices': forgenotice.main,
     'review': lambda argv: (forgereview_bundle.main if argv[:1] in (['prepare'], ['judge']) else forgetakeover.main)(
         argv
@@ -180,6 +184,7 @@ def _parser() -> argparse.ArgumentParser:
     create = _verb(issue, 'create')
     create.add_argument('--title', required=True)
     create.add_argument('--body', default='')
+    create.add_argument('--kind', required=True, choices=KINDS, help='an issue is a need, defect or decision')
     comment = _verb(issue, 'comment')
     comment.add_argument('number', type=int)
     comment.add_argument('--body', required=True)
@@ -198,6 +203,10 @@ def _parser() -> argparse.ArgumentParser:
     opened.add_argument(
         '--ready', action='store_true',
         help='open it ready for review; the default is a DRAFT, marked ready by `forge pr ready N` (D53)',
+    )  # fmt: skip
+    opened.add_argument(
+        '--ready-when-current', action='store_true',
+        help=f'open a DRAFT the serve marks ready once its head is current (`{forgedraft.READY_WHEN}` in the body)',
     )  # fmt: skip
     return parser
 
@@ -218,16 +227,23 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit),
         ('issue', 'view'): lambda: client.issue_view(args.number),
-        ('issue', 'create'): lambda: client.issue_create(args.title, args.body),
+        ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
         ('pr', 'create'): lambda: client.pr_create(
-            args.title, args.body, head=args.head, base=args.base, draft=not args.ready
+            args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
         ('pr', 'close'): lambda: pr_close(client, args.number, args.reason),
     }
     return verbs[args.noun, args.verb]()
+
+
+def _declared_body(args: argparse.Namespace) -> str:
+    """*args*' PR body, with :data:`~dev_lab.dev.forgedraft.READY_WHEN` as its last line when the author declared it."""
+    if not args.ready_when_current:
+        return args.body
+    return '\n\n'.join([*([args.body] if args.body else []), forgedraft.READY_WHEN])
 
 
 def _render(item: Issue | PullRequest | Comment) -> str:
@@ -249,6 +265,8 @@ def _refused(
     """
     if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
         parser.error('pr close: --reason must say why')
+    if (args.noun, args.verb) == ('pr', 'create') and args.ready and args.ready_when_current:
+        parser.error('pr create: --ready opens it ready; --ready-when-current opens a draft -- choose one')
     if (args.noun, args.verb) == ('pr', 'create'):
         private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
         if private:
@@ -257,6 +275,18 @@ def _refused(
             emit(f'[forge] scanning the PR text for private markers: {why}', err=True)
         return privatemarkers.text_refusal(f'{args.title}\n{args.body}', 'PR title or body')
     return None
+
+
+def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
+    """An opened PR or issue is appended to the bound rem task's journal (:func:`taskgate.record`)."""
+    if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
+        return
+    if (
+        isinstance(result, (PullRequest, Issue))
+        and (url := result.url)
+        and (said := taskgate.record(root, args.noun, url, env=env, read=taskgate.reader_for(env, Path.home())))
+    ):
+        emit(f'[forge] {said}', err=True)  # the task names its own PRs and issues
 
 
 def issue_and_pr(
@@ -283,13 +313,14 @@ def issue_and_pr(
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
         result = _dispatch(client, args)
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
-            emit(f'[forge] {forgemerge.auto_merge(client, result.number)}', err=True)
+            emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
                 emit(f'[forge] {pushwatch.arm_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
+    _record_in_task(args, result, root, os.environ if env is None else env)
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
         data = [dataclasses.asdict(item) for item in items]

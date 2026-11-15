@@ -29,7 +29,9 @@ only what differs, every entry with its reason::
     accepted = { "GHSA-xxxx-xxxx-xxxx" = "the vulnerable path is unused" }  # advisories accepted
 
 The table that JUDGES a head is read from ``origin/<integration>``, never from the head: a branch cannot widen
-the exemptions that judge it. A PR that CHANGES the table is released once, explicitly, and on the record:
+the exemptions that judge it. A base with no ``pyproject.toml`` declares nothing yet, so a repo's FIRST adoption PR
+is judged under its head's own table and says so (:data:`FIRST_ADOPTION`): there is no table it could widen. A PR
+that CHANGES the table is released once, explicitly, and on the record:
 
 * the step judges such a head twice -- with the integration table (the posted findings) and with the head's own.
   When the head's table leaves nothing, the ``failure`` says so and names the door, :data:`RELEASE_DOOR`;
@@ -139,6 +141,10 @@ class Declaration:
     def tables(self) -> dict[str, Mapping[str, str]]:
         """Each declared table by its key (:data:`KEYS`)."""
         return {'exclude': self.exclude, 'ignore': self.ignore, 'allowed': self.allowed, 'accepted': self.accepted}
+
+
+#: What a head judged under its own table says: its base has no ``pyproject.toml``, so nothing is declared yet.
+FIRST_ADOPTION: Final = "base declares nothing; first adoption -- judged under the head's own table"
 
 
 @dataclass(frozen=True)
@@ -259,6 +265,33 @@ def _declared_at(root: Path, rev: str) -> Declaration:
     return declared(text.decode('utf-8'))
 
 
+def _base_declared(root: Path, into: str) -> Declaration | None:
+    """``origin/<into>``'s declaration; ``None`` when that commit has no ``pyproject.toml`` (nothing declared yet).
+
+    A missing ``origin/<into>`` ref still raises: only a base that EXISTS without a manifest is a first adoption.
+    """
+    try:
+        text = _git(root, 'show', f'origin/{into}:pyproject.toml')
+    except subprocess.CalledProcessError:
+        _git(root, 'rev-parse', '--verify', '-q', f'origin/{into}^{{commit}}')
+        return None
+    return declared(text.decode('utf-8'))
+
+
+def _under(
+    root: Path, head: str, base: Declaration | None, judged: Callable[[Path, str, Declaration], Judgement]
+) -> tuple[Declaration, Callable[[Path, str, Declaration], Judgement]]:
+    """The table *head* is judged under and the judge: *base*'s, else the head's own, said (:data:`FIRST_ADOPTION`)."""
+    if base is not None:
+        return base, judged
+
+    def first(at: Path, sha: str, declaration: Declaration) -> Judgement:
+        found = judged(at, sha, declaration)
+        return Judgement(found.state, f'{FIRST_ADOPTION} | {found.description}'[:DESCRIPTION_LIMIT])
+
+    return _declared_at(root, head), first
+
+
 def _covered(
     root: Path, number: int, head: str, base: Declaration, found: Judgement, *,
     judged: Callable[[Path, str, Declaration], Judgement],
@@ -295,7 +328,7 @@ def step(
     try:
         into = load_policy(root).integration
         base = f'origin/{into}'
-        declaration = declared(_git(root, 'show', f'{base}:pyproject.toml').decode('utf-8'))
+        declaration = _base_declared(root, into)
         heads: list[tuple[int | None, str]] = [
             (pull.number, pull.head_sha)
             for pull in pr_list(client)
@@ -303,7 +336,8 @@ def step(
         ]
         heads.append((None, _git(root, 'rev-parse', base).decode().strip()))
         for number, head in heads:
-            if (line := judge_one(root, client, number, head, declaration, judged=judged)) is not None:
+            under, judging = _under(root, head, declaration, judged)
+            if (line := judge_one(root, client, number, head, under, judged=judging)) is not None:
                 say(f'[serve] security: {into if number is None else ""}{line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.CalledProcessError) as failed:
         say(f'[serve] security: not judged this tick: {failed}')
@@ -335,8 +369,8 @@ def run_pull(
     pull = client.pr_view(number)
     if pull.base != into or not pull.head_sha:
         return f'#{number}: not judged -- only a PR into {into} is'
-    declaration = declared(_git(root, 'show', f'origin/{into}:pyproject.toml').decode('utf-8'))
-    said = judge_one(root, client, number, pull.head_sha, declaration, judged=judged)
+    declaration, judging = _under(root, pull.head_sha, _base_declared(root, into), judged)
+    said = judge_one(root, client, number, pull.head_sha, declaration, judged=judging)
     return said or f'#{number} {pull.head_sha[:12]}: already judged'
 
 

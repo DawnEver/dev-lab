@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import agent_wiring, ephemeralrefs, journaldoor
+from dev_lab.dev import agent_wiring, ephemeralrefs, journaldoor, walls
 
 _TASK_JS = 'node "C:/x/rem/scripts/task.js"'
 
@@ -91,3 +91,13 @@ def test_the_door_is_wired_before_every_shell_call() -> None:
     wired = [w for w in agent_wiring.WIRING if w.marker == journaldoor.__name__]
     assert [(w.event, w.on_shells) for w in wired] == [('PreToolUse', True)]
     assert f'-m {journaldoor.__name__}' in wired[0].command
+
+
+def test_a_denial_is_this_sessions_wall_through_the_one_choke_point(tmp_path: Path) -> None:
+    """WALLS-ARE-RECORDED: the deny reaches the ledger with its rule and its remedy; a passing twin records none."""
+    root = _repo(tmp_path)
+    assert _hook(root, f'{_TASK_JS} log "see doc.md" --task t') is None
+    assert not walls.ledger(root).exists()
+    assert _hook(root, f'{_TASK_JS} log "swept output/logs/x.log" --task t') is not None
+    [line] = [json.loads(raw) for raw in walls.ledger(root).read_text(encoding='utf-8').splitlines()]
+    assert (line['rule'], line['remedy_present']) == (ephemeralrefs.RULE, True)

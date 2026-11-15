@@ -42,6 +42,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [One branch per session](./branch-set.md) | The declared branch set, merge-or-delete, and the push-time check |
 | [Auto mode runs the doors](./auto-doors.md) | Local cleanup and run stops are checked doors both clients allow unprompted |
 | [Refusals](./refusals.md) | Every deny refusal is a clause, a door and a pointer; the full text of each row |
+| [Every wall teaches](./feedback.md) | The feedback layers, the wall ledger, and closing a gap before the task |
 | [Project files](./project-files.md) | Every project file is rendered from a family base plus a delta, or owned by the repo; hooks and CI are TOML |
 
 ## How a consuming repo uses these pages

@@ -23,6 +23,7 @@ from lab_commons.home import HOME_ENV
 from dev_lab.dev import _dep_project, forgeserve, metrics, reviewruntime, uvfollow
 from dev_lab.dev.lockcheck import uv_version
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.producer import OUTCOME_VAR
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
 
 
@@ -34,6 +35,8 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(INSIDE_ENV, raising=False)  # the verify running these tests is boxed; a test is not
     monkeypatch.delenv(CPU_ENV, raising=False)
     monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)  # a test plants the session it means
+    # the serve running this suite named ITS outcome record here: a test's planted outage must never declare it
+    monkeypatch.delenv(OUTCOME_VAR, raising=False)
 
 
 #: What a CI job's environment carries that no test may inherit: the run id (every simulated review host would

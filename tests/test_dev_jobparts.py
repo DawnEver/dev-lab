@@ -11,11 +11,13 @@ import pytest
 from _forge_fake import make_repo
 from _forge_state import StateForge
 
-from dev_lab.dev import forgemerge, jobparts, localpart, partrows, platformparts
+from dev_lab.dev import forgemergewaits, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
-from dev_lab.dev.forgestatus import CommitStatus, status_list
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, client_for
-from dev_lab.dev.producer import full_suite_refusal
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.producer import OUTCOME_VAR, Owner, full_suite_refusal, owner_of, unreachable
 
 SHA = 'b' * 40
 T0 = datetime(2026, 11, 1, tzinfo=UTC)
@@ -210,7 +212,9 @@ def test_produce_hands_the_row_the_producing_marker_of_its_own_context_at_sha(
 
     monkeypatch.setattr(jobparts._door, 'run', run)
     monkeypatch.setattr(jobparts, 'producer_argv', lambda _root, part, *, sha: ['-m', 'x', part, sha])
-    assert jobparts.produce(tmp_path, row) == 0
+    forge = StateForge()
+    status_post(forge, sha, context=platformparts.part_context(row), state='success', description='scope=full')
+    assert jobparts.produce(tmp_path, row, forge) == 0
     env = seen['env']
     assert full_suite_refusal('verify', env, platformparts.part_context(row)) is None
     assert full_suite_refusal('verify', env, platformparts.part_context(other)) is not None, 'planted control'
@@ -263,16 +267,52 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
         'hosted = { live = { tasks = ["live"], secrets = ["K"] } }',
         'hosted = { live = { secrets = ["K"], setup = "x" } }',
         'hosted = { live = { tasks = ["live"] } }\nunproduced = ["live"]',
+        'hosted = { live = {} }',
+        'hosted = { live = { setup = "" } }',
+        'hosted = { live = { setup = ["apt-get install x"] } }',
+        'hosted = { live = { setup = "x", runner = "ubuntu-latest" } }',
     ],
 )
 def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_part_is_refused(
     declaration: str,
 ) -> None:
     text = f'[tool.lab_commons.tests]\nresources = ["live"]\n[tool.dev_lab.parts]\n{declaration}\n'
-    with pytest.raises(platformparts.UndeclaredPart):
+    with pytest.raises(platformparts.UndeclaredPart, match=r"part '(live|femm)'") as refused:
         jobparts.hosted_parts(text)
+    assert 'setup = "<shell command>"' in str(refused.value), 'the refusal names the fix: the accepted shape'
     assert jobparts.hosted_parts(HOSTED) == {'live': jobparts.Hosted(('live',))}
     assert jobparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
+
+
+SETUP_ONLY = """
+[tool.lab_commons.tests]
+resources = ["linux", "live"]
+
+[tool.dev_lab.parts]
+hosted = { linux = { setup = "sudo apt-get install -y xvfb" }, live = { tasks = ["live"] } }
+"""
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push'])
+def test_a_secretless_hosted_part_runs_on_every_event_and_one_with_secrets_stays_off_pull_requests(
+    tmp_path: Path, event: str
+) -> None:
+    """Secrets are the ONLY reason a hosted part skips a pull request; a setup alone withholds nothing.
+
+    PLANTED CONTROL: ``live`` names a task (a secret) and still has no pull request row.
+    """
+    assert jobparts.hosted_parts(SETUP_ONLY) == {
+        'linux': jobparts.Hosted(setup='sudo apt-get install -y xvfb'),
+        'live': jobparts.Hosted(('live',)),
+    }
+    (tmp_path / 'pyproject.toml').write_text(SETUP_ONLY, encoding='utf-8')
+    carrying = {'': ['t::a', 't::x', 't::l'], 'linux': ['t::x'], 'live': ['t::l']}
+    rows = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event)['include']
+    hosted = {row['part']: row for row in rows if row['part'] in {'linux', 'live'}}
+    assert hosted['linux'] == {'part': 'linux', 'runs-on': 'ubuntu-latest', 'secrets': []}
+    assert ('live' in hosted) is (event != 'pull_request'), 'PLANTED CONTROL: a secret keeps it off a PR'
+    generic = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event, hosted=True)['include']
+    assert 'linux' not in [row['part'] for row in generic], 'its own job, with its setup, produces it'
 
 
 def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
@@ -281,6 +321,118 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
     PLANTED CONTROL: the same head with ``tests/base`` red still waits.
     """
     handed = [CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemerge.parts_wait('hosted', handed) is None
+    assert forgemergewaits.parts_wait('hosted', handed) is None
     red = [CommitStatus('tests/base', 'failure', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemerge.parts_wait('hosted', red) is not None, 'PLANTED CONTROL'
+    assert forgemergewaits.parts_wait('hosted', red) is not None, 'PLANTED CONTROL'
+
+
+_RUN_ENV = {'GITHUB_SERVER_URL': 'https://github.com', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_RUN_ID': '7'}
+
+
+def _producing(monkeypatch, child: object) -> StateForge:
+    """A ``produce`` of ``base@windows`` whose producer is *child* (given the env and the forge); the forge."""
+    forge = StateForge()
+
+    def run(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        if argv[:2] == ['git', 'rev-parse']:
+            return SimpleNamespace(stdout=f'{SHA}\n', returncode=0)
+        return SimpleNamespace(returncode=child(kwargs['env'], forge))
+
+    monkeypatch.setattr(jobparts._door, 'run', run)
+    monkeypatch.setattr(jobparts, 'producer_argv', lambda _root, part, *, sha: ['-m', 'x', part, sha])
+    return forge
+
+
+def test_a_producer_that_exits_unreachable_posts_its_row_error_naming_why_never_leaves_it_absent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """claude-code-config #6 (2026-11-13): the windows job exited unreachable and its row read pending for hours."""
+
+    def npm_missing(env: dict[str, str], _forge: object) -> int:
+        monkeypatch.setenv(OUTCOME_VAR, env[OUTCOME_VAR])
+        return unreachable("cannot run 'npm': [WinError 2]", Owner.ENVIRONMENT)
+
+    forge = _producing(monkeypatch, npm_missing)
+    assert jobparts.produce(tmp_path, 'base@windows', forge, env=_RUN_ENV) == 4
+    (status,) = status_list(forge, SHA)
+    assert (status.context, status.state) == ('tests/base@windows', 'error')
+    assert status.description.startswith("unreachable: cannot run 'npm': [WinError 2]"), status.description
+    assert owner_of(status.state, status.description) is Owner.ENVIRONMENT, "not the author's red"
+    assert status.url == 'https://github.com/o/r/actions/runs/7'
+
+
+@pytest.mark.parametrize(
+    ('code', 'said'), [(1, 'exited 1 (FAIL) but posted no part'), (3, 'inconclusive'), (9, 'crashed (exit 9)')]
+)
+def test_a_producer_that_ends_without_a_part_posts_its_row_error_naming_its_exit(
+    tmp_path: Path, monkeypatch, code: int, said: str
+) -> None:
+    forge = _producing(monkeypatch, lambda _env, _forge: code)
+    assert jobparts.produce(tmp_path, 'base@windows', forge, env={}) == code
+    (status,) = status_list(forge, SHA)
+    assert status.state == 'error'
+    assert said in status.description
+
+
+@pytest.mark.parametrize('verdict', ['success', 'failure'])
+def test_a_producer_that_posted_its_part_is_left_as_it_posted(tmp_path: Path, monkeypatch, verdict: str) -> None:
+    """PLANTED CONTROL: a settled part is never overwritten by the job's error."""
+
+    def posts(_env: dict[str, str], forge: StateForge) -> int:
+        status_post(forge, SHA, context='tests/base@windows', state=verdict, description='scope=full ran=1')
+        return 0 if verdict == 'success' else 1
+
+    forge = _producing(monkeypatch, posts)
+    jobparts.produce(tmp_path, 'base@windows', forge, env={})
+    assert [s.state for s in status_list(forge, SHA)] == [verdict]
+
+
+@pytest.mark.parametrize('conclusion', sorted(jobparts.FAILED_JOB))
+def test_a_row_whose_job_concluded_failed_with_no_record_is_error_naming_the_job_not_absent(conclusion: str) -> None:
+    """A job that crashed before posting anything FAILED; reading it absent (pending) is what hid #6's red."""
+    forge = StateForge()
+    url = 'https://github.com/o/r/actions/runs/7/job/9'
+    jobs = {'tests/base@windows': jobparts.Job(conclusion, url)}
+    expected = {'include': [{'part': 'base@windows', 'runs-on': 'x'}, {'part': 'base', 'runs-on': 'x'}]}
+    said = jobparts.absent(forge, SHA, expected, jobs=jobs, now=T0)
+    latest = {s.context: s for s in status_list(forge, SHA)}
+    failed = latest['tests/base@windows']
+    assert failed.state == 'error'
+    assert f'concluded {conclusion}' in failed.description
+    assert failed.url == url
+    assert any(url in line for line in said)
+    assert latest['tests/base'].state == 'pending', 'PLANTED CONTROL: a row with no concluded job stays absent'
+
+
+def test_a_row_whose_job_succeeded_or_is_unknown_stays_absent_and_a_posted_error_is_kept() -> None:
+    """PLANTED CONTROL both ways: only a failed conclusion is a failure; an error a job posted is never re-absented."""
+    forge = StateForge()
+    jobs = {'tests/base': jobparts.Job('success', 'u')}
+    status_post(forge, SHA, context='tests/base@windows', state='error', description='unreachable: x class=network')
+    expected = {'include': [{'part': 'base', 'runs-on': 'x'}, {'part': 'base@windows', 'runs-on': 'x'}]}
+    jobparts.absent(forge, SHA, expected, jobs=jobs, now=T0)
+    latest = {s.context: s.state for s in status_list(forge, SHA)}
+    assert latest == {'tests/base': 'pending', 'tests/base@windows': 'error'}
+
+
+def test_run_jobs_reads_the_concluded_jobs_by_name_and_an_unreadable_run_is_none() -> None:
+    asked: list[str] = []
+
+    def call(method: str, path: str, *_a: object, **_k: object) -> object:
+        asked.append(f'{method} {path}')
+        return {
+            'jobs': [
+                {'name': 'tests/base@windows', 'conclusion': 'failure', 'html_url': 'u1'},
+                {'name': 'tests/base', 'conclusion': None, 'html_url': 'u2'},
+            ]
+        }
+
+    client = SimpleNamespace(repo='repos/o/r', call=call)
+    assert jobparts.run_jobs(client, '7') == {'tests/base@windows': jobparts.Job('failure', 'u1')}
+    assert asked == ['GET repos/o/r/actions/runs/7/jobs?per_page=100']
+    assert jobparts.run_jobs(client, '') == {}
+
+    def refused(*_a: object, **_k: object) -> object:
+        raise ForgeCallFailed(Report(('GET', 'jobs'), (Attempt(1, 403, 'forbidden', Diagnosis.FORGE_REFUSED),), 1))
+
+    assert jobparts.run_jobs(SimpleNamespace(repo='r', call=refused), '7') == {}

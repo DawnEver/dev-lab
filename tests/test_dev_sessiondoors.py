@@ -11,18 +11,23 @@ import contextlib
 import io
 import json
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from _forge_fake import git_out
 from _forge_state import FORGE, StateForge
+from _ops_fixtures import git
 
 from dev_lab.dev import forgewatch, pushstop, sessionprs
-from dev_lab.dev.forge import Forge
+from dev_lab.dev._forge_records import PullRequest
+from dev_lab.dev.forge import Forge, forge_from_remote
+from dev_lab.dev.forgebreakglass import merge_main
 from dev_lab.dev.githooks.table import base_rows
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from dev_lab.dev.forgework import Client
 
 SHA = 'a' * 40
 SESSION = 's1'
@@ -214,3 +219,38 @@ def test_a_push_to_the_integration_or_trunk_branch_is_never_a_pr_row(tmp_path: P
     assert [row.branch for row in sessionprs.rows(in_session).values()] == ['pr/x'], (
         'PLANTED CONTROL: the lane branch is recorded beside the two refused'
     )
+
+
+# ---------------------------------------------------------------------------------------------------- merge doors
+
+
+def test_a_break_glass_merge_ends_the_pr_in_every_session_record_and_a_refused_one_does_not(tmp_path: Path) -> None:
+    """2026-11-13: a PR merged through break-glass stayed open on record, so the Stop gate blocked on it.
+
+    PLANTED control: the same door refused by the server leaves the row open.
+    """
+    git(tmp_path, 'init', '-q')
+    git(tmp_path, 'remote', 'add', 'origin', 'https://forge.example/owner/alpha.git')
+    forge = forge_from_remote(tmp_path)
+
+    class _Client:
+        def pr_view(self, number: int) -> PullRequest:
+            return PullRequest(number, 'fix', 'open', '', 'u', 'a', 'pr/fix', 'integrate/main', head_sha=SHA)
+
+    def merge(number: int, status: int) -> int:
+        def send(table: object, request: object) -> tuple[int, str]:
+            del table, request
+            return status, 'said'
+
+        argv = [str(number), '--reason', 'r']
+        client = cast('Client', _Client())
+        return merge_main(argv, cwd=tmp_path, client=client, table={'endpoint': 'bg@host'}, send=send)
+
+    for session in ('s1', 's2'):
+        sessionprs.record_pr(session, forge, 7, branch='pr/fix')
+        sessionprs.record_pr(session, forge, 8, branch='pr/other')
+    assert merge(8, status=2) == 2
+    assert merge(7, status=0) == 0
+    for session in ('s1', 's2'):
+        assert [row.number for row in sessionprs.open_rows(session)] == [8], session
+        assert sessionprs.rows(session)[f'{forge.identity}#7'].done == 'merged'

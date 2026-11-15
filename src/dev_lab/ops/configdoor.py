@@ -20,7 +20,9 @@ The FAMILY FILE (``[ops.config] family = {file, to}``) rides the same door: ever
 mode 0644: it holds no secrets by rule -- the config source's check refuses a secret value in it -- and the judge
 reads it as its own account) only when its text changed. A family change is BOUNDARY, never routine: it carries the
 family's spend caps and HPC grants, so it needs an ``ops.config`` credential exactly as a boundary host key does, and
-the credential's subject binds both texts (:func:`digest`); ``config tick`` parks it as ``needs-consent``.
+the credential's subject binds both texts (:func:`digest`) WHENEVER a family is declared -- changed or not -- so the
+subject is a function of the reviewed source alone and an operator derives it with no session on the host
+(:func:`local_subject`); ``config tick`` parks a boundary change as ``needs-consent``.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'ACTION', 'FAMILY_KEY', 'ROUTINE', 'Applied', 'ConfigRefused', 'Family', 'Fetched', 'apply', 'boundary', 'changes',
-    'digest', 'fetch', 'git_with_env', 'tick',
+    'digest', 'fetch', 'git_with_env', 'loadable', 'local_subject', 'tick',
 ]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
@@ -120,8 +122,12 @@ class Fetched:
 
 
 def digest(text: str, family: Family | None = None) -> str:
-    """The SHA-256 a consent credential's subject must equal: exactly *text*, and the *family* text when it changes."""
-    if family is None or not family.changed():
+    """The SHA-256 a consent credential's subject must equal: exactly *text*, and the *family* text when declared.
+
+    Never the host's state (whether the placed family file already matches): the subject depends on the reviewed
+    source alone, so :func:`local_subject` derives it off the host.
+    """
+    if family is None:
         return hashlib.sha256(text.encode('utf-8')).hexdigest()
     bound = f'{text}\0family {family.to.as_posix()}\0{family.text}'
     return hashlib.sha256(bound.encode('utf-8')).hexdigest()
@@ -184,6 +190,45 @@ def fetch(source: ConfigSource, *, run: EnvRunner) -> Fetched:
     return Fetched(texts[0], family)
 
 
+#: ``(source url, path, ref)`` -> that file's text at the ref of the source, read off the host (a forge read).
+type SourceReader = Callable[[str, str, str], str]
+
+
+def local_subject(source: str, path: str, read: SourceReader, ref: str = 'main') -> str:
+    """``config apply --subject`` of the host whose reviewed file is *path* in *source*, derived HERE.
+
+    The host fetches what its LIVE ``[ops.config]`` declares; the candidate is assumed to declare the same table (the
+    reviewed file names its own source, path, ref and family), so the table read at *ref* is followed once to the
+    declared ``ref``/``path``; a declaration that still moves, or names another source, is refused: a plan that
+    changes ``[ops.config]`` itself is derived by the host. Then :func:`digest` of exactly what :func:`fetch` reads.
+
+    Raises:
+        ConfigRefused: the file declares no ``[ops.config]``, names another source, or does not settle.
+
+    """
+    for _ in range(2):
+        text = read(source, path, ref)
+        try:
+            table = tomllib.loads(text).get('ops', {}).get('config')
+        except tomllib.TOMLDecodeError as bad:
+            msg = f'{path}@{ref} is not TOML: {bad}'
+            raise ConfigRefused(msg) from bad
+        if not isinstance(table, Mapping) or not table.get('source') or not table.get('path'):
+            msg = f"{path}@{ref} declares no [ops.config] source and path: its subject is the host's to derive"
+            raise ConfigRefused(msg)
+        if table['source'] != source:
+            msg = f'{path}@{ref} names config source {table["source"]}, not {source}: derive it there'
+            raise ConfigRefused(msg)
+        declared = (str(table['path']), str(table.get('ref', 'main')))
+        if declared == (path, ref):
+            family = table.get('family') or {}
+            placed = Family(Path(family['to']), read(source, family['file'], ref)) if family else None
+            return digest(text, placed)
+        path, ref = declared
+    msg = f'{source}: [ops.config] does not settle on one path and ref (last {path}@{ref})'
+    raise ConfigRefused(msg)
+
+
 def _read(target: Path, source: ConfigSource, name: str | None) -> str:
     if name is None:
         return ''
@@ -207,6 +252,28 @@ def _write(path: Path, text: str) -> None:
         raise
 
 
+def loadable(candidate: str, name: str, loads: Callable[[Path], object]) -> None:
+    """Load *candidate* with the CURRENT code, as the live file *name* would be; nothing is written.
+
+    ``config apply`` runs it before it redeems a credential, and ``config apply --subject`` before it prints the
+    subject a preflight compares -- so a host whose code predates a key the candidate declares answers BLOCKED at
+    preflight instead of spending the user's code at run (#555).
+
+    Raises:
+        ConfigRefused: the current code refuses the candidate; the remedy is to upgrade the host first.
+
+    """
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
+        probe = Path(scratch) / name
+        probe.write_text(candidate, encoding='utf-8')
+        try:
+            loads(probe)
+        except (ValueError, TypeError) as bad:
+            msg = (f'the current code refuses the candidate: {bad} -- upgrade first (an ops.upgrade step before this '
+                   f'one, or the bare `ops upgrade` door), then apply')  # fmt: skip
+            raise ConfigRefused(msg) from bad
+
+
 def apply(
     live: Path, candidate: str, *, loads: Callable[[Path], object], checks: Checks, run: Runner,
     redeem: Redeem | None = None, credential: Mapping[str, Any] | None = None, family: Family | None = None,
@@ -227,21 +294,12 @@ def apply(
     changed, guarded = _changed(live, new, family)
     if not changed:
         return Applied((), (), None)
-    if guarded:
-        if credential is None or redeem is None:
-            msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
-            raise ConfigRefused(msg)
+    if guarded and (credential is None or redeem is None):
+        msg = f'boundary keys change and no {ACTION} consent credential was given: {list(guarded)}'
+        raise ConfigRefused(msg)
+    loadable(candidate, live.name, loads)  # BEFORE the credential is spent: a refusal never costs a code (#555)
+    if guarded and credential is not None and redeem is not None:  # both present: refused above otherwise
         redeem(credential, digest(candidate, family))
-    with tempfile.TemporaryDirectory(
-        prefix=TEMP_PREFIX
-    ) as scratch:  # loaded by the current code BEFORE the live file is touched
-        probe = Path(scratch) / live.name
-        probe.write_text(candidate, encoding='utf-8')
-        try:
-            loads(probe)
-        except (ValueError, TypeError) as bad:
-            msg = f'the current code refuses the candidate: {bad}'
-            raise ConfigRefused(msg) from bad
     if changed == (FAMILY_KEY,) and family is not None:  # only the family file moved: the host file stays
         return Applied(changed, guarded, _place(family, now))
     backup = live.with_name(f'{live.name}.bak-{_stamp(now)}')

@@ -2,8 +2,13 @@
 
 The trunk is one more session branch (:mod:`dev_lab.dev.sessionbranch`): what makes it legitimate is that
 it lands by fast-forward on an integration commit whose every part stands PASS, not which directory it was
-moved in. So the verb checks nothing out and pushes nothing -- the session publishes with a plain
+moved in. So the verb checks nothing out and pushes nothing -- the promoter publishes with a plain
 ``git push origin <branch>``, which the pre-push guard judges.
+
+WHO MAY PUBLISH THE TRUNK is the forge's protection: on GitHub the ruleset admits the nightly promote job's token
+alone (``ci.yml`` ``jobs.promote``, :data:`~dev_lab.dev.ciworkflows.NIGHTLY_CRON`; :mod:`dev_lab.dev._protect_github`),
+so anywhere else the verb DECIDES and moves nothing -- a local trunk no push can publish is a divergence, not a
+promotion -- and says ``promotable`` with when the job runs. On Gitea the host's promoter runs this verb and pushes.
 
 * ``promote <sha>`` -- fast-forward the LOCAL trunk ref to *sha*, an integration commit on origin whose
   every derived AND every declared-required ``tests/<part>`` (:func:`dev_lab.dev.platformparts.required_at`)
@@ -22,9 +27,10 @@ is checked out in some worktree is refused, and a trunk that cannot fast-forward
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -36,8 +42,9 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import metrics
-from dev_lab.dev._forgebackends import FORGE_SERVE
+from dev_lab.dev._forgebackends import FORGE_SERVE, GITHUB, actions_token, backend_for
 from dev_lab.dev.checkout import worktrees
+from dev_lab.dev.ciworkflows import NIGHTLY_CRON
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_history
@@ -63,7 +70,10 @@ class IntegrateRefused(RuntimeError):
 
 @dataclass(frozen=True)
 class Promotion:
-    """What promote decided: ``promote``, ``current`` (nothing to do) or ``refused``, with why."""
+    """What promote decided: ``promote``, ``promotable``, ``current`` (nothing to do) or ``refused``, with why.
+
+    ``promotable`` passes, but this process may not publish the trunk (:func:`publishes_trunk`): the ref stays.
+    """
 
     action: str
     sha: str
@@ -152,8 +162,15 @@ def _off_gate(root: Path, client: Client, sha: str, statuses: Sequence[CommitSta
     return off_gate(derived(statuses), declared)
 
 
-def promote(root: Path, client: Client, sha: str) -> Promotion:
-    """:func:`decide`, then the local fast-forward of the trunk ref when it says ``promote``.
+def publishes_trunk(client: Client, env: Mapping[str, str]) -> bool:
+    """Whether this process may push the trunk: on GitHub only the promote job's token (the ruleset admits no other)."""
+    return backend_for(client.forge) is not GITHUB or bool(actions_token(client.forge, env))
+
+
+def promote(root: Path, client: Client, sha: str, *, env: Mapping[str, str] = os.environ) -> Promotion:
+    """:func:`decide`, then the local fast-forward of the trunk ref when it says ``promote`` and we publish it.
+
+    A process that may not publish the trunk (:func:`publishes_trunk`) gets ``promotable``, the ref untouched.
 
     The declaration is the one *sha* -- the commit being promoted -- carries, never the working tree's.
     """
@@ -161,6 +178,8 @@ def promote(root: Path, client: Client, sha: str) -> Promotion:
     _unchecked_out(root, policy.trunk)
     found = decide(root, client, policy, sha)
     if found.action == 'promote':
+        if not publishes_trunk(client, env):
+            return Promotion('promotable', found.sha, found.reasons)
         _move(root, policy.trunk, found.sha, rev(root, f'refs/heads/{policy.trunk}'))
     return found
 
@@ -211,6 +230,14 @@ def main(
     _log(root, metrics.HAND_ACTION, args.sha)
     for reason in found.reasons:
         emit(f'[integrate]   {reason}')
+    if found.action == 'promotable':
+        emit(
+            f'[integrate] {found.sha} may promote, and {trunk} stays where it is: on GitHub the ruleset admits a '
+            f'push of {trunk} from the nightly promote job alone (ci.yml jobs.promote, cron "{NIGHTLY_CRON}" UTC), '
+            f'which promotes a green {_policy(root, args.sha).integration} tip. When it ran: '
+            f'gh run list --workflow ci.yml --event schedule'
+        )
+        return 0
     verb = 'already at' if found.action == 'current' else 'fast-forwarded to'
     emit(f'[integrate] {trunk} {verb} {found.sha}; publish it: git push origin {trunk}')
     return 0

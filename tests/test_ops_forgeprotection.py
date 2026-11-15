@@ -204,3 +204,20 @@ def test_the_local_api_returns_a_refusal_at_once_and_an_unreached_forge_as_0() -
     exchange, sleeps, made = _scripted(*[OSError('down')] * 5)
     assert local_api('GET', 'http://g/api/v1/x', 't', None, exchange=exchange, sleep=sleeps.append) == (0, None)
     assert len(made) == 3
+
+
+def test_the_local_subject_is_the_one_the_host_prints(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A workstation reading the same declaration at the same ref derives the host's ``apply --subject``.
+
+    PLANTED: another ref (whose declaration differs) or another declaration at the same ref changes it.
+    """
+    other = GITEA_TEXT.replace('promote-bot', 'other-bot')
+    gitea = FakeGitea(repo='/repos/owner/alpha', manifest={REF: GITEA_TEXT, 'main': other})
+    assert forgeprotection.run(_role(tmp_path), _args('apply', subject=True), _never, api_for=lambda _r: gitea) == 0
+    on_host = capsys.readouterr().out.strip()
+    texts = {REF: GITEA_TEXT, 'main': other}
+    here = forgeprotection.local_subject('owner/alpha', REF, 'gitea.example', texts.__getitem__)
+    assert here == on_host
+    assert forgeprotection.local_subject('owner/alpha', 'main', 'gitea.example', texts.__getitem__) != on_host
+    assert forgeprotection.local_subject('owner/alpha', REF, 'gitea.example', lambda _ref: other) != on_host
+    assert forgeprotection.local_subject('owner/alpha', 'main', 'gitea.example', lambda _ref: GITEA_TEXT) != on_host

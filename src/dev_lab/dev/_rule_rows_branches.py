@@ -117,14 +117,39 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PR-HEAD-IS-CURRENT',
         (
-            'A push creating or updating a `pr/*` branch is refused at pre-push when its tip does not contain '
-            '`origin/<integration>` fetched afresh (a fetch that fails refuses with its reason), or when its lock '
+            'A push creating or updating a `pr/*` branch is refused at pre-push when its tip lacks more than the one '
+            'lag window (`locklag.LAG_LIMIT`) of first-parent commits of `origin/<integration>` fetched afresh '
+            '(a fetch that fails refuses with its reason), or when its lock '
             'pins a floated sibling past the one lag window `lock/lag` reads (`locklag.within_window`); '
             '`forge pr ready` refuses on the same '
             'judgement and on uncommitted tracked changes. Each refusal names `forge sync`, which merges '
             'integration and relocks the floated siblings in one sync (user ruling 2026-11-07; `prcurrent`).'
         ),
         ('tests/test_dev_prcurrent.py', 'tests/test_dev_branchflow.py', 'tests/test_dev_forgedraft.py'),
+    ),
+    (
+        'BASE-HOLDS-THE-MILESTONE',
+        (
+            'A push that creates or updates `refs/heads/<X>` is refused at pre-push unless its tip contains the '
+            'newest milestone on the line: the highest `v<major>.<minor>.<patch>[.devN]` tag contained in '
+            '`origin/<integration>` or `origin/<trunk>` (a local-only stray tag is no milestone), a release above its '
+            'dev tags, dev tags such as `v0.2.13.dev1` on the integration branch included and a legacy `-unverified` '
+            'suffix read as its base (user ruling 2026-11-13: every agent iterates on a base holding the newest '
+            'milestone); no version tag holds nothing, '
+            'and the remedy is `python -m dev_lab.dev.forge sync`.'
+        ),
+        ('tests/test_dev_milestonebase.py',),
+    ),
+    (
+        'VERSION-TAG-NEEDS-APPROVAL',
+        (
+            'A `v*` tag is added only on promotion to the trunk or at the user`s request: from an '
+            'agent session, a push creating one on origin is refused at pre-push unless `DEV_LAB_TAG_APPROVED` '
+            'holds the user`s own words (the `--approved` pattern of `branchset --discard`). A dev tag not ending in '
+            '`.dev0` is refused even approved: hatch-vcs chooses the `.devN` distance itself and refuses a custom '
+            'one, so a milestone is `vX.Y.Z.dev0` and the next one bumps the patch or minor.'
+        ),
+        ('tests/test_dev_milestonebase.py',),
     ),
     (
         'NO-PUSH-ONTO-A-CLOSED-PR',

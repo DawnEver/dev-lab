@@ -73,9 +73,8 @@ request_max_age_days = 14    # close a `forge:request` issue older than this
 work_max_idle_days = 14      # close a WORK issue not updated for longer than this
 ```
 
-- A WORK issue is one no machinery keeps: not the hosts issue, not `area:*`, not a request, not an alarm kept
-  as an issue (`integration: ...`, `starved: ...`; `forgealarm.ISSUE_KINDS`), and with no hidden marker in its
-  body. A comment, a claim or an edit counts as an update.
+- A WORK issue is one no machinery keeps: not the hosts issue, not `area:*`, not a request, and with no hidden marker in
+  its body. Alarms (`integration`, `starved`, ...) are never issues: they ride the host card (`forge queue`). A comment, a claim or an edit counts as an update.
 - A comment carrying a hidden `<!-- lab-commons:<kind>... -->` marker whose kind is no `forgepulls.Marker`
   member is DELETED, always: its writer is retired and nothing else will touch it. The writers take their
   kind from that enum, so the set of live kinds is the writers' own.

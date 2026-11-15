@@ -35,7 +35,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
-from dev_lab.dev.forgemerge import parts_wait
+from dev_lab.dev.forgemergewaits import parts_wait
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import policy_from

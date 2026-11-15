@@ -25,7 +25,7 @@ from typing import Any, Final
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import remote
+from dev_lab.dev import remote, sessionprs
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgework import Client, client_for
@@ -109,4 +109,7 @@ def merge_main(
     repo = forge_from_remote(root).identity  # host/owner/name: never typed, never ambiguous across forges
     emit(f'BREAK-GLASS {repo}#{pull.number} [{pull.state}] {pull.title}: {pull.head} -> {pull.base} at {pull.head_sha}')
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
-    return _answer(send, config, request)
+    code = _answer(send, config, request)
+    if code == 0:
+        sessionprs.ended(forge_from_remote(root), pull.number)  # SESSION-HEARS-ITS-PRS: the merging door records
+    return code

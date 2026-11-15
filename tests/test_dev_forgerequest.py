@@ -19,13 +19,11 @@ from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.hpc.declared import OutdatedKit
 from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
-from dev_lab.dev import forgeclaim, forgeproduce, forgerequest
+from dev_lab.dev import forgeclaim, forgeproduce, forgerequesthost
 from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from dev_lab.dev.forgepublish import RequestRefused, publish
 from dev_lab.dev.forgerequest import (
-    DONE_LABEL,
-    UNADMITTED,
     UndeclaredRequest,
     declared_request,
     git_sources,
@@ -35,6 +33,7 @@ from dev_lab.dev.forgerequest import (
     unreachable_source,
     unserved,
 )
+from dev_lab.dev.forgerequesthost import DONE_LABEL, UNADMITTED
 from dev_lab.dev.forgeschedule import NOT_ADMITTED, labelled_issues
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.producer import Owner, owned
@@ -227,7 +226,7 @@ def _produce(monkeypatch, tmp_path: Path, code: int, kept: tuple = ()) -> tuple[
     monkeypatch.setattr(forgeproduce, 'open_tree', lambda _r, _s, _c: SimpleNamespace(path=tmp_path, python='py'))
     monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, _c, **_kw: 'removed')
     monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s, _c: kept or (KEPT, (('goldens.csv', DIGEST),)))
-    monkeypatch.setattr(forgerequest, 'add_label', lambda _c, n, name: comments.append(('label', n, name)))
+    monkeypatch.setattr(forgerequesthost, 'add_label', lambda _c, n, name: comments.append(('label', n, name)))
     item = Work('issue/9', sha, 'femm+windows', MINE, ME, argv=ARGV, request='request/9')
     forgeproduce.produce(
         tmp_path, item, client=lambda _r: client, spawn=lambda argv, **_k: record(argv, ended(code)) or _Proc(code),

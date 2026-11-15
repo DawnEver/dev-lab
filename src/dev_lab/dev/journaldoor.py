@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Final, TextIO
 
 import lab_commons.launch as _door
 
+from dev_lab.dev import walls
 from dev_lab.dev.agent_wiring import SHELL_TOOLS
 from dev_lab.dev.ephemeralrefs import RULE, cited_in_text
 
@@ -105,7 +106,7 @@ def refusal(payload: Mapping[str, object]) -> str | None:
     if not refused:
         return None
     cites = '; '.join(f'cites {why} {token!r}' for token, why in sorted(refused.items()))
-    return f'[{RULE}] the task journal line {cites}. Remedy: {_REMEDY}.'
+    return f'[{RULE}] the task journal line {cites}.\nRemedy: {_REMEDY}.'
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, stdout: TextIO | None = None) -> int:
@@ -120,6 +121,10 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, stdout: 
     except (OSError, RuntimeError):
         return 0
     if reason is not None:
+        walls.refused_text(
+            Path(payload.get('cwd') or Path.cwd()), reason, reason='pre-tool', rule=RULE,
+            session=str(payload.get('session_id') or ''),
+        )  # fmt: skip
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': reason}
         (stdout or sys.stdout).write(json.dumps({'hookSpecificOutput': decision}) + '\n')
     return 0

@@ -5,8 +5,10 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,7 @@ from dev_lab.dev.credstore import (
     stage_command,
     verify_prefix,
 )
+from dev_lab.dev.devcredential import local_shell
 from dev_lab.dev.hpcaccount import credential
 from dev_lab.dev.hpcaccount.account import _READER_REMEDY
 from dev_lab.dev.hpcaccount.credential import declared_logins, drop_host, place_credential, usage
@@ -85,7 +88,7 @@ def test_the_token_is_staged_verified_then_placed() -> None:
     staged = [(cmd, stdin) for cmd, stdin in seen if stdin]
     assert staged == [(stage_command(_STAMP), f'https://forge-ci:{_MINTED}@forge.example\n')]
     role = next(cmd for cmd in commands if 'auth role' in cmd)
-    assert role.startswith(verify_prefix(_STAMP) + 'cd ~/src/dev-lab && ')
+    assert role.startswith(verify_prefix('forge.example', _STAMP) + 'cd ~/src/dev-lab && ')
     assert f'--url {_REPO}' in role  # the default: the login's first declared repo on the forge
     rewrite = rewrite_command('forge.example', _STAMP, staged=True)
     assert commands.index(role) < commands.index(rewrite)  # verified BEFORE the store is touched
@@ -230,7 +233,8 @@ def _stored(login: str, host: str, held: str = _OLD) -> str:
 
 def _bash(tmp_path: Path, command: str, stdin: str = '') -> str:
     assert _BASH, 'every login host runs these commands in bash'
-    env = {**os.environ, 'HOME': tmp_path.as_posix(), 'GIT_TERMINAL_PROMPT': '0'}
+    env = {**os.environ, 'HOME': tmp_path.as_posix(), 'GIT_TERMINAL_PROMPT': '0', 'GIT_CONFIG_NOSYSTEM': '1'}
+    env['GIT_CONFIG_GLOBAL'] = (tmp_path / '.gitconfig').as_posix()  # never the machine's global config
     done = subprocess.run([_BASH, '-c', command], input=stdin.encode(), env=env, check=False, capture_output=True)
     assert done.returncode == 0, done.stderr.decode()
     return done.stdout.decode()  # bytes both ways: a text pipe on Windows writes CRLF
@@ -266,9 +270,38 @@ def test_the_verify_prefix_points_git_at_only_the_staged_file(tmp_path: Path) ->
     line = _stored('forge-ci', 'forge.example', _MINTED)
     (tmp_path / '.git-credentials').write_text(_stored('old', 'forge.example') + '\n', encoding='utf-8')
     _bash(tmp_path, stage_command(_STAMP), line + '\n')
-    # the path spelled as this OS's git reads it (Git for Windows does not read an MSYS ``/c/...`` $HOME)
-    prefix = verify_prefix(_STAMP).replace('$HOME', tmp_path.as_posix())
-    asked = prefix + "printf 'protocol=https\\nhost=forge.example\\n\\n' | git credential fill"
+    asked = (
+        verify_prefix('forge.example', _STAMP)
+        + "printf 'protocol=https\\nhost=forge.example\\n\\n' | git credential fill"
+    )
+    assert f'password={_MINTED}' in _bash(tmp_path, asked)
+
+
+def test_a_url_scoped_helper_in_the_global_config_does_not_shadow_the_staged_file(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the host-scoped list ``use_store`` writes reads the live store; the env entries come last."""
+    (tmp_path / '.git-credentials').write_text(_stored('old', 'forge.example') + '\n', encoding='utf-8', newline='\n')
+    gitconfig = tmp_path / '.gitconfig'
+    gitconfig.write_text('[credential "https://forge.example"]\n\thelper =\n\thelper = store\n', encoding='utf-8')
+    _bash(tmp_path, stage_command(_STAMP), _stored('forge-ci', 'forge.example', _MINTED) + '\n')
+    ask = "printf 'protocol=https\nhost=forge.example\n\n' | git credential fill"
+    env = f'export GIT_CONFIG_GLOBAL={gitconfig.as_posix()} GIT_CONFIG_NOSYSTEM=1 && '
+    assert f'password={_OLD}\n' in _bash(tmp_path, env + ask)  # the control: unprefixed, the live store answers
+    answered = _bash(tmp_path, env + verify_prefix('forge.example', _STAMP) + ask)
+    assert f'password={_MINTED}\n' in answered
+    assert f'password={_OLD}\n' not in answered
+
+
+def test_a_native_git_under_the_verify_prefix_reads_the_staged_file(tmp_path: Path) -> None:
+    """The role check is a native Python running git: an MSYS ``/c/...`` path in the env reached it unconverted.
+
+    PLANTED CONTROL: no live store, so a staged file git cannot open answers nothing -- anonymous (2026-11-12).
+    """
+    _bash(tmp_path, stage_command(_STAMP), _stored('forge-ci', 'forge.example', _MINTED) + '\n')
+    fill = (
+        "import subprocess; print(subprocess.run(['git', 'credential', 'fill'], capture_output=True, text=True, "
+        "input='protocol=https\\nhost=forge.example\\n\\n').stdout)"
+    )
+    asked = verify_prefix('forge.example', _STAMP) + shlex.join([Path(sys.executable).as_posix(), '-c', fill])
     assert f'password={_MINTED}' in _bash(tmp_path, asked)
 
 
@@ -300,7 +333,7 @@ def test_drop_host_refuses_an_undeclared_account() -> None:
 
 def test_credential_is_an_exit_of_hpc_through_the_door() -> None:
     assert 'credential' in exits_of('HPC-THROUGH-THE-DOOR', 'dev_lab.dev.hpcaccount')
-    assert 'hpcaccount deploy*|forget|credential' in str(HPC_THROUGH_THE_DOOR['remedy'])
+    assert 'hpcaccount <verb>' in str(HPC_THROUGH_THE_DOOR['remedy'])
 
 
 def test_the_reader_remedy_names_the_door_not_a_hand_edit() -> None:
@@ -327,3 +360,13 @@ def test_the_refusals_page_shows_the_credential_usage_its_argparse_renders() -> 
     assert '[-h]' not in shown, 'PLANTED CONTROL: the help flag is no part of the shape'
     page = (Path(__file__).resolve().parents[1] / 'docs-src' / 'dev' / 'refusals.md').read_text(encoding='utf-8')
     assert f'`{shown}`' in page
+
+
+def test_the_local_shell_writes_a_staged_line_with_lf_only(tmp_path: Path) -> None:
+    """A text-mode pipe on Windows turns the staged LF into CR LF; git's store then matches no host.
+
+    PLANTED: the file the stage command writes must end with exactly one LF and hold no CR.
+    """
+    target = tmp_path / 'staged'
+    local_shell(f'IFS= read -r line && printf "%s\\n" "$line" > "{target.as_posix()}"', 'a-line\n')
+    assert target.read_bytes() == b'a-line\n'

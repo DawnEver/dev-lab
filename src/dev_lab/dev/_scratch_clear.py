@@ -13,12 +13,13 @@ import stat
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from lab_commons import home as _home
 from lab_commons import launch
 from lab_commons.log import emit
 
+from dev_lab.dev import walls
 from dev_lab.dev.codeplace import PlacementNotDeclared, checkout_root, declared_placement
 from dev_lab.dev.sessionprs import SESSION_ENV, session_of, valid
 
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from typing import TextIO
 
 _SECONDS_PER_DAY = 86400.0
+RULE: Final = 'SCRATCH-IS-NEVER-COMMITTED'
 #: How many one-offs the notice names before it elides the rest.
 _SHOWN = 20
 #: The directory, under the machine-local state, holding each session's scratch baseline.
@@ -188,7 +190,7 @@ def _clear_hint(rels: list[str]) -> str:
     """The ``Stop`` block naming this session's untracked entries and the door that empties them."""
     shown = ', '.join(rels[:_SHOWN]) + (' ...' if len(rels) > _SHOWN else '')
     return (
-        f'SCRATCH-IS-NEVER-COMMITTED: this session left {len(rels)} untracked scratch entr'
+        f'{RULE}: this session left {len(rels)} untracked scratch entr'
         f'{"y" if len(rels) == 1 else "ies"}: {shown}.\nPromote what is useful into src/ with tests (a finding '
         'into memory), then python -m dev_lab.dev.scratch clear [--keep NAME ...] --yes'
     )
@@ -223,7 +225,9 @@ def _hook(mode: str, stdin: TextIO | None) -> int:
     if left is None:
         snapshot(root, session)  # a session with no baseline yet is judged from now on
     elif left:
-        emit(json.dumps({'decision': 'block', 'reason': _clear_hint(left)}))
+        hint = _clear_hint(left)
+        walls.refused_text(root, hint, reason='stop', rule=RULE, session=session)
+        emit(json.dumps({'decision': 'block', 'reason': hint}))
     return 0
 
 

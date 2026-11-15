@@ -147,7 +147,7 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 #: (briefly, 2026-11-12) were exempt on the theory that a verbatim user ruling cannot be translated; the
 #: user ruled that theory an upstream mistake. A ruling is recorded as a faithful English translation marked as
 #: translated, and an existing memory entry is translated in place through the one sanctioned shape
-#: :func:`dev_lab.dev.memoryadds.only_translated` admits. The repo-root ``archived/`` (2026-09-23) was
+#: :func:`dev_lab.dev.memoryentry.only_translated` admits. The repo-root ``archived/`` (2026-09-23) was
 #: dropped the same day: a family repo keeps archived material under ``attic/``, so a second archive
 #: prefix was a second door for the same thing. The only route for Chinese prose is a designated
 #: translation document (:data:`TRANSLATION_SUFFIXES`).

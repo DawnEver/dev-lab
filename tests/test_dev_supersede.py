@@ -365,6 +365,14 @@ def test_the_remote_original_file_is_read_too(tmp_path: Path) -> None:
     assert provenance_rows(tmp_path) == {'forge': ('original',), 'remote': ('original',)}
 
 
+def test_the_memory_original_file_is_read_too(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a name only in ``_original_rows_memory.py`` is still an original row."""
+    (tmp_path / '_original_rows.py').write_text("ORIGINAL_MODULES = ('forge',)\n", encoding='utf-8')
+    assert provenance_rows(tmp_path) == {'forge': ('original',)}
+    (tmp_path / '_original_rows_memory.py').write_text("ORIGINAL_MODULES = ('memo',)\n", encoding='utf-8')
+    assert provenance_rows(tmp_path) == {'forge': ('original',), 'memo': ('original',)}
+
+
 def test_every_published_kit_module_declares_its_provenance() -> None:
     """THE RATCHET, live. A module that forgets to say what it replaced is itself the red now.
 

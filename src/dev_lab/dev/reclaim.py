@@ -54,6 +54,7 @@ __all__ = [
     'reclaim',
     'reclaimable',
     'remove_tree',
+    'removed_approved',
     'repository_at',
     'runtime_of',
 ]
@@ -371,6 +372,25 @@ def _taken(root: Path, tree: Path, label: str) -> tuple[str, str]:
         line = refused.replace('{label}', label)
         return line, 'in use' if line.startswith('kept') else 'failed'
     return f'removed  {label}', 'removed'
+
+
+def removed_approved(root: Path, tree: Path, *, quiet_s: float = QUIET_S) -> str:
+    """Remove ONE linked worktree a user approved discarding, unlanded work included; ``''`` when gone, else why not.
+
+    The approval replaces only the landed-and-clean judgement: the main checkout or a repository, a live session
+    (an index changed within *quiet_s*), and outputs that cannot move home verified still refuse, and the delete is
+    the same all-or-nothing :func:`_removed`.
+    """
+    if refused := repository_at(root, tree):
+        return refused
+    if (age := _index_age_s(tree)) is not None and age < quiet_s:
+        return f'index changed {age / 60:.0f} min ago -- a live session'
+    if unmoved := home_outputs(root, tree):
+        return unmoved
+    if refused := _removed(tree):
+        return refused.replace('{label}', str(tree))
+    git_out(root, 'worktree', 'prune')
+    return ''
 
 
 def _summary(counts: Mapping[str, int], kept: Mapping[str, int]) -> str:

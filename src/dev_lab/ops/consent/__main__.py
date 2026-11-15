@@ -4,7 +4,8 @@
 lost or deleted one), with no code: re-delivery, never a new grant (:meth:`.issuer.Issuer.unspent`).
 
 ``grant`` grants one credential. ``plan`` prints what a plan's ONE code would open and consent to, and the digest to
-name; the code itself is given to ``python -m dev_lab.dev.sshhold open <dest> --plan <plan.json> --digest <D>``.
+name; the code itself is given to ``python -m dev_lab.dev.sshhold open --plan <plan.json> --digest <D>``, which
+opens every host the plan names.
 
 The code is the USER's: they give it, the agent runs this with it (user ruling 2026-11-08) -- as ``--code``, on stdin,
 or typed at the no-echo prompt of a terminal. Never invented, logged or reused. Writes the credential under

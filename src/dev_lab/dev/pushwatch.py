@@ -98,17 +98,40 @@ def arm_line(sha: str) -> str:
     return f'{RULE}: arm a Monitor on {sha[:12]}: {watch_command(sha)}'
 
 
-def watched(sha: str, command_lines: Iterable[str]) -> bool:
-    """Whether a live process is ``forge watch``-ing *sha* (named by it or by a prefix of at least 7 hex)."""
+def _watched_words(command_lines: Iterable[str]) -> list[str]:
+    """Every sha (or prefix of at least 7 hex) a live ``forge watch`` in *command_lines* names."""
+    words = []
     for line in command_lines:
         if _WATCH not in line:
             continue
         for word in line.split(_WATCH, 1)[1].split():
             if word.startswith('-'):
                 break
-            if len(word) >= _SHORT and sha.startswith(word):
-                return True
-    return False
+            if len(word) >= _SHORT:
+                words.append(word)
+    return words
+
+
+def watched(sha: str, command_lines: Iterable[str], *, root: Path | None = None) -> bool:
+    """Whether a live process is ``forge watch``-ing *sha*, or (with *root*) a newer head descending from it.
+
+    A head the forge's integration sync merged past (2026-11-14: the PR's head became a merge commit on top of the
+    pushed one) is carried by a watch on that descendant: the superseded sha needs no watch of its own. Ancestry
+    is read from the local repository at *root*; a watched commit it does not hold counts for nothing.
+    """
+    words = _watched_words(command_lines)
+    if any(sha.startswith(word) for word in words):
+        return True
+    return root is not None and any(_descends(root, sha, word) for word in words)
+
+
+def _descends(root: Path, sha: str, word: str) -> bool:
+    """Whether commit *word* is a strict descendant of *sha* in the repository at *root*."""
+    done = _door.run(
+        [_GIT, '-C', str(root), 'merge-base', '--is-ancestor', sha, word],
+        capture_output=True, text=True, encoding='utf-8', check=False,
+    )  # fmt: skip
+    return done.returncode == 0 and not word.startswith(sha[: len(word)])
 
 
 def pushed_ref(words: Sequence[str]) -> str | None:
