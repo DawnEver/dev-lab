@@ -106,6 +106,11 @@ from `lab_commons.census.processes`, without normalization. The words attest act
 a matching hash does not prove ownership. Select the actual Python controller, not its waiting venv launcher.
 Never reuse stale identity values or widen a project regex to get this one process through.
 
+Explicit identity is not a lifecycle override. A recognized run or orphan-role root must use its ordinary
+`--pid` door, with no approved arguments. A serve or special orphan role inside the proved bounded subtree
+also refuses before any stop, preserving its producer notes, parent checks and claim-release policy. An
+ordinary queued gate child remains allowed; an excluded older-PPID foreign branch never enters this scope.
+
 The mode refuses incomplete inputs, self/ancestors, unreadable identities and any preflight mismatch before
 stopping anything. It excludes impossible old-PPID edges, stops and confirms the controller first, then
 rechecks only the original proved members. An unchanged child may legitimately reparent after its original

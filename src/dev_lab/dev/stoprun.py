@@ -286,6 +286,18 @@ def _claimed() -> set[int]:
     return {held.pid for held in holdings()}
 
 
+def _orphan_role(command: str, orphans: tuple[str, ...]) -> bool:
+    """The existing declared orphan roles, shared by ordinary and approved policy checks."""
+    return any(sig.search(command) for sig in (*BUILTIN_ORPHANS, *(re.compile(s) for s in orphans)))
+
+
+def _ordinary_lifecycle_door(pid: int) -> str:
+    return (
+        f'{pid} has an existing lifecycle; use the ordinary '
+        f'python -m dev_lab.dev.stoprun --pid {pid} without approved arguments'
+    )
+
+
 def _orphan_refusal(
     pid: int,
     table: Mapping[int, Proc],
@@ -295,7 +307,7 @@ def _orphan_refusal(
 ) -> str | None:
     """Why *pid* is NOT a stoppable orphan, or ``None`` when it is (the module docstring's three conditions)."""
     cmdline = table[pid][1]
-    if not any(sig.search(cmdline) for sig in (*BUILTIN_ORPHANS, *(re.compile(s) for s in orphans))):
+    if not _orphan_role(cmdline, orphans):
         builtin = ', '.join(repr(sig.pattern) for sig in BUILTIN_ORPHANS)
         return f'no orphan signature either (built-in {builtin} or {_TABLE} orphans)'
     ppid = table[pid][0]
@@ -399,7 +411,16 @@ class _ApprovedTree:
     stopped: set[int]
 
     @classmethod
-    def capture(cls, pid: int, table: Mapping[int, Proc], approved: ApprovedRun, born: CreationClock) -> _ApprovedTree:
+    def capture(
+        cls,
+        pid: int,
+        table: Mapping[int, Proc],
+        approved: ApprovedRun,
+        born: CreationClock,
+        *,
+        signatures: tuple[str, ...],
+        orphans: tuple[str, ...],
+    ) -> _ApprovedTree:
         """Reuse the process owner's refuted-edge closure, then require positive identity proof."""
         stamps: dict[int, int | None] = {}
 
@@ -411,6 +432,8 @@ class _ApprovedTree:
         if observed(pid) != approved.created or _command_hash(table[pid][1]) != approved.command_sha256:
             msg = 'approved root creation stamp or complete command identity disagrees'
             raise ValueError(msg)
+        if _why_stoppable(table, pid, signatures, born) is not None:
+            raise ValueError(_ordinary_lifecycle_door(pid))
         rows = {member: (row[1], row[0]) for member, row in table.items()}
         members = descendants(pid, rows, observed)
         if any(type(observed(member)) is not int or observed(member) <= 0 for member in members):
@@ -419,6 +442,14 @@ class _ApprovedTree:
         if any(not table[member][1].strip() for member in members):
             msg = 'an approved subtree member has no readable complete command'
             raise ValueError(msg)
+        for member in members:
+            command = table[member][1]
+            if (
+                SERVE.search(command)
+                or _orphan_role(command, orphans)
+                or orphaned_worker(table, member, born) is not None
+            ):
+                raise ValueError(_ordinary_lifecycle_door(member))
         return cls(pid, dict(table), members, stamps, set())
 
     def changed(self, fresh: Callable[[], Mapping[int, Proc]], born: CreationClock) -> str | None:
@@ -472,10 +503,12 @@ def _stop_approved(
     fresh: Callable[[], Mapping[int, Proc]],
     kill: Callable[[int], None],
     gone: Callable[[int, float], bool],
+    signatures: tuple[str, ...],
+    orphans: tuple[str, ...],
 ) -> tuple[int, list[str]]:
     """Cut the actual controller first; every later uncertainty reports partial, never atomic success."""
     try:
-        tree = _ApprovedTree.capture(pid, table, approved, born)
+        tree = _ApprovedTree.capture(pid, table, approved, born, signatures=signatures, orphans=orphans)
     except (ValueError, OSError) as exc:
         return 3, [f'refused: {exc}']
     if why := tree.changed(fresh, born):
@@ -525,7 +558,18 @@ def stop(
     if never := _never(pid, table):
         return 3, [f'refused: {never}']
     if approved is not None:
-        return _stop_approved(pid, table, approved, dry_run=dry_run, born=born, fresh=fresh, kill=kill, gone=gone)
+        return _stop_approved(
+            pid,
+            table,
+            approved,
+            dry_run=dry_run,
+            born=born,
+            fresh=fresh,
+            kill=kill,
+            gone=gone,
+            signatures=signatures,
+            orphans=orphans,
+        )
     matched = _why_stoppable(table, pid, signatures, born)
     if matched is None:
         if why := _orphan_refusal(pid, table, orphans, claimed, born):
