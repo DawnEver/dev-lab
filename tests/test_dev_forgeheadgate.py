@@ -15,7 +15,7 @@ from dev_lab.dev.forgeintegration import tick
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import NOT_RENDERED, UNRESOLVED
-from dev_lab.dev.locklag import LAG_LIMIT
+from dev_lab.dev.locklag import LAG_WINDOW
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
@@ -224,7 +224,7 @@ def test_the_gates_wait_until_each_stands_success() -> None:
 
 
 def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
-    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`locklag.LAG_LIMIT`.
+    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`locklag.LAG_WINDOW`.
 
     PLANTED CONTROLS: no lock is ``success``; an uncounted sibling is ``error``, never a pass.
     """
@@ -235,16 +235,16 @@ def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
     run_git(work, 'add', 'uv.lock')
     run_git(work, 'commit', '-q', '--no-verify', '-m', 'build: lock')
     head = git_out(work, 'rev-parse', 'HEAD')
-    seen: list[int] = []
+    seen: list[object] = []
 
     def lag(answer: tuple[str, ...]) -> Callable[..., tuple[str, ...]]:
         return lambda _text, limit: seen.append(limit) or answer
 
-    behind = 'uv.lock pins dev-lab 21 commits behind its integrate/main (limit 20)'
+    behind = 'uv.lock pins dev-lab 21 landings (9.0 h) behind its integrate/main (window 8.0 h)'
     assert forgeheadgate.lag_verdict(work, head, lag=lag((behind,))) == ('failure', behind)
     assert forgeheadgate.lag_verdict(work, head, lag=lag(()))[0] == 'success'
     assert forgeheadgate.lag_verdict(work, head, lag=lag((f'{UNRESOLVED}: dev-lab: offline',)))[0] == 'error'
-    assert set(seen) == {LAG_LIMIT}
+    assert set(seen) == {LAG_WINDOW}
 
 
 def _head(work: Path, branch: str) -> str:

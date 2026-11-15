@@ -21,6 +21,7 @@ __all__ = [
     'PRESSURE_COMMAND',
     'PUSHSTOP_COMMAND',
     'PUSHWATCH_COMMAND',
+    'REAPER_COMMAND',
     'RECLAIM_COMMAND',
     'RETIRED_WIRING',
     'RULES_REL',
@@ -120,6 +121,10 @@ SWEEP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.de
 #: MAIN checkout detaches a bounded, locked reclaim of landed worktrees and their branches, and returns at once.
 RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.reclaimrun --session-start'
 
+#: A SESSION'S BACKGROUND SHELL LIVES FIFTY MINUTES (:mod:`dev_lab.dev.shellreaper`, demand 2026-11-15): every
+#: session start and every stop detaches at most one sweep per interval per repo, and returns at once.
+REAPER_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.shellreaper --hook'
+
 #: VENV-FOLLOWS-THE-LOCK (:mod:`dev_lab.dev.venvfollow`, ruling 2026-11-04): every session start whose checkout's
 #: lock moved since its venv was stamped detaches a re-bootstrap, and returns at once.
 VENVFOLLOW_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.venvfollow --session-start'
@@ -198,7 +203,9 @@ WIRING: Final = (
     Wire('Stop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False),
     Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
     Wire('SubagentStop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False),
+    Wire('Stop', REAPER_COMMAND, 'dev_lab.dev.shellreaper', on_shells=False),
     Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
+    Wire('SessionStart', REAPER_COMMAND, 'dev_lab.dev.shellreaper', on_shells=False),
     Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),
     Wire('SessionStart', FORGEAUTH_COMMAND, 'dev_lab.dev.forgeauthnotice', on_shells=False),
     Wire('SessionStart', SCRATCHSNAP_COMMAND, 'dev_lab.dev.scratch snapshot', on_shells=False),

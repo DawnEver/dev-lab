@@ -220,6 +220,25 @@ def test_a_command_that_merely_contains_a_denied_word_is_not_denied(rules: Path)
         assert agenthooks.decide(command, rules) is None, f'a string containing a denied word was refused: {command!r}'
 
 
+def _conditional_misses(rule_id: str, when: str, command: str, rules: Path) -> list[str]:
+    """A ``when`` row's refusal judged where its condition does and does not hold."""
+    misses = []
+    if when == 'live-run':
+        # No run is live in a scan tree: the row must stay SILENT (its live half is test_dev_liverun's).
+        decided = agenthooks.decide(command, rules)
+        if decided is not None and decided.startswith(f'{rule_id}:'):
+            misses.append(f'{rule_id}: fired with no live run on {command!r}')
+        return misses
+    # 'background': it fires on a background call, and the same line run in the foreground is free.
+    decided = agenthooks.decide(command, rules, background=True)
+    if decided is None or not decided.startswith(f'{rule_id}:'):
+        misses.append(f'{rule_id}: the engine did not refuse a background {command!r}')
+    foreground = agenthooks.decide(command, rules)
+    if foreground is not None and foreground.startswith(f'{rule_id}:'):
+        misses.append(f'{rule_id}: fired on a FOREGROUND {command!r}')
+    return misses
+
+
 def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None:
     """THE SCAN, WITH ITS FLOOR: every row's own controls, driven through ``node``."""
     checked = 0
@@ -233,11 +252,8 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
         agent = 'scan-agent' if rule.scope == 'subagent' else None
         for command in rule.refuses:
             checked += 1
-            if rule.when == 'live-run':
-                # No run is live in a scan tree: the row must stay SILENT (its live half is test_dev_liverun's).
-                decided = agenthooks.decide(command, rules)
-                if decided is not None and decided.startswith(f'{rule.id}:'):
-                    wrong.append(f'{rule.id}: fired with no live run on {command!r}')
+            if rule.when is not None:
+                wrong += _conditional_misses(rule.id, rule.when, command, rules)
                 continue
             # A hint row is SAID, unless a sibling refusal fires on the same command and wins (`git clone`).
             hint = rule.severity == 'hint'
@@ -252,7 +268,7 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
                 wrong.append(f'{rule.id}: the scoped row fired OUTSIDE a subagent on {command!r}')
         for command in rule.permits:
             checked += 1
-            if agenthooks.decide(command, rules, agent_id=agent) is not None:
+            if agenthooks.decide(command, rules, agent_id=agent, background=rule.when == 'background') is not None:
                 wrong.append(f'{rule.id}: the engine DENIED a near-miss the row permits: {command!r}')
     assert checked >= CONTROL_FLOOR, (
         f'only {checked} controls reached the engine, below the {CONTROL_FLOOR} floor. Finding nothing wrong '

@@ -13,7 +13,7 @@ by :func:`dev_lab.dev.forgemerge.decide`); the hook stays as early feedback only
   ``origin/<integration>``'s tip and a lock within the floated siblings' lag window. A GATE.
 * :data:`LAG_CONTEXT` -- THE ONE LOCK STATUS: the head's ``uv.lock`` does not render from its own
   ``pyproject.toml`` (:func:`dev_lab.dev.lockcheck.unrendered`, in a detached worktree, once per sha), or pins a
-  floated sibling more than :data:`~dev_lab.dev.locklag.LAG_LIMIT` commits behind that sibling's line
+  floated sibling past :data:`~dev_lab.dev.locklag.LAG_WINDOW` behind that sibling's line
   (:func:`dev_lab.dev.locklag.floating_lag`). An ALARM, never a gate -- ``pr-current`` reads the same window on a
   ``pr/`` head. A lock behind its siblings' heads but within the window is not a defect: A PR NEVER CHASES THE LOCK
   (user ruling 2026-10-28); the forge's relock pull request carries it (:mod:`dev_lab.dev.relock`). A check that
@@ -51,11 +51,12 @@ from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.lockcheck import LOCK, NOT_RENDERED, RESOLVE_TIMEOUT_S, UNRESOLVED, unrendered
-from dev_lab.dev.locklag import LAG_LIMIT, floating_lag
+from dev_lab.dev.locklag import LAG_WINDOW, floating_lag, hours
 from dev_lab.dev.relock import detached_worktree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from datetime import timedelta
 
     from dev_lab.dev.forgeintegration import Child
     from dev_lab.dev.forgestatus import CommitStatus
@@ -101,16 +102,16 @@ def refused_verdict(found: Sequence[str], holds: str) -> Verdict:
 
 
 def lag_verdict(
-    root: Path, head: str, *, limit: int = LAG_LIMIT, lag: Callable[..., tuple[str, ...]] = floating_lag
+    root: Path, head: str, *, limit: timedelta = LAG_WINDOW, lag: Callable[..., tuple[str, ...]] = floating_lag
 ) -> Verdict:
-    """``(state, description)`` for *head*'s lock: ``failure`` past *limit* commits behind a floated sibling's line."""
+    """``(state, description)`` for *head*'s lock: ``failure`` past *limit* behind a floated sibling's line."""
     shown = _git(root, 'show', f'{head}:{LOCK}')
     if shown.returncode != 0:
         return 'success', f'no {LOCK}: nothing floats'
     found = lag(shown.stdout, limit)
     if any(one.startswith(UNRESOLVED) for one in found):
         return 'error', '; '.join(found)
-    return refused_verdict(found, f'{LOCK} pins every floated sibling within {limit} commits of its line')
+    return refused_verdict(found, f'{LOCK} pins every floated sibling within {hours(limit)} of its line')
 
 
 def _git(root: Path, *argv: str) -> subprocess.CompletedProcess[str]:

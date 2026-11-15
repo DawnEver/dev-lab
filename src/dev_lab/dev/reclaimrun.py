@@ -45,6 +45,7 @@ __all__ = [
     'BATCH',
     'LOCK_NAME',
     'STALE_LOCK_S',
+    'common_dir',
     'detach',
     'detach_argv',
     'held',
@@ -81,15 +82,16 @@ def repo_main(cwd: Path) -> Path | None:
     return trees[0][0].resolve() if trees else None
 
 
-def _common_dir(root: Path) -> Path:
+def common_dir(root: Path) -> Path:
+    """*root*'s git COMMON dir, the one every worktree of the repo shares (where its per-repo locks live)."""
     out = git_out(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
     return Path((out or '').strip() or root / '.git')
 
 
 @contextlib.contextmanager
-def held(root: Path, *, stale_s: float = STALE_LOCK_S) -> Iterator[bool]:
-    """Hold *root*'s reclaim lock for the block; yields ``False`` (and holds nothing) when another run has it."""
-    lock = _common_dir(root) / LOCK_NAME
+def held(root: Path, *, stale_s: float = STALE_LOCK_S, name: str = LOCK_NAME) -> Iterator[bool]:
+    """Hold *root*'s lock *name* for the block; yields ``False`` (and holds nothing) when another run has it."""
+    lock = common_dir(root) / name
     for _ in range(2):
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)

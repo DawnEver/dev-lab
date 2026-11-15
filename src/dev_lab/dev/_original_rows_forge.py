@@ -32,6 +32,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgetry',
     'forgewait',
     'forgerecords',
+    'forgerecordkeep',  # the prune selection split out of forgerecords (2026-11-15)
     'forgetick',
     'forgeautosync',
     'forgeintegration',

@@ -15,6 +15,7 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
+    'callorigins',  # extracted in-kit lexical binding owner for reflection and tolerance scanners
     'ab_bench',
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
@@ -163,6 +164,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'stopsignatures',
     'stopapproved',
     'proctable',
+    # ORIGINAL: the agent background-shell sweep, a session's shell lives fifty minutes (demand 2026-11-15).
+    'shellreaper',
+    # ORIGINAL: the launch-time bound of a background shell and its user grant (ruling 2026-11-15).
+    'shelllife',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
     'servelanes',
@@ -210,6 +215,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'units',
     'verdict',
     'remedypaths',
+    # ORIGINAL: tracked layout readings and the shared hard directory band (2026-11-15).
+    'modulealarm',
     # ORIGINAL, for `dep_observe`'s reason read the other way round: this is the VERDICT half whose
     # readings are `depversions`'s, so the consumer file it would supersede is the one this lane
     # EXISTS to write next -- a per-repo copy of `test_dependencies_take_the_latest.py` that reads a
@@ -304,6 +311,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
     'venvfollow',
+    'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)

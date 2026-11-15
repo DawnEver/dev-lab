@@ -11,8 +11,9 @@ workflow, so every reclaimable tree's outputs are moved into the main checkout, 
 deleted; a move that fails keeps the tree and names the failure.
 :func:`reclaimable` is that one decision, built on :mod:`dev_lab.dev.checkout`'s readings (content
 by ``git cherry``, never ancestry; ``None`` when git cannot answer); :func:`reclaim` acts on it. The doors are
-``python -m dev_lab.dev.worktrees --prune`` (which the session debris hook runs) and ``python -m
-dev_lab.dev.branchset --apply``, which reclaims first so the freed branch is deleted in the same run.
+``python -m dev_lab.dev.worktrees --prune`` and ``python -m dev_lab.dev.branchset --apply``, which reclaims
+first so the freed branch is deleted in the same run; hooks never run either inline, they detach
+:mod:`dev_lab.dev.reclaimrun`.
 """
 
 from __future__ import annotations
