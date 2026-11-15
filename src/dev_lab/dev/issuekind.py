@@ -20,7 +20,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.log import emit
+
 from dev_lab.dev.forgelabels import add_label, ensure_labels
+from dev_lab.dev.forgework import client_for
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, Issue
@@ -68,13 +71,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     retire.add_argument('--apply', action='store_true', help='comment and close; without it nothing is written')
     retire.add_argument('--root', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
-    from dev_lab.dev.forgework import client_for  # noqa: PLC0415 -- the forge client only for the verb that writes
-
     client = client_for(args.root)
     found = retire_notices(client, apply=args.apply)
     tail = '' if args.apply else ' -- dry run: pass --apply to close them'
     lines = [f'{"closed" if args.apply else "would close"} #{one.number} {one.title}' for one in found]
-    sys.stdout.write('\n'.join([*lines, f'{len(found)} retired notice issue(s){tail}', '']))
+    emit('\n'.join([*lines, f'{len(found)} retired notice issue(s){tail}']))
     return 0
 
 
