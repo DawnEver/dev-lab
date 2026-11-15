@@ -55,6 +55,9 @@ _MANIFEST = """[project]
 name = "planted"
 version = "0"
 
+[project.scripts]
+planted = "planted.__main__:main"
+
 [tool.dev_lab.branchset]
 trunk = "main"
 sessions = ["integrate/main"]
@@ -311,3 +314,21 @@ def test_every_session_start_renders_the_prose() -> None:
     """The prose follows the checkout at each session start, not only when the dependency door last ran."""
     assert 'dev_lab.dev.automode session-start' in AUTOMODE_COMMAND
     assert any(w.event == 'SessionStart' and w.command == AUTOMODE_COMMAND for w in WIRING)
+
+
+def test_a_declared_cli_door_is_a_classifier_intent_and_says_whether_it_acts(tmp_path: Path) -> None:
+    """The same ``[tool.dev_lab.cli_doors]`` row renders the classifier intent; an act row's intent says it writes.
+
+    PLANTED CONTROL: a row whose ``why`` spells a command is refused by name.
+    """
+    table = (
+        '\n[tool.dev_lab.cli_doors]\ndoors = [\n'
+        '  {verb = ["case", "list"], why = "Read-only: the cases, listed."},\n'
+        '  {verb = ["case", "run"], why = "Runs one case; writes only its output tree.", act = true},\n]\n'
+    )
+    allow = automode(_repo(tmp_path / 'a', table), _FLEET)['autoMode']['allow']
+    assert 'Read-only: the cases, listed.' in allow
+    assert 'Acts (writes): Runs one case; writes only its output tree.' in allow
+    spelled = '\n[tool.dev_lab.cli_doors]\ndoors = [{verb = ["x"], why = "run `python -m planted x`"}]\n'
+    with pytest.raises(ValueError, match='spell a command'):
+        automode(_repo(tmp_path / 'b', spelled), _FLEET)
