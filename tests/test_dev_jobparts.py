@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from _forge_fake import make_repo
+from _forge_fake import make_repo, run_git
 from _forge_state import StateForge
 
 from dev_lab.dev import forgemergewaits, jobparts, localpart, partrows, platformparts
@@ -69,6 +69,27 @@ def test_a_no_tests_exit_with_partial_ids_is_not_an_empty_collection(tmp_path: P
     )
     with pytest.raises(ValueError, match='collection'):
         jobparts.pytest_collector(tmp_path)('')
+
+
+@pytest.mark.parametrize('disabled', ['autoload', 'explicit'])
+def test_a_family_manifest_requires_actual_guard_nodes_even_when_plugin_loading_is_disabled(
+    tmp_path: Path, monkeypatch, disabled: str
+) -> None:
+    root = make_repo(tmp_path, 'https://forge.example.org/team/app.git')
+    (root / 'pyproject.toml').write_text(
+        '[tool.lab_commons.tests]\nresources = []\n[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n',
+        encoding='utf-8',
+    )
+    (root / 'test_subject.py').write_text('def test_subject():\n    pass\n', encoding='utf-8')
+    run_git(root, 'add', 'pyproject.toml', 'test_subject.py')
+    if disabled == 'autoload':
+        monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
+        arguments = ()
+    else:
+        monkeypatch.delenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', raising=False)
+        arguments = ('-p', 'no:dev_lab_family')
+    with pytest.raises(ValueError, match=r'required.*family|family.*required'):
+        jobparts.pytest_collector(root, arguments)('')
 
 
 @pytest.mark.parametrize(

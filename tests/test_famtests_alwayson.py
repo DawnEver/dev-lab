@@ -35,10 +35,10 @@ def _git_repo(root: Path, files: dict[str, str]) -> None:
     subprocess.run([_GIT, 'add', '--', *files], cwd=root, check=True, timeout=60)
 
 
-def _run(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> pytest.RunResult:
+def _run(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, *args: str) -> pytest.RunResult:
     # Autoload off, so the plugin is the module under test rather than whatever dev-lab is installed.
     monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
-    return pytester.runpytest_subprocess('-p', pytest_family.__name__, '-q', '-rA', timeout=300)
+    return pytester.runpytest_subprocess('-p', pytest_family.__name__, *args, '-q', '-rA', timeout=300)
 
 
 def test_a_tracked_cjk_file_is_refused(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,6 +90,66 @@ def test_a_family_without_layout_policy_gets_a_failed_guard_not_a_collection_err
     result = _run(pytester, monkeypatch)
     result.assert_outcomes(passed=2, failed=1)
     result.stdout.fnmatch_lines(['*layout*policy*'])
+
+
+@pytest.mark.parametrize(
+    'policy',
+    [
+        'module_limit = 300\n',
+        'module_unit = "code"\n',
+        'module_unit = "code"\nmodule_limit = true\n',
+        'module_unit = "guessed"\nmodule_limit = 300\n',
+        'module_unit = "raw"\nmodule_limit = 0\n',
+        'module_unit = "code"\nmodule_limit = 300\nignore_tests = true\n',
+    ],
+)
+def test_a_malformed_layout_policy_is_a_failed_runtime_guard(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, policy: str
+) -> None:
+    _git_repo(
+        pytester.path,
+        {
+            'pyproject.toml': '[tool.lab_commons.tests]\nresources = []\n[tool.dev_lab.layout]\n' + policy,
+            'test_x.py': 'def test_x():\n    pass\n',
+        },
+    )
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=2, failed=1)
+    result.stdout.fnmatch_lines(['*layout*'])
+
+
+@pytest.mark.parametrize('directory', ['src', 'tests', 'scripts'])
+def test_the_required_layout_guard_does_not_exempt_tests_or_scripts_from_directory_width(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, directory: str
+) -> None:
+    files = {
+        'pyproject.toml': '[tool.lab_commons.tests]\nresources = []\n'
+        '[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n',
+        'test_x.py': 'def test_x():\n    pass\n',
+    }
+    files.update({f'{directory}/subject_{number}.py': 'value = 1\n' for number in range(26)})
+    _git_repo(pytester.path, files)
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=2, failed=1)
+    result.stdout.fnmatch_lines(['*26*25*'])
+
+
+@pytest.mark.parametrize(('unit', 'limit'), [('code', 300), ('raw', 600), ('raw', 799)])
+def test_valid_explicit_policy_runs_the_required_guard_even_under_a_selected_invocation(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, unit: str, limit: int
+) -> None:
+    _git_repo(
+        pytester.path,
+        {
+            'pyproject.toml': '[tool.lab_commons.tests]\nresources = []\n'
+            f'[tool.dev_lab.layout]\nmodule_unit = "{unit}"\nmodule_limit = {limit}\n',
+            'test_x.py': 'def test_x():\n    pass\n',
+            'src/one/two/three/four/five/six/subject.py': 'value = 1\n',
+        },
+    )
+    result = _run(pytester, monkeypatch, '-k', 'test_x')
+    result.assert_outcomes(passed=3)
+    result.stdout.fnmatch_lines(['*family*'])
 
 
 def test_the_plugin_is_an_entry_point() -> None:
