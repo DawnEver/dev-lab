@@ -219,14 +219,10 @@ def _remote_tags(root: Path) -> dict[str, str]:
     report = run_network_verb([_GIT, 'ls-remote', '--tags', 'origin'], cwd=root, timeout=120)
     if not report.ok:
         raise OSError(report.remedy)
-    found: dict[str, str] = {}
-    for sha, _, ref in (line.partition('	') for line in report.attempts[-1].output.splitlines()):
-        name = ref.strip().removeprefix('refs/tags/')
-        if name.endswith('^{}'):
-            found[name.removesuffix('^{}')] = sha.strip()  # an annotated tag's commit
-        else:
-            found.setdefault(name, sha.strip())
-    return found
+    lines = (line.partition('	') for line in report.attempts[-1].output.splitlines())
+    pairs = [(ref.strip().removeprefix('refs/tags/'), sha.strip()) for sha, _, ref in lines]
+    peeled = {name.removesuffix('^{}'): sha for name, sha in pairs if name.endswith('^{}')}  # annotated: its commit
+    return {name: sha for name, sha in pairs if not name.endswith('^{}')} | peeled
 
 
 def _held_by_tag(root: Path, found: Verdict, tags: dict[str, str], approved: str) -> Verdict:
