@@ -278,8 +278,10 @@ def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: M
     """An opened PR or issue is appended to the bound rem task's journal (:func:`taskgate.record`)."""
     if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
         return
-    if (url := getattr(result, 'url', '')) and (
-        said := taskgate.record(root, args.noun, url, env=env, read=taskgate.reader_for(env, Path.home()))
+    if (
+        isinstance(result, (PullRequest, Issue))
+        and (url := result.url)
+        and (said := taskgate.record(root, args.noun, url, env=env, read=taskgate.reader_for(env, Path.home())))
     ):
         emit(f'[forge] {said}', err=True)  # the task names its own PRs and issues
 
