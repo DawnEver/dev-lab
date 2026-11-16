@@ -195,7 +195,7 @@ def _standing(
     in_flight: list[dict[str, Any]] = []
     for one in found:
         context = request_context(one.number) if one.kind == REQUEST else part_context(one.platform)
-        state, holder = assess(history(one.sha), context, me=nobody, now=now)
+        state, holder = assess(history(one.sha), context, me=nobody, now=now, newest=True)  # a candidate is a tip
         if state == DONE:
             continue
         if state == CLAIMED and holder is not None:
