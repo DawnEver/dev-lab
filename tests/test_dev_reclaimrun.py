@@ -21,10 +21,12 @@ import pytest
 
 from dev_lab.dev import reclaimrun
 from dev_lab.dev.agent_wiring import WIRING
+from dev_lab.dev.backgroundrun import RECLAIM_LOCK as LOCK_NAME
+from dev_lab.dev.backgroundrun import held, main_checkout
 from dev_lab.dev.famtests.visibility import plant_checkout
 from dev_lab.dev.githooks.table import ADVISORY, base_rows, merge
 from dev_lab.dev.reclaim import blockers, orphan_reason, repository_at
-from dev_lab.dev.reclaimrun import LOCK_NAME, held, main, main_checkout, run
+from dev_lab.dev.reclaimrun import main, run
 
 _GIT = shutil.which('git') or 'git'
 _BRANCHSET = "\n[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\n"

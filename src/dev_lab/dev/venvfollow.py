@@ -44,9 +44,9 @@ from lab_commons.census import processes
 from lab_commons.log import emit
 
 from dev_lab.dev import checkoutfollow, devhost, hook_install, liverun
+from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
-from dev_lab.dev.reclaimrun import detach_argv
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 from dev_lab.dev.venvpointer import current
 

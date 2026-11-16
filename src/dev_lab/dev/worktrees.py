@@ -40,6 +40,7 @@ from typing import Final, TextIO
 from lab_commons.log import emit
 
 from dev_lab.dev import reclaimrun
+from dev_lab.dev.backgroundrun import repo_main
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
 from dev_lab.dev.checkout import authority_for, worktrees
 from dev_lab.dev.reclaim import blockers, reclaim
@@ -118,7 +119,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
             emit(line)
         return 0 if all(one.safe for one in done) else 1
     if args.prune and (payload := hook_payload(stdin or sys.stdin)) is not None:
-        root = reclaimrun.repo_main(Path(str(payload.get('cwd') or args.root)))
+        root = repo_main(Path(str(payload.get('cwd') or args.root)))
         with contextlib.suppress(OSError):  # a hook never blocks or fails the session it serves
             if root is not None:
                 reclaimrun.detach(root)

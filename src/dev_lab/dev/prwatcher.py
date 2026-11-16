@@ -36,8 +36,8 @@ from lab_commons.liveness import creation_stamp, still_the_same_process
 from lab_commons.log import emit
 
 from dev_lab.dev import native_session, sessionprs
+from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, update_waits
-from dev_lab.dev.reclaimrun import detach_argv
 from dev_lab.dev.sessionpoll import poll_session
 
 if TYPE_CHECKING:

@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Final, TextIO
 
 from lab_commons.log import emit
 
+from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.branchdelete import DOOR, ORIGIN, delete, delete_tags, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
@@ -58,7 +59,6 @@ from dev_lab.dev.forgework import client_for
 from dev_lab.dev.labsession import ENV
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.pushwatch import pushed_head
-from dev_lab.dev.reclaimrun import detach_argv
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
