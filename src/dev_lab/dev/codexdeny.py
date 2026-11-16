@@ -70,6 +70,7 @@ GAPS: Final[dict[str, str]] = {
     'TREE-HAS-A-LIVE-RUN': 'binds only while a run is live; the process table decides, not a prefix',
     'BACKGROUND-SHELL-IS-BOUNDED': 'a property of a background call, which Codex execpolicy does not see',
     'SUBAGENT-NO-PUSH': 'scoped to subagents; Codex execpolicy has no agent scope',
+    'HEAVY-IS-THE-MAIN-SESSIONS': 'scoped to subagents; Codex execpolicy has no agent scope',
     'CONSENT-CODE-FROM-THE-USER': _TARGET,
     'REPORTS-LIVE-IN-MEMORY': _TARGET,
     'WRITES-STAY-IN-THE-TREE': _TARGET,

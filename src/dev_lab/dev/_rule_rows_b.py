@@ -199,6 +199,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_hooks.py', 'tests/test_dev_agenthooks.py'),
     ),
     (
+        'HEAVY-IS-THE-MAIN-SESSIONS',
+        (
+            'The main session alone coordinates heavy testing: requesting a full or heavy run on the producer '
+            '(`forge request`, an HPC submit) and reading its verdict is its; a subagent runs only light local '
+            'measures of the paths it touched (`dev_lab.dev.verify -- <paths>`), never a heavy, gate or full '
+            'selection, and hands the request to the main session; no local machine runs heavy tests '
+            '(VERDICTS-FROM-THE-FORGE).'
+        ),
+        ('tests/test_dev_hooks.py',),
+    ),
+    (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',
         (
             'The PR review is ONE independent acceptance check per PR with advice: the repo-declared command '
