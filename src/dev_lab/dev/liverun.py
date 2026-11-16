@@ -275,6 +275,17 @@ _MODULE: Final = re.compile(r'\s-m\s+([\w.]+)')
 WATCH: Final = re.compile(r'-m\s+dev_lab.dev\.forge\s+watch\b')
 
 
+#: An sshhold HOLDER (:mod:`dev_lab.dev._sshholder`): it carries no run signature, so ``stoprun`` refuses it; the
+#: session's own ``close`` verb ends it. Group 1 is the held destination.
+_SSH_HOLDER: Final = re.compile(r'-m\s+dev_lab\.dev\._sshholder\s+(\S+)')
+
+
+def ssh_holder_dest(one: Process) -> str | None:
+    """The destination *one* holds when it is an sshhold holder, else ``None``."""
+    found = _SSH_HOLDER.search(one.command_line or '')
+    return found[1] if found else None
+
+
 def is_watch(one: Process) -> bool:
     """Whether *one* is a ``forge watch``."""
     return bool(WATCH.search(one.command_line or ''))
@@ -306,7 +317,8 @@ def refusal(root: Path | str, runs: Sequence[Process]) -> str:
     """The deny text in three lines: who holds *root*, the one exit, the details pointer.
 
     A SESSION holder is worked around in another worktree, never offered to ``stoprun``: it is another
-    agent's live work, not a run the refused agent owns.
+    agent's live work, not a run the refused agent owns. An sshhold holder is offered ``sshhold close``, the
+    door that ends it (``stoprun`` refuses a process with no run signature).
     """
     rule = rules_by_id(DENY_RULES)[RULE_ID]
     first, more = runs[0], len(runs) - 1
@@ -319,9 +331,14 @@ def refusal(root: Path | str, runs: Sequence[Process]) -> str:
             '(a session is not yours to stop).'
         )
     else:
+        dest = ssh_holder_dest(stoppable)
+        door = (
+            f'end your own held session: {PYTHON_SLOT} -m dev_lab.dev.sshhold close {dest}'
+            if dest
+            else f'stop your own run: {PYTHON_SLOT} -m dev_lab.dev.stoprun --pid {stoppable.pid}'
+        )
         exit_text = expand_interpreter(
-            'Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait, or stop '
-            f'your own run: {PYTHON_SLOT} -m dev_lab.dev.stoprun --pid {stoppable.pid}.',
+            f'Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait, or {door}.',
             Path(root),
             os_name=current_os_name(),
         )

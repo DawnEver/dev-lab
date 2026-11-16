@@ -485,6 +485,18 @@ def test_a_claude_session_holder_is_a_session_and_is_never_offered_to_stop(tree:
     assert 'another worktree' in text
 
 
+def test_an_ssh_holder_names_the_session_close_verb_not_stoprun(tree: Path) -> None:
+    """The stoprun door refuses an sshhold holder (no run signature); its working door is ``sshhold close <dest>``.
+
+    PLANTED CONTROL: the ordinary-run test above still names stoprun.
+    """
+    holder = _proc(5151, _venv_python(tree), cmd='python.exe -m dev_lab.dev._sshholder box --hours 2 --ssh ["ssh"]')
+    text = liverun.refusal(tree, [holder])
+    assert problems(text, 'refusal') == []
+    assert 'dev_lab.dev.sshhold close box' in text
+    assert 'stoprun' not in text
+
+
 def test_several_holders_are_counted_not_listed(tree: Path) -> None:
     runs = [_proc(pid, _venv_python(tree)) for pid in (11, 12, 13)]
     text = liverun.refusal(tree, runs)
