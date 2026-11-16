@@ -295,7 +295,13 @@ class StateForge(Client):
         # Gitea records a job token's status as its Actions ghost (user -2) and answers ``"creator": null``, while
         # the same token's comments name its Actions user (D11, measured 2026-11-01).
         creator = None if self.login == GITEA_ACTIONS_LOGIN else {'login': self.login}
-        made = {'id': self._next_comment, 'status': body['state'], 'creator': creator} | body
+        # Gitea stamps every status with its own post time, which a reader parses into a datetime.
+        made = {
+            'id': self._next_comment,
+            'status': body['state'],
+            'creator': creator,
+            'created_at': self._updated(),
+        } | body
         self.statuses.setdefault(sha, []).append(made)
         return made
 
