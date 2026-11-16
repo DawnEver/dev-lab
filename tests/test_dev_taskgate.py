@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from _rem_binding import bind_as_rem
+from _rem_binding import bind_as_rem, plant_claude_rem
 
 from dev_lab.dev import taskbinding, taskgate
 from dev_lab.dev.githooks.table import base_rows
@@ -18,6 +18,20 @@ SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 AGENT = {SESSION_ENV: '1d9000bd-6cd0-42ab-873f-102cd963e53d'}
 _SESSION = AGENT[SESSION_ENV]
 _GIT = shutil.which('git') or 'git'
+
+
+@pytest.fixture(autouse=True)
+def _current_rem(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every gate here reads a home whose Claude Code runs a current rem: the door is the user's `task:` prompt.
+
+    The binder skew (rem absent, disabled or old) has its own planted cases in test_dev_remplugin.py.
+    """
+    home = tmp_path_factory.mktemp('home')
+    plant_claude_rem(home, '2.6.0')
+    for key in ('HOME', 'USERPROFILE'):
+        monkeypatch.setenv(key, str(home))
+    for key in ('CLAUDE_CONFIG_DIR', 'CODEX_HOME'):
+        monkeypatch.delenv(key, raising=False)
 
 
 def _git(cwd: Path, *args: str) -> str:

@@ -40,7 +40,7 @@ from typing import Final, Protocol
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import taskbinding
+from dev_lab.dev import remplugin, taskbinding
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.native_session import session_of
 from dev_lab.dev.taskbinding import head_for, slug_of
@@ -135,8 +135,12 @@ def _branch(root: Path) -> str:
     return done.stdout.strip() if done.returncode == 0 else ''
 
 
-def _unbound(root: Path, env: Mapping[str, str]) -> tuple[str | None, str | None]:
-    """``(open bound task id, None)``, or ``(None, why)`` -- no session, an unreadable one, none bound, or closed."""
+def _unbound(root: Path, env: Mapping[str, str], home: Path) -> tuple[str | None, str | None]:
+    """``(open bound task id, None)``, or ``(None, why)`` -- no session, an unreadable one, none bound, or closed.
+
+    With none bound, the door names the session's binder when its registry shows why it bound nothing (rem absent,
+    disabled or older than the binding release, :func:`dev_lab.dev.remplugin.binder_door`), else the user's prompt.
+    """
     try:
         task = taskbinding.session_task(env, start=root)
     except ValueError as unread:
@@ -147,7 +151,7 @@ def _unbound(root: Path, env: Mapping[str, str]) -> tuple[str | None, str | None
     if task is None:
         return None, (
             f'{RULE}: this repo requires every agent session to work under the task its user bound it to, '
-            f'and none is bound. Door: {taskbinding.DOOR}.'
+            f'and none is bound. {remplugin.binder_door(env, home, root) or f"Door: {taskbinding.DOOR}"}.'
         )
     try:
         still = taskbinding.task_id(root, slug_of(task))
@@ -158,7 +162,7 @@ def _unbound(root: Path, env: Mapping[str, str]) -> tuple[str | None, str | None
     return task, None
 
 
-def refusal(root: Path, *, env: Mapping[str, str], branch: str | None = None) -> str | None:
+def refusal(root: Path, *, env: Mapping[str, str], branch: str | None = None, home: Path | None = None) -> str | None:
     """Why an agent's push (or ``forge sync`` commit) in *root* is refused, or ``None``.
 
     Judged only in a required repo, for a native agent session: no open task bound to the session in rem's ledger,
@@ -171,7 +175,7 @@ def refusal(root: Path, *, env: Mapping[str, str], branch: str | None = None) ->
         return f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}'
     if not judged:
         return None
-    task, why = _unbound(root, env)
+    task, why = _unbound(root, env, Path.home() if home is None else home)
     if task is None:
         return why
     slug = slug_of(task)
