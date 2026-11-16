@@ -56,6 +56,7 @@ from __future__ import annotations
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev._deny_background_row import BACKGROUND_BOUNDED
+from dev_lab.dev._deny_cicron_row import CI_CRON_NEEDS_CONSENT
 from dev_lab.dev._deny_commithooks_row import COMMIT_HOOKS_RUN
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
@@ -334,6 +335,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     REPORTS_LIVE_IN_MEMORY,
     WRITES_STAY_IN_THE_TREE,
     STATUS_VIA_DOORS,
+    CI_CRON_NEEDS_CONSENT,
     HPC_THROUGH_THE_DOOR,
     REMOTE_WRITE,
 )
