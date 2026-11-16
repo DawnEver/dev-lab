@@ -9,8 +9,12 @@
 // A STALE VENV NAMES ITS FIX (every-wall-teaches, 2026-11-13): a hook module the venv's dev-lab predates fails
 // `No module named dev_lab...`. When the installed dev-lab commit is not the one this checkout's uv.lock pins,
 // that is ONE line naming both shas and the bootstrap door, one walls-ledger line (the shape of
-// dev_lab.dev.walls.record -- the venv may not hold that module either), and exit 0. A missing module from a
-// venv that matches its lock is a real bug: its stderr and exit code pass through untouched.
+// dev_lab.dev.walls.record -- the venv may not hold that module either), and exit 0.
+//
+// A HOOK THAT CANNOT START NEVER BLOCKS (dev-lab #639): a child's argparse usage exit (2 with `usage:` or
+// `error: argument` / `invalid choice` / `unrecognized arguments`) or a missing module is a wiring fault, not a
+// decision -- passed through, exit 2 blocked every prompt and looped every Stop. It becomes one line naming the fix
+// and exit 0, whether or not the venv is behind its lock. A deliberate refusal (exit 2 naming its rule) still blocks.
 //
 // A QUEUED VENV UPDATE RUNS HERE (2026-11-14): `dep --bootstrap ROOT --when-free` that found the venv held left
 // its argv in <venv>/dev-lab-pending-bootstrap.json (dev_lab.dev._dep_pending). This launcher runs from OUTSIDE
@@ -82,22 +86,37 @@ performPendingUpdate(python);
 const args = process.argv.slice(2);
 const run = spawnSync(python, args, { stdio: ['inherit', 'inherit', 'pipe'] });
 const stderr = run.stderr ? run.stderr.toString('utf8') : '';
-// A module the venv predates, or a verb its older argparse lacks (`invalid choice: 'bind'`, 2026-11-16).
-const missing = run.status !== 0 &&
-  (/No module named '?(dev_lab[\w.]*)/.exec(stderr) || /(?:invalid choice|unrecognized arguments): '?([\w-]+)/.exec(stderr));
-const behind = missing && staleness(python);
-if (!behind) {
+const fault = wiringFault(run.status, stderr);
+if (!fault) {
   process.stderr.write(stderr);
   process.exit(run.status === null ? 1 : run.status);
 }
 const main = roots[roots.length - 1];
+const behind = staleness(python);
+const door = `${python} -m dev_lab.dev.dep --bootstrap ${main}`;
 process.stderr.write(
-  `[hook] ${missing[1]} missing: installed dev-lab ${behind.installed.slice(0, 10)} is behind the lock's ` +
-    `${behind.locked.slice(0, 10)} -- run: ${python} -m dev_lab.dev.dep --bootstrap ${main} --when-free ` +
-    `(held by sessions or hooks, it queues and this launcher replays it at the first free moment)\n`,
+  behind
+    ? `[hook] ${fault} missing: installed dev-lab ${behind.installed.slice(0, 10)} is behind the lock's ` +
+        `${behind.locked.slice(0, 10)} -- run: ${door} --when-free ` +
+        `(held by sessions or hooks, it queues and this launcher replays it at the first free moment)\n`
+    :`[hook] ${args.join(' ')} could not start (${fault}); not a refusal, so it passed -- run: ${door} ` +
+        `(if the installed dev-lab is current, the hook row names what dev-lab does not ship: re-render the wiring ` +
+        `with ${python} -m dev_lab.dev.agent_guard --install)\n`,
 );
 recordWall(main, args);
 process.exit(0);
+
+// What kept the child from starting -- a missing module, or argparse refusing its argv -- else null (a decision).
+function wiringFault(status, text) {
+  if (status === 0 || status === null) return null;
+  const module = /No module named '?([\w.]+)/.exec(text);
+  if (module) return module[1];
+  const usage = status === 2 && /^usage: /m.test(text) &&
+    /error: (?:argument |unrecognized arguments|the following arguments|invalid choice)/.exec(text);
+  if (!usage) return null;
+  const verb = /(?:invalid choice|unrecognized arguments): '?([\w-]+)/.exec(text);
+  return verb ? verb[1] : 'its arguments';
+}
 
 // The environment a new launch takes (dev-lab #632; the twin of dev_lab.dev.venvpointer.current): the one
 // `.venv-current` names under `.venvs/`, else the legacy `.venv`. The pointer is replaced atomically, so this reads
