@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
+import subprocess
 import sys
 import time
 import types
@@ -47,7 +49,7 @@ def _credential(
 
 
 def _held(home: Path, session: str = _SESSION) -> frozenset[str]:
-    return hpcsession.held(session=session, home=home, now=_NOW, table=_TABLE)
+    return hpcsession.held(session=session, home=home, start=home / 'repo', now=_NOW, table=_TABLE)
 
 
 _TASK = 'integrator'
@@ -59,6 +61,8 @@ def _task_checkout(root: Path, slug: str = _TASK, *, authority: str = 'a1b2c3', 
     folder.mkdir(parents=True, exist_ok=True)
     head = f'---\nname: {slug}\nkind: task\nauthority: {authority}\nstatus: {status}\n---\n\n# {slug}\n'
     (folder / 'TASK.md').write_text(head, encoding='utf-8')
+    if not (root / '.git').exists():
+        subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(root)], check=True, capture_output=True)
     return f'{slug}@{authority}'
 
 
@@ -74,11 +78,12 @@ def _task_credential(home: Path, task: str, *, expires: float = _NOW + 3600) -> 
 
 
 def _bind(home: Path, root: Path, prompt: str, session: str = _SESSION) -> str | None:
-    return taskbinding.bind({'session_id': session, 'prompt': prompt}, home=home, root=root)
+    del home
+    return taskbinding.bind({'session_id': session, 'prompt': prompt}, start=root)
 
 
 def _holder(home: Path, session: str = _SESSION) -> str | None:
-    return hpcsession.holder(session=session, home=home, now=_NOW, table=_TABLE)
+    return hpcsession.holder(session=session, home=home, start=home / 'repo', now=_NOW, table=_TABLE)
 
 
 def test_a_session_the_user_bound_to_a_granted_task_holds_the_role(tmp_path: Path) -> None:
@@ -110,7 +115,7 @@ def test_only_the_users_binding_prompt_on_an_open_task_binds(tmp_path: Path) -> 
     refused = ('please run task: integrator', f'task: {_TASK} now', 'task: done', 'task: missing', 'task: ../x')
     for prompt in refused:
         assert _bind(tmp_path, root, prompt) is None, prompt
-    assert taskbinding.bound_task(_SESSION, home=tmp_path) is None
+    assert taskbinding.bound_task(_SESSION, start=root) is None
     assert _bind(tmp_path, root, f'task: {_TASK}', session='') is None, 'no harness session id: nothing bound'
     assert _bind(tmp_path, root, f'  task: {_TASK}  ') == f'{_TASK}@a1b2c3', 'planted control: the form that binds'
 
@@ -200,11 +205,10 @@ def test_the_prompt_hook_binds_from_the_harness_payload_and_never_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     task = _task_checkout(tmp_path / 'repo')
-    monkeypatch.setattr(taskbinding, 'checkout_root', lambda _cwd: tmp_path / 'repo')
-    monkeypatch.setattr(taskbinding, 'state_dir', lambda _home=None: state_dir(tmp_path))
+    monkeypatch.chdir(tmp_path / 'repo')
     assert taskbinding.main(['bind'], stdin=io.StringIO('not json')) == 0, 'a broken payload never fails the prompt'
     assert taskbinding.bound_task(_SESSION) is None
-    payload = {'session_id': _SESSION, 'prompt': f'task: {_TASK}', 'cwd': str(tmp_path)}
+    payload = {'session_id': _SESSION, 'prompt': f'task: {_TASK}', 'cwd': str(tmp_path / 'repo')}
     assert taskbinding.main(['bind'], stdin=io.StringIO(json.dumps(payload))) == 0
     assert taskbinding.bound_task(_SESSION) == task
 

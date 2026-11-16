@@ -31,9 +31,9 @@ file is the render of the config source's ``family.toml`` and ``hosts/<cluster>-
 (:mod:`dev_lab.dev.accounthost`), and that render runs ON the account, so it runs here, between the kit's tick and
 the deploy (:func:`render_command`): the account clones or fast-forwards the config source (THIS workstation's
 ``[devhost]`` clone's origin, :class:`ConfigSource`) with its stored reader credential -- none stored for that forge
-is refused naming ``hpcaccount credential`` -- prints ``devhost drift`` (what the render changes), then
-``devhost render --write`` (the old file backed up under ``~/.cache/dev-lab/<yy>/<mm>/<dd>/devhost``). A failed
-render stops that account's deploy. Before any ssh, an account whose grant names no cluster, whose
+is refused naming ``hpcaccount credential`` -- prints ``devhost drift --from`` that clone (what the render
+changes), then ``devhost render --write`` (the old file backed up under ``~/.cache/dev-lab/<yy>/<mm>/<dd>/devhost``).
+A failed render stops that account's deploy. Before any ssh, an account whose grant names no cluster, whose
 ``<cluster>-<user>`` the family file declares no grant for, or whose ``hosts/<cluster>-<user>.toml`` this
 workstation's clone lacks, is refused by name (:func:`layer_refusal`).
 """
@@ -70,9 +70,9 @@ from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.venvpath import venv_interpreter
 
 __all__ = [
-    'KIND', 'ConfigSource', 'Target', 'account_host', 'config_source_of', 'declared_target', 'deploy_command',
-    'deploy_fleet', 'first_install', 'in_checkout', 'layer_refusal', 'layer_target', 'main', 'refresh_kit',
-    'render_command',
+    'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
+    'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'layer_refusal', 'layer_target', 'main',
+    'refresh_kit', 'render_command',
 ]  # fmt: skip
 
 #: The dated-log kind every account's log is written under.
@@ -205,7 +205,7 @@ def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
     ``devhost render --write`` replaces the file, its old copy backed up. In the grant's ``setup`` environment.
     """
     forge = urlsplit(source.url).hostname or ''
-    clone = f'"$HOME/{PurePosixPath(target.root, PurePosixPath(urlsplit(source.url).path).stem)}"'
+    clone = f'"$HOME/{account_clone(target, source)}"'
     backups = f'"$HOME/{_BASE}/$(date -u +%y/%m/%d)/devhost"'
     credential = (
         f"grep -qs '@{forge}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
@@ -221,9 +221,14 @@ def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
     render = in_checkout(target, ['-m', 'dev_lab.dev.devhost', 'render', '--host', name, '--write'])
     steps = [
         'export GIT_TERMINAL_PROMPT=0', credential, fetch, f'echo "[render] {name}: what the render changes"',
-        f'{{ {drift} ; true; }}', f'{render} --from {clone} --backups {backups}',
+        f'{{ {drift} --from {clone} ; true; }}', f'{render} --from {clone} --backups {backups}',
     ]  # fmt: skip
     return f'( {" && ".join([*grant.setup, *steps])} )'
+
+
+def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
+    """Where *target*'s account holds its config-source clone, relative to its home: ``<root>/<config repo>``."""
+    return PurePosixPath(target.root, PurePosixPath(urlsplit(source.url).path).stem)
 
 
 def in_checkout(target: Target, argv: Sequence[str]) -> str:

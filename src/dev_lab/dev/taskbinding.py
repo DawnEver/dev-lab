@@ -2,11 +2,17 @@
 
 A prompt whose FIRST line is ``task: <slug>`` binds the session receiving it to that OPEN task of the checkout:
 the ``UserPromptSubmit`` hook (``python -m dev_lab.dev.taskbinding bind``, :func:`bind`) writes the binding from the
-harness's own payload (its ``session_id``, the user's ``prompt``) into the consent state, which no agent tool may
-write (CONSENT-CODE-FROM-THE-USER, :mod:`dev_lab.dev.consentguard`). An agent can name a worktree or a branch after
-a task and can set an environment variable; it cannot author the user's prompt, so neither of those binds. This is
-the ONE session -> task record: the task gate (:mod:`dev_lab.dev.taskgate`), the integrator role
-(:mod:`dev_lab.dev.hpcaccount.session`) and the branch-name help all read it.
+harness's own payload (its ``session_id``, the user's ``prompt``). An agent can name a worktree or a branch after a
+task and can set an environment variable; it cannot author the user's prompt, so neither of those binds. This is the
+ONE session -> task record: the task gate (:mod:`dev_lab.dev.taskgate`), the integrator role
+(:mod:`dev_lab.dev.hpcaccount.session`), the branch-name help and rem (which reads the file itself) all read it.
+
+THE LEDGER AND THE BINDING ARE REPO STATE, NOT BRANCH STATE (W4, 2026-11-16: a task opened in one worktree was not
+found from another, because each reader resolved a different tree). Both live in ONE directory, :func:`ledger` --
+``<main checkout>/.claude/tasks/``, the parent of ``git rev-parse --git-common-dir``, the same from every worktree.
+A binding is ``.bindings/<session>.json`` there, ``{"session": ..., "task": "<slug>@<authority>"}`` -- a format rem
+owns and reads directly; rem's task guard refuses an agent's write to it. The ledger is never committed on a
+feature branch: it is the working state of the repository, not of one branch.
 
 A task id is ``<slug>@<authority>``: the ``authority`` the user's task-open minted into ``.claude/tasks/<slug>/
 TASK.md``, so a task closed and reopened under the same slug is a new id and an old binding never carries over.
@@ -32,7 +38,6 @@ from typing import Any, Final, TextIO
 from lab_commons import launch
 from lab_commons.log import emit
 
-from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.native_session import session_of, valid
 
 __all__ = [
@@ -45,6 +50,7 @@ __all__ = [
     'checkout_root',
     'head_advice',
     'head_for',
+    'ledger',
     'main',
     'session_task',
     'slug_of',
@@ -52,8 +58,8 @@ __all__ = [
     'under',
 ]
 
-#: Where the session -> task bindings live, below the consent state directory no agent tool writes.
-BINDINGS: Final = 'tasks'
+#: Where the session -> task bindings live, below the :func:`ledger`.
+BINDINGS: Final = '.bindings'
 _SLUG: Final = r'[a-z0-9]+(?:-[a-z0-9]+)*'
 #: The user's binding prompt: its FIRST line is exactly ``task: <slug>``.
 BIND_PROMPT: Final = re.compile(rf'\A[ \t]*task:[ \t]*({_SLUG})[ \t]*(?:\r?\n|\Z)')
@@ -66,16 +72,35 @@ DOOR: Final = (
 )
 
 
-def task_id(root: Path, slug: str) -> str:
-    """The id ``<slug>@<authority>`` of the OPEN task *slug* under *root*'s ``.claude/tasks``; ValueError otherwise."""
+def checkout_root(cwd: Path) -> Path:
+    """The main checkout of the repository at *cwd* -- the parent of its common git dir, from any of its worktrees."""
+    common = launch.run(
+        [shutil.which('git') or 'git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+        cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=True,
+    ).stdout.strip()  # fmt: skip
+    return Path(common).parent
+
+
+def ledger(start: Path) -> Path:
+    """THE ONE RESOLVER: the task ledger of the repository at *start* -- the same directory from every worktree.
+
+    Raises:
+        OSError, subprocess.CalledProcessError: *start* is in no git repository.
+
+    """
+    return checkout_root(start) / '.claude' / 'tasks'
+
+
+def task_id(start: Path, slug: str) -> str:
+    """The id ``<slug>@<authority>`` of the OPEN task *slug* in *start*'s :func:`ledger`; ValueError otherwise."""
     if not re.fullmatch(_SLUG, slug):
         msg = f'{slug!r} is not a task slug'
         raise ValueError(msg)
-    path = root / '.claude' / 'tasks' / slug / 'TASK.md'
     try:
+        path = ledger(start) / slug / 'TASK.md'
         head = path.read_text(encoding='utf-8').split('---')[1]
-    except (OSError, IndexError):
-        msg = f'no task {slug} at {path.as_posix()}'
+    except (OSError, IndexError, subprocess.CalledProcessError):
+        msg = f'no task {slug} in the ledger of {Path(start).as_posix()}'
         raise ValueError(msg) from None
     fields = dict(line.split(':', 1) for line in head.splitlines() if ':' in line)
     authority, status = fields.get('authority', '').strip(), fields.get('status', '').strip()
@@ -90,51 +115,43 @@ def slug_of(task: str) -> str:
     return task.split('@', 1)[0]
 
 
-def checkout_root(cwd: Path) -> Path:
-    """The main checkout of the repository at *cwd* -- where its tasks live, from any of its worktrees."""
-    common = launch.run(
-        [shutil.which('git') or 'git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-        cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=True,
-    ).stdout.strip()  # fmt: skip
-    return Path(common).parent
+def _binding(start: Path, session: str) -> Path:
+    return ledger(start) / BINDINGS / f'{session}.json'
 
 
-def _binding(session: str, home: Path | None) -> Path:
-    return state_dir(home) / BINDINGS / f'{session}.json'
-
-
-def bind(payload: Mapping[str, Any], *, home: Path | None = None, root: Path | None = None) -> str | None:
+def bind(payload: Mapping[str, Any], *, start: Path | None = None) -> str | None:
     """Bind the payload's session to the task its USER prompt names; the task id bound, or ``None``.
 
     Only a ``UserPromptSubmit`` payload reaches here: the prompt is the user's, the session id the harness's.
+    *start* (default: the payload's ``cwd``) is any path in the repository; the binding lands in its :func:`ledger`.
     """
     session, prompt = str(payload.get('session_id') or ''), str(payload.get('prompt') or '')
     found = BIND_PROMPT.match(prompt)
     if not found or not valid(session):
         return None
+    where = Path(str(payload.get('cwd') or '.')) if start is None else start
     try:
-        where = checkout_root(Path(str(payload.get('cwd') or '.'))) if root is None else root
         task = task_id(where, found.group(1))
+        target = _binding(where, session)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({'session': session, 'task': task}), encoding='utf-8')
     except (ValueError, OSError, subprocess.CalledProcessError):
         return None
-    target = _binding(session, home)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps({'session': session, 'task': task}), encoding='utf-8')
     return task
 
 
-def bound_task(session: str, *, home: Path | None = None) -> str | None:
-    """The task id the user bound *session* to, or ``None``."""
+def bound_task(session: str, *, start: Path | None = None) -> str | None:
+    """The task id the user bound *session* to in the repository at *start* (default: the cwd), or ``None``."""
     if not valid(session):
         return None
     try:
-        record = json.loads(_binding(session, home).read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+        record = json.loads(_binding(Path.cwd() if start is None else start, session).read_text(encoding='utf-8'))
+    except (OSError, ValueError, subprocess.CalledProcessError):
         return None
-    return record.get('task') if record.get('session') == session else None
+    return record.get('task') if isinstance(record, dict) and record.get('session') == session else None
 
 
-def session_task(env: Mapping[str, str], *, home: Path | None = None) -> str | None:
+def session_task(env: Mapping[str, str], *, start: Path | None = None) -> str | None:
     """The task id bound to the native session *env* names, or ``None`` (no session, or none bound).
 
     Raises:
@@ -142,7 +159,7 @@ def session_task(env: Mapping[str, str], *, home: Path | None = None) -> str | N
 
     """
     session = session_of(env)
-    return bound_task(session, home=home) if session else None
+    return bound_task(session, start=start) if session else None
 
 
 def head_for(slug: str, feature: str) -> str:
