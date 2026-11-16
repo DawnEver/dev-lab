@@ -199,6 +199,9 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
    runs the issuer `hello` handshake (credential field set and registry actions; a skewed pair names the side to
    upgrade), and a plan is offered (`consent plan`, `sshhold open --plan`, `grant_plan`) only after `planrun
    preflight` was green for its digest -- every door and every subject -- and recorded it.
+   A subject only an unreached plan host derives is READ, no code, through the issuer's `subject` verb: it runs only
+   the registry's declared read form (`Action.reads` + `--subject`; a credential, `--follow` or another verb is
+   refused) on the issuer's own host, so a plan takes exactly ONE code (user ruling 2026-11-16).
 
 ## 6. Break-glass waves
 

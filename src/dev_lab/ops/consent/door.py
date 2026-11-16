@@ -8,6 +8,10 @@ runs as it shows the plan. A refusal here spends no code: the user is never aske
   (:data:`~dev_lab.ops.consent.credential.FIELDS`) and the registry actions the request names. A skewed pair is
   refused locally, naming which side is older and its upgrade door (incident 2026-11-16: a code was spent, then the
   client refused every credential with "a credential carries exactly the fields ...").
+* :func:`subject_read` asks the issuer ``subject`` -- a READ: the host derives a step's subject with its verb's
+  ``--subject`` and nothing else (:func:`read_argv` refuses any other form), so a preflight needs no code to check a
+  subject only the host can derive (user ruling 2026-11-16: a plan takes exactly ONE code, spent once preflight is
+  green -- never a first code to open a hold for the read).
 * :func:`record_preflight` / :func:`offer`: a plan is offered for a code only after ``planrun preflight`` was green
   for its digest -- every host door and every subject (incident 2026-11-16: a plan whose subject could not be
   derived was granted, and its code was wasted).
@@ -40,8 +44,10 @@ __all__ = [
     'handshake',
     'hello',
     'offer',
+    'read_argv',
     'record_preflight',
     'ssh_send',
+    'subject_read',
 ]
 
 #: ``(endpoint table, request)`` -> ``(exit status, output)``: one JSON line to an endpoint.
@@ -69,6 +75,57 @@ def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, st
 def hello() -> dict[str, list[str]]:
     """What this side speaks: the credential field set and the registry actions (the issuer's ``hello`` answer)."""
     return {'fields': list(FIELDS), 'actions': sorted(ACTIONS)}
+
+
+#: The argv words a ``subject`` read refuses: each makes the verb act (redeem a credential, follow a ref) or is the
+#: read's own flag, which the reader adds itself.
+_ACTING: Final = frozenset({'--credential', '--follow', '--subject'})
+
+
+def read_argv(action: str, argv: object) -> list[str]:
+    """The ops argv the issuer's ``subject`` verb runs for *action*: *argv* + ``--subject``, admitted read-only.
+
+    Raises:
+        ConsentRefused: *action* admits no host-side read (its registry ``reads``), *argv* is not that verb, or it
+            carries an acting flag (:data:`_ACTING`).
+
+    """
+    row = ACTIONS.get(action)
+    if row is None or not row.reads:
+        msg = f'{action} admits no subject read at its host (registry reads); derive it where its content lives'
+        raise ConsentRefused(msg)
+    words = list(argv) if isinstance(argv, list) and all(isinstance(word, str) for word in argv) else None
+    if words is None or tuple(words[: len(row.reads)]) != row.reads:
+        msg = f'a {action} subject read runs `{" ".join(row.reads)} ...` only'
+        raise ConsentRefused(msg)
+    if acting := sorted(_ACTING & set(words)):
+        msg = f'a subject read never carries {acting}: it only reads and hashes'
+        raise ConsentRefused(msg)
+    return [*words, '--subject']
+
+
+def _host(dest: str) -> str:
+    return dest.rsplit('@', 1)[-1]
+
+
+def subject_read(table: Mapping[str, Any], dest: str, action: str, argv: list[str], *, send: Send) -> str:
+    """The subject *dest* derives for *action* run as *argv*, read through the issuer's ``subject`` verb -- no code.
+
+    Raises:
+        ConsentRefused: the issuer is not *dest*'s host (it reads only its own), or it refused or could not derive.
+
+    """
+    read_argv(action, argv)  # refused here first: nothing that could act is ever sent
+    endpoint = str(table.get('endpoint') or '')
+    if _host(endpoint) != _host(dest):
+        msg = f'the issuer ({_host(endpoint) or "none declared"}) reads only its own host, not {_host(dest)}'
+        raise ConsentRefused(msg)
+    status, said = send(table, {'verb': 'subject', 'action': action, 'argv': argv})
+    lines = [line.strip() for line in said.splitlines() if line.strip()]
+    if status or not lines:
+        msg = f'the issuer could not read the subject ({status}): {lines[-1] if lines else "no answer"}'
+        raise ConsentRefused(msg)
+    return lines[-1]
 
 
 def _answer(said: str) -> object:

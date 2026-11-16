@@ -4,6 +4,10 @@ Split out of :mod:`dev_lab.dev.planrun` (the run and the CLI); what is checked i
 subject derivable HERE is derived here even when its door waits on an earlier config step (incident 2026-11-16: such
 a step was skipped as ``after step N``, its subject never derived, and the granted plan's code was wasted). A green
 preflight is recorded for the plan's digest (:func:`offered`): the one consent door offers a plan for a code only then.
+
+A subject only an UNREACHED host can derive (no hold open, and it admits no login without a code) is read through the
+issuer's read-only ``subject`` verb (:func:`dev_lab.ops.consent.door.subject_read`) -- no code (user ruling
+2026-11-16: a plan takes exactly ONE code, spent once preflight is green; never a first code to open a hold).
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ from dev_lab.dev.reviewgate import DeclarationUnread, file_at, manifest_at
 from dev_lab.ops import configdoor, forgeprotection
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, handshake, record_preflight, ssh_send
+from dev_lab.ops.consent.door import Send, handshake, record_preflight, ssh_send, subject_read
 from dev_lab.ops.consent.plan import STALE_CLIENT, Plan, stale_client
 from dev_lab.ops.giteaadmin import ForgeRefused
 
@@ -52,6 +56,7 @@ __all__ = [
     'config_subject',
     'declared_at',
     'host_ready',
+    'issuer_subject',
     'offered',
     'preflight',
     'protect_target',
@@ -83,10 +88,9 @@ _NO_HOLD: Final = re.compile(r'Permission denied \((?:[\w-]+,)*(?:keyboard-inter
 HOLD_NEEDED: Final = (
     'no open ssh hold on this host, and it admits no login without a code. Build the plan first (the steps file '
     'and its plan.json; digest D: `python -m dev_lab.ops.consent plan <plan.json>`). A plan is offered for a code '
-    "only after a green preflight: when a step's subject is the host's to derive, open this host's hold first with "
-    'its own code (`python -m dev_lab.dev.sshhold open <dest> --hours H`) and re-run preflight. Once green, '
-    '`python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D>` takes the one code, opening '
-    'every plan host not already held'
+    "only after a green preflight; a step's subject only this host derives is read through the issuer's read-only "
+    '`subject` verb, no code. Once green, `python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest '
+    '<D>` takes the ONE code, opening every plan host not already held'
 )
 
 
@@ -138,13 +142,26 @@ def protect_target(argv: Sequence[str]) -> tuple[str, str]:
     return found.repo, found.ref
 
 
+#: ``(dest, action, argv)`` -> the subject *dest* derives for that step, read without a code.
+type IssuerSubject = Callable[[str, str, list[str]], str]
+
+
+def issuer_subject(dest: str, action: str, argv: list[str]) -> str:
+    """*dest*'s subject for *action* as *argv*, through the ``[consent]`` issuer's read-only ``subject`` verb."""
+    return subject_read(section(TABLE), dest, action, argv, send=ssh_send)
+
+
 @dataclass(frozen=True)
 class Readers:
-    """What a subject derived HERE reads: a repo's declaration, a config source's files, and that source's URL."""
+    """What a subject derived without a code reads (a declaration, a config source, the issuer's ``subject`` verb).
+
+    The issuer's read-only ``subject`` verb answers for a subject only an unreached host derives.
+    """
 
     declared: Declared = declared_at
     text: SourceReader = text_at
     config_source: Callable[[], str] = devhost.config_source
+    issued: IssuerSubject = issuer_subject
 
 
 def config_subject(host: str, read: SourceReader, source: str, ref: str = 'main') -> str:
@@ -183,6 +200,19 @@ def _derived_here(granted: str, step: Step, readers: Readers) -> tuple[str, bool
     if derived != granted:
         return f'BLOCKED -- derived here {derived[:12]} from {where}, the plan grants {granted[:12]}', True
     return 'green (subject derived here)', False
+
+
+def _read_unreached(granted: str, step: Step, action: str, readers: Readers) -> tuple[str, bool]:
+    """``(verdict, blocked)`` of a step on an unreached host whose subject only that host derives: read, no code."""
+    if step.stdin_local is not None or step.stdin_task is not None:
+        return 'BLOCKED -- its host is unreachable and its subject hashes stdin that never leaves here', True
+    try:
+        derived = readers.issued(step.dest, action, list(step.argv))
+    except (ConsentRefused, OSError) as unread:
+        return f"BLOCKED -- its host is unreachable and its subject is the host's to derive ({unread})", True
+    if derived != granted:
+        return f'BLOCKED -- the host derives subject {derived[:12]}, the plan grants {granted[:12]} (read)', True
+    return 'green (subject read from the host, no code)', False
 
 
 def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote, readers: Readers) -> tuple[str, bool]:
@@ -254,7 +284,7 @@ def preflight(
         elif step.dest in unreached:
             verdict, fault = (
                 _derived_here(grant['subject'], step, readers) if _derivable(step) else
-                ("BLOCKED -- its host is unreachable and its subject is the host's to derive", True)
+                _read_unreached(grant['subject'], step, grant['action'], readers)
             )  # fmt: skip
             verdict = f'{verdict} on {step.dest} (unreachable: its door is checked at run)'
         else:
