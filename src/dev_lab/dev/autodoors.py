@@ -55,6 +55,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.agentpolicy import POLICY, SUBAGENT, USER, Door
+from dev_lab.dev.codexdeny import CODEX_DENY_REL, codex_deny_rules
 from dev_lab.dev.doorrows import INTERPRETERS, allow_rows
 from dev_lab.dev.family import declared_table
 
@@ -303,18 +304,21 @@ def main(argv: list[str] | None = None) -> int:
     root = args.repo.resolve()
     scripts = script_doors(root, shell_doors=tuple(args.shell_door))
     cli = cli_doors(root)
-    text = codex_rules(scripts, cli)
-    target = root / CODEX_RULES_REL
+    files = {CODEX_RULES_REL: codex_rules(scripts, cli), CODEX_DENY_REL: codex_deny_rules()}
     for row in claude_rows(scripts, cli):
         emit(f'[autodoors] claude  {row}')
-    if args.write:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding='utf-8', newline='\n')
-        emit(f'[autodoors] codex   wrote {CODEX_RULES_REL}')
-        return 0
-    current = target.is_file() and target.read_text(encoding='utf-8') == text
-    emit(f'[autodoors] codex   {CODEX_RULES_REL}: {"current" if current else "STALE -- run with --write"}')
-    return 0 if current else 1
+    stale = 0
+    for rel, text in files.items():
+        target = root / rel
+        if args.write:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding='utf-8', newline='\n')
+            emit(f'[autodoors] codex   wrote {rel}')
+            continue
+        current = target.is_file() and target.read_text(encoding='utf-8') == text
+        stale += not current
+        emit(f'[autodoors] codex   {rel}: {"current" if current else "STALE -- run with --write"}')
+    return 1 if stale else 0
 
 
 if __name__ == '__main__':

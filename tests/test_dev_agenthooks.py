@@ -209,6 +209,18 @@ def test_a_heredoc_consumed_by_a_sink_is_data_and_is_not_denied(rules: Path) -> 
     assert agenthooks.decide(command, rules) is None, 'writing prose ABOUT a denied command was refused'
 
 
+def test_a_line_row_reads_the_executed_text_never_a_sink_body(tmp_path: Path) -> None:
+    """A `matches: 'line'` row read the RAW command, heredoc sinks included (2026-11-16): prose naming a path refused.
+
+    PLANTED CONTROL: the same shape on the line itself, or in a body an interpreter executes, is still refused.
+    """
+    path = tmp_path / 'rules.json'
+    path.write_text(json.dumps([{'name': 'PLANTED', 'pattern': r'>\s*\S*secret', 'matches': 'line', 'reason': 'r'}]))
+    assert agenthooks.decide('cat > notes.md <<EOF\nnever echo x > the/secret file\nEOF', path) is None
+    assert agenthooks.decide('echo x > the/secret', path) is not None
+    assert agenthooks.decide("python - <<'PY'\nos.system('echo x > the/secret')\nPY", path) is not None
+
+
 def test_a_command_that_merely_contains_a_denied_word_is_not_denied(rules: Path) -> None:
     """THE MEASURED FALSE POSITIVE. These run grep, git-log and git-commit -- not the named verb."""
     for command in (

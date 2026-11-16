@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -428,7 +429,19 @@ def is_network_verb(argv: Sequence[str]) -> bool:
     words = [word for word in words[index:] if not word.startswith('-')]
     if not words or words[0] not in verbs:
         return False
+    if program == 'git' and words[0] in _GIT_REPOSITORY_VERBS and len(words) > 1 and _LOCAL_REPOSITORY.match(words[1]):
+        return False
     return words[0] not in _SUBVERBS or (len(words) > 1 and words[1] in _SUBVERBS[words[0]])
+
+
+#: The git verbs whose first operand is the repository they talk to.
+_GIT_REPOSITORY_VERBS: Final = frozenset({'push', 'fetch', 'pull', 'clone', 'ls-remote'})
+
+#: A repository named by a local path -- ``.``, ``../x``, ``/c/x``, a drive-letter path, ``file://`` -- is no remote
+#: (measured 2026-11-16: ``git -C . fetch . a:b`` was hinted as a network verb). The row's shell spelling is
+#: :data:`dev_lab.dev._deny_rows.NETWORK_VERB_PATTERN`.
+LOCAL_REPOSITORY: Final = r'(?:\.{1,2}(?:[/\\]\S*)?|[/\\]\S*|[A-Za-z]:[/\\]\S*|file://\S*)'
+_LOCAL_REPOSITORY: Final = re.compile(rf'^["\']?{LOCAL_REPOSITORY}["\']?$')
 
 
 class NotANetworkVerb(ValueError):
