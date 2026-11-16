@@ -106,6 +106,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   Edit/Write (its ``hook``) and, through the deny engine's ``when: 'live-run'`` row, merges, checkouts and
   environment syncs; ``dep`` refuses a venv any live process executes from. ``output/``, ``.claude/`` and
   ``.venv/`` are not the tree.
+* :mod:`dev_lab.dev.codexdeny` - the deny registry rendered for Codex as ``prefix_rule`` forbids: a row
+  renders where its refused shapes share an argv prefix no near-miss or door starts with; every other
+  refusing row is a declared GAP with its reason. Written by ``autodoors --write``.
 * :mod:`dev_lab.dev.checkout` — SHARED-CHECKOUT, which both siblings declared absent on the
   grounds that the push obligation "is a fact about origin, not about any file in this checkout".
   The premise is true and the conclusion was wrong: git answers "what is here that origin does not

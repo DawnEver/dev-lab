@@ -437,7 +437,7 @@ def is_network_verb(argv: Sequence[str]) -> bool:
 #: The git verbs whose first operand is the repository they talk to.
 _GIT_REPOSITORY_VERBS: Final = frozenset({'push', 'fetch', 'pull', 'clone', 'ls-remote'})
 
-#: A repository named by a local path -- ``.``, ``../x``, ``/c/x``, ``C:/x``, ``file://`` -- is no remote
+#: A repository named by a local path -- ``.``, ``../x``, ``/c/x``, a drive-letter path, ``file://`` -- is no remote
 #: (measured 2026-11-16: ``git -C . fetch . a:b`` was hinted as a network verb). The row's shell spelling is
 #: :data:`dev_lab.dev._deny_rows.NETWORK_VERB_PATTERN`.
 LOCAL_REPOSITORY: Final = r'(?:\.{1,2}(?:[/\\]\S*)?|[/\\]\S*|[A-Za-z]:[/\\]\S*|file://\S*)'

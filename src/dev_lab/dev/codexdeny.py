@@ -18,6 +18,7 @@ from typing import Final
 
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
+from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 
 __all__ = ['CODEX_DENY_REL', 'FORBIDDEN', 'GAPS', 'codex_deny_rules']
 
@@ -26,7 +27,7 @@ CODEX_DENY_REL: Final = '.codex/rules/family-denies.rules'
 type Token = str | tuple[str, ...]
 type Prefix = tuple[Token, ...]
 
-_PYTHON: Final = ('python', 'python3', '.venv/Scripts/python.exe', '.venv/bin/python')
+_PYTHON: Final = ('python', 'python3', *('/'.join(parts) for parts in CANDIDATE_RELATIVE_PATHS))
 
 #: Rule ID -> the argv prefixes Codex forbids for it.
 FORBIDDEN: Final[dict[str, tuple[Prefix, ...]]] = {

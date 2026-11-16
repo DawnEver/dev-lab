@@ -322,6 +322,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrolment (2026-11-16)
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
+    'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
     'metrics',
     'monthsummary',
     'prsuperseded',
