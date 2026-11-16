@@ -364,6 +364,17 @@ def test_a_layered_account_deploys_to_its_layers_host_whatever_its_remote_file_s
     assert not any(': refused' in line for line in said)
 
 
+def test_an_unstated_root_is_the_clusters_and_a_contrary_one_is_refused() -> None:
+    """2026-11-16: a layer with no root fell back to the default and was refused against the cluster's root."""
+    rooted = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', cluster_name='c1', root='/work/c1/alice')
+    target = declared_target(rooted, lambda _cmd, _stdin=None: '[deploy]\nhost = "login02"\n')
+    assert not isinstance(target, str), target
+    assert target.root == '/work/c1/alice'
+    contrary = declared_target(rooted, lambda _cmd, _stdin=None: '[deploy]\nhost = "login02"\nroot = "src"\n')
+    assert isinstance(contrary, str), 'PLANTED CONTROL: a stated root that contradicts the cluster is still refused'
+    assert 'is not the root its cluster declares' in contrary
+
+
 def test_the_remote_read_still_refuses_a_stale_host_for_the_doors_that_use_it() -> None:
     """PLANTED CONTROL: the remote read (credential, forget, storage) keeps its refusal of a stale host."""
     stale = '# /srv/u/machine/config.toml\n[deploy]\nhost = "retired01"\n'

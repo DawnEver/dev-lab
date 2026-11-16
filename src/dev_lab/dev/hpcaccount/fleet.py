@@ -140,7 +140,7 @@ def _checked(grant: Grant, deploy: Mapping[str, Any], looked: str, door: str) ->
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
     if len(named) > 1:
         return f'{grant.user}: refused -- its [deploy] host {host} is ambiguous: it names {named}; declare one in full'
-    root = deploy.get('root', DEFAULT_ROOT)
+    root = deploy.get('root', grant.root or DEFAULT_ROOT)  # an unstated root is the cluster's, never the default
     if grant.root and root != grant.root:
         return (
             f'{grant.user}: refused -- its [deploy] root {root} is not the root its cluster declares {grant.root} '
