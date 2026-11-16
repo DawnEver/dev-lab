@@ -32,7 +32,7 @@ import lab_commons.launch as _door
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import devhost
+from dev_lab.dev import devhost, devprofile
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.credstore import CredentialRefused, DeclaredForge, Shell, digest, place_verified, read_forge
 from dev_lab.dev.venvpath import running_interpreter
@@ -166,6 +166,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--url', default='', help='a repository url on that forge')
     parser.add_argument('--host-config', type=Path, default=None, help="this machine's host file (default: render's)")
     args = parser.parse_args(argv)
+    if args.host_config is None and (why := devprofile.refusal(machineconfig.machine(), 'placing a forge credential')):
+        emit(f'credential: refused -- {why}')
+        return 2
     try:
         forge = read_forge(args.forge_config)
     except CredentialRefused as refused:

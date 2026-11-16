@@ -42,7 +42,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.native_session import session_of
-from dev_lab.dev.taskbinding import bound_task, checkout_root, task_id
+from dev_lab.dev.taskbinding import bound_task, task_id
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.client import public_key
 from dev_lab.ops.consent.credential import ConsentRefused, verify
@@ -63,12 +63,14 @@ def holder(
     *,
     session: str | None = None,
     home: Path | None = None,
+    start: Path | None = None,
     now: float | None = None,
     table: Mapping[str, Any] | None = None,
 ) -> str | None:
     """Which identity gives *session* (default: this one) the role -- ``session <id>`` or ``task <id>``; fail closed.
 
     No session id, no issuer key, or no credential verifying for this session or the task the user bound it to: None.
+    The binding is read from the task ledger of the repository at *start* (default: the cwd).
     """
     session = session_of() if session is None else session
     if not session:
@@ -79,7 +81,7 @@ def holder(
         return None
     when = time.time() if now is None else now
     wanted = {(ACTION, session): f'session {session}'}
-    task = bound_task(session, home=home)
+    task = bound_task(session, start=start)
     if task:
         wanted[(TASK_ACTION, task)] = f'task {task}'
     for path in sorted(state_dir(home).glob('*.json')):
@@ -96,11 +98,12 @@ def held(
     *,
     session: str | None = None,
     home: Path | None = None,
+    start: Path | None = None,
     now: float | None = None,
     table: Mapping[str, Any] | None = None,
 ) -> frozenset[str]:
     """The roles *session* holds, by its own credential or its bound task's (:func:`holder`)."""
-    found = holder(session=session, home=home, now=now, table=table)
+    found = holder(session=session, home=home, start=start, now=now, table=table)
     return frozenset({INTEGRATOR}) if found else frozenset()
 
 
@@ -138,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         emit(f'session {session or "(none)"} (task {task or "none bound"}) holds {role}')
         return 0
     try:
-        task = task_id(checkout_root(Path.cwd()), args.task) if args.task else None
+        task = task_id(Path.cwd(), args.task) if args.task else None
         emit(json.dumps(request(session, args.hours, task=task)))
     except (ValueError, subprocess.CalledProcessError) as refused:
         emit(f'hpcsession refused: {refused}', err=True)

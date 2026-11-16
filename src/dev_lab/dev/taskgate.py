@@ -13,7 +13,7 @@ refused naming the bound task. An unbound session is refused naming the door: th
 
 ONLY A WIRED SESSION CAN BE UNBOUND (a consumer report, 2026-11-16): the binding is written by the
 ``UserPromptSubmit`` binder (:data:`dev_lab.dev.agent_wiring.TASKBIND_COMMAND`). Where the repo's settings do not
-wire it, or the binding store cannot be reached, no prompt could ever bind the session, so refusing it refused
+wire it, or the ledger cannot be reached, no prompt could ever bind the session, so refusing it refused
 every commit with a door that cannot open. That gap is reported as ONE line naming its own door (the guard
 install that wires the binder), and the commit is admitted; a wired session with no binding is still refused.
 
@@ -44,7 +44,6 @@ from lab_commons.log import emit
 
 from dev_lab.dev import taskbinding
 from dev_lab.dev.agent_wiring import LAUNCHER_REL, SETTINGS_REL
-from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.native_session import session_of
 from dev_lab.dev.taskbinding import head_for, slug_of
@@ -157,24 +156,24 @@ def _binder_wired(root: Path) -> bool:
     return False
 
 
-def binding_gap(root: Path, home: Path | None = None) -> str | None:
-    """Why no prompt could bind a session in *root* -- the binder unwired, or its store unreachable -- else ``None``."""
+def binding_gap(root: Path) -> str | None:
+    """Why no prompt could bind a session in *root* -- binder unwired, or ledger unreachable -- else ``None``."""
     if not _binder_wired(root):
         return (
             f'{RULE}: not judged -- {root.as_posix()} does not wire the task binder ({_BINDER}) on UserPromptSubmit, '
             f'so no prompt can bind this session. Door: {_WIRE_DOOR}'
         )
     try:
-        state_dir(home)
-    except (OSError, ValueError) as unreachable:
-        return f'{RULE}: not judged -- the task binding store is unreachable ({unreachable}). Door: {_WIRE_DOOR}'
+        taskbinding.ledger(root)
+    except (OSError, subprocess.CalledProcessError) as unreachable:
+        return f'{RULE}: not judged -- the task ledger is unreachable ({unreachable}). Door: {_WIRE_DOOR}'
     return None
 
 
-def _unbound(root: Path, env: Mapping[str, str], home: Path | None) -> tuple[str | None, str | None]:
+def _unbound(root: Path, env: Mapping[str, str]) -> tuple[str | None, str | None]:
     """``(open bound task id, None)``, or ``(None, why)`` -- no session, an unreadable one, none bound, or closed."""
     try:
-        task = taskbinding.session_task(env, home=home)
+        task = taskbinding.session_task(env, start=root)
     except ValueError as unread:
         return (
             None,
@@ -186,15 +185,15 @@ def _unbound(root: Path, env: Mapping[str, str], home: Path | None) -> tuple[str
             f'and none is bound. Door: {taskbinding.DOOR}.'
         )
     try:
-        still = taskbinding.task_id(taskbinding.checkout_root(root), slug_of(task))
-    except (ValueError, OSError, subprocess.CalledProcessError):
+        still = taskbinding.task_id(root, slug_of(task))
+    except ValueError:
         still = None
     if still != task:
         return None, f'{RULE}: this session is bound to task {task}, which is no longer open. Door: {taskbinding.DOOR}.'
     return task, None
 
 
-def refusal(root: Path, *, env: Mapping[str, str], home: Path | None = None, branch: str | None = None) -> str | None:
+def refusal(root: Path, *, env: Mapping[str, str], branch: str | None = None) -> str | None:
     """Why an agent's commit or push in *root* is refused, or ``None``.
 
     Judged only in a required repo, for a native agent session: no open task bound to the session, or a ``pr/``
@@ -206,10 +205,10 @@ def refusal(root: Path, *, env: Mapping[str, str], home: Path | None = None, bra
         return f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}'
     if not judged:
         return None
-    if (gap := binding_gap(root, home)) is not None:
+    if (gap := binding_gap(root)) is not None:
         emit(gap, err=True)
         return None
-    task, why = _unbound(root, env, home)
+    task, why = _unbound(root, env)
     if task is None:
         return why
     slug = slug_of(task)
@@ -223,17 +222,15 @@ def refusal(root: Path, *, env: Mapping[str, str], home: Path | None = None, bra
     )
 
 
-def _bound_slug(env: Mapping[str, str], home: Path | None) -> str | None:
-    task = taskbinding.session_task(env, home=home)
+def _bound_slug(root: Path, env: Mapping[str, str]) -> str | None:
+    task = taskbinding.session_task(env, start=root)
     return None if task is None else slug_of(task)
 
 
-def record(
-    root: Path, kind: str, url: str, *, env: Mapping[str, str], read: Reader, home: Path | None = None
-) -> str | None:
+def record(root: Path, kind: str, url: str, *, env: Mapping[str, str], read: Reader) -> str | None:
     """Append ``<kind> opened: <url>`` to the bound task's journal through rem; the line said, or ``None``."""
     try:
-        if not required(root) or (task := _bound_slug(env, home)) is None:
+        if not required(root) or (task := _bound_slug(root, env)) is None:
             return None
         status, said = read(root, ['log', f'{kind} opened: {url}', '--task', task])
     except (TaskUnreadable, ValueError) as unread:
