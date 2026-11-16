@@ -82,7 +82,9 @@ performPendingUpdate(python);
 const args = process.argv.slice(2);
 const run = spawnSync(python, args, { stdio: ['inherit', 'inherit', 'pipe'] });
 const stderr = run.stderr ? run.stderr.toString('utf8') : '';
-const missing = run.status !== 0 && /No module named '?(dev_lab[\w.]*)/.exec(stderr);
+// A module the venv predates, or a verb its older argparse lacks (`invalid choice: 'bind'`, 2026-11-16).
+const missing = run.status !== 0 &&
+  (/No module named '?(dev_lab[\w.]*)/.exec(stderr) || /(?:invalid choice|unrecognized arguments): '?([\w-]+)/.exec(stderr));
 const behind = missing && staleness(python);
 if (!behind) {
   process.stderr.write(stderr);
