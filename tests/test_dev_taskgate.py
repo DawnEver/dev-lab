@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from collections.abc import Sequence
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import taskbinding, taskgate
+from dev_lab.dev import agent_wiring, taskbinding, taskgate
 
 SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
@@ -26,10 +27,10 @@ def _git(cwd: Path, *args: str) -> str:
     return done.stdout.strip()
 
 
-def _repo(tmp_path: Path, *, required: bool) -> Path:
+def _repo(tmp_path: Path, *, required: bool, wired: bool = True) -> Path:
     """A git checkout whose pyproject does or does not require a task, holding the open tasks `toolchain`, `other`."""
     root = tmp_path / 'repo'
-    root.mkdir(exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
     table = '[tool.dev_lab.task]\nrequired = true\n' if required else '[project]\nname = "x"\n'
     (root / 'pyproject.toml').write_text(table, encoding='utf-8')
     for slug in ('toolchain', 'other'):
@@ -37,6 +38,9 @@ def _repo(tmp_path: Path, *, required: bool) -> Path:
         folder.mkdir(parents=True, exist_ok=True)
         head = f'---\nname: {slug}\nkind: task\nauthority: a1\nstatus: open\n---\n'
         (folder / 'TASK.md').write_text(head, encoding='utf-8')
+    if wired:
+        settings = {'hooks': {'UserPromptSubmit': [{'hooks': [{'command': agent_wiring.TASKBIND_COMMAND}]}]}}
+        (root / agent_wiring.SETTINGS_REL).write_text(json.dumps(settings), encoding='utf-8')
     _git(root, 'init', '-q', '-b', 'main')
     _git(root, 'add', '.')
     _git(root, 'commit', '-q', '-m', 'chore: seed')
@@ -194,3 +198,18 @@ def test_watch_by_a_task_with_no_recorded_pr_refuses() -> None:
     """The control: an empty journal is a named refusal, never a watch of nothing."""
     with pytest.raises(taskgate.TaskUnreadable, match='no open PR head'):
         taskgate.watch_argv(['--task', 'toolchain'], _Forge, read=_Rem())
+
+
+def test_an_unwired_binder_admits_the_commit_in_one_line_naming_its_door(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A consumer report (2026-11-16): with no binder wired no prompt can bind, so refusing refused every commit.
+
+    PLANTED CONTROL: the same unbound session in a wired repo is still refused.
+    """
+    unwired = _repo(tmp_path / 'unwired', required=True, wired=False)
+    assert taskgate.refusal(unwired, env=AGENT, branch='pr/toolchain/a') is None
+    [line] = capsys.readouterr().err.strip().splitlines()
+    assert taskgate.RULE in line
+    assert 'dev_lab.dev.agent_guard --install' in line
+    assert taskgate.refusal(_repo(tmp_path / 'wired', required=True), env=AGENT, branch='pr/toolchain/a') is not None
