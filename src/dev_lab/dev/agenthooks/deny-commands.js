@@ -675,7 +675,12 @@ function logRefusal(name, where, reason) {
 /** Does `rule` fire on any executed text? */
 function fires(rule, texts, cmd) {
   // A 'line' rule names a shape that spans segments (a code piped into a command), so it reads the whole line.
-  if (rule.matches === 'line') return new RegExp(rule.pattern).test(cmd);
+  // Never a body a sink consumes (2026-11-16: prose naming a path was refused): the shell text and executed bodies.
+  if (rule.matches === 'line') {
+    const at = new RegExp(rule.pattern);
+    const { rest, executed } = splitHeredocs(cmd);
+    return at.test(rest) || executed.some((body) => at.test(body));
+  }
   const argument = rule.matches === 'argument';
   // A 'command' rule anchors at the start of a segment, and at the start of a LINE inside
   // interpreter code. An 'argument' rule names an option, so it is searched within the text.
