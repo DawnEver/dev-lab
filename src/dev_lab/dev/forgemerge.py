@@ -45,8 +45,9 @@ fifth conditions, which a serve host posts):
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
 * its head's push-row GATES stand ``success`` (:func:`dev_lab.dev.forgeheadgate.gates_wait`: ``session-branch``,
-  ``pr-current``, user ruling 2026-11-07) -- the same judges the pre-push rows call, posted by the forge, so a
-  consumer's stale hook never disarms them; absent, ``error`` or ``failure`` waits;
+  user ruling 2026-11-07) -- the same judge the pre-push row calls, posted by the forge, so a consumer's stale hook
+  never disarms it; absent, ``error`` or ``failure`` waits. ``pr-current`` and ``lock/lag`` are ALARMS, never waited
+  on (W5, dev-lab#644): a stale head is judged by the trial merge below, at merge time;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit

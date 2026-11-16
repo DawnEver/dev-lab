@@ -209,18 +209,20 @@ def test_pr_current_judges_only_what_the_row_judges(tmp_path: Path) -> None:
 def test_the_gates_wait_until_each_stands_success() -> None:
     """The merge reads :func:`forgeheadgate.gates_wait`: absent, ``error`` and ``failure`` wait.
 
-    PLANTED CONTROL: every gate ``success`` is ``None``, and ``lock/lag`` failing alone does not wait (an alarm).
+    W5 (dev-lab#644): ``pr-current`` and ``lock/lag`` are ALARMS -- mergeability is the trial merge at merge time.
+    PLANTED CONTROL: ``session-branch`` absent or red still waits; both alarms red alone never wait, and are said.
     """
 
     def status(context: str, state: str) -> CommitStatus:
         return CommitStatus(context=context, state=state, description='why', url='')
 
-    assert forgeheadgate.gates_wait(()) == 'session-branch is not yet judged; pr-current is not yet judged'
+    assert forgeheadgate.gates_wait(()) == 'session-branch is not yet judged'
     for state in ('failure', 'error', 'pending'):
-        waits = forgeheadgate.gates_wait((status('session-branch', 'success'), status('pr-current', state)))
-        assert waits == f'pr-current is {state}: why'
-    green = (status('session-branch', 'success'), status('pr-current', 'success'), status('lock/lag', 'failure'))
-    assert forgeheadgate.gates_wait(green) is None
+        assert forgeheadgate.gates_wait((status('session-branch', state),)) == f'session-branch is {state}: why'
+    alarmed = (status('session-branch', 'success'), status('pr-current', 'failure'), status('lock/lag', 'failure'))
+    assert forgeheadgate.gates_wait(alarmed) is None
+    assert forgeheadgate.alarms_said(alarmed) == 'pr-current is failure: why; lock/lag is failure: why'
+    assert forgeheadgate.alarms_said(alarmed[:1]) is None, 'CONTROL: an unjudged alarm says nothing'
 
 
 def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:

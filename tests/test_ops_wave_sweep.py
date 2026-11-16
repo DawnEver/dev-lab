@@ -143,17 +143,22 @@ def test_a_refused_merge_is_skipped_and_the_next_pr_still_merges(tmp_path) -> No
     assert _merged(host) == [8]
 
 
-def test_a_green_pr_that_is_not_current_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
+def test_a_green_pr_that_is_not_current_still_lands(tmp_path) -> None:
+    """W5 (dev-lab#644): ``pr-current`` is an alarm -- a stale green head lands; the forge's merge decides the rest.
+
+    PLANTED CONTROL: a red head beside them stays.
+    """
     stale = (*GREEN, CommitStatus(PR_CURRENT_CONTEXT, 'failure', 'lacks integrate/main', ''))
     host = _host(
         tmp_path,
         [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)],
-        {HEAD: stale, 'c' * 40: GREEN},
+        {HEAD: stale, 'c' * 40: GREEN, 'd' * 40: RED},
     )
     host.forge.pulls.append(Pull(9, 'integrate/main', 'c' * 40, draft=False))  # green, pr-current absent
+    host.forge.pulls.append(Pull(10, 'integrate/main', 'd' * 40, draft=False))
     host.open(max_merges=5)
     host.server.tick()
-    assert _merged(host) == [8]
+    assert _merged(host) == [7, 8, 9]
 
 
 # User ruling 2026-11-11: a hosts-config PR touching a boundary key (configcheck labels it) lands only by its own

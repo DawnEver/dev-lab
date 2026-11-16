@@ -10,7 +10,8 @@ by :func:`dev_lab.dev.forgemerge.decide`); the hook stays as early feedback only
 * :data:`SESSION_BRANCH_CONTEXT` -- :func:`dev_lab.dev.sessionbranch.head_refusals`: the head is published as
   itself and admitted by the branch set its own commit declares (P2, P6). A GATE.
 * :data:`PR_CURRENT_CONTEXT` -- :func:`dev_lab.dev.prcurrent.head_refusals`: a ``pr/`` head holds
-  ``origin/<integration>``'s tip and a lock within the floated siblings' lag window. A GATE.
+  ``origin/<integration>``'s tip and a lock within the floated siblings' lag window. An ALARM (W5, dev-lab#644):
+  mergeability is the trial merge at merge time (:func:`dev_lab.dev.trialmerge.trial`), never a stale head's red.
 * :data:`LAG_CONTEXT` -- THE ONE LOCK STATUS: the head's ``uv.lock`` does not render from its own
   ``pyproject.toml`` (:func:`dev_lab.dev.lockcheck.unrendered`, in a detached worktree, once per sha), or pins a
   floated sibling past :data:`~dev_lab.dev.locklag.LAG_WINDOW` behind that sibling's line
@@ -63,6 +64,7 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
+    'ALARMS',
     'GATES',
     'LAG_CONTEXT',
     'PR_CURRENT_CONTEXT',
@@ -70,6 +72,7 @@ __all__ = [
     'TERMINAL',
     'TICK_BUDGET_S',
     'VOLATILE',
+    'alarms_said',
     'gates_wait',
     'judge',
     'judge_heads',
@@ -85,7 +88,9 @@ LAG_CONTEXT: Final = 'lock/lag'
 SESSION_BRANCH_CONTEXT: Final = sessionbranch.HOOK_ID
 PR_CURRENT_CONTEXT: Final = prcurrent.HOOK_ID
 #: The statuses the merge requires ``success`` (:func:`gates_wait`).
-GATES: Final = (SESSION_BRANCH_CONTEXT, PR_CURRENT_CONTEXT)
+GATES: Final = (SESSION_BRANCH_CONTEXT,)
+#: The statuses said beside the merge, never waited on (:func:`alarms_said`): freshness is no merge condition.
+ALARMS: Final = (PR_CURRENT_CONTEXT, LAG_CONTEXT)
 #: The contexts judged on every pass, posted only on a change: their verdict reads a tip the head does not hold.
 VOLATILE: Final = frozenset({PR_CURRENT_CONTEXT, LAG_CONTEXT})
 #: The states that are a verdict; any other (``error``, ``pending``) is judged again.
@@ -199,6 +204,13 @@ def gates_wait(statuses: Sequence[CommitStatus]) -> str | None:
         elif held.state != 'success':
             waits.append(f'{context} is {held.state}: {held.description}')
     return '; '.join(waits) or None
+
+
+def alarms_said(statuses: Sequence[CommitStatus]) -> str | None:
+    """Each judged :data:`ALARMS` context not standing ``success``, named; ``None`` when none is. Never a wait."""
+    latest = {status.context: status for status in statuses}
+    red = [latest[c] for c in ALARMS if c in latest and latest[c].state != 'success']
+    return '; '.join(f'{one.context} is {one.state}: {one.description}' for one in red) or None
 
 
 def judge_heads(
