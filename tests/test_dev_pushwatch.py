@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
-from _branch_repos import clone_pair
+from _branch_repos import clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
@@ -19,7 +19,7 @@ from dev_lab.dev.pushwatch import RULE, pushed_ref, reminder, watch_command, wat
 
 def _work(tmp_path: Path) -> tuple[Path, str]:
     _, work = clone_pair(tmp_path)
-    return work, git_out(work, 'rev-parse', 'HEAD')
+    return work, commit(work, 'pr.txt', 'a head not on the integration branch\n')
 
 
 def _post(forge: StateForge, sha: str, context: str, state: str) -> None:

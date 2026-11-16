@@ -40,7 +40,9 @@ __all__ = [
     'RULE',
     'arm_line',
     'deadline_reached',
+    'descends',
     'main',
+    'origin_tip',
     'pushed_at',
     'pushed_by',
     'pushed_head',
@@ -122,16 +124,21 @@ def watched(sha: str, command_lines: Iterable[str], *, root: Path | None = None)
     words = _watched_words(command_lines)
     if any(sha.startswith(word) for word in words):
         return True
-    return root is not None and any(_descends(root, sha, word) for word in words)
+    return root is not None and any(descends(root, sha, word) for word in words)
 
 
-def _descends(root: Path, sha: str, word: str) -> bool:
+def descends(root: Path, sha: str, word: str) -> bool:
     """Whether commit *word* is a strict descendant of *sha* in the repository at *root*."""
     done = _door.run(
         [_GIT, '-C', str(root), 'merge-base', '--is-ancestor', sha, word],
         capture_output=True, text=True, encoding='utf-8', check=False,
     )  # fmt: skip
     return done.returncode == 0 and not word.startswith(sha[: len(word)])
+
+
+def origin_tip(root: Path, branch: str) -> str:
+    """The commit ``origin/<branch>`` names in the repository at *root*; ``''`` when it names none."""
+    return _git(root, 'rev-parse', '--verify', '--quiet', f'refs/remotes/origin/{branch}^{{commit}}')
 
 
 def pushed_ref(words: Sequence[str]) -> str | None:
