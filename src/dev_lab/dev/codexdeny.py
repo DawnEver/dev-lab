@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 from typing import Final
 
+from dev_lab.dev._deny_cicron_row import MODULE as _HPCACCOUNT
+from dev_lab.dev._deny_cicron_row import refused_verbs
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
@@ -52,6 +54,7 @@ FORBIDDEN: Final[dict[str, tuple[Prefix, ...]]] = {
         ('git', 'push', 'origin', ('--delete', '-d')),
     ),
     'RAW-PROCESS-KILL': (('taskkill',), ('Stop-Process',), ('kill', '-9')),
+    'CI-CRON-NEEDS-CONSENT': ((_PYTHON, '-m', _HPCACCOUNT, refused_verbs()),),
     'BARE-INTERPRETER': (
         ('uv', 'run', ('python', 'python3', '-m')),
         ('uv', 'run', '--no-sync', ('python', 'python3')),

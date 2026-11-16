@@ -89,7 +89,7 @@ class _Routed(io.TextIOBase):
 
     @property
     def encoding(self) -> str:  # type: ignore[override]
-        return getattr(self._target(), 'encoding', None) or 'utf-8'
+        return self._target().encoding or 'utf-8'
 
     def readable(self) -> bool:
         return True
@@ -100,7 +100,7 @@ class _Routed(io.TextIOBase):
     def read(self, size: int | None = -1) -> str:
         return self._target().read(-1 if size is None else size)
 
-    def readline(self, size: int | None = -1) -> str:  # type: ignore[override]
+    def readline(self, size: int | None = -1) -> str:
         return self._target().readline(-1 if size is None else size)
 
     def write(self, text: str) -> int:
@@ -147,14 +147,13 @@ def run_row(wire: Wire, text: str, *, timeout: float | None = None) -> Outcome:
     """Run *wire* on payload *text* in a thread of its own, bounded by its timeout."""
     out, err = io.StringIO(), io.StringIO()
     done: list[int] = []
-    streams = (sys.stdin, sys.stdout, sys.stderr)
-    if not all(isinstance(stream, _Routed) for stream in streams):
+    stdin, stdout, stderr = sys.stdin, sys.stdout, sys.stderr
+    if not (isinstance(stdin, _Routed) and isinstance(stdout, _Routed) and isinstance(stderr, _Routed)):
         msg = 'run_row needs the routed streams main() installs'
         raise TypeError(msg)
-    stdin, stdout, stderr = streams
 
     def body() -> None:
-        with stdin.bound(io.StringIO(text)), stdout.bound(out), stderr.bound(err):  # type: ignore[union-attr]
+        with stdin.bound(io.StringIO(text)), stdout.bound(out), stderr.bound(err):
             try:
                 done.append(_call(wire))
             except Exception:  # noqa: BLE001 -- a crashed handler is one line, never the dispatcher's crash
