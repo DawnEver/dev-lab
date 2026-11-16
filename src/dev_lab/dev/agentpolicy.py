@@ -327,6 +327,33 @@ POLICY: Final[tuple[Door, ...]] = (
         'scratch); never repository data, attachments, backups or anything the census marks not owned.',
     ),
     Door(
+        _module('hpcaccount', 'drift-fleet'),
+        SUBAGENT,
+        'Reading, read-only, what each selected cluster account holds that its config source cannot render; it '
+        'writes no file and touches no crontab (user ruling 2026-11-16).',
+    ),
+    Door(
+        _module('hpcaccount', 'drift'),
+        SUBAGENT,
+        'Reading, read-only and on the account itself, what that account holds that its config source cannot '
+        'render (user ruling 2026-11-16).',
+    ),
+    *(
+        Door(
+            _module('hpcaccount', verb),
+            USER,
+            f"{what} a verification account's forge CI cron around cluster maintenance: the user runs it, or "
+            'grants a consent plan for the cluster and its account list (user ruling 2026-11-16).',
+            deny='CI-CRON-NEEDS-CONSENT',
+        )
+        for verb, what in (
+            ('ci-pause-fleet', 'Pausing, across the selected accounts,'),
+            ('ci-resume-fleet', 'Resuming, across the selected accounts,'),
+            ('ci-pause', 'Pausing, on the account itself,'),
+            ('ci-resume', 'Resuming, on the account itself,'),
+        )
+    ),
+    Door(
         _module('hpcaccount', 'deploy'),
         USER,
         "Making a cluster account's login host a forge serve host: run by the user on that account.",
