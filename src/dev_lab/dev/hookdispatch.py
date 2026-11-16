@@ -6,6 +6,10 @@ every machine whose venv lagged (incident #633). Now the settings row names only
 (:func:`~dev_lab.dev.agent_wiring.dispatch_command`) and this module reads the table from the package it is part
 of, so rows and code are one install.
 
+The rows are the family's :data:`~dev_lab.dev.agent_wiring.WIRING` and the repo's own declared ones
+(:func:`~dev_lab.dev.agent_wiring.declared`, read from ``$CLAUDE_PROJECT_DIR``, else the payload's ``cwd``), imported
+with the repo's root on the path. A refused declaration is one stderr line naming it; the family's rows still run.
+
 ``python -m dev_lab.dev.hookdispatch <Event>`` reads the hook payload once, then for each row of the event whose
 ``tools`` admit the payload's ``tool_name`` (and, for a ``once`` row, that has not run in this session) calls
 ``<module>.main(argv)`` with the payload as its stdin, its own stdout and stderr, and its ``timeout``. The answers
@@ -27,6 +31,7 @@ import contextlib
 import importlib
 import io
 import json
+import os
 import sys
 import threading
 import traceback
@@ -37,7 +42,7 @@ from typing import Any, Final, TextIO
 
 from lab_commons.log import emit
 
-from dev_lab.dev.agent_wiring import WIRING, Wire
+from dev_lab.dev.agent_wiring import WIRING, Wire, WireRefused, declared, import_root
 
 __all__ = ['Outcome', 'answer', 'main', 'run_row', 'selected']
 
@@ -84,7 +89,7 @@ class _Routed(io.TextIOBase):
 
     @property
     def encoding(self) -> str:  # type: ignore[override]
-        return getattr(self._target(), 'encoding', None) or 'utf-8'
+        return self._target().encoding or 'utf-8'
 
     def readable(self) -> bool:
         return True
@@ -95,7 +100,7 @@ class _Routed(io.TextIOBase):
     def read(self, size: int | None = -1) -> str:
         return self._target().read(-1 if size is None else size)
 
-    def readline(self, size: int | None = -1) -> str:  # type: ignore[override]
+    def readline(self, size: int | None = -1) -> str:
         return self._target().readline(-1 if size is None else size)
 
     def write(self, text: str) -> int:
@@ -105,10 +110,23 @@ class _Routed(io.TextIOBase):
         self._target().flush()
 
 
-def selected(event: str, payload: dict[str, Any]) -> tuple[Wire, ...]:
-    """The rows of *event* whose tools admit *payload*'s ``tool_name``."""
+def selected(event: str, payload: dict[str, Any], wires: Sequence[Wire]) -> tuple[Wire, ...]:
+    """The rows of *wires* on *event* whose tools admit *payload*'s ``tool_name``."""
     tool = str(payload.get('tool_name') or '')
-    return tuple(wire for wire in WIRING if event in wire.events and (not wire.tools or tool in wire.tools))
+    return tuple(wire for wire in wires if event in wire.events and (not wire.tools or tool in wire.tools))
+
+
+def _repo_root(payload: dict[str, Any]) -> Path:
+    """The checkout whose settings run this hook: ``$CLAUDE_PROJECT_DIR``, else the payload's ``cwd``."""
+    return Path(os.environ.get('CLAUDE_PROJECT_DIR') or payload.get('cwd') or Path.cwd())
+
+
+def _repo_wires(root: Path) -> tuple[tuple[Wire, ...], str]:
+    """*root*'s declared wires and ``''``, or none and the one line naming why the declaration was refused."""
+    try:
+        return declared(root), ''
+    except (WireRefused, OSError, ValueError) as refused:
+        return (), f"[hook] the repo's declared wires did not run: {refused}"
 
 
 def _call(wire: Wire) -> int:
@@ -129,14 +147,13 @@ def run_row(wire: Wire, text: str, *, timeout: float | None = None) -> Outcome:
     """Run *wire* on payload *text* in a thread of its own, bounded by its timeout."""
     out, err = io.StringIO(), io.StringIO()
     done: list[int] = []
-    streams = (sys.stdin, sys.stdout, sys.stderr)
-    if not all(isinstance(stream, _Routed) for stream in streams):
+    stdin, stdout, stderr = sys.stdin, sys.stdout, sys.stderr
+    if not (isinstance(stdin, _Routed) and isinstance(stdout, _Routed) and isinstance(stderr, _Routed)):
         msg = 'run_row needs the routed streams main() installs'
         raise TypeError(msg)
-    stdin, stdout, stderr = streams
 
     def body() -> None:
-        with stdin.bound(io.StringIO(text)), stdout.bound(out), stderr.bound(err):  # type: ignore[union-attr]
+        with stdin.bound(io.StringIO(text)), stdout.bound(out), stderr.bound(err):
             try:
                 done.append(_call(wire))
             except Exception:  # noqa: BLE001 -- a crashed handler is one line, never the dispatcher's crash
@@ -267,13 +284,17 @@ def main(argv: list[str] | None = None) -> int:
     event = args[0]
     text = sys.stdin.read()
     payload = _json(text) or {}
-    wires = _first_runs(selected(event, payload), payload)
+    root = _repo_root(payload)
+    mine, refused = _repo_wires(root)
+    wires = _first_runs(selected(event, payload, (*WIRING, *mine)), payload)
     streams = (sys.stdin, sys.stdout, sys.stderr)
     sys.stdin, sys.stdout, sys.stderr = (_Routed(stream) for stream in streams)
-    outcomes = [run_row(wire, text) for wire in wires]
+    with import_root(root) if mine else contextlib.nullcontext():
+        outcomes = [run_row(wire, text) for wire in wires]
     if all(one.code is not None for one in outcomes):  # a row still running keeps writing into its own buffer
         sys.stdin, sys.stdout, sys.stderr = streams
     said, notes = answer(event, outcomes)
+    notes = '\n'.join(line for line in (refused, notes) if line)
     if notes:
         emit(notes, err=True)
     if said:

@@ -6,7 +6,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 * ``deploy [--dry-run|--remove]`` (:mod:`~dev_lab.dev.hpcaccount.deploy`) makes this account's login host a
   ``forge serve`` host in one run; its data is :mod:`~dev_lab.dev.hpcaccount.spec`, its account checks
   :mod:`~dev_lab.dev.hpcaccount.account` and :mod:`~dev_lab.dev.hpcaccount.checks`, its steps
-  :mod:`~dev_lab.dev.hpcaccount.steps`, its host check :mod:`~dev_lab.dev.hpcaccount.deployhost`.
+  :mod:`~dev_lab.dev.hpcaccount.steps`, its host check :mod:`~dev_lab.dev.hpcaccount.deployhost`, its declaration
+  :mod:`~dev_lab.dev.hpcaccount.declaration`.
 * ``tick <repo>...`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is one cron tick: the host refreshes the kit (this
   package's checkout) and the repo, then the kit's ``forge serve`` runs in the repo's checkout.
 * ``allocate --until <iso> [name=cpus/mem_gb ...] [--borrow <direction>] | --show | --clear``

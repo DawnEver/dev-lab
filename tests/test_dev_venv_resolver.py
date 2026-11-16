@@ -11,8 +11,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from dev_lab.dev import agent_guard, venvpointer
 from dev_lab.dev.jsrun import node_path
 
@@ -70,8 +68,8 @@ def test_there_are_twenty_distinct_layouts() -> None:
     assert len(set(LAYOUTS)) == 20
 
 
-@pytest.mark.skipif(SH is None, reason='no POSIX sh on PATH')
 def test_the_three_resolvers_agree_on_every_layout(tmp_path: Path) -> None:
+    assert SH, 'the shell twin runs in a POSIX sh: every host the kit serves has one'
     named = 0
     for index, layout in enumerate(LAYOUTS):
         root = _layout(tmp_path / f'r{index}', layout)

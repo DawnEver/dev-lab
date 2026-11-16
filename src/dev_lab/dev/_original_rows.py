@@ -187,8 +187,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hostrefresh',
     # ORIGINAL: no gate read a task ledger; the opt-in task-bound row (user ruling 2026-11-14) is new.
     'taskgate',
-    # ORIGINAL: one session-to-task binding written by the user's prompt (user ruling 2026-11-15); none existed.
+    # ORIGINAL: the one reader of rem's session-to-task binding (user ruling 2026-11-15); none existed.
     'taskbinding',
+    # ORIGINAL: which rem the session's harness runs, read from its plugin registry, so an unbound push names it.
+    'remplugin',
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
@@ -315,8 +317,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sshholdrun',  # ORIGINAL: split from sshhold: a command or credential sent through a held session (2026-11-13)
     'sshholdwire',  # ORIGINAL: split from sshhold: the client half of the holder's protocol (2026-11-13)
     'walls',  # ORIGINAL: every refusal is one ledger line (2026-11-13)
-    'pushwatch',
-    'pushstop',
+    'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
@@ -361,6 +362,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'agentpolicy',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.
     'doorrows',
+    # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-16); no consumer held it.
+    'remotedoors',
     # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.
     'gitenv',
     # ORIGINAL: pinned data dependencies (2026-11-10); no consumer pinned a data repo before.

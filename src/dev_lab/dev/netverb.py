@@ -63,7 +63,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev._netverb_rows import REMEDIES, ROWS
 from dev_lab.dev.bounded import run_bounded
-from dev_lab.dev.pushwatch import arm_line, pushed_head
+from dev_lab.dev.pushwatch import heard_line, pushed_head
 
 __all__ = [
     'CARGO_NETWORK_VERBS',
@@ -532,7 +532,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             emit(attempt.output.removesuffix('\n'), err=True)
     emit(f'[netverb] {report.remedy}', err=True)
     if report.returncode == 0 and (head := pushed_head(Path(args.cwd or Path.cwd()), shlex.join(command))):
-        emit(f'[netverb] {arm_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED: the command to arm
+        emit(f'[netverb] {heard_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED: who hears the pushed head
     if args.json:
         emit(json.dumps(report.as_dict(), indent=2))
     return report.returncode

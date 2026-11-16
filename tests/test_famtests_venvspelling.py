@@ -102,8 +102,9 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-11-12 AT 504 (the merged walk: the 11-12 wave plus the hpcaccount credential door): floor 479.
 #: RE-TAKEN 2026-11-13 AT 528 (CI's walk on e2d492ff, the 11-13 wave): floor 503.
 #: RE-TAKEN 2026-11-15 AT 544 (the 11-14 toolchain wave: taskgate, retention, mainsync, retentionrust): floor 519.
-#: RE-TAKEN 2026-11-15 AT 563 (the shell-life wave: shellreaper, shelllife; modulealarm): floor 538.
-FILE_FLOOR = 538
+#: RE-TAKEN 2026-11-16 AT 580 (the toolchain wave: hookdispatch, backgroundrun, venv_resolver, codexdeny,
+#: hpcaccount drift/declaration, the cicron and subagent-heavy rows): floor 555.
+FILE_FLOOR = 555
 
 
 def _tree() -> dict[str, str]:

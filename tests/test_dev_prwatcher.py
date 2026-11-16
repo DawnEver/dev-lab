@@ -1,8 +1,8 @@
 """SESSION-HEARS-ITS-PRS through ONE machine watcher (dev-lab#581).
 
 A harness ``Monitor`` dies after 30 minutes, so a session waiting on a long PR was refused at every stop. One
-watcher per machine polls every session's PRs, appends each change to the session's inbox and beats; the Stop
-gate counts a session heard when the beat is fresh and covers its open PRs. Each test plants its control.
+watcher per machine polls every session's PRs, appends each change to the session's inbox and beats; a session is
+heard while the beat is fresh and covers its open PRs. Each test plants its control.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import os
 import pytest
 from _forge_state import FORGE, StateForge
 
-from dev_lab.dev import prwatcher, pushstop, sessionprs
+from dev_lab.dev import prwatcher, sessionprs
 from dev_lab.dev.forgestatus import status_post
 
 SHA = 'a' * 40
@@ -107,14 +107,3 @@ def test_the_prompt_hook_surfaces_unread_events_once(capsys: pytest.CaptureFixtu
     assert key in said['additionalContext']
     assert prwatcher.main(['inbox'], stdin=io.StringIO(payload)) == 0
     assert capsys.readouterr().out == ''
-
-
-def test_the_stop_gate_counts_a_fresh_covering_beat_as_a_watch() -> None:
-    forge = StateForge()
-    _open(forge)
-    refused = pushstop.unwatched_refusal('s1').block
-    assert refused is not None, 'PLANTED CONTROL: no watch and no watcher'
-    assert 'dev_lab.dev.prwatcher start' in refused, 'the refusal names the watcher door'
-    with prwatcher.held():
-        prwatcher.poll_once(clients=lambda _f: forge)
-        assert pushstop.unwatched_refusal('s1').block is None

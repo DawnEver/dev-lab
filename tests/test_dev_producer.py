@@ -9,7 +9,6 @@ from _box_fake import ended
 from lab_commons.box import Refused
 
 from dev_lab.dev import verify
-from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.producer import (
     PRODUCING_VAR,
     RETRYABLE,
@@ -26,7 +25,6 @@ from dev_lab.dev.producer import (
     release_reason,
     unreachable,
 )
-from dev_lab.dev.requeue import RETRIES, requeued
 
 
 def test_every_meaning_has_its_own_code() -> None:
@@ -163,26 +161,3 @@ def test_a_part_refusal_is_its_own_class_and_exit() -> None:
     assert owner_of('error', said) is Owner.PART_REFUSAL, said
     assert said.startswith('released: part refused (exit 5)'), said
     assert owner_of('error', release_reason(ProducerExit.INCONCLUSIVE, outage=None)) is Owner.ENVIRONMENT, 'CONTROL'
-
-
-def _released(*descriptions: str) -> list[CommitStatus]:
-    return [CommitStatus('tests/base', 'error', one, '', index) for index, one in enumerate(descriptions)]
-
-
-def test_a_release_is_requeued_by_its_class() -> None:
-    """Every class has a retry policy: ``code`` never, a part refusal to its limit, the rest only on RETRYABLE.
-
-    PLANTED CONTROLS: a judged FAIL and an unowned error are never requeued; the bounded class past its limit is not.
-    """
-    assert set(RETRIES) == set(Owner), 'one policy per class'
-    assert RETRIES[Owner.CODE] == 0
-    superseded = owned(Owner.SCHEDULING, 'released: superseded by a newer tip')
-    assert not requeued(_released(superseded)), 'a class with no retries settles unless it says RETRYABLE'
-    refused = owned(Owner.PART_REFUSAL, 'released: part refused')
-    limit = RETRIES[Owner.PART_REFUSAL]
-    assert isinstance(limit, int)
-    assert requeued(_released(*[refused] * limit))
-    assert not requeued(_released(*[refused] * (limit + 1))), 'CONTROL: past its limit it settles'
-    assert not requeued([CommitStatus('tests/base', 'failure', 'scope=full ran=3', '', 0)]), 'CONTROL: the code'
-    assert not requeued(_released('released: something')), 'CONTROL: unowned'
-    assert requeued(_released(f'{RETRYABLE} -- this host had no room')), 'the RETRYABLE prefix stays open'

@@ -12,11 +12,15 @@ That is why the scan reads every tracked text file in those roots, not just iden
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from pathlib import Path
 from typing import Final
 
-from _arch_corpus import assert_floor, docs_pages, rel, rules_pages, source_modules, suite_modules
+import pytest
+from _arch_corpus import assert_floor, docs_pages, module_names, rel, rules_pages, source_modules, suite_modules
+
+from dev_lab.dev import branchprune, pushwatch, sessionprs
 
 #: dev-lab's own tables, moved from ``[tool.lab_commons]`` to ``[tool.dev_lab]`` (plan A3); ``schedule``,
 #: ``tools``, ``hpc``, ``tests`` and ``artefacts`` stay, because lab-commons code reads them.
@@ -60,6 +64,34 @@ RETIRED_SPELLINGS: Final = {
     'serve = false': (
         "the repo's own [tool.dev_lab.protection] producer (dev_lab.dev.producers); a host serves only hpc repos",
         'user ruling 2026-11-16: a repo is produced by forge Actions or by the HPC, declared once in the repo',
+    ),
+    **dict.fromkeys(
+        (
+            'pushstop',
+            'unwatched_refusal',
+            'red_refusal',
+            'stop_refusal',
+            'record_deadline',
+            'deadline_reached',
+            'pushed_by',
+            'pushed_at',
+            'arm_line',
+            'said_after',
+            'watch_session_command',
+            'post_push',
+            'post-push',
+        ),
+        (
+            'prwatcher, the one hearer of a session PR; push doors print pushwatch.heard_line',
+            'dev-lab #640 unwired the push journal, its Stop gate, the shell-line hooks and post-push; deleted after',
+        ),
+    ),
+    **dict.fromkeys(
+        ('stop_block', 'devhost-stop'),
+        (
+            'devhost session-start, a once-per-session SessionStart notice (agent_wiring.WIRING)',
+            'one trigger per check (2026-11-16): machine-file drift cannot change within a turn; no Stop re-reads it',
+        ),
     ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
     'PR-REVIEW-IS-ADVISORY': (
@@ -171,6 +203,13 @@ RETIRED_SPELLINGS: Final = {
             'dev-lab #641 (epic #648): an environment is published beside the live one, so nothing queues or replays',
         ),
     ),
+    **dict.fromkeys(
+        ('taskbinding bind', 'taskbinding status', 'binding_gap', 'BIND_PROMPT'),
+        (
+            "rem's UserPromptSubmit task hook binds (rem's task.js status shows it); dev_lab.dev.taskbinding reads",
+            'H4 2026-11-16: a stale venv failed the binder and blocked every prompt; rem owns binding, the gate reads',
+        ),
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a
@@ -213,3 +252,19 @@ def test_planted_retired_spelling_is_found() -> None:
 def test_every_row_names_its_replacement_and_decision() -> None:
     blank = sorted(old for old, (new, why) in RETIRED_SPELLINGS.items() if not new.strip() or not why.strip())
     assert blank == []
+
+
+def test_the_retired_push_entry_points_are_absent() -> None:
+    """dev-lab #640 unwired them; deleted, no shim. Their spellings live only here, so their absence is pinned here.
+
+    PLANTED CONTROL: the live neighbours of each stay -- the module that kept its parsing, the pre-push verb.
+    """
+    assert importlib.util.find_spec('dev_lab.dev.pushstop') is None
+    assert importlib.util.find_spec('dev_lab.dev.pushwatch') is not None
+    assert 'said_after' not in module_names(sessionprs)
+    assert 'record_pushed' in module_names(sessionprs)
+    assert {'arm_line', 'record_deadline', 'pushed_by', 'pushed_at'}.isdisjoint(module_names(pushwatch))
+    assert 'post_push' not in module_names(branchprune)
+    with pytest.raises(SystemExit) as refused:
+        branchprune.main(['post-push'])
+    assert refused.value.code == 2, 'argparse refuses the retired verb by name'

@@ -7,9 +7,11 @@ own runs is a second source that disagrees with the first. :func:`refresh` reads
 machine has not folded yet, newest last, into :mod:`lab_commons.compute.learned`, which is from then on
 a CACHE of the forge: every host prices a selection from the same numbers.
 
-A forge that cannot be read is not a refusal: the cache stands as last folded, and the caller is told how
-many records were folded (0). At most *limit* new records are read per call, newest first, so a host that
-was away a month pays a bounded download and catches up over its next calls.
+A forge that cannot be read -- unreachable, or a listing too long to read whole (``ListingIncomplete``) --
+is not a refusal: the cache stands as last folded, one stderr line names the cause, and the caller is told
+how many records were folded (0). A local measure never depends on reading a listing to completion.
+At most *limit* new records are read per call, newest first, so a host that was
+away a month pays a bounded download and catches up over its next calls.
 
 :func:`part_demand` is what a cluster part CLAIMS of its account: one light task, never above the heavy bar.
 """
@@ -24,9 +26,11 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.compute import learned
 from lab_commons.compute.measured import HEAVY_SHARE
 from lab_commons.compute.model import Demand
+from lab_commons.log import emit
 
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import unprompted_client
+from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecords import listing
 from dev_lab.dev.platformparts import origin_url
 
@@ -51,7 +55,8 @@ def refresh(repo: str, client: Client | None, *, limit: int = LIMIT) -> int:
         return 0
     try:
         attached = listing(client)
-    except (ForgeCallFailed, OSError):
+    except (ListingIncomplete, ForgeCallFailed, OSError) as error:  # optional to a measure: degrade, say why
+        emit(f'forgedemand: learned demand not refreshed (cache stands as last folded): {error}', err=True)
         return 0
     known = learned.folded(repo)
     fresh = sorted((a for a in attached if a.name not in known), key=lambda a: a.id)[-limit:]

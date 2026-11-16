@@ -91,7 +91,6 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'merge-resolution',
     }
     assert {hook.id for hook in table['pre-commit']} == {
-        'task-bound',
         'check-added-large-files',
         'check-ast',
         'check-case-conflict',
@@ -494,7 +493,7 @@ def test_the_running_interpreter_is_borrowed_unless_it_is_the_checkouts_own(repo
 @pytest.mark.parametrize(
     ('stage', 'row'),
     [
-        ('pre-commit', 'task-bound'),
+        ('pre-push', 'task-bound'),
         ('commit-msg', 'merge-audit'),
         ('commit-msg', 'merge-resolution'),
         ('commit-msg', 'memory-adds'),
@@ -503,8 +502,9 @@ def test_the_running_interpreter_is_borrowed_unless_it_is_the_checkouts_own(repo
 def test_every_named_base_row_actually_runs(repo: Path, stage: str, row: str) -> None:
     """dev-lab #639: a filter on ``python -m lab_commons`` skipped every one of these since the rename."""
     seen = _Recorder()
-    args = ['.git/COMMIT_EDITMSG'] if stage == 'commit-msg' else []
-    run_stage(stage, args, root=repo, runner=seen)
+    args = {'commit-msg': ['.git/COMMIT_EDITMSG'], 'pre-push': ['origin', 'url']}.get(stage, [])
+    stdin = _push_line(repo, 'refs/heads/main') if stage == 'pre-push' else ''
+    run_stage(stage, args, root=repo, stdin=stdin, runner=seen)
     ran = {' '.join(argv) for argv, _ in seen.calls}
     [hook] = [hook for hook in hook_table(repo)[stage] if hook.id == row]
     assert any(' '.join(hook.run[1:]) in line for line in ran), (row, ran)
