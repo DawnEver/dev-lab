@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import reclaimrun
-from dev_lab.dev.agent_wiring import RECLAIM_COMMAND, WIRING
+from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.dev.famtests.visibility import plant_checkout
 from dev_lab.dev.githooks.table import ADVISORY, base_rows, merge
 from dev_lab.dev.reclaim import blockers, orphan_reason, repository_at
@@ -142,8 +142,8 @@ def test_session_start_detaches_from_a_main_checkout_only(planted: Path, monkeyp
 
 
 def test_the_kit_wires_the_reclaim_at_session_start() -> None:
-    assert any(w.event == 'SessionStart' and w.command == RECLAIM_COMMAND for w in WIRING)
-    assert '--session-start' in RECLAIM_COMMAND
+    wired = [(w.events, w.argv, w.once) for w in WIRING if w.module == 'dev_lab.dev.reclaimrun']
+    assert wired == [(('SessionStart',), ('--session-start',), True)]
 
 
 def test_background_from_any_tree_detaches_one_run_of_its_main_checkout(

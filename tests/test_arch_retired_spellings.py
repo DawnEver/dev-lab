@@ -27,6 +27,36 @@ MOVED_TABLES: Final = (
 
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
+    **dict.fromkeys(
+        (
+            'RETIRED_WIRING',
+            'PUSHWATCH_COMMAND',
+            'SESSIONPRS_COMMAND',
+            'PUSHSTOP_COMMAND',
+            'SWEEP_COMMAND',
+            'PRESSURE_COMMAND',
+            'STRAY_COMMAND',
+            'HANDBACK_COMMAND',
+            'JOURNALDOOR_COMMAND',
+            'TASKBIND_COMMAND',
+            'WALLSPOST_COMMAND',
+            'WALLSSTOP_COMMAND',
+            'RECLAIM_COMMAND',
+            'REAPER_COMMAND',
+            'VENVFOLLOW_COMMAND',
+            'FORGEAUTH_COMMAND',
+            'AUTOMODE_COMMAND',
+            'SCRATCHSTOP_COMMAND',
+            'SCRATCHSNAP_COMMAND',
+            'DEVHOSTSTOP_COMMAND',
+            'PRWATCHER_START_COMMAND',
+            'PRWATCHER_INBOX_COMMAND',
+        ),
+        (
+            'agent_wiring.WIRING rows run by dev_lab.dev.hookdispatch; settings carry dispatch_command(event)',
+            'dev-lab #640 (W1): one dispatcher per hook event; the renderer owns every launcher row',
+        ),
+    ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
     'PR-REVIEW-IS-ADVISORY': (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',

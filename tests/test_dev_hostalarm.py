@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 from dev_lab.dev import forgeservesteps, hostalarm
-from dev_lab.dev.agent_wiring import PRESSURE_COMMAND, WIRING
+from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.dev.forgealarm import PRESSURE, Alarm, sound
 from dev_lab.supervise import hostalarms
 from dev_lab.supervise.alert import Delivery
@@ -228,9 +228,10 @@ def test_a_reading_that_fails_is_said_never_raised(monkeypatch: pytest.MonkeyPat
     assert said == ['[serve] the host-pressure reading did not run: no /proc']
 
 
-def test_the_hook_is_wired_after_shell_calls_and_on_each_prompt() -> None:
-    wired = {(w.event, w.on_shells) for w in WIRING if w.command == PRESSURE_COMMAND}
-    assert wired == {('PostToolUse', True), ('UserPromptSubmit', False)}
+def test_the_hook_is_wired_on_each_prompt_only() -> None:
+    """One event (dev-lab #640): the prompt reminder; after every shell call it repeated the same alarm."""
+    wired = [(w.events, w.argv) for w in WIRING if w.module == 'dev_lab.dev.hostalarm']
+    assert wired == [(('UserPromptSubmit',), ('hook',))]
 
 
 def test_supervision_convicts_and_records_only_its_own_alarm(monkeypatch: pytest.MonkeyPatch) -> None:

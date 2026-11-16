@@ -80,9 +80,8 @@ def test_no_stored_credential_is_silent(tmp_path: Path) -> None:
 
 
 def test_the_hook_is_wired_at_session_start_and_reads_its_cwd(tmp_path: Path, monkeypatch) -> None:
-    wire = next(w for w in agent_wiring.WIRING if w.marker == 'dev_lab.dev.forgeauthnotice')
-    assert wire.event == 'SessionStart'
-    assert 'dev_lab.dev.forgeauthnotice --session-start' in wire.command
+    wire = next(w for w in agent_wiring.WIRING if w.module == 'dev_lab.dev.forgeauthnotice')
+    assert (wire.events, wire.argv) == (('SessionStart',), ('--session-start',))
     seen: list[Path] = []
     monkeypatch.setattr(forgeauthnotice, 'notices', lambda root: seen.append(root) or ())
     repo = make_repo(tmp_path, URL)

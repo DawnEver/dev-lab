@@ -112,7 +112,9 @@ def test_the_same_pr_door_does_not_invent_an_agent_for_an_ordinary_process() -> 
 
 def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
-    binder = {'hooks': {'UserPromptSubmit': [{'hooks': [{'command': agent_wiring.TASKBIND_COMMAND}]}]}}
+    binder = {
+        'hooks': {'UserPromptSubmit': [{'hooks': [{'command': agent_wiring.dispatch_command('UserPromptSubmit')}]}]}
+    }
     (tmp_path / '.claude').mkdir()
     (tmp_path / agent_wiring.SETTINGS_REL).write_text(json.dumps(binder), encoding='utf-8')  # a wired session
     refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a')

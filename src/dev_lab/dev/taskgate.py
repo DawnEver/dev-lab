@@ -12,7 +12,7 @@ tip); a ``pr/`` branch not under its own task (another task's, the bare ``pr/<sl
 refused naming the bound task. An unbound session is refused naming the door: the user's ``task: <slug>`` prompt.
 
 ONLY A WIRED SESSION CAN BE UNBOUND (a consumer report, 2026-11-16): the binding is written by the
-``UserPromptSubmit`` binder (:data:`dev_lab.dev.agent_wiring.TASKBIND_COMMAND`). Where the repo's settings do not
+``UserPromptSubmit`` binder (a :data:`~dev_lab.dev.agent_wiring.WIRING` row). Where the repo's settings do not
 wire it, or the binding store cannot be reached, no prompt could ever bind the session, so refusing it refused
 every commit with a door that cannot open. That gap is reported as ONE line naming its own door (the guard
 install that wires the binder), and the commit is admitted; a wired session with no binding is still refused.
@@ -43,7 +43,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import taskbinding
-from dev_lab.dev.agent_wiring import LAUNCHER_REL, SETTINGS_REL
+from dev_lab.dev.agent_wiring import LAUNCHER_REL, SETTINGS_REL, dispatch_command
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.native_session import session_of
@@ -76,8 +76,9 @@ _OPENED: Final = re.compile(r'(?:pr|issue) opened: (\S+)')
 _PULL: Final = re.compile(r'/pulls?/(\d+)\b')
 _NODE: Final = shutil.which('node') or 'node'
 _GIT: Final = shutil.which('git') or 'git'
-#: The text marking the binder hook in a settings file, and the settings files Claude Code reads in a checkout.
-_BINDER: Final = 'dev_lab.dev.taskbinding bind'
+#: The row that runs the binder -- the ``UserPromptSubmit`` dispatcher, whose installed WIRING holds it -- and the
+#: settings files Claude Code reads in a checkout.
+_BINDER: Final = dispatch_command('UserPromptSubmit')
 _SETTINGS: Final = (SETTINGS_REL, '.claude/settings.local.json')
 _WIRE_DOOR: Final = f'node {LAUNCHER_REL} -m dev_lab.dev.agent_guard --install'
 
@@ -152,7 +153,8 @@ def _binder_wired(root: Path) -> bool:
         except (OSError, ValueError, AttributeError):
             continue
         entries = hooks.get('UserPromptSubmit') if isinstance(hooks, dict) else None
-        if _BINDER in json.dumps(entries or []):
+        hooks = [h for e in entries or [] if isinstance(e, dict) for h in e.get('hooks') or [] if isinstance(h, dict)]
+        if any(hook.get('command') == _BINDER for hook in hooks):
             return True
     return False
 

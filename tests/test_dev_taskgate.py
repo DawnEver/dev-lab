@@ -39,7 +39,9 @@ def _repo(tmp_path: Path, *, required: bool, wired: bool = True) -> Path:
         head = f'---\nname: {slug}\nkind: task\nauthority: a1\nstatus: open\n---\n'
         (folder / 'TASK.md').write_text(head, encoding='utf-8')
     if wired:
-        settings = {'hooks': {'UserPromptSubmit': [{'hooks': [{'command': agent_wiring.TASKBIND_COMMAND}]}]}}
+        settings = {
+            'hooks': {'UserPromptSubmit': [{'hooks': [{'command': agent_wiring.dispatch_command('UserPromptSubmit')}]}]}
+        }
         (root / agent_wiring.SETTINGS_REL).write_text(json.dumps(settings), encoding='utf-8')
     _git(root, 'init', '-q', '-b', 'main')
     _git(root, 'add', '.')
