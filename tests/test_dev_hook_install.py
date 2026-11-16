@@ -37,6 +37,7 @@ from dev_lab.dev.hook_install import (
     shim,
 )
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
+from dev_lab.dev.venvpointer import shell_function
 
 _GIT = shutil.which('git') or 'git'
 _LAYER = '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
@@ -92,8 +93,9 @@ def test_a_shim_runs_the_stage_through_the_checkout_venv() -> None:
     text = shim('pre-push')
     assert text.startswith('#!/bin/sh\n')
     assert SHIM_MARKER in text
-    assert '.venv/Scripts/python.exe' in text
-    assert '.venv/bin/python' in text
+    assert '"$(_current_env "$top")/Scripts/python.exe"' in text
+    assert '"$(_current_env "$main")/bin/python"' in text
+    assert shell_function() in text, 'the one resolver, rendered from venv_resolver.js'
     assert '-m dev_lab.dev.githooks run pre-push "$@"' in text
 
 

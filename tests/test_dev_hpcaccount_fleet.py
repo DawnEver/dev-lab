@@ -25,6 +25,7 @@ from dev_lab.dev.hpcaccount.fleet import (
     render_command,
 )
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT
+from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
 _FLEET = (
@@ -144,7 +145,7 @@ def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path
 
 def test_the_remote_runs_the_accounts_own_deploy() -> None:
     argv = [deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)]
-    assert 'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount deploy' in argv[-1]
+    assert f'cd ~/src/dev-lab && {shell_interpreter(".")} -m dev_lab.dev.hpcaccount deploy' in argv[-1]
     assert '--grant-table' in argv[-1], 'the declared slice is the one source of the grant the deploy writes'
 
 
@@ -411,7 +412,7 @@ _REPOS = (('dev-lab', 'https://forge.example/team/dev-lab.git', 'main'),)
 def test_a_first_install_precedes_the_kits_tick_and_clones_the_layers_repos() -> None:
     command = deploy_command(_FLEET[0], Target('login02.example', 'src', repos=_REPOS), _SRC)
     assert command.index('[first-install]') < command.index('tick dev-lab')
-    assert '[ -x ~/src/dev-lab/.venv/bin/python ] ||' in command
+    assert f'[ -x {shell_interpreter("~/src/dev-lab")} ] ||' in command
     assert 'git clone -q --branch main https://forge.example/team/dev-lab.git ~/src/dev-lab' in command
     assert '( cd ~/src/dev-lab && uv sync --frozen )' in command
     assert 'https://astral.sh/uv/install.sh' in command

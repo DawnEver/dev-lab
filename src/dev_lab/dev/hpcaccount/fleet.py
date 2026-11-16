@@ -67,7 +67,7 @@ from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
     'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
@@ -233,8 +233,8 @@ def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
 
 def in_checkout(target: Target, argv: Sequence[str]) -> str:
     """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv."""
-    python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
-    return f'cd {PurePosixPath("~", target.root, KIT)} && {python} {shlex.join(argv)}'
+    kit = PurePosixPath('~', target.root, KIT)  # every cluster login host is POSIX
+    return f'cd {kit} && {shell_interpreter(".")} {shlex.join(argv)}'
 
 
 def grant_slice(grant: Grant) -> dict[str, Any]:
@@ -280,19 +280,18 @@ def first_install(grant: Grant, target: Target) -> str:
     """
     root = PurePosixPath('~', target.root)
     kit = root / KIT
-    python = kit / venv_interpreter(os_name='posix')
     clones = [
         f'{{ [ -d {root / name}/.git ] || git clone -q --branch {shlex.quote(ref)} {shlex.quote(url)} {root / name}; }}'
         for name, url, ref in target.repos
     ]
     steps = [
-        f'echo "[first-install] {grant.user}: no kit venv at {python}"',
+        f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
         'export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0',
         f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
         f'mkdir -p {root}', *clones, f'( cd {kit} && uv sync --frozen )',
     ]  # fmt: skip
     body = ' && '.join([*grant.setup, *steps])
-    return f'{{ [ -x {python} ] || ( {body} ); }}'
+    return f'{{ [ -x {shell_interpreter(str(kit))} ] || ( {body} ); }}'
 
 
 def refresh_kit(grant: Grant, target: Target) -> str:
