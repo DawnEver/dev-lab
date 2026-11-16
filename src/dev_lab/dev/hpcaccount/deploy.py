@@ -153,7 +153,12 @@ def _declared(args: argparse.Namespace, path: Path) -> Deployment | str:
     fields = (args.host, args.root, args.python, tuple(args.repo), args.slurm_account, tuple(args.partition))
     given = Deployment(*fields, args.role)
     if stored is not None and stored != given:
-        return f'{path} already declares a different [deploy]; edit it there, or run without --host/--repo'
+        return (
+            f'{path} already declares a different [deploy]: it is rendered from the account layer '
+            'hosts/<cluster>-<user>.toml -- edit the layer in the config source, then run '
+            'python -m dev_lab.dev.hpcaccount deploy-fleet --account <user> from the workstation (it renders the '
+            'layer over this file); or run without --host/--repo'
+        )
     return given
 
 
