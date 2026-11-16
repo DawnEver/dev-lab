@@ -448,7 +448,7 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   if (!target || !sessionRoot || samePath(target, sessionRoot)) return reason;
   const shown = target.replace(/\\/g, '/');
   const door = doorsOf(target)[rule.name] && expand(doorsOf(target)[rule.name], target);
-  // One header line; the full wording is docs-src/dev/refusals.md#cross-repo-refusals (lab-commons).
+  // One header line; the full wording is docs-src/dev/refusals.md#cross-repo-refusals (dev-lab).
   const details = reason.split('\n').filter((line) => line.startsWith('details: '));
   if (door) {
     return [`${rule.name}: refused; ${shown} declares its own door for it:`, door, ...details].join('\n');
