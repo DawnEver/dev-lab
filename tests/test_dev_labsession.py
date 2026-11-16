@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import forgeautosync, labsession, relock
+from dev_lab.dev import forgeautosync, labsession, native_session, relock
 from dev_lab.dev.githooks.table import base_rows
 
 _GIT = shutil.which('git') or 'git'
@@ -60,6 +60,16 @@ def test_machine_env_drops_the_session() -> None:
     env = labsession.machine_env(env={labsession.ENV: _ID, 'PATH': 'p'})
     assert labsession.ENV not in env
     assert env['PATH'] == 'p'
+
+
+def test_machine_env_drops_every_native_harness_session_so_the_forge_commit_is_not_task_gated() -> None:
+    """dev-lab #630: forge sync's relock commit inherited CLAUDE_CODE_SESSION_ID and the session's task gate."""
+    keys = native_session.harness_keys()
+    assert {'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID'} <= keys
+    env = labsession.machine_env(env={**dict.fromkeys(keys, _ID), 'PATH': 'p'})
+    assert not keys & env.keys()
+    assert native_session.session_of(env) == '', 'the task gate judges no session'
+    assert env['PATH'] == 'p', 'planted control: the rest of the environment is kept'
 
 
 def test_sessions_reads_the_trailers_between_two_commits(tmp_path: Path) -> None:

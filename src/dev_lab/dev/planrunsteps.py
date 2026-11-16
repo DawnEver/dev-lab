@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shlex
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -39,6 +40,7 @@ __all__ = [
     'shown_output',
     'stdout_path',
     'step_stdin',
+    'token_step',
 ]
 
 #: Runs a local client verb (``forge`` argv words); ``(merged output, exit status)``.
@@ -110,8 +112,8 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
     if {'stdin_local', 'stdin_task'} <= set(step):
         msg = f'{name} names both stdin_local and stdin_task: exactly one source feeds its stdin'
         raise ConsentRefused(msg)
-    if 'stdout_local' in step and not _relative(step['stdout_local']):
-        msg = f'{name} stdout_local is {step["stdout_local"]!r}: a relative name under the private state, no ..'
+    if 'stdout_local' in step and (fault := _stdout_fault(step['stdout_local'], argv)):
+        msg = f'{name} {fault}'
         raise ConsentRefused(msg)
     if action in LOCAL_VERBS:
         msg = f'{name} grants {action}, which is redeemed here: {{"local": true}}'
@@ -133,6 +135,13 @@ def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str
     )  # fmt: skip
 
 
+def _stdout_fault(name: str, argv: Sequence[str]) -> str:
+    """Why ``stdout_local`` *name* is refused on a step running *argv*; ``''`` when it is fine."""
+    if token_step(argv):
+        return 'mints tokens: each lands in its own outputs/<login>-<name>.token by itself; drop stdout_local'
+    return '' if _relative(name) else f'stdout_local is {name!r}: a relative name under the private state, no ..'
+
+
 def _relative(name: str) -> bool:
     """*name* is a non-empty relative path on every platform, with no ``..`` part."""
     pure = PureWindowsPath(name)
@@ -144,15 +153,90 @@ def stdout_path(name: str, home: Path | None = None) -> Path:
     return state_dir(home) / 'outputs' / name
 
 
-def shown_output(step: Step, said: str, status: int, home: Path | None) -> str:
-    """What the run prints of *step*'s output: its last line, or -- for ``stdout_local`` -- where it was kept."""
+#: The ops verbs whose OUTPUT is secret: every token they print lands in its own file, never on the terminal.
+_TOKEN_VERBS: Final = (('forge', 'token', 'mint'), ('forge', 'token', 'mint-batch'))
+
+
+#: A login or token name safe as a file-name part.
+_NAME: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')
+
+
+def token_step(argv: Sequence[str]) -> bool:
+    """*argv* mints forge tokens (``forge token mint`` / ``mint-batch``): its output carries secrets."""
+    return tuple(argv[:3]) in _TOKEN_VERBS
+
+
+def _flag(argv: Sequence[str], flag: str) -> str:
+    return argv[argv.index(flag) + 1] if flag in argv[:-1] else ''
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]
+
+
+def _tokens(argv: Sequence[str], said: str) -> list[tuple[str, str]] | None:
+    """``(name, token)`` per token *said* prints; ``None`` when any non-blank line is not one (never truncated).
+
+    ``mint-batch`` prints one ``{"name": N, "token": T}`` line per item; ``mint`` prints its bare token once.
+    """
+    lines = [line.strip() for line in said.splitlines() if line.strip()]
+    if argv[2] == 'mint':
+        name = _flag(argv, '--name')
+        ok = len(lines) == 1 and not lines[0].startswith(('{', 'refused')) and ' ' not in lines[0]
+        return [(name, lines[0])] if ok and _NAME.fullmatch(name) else None
+    found = []
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except ValueError:
+            return None
+        if not (isinstance(item, dict) and set(item) == {'name', 'token'} and isinstance(item['token'], str)
+                and isinstance(item['name'], str) and _NAME.fullmatch(item['name']) and item['token']):  # fmt: skip
+            return None
+        found.append((item['name'], item['token']))
+    return found or None
+
+
+def _token_output(step: Step, said: str, status: int, home: Path | None) -> tuple[str, bool]:
+    """Each token *said* carries to ``outputs/<login>-<name>.token``; else the raw output kept, named, refused.
+
+    A failed batch may still have printed the tokens it minted before failing: they are kept the same way. The ops
+    verb's own ``refused: ...`` lines carry no secret and are shown.
+    """
+    refusal = [line.strip() for line in said.splitlines() if line.strip().startswith('refused: ')]
+    whole, said = said, '\n'.join(line for line in said.splitlines() if not line.strip().startswith('refused: '))
+    login, why = _flag(step.argv, '--login'), ' '.join(refusal) or 'no output'
+    tokens = _tokens(step.argv, said) if _NAME.fullmatch(login) else None
+    if tokens is None:
+        if not said.strip():
+            return why, not status
+        raw = stdout_path(f'{login if _NAME.fullmatch(login) else "unnamed"}-{_sha(whole)}.raw', home)
+        write_private(raw, whole)
+        return (f'output carries a secret but did not parse as tokens; kept unread, owner-only, at {raw} '
+                f'(sha256 {_sha(whole)}) -- place each token from it, then delete it'), False  # fmt: skip
+    wrote = []
+    for name, token in tokens:
+        path = stdout_path(f'{login}-{name}.token', home)
+        write_private(path, token + '\n')
+        wrote.append(f'{path} (sha256 {_sha(token)})')
+    return f'wrote {len(wrote)} token file(s): {", ".join(wrote)}' + (f'; {why}' if refusal else ''), True
+
+
+def shown_output(step: Step, said: str, status: int, home: Path | None) -> tuple[str, bool]:
+    """``(what the run prints of *step*'s output, it was handled)``; ``False`` only for an unparsed secret.
+
+    A token step's tokens each land in their own file (:func:`_token_output`); a ``stdout_local`` step's output is
+    kept whole; any other step shows its last line.
+    """
+    if token_step(step.argv):
+        return _token_output(step, said, status, home)
     if step.stdout_local is None:
-        return last_line(said)
+        return last_line(said), True
     if status:
-        return 'output withheld (stdout_local)'
+        return 'output withheld (stdout_local)', True
     path, data = stdout_path(step.stdout_local, home), said.encode('utf-8')
     write_private(path, said)
-    return f'wrote {path} (sha256 {hashlib.sha256(data).hexdigest()[:12]}, {len(data)} bytes)'
+    return f'wrote {path} (sha256 {hashlib.sha256(data).hexdigest()[:12]}, {len(data)} bytes)', True
 
 
 def load_steps(path: Path, plan: Plan) -> Steps:

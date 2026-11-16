@@ -1,4 +1,4 @@
-"""Fakes shared by the hpcaccount backup and ci-pause tests: a fake ``crontab`` and ``id``, a home, a machine file."""
+"""Fakes shared by the hpcaccount drift and ci-pause tests: a fake ``crontab`` and ``id``, a home, a config source."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
+from dev_lab.dev import devhost
 from dev_lab.dev.hpcaccount.steps import Tools
 
 FAKE_CRONTAB: Final = r"""
@@ -19,26 +20,40 @@ else:
     state.write_text(sys.stdin.read())
 """
 
-MARKED: Final = '*/5 * * * * tick # lab-commons-deploy:dev-lab\n'
-MACHINE: Final = (
-    '[deploy]\nhost = "login01"\nroot = "repos"\nrole = "research"\n'
+#: The account file name of the fake account: ``<cluster>-<user>``.
+HOST: Final = 'c1-alice'
+FAMILY: Final = (
+    '[[hpc.grant]]\nuser = "alice"\ncluster = "c1"\nslurm_account = "a"\nrole = "verification"\n'
+    '[hpc.clusters.c1]\nhosts = ["login01"]\n[hpc.clusters.c1.slurm_accounts.a]\nbilled = false\n'
+)
+LAYER: Final = (
+    '[deploy]\nhost = "login01"\nroot = "repos"\n'
     'repos = [{ name = "dev-lab", url = "https://forge.example/dev-lab.git", ref = "trunk" }]\n'
 )
 
 
 def tools_of(tmp_path: Path, state: str = 'crontab.txt') -> Tools:
-    """Fake ``crontab`` (state in *tmp_path*/*state*), ``id`` and ``git``; shared with the ci-pause tests."""
+    """Fake ``crontab`` (state in *tmp_path*/*state*) and ``id``."""
     script = tmp_path / 'crontab.py'
     script.write_text(FAKE_CRONTAB, encoding='utf-8')
     echo = (sys.executable, '-c', 'print("alice")')
     return Tools(crontab=(sys.executable, str(script), str(tmp_path / state)), id=echo)
 
 
-def home_of(tmp_path: Path, machine_text: str = MACHINE) -> tuple[Path, Path]:
-    """A home holding a credential store, and a machine file declaring *machine_text*."""
+def clone_of(tmp_path: Path, family: str = FAMILY) -> Path:
+    """A config-source clone declaring the account :data:`HOST` (its grant's role in *family*)."""
+    clone = tmp_path / 'config'
+    (clone / 'hosts').mkdir(parents=True)
+    (clone / 'family.toml').write_text(family, encoding='utf-8')
+    (clone / devhost.host_file(HOST)).write_text(LAYER, encoding='utf-8')
+    return clone
+
+
+def home_of(tmp_path: Path, extra: str = '', family: str = FAMILY) -> tuple[Path, Path, Path]:
+    """A home, the clone, and a machine file that IS the clone's render plus *extra* (the account's own drift)."""
     home = tmp_path / 'home'
     home.mkdir()
-    (home / '.git-credentials').write_text('https://me:secret@forge.example\n', encoding='utf-8')
-    machine = tmp_path / 'config.toml'
-    machine.write_text(machine_text, encoding='utf-8')
-    return home, machine
+    clone = clone_of(tmp_path, family)
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(devhost.render(clone, HOST, {}) + extra, encoding='utf-8')
+    return home, clone, machine

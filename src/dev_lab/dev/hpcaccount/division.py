@@ -27,7 +27,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-from lab_commons.hpc.grants import Machine, load_grants
+from lab_commons import config
+from lab_commons.hpc.grants import AccessRefused, Machine, load_grants
+
+from dev_lab.dev import devprofile
 
 __all__ = ['DEFAULT_ROLES', 'ROLE_KEYS', 'Division', 'account_role', 'division_of', 'load_division', 'reached_machine']
 
@@ -109,11 +112,14 @@ def reached_machine(accounts: Sequence[str] = ()) -> Machine:
     """The machine's reached grants, each of *accounts* checked among them.
 
     Raises:
-        lab_commons.hpc.grants.AccessRefused: an account another role reaches, or a machine reaching none.
+        lab_commons.hpc.grants.AccessRefused: an account another role reaches, a machine reaching none, or an
+            unmanaged machine (naming its enrolment door).
         LookupError: an account no grant declares.
         ValueError: the ``[hpc]`` declaration is refused.
 
     """
+    if why := devprofile.refusal(config.machine(), 'an HPC action'):
+        raise AccessRefused(why)
     machine = load_grants()
     for user in accounts:
         machine.grant(user)
