@@ -167,6 +167,13 @@ RETIRED_SPELLINGS: Final = {
             'dev-lab #641 (epic #648): an environment is published beside the live one, so nothing queues or replays',
         ),
     ),
+    **dict.fromkeys(
+        ('taskbinding bind', 'taskbinding status', 'binding_gap', 'BIND_PROMPT'),
+        (
+            "rem's UserPromptSubmit task hook binds (rem's task.js status shows it); dev_lab.dev.taskbinding reads",
+            'H4 2026-11-16: a stale venv failed the binder and blocked every prompt; rem owns binding, the gate reads',
+        ),
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

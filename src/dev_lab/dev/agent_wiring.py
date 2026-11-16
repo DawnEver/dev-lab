@@ -123,17 +123,16 @@ _STOPS: Final = ('Stop', 'SubagentStop')
 #: THE WIRING, ONE TABLE. Before every shell call: the journal door (TRACKED-CITES-NO-EPHEMERAL, dev-lab#419); before
 #: every write: the codeplace write hook (a report under output/, a write-prone root, a consent file refused; a
 #: misplaced code file hinted). After every shell call, succeeded or failed: the wall ledger's foreign-denial reader
-#: (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54), the task binder (D5), the PR inbox -- the ONE
-#: machine PR watcher (SESSION-HEARS-ITS-PRS). Every stop, the main session's and each subagent's: the hand-back
-#: check and the wall ledger's stop; the main session's adds the stray census, the scratch census, the unfilled
-#: install home and the shell reaper. Session start: the ONE reclaim, the reaper, the venv follower, the forge-token
-#: notice, the scratch baseline, the classifier render and the PR watcher.
+#: (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54) and the PR inbox -- the ONE machine PR watcher
+#: (SESSION-HEARS-ITS-PRS); the task binding is rem's own prompt hook, never a row here. Every stop, the main
+#: session's and each subagent's: the hand-back check and the wall ledger's stop; the main session's adds the stray
+#: census, the scratch census, the unfilled install home and the shell reaper. Session start: the ONE reclaim, the
+#: reaper, the venv follower, the forge-token notice, the scratch baseline, the classifier render and the PR watcher.
 WIRING: Final = (
     Wire(('PreToolUse',), 'dev_lab.dev.journaldoor', tools=SHELL_TOOLS, may_block=True),
     Wire(('PreToolUse',), 'dev_lab.dev.codeplace', tools=WRITE_TOOLS, may_block=True),
     Wire(('PostToolUse', 'PostToolUseFailure'), 'dev_lab.dev.walls', ('post-tool',), tools=SHELL_TOOLS),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.hostalarm', ('hook',)),
-    Wire(('UserPromptSubmit',), 'dev_lab.dev.taskbinding', ('bind',)),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.prwatcher', ('inbox',)),
     Wire(('Stop',), 'dev_lab.dev.codeplace', ('stray',), may_block=True, timeout=60),
     Wire(_STOPS, 'dev_lab.dev.handback', may_block=True, timeout=60),

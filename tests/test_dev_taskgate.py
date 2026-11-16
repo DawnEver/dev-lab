@@ -1,16 +1,17 @@
-"""SESSION-COMMITS-UNDER-ITS-TASK: an opt-in repo refuses an agent commit or push off the task its user bound."""
+"""SESSION-COMMITS-UNDER-ITS-TASK: an opt-in repo refuses an agent push off the task its user bound through rem."""
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from _rem_binding import bind_as_rem
 
-from dev_lab.dev import agent_wiring, taskbinding, taskgate
+from dev_lab.dev import taskbinding, taskgate
+from dev_lab.dev.githooks.table import base_rows
 
 SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
@@ -27,7 +28,7 @@ def _git(cwd: Path, *args: str) -> str:
     return done.stdout.strip()
 
 
-def _repo(tmp_path: Path, *, required: bool, wired: bool = True) -> Path:
+def _repo(tmp_path: Path, *, required: bool) -> Path:
     """A git checkout whose pyproject does or does not require a task, holding the open tasks `toolchain`, `other`."""
     root = tmp_path / 'repo'
     root.mkdir(parents=True, exist_ok=True)
@@ -38,20 +39,15 @@ def _repo(tmp_path: Path, *, required: bool, wired: bool = True) -> Path:
         folder.mkdir(parents=True, exist_ok=True)
         head = f'---\nname: {slug}\nkind: task\nauthority: a1\nstatus: open\n---\n'
         (folder / 'TASK.md').write_text(head, encoding='utf-8')
-    if wired:
-        settings = {
-            'hooks': {'UserPromptSubmit': [{'hooks': [{'command': agent_wiring.dispatch_command('UserPromptSubmit')}]}]}
-        }
-        (root / agent_wiring.SETTINGS_REL).write_text(json.dumps(settings), encoding='utf-8')
     _git(root, 'init', '-q', '-b', 'main')
     _git(root, 'add', '.')
     _git(root, 'commit', '-q', '-m', 'chore: seed')
     return root
 
 
-def _bind(root: Path, slug: str = 'toolchain') -> str | None:
-    """The USER's prompt binds the session, as the UserPromptSubmit hook does -- the one record the gate reads."""
-    return taskbinding.bind({'session_id': _SESSION, 'prompt': f'task: {slug}'}, start=root)
+def _bind(root: Path, slug: str = 'toolchain') -> str:
+    """The USER's `task: <slug>` prompt binds the session through rem -- the one record the gate reads."""
+    return bind_as_rem(root, _SESSION, slug)
 
 
 class _Rem:
@@ -69,12 +65,33 @@ class _Rem:
         return 0, {'show': self.journal}.get(args[0], 'logged')
 
 
-def test_an_unbound_session_is_refused_naming_the_users_task_prompt(tmp_path: Path) -> None:
+def test_an_unbound_session_is_refused_naming_rems_door(tmp_path: Path) -> None:
     said = taskgate.refusal(_repo(tmp_path, required=True), env=AGENT, branch='pr/toolchain/a')
     assert said is not None
     assert taskgate.RULE in said
     assert '`task: <slug>`' in said
+    assert "rem's UserPromptSubmit hook" in said
     assert '/rem:task open' in said
+
+
+def test_the_gate_is_one_pre_push_row_and_no_commit_is_judged() -> None:
+    """In-session work is rem's PreToolUse guard; the git side judges a push once, never a commit."""
+    gate = 'dev_lab.dev.taskgate'
+    found = [(stage, row['id']) for stage, rows in base_rows().items() for row in rows if gate in row['run']]
+    assert found == [('pre-push', taskgate.HOOK_ID)]
+
+
+def test_a_binding_rem_wrote_is_read_at_pre_push(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The file rem's `task: <slug>` hook writes is the whole input: no binder wiring, no dev-lab prompt hook."""
+    root = _repo(tmp_path, required=True)
+    _git(root, 'checkout', '-q', '-b', 'pr/toolchain/a')
+    monkeypatch.chdir(root)
+    monkeypatch.setenv(SESSION_ENV, _SESSION)
+    assert taskgate.main([]) == 1, 'planted control: unbound, the push is refused'
+    binding = taskbinding.ledger(root) / taskbinding.BINDINGS / f'{_SESSION}.json'
+    binding.parent.mkdir(parents=True)
+    binding.write_text(f'{{"session": "{_SESSION}", "task": "toolchain@a1"}}', encoding='utf-8')  # rem's bytes
+    assert taskgate.main([]) == 0
 
 
 def test_a_branch_named_after_a_task_binds_nothing(tmp_path: Path) -> None:
@@ -136,7 +153,7 @@ def test_a_human_commit_is_not_judged(tmp_path: Path) -> None:
     assert taskgate.refusal(_repo(tmp_path, required=True), env={}, branch='pr/x') is None
 
 
-def test_the_hook_row_refuses_an_unbound_agent_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_hook_row_refuses_an_unbound_agent_push(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _repo(tmp_path, required=True)
     monkeypatch.chdir(root)
     monkeypatch.setenv(SESSION_ENV, _SESSION)
@@ -202,21 +219,6 @@ def test_watch_by_a_task_with_no_recorded_pr_refuses() -> None:
         taskgate.watch_argv(['--task', 'toolchain'], _Forge, read=_Rem())
 
 
-def test_an_unwired_binder_admits_the_commit_in_one_line_naming_its_door(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A consumer report (2026-11-16): with no binder wired no prompt can bind, so refusing refused every commit.
-
-    PLANTED CONTROL: the same unbound session in a wired repo is still refused.
-    """
-    unwired = _repo(tmp_path / 'unwired', required=True, wired=False)
-    assert taskgate.refusal(unwired, env=AGENT, branch='pr/toolchain/a') is None
-    [line] = capsys.readouterr().err.strip().splitlines()
-    assert taskgate.RULE in line
-    assert 'dev_lab.dev.agent_guard --install' in line
-    assert taskgate.refusal(_repo(tmp_path / 'wired', required=True), env=AGENT, branch='pr/toolchain/a') is not None
-
-
 def test_a_task_opened_in_one_worktree_is_bound_journaled_and_admitted_from_another(tmp_path: Path) -> None:
     """W4: the ledger and the binding are REPO state -- one directory, reached the same way from every worktree.
 
@@ -232,8 +234,7 @@ def test_a_task_opened_in_one_worktree_is_bound_journaled_and_admitted_from_anot
     (ledger / 'opened-in-a' / 'TASK.md').write_text('---\nauthority: a9\nstatus: open\n---\n', encoding='utf-8')
     other = {SESSION_ENV: 'second-session-0001'}
     assert taskgate.refusal(tree_b, env=other, branch='pr/opened-in-a/x') is not None
-    payload = {'session_id': other[SESSION_ENV], 'prompt': 'task: opened-in-a', 'cwd': str(tree_b)}
-    assert taskbinding.bind(payload) == 'opened-in-a@a9'
+    assert bind_as_rem(tree_b, other[SESSION_ENV], 'opened-in-a') == 'opened-in-a@a9'
     assert (ledger / taskbinding.BINDINGS / 'second-session-0001.json').is_file()
     for tree in (tree_a, tree_b, main):
         assert taskbinding.session_task(other, start=tree) == 'opened-in-a@a9'
