@@ -191,6 +191,11 @@ HINT: the hazard is minutes, not harm.
 - **Why it is refused.** Scoped to subagents: the engine judges this row only when the hook payload carries a non-empty `agent_id`, which Claude Code sends only inside a subagent call (forks included; a main session launched with `--agent` carries `agent_type` but no `agent_id`). MEASURED 2026-10-08 in one consumer repo: 95 of 98 runner logs that day were the same `(tree, env, selector)`, re-launched by agents polling a held box. A push is the main session's outward action, and a skipped hook publishes what nobody checked. Refused: `git push` (also `git -C X push`), `with-retry.sh push`, and hook skipping (`SKIP=`, `--no-verify`). A full tier is refused to everyone at the runner instead (VERDICTS-FROM-THE-FORGE).
 - **The exit.** Commit on your lane and hand the commit SHA back to the main session. Every door the policy table gives the main session alone (`actor = main` in `dev_lab.dev.agentpolicy.POLICY`) is refused here too. It merges every ready lane and pushes; the forge produces the verdict. A targeted `measure` of the tests you wrote or touched stays yours.
 
+## HEAVY-IS-THE-MAIN-SESSIONS
+
+- **Why it is refused.** User ruling 2026-11-16: the main session alone coordinates heavy testing -- it requests full or heavy runs on the repo's declared producer and reads the verdicts -- and no local machine runs heavy tests. Scoped to subagents exactly as SUBAGENT-NO-PUSH is (a non-empty `agent_id` in the hook payload). Refused to a subagent: `verify --with-heavy`, a consumer `scripts/gate/runner.py gate|heavy` or `--with-heavy`, `forge request`, and `lab_commons.hpc submit` / `run submit`. A main session's producer requests stay open; its local full tier is refused at the runner (VERDICTS-FROM-THE-FORGE).
+- **The exit.** Hand the request to the main session: commit on your lane and hand back the SHA. Measure only the tests you touched: `python -m dev_lab.dev.verify -- <paths>`.
+
 ## COMMIT-HOOKS-RUN
 
 - **Why it is refused.** A commit hook that refuses is a wall, and `git commit --no-verify`/`-n` or a `-c core.hooksPath=` pointing git at no hooks routes around it: the cause stays, and the next commit meets it again (`every-wall-teaches`, ruling 2026-11-13; [feedback.md](feedback.md)). Every agent is refused, not only a subagent (`SUBAGENT-NO-PUSH` already refuses that skip there).
