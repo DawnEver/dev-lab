@@ -178,12 +178,14 @@ class Wire:
     """One hook the guard owns: its event, its command, the text marking a hook OURS, and its home.
 
     ``on_shells`` homes it on the matcher naming every shell tool; otherwise on a matcher-less entry.
+    ``timeout`` (seconds) is written on the row: a hung hook is cut by its own bound, never the tool's default.
     """
 
     event: str
     command: str
     marker: str
     on_shells: bool
+    timeout: int
 
 
 #: THE WIRING, ONE TABLE: what :func:`dev_lab.dev.agent_guard.wire_settings` writes is what
@@ -196,35 +198,35 @@ class Wire:
 #: every shell call, succeeded or failed; the pushed-head gate and the scratch census at the main session's stop; the
 #: background reclaim at session start.
 WIRING: Final = (
-    Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
-    Wire('PreToolUse', JOURNALDOOR_COMMAND, 'dev_lab.dev.journaldoor', on_shells=True),
-    Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True),
-    Wire('PostToolUse', SESSIONPRS_COMMAND, 'dev_lab.dev.sessionprs', on_shells=True),
-    Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True),
-    Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True),
-    Wire('PostToolUse', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True),
+    Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True, timeout=30),
+    Wire('PreToolUse', JOURNALDOOR_COMMAND, 'dev_lab.dev.journaldoor', on_shells=True, timeout=30),
+    Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True, timeout=30),
+    Wire('PostToolUse', SESSIONPRS_COMMAND, 'dev_lab.dev.sessionprs', on_shells=True, timeout=30),
+    Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True, timeout=30),
+    Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True, timeout=30),
+    Wire('PostToolUse', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True, timeout=30),
     # PostToolUseFailure: a documented hook event ("After a tool call fails") --
     # https://code.claude.com/docs/en/hooks; PostToolUse alone never sees a failed call's error text.
-    Wire('PostToolUseFailure', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True),
-    Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False),
-    Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.taskbinding bind', on_shells=False),
-    Wire('UserPromptSubmit', PRWATCHER_INBOX_COMMAND, 'dev_lab.dev.prwatcher inbox', on_shells=False),
-    Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
-    Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
-    Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False),
-    Wire('Stop', SCRATCHSTOP_COMMAND, 'dev_lab.dev.scratch stop', on_shells=False),
-    Wire('Stop', DEVHOSTSTOP_COMMAND, 'dev_lab.dev.devhost stop', on_shells=False),
-    Wire('Stop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False),
-    Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False),
-    Wire('SubagentStop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False),
-    Wire('Stop', REAPER_COMMAND, 'dev_lab.dev.shellreaper', on_shells=False),
-    Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False),
-    Wire('SessionStart', REAPER_COMMAND, 'dev_lab.dev.shellreaper', on_shells=False),
-    Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False),
-    Wire('SessionStart', FORGEAUTH_COMMAND, 'dev_lab.dev.forgeauthnotice', on_shells=False),
-    Wire('SessionStart', SCRATCHSNAP_COMMAND, 'dev_lab.dev.scratch snapshot', on_shells=False),
-    Wire('SessionStart', AUTOMODE_COMMAND, 'dev_lab.dev.automode session-start', on_shells=False),
-    Wire('SessionStart', PRWATCHER_START_COMMAND, 'dev_lab.dev.prwatcher session-start', on_shells=False),
+    Wire('PostToolUseFailure', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True, timeout=30),
+    Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False, timeout=30),
+    Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.taskbinding bind', on_shells=False, timeout=30),
+    Wire('UserPromptSubmit', PRWATCHER_INBOX_COMMAND, 'dev_lab.dev.prwatcher inbox', on_shells=False, timeout=30),
+    Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False, timeout=60),
+    Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False, timeout=60),
+    Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False, timeout=60),
+    Wire('Stop', SCRATCHSTOP_COMMAND, 'dev_lab.dev.scratch stop', on_shells=False, timeout=60),
+    Wire('Stop', DEVHOSTSTOP_COMMAND, 'dev_lab.dev.devhost stop', on_shells=False, timeout=60),
+    Wire('Stop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False, timeout=60),
+    Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False, timeout=60),
+    Wire('SubagentStop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False, timeout=60),
+    Wire('Stop', REAPER_COMMAND, 'dev_lab.dev.shellreaper', on_shells=False, timeout=60),
+    Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False, timeout=120),
+    Wire('SessionStart', REAPER_COMMAND, 'dev_lab.dev.shellreaper', on_shells=False, timeout=60),
+    Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False, timeout=120),
+    Wire('SessionStart', FORGEAUTH_COMMAND, 'dev_lab.dev.forgeauthnotice', on_shells=False, timeout=120),
+    Wire('SessionStart', SCRATCHSNAP_COMMAND, 'dev_lab.dev.scratch snapshot', on_shells=False, timeout=120),
+    Wire('SessionStart', AUTOMODE_COMMAND, 'dev_lab.dev.automode session-start', on_shells=False, timeout=120),
+    Wire('SessionStart', PRWATCHER_START_COMMAND, 'dev_lab.dev.prwatcher session-start', on_shells=False, timeout=120),
 )
 
 #: Wires the family once installed and no longer does, as ``(event, marker)``: a re-install removes them, so an old

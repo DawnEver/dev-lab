@@ -310,7 +310,7 @@ def _home(entry: object, wire: Wire) -> bool:
 
 def _wire(entries: list[Any], wire: Wire) -> None:
     """*wire* present exactly once in *entries*: moved off a partial shell matcher, else replaced in place."""
-    hook = {'type': 'command', 'command': wire.command}
+    hook = {'type': 'command', 'command': wire.command, 'timeout': wire.timeout}
     if wire.on_shells:
         stripped = [
             e for e in entries if _tools(e) and not _home(e, wire) and any(_mine(h, wire) for h in e.get('hooks') or [])
@@ -334,9 +334,9 @@ def _unwired(settings: dict[str, Any]) -> list[str]:
     """The events of :data:`WIRING` past the engine whose exact command is not at its home."""
     return [
         wire.event
-        for wire in WIRING[1:]
+        for wire in WIRING
         if not any(
-            isinstance(h, dict) and h.get('command') == wire.command
+            isinstance(h, dict) and h.get('command') == wire.command and h.get('timeout') == wire.timeout
             for e in settings.get('hooks', {}).get(wire.event, []) or []
             if _home(e, wire)
             for h in e.get('hooks', []) or []
