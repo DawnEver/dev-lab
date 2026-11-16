@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import sys
 import types
@@ -156,3 +157,88 @@ def test_the_real_dispatcher_answers_through_the_launcher_command(tmp_path: Path
         input=json.dumps(payload), capture_output=True, text=True, encoding='utf-8', check=False,
     )  # fmt: skip
     assert done.returncode == 0, done.stderr
+
+
+# ------------------------------------------------------------------------------------- a repo's own declared wires
+
+_DENYING_HANDLER = """import json, os, pathlib, sys
+
+
+def main(argv):
+    json.load(sys.stdin)
+    pathlib.Path(__file__).with_name('ran-in').write_text(str(os.getpid()), encoding='utf-8')
+    decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': 'repo refuses'}
+    sys.stdout.write(json.dumps({'hookSpecificOutput': decision}))
+    return 0
+"""
+
+
+def _declaring(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, module: str, row: str) -> Path:
+    """A consumer checkout declaring one ``[[tool.dev_lab.agent_hooks]]`` row, its handler a module of its own."""
+    root = tmp_path / 'consumer'
+    root.mkdir()
+    (root / 'pyproject.toml').write_text(f'[[tool.dev_lab.agent_hooks]]\n{row}\n', encoding='utf-8')
+    (root / f'{module}.py').write_text(_DENYING_HANDLER, encoding='utf-8')
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(root))
+    monkeypatch.delitem(sys.modules, module, raising=False)
+    return root
+
+
+def test_a_repo_declared_wire_runs_inside_the_one_dispatcher(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The repo's row is merged into the event's single dispatcher: one interpreter, one joined answer.
+
+    PLANTED CONTROL: a call of a tool the row does not name hears only the family row.
+    """
+    row = 'events = ["PreToolUse"]\nmodule = "planted_repo_wire_a"\ntools = ["Write"]\nmay_block = true'
+    root = _declaring(tmp_path, monkeypatch, 'planted_repo_wire_a', row)
+    family = (Wire(('PreToolUse',), _module(monkeypatch, 'planted_m', _say(_deny('family refuses'))), may_block=True),)
+    out, _err = _dispatch(monkeypatch, family, 'PreToolUse', {'tool_name': 'Write', 'cwd': str(root)})
+    assert json.loads(out)['hookSpecificOutput']['permissionDecisionReason'] == 'family refuses\nrepo refuses'
+    assert (root / 'ran-in').read_text(encoding='utf-8') == str(os.getpid()), 'in the dispatcher, not a process'
+    out, _err = _dispatch(monkeypatch, family, 'PreToolUse', {'tool_name': 'Bash', 'cwd': str(root)})
+    assert json.loads(out)['hookSpecificOutput']['permissionDecisionReason'] == 'family refuses'
+
+
+def test_an_unimportable_declared_wire_is_refused_by_name_and_the_family_still_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _declaring(tmp_path, monkeypatch, 'planted_repo_wire_b', 'events = ["PreToolUse"]\nmodule = "no_such_wire"')
+    with pytest.raises(agent_wiring.WireRefused, match=r'no_such_wire.*not importable'):
+        agent_wiring.declared(root)
+    family = (Wire(('PreToolUse',), _module(monkeypatch, 'planted_n', _say(_deny('family refuses'))), may_block=True),)
+    out, err = _dispatch(monkeypatch, family, 'PreToolUse', {'tool_name': 'Write', 'cwd': str(root)})
+    assert json.loads(out)['hookSpecificOutput']['permissionDecisionReason'] == 'family refuses'
+    assert 'no_such_wire' in err
+    assert 'agent_hooks' in err, 'the refusal names the table to fix'
+
+
+@pytest.mark.parametrize(
+    ('rows', 'said'),
+    [
+        ('events = ["PreToolUse"]\nmodule = "dev_lab.dev.codeplace"', 'duplicates a family row'),
+        (
+            (
+                'events = ["Stop"]\nmodule = "planted_repo_wire_c"\n\n'
+                '[[tool.dev_lab.agent_hooks]]\nevents = ["SessionStart"]\nmodule = "planted_repo_wire_c"'
+            ),
+            'declared twice',
+        ),
+        ('events = ["Stop"]\nmodule = "planted_repo_wire_c"\nblocks = true', 'unknown key'),
+        ('events = []\nmodule = "planted_repo_wire_c"', 'events'),
+        ('events = ["Stop"]\nmodule = "planted_repo_wire_c"\ntimeout = 0', 'timeout'),
+    ],
+)
+def test_a_duplicate_or_malformed_declared_wire_is_refused_by_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rows: str, said: str
+) -> None:
+    root = _declaring(tmp_path, monkeypatch, 'planted_repo_wire_c', rows)
+    with pytest.raises(agent_wiring.WireRefused, match=said):
+        agent_wiring.declared(root)
+
+
+def test_a_well_formed_declared_wire_is_read_as_its_row(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL beside the refusals: the same table, well formed, is one Wire with every field carried."""
+    row = 'events = ["Stop"]\nmodule = "planted_repo_wire_d"\nargs = ["x"]\nonce = true\ntimeout = 7'
+    root = _declaring(tmp_path, monkeypatch, 'planted_repo_wire_d', row)
+    assert agent_wiring.declared(root) == (Wire(('Stop',), 'planted_repo_wire_d', ('x',), once=True, timeout=7),)
+    assert agent_wiring.declared(tmp_path) == (), 'no pyproject declares nothing'
