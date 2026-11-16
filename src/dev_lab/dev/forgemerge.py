@@ -79,6 +79,7 @@ from typing import TYPE_CHECKING, Final
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING
+from dev_lab.dev.forgeheadgate import alarms_said
 from dev_lab.dev.forgemergewaits import hand_note, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgereview_declared import load_review
@@ -217,9 +218,11 @@ def decide(
 
 
 def _notes(root: Path, statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
-    """What the decision says without waiting on it: an undeclared message row, and the hand parts."""
+    """What the decision says without waiting on it: an undeclared message row, the hand parts and the alarms."""
     unjudged = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
-    return (*unjudged, *filter(None, [hand_note(statuses)]))
+    alarmed = alarms_said(statuses)
+    alarm = f'alarms, never a merge condition: {alarmed}' if alarmed else None
+    return (*unjudged, *filter(None, [hand_note(statuses), alarm]))
 
 
 def external(client: Client, pull: PullRequest) -> bool:

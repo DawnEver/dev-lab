@@ -67,7 +67,8 @@ from lab_commons.hpc.shell import FULL
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import ClusterPart, part_context
-from dev_lab.dev.producer import RETRYABLE, Owner, owned
+from dev_lab.dev.producer import Owner, owned
+from dev_lab.dev.requeue import requeued
 
 __all__ = [
     'CLAIMABLE',
@@ -221,8 +222,8 @@ def assess(history: Sequence[CommitStatus], context: str, *, me: Claim, now: dat
     holder is :func:`holder`'s, and it is :data:`MINE` exactly when *me* is its owner.
     """
     posts = [status for status in history if status.context == context]
-    if posts and posts[-1].state != 'pending':  # a claim released by an outage is open again
-        return (OPEN if posts[-1].description.startswith(RETRYABLE) else DONE), None
+    if posts and posts[-1].state != 'pending':  # a release its class requeues is open again (producer.RETRIES)
+        return (OPEN if requeued(posts) else DONE), None
     settled = max((index for index, status in enumerate(posts) if status.state != 'pending'), default=-1)
     held = holder(posts[settled + 1 :], now=now)
     if held is None:

@@ -108,11 +108,12 @@ def install_verb(config: OpsConfig, root: Path) -> int:
 
 
 def promote_verb(config: OpsConfig) -> int:
-    """``promote``: one promotion pass; each failed repo alerted."""
-    failed = [o for o in promote.run(config) if o.state == 'failed']
-    for outcome in failed:
-        alert(config, f'promote FAILED {outcome.repo}', outcome.detail)
-    return 1 if failed else 0
+    """``promote``: one promotion pass; each failed, refused or passing-over repo alerted -- no refusal is quiet."""
+    outcomes = promote.run(config)
+    for outcome in outcomes:
+        if outcome.state in {'failed', 'refused'} or outcome.alarmed:
+            alert(config, f'promote {outcome.state.upper()} {outcome.repo}', outcome.detail)
+    return 1 if any(o.state == 'failed' for o in outcomes) else 0
 
 
 def judge_verb(config: OpsConfig) -> int:
