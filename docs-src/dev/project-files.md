@@ -28,11 +28,16 @@ re-render; never hand-edit a rendered file.
 - **Hooks are declared, not rendered.** The family base is `dev_lab/dev/githooks/base.toml`; a repo adds or
   narrows rows under `[[tool.dev_lab.hooks.<stage>]]` in `pyproject.toml` (the same `id` merges key by key,
   a new `id` appends). Keys: `id`, `run` (argv; a leading `python` is the repo venv's interpreter),
-  `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, and `refs` (pre-push only).
-  Stages: `pre-commit`, `commit-msg`, `pre-push`. `uv`/`uvx` as `run[0]` is refused.
+  `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, `refs` (pre-push only),
+  `advisory` (the row only speaks: shown, never a refusal), `isolate` (a subprocess even for `python -m`) and
+  `bootstraps`. Stages: `pre-commit`, `commit-msg`, `post-commit`, `pre-push`, `post-merge`, `post-checkout`; a check
+  runs at ONE of them. `uv`/`uvx` as `run[0]` is refused.
 - **One runner**: `python -m dev_lab.dev.githooks run <stage> [git args]`. At commit it selects among the
   STAGED paths and fails a hook that rewrites the working tree; at commit-msg it appends the message file; at
   pre-push it reads git's ref lines once and pipes the matching ones to every hook. No hook runs a test suite.
+  A `python -m <module>` row runs IN the runner's interpreter (same argv, cwd, stdin, env and exit code), so a
+  stage costs one interpreter start; a tool, a script and an `isolate` row run as subprocesses. The per-file
+  checks are ONE row, `filechecks all`; a repo narrows one check with `--skip CHECK` or `--exclude CHECK=REGEX`.
 - **One install**: `python -m dev_lab.dev.hook_install --install --repo .` writes one shim per declared stage
   into the directory git consults; the shim finds the checkout's venv and runs the runner. A worktree may point
   `core.hooksPath` at its own directory with `git config --worktree`. The `hooks-installed` verify step reports a

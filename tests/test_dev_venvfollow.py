@@ -2,7 +2,7 @@
 
 A session venv ran an older kit than its own ``uv.lock``: only a served checkout's host tick ever compared the two
 (:func:`dev_lab.dev.hostrefresh.sync_venv`). That one hash-and-stamp check now has one home, called by the host tick,
-the ``SessionStart`` hook and the ``post-merge``/``post-checkout`` git hooks alike.
+the ``SessionStart`` hook and the ``post-checkout`` git hook alike.
 """
 
 from __future__ import annotations
@@ -93,13 +93,13 @@ def test_the_session_start_hook_detaches_only_when_stale(tmp_path: Path, monkeyp
     assert len(started) == 1, 'PLANTED CONTROL: a current venv detaches nothing'
 
 
-def test_a_merge_and_a_checkout_run_the_follow_as_advisory_git_hooks() -> None:
+def test_a_checkout_runs_the_follow_as_its_one_advisory_git_hook() -> None:
+    """post-checkout is the one event a new worktree fires. PLANTED CONTROL: no other stage carries the row."""
     table = merge(base_rows(), {})
-    for stage in ('post-merge', 'post-checkout'):
-        assert stage in ADVISORY
-        follow = [hook for hook in table[stage] if hook.id == 'venv-follows-lock']
-        assert len(follow) == 1, stage
-        assert 'dev_lab.dev.venvfollow' in follow[0].run
+    follow = [(stage, hook) for stage, hooks in table.items() for hook in hooks if hook.id == 'venv-follows-lock']
+    assert [stage for stage, _ in follow] == ['post-checkout']
+    assert 'post-checkout' in ADVISORY
+    assert 'dev_lab.dev.venvfollow' in follow[0][1].run
 
 
 def test_the_follow_moves_the_checkout_then_the_venv_then_the_hooks_unprompted(tmp_path: Path, monkeypatch) -> None:

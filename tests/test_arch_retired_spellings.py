@@ -62,6 +62,16 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     **dict.fromkeys(
+        ('check-case-conflict', 'check-json', 'check-merge-conflict', 'check-toml'),
+        (
+            'the one `filechecks` hook row (`dev_lab.dev.filechecks all`; a check is skipped or narrowed by name)',
+            (
+                'toolchain H3 2026-11-16: ten per-check rows cost ten interpreters per commit (check-ast stays: it '
+                'is pre-commit-hooks` own id, which the famconfig fixtures spell)'
+            ),
+        ),
+    ),
+    **dict.fromkeys(
         (
             'pushstop',
             'unwatched_refusal',

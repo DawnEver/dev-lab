@@ -8,7 +8,8 @@ unchanged checkout costs one hash. Its callers:
 * :func:`dev_lab.dev.hostrefresh.sync_venv` -- a served checkout, every host tick;
 * ``--session-start``, the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`) -- a stale venv detaches
   a background :func:`follow` and the hook returns at once;
-* the ``post-merge`` and ``post-checkout`` git hooks (``githooks/base.toml``, advisory) -- ``--background``.
+* the ``post-checkout`` git hook (``githooks/base.toml``, advisory) -- ``--background``; it is the one event a
+  new worktree fires, so its missing venv is created.
 
 THE TOOLCHAIN FOLLOWS AS ONE (user ruling 2026-11-12: no human approval keeps a checkout current). The venv is one
 of three things a checkout can be left behind on, and the follow takes them in dependency order: the CHECKOUT first
@@ -23,7 +24,7 @@ behind its LAST-FETCHED ``origin/<trunk>``, or the venv's git-installed dev-lab 
 file's notice is devhost's own once-per-session row (``devhost session-start``), never repeated here.
 
 :func:`follow` skips while a run lives in the checkout or executes from its venv (TREE-HAS-A-LIVE-RUN,
-:mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start, merge or checkout.
+:mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start or checkout.
 
 ``python -m dev_lab.dev.venvfollow [--root R] [--background | --session-start]``; always exits 0.
 """
