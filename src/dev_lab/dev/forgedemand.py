@@ -20,13 +20,13 @@ from __future__ import annotations
 
 import gzip
 import json
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.compute import learned
 from lab_commons.compute.measured import HEAVY_SHARE
 from lab_commons.compute.model import Demand
+from lab_commons.log import emit
 
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import unprompted_client
@@ -56,7 +56,7 @@ def refresh(repo: str, client: Client | None, *, limit: int = LIMIT) -> int:
     try:
         attached = listing(client)
     except (ListingIncomplete, ForgeCallFailed, OSError) as error:  # optional to a measure: degrade, say why
-        sys.stderr.write(f'forgedemand: learned demand not refreshed (cache stands as last folded): {error}\n')
+        emit(f'forgedemand: learned demand not refreshed (cache stands as last folded): {error}', err=True)
         return 0
     known = learned.folded(repo)
     fresh = sorted((a for a in attached if a.name not in known), key=lambda a: a.id)[-limit:]
