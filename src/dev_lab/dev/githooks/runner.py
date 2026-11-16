@@ -41,13 +41,14 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import metrics, walls
+from dev_lab.dev import metrics, venvpointer, walls
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
     'PUSH_URL_ENV',
     'ZERO_SHA',
     'PushLine',
+    'borrowed_interpreter',
     'parse_push_lines',
     'pushed_paths',
     'resolve',
@@ -70,9 +71,6 @@ _ARG_BUDGET: Final = 24_000
 
 #: Set to ``1`` to report every pass and skip as well as the failures.
 VERBOSE_ENV: Final = 'LAB_HOOKS_VERBOSE'
-
-#: Set by a hook shim running the stage under the interpreter recorded at install, not the checkout's venv.
-FOREIGN_INTERPRETER_ENV: Final = 'LAB_COMMONS_HOOK_FOREIGN_INTERPRETER'
 
 
 @dataclass(frozen=True)
@@ -184,11 +182,6 @@ def resolve(run: Sequence[str], python: str = sys.executable) -> list[str]:
     return [found or first, *rest]
 
 
-def needs_only_lab_commons(hook: Hook) -> bool:
-    """Whether *hook* runs under any lab_commons interpreter: ``python -m lab_commons...`` and nothing else."""
-    return ' '.join(hook.run).startswith('python -m lab_commons')
-
-
 def _chunks(paths: Sequence[str]) -> list[list[str]]:
     out: list[list[str]] = [[]]
     size = 0
@@ -253,8 +246,14 @@ def _note(line: str) -> None:
         emit(line)
 
 
-def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequence[PushLine]) -> tuple[Hook, ...]:
-    """The hooks of *stage* to run -- none for a pre-push with no ref line.
+def _selected(
+    stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequence[PushLine], *, borrowed: bool
+) -> tuple[Hook, ...] | None:
+    """The hooks of *stage* to run -- none for a pre-push with no ref line; ``None`` when *stage* is refused.
+
+    Under a BORROWED interpreter (the shim found no venv of this checkout's own that imports dev_lab) every row
+    would run in the wrong environment, so a judged stage is REFUSED naming the bootstrap door, and an advisory
+    stage runs only its ``bootstraps`` rows -- the ones that create the missing venv (dev-lab #639).
 
     Git's protocol: a push whose every ref is already up to date (a retry after an attempt that
     landed) still runs pre-push, with no ref line. It publishes nothing, so nothing is judged.
@@ -263,19 +262,22 @@ def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequen
         _note('[githooks] pre-push: no ref line on stdin -- this push publishes nothing, so nothing is judged')
         return ()
     chosen = tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
-    if os.environ.get(FOREIGN_INTERPRETER_ENV) != '1':
+    if not borrowed:
         return chosen
+    door = f'{Path(sys.executable).as_posix()} -m dev_lab.dev.dep --bootstrap {root.as_posix()}'
+    if stage not in ADVISORY:
+        emit(
+            f'[githooks] {stage}: refused -- {root.as_posix()} has no venv of its own that imports dev_lab '
+            f'(missing or half-built), and its rows run only there. Bootstrap it: {door}',
+            err=True,
+        )
+        return None
     for hook in chosen:
         if hook.bootstraps:
             emit(
-                f'[githooks] {stage}: this checkout has no venv -- {hook.id} bootstraps it in the background; '
-                f'until it lands (or if it never does) run: {Path(sys.executable).as_posix()} -m dev_lab.dev.dep '
-                f'--bootstrap {root.as_posix()}',
-                err=True,
+                f'[githooks] {stage}: this checkout has no venv -- {hook.id} bootstraps it; else run: {door}', err=True
             )
-        elif not needs_only_lab_commons(hook):
-            _note(f'[githooks] {stage} {hook.id}: skipped -- needs the repo venv, which this checkout lacks')
-    return tuple(hook for hook in chosen if needs_only_lab_commons(hook) or hook.bootstraps)
+    return tuple(hook for hook in chosen if hook.bootstraps)
 
 
 def _report(stage: str, hook_id: str, code: int, output: str) -> int:
@@ -296,6 +298,7 @@ def run_stage(
     hooks: Sequence[Hook] | None = None,
     runner: Runner = _subprocess_runner,
     env: Mapping[str, str] | None = None,
+    borrowed: bool = False,
 ) -> int:
     """Run every hook of *stage* in *root*; ``0`` when all passed or were skipped, else ``1``.
 
@@ -308,13 +311,16 @@ def run_stage(
         runner: runs ``(argv, cwd, stdin, env)`` and returns ``(exit code, output)``; injected for tests only.
         env: variables every hook of the stage runs with (beneath its own ``env``): ``integrate`` points git at
             the repository while *root* holds the merged tree's manifest.
+        borrowed: the running interpreter is not *root*'s own venv (:func:`borrowed_interpreter`).
 
     """
     if stage not in STAGES:
         msg = f'unknown hook stage {stage!r}; the family runs {list(STAGES)}'
         raise ValueError(msg)
     push = parse_push_lines(stdin) if stage == 'pre-push' else ()
-    selected_hooks = _selected(stage, root, hooks, push)
+    selected_hooks = _selected(stage, root, hooks, push, borrowed=borrowed)
+    if selected_hooks is None:
+        return 1
     paths: tuple[str, ...] = ()
     if stage == 'pre-commit':
         paths = staged_paths(root)
@@ -393,4 +399,14 @@ def main(stage: str, git_args: Sequence[str]) -> int:
     """The ``run`` subcommand: the checkout's top level from git, stdin read once when the stage has one."""
     root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').strip())
     stdin = sys.stdin.read() if stage == 'pre-push' and not sys.stdin.isatty() else ''
-    return run_stage(stage, git_args, root=root, stdin=stdin)
+    return run_stage(stage, git_args, root=root, stdin=stdin, borrowed=borrowed_interpreter(root))
+
+
+def borrowed_interpreter(root: Path) -> bool:
+    """Whether this interpreter is NOT *root*'s own environment.
+
+    The shim falls back to the main checkout's venv, or the one recorded at install, only when *root* has no venv
+    that imports dev_lab.
+    """
+    own = {(root / '.venv').resolve(), venvpointer.current(root).resolve()}
+    return Path(sys.prefix).resolve() not in own
