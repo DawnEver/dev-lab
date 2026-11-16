@@ -41,9 +41,13 @@ def argv_error(args: argparse.Namespace, *, locking: bool) -> str:
     return ''
 
 
-def held(args: argparse.Namespace, root: Path, prefix: Path, held: Exception) -> int:
-    """A held environment: refused (1), or with ``--when-free`` queued for the first free door run (0)."""
-    if not args.when_free or args.dry_run:
+def held(args: argparse.Namespace, root: Path, prefix: Path, held: Exception, *, transient: bool = False) -> int:
+    """A held environment: refused (1), or queued for the first free door run (0).
+
+    It queues with ``--when-free``, and a ``--bootstrap`` held only by agent sessions or their hooks queues
+    without it: those holders are not stopped, and asking the user to close them is no door (dev-lab #632).
+    """
+    if not (args.when_free or (transient and args.bootstrap is not None)) or args.dry_run:
         emit(f'REFUSED: {held}')
         return 1
     queued = ['--bootstrap', str(root)]

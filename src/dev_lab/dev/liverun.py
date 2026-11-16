@@ -68,6 +68,7 @@ __all__ = [
     'env_in_use',
     'executing_from',
     'in_tree',
+    'is_transient',
     'live_runs',
     'main',
     'occupants',
@@ -286,6 +287,19 @@ def ssh_holder_dest(one: Process) -> str | None:
     return found[1] if found else None
 
 
+#: A hook process: a ``dev_lab`` module started by a session hook (``agent_launcher.js``), alive for one tool call.
+_HOOK: Final = re.compile(r'agent_launcher\.js|-m\s+dev_lab\.[\w.]+\s+hook\b')
+
+
+def is_transient(one: Process) -> bool:
+    """Whether *one* holds an environment only in passing: an agent session or a hook it launched.
+
+    Neither is a verdict, and neither is the refused agent's to stop -- so a change queues behind them
+    (``dep --when-free``) instead of refusing (dev-lab #632: an upgrade never closes a session).
+    """
+    return is_session(one) or bool(_HOOK.search(one.command_line or ''))
+
+
 def is_watch(one: Process) -> bool:
     """Whether *one* is a ``forge watch``."""
     return bool(WATCH.search(one.command_line or ''))
@@ -350,6 +364,12 @@ def env_in_use(name: str, prefix: str, users: Sequence[Process]) -> str:
 
     When every holder is a ``forge watch`` the exit is stop, change, re-arm -- the watch's own command line.
     """
+    if users and all(is_transient(one) for one in users):
+        return (
+            f'{name}: {prefix} is held only by agent sessions or their hooks:\n{describe(users)}\n'
+            'Queued: the first hook launch that finds it free performs this change (dep --bootstrap ROOT '
+            '--when-free); nothing else is required.'
+        )
     if users and all(is_watch(one) for one in users):
         stops = '; '.join(f'{running_interpreter()} -m dev_lab.dev.stoprun --pid {one.pid}' for one in users)
         rearm = '\n'.join(f'  {one.command_line}' for one in users)
