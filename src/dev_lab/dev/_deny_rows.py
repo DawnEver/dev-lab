@@ -71,7 +71,7 @@ from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
 from dev_lab.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
 from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
-from dev_lab.dev.netverb import GIT_NETWORK_VERBS, UV_NETWORK_VERBS
+from dev_lab.dev.netverb import GIT_NETWORK_VERBS, LOCAL_REPOSITORY, UV_NETWORK_VERBS
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
 
@@ -90,9 +90,11 @@ RETIRED_ROW_KEY = 'deny row'
 _GIT_VERBS = '|'.join(verb for verb in GIT_NETWORK_VERBS if verb != 'submodule')
 _UV_VERBS = '|'.join(verb for verb in UV_NETWORK_VERBS if verb != 'pip')
 #: The shell spelling of :func:`dev_lab.dev.netverb.is_network_verb`, derived from its verb lists.
+#: A git verb whose repository operand is a local path is no remote.
 NETWORK_VERB_PATTERN = (
-    rf'(?:git(?:\s+-[Cc]\s+\S+)*\s+(?:{_GIT_VERBS}|submodule\s+update)'
-    rf'|uv\s+(?:{_UV_VERBS}|pip\s+(?:install|sync|compile)))\b'
+    rf'(?:git(?:\s+-[Cc]\s+\S+)*\s+(?:(?:{_GIT_VERBS})\b(?!(?:\s+-\S+)*\s+["\']?{LOCAL_REPOSITORY}["\']?(?:\s|$))'
+    r'|submodule\s+update\b)'
+    rf'|uv\s+(?:{_UV_VERBS}|pip\s+(?:install|sync|compile))\b)'
 )
 
 DENY_ROWS: tuple[dict[str, object], ...] = (
@@ -169,7 +171,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     },
     {
         'id': 'GIT-STASH',
-        'pattern': r'\bgit\s+stash(?:\s|$)',
+        # Reading the stash (`list`, `show`) pops nothing (2026-11-16).
+        'pattern': r'\bgit\s+stash(?!\s+(?:list|show)\b)(?:\s|$)',
         'matches': 'command',
         'hazard': '`refs/stash` is repo-wide, so a stash is popped by whoever pops next -- possibly another agent.',
         'remedy': (
@@ -178,7 +181,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         ),
         'needs': None,
         'refuses': ('git stash', 'git stash push -u', 'git stash pop'),
-        'permits': ('git commit -m "wip: scratch"', 'git diff --stat'),
+        'permits': ('git commit -m "wip: scratch"', 'git diff --stat', 'git stash list', 'git stash show -p'),
     },
     {
         'id': 'GIT-RESET',
@@ -258,6 +261,10 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'git commit -m "mention a push in prose"',
             'git submodule status',
             'git -C x log -- fetch',
+            # A repository named by a local path is no remote (2026-11-16).
+            'git -C . fetch . lane/x:lane/y',
+            'git fetch ../sibling main',
+            'git push C:/x/repo HEAD:lane/x',
             'uv pip list',
             'uv --version',
         ),

@@ -44,9 +44,10 @@ from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'DIGEST_CHARS',
+    'HARNESS_PERMISSION',
     'LOG_KIND',
     'RULE',
-    'UNKNOWN',
+    'UNNAMED',
     'close',
     'digest',
     'has_remedy',
@@ -56,12 +57,21 @@ __all__ = [
     'record',
     'refused',
     'refused_text',
+    'rule_of',
 ]
 
 RULE: Final = 'WALLS-ARE-RECORDED'
 LOG_KIND: Final = 'walls'
-#: The rule a denial names when it names none: the classifier's, or a tool's own.
-UNKNOWN: Final = 'unknown'
+#: The rule of a denial from the harness's permission layer (a classifier, a declined prompt), which names none.
+HARNESS_PERMISSION: Final = 'HARNESS-PERMISSION'
+#: The prefix of a denial that names no rule: ``UNNAMED-<DOOR>`` when a door printed it, else ``UNNAMED-REFUSAL``.
+#: Measured 2026-11-14/15: such walls were recorded as rule 'unknown', which no reader could act on.
+UNNAMED: Final = 'UNNAMED'
+_HARNESS: Final = re.compile(
+    r"(?i)permission to use \S+ (?:has been|was) denied|doesn't want to proceed|tool use was rejected"
+)
+#: A door's own refusal line, ``box: refused -- ...``: the door is the word before the colon.
+_DOOR: Final = re.compile(r'(?im)^\s*([a-z][\w.-]*):\s+(?:refused|denied|blocked)\b')
 #: Hex characters of a command's sha256 kept on a line: enough to tell two commands apart, never the command.
 DIGEST_CHARS: Final = 16
 #: A tool's error text that is a REFUSAL rather than an ordinary failure.
@@ -120,7 +130,7 @@ def record(
         {
             'ts': _now(),
             'session': _session(session),
-            'rule': rule or UNKNOWN,
+            'rule': rule or f'{UNNAMED}-REFUSAL',
             'command_sha256': command_sha256 or (digest(command) if command else ''),
             'remedy_present': remedy,
         },
@@ -143,12 +153,22 @@ def refused(
     return record(root, rule=rule, remedy=remedy, command=command, command_sha256=command_sha256, session=session)
 
 
+def rule_of(text: str) -> str:
+    """The rule a denial *text* names; else its source: :data:`HARNESS_PERMISSION`, or ``UNNAMED-<DOOR|REFUSAL>``."""
+    if found := _RULE_ID.search(text):
+        return found.group(0)
+    if _HARNESS.search(text):
+        return HARNESS_PERMISSION
+    door = _DOOR.search(text)
+    return f'{UNNAMED}-{door.group(1).upper().replace(".", "-").replace("_", "-") if door else "REFUSAL"}'
+
+
 def refused_text(root: Path, text: str, *, reason: str, rule: str = '', session: str | None = None) -> Path:
     """A family refusal's *text* through :func:`refused`: its *rule* (else the first rule id it names) and remedy.
 
     The remedy is :func:`has_remedy` of the text the agent was shown, the same test every refusal path takes.
     """
-    named = rule or ((found := _RULE_ID.search(text)) and found.group(0)) or UNKNOWN
+    named = rule or rule_of(text)
     return refused(
         root, repo=metrics.repo_of(root), rule=named, reason=reason, remedy=has_remedy(text), session=session or None
     )
@@ -180,7 +200,7 @@ def open_walls(root: Path, session: str) -> tuple[str, ...]:
     for line in _read(root):
         if line.get('session') != session:
             continue
-        rule = str(line.get('rule') or UNKNOWN)
+        rule = str(line.get('rule', ''))
         if 'closed_by' in line:
             still.pop(rule, None)
         elif line.get('remedy_present') is False:
@@ -202,11 +222,10 @@ def _post_tool(payload: dict) -> None:
     text = _error_text(payload)
     if not _DENIAL.search(text) or any(line.startswith(DETAILS_PREFIX) for line in text.splitlines()):
         return
-    named = _RULE_ID.search(text)
     command = (payload.get('tool_input') or {}).get('command') or ''
     record(
         Path(payload.get('cwd') or Path.cwd()),
-        rule=named.group(0) if named else UNKNOWN,
+        rule=rule_of(text),
         remedy=False,
         command=str(command),
         session=str(payload.get('session_id') or ''),

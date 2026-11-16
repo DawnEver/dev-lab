@@ -120,7 +120,26 @@ def test_a_foreign_denial_seen_after_a_tool_call_is_an_unremedied_wall(tmp_path:
     }
     assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
     (line,) = _lines(tmp_path)
-    assert (line['rule'], line['remedy_present'], line['session']) == (walls.UNKNOWN, False, SESSION)
+    assert (line['rule'], line['remedy_present'], line['session']) == (walls.HARNESS_PERMISSION, False, SESSION)
+
+
+@pytest.mark.parametrize(
+    ('text', 'rule'),
+    [
+        ('Permission to use Bash has been denied by the auto-mode classifier.', 'HARNESS-PERMISSION'),
+        ("The user doesn't want to proceed with this tool use. The tool use was rejected.", 'HARNESS-PERMISSION'),
+        ('box: refused -- verify:x: not admitted -- no room within the queue limit', 'UNNAMED-BOX'),
+        ('Exit code 1\nsomething was refused upstream', 'UNNAMED-REFUSAL'),
+        ('PreToolUse:Bash hook error: OTHER-RULE: blocked', 'OTHER-RULE'),
+    ],
+)
+def test_every_wall_names_a_rule_never_unknown(text: str, rule: str) -> None:
+    """MEASURED 2026-11-14/15: walls recorded rule 'unknown', which no reader can act on.
+
+    A denial naming no ID is named by its SOURCE: the harness's permission layer, or the door that printed it
+    (``UNNAMED-<DOOR>`` -- that door is the gap), else ``UNNAMED-REFUSAL``.
+    """
+    assert walls.rule_of(text) == rule
 
 
 @pytest.mark.parametrize(

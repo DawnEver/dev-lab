@@ -166,6 +166,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.claude/rem.json', 'remconfig.render via famfiles: the backlog is the issue tracker', FAMFILES),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
         _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
+        _g('.codex/rules/family-denies.rules', 'autodoors --write: the deny registry as Codex rules', AUTODOORS),
         _g('.github/workflows/ci.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
