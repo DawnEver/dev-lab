@@ -55,7 +55,7 @@ ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES: the base pre-push row `session-branch` (`de
 refuses a push that creates or updates `refs/heads/X` unless `BranchSet.admits(X)` -- the trunk, a `sessions`
 branch, or a branch in an `ephemeral` namespace -- by the set the PUSHED tip declares. The refusal names `X`,
 the declared branches, the ephemeral globs and the remedy: publish the feature as its one `pr/<feature>`, or keep
-the branch local. A session its user bound to a task (`task: <slug>`, `dev_lab.dev.taskbinding`) is told
+the branch local. A session its user bound to a task (`task: <slug>`, bound by rem, read by `dev_lab.dev.taskbinding`) is told
 `pr/<task>/<feature>` instead; `pr/*` admits it (fnmatch's `*` crosses `/`), and a task never publishes a bare
 `pr/<task>`, which git cannot hold beside `pr/<task>/<x>`. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
 SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new

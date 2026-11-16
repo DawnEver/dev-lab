@@ -508,7 +508,7 @@ def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path
     env.pop('CLAUDE_PROJECT_DIR', None)
     env['CODEX_THREAD_ID'] = 'native-codex'
     done = subprocess.run(
-        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-m', 'dev_lab.dev.taskbinding', 'bind'],
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-m', 'dev_lab.dev.prwatcher', 'inbox'],
         input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=tmp_path, check=False,
     )  # fmt: skip
     assert done.returncode == 0, done.stderr
