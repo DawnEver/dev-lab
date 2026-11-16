@@ -463,7 +463,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
-* :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent commit or push with no rem task bound; it reads rem.
+* :mod:`dev_lab.dev.taskbinding` -- the ONE session -> task record, bound by the user's `task: <slug>` prompt.
+* :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent commit or push off its bound task's pr/<task>/ heads.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
 * :mod:`dev_lab.dev.uvfollow` -- uv follows the version its pin needs, through WinGet or `uv self update`.
 * :mod:`dev_lab.dev.commitmsg` -- the commit-msg and push-range check: `type(scope)!: subject`, owned once.

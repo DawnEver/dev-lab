@@ -212,8 +212,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A push that creates or updates `refs/heads/<X>` on origin is refused at pre-push unless the branch '
             'set its pushed tip declares admits `<X>` (the trunk, a `sessions` branch, or a branch in an '
-            '`ephemeral` namespace, default `pr/*`): a session publishes its one `pr/<feature>` branch and its '
-            'fan-out `lane/` `feat/` `fix/` branches stay local. Deletions and tags are not judged, so an '
+            '`ephemeral` namespace, default `pr/*`, whose `*` crosses `/`): a session publishes its one `pr/<feature>` '
+            'branch -- `pr/<task>/<feature>` when its user bound it to a task, never a bare `pr/<task>`, which git '
+            'cannot hold beside its heads -- and its fan-out `lane/` `feat/` `fix/` branches stay local. '
+            'Deletions and tags are not judged, so an '
             'existing undeclared origin branch takes no new push and is deleted by a human.'
         ),
         ('tests/test_dev_sessionbranch.py',),

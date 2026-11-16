@@ -75,6 +75,7 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
+    taskbinding,
     taskgate,
 )
 from dev_lab.dev._forge_records import pull_of
@@ -277,6 +278,16 @@ def _refused(
     return None
 
 
+def _task_head_advice(head: str, env: Mapping[str, str] | None) -> tuple[str, ...]:
+    """A session bound to a task is told its PR heads are ``pr/<task>/<feature>`` (:mod:`dev_lab.dev.taskbinding`)."""
+    try:
+        task = taskbinding.session_task(os.environ if env is None else env)
+    except ValueError:
+        return ()
+    said = None if task is None else taskbinding.head_advice(head, taskbinding.slug_of(task))
+    return () if said is None else (said,)
+
+
 def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
     """An opened PR or issue is appended to the bound rem task's journal (:func:`taskgate.record`)."""
     if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
@@ -306,7 +317,8 @@ def issue_and_pr(
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            said := pradmit.create_advice(root, client, head=args.head, base=args.base)
+            said := _task_head_advice(args.head, env)
+            + pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
