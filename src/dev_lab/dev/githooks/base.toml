@@ -34,15 +34,6 @@
 # window (dev_lab.dev.locklag.within_window, the one window lock/lag reads), naming `forge sync`; `forge pr ready` reads the same judgement. A finding
 # the forge cannot see (an untracked stray file) is a post-commit hint.
 
-# SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
-# [tool.dev_lab.task] required = true, an agent session commits only while its USER bound it to an open task
-# (`task: <slug>` prompt, dev_lab.dev.taskbinding; D5 2026-11-15), and a pr/ branch only under pr/<task>/. Opt-in;
-# a repo that does not declare it is never judged.
-[[pre-commit]]
-id = "task-bound"
-run = ["python", "-m", "dev_lab.dev.taskgate"]
-always_run = true
-
 [[pre-commit]]
 id = "check-added-large-files"
 run = ["python", "-m", "dev_lab.dev.filechecks", "large-files"]
@@ -139,8 +130,9 @@ run = ["python", "-m", "dev_lab.dev.memoryadds", "commit"]
 
 # SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
 # [tool.dev_lab.task] required = true, an agent session pushes only while its USER bound it to an open task
-# (`task: <slug>` prompt, dev_lab.dev.taskbinding; D5 2026-11-15), and a pr/ branch only under pr/<task>/. Opt-in;
-# a repo that does not declare it is never judged.
+# (`task: <slug>` prompt, bound by rem's UserPromptSubmit hook and read through dev_lab.dev.taskbinding; D5
+# 2026-11-15), and a pr/ branch only under pr/<task>/. The ONE taskgate row: in-session work (a commit) is rem's
+# PreToolUse task guard. Opt-in; a repo that does not declare it is never judged.
 [[pre-push]]
 id = "task-bound"
 run = ["python", "-m", "dev_lab.dev.taskgate"]

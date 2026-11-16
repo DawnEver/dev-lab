@@ -7,8 +7,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from _rem_binding import bind_as_rem
 
-from dev_lab.dev import forgecli, taskbinding
+from dev_lab.dev import agent_wiring, forgecli, taskbinding
 from dev_lab.dev.branchset import FAMILY_EPHEMERAL, BranchSet
 from dev_lab.dev.sessionbranch import rename_remedy
 
@@ -63,7 +64,7 @@ def test_pr_create_suggests_the_bound_tasks_head(tmp_path: Path, monkeypatch: py
     _task(tmp_path)
     monkeypatch.chdir(tmp_path)
     assert forgecli._task_head_advice('pr/x', env) == (), 'planted control: unbound, nothing suggested'
-    assert taskbinding.bind({'session_id': _SESSION, 'prompt': 'task: toolchain'}, start=tmp_path) == 'toolchain@a1'
+    assert bind_as_rem(tmp_path, _SESSION, 'toolchain') == 'toolchain@a1'
     [said] = forgecli._task_head_advice('pr/x', env)
     assert 'pr/toolchain/<feature>' in said
     assert 'git branch -m pr/x pr/toolchain/x' in said
@@ -72,6 +73,14 @@ def test_pr_create_suggests_the_bound_tasks_head(tmp_path: Path, monkeypatch: py
     assert forgecli._task_head_advice('pr/x', None) == (said,), 'the process environment is the default'
 
 
-def test_status_names_the_door_when_unbound(capsys: pytest.CaptureFixture[str]) -> None:
-    assert taskbinding.main(['status']) == 0
-    assert '`task: <slug>`' in capsys.readouterr().out
+def test_dev_lab_binds_nothing_so_its_venv_cannot_block_a_prompt() -> None:
+    """Rem owns the binding (its UserPromptSubmit hook, node only): dev-lab wires no binder and only reads.
+
+    The 2026-11-16 incident: a stale venv's binder refused its own verb, and every prompt of every session failed.
+    No dev-lab prompt row binds now, and the reader has no command line to go stale.
+    """
+    binders = [wire.name for wire in agent_wiring.WIRING if wire.module == taskbinding.__name__]
+    assert binders == []
+    assert not hasattr(taskbinding, 'bind')
+    assert not hasattr(taskbinding, 'main')
+    assert "rem's UserPromptSubmit hook" in taskbinding.DOOR
