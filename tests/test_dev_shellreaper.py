@@ -19,7 +19,7 @@ import pytest
 from lab_commons.census import Process
 
 from dev_lab.dev import shellreaper
-from dev_lab.dev.agent_wiring import REAPER_COMMAND, WIRING
+from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.dev.shelllife import Grants
 from dev_lab.dev.shellreaper import shell_roots, sweep
 
@@ -163,5 +163,5 @@ def test_a_sweep_logs_each_stop_under_the_reaper_kind(tmp_path: Path, monkeypatc
 
 
 def test_the_sweep_is_wired_at_session_start_and_at_every_stop() -> None:
-    events = {w.event for w in WIRING if w.command == REAPER_COMMAND}
+    events = {e for w in WIRING if w.module == 'dev_lab.dev.shellreaper' and w.argv == ('--hook',) for e in w.events}
     assert events == {'SessionStart', 'Stop'}

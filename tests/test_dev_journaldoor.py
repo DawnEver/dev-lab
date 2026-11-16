@@ -88,9 +88,8 @@ def test_the_commit_time_refusal_names_the_door_and_a_human_remedy_for_a_journal
 
 
 def test_the_door_is_wired_before_every_shell_call() -> None:
-    wired = [w for w in agent_wiring.WIRING if w.marker == journaldoor.__name__]
-    assert [(w.event, w.on_shells) for w in wired] == [('PreToolUse', True)]
-    assert f'-m {journaldoor.__name__}' in wired[0].command
+    wired = [w for w in agent_wiring.WIRING if w.module == journaldoor.__name__]
+    assert [(w.events, w.tools, w.may_block) for w in wired] == [(('PreToolUse',), agent_wiring.SHELL_TOOLS, True)]
 
 
 def test_a_denial_is_this_sessions_wall_through_the_one_choke_point(tmp_path: Path) -> None:

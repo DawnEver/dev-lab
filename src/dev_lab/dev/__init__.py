@@ -142,8 +142,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   declaration that reads as a guard. Three parts reported BY NAME -- engine, rules, wiring -- because
   each fails differently, and installing is an EXPLICIT request that never clobbers an unrelated
   setting, matcher, or an engine lab-commons did not ship. Not re-exported below.
-* :mod:`dev_lab.dev.agent_wiring` -- the hook wiring :mod:`~dev_lab.dev.agent_guard` installs, as data: the
-  repo-relative paths, every hook command, and the one ``WIRING`` table. Not re-exported below.
+* :mod:`dev_lab.dev.agent_wiring` -- the hook wiring, as data: the engine's paths and command, the one ``WIRING``
+  table of handlers per event, and the rows :mod:`~dev_lab.dev.agent_guard` renders. Not re-exported below.
+* :mod:`dev_lab.dev.hookdispatch` -- one interpreter per hook event: every ``WIRING`` row of the event, its
+  ``may_block``/``once``/``timeout`` enforced, the answers merged into one. Not re-exported below.
 * :mod:`dev_lab.dev.docsite` -- the documentation-site driver: a TABLE of sub-sites, every
   subprocess checked and bounded, and a missing toolchain that SKIPS and SAYS SO on the portal page
   rather than failing the build or vanishing from it. Not re-exported below.
@@ -529,6 +531,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
+* :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
 * :mod:`dev_lab.dev.reclaimrun` -- reclaim as a SessionStart step: detached, locked, a bounded batch, never blocks.
 * :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
