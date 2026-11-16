@@ -20,8 +20,7 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``grac
 
 THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.dev_lab.branchset]``.
 AN AGENT'S DELETION and THE LANDED SWEEP live in :mod:`dev_lab.dev.branchdelete` (LOSSLESS-DELETE,
-LANDED-BRANCHES-SWEPT); this module keeps their command line (``delete``, ``sweep``) and the workstation's
-``PostToolUse`` hook (:func:`post_push`), which detaches ``sweep --local`` when a shell call pushed integration.
+LANDED-BRANCHES-SWEPT); this module keeps their command line (``delete``, ``sweep``).
 
 
 EACH DELETION IS PINNED to the sha the survey judged: the live tip is read from the forge first, and a
@@ -37,17 +36,15 @@ import argparse
 import json
 import os
 import sys
-import time
 import urllib.parse
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TextIO
+from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.branchdelete import DOOR, ORIGIN, delete, delete_tags, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
@@ -58,7 +55,6 @@ from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.labsession import ENV
 from dev_lab.dev.lanepolicy import Policy, load_policy
-from dev_lab.dev.pushwatch import pushed_head
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -74,7 +70,6 @@ __all__ = [
     'Row',
     'listing',
     'main',
-    'post_push',
     'prune',
     'serve_prune',
     'survey',
@@ -245,10 +240,8 @@ def serve_prune(
         return ()
 
 
-#: Where a detached sweep writes its lines (``output/logs/<yy>/<mm>/<dd>/<kind>/``).
+#: Where ``sweep --log`` writes its lines (``output/logs/<yy>/<mm>/<dd>/<kind>/``).
 _LOG_KIND: Final = 'prune'
-#: A push older than this is not the one the shell call just made.
-POST_PUSH_WINDOW_S: Final = 600.0
 
 
 def _write_log(root: Path, lines: Sequence[str]) -> None:
@@ -256,62 +249,6 @@ def _write_log(root: Path, lines: Sequence[str]) -> None:
     log = root / 'output' / 'logs' / now.strftime('%y/%m/%d') / _LOG_KIND / f'{now:%H%M%S}-{os.getpid()}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-
-
-def _main_of(cwd: Path) -> Path | None:
-    """The main checkout of the repository *cwd* lies in, from a linked worktree too; ``None`` outside git."""
-    common = git_out(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    if not common:
-        return None
-    path = Path(common.strip()).resolve()
-    return path.parent if path.name == '.git' else None
-
-
-def _pushed_integration(cwd: Path, now: float) -> bool:
-    """Whether origin's integration tracking ref was last moved by a push, within :data:`POST_PUSH_WINDOW_S`."""
-    try:
-        integration = load_policy(cwd).integration
-    except (OSError, ValueError):
-        return False
-    entry = git_out(cwd, 'reflog', 'show', '-1', '--date=unix', '--format=%gs%x09%gd', f'{ORIGIN}{integration}')
-    subject, _, selector = (entry or '').strip().partition('\t')
-    stamp = selector.rpartition('@{')[2].rstrip('}')
-    return subject == 'update by push' and stamp.isdigit() and now - int(stamp) <= POST_PUSH_WINDOW_S
-
-
-def _detach_sweep(root: Path) -> None:
-    detach_argv(root, ['-m', 'dev_lab.dev.branchprune', 'sweep', '--local', '--log'])
-
-
-def post_push(
-    argv: Sequence[str],
-    *,
-    stdin: TextIO | None = None,
-    detach: Callable[[Path], None] = _detach_sweep,
-    clock: Callable[[], float] = time.time,
-) -> int:
-    """The ``PostToolUse`` hook on the shell tools: a call that pushed integration detaches ``sweep --local``.
-
-    Read off the remote-tracking ref's reflog -- git records ``update by push`` there -- so every spelling of the
-    push counts (a refspec, an upstream, the retry wrapper) and a fetch never does. Never blocks; always 0.
-    """
-    del argv
-    try:
-        payload = json.load(stdin or sys.stdin)
-    except ValueError:
-        return 0
-    tool_input = payload.get('tool_input') if isinstance(payload, dict) else None
-    command = tool_input.get('command') if isinstance(tool_input, dict) else None
-    if not isinstance(command, str):
-        return 0
-    try:
-        cwd = Path(payload.get('cwd') or Path.cwd())
-        root = _main_of(cwd)
-        if root is not None and pushed_head(cwd, command) is not None and _pushed_integration(cwd, clock()):
-            detach(root)
-    except OSError:
-        return 0
-    return 0
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
@@ -327,10 +264,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     swept = verbs.add_parser('sweep')
     swept.add_argument('--local', action='store_true', help='also local branches and clean landed worktrees')
     swept.add_argument('--log', action='store_true', help=f'write to output/logs/.../{_LOG_KIND}/, not the console')
-    verbs.add_parser('post-push')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if args.verb == 'post-push':
-        return post_push([])
     root = Path.cwd() if cwd is None else cwd
     lines: list[str] = []
     say: Callable[[str], None] = lines.append if args.verb == 'sweep' and args.log else emit

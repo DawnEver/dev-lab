@@ -515,10 +515,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   it (remedy ``forge sync``); the push is also refused when the pushing venv does not hold what that lock pins.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; it is the
-  command line of ``delete`` and ``sweep``, and a workstation's ``PostToolUse`` hook detaches ``sweep --local``.
+  command line of ``delete`` and ``sweep``.
 * :mod:`dev_lab.dev.branchdelete` -- LOSSLESS-DELETE and LANDED-BRANCHES-SWEPT: a branch is deleted only when
   its content is held elsewhere; ``sweep`` deletes every branch integration now contains (ancestry or content),
-  after each integration move: the serve pass, GitHub's push job, and the ``PostToolUse`` hook.
+  after each integration move: the serve pass and GitHub's push job; a workstation's local half is reclaimrun.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
@@ -554,13 +554,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
 * :mod:`dev_lab.dev.journaldoor` -- the PreToolUse door: a task journal append citing an ignored path is
   refused before it is written.
-* :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the command to arm as a Monitor after a push, and an
-  advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``; it journals each push.
-* :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
-  while a PR of the session is red and unacknowledged.
+* :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the commit a shell push line publishes, and the line a
+  push door prints naming its hearer, the machine PR watcher.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
 * :mod:`dev_lab.dev.sessionpoll` -- SESSION-HEARS-ITS-PRS: one read of a session's PRs, its reds and its one green.
-* :mod:`dev_lab.dev.prwatcher` -- SESSION-HEARS-ITS-PRS: one machine watcher, per-session inboxes, the Stop gate's beat.
+* :mod:`dev_lab.dev.prwatcher` -- SESSION-HEARS-ITS-PRS: the one hearer -- a machine watcher, per-session inboxes.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
 * :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrolment door, ``[bridge]``.

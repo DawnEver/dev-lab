@@ -313,8 +313,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sshholdrun',  # ORIGINAL: split from sshhold: a command or credential sent through a held session (2026-11-13)
     'sshholdwire',  # ORIGINAL: split from sshhold: the client half of the holder's protocol (2026-11-13)
     'walls',  # ORIGINAL: every refusal is one ledger line (2026-11-13)
-    'pushwatch',
-    'pushstop',
+    'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
