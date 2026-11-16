@@ -521,6 +521,13 @@ def test_every_network_verb_is_recognised(argv: list[str]) -> None:
         ['uv', 'pip', 'list'],
         ['python', '-m', 'pip', 'list'],
         [],
+        # A repository named by a local path talks to no remote (measured 2026-11-16: a local fetch was hinted).
+        ['git', '-C', '.', 'fetch', '.', 'lane/x:lane/y'],
+        ['git', 'fetch', '../sibling', 'main'],
+        ['git', 'pull', './other', 'main'],
+        ['git', 'push', 'C:/x/repo', 'HEAD:lane/x'],
+        ['git', 'clone', '/c/x/repo', 'copy'],
+        ['git', 'fetch', 'file:///c/x/repo'],
     ],
 )
 def test_a_local_command_is_not_a_network_verb(argv: list[str]) -> None:

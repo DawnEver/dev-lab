@@ -13,7 +13,7 @@ The budget is declared data in `dev_lab.dev.disclosure.BUDGETS`:
 
 - `<ID>: <what was refused and why, as one clause>`
 - the exact command to run instead (the door);
-- `details: docs-src/dev/refusals.md#<id> (lab-commons)`, which points at the section below.
+- `details: docs-src/dev/refusals.md#<id> (dev-lab)`, which points at the section below.
 
 When a command targets another repo, the engine adds one header line naming that repo. `dev_lab.dev.famtests.injectedtext` runs the budget in a consumer's suite. `{remedy}` in an exit is the consuming repo's own door. `{python}` in an exit (and `<venv python>` in a door) is printed as the target checkout's own venv interpreter by ABSOLUTE path -- a linked worktree without one gets its main checkout's -- so the line runs from any cwd (2026-10-26: a relative `.venv` interpreter failed from another directory and the agent handed the command to the user). An exit is for the agent to run itself.
 

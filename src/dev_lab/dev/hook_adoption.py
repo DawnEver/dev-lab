@@ -53,14 +53,14 @@ import argparse
 import json
 import runpy
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from lab_commons.log import emit
 
 from dev_lab.dev._deny_rows import retired_row
 from dev_lab.dev.agent_wiring import RULES_REL
-from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, rules_by_id
+from dev_lab.dev.hooks import DENY_RULES, SEVERITIES, DenyRule, Remedy, UnremediedRule, rules_by_id
 
 __all__ = [
     'HookAdoption',
@@ -87,11 +87,15 @@ class HookAdoption:
     Construction refuses a rule listed in BOTH, for the reason
     :class:`dev_lab.dev.rules.Adoption` gives: the contradiction is what lets a stale entry sit
     there reading as shipped while being waived.
+
+    *severities* raises (or lowers) a family row's severity in THIS repo -- ``{'NETWORK-VERB': 'deny'}`` --
+    instead of a local copy of the row: one shape, one reason, one door (2026-11-16, BARE-NETWORK-GIT).
     """
 
     app_name: str
     remedies: Mapping[str, Remedy] = field(default_factory=dict)
     declared_absent: frozenset[str] = frozenset()
+    severities: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Refuse an adoption that cannot name the repo it speaks for, at construction."""
@@ -154,6 +158,7 @@ def deny_rules(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES) -
             + (f' ({retired})' if retired else '')
         )
         raise UnremediedRule(msg)
+    _check_severities(adoption, known)
     unconditional = sorted(adoption.declared_absent - needing(rules))
     if unconditional:
         msg = (
@@ -166,8 +171,26 @@ def deny_rules(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES) -
         remedy = adoption.remedies.get(rule.id)
         if rule.needs is not None and remedy is None:
             continue
-        out.append(rule.rendered(remedy))
+        severity = adoption.severities.get(rule.id, rule.severity)
+        out.append(replace(rule, severity=severity).rendered(remedy))
     return tuple(out)
+
+
+def _check_severities(adoption: HookAdoption, known: Mapping[str, DenyRule]) -> None:
+    """Refuse an override naming no row, no severity, or the severity the row already has."""
+    for rule_id, severity in sorted(adoption.severities.items()):
+        problem = (
+            'the deny registry does not define it'
+            if rule_id not in known
+            else f'{severity!r} is not a severity ({sorted(SEVERITIES)})'
+            if severity not in SEVERITIES
+            else f'the row is {severity!r} already, so the override changes nothing'
+            if known[rule_id].severity == severity
+            else ''
+        )
+        if problem:
+            msg = f'{adoption.app_name} overrides the severity of {rule_id}: {problem}.'
+            raise UnremediedRule(msg)
 
 
 def render(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES, local: Sequence[DenyRule] = ()) -> str:
