@@ -26,8 +26,9 @@ A gap found late is closed at the earliest layer that could have caught it.
 - `walls post-tool` (`PostToolUse`, `PostToolUseFailure`) records a denial in a tool's error text that
   carries no family `details:` pointer -- a classifier's or a tool's own -- as a wall with no remedy.
 - Where: `output/logs/<yy>/<mm>/<dd>/walls/walls.jsonl` under the main checkout. One line per wall:
-  `ts`, `session`, `rule` (one a denial names, else its source: `HARNESS-PERMISSION` or `UNNAMED-<DOOR>`, `walls.rule_of`), `command_sha256` (a 16-hex prefix; never the command, which may hold
-  a token), `remedy_present`. A closure line carries `closed_by` instead.
+  `ts`, `session`, `rule` (the one a denial names, else its source: `HARNESS-PERMISSION` or `UNNAMED-<DOOR>`,
+  `walls.rule_of`), `command_sha256` (a 16-hex prefix; never the command, which may hold a token),
+  `remedy_present`. A closure line carries `closed_by` instead.
 - `remedy_present` is `walls.has_remedy`: a line beyond the cause that is not only the `details:` pointer.
 
 ## Closing a gap
