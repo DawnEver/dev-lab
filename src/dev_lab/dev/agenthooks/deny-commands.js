@@ -589,6 +589,66 @@ function familySiblingClone(cmd, cwd) {
   }
 }
 
+/* ================================ A GREP WHOSE OPERANDS ARE FILES WALKS NOTHING ================================
+ *
+ * `admits: 'file-operands'` (RECURSIVE-GREP): `-r` names a WALK only when an operand is a directory, or when none is
+ * given (grep then walks the cwd). Measured 2026-11-16: `grep -rn x src/a.py` was hinted though it reads one file.
+ * The operands are read off the firing segment's argv, in the directory that segment acts in.
+ */
+const GREP = /^(?:.*[/\\])?[ef]?grep(?:\.exe)?$/i;
+const GREP_VALUED_SHORT = 'efmABCdD';
+const GREP_VALUED_LONG =
+  /^--(?:regexp|file|max-count|after-context|before-context|context|include|exclude|exclude-dir|exclude-from|label|binary-files|devices|directories)$/;
+
+/** The words the segment `rule` fires on would run, quotes dropped; null when it fires on none. */
+function firingWords(rule, cmd) {
+  let at;
+  try {
+    at = new RegExp(`^(?:${rule.pattern})`);
+  } catch {
+    return null;
+  }
+  const firing = segments(splitHeredocs(cmd).rest)
+    .flatMap((segment) => commandPositions(segment))
+    .find((text) => at.test(text));
+  return firing ? (firing.match(/"[^"\n]*"|'[^'\n]*'|\S+/g) || []).map((w) => w.replace(/^["']|["']$/g, '')) : null;
+}
+
+function fileOperands(rule, cmd, cwd) {
+  const words = cwd && firingWords(rule, cmd);
+  if (!words) return false;
+  let patternGiven = false;
+  const positional = [];
+  for (let i = words.findIndex((w) => GREP.test(w)) + 1; i > 0 && i < words.length; i += 1) {
+    const w = words[i];
+    if (w === '--') {
+      positional.push(...words.slice(i + 1));
+      break;
+    }
+    if (/^--(?:regexp|file)=/.test(w)) patternGiven = true;
+    else if (GREP_VALUED_LONG.test(w)) {
+      patternGiven = patternGiven || w === '--regexp' || w === '--file';
+      i += 1;
+    } else if (/^-[^-]/.test(w)) {
+      const valued = [...w.slice(1)].findIndex((c) => GREP_VALUED_SHORT.includes(c));
+      if (valued >= 0 && 'ef'.includes(w[valued + 1])) patternGiven = true;
+      if (valued >= 0 && valued + 2 === w.length) i += 1; // the value is the next word
+    } else if (!w.startsWith('--')) positional.push(w);
+  }
+  const operands = patternGiven ? positional : positional.slice(1);
+  const dir = ruleTarget(rule, cmd, cwd);
+  return (
+    operands.length > 0 &&
+    operands.every((operand) => {
+      try {
+        return fs.statSync(path.resolve(dir, hostPath(operand))).isFile();
+      } catch {
+        return false;
+      }
+    })
+  );
+}
+
 /* A refusal is a WALL (WALLS-ARE-RECORDED, dev_lab.dev.walls): one metrics line and one ledger line, appended by the
  * ONE writer in a DETACHED interpreter, so the refusal the agent sees waits for nothing. No interpreter, no line. The
  * command never leaves this process: only a sha256 prefix of it does. A reason names a door when a line beyond its
@@ -654,6 +714,7 @@ for (const rule of rules) {
     continue; // one malformed rule never blocks the session
   }
   if (hit && rule.admits === 'family-sibling-clone' && familySiblingClone(cmd, input.cwd)) continue;
+  if (hit && rule.admits === 'file-operands' && fileOperands(rule, cmd, input.cwd)) continue;
   let liveReason = '';
   // A 'background' row binds only on a Bash call the agent runs in the background (BACKGROUND-SHELL-IS-BOUNDED),
   // and there the session's interpreter judges it (a longer life needs the USER's grant); the pattern only without one.

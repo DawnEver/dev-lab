@@ -129,6 +129,22 @@ def test_a_hook_young_process_is_not_a_run_and_an_old_one_is(tree: Path) -> None
     assert liverun.live_runs(tree, census=lambda: [young, old], me=1) == (old,)
 
 
+def test_a_git_hook_and_its_children_are_not_runs(tree: Path) -> None:
+    """MEASURED 2026-11-16: another session's commit hook, a python older than the floor, refused a merge here.
+
+    A process that git started is a hook of a git command, which ends with it. PLANTED CONTROL: the same
+    interpreter started by a shell rather than git is a run.
+    """
+    python = _venv_python(tree)
+    git = _proc(70, '/usr/bin/git', cmd='git commit -m x', cwd=tree)
+    hook_shell = _proc(71, '/usr/bin/sh', ppid=70, cmd='sh .git/hooks/pre-commit', cwd=tree)
+    hook = _proc(72, python, ppid=71, cmd=f'{python} -m dev_lab.dev.githooks pre-commit')
+    shell = _proc(80, '/usr/bin/bash', cmd='bash', cwd=tree)
+    run = _proc(81, python, ppid=80)
+    census = [git, hook_shell, hook, shell, run]
+    assert liverun.live_runs(tree, census=lambda: census, me=1) == (run,)
+
+
 def test_the_asker_and_its_own_in_tree_family_are_not_runs(tree: Path) -> None:
     """The hook's launcher, a test's pytest workers: kin of an in-tree ancestor of the asker."""
     python = _venv_python(tree)
