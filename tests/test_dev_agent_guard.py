@@ -642,6 +642,26 @@ def test_a_stale_venv_names_its_fix_and_records_the_wall(tmp_path: Path) -> None
     assert (wall['rule'], wall['remedy_present'], wall['session']) == ('VENV-FOLLOWS-THE-LOCK', True, 'planted')
 
 
+def test_a_stale_venv_missing_a_verb_names_its_fix_and_lets_the_prompt_through(tmp_path: Path) -> None:
+    """2026-11-16: an older dev-lab whose argparse lacks the hook's verb exited 2 and blocked every prompt."""
+    env = _venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40)
+    probe = 'import sys; sys.stderr.write("error: argument verb: invalid choice: \'bind\'\\n"); sys.exit(2)'
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-c', probe],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=tmp_path, check=False,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr
+    assert 'bind missing' in done.stderr
+    assert '-m dev_lab.dev.dep --bootstrap' in done.stderr
+    current = _venv_with_dev_lab_at(tmp_path / 'current', 'c' * 40, 'c' * 40)
+    same = subprocess.run(
+        [str(node_path()), str(tmp_path / 'current' / agent_wiring.LAUNCHER_REL), '-c', probe],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=current, cwd=tmp_path / 'current',
+        check=False,
+    )  # fmt: skip
+    assert same.returncode == 2, 'PLANTED CONTROL: a current venv lacking the verb is a real bug, passed through'
+
+
 def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path: Path) -> None:
     env = _venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40)
     env.pop('CLAUDE_CODE_SESSION_ID', None)
