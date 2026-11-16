@@ -12,8 +12,8 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
-from _branch_repos import clone_pair
-from _forge_fake import git_out
+from _branch_repos import clone_pair, commit
+from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
 from dev_lab.dev import pushstop, pushwatch, sessionprs, walls
@@ -28,8 +28,11 @@ PUSHED_AT = 1_000_000.0
 
 
 def _pushed(tmp_path: Path) -> tuple[Path, str]:
+    """A PR head on ``pr/x``, pushed to origin and NOT on the integration branch."""
     _, work = clone_pair(tmp_path)
-    head = git_out(work, 'rev-parse', 'HEAD')
+    run_git(work, 'checkout', '-q', '-b', 'pr/x')
+    head = commit(work, 'x.txt', 'x\n')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', 'pr/x')
     pushwatch.record(work, 's1', 'refs/heads/pr/x', head, at=PUSHED_AT)
     return work, head
 
@@ -130,3 +133,69 @@ def test_a_session_watch_from_any_checkouts_interpreter_counts(monkeypatch: pyte
     assert 'any checkout' in refused
     another = ['/x/python -m dev_lab.dev.forge watch --session s2 --stream']
     assert pushstop.unwatched_refusal('s1', processes=lambda: another).block is not None
+
+
+def _pending(head: str) -> tuple[StateForge, int]:
+    """A forge where *head* is pending and is the open PR's current head."""
+    forge = StateForge()
+    status_post(forge, head, context='tests/base', state='pending', description='queued')
+    return forge, forge.add_pull('pr/x', 'integrate/main', sha=head)
+
+
+def _blocked(work: Path, forge: StateForge, *lines: str) -> bool:
+    said = stop_refusal(work, 's1', client=forge, processes=lambda: lines, again=False, now=PUSHED_AT + 1)
+    return said.block is not None
+
+
+def _descendant(work: Path, *, push: bool) -> str:
+    child = commit(work, 'y.txt', 'y\n', 'sync merge')
+    if push:
+        run_git(work, 'push', '-q', '--no-verify', 'origin', 'pr/x')
+    return child
+
+
+def test_a_pending_unwatched_current_head_is_still_demanded(tmp_path: Path) -> None:
+    """PLANTED CONTROL for every landed case below: open PR, its head is this sha, nothing watches it."""
+    work, head = _pushed(tmp_path)
+    forge, _ = _pending(head)
+    assert _blocked(work, forge)
+
+
+@pytest.mark.parametrize('merged', [True, False], ids=['merged', 'closed'])
+def test_a_head_whose_pr_merged_or_closed_needs_no_watch(tmp_path: Path, *, merged: bool) -> None:
+    """Task toolchain-1114 O3: the PR merged at a descendant head; the intermediate sha's checks never settle."""
+    work, head = _pushed(tmp_path)
+    forge, number = _pending(head)
+    assert _blocked(work, forge), 'PLANTED CONTROL: open, it is demanded'
+    forge.pulls[number].update(state='closed', merged=merged)
+    assert not _blocked(work, forge)
+
+
+def test_a_head_the_open_prs_watched_newer_head_descends_from_needs_no_watch(tmp_path: Path) -> None:
+    work, head = _pushed(tmp_path)
+    forge, number = _pending(head)
+    child = _descendant(work, push=False)
+    forge.pulls[number]['head']['sha'] = child
+    assert _blocked(work, forge), 'PLANTED CONTROL: the newer head is neither watched nor landed'
+    assert not _blocked(work, forge, f'python -m dev_lab.dev.forge watch {child}')
+
+
+def test_a_head_the_origin_branch_tip_descends_from_and_integration_holds_needs_no_watch(tmp_path: Path) -> None:
+    work, head = _pushed(tmp_path)
+    forge = StateForge()
+    status_post(forge, head, context='tests/base', state='pending', description='queued')
+    child = _descendant(work, push=True)
+    run_git(work, 'fetch', '-q', 'origin')
+    assert _blocked(work, forge), 'PLANTED CONTROL: the tip descends but is neither watched nor landed'
+    run_git(work, 'push', '-q', '--no-verify', 'origin', f'{child}:refs/heads/integrate/main')
+    run_git(work, 'fetch', '-q', 'origin')
+    assert not _blocked(work, forge)
+
+
+def test_a_head_the_integration_branch_holds_needs_no_watch(tmp_path: Path) -> None:
+    work, head = _pushed(tmp_path)
+    forge, _ = _pending(head)
+    assert _blocked(work, forge), 'PLANTED CONTROL: not yet on the integration branch'
+    run_git(work, 'push', '-q', '--no-verify', 'origin', f'{head}:refs/heads/integrate/main')
+    run_git(work, 'fetch', '-q', 'origin')
+    assert not _blocked(work, forge)

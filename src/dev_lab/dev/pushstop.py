@@ -15,6 +15,9 @@ forge for each one's checks (:func:`stop_refusal`):
   and no fresh machine-watcher beat covering it (:func:`dev_lab.dev.prwatcher.heard`, dev-lab#581) refuses it
   EVERY time, naming the watcher door and the Monitor command to arm (:func:`unwatched_refusal`, 2026-11-12);
 * a head with no ``tests/*`` status :data:`GRACE_S` after its push has nothing to watch (review F-05c3ae4cb27f);
+* a pending head that LANDED needs no watch (:func:`landed`, task toolchain-1114 O3): its PR merged or closed, the
+  PR's current head or the branch tip on origin descends from it and is itself watched or landed, or it is an
+  ancestor of the declared integration branch -- a superseded sha's checks never settle;
 * a pending head whose ``forge watch`` ran to its deadline is released on a repeated stop, with a note;
 * a green head, a session that pushed nothing, or a forge that cannot answer ends the turn. Always exits 0.
 """
@@ -33,10 +36,21 @@ from lab_commons.log import emit
 
 from dev_lab.dev import prwatcher, sessionprs, walls
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgewatch import clients_at, settled, unacknowledged_reds
 from dev_lab.dev.forgework import Client, client_for
-from dev_lab.dev.pushwatch import RULE, deadline_reached, pushed_at, pushed_by, watch_command, watched
+from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.pushwatch import (
+    RULE,
+    deadline_reached,
+    descends,
+    pushed_at,
+    pushed_by,
+    remote_tip,
+    watch_command,
+    watched,
+)
 from dev_lab.dev.sessionpoll import TESTS
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -45,7 +59,7 @@ if TYPE_CHECKING:
 
     from dev_lab.dev.forge import Forge
 
-__all__ = ['GRACE_S', 'Stop', 'main', 'red_refusal', 'stop_refusal', 'unwatched_refusal']
+__all__ = ['GRACE_S', 'Stop', 'landed', 'main', 'red_refusal', 'stop_refusal', 'unwatched_refusal']
 
 
 #: How long after its push a head with NO ``tests/*`` status is still awaited: time for CI to post its first
@@ -89,6 +103,9 @@ def stop_refusal(
             pending.append(sha)
     live = list(processes())
     unwatched = [sha for sha in pending if not watched(sha, live, root=root)]
+    if unwatched:
+        branches = {sha: ref.removeprefix('refs/heads/') for ref, sha in pushed_by(root, session).items()}
+        unwatched = [sha for sha in unwatched if not landed(root, sha, branches.get(sha, ''), client=client, live=live)]
     ran_out = deadline_reached(root) if again else frozenset()
     released = [sha for sha in unwatched if sha in ran_out]
     if unwatched := [sha for sha in unwatched if sha not in ran_out]:
@@ -103,6 +120,41 @@ def stop_refusal(
         return Stop(note=f'{RULE}: {named} is still pending after its watch reached its deadline; released -- '
                          'the user decides whether to wait on it.')  # fmt: skip
     return Stop()
+
+
+def _integration_holds(root: Path, sha: str) -> bool:
+    """Whether *sha* is an ancestor of ``origin/<integration>`` (the branch ``[tool.dev_lab.integrator]`` names)."""
+    try:
+        integration = load_policy(root).integration
+    except (OSError, ValueError):
+        return False
+    tip = remote_tip(root, integration)
+    return bool(tip) and (tip.startswith(sha) or descends(root, sha, tip))
+
+
+def landed(root: Path, sha: str, branch: str, *, client: Client, live: Iterable[str]) -> bool:
+    """Whether pushed *sha* (of *branch*) needs no watch: its checks can never settle, or no longer matter.
+
+    True when (c) it is an ancestor of the integration branch; (a) the newest PR from *branch* is merged or closed;
+    or (b) that PR's current head, or *branch*'s tip on origin, is a strict descendant of it that is itself watched
+    in *live* or held by the integration branch. A still-current head of an open PR is never landed.
+    """
+    if _integration_holds(root, sha):
+        return True
+    if not branch:
+        return False
+    tips = [remote_tip(root, branch)]
+    pulls = [pull for pull in pr_list(client, state='all') if pull.head == branch]
+    if pulls:
+        newest = max(pulls, key=lambda pull: pull.number)
+        if newest.state != 'open':
+            return True
+        tips.append(newest.head_sha)
+    return any(
+        tip and not tip.startswith(sha) and descends(root, sha, tip)
+        and (watched(tip, live) or _integration_holds(root, tip))
+        for tip in tips
+    )  # fmt: skip
 
 
 def red_refusal(session: str, *, clients: Callable[[Forge], Client]) -> Stop:
