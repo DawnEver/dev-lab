@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import venv
 from pathlib import Path
@@ -36,9 +37,9 @@ def _row(command: str) -> dict[str, object]:
 
 
 _ENGINE = _row(agent_wiring.HOOK_COMMAND)
-#: The PreToolUse dispatcher: the journal door before every shell call, the codeplace write hook before every write.
+#: The PreToolUse dispatcher: the codeplace write hook before every write. A shell call meets the engine alone.
 _PRE = {
-    'matcher': 'Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit',
+    'matcher': 'Write|Edit|MultiEdit|NotebookEdit',
     'hooks': [_row(agent_wiring.dispatch_command('PreToolUse'))],
 }
 
@@ -622,10 +623,30 @@ def test_settings_carry_the_engine_and_one_dispatcher_row_per_event() -> None:
 def test_a_rows_matcher_and_timeout_derive_from_its_handlers() -> None:
     """The matcher is the union of the handlers' tools (none when one sees every call); the bound is their sum."""
     by_event = {row.event: row for row in agent_wiring.rows() if row.command != agent_wiring.HOOK_COMMAND}
-    assert by_event['PreToolUse'].matcher == 'Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit'
+    assert by_event['PreToolUse'].matcher == 'Write|Edit|MultiEdit|NotebookEdit'
     assert by_event['UserPromptSubmit'].matcher is None
     for event, row in by_event.items():
         assert row.timeout == sum(w.timeout for w in agent_wiring.WIRING if event in w.events), event
+
+
+@pytest.mark.parametrize('tool', agent_wiring.SHELL_TOOLS)
+def test_a_shell_call_meets_exactly_one_pre_tool_command_the_engine(tool: str) -> None:
+    """ONE interpreter per shell call: every PreToolUse check of a command is an engine row, never a Python handler.
+
+    PLANTED CONTROL: the codeplace write hook's row does match a Write call, so the matcher test can say yes.
+    """
+    pre = agent_guard.wire_settings({})['hooks']['PreToolUse']
+
+    def commands_for(name: str) -> list[str]:
+        return [
+            hook['command']
+            for entry in pre
+            if 'matcher' not in entry or re.fullmatch(entry['matcher'], name)
+            for hook in entry['hooks']
+        ]
+
+    assert commands_for(tool) == [agent_wiring.HOOK_COMMAND]
+    assert agent_wiring.dispatch_command('PreToolUse') in commands_for('Write')
 
 
 def test_the_renderer_owns_every_launcher_row_and_keeps_foreign_hooks() -> None:

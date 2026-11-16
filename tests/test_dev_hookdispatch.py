@@ -7,10 +7,12 @@ is shown saying no as well as yes: a refusal from a row not wired ``may_block`` 
 
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import subprocess
 import sys
+import time
 import types
 from collections.abc import Callable
 from pathlib import Path
@@ -23,7 +25,7 @@ from dev_lab.dev.agent_wiring import Wire
 
 def _module(monkeypatch: pytest.MonkeyPatch, name: str, main: object) -> str:
     module = types.ModuleType(name)
-    module.main = main  # type: ignore[attr-defined]
+    monkeypatch.setattr(module, 'main', main, raising=False)
     monkeypatch.setitem(sys.modules, name, module)
     return name
 
@@ -104,8 +106,6 @@ def test_a_crash_and_a_hung_row_pass_naming_themselves(monkeypatch: pytest.Monke
         raise RuntimeError(msg)
 
     def hang(_argv: list[str]) -> int:
-        import time  # noqa: PLC0415
-
         time.sleep(30)
         return 2
 
@@ -142,10 +142,8 @@ def test_a_once_row_runs_once_per_session(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 def test_every_wired_handler_exists_in_this_install() -> None:
     """Rows and code are one install: every WIRING module imports and has a ``main``."""
-    import importlib  # noqa: PLC0415
-
     for wire in agent_wiring.WIRING:
-        assert callable(getattr(importlib.import_module(wire.module), 'main', None)), wire.name
+        assert callable(importlib.import_module(wire.module).main), wire.name
 
 
 def test_the_real_dispatcher_answers_through_the_launcher_command(tmp_path: Path) -> None:

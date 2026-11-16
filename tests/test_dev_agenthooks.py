@@ -233,8 +233,15 @@ def test_a_command_that_merely_contains_a_denied_word_is_not_denied(rules: Path)
 
 
 def _conditional_misses(rule_id: str, when: str, command: str, rules: Path) -> list[str]:
-    """A ``when`` row's refusal judged where its condition does and does not hold."""
+    """A ``when`` or ``asks`` row's refusal judged where its condition does and does not hold."""
     misses = []
+    if when == 'asks':
+        # These rules carry no checkout, so nobody can be asked: the row must ADMIT (its asked half is the judge's
+        # own suite, test_dev_journaldoor), never refuse on its prefilter alone.
+        decided = agenthooks.decide(command, rules)
+        if decided is not None and decided.startswith(f'{rule_id}:'):
+            misses.append(f'{rule_id}: refused on its prefilter with nobody asked on {command!r}')
+        return misses
     if when == 'live-run':
         # No run is live in a scan tree: the row must stay SILENT (its live half is test_dev_liverun's).
         decided = agenthooks.decide(command, rules)
@@ -264,8 +271,8 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
         agent = 'scan-agent' if rule.scope == 'subagent' else None
         for command in rule.refuses:
             checked += 1
-            if rule.when is not None:
-                wrong += _conditional_misses(rule.id, rule.when, command, rules)
+            if rule.when is not None or rule.asks is not None:
+                wrong += _conditional_misses(rule.id, rule.when or 'asks', command, rules)
                 continue
             # A hint row is SAID, unless a sibling refusal fires on the same command and wins (`git clone`).
             hint = rule.severity == 'hint'

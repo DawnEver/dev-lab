@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import gzip
 import json
+from pathlib import Path
 
 import pytest
 from lab_commons.compute import learned
 
 from dev_lab.dev import forgedemand
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecords import Attachment
 
 REPO = 'https://g/r.git'
@@ -82,3 +84,27 @@ def test_a_forge_error_on_one_download_is_not_fatal(forge: _Forge, monkeypatch) 
 def test_at_most_limit_records_are_read_newest_first(forge: _Forge) -> None:
     assert forgedemand.refresh(REPO, forge, limit=1) == 1
     assert learned.folded(REPO) == {'run-b.json.gz'}
+
+
+def test_a_listing_too_long_to_read_degrades_the_refresh_to_one_named_line(forge: _Forge, monkeypatch, capsys) -> None:
+    """A local measure never depends on reading a forge listing to completion (an issue with a vast asset list)."""
+
+    def endless(_client: object) -> tuple[Attachment, ...]:
+        msg = '<owner>/<repo>/issues/1/assets still lists past 100 pages of 50; refusing a partial read'
+        raise ListingIncomplete(msg)
+
+    monkeypatch.setattr(forgedemand, 'listing', endless)
+    monkeypatch.setattr(forgedemand, 'origin_url', lambda _root: REPO)
+    monkeypatch.setattr(forgedemand, 'unprompted_client', lambda _root: forge)
+    assert forgedemand.refresh_checkout(Path()) == 0
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert len(lines) == 1
+    assert 'refusing a partial read' in lines[0], 'the line names the cause'
+    assert 'learned demand not refreshed' in lines[0], 'the line names what was skipped'
+    assert learned.learned(REPO) == {}
+
+
+def test_a_readable_listing_refreshes_silently(forge: _Forge, capsys) -> None:
+    """PLANTED CONTROL: the degraded line is not printed when the listing reads."""
+    assert forgedemand.refresh(REPO, forge) == 2
+    assert capsys.readouterr().err == ''

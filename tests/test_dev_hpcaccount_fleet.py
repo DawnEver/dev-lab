@@ -7,12 +7,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
 from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant
 
-from dev_lab.dev.hpcaccount import deploy as account_deploy
+from dev_lab.dev.hpcaccount import declaration
 from dev_lab.dev.hpcaccount.division import load_division
 from dev_lab.dev.hpcaccount.fleet import (
     _READ_DEPLOY,
@@ -400,7 +399,7 @@ def test_the_remote_deploy_refusal_names_the_deploy_fleet_door(tmp_path: Path) -
         encoding='utf-8',
     )
     argv = ['--host', 'login02.example', '--repo', 'dev-lab=https://x.example/d.git@m']
-    why = account_deploy._declared(account_deploy._parser().parse_args(argv), config)
+    why = declaration.declaration(declaration.parser().parse_args(argv), config)
     assert isinstance(why, str)
     assert 'deploy-fleet --account' in why
     assert 'edit it there' not in why
@@ -421,8 +420,7 @@ def test_a_first_install_precedes_the_kits_tick_and_clones_the_layers_repos() ->
 def _first_install(tmp_path: Path, *, venv: bool) -> str:
     """Run the first-install line in bash against a fake home, ``uv``/``git``/``curl`` stubbed to record calls."""
     bash = shutil.which('bash')
-    if bash is None:
-        pytest.skip('no bash to run the remote line')
+    assert bash, 'the first-install line runs in bash on the account'
     home, stubs = tmp_path / 'home', tmp_path / 'stubs'
     (home / 'src' / 'dev-lab' / '.venv' / 'bin').mkdir(parents=True)
     stubs.mkdir()

@@ -49,41 +49,22 @@ def report(client: Client, run: Run, progress: str, lease: timedelta, say: Calla
     return step(run, owner=dataclasses.replace(renewed, progress='').description(), progress=progress)
 
 
-def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:  # noqa: PLR0911 -- one row per class
+#: A terminal output refusal, one row per class: ``(class, alarm subject with {sha}, owner, release prefix)``.
+#: A declared output is part of the request, so its absence fails the run; an unchanged oversized output is never
+#: retried; sealed bytes and their index disagreeing is the environment's.
+_OUTPUT_REFUSALS: Final[tuple[tuple[type[Exception], str, Owner, str], ...]] = (
+    (MissingOutput, 'the run of {sha} lacks a declared output', Owner.CODE, 'declared outputs missing'),
+    (OutputBudgetRefused, 'output budget refused for the run of {sha}', Owner.CODE, 'output budget refused'),
+    (OutputIntegrityRefused, 'the run of {sha} failed output integrity', Owner.ENVIRONMENT, 'output integrity refused'),
+)
+
+
+def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:
     """Why a run that ran no judged test is released: a missing, over-budget or corrupt declared output alarms."""
-    if isinstance(why, MissingOutput):  # a declared output is part of the request: its absence fails the run
-        alarm(
-            Alarm(
-                RUN,
-                run.repo_url,
-                f'the run of {run.sha[:12]} lacks a declared output',
-                str(why),
-                context=Context(sha=run.sha),
-            )
-        )
-        return owned(Owner.CODE, f'declared outputs missing: {why}')
-    if isinstance(why, OutputBudgetRefused):  # terminal: an unchanged oversized output is never retried
-        alarm(
-            Alarm(
-                RUN,
-                run.repo_url,
-                f'output budget refused for the run of {run.sha[:12]}',
-                str(why),
-                context=Context(sha=run.sha),
-            )
-        )
-        return owned(Owner.CODE, f'output budget refused: {why}')
-    if isinstance(why, OutputIntegrityRefused):  # terminal: sealed bytes and their index disagree
-        alarm(
-            Alarm(
-                RUN,
-                run.repo_url,
-                f'the run of {run.sha[:12]} failed output integrity',
-                str(why),
-                context=Context(sha=run.sha),
-            )
-        )
-        return owned(Owner.ENVIRONMENT, f'output integrity refused: {why}')
+    for kind, subject, owner, prefix in _OUTPUT_REFUSALS:
+        if isinstance(why, kind):
+            alarm(Alarm(RUN, run.repo_url, subject.format(sha=run.sha[:12]), str(why), context=Context(sha=run.sha)))
+            return owned(owner, f'{prefix}: {why}')
     if isinstance(why, RetiredTable):  # fixed AT THE SHA: no retry publishes it, so it settles once
         alarm(
             Alarm(

@@ -64,6 +64,7 @@ from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
+from dev_lab.dev._deny_journal_row import JOURNAL_CITES
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev._deny_push_rows import PUSH_ROWS
 from dev_lab.dev._deny_remote_row import REMOTE_WRITE
@@ -102,6 +103,7 @@ NETWORK_VERB_PATTERN = (
 DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     BACKGROUND_BOUNDED,
+    JOURNAL_CITES,
     SUBAGENT_NO_PUSH,
     HEAVY_IS_THE_MAIN_SESSIONS,
     CONSENT_CODE_FROM_THE_USER,
