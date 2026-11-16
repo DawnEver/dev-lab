@@ -321,7 +321,8 @@ continues it (LANDED-BRANCH-CONTINUES, above).
 
 The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) refuses a `pr/*` push whose tip
 lacks `origin/<integration>` (fetched afresh; a failed fetch refuses) or whose lock lags a floated sibling's
-head, naming `forge sync`; `forge pr ready` refuses on the same judgement of the pushed head -- never on the local tree, so it works from any
+head, naming `forge sync` -- early feedback: on the forge `pr-current` is an ALARM, never a merge condition (W5,
+dev-lab#644; the trial merge at merge time decides); `forge pr ready` refuses on the same judgement of the pushed head -- never on the local tree, so it works from any
 checkout (user ruling 2026-11-13).
 
 Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the

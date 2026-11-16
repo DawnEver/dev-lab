@@ -20,6 +20,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
+    'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
     'verifybox',
     'verifysteps',

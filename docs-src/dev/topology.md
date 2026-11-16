@@ -204,7 +204,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 - It runs only inside a WAVE the user opened with a `breakglass.wave` credential whose params are the window
   (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_hours_max` / `max_merges_max`
   -- above a ceiling it is refused, never clamped. The merge that reaches the cap ends the wave.
-- While a wave is open, the host's `tick` sweeps it: each green, non-draft, CURRENT (`pr-current` success) PR in
+- While a wave is open, the host's `tick` sweeps it: each green, non-draft PR (`pr-current` is an alarm, never a condition) in
   `[ops.breakglass] repos` lands; a refused one is skipped with its reason (`dev_lab.ops.wavesweep`).
 - Each merge carries a `Break-Glass: <reason>` trailer (at least `min_reason` characters) that opens a follow-up
   issue; the wave sends ONE summary alert when it ends. Client: `python -m dev_lab.dev.forge breakglass

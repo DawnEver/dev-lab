@@ -21,7 +21,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerunstate import Killed, Run, save
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.platformparts import part_context, run_tag
+from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owned, release_reason
 from dev_lab.supervise.notice import Context
 
@@ -49,7 +49,7 @@ def report(client: Client, run: Run, progress: str, lease: timedelta, say: Calla
     return step(run, owner=dataclasses.replace(renewed, progress='').description(), progress=progress)
 
 
-def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:
+def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:  # noqa: PLR0911 -- one row per class
     """Why a run that ran no judged test is released: a missing, over-budget or corrupt declared output alarms."""
     if isinstance(why, MissingOutput):  # a declared output is part of the request: its absence fails the run
         alarm(
@@ -91,6 +91,8 @@ def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None])
             )
         )
         return release_reason(ProducerExit.INCONCLUSIVE, outage=None, detail=f': {why}')
+    if isinstance(why, PartRefusal):  # it ran; its record was refused a part: its own class (dev-lab#644)
+        return release_reason(ProducerExit.PART_REFUSED, outage=None, detail=f': {why}')
     if isinstance(why, NoRoom):  # a fact about this HOST: the part stays open to every host (forgeclaim.assess)
         return owned(Owner.SCHEDULING, f'{RETRYABLE} -- this host had no room: {why}')
     log = next((word for word in str(why).split() if word.startswith('log=')), '')  # the build log, named

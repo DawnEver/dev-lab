@@ -102,6 +102,40 @@ def test_promote_takes_a_full_pass_ancestor_of_integration_not_only_its_tip(serv
     assert git_out(repo, 'rev-parse', 'main') == passed
 
 
+def test_newest_promotes_the_newest_first_parent_full_pass_and_alarms_each_one_passed_over(
+    server, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """W5 (dev-lab#644): ``promote --newest <tip>`` walks integration's first parents from the tip down.
+
+    It promotes the NEWEST commit whose parts all PASS, and every commit above it it passed over is an ALARM naming
+    its reason -- never a quiet refusal. PLANTED CONTROLS: the exact verb on the tip still refuses; with no full
+    PASS anywhere the walk refuses, naming each commit.
+    """
+    _, repo = clone_pair(tmp_path)
+    older = advance(repo, 'integrate/main', 'e.txt', 'e\n')
+    passed = advance(repo, 'integrate/main', 'f.txt', 'f\n')
+    tip = advance(repo, 'integrate/main', 'g.txt', 'g\n')
+    run_git(repo, 'checkout', '-q', '--detach')
+    run_git(repo, 'branch', '-f', 'main', 'origin/main')
+    built = client(GITEA, Loopback(server))
+    answer('GET', f'{GAPI}/statuses/{older}', (200, [_part(repo, older)]))
+    answer('GET', f'{GAPI}/statuses/{passed}', (200, [_part(repo, passed, state='failure')]))
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip, 'incremental')]))
+    said: list[str] = []
+    assert integrate.main(['promote', tip], cwd=repo, client=built, fetch=lambda _: None) == 2, 'CONTROL: exact'
+    newest = integrate.main(
+        ['promote', '--newest', tip], cwd=repo, client=built, fetch=lambda _: None, said=said.append
+    )
+    assert newest == 0
+    assert git_out(repo, 'rev-parse', 'main') == older
+    alarms = [line for line in capsys.readouterr().err.splitlines() if 'ALARM' in line]
+    assert [line.split()[2] for line in alarms] == [tip[:12], passed[:12]], alarms
+    assert said == alarms
+    run_git(repo, 'branch', '-f', 'main', 'origin/main')
+    answer('GET', f'{GAPI}/statuses/{older}', (200, [_part(repo, older, 'incremental')]))
+    assert integrate.main(['promote', '--newest', tip], cwd=repo, client=built, fetch=lambda _: None) == 2
+
+
 def test_promote_reads_the_promoted_sha_never_the_working_tree(server, tmp_path: Path) -> None:
     _, repo = clone_pair(tmp_path)
     tip = advance(repo, 'integrate/main', 'f.txt', 'f\n')

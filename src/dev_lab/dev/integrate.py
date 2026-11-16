@@ -14,6 +14,10 @@ promotion -- and says ``promotable`` with when the job runs. On Gitea the host's
   every derived AND every declared-required ``tests/<part>`` (:func:`dev_lab.dev.platformparts.required_at`)
   stands PASS at scope full under the policy *sha* declares, each naming its env (:func:`decide`, the
   standing push admission reads, over the commit's whole status history). Never a merge onto the trunk.
+* ``promote --newest <tip>`` -- the same decision on each first parent of *tip* down to the trunk (at most
+  :data:`DEPTH`), promoting the NEWEST that passes (W5, dev-lab#644: integration moves faster than a full run, so the
+  tip alone was refused nightly and a consumer's trunk froze). Every commit passed over is an ALARM naming its
+  reason (:func:`newest`), never a quiet refusal.
 * ``pending <sha>`` -- print ``pending=true`` while the trunk does not hold *sha*, else ``pending=false`` (a
   ``$GITHUB_OUTPUT`` line): the nightly promotion run (D48-1A) tests and promotes integration's tip only while it is
   pending, so a tip already promoted runs nothing.
@@ -27,6 +31,7 @@ is checked out in some worktree is refused, and a trunk that cannot fast-forward
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import shutil
 import subprocess
@@ -56,9 +61,12 @@ from dev_lab.dev.trialmerge import contains, rev
 from dev_lab.dev.unproduced import unproduced_waived
 from dev_lab.dev.verdictenv import verdict_policy_at
 
-__all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'pending', 'promote']
+__all__ = ['DEPTH', 'IntegrateRefused', 'Promotion', 'decide', 'main', 'newest', 'pending', 'promote']
 
 _GIT: Final = shutil.which('git') or 'git'
+
+#: How many first parents below the tip ``promote --newest`` decides before it refuses.
+DEPTH: Final = 64
 
 #: The refusal's id in the metrics log (:mod:`dev_lab.dev.metrics`).
 _RULE: Final = 'integrate-promote'
@@ -73,11 +81,13 @@ class Promotion:
     """What promote decided: ``promote``, ``promotable``, ``current`` (nothing to do) or ``refused``, with why.
 
     ``promotable`` passes, but this process may not publish the trunk (:func:`publishes_trunk`): the ref stays.
+    *passed_over* is each newer first parent :func:`newest` refused before it, newest first.
     """
 
     action: str
     sha: str
     reasons: tuple[str, ...] = ()
+    passed_over: tuple[Promotion, ...] = ()
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -147,6 +157,24 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
     )
 
 
+def newest(root: Path, client: Client, policy: Policy, tip: str) -> Promotion:
+    """:func:`decide` on *tip*'s first parents above the trunk, newest first: the first that is not refused.
+
+    Each refused commit above it rides along as *passed_over*; when every one refuses, the tip's refusal carries them.
+    """
+    trunk = _trunk(root, policy)
+    listed = _git(root, 'rev-list', '--first-parent', f'--max-count={DEPTH}', tip, *([f'^{trunk}'] if trunk else ()))
+    refused: list[Promotion] = []
+    for sha in listed.stdout.split() if listed.returncode == 0 else ():
+        found = decide(root, client, policy, sha)
+        if found.action != 'refused':
+            return dataclasses.replace(found, passed_over=tuple(refused))
+        refused.append(found)
+    if not refused:
+        return decide(root, client, policy, tip)
+    return dataclasses.replace(refused[0], passed_over=tuple(refused[1:]))
+
+
 def _off_gate(root: Path, client: Client, sha: str, statuses: Sequence[CommitStatus]) -> frozenset[str]:
     """The derived parts no producer *client*'s forge wires, waived (a heavy test: kept, never waited on).
 
@@ -167,8 +195,10 @@ def publishes_trunk(client: Client, env: Mapping[str, str]) -> bool:
     return backend_for(client.forge) is not GITHUB or bool(actions_token(client.forge, env))
 
 
-def promote(root: Path, client: Client, sha: str, *, env: Mapping[str, str] = os.environ) -> Promotion:
-    """:func:`decide`, then the local fast-forward of the trunk ref when it says ``promote`` and we publish it.
+def promote(
+    root: Path, client: Client, sha: str, *, env: Mapping[str, str] = os.environ, walk: bool = False
+) -> Promotion:
+    """:func:`decide` (*walk*: :func:`newest`), then the trunk ref's local fast-forward on ``promote`` when we publish.
 
     A process that may not publish the trunk (:func:`publishes_trunk`) gets ``promotable``, the ref untouched.
 
@@ -176,10 +206,10 @@ def promote(root: Path, client: Client, sha: str, *, env: Mapping[str, str] = os
     """
     policy = _policy(root, sha)
     _unchecked_out(root, policy.trunk)
-    found = decide(root, client, policy, sha)
+    found = (newest if walk else decide)(root, client, policy, sha)
     if found.action == 'promote':
         if not publishes_trunk(client, env):
-            return Promotion('promotable', found.sha, found.reasons)
+            return Promotion('promotable', found.sha, found.reasons, found.passed_over)
         _move(root, policy.trunk, found.sha, rev(root, f'refs/heads/{policy.trunk}'))
     return found
 
@@ -196,14 +226,19 @@ def main(
     cwd: Path | None = None,
     client: Client | None = None,
     fetch: Callable[[Path], None] = fetch_origin,
+    said: Callable[[str], None] | None = None,
 ) -> int:
     """``promote <sha>``: exit 0 done, 2 refused, 1 on a failure.
+
+    ``promote --newest <tip>``: likewise, and each commit passed over is an ALARM line, also handed to *said*.
 
     ``pending <sha>``: exit 0 answered, 2 refused (no declaration at *sha*), 1 on a failure.
     """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.integrate', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
-    verbs.add_parser('promote').add_argument('sha')
+    promoting = verbs.add_parser('promote')
+    promoting.add_argument('--newest', action='store_true', help='promote the newest first parent that passes')
+    promoting.add_argument('sha')
     verbs.add_parser('pending', help='print pending=true while the trunk does not hold <sha>').add_argument('sha')
     args = parser.parse_args(argv)
     root = Path.cwd() if cwd is None else cwd
@@ -212,7 +247,7 @@ def main(
         if args.verb == 'pending':
             emit(f'pending={str(pending(root, _policy(root, args.sha), args.sha)).lower()}')
             return 0
-        found = promote(root, client or client_for(root), args.sha)
+        found = promote(root, client or client_for(root), args.sha, walk=args.verb == 'promote' and args.newest)
         trunk = _policy(root, args.sha).trunk
     except IntegrateRefused as refused:
         _log(root, metrics.REFUSAL, args.sha)
@@ -221,6 +256,11 @@ def main(
     except (ForgeCallFailed, OSError) as failed:
         emit(f'[integrate] {failed}', err=True)
         return 1
+    for over in found.passed_over:  # never a quiet refusal: each commit passed over is said, with why
+        alarm = f'[integrate] ALARM: {over.sha[:12]} passed over: ' + '; '.join(over.reasons)
+        emit(alarm, err=True)
+        if said is not None:
+            said(alarm)
     if found.action == 'refused':
         _log(root, metrics.REFUSAL, args.sha)
         emit(f'[integrate] REFUSED: {trunk} stays where it is.', err=True)

@@ -374,8 +374,8 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        release_reason(ProducerExit.INCONCLUSIVE, outage=None),
-    )
+        release_reason(ProducerExit.PART_REFUSED, outage=None, detail=': INCONCLUSIVE: 3 lost'),
+    ), 'W5 (dev-lab#644): a part refusal is its own class, requeued by it'
     assert routed == [{'sha': SHA}], 'its reported reds are real reds: an inconclusive record is still routed'
 
 
