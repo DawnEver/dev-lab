@@ -233,14 +233,33 @@ def test_the_placeholder_passes_configcheck_and_is_named_by_render_and_drift(tmp
     assert devhost.drift(_unfilled_machine(tmp_path))[0] == devschema.fill_remedy(['solverx'])
 
 
-def test_the_stop_blocks_once_per_session_on_the_placeholder(tmp_path: Path) -> None:
-    live, marks = _unfilled_machine(tmp_path), tmp_path / 'marks'
-    reason = devhost.stop_block({'session_id': 's1'}, live, marks)
-    assert reason is not None
-    assert devschema.DETECT_DOOR in reason
-    assert devhost.stop_block({'session_id': 's1'}, live, marks) is None
-    assert devhost.stop_block({'session_id': 's2', 'stop_hook_active': True}, live, marks) is None
-    assert devhost.stop_block({'session_id': 's3'}, _rendered_machine(tmp_path), marks) is None
+def test_the_session_start_verb_says_the_unfilled_home_and_a_render_says_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The notice the Stop hook once blocked on is said at session start, as context, never a block."""
+    unfilled, rendered = tmp_path / 'unfilled.toml', tmp_path / 'rendered.toml'
+    clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{devschema.UNFILLED}"'))
+    unfilled.write_text(devhost.render(clone, 'ws', tomllib.loads(LOCAL)), encoding='utf-8')
+    assert devhost.main(['--machine', str(unfilled), 'session-start']) == 0
+    said = capsys.readouterr().out
+    assert devschema.DETECT_DOOR in said
+    assert 'decision' not in said, 'a notice, never a block'
+    rendered.write_text(devhost.render(_clone(tmp_path / 'b'), 'ws', tomllib.loads(LOCAL)), encoding='utf-8')
+    assert devhost.main(['--machine', str(rendered), 'session-start']) == 0
+    assert capsys.readouterr().out == '', 'PLANTED CONTROL: a machine file that is its render says nothing'
+
+
+def test_the_machine_notice_has_one_trigger_once_per_session() -> None:
+    """Drift cannot change within a turn: one SessionStart row, once; no Stop row, and venvfollow no longer says it."""
+    from dev_lab.dev import venvfollow  # noqa: PLC0415
+    from dev_lab.dev.agent_wiring import WIRING  # noqa: PLC0415
+
+    rows = [w for w in WIRING if w.module == 'dev_lab.dev.devhost']
+    assert [(w.events, w.argv, w.once, w.may_block) for w in rows] == [
+        (('SessionStart',), ('session-start',), True, False)
+    ]
+    assert not any('Stop' in w.events for w in rows), 'PLANTED CONTROL: the Stop row is gone'
+    assert 'devhost' not in vars(venvfollow), 'the notice is said by its own row alone'
 
 
 def test_a_path_needing_an_unfilled_home_refuses_with_the_remedy() -> None:

@@ -120,14 +120,17 @@ class Wire:
 
 _STOPS: Final = ('Stop', 'SubagentStop')
 
-#: THE WIRING, ONE TABLE. Before every shell call: the journal door (TRACKED-CITES-NO-EPHEMERAL, dev-lab#419); before
-#: every write: the codeplace write hook (a report under output/, a write-prone root, a consent file refused; a
-#: misplaced code file hinted). After every shell call, succeeded or failed: the wall ledger's foreign-denial reader
-#: (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54), the task binder (D5), the PR inbox -- the ONE
-#: machine PR watcher (SESSION-HEARS-ITS-PRS). Every stop, the main session's and each subagent's: the hand-back
-#: check and the wall ledger's stop; the main session's adds the stray census, the scratch census, the unfilled
-#: install home and the shell reaper. Session start: the ONE reclaim, the reaper, the venv follower, the forge-token
-#: notice, the scratch baseline, the classifier render and the PR watcher.
+#: THE WIRING, ONE TABLE, AND EACH CHECK HAS ONE TRIGGER. Before every shell call: the journal door
+#: (TRACKED-CITES-NO-EPHEMERAL, dev-lab#419); before every write: the codeplace write hook (a report under output/, a
+#: write-prone root, a consent file refused; a misplaced code file hinted). After every shell call, succeeded or
+#: failed: the wall ledger's foreign-denial reader (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54),
+#: the task binder (D5), the PR inbox -- the ONE machine PR watcher (SESSION-HEARS-ITS-PRS). Every stop, the main
+#: session's and each subagent's: the hand-back check and the wall ledger's stop; the main session's adds the stray
+#: census, the scratch census and the shell reaper -- Stop is the one event that recurs inside a session, so it is the
+#: reaper's clock, and a session's first stop sweeps what an ended one left (measured 2026-11-16: 37 sweeps and both
+#: over-bound stops of the day fell in an 11-hour window with no session start). Session start: the ONE reclaim, the
+#: machine-file notice (once: drift cannot change within a turn), the venv follower, the forge-token notice, the
+#: scratch baseline, the classifier render and the PR watcher.
 WIRING: Final = (
     Wire(('PreToolUse',), 'dev_lab.dev.journaldoor', tools=SHELL_TOOLS, may_block=True),
     Wire(('PreToolUse',), 'dev_lab.dev.codeplace', tools=WRITE_TOOLS, may_block=True),
@@ -138,10 +141,10 @@ WIRING: Final = (
     Wire(('Stop',), 'dev_lab.dev.codeplace', ('stray',), may_block=True, timeout=60),
     Wire(_STOPS, 'dev_lab.dev.handback', may_block=True, timeout=60),
     Wire(('Stop',), 'dev_lab.dev.scratch', ('stop',), may_block=True, timeout=60),
-    Wire(('Stop',), 'dev_lab.dev.devhost', ('stop',), may_block=True, timeout=60),
     Wire(_STOPS, 'dev_lab.dev.walls', ('stop',), may_block=True, timeout=60),
-    Wire(('Stop', 'SessionStart'), 'dev_lab.dev.shellreaper', ('--hook',), timeout=60),
+    Wire(('Stop',), 'dev_lab.dev.shellreaper', ('--hook',), timeout=60),
     Wire(('SessionStart',), 'dev_lab.dev.reclaimrun', ('--session-start',), once=True, timeout=120),
+    Wire(('SessionStart',), 'dev_lab.dev.devhost', ('session-start',), once=True, timeout=60),
     Wire(('SessionStart',), 'dev_lab.dev.venvfollow', ('--session-start',), timeout=120),
     Wire(('SessionStart',), 'dev_lab.dev.forgeauthnotice', ('--session-start',), once=True, timeout=120),
     Wire(('SessionStart',), 'dev_lab.dev.scratch', ('snapshot',), once=True, timeout=120),

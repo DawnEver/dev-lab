@@ -82,6 +82,13 @@ RETIRED_SPELLINGS: Final = {
             'dev-lab #640 unwired the push journal, its Stop gate, the shell-line hooks and post-push; deleted after',
         ),
     ),
+    **dict.fromkeys(
+        ('stop_block', 'devhost-stop'),
+        (
+            'devhost session-start, a once-per-session SessionStart notice (agent_wiring.WIRING)',
+            'one trigger per check (2026-11-16): machine-file drift cannot change within a turn; no Stop re-reads it',
+        ),
+    ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
     'PR-REVIEW-IS-ADVISORY': (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',
