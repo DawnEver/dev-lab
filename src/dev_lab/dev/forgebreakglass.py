@@ -7,8 +7,8 @@ no code -- the server sends ONE summary of what actually merged when the wave en
 ``ack [ID]`` records who acknowledged an audit report (no code; it never blocks a wave).
 
 The endpoint is the machine file's ``[breakglass]`` table (``endpoint = "<account>@<host>"``, optional
-``identity = "<ssh key path>"``); every request is one JSON line over ``ssh -T`` (:func:`ssh_send`, which the
-consent client shares, through :func:`dev_lab.dev.remote.piped`). The client holds no secret and
+``identity = "<ssh key path>"``); every request is one JSON line over ``ssh -T``
+(:func:`dev_lab.ops.consent.door.ssh_send`, the consent client's one transport). The client holds no secret and
 cannot authorize itself. A PR's head is pinned: one that moved after it was shown is refused server side.
 """
 
@@ -18,32 +18,23 @@ import argparse
 import getpass
 import json
 import socket
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import remote, sessionprs
+from dev_lab.dev import sessionprs
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgework import Client, client_for
+from dev_lab.ops.consent.door import Send, ssh_send
 
-__all__ = ['TABLE', 'Send', 'merge_main', 'ssh_send', 'wave_main']
+__all__ = ['TABLE', 'merge_main', 'wave_main']
 
 #: The machine-file table naming the endpoint.
 TABLE: Final = 'breakglass'
-
-Send = Callable[[Mapping[str, Any], dict[str, Any]], tuple[int, str]]
-
-
-def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
-    """Send *request* as one JSON line to *table*'s ``endpoint`` over ``ssh -T``; ``(exit status, its output)``."""
-    identity = str(table['identity']) if table.get('identity') else None
-    known_hosts = str(table['known_hosts']) if table.get('known_hosts') else None
-    line = json.dumps(request) + '\n'
-    return remote.piped(str(table['endpoint']), line, identity=identity, known_hosts=known_hosts, timeout_s=180)
 
 
 def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any] | None:

@@ -1,6 +1,9 @@
 """PLANRUN PREFLIGHT: every door of a plan checked on its hosts BEFORE the code is spent; nothing is run or redeemed.
 
-Split out of :mod:`dev_lab.dev.planrun` (the run and the CLI); what is checked is that module's docstring.
+Split out of :mod:`dev_lab.dev.planrun` (the run and the CLI); what is checked is that module's docstring. A
+subject derivable HERE is derived here even when its door waits on an earlier config step (incident 2026-11-16: such
+a step was skipped as ``after step N``, its subject never derived, and the granted plan's code was wasted). A green
+preflight is recorded for the plan's digest (:func:`offered`): the one consent door offers a plan for a code only then.
 """
 
 from __future__ import annotations
@@ -33,7 +36,9 @@ from dev_lab.dev.planrunsteps import (
 )
 from dev_lab.dev.reviewgate import DeclarationUnread, file_at, manifest_at
 from dev_lab.ops import configdoor, forgeprotection
+from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.consent.door import Send, handshake, record_preflight, ssh_send
 from dev_lab.ops.consent.plan import STALE_CLIENT, Plan, stale_client
 from dev_lab.ops.giteaadmin import ForgeRefused
 
@@ -47,6 +52,7 @@ __all__ = [
     'config_subject',
     'declared_at',
     'host_ready',
+    'offered',
     'preflight',
     'protect_target',
     'text_at',
@@ -76,9 +82,11 @@ _NO_HOLD: Final = re.compile(r'Permission denied \((?:[\w-]+,)*(?:keyboard-inter
 #: What a refused login means, and the exit: the plan first, then ONE code opens every host's hold.
 HOLD_NEEDED: Final = (
     'no open ssh hold on this host, and it admits no login without a code. Build the plan first (the steps file '
-    'and its plan.json; digest D: `python -m dev_lab.ops.consent plan <plan.json>`), then ask the user for the one '
-    'code: `python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D>` opens every plan host, '
-    'and preflight re-runs through the held sessions'
+    'and its plan.json; digest D: `python -m dev_lab.ops.consent plan <plan.json>`). A plan is offered for a code '
+    "only after a green preflight: when a step's subject is the host's to derive, open this host's hold first with "
+    'its own code (`python -m dev_lab.dev.sshhold open <dest> --hours H`) and re-run preflight. Once green, '
+    '`python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D>` takes the one code, opening '
+    'every plan host not already held'
 )
 
 
@@ -158,6 +166,10 @@ def _local_subject(step: Step, readers: Readers) -> tuple[str, str]:
     return forgeprotection.local_subject(repo, ref, step.forge, read), step.forge
 
 
+#: The last line of a blocked preflight.
+_BLOCKED: Final = 'preflight: BLOCKED (fix the named blocker before asking for a code)'
+
+
 #: What a local derivation may refuse with; each names what it could not read.
 UNREAD: Final = (ForgeRefused, DeclarationUnread, ForgeCallFailed, ConsentRefused, ValueError)
 
@@ -183,6 +195,9 @@ def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote, readers: R
     here = [i for i in range(index) if not steps.steps[i].local and steps.steps[i].dest == step.dest]
     after = next((i + 1 for i in reversed(here) if plan.grants[i]['action'] == CONFIG_ACTION), None)
     if status:
+        if after and _derivable(step):
+            verdict, blocked = _derived_here(grant['subject'], step, readers)
+            return f'{verdict}; its door after step {after} (installed by that config apply)', blocked
         if after:
             return f'after step {after} (its door is installed by that config apply)', False
         return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({last_line(said)})', True
@@ -249,6 +264,22 @@ def preflight(
             verdict, fault = f'BLOCKED -- unknown to this client: {STALE_CLIENT}', True
         lines.append(f'{name}: {verdict}')
         blocked = blocked or fault
-    lines.append('preflight: BLOCKED (fix the named blocker before asking for a code)' if blocked else
+    lines.append(_BLOCKED if blocked else
                  'preflight: green (ask the user for the code)')  # fmt: skip
     return not blocked, lines
+
+
+def offered(
+    plan: Plan, found: tuple[bool, list[str]], *, table: Mapping[str, Any] | None = None, send: Send = ssh_send,
+    home: Path | None = None,
+) -> tuple[bool, list[str]]:  # fmt: skip
+    """*found*, a preflight's verdict, completed by the issuer handshake and recorded for its digest when green."""
+    green, lines = found
+    if not green:
+        return found
+    try:
+        handshake(section(TABLE) if table is None else table, send=send, actions=[g['action'] for g in plan.grants])
+    except ConsentRefused as skewed:
+        return False, [*lines[:-1], f'issuer: BLOCKED -- {skewed}', _BLOCKED]
+    record_preflight(plan, home=home)
+    return True, [*lines, f'issuer: agrees; plan {plan.digest[:12]} offered for one code']

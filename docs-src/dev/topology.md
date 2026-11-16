@@ -190,10 +190,15 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
    `{"host", "grants"}` shape is refused by name with its one-time migration, never upgraded on read.
 2. `sshhold open --plan` grants first (the issuer), then opens every host's session concurrently with the same code,
    each started inside ONE TOTP step of it; a host that fails or misses the window is reported, never retried with
-   the code, and is re-opened alone with a new code (`dev_lab.dev.sshhold.open_planned`). Granting spends nothing.
+   the code, and is re-opened alone with a new code (`dev_lab.dev.sshholdplan.open_planned`). Granting spends
+   nothing. A plan host already held is reused: the code goes to the issuer alone.
 3. `grant_plan` checks the session host is one of the plan's hosts; `planrun` runs each step on its grant's host,
    first asking every pending host to answer -- one that does not stops the run before any step, so no grant on
    another host is spent -- and resumes per plan digest; `recover` stays per plan digest.
+4. Before any code is asked, ONE door (`dev_lab.ops.consent.door`) refuses what would waste it: every code intake
+   runs the issuer `hello` handshake (credential field set and registry actions; a skewed pair names the side to
+   upgrade), and a plan is offered (`consent plan`, `sshhold open --plan`, `grant_plan`) only after `planrun
+   preflight` was green for its digest -- every door and every subject -- and recorded it.
 
 ## 6. Break-glass waves
 

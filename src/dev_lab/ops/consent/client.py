@@ -30,8 +30,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.config import section
 
 from dev_lab.dev.consentguard import state_dir
-from dev_lab.dev.forgebreakglass import Send, ssh_send
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
+from dev_lab.ops.consent.door import Send, handshake, offer, ssh_send
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.consent.plan import request as plan_request
@@ -222,13 +222,15 @@ def grant(
     """Ask the issuer for the credential *request_file* describes; the file it was written to.
 
     Raises:
-        ConsentRefused: the code is not six digits, the request is malformed, or the issuer refused.
+        ConsentRefused: the issuer fails the handshake (:func:`.door.handshake`), the code is not six digits, the
+            request is malformed, or the issuer refused.
 
     """
     found = _endpoint(table)
     public_key(found)  # refused here, before the user spends a code
     request = json.loads(request_file.read_text(encoding='utf-8'))
     requested(request)
+    handshake(found, send=send, actions=[request['action']])  # before the code is asked
     given = _six_digits(given_code(code, tty=tty, ask=ask, read=read))
     return _issued(found, {'verb': 'issue', 'request': request, 'code': given}, send=send, home=home, now=now())[0]
 
@@ -250,8 +252,9 @@ def grant_plan(
     opens another).
 
     Raises:
-        ConsentRefused: the plan is not the one shown or does not name *host*, a grant is malformed, the code is not
-            six digits, or the issuer refused.
+        ConsentRefused: the plan is not the one shown or does not name *host*, a grant is malformed, it is not
+            offered (:func:`.door.offer`: no green preflight, or a skewed issuer), the code is not six digits, or
+            the issuer refused.
 
     """
     found = _endpoint(table)
@@ -262,6 +265,7 @@ def grant_plan(
         raise ConsentRefused(msg)
     for grant_ in plan.grants:
         requested(plan_request(grant_))  # refused here, before the user spends a code
+    offer(plan, found, send=send, home=home, now=now())  # green preflight, and an issuer this client agrees with
     payload = {'verb': 'issue-plan', 'plan': {'hosts': list(plan.hosts), 'grants': list(plan.grants)},
                'code': _six_digits(code)}  # fmt: skip
     return _issued(found, payload, send=send, home=home, now=now(), plan=plan.digest)

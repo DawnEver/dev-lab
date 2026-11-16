@@ -2,7 +2,9 @@
 
 A line is ``{"verb": "issue", "request": {...}, "code": "..."}``, ``{"verb": "issue-plan", "plan": {...}, "code":
 "..."}``, ``{"verb": "register", "credential": {...}, "amount": n}``, ``{"verb": "spent", "ids": [...]}`` or
-``{"verb": "fetch-unspent", "plan": "<digest>"}``.
+``{"verb": "fetch-unspent", "plan": "<digest>"}`` or ``{"verb": "hello"}``.
+``hello`` answers the field set and registry actions this issuer speaks (:func:`~dev_lab.ops.consent.door.hello`):
+the version handshake a client runs before it asks the user for a code.
 ``issue`` answers the credential's JSON, ``issue-plan`` the JSON list of one credential per grant; ``register`` the
 campaign's remaining cap (empty for a single credential); ``spent`` the JSON list of those ids whose use the ledger
 records; ``fetch-unspent`` the JSON list of the plan's granted, never-used, live credentials, as issued
@@ -15,6 +17,7 @@ from __future__ import annotations
 import json
 
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.consent.door import hello
 from dev_lab.ops.consent.issuer import Issuer
 
 __all__ = ['handle']
@@ -28,6 +31,8 @@ def handle(issuer: Issuer, line: str) -> str:
         msg = 'not one JSON line'
         raise ConsentRefused(msg) from bad
     verb = data.get('verb') if isinstance(data, dict) else None
+    if verb == 'hello':
+        return json.dumps(hello(), sort_keys=True)
     if verb in {'issue', 'issue-plan'}:
         code = data.get('code')
         if not isinstance(code, str):
@@ -44,5 +49,5 @@ def handle(issuer: Issuer, line: str) -> str:
         return json.dumps(issuer.unspent(data.get('plan')), sort_keys=True)
     if verb == 'spent':
         return json.dumps(issuer.spent(data.get('ids')))
-    msg = 'verb must be issue, issue-plan, register, spent or fetch-unspent'
+    msg = 'verb must be hello, issue, issue-plan, register, spent or fetch-unspent'
     raise ConsentRefused(msg)

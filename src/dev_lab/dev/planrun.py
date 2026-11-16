@@ -80,7 +80,7 @@ from lab_commons.log import emit
 from dev_lab.dev import sshholdwire, walls
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.planremote import remote_for
-from dev_lab.dev.planrunpreflight import RULE, UNREAD, Readers, config_subject, preflight
+from dev_lab.dev.planrunpreflight import RULE, UNREAD, Readers, config_subject, offered, preflight
 from dev_lab.dev.planrunsteps import (
     CONFIG_ACTION,
     REMOTE_DIR,
@@ -279,7 +279,7 @@ def main(argv: Sequence[str] | None = None, *, readers: Readers | None = None) -
         if args.verb == 'run':
             green, lines = run_plan(plan, steps, remote_for, spent=spent_ids)
         else:
-            green, lines = preflight(plan, steps, remote_for)
+            green, lines = offered(plan, preflight(plan, steps, remote_for))
             if not green:
                 walls.refused_text(Path.cwd(), '\n'.join(lines), reason='preflight', rule=RULE)
     except (ConsentRefused, sshholdwire.HoldRefused, OSError, ValueError) as refused:
