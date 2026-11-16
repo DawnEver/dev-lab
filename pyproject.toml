@@ -135,6 +135,9 @@ pr_merges_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-TAKE
 # workflows, the approver from [tool.dev_lab.review]; declared here only the ONE bypass identity per forge. A GitHub
 # ruleset cannot name a user, so on this personal repository break-glass bypasses as the admin role, in pull_request
 # mode only (it may merge a PR past the rules, never push). `python -m dev_lab.dev.forge protect plan|check|apply`.
+[tool.dev_lab.protection]
+producer = "actions"  # who posts this repo's parts (dev_lab.dev.producers, user ruling 2026-11-16): GitHub Actions only
+
 [tool.dev_lab.protection.forges."github.com"]
 breakglass = ["app:5704921", "role:admin"]  # the ops App merges break-glass; admin stays
 

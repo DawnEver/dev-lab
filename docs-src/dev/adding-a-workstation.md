@@ -16,12 +16,11 @@ The role is declared ONCE, `dev_lab.dev.workstationfile.ROLES`, and the deploy r
 
 which prints exactly this (a test pins this block to the command's output, so it cannot drift):
 
-<!-- template: light dev-lab,lab-commons,consumer-a -->
+<!-- template: light -->
 ```toml
 [capabilities.workstation]
 
 [serve]
-repos = ["dev-lab", "lab-commons", "consumer-a"]
 parts = "every"
 withhold = ["aedt", "femm", "fluent", "jmag", "lsdyna", "mapdl", "matlab", "simba"]
 ```

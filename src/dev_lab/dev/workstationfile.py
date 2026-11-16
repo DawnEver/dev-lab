@@ -30,7 +30,7 @@ from dev_lab.dev.forgereview_declared import FAMILY_RUNTIMES
 from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, RUNTIMES_TABLE
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
     from dev_lab.dev.hpcaccount.steps import Step
 
@@ -99,10 +99,10 @@ def capabilities(text: str) -> dict[str, dict[str, Any]]:
         raise argparse.ArgumentTypeError(str(bad)) from None
 
 
-def role_tables(role: Role, capabilities: Mapping[str, Mapping[str, Any]], repos: Sequence[str]) -> dict[str, Any]:
-    """The machine-file tables a *role* deploy owns: its capabilities and its ``[serve]`` rule over *repos*."""
+def role_tables(role: Role, capabilities: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """The machine-file tables a *role* deploy owns: its capabilities and its ``[serve]`` rule."""
     tables: dict[str, Any] = {f'capabilities.{name}': dict(facts) for name, facts in capabilities.items()}
-    tables[SERVE_TABLE] = {'repos': list(repos), 'parts': role.parts, 'withhold': list(role.withhold)}
+    tables[SERVE_TABLE] = {'parts': role.parts, 'withhold': list(role.withhold)}
     return tables
 
 
@@ -113,9 +113,9 @@ def role_refusal(role: str, capabilities: Mapping[str, Any]) -> str | None:
     return None
 
 
-def template(role: str, repos: Sequence[str]) -> str:
-    """The machine-file tables ``deploy --role <role> --repos <repos>`` writes, as TOML: the docs' template."""
-    return merged('', role_tables(ROLES[role], capabilities(','.join(ROLES[role].capabilities)), repos))
+def template(role: str) -> str:
+    """The machine-file tables ``deploy --role <role>`` writes, as TOML: the docs' template."""
+    return merged('', role_tables(ROLES[role], capabilities(','.join(ROLES[role].capabilities))))
 
 
 def _derived(data: Mapping[str, Any]) -> list[str]:

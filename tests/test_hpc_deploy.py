@@ -74,7 +74,8 @@ if 'ls-remote' in args:
 if args[0] == 'clone':
     target = pathlib.Path(args[-1])
     (target / '.git').mkdir(parents=True)
-    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n')
+    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n'
+                                           '[tool.dev_lab.protection]\nproducer = "hpc"\n')
 """
 
 FAKE_ANSWER: Final = r"""
@@ -714,45 +715,51 @@ def test_a_tick_period_cron_cannot_keep_is_refused(tmp_path: Path, minutes: str)
         _cron_spec(f'\n[schedule]\ntick_minutes = {minutes}\n', tmp_path)
 
 
-def test_an_unserved_kit_is_kept_fresh_but_its_queue_is_not_served(box: Box, tmp_path: Path) -> None:
-    """The kit is checked out and installed everywhere; serving dev-lab's QUEUE is declared per account.
+def _produced_by(box: Box, name: str, producer: str) -> None:
+    """Rewrite checkout *name*'s declaration so its producer is *producer*."""
+    pyproject = box.home / deploy_spec.DEFAULT_ROOT / name / 'pyproject.toml'
+    text = pyproject.read_text(encoding='utf-8').replace('producer = "hpc"', f'producer = "{producer}"')
+    pyproject.write_text(text, encoding='utf-8')
 
-    ``serve = false`` on the kit: its line stays (its own tick is the one writer of the kit checkout) but the
-    tick only refreshes; on any other repo it means no line at all. PLANTED CONTROL: alpha still serves.
+
+def test_an_actions_repo_is_kept_fresh_but_its_queue_is_never_served(box: Box, tmp_path: Path) -> None:
+    """Serving is the repo's OWN declaration (user ruling 2026-11-16), never a flag in the account's file.
+
+    An ``actions`` checkout is ticked -- refreshed, the kit's own tick the one writer of the kit -- and never served.
+    PLANTED CONTROL: alpha, declaring ``hpc``, is served.
     """
     assert box.run(*DECLARE) == 0
-    text = box.machine.read_text(encoding='utf-8')
-    text = text.replace('dev-lab.git", ref = "trunk" }', 'dev-lab.git", ref = "trunk", serve = false }')
-    text = text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = false }')
-    box.machine.write_text(text, encoding='utf-8')
+    _produced_by(box, 'dev-lab', 'actions')
+    _produced_by(box, 'beta', 'actions')
     spec = deploy_spec.load(box.machine)
     assert spec is not None
-    assert {r.name: r.serve for r in spec.repos} == {'dev-lab': False, 'alpha': True, 'beta': False}
+    assert deploy_spec.served(spec, box.home) == {'alpha'}
     assert deploy_spec.load(_write(tmp_path / 'again.toml', deploy_spec.render(spec))) == spec
-    assert box.run() == 0
-    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
-    assert {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked} == {'dev-lab', 'alpha'}
     served: list[tuple[list[str], Path, str]] = []
     assert _tick(box, 'dev-lab', served) == 0
-    assert served == [], 'the unserved kit is refreshed, never served'
+    assert _tick(box, 'beta', served) == 0
+    assert served == [], 'an actions repo is refreshed, never served'
     assert _tick(box, 'alpha', served) == 0
     assert len(served) == 1
 
 
-def test_the_deploy_ticks_now_only_the_repos_its_cron_ticks(box: Box) -> None:
-    """The one tick the deploy runs at its end reads the same set as the crontab: an unserved repo is not ticked.
-
-    PLANTED CONTROL: alpha, still served, is ticked.
-    """
+def test_a_repo_row_declaring_the_retired_serve_flag_is_refused_by_name(box: Box) -> None:
     assert box.run(*DECLARE) == 0
     text = box.machine.read_text(encoding='utf-8')
-    box.machine.write_text(
-        text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = false }'), encoding='utf-8'
-    )
-    box.calls.unlink(missing_ok=True)
-    assert box.run() == 0
-    assert 'hpcaccount tick alpha' in box.logged()
-    assert 'hpcaccount tick beta' not in box.logged()
+    box.machine.write_text(text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = true }'))
+    with pytest.raises(ValueError, match=r'beta declare serve, which is retired.*producer'):
+        deploy_spec.load(box.machine)
+
+
+def test_a_checkout_declaring_no_producer_is_released_by_name(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
+    """Every wall teaches: an undeclared producer is named on the tick, never read as unserved in silence."""
+    assert box.run(*DECLARE) == 0
+    _write(box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml', '[tool.lab_commons.hpc]\ninstall = "x"\n')
+    capsys.readouterr()
+    served: list[tuple[list[str], Path, str]] = []
+    assert _tick(box, 'beta', served) == 2
+    assert served == []
+    assert 'declares no producer' in capsys.readouterr().err
 
 
 def _as_role(box: Box, role: str | None) -> None:

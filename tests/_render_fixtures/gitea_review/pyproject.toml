@@ -4,3 +4,6 @@ name = "gitea"
 
 [tool.dev_lab.ci."review.yml"]
 [tool.dev_lab.ci."merge.yml"]
+
+[tool.dev_lab.protection]
+producer = "actions"

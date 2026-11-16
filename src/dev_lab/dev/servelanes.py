@@ -1,6 +1,6 @@
 """One serve LANE per repo: a busy repo never starves the others (incident 2026-10-25).
 
-:func:`dev_lab.dev.workstation.serve` hands each ``[serve] repos`` checkout to :func:`serve_lanes`, which serves
+:func:`dev_lab.dev.workstation.serve` hands each HPC-produced checkout to :func:`serve_lanes`, which serves
 each in a thread of its own and re-serves a finished lane every period while any other lane still runs.
 """
 

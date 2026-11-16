@@ -94,7 +94,7 @@ What every host still reads, kept small:
   checkout's venv is never the kit (user ruling 2026-10-26). NO console window opens:
   each child starts with `CREATE_NO_WINDOW` and every descendant inherits that windowless console. Output
   goes to `%LOCALAPPDATA%/lab-forge/serve.log` (rotated to `serve.log.1` at 4 MiB). Under the one serve
-  lock it runs `forge serve` in each `[serve] repos` checkout in turn. **To stop it**, disable the Task --
+  lock it runs `forge serve` in each checkout declaring `producer = "hpc"` (`dev_lab.dev.producers`) in turn. **To stop it**, disable the Task --
   `schtasks /Change /TN lab-forge-serve /DISABLE` -- then stop a running serve with
   `python -m dev_lab.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
   `error: stopped`.
@@ -240,8 +240,8 @@ nothing. In order, it:
 3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
 4. merges into `~/.config/lab-commons/config.toml`: `[capabilities.<name>]` (`jmag:4` is `seats = 4`; a `jmag`
-   row also gets `in_use = { process = [...] }`, step 7) and `[serve] repos` (a retired `[serve] root`, which
-   `serve` refuses by name, is removed). It writes no `[reserve]`:
+   row also gets `in_use = { process = [...] }`, step 7) and, with a role, `[serve] parts`/`withhold` (a retired `[serve] root` or
+   `[serve] repos`, which `serve` refuses by name, is removed: a host serves a repo by its `producer`). It writes no `[reserve]`:
    nothing is reserved for the person at the box (step 8). Every other table, key and comment is kept;
 5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
    different -- so a re-run replaces an older `cmd /c` Task.
@@ -624,7 +624,7 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   <bundle source> | python -m dev_lab.dev.forge secrets store --task pr-review
   ```
 
-- Set a task's bundle on every `[serve] repos` checkout (`<forge home>/repos/<repo>`; one missing is skipped, named) from stdin, never argv or a file:
+- Set a task's bundle on every serve checkout (`<forge home>/repos/<repo>`; one missing is skipped, named) from stdin, never argv or a file:
 
   ```
   python -m dev_lab.dev.forge secrets sync --task pr-review --dry-run      # the targets only

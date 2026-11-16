@@ -35,7 +35,7 @@ from dev_lab.ops.totp import STEP
 HEAD = 'a' * 40
 KEY = 'SHA256:agentkey'
 HOUR = 3600.0
-DECLARED = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+DECLARED = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\nproducer = "hpc"\n'
 GREEN = (
     CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=-', ''),
     CommitStatus('tests/security', 'success', 'nothing found', ''),
@@ -519,7 +519,9 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
             'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'},
             'labels': [{'name': 'needs-consent'}]}  # fmt: skip
-    manifest = base64.b64encode(b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n').decode()
+    manifest = base64.b64encode(
+        b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\nproducer = "hpc"\n'
+    ).decode()
     answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': manifest}))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
