@@ -23,7 +23,7 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   identities that may push the trunk (promote)::
 
     [tool.dev_lab.protection]
-    producer = "actions"                           # who posts the parts: "actions" or "hpc" (dev_lab.dev.producers)
+    producer = "hpc"                               # who posts the parts; absent: "actions" (dev_lab.dev.producers)
     [tool.dev_lab.protection.forges."github.com"]
     breakglass = ["app:<id>", "role:admin"]        # GitHub: a list of role:<admin|maintain|write>|app:<id>|team:<id>
     [tool.dev_lab.protection.forges."gitea.example"]
@@ -177,7 +177,7 @@ def declaration_from(text: str, origin: str) -> Declaration:
     if approvals < 0:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} is below zero'
         raise ValueError(msg)
-    producer_from(text, origin)  # the one producer (dev_lab.dev.producers), refused by name when undeclared
+    producer_from(text, origin)  # the one producer (dev_lab.dev.producers), refused by name when malformed
     return Declaration(approvals, forges)
 
 

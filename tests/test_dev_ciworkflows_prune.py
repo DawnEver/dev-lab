@@ -13,7 +13,7 @@ import pytest
 from dev_lab.dev import ciworkflows
 from dev_lab.dev.ciworkflows import RENDERED_BY, STAMP, drift, main, write
 
-#: Every repo declares its producer (dev_lab.dev.producers); these render an Actions repo.
+#: An explicit Actions producer (dev_lab.dev.producers; absent reads the same); these render an Actions repo.
 ACTIONS_REPO = '[tool.dev_lab.protection]\nproducer = "actions"\n'
 
 

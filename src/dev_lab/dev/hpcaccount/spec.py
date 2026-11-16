@@ -317,7 +317,7 @@ def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
 
 
 def served(spec: Deployment, home: Path) -> frozenset[str]:
-    """The repos this account serves (:func:`serves_here`); one declaring no producer is not (its tick names why)."""
+    """The repos this account serves (:func:`serves_here`); a malformed producer is not (its tick names why)."""
     found = set()
     for repo in spec.repos:
         try:
@@ -347,7 +347,7 @@ def serves_here(spec: Deployment, home: Path, repo: Repo) -> bool:
     The repo's own declaration decides (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16), never this file.
 
     Raises:
-        UndeclaredProducer: the checkout declares no producer; the message names the key.
+        UndeclaredProducer: the checkout declares a malformed producer; the message names the key.
 
     """
     pyproject = checkout_of(spec, home, repo) / 'pyproject.toml'

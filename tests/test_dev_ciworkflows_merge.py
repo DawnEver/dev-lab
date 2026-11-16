@@ -21,7 +21,7 @@ import pytest
 from dev_lab.dev.ciworkflows import BASE_PATH, LIGHT, follow_checks, runner_labels, workflows, write
 from dev_lab.dev.forgemerge import CI_MERGER
 
-#: Every repo declares its producer (dev_lab.dev.producers); these render an Actions repo.
+#: An explicit Actions producer (dev_lab.dev.producers; absent reads the same); these render an Actions repo.
 ACTIONS_REPO = '[tool.dev_lab.protection]\nproducer = "actions"\n'
 
 

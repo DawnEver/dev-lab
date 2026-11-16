@@ -26,7 +26,7 @@ from dev_lab.dev.producers import (
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 OWN: Final = (ROOT / 'pyproject.toml').read_text(encoding='utf-8')
-DECLARED: Final = f'producer = "{ACTIONS}"'
+TABLE: Final = '[tool.dev_lab.protection]\n'
 
 
 def _repo(tmp_path: Path, text: str, *, rendered: bool = True) -> Path:
@@ -42,12 +42,13 @@ def _repo(tmp_path: Path, text: str, *, rendered: bool = True) -> Path:
 
 
 def _as(producer: str, extra: str = '') -> str:
-    assert DECLARED in OWN, 'this repo declares itself an Actions repo'
-    return OWN.replace(DECLARED, f'producer = "{producer}"') + extra
+    assert TABLE in OWN, 'this repo declares its protection table'
+    assert 'producer =' not in OWN, 'this repo is an Actions repo by the default: it declares no producer'
+    return OWN.replace(TABLE, f'{TABLE}producer = "{producer}"\n', 1) + extra
 
 
 def test_this_repo_holds_its_declaration() -> None:
-    """dev-lab is an Actions repo: its ci.yml posts tests/base, and nothing contradicts it."""
+    """dev-lab is an Actions repo by the default: its ci.yml posts tests/base, and nothing contradicts it."""
     assert producer_from(OWN, 'dev-lab') == ACTIONS
     assert repo_refusals(ROOT, repo_forge(ROOT)) == []
 
@@ -57,10 +58,25 @@ def test_a_planted_clean_actions_repo_is_not_refused(tmp_path: Path) -> None:
     assert repo_refusals(_repo(tmp_path, OWN), 'github') == []
 
 
-@pytest.mark.parametrize('text', ['[project]\nname = "x"\n', '[tool.dev_lab.protection]\nproducer = "box"\n'])
-def test_an_undeclared_producer_is_refused_by_name(text: str) -> None:
-    with pytest.raises(UndeclaredProducer, match=r'\[tool\.dev_lab\.protection\] producer'):
-        producer_from(text, 'x')
+ABSENT: Final = '[project]\nname = "x"\n[tool.dev_lab.protection]\napprovals = 0\n'
+
+
+def test_an_absent_producer_reads_as_actions_and_renders_ci() -> None:
+    """The default is ACTIONS, stated once; PLANTED CONTROL: the same text declaring ``hpc`` renders no ci.yml."""
+    assert producer_from(ABSENT, 'x') == ACTIONS
+    assert producer_from('[project]\nname = "x"\n', 'x') == ACTIONS
+    assert CI_WORKFLOW in placed(ABSENT, 'x', 'github')
+    assert CI_WORKFLOW not in placed(ABSENT + 'producer = "hpc"\n', 'x', 'github')
+
+
+def test_hpc_is_never_assumed_it_must_be_declared() -> None:
+    assert producer_from(ABSENT, 'x') != HPC
+    assert producer_from(ABSENT + 'producer = "hpc"\n', 'x') == HPC
+
+
+def test_a_malformed_producer_is_refused_by_name() -> None:
+    with pytest.raises(UndeclaredProducer, match=r"producer = 'box'.*\[tool\.dev_lab\.protection\] producer"):
+        producer_from('[tool.dev_lab.protection]\nproducer = "box"\n', 'x')
 
 
 def test_a_an_hpc_repo_holding_a_github_workflow_is_refused(tmp_path: Path) -> None:

@@ -15,7 +15,7 @@ from typing import Any
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
-#: The producer line every declaration carries (dev_lab.dev.producers).
+#: An explicit Actions producer line (dev_lab.dev.producers; absent reads the same).
 PRODUCER = 'producer = "actions"\n'
 
 #: Integration on ``integrate/main``, trunk ``main``; an Actions-produced repo.

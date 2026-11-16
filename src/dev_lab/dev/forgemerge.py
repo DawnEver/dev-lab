@@ -189,7 +189,7 @@ def decide(
         message = f'{title}\n\n{waiver}\n\n{trailers}'
     try:
         waits = status_waits(policy, head, statuses, producer=producer_at(root))
-    except UndeclaredProducer as undeclared:  # named, never merged as if one producer were assumed
+    except UndeclaredProducer as undeclared:  # a malformed producer is named, never merged
         waits = [f'its producer: {undeclared}']
     missing += waits
     tried = trial(root, base, head)

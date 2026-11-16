@@ -751,15 +751,20 @@ def test_a_repo_row_declaring_the_retired_serve_flag_is_refused_by_name(box: Box
         deploy_spec.load(box.machine)
 
 
-def test_a_checkout_declaring_no_producer_is_released_by_name(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
-    """Every wall teaches: an undeclared producer is named on the tick, never read as unserved in silence."""
+def test_a_checkout_declaring_a_malformed_producer_is_released_by_name(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every wall teaches: a malformed producer is named on the tick; an ABSENT one is actions, never served."""
     assert box.run(*DECLARE) == 0
-    _write(box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml', '[tool.lab_commons.hpc]\ninstall = "x"\n')
-    capsys.readouterr()
+    pyproject = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
     served: list[tuple[list[str], Path, str]] = []
+    _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n')
+    assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: absent reads as actions -- refreshed, not served'
+    _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n[tool.dev_lab.protection]\nproducer = "box"\n')
+    capsys.readouterr()
     assert _tick(box, 'beta', served) == 2
     assert served == []
-    assert 'declares no producer' in capsys.readouterr().err
+    assert "declares producer = 'box'" in capsys.readouterr().err
 
 
 def _as_role(box: Box, role: str | None) -> None:

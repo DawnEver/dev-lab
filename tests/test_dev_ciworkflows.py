@@ -54,7 +54,7 @@ from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
-#: Every repo declares its producer (dev_lab.dev.producers); these render an Actions repo.
+#: An explicit Actions producer (dev_lab.dev.producers; absent reads the same); these render an Actions repo.
 ACTIONS_REPO = '[tool.dev_lab.protection]\nproducer = "actions"\n'
 
 

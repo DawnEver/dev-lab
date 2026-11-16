@@ -4,8 +4,12 @@ User ruling 2026-11-16: a family repo is produced EITHER by forge Actions OR by 
 machine is never a PR's producer::
 
     [tool.dev_lab.protection]
-    producer = "actions"     # forge Actions post tests/base; no HPC host ever offers this repo's parts
-    # producer = "hpc"       # HPC hosts produce every part, light and heavy; no forge Actions workflow is rendered
+    producer = "hpc"         # HPC hosts produce every part, light and heavy; no forge Actions workflow is rendered
+    # absent: "actions"      # forge Actions post tests/base; no HPC host ever offers this repo's parts
+
+ABSENT MEANS :data:`ACTIONS` -- the default is stated here and nowhere else, so only a repo that differs declares
+anything. A missing ``hpc`` declaration still surfaces: :mod:`dev_lab.dev.producercheck` refuses a GitHub workflow
+in a repo whose required parts only the HPC can produce.
 
 Every consumer reads it here and nowhere else: :mod:`dev_lab.dev.ciworkflows` renders ``ci.yml`` (and anything in
 ``.github/workflows``) only for :data:`ACTIONS`; :mod:`dev_lab.dev.forgeschedule` offers parts only of an
@@ -60,25 +64,24 @@ PRODUCERS: Final = (ACTIONS, HPC)
 #: The workflow whose ``jobparts produce`` posts ``tests/base``: rendered only for an :data:`ACTIONS` producer.
 CI_WORKFLOW: Final = 'ci.yml'
 
-_EXAMPLE: Final = f'[tool.dev_lab.protection] producer = "{ACTIONS}" (or "{HPC}") -- user ruling 2026-11-16'
+_EXAMPLE: Final = f'[tool.dev_lab.protection] producer = "{HPC}" (absent: "{ACTIONS}") -- user ruling 2026-11-16'
 
 
 class UndeclaredProducer(ValueError):
-    """A repo declares no producer, or one that is not :data:`PRODUCERS`; the message names the key."""
+    """A repo declares a producer that is not :data:`PRODUCERS`; the message names the key."""
 
 
 def producer_from(text: str, origin: str) -> str:
-    """The producer pyproject *text* declares; refused naming *origin* when absent or unknown.
+    """The producer pyproject *text* declares, :data:`ACTIONS` when absent; refused naming *origin* when unknown.
 
     Raises:
-        UndeclaredProducer: no ``producer``, or not one of :data:`PRODUCERS`.
+        UndeclaredProducer: ``producer`` is not one of :data:`PRODUCERS`.
 
     """
     table = declared_table(tomllib.loads(text), 'protection', {})
-    value = table.get('producer') if isinstance(table, dict) else None
+    value = table.get('producer', ACTIONS) if isinstance(table, dict) else ACTIONS
     if value not in PRODUCERS:
-        said = 'declares no producer' if value is None else f'declares producer = {value!r}'
-        msg = f'{origin} {said}: declare {_EXAMPLE}'
+        msg = f'{origin} declares producer = {value!r}: declare {_EXAMPLE}'
         raise UndeclaredProducer(msg)
     return str(value)
 
