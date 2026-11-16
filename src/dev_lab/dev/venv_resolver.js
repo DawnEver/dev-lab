@@ -4,8 +4,8 @@
 // remote deploy lines embed (dev_lab.dev.venvpointer.shell_function reads it there). The Python twin is
 // dev_lab.dev.venvpointer.current; tests/test_dev_venv_resolver.py holds all three to one answer on 20 layouts.
 //
-// THE RULE: the first line of ROOT/.venv-current, surrounding whitespace removed, names a directory under
-// ROOT/.venvs/ -- a name with no `/`, `\` or `:` that is not `.` or `..`; when it names none, ROOT/.venv.
+// THE RULE: the first line of <root>/.venv-current, surrounding whitespace removed, names a directory under
+// <root>/.venvs/ -- a name with no `/`, `\` or `:` that is not `.` or `..`; when it names none, <root>/.venv.
 // The pointer is replaced atomically, so a reader sees the old name or the new one; Windows refuses the open in
 // the instant of the swap, and that is retried, never read as absent.
 'use strict';
