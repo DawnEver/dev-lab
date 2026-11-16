@@ -358,6 +358,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'agentpolicy',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.
     'doorrows',
+    # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-16); no consumer held it.
+    'remotedoors',
     # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.
     'gitenv',
     # ORIGINAL: pinned data dependencies (2026-11-10); no consumer pinned a data repo before.
