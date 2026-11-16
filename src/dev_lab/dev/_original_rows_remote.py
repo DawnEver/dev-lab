@@ -36,6 +36,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'allocate',
     'checks',
     'deploy',
+    # ORIGINAL: 2026-11-15, deploy's host check split from it at the module-size band.
+    'deployhost',
     'division',  # ORIGINAL: the workstation's HPC division as data (user rulings 2026-11-09)
     'fleet',
     'spec',

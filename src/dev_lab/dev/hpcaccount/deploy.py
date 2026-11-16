@@ -4,7 +4,7 @@ WHAT IS DEPLOYED IS DATA in this account's machine file (:mod:`lab_commons.confi
 a tracked file, since the forge, its repos and the login host are private to the deployment::
 
     [deploy]
-    host = "<login host>"          # the ONE host whose crontab serves this account (cron is per host)
+    host = "<login host>"          # serving: the ONE node whose cron serves it; research: any grant login host
     root = ".local/share/lab-forge/repos"  # checkouts live in <root>/<name>; relative is under home
     python = "3.13"                # a uv-managed CPython: manylinux wheels run on an old glibc
     slurm_account = "<account>"    # only when sacctmgr names several
@@ -76,6 +76,7 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
+from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
 from dev_lab.dev.hpcaccount.spec import (
     DEFAULT_PYTHON,
@@ -371,12 +372,8 @@ def deploy(
     serves = bool(semantics.get('serves', False))
     short = hostname.split('.', 1)[0]
     emit(f'[host] account {os.environ.get("USER") or os.environ.get("USERNAME", "?")} on {short}')
-    if short != spec.host:
-        emit(
-            f'deploy refused: this account serves from {spec.host} ([deploy] host in '
-            f'{path}); this is {short}. ssh to {spec.host} and run it there.',
-            err=True,
-        )
+    if why := host_refusal(spec, path, short, serves=serves, table=args.grant_table):
+        emit(f'deploy refused: {why}', err=True)
         return 2
     path_env = os.pathsep.join([*tick_dirs(home)[:2], os.environ.get('PATH', '')])
     step = Step(tools or Tools(), dry=args.dry_run, path=path_env)

@@ -60,7 +60,9 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
   hosts. A second host finding a live run owned by another host of its account leaves it alone until that
-  owner's lease lapses on the forge's clock.
+  owner's lease lapses on the forge's clock. The pin is for a SERVING account only: a research account installs no
+  cron line, so its `[deploy] host` may be any login host its grant declares -- an alias that round-robins over
+  several nodes included.
 - **Identity is read, never typed**: the claim names `<cluster>/<account>` from Slurm's `ClusterName` and
   `id -un` (`lab_commons.hpc.account`).
 - The cron `PATH` is `~/.local/bin:~/.cargo/bin:/usr/local/bin:/usr/bin:/bin` plus the directories `sbatch`, `sacct` and `squeue` resolve in when the deploy runs (it refuses without them); the deploy checks every tool
