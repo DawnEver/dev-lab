@@ -126,6 +126,7 @@ def test_a_legacy_venv_directory_moves_aside_once_nothing_runs_from_it(tmp_path)
     assert 'legacy directory' in venvcurrent.publish(root, new)
     assert venvpointer.current(root) == new, 'the pointer rules before the migration'
     holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 60.0, str(tmp_path))
-    assert 'kept' in venvcurrent.migrate_legacy(root, census=lambda: [holder]), 'PLANTED CONTROL: held, it stays'
-    assert venvcurrent.migrate_legacy(root, census=list).startswith('legacy')
+    assert 'kept' in venvcurrent.reclaim(root, census=lambda: [holder])[0], 'PLANTED CONTROL: held, it stays'
+    assert legacy.is_dir()
+    assert venvcurrent.reclaim(root, census=list)[0].startswith('legacy')
     assert legacy.resolve() == new.resolve(), '.venv is now the alias of the current env'

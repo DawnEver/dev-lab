@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Final
 
+__all__ = ['ALIAS', 'HOME', 'POINTER', 'READ_TRIES', 'current', 'named']
+
 #: The one file whose content names the current environment (a directory name under :data:`HOME`).
 POINTER: Final = '.venv-current'
 #: Where every environment lives, side by side.

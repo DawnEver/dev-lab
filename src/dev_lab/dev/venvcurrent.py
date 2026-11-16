@@ -10,7 +10,7 @@ the pointer -- this module, ``agent_launcher.js`` and the githooks' ``with-venv.
 THE POINTER IS THE SOURCE OF TRUTH. ``ROOT/.venv`` stays as a junction (a symlink on POSIX) to the current
 environment for tools that only know that path; it is re-pointed best-effort after the swap. A checkout with
 no pointer is the legacy layout (a plain ``.venv`` directory) and resolves there: the one-time migration
-moves that directory aside into ``.venvs/`` the first time nothing executes from it (:func:`migrate_legacy`).
+moves that directory aside into ``.venvs/`` the first time nothing executes from it (:func:`_adopt_plain_venv`).
 
 An old environment is reclaimed (:func:`reclaim`) only when no process executes from it -- the holder census
 of :func:`dev_lab.dev.liverun.removal_holders` -- and never while it is being built (its :data:`BUILDING`
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Final
@@ -31,6 +32,11 @@ from lab_commons.census import processes
 from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.liverun import Census, label, removal_holders
 from dev_lab.dev.venvpointer import ALIAS, HOME, POINTER, named
+
+if sys.platform == 'win32':
+    import _winapi
+
+__all__ = ['BUILDING', 'BUILD_WALL_S', 'RECLAIMING', 'abandon', 'fresh', 'publish', 'reclaim', 'target']
 
 #: Suffix of the marker BESIDE an environment being built (``.venvs/<name>.building``): never reclaimed. Beside,
 #: not inside: uv refuses to sync into a non-empty directory that is not yet a venv.
@@ -107,20 +113,18 @@ def _replace(source: Path, target: Path, *, tries: int = 200) -> None:
 
 
 def _is_link(path: Path) -> bool:
-    return path.is_symlink() or (hasattr(os.path, 'isjunction') and os.path.isjunction(path))
+    return path.is_symlink() or os.path.isjunction(path)
 
 
 def _link(alias: Path, env: Path) -> None:
-    if os.name == 'nt':
-        import _winapi  # noqa: PLC0415 -- Windows only
-
+    if sys.platform == 'win32':
         _winapi.CreateJunction(str(env), str(alias))
     else:
         alias.symlink_to(env, target_is_directory=True)
 
 
 def _repoint(root: Path, env: Path) -> str:
-    """Point :data:`ALIAS` at *env*; a legacy directory there is left for :func:`migrate_legacy`."""
+    """Point :data:`ALIAS` at *env*; a legacy directory there is left for :func:`_adopt_plain_venv`."""
     alias = root / ALIAS
     if alias.exists() and not _is_link(alias):
         return f'{alias} is a legacy directory; it moves aside once nothing runs from it (the pointer already rules)'
@@ -133,7 +137,7 @@ def _repoint(root: Path, env: Path) -> str:
     return f'{alias} -> {env}'
 
 
-def migrate_legacy(root: Path, *, census: Census = processes) -> str:
+def _adopt_plain_venv(root: Path, *, census: Census = processes) -> str:
     """The ONE-TIME migration: a plain ``.venv`` directory moves into :data:`HOME` once nothing executes from it."""
     root = Path(root)
     alias, env = root / ALIAS, named(root)
@@ -175,7 +179,7 @@ def _reclaimed(env: Path) -> str:
 def reclaim(root: Path, *, census: Census = processes) -> tuple[str, ...]:
     """Remove every environment of *root* that is not current, not being built, and that nothing executes from."""
     root = Path(root)
-    lines = [line] if (line := migrate_legacy(root, census=census)) else []
+    lines = [line] if (line := _adopt_plain_venv(root, census=census)) else []
     home, live = root / HOME, named(root)
     if not home.is_dir() or live is None:
         return tuple(lines)
