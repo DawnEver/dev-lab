@@ -527,6 +527,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
+* :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
 * :mod:`dev_lab.dev.reclaimrun` -- reclaim as a SessionStart step: detached, locked, a bounded batch, never blocks.
 * :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
