@@ -420,6 +420,7 @@ def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> No
     assert check_host(clone / 'hosts/c-u1.toml', clone / 'family.toml') == []
     rendered = tomllib.loads(devhost.render(clone, 'c-u1', {}))
     assert rendered['deploy']['role'] == 'research', 'the role is the family grant, derived, never restated'
+    assert rendered['hpc']['reach'] == ['research'], 'an account reaches its own grant: its role, derived'
     assert rendered['hpc']['paging'] == {'page_cpus': 8, 'page_mem_gb': 20}
     assert rendered['hpc']['grant'][0]['user'] == 'u1', 'the family grants ride along unchanged'
 
