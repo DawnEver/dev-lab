@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from _arch_corpus import module_names
 from _rem_binding import bind_as_rem
 
 from dev_lab.dev import agent_wiring, forgecli, taskbinding
@@ -81,6 +82,7 @@ def test_dev_lab_binds_nothing_so_its_venv_cannot_block_a_prompt() -> None:
     """
     binders = [wire.name for wire in agent_wiring.WIRING if wire.module == taskbinding.__name__]
     assert binders == []
-    assert not hasattr(taskbinding, 'bind')
-    assert not hasattr(taskbinding, 'main')
+    names = module_names(taskbinding)
+    assert 'head_for' in names, 'planted control: the reader the module keeps is found'
+    assert not {'bind', 'main'} & names
     assert "rem's UserPromptSubmit hook" in taskbinding.DOOR

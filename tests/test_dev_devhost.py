@@ -9,9 +9,11 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from _arch_corpus import module_names
 from _ops_fixtures import git
 
-from dev_lab.dev import devhost, devschema
+from dev_lab.dev import devhost, devschema, venvfollow
+from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.ops.configcheck import check_family, check_host
 
 FAMILY = """\
@@ -251,15 +253,12 @@ def test_the_session_start_verb_says_the_unfilled_home_and_a_render_says_nothing
 
 def test_the_machine_notice_has_one_trigger_once_per_session() -> None:
     """Drift cannot change within a turn: one SessionStart row, once; no Stop row, and venvfollow no longer says it."""
-    from dev_lab.dev import venvfollow  # noqa: PLC0415
-    from dev_lab.dev.agent_wiring import WIRING  # noqa: PLC0415
-
     rows = [w for w in WIRING if w.module == 'dev_lab.dev.devhost']
     assert [(w.events, w.argv, w.once, w.may_block) for w in rows] == [
         (('SessionStart',), ('session-start',), True, False)
     ]
     assert not any('Stop' in w.events for w in rows), 'PLANTED CONTROL: the Stop row is gone'
-    assert 'devhost' not in vars(venvfollow), 'the notice is said by its own row alone'
+    assert 'devhost' not in module_names(venvfollow), 'the notice is said by its own row alone'
 
 
 def test_a_path_needing_an_unfilled_home_refuses_with_the_remedy() -> None:

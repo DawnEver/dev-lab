@@ -17,7 +17,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from _arch_corpus import SOURCE_FLOOR, assert_floor, parse, rel, source_modules
+from _arch_corpus import SOURCE_FLOOR, assert_floor, bound_names, parse, rel, source_modules
 
 
 def _public(path: Path) -> bool:
@@ -54,45 +54,13 @@ def surface_problems(paths: tuple[Path, ...]) -> tuple[str, ...]:
         if declared is None:
             out.append(f'{path.name} declares no __all__, so its public surface is whatever happens to be defined')
             continue
-        defined = _defined_names(tree.body)
+        defined = bound_names(tree.body)
         out.extend(
             f'{path.name}: __all__ names {name!r}, which the module does not define or import'
             for name in declared
             if name not in defined
         )
     return tuple(out)
-
-
-def _defined_names(body: list[ast.stmt]) -> set[str]:
-    """Every MODULE-LEVEL name a module binds -- by def, class, assignment or import.
-
-    Module level rather than :func:`ast.walk`, because a local variable inside a function is not a
-    name a consumer can import: counting one would let a lying ``__all__`` resolve against it.
-    """
-    names: set[str] = set()
-    for node in body:
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            names.add(node.name)
-        elif isinstance(node, ast.Import | ast.ImportFrom):
-            names.update((a.asname or a.name).split('.')[0] for a in node.names)
-        elif isinstance(node, ast.Assign):
-            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.add(node.target.id)
-        elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
-            # ``type Row = ...`` (PEP 695) binds a module-level name a consumer imports and
-            # annotates with. MEASURED 2026-09-17 on ``dev.shards.Row``: omitting this convicted a
-            # TRUE ``__all__`` entry. The blind spot ran in that direction only -- it manufactured a
-            # lie where there was none, never the reverse -- so nothing already declared was wrong.
-            names.add(node.name.id)
-        elif isinstance(node, ast.If | ast.Try):
-            names |= _defined_names(node.body)
-            names |= _defined_names(node.orelse)
-            if isinstance(node, ast.Try):
-                names |= _defined_names(node.finalbody)
-                for handler in node.handlers:
-                    names |= _defined_names(handler.body)
-    return names
 
 
 def test_every_public_module_declares_a_surface_that_resolves() -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from _arch_corpus import module_names
 from _branch_repos import clone_pair, commit
 from _forge_fake import run_git
 from _forge_state import StateForge
@@ -82,8 +83,8 @@ def test_the_heard_line_names_the_machine_watcher_and_no_monitor() -> None:
 
 def test_the_push_journal_hook_is_gone() -> None:
     """dev-lab #640 unwired it; it is deleted (the Stop gate too: ``test_arch_retired_spellings``)."""
-    assert 'main' not in vars(pushwatch), 'the PostToolUse journal-and-remind hook is deleted'
-    assert 'heard_line' in vars(pushwatch), 'PLANTED CONTROL: the module and its live line stay'
+    assert 'main' not in module_names(pushwatch), 'the PostToolUse journal-and-remind hook is deleted'
+    assert 'heard_line' in module_names(pushwatch), 'PLANTED CONTROL: the module and its live line stay'
 
 
 @pytest.mark.parametrize(
