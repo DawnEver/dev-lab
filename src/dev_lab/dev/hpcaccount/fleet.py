@@ -62,6 +62,7 @@ from dev_lab.dev import accounthost
 from dev_lab.dev.credstore import STORE, valid_host
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.devhost import OWN_TABLE, config_source, host_file
+from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
 from dev_lab.dev.hpcaccount.transport import describe, start
@@ -258,7 +259,7 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     if division is not None and (role := division.role_of(grant.user)):
         deploy += ['--fleet-role', role, '--role-table', json.dumps(dict(division.roles[role]), sort_keys=True)]
     refreshed = f'{first_install(grant, target)} && {refresh_kit(grant, target)}'
-    return f'{refreshed} ; {render_command(grant, target, source)} && {in_checkout(target, deploy)}'
+    return f'{paused_guard()} && {refreshed} ; {render_command(grant, target, source)} && {in_checkout(target, deploy)}'
 
 
 #: The official uv installer (user approval 2026-11-16: an HPC account may install uv into ``~/.local/bin``).

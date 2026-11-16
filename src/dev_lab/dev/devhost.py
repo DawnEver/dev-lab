@@ -57,7 +57,7 @@ from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'detect', 'drift', 'host_file',
-    'main', 'notice', 'render', 'stop_block',
+    'main', 'notice', 'render', 'replace_backed_up', 'stop_block',
 ]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
@@ -240,7 +240,8 @@ def detect(patterns: Mapping[str, list[str]]) -> dict[str, str]:
 RENDER_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost render --write'
 
 
-def _replace(path: Path, text: str, backups: Path) -> Path:
+def replace_backed_up(path: Path, text: str, backups: Path) -> Path:
+    """Replace *path* with *text* atomically, its previous content first copied into *backups*; the copy's path."""
     backups.mkdir(parents=True, exist_ok=True)
     backup = backups / f'{path.name}.{datetime.now(UTC):%Y%m%dT%H%M%SZ}'
     if path.is_file():
@@ -315,7 +316,7 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
         emit(f'refused: the render of {host} is not TOML ({broken}); {path} is unchanged', err=True)
         return 2
     backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
-    emit(f'rendered {path}; the previous file is {_replace(path, text, backups)}')
+    emit(f'rendered {path}; the previous file is {replace_backed_up(path, text, backups)}')
     return 0
 
 

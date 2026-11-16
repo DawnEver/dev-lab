@@ -15,6 +15,13 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 
 * ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpcaccount.fleet`) starts, over the transport,
   every declared account's own ``deploy``, one log per account.
+* ``backup-fleet (--cluster <name> | --account <user>)... [--dry-run] [--restore <stamp>|latest]``
+  (:mod:`~dev_lab.dev.hpcaccount.backup`) runs, on each selected account, its own ``backup``: the full crontab and
+  the machine file into a dated directory on the account, or puts them back. Neither filter given is refused.
+* ``ci-pause-fleet`` / ``ci-resume-fleet`` (same filters; :mod:`~dev_lab.dev.hpcaccount.cipause`) stop and restart
+  the forge CI cron of the selected VERIFICATION accounts around maintenance: backup first, then only the marked
+  lines; never a Slurm job. While CI-PAUSED, ``deploy`` and ``deploy-fleet`` refuse the account
+  (:mod:`~dev_lab.dev.hpcaccount.cimark`).
 * ``forget --repo <url> --row <key> (--account <user>... | --fleet) [--dry-run]``
   (:mod:`~dev_lab.dev.hpcaccount.forget`) runs lab-commons' ``learned forget`` of one row on each account.
 * ``retention (--account <user>... | --fleet) [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.storage`) prints each
@@ -52,18 +59,25 @@ __all__ = ['main']
 
 _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
-    '{deploy [...] | deploy-fleet [...] | forget [...] | retention [...] | credential [...] | '
+    '{deploy [...] | deploy-fleet [...] | backup [...] | backup-fleet [...] | ci-pause[-fleet] [...] | '
+    'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | '
     'tick <repo>... | allocate [...]}'
 )
 
 
 def main(argv: list[str] | None = None) -> int:
     """Dispatch one verb (``tick`` needs a repo); anything else is refused naming the verbs."""
-    from dev_lab.dev.hpcaccount import allocate, credential, deploy, fleet, forget, storage, tick  # noqa: PLC0415 -- the package imports no verb
+    from dev_lab.dev.hpcaccount import allocate, backup, cipause, credential, deploy, fleet, forget, storage, tick  # noqa: PLC0415 -- the package imports no verb
 
     argv = sys.argv[1:] if argv is None else argv
     verb, rest = (argv[0], argv[1:]) if argv else ('', [])
     verbs = {
+        'backup': backup.main,
+        'backup-fleet': backup.main_fleet,
+        'ci-pause': cipause.main_pause,
+        'ci-resume': cipause.main_resume,
+        'ci-pause-fleet': lambda rest: backup.main_fleet(rest, verb='ci-pause', ci_only=True),
+        'ci-resume-fleet': lambda rest: backup.main_fleet(rest, verb='ci-resume', ci_only=True),
         'credential': credential.main,
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
