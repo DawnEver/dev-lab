@@ -1,4 +1,4 @@
-"""A venv update waits its turn: ``dep --bootstrap --when-free`` queues, the launcher replays, a watch yields."""
+"""A queued venv update: the launcher replays a ``--when-free`` request; a held bootstrap builds beside the venv."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from _forge_state import StateForge
 from lab_commons.census import Process
 
-from dev_lab.dev import _dep_pending, dep, forgewatch, liverun
+from dev_lab.dev import _dep_pending, dep, forgewatch, liverun, venvpointer
 from dev_lab.dev.jsrun import node_path
 
 LAUNCHER = Path(dep.__file__).with_name('agent_launcher.js')
@@ -38,19 +38,20 @@ def _run(calls: list[tuple[str, ...]]) -> Callable[..., SimpleNamespace]:
     return run
 
 
-def test_a_held_when_free_bootstrap_is_queued_not_run_and_a_plain_one_still_refuses(tmp_path, monkeypatch) -> None:
+def test_a_bootstrap_whose_venv_is_held_builds_beside_it_and_queues_nothing(tmp_path, monkeypatch) -> None:
+    """dev-lab #632 (ruling 2026-11-16): a held venv no longer queues or refuses a bootstrap; it is not touched."""
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
     monkeypatch.setattr(dep, 'executing_from', liverun.executing_from)
     prefix = _project(tmp_path / 'main')
-    watcher = Process(1, 0, str(prefix / 'python.exe'), 'python -m dev_lab.dev.forge watch', 3600.0, str(tmp_path))
+    exe = str(prefix / 'python.exe')
+    watcher = Process(1, 0, exe, 'python -m dev_lab.dev.forge watch', 3600.0, str(tmp_path))
+    run = Process(10, 0, exe, f'{exe} -m app deck run cases/x', 600.0, str(tmp_path))
     calls: list[tuple[str, ...]] = []
-    held = {'run': _run(calls), 'cwd': tmp_path, 'census': lambda: [watcher]}
     argv = ['--bootstrap', str(tmp_path / 'main'), '--extra', 'dev']
-    assert dep.main(argv, **held) == 1, 'PLANTED CONTROL: without --when-free a held venv refuses'
+    assert dep.main(argv, run=_run(calls), cwd=tmp_path, census=lambda: [watcher, run]) == 0
+    assert any('sync' in call for call in calls), 'the sync ran, beside the held venv'
     assert _dep_pending.pending(prefix) is None
-    assert dep.main([*argv, '--when-free'], **held) == 0
-    assert not any('sync' in call for call in calls), 'a held venv is never synced'
-    assert _dep_pending.pending(prefix) == ('--bootstrap', str(tmp_path / 'main'), '--extra', 'dev')
+    assert venvpointer.current(tmp_path / 'main') != prefix, 'a new environment is published'
 
 
 def test_once_free_the_replayed_request_runs_and_is_answered(tmp_path, monkeypatch) -> None:
@@ -148,21 +149,3 @@ def test_no_dep_launcher_or_liverun_refusal_tells_the_user_to_close_a_session(tm
     }
     caught = {name for name, text in texts.items() if _closes_a_session(text)}
     assert caught == {'planted'}, f'PLANTED CONTROL must be the only one caught: {caught}'
-
-
-def test_a_bootstrap_held_only_by_sessions_and_hooks_queues_but_a_live_run_still_refuses(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
-    monkeypatch.setattr(dep, 'executing_from', liverun.executing_from)
-    prefix = _project(tmp_path / 'main')
-    exe = str(prefix / 'python.exe')
-    session = Process(7, 0, exe, '"claude" --resume', 60.0, str(tmp_path))
-    hook = Process(8, 7, exe, f'{exe} -m dev_lab.dev.agent_guard hook', 1.0, str(tmp_path))
-    run = Process(10, 0, exe, f'{exe} -m app deck run cases/x', 600.0, str(tmp_path))
-    argv = ['--bootstrap', str(tmp_path / 'main')]
-    calls: list[tuple[str, ...]] = []
-    live = {'run': _run(calls), 'cwd': tmp_path, 'census': lambda: [session, hook, run]}
-    assert dep.main(argv, **live) == 1, 'PLANTED CONTROL: a live run in the venv still refuses'
-    assert _dep_pending.pending(prefix) is None
-    assert dep.main(argv, run=_run(calls), cwd=tmp_path, census=lambda: [session, hook]) == 0
-    assert not any('sync' in call for call in calls), 'a held venv is never synced'
-    assert _dep_pending.pending(prefix) == tuple(argv)

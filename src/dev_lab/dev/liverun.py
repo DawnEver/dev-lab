@@ -79,7 +79,7 @@ __all__ = [
 RULE_ID: Final = str(LIVE_RUN['id'])
 
 #: Top-level directories of a checkout that no run reads: a write there never changes what a run executes.
-NOT_THE_TREE: Final = ('output', '.claude', '.venv')
+NOT_THE_TREE: Final = ('output', '.claude', '.venv', '.venvs', '.venv-current')
 
 #: The interpreter whose cwd is READ: ``python -m`` puts the cwd first on ``sys.path``. Not node: Claude Code and
 #: its MCP servers are node processes sitting in the checkout for the whole session (measured 2026-10-19).
