@@ -47,6 +47,8 @@ from dev_lab.dev.agent_wiring import (
     RULES_REL,
     SETTINGS_REL,
     SHELL_TOOLS,
+    WireRefused,
+    declared,
     rows,
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
@@ -245,7 +247,7 @@ def _no_engine_hook(settings: dict[str, Any]) -> tuple[str, str]:
     return ABSENT, f'no PreToolUse {_MATCHER} hook runs {Path(ENGINE_REL).name}'
 
 
-def _inspect_wiring(path: Path) -> tuple[str, str]:
+def _inspect_wiring(path: Path, repo: Path) -> tuple[str, str]:
     if not path.exists():
         return ABSENT, f'no {SETTINGS_REL} -- nothing runs the engine, whatever is installed beside it'
     try:
@@ -258,7 +260,7 @@ def _inspect_wiring(path: Path) -> tuple[str, str]:
         return _no_engine_hook(settings)
     if HOOK_COMMAND not in ours:
         return STALE, f'runs the engine with other arguments: {ours[0]!r}, not {HOOK_COMMAND!r}'
-    stale = [f'the hook rows differ from the rendered wiring on {", ".join(u)}' for u in [_drifted(settings)] if u]
+    stale = _drift_lines(settings, repo)
     stale += [f'enabledPlugins does not turn off {", ".join(p)}' for p in [live_disabled_plugins(settings)] if p]
     if stale:
         return STALE, '; '.join(stale) + ' -- re-install to upgrade'
@@ -270,15 +272,15 @@ def guard_installation(repo: Path) -> GuardReport:
     parts = (
         PartReport('engine', *_inspect_engine(repo / ENGINE_REL), path=repo / ENGINE_REL),
         PartReport('rules', *_inspect_rules(repo / RULES_REL), path=repo / RULES_REL),
-        PartReport('wiring', *_inspect_wiring(repo / SETTINGS_REL), path=repo / SETTINGS_REL),
+        PartReport('wiring', *_inspect_wiring(repo / SETTINGS_REL, repo), path=repo / SETTINGS_REL),
     )
     return GuardReport(repo=repo, parts=parts)
 
 
-def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
+def wire_settings(settings: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
     """*settings* with the rendered rows wired, the family's disabled plugins off, and NOTHING ELSE MOVED.
 
-    The rows are :func:`dev_lab.dev.agent_wiring.rows`.
+    The rows are :func:`dev_lab.dev.agent_wiring.rows` of *root*: the family's and what the repo declares.
 
     THE RENDERER OWNS EVERY ROW THAT IS OURS -- the engine, and any launcher row running a ``dev_lab.dev`` module --
     so every such row is removed wherever it stands (a retired handler, a hand-wired copy, a partial shell matcher)
@@ -296,7 +298,7 @@ def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
             hooks[event] = kept
         else:
             del hooks[event]
-    for row in rows():
+    for row in rows(root):
         hook = {'type': 'command', 'command': row.command, 'timeout': row.timeout}
         entry = {'matcher': row.matcher, 'hooks': [hook]} if row.matcher else {'hooks': [hook]}
         hooks.setdefault(row.event, []).append(entry)
@@ -322,10 +324,19 @@ def _owned(settings: dict[str, Any]) -> list[tuple[str, str, str]]:
     ]
 
 
-def _drifted(settings: dict[str, Any]) -> list[str]:
-    """The events whose owned rows differ from what :func:`wire_settings` renders for *settings*."""
-    have, want = Counter(_owned(settings)), Counter(_owned(wire_settings(settings)))
+def _drifted(settings: dict[str, Any], repo: Path) -> list[str]:
+    """The events whose owned rows differ from what :func:`wire_settings` renders for *settings* in *repo*."""
+    have, want = Counter(_owned(settings)), Counter(_owned(wire_settings(settings, repo)))
     return sorted({event for event, _matcher, _hook in (have - want) + (want - have)})
+
+
+def _drift_lines(settings: dict[str, Any], repo: Path) -> list[str]:
+    """Where *settings* departs from the wiring rendered for *repo*, or why that wiring cannot be rendered."""
+    try:
+        drifted = _drifted(settings, repo)
+    except WireRefused as refused:
+        return [f'the repo-declared wiring is refused, fix its row: {refused}']
+    return [f'the hook rows differ from the rendered wiring on {", ".join(drifted)}'] if drifted else []
 
 
 def _install_resolver(dirs: set[Path]) -> list[str]:
@@ -354,8 +365,10 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
     Raises:
         FileExistsError: when an engine file is present that lab-commons did not ship. Overwriting
             somebody's hand-written hook is not an install, it is a deletion; pass *force* to mean it.
+        WireRefused: the repo's ``[[tool.dev_lab.agent_hooks]]`` declaration is refused; nothing is written.
 
     """
+    declared(repo)  # a refused declaration refuses the install before any file is written
     engine = repo / ENGINE_REL
     status, detail = _inspect_engine(engine)
     actions: list[str] = []
@@ -391,7 +404,7 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
     before: dict[str, Any] = {}
     if settings_path.exists():
         before = json.loads(settings_path.read_text(encoding='utf-8'))
-    after = wire_settings(before)
+    after = wire_settings(before, repo)
     if after == before:
         actions.append(f'wiring already present: {settings_path}')
     else:
@@ -415,7 +428,12 @@ def report_guard(argv: list[str] | None = None) -> int:
     root = args.repo.resolve()
 
     if args.install:
-        for action in install_guard(root, force=args.force):
+        try:
+            actions = install_guard(root, force=args.force)
+        except WireRefused as refused:
+            emit(f'[agent-guard] REFUSED -- {refused}')
+            return 1
+        for action in actions:
             emit(f'[agent-guard] {action}')
 
     report = guard_installation(root)

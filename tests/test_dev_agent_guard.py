@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import venv
 from pathlib import Path
@@ -36,9 +37,9 @@ def _row(command: str) -> dict[str, object]:
 
 
 _ENGINE = _row(agent_wiring.HOOK_COMMAND)
-#: The PreToolUse dispatcher: the journal door before every shell call, the codeplace write hook before every write.
+#: The PreToolUse dispatcher: the codeplace write hook before every write. A shell call meets the engine alone.
 _PRE = {
-    'matcher': 'Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit',
+    'matcher': 'Write|Edit|MultiEdit|NotebookEdit',
     'hooks': [_row(agent_wiring.dispatch_command('PreToolUse'))],
 }
 
@@ -622,10 +623,30 @@ def test_settings_carry_the_engine_and_one_dispatcher_row_per_event() -> None:
 def test_a_rows_matcher_and_timeout_derive_from_its_handlers() -> None:
     """The matcher is the union of the handlers' tools (none when one sees every call); the bound is their sum."""
     by_event = {row.event: row for row in agent_wiring.rows() if row.command != agent_wiring.HOOK_COMMAND}
-    assert by_event['PreToolUse'].matcher == 'Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit'
+    assert by_event['PreToolUse'].matcher == 'Write|Edit|MultiEdit|NotebookEdit'
     assert by_event['UserPromptSubmit'].matcher is None
     for event, row in by_event.items():
         assert row.timeout == sum(w.timeout for w in agent_wiring.WIRING if event in w.events), event
+
+
+@pytest.mark.parametrize('tool', agent_wiring.SHELL_TOOLS)
+def test_a_shell_call_meets_exactly_one_pre_tool_command_the_engine(tool: str) -> None:
+    """ONE interpreter per shell call: every PreToolUse check of a command is an engine row, never a Python handler.
+
+    PLANTED CONTROL: the codeplace write hook's row does match a Write call, so the matcher test can say yes.
+    """
+    pre = agent_guard.wire_settings({})['hooks']['PreToolUse']
+
+    def commands_for(name: str) -> list[str]:
+        return [
+            hook['command']
+            for entry in pre
+            if 'matcher' not in entry or re.fullmatch(entry['matcher'], name)
+            for hook in entry['hooks']
+        ]
+
+    assert commands_for(tool) == [agent_wiring.HOOK_COMMAND]
+    assert agent_wiring.dispatch_command('PreToolUse') in commands_for('Write')
 
 
 def test_the_renderer_owns_every_launcher_row_and_keeps_foreign_hooks() -> None:
@@ -674,3 +695,54 @@ def test_a_drifted_or_extra_owned_row_is_stale_and_the_install_restores_it(repo:
         assert part.status == agent_guard.STALE, name
         agent_guard.install_guard(repo)
         assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED, name
+
+
+# ------------------------------------------------------------------------------------- a repo's own declared wires
+
+
+def _declare_wire(repo: Path, module: str, row: str) -> None:
+    """The repo declares one ``[[tool.dev_lab.agent_hooks]]`` row, its handler a module at the repo's root."""
+    (repo / 'pyproject.toml').write_text(
+        f'[[tool.dev_lab.agent_hooks]]\nmodule = "{module}"\n{row}\n', encoding='utf-8'
+    )
+    (repo / f'{module}.py').write_text('def main(argv):\n    return 0\n', encoding='utf-8')
+
+
+def test_rows_derive_matcher_and_timeout_from_the_family_and_the_repo_declaration(repo: Path) -> None:
+    _declare_wire(repo, 'planted_guard_wire_a', 'events = ["PreToolUse", "PreCompact"]\ntools = ["Read"]\ntimeout = 7')
+    family = {row.event: row for row in agent_wiring.rows()}
+    merged = {row.event: row for row in agent_wiring.rows(repo)}
+    assert merged['PreToolUse'].matcher == f'{family["PreToolUse"].matcher}|Read'
+    assert merged['PreToolUse'].timeout == family['PreToolUse'].timeout + 7
+    assert merged['PreCompact'] == agent_wiring.Row(
+        'PreCompact', 'Read', agent_wiring.dispatch_command('PreCompact'), 7
+    )
+    assert 'PreCompact' not in family, 'PLANTED CONTROL: the family alone serves no such event'
+
+
+def test_the_drift_check_counts_a_repo_declared_wire_and_the_install_renders_it(repo: Path) -> None:
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+    _declare_wire(repo, 'planted_guard_wire_b', 'events = ["PreCompact"]')
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE
+    assert 'PreCompact' in part.detail
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+    settings = json.loads((repo / agent_wiring.SETTINGS_REL).read_text(encoding='utf-8'))
+    [entry] = settings['hooks']['PreCompact']
+    assert entry['hooks'][0]['command'] == agent_wiring.dispatch_command('PreCompact')
+
+
+def test_a_refused_declaration_is_stale_by_name_and_the_install_refuses_it(repo: Path) -> None:
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / 'pyproject.toml').write_text(
+        '[[tool.dev_lab.agent_hooks]]\nevents = ["Stop"]\nmodule = "missing_guard_wire"\n', encoding='utf-8'
+    )
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE
+    assert 'missing_guard_wire' in part.detail
+    with pytest.raises(agent_wiring.WireRefused, match='missing_guard_wire'):
+        agent_guard.install_guard(repo)

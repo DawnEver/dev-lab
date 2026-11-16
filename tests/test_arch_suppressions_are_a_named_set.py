@@ -498,6 +498,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev.lanepolicy import load_policy',
     ): 'the same leaf-at-import reason: the lane policy is read only by the CLI entry point',
+    (
+        'src/dev_lab/dev/hookdispatch.py',
+        'BLE001',
+        'except Exception:',
+    ): "a crashed hook handler is one stderr line, never the dispatcher's crash: every other row still answers",
+    (
+        'src/dev_lab/dev/hookdispatch.py',
+        'override',
+        'def encoding(self) -> str:',
+    ): "a routed stream's encoding is its calling thread's target's, so it is a property where typeshed has a field",
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

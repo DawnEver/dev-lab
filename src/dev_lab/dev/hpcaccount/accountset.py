@@ -116,9 +116,12 @@ def main_fleet(
     parser.add_argument('--cluster', action='append', default=[], help='every account of one cluster (repeatable)')
     parser.add_argument('--account', action='append', default=[], help='one account of the fleet (repeatable)')
     for flag in flags:
-        parser.add_argument(flag, action='store_true', help=f"forwarded to each account's {verb}")
+        parser.add_argument(
+            flag, action='append_const', const=flag, dest='forwarded', help=f"forwarded to each account's {verb}"
+        )
     args = parser.parse_args(list(argv))
-    forwarded = [flag for flag in flags if getattr(args, flag.lstrip('-').replace('-', '_'))]
+    given = set(args.forwarded or ())
+    forwarded = [flag for flag in flags if flag in given]
     try:
         machine = reached_machine(args.account)
         source = config_source_of(machineconfig.machine())
