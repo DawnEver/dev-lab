@@ -1,16 +1,34 @@
 """The hook WIRING, as data: the engine's paths and command, and the ONE table of handlers per event.
 
 :mod:`dev_lab.dev.agent_guard` renders :func:`rows` into settings; :mod:`dev_lab.dev.hookdispatch` reads
-:data:`WIRING` at run time. Both read the same installed table, so a settings row never names a handler the
+:func:`wiring` at run time. Both read the same installed table, so a settings row never names a handler the
 interpreter running it lacks.
+
+A REPO ADDS ITS OWN HANDLERS AS DATA (:func:`declared`): ``[[tool.dev_lab.agent_hooks]]`` rows in its
+``pyproject.toml``, one :class:`Wire` each (``events``, ``module``, ``args``, ``tools``, ``may_block``, ``once``,
+``timeout``). They join the family's rows in the event's one dispatcher -- no settings row, no second process -- so
+the wiring has two sources and no third: :data:`WIRING` and the repo's declaration. A declared module must import
+from the repo's venv with the repo's root on the path, and a row may not repeat a family row or another declared one
+(a row's :attr:`Wire.name` is its identity); either is refused by name (:class:`WireRefused`).
 """
 
 from __future__ import annotations
 
+import contextlib
+import importlib.util
+import sys
+import tomllib
 from dataclasses import dataclass
-from typing import Final
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Final
+
+from dev_lab.dev.family import declared_table
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 __all__ = [
+    'DECLARED_TABLE',
     'DISPATCH_MODULE',
     'ENGINE_REL',
     'HOOK_COMMAND',
@@ -23,9 +41,13 @@ __all__ = [
     'WRITE_TOOLS',
     'Row',
     'Wire',
+    'WireRefused',
+    'declared',
     'dispatch_command',
     'events',
+    'import_root',
     'rows',
+    'wiring',
 ]
 
 
@@ -120,16 +142,19 @@ class Wire:
 
 _STOPS: Final = ('Stop', 'SubagentStop')
 
-#: THE WIRING, ONE TABLE. Before every shell call: the journal door (TRACKED-CITES-NO-EPHEMERAL, dev-lab#419); before
-#: every write: the codeplace write hook (a report under output/, a write-prone root, a consent file refused; a
-#: misplaced code file hinted). After every shell call, succeeded or failed: the wall ledger's foreign-denial reader
-#: (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54), the task binder (D5), the PR inbox -- the ONE
-#: machine PR watcher (SESSION-HEARS-ITS-PRS). Every stop, the main session's and each subagent's: the hand-back
-#: check and the wall ledger's stop; the main session's adds the stray census, the scratch census, the unfilled
-#: install home and the shell reaper. Session start: the ONE reclaim, the reaper, the venv follower, the forge-token
-#: notice, the scratch baseline, the classifier render and the PR watcher.
+#: THE WIRING, ONE TABLE, AND EACH CHECK HAS ONE TRIGGER. Before every shell call: no handler -- a check judging a
+#: command is an engine deny row, so a shell call starts one interpreter (the journal door asks Python only on a
+#: match, ``_deny_journal_row``); before every write: the codeplace write hook (a report under output/, a write-prone
+#: root, a consent file refused; a misplaced code file hinted). After every shell call, succeeded or failed: the wall
+#: ledger's foreign-denial reader (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54), the task binder
+#: (D5), the PR inbox -- the ONE machine PR watcher (SESSION-HEARS-ITS-PRS). Every stop, the main session's and each
+#: subagent's: the hand-back check and the wall ledger's stop; the main session's adds the stray census, the scratch
+#: census, the unfilled install home and the shell reaper -- Stop is the one event that recurs inside a session, so it
+#: is the reaper's clock, and a session's first stop sweeps what an ended one left (measured 2026-11-16: 37 sweeps and
+#: both over-bound stops of the day fell in an 11-hour window with no session start). Session start: the ONE reclaim,
+#: the machine-file notice (once: drift cannot change within a turn), the venv follower, the forge-token notice, the
+#: scratch baseline, the classifier render and the PR watcher.
 WIRING: Final = (
-    Wire(('PreToolUse',), 'dev_lab.dev.journaldoor', tools=SHELL_TOOLS, may_block=True),
     Wire(('PreToolUse',), 'dev_lab.dev.codeplace', tools=WRITE_TOOLS, may_block=True),
     Wire(('PostToolUse', 'PostToolUseFailure'), 'dev_lab.dev.walls', ('post-tool',), tools=SHELL_TOOLS),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.hostalarm', ('hook',)),
@@ -138,10 +163,10 @@ WIRING: Final = (
     Wire(('Stop',), 'dev_lab.dev.codeplace', ('stray',), may_block=True, timeout=60),
     Wire(_STOPS, 'dev_lab.dev.handback', may_block=True, timeout=60),
     Wire(('Stop',), 'dev_lab.dev.scratch', ('stop',), may_block=True, timeout=60),
-    Wire(('Stop',), 'dev_lab.dev.devhost', ('stop',), may_block=True, timeout=60),
     Wire(_STOPS, 'dev_lab.dev.walls', ('stop',), may_block=True, timeout=60),
-    Wire(('Stop', 'SessionStart'), 'dev_lab.dev.shellreaper', ('--hook',), timeout=60),
+    Wire(('Stop',), 'dev_lab.dev.shellreaper', ('--hook',), timeout=60),
     Wire(('SessionStart',), 'dev_lab.dev.reclaimrun', ('--session-start',), once=True, timeout=120),
+    Wire(('SessionStart',), 'dev_lab.dev.devhost', ('session-start',), once=True, timeout=60),
     Wire(('SessionStart',), 'dev_lab.dev.venvfollow', ('--session-start',), timeout=120),
     Wire(('SessionStart',), 'dev_lab.dev.forgeauthnotice', ('--session-start',), once=True, timeout=120),
     Wire(('SessionStart',), 'dev_lab.dev.scratch', ('snapshot',), once=True, timeout=120),
@@ -160,20 +185,141 @@ class Row:
     timeout: int
 
 
-def events() -> tuple[str, ...]:
-    """Every event :data:`WIRING` serves, in first-declared order."""
-    return tuple(dict.fromkeys(event for wire in WIRING for event in wire.events))
+#: The ``pyproject.toml`` table a repo declares its own handlers in: ``[[tool.dev_lab.agent_hooks]]``.
+DECLARED_TABLE: Final = 'agent_hooks'
+_KEYS: Final = frozenset({'events', 'module', 'args', 'tools', 'may_block', 'once', 'timeout'})
 
 
-def rows() -> tuple[Row, ...]:
-    """THE RENDERED ROWS, derived: the engine, then one dispatcher row per event of :data:`WIRING`.
+class WireRefused(ValueError):
+    """A repo-declared wire the dispatcher will not run, named with its cause and the table to fix."""
+
+
+@contextlib.contextmanager
+def import_root(root: Path) -> Iterator[None]:
+    """*root* first on the import path for the block: where a repo-declared module is looked up and imported."""
+    entry = str(root)
+    sys.path.insert(0, entry)
+    try:
+        yield
+    finally:
+        with contextlib.suppress(ValueError):
+            sys.path.remove(entry)
+
+
+def _strings(raw: Mapping[str, Any], key: str, where: str, *, required: bool = False) -> tuple[str, ...]:
+    value = raw.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        msg = f'{where}: {key} must be a list of non-empty strings, not {value!r}'
+        raise WireRefused(msg)
+    if required and not value:
+        msg = f'{where}: {key} names no event, so the row would never run'
+        raise WireRefused(msg)
+    return tuple(value)
+
+
+def _flag(raw: Mapping[str, Any], key: str, where: str) -> bool:
+    value = raw.get(key, False)
+    if not isinstance(value, bool):
+        msg = f'{where}: {key} must be true or false, not {value!r}'
+        raise WireRefused(msg)
+    return value
+
+
+def _wire(raw: object, where: str) -> Wire:
+    if not isinstance(raw, dict):
+        msg = f'{where}: a row is a table, not {raw!r}'
+        raise WireRefused(msg)
+    if unknown := sorted(set(raw) - _KEYS):
+        msg = f'{where}: unknown key(s) {unknown}; the keys are {sorted(_KEYS)}'
+        raise WireRefused(msg)
+    module, timeout = raw.get('module'), raw.get('timeout', 30)
+    if not isinstance(module, str) or not module or ' ' in module:
+        msg = f'{where}: module must name one importable module, not {module!r}'
+        raise WireRefused(msg)
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+        msg = f'{where}: timeout must be a positive whole number of seconds, not {timeout!r}'
+        raise WireRefused(msg)
+    return Wire(
+        _strings(raw, 'events', where, required=True),
+        module,
+        _strings(raw, 'args', where),
+        tools=_strings(raw, 'tools', where),
+        may_block=_flag(raw, 'may_block', where),
+        once=_flag(raw, 'once', where),
+        timeout=timeout,
+    )
+
+
+def _importable(module: str, root: Path) -> bool:
+    with import_root(root):
+        try:
+            return importlib.util.find_spec(module) is not None
+        except (ImportError, ValueError):
+            return False
+
+
+def declared(root: Path) -> tuple[Wire, ...]:
+    """The wires *root*'s ``pyproject.toml`` declares under ``[[tool.dev_lab.agent_hooks]]``; ``()`` when none.
+
+    Raises:
+        WireRefused: a row of the wrong shape, a module not importable from the repo's venv with *root* on the path,
+            or a row whose name (module and args) repeats a family row or an earlier declared row.
+
+    """
+    manifest = root / 'pyproject.toml'
+    if not manifest.is_file():
+        return ()
+    table = declared_table(tomllib.loads(manifest.read_text(encoding='utf-8')), DECLARED_TABLE, [])
+    if not isinstance(table, list):
+        msg = f'{manifest}: [tool.dev_lab.{DECLARED_TABLE}] is an array of tables: [[tool.dev_lab.{DECLARED_TABLE}]]'
+        raise WireRefused(msg)
+    family = {wire.name for wire in WIRING}
+    out: list[Wire] = []
+    for index, raw in enumerate(table, 1):
+        where = f'{manifest}: [[tool.dev_lab.{DECLARED_TABLE}]] row {index}'
+        wire = _wire(raw, where)
+        if wire.name in family:
+            msg = f'{where} ({wire.name}) duplicates a family row -- the family already wires it; delete the row'
+            raise WireRefused(msg)
+        if wire.name in {mine.name for mine in out}:
+            msg = f'{where} ({wire.name}) is declared twice; keep one row and list every event on it'
+            raise WireRefused(msg)
+        if not _importable(wire.module, root):
+            msg = f'{where}: {wire.module} is not importable from this venv with {root} on the path'
+            raise WireRefused(msg)
+        out.append(wire)
+    return tuple(out)
+
+
+def wiring(root: Path | None = None) -> tuple[Wire, ...]:
+    """Every handler: :data:`WIRING`, then what *root* declares (:func:`declared`); the family's alone without one.
+
+    Raises:
+        WireRefused: *root*'s declaration is refused (:func:`declared`).
+
+    """
+    return WIRING if root is None else (*WIRING, *declared(root))
+
+
+def events(wires: tuple[Wire, ...] = WIRING) -> tuple[str, ...]:
+    """Every event *wires* serve, in first-declared order."""
+    return tuple(dict.fromkeys(event for wire in wires for event in wire.events))
+
+
+def rows(root: Path | None = None) -> tuple[Row, ...]:
+    """THE RENDERED ROWS, derived: the engine, then one dispatcher row per event of :func:`wiring` (*root*).
 
     A row's matcher is the union of its handlers' tools -- none when any handler sees every call -- and its timeout
     the sum of its handlers' bounds.
+
+    Raises:
+        WireRefused: *root*'s declaration is refused (:func:`declared`).
+
     """
+    every = wiring(root)
     out = [Row('PreToolUse', '|'.join(SHELL_TOOLS), HOOK_COMMAND, 30)]
-    for event in events():
-        wires = [wire for wire in WIRING if event in wire.events]
+    for event in events(every):
+        wires = [wire for wire in every if event in wire.events]
         tools = tuple(dict.fromkeys(tool for wire in wires for tool in wire.tools))
         matcher = None if any(not wire.tools for wire in wires) else '|'.join(tools)
         out.append(Row(event, matcher, dispatch_command(event), sum(wire.timeout for wire in wires)))

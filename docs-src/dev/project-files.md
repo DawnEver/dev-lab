@@ -64,7 +64,7 @@ re-render; never hand-edit a rendered file.
 | `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.dev_lab.ci]` over `ci_base.toml` |
 | `ruff.toml` / `[tool.ruff*]` | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
 | `pyproject.toml` | section bases for `[project]` and `[tool.pytest.ini_options]`; the rest declined in `PYPROJECT_DECLINED` |
-| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption` |
+| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption`: one `hookdispatch` row per event, from `agent_wiring.WIRING` plus the repo's `[[tool.dev_lab.agent_hooks]]` rows (`events`, `module`, `args`, `tools`, `may_block`, `once`, `timeout`), run in the same dispatcher |
 | `.claude/hooks/deny-commands.js`, `deny-rules.json` | `agent_guard` install and `hook_adoption.render` |
 | `docs-src/dev/index.md` pointer table | `devdocs.pointer_table`, asserted by `famtests.devdocs` |
 | always-loaded rule pages | rule IDs from `dev_lab.dev.rules`, `famtests.rulespages` |

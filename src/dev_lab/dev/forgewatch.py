@@ -6,17 +6,17 @@ listed sha that settles (a session watching several pushed PRs wakes on each res
 exit 0 settled and every part ``success``, 1 settled with a red or an error, 3 when the deadline passed first.
 It never posts, claims or cancels anything.
 
-``--stream`` is the shape a Claude Code ``Monitor`` reads (PUSHED-HEAD-IS-WATCHED, :mod:`dev_lab.dev.pushwatch`):
-ONE flushed line per status CHANGE of any context -- ``<sha12> <context> <state>`` -- and a last line
-``<sha12> green|red|deadline``; a re-read status that did not change prints nothing.
+``--stream`` is the shape a Claude Code ``Monitor`` reads: ONE flushed line per status CHANGE of any context --
+``<sha12> <context> <state>`` -- and a last line ``<sha12> green|red|deadline``; a re-read status that did not
+change prints nothing.
 
 ``--session <id> --stream`` (SESSION-HEARS-ITS-PRS, user ruling 2026-11-11: lab-commons #158 went red and the
 session heard nothing) watches every PR the session opened or pushed, in any repository, on either forge
 (:mod:`dev_lab.dev.sessionprs`, its record): ONE line per change -- ``<key> <sha12> <context> failure|error
 <description>``, ``<key> <sha12> green`` once every ``tests/*`` check is final and green, ``<key> merged`` /
-``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. :func:`unacknowledged_reds` is what
-the ``Stop`` hook (:mod:`dev_lab.dev.pushstop`) refuses on, until a newer head is pushed or
-``--ack <key> --reason <why>`` records why the red stands.
+``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. ``--ack <key> --reason <why>``
+records why a red stands; :func:`unacknowledged_reds` lists the reds no reason answers, until a newer head.
+The machine PR watcher (:mod:`dev_lab.dev.prwatcher`) is the one hearer a session relies on (dev-lab #640).
 
 A WATCH YIELDS ITS VENV (dev-lab #641): a watch runs from a venv for hours, so once a newer environment is
 published beside it (:func:`dev_lab.dev.venvpointer.superseded`) it exits at its next poll -- one line
@@ -39,7 +39,6 @@ from dev_lab.dev import native_session, sessionprs, taskgate, venvpointer
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, client_for, stored_client
-from dev_lab.dev.pushwatch import record_deadline
 from dev_lab.dev.sessionpoll import TESTS, green, poll_session, pull_of, reds
 
 if TYPE_CHECKING:
@@ -157,8 +156,8 @@ def watch_session(
 ) -> int:
     """Report each change on *session*'s open PRs until none is open (0) or *deadline_s* passed (3).
 
-    While it runs it holds the session's liveness marker (:func:`~dev_lab.dev.sessionprs.watch`): the Stop gate
-    reads it as "a watch is armed".
+    While it runs it holds the session's liveness marker (:func:`~dev_lab.dev.sessionprs.watch`): the orphan
+    sweep reads it as a live owner (:mod:`dev_lab.dev.forgeorphan`).
     """
     sessionprs.watch(session)
     try:
@@ -308,7 +307,4 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ForgeCallFailed, ValueError) as failed:
         emit(f'watch: {failed}', err=True)
         return 2
-    if done == _DEADLINE:  # the Stop gate releases a head whose watch ran out (pushstop)
-        for sha in args.sha:
-            record_deadline(Path.cwd(), sha)
     return done

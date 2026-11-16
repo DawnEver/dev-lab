@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 from typing import Final
 
+from dev_lab.dev._deny_cicron_row import MODULE as _HPCACCOUNT
+from dev_lab.dev._deny_cicron_row import refused_verbs
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
@@ -52,6 +54,7 @@ FORBIDDEN: Final[dict[str, tuple[Prefix, ...]]] = {
         ('git', 'push', 'origin', ('--delete', '-d')),
     ),
     'RAW-PROCESS-KILL': (('taskkill',), ('Stop-Process',), ('kill', '-9')),
+    'CI-CRON-NEEDS-CONSENT': ((_PYTHON, '-m', _HPCACCOUNT, refused_verbs()),),
     'BARE-INTERPRETER': (
         ('uv', 'run', ('python', 'python3', '-m')),
         ('uv', 'run', '--no-sync', ('python', 'python3')),
@@ -66,6 +69,7 @@ _HOST = 'judged on the host an ssh/scp/rsync argument names'
 GAPS: Final[dict[str, str]] = {
     'TREE-HAS-A-LIVE-RUN': 'binds only while a run is live; the process table decides, not a prefix',
     'BACKGROUND-SHELL-IS-BOUNDED': 'a property of a background call, which Codex execpolicy does not see',
+    'TRACKED-CITES-NO-EPHEMERAL': 'judged on what the journal line cites against the repo; a prefix reads neither',
     'SUBAGENT-NO-PUSH': 'scoped to subagents; Codex execpolicy has no agent scope',
     'CONSENT-CODE-FROM-THE-USER': _TARGET,
     'REPORTS-LIVE-IN-MEMORY': _TARGET,

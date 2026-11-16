@@ -5,9 +5,11 @@ verify runs) had no lifetime; some ran for days and outlived the session that st
 
 * AT LAUNCH, the deny row ``BACKGROUND-SHELL-IS-BOUNDED`` (:mod:`dev_lab.dev._deny_background_row`) refuses a
   ``run_in_background`` Bash call that does not start with ``timeout <n>``, naming ``timeout 50m <command>``;
-* AFTERWARDS, this sweep. Wired at ``SessionStart`` and at every ``Stop`` (:data:`dev_lab.dev.agent_wiring.WIRING`),
-  ``--hook`` detaches at most one sweep per :data:`SWEEP_INTERVAL_S` per repo and returns at once; the sweep holds
-  a per-repo lock in the git common dir and logs each stop to ``output/logs/<yy>/<mm>/<dd>/reaper/``.
+* AFTERWARDS, this sweep. Wired at every ``Stop`` and nowhere else (:data:`dev_lab.dev.agent_wiring.WIRING`): Stop
+  is the one event that recurs inside a session, so it is the bound's clock, and a session's first stop also sweeps
+  what an ended session left. ``--hook`` detaches at most one sweep per :data:`SWEEP_INTERVAL_S` per repo and returns
+  at once; the sweep holds a per-repo lock in the git common dir and logs each stop to
+  ``output/logs/<yy>/<mm>/<dd>/reaper/``.
 
 WHAT IS AN AGENT SHELL, read off the one census (:mod:`lab_commons.census`): a shell process (bash, sh, zsh, dash,
 PowerShell) whose parent is an agent session (:data:`AGENT`), or which sources the agent harness's shell snapshot
@@ -192,7 +194,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose log and spares apply')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--dry-run', action='store_true', help='name what would be stopped, stop nothing')
-    mode.add_argument('--hook', action='store_true', help='the SessionStart/Stop hook: detach a sweep, return')
+    mode.add_argument('--hook', action='store_true', help='the Stop hook: detach a sweep, return')
     args = parser.parse_args(argv)
     try:
         if args.hook:
