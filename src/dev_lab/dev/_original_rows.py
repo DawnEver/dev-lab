@@ -185,8 +185,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hostrefresh',
     # ORIGINAL: no gate read a task ledger; the opt-in task-bound row (user ruling 2026-11-14) is new.
     'taskgate',
-    # ORIGINAL: one session-to-task binding written by the user's prompt (user ruling 2026-11-15); none existed.
+    # ORIGINAL: the one reader of rem's session-to-task binding (user ruling 2026-11-15); none existed.
     'taskbinding',
+    # ORIGINAL: which rem the session's harness runs, read from its plugin registry, so an unbound push names it.
+    'remplugin',
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.

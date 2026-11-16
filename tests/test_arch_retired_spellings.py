@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from _arch_corpus import assert_floor, docs_pages, rel, rules_pages, source_modules, suite_modules
+from _arch_corpus import assert_floor, docs_pages, module_names, rel, rules_pages, source_modules, suite_modules
 
 from dev_lab.dev import branchprune, pushwatch, sessionprs
 
@@ -209,6 +209,13 @@ RETIRED_SPELLINGS: Final = {
             'dev-lab #641 (epic #648): an environment is published beside the live one, so nothing queues or replays',
         ),
     ),
+    **dict.fromkeys(
+        ('taskbinding bind', 'taskbinding status', 'binding_gap', 'BIND_PROMPT'),
+        (
+            "rem's UserPromptSubmit task hook binds (rem's task.js status shows it); dev_lab.dev.taskbinding reads",
+            'H4 2026-11-16: a stale venv failed the binder and blocked every prompt; rem owns binding, the gate reads',
+        ),
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a
@@ -260,10 +267,10 @@ def test_the_retired_push_entry_points_are_absent() -> None:
     """
     assert importlib.util.find_spec('dev_lab.dev.pushstop') is None
     assert importlib.util.find_spec('dev_lab.dev.pushwatch') is not None
-    assert 'said_after' not in vars(sessionprs)
-    assert 'record_pushed' in vars(sessionprs)
-    assert {'arm_line', 'record_deadline', 'pushed_by', 'pushed_at'}.isdisjoint(vars(pushwatch))
-    assert 'post_push' not in vars(branchprune)
+    assert 'said_after' not in module_names(sessionprs)
+    assert 'record_pushed' in module_names(sessionprs)
+    assert {'arm_line', 'record_deadline', 'pushed_by', 'pushed_at'}.isdisjoint(module_names(pushwatch))
+    assert 'post_push' not in module_names(branchprune)
     with pytest.raises(SystemExit) as refused:
         branchprune.main(['post-push'])
     assert refused.value.code == 2, 'argparse refuses the retired verb by name'
