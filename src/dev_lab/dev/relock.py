@@ -71,6 +71,7 @@ from dev_lab.dev.lockcheck import (
     stale,
 )
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.venvpointer import current
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import PullRequest
@@ -290,7 +291,7 @@ def _tree_python(tree: Path) -> str:
     Raises RelockFailed when *tree* has no ``.venv``: this interpreter holds the OLD pin, and rendering with it
     would carry the stale workflow the relock exists to replace.
     """
-    for candidate in (tree / '.venv' / 'Scripts' / 'python.exe', tree / '.venv' / 'bin' / 'python'):
+    for candidate in (current(tree) / 'Scripts' / 'python.exe', current(tree) / 'bin' / 'python'):
         if candidate.is_file():
             return str(candidate)
     msg = f'{tree} has no .venv: the render needs the interpreter that holds the new pin; run the lock door first'

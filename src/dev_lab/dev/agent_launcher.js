@@ -2,7 +2,7 @@
 // Launcher shipped by dev-lab: dev_lab.dev.agent_guard (a repo's own launcher at this path is kept).
 //
 // A bare `python` in a hook resolves through PATH, and on Windows that is the Microsoft Store
-// alias. The interpreter is the project's own `.venv`, or the main checkout's when a linked
+// alias. The interpreter is the project's own current environment (currentEnv), or the main checkout's when a linked
 // worktree has none. No interpreter: one line on stderr and exit 0 -- a hook that cannot run
 // must not block the session it was meant to inform.
 //
@@ -71,7 +71,7 @@ try {
 } catch {}
 
 const tail = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
-const python = roots.map((r) => path.join(r, '.venv', ...tail)).find((p) => fs.existsSync(p));
+const python = roots.map((r) => path.join(currentEnv(r), ...tail)).find((p) => fs.existsSync(p));
 if (!python) {
   process.stderr.write(`[hook] skipped ${process.argv.slice(2).join(' ')}: no .venv interpreter\n`);
   process.exit(0);
@@ -98,6 +98,20 @@ process.stderr.write(
 );
 recordWall(main, args);
 process.exit(0);
+
+// The environment a new launch takes (dev-lab #632; the twin of dev_lab.dev.venvpointer.current): the one
+// `.venv-current` names under `.venvs/`, else the legacy `.venv`. The pointer is replaced atomically, so this reads
+// the old name or the new one, never a partial one.
+function currentEnv(root) {
+  try {
+    const name = fs.readFileSync(path.join(root, '.venv-current'), 'utf8').trim();
+    const env = path.join(root, '.venvs', name);
+    if (name && path.basename(name) === name && name !== '.' && name !== '..' && fs.statSync(env).isDirectory()) {
+      return env;
+    }
+  } catch {}
+  return path.join(root, '.venv');
+}
 
 // {installed, locked}: the venv's dev-lab commit and the one uv.lock pins, when both are known and differ; else null.
 function staleness(interpreter) {

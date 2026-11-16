@@ -47,7 +47,8 @@ from dev_lab.dev import checkoutfollow, devhost, hook_install, liverun
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
 from dev_lab.dev.reclaimrun import detach_argv
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.venvpath import VENV_LAYOUTS
+from dev_lab.dev.venvpointer import current
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -90,8 +91,8 @@ FAMILY_KIT: Final = 'dev-lab'
 
 
 def venv_python(checkout: Path) -> Path:
-    """*checkout*'s own venv interpreter."""
-    return checkout / venv_interpreter(os_name=os.name)
+    """*checkout*'s own CURRENT venv interpreter (:mod:`dev_lab.dev.venvpointer`)."""
+    return current(checkout).joinpath(*VENV_LAYOUTS[os.name][1:])
 
 
 def env_key(checkout: Path) -> str:
@@ -105,7 +106,7 @@ def env_key(checkout: Path) -> str:
 
 def stale(checkout: Path) -> str | None:
     """The key to stamp when *checkout*'s venv is missing or stamped at other inputs; ``None`` when current."""
-    key, path = env_key(checkout), checkout / '.venv' / ENV_STAMP
+    key, path = env_key(checkout), current(checkout) / ENV_STAMP
     if venv_python(checkout).is_file() and path.is_file() and path.read_text(encoding='utf-8') == key:
         return None
     return key
@@ -113,18 +114,19 @@ def stale(checkout: Path) -> str | None:
 
 def stamp(checkout: Path, key: str) -> None:
     """Record that *checkout*'s venv was bootstrapped at *key*."""
-    path = checkout / '.venv' / ENV_STAMP
+    path = current(checkout) / ENV_STAMP
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(key, encoding='utf-8')
 
 
 def busy(checkout: Path, *, census: Callable[[], Iterable[Process]] = processes) -> str:
-    """The live runs reading *checkout* or executing from its venv, described; ``''`` when there are none."""
-    table = tuple(census())
-    reading = liverun.live_runs(checkout, census=lambda: table)
-    executing = liverun.executing_from(checkout / '.venv', census=lambda: table)
-    runs = {one.pid: one for one in (*reading, *executing)}
-    return liverun.describe(runs.values()) if runs else ''
+    """The live runs reading *checkout*, described; ``''`` when there are none.
+
+    A process executing from the venv is no obstacle (dev-lab #632): the bootstrap builds a new environment beside
+    it and publishes that, so the one it runs from never moves.
+    """
+    runs = liverun.live_runs(checkout, census=census)
+    return liverun.describe(runs) if runs else ''
 
 
 def _bootstrap(checkout: Path) -> int:

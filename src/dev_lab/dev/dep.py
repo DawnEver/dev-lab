@@ -75,7 +75,7 @@ from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_cli, _dep_local, _dep_pending, _dep_project
+from dev_lab.dev import _dep_cli, _dep_local, _dep_pending, _dep_project, venvcurrent
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
@@ -365,8 +365,13 @@ def _change(
     environment: dict[str, str] | None = None,
     census: Census = processes,
     then: Callable[[], int] | None = None,
+    base: str | None = None,
 ) -> Report:
-    """Hold the seat, refuse an environment any live process executes from, run *argv* (retried when it resolves)."""
+    """Hold the seat, refuse an environment any live process executes from, run *argv* (retried when it resolves).
+
+    With *base* the change builds a NEW environment beside the live one whose interpreter *base* is (dev-lab #632):
+    the key before is the live one's, and a build that failed is never published, so the key did not move.
+    """
     gaps = []
     declared = port.anchors()
     if declared is None:
@@ -374,15 +379,16 @@ def _change(
     try:
         with EnvironmentSeat(prefix, f'dep:{port.name}').held():
 
-            def key() -> str:
-                if python is not None and not Path(python).is_file():
+            def key(target: str | None = python) -> str:
+                if target is not None and not Path(target).is_file():
                     return 'missing-environment'
-                return port.env_key(python)
+                return port.env_key(target)
 
             if users := executing_from(prefix, census=census):
                 held = TransientlyHeldError if all(is_transient(one) for one in users) else HeldEnvironmentError
                 raise held(env_in_use(port.name, prefix, users))
-            before = key()
+            before = key(base or python)
+            returncode = None
             if dry_run:
                 return Report(port.name, prefix, tuple(argv), None, before, None, (), tuple(gaps))
             try:
@@ -390,7 +396,7 @@ def _change(
                 if not returncode and then is not None:
                     returncode = then()  # in the SAME seat: nothing runs between the sync and what lands on it
             finally:
-                after = key()
+                after = before if base is not None and returncode != 0 else key()
                 retired = retire_anchors(declared) if declared and after != before else ()
             return Report(port.name, prefix, tuple(argv), returncode, before, after, retired, tuple(gaps))
     except Refused as exc:
@@ -415,39 +421,41 @@ def main(
     if why := _dep_cli.argv_error(args, locking=locking):
         parser.error(why)
     root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
-    python, selected, paths = _dep_project.read_project(root, args.extra)
-    prefix = root / '.venv'
-    if Path(python).is_file() and Path(_snapshot(python)[0]).resolve() != prefix:
-        msg = f'{python} does not execute in its own environment {prefix}'
+    base, selected, paths = _dep_project.read_project(root, args.extra)
+    live = Path(base).parent.parent
+    if Path(base).is_file() and Path(_snapshot(base)[0]).resolve() != live.resolve():
+        msg = f'{base} does not execute in its own environment {live}'
         raise ValueError(msg)
+    syncing = args.bootstrap is not None or args.sync or locking
     environment = dict(os.environ)
     environment.pop('VIRTUAL_ENV', None)
-    environment['UV_PROJECT_ENVIRONMENT'] = str(prefix)
-    syncing = args.bootstrap is not None or args.sync or locking
     if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
         emit(f'REFUSED: {why}')
         return 1
     if locking:
         code = _dep_project.lock_upgrade(
-            root, python, run=run, dry_run=args.dry_run, environment=environment, packages=args.upgrade_package
+            root, base, run=run, dry_run=args.dry_run, environment=environment, packages=args.upgrade_package
         )
         if code:
             return code
+    prefix, python = venvcurrent.target(root, base, live, side_by_side=syncing and not args.dry_run)
+    environment['UV_PROJECT_ENVIRONMENT'] = str(prefix)
     try:
         command = _dep_project.uv_command(
             root,
-            python,
+            base,
             selected,
             syncing=syncing,
             upgrade_packages=args.upgrade_package,
             frozen=args.bootstrap is not None or locking,
-            reinstall_packages=changed(root, prefix) if syncing else (),
+            reinstall_packages=changed(root, live) if syncing else (),
         )
         overlay = _dep_local.step(
             root, args.local, syncing=syncing, uv=command[0], python=python, prefix=prefix, run=run, env=environment
         )
     except (_dep_project.OtherUvRefused, _dep_local.OverlayRefused) as exc:
         emit(f'REFUSED: {exc}')
+        _publish(root, prefix, live, ok=False, census=census)
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
@@ -456,6 +464,7 @@ def main(
             port=port,
             prefix=str(prefix),
             python=python,
+            base=base if prefix != live else None,
             run=run,
             dry_run=args.dry_run,
             cwd=root,
@@ -466,12 +475,25 @@ def main(
     except HeldEnvironmentError as exc:
         return _dep_cli.held(args, root, prefix, exc, transient=isinstance(exc, TransientlyHeldError))
     if args.bootstrap is not None and not args.dry_run:
-        _dep_pending.clear(prefix)  # it ran: a queued request for this environment is answered
+        _dep_pending.clear(live)  # it ran: a queued request for this environment is answered
     emit(result.render())
+    _publish(root, prefix, live, ok=not result.returncode, census=census)
     if syncing and not args.dry_run and not result.returncode:
-        record(root, prefix)  # the trees this environment now holds its components at
         _refresh_automode(root, run=run)
     return result.returncode or 0
+
+
+def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census) -> None:
+    """Publish the environment just built (or drop a failed build), then reclaim every one nothing runs from."""
+    if prefix == live:
+        return
+    if not ok:
+        venvcurrent.abandon(prefix)
+        return
+    record(root, prefix)  # the trees this environment now holds its components at
+    emit(f'published {prefix}: {venvcurrent.publish(root, prefix)}')
+    for line in venvcurrent.reclaim(root, census=census):
+        emit(line)
 
 
 def _refresh_automode(root: Path, *, run: Callable[..., Any]) -> None:

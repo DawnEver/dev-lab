@@ -76,9 +76,23 @@ _can_run() {
 
 PYTHON=''
 _SAW_VENV=''
+# The current environment (dev-lab #632; the twin of dev_lab.dev.venvpointer.current): the one .venv-current
+# names under .venvs/, else the legacy .venv.
+_current_env() {
+  _name=''
+  if [ -f "$1/.venv-current" ]; then _name="$(head -n 1 "$1/.venv-current" | tr -d '\r\n')"; fi
+  _env="$1/.venv"
+  case "${_name}" in
+    ''|.|..|*/*|*\*) ;;
+    *) if [ -d "$1/.venvs/${_name}" ]; then _env="$1/.venvs/${_name}"; fi ;;
+  esac
+  printf '%s\n' "${_env}"
+}
+
 for root in "${THIS_ROOT}"; do
-  for candidate in "${root}/.venv/Scripts/python.exe" "${root}/.venv/bin/python"; do
-    if [ -x "${candidate}" ] && _has_distributions "${root}/.venv"; then
+  _ENV="$(_current_env "${root}")"
+  for candidate in "${_ENV}/Scripts/python.exe" "${_ENV}/bin/python"; do
+    if [ -x "${candidate}" ] && _has_distributions "${_ENV}"; then
       _SAW_VENV="yes"
       if [ -z "${PYTHON}" ] && _can_run "${candidate}"; then
         PYTHON="${candidate}"

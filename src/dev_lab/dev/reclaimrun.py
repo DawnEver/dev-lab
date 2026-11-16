@@ -40,6 +40,7 @@ from lab_commons.log import emit
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset
 from dev_lab.dev.checkout import git_out, worktrees
 from dev_lab.dev.reclaim import QUIET_S
+from dev_lab.dev.venvcurrent import reclaim as reclaim_envs
 
 __all__ = [
     'BATCH',
@@ -127,12 +128,25 @@ def run(
             lines = apply_local(root, declared_branchset(root), occupied=occupied, limit=batch, quiet_s=quiet_s)
         except BranchSetNotDeclared as exc:
             lines = (f'nothing reclaimed: {exc}',)
+        lines = (*lines, *_envs(root)) if lines is not None else None
         now = datetime.now().astimezone()
         log = root / 'output' / 'logs' / now.strftime('%y/%m/%d') / 'reclaim' / f'{now:%H%M%S}-{os.getpid()}.log'
         log.parent.mkdir(parents=True, exist_ok=True)
         body = lines if lines is not None else (f'git could not read the branches of {root}; nothing was deleted',)
         log.write_text('\n'.join(body) + '\n', encoding='utf-8')
         return log
+
+
+def _envs(root: Path) -> tuple[str, ...]:
+    """Old environments nothing executes from, reclaimed in every checkout of *root* (dev-lab #632)."""
+    trees = worktrees(root) or ()
+    out: list[str] = []
+    for tree in dict.fromkeys((root, *(path for path, _branch in trees))):
+        try:
+            out.extend(reclaim_envs(tree))
+        except OSError as exc:
+            out.append(f'environments of {tree} not reclaimed: {exc}')
+    return tuple(out)
 
 
 def detach(root: Path, *, batch: int = BATCH) -> None:

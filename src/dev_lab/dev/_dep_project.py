@@ -25,7 +25,8 @@ from dev_lab.dev.lockcheck import (
     uv_version,
 )
 from dev_lab.dev.uvfollow import follow
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.venvpath import VENV_LAYOUTS
+from dev_lab.dev.venvpointer import current
 
 
 def _checkout(cwd: Path, git_binary: str) -> tuple[Path, Path] | None:
@@ -189,11 +190,11 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
     if unknown:
         msg = f'unknown dependency extras: {sorted(unknown)}'
         raise ValueError(msg)
-    prefix = root / '.venv'
-    if prefix.resolve() != prefix:
+    prefix = current(root)
+    if not prefix.resolve().is_relative_to(root.resolve()):
         msg = f'{root} must use its own environment, not the alias {prefix} -> {prefix.resolve()}'
         raise ValueError(msg)
-    python = str(root / venv_interpreter(os_name=os.name))
+    python = str(prefix.joinpath(*VENV_LAYOUTS[os.name][1:]))
     return python, tuple(selected), anchor_paths(root, declaration.get('anchors', ()))
 
 

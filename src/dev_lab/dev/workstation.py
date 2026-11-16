@@ -81,6 +81,7 @@ from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, forge_home, held
 from dev_lab.dev.venvfollow import ENV_STAMP, venv_python
+from dev_lab.dev.venvpointer import current
 from dev_lab.dev.workstationfile import ROLES, capabilities, machine_file, role_refusal, role_tables, template
 from dev_lab.dev.workstationprobe import CREDENTIAL_REMEDY, com_server, missing, refused_credentials
 from dev_lab.dev.workstationregistry import NoRegistry, forge_refusal, this_computer
@@ -282,7 +283,7 @@ def _stand_down(tools: Programs, root: Path, repos: Sequence[str], why: str) -> 
 
 def _kit_at(git: Sequence[str], kit: Path) -> tuple[str, str]:
     """What the kit's code is: its HEAD and the env key its venv was last synced at."""
-    stamp = kit / '.venv' / ENV_STAMP
+    stamp = current(kit) / ENV_STAMP
     head = read([*git, '-C', str(kit), 'rev-parse', 'HEAD']).stdout.strip()
     return head, stamp.read_text(encoding='utf-8') if stamp.is_file() else ''
 

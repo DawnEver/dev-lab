@@ -66,11 +66,16 @@ def test_a_live_run_skips_the_rebootstrap_and_a_failed_one_is_retried(tmp_path: 
     assert venvfollow.stale(root) is not None, 'a failed bootstrap writes no stamp, so the next one retries'
 
 
-def test_the_busy_reading_names_a_run_in_the_tree_or_its_venv(tmp_path: Path) -> None:
+def test_the_busy_reading_names_a_run_in_the_tree_but_not_one_only_using_its_venv(tmp_path: Path) -> None:
+    """dev-lab #632: the bootstrap builds beside the venv, so a process executing from it is no obstacle."""
     root = _checkout(tmp_path)
+    (root / '.git').mkdir()
+    (root / 'app.py').write_text('', encoding='utf-8')  # the run's module is IN the tree: it reads it
     python = str(venvfollow.venv_python(root))
     run = Process(4242, 1, python, f'{python} -m app run', 600.0, str(root))
     assert '4242' in venvfollow.busy(root, census=lambda: (run,))
+    elsewhere = Process(4343, 1, python, f'{python} -m app run', 600.0, str(tmp_path / 'elsewhere'))
+    assert venvfollow.busy(root, census=lambda: (elsewhere,)) == ''
     assert venvfollow.busy(root, census=lambda: ()) == ''
 
 

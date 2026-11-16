@@ -103,7 +103,8 @@ CODE_SUFFIXES = frozenset({
 #: Directories never walked, matched by NAME at any depth: tool state, environments and build
 #: output, none of it written by a person.
 PRUNED_NAMES = frozenset({
-    '.git', '.venv', 'venv', 'node_modules', 'target', '__pycache__', '.pytest_cache', '.ruff_cache', '.mypy_cache',
+    '.git', '.venv', '.venvs', 'venv', 'node_modules', 'target', '__pycache__', '.pytest_cache', '.ruff_cache',
+    '.mypy_cache',
     # the cluster run's record, written INTO the tree it judges (lab_commons.hpc: streams, env.sh, job.sh)
     '.lab-ci', '.lab-hpc',
 })  # fmt: skip
