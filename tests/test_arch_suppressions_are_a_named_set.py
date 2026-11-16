@@ -440,6 +440,18 @@ ALLOWED: Final[dict[Site, str]] = {
         "['git', '-C', str(root), *arguments],",
     ): 'git through PATH building the scratch checkouts the local-name reader is then asked to read',
     (
+        'src/dev_lab/dev/githooks/inprocess.py',
+        'S102',
+        'exec(code, main.__dict__)',
+    ): 'the hook row`s own module code, executed as __main__ exactly as `python -m` would; runpy cannot, because '
+    'a meta-path finder (pytest`s assertion rewriter) may own the module without handing out its code',
+    (
+        'src/dev_lab/dev/githooks/inprocess.py',
+        'BLE001',
+        'except Exception:',
+    ): 'a hook row run in the runner`s interpreter must end as the subprocess would: an uncaught exception of any '
+    'type is the interpreter`s exit 1 with its traceback, and the next row still runs',
+    (
         'src/dev_lab/dev/branchnotices.py',
         'PLC0415',
         'from dev_lab.dev.forgepulls import pr_list',

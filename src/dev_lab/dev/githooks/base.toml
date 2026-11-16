@@ -14,6 +14,14 @@
 #   env         a table of environment variables the command runs with (a script's repo facts).
 #   refs        pre-push only: regex over the pushed REMOTE refs; the hook runs only for matching
 #               refs and reads only their lines on stdin.
+#   advisory    the row only SPEAKS (a warning, a notice): its output is shown whatever its exit, and no exit of
+#               its fails the stage or is recorded as a wall.
+#   isolate     run as its own subprocess. A `python -m <module>` row otherwise runs IN the runner's interpreter
+#               (one interpreter per stage); any other `run` is always a subprocess.
+#   bootstraps  it creates the checkout's own venv, so it runs on whichever interpreter the shim found.
+#
+# ONE STAGE PER CHECK: a check runs at the one stage its nature needs, never at two
+# (tests/test_dev_githooks_runner.py, `test_no_base_module_runs_at_two_stages`).
 #
 # What each stage hands a hook is git's own contract: pre-commit selects among the STAGED paths;
 # commit-msg appends the message file to `run`; pre-push pipes git's ref lines to stdin and selects
@@ -22,17 +30,18 @@
 # what the commit changes; whole-tree checks are the forge's. The checks below report and never rewrite a file.
 #
 # WHAT RUNS HERE (toolchain plan P3, user-approved 2026-10-23; amended by the user ruling of 2026-11-07): a local
-# row is an irreversible-harm check, a second-scale format check, or -- since 2026-11-07 -- the CURRENCY of a pr/*
-# head. Everything else the forge judges on the pushed sha is the forge's alone, and a local copy only refused the
+# row is an irreversible-harm check, a second-scale format check, or -- since 2026-11-07 -- a WARNING on the
+# CURRENCY of a pr/* head. Everything else the forge judges on the pushed sha is the forge's alone, and a local copy only refused the
 # same push twice: the tracked-tree scans (TRACKED-CITES-NO-EPHEMERAL, SCRATCH-IS-NEVER-COMMITTED:
 # dev_lab.dev.famtests.ephemeralrefs, dev_lab.dev.scratch), the branch set (dev_lab.dev.famtests.branchset,
 # dev_lab.dev.branchprune), the lock PIN (dev_lab.dev.famtests.lockpin) and PR advice (`forge pr create`,
 # dev_lab.dev.pradmit, never a refusal). THE 2026-11-07 RULING reverses P3's "no local behind bound or lock
 # freshness": agents kept pushing stale pr/* heads, and the forge's integration alarm and lock freshness status came
-# after the harm. So the `pr-current` row (PR-HEAD-IS-CURRENT, dev_lab.dev.prcurrent) refuses a pr/* push whose
-# tip lacks origin/<integration> (fetched afresh) or whose lock pins a floated sibling past the lag
-# window (dev_lab.dev.locklag.within_window, the one window lock/lag reads), naming `forge sync`; `forge pr ready` reads the same judgement. A finding
-# the forge cannot see (an untracked stray file) is a post-commit hint.
+# after the harm. So the `pr-current` row (PR-HEAD-IS-CURRENT, dev_lab.dev.prcurrent) names a pr/* push whose
+# tip lacks origin/<integration> (fetched afresh) or whose lock pins a floated sibling past the lag window
+# (dev_lab.dev.locklag.within_window, the one window lock/lag reads), naming `forge sync`. Since dev-lab #661 the
+# forge's `pr-current` is an ALARM, never a merge gate, so the row WARNS and never refuses; `forge pr ready` reads the
+# same judgement. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
 
 # SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
 # [tool.dev_lab.task] required = true, an agent session commits only while its USER bound it to an open task
@@ -43,58 +52,12 @@ id = "task-bound"
 run = ["python", "-m", "dev_lab.dev.taskgate"]
 always_run = true
 
+# The per-file checks, ONE row (dev_lab.dev.filechecks all): the staged paths are handed over once and each file is
+# read once, every check reporting under its own name. A repo skips one (`--skip CHECK`) or narrows one
+# (`--exclude CHECK=REGEX`, `--max-kb N`) by restating this `run` in its own row of id "filechecks".
 [[pre-commit]]
-id = "check-added-large-files"
-run = ["python", "-m", "dev_lab.dev.filechecks", "large-files"]
-pass_files = true
-
-[[pre-commit]]
-id = "check-ast"
-run = ["python", "-m", "dev_lab.dev.filechecks", "ast"]
-files = '\.pyi?$'
-pass_files = true
-
-[[pre-commit]]
-id = "check-case-conflict"
-run = ["python", "-m", "dev_lab.dev.filechecks", "case-conflict"]
-pass_files = true
-
-[[pre-commit]]
-id = "check-json"
-run = ["python", "-m", "dev_lab.dev.filechecks", "json"]
-files = '\.json$'
-pass_files = true
-
-[[pre-commit]]
-id = "check-merge-conflict"
-run = ["python", "-m", "dev_lab.dev.filechecks", "merge-conflict"]
-pass_files = true
-
-[[pre-commit]]
-id = "check-toml"
-run = ["python", "-m", "dev_lab.dev.filechecks", "toml"]
-files = '\.toml$'
-pass_files = true
-
-[[pre-commit]]
-id = "debug-statements"
-run = ["python", "-m", "dev_lab.dev.filechecks", "debug-statements"]
-files = '\.pyi?$'
-pass_files = true
-
-[[pre-commit]]
-id = "end-of-file"
-run = ["python", "-m", "dev_lab.dev.filechecks", "end-of-file"]
-pass_files = true
-
-[[pre-commit]]
-id = "mixed-line-ending"
-run = ["python", "-m", "dev_lab.dev.filechecks", "mixed-line-ending"]
-pass_files = true
-
-[[pre-commit]]
-id = "trailing-whitespace"
-run = ["python", "-m", "dev_lab.dev.filechecks", "trailing-whitespace"]
+id = "filechecks"
+run = ["python", "-m", "dev_lab.dev.filechecks", "all"]
 pass_files = true
 
 # The conventional-commit shape, owned once in dev_lab.dev.commitmsg (an empty message is an abort, not a refusal).
@@ -102,10 +65,12 @@ pass_files = true
 id = "conventional-commit"
 run = ["python", "-m", "dev_lab.dev.commitmsg", "--commit-msg-file"]
 
-# Warns on a malformed `Refs #N` / `Closes #N` / `Fixes #N` and never blocks (dev_lab.dev.issueref).
+# Warns on a malformed `Refs #N` / `Closes #N` / `Fixes #N` and never blocks (dev_lab.dev.issueref): `advisory`, so
+# the warning is shown although the row passes.
 [[commit-msg]]
 id = "issue-ref"
 run = ["python", "-m", "dev_lab.dev.issueref"]
+advisory = true
 
 # The origin host a `[priority] hosts` entry matches, as a `Forge-Host:` trailer (dev_lab.dev.forgeorigin).
 # It appends the trailer and never blocks.
@@ -131,12 +96,6 @@ run = ["python", "-m", "dev_lab.dev.mergeaudit"]
 id = "merge-resolution"
 run = ["python", "-m", "dev_lab.dev.mergeresolution"]
 
-# MEMORY-SHAPE, the change half (dev_lab.dev.memoryadds): EVERY commit, a merge included, may only ADD under
-# **/.claude/memory/** -- read off the index, so a plain commit and a merge resolution are judged alike.
-[[commit-msg]]
-id = "memory-adds"
-run = ["python", "-m", "dev_lab.dev.memoryadds", "commit"]
-
 # SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
 # [tool.dev_lab.task] required = true, an agent session pushes only while its USER bound it to an open task
 # (`task: <slug>` prompt, dev_lab.dev.taskbinding; D5 2026-11-15), and a pr/ branch only under pr/<task>/. Opt-in;
@@ -146,19 +105,20 @@ id = "task-bound"
 run = ["python", "-m", "dev_lab.dev.taskgate"]
 always_run = true
 
+# MEMORY-SHAPE, the change half (dev_lab.dev.memoryadds): a push may only ADD under **/.claude/memory/**, judged net
+# over each pushed range since origin/<integration>. ONE stage, the one that PUBLISHES: immutability starts at
+# publication, and every route a commit can take (a merge, a rebase, a commit made with the hook off) reaches it.
+[[pre-push]]
+id = "memory-adds"
+run = ["python", "-m", "dev_lab.dev.memoryadds"]
+always_run = true
+
 # The session-branch invariants at push, local reads only (dev_lab.dev.sessionbranch): a declared session branch
 # or the trunk is published from that very local branch (PUBLISH-IS-THE-LOCAL-REF), by fast-forward
 # (SESSION-HISTORY-ONLY-GROWS), and the integration branch by audited merges (INTEGRATION-IS-MERGES-ONLY);
-# origin takes only a branch the set admits (ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES).
-# MEMORY-SHAPE again at push, over each pushed range since origin/<integration>: a commit made past the
-# commit-msg row (--no-verify, another tool) still reds before it leaves.
-[[pre-push]]
-id = "memory-adds"
-run = ["python", "-m", "dev_lab.dev.memoryadds", "push"]
-always_run = true
-
-# The session-branch invariants (dev_lab.dev.sessionbranch). EARLY FEEDBACK for a PR head: the forge posts the same
-# judgement as the `session-branch` status on every PR head and the merge requires it (dev_lab.dev.forgeheadgate).
+# origin takes only a branch the set admits (ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES). EARLY FEEDBACK for a PR head: the
+# forge posts the same judgement as the `session-branch` status on every PR head and the merge requires it
+# (dev_lab.dev.forgeheadgate).
 [[pre-push]]
 id = "session-branch"
 run = ["python", "-m", "dev_lab.dev.sessionbranch"]
@@ -185,23 +145,26 @@ always_run = true
 # PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07; a TIME window 2026-11-15): a pr/* head lacks
 # no origin/<integration> landing older than locklag.LAG_WINDOW, its lock pins no floated sibling past that window,
 # and the pushing venv holds what that lock pins (else these hooks ran a stale kit); the remedy is `forge sync` (for
-# the kit, the bootstrap door). EARLY FEEDBACK only:
-# the forge posts the same judgement as the `pr-current` status on every PR head, an ALARM the merge never waits
-# on (dev_lab.dev.forgeheadgate, W5 dev-lab#644): mergeability is the trial merge at merge time.
+# the kit, the bootstrap door). A WARNING, never a refusal (`advisory`): the forge posts the same judgement as the
+# `pr-current` status on every PR head, an ALARM the merge never waits on (dev_lab.dev.forgeheadgate, W5 dev-lab#644,
+# #661): mergeability is the trial merge at merge time, and a push refused on it would be a gate that does not exist.
 [[pre-push]]
 id = "pr-current"
 run = ["python", "-m", "dev_lab.dev.prcurrent"]
 always_run = true
 refs = '^refs/heads/pr/'
+advisory = true
 
-# FORGE NOTICES WHERE A SESSION ACTS ON ITS PR (user ruling 2026-10-21): a pr/* push, and every commit on a pr/*
-# branch, print that PR's open notices for this LAB_SESSION (dev_lab.dev.branchnotices: one reader, cached 60 s,
-# short deadline, read-only, silent when none, exit 0 always). git verbs are the decision points every vendor shares.
+# FORGE NOTICES WHERE A SESSION ACTS ON ITS PR (user ruling 2026-10-21): a pr/* push prints that PR's open notices
+# for this LAB_SESSION (dev_lab.dev.branchnotices: one reader, cached 60 s, short deadline, read-only, silent when
+# none, exit 0 always; `advisory`, so what it prints is shown). The PUSH is where a session acts on its PR -- a commit
+# is local, and the PR has not seen it -- and git's ref lines name exactly the pr/* heads it publishes.
 [[pre-push]]
 id = "pr-notices"
-run = ["python", "-m", "dev_lab.dev.branchnotices", "--push"]
+run = ["python", "-m", "dev_lab.dev.branchnotices"]
 always_run = true
 refs = '^refs/heads/pr/'
+advisory = true
 
 # SESSION-HEARS-ITS-PRS (2026-11-12): a push records its branches and heads as the agent session's
 # (the canonical native harness identity) in the repository git is pushing, from git's own ref lines -- never from a shell line's
@@ -211,14 +174,6 @@ id = "session-prs"
 run = ["python", "-m", "dev_lab.dev.sessionprs", "--push"]
 always_run = true
 refs = '^refs/heads/'
-
-# RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12: clearing useless worktrees is REQUIRED): every push, from
-# any tree, detaches a background reclaim of the main checkout (dev_lab.dev.reclaimrun --background: per-repo lock,
-# bounded batch, exit 0 always), so it never delays or fails the push. Merge and checkout run it below.
-[[pre-push]]
-id = "reclaim"
-run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
-always_run = true
 
 # post-commit is ADVISORY (githooks.table.ADVISORY): the commit is made, and no row can change its exit status.
 
@@ -230,42 +185,33 @@ id = "stray-files"
 run = ["python", "-m", "dev_lab.dev.codeplace", "stray-check"]
 always_run = true
 
-[[post-commit]]
-id = "pr-notices"
-run = ["python", "-m", "dev_lab.dev.branchnotices"]
-always_run = true
-
 # A PRESSED HOST TELLS ITS AGENTS (ruling D54): this host's disk/memory/CPU alarms, the agent hook's own lines
-# (dev_lab.dev.hostalarm check; silent when the host is not pressed) -- a secondary channel to the hook.
+# (dev_lab.dev.hostalarm check; silent when the host is not pressed, exit 0; `advisory`, so its lines are shown) --
+# a secondary channel to the hook.
 [[post-commit]]
 id = "host-pressure"
 run = ["python", "-m", "dev_lab.dev.hostalarm", "check"]
 always_run = true
+advisory = true
 
-# VENV-FOLLOWS-THE-LOCK (user ruling 2026-11-04): a merge or checkout that moved pyproject.toml/uv.lock detaches a
+# RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12: clearing useless worktrees is REQUIRED): a merge detaches a
+# background reclaim of the main checkout (dev_lab.dev.reclaimrun --background: per-repo lock, bounded batch, exit 0
+# always), so it never delays the merge. ONE git trigger beside the agent's SessionStart run: a tree becomes
+# reclaimable when its branch LANDS, which a checkout learns when it takes in upstream -- a pull, `forge sync` --
+# never at a push (it lands nothing) or a checkout (it creates a tree, never frees one).
+[[post-merge]]
+id = "reclaim"
+run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
+always_run = true
+
+# VENV-FOLLOWS-THE-LOCK (user ruling 2026-11-04): a checkout that moved pyproject.toml/uv.lock detaches a
 # re-bootstrap of this checkout's venv (dev_lab.dev.venvfollow); an unchanged lock costs one hash, a live run skips.
-# Both stages are ADVISORY: the merge or checkout is done. `bootstraps`: a checkout with NO venv (a new worktree) runs
-# it on the interpreter the shim found, so the venv is created rather than every row skipped.
-[[post-merge]]
-id = "venv-follows-lock"
-run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
-always_run = true
-bootstraps = true
-
+# ADVISORY: the checkout is done. `bootstraps`: a checkout with NO venv (a new worktree) runs it on the interpreter
+# the shim found, so the venv is created rather than every row skipped. ONE git trigger: post-checkout is the only
+# event a new worktree fires, and without its venv every judged stage there is refused; a merge that moves the lock
+# leaves a WORKING venv one kit behind, which the SessionStart follow and the pr-current kit warning both name.
 [[post-checkout]]
 id = "venv-follows-lock"
 run = ["python", "-m", "dev_lab.dev.venvfollow", "--background"]
 always_run = true
 bootstraps = true
-
-# RECLAIM RUNS IN THE WORKFLOW (user ruling 2026-11-12): a merge or checkout that lands detaches the same background
-# reclaim as a push (the pre-push row above); ADVISORY, and reclaimrun exits 0 always.
-[[post-merge]]
-id = "reclaim"
-run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
-always_run = true
-
-[[post-checkout]]
-id = "reclaim"
-run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
-always_run = true

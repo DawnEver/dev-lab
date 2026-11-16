@@ -497,7 +497,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.branchfate` -- TWO-FATES: every local branch and worktree is kept for a named live owner, or
   archived losslessly (bundle, uncommitted work, manifest) and cleaned up by ``branchset --apply``; none lingers.
 * :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
-* :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,
+* :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (pre-push,
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
@@ -510,9 +510,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   (``continues #N``) the forge opens: Gitea's serve tick, GitHub's ``continue.yml``, and ``forge pr continue``.
 * :mod:`dev_lab.dev.branchreview` -- the ONE review record per branch: its PRs, oldest first, and every carried
   finding's disposition; what a continuation's review is scoped by and carries (``forge review carry``).
-* :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: a ``pr/*`` push or ``pr ready`` is refused when the head
-  lacks an ``origin/<integration>`` landing older than the TIME lag window or its lock pins a floated sibling past
-  it (remedy ``forge sync``); the push is also refused when the pushing venv does not hold what that lock pins.
+* :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: ``pr ready`` is refused, and a ``pr/*`` push warned, when the
+  head lacks an ``origin/<integration>`` landing older than the TIME lag window or its lock pins a floated sibling
+  past it (remedy ``forge sync``); the push is also warned when the pushing venv does not hold what that lock pins.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; it is the
   command line of ``delete`` and ``sweep``, and a workstation's ``PostToolUse`` hook detaches ``sweep --local``.

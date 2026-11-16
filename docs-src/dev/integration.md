@@ -319,11 +319,12 @@ push updating a branch whose newest PR into the integration branch was closed UN
 from the branch, or a new branch name); a forge that cannot be read refuses. A merged PR's branch passes: the forge
 continues it (LANDED-BRANCH-CONTINUES, above).
 
-The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) refuses a `pr/*` push whose tip
-lacks `origin/<integration>` (fetched afresh; a failed fetch refuses) or whose lock lags a floated sibling's
-head, naming `forge sync` -- early feedback: on the forge `pr-current` is an ALARM, never a merge condition (W5,
-dev-lab#644; the trial merge at merge time decides); `forge pr ready` refuses on the same judgement of the pushed head -- never on the local tree, so it works from any
-checkout (user ruling 2026-11-13).
+The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) WARNS on a `pr/*` push whose tip
+lacks `origin/<integration>` (fetched afresh; a failed fetch is named) or whose lock lags a floated sibling's
+head, naming `forge sync`, and never refuses it (`advisory = true`, dev-lab #661): on the forge `pr-current` is an
+ALARM, never a merge condition (W5, dev-lab#644; the trial merge at merge time decides). `forge pr ready` refuses on
+the same judgement of the pushed head -- never on the local tree, so it works from any checkout (user ruling
+2026-11-13).
 
 Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the
 integration branch after `merges_only_since` that is not a two-parent merge with a `Merged-Branch:` trailer

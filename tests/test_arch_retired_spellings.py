@@ -57,6 +57,16 @@ RETIRED_SPELLINGS: Final = {
             'dev-lab #640 (W1): one dispatcher per hook event; the renderer owns every launcher row',
         ),
     ),
+    **dict.fromkeys(
+        ('check-case-conflict', 'check-json', 'check-merge-conflict', 'check-toml'),
+        (
+            'the one `filechecks` hook row (`dev_lab.dev.filechecks all`; a check is skipped or narrowed by name)',
+            (
+                'toolchain H3 2026-11-16: ten per-check rows cost ten interpreters per commit (check-ast stays: it '
+                'is pre-commit-hooks` own id, which the famconfig fixtures spell)'
+            ),
+        ),
+    ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
     'PR-REVIEW-IS-ADVISORY': (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',
