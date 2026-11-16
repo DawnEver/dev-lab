@@ -45,9 +45,9 @@ from dev_lab.dev.pushwatch import (
     RULE,
     deadline_reached,
     descends,
+    origin_tip,
     pushed_at,
     pushed_by,
-    remote_tip,
     watch_command,
     watched,
 )
@@ -128,7 +128,7 @@ def _integration_holds(root: Path, sha: str) -> bool:
         integration = load_policy(root).integration
     except (OSError, ValueError):
         return False
-    tip = remote_tip(root, integration)
+    tip = origin_tip(root, integration)
     return bool(tip) and (tip.startswith(sha) or descends(root, sha, tip))
 
 
@@ -143,7 +143,7 @@ def landed(root: Path, sha: str, branch: str, *, client: Client, live: Iterable[
         return True
     if not branch:
         return False
-    tips = [remote_tip(root, branch)]
+    tips = [origin_tip(root, branch)]
     pulls = [pull for pull in pr_list(client, state='all') if pull.head == branch]
     if pulls:
         newest = max(pulls, key=lambda pull: pull.number)

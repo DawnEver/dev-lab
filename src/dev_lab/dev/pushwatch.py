@@ -42,6 +42,7 @@ __all__ = [
     'deadline_reached',
     'descends',
     'main',
+    'origin_tip',
     'pushed_at',
     'pushed_by',
     'pushed_head',
@@ -51,7 +52,6 @@ __all__ = [
     'record',
     'record_deadline',
     'reminder',
-    'remote_tip',
     'watch_command',
     'watched',
 ]
@@ -136,7 +136,7 @@ def descends(root: Path, sha: str, word: str) -> bool:
     return done.returncode == 0 and not word.startswith(sha[: len(word)])
 
 
-def remote_tip(root: Path, branch: str) -> str:
+def origin_tip(root: Path, branch: str) -> str:
     """The commit ``origin/<branch>`` names in the repository at *root*; ``''`` when it names none."""
     return _git(root, 'rev-parse', '--verify', '--quiet', f'refs/remotes/origin/{branch}^{{commit}}')
 
