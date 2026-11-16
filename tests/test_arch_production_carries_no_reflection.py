@@ -29,6 +29,11 @@ _ALLOWED = {
         'rebind/restore_all rebind a name handed in as DATA (a Seam path) on an arbitrary owner and put '
         'the original back; the attribute name is not known to any type, so setattr is the operation'
     ),
+    'tests/test_dev_disclosure.py': (
+        '_details_callers reads each details_for(<NAME>) argument out of SOURCE TEXT and resolves that name on '
+        'its module; the name is data and a constant may be computed (shelllife._RULE), so no source parse '
+        'can stand in for the lookup'
+    ),
 }
 
 
