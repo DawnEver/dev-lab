@@ -93,7 +93,8 @@ if (!behind) {
 const main = roots[roots.length - 1];
 process.stderr.write(
   `[hook] ${missing[1]} missing: installed dev-lab ${behind.installed.slice(0, 10)} is behind the lock's ` +
-    `${behind.locked.slice(0, 10)} -- run: ${python} -m dev_lab.dev.dep --bootstrap ${main}\n`,
+    `${behind.locked.slice(0, 10)} -- run: ${python} -m dev_lab.dev.dep --bootstrap ${main} --when-free ` +
+    `(held by sessions or hooks, it queues and this launcher replays it at the first free moment)\n`,
 );
 recordWall(main, args);
 process.exit(0);

@@ -80,7 +80,7 @@ from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
 from dev_lab.dev.envseat import EnvironmentSeat
-from dev_lab.dev.liverun import Census, env_in_use, executing_from
+from dev_lab.dev.liverun import Census, env_in_use, executing_from, is_transient
 
 __all__ = [
     'CHILD_WALL_S',
@@ -108,6 +108,10 @@ NO_ANCHORS_DECLARED: Final = (
 
 class HeldEnvironmentError(RuntimeError):
     """A verdict is in flight for this environment, so the environment must not move under it."""
+
+
+class TransientlyHeldError(HeldEnvironmentError):
+    """Only agent sessions or their hooks hold the environment: a bootstrap queues (``--when-free``), never refuses."""
 
 
 class Mode(Enum):
@@ -376,7 +380,8 @@ def _change(
                 return port.env_key(python)
 
             if users := executing_from(prefix, census=census):
-                raise HeldEnvironmentError(env_in_use(port.name, prefix, users))
+                held = TransientlyHeldError if all(is_transient(one) for one in users) else HeldEnvironmentError
+                raise held(env_in_use(port.name, prefix, users))
             before = key()
             if dry_run:
                 return Report(port.name, prefix, tuple(argv), None, before, None, (), tuple(gaps))
@@ -459,7 +464,7 @@ def main(
             then=overlay,
         )
     except HeldEnvironmentError as exc:
-        return _dep_cli.held(args, root, prefix, exc)
+        return _dep_cli.held(args, root, prefix, exc, transient=isinstance(exc, TransientlyHeldError))
     if args.bootstrap is not None and not args.dry_run:
         _dep_pending.clear(prefix)  # it ran: a queued request for this environment is answered
     emit(result.render())
