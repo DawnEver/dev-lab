@@ -122,6 +122,21 @@ RETIRED_SPELLINGS: Final = {
             'user ruling 2026-11-11 (consumer-a D51/D52): migrate stored records once, refuse the rest',
         ),
     ),
+    **dict.fromkeys(
+        (
+            '_dep_pending',
+            'when-free',
+            'when_free',
+            'update_waits',
+            'TransientlyHeldError',
+            'performPendingUpdate',
+            'dev-lab-pending-bootstrap',
+        ),
+        (
+            'dep --bootstrap publishes beside the live env (venvcurrent); a watch yields on venvpointer.superseded',
+            'dev-lab #641 (epic #648): an environment is published beside the live one, so nothing queues or replays',
+        ),
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

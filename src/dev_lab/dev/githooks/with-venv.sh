@@ -76,18 +76,10 @@ _can_run() {
 
 PYTHON=''
 _SAW_VENV=''
-# The current environment (dev-lab #632; the twin of dev_lab.dev.venvpointer.current): the one .venv-current
-# names under .venvs/, else the legacy .venv.
-_current_env() {
-  _name=''
-  if [ -f "$1/.venv-current" ]; then _name="$(head -n 1 "$1/.venv-current" | tr -d '\r\n')"; fi
-  _env="$1/.venv"
-  case "${_name}" in
-    ''|.|..|*/*|*\*) ;;
-    *) if [ -d "$1/.venvs/${_name}" ]; then _env="$1/.venvs/${_name}"; fi ;;
-  esac
-  printf '%s\n' "${_env}"
-}
+# The current environment (dev-lab #641): rendered by `node venv_resolver.js --shell`, never edited here.
+# BEGIN venv_resolver.js --shell
+_current_env() { _n=""; if [ -f "$1/.venv-current" ]; then _n="$(head -n 1 "$1/.venv-current" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"; fi; case "$_n" in ""|.|..|*/*|*\\*|*:*) echo "$1/.venv" ;; *) if [ -d "$1/.venvs/$_n" ]; then echo "$1/.venvs/$_n"; else echo "$1/.venv"; fi ;; esac; }
+# END venv_resolver.js --shell
 
 for root in "${THIS_ROOT}"; do
   _ENV="$(_current_env "${root}")"

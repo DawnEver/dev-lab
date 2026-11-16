@@ -12,6 +12,7 @@ from lab_commons.hpc.grants import AccessRefused, Grant
 from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.hpcaccount import storage
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE, retention_fleet
+from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
 _FLEET = (
@@ -20,6 +21,11 @@ _FLEET = (
 )
 _DEPLOY = '[deploy]\nhost = "login01.example"\nroot = "src"\n'
 _QUOTA = 'Disk quotas for user alice\n  /home  29G  30G  30G  999k* 1000k 1000k'
+
+
+def _line(argv: str) -> str:
+    """The remote line in the account's dev-lab checkout, run by its current environment (the one resolver)."""
+    return f'cd ~/src/dev-lab && {shell_interpreter(".")} {argv}'
 
 
 def _account(*, ticks: str = '2', unreachable: bool = False, seen: list[str]) -> Runner:
@@ -61,7 +67,7 @@ def _retentions(seen: list[str]) -> list[str]:
 def test_a_dry_run_runs_the_accounts_own_retention_without_apply() -> None:
     code, said, seen = _run()
     assert code == 0
-    assert _retentions(seen['alice']) == ['cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.retention --cluster']
+    assert _retentions(seen['alice']) == [_line('-m dev_lab.dev.retention --cluster')]
     assert not any('--apply' in cmd for cmd in seen['alice'] + seen['bob'])  # PLANTED: a dry run deletes nothing
     assert any('999k' in line for line in said)  # the files column of the quota is printed
     assert 'alice: retention (dry run)' in said
@@ -70,9 +76,7 @@ def test_a_dry_run_runs_the_accounts_own_retention_without_apply() -> None:
 def test_apply_passes_apply_to_the_accounts_retention() -> None:
     code, said, seen = _run(apply=True, accounts=('bob',))
     assert code == 0
-    assert _retentions(seen['bob']) == [
-        'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.retention --cluster --apply'
-    ]
+    assert _retentions(seen['bob']) == [_line('-m dev_lab.dev.retention --cluster --apply')]
     assert seen['alice'] == []  # only the named account is reached
     assert 'bob: retention --apply' in said
 

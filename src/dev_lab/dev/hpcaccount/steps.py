@@ -16,6 +16,7 @@ import lab_commons.launch as _door
 from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
+from dev_lab.dev import venvpointer
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
 
@@ -117,9 +118,11 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
     }
     inputs = builds.dependency_inputs or ('pyproject.toml', 'uv.lock')
     env_key = _key(step, checkout, inputs, builds.install, spec.python, *builds.needs)
-    stamp = checkout / '.venv' / '.lab-deploy-env'
+    live = venvpointer.current(checkout)  # the one rule (dev-lab #641): the env a launch there takes
+    env['UV_PROJECT_ENVIRONMENT'] = str(live)
+    stamp = live / '.lab-deploy-env'
     if _stamped(stamp, env_key):
-        emit(f'  {repo.name}: .venv current (key {env_key[:12]})')
+        emit(f'  {repo.name}: {live.name} current (key {env_key[:12]})')
     else:
         if rc := step.change(f'{repo.name}: {builds.install}', [*step.tools.sh, builds.install], cwd=checkout, env=env):
             return rc

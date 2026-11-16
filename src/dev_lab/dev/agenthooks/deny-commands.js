@@ -393,16 +393,17 @@ const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toL
  * `{python}` (or a repo door's `<venv python>`) and the engine writes the TARGET checkout's interpreter by
  * absolute path -- the same answer as dev_lab.dev.venvpath.remedy_interpreter.
  */
-/** The environment a new launch in `root` takes (dev-lab #632; twin of dev_lab.dev.venvpointer.current). */
+/** The ONE resolver (dev-lab #641): installed beside this engine; in the package, one directory up. Loaded only
+ * when a remedy names an interpreter, so a missing copy never stops a decision: the remedy names its door. */
+const MISSING_RESOLVER = 'venv_resolver.js is missing beside deny-commands.js -- run: python -m dev_lab.dev.agent_guard --install';
+let resolver;
 function currentEnv(root) {
-  try {
-    const name = fs.readFileSync(path.join(root, '.venv-current'), 'utf8').trim();
-    const env = path.join(root, '.venvs', name);
-    if (name && path.basename(name) === name && name !== '.' && name !== '..' && fs.statSync(env).isDirectory()) {
-      return env;
-    }
-  } catch {}
-  return path.join(root, '.venv');
+  if (resolver === undefined) {
+    const file = [__dirname, path.dirname(__dirname)].map((dir) => path.join(dir, 'venv_resolver.js')).find(fs.existsSync);
+    resolver = file ? require(file) : null;
+  }
+  if (!resolver) throw new Error(MISSING_RESOLVER);
+  return resolver.currentEnv(root);
 }
 
 const VENV_TAIL = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
@@ -433,7 +434,12 @@ function remedyPython(root) {
 function expand(text, checkout) {
   const out = String(text).replaceAll('{root}', root);
   if (!checkout || !/\{python\}|<venv python>/.test(out)) return out;
-  const python = remedyPython(checkout);
+  let python;
+  try {
+    python = remedyPython(checkout);
+  } catch (missing) {
+    python = `<${missing.message}>`; // the refusal still stands, and names the door that restores the resolver
+  }
   return out.replaceAll('{python}', python).replaceAll('<venv python>', python);
 }
 
