@@ -23,6 +23,7 @@ __all__ = [
     'PUSHWATCH_COMMAND',
     'REAPER_COMMAND',
     'RECLAIM_COMMAND',
+    'REINSTALL_COMMAND',
     'RETIRED_WIRING',
     'RULES_REL',
     'SESSIONPRS_COMMAND',
@@ -60,12 +61,25 @@ LAUNCHER_REL: Final = '.claude/hooks/py.js'
 #: unjudged. The variable is the tool's own, so the committed line stays true on every box.
 #: AND IT FAILS CLOSED (2026-10-21): a missing engine, a missing ``node`` or an engine that crashed exits
 #: nonzero-but-not-2, which the tool reads as a NON-BLOCKING error -- the same fail-open by another door.
-#: So the line is a POSIX wrapper: no engine file, or any engine exit but 0, exits 2 (blocking) naming why.
+#: So the line is a POSIX wrapper: any engine exit but 0 exits 2 (blocking) naming why.
+#: ONE POLICY FOR A MISSING PART (dev-lab #639): no engine and no rules are the same broken guard -- the repair
+#: (:data:`REINSTALL_COMMAND`, one plain command matched by :data:`_REPAIR_CHECK`) passes, everything else is refused
+#: naming it. The repair always passes, engine or not: a guard that refuses its own reinstall has no door.
+REINSTALL_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.agent_guard --install'
+
+#: Exit 0 when the hook payload's command is the reinstall alone: an interpreter or the launcher, the module, and
+#: ``--install [--force]`` -- no shell operator or newline, so nothing rides along with the repair.
+_REPAIR_CHECK: Final = (
+    r"""node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{let c="";"""
+    r"""try{c=String(JSON.parse(s).tool_input.command||"")}catch{}"""
+    r"""process.exit(/^[^;&|<>`()\n\r]*-m dev_lab\.dev\.agent_guard --install( --force)?$/.test(c.trim())?0:1)})'"""
+)
 HOOK_COMMAND: Final = (
-    f'e="$CLAUDE_PROJECT_DIR/{ENGINE_REL}"; '
-    '[ -f "$e" ] || { echo "agent-guard: no engine at $e -- refused (fail closed); '
-    f're-install: node $CLAUDE_PROJECT_DIR/{LAUNCHER_REL} -m dev_lab.dev.hook_install --install" >&2; exit 2; }}; '
-    f'node "$e" "$CLAUDE_PROJECT_DIR/{RULES_REL}" || '
+    f'e="$CLAUDE_PROJECT_DIR/{ENGINE_REL}"; r="$CLAUDE_PROJECT_DIR/{RULES_REL}"; i=$(cat); '
+    f'case "$i" in *"agent_guard --install"*) printf %s "$i" | {_REPAIR_CHECK} && exit 0;; esac; '
+    '[ -f "$e" ] && [ -f "$r" ] || { echo "agent-guard: no engine at $e or no rules at $r -- refused (fail closed); '
+    'repair: ' + REINSTALL_COMMAND.replace('"', '\\"') + '" >&2; exit 2; }; '
+    'printf %s "$i" | node "$e" "$r" || '
     '{ echo "agent-guard: the engine exited $? -- refused (fail closed)" >&2; exit 2; }'
 )
 

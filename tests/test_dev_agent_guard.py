@@ -259,7 +259,32 @@ def test_a_missing_engine_fails_closed_with_a_blocking_exit(repo: Path) -> None:
     done = _run_hook(repo, _wired_line(repo), 'git status')
     assert done.returncode == 2, (done.returncode, done.stderr)
     assert 'fail closed' in done.stderr
-    assert 'hook_install' in done.stderr
+    assert 'dev_lab.dev.agent_guard --install' in done.stderr
+    assert 'hook_install' not in done.stderr, 'the git-hook installer does not restore the agent guard'
+
+
+_REPAIR = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/py.js" -m dev_lab.dev.agent_guard --install'
+
+
+@pytest.mark.parametrize('part', [agent_wiring.ENGINE_REL, agent_wiring.RULES_REL])
+def test_a_missing_engine_or_rules_share_one_policy_the_repair_passes(repo: Path, part: str) -> None:
+    """dev-lab #639: either part gone refuses every command but the reinstall, naming it."""
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / part).unlink()
+    refused = _run_hook(repo, _wired_line(repo), 'git status')
+    assert refused.returncode == 2, (refused.returncode, refused.stderr)
+    assert 'dev_lab.dev.agent_guard --install' in refused.stderr
+    assert _run_hook(repo, _wired_line(repo), _REPAIR).returncode == 0, 'the guard refused its own repair'
+    smuggled = _run_hook(repo, _wired_line(repo), f'git status; {_REPAIR}')
+    assert smuggled.returncode == 2, 'PLANTED CONTROL: a command riding along with the repair is still refused'
+
+
+def test_the_repair_passes_even_a_crashing_engine(repo: Path) -> None:
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / agent_wiring.ENGINE_REL).write_text('process.exit(1);\n', encoding='utf-8')
+    assert _run_hook(repo, _wired_line(repo), f'{_REPAIR} --force').returncode == 0
 
 
 def test_an_engine_that_crashes_fails_closed_with_a_blocking_exit(repo: Path) -> None:
@@ -659,7 +684,9 @@ def test_a_stale_venv_missing_a_verb_names_its_fix_and_lets_the_prompt_through(t
         input='{}', capture_output=True, text=True, encoding='utf-8', env=current, cwd=tmp_path / 'current',
         check=False,
     )  # fmt: skip
-    assert same.returncode == 2, 'PLANTED CONTROL: a current venv lacking the verb is a real bug, passed through'
+    assert same.returncode == 0, 'dev-lab #639: a current venv lacking the verb is a wiring fault, never a block'
+    assert 'behind' not in same.stderr
+    assert 'agent_guard --install' in same.stderr, 'a current venv is told to re-render the wiring'
 
 
 def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path: Path) -> None:
@@ -747,10 +774,12 @@ def test_the_installed_launcher_refuses_a_missing_or_corrupt_identity_companion(
     assert 'Door:' in done.stderr
 
 
-def test_a_missing_module_from_a_current_venv_is_reported_as_itself(tmp_path: Path) -> None:
-    """PLANTED control: the venv matches its lock, so the missing module is a real bug -- passed through, failing."""
+def test_a_missing_module_from_a_current_venv_lets_the_prompt_through_naming_itself(tmp_path: Path) -> None:
+    """dev-lab #639: a venv matching its lock but missing the module still never blocks; it is no stale-venv wall."""
     done = _bind(_venv_with_dev_lab_at(tmp_path, 'c' * 40, 'c' * 40))
-    assert done.returncode != 0
-    assert "No module named 'dev_lab'" in done.stderr
+    assert done.returncode == 0, done.stderr
+    [line] = done.stderr.splitlines()
+    assert '(dev_lab' in line, line
+    assert '-m dev_lab.dev.dep --bootstrap' in line, line
     assert 'behind' not in done.stderr
     assert not list(tmp_path.glob('output/logs/*/*/*/walls/walls.jsonl'))

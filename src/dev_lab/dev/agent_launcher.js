@@ -103,17 +103,17 @@ process.stderr.write(
         `(if the installed dev-lab is current, the hook row names what dev-lab does not ship: re-render the wiring ` +
         `with ${python} -m dev_lab.dev.agent_guard --install)\n`,
 );
-recordWall(main, args);
+if (behind) recordWall(main, args);
 process.exit(0);
 
-// What kept the child from starting -- a missing module, or argparse refusing its argv -- else null (a decision).
+// What kept the child from starting -- a missing module, or argparse refusing its argv (exit 2 with its usage or an
+// `error: argument` line) -- else null: a decision, passed through.
 function wiringFault(status, text) {
   if (status === 0 || status === null) return null;
   const module = /No module named '?([\w.]+)/.exec(text);
   if (module) return module[1];
-  const usage = status === 2 && /^usage: /m.test(text) &&
-    /error: (?:argument |unrecognized arguments|the following arguments|invalid choice)/.exec(text);
-  if (!usage) return null;
+  const usage = status === 2 && /^usage: |error: (?:argument |unrecognized arguments|the following arguments)/m;
+  if (!usage || !usage.test(text)) return null;
   const verb = /(?:invalid choice|unrecognized arguments): '?([\w-]+)/.exec(text);
   return verb ? verb[1] : 'its arguments';
 }
