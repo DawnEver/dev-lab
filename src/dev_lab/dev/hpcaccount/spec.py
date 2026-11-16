@@ -46,6 +46,7 @@ __all__ = [
     'load',
     'login_hosts',
     'merge_crontab',
+    'parse',
     'parse_repo',
     'render',
     'render_grant',
@@ -118,7 +119,11 @@ class Deployment:
 
 def load(path: Path) -> Deployment | None:
     """The ``[deploy]`` table of the machine file at *path*; ``None`` when undeclared, a missing key refused."""
-    table = tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    return parse(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}, path)
+
+
+def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
+    """The ``[deploy]`` of an already-read machine-file *table* (named *path* in a refusal); see :func:`load`."""
     raw = table.get('deploy')
     if not raw:
         return None

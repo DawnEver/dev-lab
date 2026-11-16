@@ -15,13 +15,14 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 
 * ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpcaccount.fleet`) starts, over the transport,
   every declared account's own ``deploy``, one log per account.
-* ``backup-fleet (--cluster <name> | --account <user>)... [--dry-run] [--restore <stamp>|latest]``
-  (:mod:`~dev_lab.dev.hpcaccount.backup`) runs, on each selected account, its own ``backup``: the full crontab and
-  the machine file into a dated directory on the account, or puts them back. Neither filter given is refused.
+* ``drift-fleet (--cluster <name> | --account <user>)...`` (:mod:`~dev_lab.dev.hpcaccount.accountset`) runs, on each
+  selected account, its own read-only ``drift`` (:mod:`~dev_lab.dev.hpcaccount.drift`): what the account holds that
+  its config source cannot render. Neither filter given is refused. Nothing on an account is backed up: the config
+  source is the truth, an account its render (user ruling 2026-11-16).
 * ``ci-pause-fleet`` / ``ci-resume-fleet`` (same filters; :mod:`~dev_lab.dev.hpcaccount.cipause`) stop and restart
-  the forge CI cron of the selected VERIFICATION accounts around maintenance: backup first, then only the marked
-  lines; never a Slurm job. While CI-PAUSED, ``deploy`` and ``deploy-fleet`` refuse the account
-  (:mod:`~dev_lab.dev.hpcaccount.cimark`).
+  the forge CI cron of the selected VERIFICATION accounts around maintenance: a pause refuses while the account
+  drifts, then removes only the marked lines; never a Slurm job. While CI-PAUSED, ``deploy`` and ``deploy-fleet``
+  refuse the account (:mod:`~dev_lab.dev.hpcaccount.cimark`).
 * ``forget --repo <url> --row <key> (--account <user>... | --fleet) [--dry-run]``
   (:mod:`~dev_lab.dev.hpcaccount.forget`) runs lab-commons' ``learned forget`` of one row on each account.
 * ``retention (--account <user>... | --fleet) [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.storage`) prints each
@@ -53,31 +54,47 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from lab_commons.hpc.retired import refusal as retired_refusal
 from lab_commons.log import emit
 
 __all__ = ['main']
 
 _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
-    '{deploy [...] | deploy-fleet [...] | backup [...] | backup-fleet [...] | ci-pause[-fleet] [...] | '
+    '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | '
     'tick <repo>... | allocate [...]}'
 )
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Dispatch one verb (``tick`` needs a repo); anything else is refused naming the verbs."""
-    from dev_lab.dev.hpcaccount import allocate, backup, cipause, credential, deploy, fleet, forget, storage, tick  # noqa: PLC0415 -- the package imports no verb
+    """Dispatch one verb (``tick`` needs a repo); a retired verb is refused naming its door, else the verbs."""
+    from dev_lab.dev.hpcaccount import (  # noqa: PLC0415 -- the package imports no verb
+        accountset,
+        allocate,
+        cipause,
+        credential,
+        deploy,
+        drift,
+        fleet,
+        forget,
+        storage,
+        tick,
+    )
 
     argv = sys.argv[1:] if argv is None else argv
     verb, rest = (argv[0], argv[1:]) if argv else ('', [])
     verbs = {
-        'backup': backup.main,
-        'backup-fleet': backup.main_fleet,
         'ci-pause': cipause.main_pause,
         'ci-resume': cipause.main_resume,
-        'ci-pause-fleet': lambda rest: backup.main_fleet(rest, verb='ci-pause', ci_only=True),
-        'ci-resume-fleet': lambda rest: backup.main_fleet(rest, verb='ci-resume', ci_only=True),
+        'ci-pause-fleet': lambda rest: accountset.main_fleet(
+            rest, verb='ci-pause', ci_only=True, flags=('--dry-run', '--discard-drift')
+        ),
+        'ci-resume-fleet': lambda rest: accountset.main_fleet(
+            rest, verb='ci-resume', ci_only=True, flags=('--dry-run',), sourced=False
+        ),
+        'drift': drift.main,
+        'drift-fleet': lambda rest: accountset.main_fleet(rest, verb='drift'),
         'credential': credential.main,
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
@@ -90,5 +107,5 @@ def main(argv: list[str] | None = None) -> int:
     if verb == 'tick' and rest:
         probed: dict[str, bool] = {}  # one probe per tool per tick, however many repos it serves
         return max(tick.tick(name, home=Path.home(), probed=probed) for name in rest)
-    emit(_USAGE, err=True)
+    emit(retired_refusal('dev_lab.dev.hpcaccount', verb) or _USAGE, err=True)
     return 2

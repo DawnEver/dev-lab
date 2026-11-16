@@ -74,6 +74,14 @@ account it reads that account's own `[deploy]` host, root and role, then one det
 `deploy`, one log each under
 `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log`. An account outside the grants is refused.
 
+**An account is a render, never a backup** (user ruling 2026-11-16). The config source -- `family.toml`
+(`[hpc.clusters.*]`, `[[hpc.grant]]`) and `hosts/<cluster>-<user>.toml` -- is the one truth; an account's machine
+file and this tool's crontab lines are renders of it, its checkouts are copies of origin, and its results are each
+agent's own. Nothing on an account is backed up. What an account holds that the source cannot render is read with
+`python -m dev_lab.dev.hpcaccount drift-fleet (--cluster <name> | --account <user>)...` (read only; secret-looking
+values print as a hash): fold each item into the config source, or discard it. `ci-pause-fleet` refuses an account
+while it drifts, naming each item; `--discard-drift` accepts the loss (`dev_lab.dev.hpcaccount.drift`).
+
 A learned row no run can supersede (an OOM-inflated `slurm|` peak, say) is forgotten on the accounts that hold it
 with `python -m dev_lab.dev.hpcaccount forget --repo <url> --row "slurm|" (--fleet | --account <user>...) [--dry-run]`:
 through each grant's own login hosts it runs lab-commons' `learned forget` in the account's declared checkout
