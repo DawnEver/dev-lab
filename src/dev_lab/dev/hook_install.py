@@ -52,6 +52,7 @@ from lab_commons.log import emit
 from dev_lab.dev.githooks.table import ADVISORY, hook_table
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
+from dev_lab.dev.venvpointer import shell_function
 
 __all__ = [
     'ABSENT',
@@ -223,13 +224,18 @@ def shim(stage: str, fallback: str | None = None) -> str:
     made silently, and a message or a marker it carried cannot be taken back once pushed.
     """
     recorded = Path(fallback if fallback is not None else sys.executable).as_posix()
-    found = ' '.join(f'"${root}/{"/".join(parts)}"' for root in ('top', 'main') for parts in CANDIDATE_RELATIVE_PATHS)
+    found = ' '.join(
+        f'"$(_current_env "${root}")/{"/".join(parts[1:])}"'
+        for root in ('top', 'main')
+        for parts in CANDIDATE_RELATIVE_PATHS
+    )
     return (
         '#!/bin/sh\n'
         f'{SHIM_MARKER} -- installed by `{INSTALL_COMMAND}`; the hooks are declared in TOML\n'
         '# (dev_lab/dev/githooks/base.toml + [tool.dev_lab.hooks] in pyproject.toml).\n'
         'top=$(git rev-parse --show-toplevel) || exit 1\n'
         'main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")\n'
+        f'{shell_function()}\n'
         f'fallback={_sh_quote(recorded)}\n'
         f'for found in {found} "$fallback"; do\n'
         '  if [ -x "$found" ] && "$found" -c "import dev_lab.dev.githooks" >/dev/null 2>&1; then\n'

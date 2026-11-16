@@ -49,7 +49,7 @@ def served_by(
 ) -> None:
     """:func:`served` over a token OR an App per forge, also refusing a forge named by both or by a bad App.
 
-    An App is ``{app_id, key_file}``; a GitHub token is dropped on read (:mod:`dev_lab.ops.configupgrade`).
+    An App is ``{app_id, key_file}``; a standing GitHub token is refused at load (:mod:`dev_lab.ops.configretired`).
     """
     if twice := sorted(set(tokens) & set(apps)):
         msg = f'{where} forge {", ".join(twice)} names both a token and an app: one identity per forge'

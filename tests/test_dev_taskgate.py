@@ -51,7 +51,7 @@ def _repo(tmp_path: Path, *, required: bool, wired: bool = True) -> Path:
 
 def _bind(root: Path, slug: str = 'toolchain') -> str | None:
     """The USER's prompt binds the session, as the UserPromptSubmit hook does -- the one record the gate reads."""
-    return taskbinding.bind({'session_id': _SESSION, 'prompt': f'task: {slug}'}, root=root)
+    return taskbinding.bind({'session_id': _SESSION, 'prompt': f'task: {slug}'}, start=root)
 
 
 class _Rem:
@@ -215,3 +215,34 @@ def test_an_unwired_binder_admits_the_commit_in_one_line_naming_its_door(
     assert taskgate.RULE in line
     assert 'dev_lab.dev.agent_guard --install' in line
     assert taskgate.refusal(_repo(tmp_path / 'wired', required=True), env=AGENT, branch='pr/toolchain/a') is not None
+
+
+def test_a_task_opened_in_one_worktree_is_bound_journaled_and_admitted_from_another(tmp_path: Path) -> None:
+    """W4: the ledger and the binding are REPO state -- one directory, reached the same way from every worktree.
+
+    PLANTED CONTROLS: an unbound session is still refused from either tree, and a closed task is refused everywhere.
+    """
+    main = _repo(tmp_path, required=True)
+    tree_a, tree_b = tmp_path / 'a', tmp_path / 'b'
+    _git(main, 'worktree', 'add', '-q', '-b', 'pr/toolchain/a', str(tree_a))
+    _git(main, 'worktree', 'add', '-q', '-b', 'pr/toolchain/b', str(tree_b))
+    ledger = taskbinding.ledger(main)
+    assert taskbinding.ledger(tree_a) == taskbinding.ledger(tree_b) == ledger
+    (ledger / 'opened-in-a').mkdir()  # what rem's /rem:task open writes from tree A: the one ledger
+    (ledger / 'opened-in-a' / 'TASK.md').write_text('---\nauthority: a9\nstatus: open\n---\n', encoding='utf-8')
+    other = {SESSION_ENV: 'second-session-0001'}
+    assert taskgate.refusal(tree_b, env=other, branch='pr/opened-in-a/x') is not None
+    payload = {'session_id': other[SESSION_ENV], 'prompt': 'task: opened-in-a', 'cwd': str(tree_b)}
+    assert taskbinding.bind(payload) == 'opened-in-a@a9'
+    assert (ledger / taskbinding.BINDINGS / 'second-session-0001.json').is_file()
+    for tree in (tree_a, tree_b, main):
+        assert taskbinding.session_task(other, start=tree) == 'opened-in-a@a9'
+        assert taskgate.refusal(tree, env=other, branch='pr/opened-in-a/x') is None
+    rem = _Rem()
+    taskgate.record(tree_a, 'pr', 'u', env=other, read=rem)
+    assert rem.calls[-1] == ['log', 'pr opened: u', '--task', 'opened-in-a']
+    assert taskgate.refusal(tree_a, env=AGENT, branch='pr/toolchain/a') is not None, 'an unbound session'
+    task = ledger / 'opened-in-a' / 'TASK.md'
+    task.write_text(task.read_text(encoding='utf-8').replace('open', 'closed'), encoding='utf-8')
+    for tree in (tree_a, tree_b, main):
+        assert 'no longer open' in (taskgate.refusal(tree, env=other, branch='pr/opened-in-a/x') or '')

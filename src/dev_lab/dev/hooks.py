@@ -92,8 +92,9 @@ WHENS: Final = frozenset({'live-run', 'background'})
 #: WHAT A FIRING ROW STILL ADMITS, which only the filesystem can judge. ``'family-sibling-clone'``: a line
 #: that is one clone (after any ``cd``) of a repo into a NEW directory named for it, beside the family's
 #: checkouts, from a forge a sibling checkout already comes from. A closed set, because the engine reads an
-#: unknown admission as none, which narrows the rule rather than widening it.
-ADMITS: Final = frozenset({'family-sibling-clone'})
+#: unknown admission as none, which narrows the rule rather than widening it. ``'file-operands'``: a grep
+#: whose every operand is an existing file reads only those files, whatever its recursion flag says.
+ADMITS: Final = frozenset({'family-sibling-clone', 'file-operands'})
 
 
 class UnremediedRule(RuntimeError):

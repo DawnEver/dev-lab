@@ -99,7 +99,7 @@ from dev_lab.dev.hpcaccount.spec import (
 )
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, update
 
-__all__ = ['deploy', 'main']
+__all__ = ['deploy', 'main', 'slurm_dirs']
 
 
 _which = shutil.which
@@ -241,7 +241,7 @@ def _serve_git(step: Step, home: Path, path: Path, slurm: Sequence[str], setup: 
 SLURM_TOOLS: Final = ('sbatch', 'sacct', 'squeue')
 
 
-def _slurm_dirs() -> list[str] | str:
+def slurm_dirs() -> list[str] | str:
     """The directories ``sbatch``, ``sacct`` and ``squeue`` resolve in NOW; a missing one is refused by name."""
     found = {tool: _which(tool) for tool in SLURM_TOOLS}
     if missing := [tool for tool, where in found.items() if where is None]:
@@ -386,7 +386,7 @@ def deploy(
     if args.remove:
         emit('[cron] removing the marked lines')
         return crontab(step, [])
-    slurm = _slurm_dirs()
+    slurm = slurm_dirs()
     if isinstance(slurm, str):
         emit(f'deploy refused: {slurm}', err=True)
         return 2

@@ -9,7 +9,7 @@ at every stop. So one watcher per machine does the polling, outside any harness:
   (:mod:`dev_lab.dev.sessionprs`, through :func:`dev_lab.dev.sessionpoll.poll_session`), appends each change the
   session has not heard to that session's INBOX (``sessions/<id>.inbox.jsonl`` in the machine home, beside the
   record it caches -- the forge's statuses stay the truth), and writes the BEAT: its pid, the time and every PR
-  key it covered. It exits :data:`YIELDED` when an update of its venv is queued; the next start re-runs it;
+  key it covered. It exits :data:`YIELDED` when a newer environment is published; the next start re-runs it;
 * ``start`` and ``session-start`` (the ``SessionStart`` hook) detach ``run`` through the one launch door unless a
   watcher already runs -- idempotent, pure Python, the same on Windows and Linux;
 * :func:`heard` is what the ``Stop`` gate (:func:`dev_lab.dev.pushstop.unwatched_refusal`) reads: the beat is
@@ -37,7 +37,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import native_session, sessionprs
 from dev_lab.dev.backgroundrun import detach_argv
-from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, update_waits
+from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, env_superseded
 from dev_lab.dev.sessionpoll import poll_session
 
 if TYPE_CHECKING:
@@ -209,7 +209,7 @@ def run(
     clients: Callable[[Forge], Client],
     every_s: float = POLL_S,
     sleep: Callable[[float], None] = time.sleep,
-    yielding: Callable[[], str] = update_waits,
+    yielding: Callable[[], str] = env_superseded,
 ) -> int:
     """Hold the machine lock and poll until the venv is wanted (:data:`YIELDED`); 1 when another watcher runs."""
     with held() as mine:

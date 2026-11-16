@@ -28,6 +28,7 @@ from typing import Any, Final
 
 from lab_commons.outcomes import Status
 
+from dev_lab.dev.venvpointer import current
 from dev_lab.ops.config import INTEGRATION_REF
 from dev_lab.supervise.component import ActionContext
 from dev_lab.supervise.process.base import Ran
@@ -289,7 +290,7 @@ def preflight(
             return PhaseResult(ok=False, detail=f'installing the candidate failed: {built.detail()}')
         if plan.prepare:
             wires = {
-                'python': str(candidate / '.venv' / 'bin' / 'python'),
+                'python': str(current(candidate) / 'bin' / 'python'),
                 'home': str(home),
                 'port': str(port),
                 'candidate': str(candidate),
@@ -301,7 +302,7 @@ def preflight(
             if not wired.ok:
                 return PhaseResult(ok=False, detail=f'wiring the candidate failed: {wired.detail()}')
         command = plan.run.format(
-            python=str(candidate / '.venv' / 'bin' / 'python'),
+            python=str(current(candidate) / 'bin' / 'python'),
             home=str(home),
             port=str(port),
             candidate=str(candidate),

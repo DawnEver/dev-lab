@@ -88,6 +88,8 @@ UNGUARDED: Final = 'unguarded'
 NOTHING_DECLARED: Final = 'nothing-declared'
 
 _LAUNCHER_SHIPPED: Final = Path(__file__).resolve().with_name('agent_launcher.js')
+#: The one environment resolver the launcher and the engine require, installed beside each (dev-lab #641).
+_RESOLVER: Final = 'venv_resolver.js'
 
 
 def launcher_source() -> str:
@@ -326,6 +328,20 @@ def _drifted(settings: dict[str, Any]) -> list[str]:
     return sorted({event for event, _matcher, _hook in (have - want) + (want - have)})
 
 
+def _install_resolver(dirs: set[Path]) -> list[str]:
+    """The ONE environment resolver into each of *dirs*: the launcher and the engine both require it."""
+    shipped = _LAUNCHER_SHIPPED.with_name(_RESOLVER).read_bytes()
+    actions = []
+    for beside in sorted(dirs):
+        resolver = beside / _RESOLVER
+        if resolver.exists() and resolver.read_bytes() == shipped:
+            actions.append(f'environment resolver already present: {resolver}')
+        else:
+            resolver.write_bytes(shipped)
+            actions.append(f'environment resolver installed: {resolver}')
+    return actions
+
+
 def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
     """Install the engine into *repo* and wire it, returning what was DONE, one line per action.
 
@@ -368,6 +384,8 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
     else:
         catalog.write_bytes(catalog_bytes)
         actions.append(f'native session catalog installed: {catalog}')
+
+    actions.extend(_install_resolver({launcher.parent, engine.parent}))
 
     settings_path = repo / SETTINGS_REL
     before: dict[str, Any] = {}

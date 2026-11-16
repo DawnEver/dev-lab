@@ -45,8 +45,9 @@ fifth conditions, which a serve host posts):
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
 * its head's push-row GATES stand ``success`` (:func:`dev_lab.dev.forgeheadgate.gates_wait`: ``session-branch``,
-  ``pr-current``, user ruling 2026-11-07) -- the same judges the pre-push rows call, posted by the forge, so a
-  consumer's stale hook never disarms them; absent, ``error`` or ``failure`` waits;
+  user ruling 2026-11-07) -- the same judge the pre-push row calls, posted by the forge, so a consumer's stale hook
+  never disarms it; absent, ``error`` or ``failure`` waits. ``pr-current`` and ``lock/lag`` are ALARMS, never waited
+  on (W5, dev-lab#644): a stale head is judged by the trial merge below, at merge time;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
@@ -78,6 +79,7 @@ from typing import TYPE_CHECKING, Final
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING
+from dev_lab.dev.forgeheadgate import alarms_said
 from dev_lab.dev.forgemergewaits import hand_note, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgereview_declared import load_review
@@ -216,9 +218,11 @@ def decide(
 
 
 def _notes(root: Path, statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
-    """What the decision says without waiting on it: an undeclared message row, and the hand parts."""
+    """What the decision says without waiting on it: an undeclared message row, the hand parts and the alarms."""
     unjudged = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
-    return (*unjudged, *filter(None, [hand_note(statuses)]))
+    alarmed = alarms_said(statuses)
+    alarm = f'alarms, never a merge condition: {alarmed}' if alarmed else None
+    return (*unjudged, *filter(None, [hand_note(statuses), alarm]))
 
 
 def external(client: Client, pull: PullRequest) -> bool:

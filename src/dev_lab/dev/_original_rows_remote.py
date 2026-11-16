@@ -34,8 +34,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # the lab-commons owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
     'account',
     'allocate',
-    # ORIGINAL: 2026-11-16, an account's crontab and machine file saved before cluster maintenance and restored after.
-    'backup',
+    # ORIGINAL: 2026-11-16, the fleet launcher of drift, ci-pause and ci-resume (the retired backup verb's half).
+    'accountset',
     # ORIGINAL: 2026-11-16, a verification account's CI cron paused and resumed around cluster maintenance.
     'cimark',
     'cipause',
@@ -43,6 +43,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'deploy',
     # ORIGINAL: 2026-11-15, deploy's host check split from it at the module-size band.
     'deployhost',
+    # ORIGINAL: 2026-11-16, what an account holds that its config source cannot render (an account is a render).
+    'drift',
     'division',  # ORIGINAL: the workstation's HPC division as data (user rulings 2026-11-09)
     'fleet',
     'spec',
