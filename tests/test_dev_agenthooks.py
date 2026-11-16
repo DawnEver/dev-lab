@@ -615,3 +615,45 @@ def test_the_consent_row_names_no_home_and_still_refuses_a_write_under_the_real_
         assert verdict.startswith('CONSENT-CODE-FROM-THE-USER:'), spelled
     assert agenthooks.decide(f'cat "{credential.as_posix()}"', rules) is None  # reading stays the read guard's
     assert agenthooks.decide('echo x > state/consentfoo/x.json', rules) is None  # planted near-miss
+
+
+_PY = '.venv/Scripts/python.exe'
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        f'{_PY} -m dev_lab.dev.verify --with-heavy -- tests/test_x.py',
+        f'{_PY} -m dev_lab.dev.forge request tests --sha 0123abc',
+        f'{_PY} scripts/gate/runner.py gate',
+        'python -m lab_commons.hpc run submit --sha 0123abc',
+    ],
+)
+def test_a_subagent_is_refused_heavy_and_producer_requests(rules: Path, command: str) -> None:
+    """HEAVY-IS-THE-MAIN-SESSIONS through the shipped engine: the refusal names the main session as the door."""
+    reason = agenthooks.decide(command, rules, agent_id='a1')
+    assert reason is not None
+    assert reason.startswith('HEAVY-IS-THE-MAIN-SESSIONS:'), reason
+    assert 'Hand the request to the main session' in reason
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        f'{_PY} -m dev_lab.dev.verify -- tests/x.py',
+        f'{_PY} -m dev_lab.dev.verify --lock-wait "40 min" -- tests/test_heavy.py',
+        f'{_PY} -m dev_lab.dev.forge requests',
+        f'{_PY} -m dev_lab.dev.forge queue',
+        'git commit -m "forge request later"',
+    ],
+)
+def test_a_subagent_keeps_its_light_measure_and_near_misses(rules: Path, command: str) -> None:
+    """PLANTED CONTROL: the light measure and look-alikes are admitted to a subagent."""
+    assert agenthooks.decide(command, rules, agent_id='a1') is None
+
+
+def test_the_main_session_keeps_its_producer_request(rules: Path) -> None:
+    """The same request a subagent is refused stays the main session's."""
+    command = f'{_PY} -m dev_lab.dev.forge request tests --sha 0123abc'
+    assert agenthooks.decide(command, rules, agent_id='a1') is not None
+    assert agenthooks.decide(command, rules) is None

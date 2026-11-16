@@ -71,6 +71,7 @@ GAPS: Final[dict[str, str]] = {
     'BACKGROUND-SHELL-IS-BOUNDED': 'a property of a background call, which Codex execpolicy does not see',
     'TRACKED-CITES-NO-EPHEMERAL': 'judged on what the journal line cites against the repo; a prefix reads neither',
     'SUBAGENT-NO-PUSH': 'scoped to subagents; Codex execpolicy has no agent scope',
+    'HEAVY-IS-THE-MAIN-SESSIONS': 'scoped to subagents; Codex execpolicy has no agent scope',
     'CONSENT-CODE-FROM-THE-USER': _TARGET,
     'REPORTS-LIVE-IN-MEMORY': _TARGET,
     'WRITES-STAY-IN-THE-TREE': _TARGET,
