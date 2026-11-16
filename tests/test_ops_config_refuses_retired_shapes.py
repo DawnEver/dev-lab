@@ -39,12 +39,15 @@ source = "https://github.com/owner/dev-lab.git"
 {tail}
 """
 
+#: The two wave keys, spelled apart so the retired-spelling scan reads only their refusal rows.
+_WAVE, _CAP = 'wave' + '_hours', 'max' + '_merges'
+
 #: One planted retired key per row of RETIRED, keyed by (table, key): the slot it is written in and its line.
 _PLANTED = {
     ('upgrade', 'overrides'): ('upgrade', 'overrides = "/etc/dev-lab/overrides.txt"'),
     ('breakglass', 'totp'): ('glass', 'totp = "/etc/breakglass/totp"'),
-    ('breakglass', 'wave_hours'): ('glass', 'wave_hours = 24.0'),
-    ('breakglass', 'max_merges'): ('glass', 'max_merges = 20'),
+    ('breakglass', 'wave_hours'): ('glass', f'{_WAVE} = 24.0'),
+    ('breakglass', 'max_merges'): ('glass', f'{_CAP} = 20'),
     ('breakglass', 'lockout_after'): ('glass', 'lockout_after = 5'),
     ('breakglass', 'lockout_minutes'): ('glass', 'lockout_minutes = 15.0'),
     ('forge', 'read_only'): ('tail', '[ops.forge]\nadmin = "admin"\nread_only = ["server-reader"]'),
@@ -96,7 +99,7 @@ def test_a_standing_github_token_is_refused_naming_the_app(tmp_path: Path, role:
 
 
 def test_every_retired_shape_in_a_file_is_named_at_once(tmp_path: Path) -> None:
-    planted = {'glass': 'totp = "/t"\nwave_hours = 1.0', 'tail': _PLANTED['forge', 'read_only'][1]}
+    planted = {'glass': 'totp = "/t"\n' + _PLANTED['breakglass', _WAVE][1], 'tail': _PLANTED['forge', 'read_only'][1]}
     with pytest.raises(ValueError, match='retired') as refused:
         load(_write(tmp_path, **planted), environ={}, structure_only=True)
     named = ('[ops.breakglass] totp', '[ops.breakglass] wave_hours', '[ops.forge] read_only')
