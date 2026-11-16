@@ -40,6 +40,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'cimark',
     'cipause',
     'checks',
+    # ORIGINAL: 2026-11-16, what a deploy declares (flags, stored [deploy], first write), split at the size band.
+    'declaration',
     'deploy',
     # ORIGINAL: 2026-11-15, deploy's host check split from it at the module-size band.
     'deployhost',
