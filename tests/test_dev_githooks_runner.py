@@ -518,7 +518,10 @@ def test_under_a_borrowed_interpreter_a_judged_stage_is_refused_naming_the_door(
 
 def test_the_running_interpreter_is_borrowed_unless_it_is_the_checkouts_own(repo: Path) -> None:
     assert borrowed_interpreter(repo)
-    assert not borrowed_interpreter(Path(sys.prefix).parent), 'PLANTED CONTROL: a checkout whose .venv runs this'
+    # The checkout these tests run from runs them in its own environment, `.venv` or a published `.venvs/<id>`: the
+    # interpreter's parent is the checkout only in the first layout, so the control names the checkout, not the prefix.
+    checkout = Path(__file__).resolve().parents[1]
+    assert not borrowed_interpreter(checkout), 'PLANTED CONTROL: the checkout whose own environment runs this'
 
 
 @pytest.mark.parametrize(
