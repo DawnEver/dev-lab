@@ -17,10 +17,11 @@ import pytest
 
 from dev_lab.dev import walls
 from dev_lab.dev.githooks import main as githooks_main
+from dev_lab.dev.githooks import runner
 from dev_lab.dev.githooks.runner import (
-    FOREIGN_INTERPRETER_ENV,
     PUSH_URL_ENV,
     ZERO_SHA,
+    borrowed_interpreter,
     parse_push_lines,
     resolve,
     run_stage,
@@ -270,6 +271,7 @@ def test_push_lines_are_git_s_four_fields_and_a_deletion_is_recognised() -> None
 def test_the_run_verb_runs_the_real_base_over_a_real_staged_file(repo: Path, monkeypatch) -> None:
     """End to end through the CLI: the base's trailing-whitespace check refuses, then passes."""
     monkeypatch.chdir(repo)
+    monkeypatch.setattr(runner, 'borrowed_interpreter', lambda _root: False)  # it stands for a checkout's own venv
     (repo / 'notes.txt').write_text('trailing \n', encoding='utf-8')
     _git(repo, 'add', 'notes.txt')
     assert githooks_main(['run', 'pre-commit']) == 1
@@ -450,24 +452,62 @@ def test_a_pushed_merge_hands_a_pre_push_hook_only_its_own_and_the_lanes_paths(r
     assert sorted(seen.calls[0][0][1:]) == ['both.py', 'mine.py']
 
 
-def test_under_a_foreign_interpreter_a_bootstrapping_row_runs_and_names_the_door(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_under_a_borrowed_interpreter_a_bootstrapping_row_runs_and_names_the_door(
+    repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """2026-11-13: a new worktree had no venv, every row skipped, and the venv never came.
 
-    PLANTED control: beside it a repo-venv row is still skipped.
+    PLANTED control: beside it a row needing the checkout's own venv does not run on the borrowed one.
     """
-    monkeypatch.setenv(FOREIGN_INTERPRETER_ENV, '1')
     seen = _Recorder()
     follow = Hook(
         stage='post-checkout', id='venv-follows-lock', run=('python', '-m', 'x'), always_run=True, bootstraps=True
     )
     other = Hook(stage='post-checkout', id='reclaim', run=('python', '-m', 'y'), always_run=True)
-    assert run_stage('post-checkout', root=repo, hooks=(follow, other), runner=seen) == 0
+    assert run_stage('post-checkout', root=repo, hooks=(follow, other), runner=seen, borrowed=True) == 0
     assert [argv[-1] for argv, _ in seen.calls] == ['x']
     said = capsys.readouterr().err
     assert 'this checkout has no venv -- venv-follows-lock bootstraps it' in said
     assert f'-m dev_lab.dev.dep --bootstrap {repo.as_posix()}' in said
+
+
+def test_under_a_borrowed_interpreter_a_judged_stage_is_refused_naming_the_door(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """dev-lab #639: no venv of its own (or a half one) is a refusal with its door, never a silent skip."""
+    seen = _Recorder()
+    row = Hook(stage='pre-commit', id='task-bound', run=('python', '-m', 'x'), always_run=True)
+    assert run_stage('pre-commit', root=repo, hooks=(row,), runner=seen, borrowed=True) == 1
+    assert seen.calls == []
+    said = capsys.readouterr().err
+    assert 'refused' in said
+    assert f'-m dev_lab.dev.dep --bootstrap {repo.as_posix()}' in said
+    assert run_stage('pre-commit', root=repo, hooks=(row,), runner=seen) == 0, 'PLANTED CONTROL: its own venv runs it'
+    assert len(seen.calls) == 1
+
+
+def test_the_running_interpreter_is_borrowed_unless_it_is_the_checkouts_own(repo: Path) -> None:
+    assert borrowed_interpreter(repo)
+    assert not borrowed_interpreter(Path(sys.prefix).parent), 'PLANTED CONTROL: a checkout whose .venv runs this'
+
+
+@pytest.mark.parametrize(
+    ('stage', 'row'),
+    [
+        ('pre-commit', 'task-bound'),
+        ('commit-msg', 'merge-audit'),
+        ('commit-msg', 'merge-resolution'),
+        ('commit-msg', 'memory-adds'),
+    ],
+)
+def test_every_named_base_row_actually_runs(repo: Path, stage: str, row: str) -> None:
+    """dev-lab #639: a filter on ``python -m lab_commons`` skipped every one of these since the rename."""
+    seen = _Recorder()
+    args = ['.git/COMMIT_EDITMSG'] if stage == 'commit-msg' else []
+    run_stage(stage, args, root=repo, runner=seen)
+    ran = {' '.join(argv) for argv, _ in seen.calls}
+    [hook] = [hook for hook in hook_table(repo)[stage] if hook.id == row]
+    assert any(' '.join(hook.run[1:]) in line for line in ran), (row, ran)
 
 
 def test_the_base_venv_follow_rows_bootstrap_a_checkout_with_no_venv() -> None:

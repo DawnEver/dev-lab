@@ -49,7 +49,6 @@ from typing import IO, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.githooks.runner import FOREIGN_INTERPRETER_ENV
 from dev_lab.dev.githooks.table import ADVISORY, hook_table
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
@@ -215,30 +214,26 @@ def _sh_quote(text: str) -> str:
 def shim(stage: str, fallback: str | None = None) -> str:
     """The ``.git/hooks/<stage>`` file: this checkout's venv, else the main checkout's, else a family one, else REFUSE.
 
-    A linked worktree with no venv of its own runs its hooks on the MAIN checkout's venv; failing that, on
-    *fallback* (default: the interpreter running the install, recorded in the file) when it can import
-    lab_commons. Either runs only the rows that need nothing of this tree's own environment. With no interpreter
+    Every candidate is PROBED (``import dev_lab.dev.githooks``), its own venv included: a half-built venv is
+    passed over, never exec'd into a ``No module named``. A borrowed interpreter (the MAIN checkout's venv, else
+    *fallback*: the interpreter running the install, recorded in the file) runs the stage, and the runner
+    (:func:`dev_lab.dev.githooks.runner.borrowed_interpreter`) refuses a judged stage there naming the bootstrap
+    door, running only the rows that create the venv at an advisory one (dev-lab #639). With no interpreter
     anywhere the commit or push is REFUSED naming the bootstrap and install doors: a commit no hook judged was
     made silently, and a message or a marker it carried cannot be taken back once pushed.
     """
-    candidates = ' '.join('/'.join(parts) for parts in CANDIDATE_RELATIVE_PATHS)
     recorded = Path(fallback if fallback is not None else sys.executable).as_posix()
-    mains = ' '.join(f'"$main/{"/".join(parts)}"' for parts in CANDIDATE_RELATIVE_PATHS)
+    found = ' '.join(f'"${root}/{"/".join(parts)}"' for root in ('top', 'main') for parts in CANDIDATE_RELATIVE_PATHS)
     return (
         '#!/bin/sh\n'
         f'{SHIM_MARKER} -- installed by `{INSTALL_COMMAND}`; the hooks are declared in TOML\n'
         '# (dev_lab/dev/githooks/base.toml + [tool.dev_lab.hooks] in pyproject.toml).\n'
         'top=$(git rev-parse --show-toplevel) || exit 1\n'
-        f'for rel in {candidates}; do\n'
-        '  if [ -x "$top/$rel" ]; then\n'
-        f'    exec "$top/$rel" -m dev_lab.dev.githooks run {stage} "$@"\n'
-        '  fi\n'
-        'done\n'
         'main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")\n'
         f'fallback={_sh_quote(recorded)}\n'
-        f'for found in {mains} "$fallback"; do\n'
+        f'for found in {found} "$fallback"; do\n'
         '  if [ -x "$found" ] && "$found" -c "import dev_lab.dev.githooks" >/dev/null 2>&1; then\n'
-        f'    {FOREIGN_INTERPRETER_ENV}=1 exec "$found" -m dev_lab.dev.githooks run {stage} "$@"\n'
+        f'    exec "$found" -m dev_lab.dev.githooks run {stage} "$@"\n'
         '  fi\n'
         'done\n'
         f'{_no_interpreter(stage)}'
@@ -255,13 +250,14 @@ def _no_interpreter(stage: str) -> str:
     """The shim's last lines when nothing could run *stage*: a judged stage is refused; each says the door."""
     if stage in ADVISORY:
         return (
-            f'echo "[githooks] {stage}: no venv in $top or $main, no lab_commons interpreter; nothing ran. This'
-            f' checkout needs its own venv: {_BOOTSTRAP}, then {INSTALL_COMMAND}." >&2\n'
+            f'echo "[githooks] {stage}: no venv in $top or $main, no interpreter that imports dev_lab; nothing ran.'
+            f' This checkout needs its own venv: {_BOOTSTRAP}, then {INSTALL_COMMAND}." >&2\n'
             'exit 0\n'
         )
     return (
-        f'echo "[githooks] {stage}: no venv in $top or $main, no lab_commons interpreter; refused -- no hook would'
-        f' judge it. Bootstrap the venv ({_BOOTSTRAP}), install the hooks ({INSTALL_COMMAND}), then try again." >&2\n'
+        f'echo "[githooks] {stage}: no venv in $top or $main, no interpreter that imports dev_lab; refused --'
+        f' no hook would judge it. Bootstrap the venv ({_BOOTSTRAP}), install the hooks ({INSTALL_COMMAND}),'
+        ' then try again." >&2\n'
         'exit 1\n'
     )
 

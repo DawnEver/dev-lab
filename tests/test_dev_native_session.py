@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 from _forge_state import FORGE
 
-from dev_lab.dev import sessionprs, taskbinding, taskgate, walls
+from dev_lab.dev import agent_wiring, sessionprs, taskbinding, taskgate, walls
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -112,6 +112,9 @@ def test_the_same_pr_door_does_not_invent_an_agent_for_an_ordinary_process() -> 
 
 def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
+    binder = {'hooks': {'UserPromptSubmit': [{'hooks': [{'command': agent_wiring.TASKBIND_COMMAND}]}]}}
+    (tmp_path / '.claude').mkdir()
+    (tmp_path / agent_wiring.SETTINGS_REL).write_text(json.dumps(binder), encoding='utf-8')  # a wired session
     refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a')
     assert refusal is not None
     assert taskgate.RULE in refusal

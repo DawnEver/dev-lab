@@ -266,13 +266,28 @@ def _install_with(repo: Path, fallback: str) -> None:
 _REPO_ROW = '[[tool.dev_lab.hooks.commit-msg]]\nid = "repo-only"\nrun = ["python", "-m", "no_such_repo_module"]\n'
 
 
-def test_no_venv_commits_through_the_recorded_interpreter_and_skips_repo_rows(repo: Path) -> None:
-    """A row needing the repo's own env would fail here; under the recorded interpreter it is skipped."""
+def test_a_venv_less_commit_is_refused_naming_the_bootstrap_door(repo: Path) -> None:
+    """dev-lab #639: under the recorded interpreter every row was skipped -- a commit no hook judged. Now refused."""
     (repo / 'pyproject.toml').write_text(_REPO_ROW, encoding='utf-8')
     _install_with(repo, sys.executable)
     done = _commit(repo)
-    assert done.returncode == 0, done.stderr
+    assert done.returncode != 0, done.stderr
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr
     assert 'no_such_repo_module' not in done.stderr
+
+
+def test_a_half_built_venv_is_passed_over_and_the_commit_refused_naming_the_door(repo: Path) -> None:
+    """A venv whose interpreter exists but cannot import dev_lab is not exec'd into a bare ``No module named``."""
+    venv = repo / '.venv' / 'bin'
+    venv.mkdir(parents=True)
+    fake = venv / 'python'
+    fake.write_text('#!/bin/sh\necho "No module named dev_lab" >&2\nexit 1\n', encoding='utf-8', newline='\n')
+    fake.chmod(0o755)
+    _install_with(repo, sys.executable)
+    done = _commit(repo)
+    assert done.returncode != 0
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr
+    assert 'No module named' not in done.stderr
 
 
 def test_no_interpreter_anywhere_refuses_the_commit_in_one_line(repo: Path, tmp_path: Path) -> None:
@@ -281,7 +296,7 @@ def test_no_interpreter_anywhere_refuses_the_commit_in_one_line(repo: Path, tmp_
     assert done.returncode != 0
     lines = [line for line in done.stderr.splitlines() if '[githooks]' in line]
     assert len(lines) == 1  # pre-commit refuses; commit-msg never runs
-    assert 'no lab_commons interpreter; refused' in lines[0]
+    assert 'no interpreter that imports dev_lab; refused' in lines[0]
 
 
 def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path) -> None:
@@ -289,7 +304,9 @@ def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path)
     venv = repo / '.venv' / 'bin'
     venv.mkdir(parents=True)
     fake = venv / 'python'
-    fake.write_text('#!/bin/sh\necho venv-ran >&2\nexit 1\n', encoding='utf-8', newline='\n')
+    fake.write_text(
+        '#!/bin/sh\n[ "$1" = -c ] && exit 0\necho venv-ran >&2\nexit 1\n', encoding='utf-8', newline='\n'
+    )  # the import probe passes
     fake.chmod(0o755)
     _install_with(repo, sys.executable)
     done = _commit(repo)

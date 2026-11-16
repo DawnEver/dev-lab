@@ -11,6 +11,12 @@ a worktree directory or a branch name. A bound session commits and pushes on its
 tip); a ``pr/`` branch not under its own task (another task's, the bare ``pr/<slug>``, a flat ``pr/<feature>``) is
 refused naming the bound task. An unbound session is refused naming the door: the user's ``task: <slug>`` prompt.
 
+ONLY A WIRED SESSION CAN BE UNBOUND (a consumer report, 2026-11-16): the binding is written by the
+``UserPromptSubmit`` binder (:data:`dev_lab.dev.agent_wiring.TASKBIND_COMMAND`). Where the repo's settings do not
+wire it, or the binding store cannot be reached, no prompt could ever bind the session, so refusing it refused
+every commit with a door that cannot open. That gap is reported as ONE line naming its own door (the guard
+install that wires the binder), and the commit is admitted; a wired session with no binding is still refused.
+
 rem owns the task ledger (TASK.md, JOURNAL.md); this module appends to it and reads it only through rem's own CLI,
 found at :data:`REM_ENV` (a path to ``task.js``), else in Claude Code's installed-plugins record.
 
@@ -37,6 +43,8 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import taskbinding
+from dev_lab.dev.agent_wiring import LAUNCHER_REL, SETTINGS_REL
+from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.native_session import session_of
 from dev_lab.dev.taskbinding import head_for, slug_of
@@ -47,6 +55,7 @@ __all__ = [
     'RULE',
     'Reader',
     'TaskUnreadable',
+    'binding_gap',
     'main',
     'reader_for',
     'record',
@@ -67,6 +76,10 @@ _OPENED: Final = re.compile(r'(?:pr|issue) opened: (\S+)')
 _PULL: Final = re.compile(r'/pulls?/(\d+)\b')
 _NODE: Final = shutil.which('node') or 'node'
 _GIT: Final = shutil.which('git') or 'git'
+#: The text marking the binder hook in a settings file, and the settings files Claude Code reads in a checkout.
+_BINDER: Final = 'dev_lab.dev.taskbinding bind'
+_SETTINGS: Final = (SETTINGS_REL, '.claude/settings.local.json')
+_WIRE_DOOR: Final = f'node {LAUNCHER_REL} -m dev_lab.dev.agent_guard --install'
 
 #: ``read(root, args) -> (exit status, stdout)``: one call of rem's task CLI in *root*.
 Reader = Callable[[Path, Sequence[str]], tuple[int, str]]
@@ -131,6 +144,33 @@ def _branch(root: Path) -> str:
     return done.stdout.strip() if done.returncode == 0 else ''
 
 
+def _binder_wired(root: Path) -> bool:
+    """Whether a settings file of *root* runs the binder on ``UserPromptSubmit``."""
+    for rel in _SETTINGS:
+        try:
+            hooks = json.loads((root / rel).read_text(encoding='utf-8')).get('hooks') or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        entries = hooks.get('UserPromptSubmit') if isinstance(hooks, dict) else None
+        if _BINDER in json.dumps(entries or []):
+            return True
+    return False
+
+
+def binding_gap(root: Path, home: Path | None = None) -> str | None:
+    """Why no prompt could bind a session in *root* -- the binder unwired, or its store unreachable -- else ``None``."""
+    if not _binder_wired(root):
+        return (
+            f'{RULE}: not judged -- {root.as_posix()} does not wire the task binder ({_BINDER}) on UserPromptSubmit, '
+            f'so no prompt can bind this session. Door: {_WIRE_DOOR}'
+        )
+    try:
+        state_dir(home)
+    except (OSError, ValueError) as unreachable:
+        return f'{RULE}: not judged -- the task binding store is unreachable ({unreachable}). Door: {_WIRE_DOOR}'
+    return None
+
+
 def _unbound(root: Path, env: Mapping[str, str], home: Path | None) -> tuple[str | None, str | None]:
     """``(open bound task id, None)``, or ``(None, why)`` -- no session, an unreadable one, none bound, or closed."""
     try:
@@ -165,6 +205,9 @@ def refusal(root: Path, *, env: Mapping[str, str], home: Path | None = None, bra
     except ValueError as unread:
         return f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}'
     if not judged:
+        return None
+    if (gap := binding_gap(root, home)) is not None:
+        emit(gap, err=True)
         return None
     task, why = _unbound(root, env, home)
     if task is None:
