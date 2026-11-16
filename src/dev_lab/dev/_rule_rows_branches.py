@@ -118,13 +118,12 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'PR-HEAD-IS-CURRENT',
         (
             '`forge pr ready` refuses a `pr/*` head whose tip lacks a first-parent landing of `origin/<integration>` '
-            '(fetched afresh) older than the one TIME window `locklag.LAG_WINDOW` (a fetch that fails refuses with '
-            'its reason), or whose lock pins a floated sibling past the one lag window `lock/lag` reads '
-            '(`locklag.within_window`), or with uncommitted tracked changes. A push creating or updating a `pr/*` '
-            'branch is WARNED at pre-push on the same judgement and when the pushing venv does not hold what that '
-            'lock pins (`prcurrent.kit_stale`, naming the bootstrap door) -- a warning, because the forge`s '
-            '`pr-current` is an alarm and never a merge gate (dev-lab #661). Each names `forge sync`, which merges '
-            'integration and relocks the floated siblings in one sync (user ruling 2026-11-07; `prcurrent`).'
+            '(fetched afresh) older than the TIME window `locklag.LAG_WINDOW` (a failed fetch refuses with its '
+            'reason), whose lock pins a floated sibling past the lag window `lock/lag` reads '
+            '(`locklag.within_window`), or with uncommitted tracked changes. A `pr/*` push is WARNED at pre-push on '
+            'the same judgement and when the pushing venv lacks what that lock pins (`prcurrent.kit_stale`, naming '
+            'the bootstrap door): the forge status `pr-current` is an alarm, never a merge gate (dev-lab #661). Each '
+            'names `forge sync`, which merges integration and relocks the floated siblings (user ruling 2026-11-07).'
         ),
         ('tests/test_dev_prcurrent.py', 'tests/test_dev_branchflow.py', 'tests/test_dev_forgedraft.py'),
     ),

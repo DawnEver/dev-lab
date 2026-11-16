@@ -23,7 +23,6 @@ there. The code is read off the finder's loader when it can give it, else compil
 
 from __future__ import annotations
 
-import builtins
 import contextlib
 import importlib.util
 import io
@@ -32,8 +31,12 @@ import sys
 import traceback
 import types
 from collections.abc import Iterator, Mapping
+from importlib.abc import InspectLoader
 from importlib.machinery import ModuleSpec, SourceFileLoader
 from pathlib import Path
+from typing import override
+
+from lab_commons.log import emit
 
 __all__ = ['run']
 
@@ -68,20 +71,42 @@ def _main_spec(module: str) -> ModuleSpec:
     return _main_spec(f'{module}.__main__') if spec.submodule_search_locations is not None else spec
 
 
+class _Compiled(InspectLoader):
+    """A loader holding one code object, so the stdlib's ``exec_module`` runs it in a module's own namespace."""
+
+    def __init__(self, code: types.CodeType) -> None:
+        self._code = code
+
+    @override
+    def get_code(self, fullname: str) -> types.CodeType:
+        return self._code
+
+    @override
+    def get_source(self, fullname: str) -> None:
+        return None
+
+
+def _code(spec: ModuleSpec) -> types.CodeType | None:
+    """The code ``python -m`` would run: the finder's loader's when it can give it, else compiled from the source."""
+    loader = spec.loader
+    if isinstance(loader, InspectLoader):
+        return loader.get_code(spec.name)
+    return SourceFileLoader(spec.name, str(spec.origin)).get_code(spec.name)
+
+
 def _run_as_main(module: str) -> None:
     """Execute *module* as ``__main__``, the way ``python -m`` does, with ``sys.modules['__main__']`` its namespace."""
     spec = _main_spec(module)
-    loader = spec.loader
-    get_code = getattr(loader, 'get_code', None)
-    code = get_code(spec.name) if get_code else SourceFileLoader(spec.name, str(spec.origin)).get_code(spec.name)
+    code = _code(spec)
+    if code is None:
+        msg = f'No code object available for {spec.name}'
+        raise ImportError(msg, name=spec.name)
     main = types.ModuleType('__main__')
-    main.__dict__.update(
-        __file__=spec.origin, __spec__=spec, __loader__=loader, __package__=spec.parent, __builtins__=builtins
-    )
+    main.__file__, main.__spec__, main.__loader__, main.__package__ = spec.origin, spec, spec.loader, spec.parent
     saved = sys.modules.get('__main__')
     sys.modules['__main__'], sys.argv[0] = main, str(spec.origin)
     try:
-        exec(code, main.__dict__)  # noqa: S102 -- the row's own module, exactly what `python -m` would execute
+        _Compiled(code).exec_module(main)
     finally:
         if saved is not None:
             sys.modules['__main__'] = saved
@@ -94,7 +119,7 @@ def _exit_code(module: str) -> int:
     except SystemExit as stop:
         if stop.code is None or isinstance(stop.code, int):
             return stop.code or 0
-        sys.stderr.write(f'{stop.code}\n')
+        emit(stop.code, err=True)
         return 1
     except Exception:  # noqa: BLE001 -- an uncaught exception is the interpreter's exit 1, with its traceback
         traceback.print_exc()

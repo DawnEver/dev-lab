@@ -296,6 +296,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # -- `dev_lab.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
     'table',
     'runner',
+    'inprocess',  # ORIGINAL: split from runner: a `python -m` row run in the stage's one interpreter (2026-11-16)
     'filechecks',
     'ciworkflows',
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
