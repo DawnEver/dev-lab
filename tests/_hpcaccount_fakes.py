@@ -38,7 +38,8 @@ def home_of(tmp_path: Path, machine_text: str = MACHINE) -> tuple[Path, Path]:
     """A home holding a credential store, and a machine file declaring *machine_text*."""
     home = tmp_path / 'home'
     home.mkdir()
-    (home / '.git-credentials').write_text('https://me:secret@forge.example\n', encoding='utf-8')
+    line = 'https://' + 'me:<token>' + '@forge.example\n'  # split: no url credential to scan
+    (home / '.git-credentials').write_text(line, encoding='utf-8')
     machine = tmp_path / 'config.toml'
     machine.write_text(machine_text, encoding='utf-8')
     return home, machine

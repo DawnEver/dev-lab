@@ -29,6 +29,7 @@ the trunk, on the integration branch and on a detached HEAD, where a sync has no
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -39,7 +40,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import datadeps
+from dev_lab.dev import datadeps, taskgate
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.labsession import trailers
 from dev_lab.dev.lanepolicy import Policy, load_policy
@@ -302,6 +303,16 @@ def _render(found: Plan) -> list[str]:
     return lines
 
 
+def task_refusal(root: Path) -> str | None:
+    """Why the task gate would refuse this session's commits in *root*, else ``None``.
+
+    :func:`dev_lab.dev.taskgate.refusal` decides it. A sync commits its merge and its relock, so it asks first: refused,
+    nothing is fetched, merged or relocked. In a consumer repo (2026-11-16) the relock commit used to be refused after
+    the tree had been rewritten, naming no door.
+    """
+    return taskgate.refusal(root, env=os.environ)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -317,6 +328,9 @@ def main(
     group.add_argument('--list', action='store_true', help="print this branch's upstream set and exit")
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
+    if not (args.watch or args.unwatch or args.list) and (why := task_refusal(root)):
+        emit(f'[sync] refused before merging: {why}', err=True)
+        return 2
     policy = load_policy(root)
     try:
         branch = _current(root, policy)

@@ -321,6 +321,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',
+    'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrolment (2026-11-16)
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
     'metrics',
