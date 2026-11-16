@@ -76,6 +76,7 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
+from dev_lab.dev.hpcaccount.cimark import paused_refusal
 from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
 from dev_lab.dev.hpcaccount.spec import (
@@ -367,7 +368,7 @@ def deploy(
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
     args = _parser().parse_args(list(argv))
     path = args.config or config_path()
-    spec = _resolve(args, path)
+    spec = paused_refusal(home) or _resolve(args, path)  # CI-PAUSED: only ci-resume-fleet brings the cron back
     semantics = (
         {} if isinstance(spec, str) or args.remove else account_role(spec.role, args.fleet_role, args.role_table)
     )
@@ -385,7 +386,6 @@ def deploy(
     if args.remove:
         emit('[cron] removing the marked lines')
         return crontab(step, [])
-    check = api or auth_check
     slurm = _slurm_dirs()
     if isinstance(slurm, str):
         emit(f'deploy refused: {slurm}', err=True)
@@ -394,7 +394,7 @@ def deploy(
     setup: list[str] = []  # the grant's setup lines: every tick runs inside them
     artefacts = '[artefacts] the rclone remote, where a repo declares one'
     phases = (
-        lambda: credentials(step, spec, home, check, serves=serves),
+        lambda: credentials(step, spec, home, api or auth_check, serves=serves),
         lambda: reader(spec, home, role or role_of, semantics=semantics),
         lambda: grant(step, path, args.grant_table),
         lambda: _declare(step, spec, path),

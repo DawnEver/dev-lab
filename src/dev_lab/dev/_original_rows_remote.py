@@ -34,6 +34,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # the lab-commons owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
     'account',
     'allocate',
+    # ORIGINAL: 2026-11-16, an account's crontab and machine file saved before cluster maintenance and restored after.
+    'backup',
+    # ORIGINAL: 2026-11-16, a verification account's CI cron paused and resumed around cluster maintenance.
+    'cimark',
+    'cipause',
     'checks',
     'deploy',
     # ORIGINAL: 2026-11-15, deploy's host check split from it at the module-size band.
