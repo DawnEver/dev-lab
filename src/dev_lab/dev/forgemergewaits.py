@@ -3,7 +3,10 @@
 Split out of :mod:`dev_lab.dev.forgemerge` (the merge DECISION), which asks :func:`status_waits` once per head.
 A repo declaring ``[tool.dev_lab.integrator] merge_checks`` waits on those checks (:func:`checks_wait`);
 otherwise on the serve-posted ones -- ``tests/security``, the head gates, and every HOSTED test part standing
-PASS (:func:`parts_wait`). A hand part (:func:`hand_parts`, user ruling 2026-11-10) is named, never waited on.
+PASS (:func:`parts_wait`). A hand part (:func:`hand_parts`, user ruling 2026-11-10) is named, never waited on;
+nor is a part released under a class that is not the code's (:func:`requeued_parts`, W5 dev-lab#644): no part
+posted, no grant had room, a QOS refusal is the environment's or the schedule's, requeued
+(:mod:`dev_lab.dev.requeue`), never the author's wait.
 """
 
 from __future__ import annotations
@@ -18,12 +21,22 @@ from dev_lab.dev.forgeheadgate import gates_wait
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import derived, part_context, parts_of, standing
+from dev_lab.dev.producer import Owner, owner_of
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['RED', 'checks_wait', 'hand_note', 'hand_parts', 'parts_wait', 'red_checks', 'status_waits']
+__all__ = [
+    'RED',
+    'checks_wait',
+    'hand_note',
+    'hand_parts',
+    'parts_wait',
+    'red_checks',
+    'requeued_parts',
+    'status_waits',
+]
 
 #: The terminal red states of a status, on both forges: the check FAILED, it is not waiting.
 RED: Final = frozenset({'failure', 'error'})
@@ -37,6 +50,16 @@ def hand_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
     """
     parts, _ = parts_of(statuses)
     return frozenset(name for name in {*derived(statuses), *parts} if row_part(name) != BASE)
+
+
+def requeued_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
+    """The parts whose latest ``tests/<part>`` stands ``error`` under an owner class other than :attr:`Owner.CODE`."""
+    latest = {status.context: status for status in statuses}
+    return frozenset(
+        context.removeprefix(part_context(''))
+        for context, status in latest.items()
+        if context.startswith(part_context('')) and owner_of(status.state, status.description) not in {None, Owner.CODE}
+    )
 
 
 def hand_note(statuses: Sequence[CommitStatus]) -> str | None:
@@ -66,7 +89,7 @@ def parts_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
     Every hand part (:func:`hand_parts`) is waived -- an unproduced one and a secrets-hosted one (produced only on a
     full run, never for a pull request) among them.
     """
-    parts = standing(statuses, head=head, waived=hand_parts(statuses))
+    parts = standing(statuses, head=head, waived=hand_parts(statuses) | requeued_parts(statuses))
     if parts.result is Conclusion.PASS:
         return None
     return '; '.join([f'they stand {parts.reading}', *parts.problems])
@@ -109,7 +132,7 @@ def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus]) ->
 
 
 def red_checks(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
-    """The contexts in *statuses* standing terminal red (``failure``/``error``), every hand part excluded."""
-    hands = {part_context(name) for name in hand_parts(statuses)}
+    """The contexts in *statuses* standing terminal red (``failure``/``error``), hand and requeued parts excluded."""
+    hands = {part_context(name) for name in hand_parts(statuses) | requeued_parts(statuses)}
     latest = {status.context: status for status in statuses}
     return tuple(c for c, s in latest.items() if s.state in RED and c not in hands)

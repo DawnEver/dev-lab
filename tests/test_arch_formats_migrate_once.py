@@ -36,7 +36,6 @@ MARKER: Final = 'OLD-SHAPE-READER'
 #: Each marked module -> why its migration is still owed. Delete a row in the change that migrates and
 #: deletes the reader; never add one to dodge the table check (a table is red whatever this says).
 _OWED: Final[dict[str, str]] = {
-    'dev_lab/ops/configupgrade.py': 'live [ops] files on the ops hosts: needs a `config migrate` run on each host',
     'dev_lab/ops/wave.py': 'wave files under each ops host state dir written before `summarized`',
     'dev_lab/dev/forgestatus.py': 'forge statuses posted under the retired carry wording, readable on old shas',
 }

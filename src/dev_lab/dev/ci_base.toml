@@ -24,7 +24,7 @@
 #   security      `forge security run --pr N`: tests/security
 #   head-gates    `forge headgate run --pr N`: session-branch, pr-current, lock/lag -- the pre-push rows'
 #                 own judges, posted by the forge (user ruling 2026-11-07: a family check never depends on a
-#                 consumer's hook); merge-ready requires session-branch and pr-current. Gitea's serve tick posts them
+#                 consumer's hook); merge-ready requires session-branch (pr-current and lock/lag alarm). Gitea's serve tick posts them
 #   merge-ready   after the parts, in THIS workflow (no cross-workflow trigger): `forge merge ready --pr N` posts
 #                 tests/merge-ready and, when it is success, merges that head into integrate/main itself
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the

@@ -106,6 +106,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   Edit/Write (its ``hook``) and, through the deny engine's ``when: 'live-run'`` row, merges, checkouts and
   environment syncs; ``dep`` refuses a venv any live process executes from. ``output/``, ``.claude/`` and
   ``.venv/`` are not the tree.
+* :mod:`dev_lab.dev.codexdeny` - the deny registry rendered for Codex as ``prefix_rule`` forbids: a row
+  renders where its refused shapes share an argv prefix no near-miss or door starts with; every other
+  refusing row is a declared GAP with its reason. Written by ``autodoors --write``.
 * :mod:`dev_lab.dev.checkout` — SHARED-CHECKOUT, which both siblings declared absent on the
   grounds that the push obligation "is a fact about origin, not about any file in this checkout".
   The premise is true and the conclusion was wrong: git answers "what is here that origin does not
@@ -208,8 +211,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   system, and this machine's platform.
 * :mod:`dev_lab.dev.partrefs` -- the refs a part is produced under, per resource and scope
   (``[tool.dev_lab.parts.refs.<resource>]``), read by the schedule.
+* :mod:`dev_lab.dev.requeue` -- one retry policy per owner class: whether a released part is claimed again.
 * :mod:`dev_lab.dev.producer` -- the producer exit contract: what a part producer's exit code
-  means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE), one source.
+  means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE, PART_REFUSED), one source.
 * :mod:`dev_lab.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
   STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a
   mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the
@@ -557,6 +561,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.prwatcher` -- SESSION-HEARS-ITS-PRS: one machine watcher, per-session inboxes, the Stop gate's beat.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
+* :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrolment door, ``[bridge]``.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
 * :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.
 * :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.
@@ -589,7 +594,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgelabel` -- `forge label create`: one repository label through the door, idempotent by name.
 * :mod:`dev_lab.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`dev_lab.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.
-* :mod:`dev_lab.dev.venvpointer` -- which environment a new launch takes: the one reader of ``.venv-current``.
+* :mod:`dev_lab.dev.venvpointer` -- which environment a new launch takes: the twin of ``venv_resolver.js``.
 * :mod:`dev_lab.dev.venvcurrent` -- an environment is built beside, published by pointer, reclaimed when unheld.
 * :mod:`dev_lab.dev.durations` -- what every test COST, as a ledger the runner merges rather than
   overwrites, and the two readings a ``slow`` marker set is judged by. The wall's own kills arrive

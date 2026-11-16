@@ -27,6 +27,8 @@ WHAT IS NOT A RUN, each decided by evidence:
 * A process younger than :data:`RUN_FLOOR_S`. Claude Code starts every matching hook of a tool call at
   once, each through the checkout's own interpreter; a hook lives for well under a second, a run for
   minutes. A run started within the floor is caught by the next tool call.
+* A process git started, and its descendants: a hook of a git command, which ends with that command.
+  Measured 2026-11-16: another session's commit hook, a python older than the floor, refused a merge.
 * A multiprocessing worker whose parent is gone (:data:`SPAWN_WORKER`). It serves its parent through a pipe,
   so without the parent it can never advance; it only holds the cwd it inherited. Measured 2026-10-24: two
   day-old spawn workers of a dead pid sat in a downstream worktree and refused every mutation there.
@@ -87,6 +89,9 @@ _INTERPRETER: Final = re.compile(r'^python[\w.]*(?:\.exe)?$', re.IGNORECASE)
 
 #: A Git Bash spelling of a drive path, ``/<drive>/x`` -> ``<drive>:/x``.
 _DRIVE: Final = re.compile(r'^/([a-zA-Z])/')
+
+#: The executable whose descendants are its hooks, never a run.
+_GIT: Final = re.compile(r'^git(?:\.exe)?$', re.IGNORECASE)
 
 #: A process younger than this is a concurrent hook, not a run (seconds).
 RUN_FLOOR_S: Final = 5.0
@@ -149,10 +154,20 @@ def _others(table: Sequence[Process], inside: Callable[[Process], bool], me: int
             at = by_pid[at].ppid
         return False
 
+    def hook(one: Process) -> bool:
+        seen, at = set(), one.ppid
+        while at in by_pid and at not in seen:
+            seen.add(at)
+            if _GIT.match(Path(by_pid[at].executable.replace('\\', '/')).name):
+                return True
+            at = by_pid[at].ppid
+        return False
+
     return tuple(
         one
         for one in table
         if one.pid != me
+        and not hook(one)
         and one.executable
         and inside(one)
         and not kin(one)
@@ -294,8 +309,8 @@ _HOOK: Final = re.compile(r'agent_launcher\.js|-m\s+dev_lab\.[\w.]+\s+hook\b')
 def is_transient(one: Process) -> bool:
     """Whether *one* holds an environment only in passing: an agent session or a hook it launched.
 
-    Neither is a verdict, and neither is the refused agent's to stop -- so a change queues behind them
-    (``dep --when-free``) instead of refusing (dev-lab #632: an upgrade never closes a session).
+    Neither is a verdict, and neither is the refused agent's to stop -- so the door is a new environment published
+    beside theirs (``dep --bootstrap ROOT``), never closing them (dev-lab #632: an upgrade never closes a session).
     """
     return is_session(one) or bool(_HOOK.search(one.command_line or ''))
 
@@ -367,8 +382,8 @@ def env_in_use(name: str, prefix: str, users: Sequence[Process]) -> str:
     if users and all(is_transient(one) for one in users):
         return (
             f'{name}: {prefix} is held only by agent sessions or their hooks:\n{describe(users)}\n'
-            'Queued: the first hook launch that finds it free performs this change (dep --bootstrap ROOT '
-            '--when-free); nothing else is required.'
+            'Run dep --bootstrap ROOT instead: it publishes a new environment beside this one and the next '
+            'launch takes it; nothing else is required.'
         )
     if users and all(is_watch(one) for one in users):
         stops = '; '.join(f'{running_interpreter()} -m dev_lab.dev.stoprun --pid {one.pid}' for one in users)

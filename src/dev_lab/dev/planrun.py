@@ -31,7 +31,10 @@ file is written anywhere, and the bytes are never printed. ``stdout_local`` (a r
 mirror for a step whose OUTPUT is the secret (a ``forge token mint``): the output is written owner-only under THIS
 machine's private state (:func:`stdout_path`, beside the credentials of :func:`.consentguard.state_dir`, never a
 checkout), and the run shows only ``wrote <path> (sha256 <12 hex>, <n> bytes)``; on a failure it shows the exit
-status and that the output was withheld, and writes nothing.
+status and that the output was withheld, and writes nothing. A ``forge token mint``/``mint-batch`` step needs no
+``stdout_local`` (and refuses one): EVERY token it prints lands in its own owner-only
+``outputs/<login>-<name>.token`` and the run names each path and the token's sha256 prefix -- never the value; an
+output that carries a secret but does not parse stops the run naming the raw file it kept, never truncating it.
 
 :func:`preflight` spends no code. Per host it asks ``consent ready`` WITHOUT sudo
 (it reads only the config and the public key, so no sudoers row: the verifier key resolves, a use can register);
@@ -221,13 +224,16 @@ def run_plan(
         if used:
             held.unlink()
         kept = 'spent, deleted' if used else f'NOT spent, kept: {held}'
+        shown, handled = shown_output(step, said, status, home)
         if status:
-            shown = shown_output(step, said, status, home)
             lines.append(f'{name}: STOPPED -- refused (exit {status}): {shown}; credential {kept}')
+            return False, lines
+        if not handled:
+            lines.append(f'{name}: STOPPED -- ran, but {shown}; credential {kept}')
             return False, lines
         done.add(index)
         write_private(record, json.dumps({'done': sorted(done)}) + '\n')
-        lines.append(f'{name}: ran ({shown_output(step, said, status, home)}); credential {kept}')
+        lines.append(f'{name}: ran ({shown}); credential {kept}')
     return True, [*lines, 'plan: every step ran']
 
 

@@ -31,9 +31,9 @@ file is the render of the config source's ``family.toml`` and ``hosts/<cluster>-
 (:mod:`dev_lab.dev.accounthost`), and that render runs ON the account, so it runs here, between the kit's tick and
 the deploy (:func:`render_command`): the account clones or fast-forwards the config source (THIS workstation's
 ``[devhost]`` clone's origin, :class:`ConfigSource`) with its stored reader credential -- none stored for that forge
-is refused naming ``hpcaccount credential`` -- prints ``devhost drift`` (what the render changes), then
-``devhost render --write`` (the old file backed up under ``~/.cache/dev-lab/<yy>/<mm>/<dd>/devhost``). A failed
-render stops that account's deploy. Before any ssh, an account whose grant names no cluster, whose
+is refused naming ``hpcaccount credential`` -- prints ``devhost drift --from`` that clone (what the render
+changes), then ``devhost render --write`` (the old file backed up under ``~/.cache/dev-lab/<yy>/<mm>/<dd>/devhost``).
+A failed render stops that account's deploy. Before any ssh, an account whose grant names no cluster, whose
 ``<cluster>-<user>`` the family file declares no grant for, or whose ``hosts/<cluster>-<user>.toml`` this
 workstation's clone lacks, is refused by name (:func:`layer_refusal`).
 """
@@ -67,12 +67,12 @@ from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
-    'KIND', 'ConfigSource', 'Target', 'account_host', 'config_source_of', 'declared_target', 'deploy_command',
-    'deploy_fleet', 'first_install', 'in_checkout', 'layer_refusal', 'layer_target', 'main', 'refresh_kit',
-    'render_command',
+    'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
+    'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'layer_refusal', 'layer_target', 'main',
+    'refresh_kit', 'render_command',
 ]  # fmt: skip
 
 #: The dated-log kind every account's log is written under.
@@ -205,7 +205,7 @@ def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
     ``devhost render --write`` replaces the file, its old copy backed up. In the grant's ``setup`` environment.
     """
     forge = urlsplit(source.url).hostname or ''
-    clone = f'"$HOME/{PurePosixPath(target.root, PurePosixPath(urlsplit(source.url).path).stem)}"'
+    clone = f'"$HOME/{account_clone(target, source)}"'
     backups = f'"$HOME/{_BASE}/$(date -u +%y/%m/%d)/devhost"'
     credential = (
         f"grep -qs '@{forge}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
@@ -221,15 +221,20 @@ def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
     render = in_checkout(target, ['-m', 'dev_lab.dev.devhost', 'render', '--host', name, '--write'])
     steps = [
         'export GIT_TERMINAL_PROMPT=0', credential, fetch, f'echo "[render] {name}: what the render changes"',
-        f'{{ {drift} ; true; }}', f'{render} --from {clone} --backups {backups}',
+        f'{{ {drift} --from {clone} ; true; }}', f'{render} --from {clone} --backups {backups}',
     ]  # fmt: skip
     return f'( {" && ".join([*grant.setup, *steps])} )'
 
 
+def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
+    """Where *target*'s account holds its config-source clone, relative to its home: ``<root>/<config repo>``."""
+    return PurePosixPath(target.root, PurePosixPath(urlsplit(source.url).path).stem)
+
+
 def in_checkout(target: Target, argv: Sequence[str]) -> str:
     """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv."""
-    python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
-    return f'cd {PurePosixPath("~", target.root, KIT)} && {python} {shlex.join(argv)}'
+    kit = PurePosixPath('~', target.root, KIT)  # every cluster login host is POSIX
+    return f'cd {kit} && {shell_interpreter(".")} {shlex.join(argv)}'
 
 
 def grant_slice(grant: Grant) -> dict[str, Any]:
@@ -275,19 +280,18 @@ def first_install(grant: Grant, target: Target) -> str:
     """
     root = PurePosixPath('~', target.root)
     kit = root / KIT
-    python = kit / venv_interpreter(os_name='posix')
     clones = [
         f'{{ [ -d {root / name}/.git ] || git clone -q --branch {shlex.quote(ref)} {shlex.quote(url)} {root / name}; }}'
         for name, url, ref in target.repos
     ]
     steps = [
-        f'echo "[first-install] {grant.user}: no kit venv at {python}"',
+        f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
         'export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0',
         f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
         f'mkdir -p {root}', *clones, f'( cd {kit} && uv sync --frozen )',
     ]  # fmt: skip
     body = ' && '.join([*grant.setup, *steps])
-    return f'{{ [ -x {python} ] || ( {body} ); }}'
+    return f'{{ [ -x {shell_interpreter(str(kit))} ] || ( {body} ); }}'
 
 
 def refresh_kit(grant: Grant, target: Target) -> str:

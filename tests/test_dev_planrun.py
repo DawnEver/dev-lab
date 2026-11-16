@@ -816,3 +816,81 @@ def test_one_pair_granted_on_two_hosts_carries_one_distinct_credential_to_each(t
     carried = [json.loads(text)['id'] for host in (HOST, JUDGE) for text in hosts[host].carried]
     assert sorted(carried) == ['id-0', 'id-1']
     assert not any(path.exists() for path in written)
+
+
+BATCH = tuple(f'forge-PLANTED-{n}-c0ffee' for n in range(6))
+LOGIN = 'reader-bot'
+
+
+def _token_run(tmp_path: Path, argv: tuple[str, ...], said: str, status: int = 0) -> tuple[bool, list[str]]:
+    """Step 2 is the token verb *argv*; the host prints *said* (merged output) and exits *status*."""
+    host, _ = FakeHost(), _granted(tmp_path)
+    host.doors.add(argv[:2])
+    host.outcomes[argv[0]] = (said, status, True)
+    steps = planrunsteps.Steps((STEPS.steps[0], dataclasses.replace(STEPS.steps[1], argv=argv, stdin_local=None)))
+    return planrun.run_plan(
+        PLAN, steps, lambda _dest: host, spent=lambda ids: set(ids) & host.ledger, home=tmp_path, now=lambda: NOW
+    )
+
+
+def _batch_argv() -> tuple[str, ...]:
+    items = [word for n in range(6) for word in ('--item', f'tok{n}:read:repository')]
+    return ('forge', 'token', 'mint-batch', '--login', LOGIN, *items)
+
+
+def test_a_six_item_batch_lands_six_token_files_and_prints_no_token(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    said = ''.join(_batch_line(n) for n in range(6))
+    finished, lines = _token_run(tmp_path, _batch_argv(), said)
+    assert finished, lines
+    shown = '\n'.join(lines) + capsys.readouterr().out + capsys.readouterr().err
+    outputs = tmp_path / 'state' / 'consent' / 'outputs'
+    files = sorted(outputs.glob('*.token'))
+    assert [path.name for path in files] == [f'{LOGIN}-tok{n}.token' for n in range(6)]
+    assert [path.read_text(encoding='utf-8') for path in files] == [f'{token}\n' for token in BATCH]
+    assert not [token for token in BATCH if token in shown]  # 0 values on the terminal
+    assert all(str(path) in lines[1] for path in files)
+    assert 'PLANTED' in said  # control: the output the run read DID carry every value
+
+
+def _batch_line(n: int) -> str:
+    return json.dumps({'name': f'tok{n}', 'token': BATCH[n]}) + '\n'
+
+
+def test_a_batch_that_failed_midway_still_lands_the_tokens_it_minted(tmp_path: Path) -> None:
+    said = _batch_line(0) + _batch_line(1) + 'refused: gitea said no; minted [tok0, tok1]\n'
+    finished, lines = _token_run(tmp_path, _batch_argv(), said, status=2)
+    assert not finished
+    outputs = tmp_path / 'state' / 'consent' / 'outputs'
+    assert sorted(path.name for path in outputs.glob('*.token')) == [f'{LOGIN}-tok0.token', f'{LOGIN}-tok1.token']
+    assert 'gitea said no' in lines[-1]
+    assert BATCH[0] not in '\n'.join(lines)
+
+
+def test_a_single_mint_lands_its_token_by_login_and_name(tmp_path: Path) -> None:
+    argv = ('forge', 'token', 'mint', '--login', LOGIN, '--name', 'read', '--scope', 'read:repository')
+    finished, lines = _token_run(tmp_path, argv, f'{BATCH[0]}\n')
+    assert finished, lines
+    kept = tmp_path / 'state' / 'consent' / 'outputs' / f'{LOGIN}-read.token'
+    assert kept.read_text(encoding='utf-8') == f'{BATCH[0]}\n'
+    assert BATCH[0] not in '\n'.join(lines)
+
+
+def test_a_token_output_that_does_not_parse_stops_naming_its_raw_file(tmp_path: Path) -> None:
+    said = _batch_line(0) + f'garbled {BATCH[1]}\n' + _batch_line(2)
+    finished, lines = _token_run(tmp_path, _batch_argv(), said)
+    assert not finished
+    outputs = tmp_path / 'state' / 'consent' / 'outputs'
+    raws = list(outputs.glob('*.raw'))
+    assert len(raws) == 1
+    assert raws[0].read_text(encoding='utf-8') == said  # never truncated
+    assert str(raws[0]) in lines[-1]
+    assert not [token for token in BATCH if token in '\n'.join(lines)]
+    assert not list(outputs.glob('*.token'))
+
+
+def test_a_token_step_refuses_stdout_local(tmp_path: Path) -> None:
+    bad = [{'argv': ['config', 'apply']}, {'argv': ['forge', 'token', 'mint-batch'], 'stdout_local': 'x'}]
+    with pytest.raises(ConsentRefused, match='own outputs'):
+        planrunsteps.load_steps(_steps_file(tmp_path, bad), PLAN)

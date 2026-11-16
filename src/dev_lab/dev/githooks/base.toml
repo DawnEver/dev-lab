@@ -186,8 +186,8 @@ always_run = true
 # no origin/<integration> landing older than locklag.LAG_WINDOW, its lock pins no floated sibling past that window,
 # and the pushing venv holds what that lock pins (else these hooks ran a stale kit); the remedy is `forge sync` (for
 # the kit, the bootstrap door). EARLY FEEDBACK only:
-# the forge posts the same judgement as the `pr-current` status on every PR head and the merge requires it
-# (dev_lab.dev.forgeheadgate, user ruling 2026-11-07), so a stale or missing shim never disarms it.
+# the forge posts the same judgement as the `pr-current` status on every PR head, an ALARM the merge never waits
+# on (dev_lab.dev.forgeheadgate, W5 dev-lab#644): mergeability is the trial merge at merge time.
 [[pre-push]]
 id = "pr-current"
 run = ["python", "-m", "dev_lab.dev.prcurrent"]

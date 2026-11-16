@@ -12,8 +12,8 @@ The sweep only decides WHICH PRs to ask for:
 
 - a draft is left alone (a draft runs nothing, so it is never judged);
 - a PR whose ``tests/merge-ready`` already stands ``success`` lands by the normal path, which wins;
-- a PR whose head is not current (``pr-current`` does not stand ``success``: it lacks the integration branch or its
-  lock is stale) is left alone -- a wave lands only what is current, never a stale green head;
+- a PR whose head is not current (``pr-current`` red) still lands: freshness is an ALARM (W5, dev-lab#644) and the
+  forge's own merge refuses a head that does not merge cleanly;
 - a PR whose security check or test parts do not stand green (red, pending, unrun) is left alone;
 - a PR whose admission or merge is refused (off the integration branch, the forge's own refusal) is
   skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick;
@@ -34,7 +34,6 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
 from dev_lab.dev.forgemergewaits import parts_wait
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import CommitStatus
@@ -85,8 +84,8 @@ def reason_of(wave: str) -> str:
 
 
 def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str) -> bool:
-    """Whether *head* is current and green -- security check and test parts PASS -- yet not already merge-ready."""
-    if _stands(posted, MERGE_READY_CONTEXT) or not _stands(posted, PR_CURRENT_CONTEXT):
+    """Whether *head* is green -- security check and test parts PASS -- yet not already merge-ready."""
+    if _stands(posted, MERGE_READY_CONTEXT):
         return False
     return security_wait(posted) is None and parts_wait(head, posted) is None
 

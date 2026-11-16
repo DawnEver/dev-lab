@@ -146,7 +146,9 @@ def test_a_promotion_is_a_hand_action_and_its_refusal_a_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     answers = iter(('promote', 'refused'))
-    monkeypatch.setattr(integrate, 'promote', lambda _r, _c, sha: integrate.Promotion(next(answers), sha, ('red',)))
+    monkeypatch.setattr(
+        integrate, 'promote', lambda _r, _c, sha, **_: integrate.Promotion(next(answers), sha, ('red',))
+    )
     monkeypatch.setattr(integrate, '_policy', lambda _r, _s: SimpleNamespace(trunk='main'))
     run = {'cwd': tmp_path, 'client': object(), 'fetch': lambda _root: None}
     assert integrate.main(['promote', 'abcdef1'], **run) == 0

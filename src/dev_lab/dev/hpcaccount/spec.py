@@ -28,6 +28,7 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
+from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
     'DEFAULT_PYTHON',
@@ -46,6 +47,7 @@ __all__ = [
     'load',
     'login_hosts',
     'merge_crontab',
+    'parse',
     'parse_repo',
     'render',
     'render_grant',
@@ -76,9 +78,6 @@ KIT: Final = 'dev-lab'
 VERIFICATION: Final = 'verification'
 RESEARCH: Final = 'research'
 _ROLE_NAME: Final = re.compile(r'[a-z][a-z0-9-]*')
-
-#: The interpreter a cron line runs: the line is a Linux login node's, so the POSIX venv layout is the only one.
-_VENV_PYTHON: Final = str(PurePosixPath('.venv', 'bin', 'python'))
 
 
 @dataclass(frozen=True)
@@ -118,7 +117,11 @@ class Deployment:
 
 def load(path: Path) -> Deployment | None:
     """The ``[deploy]`` table of the machine file at *path*; ``None`` when undeclared, a missing key refused."""
-    table = tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    return parse(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}, path)
+
+
+def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
+    """The ``[deploy]`` of an already-read machine-file *table* (named *path* in a refusal); see :func:`load`."""
     raw = table.get('deploy')
     if not raw:
         return None
@@ -317,9 +320,10 @@ def tick_command(
     cache = home / '.cache'
     lab = next(one for one in spec.repos if one.name == KIT)
     command = (
-        f'{tick_environment(home, slurm, setup)}; cd {shlex.quote(str(checkout_of(spec, home, lab)))} && '
+        f'{tick_environment(home, slurm, setup)}; '
+        f'cd {shlex.quote(str(checkout_of(spec, home, lab)))} && '
         f'flock -n {shlex.quote(str(cache / f"lab-forge-{repo.name}.lock"))} '
-        f'{_VENV_PYTHON} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
+        f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
     )
     command = f'bash -lc {shlex.quote(command)}' if setup else command
     return command + (f' >> {shlex.quote(str(cache / f"lab-forge-{repo.name}.log"))} 2>&1' if log else '')

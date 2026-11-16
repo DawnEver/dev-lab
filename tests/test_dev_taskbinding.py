@@ -20,6 +20,8 @@ def _task(root: Path, slug: str = 'toolchain') -> None:
     folder = root / '.claude' / 'tasks' / slug
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'TASK.md').write_text('---\nauthority: a1\nstatus: open\n---\n', encoding='utf-8')
+    if not (root / '.git').exists():
+        subprocess.run([_GIT, 'init', '-q', str(root)], check=True, capture_output=True)
 
 
 def test_a_tasks_heads_are_nested_under_it_and_never_the_bare_task() -> None:
@@ -58,9 +60,10 @@ def test_the_rename_remedy_names_the_bound_tasks_head() -> None:
 
 def test_pr_create_suggests_the_bound_tasks_head(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     env = {'CLAUDE_CODE_SESSION_ID': _SESSION}
-    assert forgecli._task_head_advice('pr/x', env) == (), 'planted control: unbound, nothing suggested'
     _task(tmp_path)
-    assert taskbinding.bind({'session_id': _SESSION, 'prompt': 'task: toolchain'}, root=tmp_path) == 'toolchain@a1'
+    monkeypatch.chdir(tmp_path)
+    assert forgecli._task_head_advice('pr/x', env) == (), 'planted control: unbound, nothing suggested'
+    assert taskbinding.bind({'session_id': _SESSION, 'prompt': 'task: toolchain'}, start=tmp_path) == 'toolchain@a1'
     [said] = forgecli._task_head_advice('pr/x', env)
     assert 'pr/toolchain/<feature>' in said
     assert 'git branch -m pr/x pr/toolchain/x' in said

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['session_of', 'valid']
+__all__ = ['harness_keys', 'session_of', 'valid']
 
 
 def _catalog() -> dict:
@@ -46,6 +46,11 @@ def valid(session: object) -> bool:
         and 0 < len(session) <= catalog['max_length']
         and all(char.isalnum() or char in catalog['punctuation'] for char in session)
     )
+
+
+def harness_keys() -> frozenset[str]:
+    """Every environment key a native harness names its session in -- what a machine's own commit must not carry."""
+    return frozenset(key for row in _catalog()['harnesses'] for key in (row['primary'], *row['auxiliary']))
 
 
 def session_of(env: Mapping[str, object] | None = None) -> str:

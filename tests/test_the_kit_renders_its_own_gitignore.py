@@ -88,8 +88,11 @@ def test_the_hatch_vcs_version_file_stays_ignored() -> None:
 
 
 #: Paths a family repo deliberately tracks under an ignored root, at any depth; the planted control is the
-#: generated index the same base must keep ignoring outside an archive.
+#: generated index the same base must keep ignoring outside an archive. A `.claude/rules/MEMORY.md` is NOT
+#: ignored: nothing generates it any more (rem retired it and its migration deletes it), so a stale one
+#: shows in `git status` instead of loading on every turn unseen.
 _TRACKED: Final = (
+    '.claude/rules/MEMORY.md',
     '.claude/sharp-review.json',
     '.claude/rem.json',
     '.claude/tasks/integrator/JOURNAL.md',
@@ -99,7 +102,6 @@ _TRACKED: Final = (
 )
 _IGNORED: Final = (
     '.claude/memory-index.md',
-    '.claude/rules/MEMORY.md',
     '.claude/memory/2026/06/01/_meta.json',
     'attic/old/__pycache__/x.pyc',
 )

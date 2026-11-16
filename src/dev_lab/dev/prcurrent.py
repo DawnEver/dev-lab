@@ -24,8 +24,8 @@ judges its own environment, so this is no status.
 
 Both name the one remedy, :data:`SYNC` (``forge sync`` merges integration and relocks the floated siblings in the
 same sync, :mod:`dev_lab.dev.forgesync`). The judgement is read at three doors: the forge's ``pr-current`` status on
-every open PR head, which the merge requires (:mod:`dev_lab.dev.forgeheadgate`, user ruling 2026-11-07: a family
-check never depends on a consumer's hook being current), ``forge pr ready`` (:func:`ready_refusals`), and the
+every open PR head, an ALARM the merge never waits on (:mod:`dev_lab.dev.forgeheadgate`, W5 dev-lab#644: the
+trial merge at merge time decides mergeability), ``forge pr ready`` (:func:`ready_refusals`), and the
 ``pr-current`` pre-push row (:func:`main`, ``refs = '^refs/heads/pr/'``) -- EARLY FEEDBACK
 only; the forge decides. The forge's own pushers' branches (:data:`dev_lab.dev.sessionbranch.MACHINE_BRANCHES`) are
 not judged (:func:`judged`): the relock IS what makes a lock fresh.
