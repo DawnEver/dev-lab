@@ -1,13 +1,13 @@
-"""SESSION-HEARS-ITS-PRS, the doors: the door that acts records, and a turn does not end with its PRs unwatched.
+"""SESSION-HEARS-ITS-PRS, the doors: the door that acts records, and the machine watcher hears what they record.
 
 2026-11-12: a PostToolUse hook scraping the shell line missed a second ``forge pr create`` in one command, a
 create whose output was piped through ``| tail -1``, and a push after ``cd`` into another repository -- each
-silently. Each test below plants its control beside the refusal or record it asserts.
+silently. So the doors record, and no shell-line hook remains (dev-lab #640 unwired it; it is deleted). Each test
+below plants its control beside the record it asserts.
 """
 
 from __future__ import annotations
 
-import contextlib
 import io
 import json
 import os
@@ -18,7 +18,7 @@ from _forge_fake import git_out
 from _forge_state import FORGE, StateForge
 from _ops_fixtures import git
 
-from dev_lab.dev import forgewatch, pushstop, sessionprs
+from dev_lab.dev import forgewatch, sessionprs
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev.forge import Forge, forge_from_remote
 from dev_lab.dev.forgebreakglass import merge_main
@@ -39,17 +39,6 @@ def in_session(monkeypatch: pytest.MonkeyPatch) -> str:
     return SESSION
 
 
-def _hook(command: str, *, session: str = SESSION, cwd: str = '') -> str | None:
-    payload = {'hook_event_name': 'PostToolUse', 'session_id': session, 'cwd': cwd,
-               'tool_input': {'command': command}, 'tool_response': {'stdout': '', 'stderr': ''}}  # fmt: skip
-    out = io.StringIO()
-
-    with contextlib.redirect_stdout(out):
-        assert sessionprs.main([], stdin=io.StringIO(json.dumps(payload))) == 0
-    text = out.getvalue().strip()
-    return json.loads(text)['hookSpecificOutput']['additionalContext'] if text else None
-
-
 # ---------------------------------------------------------------------------------------------------- PR create
 
 
@@ -59,9 +48,6 @@ def test_two_creates_in_one_command_are_both_recorded_with_no_url_printed(in_ses
     second = forge.pr_create('b', '', head='pr/b', base='main', draft=False)
     keys = set(sessionprs.rows(in_session))
     assert keys == {f'{FORGE.identity}#{first.number}', f'{FORGE.identity}#{second.number}'}
-    said = _hook('py -m dev_lab.dev.forge pr create --head pr/a ... && py -m dev_lab.dev.forge pr create | tail -1')
-    assert said is not None
-    assert sessionprs.watch_session_command(in_session) in said, 'the hook names the one watch to arm'
 
 
 def test_a_create_outside_a_session_records_nothing(capsys: pytest.CaptureFixture[str]) -> None:
@@ -113,9 +99,8 @@ def _pre_push(root: Path, *lines: str) -> int:
 def test_a_push_after_cd_is_recorded_against_the_pushed_repo_never_the_shells_cwd(
     tmp_path: Path, in_session: str
 ) -> None:
-    here, other = _repo(tmp_path, 'here'), _repo(tmp_path, 'other')
-    assert _hook(f'cd {other} && git push origin pr/x', cwd=str(here)) is not None
-    assert sessionprs.rows(in_session) == {}, 'the shell hook attributes nothing from its cwd'
+    other = _repo(tmp_path, 'other')
+    assert sessionprs.rows(in_session) == {}, 'PLANTED CONTROL: nothing is recorded before git names the refs'
     assert _pre_push(other, f'refs/heads/pr/x {SHA} refs/heads/pr/x {"0" * 40}') == 0
     (row,) = sessionprs.rows(in_session).values()
     assert row.forge == Forge('f.example', 'o', 'other')
@@ -152,45 +137,31 @@ def test_the_family_pre_push_table_runs_the_session_row_on_every_branch() -> Non
     assert row['refs'] == '^refs/heads/'
 
 
-# ---------------------------------------------------------------------------------------------------- the hook
+# ---------------------------------------------------------------------------------------------------- no hook
 
 
-@pytest.mark.usefixtures('in_session')
-def test_a_push_or_create_leaving_no_open_pr_on_record_is_a_warning() -> None:
-    said = _hook('git -C ../lab-commons push origin pr/y')
-    assert said is not None
-    assert 'WARNING' in said
-    assert 'native agent session' in said
-    assert _hook('git status && ls') is None, 'PLANTED CONTROL: a command that neither pushes nor creates is silent'
+def test_the_shell_line_hook_is_deleted_and_only_the_pre_push_row_remains(
+    in_session: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """dev-lab #640 unwired the PostToolUse path; a payload on stdin is a usage error now, and records nothing."""
+    payload = {'hook_event_name': 'PostToolUse', 'session_id': in_session, 'tool_input': {'command': 'git push'}}
+    assert sessionprs.main([], stdin=io.StringIO(json.dumps(payload))) == 2
+    out, err = capsys.readouterr()
+    assert out == ''
+    assert '--push' in err, 'the refusal names the one verb left'
+    assert sessionprs.rows(in_session) == {}
 
 
-# ---------------------------------------------------------------------------------------------------- the Stop
+def test_a_watch_marker_counts_only_while_its_process_lives(in_session: str) -> None:
+    assert not sessionprs.watching(in_session), 'PLANTED CONTROL: no watch, no marker'
+    sessionprs.watch(in_session)
+    assert sessionprs.watching(in_session)
+    sessionprs.watch(in_session, pid=2**22 + 7)  # a pid no process holds
+    assert not sessionprs.watching(in_session), 'a marker whose process is gone is no watch'
+    sessionprs.unwatch(in_session)
 
 
 _FORGE = StateForge()
-
-
-def _stop(session: str = SESSION) -> dict | None:
-    out = io.StringIO()
-    payload = {'hook_event_name': 'Stop', 'cwd': '', 'session_id': session}
-    pushstop.main([], stdin=io.StringIO(json.dumps(payload)), processes=lambda: (), client=lambda _r: _FORGE,
-                  clients=lambda _f: _FORGE, out=out)  # fmt: skip
-    return json.loads(out.getvalue()) if out.getvalue().strip() else None
-
-
-def test_an_open_session_pr_with_no_live_watch_blocks_every_stop_naming_the_monitor(in_session: str) -> None:
-    _FORGE.pr_create('a', '', head='pr/a', base='main', draft=False)
-    for _ in range(2):
-        block = _stop()
-        assert block is not None
-        assert block['decision'] == 'block'
-        assert sessionprs.watch_session_command(in_session) in block['reason']
-    sessionprs.watch(in_session)
-    assert _stop() is None, 'PLANTED CONTROL: a live watch lifts the refusal'
-    sessionprs.watch(in_session, pid=2**22 + 7)  # a pid no process holds
-    assert _stop() is not None, 'a marker whose process is gone is no watch'
-    sessionprs.unwatch(in_session)
-    assert _stop('other') is None, 'PLANTED CONTROL: a session with no open PR is never held'
 
 
 def test_the_session_watch_holds_the_liveness_marker_while_it_runs_and_drops_it_after(in_session: str) -> None:

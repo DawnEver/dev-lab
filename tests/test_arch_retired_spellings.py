@@ -12,11 +12,15 @@ That is why the scan reads every tracked text file in those roots, not just iden
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from pathlib import Path
 from typing import Final
 
+import pytest
 from _arch_corpus import assert_floor, docs_pages, rel, rules_pages, source_modules, suite_modules
+
+from dev_lab.dev import branchprune, pushwatch, sessionprs
 
 #: dev-lab's own tables, moved from ``[tool.lab_commons]`` to ``[tool.dev_lab]`` (plan A3); ``schedule``,
 #: ``tools``, ``hpc``, ``tests`` and ``artefacts`` stay, because lab-commons code reads them.
@@ -55,6 +59,34 @@ RETIRED_SPELLINGS: Final = {
         (
             'agent_wiring.WIRING rows run by dev_lab.dev.hookdispatch; settings carry dispatch_command(event)',
             'dev-lab #640 (W1): one dispatcher per hook event; the renderer owns every launcher row',
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            'pushstop',
+            'unwatched_refusal',
+            'red_refusal',
+            'stop_refusal',
+            'record_deadline',
+            'deadline_reached',
+            'pushed_by',
+            'pushed_at',
+            'arm_line',
+            'said_after',
+            'watch_session_command',
+            'post_push',
+            'post-push',
+        ),
+        (
+            'prwatcher, the one hearer of a session PR; push doors print pushwatch.heard_line',
+            'dev-lab #640 unwired the push journal, its Stop gate, the shell-line hooks and post-push; deleted after',
+        ),
+    ),
+    **dict.fromkeys(
+        ('stop_block', 'devhost-stop'),
+        (
+            'devhost session-start, a once-per-session SessionStart notice (agent_wiring.WIRING)',
+            'one trigger per check (2026-11-16): machine-file drift cannot change within a turn; no Stop re-reads it',
         ),
     ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
@@ -209,3 +241,19 @@ def test_planted_retired_spelling_is_found() -> None:
 def test_every_row_names_its_replacement_and_decision() -> None:
     blank = sorted(old for old, (new, why) in RETIRED_SPELLINGS.items() if not new.strip() or not why.strip())
     assert blank == []
+
+
+def test_the_retired_push_entry_points_are_absent() -> None:
+    """dev-lab #640 unwired them; deleted, no shim. Their spellings live only here, so their absence is pinned here.
+
+    PLANTED CONTROL: the live neighbours of each stay -- the module that kept its parsing, the pre-push verb.
+    """
+    assert importlib.util.find_spec('dev_lab.dev.pushstop') is None
+    assert importlib.util.find_spec('dev_lab.dev.pushwatch') is not None
+    assert 'said_after' not in vars(sessionprs)
+    assert 'record_pushed' in vars(sessionprs)
+    assert {'arm_line', 'record_deadline', 'pushed_by', 'pushed_at'}.isdisjoint(vars(pushwatch))
+    assert 'post_push' not in vars(branchprune)
+    with pytest.raises(SystemExit) as refused:
+        branchprune.main(['post-push'])
+    assert refused.value.code == 2, 'argparse refuses the retired verb by name'

@@ -514,8 +514,8 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 
 `python -m dev_lab.dev.forge watch <sha>... [--deadline-minutes M] [--stream]` only reads: it prints each
 `tests/<part>` change until the first listed sha has every part final (exit 0 green, 1 red) or the deadline
-passes (exit 3). A session that pushed arms it as a Monitor: the `Stop` hook (`dev_lab.dev.pushstop`) refuses
-to end a turn while a head the session pushed is pending with no live watch, or red.
+passes (exit 3). It is a read on request: a session hears its pushed PRs through the machine PR watcher
+(`dev_lab.dev.prwatcher`), which the push doors name, and no `Stop` hook waits on a pushed head.
 
 `python -m dev_lab.dev.forge cancel-stuck <sha> [--factor N] [--bound-minutes M]`, run in the repo's checkout,
 scancels only the full sha's `run-<sha12>-<part>` tasks that are busy (90 % CPU or more) with no new test line in

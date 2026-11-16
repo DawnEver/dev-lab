@@ -31,6 +31,8 @@ A machine with no host file renders the family's ``[dev.default]`` instead, stam
 :func:`render` = family ⊕ host ⊕ local, with a header naming the sources and their digests and a ``[devhost]``
 table naming the host and the clone. :func:`drift` compares the live file with that render, and its ``[repos]
 dev-lab`` checkout's branch with ``ref``; the ``SessionStart`` notice (:func:`notice`) runs it with no network.
+``session-start`` is that notice's ONE trigger, wired once per session (:data:`dev_lab.dev.agent_wiring.WIRING`):
+machine-file drift and an unfilled install home cannot change within a turn, so no ``Stop`` re-reads them.
 
 ``python -m dev_lab.dev.devhost drift [--from CLONE]`` -- read only, exit 1 on drift;
 ``python -m dev_lab.dev.devhost render --host NAME --from CLONE [--write]`` -- prints the render; ``--write``
@@ -44,7 +46,6 @@ import hashlib
 import json
 import os
 import platform
-import sys
 import tomllib
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -62,7 +63,7 @@ from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'detect', 'drift', 'host_file',
-    'main', 'notice', 'render', 'replace_backed_up', 'stop_block',
+    'main', 'notice', 'render', 'replace_backed_up',
 ]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
@@ -223,29 +224,6 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     return '\n'.join(lines) or None
 
 
-def _own_dev(live: Mapping[str, Any]) -> dict[str, Any]:
-    own = live.get(OWN_TABLE, {})
-    if not own.get('host') or not own.get('source'):
-        return {}
-    family_file, host_file = _sources(Path(own['source']), own['host'])
-    return declared(host_file, family_file)
-
-
-def stop_block(payload: Mapping[str, Any], live: Mapping[str, Any], marks: Path) -> str | None:
-    """The ``Stop`` hook's reason to block, ONCE per session, while this machine's host file holds an unfilled home."""
-    session = str(payload.get('session_id') or '')
-    try:
-        names = unfilled(_own_dev(live))
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
-    mark = marks / session
-    if not names or not session or mark.exists() or payload.get('stop_hook_active'):
-        return None
-    marks.mkdir(parents=True, exist_ok=True)
-    mark.touch()
-    return f'Before you stop: {fill_remedy(names)}.'
-
-
 def _matches(pattern: str) -> list[Path]:
     anchored = Path(pattern)
     return list(Path(anchored.anchor).glob(str(anchored.relative_to(anchored.anchor))))
@@ -279,17 +257,6 @@ def replace_backed_up(path: Path, text: str, backups: Path) -> Path:
 
 def _source(clone: Path | None, own: Mapping[str, Any]) -> Path | None:
     return clone or (Path(own['source']) if own.get('source') else None)
-
-
-def _stop(path: Path, live: Mapping[str, Any]) -> int:
-    try:
-        payload = json.load(sys.stdin)
-    except ValueError:
-        return 0
-    marks = path.parent.parent / 'state' / 'devhost-stop'
-    if isinstance(payload, dict) and (reason := stop_block(payload, live, marks)):
-        emit(json.dumps({'decision': 'block', 'reason': reason}))
-    return 0
 
 
 def _drift(path: Path, live: Mapping[str, Any], clone: Path | None) -> int:
@@ -352,13 +319,13 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``drift`` (read only; exit 1 on drift), ``render`` (``--write`` backs up), ``detect``, ``stop``, ``channels``."""
+    """``drift`` (exit 1 on drift), ``render`` (``--write`` backs up), ``detect``, ``session-start``, ``channels``."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
     drifting = verbs.add_parser('drift', help='report where the machine file departs from its render')
     drifting.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
-    verbs.add_parser('stop', help='the Stop hook: block once per session while an install home is unfilled')
+    verbs.add_parser('session-start', help='the SessionStart hook: the machine-file notice, if any; always 0')
     telling = verbs.add_parser('channels', help="print this machine's declared session channels (source -> user)")
     telling.add_argument('--json', action='store_true', required=True, help='as one JSON object ({} when undeclared)')
     finding = verbs.add_parser('detect', help="print the host-file lines for this machine's vendor install homes")
@@ -371,8 +338,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     path = args.machine or machineconfig.config_path()
     live = _read(path) if path.is_file() else {}
-    if args.verb == 'stop':
-        return _stop(path, live)
+    if args.verb == 'session-start':
+        if said := notice(live):
+            emit(said)
+        return 0
     if args.verb == 'channels':
         return _channels(live)
     if args.verb == 'drift':

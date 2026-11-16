@@ -1,7 +1,7 @@
 """SESSION-HEARS-ITS-PRS, the record: every pull request a session opened or pushed, across every repository.
 
-User ruling 2026-11-11: lab-commons #158 went red and the session heard nothing, because the push journal
-(:mod:`dev_lab.dev.pushwatch`) lives in ONE checkout's git dir while a session works in many. So this record
+User ruling 2026-11-11: lab-commons #158 went red and the session heard nothing, because the push journal of
+the day lived in ONE checkout's git dir while a session works in many. So this record
 lives in the machine home (:func:`lab_commons.home.home`), one file per session -- ``sessions/<id>.json`` --
 and holds one row per PR, keyed ``<host>/<owner>/<repo>#<number>``, or ``...@<branch>`` while a pushed
 branch's PR number is not yet known (:func:`resolve` renames it once the forge names one).
@@ -15,15 +15,15 @@ output was piped away, and a push after ``cd`` into another repository -- all si
   the repository git is pushing (:func:`record_pushed`); a push to the declared integration or trunk branch is
   no PR and records nothing;
 * the session is the validated native harness identity; invalid identity is reported loudly;
-* the ``PostToolUse`` hook (:func:`main`) only tells the agent to arm the watch, or WARNS when a push or a create
-  left the session no open PR on record (:func:`said_after`);
+* the machine PR watcher (:mod:`dev_lab.dev.prwatcher`) reads it for every session on the machine -- the one hearer
+  (dev-lab #640); no shell-line hook reads or writes it;
 * ``forge watch --session <id> --stream`` (:mod:`dev_lab.dev.forgewatch`) reads it, and marks a PR
   ``merged``/``closed`` once it has said so (:func:`close`), so a merge is reported once; a branch row it
   resolves to its PR, open or not, or closes with a reason when no PR can come (a protected or a gone branch);
-* :func:`is_open` is the ONE predicate the watch and the ``Stop`` gate read: a PR is open when the forge named
-  its number and no end was heard -- a branch row with no PR yet is pending, and holds nothing;
+* :func:`is_open` is the ONE predicate every reader uses: a PR is open when the forge named its number and no end
+  was heard -- a branch row with no PR yet is pending, and holds nothing;
 * THE DOOR THAT MERGES ENDS THE ROW (2026-11-13: a PR merged through ``forge pr breakglass`` stayed open on
-  record and the ``Stop`` gate kept blocking on it): every merge door calls :func:`ended`, which marks the PR
+  record): every merge door calls :func:`ended`, which marks the PR
   ``merged`` in every session record on this machine that holds it open;
 * ``forge watch --session <id> --ack <key> --reason <why>`` records why a red head may stand (:func:`ack`);
   a newer head is not covered by an older head's reason.
@@ -34,7 +34,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -49,7 +48,6 @@ from dev_lab.dev import native_session
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.refspec import pushed_refs
-from dev_lab.dev.venvpath import running_interpreter
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -71,10 +69,8 @@ __all__ = [
     'record_pushed',
     'resolve',
     'rows',
-    'said_after',
     'unwatch',
     'watch',
-    'watch_session_command',
     'watching',
 ]
 
@@ -105,11 +101,6 @@ class Row:
     def key(self) -> str:
         """``<host>/<owner>/<repo>#<number>``, or ``@<branch>`` while the number is unknown."""
         return f'{self.forge.identity}#{self.number}' if self.number else f'{self.forge.identity}@{self.branch}'
-
-
-def watch_session_command(session: str) -> str:
-    """The command reporting every change on *session*'s PRs until none is open (run it as a ``Monitor``)."""
-    return f'{running_interpreter()} -m dev_lab.dev.forge watch --session {session} --stream'
 
 
 def _path(session: str) -> Path | None:
@@ -350,51 +341,14 @@ def watching(session: str) -> bool:
         return False
 
 
-#: A shell line that pushes or opens a PR: the moments the hook speaks after.
-_ACTS: Final = re.compile(r'\bgit\b[^\n;&|]*\spush\b|with-retry\.sh\S*\s+push\b|\bforge\s+pr\s+create\b')
-
-
-def said_after(command: str, session: str) -> str | None:
-    """What the hook tells the agent after shell *command*: arm the watch, or a warning; ``None`` when silent.
-
-    It reads the record the doors wrote, never the command's output: a push or a create that left the session
-    no open PR on record is SAID, because the watch would hear nothing of it.
-    """
-    if not _ACTS.search(command):
-        return None
-    open_now = open_rows(session)
-    if not open_now:
-        return (
-            f'{RULE}: WARNING -- this command pushes or opens a PR, yet session {session} has no open PR on record, '
-            'so no merge or red check will reach you. The doors record one (`forge pr create`, the family pre-push '
-            'row `session-prs`) only in a native agent session when the repository runs the family hooks.'
-        )
-    keys = ', '.join(row.key for row in open_now)
-    return (
-        f"{RULE}: this session's open PRs on record: {keys}. Arm ONE persistent Monitor on every PR of the session "
-        f'(it ends when none is open): {watch_session_command(session)}'
-    )
-
-
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """``--push [ROOT]``: the pre-push row (git's ref lines on stdin); else the ``PostToolUse`` hook. Always 0."""
+    """``--push [ROOT]``: the pre-push row, git's ref lines on stdin; always 0. Anything else is a usage error, 2."""
     args = list(sys.argv[1:] if argv is None else argv)
-    source = stdin or sys.stdin
-    if args[:1] == ['--push']:
-        with contextlib.suppress(OSError):
-            record_pushed(Path(args[1]) if len(args) > 1 else Path.cwd(), source.read().splitlines())
-        return 0
-    try:
-        payload = json.load(source)
-    except ValueError:
-        return 0
-    tool_input = payload.get('tool_input') if isinstance(payload, dict) else None
-    command = tool_input.get('command') if isinstance(tool_input, dict) else None
-    session = str(payload.get('session_id') or '')
-    if not isinstance(command, str) or not native_session.valid(session):
-        return 0
-    if (said := said_after(command, session)) is not None:
-        emit(json.dumps({'hookSpecificOutput': {'hookEventName': 'PostToolUse', 'additionalContext': said}}))
+    if args[:1] != ['--push']:
+        emit('usage: python -m dev_lab.dev.sessionprs --push [ROOT]  (the family pre-push row `session-prs`)', err=True)
+        return 2
+    with contextlib.suppress(OSError):
+        record_pushed(Path(args[1]) if len(args) > 1 else Path.cwd(), (stdin or sys.stdin).read().splitlines())
     return 0
 
 

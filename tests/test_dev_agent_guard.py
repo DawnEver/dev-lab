@@ -695,3 +695,54 @@ def test_a_drifted_or_extra_owned_row_is_stale_and_the_install_restores_it(repo:
         assert part.status == agent_guard.STALE, name
         agent_guard.install_guard(repo)
         assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED, name
+
+
+# ------------------------------------------------------------------------------------- a repo's own declared wires
+
+
+def _declare_wire(repo: Path, module: str, row: str) -> None:
+    """The repo declares one ``[[tool.dev_lab.agent_hooks]]`` row, its handler a module at the repo's root."""
+    (repo / 'pyproject.toml').write_text(
+        f'[[tool.dev_lab.agent_hooks]]\nmodule = "{module}"\n{row}\n', encoding='utf-8'
+    )
+    (repo / f'{module}.py').write_text('def main(argv):\n    return 0\n', encoding='utf-8')
+
+
+def test_rows_derive_matcher_and_timeout_from_the_family_and_the_repo_declaration(repo: Path) -> None:
+    _declare_wire(repo, 'planted_guard_wire_a', 'events = ["PreToolUse", "PreCompact"]\ntools = ["Read"]\ntimeout = 7')
+    family = {row.event: row for row in agent_wiring.rows()}
+    merged = {row.event: row for row in agent_wiring.rows(repo)}
+    assert merged['PreToolUse'].matcher == f'{family["PreToolUse"].matcher}|Read'
+    assert merged['PreToolUse'].timeout == family['PreToolUse'].timeout + 7
+    assert merged['PreCompact'] == agent_wiring.Row(
+        'PreCompact', 'Read', agent_wiring.dispatch_command('PreCompact'), 7
+    )
+    assert 'PreCompact' not in family, 'PLANTED CONTROL: the family alone serves no such event'
+
+
+def test_the_drift_check_counts_a_repo_declared_wire_and_the_install_renders_it(repo: Path) -> None:
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+    _declare_wire(repo, 'planted_guard_wire_b', 'events = ["PreCompact"]')
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE
+    assert 'PreCompact' in part.detail
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+    settings = json.loads((repo / agent_wiring.SETTINGS_REL).read_text(encoding='utf-8'))
+    [entry] = settings['hooks']['PreCompact']
+    assert entry['hooks'][0]['command'] == agent_wiring.dispatch_command('PreCompact')
+
+
+def test_a_refused_declaration_is_stale_by_name_and_the_install_refuses_it(repo: Path) -> None:
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / 'pyproject.toml').write_text(
+        '[[tool.dev_lab.agent_hooks]]\nevents = ["Stop"]\nmodule = "missing_guard_wire"\n', encoding='utf-8'
+    )
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE
+    assert 'missing_guard_wire' in part.detail
+    with pytest.raises(agent_wiring.WireRefused, match='missing_guard_wire'):
+        agent_guard.install_guard(repo)

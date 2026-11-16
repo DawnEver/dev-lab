@@ -327,7 +327,7 @@ def issue_and_pr(
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
             emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
-                emit(f'[forge] {pushwatch.arm_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
+                emit(f'[forge] {pushwatch.heard_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)

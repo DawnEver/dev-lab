@@ -162,6 +162,13 @@ def test_a_sweep_logs_each_stop_under_the_reaper_kind(tmp_path: Path, monkeypatc
     assert 'stopped 200' in log.read_text(encoding='utf-8')
 
 
-def test_the_sweep_is_wired_at_session_start_and_at_every_stop() -> None:
-    events = {e for w in WIRING if w.module == 'dev_lab.dev.shellreaper' and w.argv == ('--hook',) for e in w.events}
-    assert events == {'SessionStart', 'Stop'}
+def test_the_sweep_has_one_trigger_every_stop() -> None:
+    """ONE trigger: Stop, the only event that recurs inside a session, so the bound's clock.
+
+    A session's first stop also sweeps what an ended session left, which is all a SessionStart sweep did (measured
+    2026-11-16: 37 sweeps and both over-bound stops of the day fell in an 11-hour window with no session start).
+    PLANTED CONTROL: no row of the sweep is on SessionStart, and exactly one row names it.
+    """
+    rows = [w for w in WIRING if w.module == 'dev_lab.dev.shellreaper']
+    assert [(w.events, w.argv) for w in rows] == [(('Stop',), ('--hook',))]
+    assert not any('SessionStart' in w.events for w in rows)
