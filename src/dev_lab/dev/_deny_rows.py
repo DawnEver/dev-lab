@@ -171,7 +171,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     },
     {
         'id': 'GIT-STASH',
-        'pattern': r'\bgit\s+stash(?:\s|$)',
+        # Reading the stash (`list`, `show`) pops nothing (2026-11-16).
+        'pattern': r'\bgit\s+stash(?!\s+(?:list|show)\b)(?:\s|$)',
         'matches': 'command',
         'hazard': '`refs/stash` is repo-wide, so a stash is popped by whoever pops next -- possibly another agent.',
         'remedy': (
@@ -180,7 +181,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         ),
         'needs': None,
         'refuses': ('git stash', 'git stash push -u', 'git stash pop'),
-        'permits': ('git commit -m "wip: scratch"', 'git diff --stat'),
+        'permits': ('git commit -m "wip: scratch"', 'git diff --stat', 'git stash list', 'git stash show -p'),
     },
     {
         'id': 'GIT-RESET',
