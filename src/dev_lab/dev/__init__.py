@@ -552,8 +552,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.proctable` -- the process table the stop doors read and its walks: subtree, ancestors,
   whose session a pid descends from, and the pids no door may stop.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
-* :mod:`dev_lab.dev.journaldoor` -- the PreToolUse door: a task journal append citing an ignored path is
-  refused before it is written.
+* :mod:`dev_lab.dev.journaldoor` -- the journal door's judge, asked by the engine's deny row on a match: a task
+  journal append citing an ignored path is refused before it is written.
 * :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the command to arm as a Monitor after a push, and an
   advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``; it journals each push.
 * :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or

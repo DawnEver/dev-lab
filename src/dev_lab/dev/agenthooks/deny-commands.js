@@ -8,12 +8,13 @@
  * is a rule in the JSON file passed as argv[2] (`.claude/hooks/deny-rules.json`), so adding or
  * retiring a rule is a data change, never an engine change.
  *
- * A rule is {name, pattern, matches?, allow?, scope?, severity?, reason}. `scope: 'subagent'` judges the rule only
+ * A rule is {name, pattern, matches?, allow?, scope?, severity?, asks?, reason}. `scope: 'subagent'` judges the rule only
  * when the payload carries a non-empty `agent_id`. `severity: 'hint'` never denies: the call runs and the
  * reason reaches the agent as `additionalContext` -- unless a refusing rule also fires, which wins. `pattern` (JS regex source) denies a
  * command it matches, unless `allow` (regex source) also matches -- the sanctioned spelling.
  * `reason` is the rewrite hint shown to the agent; `{root}` in it expands to the tool call's cwd, and `{python}`
- * (or a door's `<venv python>`) to the target checkout's interpreter by ABSOLUTE path.
+ * (or a door's `<venv python>`) to the target checkout's interpreter by ABSOLUTE path. `asks` names the Python
+ * module that judges a call the pattern only prefilters (A ROW WHOSE JUDGE IS A MODULE, below).
  *
  * ================================ WHAT IS MATCHED, AND WHY ================================
  *
@@ -517,6 +518,32 @@ function lifetimeRefusal(cmd, sessionRoot) {
   return done.status === 1 && said ? said : null;
 }
 
+/* ================================ A ROW WHOSE JUDGE IS A MODULE ================================
+ *
+ * `asks: '<module>'`: the decision needs repo state no regex reads (TRACKED-CITES-NO-EPHEMERAL: is a path the
+ * journal line cites ignored HERE?), so the pattern is only a cheap PREFILTER. After it matched -- never before, so
+ * the common call starts no interpreter -- the session checkout's Python runs `-m <module> --admit` with the hook
+ * payload on stdin. Exit 1 with text refuses with that text, verbatim; anything else admits: no interpreter, no kit,
+ * a crash or a timeout is nobody's refusal, as the hook this replaced was (the commit-time check stands behind it).
+ */
+function askedRefusal(module, sessionRoot) {
+  let python;
+  try {
+    python = venvPython(sessionRoot);
+  } catch {
+    return ''; // no resolver: nobody to ask
+  }
+  if (!python) return '';
+  const done = spawnSync(python, ['-m', module, '--admit'], {
+    input: JSON.stringify(input),
+    encoding: 'utf8',
+    timeout: 15000,
+    windowsHide: true,
+  });
+  const said = String(done.stdout || '').trim();
+  return done.status === 1 ? said : '';
+}
+
 /* ================================ A ROW THAT STILL ADMITS A FAMILY SIBLING CLONE ================================
  *
  * `admits: 'family-sibling-clone'` (WORKTREES-STAY-INSIDE): every family checkout lives BESIDE its siblings, so
@@ -727,6 +754,10 @@ for (const rule of rules) {
   if (hit && rule.admits === 'family-sibling-clone' && familySiblingClone(cmd, input.cwd)) continue;
   if (hit && rule.admits === 'file-operands' && fileOperands(rule, cmd, input.cwd)) continue;
   let liveReason = '';
+  if (hit && rule.asks) {
+    liveReason = askedRefusal(rule.asks, sessionRoot);
+    hit = liveReason !== '';
+  }
   // A 'background' row binds only on a Bash call the agent runs in the background (BACKGROUND-SHELL-IS-BOUNDED),
   // and there the session's interpreter judges it (a longer life needs the USER's grant); the pattern only without one.
   if (rule.when === 'background') {
