@@ -175,7 +175,7 @@ def advance(
 ) -> Run | None:
     """Take *run* as far as it goes without waiting; the run as left, or ``None`` once released or stood down."""
     tag = run_tag(run.platform, run.sha)
-    held, run = _hold(root, run, client=client, me=me, lease=lease, say=say, alarm=alarm, tag=tag)
+    held, run = _hold(run, root=root, client=client, me=me, lease=lease, say=say, alarm=alarm, tag=tag)
     if held != _ADVANCE:
         return _not_advanced(held, run, cluster=cluster, say=say, tag=tag)
     try:  # a build that submitted nothing, like an inconclusive record, ran no test: released, never red
@@ -367,9 +367,9 @@ def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callab
 
 
 def _hold(
-    root: Path,
     run: Run,
     *,
+    root: Path,
     client: Client,
     me: Claim,
     lease: timedelta,
