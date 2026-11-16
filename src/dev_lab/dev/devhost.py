@@ -127,8 +127,8 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     vendors = declared.get('dev', {}).get('vendors', {})
     seats = {name: {'seats': vendor['seats']} for name, vendor in vendors.items() if vendor.get('seats')}
     layered = _merge(layered, {'capabilities': seats} if seats else {})
-    layered = _merge(layered, accounthost.derived(host, family) if accounthost.is_account(declared) else {})
     layered = _merge(layered, {'hpc': {'reach': hpc_reach(declared.get('dev', {}))}} if 'hpc' in layered else {})
+    layered = _merge(layered, accounthost.derived(host, family) if accounthost.is_account(declared) else {})
     if channels := declared.get('dev', {}).get('channels'):
         layered = _merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     local = {k: v for k, v in live.items() if k not in layered and k != OWN_TABLE}

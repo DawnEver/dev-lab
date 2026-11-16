@@ -43,9 +43,15 @@ def grant_of(name: str, family: Mapping[str, Any]) -> Mapping[str, Any] | None:
 
 
 def derived(name: str, family: Mapping[str, Any]) -> dict[str, Any]:
-    """What the render adds to account *name* from its family grant: ``[deploy] role``; ``{}`` for no grant."""
+    """What the render adds to account *name* from its family grant; ``{}`` for no grant.
+
+    ``[deploy] role`` and ``[hpc] reach``: an account reaches its own grant, so the roles it may use are its own
+    role -- without it ``lab_commons.hpc`` refuses every grant on the account (HPC-ACCESS-BY-ROLE).
+    """
     grant = grant_of(name, family)
-    return {'deploy': {'role': grant['role']}} if grant and grant.get('role') else {}
+    if not grant or not grant.get('role'):
+        return {}
+    return {'deploy': {'role': grant['role']}, 'hpc': {'reach': [grant['role']]}}
 
 
 def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[str]:
