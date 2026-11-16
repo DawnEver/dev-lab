@@ -28,7 +28,7 @@ lines to propose through a pull request; a vendor with seats and no ``home`` is 
 table naming the host and the clone. :func:`drift` compares the live file with that render, and its ``[repos]
 dev-lab`` checkout's branch with ``ref``; the ``SessionStart`` notice (:func:`notice`) runs it with no network.
 
-``python -m dev_lab.dev.devhost drift`` -- read only, exit 1 on drift;
+``python -m dev_lab.dev.devhost drift [--from CLONE]`` -- read only, exit 1 on drift;
 ``python -m dev_lab.dev.devhost render --host NAME --from CLONE [--write]`` -- prints the render; ``--write``
 refuses a render that does not parse, else backs the live file up under the output tree and replaces it.
 """
@@ -161,12 +161,18 @@ def _branch(checkout: str) -> str | None:
     return (git_out(Path(checkout), 'symbolic-ref', '--short', 'HEAD') or '').strip() or None
 
 
-def drift(live: Mapping[str, Any]) -> list[str]:
-    """Where the *live* machine file departs from its render, and its dev-lab checkout from the declared ref."""
+def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
+    """Where the *live* machine file departs from its render, and its dev-lab checkout from the declared ref.
+
+    Rendered from *clone* when given, else from the live ``[devhost] source`` -- which may name a path of another
+    machine: a source that is not a clone here is one drift line naming ``--from``, never a crash.
+    """
     own = live.get(OWN_TABLE, {})
-    if not own.get('host') or not own.get('source'):
+    if not own.get('host') or not (clone or own.get('source')):
         return []
-    clone, host = Path(own['source']), own['host']
+    clone, host = clone or Path(own['source']), own['host']
+    if not (clone / 'family.toml').is_file():
+        return [f'the config source {clone.as_posix()} is not a clone here: name one with drift --from <clone>']
     rendered = tomllib.loads(render(clone, host, live))
     found = [
         f'[{key}] is {"absent" if key not in live else "not the render"}'
@@ -267,8 +273,8 @@ def _stop(path: Path, live: Mapping[str, Any]) -> int:
     return 0
 
 
-def _drift(path: Path, live: Mapping[str, Any]) -> int:
-    found = drift(live)
+def _drift(path: Path, live: Mapping[str, Any], clone: Path | None) -> int:
+    found = drift(live, clone)
     for line in found:
         emit(f'drift: {line}')
     if not found:
@@ -325,7 +331,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
-    verbs.add_parser('drift', help='report where the machine file departs from its render')
+    drifting = verbs.add_parser('drift', help='report where the machine file departs from its render')
+    drifting.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     verbs.add_parser('stop', help='the Stop hook: block once per session while an install home is unfilled')
     telling = verbs.add_parser('channels', help="print this machine's declared session channels (source -> user)")
     telling.add_argument('--json', action='store_true', required=True, help='as one JSON object ({} when undeclared)')
@@ -344,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.verb == 'channels':
         return _channels(live)
     if args.verb == 'drift':
-        return _drift(path, live)
+        return _drift(path, live, args.clone)
     if args.verb == 'detect':
         return _detect(_source(args.clone, live.get(OWN_TABLE, {})))
     return _render_verb(args, path, live)

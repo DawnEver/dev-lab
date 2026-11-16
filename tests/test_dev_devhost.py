@@ -172,6 +172,18 @@ def test_a_dev_lab_checkout_off_the_declared_ref_is_drift(tmp_path: Path) -> Non
     assert devhost.drift(live) == ["the dev-lab checkout is on 'feature', declared ref 'integrate/main'"]
 
 
+def test_a_stale_source_path_is_one_drift_line_and_from_names_the_clone(tmp_path: Path) -> None:
+    live = _rendered_machine(tmp_path)
+    clone = Path(live[devhost.OWN_TABLE]['source'])
+    live[devhost.OWN_TABLE]['source'] = (tmp_path / 'another-machine').as_posix()
+    (stale,) = devhost.drift(live)
+    assert 'is not a clone here' in stale
+    assert '--from' in stale
+    assert '[devhost] is not the render' in devhost.drift(live, clone)  # the control: --from renders, so it compares
+    machine = _write(tmp_path, 'machine/m.toml', devhost.dumps(live))
+    assert devhost.main(['--machine', str(machine), 'drift', '--from', str(clone)]) == 1
+
+
 def test_drift_writes_nothing_and_render_write_backs_up_first(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
     machine = _write(tmp_path, 'machine/m.toml', LOCAL)
