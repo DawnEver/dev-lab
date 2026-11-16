@@ -12,10 +12,34 @@ from typing import Any, Final
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'BRIDGE', 'BRIDGE_HPC', 'CHANNELS_TABLE', 'CPU_SHARES', 'DETECT_DOOR', 'EVERY_HOURS', 'FAMILY_ONLY', 'HELPERS',
-    'HOOK_MODES', 'HOST_ONLY', 'MACHINE_TABLES', 'RESOURCES',
-    'RETIRED_KEYS', 'SCHEMA', 'SSH', 'SSH_HOLD', 'UNFILLED', 'VENDOR', 'HomeUnfilled', 'channel_defects', 'check',
-    'check_family', 'fill_remedy', 'home_of', 'hpc_reach', 'ssh_defects', 'unfilled', 'usable',
+    'BRIDGE',
+    'BRIDGE_HPC',
+    'CADENCE_HOURS',
+    'CHANNELS_TABLE',
+    'CPU_SHARES',
+    'DETECT_DOOR',
+    'FAMILY_ONLY',
+    'HELPERS',
+    'HOOK_MODES',
+    'HOST_ONLY',
+    'MACHINE_TABLES',
+    'RESOURCES',
+    'RETIRED_KEYS',
+    'SCHEMA',
+    'SSH',
+    'SSH_HOLD',
+    'UNFILLED',
+    'VENDOR',
+    'HomeUnfilled',
+    'channel_defects',
+    'check',
+    'check_family',
+    'fill_remedy',
+    'home_of',
+    'hpc_reach',
+    'ssh_defects',
+    'unfilled',
+    'usable',
 ]  # fmt: skip
 
 #: Retired ``[dev]`` keys, each with its remedy (refused by name, never read).
@@ -36,10 +60,10 @@ SCHEMA: Final = {
 #: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
 #: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
 BRIDGE: Final = {'hpc': dict}
-#: ``[dev] bridge.hpc``: ``every_hours`` -- the read cadence (1..168; default 6).
-BRIDGE_HPC: Final = {'every_hours': int}
-#: ``every_hours`` bounds: an hourly read at most, a weekly one at least.
-EVERY_HOURS: Final = (1, 168)
+#: ``[dev] bridge.hpc``: ``cadence_hours`` -- the read cadence (1..168; default 6).
+BRIDGE_HPC: Final = {'cadence_hours': int}
+#: ``cadence_hours`` bounds: an hourly read at most, a weekly one at least.
+CADENCE_HOURS: Final = (1, 168)
 #: ``[dev] hooks``: ``enforce`` -- a firing hook row refuses; ``warn`` -- it only warns (an unmanaged machine).
 HOOK_MODES: Final = ('enforce', 'warn')
 #: ``[dev]`` keys only the family declares: ``default`` -- the profile an undeclared machine renders
@@ -148,9 +172,11 @@ def _bridge(table: Mapping[str, Any], where: str) -> list[str]:
     hpc = bridge.get('hpc')
     if isinstance(hpc, dict):
         found += _typed(hpc, BRIDGE_HPC, f'{where}.bridge.hpc')
-        hours = hpc.get('every_hours', 6)
-        if isinstance(hours, int) and not EVERY_HOURS[0] <= hours <= EVERY_HOURS[1]:
-            found.append(f'{where}.bridge.hpc.every_hours must be {EVERY_HOURS[0]}..{EVERY_HOURS[1]}, not {hours}')
+        hours = hpc.get('cadence_hours', 6)
+        if isinstance(hours, int) and not CADENCE_HOURS[0] <= hours <= CADENCE_HOURS[1]:
+            found.append(
+                f'{where}.bridge.hpc.cadence_hours must be {CADENCE_HOURS[0]}..{CADENCE_HOURS[1]}, not {hours}'
+            )
     return found
 
 

@@ -16,7 +16,7 @@ FAMILY = """\
 [dev]
 ref = "integrate/main"
 forges = { "forge.example" = ["dev-user"] }
-bridge = { hpc = { every_hours = 6 } }
+bridge = { hpc = { cadence_hours = 6 } }
 
 [dev.default]
 forges = {}
@@ -66,7 +66,7 @@ def test_bridge_hpc_renders_on_every_dev_machine_from_the_family(tmp_path: Path)
     for host in ('ws', 'stranger'):
         hpc = tomllib.loads(devhost.render(clone, host, {}))['bridge']['hpc']
         assert hpc['command'][1:] == list(devprofile.HPC_READ_DOOR)
-        assert hpc['every_hours'] == 6
+        assert hpc['cadence_hours'] == 6
 
 
 def test_without_a_declared_default_an_unknown_host_is_refused_by_name(tmp_path: Path) -> None:
@@ -92,8 +92,8 @@ def test_the_family_default_and_bridge_are_checked(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
     assert check_family(clone / 'family.toml') == []
     assert check_host(clone / 'hosts' / 'ws.toml', clone / 'family.toml') == []
-    bad = FAMILY.replace('hooks = "warn"', 'hooks = "off"').replace('every_hours = 6', 'every_hours = 0')
+    bad = FAMILY.replace('hooks = "warn"', 'hooks = "off"').replace('cadence_hours = 6', 'cadence_hours = 0')
     found = devschema.check_family(tomllib.loads(bad))
     assert any('default.hooks' in line for line in found), found
-    assert any('every_hours must be 1..168' in line for line in found), found
+    assert any('cadence_hours must be 1..168' in line for line in found), found
     assert devschema.check({'dev': {'default': {}}}, tomllib.loads(FAMILY)), 'a host may not declare the default'

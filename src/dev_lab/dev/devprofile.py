@@ -7,7 +7,7 @@ write account (``forges = {}``), no HPC roles (``hpc = []``), no vendor seats, h
 
 ``[dev] bridge.hpc`` (user ruling 2026-11-16: on EVERY development machine, so the family declares it) renders as
 the machine file's ``[bridge.hpc]``: the HPC usage read door the session bridge runs for the agents dashboard
-(``command``, an argv) and its cadence (``every_hours``).
+(``command``, an argv) and its cadence (``cadence_hours``).
 """
 
 from __future__ import annotations
@@ -89,4 +89,4 @@ def bridge_tables(dev: Mapping[str, Any], python: str | None = None) -> dict[str
     if not isinstance(hpc, Mapping):
         return {}
     command = [python or running_interpreter(), *HPC_READ_DOOR]
-    return {'bridge': {'hpc': {'command': command, 'every_hours': hpc.get('every_hours', 6)}}}
+    return {'bridge': {'hpc': {'command': command, 'cadence_hours': hpc.get('cadence_hours', 6)}}}
