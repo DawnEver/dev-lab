@@ -11,7 +11,7 @@ from typing import Final
 
 from dev_lab.dev.doorrows import allow_rows
 
-__all__ = ['ACTORS', 'MAIN', 'SUBAGENT', 'USER', 'Door']
+__all__ = ['ACTORS', 'MAIN', 'SUBAGENT', 'USER', 'Door', 'module_argv']
 
 #: The main session: it publishes (MAIN-SESSION-PUBLISHES) and changes forge state.
 MAIN: Final = 'main'
@@ -22,6 +22,11 @@ USER: Final = 'user'
 ACTORS: Final = (MAIN, SUBAGENT, USER)
 
 _RUNNERS: Final = ('python', 'git', 'sh', 'gh')
+
+
+def module_argv(name: str, *verbs: str) -> tuple[str, ...]:
+    """The door argv of ``python -m dev_lab.dev.<name> <verbs>``."""
+    return ('python', '-m', f'dev_lab.dev.{name}', *verbs)
 
 
 @dataclass(frozen=True, slots=True)
