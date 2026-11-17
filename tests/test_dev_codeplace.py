@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import ast
 import contextlib
+import inspect
 import io
 import json
 import os
 import time
 
+import _arch_corpus
 import pytest
 from lab_commons import launch
 
@@ -16,7 +19,6 @@ from dev_lab.dev.codeplace import (
     FAMILY_CODE_ROOTS,
     FAMILY_HOMES,
     FAMILY_STRAY_ROOTS,
-    RETIRED_FILES,
     TASK_ROOT,
     PlacementNotDeclared,
     StrayCensusUnreadable,
@@ -27,11 +29,13 @@ from dev_lab.dev.codeplace import (
     main,
     misplaced_code,
     refuse_write,
+    retired_copies,
     stray_files,
     stray_refusal,
 )
 from dev_lab.dev.disclosure import problems
 from dev_lab.dev.famtests import noreflection
+from dev_lab.dev.retiredfiles import RetiredFile
 
 _ROOTS = ('src/', 'tests/', 'scratch/', '.claude/memory/')
 _DAY = 86400.0
@@ -208,10 +212,10 @@ def test_noreflection_excludes_the_same_archive_codeplace_writes() -> None:
 # -- STRAY-FILE-REFUSED: an untracked, non-ignored file outside the stray roots -------------------------------
 
 
-def _repo(root, *, stray_roots: str = '[]') -> None:
+def _repo(root, *, stray_roots: str = '[]', retired: str = '') -> None:
     launch.run(['git', 'init', '-q', str(root)], check=True)
     (root / 'pyproject.toml').write_text(
-        f"[tool.dev_lab.placement]\npruned_paths = ['lanes']\nstray_roots = {stray_roots}\n", encoding='utf-8'
+        f"[tool.dev_lab.placement]\npruned_paths = ['lanes']\nstray_roots = {stray_roots}\n{retired}", encoding='utf-8'
     )
     (root / '.gitignore').write_text('output/\n', encoding='utf-8')
     launch.run(['git', '-C', str(root), 'add', 'pyproject.toml', '.gitignore'], check=True)
@@ -299,38 +303,123 @@ def test_a_stray_under_a_code_root_is_a_file_meant_and_its_one_remedy_is_git_add
     assert 'scratch/' not in reason.splitlines()[1]
 
 
-def test_a_retired_file_is_named_with_its_deletion_door_and_never_git_add(tmp_path) -> None:
-    """The 2026-11-17 wall: twelve stale rem indexes, eleven under src/, were told to be `git add`-ed."""
-    _repo(tmp_path)
-    scoped = [f'src/pkg{n}/.claude/rules/MEMORY.md' for n in range(11)]
-    for rel in ('.claude/rules/MEMORY.md', *scoped):
-        _plant(tmp_path, rel)
-    _plant(tmp_path, 'src/new_module.py')  # the planted control: a file meant still gets the add remedy
+#: rem's retired generated index: a CONSUMER's tree path, so it is test data here and never a literal in src/.
+_INDEX = '.claude/rules/MEMORY.md'
+_DOOR = "delete them through rem's migration"
+_ROW = f'retired = [{{ path = "{_INDEX}", what = "a retired generated index", door = "{_DOOR}" }}]\n'
+
+
+def _plant_the_incident(root) -> None:
+    """The 2026-11-17 wall: twelve stale indexes, eleven under src/, beside one ordinary new source file."""
+    for one in (_INDEX, *(f'src/pkg{n}/{_INDEX}' for n in range(11)), 'src/new_module.py'):
+        _plant(root, one)
+
+
+def test_a_declared_retired_file_is_named_with_its_deletion_door_and_never_git_add(tmp_path) -> None:
+    """The checkout declares the row in its own placement table, and the stray census reads it from there."""
+    _repo(tmp_path, retired=_ROW)
+    _plant_the_incident(tmp_path)
     reason = stray_refusal(tmp_path)
     assert reason is not None
     assert problems(reason, 'refusal') == []
     exits = reason.splitlines()[1]
-    retired = next(one for one in RETIRED_FILES if one.tail == '.claude/rules/MEMORY.md')
-    assert f'12 x {retired.tail} retired' in exits
-    assert retired.door in exits
-    assert 'git add src/new_module.py' in exits
+    assert f'12 x {_INDEX} retired (a retired generated index): {_DOOR}' in exits
+    assert 'git add src/new_module.py' in exits, 'a file meant still gets the add remedy'
     assert 'MEMORY.md' not in exits.split('git add', 1)[1], 'a retired file is never offered to git add'
-    assert 'output/logs/' not in exits, 'the root copy is not data either'
+    assert 'data -> ' not in exits, 'the root copy is not data either'
+
+
+def test_PLANTED_CONTROL_with_no_declared_row_the_same_strays_are_judged_as_before(tmp_path) -> None:
+    """No row, no retired exit: the leaf holds no table of its own, so an index under src/ reads as meant."""
+    _repo(tmp_path)
+    _plant_the_incident(tmp_path)
+    reason = stray_refusal(tmp_path)
+    assert reason is not None
+    exits = reason.splitlines()[1]
+    assert 'retired' not in exits
+    assert f'git add src/new_module.py src/pkg0/{_INDEX} src/pkg1/{_INDEX}' in exits
+    assert 'data -> ' in exits, 'the root copy is data, as before'
+
+
+def test_the_declared_rows_are_read_off_the_placement_table(tmp_path) -> None:
+    _declare(tmp_path, _ROW)
+    assert declared_placement(tmp_path).retired == (RetiredFile(_INDEX, 'a retired generated index', _DOOR),)
+    _declare(tmp_path, '')
+    assert declared_placement(tmp_path).retired == ()
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        "retired = 'x'\n",
+        "retired = ['x']\n",
+        "retired = [{ path = 'a/b.md', what = 'w' }]\n",
+        "retired = [{ path = '', what = 'w', door = 'd' }]\n",
+        "retired = [{ path = 'a/b.md', what = 'w', door = 'd', extra = 'e' }]\n",
+    ],
+)
+def test_a_malformed_retired_row_is_REFUSED(tmp_path, body) -> None:
+    _declare(tmp_path, body)
+    with pytest.raises(PlacementNotDeclared, match='retired'):
+        declared_placement(tmp_path)
+
+
+def test_the_retired_check_takes_its_table_with_no_default() -> None:
+    """The leaf holds no consumer's rows: a caller that forgets the table is a TypeError, never an empty verdict."""
+    assert inspect.signature(retired_copies).parameters['retired'].default is inspect.Parameter.empty
+    row = RetiredFile(_INDEX, 'w', 'd')
+    assert retired_copies([_INDEX, 'src/x.py'], retired=(row,)) == {row: [_INDEX]}
+    assert retired_copies([_INDEX, 'src/x.py'], retired=()) == {}
 
 
 @pytest.mark.parametrize(
     ('rel', 'retired'),
     [
-        ('.claude/rules/MEMORY.md', True),
-        ('src/pkg/sub/.claude/rules/MEMORY.md', True),
-        ('attic/old/.claude/rules/MEMORY.md', False),  # an archive is frozen source: rem's migration skips it
+        (_INDEX, True),
+        (f'src/pkg/sub/{_INDEX}', True),
+        (f'attic/old/{_INDEX}', False),  # an archive is frozen source: rem's migration skips it
         ('.claude/rules/taste.md', False),
         ('docs/rules/MEMORY.md', False),
         ('src/pkg/x.claude/rules/MEMORY.md', False),
     ],
 )
-def test_a_retired_file_is_matched_by_its_tail_at_any_depth_outside_an_archive(rel: str, *, retired: bool) -> None:
-    assert any(one.matches(rel) for one in RETIRED_FILES) is retired
+def test_a_retired_file_is_matched_by_its_path_at_any_depth_outside_an_archive(rel: str, *, retired: bool) -> None:
+    row = RetiredFile(_INDEX, 'w', 'd')
+    assert (retired_copies([rel], retired=(row,)) == {row: [rel]}) is retired
+
+
+def _literals_naming(text: str, needle: str) -> list[str]:
+    """Every string constant of module *text* containing *needle*, docstrings excepted: those are prose."""
+    tree = ast.parse(text)
+    docs = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+    }
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and needle in node.value
+        and id(node) not in docs
+    ]
+
+
+def test_PLANTED_CONTROL_the_literal_reading_sees_a_path_and_a_glob_but_not_a_docstring() -> None:
+    planted = f'"""Mentions {_INDEX} in prose."""\nA = {_INDEX!r}\nB = "**/{_INDEX}"\n'
+    assert _literals_naming(planted, _INDEX) == [_INDEX, f'**/{_INDEX}']
+
+
+def test_no_source_module_holds_the_retired_index_as_a_literal_or_a_glob() -> None:
+    """The leaf scan's remedy, taken: rem's layout is the consumer's data, never a path literal in src/."""
+    modules = _arch_corpus.source_modules()
+    _arch_corpus.assert_floor(len(modules), _arch_corpus.SOURCE_FLOOR, 'retired-index literal')
+    found = [_arch_corpus.rel(path) for path in modules if _literals_naming(path.read_text(encoding='utf-8'), _INDEX)]
+    assert found == []
 
 
 # -- the task ledger is repo state: never a stray, never a demand to commit it (W4) -------------------------------

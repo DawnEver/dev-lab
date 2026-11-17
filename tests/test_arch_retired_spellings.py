@@ -230,6 +230,10 @@ RETIRED_SPELLINGS: Final = {
             "user ruling 2026-11-16: a workstation never serves a merge's parts; only Actions and the HPC produce",
         ),
     ),
+    'RETIRED_FILES': (
+        "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to codeplace.retired_copies",
+        "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

@@ -16,13 +16,15 @@ THREE RULES OVER ONE MAP; the second's mechanism is its own module:
 * ``STRAY-FILE-REFUSED`` -- an UNTRACKED, non-ignored file outside the declared stray roots (the family's
   ``scratch/`` plus ``stray_roots``) is a defect the moment it appears: a file a person meant is STAGED,
   an artefact a program wrote belongs under ``output/logs/<yy>/<mm>/<dd>/<kind>/`` (ignored), a one-off
-  in scratch, and a file a known retirement declares gone (:data:`RETIRED_FILES`) is deleted through its
-  door -- never staged (2026-11-17: twelve stale rem indexes, eleven under ``src/``, were told to be
-  ``git add``-ed). Earned 2026-10-20 in consumer-a: a vendor controller run by hand with the checkout as its
-  cwd left seven log files in the root, and a ``uv`` run in a subdirectory left a ``uv.lock`` there; nothing
-  said so until a human saw them. :func:`stray_files` is the census; the agent hooks (``PostToolUse`` on
-  the shell tools and ``Stop``, ``python -m dev_lab.dev.codeplace stray``) report it the moment a
-  command made one, and the ``stray-files`` post-commit row names each one after a commit (a hint: the
+  in scratch, and a file a known retirement declares gone is deleted through its door -- never staged
+  (2026-11-17: twelve stale rem indexes, eleven under ``src/``, were told to be ``git add``-ed). Which files
+  are retired is the CHECKOUT's data, the ``retired`` rows of its table below (:mod:`dev_lab.dev.retiredfiles`),
+  passed to :func:`retired_copies`; the leaf holds no consumer's layout (:mod:`dev_lab.dev.foreign`), and a
+  checkout declaring none gets no such exit. Earned 2026-10-20 in consumer-a: a vendor controller run by hand
+  with the checkout as its cwd left seven log files in the root, and a ``uv`` run in a subdirectory left a
+  ``uv.lock`` there; nothing said so until a human saw them. :func:`stray_files` is the census; the agent
+  hooks (``PostToolUse`` on the shell tools and ``Stop``, ``python -m dev_lab.dev.codeplace stray``) report it
+  the moment a command made one, and the ``stray-files`` post-commit row names each one after a commit (a hint: the
   forge cannot see an untracked file, and a style finding blocks nothing -- toolchain plan P3).
 
 THE PLACEMENT MAP IS THE FAMILY'S, THE EXTRA ROOTS ARE THE REPO'S (user ruling 2026-10-02). Every
@@ -36,6 +38,7 @@ A repo declares ONLY what it adds, in ONE place -- ``[tool.dev_lab.placement]`` 
     stray_roots = []                        # where an untracked file may sit, beyond scratch
     scratch = 'scratch/'                    # the one-off sink; the family's home when omitted
     max_age_days = 3.0                      # when the SessionStart notice starts naming a one-off
+    retired = []                            # files a tool this repo uses retired (dev_lab.dev.retiredfiles)
 
 ONE TABLE, ONE PREDICATE, TWO CALLERS. The architecture test calls :func:`declared_misplaced` over
 the tree; the ``PreToolUse`` hook (``python -m dev_lab.dev.codeplace``, wired on
@@ -67,6 +70,7 @@ from dev_lab.dev.consentguard import refuse_write as refuse_consent_write
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reportplace import refuse_report
+from dev_lab.dev.retiredfiles import RetiredFile, declared_retired
 from dev_lab.dev.writeroots import refuse_outside_tree
 
 __all__ = [
@@ -77,12 +81,10 @@ __all__ = [
     'FAMILY_HOMES',
     'FAMILY_STRAY_ROOTS',
     'PRUNED_NAMES',
-    'RETIRED_FILES',
     'SCRATCH_MAX_AGE_DAYS',
     'TASK_ROOT',
     'Placement',
     'PlacementNotDeclared',
-    'RetiredFile',
     'StrayCensusUnreadable',
     'admits',
     'checkout_root',
@@ -93,6 +95,7 @@ __all__ = [
     'main',
     'misplaced_code',
     'refuse_write',
+    'retired_copies',
     'stray_files',
     'stray_refusal',
 ]
@@ -199,13 +202,14 @@ class PlacementNotDeclared(LookupError):
 
 @dataclasses.dataclass(frozen=True)
 class Placement:
-    """A repo's placement: code roots, the paths not walked, the stray roots, and its scratch lifecycle."""
+    """A repo's placement: code roots, paths not walked, stray roots, scratch lifecycle, and its retired files."""
 
     code_roots: tuple[str, ...]
     pruned_paths: tuple[str, ...] = ()
     stray_roots: tuple[str, ...] = FAMILY_STRAY_ROOTS
     scratch: str = FAMILY_STRAY_ROOTS[0]
     max_age_days: float = SCRATCH_MAX_AGE_DAYS
+    retired: tuple[RetiredFile, ...] = ()
 
 
 def _strings(table: dict, key: str, manifest: Path) -> tuple[str, ...]:
@@ -243,6 +247,11 @@ def declared_placement(root: Path) -> Placement:
     if isinstance(age, bool) or not isinstance(age, int | float) or age <= 0:
         msg = f'{_TABLE} max_age_days in {manifest} is {age!r}; it must be a positive number of days'
         raise PlacementNotDeclared(msg)
+    try:
+        retired = declared_retired(table.get('retired', []))
+    except ValueError as exc:
+        msg = f'{_TABLE} in {manifest}: {exc}'
+        raise PlacementNotDeclared(msg) from exc
     scratch = f'{scratch.strip("/")}/'
     return Placement(
         tuple(dict.fromkeys((*FAMILY_CODE_ROOTS, scratch, *extra))),
@@ -250,6 +259,7 @@ def declared_placement(root: Path) -> Placement:
         (scratch, *_strings(table, 'stray_roots', manifest)),
         scratch,
         float(age),
+        retired,
     )
 
 
@@ -266,37 +276,16 @@ _SCRIPT_HOME = 'scratch/<yy>/<mm>/<dd>/<kind>/'
 _DATA_HOME = 'output/logs/<yy>/<mm>/<dd>/<kind>/'
 
 
-@dataclasses.dataclass(frozen=True)
-class RetiredFile:
-    """A file a known retirement declares GONE: a ``**/<tail>`` glob, what it was, and the door that deletes it.
+def retired_copies(found: Iterable[str], *, retired: Iterable[RetiredFile]) -> dict[RetiredFile, list[str]]:
+    """Each *retired* row with a copy among repo-relative POSIX *found* outside an archive, mapped to its copies.
 
-    A GLOB, not a path: the row names every copy at any depth in whichever checkout runs the check, never a file
-    of this tree -- so it is a shape the leaf may hold, and :mod:`dev_lab.dev.foreign` reads it as one.
+    The table is the CALLER's, with no default: which files a tool retired is a fact of the checkout that used
+    the tool, declared in its own ``retired`` rows (:mod:`dev_lab.dev.retiredfiles`), and the leaf holds no
+    consumer's layout (:mod:`dev_lab.dev.foreign`).
     """
-
-    glob: str
-    what: str
-    door: str
-
-    @property
-    def tail(self) -> str:
-        """The path every copy ends with: the glob without its any-depth ``**/`` prefix."""
-        return self.glob.removeprefix('**/')
-
-    def matches(self, rel: str) -> bool:
-        """Whether repo-relative POSIX *rel* is a copy of this file, at any depth, outside an archive."""
-        return (rel == self.tail or rel.endswith(f'/{self.tail}')) and not is_archived(rel)
-
-
-#: Every file a known retirement declares gone. A stray copy is named with its door, never offered to ``git add``.
-RETIRED_FILES: tuple[RetiredFile, ...] = (
-    RetiredFile(
-        '**/.claude/rules/MEMORY.md',
-        "rem's generated memory index; nothing rebuilds it",
-        "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs "
-        '<checkout> -- which removes every copy outside attic/',
-    ),
-)
+    paths = tuple(found)
+    copies = {one: [rel for rel in paths if one.matches(rel) and not is_archived(rel)] for one in retired}
+    return {one: rels for one, rels in copies.items() if rels}
 
 
 class StrayCensusUnreadable(RuntimeError):
@@ -346,10 +335,10 @@ def stray_refusal(root: Path) -> str | None:
     """The ``STRAY-FILE-REFUSED`` message for *root* in three lines; ``None`` if clean.
 
     The first line counts the strays and names a few; the second gives each file ONE exit chosen by its kind --
-    a retired file (:data:`RETIRED_FILES`) is deleted through its door, a file under a code root was meant
-    (``git add``), a script is a one-off (``scratch/<yy>/<mm>/<dd>/<kind>/``), anything else is a program's data
-    (``output/logs/...``); the third points at the details. A checkout that declares no placement is not judged:
-    the adopter's own test reds on the missing table.
+    a file the checkout's own ``retired`` rows declare gone is deleted through its door, a file under a code root
+    was meant (``git add``), a script is a one-off (``scratch/<yy>/<mm>/<dd>/<kind>/``), anything else is a
+    program's data (``output/logs/...``); the third points at the details. A checkout that declares no placement
+    is not judged: the adopter's own test reds on the missing table.
     """
     try:
         placement = declared_placement(root)
@@ -359,12 +348,12 @@ def stray_refusal(root: Path) -> str | None:
     if not found:
         return None
     shown = ', '.join(found[:_SHOWN]) + (f' (+{len(found) - _SHOWN} more)' if len(found) > _SHOWN else '')
-    retired = {one: [rel for rel in found if one.matches(rel)] for one in RETIRED_FILES}
+    retired = retired_copies(found, retired=placement.retired)
     gone = {rel for copies in retired.values() for rel in copies}
     rest = [rel for rel in found if rel not in gone]
     meant = [rel for rel in rest if rel.startswith(placement.code_roots)]
     scripts = [rel for rel in rest if rel not in meant and Path(rel).suffix.lower() in CODE_SUFFIXES]
-    exits = [f'{len(rels)} x {one.tail} retired ({one.what}): {one.door}' for one, rels in retired.items() if rels]
+    exits = [f'{len(rels)} x {one.path} retired ({one.what}): {one.door}' for one, rels in retired.items()]
     exits.append(f'git add {" ".join(meant[:_SHOWN])}' if meant else '')
     exits.append(f'{", ".join(scripts[:_SHOWN])} -> {_SCRIPT_HOME}' if scripts else '')
     exits.append(f'data -> {_DATA_HOME}' if len(rest) > len(meant) + len(scripts) else '')
