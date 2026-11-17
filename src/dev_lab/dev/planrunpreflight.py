@@ -43,7 +43,7 @@ from dev_lab.ops import configdoor, forgeprotection
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import Send, handshake, record_preflight, ssh_send, subject_read
-from dev_lab.ops.consent.plan import STALE_CLIENT, Plan, stale_client
+from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
 from dev_lab.ops.giteaadmin import ForgeRefused
 
 __all__ = [
@@ -259,8 +259,8 @@ def preflight(
 ) -> tuple[bool, list[str]]:
     """``(green, lines)``: every check of the module docstring, BEFORE a code; the lines name each blocker."""
     readers = readers or Readers()
-    stale = stale_client(plan)
-    lines = [f'plan: BLOCKED -- {stale} unknown to this client: {STALE_CLIENT}'] if stale else []
+    stale = unregistered(plan)
+    lines = [f'plan: BLOCKED -- {not_registered(stale)}'] if stale else []
     blocked = bool(stale)
     hosts = {step.dest: step for step in reversed(steps.steps) if not step.local}
     unreached: set[str] = set()
@@ -291,7 +291,7 @@ def preflight(
             verdict, fault = _host_check(plan, steps, index, remotes(step.dest), readers)
             verdict = f'{verdict} on {step.dest}'
         if grant['action'] in stale:
-            verdict, fault = f'BLOCKED -- unknown to this client: {STALE_CLIENT}', True
+            verdict, fault = f'BLOCKED -- {not_registered([grant["action"]])}', True
         lines.append(f'{name}: {verdict}')
         blocked = blocked or fault
     lines.append(_BLOCKED if blocked else

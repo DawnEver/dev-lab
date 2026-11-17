@@ -33,7 +33,7 @@ from dev_lab.dev import remote
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.credential import FIELDS, ConsentRefused
-from dev_lab.ops.consent.plan import STALE_CLIENT, Plan, stale_client
+from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
 from dev_lab.ops.totp import write_private
 
 __all__ = [
@@ -54,7 +54,10 @@ __all__ = [
 Send = Callable[[Mapping[str, Any], dict[str, Any]], tuple[int, str]]
 
 #: The door of a client older than its issuer.
-CLIENT_UPGRADE: Final = f'{STALE_CLIENT}: pull dev-lab here and run `python -m dev_lab.dev.dep --bootstrap <checkout>`'
+CLIENT_UPGRADE: Final = (
+    'local dev-lab is older than the issuer; update it: '
+    'pull dev-lab here and run `python -m dev_lab.dev.dep --bootstrap <checkout>`'
+)
 #: The door of an issuer older than its client.
 ISSUER_UPGRADE: Final = (
     "the consent issuer's dev-lab is older than this client: upgrade the issuer host (its `ops upgrade --follow` "
@@ -181,8 +184,8 @@ def offer(
         ConsentRefused: the named blocker; no code was asked.
 
     """
-    if stale := stale_client(plan):
-        msg = f'no code asked: {stale} unknown to this client: {CLIENT_UPGRADE}'
+    if stale := unregistered(plan):
+        msg = f'no code asked: {not_registered(stale)}'
         raise ConsentRefused(msg)
     path, clock = _stamp(plan.digest, home), time.time() if now is None else now
     at = json.loads(path.read_text(encoding='utf-8')).get('at', 0) if path.is_file() else None

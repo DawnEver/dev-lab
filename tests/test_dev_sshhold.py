@@ -260,7 +260,7 @@ def test_a_plan_naming_an_action_this_client_lacks_is_refused_before_the_code_is
     unknown = {'host': 'ops@h', 'action': 'ops.not.yet.known', 'subject': 'c'}
     plan.write_text(json.dumps({'hosts': ['ops@h'], 'grants': [unknown]}))
     sent: list[str] = []
-    with pytest.raises(sshholdwire.HoldRefused, match='local dev-lab is older than the plan; update it'):
+    with pytest.raises(sshholdwire.HoldRefused, match='not a consent action; the registered ones are'):
         sshholdplan.open_planned(
             1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [], routes=sshhold.route, opener=str
         )

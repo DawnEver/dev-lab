@@ -30,7 +30,7 @@ from dev_lab.dev.sshholdwire import HoldRefused, ping
 from dev_lab.ops.consent.client import TABLE, grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import Send, offer, ssh_send
-from dev_lab.ops.consent.plan import STALE_CLIENT, parsed, stale_client
+from dev_lab.ops.consent.plan import not_registered, parsed, unregistered
 from dev_lab.ops.totp import STEP
 
 __all__ = ['OPEN_WINDOW_S', 'offered', 'open_planned']
@@ -57,8 +57,8 @@ def open_planned(
     re-opened.
     """
     found = parsed(json.loads(plan.read_text(encoding='utf-8')))
-    if stale := stale_client(found):
-        msg = f'the plan was not granted, no code sent: {stale} unknown to this client: {STALE_CLIENT}'
+    if stale := unregistered(found):
+        msg = f'the plan was not granted, no code sent: {not_registered(stale)}'
         raise HoldRefused(msg)
     reused = [dest for dest in found.hosts if (held or _held)(dest)]
     given = clock()
