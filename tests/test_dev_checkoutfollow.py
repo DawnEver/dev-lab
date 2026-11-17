@@ -165,3 +165,71 @@ def test_a_dirty_behind_checkout_is_not_touched_and_its_obstacle_says_so(tmp_pat
     assert 'uncommitted' in checkoutfollow.advance(clone, fetch=_no_fetch, busy=_idle)
     assert _git(clone, 'rev-parse', 'HEAD') == head
     assert (clone / 'pyproject.toml').read_text(encoding='utf-8') == 'edited\n'
+
+
+_JOURNAL = '.claude/tasks/some-task/JOURNAL.md'
+
+
+def _clone_behind_with_journal(tmp_path: Path, *, upstream_appends: bool = False) -> tuple[Path, str]:
+    """A fetched clone one commit behind, whose task journal is tracked; upstream optionally appends to it too."""
+    _bare, clone, _rules = _clone_behind(tmp_path)
+    seed = tmp_path / 'seed'
+    journal = seed / _JOURNAL
+    journal.parent.mkdir(parents=True)
+    journal.write_text('- opened\n', encoding='utf-8')
+    _git(seed, 'add', _JOURNAL)
+    _git(seed, 'commit', '-q', '-m', 'journal')
+    _git(seed, 'push', '-q', 'origin', 'HEAD:integrate/main')
+    _git(clone, 'pull', '-q', '--ff-only')
+    (seed / 'pyproject.toml').write_text(_DECLARED + '# newer\n', encoding='utf-8')
+    if upstream_appends:
+        journal.write_text('- opened\n- upstream line\n', encoding='utf-8')
+    _git(seed, 'commit', '-q', '-am', 'newer')
+    _git(seed, 'push', '-q', 'origin', 'HEAD:integrate/main')
+    _git(clone, 'fetch', '-q')
+    return clone, _git(clone, 'rev-parse', 'origin/integrate/main')
+
+
+def test_a_journal_append_alone_fast_forwards_and_the_append_survives(tmp_path) -> None:
+    """O19 ruling A: the rem task hooks append to the main checkout's journal; that dirt never holds the follow."""
+    clone, tip = _clone_behind_with_journal(tmp_path)
+    journal = clone / _JOURNAL
+    journal.write_text('- opened\n- local line\n', encoding='utf-8')
+    (clone / '.claude' / 'tasks' / 'untracked-task').mkdir()
+    (clone / '.claude' / 'tasks' / 'untracked-task' / 'TASK.md').write_text('t\n', encoding='utf-8')
+    assert checkoutfollow.obstacle(clone, busy=_idle) == ''
+    assert 'integrate/main' in checkoutfollow.advance(clone, fetch=_no_fetch, busy=_idle)
+    assert _git(clone, 'rev-parse', 'HEAD') == tip
+    assert journal.read_text(encoding='utf-8') == '- opened\n- local line\n'
+
+
+def test_a_journal_append_upstream_also_changed_is_refused_by_name(tmp_path) -> None:
+    clone, _tip = _clone_behind_with_journal(tmp_path, upstream_appends=True)
+    head = _git(clone, 'rev-parse', 'HEAD')
+    (clone / _JOURNAL).write_text('- opened\n- local line\n', encoding='utf-8')
+    said = checkoutfollow.advance(clone, fetch=_no_fetch, busy=_idle)
+    assert _JOURNAL in said
+    assert 'upstream' in said
+    assert _git(clone, 'rev-parse', 'HEAD') == head
+
+
+def test_a_journal_edit_that_is_not_an_append_is_refused(tmp_path) -> None:
+    clone, _tip = _clone_behind_with_journal(tmp_path)
+    head = _git(clone, 'rev-parse', 'HEAD')
+    (clone / _JOURNAL).write_text('- rewritten\n', encoding='utf-8')
+    said = checkoutfollow.advance(clone, fetch=_no_fetch, busy=_idle)
+    assert _JOURNAL in said
+    assert 'not an append' in said
+    assert _git(clone, 'rev-parse', 'HEAD') == head
+
+
+def test_a_journal_append_beside_another_tracked_edit_is_refused(tmp_path) -> None:
+    clone, _tip = _clone_behind_with_journal(tmp_path)
+    head = _git(clone, 'rev-parse', 'HEAD')
+    (clone / _JOURNAL).write_text('- opened\n- local line\n', encoding='utf-8')
+    rules = clone / '.claude' / 'hooks' / 'deny-rules.json'
+    rules.write_bytes(rules.read_bytes() + b'\n')
+    said = checkoutfollow.advance(clone, fetch=_no_fetch, busy=_idle)
+    assert 'uncommitted' in said
+    assert 'deny-rules.json' in said
+    assert _git(clone, 'rev-parse', 'HEAD') == head
