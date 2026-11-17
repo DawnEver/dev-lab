@@ -105,8 +105,8 @@ is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
 - **A cluster account's machine file**: delete the `serve` key from `[deploy]` (on Ada it named the
   integration mode), then re-run `python -m dev_lab.dev.hpcaccount deploy` so the crontab lines become plain
   `forge serve`. A `[deploy]` still carrying the key is refused.
-- **A workstation**: re-run `python -m dev_lab.dev.workstation deploy ...` without the mode flag; it
-  rewrites the `lab-forge-serve` Task, whose old action is refused until then.
+- **A workstation**: re-run `python -m dev_lab.dev.workstation deploy ...` without the mode flag; it deletes the
+  retired `lab-forge-serve` Task (a workstation never serves, user ruling 2026-11-16).
 - **A host that should take no foreign work**: do not run `forge serve` on it; to have it take its own
   work first, name it in the machine file's `[priority]` (ordering only -- nothing is reserved).
 - **A consumer's `pyproject.toml`**: replace the opted-in branch list under `[tool.lab_commons.schedule]` and

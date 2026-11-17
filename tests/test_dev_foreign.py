@@ -15,6 +15,7 @@ from pathlib import Path
 import lab_commons.launch as _door
 import pytest
 
+from dev_lab.dev.failprint import subjects_of
 from dev_lab.dev.floors import FloorUnmet
 from dev_lab.dev.foreign import (
     DATA,
@@ -216,3 +217,15 @@ def test_a_file_added_after_the_first_read_resolves_in_the_same_process(tmp_path
     (tmp_path / 'b' / 'later.json').write_text('{}', encoding='utf-8')
     _git(tmp_path, 'add', 'b/later.json')
     assert not is_unresolved_path('b/later.json', tmp_path)
+
+
+def test_each_foreign_red_names_its_handles_as_subjects(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for the fingerprint: an unwaived and a stale handle are each a subject line."""
+    src = _tree(tmp_path, 'm.py', 'REPO = "consumer-b"\n')
+    with pytest.raises(ForeignData) as unwaived:
+        assert_no_foreign_data(_scan(tmp_path, src), evicted={}, synthetic={}, read=99, floor=1)
+    assert subjects_of(str(unwaived.value)) == {'src/pkg/m.py::data'}
+    stale = {'src/pkg/m.py::data': 'r', 'src/pkg/gone.py::path': 'r'}
+    with pytest.raises(StaleWaiver) as gone:
+        assert_no_foreign_data(_scan(tmp_path, src), evicted=stale, synthetic={}, read=99, floor=1)
+    assert subjects_of(str(gone.value)) == {'src/pkg/gone.py::path'}

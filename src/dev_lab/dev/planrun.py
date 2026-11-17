@@ -13,7 +13,9 @@ its digest -- topology.md 5.1)::
 The STEPS FILE says what each grant of the plan runs, in the plan's order (one step per grant). A HOST step runs an
 ops verb on its grant's ``host`` (``config``/``python`` default the file's); a LOCAL step redeems its grant
 here, through the client verb of :data:`LOCAL_VERBS` (a ``breakglass.wave`` opens a wave:
-``python -m dev_lab.dev.forge breakglass open --credential <id>``)::
+``python -m dev_lab.dev.forge breakglass open --credential <id>``; a ``hpcaccount.ci-cron`` step names its verb,
+``{"local": true, "argv": ["ci-pause-fleet", "--cluster", "<c>"]}``, run as ``python -m dev_lab.dev.hpcaccount
+<argv...> --credential <id>``)::
 
     {"config": "/etc/dev-lab/supervise.toml", "python": "/usr/bin/python3",
      "steps": [{"argv": ["config", "apply", "--from", "/srv/plan/candidate.toml"]},

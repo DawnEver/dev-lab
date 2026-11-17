@@ -147,3 +147,13 @@ def test_an_unlanded_lane_names_the_discard_door_never_a_move_under_output() -> 
     for text in (rule.remedy, section):
         assert 'dev_lab.dev.branchset --discard <branch> --approved' in text
         assert 'never a worktree' in text
+
+
+def test_an_archived_tree_branch_or_detached_names_the_remove_door() -> None:
+    """Wall 2026-11-17: ``--discard`` takes a BRANCH, so a detached tree had no door; ``worktrees --remove`` is it."""
+    rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']
+    section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
+    section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
+    for text in (rule.remedy, section):
+        assert 'dev_lab.dev.worktrees --remove <name>' in text
+        assert 'detached' in text

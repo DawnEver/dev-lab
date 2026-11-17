@@ -142,8 +142,11 @@ are too unqualified to survive being flattened into a namespace this wide.
   declaration that reads as a guard. Three parts reported BY NAME -- engine, rules, wiring -- because
   each fails differently, and installing is an EXPLICIT request that never clobbers an unrelated
   setting, matcher, or an engine lab-commons did not ship. Not re-exported below.
-* :mod:`dev_lab.dev.agent_wiring` -- the hook wiring :mod:`~dev_lab.dev.agent_guard` installs, as data: the
-  repo-relative paths, every hook command, and the one ``WIRING`` table. Not re-exported below.
+* :mod:`dev_lab.dev.agent_wiring` -- the hook wiring, as data: the engine's paths and command, the one ``WIRING``
+  table of handlers per event, a repo's own ``[[tool.dev_lab.agent_hooks]]`` rows, and the rows
+  :mod:`~dev_lab.dev.agent_guard` renders. Not re-exported below.
+* :mod:`dev_lab.dev.hookdispatch` -- one interpreter per hook event: every family and repo-declared row of it, its
+  ``may_block``/``once``/``timeout`` enforced, the answers merged into one. Not re-exported below.
 * :mod:`dev_lab.dev.docsite` -- the documentation-site driver: a TABLE of sub-sites, every
   subprocess checked and bounded, and a missing toolchain that SKIPS and SAYS SO on the portal page
   rather than failing the build or vanishing from it. Not re-exported below.
@@ -350,6 +353,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgedemand` -- SHARED DEMAND: the forge's run records folded into the learned cache.
 * :mod:`dev_lab.dev.forgeclaim` -- a claim is a pending status with a lease; the earliest wins the race.
 * :mod:`dev_lab.dev.forgecoalesce` -- one run per coalesced ref and part in flight; the tip waits behind it.
+* :mod:`dev_lab.dev.producers` -- each repo's ONE producer (``[tool.dev_lab.protection] producer``: ``actions`` or
+  ``hpc``) and its ``optional_needs`` parts, never a merge condition; every consumer derives from it.
+* :mod:`dev_lab.dev.producercheck` -- refuses what contradicts a producer: an HPC repo's GitHub workflow, an Actions
+  repo without its ``ci.yml``, a host ``[serve]`` off an HPC account, a required part nothing produces.
 * :mod:`dev_lab.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`dev_lab.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
 * :mod:`dev_lab.dev.forgephases` -- where a forge read's time went: forge HTTP, git fetch, local git, compute.
@@ -408,6 +415,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`dev_lab.dev.forgelanes` -- the origin branches tracked, a PR head fetched, the PR a pushed lane lands by.
 * :mod:`dev_lab.dev.forgemerge` -- the merge decision: may a reviewed, clean PR merge into integration now.
+* :mod:`dev_lab.dev.failprint` -- a failure fingerprint: a test id plus the subjects its failure names.
 * :mod:`dev_lab.dev.forgemergewaits` -- what a PR head's posted statuses lack before it merges.
 * :mod:`dev_lab.dev.forgemergecall` -- the forge's merge calls: merge a judged head, or enable auto-merge.
 * :mod:`dev_lab.dev.forgemergeready` -- ``forge merge ready``: post the decision and merge a ready head.
@@ -467,8 +475,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
-* :mod:`dev_lab.dev.taskbinding` -- the ONE session -> task record, bound by the user's `task: <slug>` prompt.
-* :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent commit or push off its bound task's pr/<task>/ heads.
+* :mod:`dev_lab.dev.taskbinding` -- the ONE reader of rem's task ledger and session binding (rem writes both).
+* :mod:`dev_lab.dev.remplugin` -- which rem the session's harness runs: an unbound push names an absent or old one.
+* :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent push off its bound task's pr/<task>/ heads.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
 * :mod:`dev_lab.dev.uvfollow` -- uv follows the version its pin needs, through WinGet or `uv self update`.
 * :mod:`dev_lab.dev.commitmsg` -- the commit-msg and push-range check: `type(scope)!: subject`, owned once.
@@ -495,7 +504,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.branchfate` -- TWO-FATES: every local branch and worktree is kept for a named live owner, or
   archived losslessly (bundle, uncommitted work, manifest) and cleaned up by ``branchset --apply``; none lingers.
 * :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
-* :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,
+* :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (pre-push,
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
@@ -508,15 +517,15 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   (``continues #N``) the forge opens: Gitea's serve tick, GitHub's ``continue.yml``, and ``forge pr continue``.
 * :mod:`dev_lab.dev.branchreview` -- the ONE review record per branch: its PRs, oldest first, and every carried
   finding's disposition; what a continuation's review is scoped by and carries (``forge review carry``).
-* :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: a ``pr/*`` push or ``pr ready`` is refused when the head
-  lacks an ``origin/<integration>`` landing older than the TIME lag window or its lock pins a floated sibling past
-  it (remedy ``forge sync``); the push is also refused when the pushing venv does not hold what that lock pins.
+* :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: ``pr ready`` is refused, and a ``pr/*`` push warned, when the
+  head lacks an ``origin/<integration>`` landing older than the TIME lag window or its lock pins a floated sibling
+  past it (remedy ``forge sync``); the push is also warned when the pushing venv does not hold what that lock pins.
 * :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; it is the
-  command line of ``delete`` and ``sweep``, and a workstation's ``PostToolUse`` hook detaches ``sweep --local``.
+  command line of ``delete`` and ``sweep``.
 * :mod:`dev_lab.dev.branchdelete` -- LOSSLESS-DELETE and LANDED-BRANCHES-SWEPT: a branch is deleted only when
   its content is held elsewhere; ``sweep`` deletes every branch integration now contains (ancestry or content),
-  after each integration move: the serve pass, GitHub's push job, and the ``PostToolUse`` hook.
+  after each integration move: the serve pass and GitHub's push job; a workstation's local half is reclaimrun.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
@@ -529,6 +538,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
+* :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
 * :mod:`dev_lab.dev.reclaimrun` -- reclaim as a SessionStart step: detached, locked, a bounded batch, never blocks.
 * :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
@@ -550,15 +560,13 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.proctable` -- the process table the stop doors read and its walks: subtree, ancestors,
   whose session a pid descends from, and the pids no door may stop.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
-* :mod:`dev_lab.dev.journaldoor` -- the PreToolUse door: a task journal append citing an ignored path is
-  refused before it is written.
-* :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the command to arm as a Monitor after a push, and an
-  advisory ``PostToolUse`` reminder when a pushed head has no live ``forge watch``; it journals each push.
-* :mod:`dev_lab.dev.pushstop` -- the Stop hook: a turn does not end while a pushed head is unwatched-pending, or
-  while a PR of the session is red and unacknowledged.
+* :mod:`dev_lab.dev.journaldoor` -- the journal door's judge, asked by the engine's deny row on a match: a task
+  journal append citing an ignored path is refused before it is written.
+* :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the commit a shell push line publishes, and the line a
+  push door prints naming its hearer, the machine PR watcher.
 * :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
 * :mod:`dev_lab.dev.sessionpoll` -- SESSION-HEARS-ITS-PRS: one read of a session's PRs, its reds and its one green.
-* :mod:`dev_lab.dev.prwatcher` -- SESSION-HEARS-ITS-PRS: one machine watcher, per-session inboxes, the Stop gate's beat.
+* :mod:`dev_lab.dev.prwatcher` -- SESSION-HEARS-ITS-PRS: the one hearer -- a machine watcher, per-session inboxes.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
 * :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrolment door, ``[bridge]``.
@@ -567,17 +575,15 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,
   after the checkout follows integration and before stale hooks are reinstalled.
-* :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
-* :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.
-* :mod:`dev_lab.dev.workstation` -- a Windows workstation as a serve host in one run, and the Task's serve loop.
+* :mod:`dev_lab.dev.workstation` -- a Windows workstation's deploy in one run; a workstation never serves.
 * :mod:`dev_lab.dev.workstationfile` -- the machine-file tables a workstation deploy writes, and its roles.
 * :mod:`dev_lab.dev.workstationprobe` -- the tools, COM classes and stored credentials a workstation deploy needs.
-* :mod:`dev_lab.dev.workstationregistry` -- which workstation serves the forge: the synced registry's roles.
+* :mod:`dev_lab.dev.workstationregistry` -- which workstation is the forge host: the synced registry's roles.
 * :mod:`dev_lab.dev.hpcaccount` -- a cluster account as a serve host: its deploy, cron tick and allocation record.
 * :mod:`dev_lab.dev.opsserver` -- the ops door: its fixed verbs on a declared server the integrator deploys.
 * :mod:`dev_lab.dev.remote` -- the one ssh transport both remote doors share: how a command reaches a host.
-* :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
+* :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a checkout it keeps and syncs its venv.
 * :mod:`dev_lab.dev.mainsync` -- a main checkout follows its branch: byte-identical untracked files are no obstacle,
   a differing one, a tracked change or a divergence refuses by name; then its venv follows.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
@@ -591,6 +597,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.verifiedby` -- a data repo's ``tests/base`` is its declared consumers' tests at its head.
 * :mod:`dev_lab.dev.forgedataruns` -- the serve runs a consumed data PR's consumer tests here and posts them there.
 * :mod:`dev_lab.dev.doorrows` -- how one door argv is spelled as allow rows: one literal interpreter per layout.
+* :mod:`dev_lab.dev.remotedoors` -- the agent-policy rows that reach a cluster account or server, spliced into POLICY.
 * :mod:`dev_lab.dev.forgelabel` -- `forge label create`: one repository label through the door, idempotent by name.
 * :mod:`dev_lab.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`dev_lab.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.

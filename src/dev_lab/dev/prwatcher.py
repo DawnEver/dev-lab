@@ -12,12 +12,12 @@ at every stop. So one watcher per machine does the polling, outside any harness:
   key it covered. It exits :data:`YIELDED` when a newer environment is published; the next start re-runs it;
 * ``start`` and ``session-start`` (the ``SessionStart`` hook) detach ``run`` through the one launch door unless a
   watcher already runs -- idempotent, pure Python, the same on Windows and Linux;
-* :func:`heard` is what the ``Stop`` gate (:func:`dev_lab.dev.pushstop.unwatched_refusal`) reads: the beat is
-  younger than :data:`FRESH_S`, its writer is alive, and it covers every open PR of the session. A red still needs
-  act-or-ack (:func:`dev_lab.dev.pushstop.red_refusal`);
+* :func:`heard` says whether a session is heard: the beat is younger than :data:`FRESH_S`, its writer is alive,
+  and it covers every open PR of the session;
 * ``inbox`` (the ``UserPromptSubmit`` hook) surfaces the session's unread events as additional context and marks
   them read.
 
+It is the ONE hearer of a session's PRs (dev-lab #640): no Monitor, no Stop gate, no shell-line hook.
 ``python -m dev_lab.dev.prwatcher run | start | session-start | inbox``; the hooks always exit 0.
 """
 
@@ -36,8 +36,8 @@ from lab_commons.liveness import creation_stamp, still_the_same_process
 from lab_commons.log import emit
 
 from dev_lab.dev import native_session, sessionprs
+from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, env_superseded
-from dev_lab.dev.reclaimrun import detach_argv
 from dev_lab.dev.sessionpoll import poll_session
 
 if TYPE_CHECKING:

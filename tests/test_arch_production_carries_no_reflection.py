@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.failprint import subjects_of
 from dev_lab.dev.famtests.noreflection import assert_no_reflection, reflection_sites
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +29,11 @@ _ALLOWED = {
     'src/dev_lab/dev/seams.py': (
         'rebind/restore_all rebind a name handed in as DATA (a Seam path) on an arbitrary owner and put '
         'the original back; the attribute name is not known to any type, so setattr is the operation'
+    ),
+    'tests/test_dev_disclosure.py': (
+        '_details_callers reads each details_for(<NAME>) argument out of SOURCE TEXT and resolves that name on '
+        'its module; the name is data and a constant may be computed (shelllife._RULE), so no source parse '
+        'can stand in for the lookup'
     ),
 }
 
@@ -146,3 +152,11 @@ def test_an_unread_tree_reds(tmp_path: Path) -> None:
     root = _repo(tmp_path, {'a.py': 'x = 1\n'})
     with pytest.raises(AssertionError):
         assert_no_reflection(root=root, allowed={}, floor=2)
+
+
+def test_the_reflection_red_names_each_site_and_entry_as_a_subject(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for the fingerprint: each new ``file:line`` and each bad entry is a subject line."""
+    root = _repo(tmp_path, {'a.py': 'setattr(o, "x", 1)\ngetattr(o, "y")\n', 'b.py': 'x = 1\n'})
+    with pytest.raises(AssertionError) as red:
+        assert_no_reflection(root=root, allowed={'b.py': 'gone'}, floor=1)
+    assert subjects_of(str(red.value)) == {'a.py:1', 'a.py:2', 'b.py'}

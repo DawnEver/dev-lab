@@ -9,9 +9,10 @@ being too slow to run inline. So this module decides nothing; it RUNS that owner
 * ``--session-start`` is the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`): it reads the
   payload's ``cwd``, does nothing unless that is a MAIN checkout (a linked tree is somebody's lease), detaches
   a background run and returns at once;
-* ``--background`` is the git hooks' door (``githooks/base.toml``: ``post-merge``, ``post-checkout`` and
-  ``pre-push``, user ruling 2026-11-12): from ANY tree of the repo it detaches a run of the MAIN checkout and
-  returns at once, exit 0 whatever happens, so it never delays or fails the merge, checkout or push;
+* ``--background`` is the git hook's door (``githooks/base.toml``: ``post-merge``, user ruling 2026-11-12; a tree
+  becomes reclaimable when its branch lands, which a checkout learns when it takes in upstream): from ANY tree of
+  the repo it detaches a run of the MAIN checkout and returns at once, exit 0 whatever happens, so it never delays
+  or fails the merge;
 * a background run has no console, survives its parent, and holds a PER-REPO lock in the git common dir, so a
   second session's run is a no-op; a lock older than :data:`STALE_LOCK_S` is a crashed run's and is taken over;
 * each run removes at most :data:`BATCH` trees and writes every line -- removed, kept with its reason (a real
@@ -23,94 +24,26 @@ being too slow to run inline. So this module decides nothing; it RUNS that owner
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import os
-import subprocess
 import sys
-import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Final, TextIO
 
-import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.backgroundrun import detach_argv, held, main_checkout, repo_main
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset
-from dev_lab.dev.checkout import git_out, worktrees
+from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.reclaim import QUIET_S
 from dev_lab.dev.venvcurrent import reclaim as reclaim_envs
 
-__all__ = [
-    'BATCH',
-    'LOCK_NAME',
-    'STALE_LOCK_S',
-    'common_dir',
-    'detach',
-    'detach_argv',
-    'held',
-    'main',
-    'main_checkout',
-    'repo_main',
-    'run',
-]
+__all__ = ['BATCH', 'detach', 'main', 'run']
 
 #: Trees removed per run at most: a run stays minutes, and the next session start takes the next batch.
 BATCH: Final = 10
-#: The per-repo lock, in the git COMMON dir every worktree of the repo shares.
-LOCK_NAME: Final = 'dev-lab-reclaim.lock'
-#: A lock this old belongs to a run that died; the next run takes it over.
-STALE_LOCK_S: Final = 6 * 3600.0
-#: Windows: no console window, its own process group, out of the hook runner's job (``subprocess`` names).
-_DETACHED: Final = 0x08000000 | 0x00000200
-_BREAKAWAY: Final = 0x01000000
-
-
-def main_checkout(cwd: Path) -> Path | None:
-    """The top of the MAIN checkout *cwd* lies in; ``None`` in a linked worktree or outside git."""
-    out = git_out(cwd, 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel')
-    match (out or '').splitlines():
-        case [git_dir, common, top] if Path(git_dir).resolve() == Path(common).resolve():
-            return Path(top).resolve()
-        case _:
-            return None
-
-
-def repo_main(cwd: Path) -> Path | None:
-    """The MAIN checkout of the repository *cwd* lies in, from any of its trees; ``None`` outside git."""
-    trees = worktrees(cwd) if cwd.is_dir() else None
-    return trees[0][0].resolve() if trees else None
-
-
-def common_dir(root: Path) -> Path:
-    """*root*'s git COMMON dir, the one every worktree of the repo shares (where its per-repo locks live)."""
-    out = git_out(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    return Path((out or '').strip() or root / '.git')
-
-
-@contextlib.contextmanager
-def held(root: Path, *, stale_s: float = STALE_LOCK_S, name: str = LOCK_NAME) -> Iterator[bool]:
-    """Hold *root*'s lock *name* for the block; yields ``False`` (and holds nothing) when another run has it."""
-    lock = common_dir(root) / name
-    for _ in range(2):
-        try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            with contextlib.suppress(OSError):
-                if time.time() - lock.stat().st_mtime > stale_s:
-                    lock.unlink()
-                    continue
-            yield False
-            return
-        os.write(fd, f'{os.getpid()}\n'.encode())
-        os.close(fd)
-        try:
-            yield True
-        finally:
-            lock.unlink(missing_ok=True)
-        return
-    yield False
 
 
 def run(
@@ -152,19 +85,6 @@ def _envs(root: Path) -> tuple[str, ...]:
 def detach(root: Path, *, batch: int = BATCH) -> None:
     """Start a background :func:`run` of *root* that outlives this process and opens no window."""
     detach_argv(root, ['-m', 'dev_lab.dev.reclaimrun', '--root', str(root), '--batch', str(batch)])
-
-
-def detach_argv(root: Path, args: list[str]) -> None:
-    """Start this interpreter with *args* in *root*, outliving this process and opening no window."""
-    argv = [sys.executable, *args]
-    quiet = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL}
-    if sys.platform != 'win32':
-        _door.popen(argv, cwd=root, start_new_session=True, **quiet)
-        return
-    try:
-        _door.popen(argv, cwd=root, creationflags=_DETACHED | _BREAKAWAY, **quiet)
-    except OSError:  # the job forbids breakaway: still detached from the console and the process group
-        _door.popen(argv, cwd=root, creationflags=_DETACHED, **quiet)
 
 
 def _session_root(stdin: TextIO) -> Path | None:

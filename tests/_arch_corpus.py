@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 from typing import Final
 
 from dev_lab.dev.rules import tracked_files
@@ -103,3 +104,47 @@ def rel(path: Path) -> str:
 def parse(path: Path) -> ast.Module:
     """*path* as an AST. A file that does not parse is a failure, never a file that is skipped."""
     return ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+
+
+def bound_names(body: list[ast.stmt]) -> set[str]:
+    """Every MODULE-LEVEL name a module binds -- by def, class, assignment or import.
+
+    Module level rather than :func:`ast.walk`, because a local variable inside a function is not a
+    name a consumer can import: counting one would let a lying ``__all__`` resolve against it.
+    """
+    names: set[str] = set()
+    for node in body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            names.update((a.asname or a.name).split('.')[0] for a in node.names)
+        elif isinstance(node, ast.Assign):
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
+            # ``type Row = ...`` (PEP 695) binds a module-level name a consumer imports and
+            # annotates with. MEASURED 2026-09-17 on ``dev.shards.Row``: omitting this convicted a
+            # TRUE ``__all__`` entry. The blind spot ran in that direction only -- it manufactured a
+            # lie where there was none, never the reverse -- so nothing already declared was wrong.
+            names.add(node.name.id)
+        elif isinstance(node, ast.If | ast.Try):
+            names |= bound_names(node.body)
+            names |= bound_names(node.orelse)
+            if isinstance(node, ast.Try):
+                names |= bound_names(node.finalbody)
+                for handler in node.handlers:
+                    names |= bound_names(handler.body)
+    return names
+
+
+def module_names(module: ModuleType) -> set[str]:
+    """Every name *module*'s SOURCE binds at module level -- how a test pins a deleted name absent.
+
+    Read from the source, not the live namespace: ``vars(module)`` is reflection (NO-REFLECTION), and a
+    deleted function is a fact about the file -- its ``def`` and its imports -- which the AST states directly.
+    """
+    if module.__file__ is None:
+        msg = f'{module.__name__} has no source file, so its bound names cannot be read'
+        raise AssertionError(msg)
+    return bound_names(parse(Path(module.__file__)).body)

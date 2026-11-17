@@ -18,8 +18,8 @@ THEN THE LOCK (user ruling 2026-11-07). A clean sync then relocks every floated 
 to its line's current head through the dependency door (:func:`relock_floating`) and commits
 the lock in the same sync (:func:`relock`) together with every generated file the new pin renders -- each
 renderer the repo's files call for (:data:`dev_lab.dev.famfiles.RENDERERS`), run with the tree's re-synced
-environment (:func:`dev_lab.dev.relock.rerender`) -- so ONE push of the result passes the ``pr-current`` pre-push row
-(:mod:`dev_lab.dev.prcurrent`), which refuses a ``pr/*`` head that lacks integration's tip or lags a sibling.
+environment (:func:`dev_lab.dev.relock.rerender`) -- so ONE push of the result is current for the ``pr-current``
+judgement (:mod:`dev_lab.dev.prcurrent`), which names a ``pr/*`` head that lacks integration's tip or lags a sibling.
 
 THE OWNER'S CHECKOUT, THE OWNER'S PUSH. Run by the owner's agent in develop mode on a clean tree.
 It merges locally and stops: the owner runs their tests and pushes. It never pushes, and it refuses on

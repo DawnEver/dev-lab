@@ -11,8 +11,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 from _forge_state import FORGE
+from _rem_binding import bind_as_rem, plant_codex_rem
 
-from dev_lab.dev import agent_wiring, sessionprs, taskbinding, taskgate, walls
+from dev_lab.dev import sessionprs, taskgate, walls
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -92,7 +93,7 @@ def test_a_missing_or_corrupt_identity_catalog_never_turns_into_a_human_bypass(
     monkeypatch.setattr(native, '__file__', str(tmp_path / 'native_session.py'))
     if contents is not None:
         (tmp_path / 'native_session.json').write_text(contents, encoding='utf-8')
-    with pytest.raises(ValueError, match=r'native session catalog.*Door:'):
+    with pytest.raises(ValueError, match=r'native session catalog[^\n]*\nDoor:'):
         native.session_of({})
 
 
@@ -112,11 +113,9 @@ def test_the_same_pr_door_does_not_invent_an_agent_for_an_ordinary_process() -> 
 
 def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
-    binder = {'hooks': {'UserPromptSubmit': [{'hooks': [{'command': agent_wiring.TASKBIND_COMMAND}]}]}}
-    (tmp_path / '.claude').mkdir()
-    (tmp_path / agent_wiring.SETTINGS_REL).write_text(json.dumps(binder), encoding='utf-8')  # a wired session
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
-    refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a')
+    plant_codex_rem(tmp_path / 'home', '2.6.0')  # a current binder: the door is the user's prompt
+    refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a', home=tmp_path / 'home')
     assert refusal is not None
     assert taskgate.RULE in refusal
     assert '/rem:task open' in refusal
@@ -128,7 +127,7 @@ def test_a_real_bound_task_still_admits_the_native_codex_session(tmp_path: Path)
     task.mkdir(parents=True)
     (task / 'TASK.md').write_text('---\nauthority: a1\nstatus: open\n---\n', encoding='utf-8')
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
-    assert taskbinding.bind({'session_id': _ID, 'prompt': 'task: native-task'}, start=tmp_path) == 'native-task@a1'
+    assert bind_as_rem(tmp_path, _ID, 'native-task') == 'native-task@a1'  # rem keys a Codex binding by its thread
     assert taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a') is None
 
 

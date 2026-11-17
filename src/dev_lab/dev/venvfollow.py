@@ -5,10 +5,11 @@ its own ``uv.lock``, because only a served checkout's host tick compared the two
 home, :func:`stale`: the key of :data:`ENV_INPUTS` against the stamp the last successful bootstrap wrote, so an
 unchanged checkout costs one hash. Its callers:
 
-* :func:`dev_lab.dev.hostrefresh.sync_venv` -- a served checkout, every host tick;
+* :func:`dev_lab.dev.hostrefresh.sync_venv` -- a checkout a workstation deploy or main sync keeps;
 * ``--session-start``, the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`) -- a stale venv detaches
   a background :func:`follow` and the hook returns at once;
-* the ``post-merge`` and ``post-checkout`` git hooks (``githooks/base.toml``, advisory) -- ``--background``.
+* the ``post-checkout`` git hook (``githooks/base.toml``, advisory) -- ``--background``; it is the one event a
+  new worktree fires, so its missing venv is created.
 
 THE TOOLCHAIN FOLLOWS AS ONE (user ruling 2026-11-12: no human approval keeps a checkout current). The venv is one
 of three things a checkout can be left behind on, and the follow takes them in dependency order: the CHECKOUT first
@@ -19,11 +20,11 @@ detaches when any of the three is due.
 
 THE BEHIND NOTICE (``--session-start`` too, :func:`behind_notice`): one line when the trunk checkout's HEAD is
 behind its LAST-FETCHED ``origin/<trunk>``, or the venv's git-installed dev-lab is not the commit that ref's
-``uv.lock`` pins -- naming the update door. No network, no install, no prune: a few local git reads. Beside it,
-:func:`dev_lab.dev.devhost.notice`: one line when the machine file disagrees with its declared host file.
+``uv.lock`` pins -- naming the update door. No network, no install, no prune: a few local git reads. The machine
+file's notice is devhost's own once-per-session row (``devhost session-start``), never repeated here.
 
 :func:`follow` skips while a run lives in the checkout or executes from its venv (TREE-HAS-A-LIVE-RUN,
-:mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start, merge or checkout.
+:mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start or checkout.
 
 ``python -m dev_lab.dev.venvfollow [--root R] [--background | --session-start]``; always exits 0.
 """
@@ -43,10 +44,10 @@ import lab_commons.launch as _door
 from lab_commons.census import processes
 from lab_commons.log import emit
 
-from dev_lab.dev import checkoutfollow, devhost, hook_install, liverun
+from dev_lab.dev import checkoutfollow, hook_install, liverun
+from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
-from dev_lab.dev.reclaimrun import detach_argv
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 from dev_lab.dev.venvpointer import current
 
@@ -226,8 +227,6 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         if args.background or args.session_start:
             if due(root):
                 detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)])
-            if args.session_start and (declared := devhost.notice()):
-                emit(declared)  # first: an unfilled install home is this machine's first work
             if args.session_start and (notice := behind_notice(root)):
                 emit(notice)
             return 0

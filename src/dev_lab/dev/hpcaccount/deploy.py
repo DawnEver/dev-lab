@@ -11,7 +11,7 @@ a tracked file, since the forge, its repos and the login host are private to the
     partitions = ["<partition>", ...]
     role = "verification"          # or "research": only a verification account serves (user ruling 2026-11-06)
     repos = [{ name = "dev-lab", url = "<https url>", ref = "<branch>" }, { name = "<repo>", ... }, ...]
-    # an entry may add serve = false: checked out and installed, its forge queue not served by this account
+    # served only where the repo itself declares [tool.dev_lab.protection] producer = "hpc" (dev_lab.dev.producers)
 
     [schedule]
     tick_minutes = 15              # the cron period (divides 60; default 5) -- also what the host card is judged by
@@ -55,8 +55,6 @@ others, then exits 2 naming each refused repo and raising one forge ``run`` alar
 
 from __future__ import annotations
 
-import argparse
-import json
 import os
 import shutil
 import socket
@@ -77,21 +75,15 @@ from lab_commons.temp import TEMP_PREFIX
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
 from dev_lab.dev.hpcaccount.cimark import paused_refusal
+from dev_lab.dev.hpcaccount.declaration import parser, resolve, store
 from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
 from dev_lab.dev.hpcaccount.spec import (
-    DEFAULT_PYTHON,
-    DEFAULT_ROOT,
-    KIT,
     Deployment,
     Repo,
     checkout_of,
     cron_lines,
     grant_setup,
-    load,
-    parse_repo,
-    render,
-    role_refusal,
     tick_command,
     tick_dirs,
     tick_environment,
@@ -116,76 +108,6 @@ AlarmSink = Callable[[str, str, str], object]
 
 #: The served repos refused so far, by name, each with its reason; every later per-repo step skips them.
 Refused = dict[str, str]
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount deploy', description=__doc__.splitlines()[0])
-    parser.add_argument('--config', type=Path, help='the machine file holding [deploy] (default: lab_commons.config)')
-    parser.add_argument('--host', help='declare: the one login host serving this account')
-    parser.add_argument(
-        '--repo', type=parse_repo, action='append', default=[], help='declare: <name>=<https url>@<branch>'
-    )
-    parser.add_argument(
-        '--root', default=DEFAULT_ROOT, help='declare: checkouts live in <root>/<name>, a relative root under home'
-    )
-    parser.add_argument('--python', default=DEFAULT_PYTHON, help='declare: the uv-managed interpreter request')
-    parser.add_argument('--slurm-account', default='', help="declare: the grant's account, when Slurm names several")
-    parser.add_argument('--partition', action='append', default=[], help='declare: a partition the grant may use')
-    parser.add_argument('--role', default='', help='declare: the role name (verification serves; research never)')
-    parser.add_argument('--fleet-role', default='', help="deploy-fleet: the workstation's role for this account")
-    parser.add_argument('--role-table', type=json.loads, help="deploy-fleet: the role's [hpc.roles] table, JSON")
-    parser.add_argument(
-        '--grant-table', type=json.loads, help="deploy-fleet: this account's slice of the declared [hpc], JSON"
-    )
-    parser.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
-    parser.add_argument('--remove', action='store_true', help='delete the marked crontab lines only')
-    return parser
-
-
-def _declared(args: argparse.Namespace, path: Path) -> Deployment | str:
-    """The declared deployment (stored, else from the flags); a refusal is returned as its message."""
-    stored = load(path)
-    if not (args.host or args.repo):
-        return stored or (
-            f'no [deploy] in {path}: declare it once with --host <login host> --repo <name>=<https url>@<branch> ...'
-        )
-    if not (args.host and args.repo):
-        return 'a declaration needs both --host and at least one --repo'
-    fields = (args.host, args.root, args.python, tuple(args.repo), args.slurm_account, tuple(args.partition))
-    given = Deployment(*fields, args.role)
-    if stored is not None and stored != given:
-        return (
-            f'{path} already declares a different [deploy]: it is rendered from the account layer '
-            'hosts/<cluster>-<user>.toml -- edit the layer in the config source, then run '
-            'python -m dev_lab.dev.hpcaccount deploy-fleet --account <user> from the workstation (it renders the '
-            'layer over this file); or run without --host/--repo'
-        )
-    return given
-
-
-def _resolve(args: argparse.Namespace, path: Path) -> Deployment | str:
-    """The declared deployment, refused unless it declares its role and the kit (dev-lab), which every tick runs."""
-    spec = _declared(args, path)
-    if isinstance(spec, Deployment) and KIT not in {repo.name for repo in spec.repos}:
-        return f'every tick runs {KIT}, so the host checks it out: add --repo {KIT}=<https url>@<branch>'
-    if isinstance(spec, Deployment) and not args.remove and (why := role_refusal(spec, path)):
-        return why  # a deploy never serves silently; --remove needs no role
-    return spec
-
-
-def _declare(step: Step, spec: Deployment, path: Path) -> int:
-    """Store a first declaration once the host and every credential have passed."""
-    if load(path) is not None:
-        return 0
-    emit('[declare]')
-    if step.dry:
-        emit(f'  [dry-run] declare [deploy] in {path}')
-        return 0
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as out:
-        out.write(render(spec))
-    emit(f'  declared [deploy] in {path}')
-    return 0
 
 
 def _each(step: Step, spec: Deployment, home: Path, title: str, act: Callable[..., int], *, refused: Refused) -> int:
@@ -366,9 +288,9 @@ def deploy(
     alarm: AlarmSink = _sound,
 ) -> int:
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
-    args = _parser().parse_args(list(argv))
+    args = parser(__doc__.splitlines()[0]).parse_args(list(argv))
     path = args.config or config_path()
-    spec = paused_refusal(home) or _resolve(args, path)  # CI-PAUSED: only ci-resume-fleet brings the cron back
+    spec = paused_refusal(home) or resolve(args, path)  # CI-PAUSED: only ci-resume-fleet brings the cron back
     semantics = (
         {} if isinstance(spec, str) or args.remove else account_role(spec.role, args.fleet_role, args.role_table)
     )
@@ -397,7 +319,7 @@ def deploy(
         lambda: credentials(step, spec, home, api or auth_check, serves=serves),
         lambda: reader(spec, home, role or role_of, semantics=semantics),
         lambda: grant(step, path, args.grant_table),
-        lambda: _declare(step, spec, path),
+        lambda: store(step, spec, path),
         lambda: _serve_git(step, home, path, slurm, setup),
         lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
         lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),

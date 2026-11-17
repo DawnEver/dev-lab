@@ -6,20 +6,11 @@ in another checkout. Each test plants its control: the same red on a PR that is 
 
 from __future__ import annotations
 
-import io
-import json
-from typing import TYPE_CHECKING
-
 import pytest
-from _branch_repos import clone_pair
-from _forge_fake import git_out
 from _forge_state import FORGE, StateForge
 
-from dev_lab.dev import forgewatch, pushstop, pushwatch, sessionprs
+from dev_lab.dev import forgewatch, sessionprs
 from dev_lab.dev.forgestatus import status_post
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 SHA = 'a' * 40
 NEWER = 'b' * 40
@@ -30,19 +21,10 @@ def _post(forge: StateForge, sha: str, context: str, state: str) -> None:
 
 
 def _opened(forge: StateForge, capsys: pytest.CaptureFixture[str], session: str = 's1', *, sha: str = SHA) -> int:
-    """A PR the session opened: the door records it, and the PostToolUse hook names the watch to arm."""
+    """A PR the session opened: the door records it."""
     number = forge.add_pull('pr/x', 'main', sha=sha)
     assert sessionprs.record_opened(FORGE, number, branch='pr/x', sha=sha, env={'CLAUDE_CODE_SESSION_ID': session})
-    payload = {
-        'hook_event_name': 'PostToolUse',
-        'session_id': session,
-        'tool_input': {'command': 'py -m dev_lab.dev.forge pr create --title t --head pr/x --base main | tail -1'},
-        'tool_response': {'stdout': 'opened, no url here\n', 'stderr': ''},
-    }
     capsys.readouterr()
-    assert sessionprs.main([], stdin=io.StringIO(json.dumps(payload))) == 0
-    said = json.loads(capsys.readouterr().out)['hookSpecificOutput']['additionalContext']
-    assert sessionprs.watch_session_command(session) in said, 'the opened PR names the one watch to arm'
     return number
 
 
@@ -60,21 +42,9 @@ def _watch(forge: StateForge, session: str = 's1', *, posts: list | None = None)
     return code, said
 
 
-def _stop(
-    forge: StateForge, tmp_path: Path, *, session: str = 's1', again: bool = False, watched: bool = True
-) -> dict | None:
-    if watched:
-        sessionprs.watch(session)  # a live watch is armed (this process): only reds are judged
-    else:
-        sessionprs.unwatch(session)
-    payload = {'hook_event_name': 'Stop', 'cwd': str(tmp_path), 'session_id': session, 'stop_hook_active': again}
-    out = io.StringIO()
-    code = pushstop.main(
-        [], stdin=io.StringIO(json.dumps(payload)), processes=lambda: (), client=lambda _r: forge,
-        clients=lambda _f: forge, out=out,
-    )  # fmt: skip
-    assert code == 0
-    return json.loads(out.getvalue()) if out.getvalue().strip() else None
+def _reds(forge: StateForge, session: str = 's1') -> list[str]:
+    """The session's red PR heads no ``--ack`` answers (:func:`forgewatch.unacknowledged_reds`)."""
+    return forgewatch.unacknowledged_reds(session, clients=lambda _f: forge)
 
 
 def _merge(forge: StateForge, number: int) -> None:
@@ -134,18 +104,13 @@ def test_a_closed_pr_is_reported_closed_and_another_session_hears_nothing(
     assert _watch(forge)[1][0] == f'{FORGE.identity}#{number} closed'
 
 
-def test_a_red_session_pr_blocks_every_stop_until_acknowledged_or_a_newer_head(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_red_session_pr_stands_until_acknowledged_or_a_newer_head(capsys: pytest.CaptureFixture[str]) -> None:
     forge = StateForge()
     number = _opened(forge, capsys)
     _post(forge, SHA, 'tests/base', 'error')
-    block = _stop(forge, tmp_path)
-    assert block is not None
-    assert block['decision'] == 'block'
-    assert forge.pulls[number]['html_url'] in block['reason']
-    assert 'tests/base error' in block['reason']
-    assert _stop(forge, tmp_path, again=True) is not None, 'a red blocks until it is answered, not once'
+    [red] = _reds(forge)
+    assert forge.pulls[number]['html_url'] in red
+    assert 'tests/base error' in red
     with pytest.raises(SystemExit):
         forgewatch.session_main(
             ['--session', 's1', '--ack', str(number)], clients=lambda _f: forge
@@ -156,30 +121,21 @@ def test_a_red_session_pr_blocks_every_stop_until_acknowledged_or_a_newer_head(
         )
         == 0
     )
-    assert _stop(forge, tmp_path) is None, 'an acknowledged red head lets the turn end'
+    assert _reds(forge) == [], 'an acknowledged red head stands answered'
     forge.pulls[number]['head']['sha'] = NEWER
     _post(forge, NEWER, 'tests/base', 'failure')
-    assert _stop(forge, tmp_path) is not None, 'a newer head is judged afresh: the old reason does not cover it'
+    assert _reds(forge), 'a newer head is judged afresh: the old reason does not cover it'
     _post(forge, NEWER, 'tests/base', 'success')
-    assert _stop(forge, tmp_path) is None
+    assert _reds(forge) == []
     capsys.readouterr()
 
 
-def test_a_red_head_that_is_no_session_pr_is_not_blocked_on(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """The integrate/main head a session pushed, and a red PR another session opened, never hold this turn."""
-    _, work = clone_pair(tmp_path)
-    head = git_out(work, 'rev-parse', 'HEAD')
-    pushwatch.record(work, 's1', 'refs/heads/integrate/main', head)
+def test_a_red_pr_another_session_opened_is_not_this_sessions_red(capsys: pytest.CaptureFixture[str]) -> None:
     forge = StateForge()
-    _post(forge, head, 'tests/base', 'failure')
     foreign = _opened(forge, capsys, 'other')
     _post(forge, SHA, 'tests/base', 'failure')
-    payload = {'hook_event_name': 'Stop', 'cwd': str(work), 'session_id': 's1'}
-    out = io.StringIO()
-    pushstop.main([], stdin=io.StringIO(json.dumps(payload)), processes=lambda: (), client=lambda _r: forge,
-                  clients=lambda _f: forge, out=out)  # fmt: skip
-    assert out.getvalue() == ''
-    assert _stop(forge, tmp_path, session='other') is not None, f'PLANTED CONTROL: #{foreign} is red for its owner'
+    assert _reds(forge) == []
+    assert _reds(forge, 'other'), f'PLANTED CONTROL: #{foreign} is red for its owner'
 
 
 def test_a_pushed_branch_becomes_its_open_pr_and_is_watched() -> None:
@@ -202,20 +158,16 @@ def test_forge_watch_with_session_routes_to_the_session_watch(monkeypatch: pytes
 
 
 @pytest.mark.parametrize('named', ['url', 'key'])
-def test_a_red_is_acknowledged_by_its_pr_url_or_its_key_and_the_stop_names_the_key_form(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], named: str
-) -> None:
-    """The Stop hook's example is the accepted form; the URL a red line prints is normalised to that key."""
+def test_a_red_is_acknowledged_by_its_pr_url_or_its_key(capsys: pytest.CaptureFixture[str], named: str) -> None:
+    """The URL a red line prints is normalised to the ``<host>/<owner>/<repo>#<number>`` key."""
     forge = StateForge()
     number = _opened(forge, capsys)
     _post(forge, SHA, 'tests/base', 'failure')
-    block = _stop(forge, tmp_path)
-    assert block is not None
-    assert '--ack <host>/<owner>/<repo>#<number>' in block['reason']
+    assert _reds(forge), 'PLANTED CONTROL: unanswered, the red stands'
     given = forge.pulls[number]['html_url'] if named == 'url' else f'{FORGE.identity}#{number}'
     args = ['--session', 's1', '--ack', given, '--reason', 'stands on purpose']
     assert forgewatch.session_main(args, clients=lambda _f: forge) == 0
-    assert _stop(forge, tmp_path) is None
+    assert _reds(forge) == []
     capsys.readouterr()
 
 
@@ -275,11 +227,7 @@ def test_green_waits_for_every_required_context_to_end_in_success(capsys: pytest
 # ------------------------------------------------- a branch row closes with its PR, or because none can come
 
 
-def _unwatched_stop(forge: StateForge, tmp_path: Path) -> dict | None:
-    return _stop(forge, tmp_path, watched=False)
-
-
-def test_a_branch_row_whose_pr_merged_unseen_closes_and_no_longer_holds_the_stop(tmp_path: Path) -> None:
+def test_a_branch_row_whose_pr_merged_unseen_closes_and_is_no_open_pr() -> None:
     """A break-glass merge closed the PR before any watch resolved the pushed branch to it."""
     forge = StateForge()
     sessionprs.record_push('s1', FORGE, 'pr/z', SHA)
@@ -289,13 +237,12 @@ def test_a_branch_row_whose_pr_merged_unseen_closes_and_no_longer_holds_the_stop
     assert code == 0
     assert said == [f'{FORGE.identity}#{number} merged', 'session s1: no open PR left']
     assert not sessionprs.open_rows('s1')
-    assert _unwatched_stop(forge, tmp_path) is None
     other = forge.add_pull('pr/w', 'main', sha=NEWER)
     sessionprs.record_pr('s1', FORGE, other, branch='pr/w', sha=NEWER)
-    assert _unwatched_stop(forge, tmp_path) is not None, 'PLANTED CONTROL: an open PR with no watch still holds it'
+    assert sessionprs.open_rows('s1'), 'PLANTED CONTROL: a recorded open PR is open'
 
 
-def test_a_branch_row_of_a_protected_branch_closes_with_its_reason(tmp_path: Path) -> None:
+def test_a_branch_row_of_a_protected_branch_closes_with_its_reason() -> None:
     """A push to the integration branch itself, recorded before such a push stopped being recorded."""
     forge = StateForge()
     forge.branches['integrate/main'] = True
@@ -307,12 +254,10 @@ def test_a_branch_row_of_a_protected_branch_closes_with_its_reason(tmp_path: Pat
     (row,) = sessionprs.rows('s1').values()
     assert row.done == 'closed'
     assert 'protected' in row.reason
-    assert _unwatched_stop(forge, tmp_path) is None
+    assert not sessionprs.open_rows('s1')
 
 
-def test_a_branch_row_whose_branch_is_gone_closes_and_a_live_one_waits_without_holding_the_stop(
-    tmp_path: Path,
-) -> None:
+def test_a_branch_row_whose_branch_is_gone_closes_and_a_live_one_waits_as_no_open_pr() -> None:
     forge = StateForge()
     forge.branches['pr/live'] = False
     sessionprs.record_push('s1', FORGE, 'pr/gone', SHA)
@@ -323,5 +268,4 @@ def test_a_branch_row_whose_branch_is_gone_closes_and_a_live_one_waits_without_h
     table = sessionprs.rows('s1')
     assert table[f'{FORGE.identity}@pr/gone'].done == 'closed'
     assert table[f'{FORGE.identity}@pr/live'].done == '', 'PLANTED CONTROL: a live branch may still get its PR'
-    assert not sessionprs.open_rows('s1'), 'a branch with no PR is no open PR: the watch and the stop agree'
-    assert _unwatched_stop(forge, tmp_path) is None
+    assert not sessionprs.open_rows('s1'), 'a branch with no PR is no open PR'

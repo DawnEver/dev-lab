@@ -156,8 +156,8 @@ def test_the_prune_cli_fetches_then_keeps_live_tips(server, tmp_path: Path, caps
 def test_prune_keeps_only_the_newest_unit_results_the_retention_policy_allows(server) -> None:
     """PLANTED CONTROL: unit results (D16) beyond ``[retention] unit_results`` go oldest first; records unaffected."""
     assert Policy().unit_results > 0, 'the one retention policy declares the budget'
-    unit = [_asset(i, f'unit-{c * 64}-{"f" * 64}.tar.gz') for i, c in ((4, 'a'), (5, 'b'), (6, 'c'))]
-    legacy = _asset(2, f'unit-{"d" * 64}-{"f" * 64}.tar.zst')
+    unit = [_asset(i, f'unit-{c * 64}-g0-{"f" * 64}.tar.gz') for i, c in ((4, 'a'), (5, 'b'), (6, 'c'))]
+    legacy = _asset(2, f'unit-{"d" * 64}-g0-{"f" * 64}.tar.zst')
     answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': RECORDS_TITLE}]))
     answer('GET', f'{API}/issues/3/assets', (200, [_asset(1, f'run-{LIVE}-linux-r1.json.gz'), legacy, *unit]))
     built = client(FORGE, Loopback(server))
@@ -305,7 +305,7 @@ def test_attach_without_a_checkout_still_prunes_what_needs_no_liveness(server, t
     _full_github([f'run-{i:040x}-base@windows-r1.json.gz' for i in range(1, cap - 4)] + [
         f'run-{DEAD}-base@windows-verify-{i}.json.gz' for i in range(5)
     ])  # fmt: skip
-    record = tmp_path / f'unit-{"a" * 64}-{"f" * 64}.tar.gz'
+    record = tmp_path / f'unit-{"a" * 64}-g0-{"f" * 64}.tar.gz'
     record.write_bytes(b'x')
     answer('POST', '/repos/o/r/releases/9/assets', (201, _asset(cap + 1, record.name)))
     built = client(Forge('github.com', 'o', 'r'), Loopback(server))

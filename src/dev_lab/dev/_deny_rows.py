@@ -56,6 +56,7 @@ from __future__ import annotations
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev._deny_background_row import BACKGROUND_BOUNDED
+from dev_lab.dev._deny_cicron_row import CI_CRON_NEEDS_CONSENT
 from dev_lab.dev._deny_commithooks_row import COMMIT_HOOKS_RUN
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
@@ -63,11 +64,13 @@ from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
+from dev_lab.dev._deny_journal_row import JOURNAL_CITES
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev._deny_push_rows import PUSH_ROWS
 from dev_lab.dev._deny_remote_row import REMOTE_WRITE
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
+from dev_lab.dev._deny_subagent_heavy_row import HEAVY_IS_THE_MAIN_SESSIONS
 from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
 from dev_lab.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
 from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
@@ -100,7 +103,9 @@ NETWORK_VERB_PATTERN = (
 DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     BACKGROUND_BOUNDED,
+    JOURNAL_CITES,
     SUBAGENT_NO_PUSH,
+    HEAVY_IS_THE_MAIN_SESSIONS,
     CONSENT_CODE_FROM_THE_USER,
     COMMIT_HOOKS_RUN,
     {
@@ -332,6 +337,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     REPORTS_LIVE_IN_MEMORY,
     WRITES_STAY_IN_THE_TREE,
     STATUS_VIA_DOORS,
+    CI_CRON_NEEDS_CONSENT,
     HPC_THROUGH_THE_DOOR,
     REMOTE_WRITE,
 )

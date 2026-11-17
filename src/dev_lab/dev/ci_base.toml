@@ -37,9 +37,11 @@
 #                 review.yml below is the one pull_request_target workflow: it acts on nothing the head declares,
 #                 below). A push reviews nothing by itself; the merge tick merges the reviewed head
 #   promote       NIGHTLY (D48-1A, user ruling 2026-11-01), never per merge: on the full run of a pending
-#                 integrate/main tip, once every part settled: `integrate promote`
-#                 refuses unless every part stands PASS at scope full,
-#                 the SAME decision Gitea's integrator runs, fast-forwards main and the job token pushes it;
+#                 integrate/main tip, once every part settled: `integrate promote --newest` walks the tip's first
+#                 parents to the newest whose every part stands PASS at scope full (the tip of a busy branch
+#                 is always freshly merged and untested), ALARMs each commit passed over, and refuses when
+#                 none passes -- the SAME decision Gitea's integrator runs; it fast-forwards the local main
+#                 to that sha (a non-tip first parent of integrate/main) and the job token pushes it;
 #                 then `branchprune sweep` deletes every branch integration now contains
 #
 # ACTIONS ALONE (user rulings 2026-11-11): a GitHub repo is a toolchain repo, tested and gated by these jobs on
@@ -361,7 +363,7 @@ if = "${{ needs.parts.outputs.pending == 'true' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "Promote main", run = 'uv run --no-sync python -m dev_lab.dev.integrate promote "$HEAD_SHA" && git push origin main' },
+    { name = "Promote main", run = 'uv run --no-sync python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA" && git push origin main' },
     { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", run = "uv run --no-sync python -m dev_lab.dev.branchprune sweep" },
 ]
 

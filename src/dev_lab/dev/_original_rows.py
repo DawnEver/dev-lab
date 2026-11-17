@@ -20,12 +20,17 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
+    'failprint',  # a failure fingerprint: test id plus the subjects its failure names (finding D13, 2026-11-16)
+    'producers',  # each repo's one producer, actions or hpc, and its optional parts (ruling 2026-11-16)
+    'producercheck',  # the guard refusing what contradicts a producer declaration (ruling 2026-11-16)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
     'verifybox',
     'verifysteps',
     'agent_guard',
     'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
+    'backgroundrun',  # the background hooks' detach and per-repo lock, split from reclaimrun (dev-lab #640)
+    'hookdispatch',  # one interpreter per hook event, reading WIRING from its own install (dev-lab #640)
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
     # derives or admits. The row consumer-a added by hand on 2026-09-18 is the first thing it subsumes.
@@ -171,9 +176,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'shelllife',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
-    'servelanes',
     'servelock',
-    'servetask',
     'workstation',
     'workstationfile',
     'workstationprobe',
@@ -183,8 +186,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hostrefresh',
     # ORIGINAL: no gate read a task ledger; the opt-in task-bound row (user ruling 2026-11-14) is new.
     'taskgate',
-    # ORIGINAL: one session-to-task binding written by the user's prompt (user ruling 2026-11-15); none existed.
+    # ORIGINAL: the one reader of rem's session-to-task binding (user ruling 2026-11-15); none existed.
     'taskbinding',
+    # ORIGINAL: which rem the session's harness runs, read from its plugin registry, so an unbound push names it.
+    'remplugin',
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
@@ -294,6 +299,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # -- `dev_lab.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
     'table',
     'runner',
+    'inprocess',  # ORIGINAL: split from runner: a `python -m` row run in the stage's one interpreter (2026-11-16)
     'filechecks',
     'ciworkflows',
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
@@ -312,8 +318,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sshholdplan',  # ORIGINAL: split from sshhold: one code opens a plan's hosts, a held one reused (2026-11-16)
     'sshholdwire',  # ORIGINAL: split from sshhold: the client half of the holder's protocol (2026-11-13)
     'walls',  # ORIGINAL: every refusal is one ledger line (2026-11-13)
-    'pushwatch',
-    'pushstop',
+    'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
@@ -358,6 +363,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'agentpolicy',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.
     'doorrows',
+    # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-16); no consumer held it.
+    'remotedoors',
     # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.
     'gitenv',
     # ORIGINAL: pinned data dependencies (2026-11-10); no consumer pinned a data repo before.

@@ -11,8 +11,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from dev_lab.dev import agent_guard, venvpointer
 from dev_lab.dev.jsrun import node_path
 
@@ -70,8 +68,8 @@ def test_there_are_twenty_distinct_layouts() -> None:
     assert len(set(LAYOUTS)) == 20
 
 
-@pytest.mark.skipif(SH is None, reason='no POSIX sh on PATH')
 def test_the_three_resolvers_agree_on_every_layout(tmp_path: Path) -> None:
+    assert SH, 'the shell twin runs in a POSIX sh: every host the kit serves has one'
     named = 0
     for index, layout in enumerate(LAYOUTS):
         root = _layout(tmp_path / f'r{index}', layout)
@@ -88,6 +86,16 @@ def test_the_shell_twin_in_with_venv_is_the_rendering_of_the_js_rule() -> None:
     rendered = _run([str(node_path()), str(RESOLVER), '--shell'])
     assert venvpointer.shell_function() == rendered, 're-render: node venv_resolver.js --shell into with-venv.sh'
     assert '%' not in rendered, 'a crontab line embeds it, and cron reads % as a newline'
+
+
+def test_every_case_arm_of_the_shell_twin_opens_its_paren() -> None:
+    """Every arm is written ``(pattern)``: macOS bash 3.2 ends a ``$(...)`` at an arm's bare ``)``.
+
+    :func:`venvpointer.shell_interpreter` puts the twin INSIDE a command substitution, so a bare arm broke it there.
+    """
+    body = venvpointer.shell_function()
+    arms = body[body.index(' in ') + 4 : body.index('esac')].split(';;')
+    assert [arm.strip()[0] for arm in arms if arm.strip()] == ['(', '('], body
 
 
 def test_no_door_carries_its_own_pointer_reader() -> None:

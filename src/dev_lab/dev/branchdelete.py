@@ -19,9 +19,8 @@ judge LOSSLESS-DELETE uses: a squash-landed or forge-synced branch carries other
 closed (:func:`dev_lab.dev.prlanded.close_pr`), then its branch is lease-deleted; anything else is kept and said
 with its reason. ``--local`` then reclaims the clean landed worktrees and deletes the landed local branches
 (:func:`dev_lab.dev.branchset.apply_local`, then the content judge for those checked out nowhere). It runs
-wherever integration moves: the forge's repo-wide serve pass (:func:`serve_sweep`), the GitHub job a push to
-integration runs (``ci_base.toml``), and on a workstation the ``PostToolUse`` hook
-(:func:`dev_lab.dev.branchprune.post_push`), which detaches ``sweep --local`` when the shell call pushed integration.
+wherever integration moves: the forge's repo-wide serve pass (:func:`serve_sweep`) and the GitHub job a push to
+integration runs (``ci_base.toml``); on a workstation, :mod:`dev_lab.dev.reclaimrun` reclaims the local half.
 """
 
 from __future__ import annotations
@@ -32,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev.backgroundrun import held
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, checked_out, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.famfiles import GENERATED
@@ -42,7 +42,6 @@ from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.prlanded import close_pr
-from dev_lab.dev.reclaimrun import held
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client

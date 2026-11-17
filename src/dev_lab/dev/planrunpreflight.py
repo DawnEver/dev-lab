@@ -276,11 +276,11 @@ def preflight(
         step = steps.steps[index]
         name = f'step {index + 1} {grant["action"]}'
         if step.local:
-            table = LOCAL_VERBS[grant['action']][1]
+            table = LOCAL_VERBS[grant['action']].table
             endpoint = machine(table).get('endpoint')
             fault = not endpoint
             verdict = (f'BLOCKED -- the machine file has no [{table}] endpoint' if fault else
-                       f'green (here: forge {shlex.join(step.argv)} via {endpoint})')  # fmt: skip
+                       f'green (here: python -m {shlex.join(step.argv)} via {endpoint})')  # fmt: skip
         elif step.dest in unreached:
             verdict, fault = (
                 _derived_here(grant['subject'], step, readers) if _derivable(step) else

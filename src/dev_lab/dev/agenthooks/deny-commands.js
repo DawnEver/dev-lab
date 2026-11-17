@@ -8,12 +8,13 @@
  * is a rule in the JSON file passed as argv[2] (`.claude/hooks/deny-rules.json`), so adding or
  * retiring a rule is a data change, never an engine change.
  *
- * A rule is {name, pattern, matches?, allow?, scope?, severity?, reason}. `scope: 'subagent'` judges the rule only
+ * A rule is {name, pattern, matches?, allow?, scope?, severity?, asks?, reason}. `scope: 'subagent'` judges the rule only
  * when the payload carries a non-empty `agent_id`. `severity: 'hint'` never denies: the call runs and the
  * reason reaches the agent as `additionalContext` -- unless a refusing rule also fires, which wins. `pattern` (JS regex source) denies a
  * command it matches, unless `allow` (regex source) also matches -- the sanctioned spelling.
  * `reason` is the rewrite hint shown to the agent; `{root}` in it expands to the tool call's cwd, and `{python}`
- * (or a door's `<venv python>`) to the target checkout's interpreter by ABSOLUTE path.
+ * (or a door's `<venv python>`) to the target checkout's interpreter by ABSOLUTE path. `asks` names the Python
+ * module that judges a call the pattern only prefilters (A ROW WHOSE JUDGE IS A MODULE, below).
  *
  * ================================ WHAT IS MATCHED, AND WHY ================================
  *
@@ -319,9 +320,17 @@ function namedDir(words) {
 
 /** The directory the command acts in -- the ONE answer to "which tree" every judge reads. A segment acts in the
  * call's cwd as moved by the `cd X` segments before it, or in the dir its git/uv/dep call names. The answer is
- * the dir of the first segment `acts` selects (the one a rule fired on), else of the first segment that is not
- * a `cd`, else the cwd the `cd`s leave. */
+ * the dir of the first segment `acts` selects at any command position (the one a rule fired on, behind a
+ * `timeout 50m` too), else of the first segment that is not a `cd`, else the cwd the `cd`s leave. A shell's
+ * `-c` script is a command line of its own starting in its segment's dir, so its `cd`s move it (2026-11-17:
+ * `timeout 50m bash -c 'cd B && ...'` from A, and a bounded `dep --bootstrap C`, were both judged against A). */
 function targetDir(cmd, cwd, acts = () => true) {
+  const found = targetIn(cmd, cwd, acts);
+  return found.hit ?? found.first ?? found.dir;
+}
+
+/** `targetDir`'s walk: {hit} the dir of the first acting segment, else {first, dir}. */
+function targetIn(cmd, cwd, acts) {
   let dir = cwd;
   let first = null;
   const word = String.raw`("[^"\n]*"|'[^'\n]*'|[^\s;&|()]+)`;
@@ -332,12 +341,20 @@ function targetDir(cmd, cwd, acts = () => true) {
       dir = path.resolve(dir, hostPath(cd[1]));
       continue;
     }
-    const named = namedDir(text.match(new RegExp(word, 'g')) || []);
+    const positions = commandPositions(text);
+    const acting = positions.find((position) => acts(position));
+    const named = namedDir((acting ?? positions[positions.length - 1] ?? text).match(new RegExp(word, 'g')) || []);
     const here = named ? path.resolve(dir, hostPath(named)) : dir;
-    if (acts(text)) return here;
+    if (acting !== undefined) return { hit: here };
+    if (positions.some((position) => SHELLS.test(commandWord(position)))) {
+      for (const script of inlineScripts(text)) {
+        const inner = targetIn(script, here, acts);
+        if (inner.hit) return inner;
+      }
+    }
     if (first === null && text) first = here;
   }
-  return first === null ? dir : first;
+  return { hit: null, first, dir };
 }
 
 /** The directory the segment `rule` fires on acts in (`targetDir`). */
@@ -515,6 +532,32 @@ function lifetimeRefusal(cmd, sessionRoot) {
   if (done.status === 0) return '';
   const said = String(done.stdout || '').trim();
   return done.status === 1 && said ? said : null;
+}
+
+/* ================================ A ROW WHOSE JUDGE IS A MODULE ================================
+ *
+ * `asks: '<module>'`: the decision needs repo state no regex reads (TRACKED-CITES-NO-EPHEMERAL: is a path the
+ * journal line cites ignored HERE?), so the pattern is only a cheap PREFILTER. After it matched -- never before, so
+ * the common call starts no interpreter -- the session checkout's Python runs `-m <module> --admit` with the hook
+ * payload on stdin. Exit 1 with text refuses with that text, verbatim; anything else admits: no interpreter, no kit,
+ * a crash or a timeout is nobody's refusal, as the hook this replaced was (the commit-time check stands behind it).
+ */
+function askedRefusal(module, sessionRoot) {
+  let python;
+  try {
+    python = venvPython(sessionRoot);
+  } catch {
+    return ''; // no resolver: nobody to ask
+  }
+  if (!python) return '';
+  const done = spawnSync(python, ['-m', module, '--admit'], {
+    input: JSON.stringify(input),
+    encoding: 'utf8',
+    timeout: 15000,
+    windowsHide: true,
+  });
+  const said = String(done.stdout || '').trim();
+  return done.status === 1 ? said : '';
 }
 
 /* ================================ A ROW THAT STILL ADMITS A FAMILY SIBLING CLONE ================================
@@ -727,6 +770,10 @@ for (const rule of rules) {
   if (hit && rule.admits === 'family-sibling-clone' && familySiblingClone(cmd, input.cwd)) continue;
   if (hit && rule.admits === 'file-operands' && fileOperands(rule, cmd, input.cwd)) continue;
   let liveReason = '';
+  if (hit && rule.asks) {
+    liveReason = askedRefusal(rule.asks, sessionRoot);
+    hit = liveReason !== '';
+  }
   // A 'background' row binds only on a Bash call the agent runs in the background (BACKGROUND-SHELL-IS-BOUNDED),
   // and there the session's interpreter judges it (a longer life needs the USER's grant); the pattern only without one.
   if (rule.when === 'background') {

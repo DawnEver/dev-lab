@@ -64,6 +64,7 @@ forge's job, not yours.
 - Then have it check where it landed before anything else: `git rev-parse HEAD` against the sha, plus a count of
   a symbol the task needs that must be non-zero. A zero count is a STOP.
 - A subagent measures what it touched, commits and hands back its SHA; it never pushes (`SUBAGENT-NO-PUSH`).
+- Heavy testing is the main session's: a subagent runs only `verify -- <touched paths>`, never a heavy, gate or full selection, and hands any `forge request` or HPC submit to the main session (`HEAVY-IS-THE-MAIN-SESSIONS`).
 - Its hand-back carries a **Walls hit** section: each refusal it met, whether it named a door, and what closed
   or recorded the gap ([feedback.md](feedback.md#a-subagents-hand-back)).
 - Tell it not to kill processes or delete lock files it does not own.

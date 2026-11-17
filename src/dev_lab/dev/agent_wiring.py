@@ -1,41 +1,53 @@
-"""The hook WIRING :mod:`dev_lab.dev.agent_guard` installs and inspects, as data: paths, commands, one table.
+"""The hook WIRING, as data: the engine's paths and command, and the ONE table of handlers per event.
 
-Split from the install/inspection half so the table a hook module is wired by reads as one page; every
-hook module that pins its own row imports it from here.
+:mod:`dev_lab.dev.agent_guard` renders :func:`rows` into settings; :mod:`dev_lab.dev.hookdispatch` reads
+:func:`wiring` at run time. Both read the same installed table, so a settings row never names a handler the
+interpreter running it lacks.
+
+A REPO ADDS ITS OWN HANDLERS AS DATA (:func:`declared`): ``[[tool.dev_lab.agent_hooks]]`` rows in its
+``pyproject.toml``, one :class:`Wire` each (``events``, ``module``, ``args``, ``tools``, ``may_block``, ``once``,
+``timeout``). They join the family's rows in the event's one dispatcher -- no settings row, no second process -- so
+the wiring has two sources and no third: :data:`WIRING` and the repo's declaration. A declared module must import
+from the repo's venv with the repo's root on the path, and a row may not repeat a family row or another declared one
+(a row's :attr:`Wire.name` is its identity); either is refused by name (:class:`WireRefused`).
 """
 
 from __future__ import annotations
 
+import contextlib
+import importlib.util
+import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Any, Final
+
+from dev_lab.dev.family import declared_table
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 __all__ = [
-    'AUTOMODE_COMMAND',
+    'DECLARED_TABLE',
+    'DISPATCH_MODULE',
     'ENGINE_REL',
-    'FORGEAUTH_COMMAND',
-    'HANDBACK_COMMAND',
     'HOOK_COMMAND',
-    'JOURNALDOOR_COMMAND',
     'LAUNCHER_REL',
-    'PRESSURE_COMMAND',
-    'PUSHSTOP_COMMAND',
-    'PUSHWATCH_COMMAND',
-    'REAPER_COMMAND',
-    'RECLAIM_COMMAND',
     'REINSTALL_COMMAND',
-    'RETIRED_WIRING',
     'RULES_REL',
-    'SESSIONPRS_COMMAND',
     'SETTINGS_REL',
     'SHELL_TOOLS',
-    'STRAY_COMMAND',
-    'SWEEP_COMMAND',
-    'VENVFOLLOW_COMMAND',
-    'WALLSPOST_COMMAND',
-    'WALLSSTOP_COMMAND',
     'WIRING',
+    'WRITE_TOOLS',
+    'Row',
     'Wire',
+    'WireRefused',
+    'declared',
+    'dispatch_command',
+    'events',
+    'import_root',
+    'rows',
+    'wiring',
 ]
 
 
@@ -89,149 +101,225 @@ HOOK_COMMAND: Final = (
 #: denied shape ran unjudged through the PowerShell tool.
 SHELL_TOOLS: Final = ('Bash', 'PowerShell')
 
+#: The tools that write a file by path: the :mod:`dev_lab.dev.codeplace` write hook judges each one's target.
+WRITE_TOOLS: Final = ('Write', 'Edit', 'MultiEdit', 'NotebookEdit')
 
-#: The STRAY-FILE-REFUSED census (:mod:`dev_lab.dev.codeplace` ``stray``), through :data:`LAUNCHER_REL`. A
-#: checkout with no venv is NOT blocked (decision 7, 2026-10-22): the launcher exits 0 without one.
-STRAY_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.codeplace stray'
+#: THE ONE DISPATCHER (:mod:`dev_lab.dev.hookdispatch`, dev-lab #640): settings carry one row per event naming only
+#: the event; the dispatcher reads :data:`WIRING` from the INSTALLED package and runs every handler in one
+#: interpreter. A handler added to WIRING never reaches a machine whose venv lacks it -- the rows and the code come
+#: from the same install -- and a venv predating the dispatcher itself is the launcher's named stale-venv line.
+DISPATCH_MODULE: Final = 'dev_lab.dev.hookdispatch'
 
-#: AGENT-RUNS-ITS-OWN-COMMANDS (:mod:`dev_lab.dev.handback`): a final message handing the user a runnable
-#: command blocks the stop, for the main session and for every subagent.
-HANDBACK_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.handback'
 
-#: TRACKED-CITES-NO-EPHEMERAL at the door (:mod:`dev_lab.dev.journaldoor`, dev-lab#419): a task-journal append
-#: citing an ignored path is refused before it is written.
-JOURNALDOOR_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.journaldoor'
-
-#: PUSHED-HEAD-IS-WATCHED (:mod:`dev_lab.dev.pushwatch`): after a shell call that pushed, ONE advisory line when
-#: no live ``forge watch <sha>`` watches the pushed head -- never a block.
-PUSHWATCH_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushwatch'
-
-#: SESSION-HEARS-ITS-PRS (:mod:`dev_lab.dev.sessionprs`, ruling 2026-11-11): the doors record a session's PRs (the
-#: create door, the pre-push row); after a shell call that pushed or ran ``forge pr create`` this hook names the watch
-#: to arm, or warns when the session has no open PR on record.
-SESSIONPRS_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.sessionprs'
-
-#: SESSION-HEARS-ITS-PRS through ONE machine watcher (:mod:`dev_lab.dev.prwatcher`, dev-lab#581): every session start
-#: detaches the watcher unless one runs; each prompt surfaces the session's unread PR events and marks them read.
-PRWATCHER_START_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.prwatcher session-start'
-PRWATCHER_INBOX_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.prwatcher inbox'
-
-#: PUSHED-HEAD-IS-WATCHED, the ``Stop`` half (:mod:`dev_lab.dev.pushstop`, ruling 2026-11-04): a turn does not end
-#: while a head the session pushed is pending with no live watcher, or red (refused once).
-PUSHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.pushstop'
-
-#: SCRATCH-IS-NEVER-COMMITTED, the ``Stop`` half (:mod:`dev_lab.dev.scratch` ``stop``): a session does not end while
-#: its checkout's scratch holds an untracked entry the session left (blocked once), naming ``scratch clear``.
-SCRATCHSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.scratch stop'
-
-#: Its baseline: every session start records the scratch entries that predate it, so the stop judges only its own.
-SCRATCHSNAP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.scratch snapshot'
-
-#: LANDED-BRANCHES-SWEPT (:mod:`dev_lab.dev.branchprune`, ruling 2026-10-29): after a shell call that pushed
-#: integration, a detached ``sweep --local`` deletes every branch and clean worktree integration now contains.
-SWEEP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.branchprune post-push'
-
-#: RECLAIM RUNS IN THE WORKFLOW (:mod:`dev_lab.dev.reclaimrun`, ruling 2026-10-27): every session start in a
-#: MAIN checkout detaches a bounded, locked reclaim of landed worktrees and their branches, and returns at once.
-RECLAIM_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.reclaimrun --session-start'
-
-#: A SESSION'S BACKGROUND SHELL LIVES FIFTY MINUTES (:mod:`dev_lab.dev.shellreaper`, demand 2026-11-15): every
-#: session start and every stop detaches at most one sweep per interval per repo, and returns at once.
-REAPER_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.shellreaper --hook'
-
-#: VENV-FOLLOWS-THE-LOCK (:mod:`dev_lab.dev.venvfollow`, ruling 2026-11-04): every session start whose checkout's
-#: lock moved since its venv was stamped detaches a re-bootstrap, and returns at once.
-VENVFOLLOW_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.venvfollow --session-start'
-
-#: AN UNFILLED INSTALL HOME IS FORCED-FIRST WORK (:mod:`dev_lab.dev.devhost`, ruling 2026-11-12): the stop blocks
-#: once per session while this machine's host file holds the placeholder, naming the detect door and the PR to open.
-DEVHOSTSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.devhost stop'
-
-#: A REFUSED TOKEN IS HEARD AT SESSION START (:mod:`dev_lab.dev.forgeauthnotice`): one bounded ``GET /user`` per forge
-#: the checkout's remotes declare; one line naming the host and the remedy door when the forge refuses, else silent.
-FORGEAUTH_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.forgeauthnotice --session-start'
-
-#: THE CLASSIFIER PROSE FOLLOWS THE CHECKOUT (:mod:`dev_lab.dev.automode`, 2026-11-09): every session start renders
-#: the classifier's intents file from the policy table and the repo's own intents, so a door added to the table
-#: reaches the classifier on the next session, not on the next dependency sync (a ten-day-old render withheld one).
-AUTOMODE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.automode session-start'
-
-#: A PRESSED HOST TELLS ITS AGENTS (:mod:`dev_lab.dev.hostalarm`, ruling D54): the host's disk/memory/CPU alarms as
-#: additional context after a shell call and on each prompt, once per alarm per session per 30 minutes.
-PRESSURE_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.hostalarm hook'
-
-#: A SESSION WORKS ON A TASK BY THE USER'S WORD (:mod:`dev_lab.dev.taskbinding`, rulings 2026-11-13, D5): a prompt
-#: whose first line is ``task: <slug>`` binds the session to that task, so it holds the role the task was granted.
-TASKBIND_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.taskbinding bind'
-
-#: WALLS-ARE-RECORDED (:mod:`dev_lab.dev.walls`, ruling 2026-11-13): after a shell call, a denial in its error text
-#: that no family emit path recorded (a classifier's, a tool's own) is an unremedied wall in the session's ledger.
-WALLSPOST_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.walls post-tool'
-
-#: Its ``Stop`` half, for the main session and every subagent: a wall that named no door and that no ``walls close``
-#: answers refuses the stop once, naming the gap loop (``docs-src/dev/feedback.md``).
-WALLSSTOP_COMMAND: Final = f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m dev_lab.dev.walls stop'
+def dispatch_command(event: str) -> str:
+    """The settings command for *event*: the launcher, the dispatcher, the event -- nothing a release can move."""
+    return f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m {DISPATCH_MODULE} {event}'
 
 
 @dataclass(frozen=True, slots=True)
 class Wire:
-    """One hook the guard owns: its event, its command, the text marking a hook OURS, and its home.
+    """One handler the dispatcher runs -- ``python -m <module> <argv>``, in-process -- on each of *events*.
 
-    ``on_shells`` homes it on the matcher naming every shell tool; otherwise on a matcher-less entry.
-    ``timeout`` (seconds) is written on the row: a hung hook is cut by its own bound, never the tool's default.
+    ``tools``: the tools whose calls a tool event's handler sees (empty: every call). ``may_block``: only such a
+    row's refusal (exit 2, ``decision: block``, ``permissionDecision: deny``) is answered; another row's is a wiring
+    fault, demoted to one stderr line. ``once``: at most once per session. ``timeout`` (seconds) bounds the row; the
+    event's settings row carries the sum, since the dispatcher runs its rows one after another.
     """
 
+    events: tuple[str, ...]
+    module: str
+    argv: tuple[str, ...] = ()
+    tools: tuple[str, ...] = ()
+    may_block: bool = False
+    once: bool = False
+    timeout: int = 30
+
+    @property
+    def name(self) -> str:
+        """The row as one readable id: ``<module> <argv>``."""
+        return ' '.join((self.module, *self.argv))
+
+
+_STOPS: Final = ('Stop', 'SubagentStop')
+
+#: THE WIRING, ONE TABLE, AND EACH CHECK HAS ONE TRIGGER. Before every shell call: no handler -- a check judging a
+#: command is an engine deny row, so a shell call starts one interpreter (the journal door asks Python only on a
+#: match, ``_deny_journal_row``); before every write: the codeplace write hook (a report under output/, a write-prone
+#: root, a consent file refused; a misplaced code file hinted). After every shell call, succeeded or failed: the wall
+#: ledger's foreign-denial reader (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54) and the PR inbox
+#: -- the ONE machine PR watcher (SESSION-HEARS-ITS-PRS); the task binding is rem's own prompt hook, never a row here.
+#: Every stop, the main session's and each subagent's: the hand-back check and the wall ledger's stop; the main
+#: session's adds the stray census, the scratch census, the unfilled install home and the shell reaper -- Stop is the
+#: one event that recurs inside a session, so it is the reaper's clock, and a session's first stop sweeps what an ended
+#: one left (measured 2026-11-16: 37 sweeps and both over-bound stops of the day fell in an 11-hour window with no
+#: session start). Session start: the ONE reclaim, the machine-file notice (once: drift cannot change within a turn),
+#: the venv follower, the forge-token notice, the scratch baseline, the classifier render and the PR watcher.
+WIRING: Final = (
+    Wire(('PreToolUse',), 'dev_lab.dev.codeplace', tools=WRITE_TOOLS, may_block=True),
+    Wire(('PostToolUse', 'PostToolUseFailure'), 'dev_lab.dev.walls', ('post-tool',), tools=SHELL_TOOLS),
+    Wire(('UserPromptSubmit',), 'dev_lab.dev.hostalarm', ('hook',)),
+    Wire(('UserPromptSubmit',), 'dev_lab.dev.prwatcher', ('inbox',)),
+    Wire(('Stop',), 'dev_lab.dev.codeplace', ('stray',), may_block=True, timeout=60),
+    Wire(_STOPS, 'dev_lab.dev.handback', may_block=True, timeout=60),
+    Wire(('Stop',), 'dev_lab.dev.scratch', ('stop',), may_block=True, timeout=60),
+    Wire(_STOPS, 'dev_lab.dev.walls', ('stop',), may_block=True, timeout=60),
+    Wire(('Stop',), 'dev_lab.dev.shellreaper', ('--hook',), timeout=60),
+    Wire(('SessionStart',), 'dev_lab.dev.reclaimrun', ('--session-start',), once=True, timeout=120),
+    Wire(('SessionStart',), 'dev_lab.dev.devhost', ('session-start',), once=True, timeout=60),
+    Wire(('SessionStart',), 'dev_lab.dev.venvfollow', ('--session-start',), timeout=120),
+    Wire(('SessionStart',), 'dev_lab.dev.forgeauthnotice', ('--session-start',), once=True, timeout=120),
+    Wire(('SessionStart',), 'dev_lab.dev.scratch', ('snapshot',), once=True, timeout=120),
+    Wire(('SessionStart',), 'dev_lab.dev.automode', ('session-start',), timeout=120),
+    Wire(('SessionStart',), 'dev_lab.dev.prwatcher', ('session-start',), timeout=120),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Row:
+    """One rendered settings row: its event, its matcher (``None``: every call), its command and its timeout."""
+
     event: str
+    matcher: str | None
     command: str
-    marker: str
-    on_shells: bool
     timeout: int
 
 
-#: THE WIRING, ONE TABLE: what :func:`dev_lab.dev.agent_guard.wire_settings` writes is what
-#: :func:`dev_lab.dev.agent_guard.guard_installation` reads.
-#: The engine and the journal door before every shell call; the pushed-head reminder, the landed sweep and the
-#: host-pressure reminder after every one (the reminder on each prompt too); the STRAY-FILE-REFUSED census ONCE, at
-#: stop -- a stray is the state a turn leaves, the PreToolUse refusals stop a misplaced write as it is made, and a
-#: census after every shell call repeated the same block (2026-11-03 audit); the hand-back check and the wall
-#: ledger's stop at every stop, the main session's and each subagent's, the ledger's foreign-denial reader after
-#: every shell call, succeeded or failed; the pushed-head gate and the scratch census at the main session's stop; the
-#: background reclaim at session start.
-WIRING: Final = (
-    Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True, timeout=30),
-    Wire('PreToolUse', JOURNALDOOR_COMMAND, 'dev_lab.dev.journaldoor', on_shells=True, timeout=30),
-    Wire('PostToolUse', PUSHWATCH_COMMAND, 'dev_lab.dev.pushwatch', on_shells=True, timeout=30),
-    Wire('PostToolUse', SESSIONPRS_COMMAND, 'dev_lab.dev.sessionprs', on_shells=True, timeout=30),
-    Wire('PostToolUse', SWEEP_COMMAND, 'dev_lab.dev.branchprune post-push', on_shells=True, timeout=30),
-    Wire('PostToolUse', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=True, timeout=30),
-    Wire('PostToolUse', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True, timeout=30),
-    # PostToolUseFailure: a documented hook event ("After a tool call fails") --
-    # https://code.claude.com/docs/en/hooks; PostToolUse alone never sees a failed call's error text.
-    Wire('PostToolUseFailure', WALLSPOST_COMMAND, 'dev_lab.dev.walls post-tool', on_shells=True, timeout=30),
-    Wire('UserPromptSubmit', PRESSURE_COMMAND, 'dev_lab.dev.hostalarm', on_shells=False, timeout=30),
-    Wire('UserPromptSubmit', TASKBIND_COMMAND, 'dev_lab.dev.taskbinding bind', on_shells=False, timeout=30),
-    Wire('UserPromptSubmit', PRWATCHER_INBOX_COMMAND, 'dev_lab.dev.prwatcher inbox', on_shells=False, timeout=30),
-    Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False, timeout=60),
-    Wire('Stop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False, timeout=60),
-    Wire('Stop', PUSHSTOP_COMMAND, 'dev_lab.dev.pushstop', on_shells=False, timeout=60),
-    Wire('Stop', SCRATCHSTOP_COMMAND, 'dev_lab.dev.scratch stop', on_shells=False, timeout=60),
-    Wire('Stop', DEVHOSTSTOP_COMMAND, 'dev_lab.dev.devhost stop', on_shells=False, timeout=60),
-    Wire('Stop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False, timeout=60),
-    Wire('SubagentStop', HANDBACK_COMMAND, 'dev_lab.dev.handback', on_shells=False, timeout=60),
-    Wire('SubagentStop', WALLSSTOP_COMMAND, 'dev_lab.dev.walls stop', on_shells=False, timeout=60),
-    Wire('Stop', REAPER_COMMAND, 'dev_lab.dev.shellreaper', on_shells=False, timeout=60),
-    Wire('SessionStart', RECLAIM_COMMAND, 'dev_lab.dev.reclaimrun', on_shells=False, timeout=120),
-    Wire('SessionStart', REAPER_COMMAND, 'dev_lab.dev.shellreaper', on_shells=False, timeout=60),
-    Wire('SessionStart', VENVFOLLOW_COMMAND, 'dev_lab.dev.venvfollow', on_shells=False, timeout=120),
-    Wire('SessionStart', FORGEAUTH_COMMAND, 'dev_lab.dev.forgeauthnotice', on_shells=False, timeout=120),
-    Wire('SessionStart', SCRATCHSNAP_COMMAND, 'dev_lab.dev.scratch snapshot', on_shells=False, timeout=120),
-    Wire('SessionStart', AUTOMODE_COMMAND, 'dev_lab.dev.automode session-start', on_shells=False, timeout=120),
-    Wire('SessionStart', PRWATCHER_START_COMMAND, 'dev_lab.dev.prwatcher session-start', on_shells=False, timeout=120),
-)
+#: The ``pyproject.toml`` table a repo declares its own handlers in: ``[[tool.dev_lab.agent_hooks]]``.
+DECLARED_TABLE: Final = 'agent_hooks'
+_KEYS: Final = frozenset({'events', 'module', 'args', 'tools', 'may_block', 'once', 'timeout'})
 
-#: Wires the family once installed and no longer does, as ``(event, marker)``: a re-install removes them, so an old
-#: settings file is not left running a hook the wiring retired (no-backward-compatibility).
-RETIRED_WIRING: Final = (
-    ('PostToolUse', 'dev_lab.dev.codeplace stray'),
-    ('UserPromptSubmit', 'dev_lab.dev.hpcaccount.session bind'),
-)
+
+class WireRefused(ValueError):
+    """A repo-declared wire the dispatcher will not run, named with its cause and the table to fix."""
+
+
+@contextlib.contextmanager
+def import_root(root: Path) -> Iterator[None]:
+    """*root* first on the import path for the block: where a repo-declared module is looked up and imported."""
+    entry = str(root)
+    sys.path.insert(0, entry)
+    try:
+        yield
+    finally:
+        with contextlib.suppress(ValueError):
+            sys.path.remove(entry)
+
+
+def _strings(raw: Mapping[str, Any], key: str, where: str, *, required: bool = False) -> tuple[str, ...]:
+    value = raw.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        msg = f'{where}: {key} must be a list of non-empty strings, not {value!r}'
+        raise WireRefused(msg)
+    if required and not value:
+        msg = f'{where}: {key} names no event, so the row would never run'
+        raise WireRefused(msg)
+    return tuple(value)
+
+
+def _flag(raw: Mapping[str, Any], key: str, where: str) -> bool:
+    value = raw.get(key, False)
+    if not isinstance(value, bool):
+        msg = f'{where}: {key} must be true or false, not {value!r}'
+        raise WireRefused(msg)
+    return value
+
+
+def _wire(raw: object, where: str) -> Wire:
+    if not isinstance(raw, dict):
+        msg = f'{where}: a row is a table, not {raw!r}'
+        raise WireRefused(msg)
+    if unknown := sorted(set(raw) - _KEYS):
+        msg = f'{where}: unknown key(s) {unknown}; the keys are {sorted(_KEYS)}'
+        raise WireRefused(msg)
+    module, timeout = raw.get('module'), raw.get('timeout', 30)
+    if not isinstance(module, str) or not module or ' ' in module:
+        msg = f'{where}: module must name one importable module, not {module!r}'
+        raise WireRefused(msg)
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+        msg = f'{where}: timeout must be a positive whole number of seconds, not {timeout!r}'
+        raise WireRefused(msg)
+    return Wire(
+        _strings(raw, 'events', where, required=True),
+        module,
+        _strings(raw, 'args', where),
+        tools=_strings(raw, 'tools', where),
+        may_block=_flag(raw, 'may_block', where),
+        once=_flag(raw, 'once', where),
+        timeout=timeout,
+    )
+
+
+def _importable(module: str, root: Path) -> bool:
+    with import_root(root):
+        try:
+            return importlib.util.find_spec(module) is not None
+        except (ImportError, ValueError):
+            return False
+
+
+def declared(root: Path) -> tuple[Wire, ...]:
+    """The wires *root*'s ``pyproject.toml`` declares under ``[[tool.dev_lab.agent_hooks]]``; ``()`` when none.
+
+    Raises:
+        WireRefused: a row of the wrong shape, a module not importable from the repo's venv with *root* on the path,
+            or a row whose name (module and args) repeats a family row or an earlier declared row.
+
+    """
+    manifest = root / 'pyproject.toml'
+    if not manifest.is_file():
+        return ()
+    table = declared_table(tomllib.loads(manifest.read_text(encoding='utf-8')), DECLARED_TABLE, [])
+    if not isinstance(table, list):
+        msg = f'{manifest}: [tool.dev_lab.{DECLARED_TABLE}] is an array of tables: [[tool.dev_lab.{DECLARED_TABLE}]]'
+        raise WireRefused(msg)
+    family = {wire.name for wire in WIRING}
+    out: list[Wire] = []
+    for index, raw in enumerate(table, 1):
+        where = f'{manifest}: [[tool.dev_lab.{DECLARED_TABLE}]] row {index}'
+        wire = _wire(raw, where)
+        if wire.name in family:
+            msg = f'{where} ({wire.name}) duplicates a family row -- the family already wires it; delete the row'
+            raise WireRefused(msg)
+        if wire.name in {mine.name for mine in out}:
+            msg = f'{where} ({wire.name}) is declared twice; keep one row and list every event on it'
+            raise WireRefused(msg)
+        if not _importable(wire.module, root):
+            msg = f'{where}: {wire.module} is not importable from this venv with {root} on the path'
+            raise WireRefused(msg)
+        out.append(wire)
+    return tuple(out)
+
+
+def wiring(root: Path | None = None) -> tuple[Wire, ...]:
+    """Every handler: :data:`WIRING`, then what *root* declares (:func:`declared`); the family's alone without one.
+
+    Raises:
+        WireRefused: *root*'s declaration is refused (:func:`declared`).
+
+    """
+    return WIRING if root is None else (*WIRING, *declared(root))
+
+
+def events(wires: tuple[Wire, ...] = WIRING) -> tuple[str, ...]:
+    """Every event *wires* serve, in first-declared order."""
+    return tuple(dict.fromkeys(event for wire in wires for event in wire.events))
+
+
+def rows(root: Path | None = None) -> tuple[Row, ...]:
+    """THE RENDERED ROWS, derived: the engine, then one dispatcher row per event of :func:`wiring` (*root*).
+
+    A row's matcher is the union of its handlers' tools -- none when any handler sees every call -- and its timeout
+    the sum of its handlers' bounds.
+
+    Raises:
+        WireRefused: *root*'s declaration is refused (:func:`declared`).
+
+    """
+    every = wiring(root)
+    out = [Row('PreToolUse', '|'.join(SHELL_TOOLS), HOOK_COMMAND, 30)]
+    for event in events(every):
+        wires = [wire for wire in every if event in wire.events]
+        tools = tuple(dict.fromkeys(tool for wire in wires for tool in wire.tools))
+        matcher = None if any(not wire.tools for wire in wires) else '|'.join(tools)
+        out.append(Row(event, matcher, dispatch_command(event), sum(wire.timeout for wire in wires)))
+    return tuple(out)

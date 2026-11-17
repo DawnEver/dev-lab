@@ -35,6 +35,7 @@ the half the rows' own ``refuses``/``permits`` proof exercises, and the half a p
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -46,6 +47,7 @@ from dev_lab.dev.disclosure import details_for
 
 __all__ = [
     'ADMITS',
+    'ASKED',
     'DENY_RULES',
     'MATCH_KINDS',
     'PLACEHOLDER',
@@ -95,6 +97,10 @@ WHENS: Final = frozenset({'live-run', 'background'})
 #: unknown admission as none, which narrows the rule rather than widening it. ``'file-operands'``: a grep
 #: whose every operand is an existing file reads only those files, whatever its recursion flag says.
 ADMITS: Final = frozenset({'family-sibling-clone', 'file-operands'})
+#: The shape of an ``asks`` value: a ``dev_lab`` module, the one whose ``--admit`` judges a row its pattern only
+#: prefilters. The engine runs it through the session checkout's interpreter after the pattern matched, so the
+#: common call spawns none; exit 1 with text refuses with that text, anything else admits.
+ASKED: Final = re.compile(r'dev_lab(?:\.\w+)+')
 
 
 class UnremediedRule(RuntimeError):
@@ -177,6 +183,7 @@ class DenyRule:
     severity: str = 'deny'
     when: str | None = None
     admits: str | None = None
+    asks: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
@@ -200,6 +207,9 @@ class DenyRule:
             raise ValueError(msg)
         if self.admits is not None and self.admits not in ADMITS:
             msg = f'{self.id}: admits={self.admits!r} is not one of {sorted(ADMITS)}; the engine would admit nothing.'
+            raise ValueError(msg)
+        if self.asks is not None and not _judge_exists(self.asks):
+            msg = f'{self.id}: asks={self.asks!r} names no dev_lab module; the engine would ask nobody and admit all.'
             raise ValueError(msg)
         _compiled(self.pattern, f'{self.id} pattern')
         _compiled(self.allow, f'{self.id} allow')
@@ -274,7 +284,17 @@ class DenyRule:
             row['when'] = self.when
         if self.admits is not None:
             row['admits'] = self.admits
+        if self.asks is not None:
+            row['asks'] = self.asks
         return row
+
+
+def _judge_exists(module: str) -> bool:
+    """Whether *module* is an :data:`ASKED`-shaped module this install carries; a missing parent is no module."""
+    try:
+        return ASKED.fullmatch(module) is not None and importlib.util.find_spec(module) is not None
+    except ModuleNotFoundError:
+        return False
 
 
 def _compiled(pattern: str | None, what: str) -> re.Pattern[str] | None:
@@ -359,7 +379,8 @@ def denies(
 
     *live* says whether the checkout the command targets has a live run, as the engine asks
     :mod:`dev_lab.dev.liverun`; a ``when='live-run'`` row binds only then. *background* says the call runs in
-    the background; a ``when='background'`` row binds only then.
+    the background; a ``when='background'`` row binds only then. An ``asks`` row is judged by its pattern alone,
+    the prefilter: its judge needs a repo, so a near-miss its pattern names reads as refused here.
 
     An opening is tested against the whole text, as the engine tests it against the whole command:
     an ``allow`` is a statement about the invocation, not about the token the pattern landed on.

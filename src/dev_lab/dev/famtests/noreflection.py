@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from dev_lab.dev import floors
 from dev_lab.dev.callorigins import call_origins
 from dev_lab.dev.codeplace import ARCHIVED_SEGMENTS, is_archived
+from dev_lab.dev.failprint import subject_lines
 from dev_lab.dev.rules import tracked_files
 
 if TYPE_CHECKING:
@@ -101,6 +102,7 @@ def assert_no_reflection(*, root: Path, allowed: Mapping[str, str], floor: int) 
             f'NO-REFLECTION: attribute/namespace probes, reflective helpers and hooks are banned. '
             f'Replace each with typed access (attribute, isinstance on a Protocol, dataclasses, a dict, '
             f'pytest.raises(AttributeError)) -- never vars()/__dict__. new={new} '
-            f'stale allow entries (delete them)={stale} allow entries without a reason={unreasoned}'
+            f'stale allow entries (delete them)={stale} allow entries without a reason={unreasoned}\n'
+            + subject_lines([*new, *stale, *unreasoned])
         )
         raise AssertionError(msg)

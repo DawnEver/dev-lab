@@ -28,7 +28,8 @@ from __future__ import annotations
 
 from typing import Final
 
-from dev_lab.dev._policy_door import ACTORS, MAIN, SUBAGENT, USER, Door
+from dev_lab.dev._policy_door import ACTORS, MAIN, SUBAGENT, USER, Door, module_argv
+from dev_lab.dev.remotedoors import REMOTE_DOORS
 
 #: The row shape (:class:`Door`, the actors) lives in :mod:`dev_lab.dev._policy_door`; this module is its one
 #: public face, so every reader imports both from here.
@@ -48,10 +49,6 @@ def _forge(*verbs: str) -> tuple[str, ...]:
     return ('python', '-m', 'dev_lab.dev.forge', *verbs)
 
 
-def _module(name: str, *verbs: str) -> tuple[str, ...]:
-    return ('python', '-m', f'dev_lab.dev.{name}', *verbs)
-
-
 def _desktop(verb: str) -> tuple[str, ...]:
     return ('python', '-m', 'lab_commons.desktop', verb)
 
@@ -59,33 +56,40 @@ def _desktop(verb: str) -> tuple[str, ...]:
 _FORGE_WRITE: Final = 'FORGE-WRITE-VIA-CLI'
 
 #: THE TABLE. Ordered as a reader looks for a door: the local verdict and housekeeping, the forge's read side, its
-#: write side, publishing, then the remote doors.
+#: write side, publishing, then the remote doors
+#: (:mod:`dev_lab.dev.remotedoors`, spliced in here so this stays the ONE table).
 POLICY: Final[tuple[Door, ...]] = (
     # ---- local, any agent
-    Door(_module('verify'), SUBAGENT, 'Running the family verdict over the tests a change touched.'),
-    Door(_module('stoprun'), SUBAGENT, 'Stopping one identifiable run this session started, with its subtree.'),
-    Door(_module('netverb'), SUBAGENT, 'A network git or uv verb through the bounded-retry door.'),
+    Door(module_argv('verify'), SUBAGENT, 'Running the family verdict over the tests a change touched.'),
+    Door(module_argv('stoprun'), SUBAGENT, 'Stopping one identifiable run this session started, with its subtree.'),
+    Door(module_argv('netverb'), SUBAGENT, 'A network git or uv verb through the bounded-retry door.'),
     Door(
-        _module('dep', '--bootstrap'),
+        module_argv('dep', '--bootstrap'),
         SUBAGENT,
         "Creating a checkout's own environment through the checked dependency door.",
     ),
-    Door(_module('branchset'), SUBAGENT, 'The branch census; applying it deletes merged local branches, never remote.'),
     Door(
-        _module('worktrees'),
+        module_argv('branchset'),
+        SUBAGENT,
+        'The branch census; applying it deletes merged local branches, never remote.',
+    ),
+    Door(
+        module_argv('worktrees'),
         SUBAGENT,
         'The worktree census; pruning removes only a clean, pushed worktree, archiving moves its outputs home.',
     ),
-    Door(_module('family', 'check'), SUBAGENT, "Read-only: every fact of this machine's family members, named."),
-    Door(_module('family', 'join'), MAIN, 'Making a repo a family member: clone, record, protect, set its secret.'),
-    Door(_module('famfiles'), SUBAGENT, "Rendering the family project files of a checkout from the kit's one source."),
-    Door(_module('autodoors'), SUBAGENT, "Rendering this checkout's door rules for each agent client."),
+    Door(module_argv('family', 'check'), SUBAGENT, "Read-only: every fact of this machine's family members, named."),
+    Door(module_argv('family', 'join'), MAIN, 'Making a repo a family member: clone, record, protect, set its secret.'),
+    Door(
+        module_argv('famfiles'), SUBAGENT, "Rendering the family project files of a checkout from the kit's one source."
+    ),
+    Door(module_argv('autodoors'), SUBAGENT, "Rendering this checkout's door rules for each agent client."),
     # The desktop tool's READ verbs (user ruling 2026-11-14 E6); its acts (press, set-value, close) stay prompted.
     Door(_desktop('windows'), SUBAGENT, 'Read-only: the top-level desktop windows, listed.'),
     Door(_desktop('capture'), SUBAGENT, 'Read-only: an image of one desktop window, captured.'),
     Door(_desktop('controls'), SUBAGENT, "Read-only: one desktop window's control tree, listed."),
     Door(
-        _module('hook_install', '--install'),
+        module_argv('hook_install', '--install'),
         SUBAGENT,
         'Installing or refreshing the kit git hooks in a checkout of this repository.',
     ),
@@ -98,7 +102,7 @@ POLICY: Final[tuple[Door, ...]] = (
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
-        _module('sshhold', 'open'),
+        module_argv('sshhold', 'open'),
         MAIN,
         'Opening one held login session to a key and authenticator-code host, answered with the one-time code the '
         'user supplied in this conversation for it, within the machine ceiling on its hours; never an invented, '
@@ -106,19 +110,19 @@ POLICY: Final[tuple[Door, ...]] = (
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
-        _module('sshhold', 'run'),
+        module_argv('sshhold', 'run'),
         MAIN,
         'Running one command on a login session the user authenticated, audited.',
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
-        _module('sshhold', 'credential'),
+        module_argv('sshhold', 'credential'),
         MAIN,
         "Storing a forge token on a held account's git credential helper, the token read on standard input from "
         'where the user placed it; never a token typed into a command line, a log or a file the agent writes.',
     ),
-    Door(_module('sshhold', 'close'), MAIN, 'Ending a held login session.'),
-    Door(_module('sshhold', 'status'), MAIN, 'Read-only: the held login sessions and time left.'),
+    Door(module_argv('sshhold', 'close'), MAIN, 'Ending a held login session.'),
+    Door(module_argv('sshhold', 'status'), MAIN, 'Read-only: the held login sessions and time left.'),
     Door(_forge('status', 'list'), SUBAGENT, 'Read-only: the commit statuses the forge holds for one commit.'),
     Door(
         _forge('run', 'show'),
@@ -242,7 +246,7 @@ POLICY: Final[tuple[Door, ...]] = (
         'the guard and are never bypassed.',
     ),
     Door(
-        _module('integrate', 'promote'),
+        module_argv('integrate', 'promote'),
         MAIN,
         'Promoting an integration commit whose every test part stands passed, as a fast-forward of the trunk.',
     ),
@@ -252,13 +256,13 @@ POLICY: Final[tuple[Door, ...]] = (
         'A fast-forward of a trunk the main session publishes; never a merge commit.',
     ),
     Door(
-        _module('branchprune', 'delete'),
+        module_argv('branchprune', 'delete'),
         MAIN,
         'Deleting a remote branch only when every commit on it is already on the integration branch or on '
         'another live branch or open pull request; never a force push and never a lossy delete.',
     ),
     Door(
-        _module('branchprune', 'delete-tag'),
+        module_argv('branchprune', 'delete-tag'),
         MAIN,
         'Deleting a remote tag the user approved in their own words, only when its commit is on the integration '
         'branch or the trunk; never a lossy delete.',
@@ -275,63 +279,8 @@ POLICY: Final[tuple[Door, ...]] = (
         'Pausing a GitHub Actions workflow of a family repository, so it starts no new runs until re-enabled '
         '(user ruling 2026-11-07).',
     ),
-    # ---- remote
-    Door(
-        _module('hpcaccount', 'deploy-fleet'),
-        MAIN,
-        'Deploying or restarting the forge serve hosts of the trusted fleet: each trusted cluster account on its '
-        'own declared login host, over ssh, detached, one log per account.',
-        deny='HPC-THROUGH-THE-DOOR',
-    ),
-    Door(
-        _module('hpcaccount', 'forget'),
-        MAIN,
-        "Forgetting one stale row of each trusted cluster account's learned memory table, backed up beside itself, "
-        "through the grant's own login hosts; a dry run only reads what each account holds.",
-        deny='HPC-THROUGH-THE-DOOR',
-    ),
-    Door(
-        _module('hpcaccount', 'retention'),
-        MAIN,
-        "Reading each trusted cluster account's quota (files and blocks) and whether its serve ticks, and running "
-        "that account's own in-flight-aware storage retention through the grant's own login hosts; a dry run "
-        'unless asked to apply.',
-        deny='HPC-THROUGH-THE-DOOR',
-    ),
-    Door(
-        _module('hpcaccount', 'credential'),
-        MAIN,
-        'Placing one minted forge token of a declared login on a trusted cluster account, the token on standard '
-        "input and replacing only that forge's stored line, through the grant's own login hosts, then confirming "
-        'the forge answers as that login (user ruling 2026-11-12).',
-        deny='HPC-THROUGH-THE-DOOR',
-    ),
-    Door(
-        _module('opsserver'),
-        MAIN,
-        "Running one of the ops account's fixed verbs on a declared server the integrator deploys: install, a "
-        "unit's status, restart, reload or logs, or a daemon reload, with the user's one-time code at the login.",
-        deny='REMOTE-WRITE-THROUGH-A-DOOR',
-    ),
-    Door(
-        (),
-        MAIN,
-        'The first hand deploy of a trusted fleet account the fleet deploy refuses for want of a declared host: on '
-        "that account's own login host, through the family deploy verb, detached, its log kept on the account.",
-    ),
-    Door(
-        (),
-        MAIN,
-        'Maintenance of a declared server or cluster account the integrator owns: read-only disk and process '
-        'census, and cleanup of regenerable caches only (journal, package and archive caches, finished run '
-        'scratch); never repository data, attachments, backups or anything the census marks not owned.',
-    ),
-    Door(
-        _module('hpcaccount', 'deploy'),
-        USER,
-        "Making a cluster account's login host a forge serve host: run by the user on that account.",
-        deny='HPC-THROUGH-THE-DOOR',
-    ),
+    # ---- remote: :data:`dev_lab.dev.remotedoors.REMOTE_DOORS`
+    *REMOTE_DOORS,
 )
 
 
