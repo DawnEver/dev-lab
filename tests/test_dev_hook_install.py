@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import hook_install
+from dev_lab.dev import hook_install, venvpointer
 from dev_lab.dev.famtests.hookinstall import (
     assert_declared_hooks_are_installed,
     assert_hooks_dir_is_the_one_git_consults,
@@ -314,6 +314,34 @@ def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path)
     done = _commit(repo)
     assert done.returncode != 0
     assert 'venv-ran' in done.stderr
+
+
+def _fallback(stage_shim: str) -> str:
+    """What the shim's ``fallback`` line evaluates to in a POSIX sh."""
+    line = next(line for line in stage_shim.splitlines() if line.startswith('fallback='))
+    sh = shutil.which('sh')
+    assert sh, 'the shim runs in a POSIX sh: every host the kit serves has one'
+    done = subprocess.run(
+        [sh, '-c', f'{shell_function()}\n{line}\nprintf %s "$fallback"'],
+        capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr
+    return done.stdout
+
+
+def test_a_recorded_checkout_interpreter_follows_that_checkouts_current_environment(tmp_path: Path) -> None:
+    """A fallback recorded from a legacy ``.venv`` (or an older ``.venvs/<id>``) re-resolves at every run."""
+    root = tmp_path / 'main'
+    tail = CANDIDATE_RELATIVE_PATHS[0][1:]
+    (root / venvpointer.HOME / 'x').mkdir(parents=True)
+    (root / venvpointer.ALIAS).mkdir()
+    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
+    recorded = root.joinpath(venvpointer.ALIAS, *tail).as_posix()
+    assert _fallback(shim('pre-commit', recorded)) == root.joinpath(venvpointer.HOME, 'x', *tail).as_posix()
+    (root / venvpointer.POINTER).unlink()
+    assert _fallback(shim('pre-commit', recorded)) == recorded, 'PLANTED CONTROL: no pointer: .venv is current'
+    elsewhere = (tmp_path / 'python-install' / 'python').as_posix()
+    assert _fallback(shim('pre-commit', elsewhere)) == elsewhere, 'not a checkout env: recorded verbatim'
 
 
 def test_a_shim_recording_another_interpreter_is_still_installed(repo: Path) -> None:

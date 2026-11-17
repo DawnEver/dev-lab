@@ -230,6 +230,10 @@ RETIRED_SPELLINGS: Final = {
             "user ruling 2026-11-16: a workstation never serves a merge's parts; only Actions and the HPC produce",
         ),
     ),
+    '_adopt_plain_venv': (
+        'dev_lab.dev.venvcurrent.retire_passed_over, retried by every publish, reclaim and follow',
+        '2026-11-17: a held legacy .venv never drained; the follow retries the drain from the current environment',
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a
