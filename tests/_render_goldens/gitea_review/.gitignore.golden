@@ -54,6 +54,8 @@ output/
 **/.claude/**/__pycache__/
 **/.claude/**/*.py[cod]
 **/.claude/automode.json
+**/.claude/rules/MEMORY.md
+**/.claude/tasks/.bindings/
 
 # --- gitea delta, 1 of 1 allowed ---
 /output/

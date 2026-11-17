@@ -54,6 +54,8 @@ output/
 **/.claude/**/__pycache__/
 **/.claude/**/*.py[cod]
 **/.claude/automode.json
+**/.claude/rules/MEMORY.md
+**/.claude/tasks/.bindings/
 
 # --- overrides delta, 2 of 2 allowed ---
 /data/
