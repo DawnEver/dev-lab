@@ -448,7 +448,7 @@ def main(
         overlay = _dep_local.step(
             root, args.local, syncing=syncing, uv=command[0], python=python, prefix=prefix, run=run, env=environment
         )
-    except (_dep_project.OtherUvRefused, _dep_local.OverlayRefused) as exc:
+    except (_dep_project.OtherUvRefused, _dep_project.ForeignEnvRefused, _dep_local.OverlayRefused) as exc:
         emit(f'REFUSED: {exc}')
         _publish(root, prefix, live, ok=False, census=census, base=base)
         return 1

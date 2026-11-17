@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
@@ -143,6 +144,19 @@ def _the_declared_uv(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: uv_version())
     monkeypatch.setattr(uvfollow, 'run_network_verb', _no_installer)
+
+
+def _invoking_stands_in(_root: Path, python: str) -> str:
+    return python if Path(python).is_file() else sys.executable
+
+
+@pytest.fixture(autouse=True)
+def _an_env_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test's tmp project has no venv, so the invoking interpreter stands in as its own; every uv run is faked.
+
+    Planted control, restoring the real refusal: test_dev_sync_owns_its_env.
+    """
+    monkeypatch.setattr(_dep_project, 'own_interpreter', _invoking_stands_in)
 
 
 def _no_installer(argv: Sequence[str], **_kwargs: object) -> Report:
