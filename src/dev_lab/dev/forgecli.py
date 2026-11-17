@@ -271,21 +271,21 @@ def _refused(
         parser.error('pr create: --ready opens it ready; --ready-when-current opens a draft -- choose one')
     if (published := _PUBLISHED_TEXT.get((args.noun, args.verb))) is None:
         return None
-    what, fields = published
+    what, texts = published
     private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
     if private:
         return None
     if why:
         emit(f'[forge] scanning the {what} for private markers: {why}', err=True)
-    return privatemarkers.text_refusal('\n'.join(getattr(args, field) for field in fields), what)
+    return privatemarkers.text_refusal('\n'.join(texts(args)), what)
 
 
 #: Each write verb that publishes typed text: what a refusal calls it, and the argument fields that hold it.
-_PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, tuple[str, ...]]] = {
-    ('pr', 'create'): ('PR title or body', ('title', 'body')),
-    ('pr', 'close'): ('close reason', ('reason',)),
-    ('issue', 'create'): ('issue title or body', ('title', 'body')),
-    ('issue', 'comment'): ('comment body', ('body',)),
+_PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace], tuple[str, ...]]]] = {
+    ('pr', 'create'): ('PR title or body', lambda a: (a.title, a.body)),
+    ('pr', 'close'): ('close reason', lambda a: (a.reason,)),
+    ('issue', 'create'): ('issue title or body', lambda a: (a.title, a.body)),
+    ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
 }
 
 
