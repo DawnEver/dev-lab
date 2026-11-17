@@ -19,6 +19,10 @@ re-render; never hand-edit a rendered file.
   files make due (`famfiles.render_repo`): CI workflows, the base + delta files, principles and rem pages, deny
   rules, the guard engine and its settings wiring, the door rules, the dev-docs pointer table. `forge sync`'s
   relock calls the same function. `--deltas <module> [--check]` runs the base + delta renderer alone.
+- **A tracked render moves in a lane, under its own kit.** `agent_guard --install` leaves a TRACKED file
+  differing from the index only in a linked worktree whose kit is its own (its `src/dev_lab`, or the dev-lab
+  commit its `uv.lock` pins); a main checkout moves only by fast-forward. Otherwise it writes nothing and names
+  the door: re-render under the checkout's own interpreter, or relock in a lane and commit the render there.
 - **One check.** `dev_lab.dev.famtests.famfiles`:
   `assert_every_project_file_is_accounted_for(root=, owned_here=)` and
   `assert_every_managed_file_is_rendered(root=, deltas=, repo=, rerender_hint=)`.
