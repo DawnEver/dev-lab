@@ -15,6 +15,10 @@ line kept. Running jobs are never touched: this module runs no Slurm command at 
 ``ci-resume [--config <machine file>] [--dry-run]``: refuse without the marker; rewrite the lines the deploy writes
 from the account's declaration (:func:`~dev_lab.dev.hpcaccount.spec.cron_lines`, never a stale saved text), verify
 ``crontab -l`` holds each, and delete the marker.
+
+``--credential <id> --cluster <name>`` (either verb): redeem a granted :data:`~dev_lab.dev.hpcaccount.cicron.ACTION`
+credential whose subject is this cluster, this account (``id -un``) and the verb's direction, before any change; a
+mismatched one refuses with nothing changed (:mod:`~dev_lab.dev.hpcaccount.cicron`). A dry run spends nothing.
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ from pathlib import Path
 from lab_commons.config import config_path
 from lab_commons.log import emit
 
-from dev_lab.dev.hpcaccount import deploy
+from dev_lab.dev.hpcaccount import cicron, deploy
 from dev_lab.dev.hpcaccount.cimark import RESUME_DOOR, marker
 from dev_lab.dev.hpcaccount.drift import DISCARD, account_drift
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, cron_lines, grant_setup, load, ticked
@@ -41,7 +45,22 @@ def _parser(verb: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=f'dev_lab.dev.hpcaccount {verb}', description=__doc__.splitlines()[0])
     parser.add_argument('--config', type=Path, help='the rendered machine file (default: lab_commons.config)')
     parser.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
+    parser.add_argument(
+        '--credential', help=f'the id of a granted {cicron.ACTION} credential, redeemed before a change'
+    )
+    parser.add_argument('--cluster', help="this account's cluster: the subject a --credential is redeemed for")
     return parser
+
+
+def _consented(verb: str, step: Step, args: argparse.Namespace, redeem_with: cicron.Redeem | None) -> str | None:
+    """``None`` when no credential is given or it is redeemed for this cluster and account; else the refusal."""
+    if args.credential is None:
+        return None
+    if not args.cluster:
+        return f'--credential needs --cluster: the subject names the cluster ({cicron.ACTION})'
+    user = step.read([*step.tools.id, '-un']).stdout.strip()
+    wanted = cicron.subject(verb, args.cluster, [user])
+    return cicron.spend(args.credential, wanted, redeem_with=redeem_with)
 
 
 def _serving(machine: Path) -> Deployment | str:
@@ -68,7 +87,9 @@ def _lost(step: Step, home: Path, machine: Path, args: argparse.Namespace) -> li
     return lost
 
 
-def ci_pause(argv: Sequence[str], *, home: Path, tools: Tools | None = None) -> int:
+def ci_pause(
+    argv: Sequence[str], *, home: Path, tools: Tools | None = None, redeem_with: cicron.Redeem | None = None
+) -> int:
     """Refuse on drift, mark, then remove the marked lines; 0 paused (or already), 2 refused with nothing removed."""
     parser = _parser('ci-pause')
     parser.add_argument('--from', dest='clone', type=Path, required=True, help="the account's config-source clone")
@@ -84,8 +105,9 @@ def ci_pause(argv: Sequence[str], *, home: Path, tools: Tools | None = None) -> 
         emit(f'ci-pause: already CI-PAUSED ({marker(home)}); {RESUME_DOOR} resumes it')
         return 0
     lost = _lost(step, home, machine, args)
-    if isinstance(lost, str):
-        emit(f'ci-pause refused, nothing removed: {lost}', err=True)
+    refused = lost if isinstance(lost, str) else not step.dry and _consented('ci-pause', step, args, redeem_with)
+    if isinstance(lost, str) or refused:
+        emit(f'ci-pause refused, nothing removed: {refused}', err=True)
         return 2
     marked = sum(MARK in line for line in step.read([*step.tools.crontab, '-l']).stdout.splitlines())
     discarded = f'{len(lost)} drift item(s) discarded'
@@ -101,7 +123,9 @@ def ci_pause(argv: Sequence[str], *, home: Path, tools: Tools | None = None) -> 
     return 0
 
 
-def ci_resume(argv: Sequence[str], *, home: Path, tools: Tools | None = None) -> int:
+def ci_resume(
+    argv: Sequence[str], *, home: Path, tools: Tools | None = None, redeem_with: cicron.Redeem | None = None
+) -> int:
     """Rewrite the declared lines, verify them, delete the marker; 0 resumed, 2 refused or unverified."""
     args = _parser('ci-resume').parse_args(list(argv))
     step, machine = Step(tools or Tools(), dry=args.dry_run), args.config or config_path()
@@ -115,6 +139,9 @@ def ci_resume(argv: Sequence[str], *, home: Path, tools: Tools | None = None) ->
         return 2
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     lines = cron_lines(spec, home, slurm=slurm, setup=grant_setup(machine, user))
+    if not step.dry and (refused := _consented('ci-resume', step, args, redeem_with)):
+        emit(f'ci-resume refused, nothing changed: {refused}', err=True)
+        return 2
     if (rc := crontab(step, lines)) or step.dry:
         return rc
     held = step.read([*step.tools.crontab, '-l']).stdout.splitlines()

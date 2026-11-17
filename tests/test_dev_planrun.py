@@ -402,7 +402,7 @@ WIDE_STEPS = planrunsteps.Steps((
     STEPS.steps[0],
     planrunsteps.Step(('config', 'apply', '--from', '/srv/plan/judge.toml'), JUDGE, '/etc/dev-lab/judge.toml', PY),
     STEPS.steps[1],
-    planrunsteps.Step(('breakglass', 'open'), local=True),
+    planrunsteps.Step(('dev_lab.dev.forge', 'breakglass', 'open'), local=True),
 ))  # fmt: skip
 ENDPOINT = {'endpoint': 'breakglass@forge'}
 
@@ -424,7 +424,9 @@ def test_a_plan_across_hosts_and_a_local_wave_is_green_with_every_check_on_its_o
     assert green, lines
     assert lines[:2] == [f'host {HOST}: ready', f'host {JUDGE}: ready']
     assert lines[3] == f'step 2 ops.config: green on {JUDGE}'
-    assert lines[5].startswith('step 4 breakglass.wave: green (here: forge breakglass open via breakglass@forge')
+    assert lines[5].startswith(
+        'step 4 breakglass.wave: green (here: python -m dev_lab.dev.forge breakglass open via breakglass@forge'
+    )
     judged = [command for command in hosts[JUDGE].commands if '--subject' in command]
     assert judged == [planrunsteps.ops_command(WIDE_STEPS.steps[1], [*WIDE_STEPS.steps[1].argv, '--subject'])]
     assert all('judge.toml' not in command for command in hosts[HOST].commands)
@@ -471,7 +473,7 @@ def test_one_plan_runs_across_its_hosts_and_redeems_the_wave_here(tmp_path: Path
     assert finished, lines
     assert [json.loads(text)['id'] for text in hosts[HOST].carried] == ['id-0', 'id-2']
     assert [json.loads(text)['id'] for text in hosts[JUDGE].carried] == ['id-1']
-    assert opened == [['breakglass', 'open', '--credential', 'id-3']]
+    assert opened == [['dev_lab.dev.forge', 'breakglass', 'open', '--credential', 'id-3']]
     assert lines[3] == 'step 4 breakglass.wave here: ran ([breakglass] wave open); credential spent, deleted'
     assert not any(path.exists() for path in written)
 
@@ -527,7 +529,7 @@ def test_a_steps_file_names_each_steps_host_and_a_local_wave(tmp_path: Path) -> 
     ]  # fmt: skip
     with pytest.raises(ConsentRefused, match='"argv"'):  # the plan names where a grant runs; a step never does
         planrunsteps.load_steps(_steps_file(tmp_path, [good[0], {**good[1], 'dest': JUDGE}, *good[2:]]), WIDE)
-    assert steps[3].argv == ('breakglass', 'open')
+    assert steps[3].argv == ('dev_lab.dev.forge', 'breakglass', 'open')
     with pytest.raises(ConsentRefused, match='redeemed here'):
         planrunsteps.load_steps(_steps_file(tmp_path, [*good[:3], {'argv': ['breakglass', 'open']}]), WIDE)
     with pytest.raises(ConsentRefused, match='redeemed on a host'):

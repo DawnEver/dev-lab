@@ -30,6 +30,7 @@ __all__ = [
     'LOCAL_VERBS',
     'REMOTE_DIR',
     'Local',
+    'LocalVerb',
     'Remotes',
     'Step',
     'Steps',
@@ -43,7 +44,7 @@ __all__ = [
     'token_step',
 ]
 
-#: Runs a local client verb (``forge`` argv words); ``(merged output, exit status)``.
+#: Runs a local client verb (``[module, *words]``); ``(merged output, exit status)``.
 type Local = Callable[[Sequence[str]], tuple[str, int]]
 
 
@@ -59,11 +60,29 @@ CONFIG_ACTION: Final = 'ops.config'
 REMOTE_DIR: Final = '.dev-lab/consent'
 
 
-#: A grant redeemed HERE rather than on a host: action -> (its ``forge`` client verb, the machine-file table naming
-#: that client's endpoint). The step adds ``--credential <id>``.
-LOCAL_VERBS: Final[Mapping[str, tuple[tuple[str, ...], str]]] = {
-    'breakglass.wave': (('breakglass', 'open'), 'breakglass'),
-}
+@dataclass(frozen=True)
+class LocalVerb:
+    """How a grant redeemed HERE runs: ``python -m <module> <words>``, the endpoint's machine-file table.
+
+    *verbs* empty: *words* is the whole verb and a step is ``{"local": true}``. Else the step names its own argv
+    (``{"local": true, "argv": [verb, ...]}``) whose first word is one of *verbs* -- the request the credential's
+    subject names, which the verb derives and redeems against.
+    """
+
+    module: str
+    words: tuple[str, ...]
+    table: str
+    verbs: frozenset[str] = frozenset()
+
+
+#: A grant redeemed HERE rather than on a host, by action. The step adds ``--credential <id>``.
+LOCAL_VERBS: Final[Mapping[str, LocalVerb]] = {
+    'breakglass.wave': LocalVerb('dev_lab.dev.forge', ('breakglass', 'open'), 'breakglass'),
+    'hpcaccount.ci-cron': LocalVerb(
+        'dev_lab.dev.hpcaccount', (), 'consent',
+        frozenset({'ci-pause', 'ci-pause-fleet', 'ci-resume', 'ci-resume-fleet'}),
+    ),
+}  # fmt: skip
 
 
 _LOCAL_S: Final = 600.0
@@ -95,13 +114,29 @@ class Steps:
 _HOST_KEYS: Final = {'argv', 'stdin_local', 'stdin_task', 'stdout_local', 'config', 'python', 'forge', 'config_host'}
 
 
+def _local_step(name: str, action: str, argv: object) -> Step:
+    if action not in LOCAL_VERBS:
+        msg = f'{name} is local, but {action} is redeemed on a host; local steps: {sorted(LOCAL_VERBS)}'
+        raise ConsentRefused(msg)
+    verb = LOCAL_VERBS[action]
+    if not verb.verbs:
+        if argv is not None:
+            msg = f'{name} grants {action}, whose local step is {{"local": true}}: it names no argv'
+            raise ConsentRefused(msg)
+        return Step((verb.module, *verb.words), local=True)
+    if not (isinstance(argv, list) and argv and all(isinstance(word, str) for word in argv)) or (
+        argv[0] not in verb.verbs or '--credential' in argv
+    ):
+        msg = (f'{name} grants {action}: {{"local": true, "argv": [one of {sorted(verb.verbs)}, ...]}}, '
+               'never --credential (the runner adds it)')  # fmt: skip
+        raise ConsentRefused(msg)
+    return Step((verb.module, *verb.words, *argv), local=True)
+
+
 def _step(index: int, step: object, action: str, data: dict[str, Any], dest: str) -> Step:
     name = f'step {index + 1}'
-    if isinstance(step, dict) and step.get('local') is True and set(step) == {'local'}:
-        if action not in LOCAL_VERBS:
-            msg = f'{name} is local, but {action} is redeemed on a host; local steps: {sorted(LOCAL_VERBS)}'
-            raise ConsentRefused(msg)
-        return Step(LOCAL_VERBS[action][0], local=True)
+    if isinstance(step, dict) and step.get('local') is True and set(step) <= {'local', 'argv'}:
+        return _local_step(name, action, step.get('argv'))
     argv = step.get('argv') if isinstance(step, dict) else None
     if not (isinstance(argv, list) and argv and all(isinstance(word, str) for word in argv)) or (
         set(step) - _HOST_KEYS or not all(isinstance(step.get(key, ''), str) for key in _HOST_KEYS - {'argv'})
@@ -261,8 +296,8 @@ def ops_command(step: Step, words: Sequence[str], *, sudo: str = 'sudo -n') -> s
 
 
 def run_local(words: Sequence[str]) -> tuple[str, int]:
-    """Run ``python -m dev_lab.dev.forge`` *words* here; ``(merged output, exit status)``."""
-    argv = [sys.executable, '-m', 'dev_lab.dev.forge', *words]
+    """Run ``python -m`` *words* (``[module, *verb words]``) here; ``(merged output, exit status)``."""
+    argv = [sys.executable, '-m', *words]
     done = _door.run(argv, capture_output=True, text=True, encoding='utf-8', check=False, timeout=_LOCAL_S)
     return done.stdout + done.stderr, done.returncode
 

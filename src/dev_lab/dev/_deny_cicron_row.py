@@ -3,8 +3,11 @@
 User ruling 2026-11-16: ``hpcaccount drift`` and ``drift-fleet`` are read-only (no file written, no crontab touched),
 so every agent runs them; ``ci-pause``, ``ci-pause-fleet``, ``ci-resume`` and ``ci-resume-fleet`` rewrite a cluster
 account's crontab, so an agent is refused them EVERY time. The refused verbs are the USER
-doors whose ``deny`` is this row (:func:`refused_verbs`), never a second list. The door the refusal names: the user
-runs the verb, or approves a consent plan whose subject is the cluster and its account list and gives its code.
+doors whose ``deny`` is this row (:func:`refused_verbs`), never a second list. The doors the refusal names: the user
+runs the verb, or approves a consent plan whose subject is the cluster and its account list and gives its code -- the
+granted step then runs the verb with ``--credential <id>``, which this row ADMITS: the verb redeems the credential
+against the subject it derives before any crontab change (:mod:`dev_lab.dev.hpcaccount.cicron`), so the grant check
+in the verb, not this guard, is what enforces the consent.
 """
 
 from __future__ import annotations
@@ -30,12 +33,14 @@ _VERBS = '|'.join(re.escape(verb) for verb in refused_verbs())
 
 CI_CRON_NEEDS_CONSENT: dict[str, object] = {
     'id': RULE_ID,
-    'pattern': rf'\S*python[\w.]*(?:\.exe)?\s+-m\s+{re.escape(MODULE)}\s+(?:{_VERBS})(?![\w-])',
+    'pattern': rf'\S*python[\w.]*(?:\.exe)?\s+-m\s+{re.escape(MODULE)}\s+(?:{_VERBS})(?![\w-])'
+    r'(?![^;&|\n]*\s--credential(?:[\s=]|$))',
     'matches': 'command',
     'hazard': "pausing or resuming CI rewrites a cluster account's crontab; an agent never does it on its own "
     '(user ruling 2026-11-16).',
     'remedy': 'Read first with hpcaccount drift-fleet. Then the user runs it, or approves a consent plan whose '
-    'subject is the cluster plus its account list: {python} -m dev_lab.ops.consent grant <request.json> --code <code>.',
+    'subject is the cluster plus its account list (action hpcaccount.ci-cron): {python} -m dev_lab.ops.consent grant '
+    '<request.json> --code <code>, then the verb runs with --credential <id>, redeemed before any crontab change.',
     'needs': None,
     'refuses': tuple(f'python -m {MODULE} {verb} --cluster c1' for verb in refused_verbs()),
     'permits': (
@@ -43,6 +48,7 @@ CI_CRON_NEEDS_CONSENT: dict[str, object] = {
         f'python -m {MODULE} drift --from /srv/clone --host h',
         f'python -m {MODULE} --help',
         f'python -m {MODULE} ci-pause-fleetx',
+        f'python -m {MODULE} ci-pause-fleet --cluster c1 --credential 0123abcd-ef',
         'git commit -m "ci-pause-fleet asks the user first"',
     ),
 }
