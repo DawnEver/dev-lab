@@ -491,9 +491,8 @@ def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, 
     emit(f'published {prefix}: {venvcurrent.publish(root, prefix)}')
     for line in venvcurrent.reclaim(root, census=census):
         emit(line)
-    if why := venvcurrent.stale_alias(root, prefix):
-        python = prefix.joinpath(*Path(base).relative_to(live).parts)
-        emit(f'REFUSED: {why}. Stop what runs from it and re-run this bootstrap, or run {python} directly.')
+    if why := venvcurrent.stale_alias(root, prefix, prefix.joinpath(*Path(base).relative_to(live).parts)):
+        emit(f'REFUSED: {why}')
         return 1
     return 0
 

@@ -137,12 +137,18 @@ def _repoint(root: Path, env: Path) -> str:
     return f'{alias} -> {env}'
 
 
-def stale_alias(root: Path, env: Path) -> str:
-    """Why :data:`ALIAS` does not run the current *env*, ``''`` when it does (or is absent: the pointer rules)."""
+def stale_alias(root: Path, env: Path, python: Path | None = None) -> str:
+    """Why :data:`ALIAS` does not run the current *env* and the door out, ``''`` when it does (or is absent).
+
+    *python* is *env*'s interpreter, named as the direct way round a held ``.venv``.
+    """
     alias = Path(root) / ALIAS
     if not alias.exists() or alias.resolve() == Path(env).resolve():
         return ''
-    return f'{alias} still runs {alias.resolve()}, not the published {env}'
+    why = f'{alias} still runs {alias.resolve()}, not the published {env}'
+    return (
+        why if python is None else f'{why}. Stop what runs from it and re-run this bootstrap, or run {python} directly.'
+    )
 
 
 def _adopt_plain_venv(root: Path, *, census: Census = processes) -> str:
