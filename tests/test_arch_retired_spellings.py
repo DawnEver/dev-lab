@@ -230,6 +230,16 @@ RETIRED_SPELLINGS: Final = {
             "user ruling 2026-11-16: a workstation never serves a merge's parts; only Actions and the HPC produce",
         ),
     ),
+    **dict.fromkeys(
+        ('delete_tags', 'judge_tag', 'TAG_DOOR', '_held_by_tag'),
+        (
+            (
+                'branchprune delete: a LOSSY branch is MERGED, or LANDED by a declared `git merge -s ours` PR and '
+                'deleted; `delete-tag` and `delete --approved` are refused by name (branchprune.RETIRED)'
+            ),
+            'user ruling D22 2026-11-17: no tags -- either merge or delete (dev-lab O23)',
+        ),
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

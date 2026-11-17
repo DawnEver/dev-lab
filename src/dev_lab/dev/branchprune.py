@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, ORIGIN, delete, delete_tags, sweep
+from dev_lab.dev.branchdelete import DOOR, ORIGIN, delete, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.forge import fetch_origin
@@ -251,20 +251,38 @@ def _write_log(root: Path, lines: Sequence[str]) -> None:
     log.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
+#: RETIRED-NAMES-REGISTERED: the spellings of the tag-held delete D22 retired (2026-11-17: "no tags -- either merge
+#: or delete"), each refused by name with the door that replaced it, never parsed as unknown.
+RETIRED: Final = {
+    'delete-tag': 'tags are no place to keep work (D22); a branch is merged or deleted: ' + DOOR,
+    '--approved': 'no tag-held delete (D22); a refused branch names its doors: MERGE it, or LAND it with a declared '
+    '`git merge -s ours` PR, then ' + DOOR,
+}
+
+
+def retired(argv: Sequence[str]) -> str:
+    """The refusal naming the first retired spelling in *argv* and its door; ``''`` when none."""
+    for word in argv:
+        door = RETIRED.get(word.partition('=')[0])
+        if door:
+            return f'[branchprune] `{word.partition("=")[0]}` is retired: {door}'
+    return ''
+
+
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
-    """``python -m dev_lab.dev.branchprune {delete B... [--approved W] | delete-tag T... --approved W | sweep}``."""
+    """``python -m dev_lab.dev.branchprune {delete B... | sweep}``."""
+    words = list(sys.argv[1:] if argv is None else argv)
+    if why := retired(words):
+        emit(why, err=True)
+        return 2
     parser = argparse.ArgumentParser(prog='dev_lab.dev.branchprune', description=main.__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
-    deleted = verbs.add_parser('delete', help='a branch whose content is held elsewhere (--approved: or by a tag)')
+    deleted = verbs.add_parser('delete', help='a branch whose content is held elsewhere')
     deleted.add_argument('branches', nargs='+')
-    deleted.add_argument('--approved', default='', help="the user's own words approving a tag-held delete")
-    tagged = verbs.add_parser('delete-tag', help='a tag the integration branch or trunk holds, user-approved')
-    tagged.add_argument('tags', nargs='+')
-    tagged.add_argument('--approved', default='', help="the user's own words approving the delete")
     swept = verbs.add_parser('sweep')
     swept.add_argument('--local', action='store_true', help='also local branches and clean landed worktrees')
     swept.add_argument('--log', action='store_true', help=f'write to output/logs/.../{_LOG_KIND}/, not the console')
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    args = parser.parse_args(words)
     root = Path.cwd() if cwd is None else cwd
     lines: list[str] = []
     say: Callable[[str], None] = lines.append if args.verb == 'sweep' and args.log else emit
@@ -272,13 +290,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
         client = client_for(root)
         session = os.environ.get(ENV, '')
         if args.verb == 'delete':
-            return delete(
-                root, args.branches, approved=args.approved, client=client, session=session, fetch=fetch_origin, say=say
-            )
-        if args.verb == 'delete-tag':
-            return delete_tags(
-                root, args.tags, approved=args.approved, client=client, session=session, fetch=fetch_origin, say=say
-            )
+            return delete(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
         return sweep(root, client=client, session=session, fetch=fetch_origin, say=say, local=args.local)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         if say is emit:
