@@ -98,7 +98,7 @@ def test_a_missing_or_corrupt_identity_catalog_never_turns_into_a_human_bypass(
 
 
 def test_the_pr_door_records_the_codex_thread_in_its_own_existing_journal() -> None:
-    opened = sessionprs.record_opened(FORGE, 7, sha='a' * 40, env={_CODEX: _ID})
+    opened = sessionprs.record_opened(FORGE, 7, branch='pr/native', sha='a' * 40, env={_CODEX: _ID})
     assert opened is not None, 'a successful native Codex PR must not disappear from session tracking'
     [(key, recorded)] = sessionprs.rows(_ID).items()
     assert key == f'{FORGE.identity}#7'
