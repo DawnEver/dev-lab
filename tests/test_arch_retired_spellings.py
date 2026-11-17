@@ -258,8 +258,15 @@ RETIRED_SPELLINGS: Final = {
             'user ruling D22 2026-11-17: no tags -- either merge or delete (dev-lab O23)',
         ),
     ),
+    **dict.fromkeys(
+        ('codeplace stray', 'stray-check'),
+        (
+            'python -m dev_lab.dev.strays hook|check (the STRAY-FILE-REFUSED census is its own module)',
+            'D40 2026-11-17: codeplace reached the 300-code-line band holding two rules; the stray rule split out',
+        ),
+    ),
     'RETIRED_FILES': (
-        "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to codeplace.retired_copies",
+        "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
         "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",
     ),
     '_adopt_plain_venv': (

@@ -326,7 +326,8 @@ family half only, no consumer re-pointed, none re-exported. ONE LINE EACH AND TH
 the tranche at 387 lines against a 400-line band, so the reasoning stays in each module's own
 docstring rather than being copied here -- and the NEXT module to arrive must split this inventory.
 
-* :mod:`dev_lab.dev.codeplace` -- code under DECLARED roots; no stray file.
+* :mod:`dev_lab.dev.codeplace` -- the placement map; code under DECLARED roots.
+* :mod:`dev_lab.dev.strays` -- no untracked, unclaimed file in a checkout.
 * :mod:`dev_lab.dev.retiredfiles` -- files a retirement declared gone: each checkout's own rows, never the leaf's.
 * :mod:`dev_lab.dev.scratch` -- scratch is visible to git, never committed; `clear` empties it, a Stop hook asks for it.
 * :mod:`dev_lab.dev.reportplace` -- no agent-written Markdown under ``output/``; a written report is a memory entry.

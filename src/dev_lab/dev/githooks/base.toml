@@ -182,10 +182,10 @@ refs = '^refs/heads/'
 
 # STRAY-FILE-REFUSED as a HINT: an untracked, non-ignored file outside the declared stray roots
 # ([tool.dev_lab.placement] stray_roots, plus scratch/) is named with its remedy after the commit
-# (dev_lab.dev.codeplace). Untracked files are invisible to the forge, so this is the one place it is said.
+# (dev_lab.dev.strays). Untracked files are invisible to the forge, so this is the one place it is said.
 [[post-commit]]
 id = "stray-files"
-run = ["python", "-m", "dev_lab.dev.codeplace", "stray-check"]
+run = ["python", "-m", "dev_lab.dev.strays", "check"]
 always_run = true
 
 # A PRESSED HOST TELLS ITS AGENTS (ruling D54): this host's disk/memory/CPU alarms, the agent hook's own lines

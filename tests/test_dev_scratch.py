@@ -10,7 +10,7 @@ import time
 import pytest
 from lab_commons import launch
 
-from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement, stray_refusal
+from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement
 from dev_lab.dev.scratch import (
     SCRATCH_README,
     ScratchCommitted,
@@ -23,6 +23,7 @@ from dev_lab.dev.scratch import (
     scratch_reminder,
     staged_scratch,
 )
+from dev_lab.dev.strays import stray_refusal
 
 _DAY = 86400.0
 

@@ -9,7 +9,7 @@ dev mechanisms only. The archive-to-memory exit this replaced is retired with no
 VISIBLE, NEVER COMMITTED. The directory is never git-ignored (the family ``.gitignore`` bans the line),
 so an untracked one-off shows in ``git status``; it is anchored by one tracked :data:`SCRATCH_README`
 stating the two exits, and nothing else under it is ever committed. It is the stray census's declared
-sink (:func:`dev_lab.dev.codeplace.stray_files`), so a one-off there is never a stray.
+sink (:func:`dev_lab.dev.strays.stray_files`), so a one-off there is never a stray.
 
 ONE DECLARATION, read off the repo's ``[tool.dev_lab.placement]`` by
 :func:`dev_lab.dev.codeplace.declared_placement`: ``scratch`` (the directory, the family's
