@@ -268,3 +268,57 @@ def test_outer_proof_does_not_advertise_nonfamily_inputs_as_family_qualification
     assert not alwayson.required_ids(tmp_path)
     alwayson.assert_required_collected(tmp_path, [])
     assert alwayson.resource_nodes(tmp_path, ['test_x.py::test_x']) == ['test_x.py::test_x']
+
+
+@pytest.mark.parametrize('failure', ['timeout', 'io-error', 'git-error'])
+@pytest.mark.parametrize('entry', ['catalog', 'proof'])
+def test_known_family_git_read_failure_is_not_a_successful_collection_proof(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str, entry: str
+) -> None:
+    _git_repo(
+        tmp_path,
+        {'pyproject.toml': '[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n'},
+    )
+    healthy = list(alwayson.required_ids(tmp_path))
+    assert healthy
+
+    def unavailable(*_args: object) -> subprocess.CompletedProcess[bytes]:
+        if failure == 'timeout':
+            command = 'git'
+            raise subprocess.TimeoutExpired(command, 60)
+        if failure == 'io-error':
+            message = 'git cannot be started'
+            raise OSError(message)
+        return subprocess.CompletedProcess(['git'], 128, stdout=b'', stderr=b'git index cannot be read')
+
+    monkeypatch.setattr(alwayson, '_git', unavailable)
+    operation = alwayson.required_ids if entry == 'catalog' else alwayson.assert_required_collected
+    arguments = (tmp_path,) if entry == 'catalog' else (tmp_path, healthy)
+    with pytest.raises(ValueError, match='git') as refused:
+        operation(*arguments)
+    assert 'recollect' in str(refused.value).lower()
+
+
+@pytest.mark.parametrize('failure', ['timeout', 'git-error'])
+def test_known_family_git_read_failure_remains_visible_as_failed_runtime_items(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    _git_repo(
+        pytester.path,
+        {
+            'pyproject.toml': '[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n',
+            'test_x.py': 'def test_x():\n    pass\n',
+            'conftest.py': 'import subprocess\nfrom dev_lab.dev.famtests import alwayson\n'
+            'def unavailable(*args):\n'
+            + (
+                '    raise subprocess.TimeoutExpired("git", 60)\n'
+                if failure == 'timeout'
+                else '    return subprocess.CompletedProcess(["git"], 128, stdout=b"", '
+                'stderr=b"git index unreadable")\n'
+            )
+            + 'def pytest_configure(config):\n    alwayson._git = unavailable\n',
+        },
+    )
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=1, failed=len(alwayson.rows()))
+    result.stdout.fnmatch_lines(['*git*recollect*'])
