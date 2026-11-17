@@ -80,7 +80,7 @@ class _Rem:
 
 
 def test_an_unbound_session_is_refused_naming_rems_door(tmp_path: Path) -> None:
-    said = taskgate.refusal(_repo(tmp_path, required=True), env=AGENT, branch='pr/toolchain/a')
+    said = taskgate.refusal(_repo(tmp_path, required=True), env=AGENT)
     assert said is not None
     assert taskgate.RULE in said
     assert '`task: <slug>`' in said
@@ -118,15 +118,12 @@ def test_a_binding_written_from_repo_a_admits_a_push_from_repo_b(tmp_path: Path)
     """D34, measured O29: the session bound `toolchain` in one repo and was refused pushing from another."""
     first, second = _repo(tmp_path / 'a', required=True), _repo(tmp_path / 'b', required=True)
     (second / '.claude' / 'tasks' / 'toolchain' / 'TASK.md').unlink()  # the task lives in repo A only
-    assert taskgate.refusal(second, env=AGENT, branch='pr/toolchain/x') is not None, 'planted control: unbound'
+    assert taskgate.refusal(second, env=AGENT) is not None, 'planted control: unbound'
     _bind(first)
-    assert taskgate.refusal(second, env=AGENT, branch='pr/toolchain/x') is None
-    said = taskgate.refusal(second, env=AGENT, branch='pr/other/x')
-    assert said is not None
-    assert 'pr/toolchain/<feature>' in said, 'the cross-repo binding still scopes the heads'
+    assert taskgate.refusal(second, env=AGENT) is None
     folder = first / '.claude' / 'tasks' / 'toolchain'
     (folder / 'TASK.md').write_text('---\nauthority: a1\nstatus: closed\n---\n', encoding='utf-8')
-    closed = taskgate.refusal(second, env=AGENT, branch='pr/toolchain/x')
+    closed = taskgate.refusal(second, env=AGENT)
     assert closed is not None
     assert 'no longer open' in closed, 'judged open in the ledger the record names (A)'
     assert taskbinding.ledger(first).as_posix() in closed
@@ -136,14 +133,14 @@ def test_a_binding_only_in_the_retired_store_is_refused_naming_its_migration(tmp
     """FORMATS-MIGRATE-ONCE: the old per-repo record is never read, only refused by name with its migration."""
     root = _repo(tmp_path, required=True)
     old = bind_in_retired_store(root, _SESSION, 'toolchain')
-    said = taskgate.refusal(root, env=AGENT, branch='pr/toolchain/a')
+    said = taskgate.refusal(root, env=AGENT)
     assert said is not None
     assert old.as_posix() in said
     assert _SESSION in said
     assert taskbinding.binding_path(_SESSION).as_posix() in said
     assert 'migrations/migrate.mjs' in said
     _bind(root)
-    assert taskgate.refusal(root, env=AGENT, branch='pr/toolchain/a') is None, 'planted control: migrated, admitted'
+    assert taskgate.refusal(root, env=AGENT) is None, 'planted control: migrated, admitted'
 
 
 def test_a_branch_named_after_a_task_binds_nothing(tmp_path: Path) -> None:
@@ -168,41 +165,22 @@ def test_a_bound_session_keeps_its_task_across_a_landed_pr(tmp_path: Path) -> No
     assert taskgate.refusal(root, env=AGENT) is None
 
 
-@pytest.mark.parametrize('branch', ['pr/other/a', 'pr/toolchain', 'pr/a'])
-def test_a_pr_branch_outside_the_bound_task_is_refused_naming_it(tmp_path: Path, branch: str) -> None:
-    root = _repo(tmp_path, required=True)
-    _bind(root)
-    said = taskgate.refusal(root, env=AGENT, branch=branch)
-    assert said is not None
-    assert 'bound to task toolchain@a1' in said
-    assert f'git branch -m {branch} pr/toolchain/' in said
-    assert taskgate.refusal(root, env=AGENT, branch='pr/toolchain/a') is None, 'planted control: its own head'
-
-
-def test_local_fan_out_and_a_detached_tip_are_not_pr_heads(tmp_path: Path) -> None:
-    root = _repo(tmp_path, required=True)
-    _bind(root)
-    assert taskgate.refusal(root, env=AGENT, branch='lane/x') is None
-    _git(root, 'checkout', '-q', '--detach')
-    assert taskgate.refusal(root, env=AGENT) is None
-
-
 def test_a_binding_to_a_task_closed_since_is_refused(tmp_path: Path) -> None:
     root = _repo(tmp_path, required=True)
     _bind(root)
     task = root / '.claude' / 'tasks' / 'toolchain' / 'TASK.md'
     task.write_text(task.read_text(encoding='utf-8').replace('status: open', 'status: closed'), encoding='utf-8')
-    said = taskgate.refusal(root, env=AGENT, branch='pr/toolchain/a')
+    said = taskgate.refusal(root, env=AGENT)
     assert said is not None
     assert 'no longer open' in said
 
 
 def test_a_repo_that_does_not_declare_it_is_never_judged(tmp_path: Path) -> None:
-    assert taskgate.refusal(_repo(tmp_path, required=False), env=AGENT, branch='pr/x') is None
+    assert taskgate.refusal(_repo(tmp_path, required=False), env=AGENT) is None
 
 
 def test_a_human_commit_is_not_judged(tmp_path: Path) -> None:
-    assert taskgate.refusal(_repo(tmp_path, required=True), env={}, branch='pr/x') is None
+    assert taskgate.refusal(_repo(tmp_path, required=True), env={}) is None
 
 
 def test_the_hook_row_refuses_an_unbound_agent_push(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -223,20 +201,17 @@ def _every_refusal(tmp_path: Path) -> dict[str, str | None]:
     unbound = _repo(tmp_path / 'unbound', required=True)
     old_rem = tmp_path / 'old-rem-home'
     plant_claude_rem(old_rem, '2.6.0')
-    said['unbound'] = taskgate.refusal(unbound, env=AGENT, branch='pr/toolchain/a')
-    said['binder too old'] = taskgate.refusal(unbound, env=AGENT, branch='pr/toolchain/a', home=old_rem)
-    said['session unreadable'] = taskgate.refusal(unbound, env={SESSION_ENV: ''}, branch='pr/toolchain/a')
+    said['unbound'] = taskgate.refusal(unbound, env=AGENT)
+    said['binder too old'] = taskgate.refusal(unbound, env=AGENT, home=old_rem)
+    said['session unreadable'] = taskgate.refusal(unbound, env={SESSION_ENV: ''})
     retired = _repo(tmp_path / 'retired', required=True)
     bind_in_retired_store(retired, _SESSION, 'toolchain')
-    said['unmigrated'] = taskgate.refusal(retired, env=AGENT, branch='pr/toolchain/a')
+    said['unmigrated'] = taskgate.refusal(retired, env=AGENT)
     closed = _repo(tmp_path / 'closed', required=True)
     _bind(closed)
     task = closed / '.claude' / 'tasks' / 'toolchain' / 'TASK.md'
     task.write_text(task.read_text(encoding='utf-8').replace('status: open', 'status: closed'), encoding='utf-8')
-    said['task closed'] = taskgate.refusal(closed, env=AGENT, branch='pr/toolchain/a')
-    bound = _repo(tmp_path / 'bound', required=True)
-    _bind(bound)
-    said['another task'] = taskgate.refusal(bound, env=AGENT, branch='pr/other/a')
+    said['task closed'] = taskgate.refusal(closed, env=AGENT)
     return said
 
 
@@ -324,17 +299,17 @@ def test_a_task_opened_in_one_worktree_is_bound_journaled_and_admitted_from_anot
     (ledger / 'opened-in-a').mkdir()  # what rem's /rem:task open writes from tree A: the one ledger
     (ledger / 'opened-in-a' / 'TASK.md').write_text('---\nauthority: a9\nstatus: open\n---\n', encoding='utf-8')
     other = {SESSION_ENV: 'second-session-0001'}
-    assert taskgate.refusal(tree_b, env=other, branch='pr/opened-in-a/x') is not None
+    assert taskgate.refusal(tree_b, env=other) is not None
     assert bind_as_rem(tree_b, other[SESSION_ENV], 'opened-in-a') == 'opened-in-a@a9'
     assert taskbinding.binding(other[SESSION_ENV]).ledger == ledger, 'the record names the one ledger'
     for tree in (tree_a, tree_b, main):
         assert taskbinding.session_task(other, start=tree) == 'opened-in-a@a9'
-        assert taskgate.refusal(tree, env=other, branch='pr/opened-in-a/x') is None
+        assert taskgate.refusal(tree, env=other) is None
     rem = _Rem()
     taskgate.record(tree_a, 'pr', 'u', env=other, read=rem)
     assert rem.calls[-1] == ['log', 'pr opened: u', '--task', 'opened-in-a']
-    assert taskgate.refusal(tree_a, env=AGENT, branch='pr/toolchain/a') is not None, 'an unbound session'
+    assert taskgate.refusal(tree_a, env=AGENT) is not None, 'an unbound session'
     task = ledger / 'opened-in-a' / 'TASK.md'
     task.write_text(task.read_text(encoding='utf-8').replace('open', 'closed'), encoding='utf-8')
     for tree in (tree_a, tree_b, main):
-        assert 'no longer open' in (taskgate.refusal(tree, env=other, branch='pr/opened-in-a/x') or '')
+        assert 'no longer open' in (taskgate.refusal(tree, env=other) or '')

@@ -166,9 +166,9 @@ def test_session_branch_is_the_push_rows_own_judge(
 def test_session_branch_reads_the_push_line_of_a_created_head(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The forge's caller hands :func:`sessionbranch.refusals` the pre-push line creating ``refs/heads/<branch>``."""
     lines: list[str] = []
-    monkeypatch.setattr(sessionbranch, 'refusals', lambda _root, text: lines.append(text) or [])
+    monkeypatch.setattr(sessionbranch, 'refusals', lambda _root, text, env: lines.extend([text, env]) or [])
     assert sessionbranch.head_refusals(tmp_path, _SHA, 'pr/x') == []
-    assert lines == [f'refs/heads/pr/x {_SHA} refs/heads/pr/x {"0" * 40}']
+    assert lines == [f'refs/heads/pr/x {_SHA} refs/heads/pr/x {"0" * 40}', {}], 'the forge pushes for no session (P7)'
 
 
 def test_pr_current_is_volatile_and_posts_only_a_change(
