@@ -413,6 +413,38 @@ def test_a_target_declaring_no_door_is_told_the_named_exit_is_not_its_own(
     assert bare.as_posix().lower() in reason.lower(), reason
 
 
+def test_a_target_declaring_no_door_is_never_sent_to_the_session_repos_path(
+    two_repos: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """THE PLANTED CONTROL: no dev_lab venv, no declaration -> the declaration to add, never SESSION_DOOR."""
+    _session, _target, rules = two_repos
+    bare = tmp_path / 'bare'
+    (bare / '.git').mkdir(parents=True)
+    reason = agenthooks.decide('pytest tests/', rules, cwd=bare)
+    assert reason is not None
+    assert SESSION_DOOR not in reason, reason
+    assert '[tool.dev_lab.doors] BARE-TEST-INVOCATION = ' in reason, reason
+
+
+def test_a_target_whose_venv_carries_dev_lab_is_sent_to_its_own_verify(
+    two_repos: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """The derived door: the target's OWN interpreter, which exists, running the family verify."""
+    _session, _target, rules = two_repos
+    kit = tmp_path / 'withkit'
+    (kit / '.git').mkdir(parents=True)
+    tail = ('Scripts', 'python.exe') if os.name == 'nt' else ('bin', 'python')
+    python = kit.joinpath('.venv', *tail)
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b'')
+    site = kit.joinpath('.venv', *(('Lib',) if os.name == 'nt' else ('lib', 'python3.12')), 'site-packages')
+    (site / 'dev_lab-1.0.dist-info').mkdir(parents=True)
+    reason = agenthooks.decide('pytest tests/', rules, cwd=kit)
+    assert reason is not None
+    assert SESSION_DOOR not in reason, reason
+    assert f'{python.as_posix()} -m dev_lab.dev.verify -- <paths>'.lower() in reason.lower(), reason
+
+
 # --------------------------------------------------------------------------------------------
 # Every shell tool, and the subagent scope
 

@@ -286,6 +286,8 @@ class DenyRule:
             row['admits'] = self.admits
         if self.asks is not None:
             row['asks'] = self.asks
+        if self.needs is not None:
+            row['needs'] = self.needs  # the engine derives a door for a target repo that declares none
         return row
 
 
