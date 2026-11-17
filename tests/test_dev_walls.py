@@ -163,3 +163,26 @@ def test_a_named_rule_in_a_foreign_denial_is_kept(tmp_path: Path) -> None:
     }
     assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
     assert [line['rule'] for line in _lines(tmp_path)] == ['OTHER-RULE']
+
+
+#: MEASURED: grep output quoting a docstring was recorded as a NEEDS-NEWEST-HEAD-ONLY wall.
+_QUOTED_SOURCE = (
+    'Exit code 1\n'
+    'src/dev_lab/dev/forgesupersede.py:147:    NEEDS-NEWEST-HEAD-ONLY: a started task is never refused or blocked\n'
+    '    NEEDS-NEWEST-HEAD-ONLY: the tip is blocked behind it'
+)
+
+
+@pytest.mark.parametrize(
+    ('text', 'rules'),
+    [
+        (_QUOTED_SOURCE, []),  # an id inside ordinary tool output is not a refusal
+        ('PreToolUse:Bash hook error: OTHER-RULE: blocked -- quoted NEEDS-NEWEST-HEAD-ONLY', ['OTHER-RULE']),
+        ("OTHER-RULE: refused -- a printer's own refusal line", ['OTHER-RULE']),
+    ],
+)
+def test_only_a_refusal_line_records_a_wall_never_an_id_in_output(tmp_path: Path, text: str, rules: list[str]) -> None:
+    payload = {'session_id': SESSION, 'cwd': str(tmp_path), 'tool_response': {'stderr': text, 'stdout': ''}}
+    assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
+    recorded = [line['rule'] for line in _lines(tmp_path)] if walls.ledger(tmp_path).exists() else []
+    assert recorded == rules

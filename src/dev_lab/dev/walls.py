@@ -76,8 +76,12 @@ _DOOR: Final = re.compile(r'(?im)^\s*([a-z][\w.-]*):\s+(?:refused|denied|blocked
 DIGEST_CHARS: Final = 16
 #: A tool's error text that is a REFUSAL rather than an ordinary failure.
 _DENIAL: Final = re.compile(r'(?i)\b(?:hook error|denied|refused|blocked|not permitted|not allowed)\b')
-#: A rule id as the family spells one (``WORKTREES-STAY-INSIDE``).
-_RULE_ID: Final = re.compile(r'\b[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+\b')
+#: A refusal line as the deny engine and the refusal printers emit one: ``<RULE-ID>: ...`` at the start of a line,
+#: after the harness's ``<Event>:<Tool> hook error:`` prefix if any. An id anywhere else is tool OUTPUT (a grep hit,
+#: quoted source) and names no wall -- measured: a docstring in grep output was recorded as a wall.
+_RULE_LINE: Final = re.compile(r'(?m)^(?:\w+:\w+ hook error:\s*)?([A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+):')
+#: The harness's own wrapper of a hook's refusal: a refusal whatever its body names.
+_HOOK_ERROR: Final = re.compile(r'(?m)^\w+:\w+ hook error:')
 #: A refusal that names a door has at least its cause line and its door line.
 _CAUSE_AND_DOOR: Final = 2
 #: The engine's header when a command targets another checkout: context, not the cause or the door.
@@ -155,8 +159,8 @@ def refused(
 
 def rule_of(text: str) -> str:
     """The rule a denial *text* names; else its source: :data:`HARNESS_PERMISSION`, or ``UNNAMED-<DOOR|REFUSAL>``."""
-    if found := _RULE_ID.search(text):
-        return found.group(0)
+    if found := _RULE_LINE.search(text):
+        return found.group(1)
     if _HARNESS.search(text):
         return HARNESS_PERMISSION
     door = _DOOR.search(text)
@@ -218,9 +222,16 @@ def _error_text(payload: dict) -> str:
     return response if isinstance(response, str) else ''
 
 
+def _is_refusal(text: str) -> bool:
+    """Whether *text* carries a refusal LINE (a hook, rule, harness or door line), not a word in output."""
+    if not _DENIAL.search(text):
+        return False
+    return any(pattern.search(text) for pattern in (_HOOK_ERROR, _RULE_LINE, _HARNESS, _DOOR))
+
+
 def _post_tool(payload: dict) -> None:
     text = _error_text(payload)
-    if not _DENIAL.search(text) or any(line.startswith(DETAILS_PREFIX) for line in text.splitlines()):
+    if not _is_refusal(text) or any(line.startswith(DETAILS_PREFIX) for line in text.splitlines()):
         return
     command = (payload.get('tool_input') or {}).get('command') or ''
     record(
