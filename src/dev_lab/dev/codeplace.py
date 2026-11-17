@@ -268,11 +268,20 @@ _DATA_HOME = 'output/logs/<yy>/<mm>/<dd>/<kind>/'
 
 @dataclasses.dataclass(frozen=True)
 class RetiredFile:
-    """A file a known retirement declares GONE: its path tail, what it was, and the door that deletes it."""
+    """A file a known retirement declares GONE: a ``**/<tail>`` glob, what it was, and the door that deletes it.
 
-    tail: str
+    A GLOB, not a path: the row names every copy at any depth in whichever checkout runs the check, never a file
+    of this tree -- so it is a shape the leaf may hold, and :mod:`dev_lab.dev.foreign` reads it as one.
+    """
+
+    glob: str
     what: str
     door: str
+
+    @property
+    def tail(self) -> str:
+        """The path every copy ends with: the glob without its any-depth ``**/`` prefix."""
+        return self.glob.removeprefix('**/')
 
     def matches(self, rel: str) -> bool:
         """Whether repo-relative POSIX *rel* is a copy of this file, at any depth, outside an archive."""
@@ -282,7 +291,7 @@ class RetiredFile:
 #: Every file a known retirement declares gone. A stray copy is named with its door, never offered to ``git add``.
 RETIRED_FILES: tuple[RetiredFile, ...] = (
     RetiredFile(
-        '.claude/rules/MEMORY.md',
+        '**/.claude/rules/MEMORY.md',
         "rem's generated memory index; nothing rebuilds it",
         "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs "
         '<checkout> -- which removes every copy outside attic/',
