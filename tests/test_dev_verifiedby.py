@@ -154,3 +154,26 @@ def test_the_judged_run_posts_as_the_data_heads_base_part(
     inconclusive = verifiedby.Judged(Conclusion.INCONCLUSIVE, {}, frozenset(), ())
     assert 'INCONCLUSIVE' in verifiedby.post(world.data, world.bad, inconclusive)
     assert len(posted) == 1
+
+
+def test_consumer_success_does_not_certify_a_data_repos_malformed_layout_policy(
+    world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    (world.data / 'pyproject.toml').write_text(
+        f'[tool.dev_lab.verify]\nby = [{{repo = "{APP}", part = "connection"}}]\n'
+        '[tool.dev_lab.layout]\nmodule_unit = "guessed"\nmodule_limit = 300\n',
+        encoding='utf-8',
+    )
+    consumers: list[object] = []
+
+    def judge(*args: object, **kwargs: object) -> verifiedby.Judged:
+        consumers.append((args, kwargs))
+        return verifiedby.Judged(Conclusion.PASS, {}, frozenset(), ('consumer passed',))
+
+    monkeypatch.setattr(verifiedby, 'judge', judge)
+    monkeypatch.setattr(verifiedby, 'origin_url', lambda _root: world.url)
+    monkeypatch.setattr(verifiedby, 'repos', dict)
+    assert verifiedby.main(world.data, producer=False) == 1
+    assert consumers == [], 'consumer qualification must not hide a failed own-repository guard'
+    output = capsys.readouterr()
+    assert 'layout' in (output.out + output.err).lower()
