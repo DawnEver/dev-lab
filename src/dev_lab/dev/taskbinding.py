@@ -84,7 +84,8 @@ PREFIX: Final = 'pr/'
 DOOR: Final = (
     "the user binds this session with a prompt whose first line is `task: <slug>`, which rem's UserPromptSubmit "
     'hook writes as the binding (the rem plugin; an open task -- a new one is opened by the user with '
-    '/rem:task open <slug> "<goal>"; rem\'s `task.js status` shows what is bound)'
+    '/rem:task open <slug> "<goal>"; rem\'s `task.js status` shows what is bound; rem finds the machine home in '
+    'LAB_COMMONS_HOME, which `python -m dev_lab.dev.remhome --install` sets)'
 )
 
 
