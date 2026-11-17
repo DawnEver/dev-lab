@@ -154,7 +154,8 @@ def test_the_required_layout_guard_does_not_exempt_tests_or_scripts_from_directo
     files.update({f'{directory}/subject_{number}.py': 'value = 1\n' for number in range(26)})
     _git_repo(pytester.path, files)
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=2, failed=1)
+    # every other required row passes: a tests/ tree also brings the tree checks (D42)
+    result.assert_outcomes(passed=len(alwayson.required_ids(pytester.path)), failed=1)
     result.stdout.fnmatch_lines(['*26*25*'])
 
 

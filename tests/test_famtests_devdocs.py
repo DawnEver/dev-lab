@@ -32,7 +32,7 @@ def _family() -> dict[str, str]:
 
 
 def _residue(slug: str) -> str:
-    return f'# {slug} here\n\n- Read [it](../../../lab-commons/{CANONICAL_TREE}/{slug}.md) first.\n- Local delta.\n'
+    return f'# {slug} here\n\n- Read [it](../../../dev-lab/{CANONICAL_TREE}/{slug}.md) first.\n- Local delta.\n'
 
 
 def test_shingles_are_wrapping_and_case_blind() -> None:
@@ -115,5 +115,5 @@ def test_an_absent_tree_refuses_rather_than_passing(tmp_path: Path) -> None:
     tree = tmp_path.joinpath(*CANONICAL_TREE.split('/'))
     tree.mkdir(parents=True)
     (tree / 'motors.md').write_text('# Motors\n', encoding='utf-8')
-    with pytest.raises(AssertionError, match='clone lab-commons'):
+    with pytest.raises(AssertionError, match='clone dev-lab'):
         assert_local_dev_pages_are_residues(tmp_path, family_root=tmp_path / 'nowhere', subject_allowlist={})

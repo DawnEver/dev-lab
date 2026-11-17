@@ -15,6 +15,9 @@ is a git toplevel it appends one item per row in :func:`rows`; a session rooted 
 pytester tree, an unpacked sdist) has no tracked corpus and gets none. :data:`dev_lab.dev.rules.ALWAYS_ON`
 is the registry's half: an adoption may neither list these rules nor declare them absent.
 
+A DECLARED CHECKOUT ALSO GETS THE TREE CHECKS (:mod:`dev_lab.dev.famtests.treechecks`, user ruling D42,
+2026-11-17): the famtests bodies whose every argument the checkout answers, each where its population exists.
+
 ONE ``git grep`` FINDS THE CANDIDATES (coordinator ruling 2026-11-07): a per-file Python read took
 331 s over acme-consumer's 22k files. The PCRE class is built from :data:`dev_lab.dev.cjk.CJK_RANGES` and
 the exclusions from :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`; ``-I`` skips binaries. The translation
@@ -38,7 +41,7 @@ from lab_commons.outcomes import Cell, Reason, Status
 
 from dev_lab.dev import cjk
 from dev_lab.dev.family import declared_table, is_member
-from dev_lab.dev.famtests import modulealarm
+from dev_lab.dev.famtests import modulealarm, treechecks
 from dev_lab.dev.rules import ALWAYS_ON, tracked_files
 
 if TYPE_CHECKING:
@@ -167,8 +170,10 @@ def _declares_layout(root: Path) -> bool:
 
 def _applicable(root: Path) -> dict[str, Callable[[Path], None]]:
     checks = rows()
-    if _declared_checkout(root) and _declares_layout(root):
-        checks[_LAYOUT_RULE] = _CHECKS[_LAYOUT_RULE]
+    if _declared_checkout(root):
+        if _declares_layout(root):
+            checks[_LAYOUT_RULE] = _CHECKS[_LAYOUT_RULE]
+        checks.update(treechecks.applicable(root))
     return checks
 
 
