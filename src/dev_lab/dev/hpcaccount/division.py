@@ -32,7 +32,7 @@ from lab_commons.hpc.grants import AccessRefused, Machine, load_grants
 
 from dev_lab.dev import devprofile
 
-__all__ = ['DEFAULT_ROLES', 'ROLE_KEYS', 'Division', 'account_role', 'division_of', 'load_division', 'reached_machine']
+__all__ = ['DEFAULT_ROLES', 'ROLE_KEYS', 'Division', 'account_role', 'division_of', 'reached_machine']
 
 #: The role table when the workstation declares none: verification serves and is reported; research is refused
 #: a writer.
@@ -71,14 +71,6 @@ def _roles(raw: Mapping[str, Mapping[str, Any]] | None) -> Mapping[str, Mapping[
             msg = f'[hpc.roles.{name}] has unknown keys {sorted(unknown)}; known: {sorted(ROLE_KEYS)}'
             raise ValueError(msg)
     return {name: dict(table) for name, table in raw.items()}
-
-
-def load_division(hpc: Mapping[str, Any]) -> Division:
-    """The division the raw ``[hpc]`` table declares; an unknown role key refused naming it."""
-    return Division(
-        grant_roles={grant['user']: grant.get('role', '') for grant in hpc.get('grant', [])},
-        roles=_roles(hpc.get('roles')),
-    )
 
 
 def account_role(role: str, fleet_role: str, passed: Mapping[str, Any] | None) -> Mapping[str, Any] | str:

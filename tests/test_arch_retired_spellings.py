@@ -265,6 +265,17 @@ RETIRED_SPELLINGS: Final = {
             'D40 2026-11-17: codeplace reached the 300-code-line band holding two rules; the stray rule split out',
         ),
     ),
+    'load_division': (
+        'dev_lab.dev.hpcaccount.division.division_of (the reached Machine is the one reader of the division)',
+        'D40 2026-11-17: a second reader of a raw [hpc] table no production path builds',
+    ),
+    **dict.fromkeys(
+        ('UncensusedSiteError', 'hook_table_from', 'declares_groups', 'overdue_declared', 'page_path'),
+        (
+            'nothing: no caller in dev-lab or any family repo',
+            'D40 2026-11-17: dead public names removed (a never-raised error and four uncalled readers)',
+        ),
+    ),
     'RETIRED_FILES': (
         "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
         "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",

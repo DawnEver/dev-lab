@@ -82,7 +82,6 @@ __all__ = [
     'clear_scratch',
     'discard_scratch',
     'main',
-    'overdue_declared',
     'overdue_scratch',
     'pending_scratch',
     'scratch_reminder',
@@ -118,12 +117,6 @@ def pending_scratch(scratch: Path, *, root: Path, now: float | None = None) -> l
 def overdue_scratch(scratch: Path, *, root: Path, max_age_days: float, now: float | None = None) -> list[str]:
     """The one-offs in *scratch* older than *max_age_days*, oldest first."""
     return [path for path, age in pending_scratch(scratch, root=root, now=now) if age > max_age_days]
-
-
-def overdue_declared(root: Path) -> list[str]:
-    """:func:`overdue_scratch` over the scratch directory and age *root* declares."""
-    placement = declared_placement(root)
-    return overdue_scratch(root / placement.scratch, root=root, max_age_days=placement.max_age_days)
 
 
 def staged_scratch(paths: Iterable[str], *, scratch: str, anchor: bool = True) -> list[str]:

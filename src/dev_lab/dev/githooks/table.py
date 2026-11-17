@@ -32,7 +32,6 @@ __all__ = [
     'HookTableError',
     'base_rows',
     'hook_table',
-    'hook_table_from',
     'merge',
     'repo_rows',
 ]
@@ -204,9 +203,3 @@ def hook_table(root: Path) -> dict[str, tuple[Hook, ...]]:
     """
     layer = repo_rows(root)
     return {} if layer is None else merge(base_rows(), layer, origin=str(root / 'pyproject.toml'))
-
-
-def hook_table_from(text: str, origin: str) -> dict[str, tuple[Hook, ...]]:
-    """:func:`hook_table` for manifest *text* read anywhere (a commit or tree, not the working tree)."""
-    hooks = declared_table(tomllib.loads(text), 'hooks')
-    return {} if hooks is None else merge(base_rows(), _rows(hooks, origin), origin=origin)
