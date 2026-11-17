@@ -141,9 +141,11 @@ are too unqualified to survive being flattened into a namespace this wide.
   engine lived in ONE repo of four, so rendering rules anywhere else would have produced an inert
   declaration that reads as a guard. Three parts reported BY NAME -- engine, rules, wiring -- because
   each fails differently, and installing is an EXPLICIT request that never clobbers an unrelated
-  setting, matcher, or an engine lab-commons did not ship. A TRACKED file moves only under the
-  checkout's own kit (its source, or its ``uv.lock`` pin) in a linked worktree -- never a main checkout;
-  a refusal writes nothing and names the door. Not re-exported below.
+  setting, matcher, or an engine lab-commons did not ship. A TRACKED file moves only as
+  :mod:`~dev_lab.dev.trackedrender` decides. Not re-exported below.
+* :mod:`dev_lab.dev.trackedrender` -- a render moves a TRACKED file only under the checkout's own kit (its
+  ``src/dev_lab``, or the dev-lab commit its ``uv.lock`` pins) in a linked worktree, never a main checkout;
+  a refusal names the files, the kit and pin, and the door (toolchain O14). Not re-exported below.
 * :mod:`dev_lab.dev.agent_wiring` -- the hook wiring, as data: the engine's paths and command, the one ``WIRING``
   table of handlers per event, a repo's own ``[[tool.dev_lab.agent_hooks]]`` rows, and the rows
   :mod:`~dev_lab.dev.agent_guard` renders. Not re-exported below.
