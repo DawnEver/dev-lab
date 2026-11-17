@@ -149,16 +149,20 @@ def _unbound(root: Path, env: Mapping[str, str], home: Path) -> tuple[str | None
             f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}',
         )
     if task is None:
+        # The binder's own text is a cause line and a door line; the user's prompt is a door line alone.
+        binder = remplugin.binder_door(env, home, root)
+        door = f' {binder}' if binder else f'\nDoor: {taskbinding.DOOR}'
         return None, (
             f'{RULE}: this repo requires every agent session to work under the task its user bound it to, '
-            f'and none is bound. {remplugin.binder_door(env, home, root) or f"Door: {taskbinding.DOOR}"}.'
+            f'and none is bound.{door}.'
         )
     try:
         still = taskbinding.task_id(root, slug_of(task))
     except ValueError:
         still = None
     if still != task:
-        return None, f'{RULE}: this session is bound to task {task}, which is no longer open. Door: {taskbinding.DOOR}.'
+        closed = f'{RULE}: this session is bound to task {task}, which is no longer open.'
+        return None, f'{closed}\nDoor: {taskbinding.DOOR}.'
     return task, None
 
 
@@ -184,7 +188,8 @@ def refusal(root: Path, *, env: Mapping[str, str], branch: str | None = None, ho
         return None
     return (
         f'{RULE}: this session is bound to task {task}, and {branch} is not one of its heads '
-        f'({head_for(slug, "<feature>")}). Door: `git branch -m {branch} {head_for(slug, branch.rsplit("/", 1)[-1])}`; '
+        f'({head_for(slug, "<feature>")}).\n'
+        f'Door: `git branch -m {branch} {head_for(slug, branch.rsplit("/", 1)[-1])}`; '
         'another task is the user`s to bind (`task: <slug>`).'
     )
 

@@ -178,6 +178,38 @@ def test_a_spawn_worker_whose_parent_is_gone_is_an_orphan_not_a_run(tree: Path) 
     assert liverun.live_runs(tree, census=lambda: [parent, child], me=1) == (parent, child)
 
 
+def test_a_shell_script_or_a_git_read_that_names_the_tree_is_not_a_run_of_it(tree: Path, tmp_path: Path) -> None:
+    """MEASURED 2026-11-17: a wait loop in another session locked the tree it waited on -- a deadlock.
+
+    ``timeout 580 bash -c "until [ $(git -C <tree> rev-parse HEAD) != <sha> ]; ..."`` ran from another folder and
+    executed nothing of the tree, yet its command line named the tree's path, so the agent working there could
+    never move the HEAD the loop waited for. A shell's ``-c`` script is TEXT: every command it starts is a process
+    of its own, judged by what IT executes. And git executes no code of the tree (its hooks were never runs).
+    The wrapper shape is the Bash tool's own ``bash -c -l "eval '...'"``, whose escaped inner quotes split the
+    script into words. PLANTED CONTROL: the tree's venv running pytest there, a script operand in the tree, and
+    the same ``bash -c`` whose CHILD is that pytest are all still runs.
+    """
+    (tree / 'scratch').mkdir()
+    (tree / 'scratch' / 'chain.sh').write_text('', encoding='utf-8')
+    elsewhere = tmp_path / 'session'
+    elsewhere.mkdir()
+    loop = f'until [ $(git -C {tree.as_posix()} rev-parse HEAD) != abc123 ]; do sleep 20; done'
+    readers = [
+        _proc(81, '/usr/bin/timeout', cwd=elsewhere, cmd=f'timeout 580 bash -c "{loop}"'),
+        _proc(82, '/usr/bin/bash', cwd=elsewhere, cmd=f'bash -c "{loop}"'),
+        _proc(83, '/usr/bin/bash', cwd=elsewhere, cmd=f'"bash.exe" -c -l "eval \'timeout 580 bash -c \\"{loop}\\"\'"'),
+        _proc(84, '/usr/bin/git', ppid=82, cwd=elsewhere, cmd=f'git -C {tree.as_posix()} log -1 --format=%H'),
+    ]
+    assert liverun.live_runs(tree, census=lambda: readers, me=1) == ()
+    wrapper = _proc(90, '/usr/bin/bash', cwd=elsewhere, cmd=f'bash -c "cd {tree.as_posix()} && python -m pytest"')
+    pytest_run = _proc(91, _venv_python(tree), ppid=90, cwd=tree, cmd=f'"{_venv_python(tree)}" -m pytest')
+    script_run = _proc(92, '/usr/bin/bash', cwd=elsewhere, cmd=f'bash {(tree / "scratch" / "chain.sh").as_posix()}')
+    assert liverun.live_runs(tree, census=lambda: [*readers, wrapper, pytest_run, script_run], me=1) == (
+        pytest_run,
+        script_run,
+    )
+
+
 # ----------------------------------------------------------------------------------------------- what is the tree
 
 
@@ -418,6 +450,10 @@ def test_a_live_run_probe_that_cannot_answer_refuses_and_names_the_target(tmp_pa
         'cd {tree} && git merge origin/integrate/main && cd {other}',
         'git -C {other} log -1; cd {tree} && uv sync',
         'python -m dev_lab.dev.dep --bootstrap {tree}',
+        # 2026-11-17: a wrapper hid the mutating command, and a `cd` inside `bash -c` was never followed.
+        'timeout 50m python -m dev_lab.dev.dep --bootstrap {tree}',
+        "timeout 50m bash -c 'cd {tree} && git merge origin/integrate/main'",
+        'cd {other} && bash -c "git -C {other} status; cd {tree} && uv sync"',
     ],
 )
 def test_the_live_run_target_is_the_tree_the_matching_segment_acts_in(tmp_path: Path, spelling: str) -> None:
@@ -552,3 +588,35 @@ def test_the_real_engine_judges_the_target_worktree_not_the_checkout_holding_it(
     refused = agenthooks.decide(f'git -C {root.as_posix()} switch -c lane/z', rules, cwd=session)
     assert refused is not None
     assert refused.startswith('TREE-HAS-A-LIVE-RUN:'), refused
+
+
+@pytest.mark.parametrize(
+    'shape',
+    [
+        "timeout 50m bash -c 'cd {tree} && git merge origin/integrate/main'",
+        'timeout 50m python -m dev_lab.dev.dep --bootstrap {tree}',
+    ],
+)
+def test_the_real_engine_judges_the_tree_a_wrapped_command_acts_in_not_the_cwd(
+    live_tree: tuple[Path, int], tmp_path: Path, shape: str
+) -> None:
+    """MEASURED 2026-11-17, twice: the call's cwd held a live run, the command acted in another tree, and was refused.
+
+    ``timeout 50m bash -c 'cd <B> && ...'`` and ``timeout 50m python -m dev_lab.dev.dep --bootstrap <C>`` -- the
+    bound BACKGROUND-SHELL-IS-BOUNDED requires -- were judged against the cwd: the wrapper hid the mutating
+    command from the target resolver, and a ``cd`` inside a ``bash -c`` script was never followed. PLANTED
+    CONTROL: the same shape aimed at the live tree from an idle cwd is refused and names the run.
+    """
+    root, pid = live_tree
+    session = _checkout(tmp_path / 'session')
+    _junction(session / '.venv', Path(sys.prefix))
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    rules = hooks / 'deny-rules.json'
+    rules.write_text(render(HookAdoption(app_name='s', declared_absent=frozenset(_NEEDING))), encoding='utf-8')
+    idle = _checkout(tmp_path / 'idle')
+    assert agenthooks.decide(shape.format(tree=idle.as_posix()), rules, cwd=root) is None
+    refused = agenthooks.decide(shape.format(tree=root.as_posix()), rules, cwd=idle)
+    assert refused is not None
+    assert refused.startswith('TREE-HAS-A-LIVE-RUN:'), refused
+    assert f'pid {pid}' in refused
