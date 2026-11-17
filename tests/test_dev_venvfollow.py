@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import sys
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from lab_commons.census import Process
 
-from dev_lab.dev import venvfollow
+from dev_lab.dev import venvfollow, venvpointer
 from dev_lab.dev.githooks.table import ADVISORY, base_rows, merge
+from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -121,3 +125,53 @@ def test_the_background_follow_detaches_for_a_behind_checkout_or_unwired_hooks(t
         monkeypatch.setattr(venvfollow.hook_install, 'unwired', lambda _r, u=unwired: u)
         venvfollow.main(['--root', str(root), '--background'])
     assert len(started) == 2, 'PLANTED CONTROL: a current venv, checkout and hooks detach nothing'
+
+
+def _published(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A checkout whose pointer names ``.venvs/x`` beside a LEGACY ``.venv`` directory: (root, legacy, current)."""
+    root = tmp_path / 'main'
+    root.mkdir()
+    (root / 'pyproject.toml').write_text('[project]\nname = "r"\n', encoding='utf-8')
+    pythons = []
+    for env in (root / venvpointer.ALIAS, root / venvpointer.HOME / 'x'):
+        python = env.joinpath(*VENV_LAYOUTS[os.name][1:])
+        python.parent.mkdir(parents=True)
+        python.write_text('', encoding='utf-8')
+        pythons.append(python)
+    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
+    return root, pythons[0], pythons[1]
+
+
+def test_the_bootstrap_runs_from_the_current_environment(tmp_path: Path, monkeypatch) -> None:
+    root, legacy, current = _published(tmp_path)
+    ran: list[list[str]] = []
+    monkeypatch.setattr(venvfollow._door, 'run', lambda argv, **_: ran.append(argv) or SimpleNamespace(returncode=0))
+    monkeypatch.setattr(sys, 'executable', str(legacy))
+    assert venvfollow.follow(root, busy=lambda _r: '') == venvfollow.BOOTSTRAPPED
+    assert ran[-1][:4] == [str(current), '-m', 'dev_lab.dev.dep', '--bootstrap']
+    (root / venvpointer.POINTER).unlink()
+    (root / 'uv.lock').write_text('rev = "2"\n', encoding='utf-8')
+    venvfollow.follow(root, busy=lambda _r: '')
+    assert ran[-1][0] == str(legacy), 'PLANTED CONTROL: no pointer: the legacy .venv is current'
+
+
+def test_a_legacy_venv_makes_the_follow_due_and_it_retires_once_unheld(tmp_path: Path, monkeypatch) -> None:
+    """The drain retries at every follow: held, the legacy ``.venv`` stays; unheld, it becomes the current alias."""
+    root, legacy, current = _published(tmp_path)
+    venvfollow.stamp(root, venvfollow.env_key(root))
+    monkeypatch.setattr(venvfollow.checkoutfollow, 'behind', lambda _r: False)
+    monkeypatch.setattr(venvfollow.hook_install, 'unwired', lambda _r: False)
+    monkeypatch.setattr(venvfollow.checkoutfollow, 'advance', lambda _r: '')
+    monkeypatch.setattr(venvfollow.hook_install, 'rewire', lambda _r: '')
+    assert venvfollow.due(root), 'a legacy .venv the pointer passed over is due for its drain'
+    holder = Process(4242, 1, str(legacy), f'{legacy} -m app run', 3600.0, str(tmp_path))
+    monkeypatch.setattr(venvfollow, 'processes', lambda: [holder])
+    venvfollow.main(['--root', str(root)])
+    alias = root / venvpointer.ALIAS
+    assert legacy.is_file(), 'PLANTED CONTROL: held, the legacy directory stays'
+    assert not os.path.isjunction(alias)
+    assert not alias.is_symlink()
+    monkeypatch.setattr(venvfollow, 'processes', list)
+    venvfollow.main(['--root', str(root)])
+    assert alias.resolve() == current.parents[1].resolve(), 'unheld: .venv is now the alias of the current env'
+    assert not venvfollow.due(root), 'PLANTED CONTROL: drained, nothing is due'

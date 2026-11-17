@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import walls
+from dev_lab.dev import venvpointer, walls
 from dev_lab.dev.githooks import main as githooks_main
 from dev_lab.dev.githooks import runner
 from dev_lab.dev.githooks.runner import (
@@ -521,6 +521,24 @@ def test_the_running_interpreter_is_borrowed_unless_it_is_the_checkouts_own(repo
     # interpreter's parent is the checkout only in the first layout, so the control names the checkout, not the prefix.
     checkout = Path(__file__).resolve().parents[1]
     assert not borrowed_interpreter(checkout), 'PLANTED CONTROL: the checkout whose own environment runs this'
+
+
+def test_a_legacy_venv_the_pointer_passed_over_is_not_the_checkouts_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One rule names a checkout's environment (``venvpointer.current``): no second ``.venv`` spelling beside it."""
+    root = tmp_path / 'main'
+    legacy, current = root / venvpointer.ALIAS, root / venvpointer.HOME / 'x'
+    legacy.mkdir(parents=True)
+    current.mkdir(parents=True)
+    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
+    monkeypatch.setattr(sys, 'prefix', str(legacy))
+    assert borrowed_interpreter(root), 'the pointer names .venvs/x: the legacy directory is not current'
+    monkeypatch.setattr(sys, 'prefix', str(current))
+    assert not borrowed_interpreter(root)
+    (root / venvpointer.POINTER).unlink()
+    monkeypatch.setattr(sys, 'prefix', str(legacy))
+    assert not borrowed_interpreter(root), 'PLANTED CONTROL: no pointer: .venv is the checkout own'
 
 
 @pytest.mark.parametrize(
