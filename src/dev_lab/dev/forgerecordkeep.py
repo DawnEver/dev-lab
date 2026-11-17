@@ -35,7 +35,9 @@ RECORDS_PER_ROW: Final = 2
 #: :func:`dev_lab.dev.partrows.is_row` -- 2026-11-15: a ``[a-z]+`` part read no row record, and none was pruned.
 _RECORD_NAME: Final = re.compile(r'^run-(?P<sha>[0-9a-f]{40})-(?P<row>[^-/]+)-[^/]+\.json\.gz$')
 #: A compute unit result (:func:`dev_lab.dev.forgeunit.result_name`), whatever archive it was posted as.
-UNIT_RESULT: Final = re.compile(r'^unit-(?P<unit>[0-9a-f]{64})-(?P<result>[0-9a-f]{64})\.tar\.[a-z]+$')
+UNIT_RESULT: Final = re.compile(
+    r'^unit-(?P<unit>[0-9a-f]{64})-g(?P<generation>\d+)-(?P<result>[0-9a-f]{64})\.tar\.[a-z]+$'
+)
 _TRACKING: Final = 'refs/remotes/origin/'
 
 

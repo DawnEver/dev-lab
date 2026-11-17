@@ -3,9 +3,13 @@
 SHARED RESULTS (:class:`ForgeResults`, the :class:`~lab_commons.compute.store.SharedTier` of a
 :class:`~lab_commons.compute.store.ResultStore`). A result is one archive attached to the records home
 (:func:`dev_lab.dev.forgerecords.attach`, so the upload goes through the durable outbox and is idempotent by
-name), named ``unit-<unit hash>-<result hash>.tar.gz``: the name alone says which unit and which outputs, so
-the FIRST attachment for a unit hash is its result, an identical later post is a no-op, and a differing one
-sounds the ``nondeterminism`` alarm (:mod:`dev_lab.dev.forgealarm`) and raises -- the first stands.
+name), named ``unit-<unit hash>-g<generation>-<result hash>.tar.gz``: the name alone says which unit, which
+generation and which outputs, so the FIRST attachment for a unit hash and generation is its result, an
+identical later post is a no-op, and a differing one sounds the ``nondeterminism`` alarm
+(:mod:`dev_lab.dev.forgealarm`) and raises -- the first stands. An archive over :data:`MAX_UPLOAD_BYTES` (the
+forge attachment limit, :data:`~dev_lab.dev.artefactstores.ATTACHMENT_LIMIT_MB`) is refused with
+:class:`~lab_commons.compute.store.TooLarge`, never attached. A TOMBSTONE closing a generation is a small
+``grave-<unit hash>-<generation>.json`` attachment through the same outbox; every host reads it (``graves``).
 
 A UNIT OFFERED (:func:`offering`, the ``offer`` a :class:`~lab_commons.compute.execute.LocalExecutor` calls when
 ``--where`` lets a unit this box cannot run go elsewhere). Its BUNDLE -- ``unit.json`` (engine, version,
@@ -39,7 +43,7 @@ from lab_commons.compute.execute import CACHED, RAN, LocalExecutor, Offer, prese
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.model import Demand
 from lab_commons.compute.presence import cached
-from lab_commons.compute.store import Nondeterministic, Result, ResultStore
+from lab_commons.compute.store import Nondeterministic, Result, ResultStore, Tombstone, TooLarge
 from lab_commons.compute.unit import Engine, Environment, Unit, environment_here
 from lab_commons.config import config_path
 from lab_commons.log import emit
@@ -47,7 +51,7 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.artefactpack import pack, unpack
 from dev_lab.dev.artefacts import load_config, resolve, store_for
-from dev_lab.dev.artefactstores import ARCHIVE, Ref, run_id
+from dev_lab.dev.artefactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, Ref, run_id
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from dev_lab.dev.forgepublish import publish
 from dev_lab.dev.forgerecordkeep import UNIT_RESULT
@@ -56,16 +60,36 @@ from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgework import Client, client_for
 
-__all__ = ['ForgeResults', 'UnitJob', 'main', 'offering', 'offering_for', 'result_name', 'unit_request']
+__all__ = [
+    'GRAVE',
+    'MAX_UPLOAD_BYTES',
+    'ForgeResults',
+    'UnitJob',
+    'grave_name',
+    'main',
+    'offering',
+    'offering_for',
+    'result_name',
+    'unit_request',
+]
 
 _HASH: Final = r'[0-9a-f]{64}'
 #: The bundle's manifest, beside ``files/``.
 MANIFEST: Final = 'unit.json'
+#: The largest result archive the shared tier uploads: the forge's attachment limit, declared once there.
+MAX_UPLOAD_BYTES: Final = ATTACHMENT_LIMIT_MB * MB
+#: A tombstone attachment (:func:`grave_name`).
+GRAVE: Final = re.compile(r'^grave-(?P<unit>[0-9a-f]{64})-(?P<generation>\d+)\.json$')
 
 
-def result_name(unit_hash: str, result_hash: str) -> str:
-    """The attachment name of a result: the unit and its outputs, by hash."""
-    return f'unit-{unit_hash}-{result_hash}{ARCHIVE}'
+def result_name(unit_hash: str, generation: int, result_hash: str) -> str:
+    """The attachment name of a result: the unit, its generation and its outputs."""
+    return f'unit-{unit_hash}-g{generation}-{result_hash}{ARCHIVE}'
+
+
+def grave_name(unit_hash: str, generation: int) -> str:
+    """The attachment name of the tombstone closing *generation* of *unit_hash*."""
+    return f'grave-{unit_hash}-{generation}.json'
 
 
 @dataclass(frozen=True)
@@ -74,17 +98,20 @@ class ForgeResults:
 
     client: Client
     alarm: Callable[[Alarm], object] = sound
+    max_bytes: int | None = MAX_UPLOAD_BYTES
 
-    def _posted(self, unit_hash: str) -> list[tuple[str, str]]:
-        """``(download url, result hash)`` of each result posted for *unit_hash*, first posted first."""
+    def _posted(self, unit_hash: str, generation: int) -> list[tuple[str, str]]:
+        """``(download url, result hash)`` of each result posted for *unit_hash*'s *generation*, first first."""
         found = ((item, UNIT_RESULT.match(item.name)) for item in listing(self.client))
         return [
-            (item.url, m['result']) for item, m in found if m and m['unit'] == unit_hash and item.name.endswith(ARCHIVE)
+            (item.url, m['result'])
+            for item, m in found
+            if m and m['unit'] == unit_hash and int(m['generation']) == generation and item.name.endswith(ARCHIVE)
         ]
 
-    def fetch(self, unit_hash: str, dest: Path) -> Path | None:
-        """The first posted result, unpacked into *dest*; ``None`` when none is posted."""
-        posted = self._posted(unit_hash)
+    def fetch(self, unit_hash: str, generation: int, dest: Path) -> Path | None:
+        """*generation*'s first posted result, unpacked into *dest*; ``None`` when none is posted."""
+        posted = self._posted(unit_hash, generation)
         if not posted:
             return None
         with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
@@ -92,10 +119,16 @@ class ForgeResults:
             archive.write_bytes(self.client.download(posted[0][0]))
             return unpack(archive, dest)
 
-    def post(self, result: Result) -> None:
-        """Attach *result* unless its unit has one; a differing one already there alarms and raises."""
+    def post(self, result: Result, generation: int) -> None:
+        """Attach *result* as *generation*'s unless one is there; a differing one alarms and raises.
+
+        Raises:
+            Nondeterministic: *generation* already holds a different result.
+            TooLarge: the archive is over :attr:`max_bytes`; nothing is attached.
+
+        """
         record = result.record
-        posted = self._posted(record.unit_hash)
+        posted = self._posted(record.unit_hash, generation)
         if posted:
             if posted[0][1] == record.result_hash:
                 return
@@ -111,14 +144,36 @@ class ForgeResults:
             raise Nondeterministic(alarm.body)
         with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
             files = sorted(p for p in result.path.rglob('*') if p.is_file())
-            attach(
-                self.client,
-                pack(
-                    result.path,
-                    files,
-                    Path(scratch) / result_name(record.unit_hash, record.result_hash),
-                ).path,
-            )
+            name = result_name(record.unit_hash, generation, record.result_hash)
+            archive = pack(result.path, files, Path(scratch) / name).path
+            size = archive.stat().st_size
+            if self.max_bytes is not None and size > self.max_bytes:
+                raise TooLarge(result, size, self.max_bytes)
+            attach(self.client, archive)
+
+    def _graves(self, unit_hash: str) -> dict[int, str]:
+        """The download url of each tombstone posted for *unit_hash*, by generation (the first posted wins)."""
+        found: dict[int, str] = {}
+        for item in listing(self.client):
+            m = GRAVE.match(item.name)
+            if m and m['unit'] == unit_hash:
+                found.setdefault(int(m['generation']), item.url)
+        return found
+
+    def bury(self, tombstone: Tombstone) -> None:
+        """Attach *tombstone*; one already posted for its generation is a no-op."""
+        if tombstone.generation in self._graves(tombstone.unit_hash):
+            return
+        with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
+            grave = Path(scratch) / grave_name(tombstone.unit_hash, tombstone.generation)
+            grave.write_bytes(tombstone.to_bytes())
+            attach(self.client, grave)
+
+    def graves(self, unit_hash: str) -> tuple[Tombstone, ...]:
+        """Every tombstone posted for *unit_hash*, by generation."""
+        return tuple(
+            Tombstone(**json.loads(self.client.download(url))) for _, url in sorted(self._graves(unit_hash).items())
+        )
 
 
 @dataclass(frozen=True)
