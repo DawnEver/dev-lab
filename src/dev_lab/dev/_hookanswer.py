@@ -38,13 +38,13 @@ _REFUSED: Final = 2
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    """What one row did: its exit code (``None``: outlived its bound), its stdout, its stderr and its wall time."""
+    """What one row did: its exit code (``None``: outlived its bound), its stdout, its stderr, its wall time (s)."""
 
     wire: Wire
     code: int | None
     out: str
     err: str
-    ms: float = 0.0
+    elapsed: float = 0.0
 
 
 def parsed(text: str) -> dict[str, Any] | None:

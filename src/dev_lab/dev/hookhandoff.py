@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.liveness import creation_stamp, still_the_same_process
 
+from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.gitdirs import git_dir
 
 if TYPE_CHECKING:
@@ -85,9 +86,6 @@ def runner_alive(queue: Path) -> bool:
 
 def detach(root: Path, job: Path) -> None:
     """Start the runner for *job*'s queue in *root*, outliving the hook and opening no window."""
-    # HOOK-UNDER-FIVE-SECONDS: only a hand-off pays for the launch door, never a hook that hands nothing off.
-    from dev_lab.dev.backgroundrun import detach_argv  # noqa: PLC0415
-
     detach_argv(root, ['-m', 'dev_lab.dev.hookdispatch', '--background', str(job)])
 
 

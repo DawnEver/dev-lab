@@ -68,9 +68,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   2026-09-16): the scan, the five CJK ranges, the ``.claude/memory/``/``attic/``/``archived/``
   exemptions and the floor are shared; each adopting repo supplies its own named-set declaration of
   files still carrying CJK, exactly the shape the suppression ratchet already uses, so a population
-  too large for one commit can be migrated as a ratchet instead of a flat assertion. Re-exported
-  below under ``CJK``-prefixed names because :class:`~dev_lab.dev.units.Scan` and
-  :func:`~dev_lab.dev.units.scan_files` already own the unqualified spellings.
+  too large for one commit can be migrated as a ratchet instead of a flat assertion.
 * :mod:`dev_lab.dev.docwidth` — the family's ONE per-line WIDTH ceiling for every document
   injected into an agent's context (user directive, 2026-09-16): a line-COUNT ratchet is blind to
   how long each line is, so this caps columns too, at 120 -- the ceiling every repo already uses for
@@ -629,16 +627,11 @@ LATEST-DEPENDENCIES, THE RESOLVED HALF (2026-09-21) -- two modules, split where 
 * :mod:`dev_lab.dev.depversions` -- what a checkout RESOLVED: the lock, the live observation, the environment.
 * :mod:`dev_lab.dev.dep_observe` -- the refresher, the ONE module here that calls out at all.
 
-THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
-short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
-flattening them into one namespace beside :data:`dev_lab.dev.content.ABSENT` would leave a
-reader guessing which of two unrelated answers they are holding. Import them by module.
-
-NOR ARE THE MODULES THAT NEED AN EXTRA: :mod:`~dev_lab.dev.profile`, :mod:`~dev_lab.dev.rules`,
-:mod:`~dev_lab.dev.reports` and :mod:`~dev_lab.dev.quantity_values` reach ``platformdirs``, ``tomlkit`` or
-``pint``. Every submodule import runs this file first, so re-exporting them here would make the stdlib-only
-hook runner (:mod:`dev_lab.dev.githooks`) fail in an environment installed without extras.
-Import them by module.
+THIS PACKAGE RE-EXPORTS NOTHING: import every name by its module, as the opening paragraph says
+(HOOK-UNDER-FIVE-SECONDS, user ruling D24, 2026-11-17). Every submodule import runs this file first, so whatever it
+imports every hook interpreter pays: the eager re-exports it carried until then cost each one about half a second
+(the deny rows pulled the box ledger in) before its own row ran, and a lazy re-export is a module ``__getattr__``,
+which NO-REFLECTION refuses. The names live on, each in its module; only the flattened spelling is gone.
 
 WHAT IS DELIBERATELY NOT HERE YET: the five architecture mechanisms (public-surface declaration,
 suppression ratchet, module-size alarm, enforced-mechanism registry, duplication ratchet). They take
@@ -646,143 +639,4 @@ a ``RepoProfile`` and are the next layer. :mod:`dev_lab.dev.rules` is NOT that l
 whether a named mechanism is still LIVE, and the five are the mechanisms an adopter would name.
 """
 
-import functools
-import importlib
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-# THE RE-EXPORTS ARE LAZY (HOOK-UNDER-FIVE-SECONDS, user ruling D24, 2026-11-17). Every submodule import runs this
-# file first, and importing these eagerly cost every hook interpreter about half a second (hook_adoption alone
-# pulled the box ledger through the deny rows) before its own row ran. The block below is the ONE list: type
-# checkers read it, and ``__getattr__`` reads the same lines off this file the first time a name is asked for.
-if TYPE_CHECKING:
-    from dev_lab.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
-    from dev_lab.dev.cjk import CJK_RANGES, EXEMPT_PREFIXES
-    from dev_lab.dev.cjk import Occurrence as CJKOccurrence
-    from dev_lab.dev.cjk import Scan as CJKScan
-    from dev_lab.dev.cjk import VacuousScan as VacuousCJKScan
-    from dev_lab.dev.cjk import assert_floor as assert_cjk_floor
-    from dev_lab.dev.cjk import ratchet as cjk_ratchet
-    from dev_lab.dev.cjk import scan_files as scan_cjk_files
-    from dev_lab.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
-    from dev_lab.dev.docwidth import (
-        INJECTED_BASENAMES,
-        INJECTED_EXEMPT_PREFIXES,
-        INJECTED_PREFIXES,
-        WIDTH_CEILING,
-        Overwidth,
-        VacuousWidthScan,
-        WidthScan,
-        assert_width_floor,
-        injected_docs,
-        is_injected_doc,
-        line_widths,
-        scan_widths,
-        width_ratchet,
-        width_remedy,
-    )
-    from dev_lab.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
-    from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
-    from dev_lab.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
-    from dev_lab.dev.units import (
-        SCANNED_SUFFIXES,
-        Scan,
-        Violation,
-        assert_registry_sane,
-        scan_files,
-        trailing_token,
-    )
-    from dev_lab.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
-
-
-__all__ = [
-    'ABSENT',
-    'CJK_RANGES',
-    'DEFAULT_IGNORES',
-    'DENY_RULES',
-    'EXCLUDED_TOKENS',
-    'EXEMPT_PREFIXES',
-    'INJECTED_BASENAMES',
-    'INJECTED_EXEMPT_PREFIXES',
-    'INJECTED_PREFIXES',
-    'MARKER',
-    'SCANNED_SUFFIXES',
-    'UNIT_TOKENS',
-    'WIDTH_CEILING',
-    'CJKOccurrence',
-    'CJKScan',
-    'Citation',
-    'DenyRule',
-    'HookAdoption',
-    'IncompleteRun',
-    'LogRef',
-    'Overwidth',
-    'Proof',
-    'Remedy',
-    'Result',
-    'Scan',
-    'Selector',
-    'UnremediedRule',
-    'UnverifiableLog',
-    'VacuousCJKScan',
-    'VacuousWidthScan',
-    'Verdict',
-    'Violation',
-    'WidthScan',
-    'assert_cjk_floor',
-    'assert_registry_sane',
-    'assert_shippable',
-    'assert_width_floor',
-    'cjk_ratchet',
-    'content_address',
-    'denies',
-    'deny_rules',
-    'file_digest',
-    'fires',
-    'injected_docs',
-    'is_injected_doc',
-    'line_widths',
-    'render',
-    'scan_cjk_files',
-    'scan_files',
-    'scan_widths',
-    'stamp_line',
-    'trailing_token',
-    'unremedied',
-    'verify_log',
-    'width_ratchet',
-    'width_remedy',
-]
-
-
-@functools.cache
-def _exports() -> dict[str, tuple[str, str]]:
-    """Each re-exported name and the ``(module, attribute)`` it comes from, read off the TYPE_CHECKING block."""
-    import ast  # noqa: PLC0415 -- HOOK-UNDER-FIVE-SECONDS: only asking for a re-export pays for the parser
-
-    tree = ast.parse(Path(__file__).read_text(encoding='utf-8'))
-    return {
-        alias.asname or alias.name: (str(node.module), alias.name)
-        for branch in tree.body
-        if isinstance(branch, ast.If) and isinstance(branch.test, ast.Name) and branch.test.id == 'TYPE_CHECKING'
-        for node in branch.body
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-    }
-
-
-def __getattr__(name: str) -> Any:  # noqa: ANN401 -- a re-export is whatever its module defines
-    """A re-exported name, imported from its module the first time it is asked for."""
-    try:
-        module, attribute = _exports()[name]
-    except KeyError:
-        msg = f'module {__name__!r} has no attribute {name!r}'
-        raise AttributeError(msg) from None
-    value = getattr(importlib.import_module(module), attribute)
-    globals()[name] = value
-    return value
-
-
-def __dir__() -> list[str]:
-    """The module's own names and every re-export, imported or not."""
-    return sorted({*globals(), *_exports()})
+__all__: list[str] = []

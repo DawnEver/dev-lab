@@ -138,8 +138,10 @@ HOOK_TIMEOUT_S: Final = 5
 #: to the background (:mod:`dev_lab.dev.hookhandoff`) to run to completion -- never cut, never skipped.
 DISPATCH_BUDGET_S: Final = 1.0
 #: A guard (``may_block``) cannot be handed off for its answer -- it is needed now -- so it keeps running to this
-#: bound, a margin under the ceiling; past it the call goes through, the guard's work moves to the background.
-GUARD_BUDGET_S: Final = 4.0
+#: bound; past it the call goes through and the guard's work moves to the background. Both budgets count from the
+#: dispatcher's ``main``: the launcher, the interpreter's start and the imports before it (measured 2026-11-17 up to
+#: 1.4 s cold) live in the margin left under the ceiling.
+GUARD_BUDGET_S: Final = 3.5
 #: A background run's bound when its row names none.
 BACKGROUND_BOUND_S: Final = 600
 

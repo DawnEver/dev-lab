@@ -17,7 +17,7 @@ whose ``tools`` admit the payload's ``tool_name`` (and, for a ``once`` row, that
 
 FIVE SECONDS, AND NOTHING DROPPED (``HOOK-UNDER-FIVE-SECONDS``, user ruling D24, 2026-11-17). Guards run first and
 keep running to :data:`~dev_lab.dev.agent_wiring.GUARD_BUDGET_S`; every other row must finish within
-:data:`~dev_lab.dev.agent_wiring.DISPATCH_BUDGET_S` of this interpreter's start. A ``detached`` row, a row the budget
+:data:`~dev_lab.dev.agent_wiring.DISPATCH_BUDGET_S` of the dispatcher's start. A ``detached`` row, a row the budget
 ran out before, and a row that outlived it are HANDED OFF (:mod:`dev_lab.dev.hookhandoff`): one background runner
 runs them to completion and their answer reaches the session at its next context event, which this dispatcher
 delivers. A hand-off past the budget is said in the answer, by name. ``--background <job>`` is that runner.
@@ -27,27 +27,24 @@ The dispatcher always exits 0: a block is its JSON answer, never an exit code.
 
 from __future__ import annotations
 
+import contextlib
+import importlib
+import io
+import os
+import sys
+import threading
 import time
+import traceback
+from collections.abc import Iterator, Sequence
+from pathlib import Path
+from typing import Any, Final, TextIO
 
-_STARTED = time.monotonic()  # the budget's clock, read as early as this interpreter reaches dispatcher code
+from lab_commons.log import emit
 
-import contextlib  # noqa: E402 -- after the clock, so the budget counts this module's own imports
-import importlib  # noqa: E402
-import io  # noqa: E402
-import os  # noqa: E402
-import sys  # noqa: E402
-import threading  # noqa: E402
-import traceback  # noqa: E402
-from collections.abc import Iterator, Sequence  # noqa: E402
-from pathlib import Path  # noqa: E402
-from typing import Any, Final, TextIO  # noqa: E402
-
-from lab_commons.log import emit  # noqa: E402
-
-from dev_lab.dev import hookhandoff  # noqa: E402
-from dev_lab.dev._hookanswer import CONTEXT_EVENTS, Outcome, answer, deferred_text, parsed  # noqa: E402
-from dev_lab.dev._hookonce import first_runs  # noqa: E402
-from dev_lab.dev.agent_wiring import (  # noqa: E402
+from dev_lab.dev import hookhandoff
+from dev_lab.dev._hookanswer import CONTEXT_EVENTS, Outcome, answer, deferred_text, parsed
+from dev_lab.dev._hookonce import first_runs
+from dev_lab.dev.agent_wiring import (
     DISPATCH_BUDGET_S,
     GUARD_BUDGET_S,
     WIRING,
@@ -56,8 +53,8 @@ from dev_lab.dev.agent_wiring import (  # noqa: E402
     declared,
     import_root,
 )
-from dev_lab.dev.disclosure import details_for  # noqa: E402
-from dev_lab.dev.gitdirs import git_dir  # noqa: E402
+from dev_lab.dev.disclosure import details_for
+from dev_lab.dev.gitdirs import git_dir
 
 __all__ = ['Outcome', 'answer', 'main', 'run_row', 'selected']
 
@@ -164,8 +161,8 @@ def run_row(wire: Wire, text: str, *, timeout: float | None = None) -> Outcome:
     worker = threading.Thread(target=body, name=wire.name, daemon=True)
     worker.start()
     worker.join(wire.inline_bound if timeout is None else timeout)
-    ms = (time.monotonic() - began) * 1000
-    return Outcome(wire, done[0] if done else None, out.getvalue(), err.getvalue(), ms)
+    elapsed = time.monotonic() - began
+    return Outcome(wire, done[0] if done else None, out.getvalue(), err.getvalue(), elapsed)
 
 
 def _inline(wires: Sequence[Wire], text: str, started: float) -> tuple[list[Outcome], list[Wire]]:
@@ -219,7 +216,7 @@ def _run_job(job: dict[str, Any]) -> None:
 
 
 def _timing(event: str, outcomes: Sequence[Outcome], late: Sequence[Wire], started: float) -> str:
-    rows = [f'[hook-timing] {event} {one.wire.name} {one.ms:.0f} ms' for one in outcomes]
+    rows = [f'[hook-timing] {event} {one.wire.name} {one.elapsed * 1000:.0f} ms' for one in outcomes]
     rows += [f'[hook-timing] {event} {wire.name} handed off' for wire in late]
     return '\n'.join([*rows, f'[hook-timing] {event} total {(time.monotonic() - started) * 1000:.0f} ms'])
 
@@ -237,19 +234,20 @@ def _background(job: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     """``python -m dev_lab.dev.hookdispatch [--timing] <Event> | --background <job>``; always exit 0.
 
-    Run as the hook's process (no *argv*), the budget counts from this interpreter's arrival in this module; called
-    in-process with *argv*, from the call.
+    The budget counts from this call. The interpreter's start and this module's imports come before it (measured
+    2026-11-17: 0.2-0.4 s warm, up to 1.3 s cold) and sit in the margin the budgets leave under the ceiling.
     """
-    started = _STARTED if argv is None else time.monotonic()
+    started = time.monotonic()
     args = list(sys.argv[1:] if argv is None else argv)
     timing = '--timing' in args
-    args = [arg for arg in args if arg != '--timing']
-    if len(args) == 2 and args[0] == '--background':  # noqa: PLR2004 -- the flag and its job
-        return _background(Path(args[1]))
-    if len(args) != 1:
-        emit('usage: python -m dev_lab.dev.hookdispatch [--timing] <Event> | --background <job>', err=True)
-        return 0
-    event = args[0]
+    match [arg for arg in args if arg != '--timing']:
+        case ['--background', job]:
+            return _background(Path(job))
+        case [event]:
+            pass
+        case _:
+            emit('usage: python -m dev_lab.dev.hookdispatch [--timing] <Event> | --background <job>', err=True)
+            return 0
     text = sys.stdin.read()
     payload = parsed(text) or {}
     root = _repo_root(payload)
