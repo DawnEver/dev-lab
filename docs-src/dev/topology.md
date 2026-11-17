@@ -39,12 +39,13 @@ host configuration (private): data only, consumed by the dev kit's ops door on e
 
 ```
 lane/* feat/* fix/*   (local only; fan-out in worktrees)
-   -> pr/<feature>    (one long-lived pushed branch per session)
+   -> pr/<task-slug>/<feature>   (the pushed head: one feature per PR)
         -> integrate/main   (the forge merges a green, reviewed PR; merges only)
              -> main        (integrate promote: fast-forward only, every part a full PASS)
 ```
 
-- Child branches are local; one `pr/<feature>` per session is what is pushed ([one branch per session](branch-set.md)).
+- Child branches are local; a pushed head is `pr/<task-slug>/<feature>`, one feature per PR, and `integrate/main` is
+  the only long-lived branch ([branch set](branch-set.md), `PUSHED-HEAD-CARRIES-ITS-TASK`).
 - A PR targets the integration branch (`PRS-TARGET-INTEGRATION`); the integration branch takes only forge merges
   (`INTEGRATION-IS-MERGES-ONLY`, from `[tool.dev_lab.integrator] merges_only_since` / `pr_merges_since`).
 - A child takes integration by `forge sync` (a merge, never a rebase); the forge auto-syncs a head whose lock alone

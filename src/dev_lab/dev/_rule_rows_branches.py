@@ -9,10 +9,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ONE-BRANCH-PER-SESSION',
         (
-            'Each working session maintains exactly ONE long-lived branch and merges its work into it, every other '
-            'branch is merged and then deleted, never left behind, a repo`s long-lived branches are DECLARED (the '
-            'trunk plus one branch per declared session or lane owner) so anything else on origin or on this box '
-            'is debt, and unpushed work is reported, never deleted silently.'
+            'The integration branch is the only long-lived branch a session works into: a pushed head is '
+            '`pr/<task-slug>/<feature>`, one feature per PR, and every other branch is merged and then deleted, '
+            'never left behind; a repo`s long-lived branches are DECLARED (the trunk plus the integration branch) '
+            'so anything else on origin or on this box is debt, and unpushed work is reported, never deleted '
+            'silently.'
         ),
         ('tests/test_dev_branchset.py',),
     ),
@@ -211,11 +212,23 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A push that creates or updates `refs/heads/<X>` on origin is refused at pre-push unless the branch '
             'set its pushed tip declares admits `<X>` (the trunk, a `sessions` branch, or a branch in an '
-            '`ephemeral` namespace, default `pr/*`, whose `*` crosses `/`): a session publishes its one `pr/<feature>` '
-            'branch -- `pr/<task>/<feature>` when its user bound it to a task, never a bare `pr/<task>`, which git '
-            'cannot hold beside its heads -- and its fan-out `lane/` `feat/` `fix/` branches stay local. '
+            '`ephemeral` namespace, default `pr/*`, whose `*` crosses `/`): a session publishes each feature as its '
+            'task`s `pr/<task>/<feature>` head (PUSHED-HEAD-CARRIES-ITS-TASK), and its fan-out `lane/` `feat/` '
+            '`fix/` branches stay local. '
             'Deletions and tags are not judged, so an '
             'existing undeclared origin branch takes no new push and is deleted by a human.'
+        ),
+        ('tests/test_dev_sessionbranch.py',),
+    ),
+    (
+        'PUSHED-HEAD-CARRIES-ITS-TASK',
+        (
+            'Branch names follow the task (user ruling D25, 2026-11-17): an agent session creates or updates a '
+            'head in the task namespace (`[tool.dev_lab.branchset] task_heads`, default `pr/<task>/<feature>`) '
+            'only under the task its user bound it to (`dev_lab.dev.taskbinding`), one feature per PR. Another '
+            'task`s head, a flat `pr/<feature>` and the bare `pr/<task>` (which git cannot hold beside its heads) '
+            'are refused at pre-push in the `session-branch` row naming `pr/<task>/`; with no bound task the '
+            'refusal names how a task is bound. A human push and the forge are not judged.'
         ),
         ('tests/test_dev_sessionbranch.py',),
     ),

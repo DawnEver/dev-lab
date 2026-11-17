@@ -117,17 +117,17 @@ def test_an_unreadable_registry_keeps_the_plain_door(tmp_path: Path, env: dict[s
 def test_the_gate_names_the_skew_and_otherwise_the_task_prompt(tmp_path: Path) -> None:
     root, home = _repo(tmp_path), tmp_path / 'home'
     plant_claude_rem(home, '2.5.0')
-    said = taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home) or ''
+    said = taskgate.refusal(root, env=_CLAUDE, home=home) or ''
     assert taskgate.RULE in said
     assert 'none is bound' in said
     assert 'update rem to >= 2.6.0' in said
     plant_claude_rem(home, None)
-    assert 'install rem@cc-market' in (taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home) or '')
+    assert 'install rem@cc-market' in (taskgate.refusal(root, env=_CLAUDE, home=home) or '')
     plant_claude_rem(home, '2.6.0')
-    said = taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home) or ''
+    said = taskgate.refusal(root, env=_CLAUDE, home=home) or ''
     assert taskbinding.DOOR in said, 'a current binder: the door is the `task:` prompt, as before'
     (home / '.claude' / 'plugins' / 'installed_plugins.json').write_text('{', encoding='utf-8')
-    assert taskbinding.DOOR in (taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home) or '')
+    assert taskbinding.DOOR in (taskgate.refusal(root, env=_CLAUDE, home=home) or '')
 
 
 def test_the_gate_reads_and_never_writes_the_registries(tmp_path: Path) -> None:
@@ -135,6 +135,6 @@ def test_the_gate_reads_and_never_writes_the_registries(tmp_path: Path) -> None:
     plant_claude_rem(home, '2.5.0')
     plant_codex_rem(home, '2.4.0')
     before = {path: path.read_bytes() for path in home.rglob('*') if path.is_file()}
-    taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home)
-    taskgate.refusal(root, env=_CODEX, branch='pr/toolchain/a', home=home)
+    taskgate.refusal(root, env=_CLAUDE, home=home)
+    taskgate.refusal(root, env=_CODEX, home=home)
     assert {path: path.read_bytes() for path in home.rglob('*') if path.is_file()} == before

@@ -1,7 +1,7 @@
 # One branch per session
 
-Each working session keeps exactly ONE long-lived branch, declared in `pyproject.toml`, and merges its work into
-it (`ONE-BRANCH-PER-SESSION`). Every other branch is merged and then deleted (`MERGE-OR-DELETE`): there is no
+The integration branch is the only long-lived branch, declared in `pyproject.toml`; a pushed head is
+`pr/<task-slug>/<feature>`, one feature per PR (`ONE-BRANCH-PER-SESSION`, `PUSHED-HEAD-CARRIES-ITS-TASK`). Every other branch is merged and then deleted (`MERGE-OR-DELETE`): there is no
 third state, and a parked tag or renamed branch is the same debt. Run `python -m dev_lab.dev.branchset` to see
 what to merge and what to delete, and `--apply` to delete the merged local ones.
 
@@ -54,9 +54,12 @@ and reds every unrelated PR (ruling 2026-10-24).
 ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES: the base pre-push row `session-branch` (`dev_lab.dev.sessionbranch`)
 refuses a push that creates or updates `refs/heads/X` unless `BranchSet.admits(X)` -- the trunk, a `sessions`
 branch, or a branch in an `ephemeral` namespace -- by the set the PUSHED tip declares. The refusal names `X`,
-the declared branches, the ephemeral globs and the remedy: publish the feature as its one `pr/<feature>`, or keep
-the branch local. A session its user bound to a task (`task: <slug>`, bound by rem, read by `dev_lab.dev.taskbinding`) is told
-`pr/<task>/<feature>` instead; `pr/*` admits it (fnmatch's `*` crosses `/`), and a task never publishes a bare
+the declared branches, the ephemeral globs and the remedy: publish the feature as its task's head, or keep
+the branch local. PUSHED-HEAD-CARRIES-ITS-TASK, in the same row: an agent session's head in the task namespace
+(`[tool.dev_lab.branchset] task_heads`, default `pr/<task>/<feature>`; `''` judges none) carries the task its user
+bound it to (`task: <slug>`, bound by rem, read by `dev_lab.dev.taskbinding`) -- another task's head, a flat
+`pr/<feature>` and a bare `pr/<task>` are refused naming `pr/<task>/`, and an unbound session is told how a task is
+bound. A human push and the forge's own status are not judged; `pr/*` admits the head (fnmatch's `*` crosses `/`), and a task never publishes a bare
 `pr/<task>`, which git cannot hold beside `pr/<task>/<x>`. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
 SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new
 push and is deleted by a human. The machine pushers all land: relock (`pr/relock`), forge autosync (`pr/*`

@@ -98,7 +98,7 @@ def test_a_missing_or_corrupt_identity_catalog_never_turns_into_a_human_bypass(
 
 
 def test_the_pr_door_records_the_codex_thread_in_its_own_existing_journal() -> None:
-    opened = sessionprs.record_opened(FORGE, 7, branch='pr/native', sha='a' * 40, env={_CODEX: _ID})
+    opened = sessionprs.record_opened(FORGE, 7, sha='a' * 40, env={_CODEX: _ID})
     assert opened is not None, 'a successful native Codex PR must not disappear from session tracking'
     [(key, recorded)] = sessionprs.rows(_ID).items()
     assert key == f'{FORGE.identity}#7'
@@ -115,7 +115,7 @@ def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
     plant_codex_rem(tmp_path / 'home', '2.6.0')  # a current binder: the door is the user's prompt
-    refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a', home=tmp_path / 'home')
+    refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, home=tmp_path / 'home')
     assert refusal is not None
     assert taskgate.RULE in refusal
     assert '/rem:task open' in refusal
@@ -128,7 +128,7 @@ def test_a_real_bound_task_still_admits_the_native_codex_session(tmp_path: Path)
     (task / 'TASK.md').write_text('---\nauthority: a1\nstatus: open\n---\n', encoding='utf-8')
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
     assert bind_as_rem(tmp_path, _ID, 'native-task') == 'native-task@a1'  # rem keys a Codex binding by its thread
-    assert taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a') is None
+    assert taskgate.refusal(tmp_path, env={_CODEX: _ID}) is None
 
 
 def test_wall_records_carry_the_codex_thread_not_an_empty_claude_identity(
