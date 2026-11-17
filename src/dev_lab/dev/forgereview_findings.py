@@ -70,12 +70,14 @@ class UnknownSchemaVersion(FindingsInvalid):
 
 @dataclass(frozen=True)
 class Reviewer:
-    """One planned reviewer: its profile key, the provider that ran it (or could not), its status."""
+    """One planned reviewer: its profile key, the provider that ran it (or could not), its status, and why not."""
 
     name: str
     provider: str | None
     status: str
     dropped_findings: int
+    #: Why it has no findings (the engine's ``error``: never a key); ``''`` for an ``ok`` or ``skipped`` one.
+    error: str = ''
 
 
 @dataclass(frozen=True)
@@ -140,7 +142,9 @@ def _one_of(value: object, allowed: frozenset[str] | tuple[str, ...], where: str
 def _reviewer(row: object, at: int) -> Reviewer:
     got = _fields(row, _REVIEWER, f'reviewers[{at}]')
     status = _one_of(got['status'], REVIEWER_STATUSES, f'reviewers[{at}].status')
-    return Reviewer(str(got['name']), got['provider'], status, int(got['dropped_findings']))
+    return Reviewer(
+        str(got['name']), got['provider'], status, int(got['dropped_findings']), str(got.get('error') or '')
+    )
 
 
 def _finding(row: object, at: int) -> Finding:

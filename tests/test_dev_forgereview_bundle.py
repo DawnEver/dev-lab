@@ -590,6 +590,15 @@ def test_a_reviewer_that_did_not_run_posts_nothing(prepared: Prepared, statuses:
     assert 'nothing posted' in said[0]
 
 
+def test_a_reviewer_that_did_not_run_is_said_with_its_reason(prepared: Prepared) -> None:
+    """The line names WHY each reviewer has no findings: a host missing its keys is otherwise undiagnosable."""
+    doc = json.loads(_findings(None, statuses=('ok', 'unsupported')))
+    doc['reviewers'][1]['error'] = 'anthropic has no pr-review task key stored for api.anthropic.com'
+    said, _ = _judged(prepared.forge, json.dumps(doc))
+    assert prepared.forge.verdicts() == []
+    assert 'r1 unsupported: anthropic has no pr-review task key stored for api.anthropic.com' in said[0]
+
+
 def test_a_bundle_the_forge_diff_disowns_is_refused_as_request_changes(prepared: Prepared) -> None:
     forge = prepared.forge
     forge.diffs[7] = forge.diff.replace('kept.py', 'other.py')
