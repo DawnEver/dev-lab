@@ -17,3 +17,5 @@ manual Fabric/sharp-review dispatch, permit a different provider, bypass a
 gate, or revoke this worker's no-push/no-PR/no-ready ownership boundary. Root
 owns normal publication, review/ready transitions and formal producer routing.
 No secret, consent code or external model call is stored or performed here.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

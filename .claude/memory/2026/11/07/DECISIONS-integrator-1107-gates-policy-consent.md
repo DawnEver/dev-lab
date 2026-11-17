@@ -51,3 +51,5 @@ U = the user ruled; M = the integrator decided.
 - TREE-HAS-A-LIVE-RUN mistakes this Claude session (`ai_lab.session ... automode.json`) for a run in the the private consumer main checkout.
 - The Ada forge tick must not hold its lock through `--collect-only` while finished results wait.
 - `[tool.dev_lab.render]` must be declared in numerics-lab, lab-commons and the private consumer once #315 lands.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

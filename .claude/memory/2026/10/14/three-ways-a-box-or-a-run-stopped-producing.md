@@ -19,3 +19,5 @@ created: 2026-10-14
   encoding): run every `tests/test_arch_*.py` before an integrate merge.
 - Next: one box manager (`lab_commons.box`), user ruling 2026-10-14 "A: delete" (user, translated): reservations/leases, lending
   and preemption are deleted -- a claim exists only for a running process, is its kernel limit, and has a deadline.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

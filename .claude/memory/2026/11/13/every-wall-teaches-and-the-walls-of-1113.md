@@ -30,4 +30,6 @@ never hand the user a command.
 - A command hidden behind a shell variable evaded the deny row; the hook saw only `"$C"`.
 - A permission-classifier denial carries no remedy, so it read as a dead end; the door existed.
 - One `--jump` for a whole plan routed every host through the bastion, which refused the direct host.
-> Amended 2026-11-13: added the name/description frontmatter the memory shape requires -- approved: "agreed, complete it" (user, translated)
+> Amended 2026-11-13: added the name/description frontmatter the memory shape requires -- approved: "(user, translated) agreed, complete it"
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

@@ -18,3 +18,5 @@ metadata:
 - The deny row is CONSENT-CODE-FROM-THE-USER (old id in `_deny_rows.RETIRED_IDS`). It refuses only a planted
   credential: a shell write under `~/.the private consumer/state/consent/`. The Write/Edit half is `consentguard.refuse_write`.
 - The code's origin is the rule an agent keeps: only a code the user gave in this conversation, used at once.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

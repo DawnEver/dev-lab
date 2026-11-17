@@ -44,3 +44,5 @@ unbounded). Check on the host before deploying; the fix would be a system-scope 
 
 - P4: the cluster `held_run` double count (a cluster run in flight is still `running` at `cluster_demand`).
 - P5: downstream callers (its gate runner and anything importing the deleted `dev` modules).
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

@@ -24,3 +24,5 @@ Supersedes the `allowed_prefixes` paragraph of `one-test-kit-and-an-in-repo-comm
   base only, because a PR's own commits are on the remote by then and would otherwise never be judged.
 - The reason the holes existed (a published off-format commit made every later push unpushable) is answered by
   the published-exclusion, not by an exemption.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

@@ -25,3 +25,5 @@ accessed: 2026-11-05
   `.gitignore` drops it on their next render), the Makefile `clean` entry, and the prose.
 - Stale `.verify/` dirs on disk at the time (to delete after merge, not by the agent): dev-lab worktrees
   dep-local, one-test-kit, uv-freshened; lab-commons worktree one-toml-writer.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

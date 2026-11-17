@@ -84,3 +84,5 @@ Ratchet: `CONSTANT_FLOOR` re-measured 357 → 358 (448 constants read, the same 
 stays 90). Everything else passed unchanged, including the module-size band and the verb-parity
 guard, which now checks TWO protocols and reads them from the source so it holds with neither
 plotting library installed.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"
