@@ -83,6 +83,23 @@ def test_no_command_is_refused_naming_the_shape(tmp_path: Path) -> None:
         commandpart.main(['--root', str(tmp_path), 'base', '--'])
 
 
+def test_a_family_command_cannot_pass_without_its_layout_policy(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.tests]\nresources = []\n', encoding='utf-8')
+    posted = _wired(tmp_path, monkeypatch, code=0)
+    started: list[list[str]] = []
+    execute = commandpart._door.run
+
+    def run(argv: list[str], **kwargs: object) -> object:
+        started.append(list(argv))
+        return execute(argv, **kwargs)
+
+    monkeypatch.setattr(commandpart._door, 'run', run)
+    assert commandpart.main(['--root', str(tmp_path), 'base', '--', 'npm', 'test']) == ProducerExit.FAIL
+    assert not any('test' in argv for argv in started), 'the external command must not run past a failed guard'
+    assert posted
+    assert all(cell['status'] != 'ok' for record in posted for cell in record['cells'].values())
+
+
 def test_the_program_is_resolved_on_path_so_a_windows_cmd_shim_runs(tmp_path: Path, monkeypatch) -> None:
     """On Windows ``npm`` is ``npm.cmd``: a bare name cannot be started (WinError 2), so the door resolves it first.
 
