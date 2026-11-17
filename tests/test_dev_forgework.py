@@ -489,7 +489,7 @@ def test_the_cli_stamps_from_the_environment(server, tmp_path: Path, capsys) -> 
     assert (
         issue_and_pr(['issue', 'comment', '7', '--body', 'hello'], cwd=repo, env=env, transport=_Loopback(server)) == 0
     )
-    assert _Recorder.received[0]['body'] == {'body': '[g · claude · lane]\n\nhello'}
+    assert _Recorder.received[-1]['body'] == {'body': '[g · claude · lane]\n\nhello'}
     assert 'u' in capsys.readouterr().out
 
 

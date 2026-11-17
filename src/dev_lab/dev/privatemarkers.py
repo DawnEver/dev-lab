@@ -243,7 +243,11 @@ def text_refusal(text: str, what: str, markers: tuple[re.Pattern[str], ...] | No
     if not hits:
         return None
     named = ', '.join(f'line {n}: {kind}' for n, kind, _ in hits)
-    return f'PRIVATE-MARKERS: the {what} names a private value ({named}); neutralise it before it is published.'
+    return (
+        f'PRIVATE-MARKERS: the {what} names a private value ({named}) and the target repo is not known private; '
+        'rewrite the text neutrally (a placeholder for each name) and re-run.\n'
+        'details: docs-src/dev/refusals.md#private-markers (dev-lab)'
+    )
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
