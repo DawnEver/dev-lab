@@ -308,6 +308,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
     'jobparts',
+    'hostedparts',  # ORIGINAL: split from jobparts: the hosted-part declaration reader (2026-11-17)
     # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
     'jobmeasure',
     'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
