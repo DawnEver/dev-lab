@@ -93,6 +93,7 @@ from dev_lab.dev.forgework import Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.partrefs import part_refs
 from dev_lab.dev.partrows import row_part
+from dev_lab.dev.producers import HPC, producer_at
 
 __all__ = [
     'NOT_ADMITTED',
@@ -227,14 +228,8 @@ def ref_usage(root: Path, ref: str, used: Mapping[str, float]) -> float:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = _door.run(
-        [_GIT, '-C', str(root), *args],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        timeout=_GIT_TIMEOUT_S,
-        check=False,
-    )
+    done = _door.run([_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8',
+                     timeout=_GIT_TIMEOUT_S, check=False)  # fmt: skip
     return done.stdout.strip() if done.returncode == 0 else ''
 
 
@@ -390,7 +385,13 @@ def candidates(
     any one: the reads it may make concurrently (:meth:`~dev_lab.dev.forgesettled.SettledHistories.prefetch`).
     A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
+
+    A repo whose serving checkout declares an ``actions`` producer (:mod:`dev_lab.dev.producers`) has NO
+    candidate: forge Actions post its parts, and no HPC host is ever offered one (user ruling 2026-11-16).
     """
+    if (producer := producer_at(root)) != HPC:
+        say(f'[serve] {repo} declares producer = "{producer}": its parts are never offered here')
+        return ()
     found, reached = [], set()
     served = _part_refs(root, client, schedule, policy, say=say)
     prefetch(sha for _, sha, *_ in served)

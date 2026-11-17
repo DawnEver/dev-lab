@@ -31,7 +31,7 @@ THREE MODULES, ONE CONCEPT EACH: this one RECORDS (the kinds, the one writer, th
 :mod:`dev_lab.dev.metrics_report` REPORTS them, and is the CLI (``record`` included).
 
 THE READ (``python -m dev_lab.dev.metrics_report``) covers every repository of the family -- the machine file's
-``[serve] repos`` under its ``root``, the list the serving host itself walks (:func:`family`) -- over one
+``[repos]`` (:func:`dev_lab.dev.metrics_report.family`) -- over one
 window with both bounds. What LANDED is read from git, not the log: a PR whose head branch a first-parent
 ``Merged-Branch:`` merge of the integration branch names is merged at that commit's time
 (:func:`landings`), however it was closed, and a ``Break-Glass:`` landing is a hand action on the PR it

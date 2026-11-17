@@ -1,7 +1,7 @@
 """THE TOOLCHAIN'S METRICS, REPORTED: every family repository over one window, and the metrics CLI.
 
 ``python -m dev_lab.dev.metrics_report [--since T] [--until T] [--days N] [--json]`` reads every repository of
-the family -- the machine file's ``[serve] repos`` under its ``root`` (:func:`family`) -- over one window with
+the family -- the machine file's ``[repos]`` (:func:`family`) -- over one window with
 both bounds; ``record <kind> ...`` appends one line through :func:`dev_lab.dev.metrics.record` (the agent guard
 engine calls it). The figures are :mod:`dev_lab.dev.metrics_compute`'s.
 """
@@ -14,9 +14,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 
-from lab_commons.config import config_path, section
+from lab_commons.config import config_path
+from lab_commons.home import repos
 from lab_commons.log import emit
 
 from dev_lab.dev.forgepulls import pages
@@ -28,14 +28,13 @@ from dev_lab.dev.metrics_compute import Metrics, compute, landings
 __all__ = ['family', 'main']
 
 
-def family(table: Mapping[str, Any] | None = None) -> list[Path]:
-    """Every family checkout: the machine file's ``[serve] repos`` under its ``root`` (*table*, default that table)."""
-    table = section('serve') if table is None else table
-    repos, root = table.get('repos'), table.get('root')
-    if not (isinstance(repos, list) and repos and isinstance(root, str)):
-        msg = f'no [serve] repos and root in {config_path()}: the family is declared there (`workstation deploy`)'
+def family(checkouts: Mapping[str, Path] | None = None) -> list[Path]:
+    """Every family checkout: the machine file's ``[repos]`` (*checkouts*, default :func:`lab_commons.home.repos`)."""
+    checkouts = repos() if checkouts is None else checkouts
+    if not checkouts:
+        msg = f'no [repos] in {config_path()}: the family is declared there (python -m dev_lab.dev.family join)'
         raise ValueError(msg)
-    return [Path(root) / name for name in repos]
+    return list(checkouts.values())
 
 
 def _cli_record(args: argparse.Namespace) -> int:

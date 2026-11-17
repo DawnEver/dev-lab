@@ -31,7 +31,10 @@ from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
-_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+_MANIFEST = (
+    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+    "[tool.dev_lab.protection]\nproducer = 'hpc'\n"
+)
 
 
 def _green() -> list[dict[str, object]]:
@@ -62,6 +65,7 @@ def _tested(tmp_path: Path) -> Path:
     _, work = clone_pair(tmp_path)
     (work / 'tests').mkdir()
     advance(work, 'integrate/main', 'tests/test_a.py', 'def test_a():\n    assert True\n')
+    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')  # the serving checkout's producer
     return work
 
 

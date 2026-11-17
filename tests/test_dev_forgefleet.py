@@ -1,6 +1,6 @@
 """A DARK FLEET REACHES A HUMAN: every host of a platform stale, or a tick that serves nothing, alarms once per episode.
 
-Ada 2026-10-25..27: every host ticked with ``serve = false`` in each account, ``forge queue`` printed STALE per host,
+Ada 2026-10-25..27: every host ticked with every repo unserved in each account, ``forge queue`` printed STALE per host,
 and no alarm reached anyone for two days.
 """
 

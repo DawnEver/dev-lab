@@ -3,3 +3,6 @@
 name = "plain"
 
 [tool.dev_lab.ci."ci.yml"]
+
+[tool.dev_lab.protection]
+producer = "actions"

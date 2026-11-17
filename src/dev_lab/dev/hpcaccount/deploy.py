@@ -11,7 +11,7 @@ a tracked file, since the forge, its repos and the login host are private to the
     partitions = ["<partition>", ...]
     role = "verification"          # or "research": only a verification account serves (user ruling 2026-11-06)
     repos = [{ name = "dev-lab", url = "<https url>", ref = "<branch>" }, { name = "<repo>", ... }, ...]
-    # an entry may add serve = false: checked out and installed, its forge queue not served by this account
+    # served only where the repo itself declares [tool.dev_lab.protection] producer = "hpc" (dev_lab.dev.producers)
 
     [schedule]
     tick_minutes = 15              # the cron period (divides 60; default 5) -- also what the host card is judged by

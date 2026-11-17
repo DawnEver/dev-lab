@@ -240,8 +240,8 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
    per forge host, or move them from an old box with `forge auth export | ssh <box> "... auth login --from-file -"`;
    verify with `auth status` ([credentials](forge.md#credentials)).
 5. Install the hooks: `python -m dev_lab.dev.hook_install --install`.
-6. To also SERVE parts: `python -m dev_lab.dev.workstation template --role light --repos ...`, then the deploy
-   ([adding a workstation](adding-a-workstation.md)).
+6. To declare its capabilities: `python -m dev_lab.dev.workstation template --role light`, then the deploy
+   ([adding a workstation](adding-a-workstation.md)). A workstation never serves a merge's parts.
 7. For hosts behind a TOTP: optionally set `[ssh.hold] max_hours` / `idle_minutes` in the machine file.
 
 ### A forge host
