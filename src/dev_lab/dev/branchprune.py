@@ -139,12 +139,13 @@ def survey(
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
         if name in keep or idle_h < branchset.grace_hours:
             continue
+        if branchset.is_ephemeral(name) and name in heads:
+            continue  # its open PR owns it
         merged = any(git_out(root, 'merge-base', '--is-ancestor', sha, holder) is not None for holder in holders)
         if not merged:
             rows.append(Row(name, sha, UNMERGED, STALE, idle_h))
         elif branchset.is_ephemeral(name):
-            if name not in heads:
-                rows.append(Row(name, sha, EPHEMERAL, DELETE, idle_h))
+            rows.append(Row(name, sha, EPHEMERAL, DELETE, idle_h))
         elif name not in heads:
             rows.append(Row(name, sha, MERGED, DELETE if branchset.prune_merged else DELETABLE, idle_h))
     return tuple(sorted(rows, key=lambda row: row.ref))
