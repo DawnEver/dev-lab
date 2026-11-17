@@ -125,7 +125,10 @@ def actions_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
     a host: a base part not yet posted is Actions' run still to come.
     """
     if not any(status.context.startswith(part_context(BASE)) for status in statuses):
-        return f'forge Actions has not yet posted {part_context(BASE)} for {head[:12]} (its ci.yml run)'
+        return (
+            f'forge Actions has not yet posted {part_context(BASE)} for {head[:12]}: its ci.yml run is still to come '
+            '(a parts job that derives no matrix posts it red, naming why)'
+        )
     return parts_wait(head, statuses)
 
 

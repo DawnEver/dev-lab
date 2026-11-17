@@ -11,7 +11,7 @@ import pytest
 from _forge_fake import make_repo, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev import forgemergewaits, jobparts, localpart, partrows, platformparts
+from dev_lab.dev import forgemergewaits, hostedparts, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
@@ -37,9 +37,59 @@ def test_a_failed_collection_cannot_publish_a_partial_matrix(tmp_path: Path, mon
         'run',
         lambda *_args, **_kwargs: SimpleNamespace(returncode=code, stdout=partial, stderr=''),
     )
-    with pytest.raises(ValueError, match='collection'):
-        jobparts.main(['matrix', '--root', str(tmp_path)])
+    forge = StateForge()
+    monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
+    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    assert jobparts.main(['matrix', '--root', str(tmp_path)]) == 1
     assert capsys.readouterr().out == '', 'a failed collection must not become a complete workflow manifest'
+    (posted,) = status_list(forge, SHA)
+    assert (posted.context, posted.state) == ('tests/base', 'error')
+    assert posted.description.startswith(f'{jobparts.NO_MATRIX}: pytest collection failed')
+
+
+def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path: Path, monkeypatch) -> None:
+    """cc-market #29: the matrix came out empty, no part job ran, and merge-ready waited on tests/base forever."""
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    forge = StateForge()
+    assert 'not yet posted' in forgemergewaits.actions_wait(SHA, status_list(forge, SHA)), 'PLANTED CONTROL'
+
+    def broken(_expression: str) -> list[str]:
+        msg = 'pytest collection failed with exit 2'
+        raise ValueError(msg)
+
+    monkeypatch.setattr(jobparts, 'pytest_collector', lambda _root: broken)
+    monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
+    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    assert jobparts.main(['matrix', '--root', str(tmp_path), '--event', 'pull_request']) == 1
+    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA))
+    assert waited is not None
+    assert 'not yet posted' not in waited
+    assert jobparts.NO_MATRIX in waited
+
+
+CC_MARKET = """
+[tool.dev_lab.parts]
+output = "output/logs"
+
+[tool.lab_commons.tests]
+produce = ["-m", "dev_lab.dev.commandpart", "{part}", "--", "node", "--test", "tests/*.test.mjs"]
+"""
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push'])
+def test_a_command_part_repo_derives_base_without_collecting(tmp_path: Path, event: str) -> None:
+    """cc-market's shape: a JS suite as the one command part; stray Python under it never decides its parts."""
+    (tmp_path / 'pyproject.toml').write_text(CC_MARKET, encoding='utf-8')
+
+    def broken(_expression: str) -> list[str]:
+        msg = 'pytest collection failed with exit 2'
+        raise ValueError(msg)
+
+    found = jobparts.matrix(tmp_path, collect=broken, event=event, hosted=True)
+    assert {row['part'] for row in found['include']} >= {'base'}
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    with pytest.raises(ValueError, match='collection'):  # PLANTED CONTROL: a pytest repo still collects
+        jobparts.matrix(tmp_path, collect=broken, event=event, hosted=True)
 
 
 @pytest.mark.parametrize(
@@ -133,7 +183,7 @@ def test_a_part_runs_on_a_hosted_runner_only_when_it_needs_no_more_than_an_os(pa
 
 
 def test_a_heavy_part_is_kept_and_off_the_github_gate_and_a_secret_hosted_or_os_part_is_on_it() -> None:
-    declared = {'live': jobparts.Hosted(('live',))}
+    declared = {'live': hostedparts.Hosted(('live',))}
     parts = ['base', 'base@windows', 'windows', 'live', 'femm', 'femm+windows']
     assert jobparts.off_gate(parts, declared) == {'femm', 'femm+windows'}
     assert jobparts.rows('femm', 'push', {}) == [], 'no row: nothing posts it absent, no job waits on a workstation'
@@ -366,10 +416,10 @@ def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_p
 ) -> None:
     text = f'[tool.lab_commons.tests]\nresources = ["live"]\n[tool.dev_lab.parts]\n{declaration}\n'
     with pytest.raises(platformparts.UndeclaredPart, match=r"part '(live|femm)'") as refused:
-        jobparts.hosted_parts(text)
+        hostedparts.hosted_parts(text)
     assert 'setup = "<shell command>"' in str(refused.value), 'the refusal names the fix: the accepted shape'
-    assert jobparts.hosted_parts(HOSTED) == {'live': jobparts.Hosted(('live',))}
-    assert jobparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
+    assert hostedparts.hosted_parts(HOSTED) == {'live': hostedparts.Hosted(('live',))}
+    assert hostedparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
 
 
 SETUP_ONLY = """
@@ -389,9 +439,9 @@ def test_a_secretless_hosted_part_runs_on_every_event_and_one_with_secrets_stays
 
     PLANTED CONTROL: ``live`` names a task (a secret) and still has no pull request row.
     """
-    assert jobparts.hosted_parts(SETUP_ONLY) == {
-        'linux': jobparts.Hosted(setup='sudo apt-get install -y xvfb'),
-        'live': jobparts.Hosted(('live',)),
+    assert hostedparts.hosted_parts(SETUP_ONLY) == {
+        'linux': hostedparts.Hosted(setup='sudo apt-get install -y xvfb'),
+        'live': hostedparts.Hosted(('live',)),
     }
     (tmp_path / 'pyproject.toml').write_text(SETUP_ONLY, encoding='utf-8')
     carrying = {'': ['t::a', 't::x', 't::l'], 'linux': ['t::x'], 'live': ['t::l']}

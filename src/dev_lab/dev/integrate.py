@@ -55,7 +55,8 @@ from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_history
 from dev_lab.dev.forgework import Client, client_for
-from dev_lab.dev.jobparts import hosted_parts, off_gate
+from dev_lab.dev.hostedparts import hosted_parts
+from dev_lab.dev.jobparts import off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.platformparts import UndeclaredPart, derived, required_at, standing
 from dev_lab.dev.producers import optional_needs_from, optional_parts
