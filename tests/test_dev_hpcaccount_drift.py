@@ -135,3 +135,19 @@ def test_ci_pause_fleet_refuses_a_research_account_named_explicitly(tmp_path: Pa
 def test_the_retired_backup_verbs_are_no_verb(verb: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert hpcaccount.main([verb, '--account', 'alice']) == 2
     assert 'drift' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('flags', [(), ('--dry-run',)])
+def test_a_fleet_verb_with_no_forwarded_flag_parses(monkeypatch: pytest.MonkeyPatch, flags: tuple[str, ...]) -> None:
+    """``drift-fleet`` declares no forwarded flag, so its parser never adds ``forwarded``: it must still parse.
+
+    MEASURED 2026-11-17: ``drift-fleet --cluster c`` crashed with AttributeError before reaching a host. The tests
+    above drive :func:`accountset.start_on_selected` directly and never parsed. PLANTED CONTROL: a verb that does
+    declare a flag parses the same way.
+    """
+
+    def refuse(_accounts: object) -> None:
+        raise LookupError
+
+    monkeypatch.setattr(accountset, 'reached_machine', refuse)
+    assert accountset.main_fleet(['--cluster', 'c1'], verb='drift', flags=flags) == 2

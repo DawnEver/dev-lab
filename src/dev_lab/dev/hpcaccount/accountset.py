@@ -151,7 +151,7 @@ def main_fleet(
         parser.add_argument(
             flag, action='append_const', const=flag, dest='forwarded', help=f"forwarded to each account's {verb}"
         )
-    parser.set_defaults(credential=None)
+    parser.set_defaults(credential=None, forwarded=None)
     if ci_only:
         parser.add_argument('--credential', help=f'the id of a granted {cicron.ACTION} credential, redeemed here')
     args = parser.parse_args(list(argv))
