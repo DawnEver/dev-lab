@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tomllib
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -35,7 +36,7 @@ from lab_commons.launch import run
 from lab_commons.outcomes import Cell, Reason, Status
 
 from dev_lab.dev import cjk
-from dev_lab.dev.family import is_member
+from dev_lab.dev.family import declared_table, is_member
 from dev_lab.dev.famtests import modulealarm
 from dev_lab.dev.rules import ALWAYS_ON, tracked_files
 
@@ -124,10 +125,21 @@ def rows() -> dict[str, Callable[[Path], None]]:
     return {rule: _CHECKS[rule] for rule in sorted(ALWAYS_ON)}
 
 
+def _declares_layout(root: Path) -> bool:
+    """Opt-in: a ``[tool.dev_lab.layout]`` table, or a manifest too broken to say, enables the layout check."""
+    try:
+        data = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    except OSError:
+        return False
+    except ValueError:
+        return True
+    return declared_table(data, 'layout') is not None
+
+
 def _applicable(root: Path) -> dict[str, Callable[[Path], None]]:
     checks = rows()
-    if not is_member(root):
-        checks.pop(_LAYOUT_RULE)
+    if is_member(root) and _declares_layout(root):
+        checks[_LAYOUT_RULE] = _CHECKS[_LAYOUT_RULE]
     return checks
 
 

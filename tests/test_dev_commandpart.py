@@ -87,8 +87,12 @@ def test_no_command_is_refused_naming_the_shape(tmp_path: Path) -> None:
         commandpart.main(['--root', str(tmp_path), 'base', '--'])
 
 
-def test_a_family_command_cannot_pass_without_its_layout_policy(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.tests]\nresources = []\n', encoding='utf-8')
+def test_a_family_command_cannot_pass_with_a_malformed_layout_policy(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.lab_commons.tests]\nresources = []\n'
+        '[tool.dev_lab.layout]\nmodule_unit = "guessed"\nmodule_limit = 300\n',
+        encoding='utf-8',
+    )
     posted = _wired(tmp_path, monkeypatch, code=0)
     started: list[list[str]] = []
     execute = commandpart._door.run

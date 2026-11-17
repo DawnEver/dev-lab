@@ -78,7 +78,7 @@ def test_no_item_outside_a_git_checkout(pytester: pytest.Pytester, monkeypatch: 
     _run(pytester, monkeypatch).assert_outcomes(passed=1)
 
 
-def test_a_family_without_layout_policy_gets_a_failed_guard_not_a_collection_error(
+def test_a_family_without_layout_policy_has_not_opted_into_the_layout_guard(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _git_repo(
@@ -89,8 +89,8 @@ def test_a_family_without_layout_policy_gets_a_failed_guard_not_a_collection_err
         },
     )
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=2, failed=1)
-    result.stdout.fnmatch_lines(['*layout*policy*'])
+    result.assert_outcomes(passed=2)
+    assert 'MODULE-SIZE-ALARM' not in result.stdout.str()
 
 
 @pytest.mark.parametrize(
@@ -229,7 +229,7 @@ def test_the_required_identity_catalog_matches_actual_collected_items(
     actual = json.loads((pytester.path / 'collected.json').read_text(encoding='utf-8'))
     required = set(alwayson.required_ids(pytester.path))
     assert required == set(actual) - {'test_x.py::test_x'}
-    assert len(required) == len(alwayson.rows())
+    assert len(required) == len(alwayson.rows()) + 1, 'the declared layout table opts MODULE-SIZE-ALARM in'
     alwayson.assert_required_collected(pytester.path, actual)
 
 
@@ -320,5 +320,5 @@ def test_known_family_git_read_failure_remains_visible_as_failed_runtime_items(
         },
     )
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=1, failed=len(alwayson.rows()))
+    result.assert_outcomes(passed=1, failed=len(alwayson.rows()) + 1)
     result.stdout.fnmatch_lines(['*git*recollect*'])
