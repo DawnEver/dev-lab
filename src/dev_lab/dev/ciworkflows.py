@@ -74,12 +74,12 @@ from typing import Any, Final, cast
 
 from lab_commons.log import emit
 
+from dev_lab.dev import hostedparts, jobparts
 from dev_lab.dev._forgebackends import BACKENDS, JUDGE_HOST, backend_for, require_producer
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
-from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.producers import producer_from, renders
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
@@ -365,7 +365,7 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
     elif PREPARE_WORKFLOW in declared:
         msg = f'[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]: rendered only for [tool.dev_lab.review] where = "{JUDGE}"'
         raise ValueError(msg)
-    hosted = hosted_parts(text)
+    hosted = hostedparts.hosted_parts(text)
     integration = _integration(text, origin)
     producer = producer_from(text, origin)
     out = {}
@@ -375,7 +375,7 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         if not renders(producer, name, forge):
             continue  # an HPC repo: GitHub Actions never runs it, nothing posts its tests/base (2026-11-16)
         merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
-        expanded = hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted)
+        expanded = jobparts.hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted)
         workflow = ready_only(measurement_isolated(expanded))
         if 'jobs' in workflow and not workflow['jobs']:
             continue  # every job reviewed on the runner, in a judge repo: nothing to render

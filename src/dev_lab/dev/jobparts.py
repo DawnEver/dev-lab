@@ -48,7 +48,8 @@ part naming no task names no secret and runs on EVERY event, a pull request incl
 part's row is withheld from one.
 
 A part naming tasks gets ONE row, on a full run only (as macos, D84), carrying its bundles' secret NAMES
-(:func:`hosted_parts`, each :func:`~dev_lab.dev.taskkeys.secret_name`). The generic matrix job never runs it:
+(:func:`~dev_lab.dev.hostedparts.hosted_parts`, each :func:`~dev_lab.dev.taskkeys.secret_name`). The generic
+matrix job never runs it:
 :func:`hosted_jobs` renders it its own job, in which ONE setup step alone has the bundles in its environment and
 pipes each to ai-lab's loader on stdin -- never argv, never echoed -- before the part is produced. The render names
 a secret; it never holds a value, and it names no provider (ai-lab's routes say which a task uses).
@@ -78,13 +79,13 @@ from lab_commons.hpc.shell import parse_collection_errors, parse_ids
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev.family import declared_in
 from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
+from dev_lab.dev.hostedparts import Hosted, hosted_parts
 from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row, row_part
-from dev_lab.dev.platformparts import UndeclaredPart, part_context, producer_argv
+from dev_lab.dev.platformparts import part_context, producer_argv
 from dev_lab.dev.producer import OUTCOME_VAR, Owner, outage_said, owned, producing, release_reason
 from dev_lab.dev.taskkeys import loader, secret_name
 from dev_lab.dev.unproduced import unproduced, unproduced_parts
@@ -99,12 +100,10 @@ __all__ = [
     'FAILED_JOB',
     'HOSTED_RUNNERS',
     'NO_MATRIX',
-    'Hosted',
     'Job',
     'absent',
     'command_part',
     'hosted_jobs',
-    'hosted_parts',
     'main',
     'matrix',
     'off_gate',
@@ -157,61 +156,6 @@ _FORGET_KEYS: Final = {
     'if': 'always()',
     'run': f'git credential-cache {_KEY_SOCKET} exit || true',
 }
-
-
-@dataclass(frozen=True)
-class Hosted:
-    """A part run in its own hosted job: the ai-lab tasks whose key bundles it loads, and its ``setup`` command."""
-
-    tasks: tuple[str, ...] = ()
-    setup: str = ''
-
-    @property
-    def secrets(self) -> tuple[str, ...]:
-        """The secret holding each task's bundle, in task order."""
-        return tuple(secret_name(task) for task in self.tasks)
-
-
-_ENTRY_KEYS: Final = frozenset({'tasks', 'setup'})
-
-
-def _malformed(name: str, entry: object, produced: set[str]) -> str:
-    """Why hosted *entry* of part *name* is refused; ``''``: a produced resource naming a setup, tasks or both."""
-    if name not in produced:
-        return 'not a produced resource'
-    if not isinstance(entry, dict) or not entry or not set(entry) <= _ENTRY_KEYS:
-        return f'not a table of {sorted(_ENTRY_KEYS)} naming at least one'
-    setup = entry.get('setup', 'x')
-    if not isinstance(setup, str) or not setup.strip():
-        return 'setup is not a non-empty string'
-    tasks = entry.get('tasks', ['x'])
-    if not isinstance(tasks, list) or not tasks or not all(isinstance(one, str) for one in tasks):
-        return 'tasks is not a non-empty list of strings'
-    try:
-        [secret_name(task) for task in entry.get('tasks', [])]
-    except ValueError as error:
-        return str(error)
-    return ''
-
-
-def hosted_parts(text: str) -> dict[str, Hosted]:
-    """``[tool.dev_lab.parts] hosted`` of pyproject *text*, by part; a malformed or unproduced one is refused."""
-    parts = declared_in(text, 'parts')
-    value = parts.get('hosted', {})
-    resources = set(read_vocabulary(text).resources)
-    produced = resources - set(parts.get('unproduced', []))
-    shape = (
-        f'each key a produced resource of {sorted(produced)} = '
-        '{ setup = "<shell command>", tasks = ["<ai-lab task>", ...] }, at least one of the two'
-    )
-    if not isinstance(value, dict):
-        msg = f'[tool.dev_lab.parts] hosted = {value!r} is not a table: write {shape}'
-        raise UndeclaredPart(msg)
-    for name, entry in value.items():
-        if why := _malformed(name, entry, produced):
-            msg = f'[tool.dev_lab.parts] hosted part {name!r} = {entry!r}: {why}; write {shape}'
-            raise UndeclaredPart(msg)
-    return {name: Hosted(tuple(entry.get('tasks', ())), entry.get('setup', '')) for name, entry in value.items()}
 
 
 def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dict[str, Any]:

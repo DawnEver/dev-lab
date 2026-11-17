@@ -11,7 +11,7 @@ import pytest
 from _forge_fake import make_repo, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev import forgemergewaits, jobparts, localpart, partrows, platformparts
+from dev_lab.dev import forgemergewaits, hostedparts, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
@@ -183,7 +183,7 @@ def test_a_part_runs_on_a_hosted_runner_only_when_it_needs_no_more_than_an_os(pa
 
 
 def test_a_heavy_part_is_kept_and_off_the_github_gate_and_a_secret_hosted_or_os_part_is_on_it() -> None:
-    declared = {'live': jobparts.Hosted(('live',))}
+    declared = {'live': hostedparts.Hosted(('live',))}
     parts = ['base', 'base@windows', 'windows', 'live', 'femm', 'femm+windows']
     assert jobparts.off_gate(parts, declared) == {'femm', 'femm+windows'}
     assert jobparts.rows('femm', 'push', {}) == [], 'no row: nothing posts it absent, no job waits on a workstation'
@@ -416,10 +416,10 @@ def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_p
 ) -> None:
     text = f'[tool.lab_commons.tests]\nresources = ["live"]\n[tool.dev_lab.parts]\n{declaration}\n'
     with pytest.raises(platformparts.UndeclaredPart, match=r"part '(live|femm)'") as refused:
-        jobparts.hosted_parts(text)
+        hostedparts.hosted_parts(text)
     assert 'setup = "<shell command>"' in str(refused.value), 'the refusal names the fix: the accepted shape'
-    assert jobparts.hosted_parts(HOSTED) == {'live': jobparts.Hosted(('live',))}
-    assert jobparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
+    assert hostedparts.hosted_parts(HOSTED) == {'live': hostedparts.Hosted(('live',))}
+    assert hostedparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
 
 
 SETUP_ONLY = """
@@ -439,9 +439,9 @@ def test_a_secretless_hosted_part_runs_on_every_event_and_one_with_secrets_stays
 
     PLANTED CONTROL: ``live`` names a task (a secret) and still has no pull request row.
     """
-    assert jobparts.hosted_parts(SETUP_ONLY) == {
-        'linux': jobparts.Hosted(setup='sudo apt-get install -y xvfb'),
-        'live': jobparts.Hosted(('live',)),
+    assert hostedparts.hosted_parts(SETUP_ONLY) == {
+        'linux': hostedparts.Hosted(setup='sudo apt-get install -y xvfb'),
+        'live': hostedparts.Hosted(('live',)),
     }
     (tmp_path / 'pyproject.toml').write_text(SETUP_ONLY, encoding='utf-8')
     carrying = {'': ['t::a', 't::x', 't::l'], 'linux': ['t::x'], 'live': ['t::l']}

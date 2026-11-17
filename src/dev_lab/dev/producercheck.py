@@ -29,7 +29,7 @@ from lab_commons.hpc.needsets import BASE
 
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.jobparts import hosted_parts
+from dev_lab.dev.hostedparts import hosted_parts
 from dev_lab.dev.producers import (
     ACTIONS,
     CI_WORKFLOW,
