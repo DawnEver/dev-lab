@@ -30,9 +30,8 @@ The invariants refused here by name, with NO network call beyond the push itself
   (:mod:`dev_lab.dev.forgemerge`). Such a merge is on origin before any client holds it, so a client push
   that adds ANY first-parent commit past origin's tip (and past the declared start) is not one, and is refused.
   It replaces P4 for that branch. The ONE bypass is in the history: a push whose every new first-parent
-  commit carries a non-empty ``Break-Glass: <reason>`` trailer is admitted (:mod:`dev_lab.dev.breakglass`) --
-  and only when every head it lands (a merge's PR head, else the commit) carries a posted review: Break-Glass
-  bypasses the forge's merge, never the review.
+  commit carries a non-empty ``Break-Glass: <reason>`` trailer is admitted (:mod:`dev_lab.dev.breakglass`), its
+  heads' reviews unasked: the review is advisory (user rulings 2026-11-11/12), so it never holds a push either.
 * ``ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES`` (P6) -- a push that creates or updates ``refs/heads/X`` lands only
   when the branch set admits ``X`` (:meth:`BranchSet.admits`: a declared long-lived branch, or one in an
   ``ephemeral`` namespace, default ``pr/*``). Fan-out ``lane/`` ``feat/`` ``fix/`` branches stay local; a
@@ -53,11 +52,12 @@ a guard that cannot judge (no branch set at that tip) refuses.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
@@ -66,12 +66,12 @@ from lab_commons.log import emit
 
 from dev_lab.dev import metrics
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, branchset_at
-from dev_lab.dev.breakglass import BREAK_GLASS, forge_unreviewed, reason
+from dev_lab.dev.breakglass import BREAK_GLASS, reason
 from dev_lab.dev.componentbump import LANE as COMPONENT_LANE
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
-from dev_lab.dev.reviewgate import RERUN
+from dev_lab.dev.taskbinding import head_for, session_task, slug_of
 
 __all__ = [
     'HOOK_ID',
@@ -163,30 +163,7 @@ def _merges_only(root: Path, policy: Policy, old: str, new: str) -> list[str]:
     return found
 
 
-#: Why a head carries no posted review, or ``None`` (:func:`dev_lab.dev.breakglass.forge_unreviewed`).
-Reviewed = Callable[[Path, str], str | None]
-
-
-def _landed_head(root: Path, sha: str) -> str:
-    """The head *sha* lands: a merge's merged parent (the PR head), else *sha* itself."""
-    parents = _git(root, 'rev-list', '--parents', '-n', '1', sha).stdout.split()[1:]
-    return parents[1] if len(parents) == _PARENTS else sha
-
-
-def _unreviewed_glass(root: Path, added: Sequence[str], reviewed: Reviewed) -> list[str]:
-    """P5 for an all-glassed push: every head it lands needs a posted review."""
-    found = []
-    for sha in added:
-        head = _landed_head(root, sha)
-        if (why := reviewed(root, head)) is not None:
-            found.append(
-                f'{P5}: Break-Glass {sha[:12]} lands {head[:12]} with no posted review ({why}); Break-Glass bypasses '
-                f'the forge merge, never the review -- {RERUN} for {head}, then push again'
-            )
-    return found
-
-
-def _forge_merges_only(root: Path, policy: Policy, old: str, new: str, reviewed: Reviewed) -> list[str]:
+def _forge_merges_only(root: Path, policy: Policy, old: str, new: str) -> list[str]:
     """P5: the first-parent commits *new* adds past origin's *old* and the declared start -- every one refused."""
     excluded = [f'^{sha}' for sha in (old, policy.pr_merges_since) if not _zero(sha)]
     listed = _git(root, 'rev-list', '--first-parent', new, *excluded)
@@ -196,8 +173,6 @@ def _forge_merges_only(root: Path, policy: Policy, old: str, new: str, reviewed:
     messages = {sha: _git(root, 'log', '-1', '--format=%B', sha).stdout for sha in added}
     unglassed = [sha for sha in added if not reason(messages[sha])]
     if not unglassed:
-        if found := _unreviewed_glass(root, added, reviewed):
-            return found
         _record_break_glass(root, new, messages)
         return []
     return [
@@ -232,7 +207,7 @@ def _local(root: Path, local: str) -> str:
     return done.stdout.strip() if done.returncode == 0 else 'a detached HEAD'
 
 
-def _judge_ref(root: Path, policy: Policy, fields: Sequence[str], reviewed: Reviewed) -> list[str]:
+def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
     """P2, P3 and P4 for one pre-push line whose remote ref is a guarded branch."""
     local, sha, remote, old = fields
     branch = remote[len(_HEADS) :]
@@ -250,20 +225,30 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str], reviewed: Revi
             f'fetch, merge origin/{branch} into {branch}, push again (never force)'
         )
     if branch == policy.integration and policy.pr_merges_since:
-        found += _forge_merges_only(root, policy, old, sha, reviewed)
+        found += _forge_merges_only(root, policy, old, sha)
     elif branch == policy.integration:
         found += _merges_only(root, policy, old, sha)
     return found
 
 
-def rename_remedy(branch: str) -> str:
+def rename_remedy(branch: str, task: str | None = None) -> str:
     """The ONE exit for a feature on a local branch origin does not hold: rename it to its ``pr/`` name, push that.
 
     ``fix/x`` becomes ``pr/x`` (the namespace dropped, the feature kept), so P6 and P2 name the same command
-    and the first remedy never walks into the second refusal (2026-11-02, dev-lab #68).
+    and the first remedy never walks into the second refusal (2026-11-02, dev-lab #68). A session bound to task
+    *task* (a slug, :mod:`dev_lab.dev.taskbinding`) gets its task's head ``pr/<task>/x`` instead (D5, 2026-11-15).
     """
-    feature = branch.split('/', 1)[-1]
-    return f'rename it and push: `git branch -m {branch} pr/{feature}` then `push -u origin pr/{feature}`'
+    target = f'pr/{branch.split("/", 1)[-1]}' if task is None else head_for(task, branch.rsplit('/', 1)[-1])
+    return f'rename it and push: `git branch -m {branch} {target}` then `push -u origin {target}`'
+
+
+def _bound_slug() -> str | None:
+    """The slug of the task this process's session is bound to, or ``None`` (none, or no readable session)."""
+    try:
+        task = session_task(os.environ)
+    except ValueError:
+        return None
+    return None if task is None else slug_of(task)
 
 
 def _undeclared(declared: BranchSet, branch: str) -> list[str]:
@@ -275,7 +260,7 @@ def _undeclared(declared: BranchSet, branch: str) -> list[str]:
     return [
         (
             f'{P6}: origin holds only the declared branches ({names}) and the ephemeral namespaces ({globs}), '
-            f'not {branch}; {rename_remedy(branch)}'
+            f'not {branch}; {rename_remedy(branch, _bound_slug())}'
         )
     ]
 
@@ -287,7 +272,8 @@ def _misnamed(root: Path, local: str, target: str) -> list[str]:
         return []
     if named.startswith(_HEADS):
         branch = named[len(_HEADS) :]
-        exit_text = rename_remedy(branch) if target.startswith('pr/') else f'push `git push origin {branch}`'
+        own = f'push `git push origin {branch}`'
+        exit_text = rename_remedy(branch, _bound_slug()) if target.startswith('pr/') else own
         return [f'{P2}: the local branch {branch} is published only as {branch}, not {target}; {exit_text}']
     if target in MACHINE_BRANCHES:
         return []
@@ -332,8 +318,8 @@ def _trusted(root: Path, pushed: Policy | None, old: str) -> Policy | None:
     return held if pushed is None or held.integration != pushed.integration else pushed
 
 
-def refusals(root: Path, lines: str, *, reviewed: Reviewed = forge_unreviewed) -> list[str]:
-    """Every refusal for the push *lines* describe: local reads, and the forge review of a Break-Glass head.
+def refusals(root: Path, lines: str) -> list[str]:
+    """Every refusal for the push *lines* describe, from local reads.
 
     Each ref is judged by the declaration its PUSHED tip carries -- never the working tree's. A deletion
     pushes no content, so it is judged by the integration branch's (:func:`_deletion_rev`), never the deleted
@@ -359,7 +345,7 @@ def refusals(root: Path, lines: str, *, reviewed: Reviewed = forge_unreviewed) -
             found += _undeclared(declared, fields[2][len(_HEADS) :])
         if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
             if (judged := _trusted(root, policy, fields[3])) is not None:
-                found += _judge_ref(root, judged, fields, reviewed)
+                found += _judge_ref(root, judged, fields)
         elif not _zero(fields[1]):
             found += _misnamed(root, fields[0], fields[2][len(_HEADS) :])
     return found

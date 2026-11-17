@@ -7,6 +7,7 @@ The staleness reading is ``lockcheck.stale`` -- the one staleness reading -- so 
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
@@ -17,13 +18,13 @@ from typing import Any, cast
 
 import pytest
 
-from dev_lab.dev import forgeservesteps, relock
+from dev_lab.dev import forgeservesteps, locklag, relock
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import UV_PIN
-from dev_lab.dev.locklag import _commits_behind, floating_lag, floating_stale
+from dev_lab.dev.locklag import LAG_WINDOW, Lag, _behind, floating_lag, hours, lag_of, within_window
 from dev_lab.dev.relock import (
     BRANCH,
     DEFAULT_CADENCE,
@@ -36,6 +37,7 @@ from dev_lab.dev.relock import (
     chosen,
     dist_of,
     in_house,
+    line_of,
     rerender,
 )
 
@@ -203,35 +205,34 @@ _SIBLING_SHA = 'ed24ab516a140b62b77a89a1b546d5fee8903d22'
 _BRANCHED = _LOCK.replace('lab-commons.git#', 'lab-commons.git?branch=release%2Fx#')
 
 
-def test_the_floating_reading_compares_each_siblings_locked_commit_with_its_lines_head() -> None:
-    """User ruling 2026-11-07: an ls-remote per sibling, never a resolution. PLANTED CONTROL: at its head, fresh."""
-    asked: list[tuple[str, str]] = []
-
-    def moved(url: str, branch: str) -> str:
-        asked.append((url, branch))
-        return 'f' * 40
-
-    (why,) = floating_stale(_LOCK, head=moved)
-    assert 'lab-commons' in why
-    assert _SIBLING_SHA[:12] in why
-    assert asked == [('https://github.com/DawnEver/lab-commons.git', 'integrate/main')], 'held and index: not read'
-    assert floating_stale(_LOCK, head=lambda _url, _branch: _SIBLING_SHA) == ()
-
-
-def test_the_floating_reading_follows_the_sources_branch() -> None:
+def test_the_lag_reading_follows_the_sources_branch() -> None:
     asked: list[str] = []
-    floating_stale(_BRANCHED, head=lambda _url, branch: asked.append(branch) or _SIBLING_SHA)
+    floating_lag(_BRANCHED, _HOUR, behind=lambda _url, branch, _sha: asked.append(branch) or _CURRENT)
     assert asked == ['release/x']
+    assert floating_lag('not toml [', _HOUR, behind=_never_counted) == (), 'PLANTED CONTROL: nothing floats, none read'
 
 
-def test_the_floating_reading_refuses_a_line_that_cannot_be_read() -> None:
-    def offline(_url: str, _branch: str) -> str:
-        msg = 'no network'
-        raise RelockFailed(msg)
+_HOUR = timedelta(hours=1)
+_CURRENT = Lag(0, timedelta(0))
+_SECOND = timedelta(seconds=1)
 
-    (why,) = floating_stale(_LOCK, head=offline)
-    assert 'no network' in why
-    assert floating_stale('not toml [', head=offline) == (), 'PLANTED CONTROL: nothing floats, nothing is read'
+
+def _never_counted(_url: str, _branch: str, _sha: str) -> Lag:
+    raise AssertionError
+
+
+def test_current_enough_is_the_one_time_window() -> None:
+    """User ruling 2026-11-15: a pin whose oldest missed landing is within :data:`LAG_WINDOW` is current enough.
+
+    PLANTED CONTROLS: a current pin passes; just inside passes however many landings it missed; just outside refuses
+    naming the sibling, the landings, the hours and the window.
+    """
+    assert within_window(_LOCK, behind=lambda _u, _b, _s: _CURRENT) == (), 'a current pin'
+    inside = Lag(200, LAG_WINDOW - _SECOND)
+    assert within_window(_LOCK, behind=lambda _u, _b, _s: inside) == (), 'just inside: a count does not decide'
+    (why,) = within_window(_LOCK, behind=lambda _u, _b, _s: Lag(1, LAG_WINDOW + _SECOND))
+    assert 'lab-commons 1 landings' in why
+    assert f'(window {hours(LAG_WINDOW)})' in why
 
 
 def test_relock_floating_moves_only_the_siblings_and_raises_on_a_failed_door(tmp_path: Path) -> None:
@@ -395,7 +396,7 @@ def test_a_declared_cadence_is_read_at_the_tip(world: tuple[Path, Path, str]) ->
     at = _relocked_fully(world)
     manifest = '[project]\nname = "x"\nversion = "0"\n[tool.dev_lab.relock]\nthird_party_every = "1 h"\n'
     _commit(world, 'build: hourly third-party relock', {'pyproject.toml': manifest})
-    assert '(full, 1 move(s))' in _carry(world[0], _Forge(), now=at + 3600, resolve=_stale)
+    assert '(full, 1 move(s))' in _carry(world[0], _Forge(), now=at + 3600, resolve=_stale, rerender=lambda _tree: ())
 
 
 # --- refusals and seams kept from the single-shot relock -----------------------------------------------------
@@ -527,14 +528,14 @@ def test_a_tree_without_its_venv_is_refused_not_rendered_with_this_interpreter(t
 
 def test_rerender_runs_every_due_renderer_with_the_trees_interpreter_and_names_a_failure(tmp_path: Path) -> None:
     """PLANTED CONTROL: a tree with no generated file runs nothing, so it needs no interpreter at all."""
-    assert rerender(tmp_path, run=lambda _argv, _tree: 1) == ()
+    assert not any(line.endswith(': rendered') for line in rerender(tmp_path, run=lambda _argv, _tree: 1))
     (tmp_path / '.claude' / 'hooks').mkdir(parents=True)
     (tmp_path / '.claude' / 'hooks' / 'deny-commands.js').write_text('x\n', encoding='utf-8')
     python = tmp_path / '.venv' / 'bin' / 'python'
     python.parent.mkdir(parents=True)
     python.write_text('', encoding='utf-8')
     ran: list[list[str]] = []
-    assert rerender(tmp_path, run=lambda argv, _tree: ran.append(argv) or 0) == ('agent_guard',)
+    assert 'agent_guard: rendered' in rerender(tmp_path, run=lambda argv, _tree: ran.append(argv) or 0)
     assert ran == [[str(python), '-m', 'dev_lab.dev.agent_guard', '--install', '--repo', str(tmp_path)]]
     with pytest.raises(RelockFailed, match='the renderer agent_guard exited 4'):
         rerender(tmp_path, run=lambda _argv, _tree: 4)
@@ -585,59 +586,145 @@ def test_planted_control_a_host_without_the_new_uv_refuses_the_relock_naming_the
     assert _git(origin, 'branch', '--list', BRANCH) == ''
 
 
-def test_the_lag_reading_counts_each_floated_sibling_against_the_limit() -> None:
-    """``lock/lag``: past the limit is a sentence. PLANTED CONTROLS: AT the limit is none; uncounted refuses."""
+def test_the_lag_reading_judges_each_floated_sibling_against_the_window() -> None:
+    """``lock/lag``: past the window is a sentence. PLANTED CONTROLS: AT the window is none; unmeasured refuses."""
     asked: list[tuple[str, str, str]] = []
 
-    def behind(n: int) -> Callable[[str, str, str], int]:
-        return lambda url, branch, sha: asked.append((url, branch, sha)) or n
+    def behind(lag: Lag) -> Callable[[str, str, str], Lag]:
+        return lambda url, branch, sha: asked.append((url, branch, sha)) or lag
 
-    (why,) = floating_lag(_LOCK, 20, behind=behind(21))
-    assert 'lab-commons' in why
-    assert '21 commits behind' in why
+    (why,) = floating_lag(_LOCK, _HOUR, behind=behind(Lag(21, _HOUR + _SECOND)))
+    assert 'lab-commons 21 landings (1.0 h) behind its integrate/main (window 1.0 h)' in why
     assert asked == [('https://github.com/DawnEver/lab-commons.git', 'integrate/main', _SIBLING_SHA)]
-    assert floating_lag(_LOCK, 20, behind=behind(20)) == ()
+    assert floating_lag(_LOCK, _HOUR, behind=behind(Lag(21, _HOUR))) == ()
 
-    def offline(_url: str, _branch: str, _sha: str) -> int:
+    def offline(_url: str, _branch: str, _sha: str) -> Lag:
         msg = 'no network'
         raise RelockFailed(msg)
 
-    (why,) = floating_lag(_LOCK, 20, behind=offline)
+    (why,) = floating_lag(_LOCK, _HOUR, behind=offline)
     assert 'no network' in why
 
 
-def test_the_lag_count_is_the_lines_commits_past_the_pin(tmp_path: Path) -> None:
-    """A treeless fetch of the sibling's line counts ``<pin>..<tip>``. PLANTED CONTROL: a pin off the line raises."""
+def _sibling(tmp_path: Path) -> Callable[..., str]:
     sibling = tmp_path / 'sibling'
     sibling.mkdir()
 
-    def git(*argv: str) -> str:
+    def git(*argv: str, at: int = 1_700_000_000) -> str:
         return subprocess.run(
-            [shutil.which('git') or 'git', '-C', str(sibling), *argv],
+            [shutil.which('git') or 'git', '-C', str(sibling), '-c', 'user.name=t', '-c', 'user.email=t@t', *argv],
             capture_output=True,
             text=True,
             encoding='utf-8',
             check=True,
+            env={**os.environ, 'GIT_COMMITTER_DATE': f'@{at} +0000', 'GIT_AUTHOR_DATE': f'@{at} +0000'},
         ).stdout.strip()
 
     git('init', '-q', '-b', 'integrate/main')
-    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '--allow-empty', '-m', 'feat: pin')
+    return git
+
+
+def test_the_lag_is_aged_from_the_oldest_landing_the_pin_lacks(tmp_path: Path) -> None:
+    """A treeless fetch of the sibling's line ages ``<pin>..<tip>`` from its OLDEST landing, by committer time.
+
+    PLANTED CONTROLS: the tip itself lags nothing; a pin off the line raises; a missing line names its fetch.
+    """
+    git = _sibling(tmp_path)
+    git('commit', '-q', '--no-verify', '--allow-empty', '-m', 'feat: pin', at=1_000)
     pin = git('rev-parse', 'HEAD')
-    for n in range(3):
-        git(
-            '-c',
-            'user.name=t',
-            '-c',
-            'user.email=t@t',
-            'commit',
-            '-q',
-            '--no-verify',
-            '--allow-empty',
-            '-m',
-            f'feat: {n}',
-        )
-    url = sibling.as_uri()
-    assert _commits_behind(url, 'integrate/main', pin) == 3
-    assert _commits_behind(url, 'integrate/main', git('rev-parse', 'HEAD')) == 0
+    for n, at in enumerate((5_000, 9_000, 9_500)):
+        git('commit', '-q', '--no-verify', '--allow-empty', '-m', f'feat: {n}', at=at)
+    url = (tmp_path / 'sibling').as_uri()
+    assert _behind(url, 'integrate/main', pin, now=lambda: 10_000.0) == Lag(3, timedelta(seconds=5_000))
+    assert _behind(url, 'integrate/main', git('rev-parse', 'HEAD'), now=lambda: 10_000.0) == _CURRENT
     with pytest.raises(RelockFailed, match='is not on'):
-        _commits_behind(url, 'integrate/main', 'e' * 40)
+        _behind(url, 'integrate/main', 'e' * 40)
+    with pytest.raises(RelockFailed, match=r'could not be fetched \(`git fetch .* refs/heads/gone`\)'):
+        _behind(url, 'gone', pin)
+
+
+def test_the_lag_ages_the_first_parent_landing_never_a_merged_commit(tmp_path: Path) -> None:
+    """A PR merged into the line lands when its merge does: its own older commits do not age the lag."""
+    git = _sibling(tmp_path)
+    git('commit', '-q', '--no-verify', '--allow-empty', '-m', 'feat: pin', at=1_000)
+    pin = git('rev-parse', 'HEAD')
+    git('checkout', '-q', '-b', 'pr/old')
+    git('commit', '-q', '--no-verify', '--allow-empty', '-m', 'feat: written long ago', at=2_000)
+    git('checkout', '-q', 'integrate/main')
+    git('merge', '-q', '--no-ff', '--no-edit', 'pr/old', at=9_000)
+    lag = lag_of(lambda *argv: _git_run(tmp_path / 'sibling', *argv), pin, 'HEAD', now=lambda: 10_000.0)
+    assert lag == Lag(1, timedelta(seconds=1_000))
+
+
+def _git_run(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [shutil.which('git') or 'git', '-C', str(cwd), *argv],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+    )
+
+
+def test_a_lag_count_never_fetches_lazily_from_the_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pin the treeless fetch does not hold must fail locally, never start git's lazy promisor fetch.
+
+    A lazy fetch is a GRANDCHILD network process: a timeout kills the local git, the grandchild keeps the pipe
+    open, and the pre-push hook waited hours (2026-11-13). Only the one declared fetch reaches the network.
+    """
+    seen: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs.get('env')
+        seen.append((argv, dict(env) if isinstance(env, dict) else {}))
+        return subprocess.CompletedProcess(argv, 0, stdout='', stderr='')
+
+    monkeypatch.setattr(locklag._door, 'run', run)
+    monkeypatch.setattr(locklag, 'run_network_verb', lambda *_a, **_k: SimpleNamespace(ok=True, remedy=''))
+    assert locklag._behind('https://forge.example/t/sib.git', 'integrate/main', 'a' * 40) == _CURRENT
+    local = [(argv, env) for argv, env in seen if 'init' not in argv]
+    assert local, 'the local graph reads ran'
+    assert all(env.get('GIT_NO_LAZY_FETCH') == '1' for _argv, env in local)
+
+
+_A_SHA = '0123456789abcdef0123456789abcdef01234567'
+
+
+@pytest.mark.parametrize(
+    ('query', 'line'),
+    [
+        ('rev=integrate%2Fmain', 'integrate/main'),
+        ('rev=integrate/main', 'integrate/main'),
+        ('rev=main', 'main'),
+        ('branch=release%2Fx', 'release/x'),
+        ('', relock.DEFAULT_LINE),
+        (f'rev={_A_SHA}', None),
+        (f'rev={_A_SHA[:12]}', _A_SHA[:12]),
+        ('tag=v1', None),
+    ],
+)
+def test_a_rev_naming_a_branch_floats_and_only_a_full_sha_or_a_tag_holds(query: str, line: str | None) -> None:
+    """A rev is judged by what it IS, URL-decoded: a branch floats; a full sha holds; a tag is declared held.
+
+    PLANTED CONTROLS: the 40-hex sha and the tag hold; a 12-hex prefix is not a full sha and is not taken for one.
+    """
+    assert line_of(query) == line
+
+
+_BRANCH_REV = _LOCK.replace('lab-commons.git#', 'lab-commons.git?rev=integrate%2Fmain#').replace(
+    'held.git?tag=v1#', f'held.git?rev={_A_SHA}#'
+)
+
+
+def test_forge_sync_relocks_a_branch_rev_source_and_leaves_a_sha_pinned_one(tmp_path: Path) -> None:
+    """The consumer defect: ``?rev=integrate%2Fmain`` was read as held, so the relock skipped it.
+
+    PLANTED CONTROL: the source pinned at a full sha is never handed to the door.
+    """
+    (tmp_path / 'uv.lock').write_text(_BRANCH_REV, encoding='utf-8')
+    asked: list[Sequence[str]] = []
+    assert relock_floating(tmp_path, upgrade=lambda _t, names: asked.append(names) or 0) == ('lab-commons',)
+    assert asked == [('lab-commons',)]
+    reads: list[str] = []
+    floating_lag(_BRANCH_REV, _HOUR, behind=lambda _u, branch, _s: reads.append(branch) or _CURRENT)
+    assert reads == ['integrate/main'], 'the lag reads the branch the rev names'

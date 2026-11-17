@@ -15,7 +15,8 @@ from test_dev_forgeauth import _isolated_store
 from test_dev_forgework import _answer, _Loopback, server
 
 from dev_lab.dev.forge import credential_for, store_credential
-from dev_lab.dev.forgeauth import KeyLine, family_hosts, format_key_file, main, parse_key_file
+from dev_lab.dev.forgeauth import family_hosts, main
+from dev_lab.dev.forgekeyfile import KeyLine, format_key_file, parse_key_file
 
 __all__ = ['server']
 

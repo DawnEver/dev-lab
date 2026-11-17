@@ -50,6 +50,7 @@ __all__ = [
     'learn_floors',
     'oom_floors',
     'raised',
+    'task_files',
     'task_items',
 ]
 
@@ -63,13 +64,16 @@ def oom_floors(jobs: Sequence[Killed], items: Mapping[str, Sequence[Mapping[str,
     for job in jobs:
         if job.state != 'OUT_OF_MEMORY':
             continue
-        files = {
-            str(node).split('::', maxsplit=1)[0] for item in items.get(job.job, ()) for node in item.get('ids', ())
-        }
+        files = task_files(items.get(job.job, ()))
         if len(files) == 1:
             (name,) = files
             floors[name] = max(floors.get(name, 0.0), float(job.asked_mb))
     return floors
+
+
+def task_files(items: Sequence[Mapping[str, Any]]) -> set[str]:
+    """The test files one task's *items* ran."""
+    return {str(node).split('::', maxsplit=1)[0] for item in items for node in item.get('ids', ())}
 
 
 def raised(peaks_mb: Mapping[str, float], floors: Mapping[str, float]) -> dict[str, float]:

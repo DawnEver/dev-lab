@@ -70,7 +70,7 @@ class Login:
 def _manifest(tmp_path: Path, items: list[int], shards: list[list[int]]) -> Path:
     path = tmp_path / 'run' / 'manifest.json'
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({'entry': 'math:sqrt', 'items': items, 'shards': shards}), encoding='utf-8')
+    path.write_text(json.dumps({'entry': 'math:sqrt', 'items': items, 'shards': shards, 'lanes': []}), encoding='utf-8')
     return path
 
 
@@ -116,7 +116,7 @@ def _judge(item: int) -> int:
 def test_a_declared_rejection_is_rejected_and_any_other_exception_an_error(tmp_path: Path) -> None:
     """Control: only the declared :class:`Rejected` is a DECIDED no; a crash is RETRYABLE."""
     results = tmp_path / RESULTS
-    run_shard({'items': [3, -1, 0], 'shards': [[0, 3]]}, 0, results, entry=_judge)
+    run_shard({'items': [3, -1, 0], 'shards': [[0, 3]], 'lanes': []}, 0, results, entry=_judge)
     cells = [Event.from_plain(row).cell for row in read_jsonl(results).rows]
     assert [c.status for c in cells] == [Status.OK, Status.REJECTED, Status.ERROR]
     assert cells[1].reason == Reason('invalid', '-1 is negative')
@@ -184,7 +184,10 @@ def _ok(index: int, value: object) -> dict:
 
 
 def test_gather_derives_every_returned_shard_from_the_one_file() -> None:
-    """FORMATS-UPGRADE-ON-READ: these are a pre-Cell worker's ``item`` lines, still read as OK items."""
+    """An old shape lab-commons still reads, owed under FORMATS-MIGRATE-ONCE.
+
+    These are a pre-Cell worker's ``item`` lines, still read as OK items.
+    """
     text = _lines(
         _item(0, 0, 'a'),
         _item(1, 0, 'b'),
@@ -208,7 +211,10 @@ def test_gather_derives_every_returned_shard_from_the_one_file() -> None:
 
 
 def test_a_run_an_earlier_worker_wrote_still_gathers() -> None:
-    """FORMATS-UPGRADE-ON-READ: jobs on the cluster across the change wrote one ``results/<shard>.json`` each."""
+    """An old shape lab-commons still reads, owed under FORMATS-MIGRATE-ONCE.
+
+    Jobs on the cluster across the change wrote one ``results/<shard>.json`` each.
+    """
     old = NL.join(
         json.dumps({'shard': shard, 'results': [{'index': shard, 'ok': True, 'value': shard * 10}]}) for shard in (0, 1)
     )

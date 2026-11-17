@@ -5,10 +5,10 @@ The 11-02/03 backlog went unseen. lab-commons' review job could not import its m
 look the same from the forge: a ready head whose ``tests/review`` is absent or still ``pending`` long after its
 push. That is the one signal read here, so it covers a job that never posted as well as one that waits on a cap.
 
-ONE ``integration`` alarm per such head (:func:`alarms`), raised by the serve's integration step through
-:func:`dev_lab.dev.forgeservesteps.raise_once`, which keeps one issue per alarm and pages once; a posted verdict or
-a new head closes it. The bound is the repo's ``[tool.dev_lab.review] backlog`` (:func:`declared_wait`), a
-duration, :data:`DEFAULT_WAIT` when undeclared. A draft is not waiting on a review (D53): it is never counted.
+ONE ``integration`` alarm per such head (:func:`alarms`), raised by the serve's integration step through the host
+card's alarms (never an issue); a posted verdict or a new head stops deriving it. The bound is the repo's
+``[tool.dev_lab.review] backlog`` (:func:`declared_wait`), a duration, :data:`DEFAULT_WAIT` when undeclared. A draft
+is not waiting on a review (D53): it is never counted.
 """
 
 from __future__ import annotations

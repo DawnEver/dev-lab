@@ -33,14 +33,14 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 | `census(root, branchset)` | `undeclared_origin` (debt), `local_debt`, `unpushed` (undeclared, holding commits no origin ref has) |
 | `merge_candidates(root, branchset)` | every undeclared branch and parked tag, `deletable` when its tip is in the trunk's authority or a session branch; anything else is merged first |
 | `python -m dev_lab.dev.branchset [--root R]` | prints the candidates as `delete` / `merge` rows; deletes nothing |
-| `python -m dev_lab.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists origin's for a human |
+| `python -m dev_lab.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists landed origin ones with the `branchprune delete` door |
 
 - **Merged means merged into the REMOTE authority.** A local `main` that is ahead and unpushed answers "merged"
   about work whose only published copy is the branch you are about to delete.
 - The question is whether the CHANGE is there, so the instrument is `git cherry` against the remote, which sees
   through cherry-picks and rebases; the ancestor test does not.
-- Deleting a branch on origin BY HAND is a human's action (the forge's automatic prune, below, is the same
-  human decision made once as data): the door prints `git push origin --delete <b>`.
+- An origin branch is never deleted BY HAND: the door prints `python -m dev_lab.dev.branchprune delete <b>`
+  (LOSSLESS-DELETE) on each landed one; the forge's automatic prune, below, is the other deleter.
 
 ## The assertion consumers run
 
@@ -55,7 +55,9 @@ ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES: the base pre-push row `session-branch` (`de
 refuses a push that creates or updates `refs/heads/X` unless `BranchSet.admits(X)` -- the trunk, a `sessions`
 branch, or a branch in an `ephemeral` namespace -- by the set the PUSHED tip declares. The refusal names `X`,
 the declared branches, the ephemeral globs and the remedy: publish the feature as its one `pr/<feature>`, or keep
-the branch local. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
+the branch local. A session its user bound to a task (`task: <slug>`, bound by rem, read by `dev_lab.dev.taskbinding`) is told
+`pr/<task>/<feature>` instead; `pr/*` admits it (fnmatch's `*` crosses `/`), and a task never publishes a bare
+`pr/<task>`, which git cannot hold beside `pr/<task>/<x>`. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
 SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new
 push and is deleted by a human. The machine pushers all land: relock (`pr/relock`), forge autosync (`pr/*`
 heads only), the component bump (`pr/components-bump`), and the declared trunk and integration branch.

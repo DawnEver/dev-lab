@@ -60,7 +60,7 @@ import re
 import subprocess
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -93,6 +93,7 @@ from dev_lab.dev.forgework import Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.partrefs import part_refs
 from dev_lab.dev.partrows import row_part
+from dev_lab.dev.producers import HPC, producer_at
 
 __all__ = [
     'NOT_ADMITTED',
@@ -227,14 +228,8 @@ def ref_usage(root: Path, ref: str, used: Mapping[str, float]) -> float:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = _door.run(
-        [_GIT, '-C', str(root), *args],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        timeout=_GIT_TIMEOUT_S,
-        check=False,
-    )
+    done = _door.run([_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8',
+                     timeout=_GIT_TIMEOUT_S, check=False)  # fmt: skip
     return done.stdout.strip() if done.returncode == 0 else ''
 
 
@@ -374,6 +369,7 @@ def candidates(
     now: datetime,
     say: Callable[[str], None] = lambda _: None,
     waived: Callable[[str], frozenset[str]] = lambda _: frozenset(),
+    prefetch: Callable[[Iterable[str]], None] = lambda _: None,
 ) -> tuple[Candidate, ...]:
     """Every candidate, ONE per ref and part: the ref's newest sha (coalesced). Fetches nothing.
 
@@ -385,11 +381,21 @@ def candidates(
     The integration branch, every open PR into it (labels from the PR), every branch ``classes_by_ref``
     classes, and every request issue -- each kept only where its part's ref filter admits its ref
     (:func:`dev_lab.dev.partrefs.part_refs`, the exclusion said through *say*) -- PRs and requests
-    :func:`optional`, a failure said through *say*. A PR's origin is its author; any other head's is the
+    :func:`optional`, a failure said through *say*. *prefetch* is handed every served sha before *parts* asks of
+    any one: the reads it may make concurrently (:meth:`~dev_lab.dev.forgesettled.SettledHistories.prefetch`).
+    A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
+
+    A repo whose serving checkout declares an ``actions`` producer (:mod:`dev_lab.dev.producers`) has NO
+    candidate: forge Actions post its parts, and no HPC host is ever offered one (user ruling 2026-11-16).
     """
+    if (producer := producer_at(root)) != HPC:
+        say(f'[serve] {repo} declares producer = "{producer}": its parts are never offered here')
+        return ()
     found, reached = [], set()
-    for ref, sha, kind, labels, number, pr_author in _part_refs(root, client, schedule, policy, say=say):
+    served = _part_refs(root, client, schedule, policy, say=say)
+    prefetch(sha for _, sha, *_ in served)
+    for ref, sha, kind, labels, number, pr_author in served:
         needed = parts(sha)
         if kind == PR:
             skipped = waived(sha)

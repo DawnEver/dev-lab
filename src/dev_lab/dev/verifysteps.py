@@ -14,9 +14,12 @@ drag the verdict to INCONCLUSIVE, so all three run and the verdict names the one
 from __future__ import annotations
 
 import functools
+import hashlib
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,26 +28,21 @@ from typing import IO, Final
 import lab_commons.launch as _door
 from lab_commons.box import POLL_S
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
-from dev_lab.dev.content import content_address
+from dev_lab.dev.content import ABSENT, content_address, file_digest
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
-from dev_lab.dev.reports import (
-    StepReport,
-    declared_skips,
-    read_ruff,
-    read_stages,
-    stale_declarations,
-    vanished_shortfall,
-)
+from dev_lab.dev.reports import StepReport, read_ruff, read_stages
 from dev_lab.dev.selection import census_scope
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
-from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, outcomes_dir
+from dev_lab.dev.skipallowance import declared_skips, stale_declarations, vanished_shortfall
+from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, OutcomeReadError, RetiredOutcomes, outcomes_dir, read_cells
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verifybox import (
@@ -69,6 +67,7 @@ __all__ = [
     'coverage_report',
     'coverage_total',
     'run_verify',
+    'tree_address',
 ]
 
 #: What the tree address covers, for EVERY repo in the family. A fixed tuple rather than a
@@ -76,6 +75,37 @@ __all__ = [
 #: there as ``absent``, so a repo without one of these addresses differently instead of needing a
 #: branch here -- and a repo that ACQUIRES one changes its address, which is correct.
 MEASURED_TARGETS: Final[tuple[str, ...]] = ('src', 'tests', 'pyproject.toml')
+
+_GIT: Final = shutil.which('git') or 'git'
+
+
+def _git_z(root: Path, *args: str) -> tuple[str, ...] | None:
+    """NUL-separated output of ``git -C root <args>``; ``None`` when *root* is not a git work tree."""
+    done = _door.run(
+        [_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=False, timeout=120
+    )
+    return tuple(part for part in done.stdout.split('\0') if part) if done.returncode == 0 else None
+
+
+def tree_address(root: Path) -> str:
+    """The address a verdict names: :data:`MEASURED_TARGETS` by content, plus every TRACKED file as it is on disk.
+
+    2026-11-13: a cited FAIL was reused for "the same tree" while a tracked file outside the targets held unstaged
+    edits. The tracked half is the index (``git ls-files -s``: path and blob sha, content-addressed) with each file
+    the working tree differs from it on (``git diff --name-only``, the stat-cached check) hashed from its bytes, or
+    ``absent`` -- so every tracked byte is covered without reading every tracked file. Outside git: the targets only.
+    """
+    base = content_address(root, MEASURED_TARGETS)
+    index = _git_z(root, 'ls-files', '-s', '-z')
+    changed = _git_z(root, 'diff', '--name-only', '-z')
+    if index is None or changed is None:
+        return base
+    digest = hashlib.sha256('\n'.join(index).encode('utf-8'))
+    for rel in sorted(changed):
+        path = root / rel
+        digest.update(f'\n{rel}\0{file_digest(path) if path.is_file() else ABSENT}'.encode())
+    return f'{base}+tracked:{digest.hexdigest()[:16]}'
+
 
 #: The output-tree kind the run log and its records live under: ``<output>/<yy>/<mm>/<dd>/verify/``
 #: (:func:`dev_lab.dev.datedlog.output_dir`; user ruling 2026-11-05, ``.verify/`` retired). Inside the
@@ -286,6 +316,36 @@ def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec:
     return Verdict(tree=tree, env=env, selector=selector, result=result, log=log)
 
 
+def _recorded_pytest_report(
+    directory: Path,
+    stages: tuple[tuple[str, int], ...],
+    *,
+    allowed: tuple[str, ...],
+    complete_census: bool,
+) -> StepReport:
+    """Bind each executed stage to its own exact Record evidence, never to a text fallback."""
+    try:
+        read_cells(directory)  # validate the whole layout, including unknown/mixed stages
+        expected_stages = ('parallel', 'serial')[: len(stages)]
+        actual_stages = (
+            tuple(sorted(one.name for one in directory.iterdir() if one.is_dir())) if directory.is_dir() else ()
+        )
+        stage_cells = tuple(read_cells(directory / name) for name in expected_stages)
+    except (OutcomeReadError, RetiredOutcomes) as error:
+        return StepReport(name='pytest', truncated=(f'pytest recorded evidence is unreadable: {error}',))
+    if actual_stages != expected_stages:
+        return StepReport(
+            name='pytest',
+            truncated=(f'pytest recorded stages {actual_stages} disagree with executed stages {expected_stages}',),
+        )
+    return read_stages(
+        stages,
+        allowed_skips=allowed,
+        complete_skip_census=complete_census,
+        stage_cells=stage_cells,
+    )
+
+
 def run_verify(
     root: Path,
     pytest_args: tuple[str, ...] = (),
@@ -308,10 +368,10 @@ def run_verify(
 
     The skip allowance is read BEFORE any step launches, so a declaration nobody can parse is
     refused against a tree that has not yet spent twenty minutes being tested -- and so is an entry
-    whose SUBJECT has left the checkout (:func:`~dev_lab.dev.reports.stale_declarations`), which
+    whose SUBJECT has left the checkout (:func:`~dev_lab.dev.skipallowance.stale_declarations`), which
     is the one side of the ratchet a selected invocation can still judge.
 
-    THE SEAT IS TAKEN AFTER :func:`~dev_lab.dev.reports.declared_skips` AND NOT BEFORE: an
+    THE SEAT IS TAKEN AFTER :func:`~dev_lab.dev.skipallowance.declared_skips` AND NOT BEFORE: an
     unparseable declaration is refused against a tree that has not yet queued for anything.
 
     THE LOG IS READ BACK STREAMED AND IS NEVER RESIDENT, which is why the last two lines go through
@@ -338,47 +398,79 @@ def run_verify(
     path = output_dir(root, LOG_KIND) / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
     seat = EnvironmentSeat(sys.prefix, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
-    with seat.held(), path.open('w', encoding='utf-8') as handle:
-        if hooks:
-            reports.append(read_hooks(root, handle=handle))
-        for name, arguments in RUFF_STEPS:
-            reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-        handle.write(_PYTEST_BANNER)
-        stamp = {
-            durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
-            durations.LEDGER_ENV_VAR: verdict_env(root),
-            OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
-            **coverage_env(root, path),
-        }
-        head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
-        pytest = [*head, *pytest_args]
-        covered = [*head, *coverage_args(root, path), *pytest_args]
-        seen = path.with_suffix('.serial-seen')
-        argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
-        codes = [_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'parallel', SEEN_ENV: str(seen)})]
-        learn_ended(root, pytest, record)
-        cut = ended_in_the_box(record)
-        if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
-            handle.write(SERIAL_BANNER)
-            appended = [*covered, '--cov-append', *serial_width()]
-            argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
-            codes.append(_tee(argv, cwd=root, handle=handle, extra_env={**stamp, STAGE_ENV: 'serial'}))
-            cut += ended_in_the_box(record)
+    # THE CELLS ARE WRITTEN OUTSIDE THE CHECKOUT WHILE THE SESSION RUNS and land beside the log once it ends: a
+    # consumer's session may guard its live output tree against every write it makes, and verify's own evidence
+    # is not that session's litter. Moved in a `finally`, so a cut run's cells still land.
+    live = Path(tempfile.mkdtemp(prefix=f'{TEMP_PREFIX}{path.stem}-cells-'))
+    try:
+        with seat.held(), path.open('w', encoding='utf-8') as handle:
+            if hooks:
+                reports.append(read_hooks(root, handle=handle))
+            for name, arguments in RUFF_STEPS:
+                reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
+            handle.write(_PYTEST_BANNER)
+            stamp = {
+                durations.LEDGER_TREE_VAR: tree_address(root),
+                durations.LEDGER_ENV_VAR: verdict_env(root),
+                **coverage_env(root, path),
+            }
+            head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
+            pytest = [*head, *pytest_args]
+            covered = [*head, *coverage_args(root, path), *pytest_args]
+            seen = path.with_suffix('.serial-seen')
+            argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
+            (live / 'parallel').mkdir()
+            codes = [
+                _tee(
+                    argv,
+                    cwd=root,
+                    handle=handle,
+                    extra_env={
+                        **stamp,
+                        OUTCOMES_DIR_VAR: str(live / 'parallel'),
+                        STAGE_ENV: 'parallel',
+                        SEEN_ENV: str(seen),
+                    },
+                )
+            ]
+            learn_ended(root, pytest, record)
+            cut = ended_in_the_box(record)
+            if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
+                handle.write(SERIAL_BANNER)
+                appended = [*covered, '--cov-append', *serial_width()]
+                argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
+                (live / 'serial').mkdir()
+                codes.append(
+                    _tee(
+                        argv,
+                        cwd=root,
+                        handle=handle,
+                        extra_env={
+                            **stamp,
+                            OUTCOMES_DIR_VAR: str(live / 'serial'),
+                            STAGE_ENV: 'serial',
+                        },
+                    )
+                )
+                cut += ended_in_the_box(record)
+    finally:
+        shutil.move(live, outcomes_dir(path))
     report = coverage_report(root, path)
     emit(f'coverage: {coverage_total(report) or "not measured"} -- {report.relative_to(root).as_posix()} (a report)')
     stages = [distil_log(path, banner=_PYTEST_BANNER, until=SERIAL_BANNER)]
     stages += [distil_log(path, banner=SERIAL_BANNER) for _ in codes[1:]]
     complete_census, scope_refusal = census_scope(pytest_args)
-    report = read_stages(
+    report = _recorded_pytest_report(
+        outcomes_dir(path),
         tuple((one.text, code) for one, code in zip(stages, codes, strict=True)),
-        allowed_skips=allowed,
-        complete_skip_census=complete_census,
+        allowed=allowed,
+        complete_census=complete_census,
     )
     report = replace(report, truncated=(*report.truncated, *scope_refusal, *vanished, *cut))
     reports.append(functools.reduce(lambda done, stage: stage.annotate(done), stages, report))
     return build_verdict(
         tuple(reports),
-        tree=content_address(root, MEASURED_TARGETS),
+        tree=tree_address(root),
         env=verdict_env(root),
         spec=' '.join(('verify', *pytest_args)),
         log=LogRef.of(path),

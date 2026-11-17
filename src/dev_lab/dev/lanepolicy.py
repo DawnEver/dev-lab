@@ -23,9 +23,28 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev.family import declared_table
 
-__all__ = ['Policy', 'load_policy', 'policy_at', 'policy_from']
+__all__ = [
+    'FAMILY_INTEGRATION',
+    'UNDECLARED_INTEGRATION',
+    'IntegrationNotDeclared',
+    'Policy',
+    'load_policy',
+    'policy_at',
+    'policy_from',
+]
 
 _TABLE: Final = 'integrator'
+
+#: The family's integration branch name: what a repo declaring no ``integration`` is told to declare, and the one
+#: PR base a checkout without the table is still judged against (:mod:`dev_lab.dev.forgemergeready`).
+FAMILY_INTEGRATION: Final = 'integrate/main'
+
+#: The note a decision carries when it was judged against :data:`FAMILY_INTEGRATION` for want of a declaration.
+UNDECLARED_INTEGRATION: Final = f'no [tool.dev_lab.{_TABLE}]: judged into {FAMILY_INTEGRATION}'
+
+
+class IntegrationNotDeclared(ValueError):
+    """The manifest names no ``integration`` branch; the message names the declaration that is the exit."""
 
 
 @dataclass(frozen=True)
@@ -48,6 +67,12 @@ class Policy:
     #: server-side once it is green (:mod:`dev_lab.dev.forgemerge`), and a client push adding any commit to
     #: it is refused (:mod:`dev_lab.dev.sessionbranch`). ``''``: the integrator merges and pushes.
     pr_merges_since: str = ''
+    #: The forge checks the merge decision waits on IN PLACE of the statuses a serve host posts (the test parts,
+    #: ``tests/security``, the head gates): each a status context that must stand ``success`` at the PR head
+    #: (:func:`dev_lab.dev.forgemergewaits.checks_wait`), and required on the integration branch
+    #: (:func:`dev_lab.dev.forgeprotect.required_contexts`). For a repo no serve host serves -- a config-only repo
+    #: whose Actions workflow is its check (user ruling 2026-11-12). ``()``: the serve-posted statuses gate.
+    merge_checks: tuple[str, ...] = ()
     #: A head committed more recently than this duration is not AUTO-SYNCED (:mod:`dev_lab.dev.forgeautosync`,
     #: on wherever ``pr_merges_since`` is declared): a live author is not raced.
     auto_sync_quiet: str = '10 min'
@@ -85,7 +110,11 @@ def policy_from(text: str, origin: str) -> Policy:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     if not declared.get('integration'):
-        msg = f'[tool.dev_lab.{_TABLE}] in {origin} names no integration branch; declare integration = "integrate/main"'
-        raise ValueError(msg)
-    declared = declared | {key: tuple(declared[key]) for key in ('test_roots',) if key in declared}
+        # The exit leads: a forge status description is cut at its limit, and the origin path is the longest part.
+        msg = (
+            f'names no integration branch: declare [tool.dev_lab.{_TABLE}] integration = "{FAMILY_INTEGRATION}" '
+            f'in {origin} (docs-src/dev/onboarding.md)'
+        )
+        raise IntegrationNotDeclared(msg)
+    declared = declared | {key: tuple(declared[key]) for key in ('test_roots', 'merge_checks') if key in declared}
     return Policy(**declared)

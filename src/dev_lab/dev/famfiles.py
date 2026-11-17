@@ -13,6 +13,15 @@ drifting with nobody saying so, and :mod:`dev_lab.dev.famtests.famfiles` refuses
 :func:`render_all` (``python -m dev_lab.dev.famfiles``), writes every RENDERED artefact a repo
 declares a delta for, so a base edit here reaches a repo by one re-render rather than one per file.
 
+THE ONE DOOR (2026-11-13). ``python -m dev_lab.dev.famfiles`` WITHOUT ``--files`` runs every renderer due in
+the repo (:func:`render_repo`) -- CI workflows, the whole files, deny rules and engine, the settings wiring, the
+door rules, the dev-docs pointer table -- each with the inputs its ``[tool.dev_lab.render]`` declares; ``forge
+sync``'s relock calls the same function. In a FAMILY repo (:func:`is_member`: a dev-lab dependency or any
+``[tool.dev_lab.*]`` table) every renderer whose inputs are derivable is due, present files or not -- cc-market
+(2026-11-13) declared only ``[tool.dev_lab.integrator]`` and the door rendered nothing while its workflows were
+missing. Elsewhere a renderer is due where a file it writes is present. One that writes a PART of a repo-owned file
+is due only where its input is declared. The door prints one line per renderer: rendered, or skipped and why.
+
 THE TWO KINDS, and the line between them is the noun test the rules registry uses: a file whose
 CONTENT is about the family's toolchain is managed; a file whose content is about the repo (its
 licence, its architecture, its release history) is owned, and the row says which noun made it so.
@@ -22,9 +31,11 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import re
 import shutil
 import sys
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -51,17 +62,22 @@ __all__ = [
     'ProjectFile',
     'Renderer',
     'due_renderers',
+    'is_member',
     'load_deltas',
     'main',
+    'plan',
     'project_files_on_disk',
     'render_agent_files',
     'render_all',
     'render_argv',
+    'render_repo',
     'unaccounted',
+    'undeclared_inputs',
+    'whole_files',
 ]
 
 #: The one command a repo re-renders every family file with (its own deltas module named).
-RENDER_COMMAND: Final = 'python -m dev_lab.dev.famfiles --deltas <the repo`s deltas module>'
+RENDER_COMMAND: Final = 'python -m dev_lab.dev.famfiles'
 
 #: A file whose content comes from a family mechanism named in the row.
 MANAGED: Final = 'managed'
@@ -86,12 +102,14 @@ class Renderer:
     repo_flag: str = '--repo'
     inputs: tuple[tuple[str, str], ...] = ()
     required: frozenset[str] = frozenset()
+    declared_by: str = ''  # set: due where the repo DECLARES this input, not where a file it writes is present
+    needs: str = ''  # set: in a family repo with no file it writes, due only where the renderer named here is
 
 
-FAMFILES: Final = Renderer(
-    'famfiles', ('dev_lab.dev.famfiles',), inputs=(('deltas', '--deltas'),), required=frozenset({'deltas'})
-)
-AGENT_GUARD: Final = Renderer('agent_guard', ('dev_lab.dev.agent_guard', '--install'))
+#: Optional ``deltas``: a repo with no deltas module (cc-market) has no per-file overrides and adopts no base.
+FAMFILES: Final = Renderer('famfiles', ('dev_lab.dev.famfiles', '--files'), inputs=(('deltas', '--deltas'),))
+#: The guard installs over the deny rules hook_adoption renders: without them its install is refused (exit 1).
+AGENT_GUARD: Final = Renderer('agent_guard', ('dev_lab.dev.agent_guard', '--install'), needs='hook_adoption')
 HOOK_ADOPTION: Final = Renderer(
     'hook_adoption', ('dev_lab.dev.hook_adoption',), inputs=(('adoption', '--adoption'),),
     required=frozenset({'adoption'}),
@@ -100,6 +118,10 @@ CIWORKFLOWS: Final = Renderer('ciworkflows', ('dev_lab.dev.ciworkflows', 'render
 AUTODOORS: Final = Renderer(
     'autodoors', ('dev_lab.dev.autodoors', '--write'), inputs=(('shell_doors', '--shell-door'),)
 )
+DEVDOCS: Final = Renderer(
+    'devdocs', ('dev_lab.dev.devdocs',), inputs=(('docs_base', '--base'),), required=frozenset({'docs_base'}),
+    declared_by='docs_base',
+)  # fmt: skip
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,15 +161,28 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
         _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte', AGENT_GUARD),
+        _g('.claude/hooks/venv_resolver.js', 'agent_guard install: the one environment resolver', AGENT_GUARD),
         _g('.claude/rules/principles.md', 'principles.render via famfiles: the family principles', FAMFILES),
         _g('.claude/rem.json', 'remconfig.render via famfiles: the backlog is the issue tracker', FAMFILES),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
         _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
+        _g('.codex/rules/family-denies.rules', 'autodoors --write: the deny registry as Codex rules', AUTODOORS),
         _g('.github/workflows/ci.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/continue.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
+        _g(
+            '.github/workflows/review-prepare.yml',
+            'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]',
+            CIWORKFLOWS,
+        ),
         _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
+        ProjectFile(
+            'docs-src/dev/index.md',
+            MANAGED,
+            'devdocs.write_pointer_table writes the family pointer table; the rest of the index is the repo`s',
+            renderer=DEVDOCS,
+        ),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
         _o(
@@ -169,9 +204,85 @@ RENDERERS: Final = tuple(dict.fromkeys(row.renderer for row in PROJECT_FILES.val
 
 
 def due_renderers(root: Path) -> tuple[Renderer, ...]:
-    """The renderers of :data:`RENDERERS` writing a file present in *root*: what a re-render there runs."""
-    present = {row.renderer for row in PROJECT_FILES.values() if row.renderer and (root / row.path).is_file()}
+    """The renderers of :data:`RENDERERS` due in *root*: what a re-render there runs (:class:`Renderer`)."""
+    return tuple(renderer for renderer, why in plan(root) if why is None)
+
+
+#: Each renderer by name: what a :attr:`Renderer.needs` names.
+_NAMED: Final = {renderer.name: renderer for renderer in RENDERERS}
+
+
+def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
+    """Every renderer of :data:`RENDERERS` with ``None`` when it is due in *root*, else why it is skipped.
+
+    Due: a file it writes is present, or -- in a family repo (:func:`is_member`) -- its required inputs are all
+    declared. A ``declared_by`` renderer writes part of a repo-owned file and is due only where that is declared.
+    """
+    text = _manifest(root)
+    declared = _render_table(text)
+    member = is_member(text)
+    present = set(_due(lambda path: (root / path).is_file(), declared))
+
+    def why(renderer: Renderer) -> str | None:
+        if renderer in present:
+            return None
+        if renderer.declared_by:
+            return f'[{RENDER_TABLE}] {renderer.declared_by} is not declared'
+        if not member:
+            return 'not a family repo (no dev-lab dependency, no [tool.dev_lab.*] table) and no file it writes exists'
+        if missing := sorted(renderer.required - set(declared)):
+            return f'[{RENDER_TABLE}] {", ".join(missing)} is not declared'
+        if renderer.needs and (reason := why(_NAMED[renderer.needs])) is not None:
+            return f'it needs {renderer.needs}, skipped: {reason}'
+        return None
+
+    return tuple((renderer, why(renderer)) for renderer in RENDERERS)
+
+
+def _due(has: Callable[[str], bool], declared: Mapping[str, object]) -> tuple[Renderer, ...]:
+    def due(row: ProjectFile) -> bool:
+        if row.renderer is None:
+            return False
+        return row.renderer.declared_by in declared if row.renderer.declared_by else has(row.path)
+
+    present = {row.renderer for row in PROJECT_FILES.values() if due(row)}
     return tuple(renderer for renderer in RENDERERS if renderer in present)
+
+
+_DEV_LAB: Final = re.compile(r'^\s*dev[-_.]lab(?![\w.-])', re.IGNORECASE)
+
+
+def is_member(text: str) -> bool:
+    """Whether manifest *text* is a family repo's: it depends on dev-lab, or declares any ``[tool.dev_lab.*]`` table."""
+    data = tomllib.loads(text) if text else {}
+    if data.get('tool', {}).get('dev_lab'):
+        return True
+    project = data.get('project', {})
+    lists = [project.get('dependencies', []), *project.get('optional-dependencies', {}).values()]
+    lists += data.get('dependency-groups', {}).values()
+    return any(isinstance(dep, str) and _DEV_LAB.match(dep) for deps in lists for dep in deps)
+
+
+def _manifest(root: Path) -> str:
+    manifest = root / 'pyproject.toml'
+    return manifest.read_text(encoding='utf-8') if manifest.is_file() else ''
+
+
+def _render_table(text: str) -> dict[str, object]:
+    table: object = tomllib.loads(text) if text else {}
+    for part in RENDER_TABLE.split('.'):
+        table = table.get(part, {}) if isinstance(table, dict) else {}
+    return table if isinstance(table, dict) else {}
+
+
+def undeclared_inputs(text: str, has: Callable[[str], bool]) -> list[str]:
+    """Each required input of a renderer due in a tree that manifest *text* leaves undeclared, ``"<renderer> <key>"``.
+
+    A renderer is DUE where a file it writes is present (``has(path)``); without its input a relock cannot
+    re-render that tree's family files, and they go stale.
+    """
+    declared = _render_table(text)
+    return [f'{r.name} {key}' for r in _due(has, declared) for key in sorted(r.required - set(declared))]
 
 
 def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
@@ -179,11 +290,7 @@ def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
 
     RAISES :class:`ValueError` naming the key when a required input is not declared.
     """
-    manifest = root / 'pyproject.toml'
-    table: object = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
-    for part in RENDER_TABLE.split('.'):
-        table = table.get(part, {}) if isinstance(table, dict) else {}
-    declared: dict[str, object] = table if isinstance(table, dict) else {}
+    declared = _render_table(_manifest(root))
     if missing := sorted(renderer.required - set(declared)):
         msg = (
             f'{renderer.name} renders files {root} holds, but [{RENDER_TABLE}] {", ".join(missing)} is not '
@@ -196,6 +303,30 @@ def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
         for item in [value] if isinstance(value, str) else value if isinstance(value, list) else ():
             argv += [flag, str(item)]
     return argv
+
+
+def render_repo(root: Path, python: str, run: Callable[[list[str], Path], int]) -> tuple[str, ...]:
+    """THE ONE DOOR: run every renderer due in *root* under *python* (``run(argv, root)``).
+
+    Answers one line per renderer of :data:`RENDERERS`, ``"<name>: rendered"`` or ``"<name>: skipped -- <why>"``.
+    RAISES :class:`ValueError` naming the renderer when a declared input is missing or it exits non-zero, before
+    any later renderer runs.
+    """
+    steps = [(r, why, None if why else render_argv(r, root, python)) for r, why in plan(root)]
+    lines: list[str] = []
+    for renderer, why, argv in steps:
+        if argv is None:
+            lines.append(f'{renderer.name}: skipped -- {why}')
+        elif (exited := run(argv, root)) != 0:
+            msg = f'the renderer {renderer.name} exited {exited} in {root}: {" ".join(argv[1:])}'
+            raise ValueError(msg)
+        else:
+            lines.append(f'{renderer.name}: rendered')
+    return tuple(lines)
+
+
+def _run(argv: list[str], root: Path) -> int:
+    return _door.run(argv, cwd=root, check=False).returncode
 
 
 def _git_lines(root: Path, *args: str) -> tuple[str, ...]:
@@ -270,8 +401,8 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
     return tuple(out)
 
 
-#: The family files every repo carries whole, with no delta: (repo-relative path, its text).
-def _whole_files() -> tuple[tuple[str, str], ...]:
+def whole_files() -> tuple[tuple[str, str], ...]:
+    """The family files every repo carries whole, with no delta: (repo-relative path, its text)."""
     return ((principles.PAGE_REL, principles.render()), (remconfig.REL, remconfig.render()))
 
 
@@ -281,7 +412,7 @@ def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
     ``.claude/rem.json`` that differs is the repo's own choice and is reported, never overwritten.
     """
     out: list[str] = []
-    for rel, text in _whole_files():
+    for rel, text in whole_files():
         path = root / rel
         held = path.read_text(encoding='utf-8') if path.is_file() else None
         if held == text:
@@ -298,15 +429,33 @@ def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI. Exit 0 when every declared artefact is current (after writing, unless --check), else 1."""
-    parser = argparse.ArgumentParser(description='Render every family-managed project file from base + delta.')
+    """CLI. Without ``--files``/``--deltas``: THE ONE DOOR (:func:`render_repo`), exit 0 when every due renderer did.
+
+    With ``--files`` (the famfiles renderer itself): the whole files, plus every base + delta file when ``--deltas``
+    names the repo's module (no deltas: no per-file overrides, no base written); exit 0 when every one is current
+    (after writing, unless --check), else 1. ``--deltas`` implies ``--files``.
+    """
+    parser = argparse.ArgumentParser(description='Render every family artefact a repo declares (the one door).')
     parser.add_argument('--repo', type=Path, default=Path.cwd())
-    parser.add_argument('--deltas', type=Path, required=True, help='the module file holding this repo`s DELTAS')
-    parser.add_argument('--check', action='store_true', help='write nothing; report what would change')
+    parser.add_argument('--files', action='store_true', help='only the famfiles renderer: whole + base/delta files')
+    parser.add_argument('--deltas', type=Path, help='the repo DELTAS module; implies --files')
+    parser.add_argument('--check', action='store_true', help='with --files: write nothing; report what would change')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
+    if not args.files and args.deltas is None:
+        if args.check:
+            parser.error('--check reads one renderer: name --files')
+        try:
+            lines = render_repo(root, sys.executable, _run)
+        except ValueError as exc:
+            emit(f'[famfiles] REFUSED -- {exc}', err=True)
+            return 1
+        for line in lines:
+            emit(f'[famfiles] {line}')
+        return 0
+    deltas = load_deltas(args.deltas.resolve()) if args.deltas is not None else None
     lines = (
-        *render_all(root, load_deltas(args.deltas.resolve()), write=not args.check),
+        *(render_all(root, deltas, write=not args.check) if deltas is not None else ()),
         *render_agent_files(root, write=not args.check),
     )
     for line in lines:

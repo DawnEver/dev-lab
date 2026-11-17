@@ -11,6 +11,9 @@ code is checked, so a refused request spends no step.
 
 THE LEDGER (``<state>/ledger.jsonl``) is append-only and records ``event``, ``id``, ``action``, ``subject`` and, for
 a use, its ``amount`` -- never a code, a param, a signature or a key.
+
+A PLAN's credentials are also kept as issued, one private file each under ``<state>/issued/``, so
+:meth:`Issuer.unspent` can deliver one AGAIN when the client lost it before its use (see there for the boundary).
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,12 +31,17 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_private_key
 
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN, Action
-from dev_lab.ops.consent.credential import ConsentRefused, Credential, params_hash, sign, verify
+from dev_lab.ops.consent.credential import ConsentRefused, Credential, full_digest, params_hash, sign, verify
+from dev_lab.ops.consent.plan import parsed, request
+from dev_lab.ops.consentrole import Consent
 from dev_lab.ops.lockout import guarded
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.totp import TotpRefused, accept, write_private
 
 __all__ = ['Issuer', 'keygen', 'requested']
+
+#: One checked request: ``(row, subject, params, cap, ttl)``.
+type _Row = tuple[Action, str, dict[str, Any], int | None, float]
 
 
 def keygen(key_file: Path, *, force: bool = False) -> Ed25519PrivateKey:
@@ -109,6 +118,7 @@ class Issuer:
     lockout_after: int = 5
     lockout_minutes: float = 15.0
     on_lock: Callable[[float], None] = lambda _until: None
+    max_grants: int = Consent.max_grants
 
     @property
     def ledger(self) -> Path:
@@ -129,9 +139,9 @@ class Issuer:
         """The public half of the signing key: what a verifier on this host checks with."""
         return self._private().public_key()
 
-    def _record(self, event: str, credential: Credential, amount: int | None = None) -> None:
-        line = {'event': event, 'id': credential.id, 'action': credential.action,
-                'subject': credential.subject} | ({} if amount is None else {'amount': amount})  # fmt: skip
+    def _record(self, event: str, credential: Credential, amount: int | None = None, plan: str | None = None) -> None:
+        line = {'event': event, 'id': credential.id, 'action': credential.action, 'subject': credential.subject}
+        line |= ({} if amount is None else {'amount': amount}) | ({} if plan is None else {'plan': plan})
         self.ledger.parent.mkdir(parents=True, exist_ok=True)
         with self.ledger.open('a', encoding='utf-8') as out:
             out.write(json.dumps(line, sort_keys=True) + '\n')
@@ -154,17 +164,93 @@ class Issuer:
 
     def issue(self, request: object, code: str) -> dict[str, Any]:
         """The signed credential *request* asks for, paid for with the user's TOTP *code*."""
-        row, subject, params, cap, ttl = requested(request)  # before the code: a refused request spends no step
+        return self._issue([requested(request)], code, plan=None)[0]  # before the code: a refused request spends none
+
+    def issue_plan(self, plan: object, code: str) -> list[dict[str, Any]]:
+        """One single-use credential per grant of *plan* (:mod:`.plan`), all paid for with ONE TOTP *code*.
+
+        Every grant is checked as a lone request is, before the code; each credential SIGNS the plan's digest (its
+        ``plan`` field), and the ledger records it on each.
+        """
+        found = parsed(plan)
+        if len(found.grants) > self.max_grants:
+            msg = (
+                f'the plan grants {len(found.grants)}; [ops.consent] max_grants = {self.max_grants} on this issuer '
+                '(the user approves the whole plan by its digest; raise the declared cap, or split the plan)'
+            )
+            raise ConsentRefused(msg)
+        return self._issue([requested(request(grant)) for grant in found.grants], code, plan=found.digest)
+
+    def _issue(self, rows: list[_Row], code: str, *, plan: str | None) -> list[dict[str, Any]]:
         with exclusive(self.state):
             key = self._private()
             self._code(code)
             now = self.now()
-            fields = {'id': str(uuid.uuid4()), 'action': row.name, 'subject': subject, 'params': params,
-                      'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'issued': now,
-                      'expires': now + ttl, 'issuer': self.name}  # fmt: skip
-            credential = sign(fields, key)
-            self._record('granted', verify(credential, key.public_key(), now=now))
-            return credential
+            issued = []
+            for row, subject, params, cap, ttl in rows:
+                fields = {'id': str(uuid.uuid4()), 'action': row.name, 'subject': subject, 'params': params,
+                          'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'plan': plan,
+                          'issued': now, 'expires': now + ttl, 'issuer': self.name}  # fmt: skip
+                credential = sign(fields, key)
+                self._record('granted', verify(credential, key.public_key(), now=now), plan=plan)
+                if plan is not None:
+                    write_private(self._kept(credential['id']), json.dumps(credential, sort_keys=True) + '\n')
+                issued.append(credential)
+            return issued
+
+    def _kept(self, ident: str) -> Path:
+        return self.state / 'issued' / f'{ident}.json'
+
+    def unspent(self, plan: object) -> list[dict[str, Any]]:
+        """The credentials granted for the plan whose digest is *plan* and never used: delivered AGAIN, as issued.
+
+        THE BOUNDARY. The user's code already authorized exactly these credentials for exactly this plan; fetching
+        re-delivers the same signed bytes and never mints, extends or widens a grant -- so no code is asked, and the
+        caller is authenticated by the consent account's ForceCommand key, the same door ``register`` rides. It
+        returns at most one credential per grant of the plan (the newest live one); none for a grant any of whose
+        credentials was USED (the step happened); none that no longer verifies (expired); none of another plan.
+        """
+        if not full_digest(plan):
+            msg = 'fetch-unspent names a plan by its full SHA-256 digest'
+            raise ConsentRefused(msg)
+        with exclusive(self.state):
+            lines = self.ledger.read_text(encoding='utf-8').splitlines() if self.ledger.is_file() else []
+            events = [json.loads(line) for line in lines if line]
+            used = {event.get('id') for event in events if event.get('event') == 'used'}
+            granted = [event for event in events if event.get('event') == 'granted' and event.get('plan') == plan]
+            spent = Counter((event['action'], event['subject']) for event in granted if event['id'] in used)
+            public, live, batches = self.public(), defaultdict(list), Counter()
+            for event in granted:
+                pair, kept = (event['action'], event['subject']), self._kept(event['id'])
+                if not kept.is_file():
+                    continue
+                credential = json.loads(kept.read_text(encoding='utf-8'))
+                batches[pair, credential['issued']] += 1  # one code issues each grant of the pair together
+                if event['id'] in used:
+                    continue
+                try:
+                    verify(credential, public, now=self.now())
+                except ConsentRefused:
+                    continue  # expired: never revived
+                live[pair].append(credential)
+            # One pair is granted once per plan grant naming it (one sha on two hosts: twice). The grants still owed
+            # are the most one code issued less the uses registered, so a second code never returns more.
+            owed = {pair: max(n for (p, _), n in batches.items() if p == pair) - spent[pair] for pair in live}
+            return [
+                credential
+                for pair, found in live.items()
+                for credential in sorted(found, key=lambda c: c['issued'], reverse=True)[: max(owed[pair], 0)]
+            ]
+
+    def spent(self, ids: object) -> list[str]:
+        """Which of *ids* the ledger records a use of: what a runner asks before it deletes a local credential."""
+        if not isinstance(ids, list) or not all(isinstance(ident, str) for ident in ids):
+            msg = 'spent asks about a list of credential ids'
+            raise ConsentRefused(msg)
+        with exclusive(self.state):
+            lines = self.ledger.read_text(encoding='utf-8').splitlines() if self.ledger.is_file() else []
+            used = {event.get('id') for event in map(json.loads, filter(None, lines)) if event.get('event') == 'used'}
+        return [ident for ident in ids if ident in used]
 
     def register(self, credential: object, amount: int = 1) -> int | None:
         """Record one irreversible use of *credential*; the campaign's remaining cap, ``None`` for a single one.

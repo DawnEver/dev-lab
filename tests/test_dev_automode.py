@@ -7,6 +7,7 @@ host; a machine file with no registry writes nothing and says why.
 from __future__ import annotations
 
 import io
+import ipaddress
 import json
 import re
 import shutil
@@ -17,6 +18,7 @@ import pytest
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev._famconfig_rows import GITIGNORE_CLAUDE_SECTION
+from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.autodoors import claude_rows, codex_rules, doors
 from dev_lab.dev.automode import (
@@ -52,6 +54,9 @@ _FLEET = Fleet(
 _MANIFEST = """[project]
 name = "planted"
 version = "0"
+
+[project.scripts]
+planted = "planted.__main__:main"
 
 [tool.dev_lab.branchset]
 trunk = "main"
@@ -98,7 +103,7 @@ def test_the_render_equals_its_sources(tmp_path: Path) -> None:
         assert rendered[key][0] == '$defaults', key
         assert spelled_commands(rendered[key][1:]) == (), key
     environment = ' '.join(rendered['environment'])
-    for fact in ('G (computer G; address 192.0.2.1', 'serves the forge', 'HOST1 (computer BOXONE'):
+    for fact in ('G (computer G; address 192.0.2.1', 'the forge host', 'HOST1 (computer BOXONE'):
         assert fact in environment
     assert (
         'account alice9 at login hosts login1.example.ac.uk, login2.example.ac.uk (Slurm account acct)' in environment
@@ -186,6 +191,20 @@ _TREE_SHAPES = re.compile(
     r'|\b[\w-]+(?:\.[\w-]+)*\.(?:ada|ad)\.[\w-]+\.ac\.uk\b',
     re.IGNORECASE,
 )
+_DOTTED_QUAD = re.compile(r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.]*\d)')
+
+
+def _public_addresses(text: str) -> list[str]:
+    """Every dotted quad naming a routable address: a public repo quotes only RFC 5737 / private / loopback."""
+    found = []
+    for m in _DOTTED_QUAD.finditer(text):
+        try:
+            routable = ipaddress.ip_address(m.group(0)).is_global
+        except ValueError:
+            continue
+        if routable:
+            found.append(m.group(0))
+    return found
 
 
 def _tree_leaks(texts: dict[str, str], fleet: Fleet | None) -> list[str]:
@@ -199,6 +218,7 @@ def _tree_leaks(texts: dict[str, str], fleet: Fleet | None) -> list[str]:
     found = []
     for path, text in texts.items():
         found += [f'{path}: {m.group(0)}' for m in _TREE_SHAPES.finditer(text)]
+        found += [f'{path}: {a}' for a in _public_addresses(text)]
         found += [f'{path}: {w.pattern}' for w in words if w.search(text)]
     return found
 
@@ -233,7 +253,7 @@ def test_no_tracked_file_carries_a_fleet_fact() -> None:
 
 
 def test_the_tree_scan_sees_a_planted_fleet_fact() -> None:
-    """PLANTED CONTROL: each shape, and a fleet name, is caught; a TEST-NET address and an example host are not."""
+    """PLANTED CONTROL: shapes, routable addresses and fleet names are caught; TEST-NET and example hosts are not."""
     planted = {
         'a': 'reach 10.' + '1.2.3',
         'b': 'reach 172.' + '20.0.1',
@@ -241,9 +261,14 @@ def test_the_tree_scan_sees_a_planted_fleet_fact() -> None:
         'd': 'ssh login1.' + 'ada.uni.ac.uk',
         'e': 'box ws.' + 'ad.uni.ac.uk',
         'f': 'deploy alice9 there',
+        'h': 'allow 128.' + '243.0.0/16',
+        'i': 'allow 8.' + '208.22.233/32',
     }
-    assert len(_tree_leaks(planted, _FLEET)) == 6
-    assert _tree_leaks({'g': 'reach 192.0.2.7 on login1.example'}, _FLEET) == []
+    leaked = _tree_leaks(planted, _FLEET)
+    assert {'h: 128.' + '243.0.0', 'i: 8.' + '208.22.233'} <= set(leaked), 'a routable address is a site fact'
+    assert len(leaked) == 8
+    documented = 'reach 192.0.2.7, 198.51.100.0/24, 203.0.113.9, 127.0.0.1, 0.0.0.0 on login1.example; v1.2.3'
+    assert _tree_leaks({'g': documented}, _FLEET) == []
 
 
 def test_write_outside_a_checkout_says_why_and_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -260,3 +285,49 @@ def test_every_agent_door_of_the_policy_is_an_intent_and_a_user_door_is_not() ->
     assert set(INTENTS) == {door.intent for door in POLICY if door.actor != USER}
     assert not {door.intent for door in POLICY if door.actor == USER} & set(INTENTS)
     assert spelled_commands(INTENTS) == ()
+
+
+def test_a_refused_declaration_keeps_no_stale_prose_and_says_why(tmp_path: Path) -> None:
+    """A refused render leaves no stale prose behind, and says why.
+
+    2026-11-09: a checkout still holding the retired table raised inside the dependency door's child process, so
+    the classifier read prose ten days old -- no consent-grant intent -- and refused a code the user supplied.
+
+    A refused render REMOVES the old file (the classifier then falls back to its defaults, never to a stale grant
+    set) and says why by name; a session still starts.
+    """
+    work = _repo(tmp_path, '\n[tool.dev_lab.automode]\ndeclares = ["jmag-material-card"]\n')
+    stale = work / AUTOMODE_REL
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text('{"autoMode": {}}', encoding='utf-8')
+    said: list[str] = []
+    assert refresh(work, say=said.append, fleet=_FLEET) is False
+    assert not stale.exists()
+    assert len(said) == 1
+    assert 'not written' in said[0]
+    assert 'is retired' in said[0]
+    payload = io.StringIO(json.dumps({'cwd': str(work)}))
+    assert main(['session-start'], stdin=payload) == 0, 'a session never fails to start over it'
+
+
+def test_every_session_start_renders_the_prose() -> None:
+    """The prose follows the checkout at each session start, not only when the dependency door last ran."""
+    assert any(w.events == ('SessionStart',) and w.name == 'dev_lab.dev.automode session-start' for w in WIRING)
+
+
+def test_a_declared_cli_door_is_a_classifier_intent_and_says_whether_it_acts(tmp_path: Path) -> None:
+    """The same ``[tool.dev_lab.cli_doors]`` row renders the classifier intent; an act row's intent says it writes.
+
+    PLANTED CONTROL: a row whose ``why`` spells a command is refused by name.
+    """
+    table = (
+        '\n[tool.dev_lab.cli_doors]\ndoors = [\n'
+        '  {verb = ["case", "list"], why = "Read-only: the cases, listed."},\n'
+        '  {verb = ["case", "run"], why = "Runs one case; writes only its output tree.", act = true},\n]\n'
+    )
+    allow = automode(_repo(tmp_path / 'a', table), _FLEET)['autoMode']['allow']
+    assert 'Read-only: the cases, listed.' in allow
+    assert 'Acts (writes): Runs one case; writes only its output tree.' in allow
+    spelled = '\n[tool.dev_lab.cli_doors]\ndoors = [{verb = ["x"], why = "run `python -m planted x`"}]\n'
+    with pytest.raises(ValueError, match='spell a command'):
+        automode(_repo(tmp_path / 'b', spelled), _FLEET)

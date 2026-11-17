@@ -14,6 +14,7 @@ from dev_lab.dev.famtests.onboarding import (
     OnboardingViolation,
     assert_repo_is_onboarded,
     assert_the_forge_takes_pull_requests,
+    onboarding_gaps,
 )
 
 _COMPLETE = """[tool.dev_lab.branchset]
@@ -28,6 +29,9 @@ pr_merges_since = 'abc123'
 produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
 [tool.dev_lab.hooks]
+
+[tool.dev_lab.protection]
+producer = "actions"
 """
 
 
@@ -48,7 +52,15 @@ def test_a_bare_repo_names_every_missing_piece_at_once(tmp_path: Path) -> None:
     with pytest.raises(OnboardingViolation) as refused:
         assert_repo_is_onboarded(root=bare)
     text = str(refused.value)
-    for piece in ('branchset', 'integrator] integration', 'pr_merges_since', 'produce', 'hooks', 'AGENTS.md'):
+    pieces = (
+        'branchset',
+        'integrator] integration',
+        'pr_merges_since',
+        'produce',
+        'hooks',
+        'AGENTS.md',
+    )  # producer defaults to actions
+    for piece in pieces:
         assert piece in text, f'{piece} is missing from:\n{text}'
     assert 'uv.lock' in text
 
@@ -91,3 +103,40 @@ def test_a_repo_with_pull_requests_off_is_refused_by_name() -> None:
     assert_the_forge_takes_pull_requests(_Forge(pulls=True))
     with pytest.raises(OnboardingViolation, match='Pull Requests unit is OFF'):
         assert_the_forge_takes_pull_requests(_Forge(pulls=False))
+
+
+def test_the_built_in_ephemeral_default_needs_no_restating() -> None:
+    """``branchset.FAMILY_EPHEMERAL`` already makes ``pr/*`` ephemeral; a manifest without the line is onboarded.
+
+    PLANTED CONTROL: a value that drops ``pr/*`` is still named.
+    """
+    text = (
+        "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\npr_merges_since = 'abc'\n"
+        "[tool.dev_lab.hooks]\n[tool.lab_commons.tests]\nproduce = ['-m', 'dev_lab.dev.verify', '--part', '{part}']\n"
+        "[tool.dev_lab.protection]\nproducer = 'actions'\n"
+    )
+    assert onboarding_gaps(text, {'AGENTS.md', 'uv.lock'}.__contains__, 'origin/x') == []
+    off = text.replace("sessions = ['integrate/main']\n", "sessions = ['integrate/main']\nephemeral = ['wip/*']\n")
+    assert onboarding_gaps(off, {'AGENTS.md', 'uv.lock'}.__contains__, 'origin/x') != []
+
+
+def test_a_rendered_family_file_without_its_render_input_declared_is_a_gap() -> None:
+    """A family file a renderer writes, held with that renderer's input undeclared, is an onboarding gap.
+
+    MEASURED 2026-11-10: three members held family files and declared no ``[tool.dev_lab.render]``, so every relock
+    left them stale and the forge went red on the symptoms. A renderer is DUE where a file it writes is present
+    (:func:`dev_lab.dev.famfiles.due_renderers`); each due renderer's required input must be declared.
+
+    PLANTED CONTROLS: the same manifest with the inputs declared has no gap; a tree holding no file the renderer
+    writes owes none of its inputs.
+    """
+    present = {'AGENTS.md', 'uv.lock', '.gitignore', '.claude/hooks/deny-rules.json'}
+    gaps = ' '.join(onboarding_gaps(_COMPLETE, present.__contains__, 'origin/x'))
+    assert 'deltas' not in gaps, 'deltas is optional: a repo without the module has no per-file overrides'
+    assert '[tool.dev_lab.render] adoption' in gaps
+    declared = _COMPLETE + '[tool.dev_lab.render]\ndeltas = "tests/_famconfig.py"\nadoption = "scripts/deny_rules.py"\n'
+    assert onboarding_gaps(declared, present.__contains__, 'origin/x') == []
+    only_gitignore = {'AGENTS.md', 'uv.lock', '.gitignore'}
+    left = ' '.join(onboarding_gaps(_COMPLETE, only_gitignore.__contains__, 'origin/x'))
+    assert onboarding_gaps(_COMPLETE, only_gitignore.__contains__, 'origin/x') == [], left

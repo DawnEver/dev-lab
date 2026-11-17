@@ -43,6 +43,7 @@ from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
 from dev_lab.dev.agentpolicy import POLICY, USER
+from dev_lab.dev.autodoors import cli_doors
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
@@ -130,7 +131,7 @@ def spelled_commands(entries: Sequence[str]) -> tuple[str, ...]:
 
 
 def _declared(root: Path) -> tuple[str, ...]:
-    """The repo's own intents, ``[tool.dev_lab.policy] intents``; a retired ``[tool.dev_lab.automode]`` is refused."""
+    """The repo's own intents (``[tool.dev_lab.policy] intents``, its :func:`cli_doors`); a retired table is refused."""
     manifest = root / 'pyproject.toml'
     data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
     if declared_table(data, 'automode', {}):
@@ -139,7 +140,10 @@ def _declared(root: Path) -> tuple[str, ...]:
             f'[tool.dev_lab.{POLICY_TABLE}] intents (user ruling 2026-11-07: a repo row lives in its own pyproject)'
         )
         raise ValueError(msg)
-    intents = tuple(declared_table(data, POLICY_TABLE, {}).get('intents', ()))
+    intents = (
+        *declared_table(data, POLICY_TABLE, {}).get('intents', ()),
+        *(door.intent for door in cli_doors(root)),
+    )
     if spelled := spelled_commands(intents):
         msg = f'{manifest}: [tool.dev_lab.{POLICY_TABLE}] intents spell a command, not an intent: {list(spelled)}'
         raise ValueError(msg)
@@ -166,7 +170,7 @@ def _workstation(entry: Mapping[str, Any]) -> str:
     facts += [f'address {entry["address"]}'] if entry.get('address') else []
     roles = list(entry.get('roles') or [])
     if roles:
-        facts.append(f'roles {", ".join(roles)}{", serves the forge" if FORGE_ROLE in roles else ""}')
+        facts.append(f'roles {", ".join(roles)}{", the forge host" if FORGE_ROLE in roles else ""}')
     return f'{entry.get("name", "?")} ({"; ".join(facts)})'
 
 
@@ -209,11 +213,19 @@ def write(root: Path, fleet: Fleet | None = None) -> None:
 
 
 def refresh(root: Path, *, say: Callable[[str], None], fleet: Fleet | None = None) -> bool:
-    """Render *root*'s local file, or print why not; never raises for an unreadable source. Whether it wrote."""
+    """Render *root*'s local file, or print why not; never raises for an unreadable source. Whether it wrote.
+
+    A declaration the render REFUSES (a retired table, a spelled command) also removes the file it would have
+    replaced: a stale render keeps granting what the checkout no longer declares, and withholds what it does.
+    """
     try:
         write(root, fleet)
     except SourcesUnavailable as unread:
         say(f'[automode] {AUTOMODE_REL} not written -- {unread}')
+        return False
+    except ValueError as refused:
+        (root / AUTOMODE_REL).unlink(missing_ok=True)
+        say(f'[automode] {AUTOMODE_REL} not written, and its stale copy removed -- {refused}')
         return False
     say(f'[automode] wrote {AUTOMODE_REL} (machine-local, gitignored)')
     return True

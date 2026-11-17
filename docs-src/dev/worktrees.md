@@ -11,7 +11,7 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 
 | mechanism | where | what it refuses |
 |---|---|---|
-| PREVENT | deny row `WORKTREES-STAY-INSIDE` in `dev_lab.dev._deny_rows`, rendered into every repo's `.claude/hooks/deny-rules.json` | `git [-C <dir>] worktree add` / `worktree move` / `git clone` whose target is not `.../.claude/worktrees/<name>`; any `..`; a clone with no explicit target |
+| PREVENT | deny row `WORKTREES-STAY-INSIDE` in `dev_lab.dev._deny_rows`, rendered into every repo's `.claude/hooks/deny-rules.json` | `git [-C <dir>] worktree add` / `worktree move` / `git clone` whose target is not `.../.claude/worktrees/<name>`; any `..`; a clone with no explicit target. Admitted (`admits: family-sibling-clone`, judged on the filesystem by `deny-commands.js`): ONE clone of a family repo into the siblings root |
 | DETECT | `dev_lab.dev.famtests.worktreeplace.assert_every_worktree_stays_inside(root=...)` | any `git worktree list --porcelain` entry (main checkout excepted) not inside `<main>/.claude/worktrees/`; the red names the `git worktree move` that fixes it |
 | IGNORE | the family `.gitignore` base's Claude section: `**/.claude/**` with only the shared directories re-included | a worktree showing up as untracked content of its own repository |
 
@@ -40,21 +40,30 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 A worktree is a lease on a branch for one task. It ends when the branch's content is landed (on the trunk or a
 declared session) and no TRACKED file is changed. What git does not track -- scratch one-offs, untracked files,
 ignored `.venv`, caches, builds -- is not the work (the work is committed; a finding belongs in memory) and goes
-with the tree (user ruling 2026-10-25). The one exception is run output (user ruling 2026-11-09): runs write to
-the MAIN checkout's `output/`, so a tree whose `archive-outputs` hold a file is a writer defect -- it is kept and
-the line names it ("wrote run outputs inside the worktree: <top paths>; fix the writer"), nothing copied. A
-deliberate keep is `--prune --home-outputs NAME`: that tree's outputs are moved home and verified, and only then
-does it go; an archive that cannot be verified keeps it and prints why. An orphan directory under the worktree
+with the tree (user rulings 2026-10-25 and 2026-11-12). Run output is moved first (user ruling 2026-11-12:
+reclaiming useless trees is a required part of the workflow): a reclaimable tree's `archive-outputs` are moved
+into the MAIN checkout's `output/` and verified, and only then does it go; a move that cannot be verified keeps it
+and prints why. Each run ends with a summary line counting every kept tree by reason. An orphan directory under the worktree
 home is judged the same way. What blocks reclaim: a tracked change (staged or not), commits not landed (`git cherry`), a
 live process, a `git worktree lock`. `dev_lab.dev.reclaim.reclaimable` is the
 one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
-and the session debris hook runs the former, so a finished tree no longer pins its branch forever. The exact
+and the session debris hook runs the former; a session start, and every merge (`githooks/base.toml`
+`post-merge`, `reclaimrun --background`), detach a background run of the latter, so a finished tree no
+longer pins its branch forever. `--prune` removes at most `--limit N` trees per run (default
+`reclaimrun.BATCH`, `0` for no bound) and ends with a `next` line naming the run that takes the deferred rest:
+each removal deletes a tree's `.venv` (~12.8k files, ~12 s measured 2026-11-17), so an unbounded prune over ~90
+trees outran an agent's 50-minute shell. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
 
 ## Archiving a tree before removing it
 
 `python -m dev_lab.dev.worktrees --archive <name>` (`dev_lab.dev.worktree_archive`) is the step before
-a deliberate removal. It removes nothing; it reports `safe to remove` or why not.
+a deliberate removal. It removes nothing; it reports `safe to remove` with the removal command, or why not.
+That command is `python -m dev_lab.dev.worktrees --remove <name>` (`dev_lab.dev.worktrees.remove`), the one door
+for a named tree on a branch or detached -- never the raw git removal, which `RECURSIVE-DELETE` refuses. It
+refuses unless a saved archive holds the tree as it is NOW (same HEAD, same `dirty.patch`, every untracked file
+saved), and refuses a detached commit no ref contains, a holding process, a live session and the main checkout. A
+branch the tree held stays for `branchset --apply`.
 
 - Saves no ignored file outside the outputs: what git does not track is not the work.
 - Refuses a tree with an occupant (`dev_lab.dev.liverun.occupants`: a process working in it, executing from

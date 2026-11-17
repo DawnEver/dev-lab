@@ -7,8 +7,8 @@ no code -- the server sends ONE summary of what actually merged when the wave en
 ``ack [ID]`` records who acknowledged an audit report (no code; it never blocks a wave).
 
 The endpoint is the machine file's ``[breakglass]`` table (``endpoint = "<account>@<host>"``, optional
-``identity = "<ssh key path>"``); every request is one JSON line over ``ssh -T`` (:func:`ssh_send`, which the
-consent client shares, through :func:`dev_lab.dev.remote.piped`). The client holds no secret and
+``identity = "<ssh key path>"``); every request is one JSON line over ``ssh -T``
+(:func:`dev_lab.ops.consent.door.ssh_send`, the consent client's one transport). The client holds no secret and
 cannot authorize itself. A PR's head is pinned: one that moved after it was shown is refused server side.
 """
 
@@ -18,30 +18,23 @@ import argparse
 import getpass
 import json
 import socket
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import remote
+from dev_lab.dev import sessionprs
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgework import Client, client_for
+from dev_lab.ops.consent.door import Send, ssh_send
 
-__all__ = ['TABLE', 'Send', 'merge_main', 'ssh_send', 'wave_main']
+__all__ = ['TABLE', 'merge_main', 'wave_main']
 
 #: The machine-file table naming the endpoint.
 TABLE: Final = 'breakglass'
-
-Send = Callable[[Mapping[str, Any], dict[str, Any]], tuple[int, str]]
-
-
-def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
-    """Send *request* as one JSON line to *table*'s ``endpoint`` over ``ssh -T``; ``(exit status, its output)``."""
-    identity = str(table['identity']) if table.get('identity') else None
-    return remote.piped(str(table['endpoint']), json.dumps(request) + '\n', identity=identity, timeout_s=180)
 
 
 def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
@@ -93,7 +86,7 @@ def merge_main(
     table: Mapping[str, Any] | None = None,
     send: Send = ssh_send,
 ) -> int:
-    """``pr breakglass <N> --reason R``: merge inside the open wave; exit 0 merged, 2 refused, 1 unreachable."""
+    """``pr breakglass <N> --reason R``: merge inside the open wave; exit 0 merged or was, 2 refused, 1 unreachable."""
     parser = argparse.ArgumentParser(
         prog='python -m dev_lab.dev.forge pr breakglass', description='merge PR N inside the open break-glass wave'
     )
@@ -105,6 +98,20 @@ def merge_main(
     root = Path.cwd() if cwd is None else cwd
     pull = (client or client_for(root)).pr_view(args.number)
     repo = forge_from_remote(root).identity  # host/owner/name: never typed, never ambiguous across forges
+    if pull.merged:  # the wave sweep (or anyone) landed it: done, nothing to merge, never a refusal
+        emit(f'[breakglass] {repo}#{pull.number} is already merged as {pull.merge_sha or "(no merge sha reported)"}')
+        return 0
+    if pull.state != 'open':  # closed unmerged: its owner's "do not land", which nothing reopens
+        emit(
+            f'[breakglass] {repo}#{pull.number} was closed unmerged; a refused PR is not reopened -- open a new one '
+            f'from its branch: python -m dev_lab.dev.forge pr create --head {pull.head} --base {pull.base} '
+            f'--title "{pull.title}", then pr breakglass <new N>',
+            err=True,
+        )
+        return 2
     emit(f'BREAK-GLASS {repo}#{pull.number} [{pull.state}] {pull.title}: {pull.head} -> {pull.base} at {pull.head_sha}')
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
-    return _answer(send, config, request)
+    code = _answer(send, config, request)
+    if code == 0:
+        sessionprs.ended(forge_from_remote(root), pull.number)  # SESSION-HEARS-ITS-PRS: the merging door records
+    return code

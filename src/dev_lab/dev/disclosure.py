@@ -24,6 +24,7 @@ __all__ = [
     'DEFAULT_BUDGET',
     'DETAILS_PREFIX',
     'REFUSALS_DOC',
+    'REFUSALS_REPO',
     'ROW_SURFACES',
     'Budget',
     'InjectedTextOverBudget',
@@ -64,7 +65,11 @@ BUDGETS: Final[dict[str, Budget]] = {
         reason='a statement is the whole universal rule, cited by ID everywhere else; cutting it loses the rule',
     ),
     'deny-hazard': Budget(max_lines=1, max_line_chars=132),
-    'deny-remedy': Budget(max_lines=1, max_line_chars=234),
+    'deny-remedy': Budget(
+        max_lines=1,
+        max_line_chars=260,
+        reason='a refusal names, per need, the exact unified door command with its flags (user ruling 2026-11-10)',
+    ),
 }
 
 #: The row field each row surface measures.
@@ -74,10 +79,14 @@ ROW_SURFACES: Final[dict[str, str]] = {
     'remedy': 'deny-remedy',
 }
 
-#: The page that holds every universal refusal's full text, relative to the lab-commons root.
+#: The page that holds every universal refusal's full text, relative to the root of :data:`REFUSALS_REPO`.
 REFUSALS_DOC: Final = 'docs-src/dev/refusals.md'
+#: The repo whose checkout holds :data:`REFUSALS_DOC` -- this one (lab-commons deleted its copy on 2026-10-23).
+REFUSALS_REPO: Final = 'dev-lab'
 DETAILS_PREFIX: Final = 'details: '
-_POINTER: Final = re.compile(r'^details: (?P<path>[\w./-]+\.md)#(?P<anchor>[a-z0-9-]+)(?: \(lab-commons\))?$')
+_POINTER: Final = re.compile(
+    rf'^details: (?P<path>[\w./-]+\.md)#(?P<anchor>[a-z0-9-]+)(?: \({re.escape(REFUSALS_REPO)}\))?$'
+)
 
 
 class InjectedTextOverBudget(AssertionError):
@@ -86,7 +95,7 @@ class InjectedTextOverBudget(AssertionError):
 
 def details_for(rule_id: str) -> str:
     """The ``details:`` line for a universal deny row: its section in :data:`REFUSALS_DOC`."""
-    return f'{DETAILS_PREFIX}{REFUSALS_DOC}#{rule_id.lower()} (lab-commons)'
+    return f'{DETAILS_PREFIX}{REFUSALS_DOC}#{rule_id.lower()} ({REFUSALS_REPO})'
 
 
 def pointer(text: str) -> tuple[str, str] | None:

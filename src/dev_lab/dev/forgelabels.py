@@ -16,7 +16,7 @@ from dev_lab.dev._forgebackends import GITHUB
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
-__all__ = ['LABEL_COLOR', 'LabelMissing', 'add_label', 'ensure_labels', 'label_ids']
+__all__ = ['LABEL_COLOR', 'LabelMissing', 'add_label', 'ensure_labels', 'label_ids', 'remove_label']
 
 #: The colour a label this module creates gets (neutral grey).
 LABEL_COLOR: Final = 'cccccc'
@@ -73,3 +73,9 @@ def add_label(client: Client, number: int, name: str) -> None:
     client.call(
         'POST', f'{client.repo}/issues/{number}/labels', {'labels': [name if client.backend is GITHUB else ident]}
     )
+
+
+def remove_label(client: Client, number: int, name: str) -> None:
+    """Take label *name* off issue *number*; a label the repository lacks raises :class:`LabelMissing`."""
+    (ident,) = label_ids(client, [name]).values()
+    client.call('DELETE', f'{client.repo}/issues/{number}/labels/{name if client.backend is GITHUB else ident}')

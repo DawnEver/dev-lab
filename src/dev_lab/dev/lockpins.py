@@ -33,6 +33,7 @@ __all__ = [
     'lock_freshness',
     'locked_git',
     'mismatches',
+    'pinned_git',
     'refusal',
     'sync_door',
 ]
@@ -74,10 +75,13 @@ def installed_git(
 
 def locked_git(lock: Path) -> dict[str, str]:
     """Package name -> the commit *lock* pins it at, for every package the lock sources from git."""
-    if not lock.is_file():
-        return {}
+    return pinned_git(lock.read_text(encoding='utf-8')) if lock.is_file() else {}
+
+
+def pinned_git(lock: str) -> dict[str, str]:
+    """:func:`locked_git` of lock TEXT -- a lock read at a commit rather than off the disk."""
     pins: dict[str, str] = {}
-    for package in tomllib.loads(lock.read_text(encoding='utf-8')).get('package', []):
+    for package in tomllib.loads(lock).get('package', []):
         git = package.get('source', {}).get('git')
         if isinstance(git, str) and '#' in git:
             pins[_canonical(package['name'])] = git.rpartition('#')[2]

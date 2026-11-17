@@ -8,7 +8,6 @@ branch, a busy local branch and an unlanded local branch all survive.
 
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
 
@@ -17,7 +16,6 @@ from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
 from dev_lab.dev.branchdelete import DELETED_EVENT, sweep
-from dev_lab.dev.branchprune import post_push
 from dev_lab.dev.forge import fetch_origin
 
 SESSION = 'session_aaaabbbbcccc'
@@ -138,36 +136,6 @@ def test_local_landed_branches_go_and_busy_or_unlanded_ones_stay(tmp_path: Path)
     assert _local(work, 'feat/busy'), 'checked out in a worktree'
     assert tree.is_dir(), 'a worktree touched within the quiet window is a live lease'
     assert _local(work, 'lane/local'), 'its commit is on no other ref'
-
-
-def _payload(work: Path, command: str) -> io.StringIO:
-    return io.StringIO(json.dumps({'cwd': str(work), 'tool_input': {'command': command}}))
-
-
-def test_a_push_that_moved_integration_detaches_one_sweep_of_the_main_checkout(tmp_path: Path) -> None:
-    work = _repo(tmp_path)
-    run_git(work, 'checkout', '-q', '-B', 'land', 'origin/integrate/main')
-    (work / 'n.txt').write_text('n\n', encoding='utf-8')
-    run_git(work, 'add', 'n.txt')
-    run_git(work, 'commit', '-q', '--no-verify', '-m', 'n')
-    command = 'sh scripts/hooks/with-retry.sh push origin land:integrate/main'
-    run_git(work, 'push', '-q', '--no-verify', 'origin', 'land:integrate/main')
-    started: list[Path] = []
-    assert post_push([], stdin=_payload(work, command), detach=started.append) == 0
-    assert started == [work.resolve()]
-
-
-def test_a_push_of_another_branch_or_a_fetch_detaches_nothing(tmp_path: Path) -> None:
-    """PLANTED control: integration moved by a FETCH, then a push of a PR head -- neither is an integration push."""
-    work = _repo(tmp_path)
-    advance(work, 'integrate/main', 'i.txt', 'i\n')  # its tracking ref moves by fetch after the push
-    run_git(work, 'update-ref', 'refs/remotes/origin/integrate/main', 'origin/main')
-    run_git(work, 'fetch', '-q', 'origin')
-    advance(work, 'pr/x', 'x.txt', 'x\n')
-    started: list[Path] = []
-    assert post_push([], stdin=_payload(work, 'git push origin HEAD:pr/x'), detach=started.append) == 0
-    assert post_push([], stdin=_payload(work, 'git status'), detach=started.append) == 0
-    assert started == []
 
 
 def test_an_open_pr_whose_one_commit_only_relocks_is_neither_closed_nor_deleted(tmp_path: Path) -> None:

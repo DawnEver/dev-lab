@@ -69,6 +69,8 @@ import sys
 from pathlib import Path
 from typing import Final
 
+from dev_lab.dev.venvpointer import current
+
 __all__ = [
     'CANDIDATE_RELATIVE_PATHS',
     'INTERPRETER_RULE',
@@ -230,10 +232,10 @@ def unportable_row(entry: str) -> str | None:
 
 
 def checkout_interpreter(root: Path, *, os_name: str) -> Path:
-    """Require this checkout's own interpreter; a lane never borrows main's environment."""
-    relative = venv_interpreter(os_name=os_name)
-    own = root / relative
-    if not own.is_file() or (root / '.venv').resolve() != root.resolve() / '.venv':
+    """Require this checkout's own CURRENT interpreter (:mod:`dev_lab.dev.venvpointer`); a lane never borrows main's."""
+    env = current(root)
+    own = env.joinpath(*VENV_LAYOUTS[os_name][1:])
+    if not own.is_file() or not env.resolve().is_relative_to(root.resolve()):
         msg = f'{root} has no own environment; run {running_interpreter()} -m dev_lab.dev.dep --bootstrap "{root}"'
         raise FileNotFoundError(msg)
     return own
@@ -267,17 +269,17 @@ def _main_checkout(root: Path) -> Path | None:
 def remedy_interpreter(root: Path, *, os_name: str) -> str:
     """The ABSOLUTE interpreter a remedy about *root* names, POSIX-separated.
 
-    The checkout's own venv; else, for a linked worktree with none, the main checkout's (the one that can
-    bootstrap it); else the checkout's own path spelled absolute, so the line runs from any cwd once the
-    environment exists.
+    The checkout's own current environment (:mod:`dev_lab.dev.venvpointer`); else, for a linked worktree with none,
+    the main checkout's (the one that can bootstrap it); else the checkout's own path spelled absolute, so the line
+    runs from any cwd once the environment exists.
     """
-    relative = venv_interpreter(os_name=os_name)
-    own = Path(root).absolute() / relative
+    tail = VENV_LAYOUTS[os_name][1:]
+    own = current(Path(root).absolute()).joinpath(*tail)
     if own.is_file():
         return own.as_posix()
     main = _main_checkout(Path(root).absolute())
-    if main is not None and (main / relative).is_file():
-        return (main / relative).as_posix()
+    if main is not None and current(main).joinpath(*tail).is_file():
+        return current(main).joinpath(*tail).as_posix()
     return own.as_posix()
 
 

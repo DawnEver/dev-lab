@@ -33,6 +33,7 @@ from dev_lab.dev.reviewbudget import (
     SCOPE_ENV,
     SPEND_SCHEMA,
     TAG_ENV,
+    NoReviewAllotment,
     Raised,
     ShareRefused,
     Spend,
@@ -148,7 +149,7 @@ def test_the_review_month_is_the_review_allotment_ai_lab_reports_never_a_number_
 
 
 def test_a_report_with_no_review_allotment_is_refused_naming_the_row_to_declare() -> None:
-    with pytest.raises(ValueError, match=r'\[ai_lab\.standing\] review'):
+    with pytest.raises(NoReviewAllotment, match=r'\[ai_lab\.standing\] review'):
         Spend.from_report(_report({}))
 
 

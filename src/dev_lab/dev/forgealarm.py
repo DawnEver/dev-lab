@@ -68,10 +68,10 @@ __all__ = [
     'DRIFT',
     'ESCAPE',
     'EVENT',
+    'FAMILY',
     'FLEET',
     'IDLE',
     'INTEGRATION',
-    'ISSUE_KINDS',
     'LEASE',
     'NEEDS',
     'NONDETERMINISM',
@@ -102,10 +102,6 @@ RUN: Final = 'run'
 STARVED: Final = 'starved'
 #: An integration row this host created or changed on the forge (:mod:`dev_lab.dev.integrator`).
 INTEGRATION: Final = 'integration'
-#: The kinds kept as ONE forge issue per alarm, titled ``<kind>: <subject>``
-#: (:func:`dev_lab.dev.forgeservesteps.raise_once` refuses any other) --
-#: so ``forge tidy`` knows them as machine-kept.
-ISSUE_KINDS: Final = (INTEGRATION, STARVED)
 #: A host deleted merged idle origin branches, or failed to (:mod:`dev_lab.dev.branchprune`).
 PRUNED: Final = 'pruned'
 #: An UNMERGED origin branch sat idle past the declared grace; never deleted (:mod:`dev_lab.dev.branchprune`).
@@ -127,6 +123,8 @@ PRESSURE: Final = 'pressure'
 DRIFT: Final = 'drift'
 #: A file written outside every allowed root, found by the tick's census (:mod:`dev_lab.dev.escapes`, 2026-11-03).
 ESCAPE: Final = 'escape'
+#: A family member not fully joined, found by the tick's family watch (:mod:`dev_lab.dev.family.watch`, 2026-11-09).
+FAMILY: Final = 'family'
 
 
 #: The alarms that are a prompt or a notice, not a failure: they are no host failure in the metrics log.

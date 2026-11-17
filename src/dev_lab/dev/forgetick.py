@@ -41,7 +41,7 @@ its selection, :func:`~lab_commons.compute.learned.selection_gb` at the ids it i
 admission and the box's enforced claim are one number -- and ONE CLAIM: given *reserve*, a local part's box
 claim is taken before the part is claimed, and its producer adopts it (:mod:`dev_lab.dev.forgetake`).
 A CLUSTER part asks what its
-last Slurm run measured (:func:`~lab_commons.compute.learned.cluster_demand`).
+last Slurm run measured (:func:`dev_lab.dev.forgedemand.part_demand`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 
 A WAIT IS ANSWERED, BOUNDED AND SEEN (:mod:`dev_lab.dev.forgewait`). Given its *box*, a tick tells every part
@@ -66,7 +66,7 @@ from typing import Any
 
 from lab_commons.box import Capacity
 from lab_commons.box.providers import box_engine
-from lab_commons.compute.learned import box_demand, cluster_demand, learned, request_demand
+from lab_commons.compute.learned import box_demand, learned, request_demand
 from lab_commons.compute.model import (
     REQUEST,
     Candidate,
@@ -103,12 +103,14 @@ from dev_lab.dev.forgeclaim import (
     this_machine,
     this_seat,
 )
+from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgerecords import read_named
-from dev_lab.dev.forgerequest import declared_request, remind, request_authors
+from dev_lab.dev.forgerequest import declared_request
+from dev_lab.dev.forgerequesthost import remind, request_authors
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
 from dev_lab.dev.forgesettled import SettledHistories
@@ -140,6 +142,22 @@ class TickReport:
     artefacts: str = ''
     #: The open parts this host could serve -- its needs all present here -- and did not claim: what makes it idle.
     pending: tuple[Work, ...] = ()
+
+    def idle(self) -> str:
+        """Why the *pending* parts sat unclaimed: each with its queue row's block, then the tick's refusals.
+
+        Every wall teaches: an idle alarm names each part's own cause (``not admitted: lacking mem_gb (...)``), so
+        a reader of the card sees which resource starves the account; only a part no row blocks reads as bare.
+        """
+        blocks = {(row.candidate.sha, row.candidate.platform): row.blocked for row in self.queue if row.blocked}
+        whys = [blocks.get((item.sha, item.platform), '') for item in self.pending]
+        named = ', '.join(
+            f'{item.ref} {item.sha[:12]} {item.platform}' + (f' -- {why}' if why else '')
+            for item, why in zip(self.pending, whys, strict=True)
+        )
+        told = any(whys)
+        refused = '; '.join(self.refused) or ('' if told else 'nothing was claimed')
+        return f'{named}: {refused}' if refused else named
 
 
 def tip_first(ranked: Sequence[Ranked], integration: str) -> tuple[Ranked, ...]:
@@ -346,7 +364,7 @@ def _demand_of(
     """
     repo_url = origin_url(root)
     if cluster:
-        asked = cluster_demand(repo_url)
+        asked = part_demand(repo_url, ceiling_gb=None)
         return lambda _wanted, needed: asked(needed)
     free = (room or _box_now()).resources
 

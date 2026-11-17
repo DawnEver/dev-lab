@@ -4,14 +4,14 @@ WHAT IS DEPLOYED IS DATA in this account's machine file (:mod:`lab_commons.confi
 a tracked file, since the forge, its repos and the login host are private to the deployment::
 
     [deploy]
-    host = "<login host>"          # the ONE host whose crontab serves this account (cron is per host)
+    host = "<login host>"          # serving: the ONE node whose cron serves it; research: any grant login host
     root = ".local/share/lab-forge/repos"  # checkouts live in <root>/<name>; relative is under home
     python = "3.13"                # a uv-managed CPython: manylinux wheels run on an old glibc
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
     role = "verification"          # or "research": only a verification account serves (user ruling 2026-11-06)
     repos = [{ name = "dev-lab", url = "<https url>", ref = "<branch>" }, { name = "<repo>", ... }, ...]
-    # an entry may add serve = false: checked out and installed, its forge queue not served by this account
+    # served only where the repo itself declares [tool.dev_lab.protection] producer = "hpc" (dev_lab.dev.producers)
 
     [schedule]
     tick_minutes = 15              # the cron period (divides 60; default 5) -- also what the host card is judged by
@@ -23,7 +23,9 @@ its checkout; whether this account also serves dev-lab's queue is that entry's `
 
 STEPS, each one reporting, each one safe to repeat: refuse an undeclared ``role``; refuse off the declared host;
 check the account BEFORE anything changes (:mod:`dev_lab.dev.hpcaccount.account`: git's credential helper and
-its store, every repo's ``git ls-remote``, and the forge API calls a tick makes); write this account's own
+its store, every repo's ``git ls-remote``, and the forge API calls a tick makes); refuse a stored forge
+credential that may push or administer a forge-hosted repo, or is not the role's ``reader``, when the role is
+``read_only`` (else reported; :mod:`dev_lab.dev.hpcaccount.division`, user rulings 2026-11-09); write this account's own
 ``[[hpc.grant]]`` when it has none; prove the serve's git (``git merge-tree --write-tree``, git >= 2.38) on a toy
 repository -- IN the tick's environment (cron's PATH, then this account's grant ``setup``, which every cron line runs
 before its tick) -- or refuse naming that environment; clone or update each checkout; install ``uv`` and
@@ -53,9 +55,7 @@ others, then exits 2 naming each refused repo and raising one forge ``run`` alar
 
 from __future__ import annotations
 
-import argparse
 import os
-import shlex
 import shutil
 import socket
 import sys
@@ -70,39 +70,28 @@ from lab_commons.config import config_path
 from lab_commons.hpc.declared import REFUSALS
 from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev.hpcaccount.account import ApiCheck, auth_check, credentials, grant
-from dev_lab.dev.hpcaccount.checks import (
-    LOGIN_MARK,
-    MERGE_TREE_GIT,
-    login_files,
-    login_line,
-    merge_tree_refusal,
-    runs,
-    tool_plan,
-)
+from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
+from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
+from dev_lab.dev.hpcaccount.cimark import paused_refusal
+from dev_lab.dev.hpcaccount.declaration import parser, resolve, store
+from dev_lab.dev.hpcaccount.deployhost import host_refusal
+from dev_lab.dev.hpcaccount.division import account_role
 from dev_lab.dev.hpcaccount.spec import (
-    DEFAULT_PYTHON,
-    DEFAULT_ROOT,
-    KIT,
-    ROLES,
     Deployment,
     Repo,
     checkout_of,
     cron_lines,
     grant_setup,
-    load,
-    parse_repo,
-    render,
-    role_refusal,
     tick_command,
     tick_dirs,
     tick_environment,
     ticked,
 )
-from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, update
+from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, update
 
-__all__ = ['deploy', 'main']
+__all__ = ['deploy', 'main', 'slurm_dirs']
 
 
 _which = shutil.which
@@ -119,67 +108,6 @@ AlarmSink = Callable[[str, str, str], object]
 
 #: The served repos refused so far, by name, each with its reason; every later per-repo step skips them.
 Refused = dict[str, str]
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount deploy', description=__doc__.splitlines()[0])
-    parser.add_argument('--config', type=Path, help='the machine file holding [deploy] (default: lab_commons.config)')
-    parser.add_argument('--host', help='declare: the one login host serving this account')
-    parser.add_argument(
-        '--repo', type=parse_repo, action='append', default=[], help='declare: <name>=<https url>@<branch>'
-    )
-    parser.add_argument(
-        '--root', default=DEFAULT_ROOT, help='declare: checkouts live in <root>/<name>, a relative root under home'
-    )
-    parser.add_argument('--python', default=DEFAULT_PYTHON, help='declare: the uv-managed interpreter request')
-    parser.add_argument('--slurm-account', default='', help="declare: the grant's account, when Slurm names several")
-    parser.add_argument('--partition', action='append', default=[], help='declare: a partition the grant may use')
-    parser.add_argument('--role', choices=ROLES, default='', help='declare: verification serves; research never')
-    parser.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
-    parser.add_argument('--remove', action='store_true', help='delete the marked crontab lines only')
-    return parser
-
-
-def _declared(args: argparse.Namespace, path: Path) -> Deployment | str:
-    """The declared deployment (stored, else from the flags); a refusal is returned as its message."""
-    stored = load(path)
-    if not (args.host or args.repo):
-        return stored or (
-            f'no [deploy] in {path}: declare it once with --host <login host> --repo <name>=<https url>@<branch> ...'
-        )
-    if not (args.host and args.repo):
-        return 'a declaration needs both --host and at least one --repo'
-    given = Deployment(
-        args.host, args.root, args.python, tuple(args.repo), args.slurm_account, tuple(args.partition), args.role
-    )
-    if stored is not None and stored != given:
-        return f'{path} already declares a different [deploy]; edit it there, or run without --host/--repo'
-    return given
-
-
-def _resolve(args: argparse.Namespace, path: Path) -> Deployment | str:
-    """The declared deployment, refused unless it declares its role and the kit (dev-lab), which every tick runs."""
-    spec = _declared(args, path)
-    if isinstance(spec, Deployment) and KIT not in {repo.name for repo in spec.repos}:
-        return f'every tick runs {KIT}, so the host checks it out: add --repo {KIT}=<https url>@<branch>'
-    if isinstance(spec, Deployment) and not args.remove and (why := role_refusal(spec, path)):
-        return why  # a deploy never serves silently; --remove needs no role
-    return spec
-
-
-def _declare(step: Step, spec: Deployment, path: Path) -> int:
-    """Store a first declaration once the host and every credential have passed."""
-    if load(path) is not None:
-        return 0
-    emit('[declare]')
-    if step.dry:
-        emit(f'  [dry-run] declare [deploy] in {path}')
-        return 0
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as out:
-        out.write(render(spec))
-    emit(f'  declared [deploy] in {path}')
-    return 0
 
 
 def _each(step: Step, spec: Deployment, home: Path, title: str, act: Callable[..., int], *, refused: Refused) -> int:
@@ -216,7 +144,7 @@ def _serve_git(step: Step, home: Path, path: Path, slurm: Sequence[str], setup: 
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     loaded = grant_setup(path, user)
     environment = tick_environment(home, slurm, loaded)
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         why = _proves([*step.tools.sh, f'{environment}; exec git "$@"', 'git'], Path(scratch))
     if not why:
         emit(f'  git in `{environment}`: merge-tree --write-tree runs')
@@ -235,7 +163,7 @@ def _serve_git(step: Step, home: Path, path: Path, slurm: Sequence[str], setup: 
 SLURM_TOOLS: Final = ('sbatch', 'sacct', 'squeue')
 
 
-def _slurm_dirs() -> list[str] | str:
+def slurm_dirs() -> list[str] | str:
     """The directories ``sbatch``, ``sacct`` and ``squeue`` resolve in NOW; a missing one is refused by name."""
     found = {tool: _which(tool) for tool in SLURM_TOOLS}
     if missing := [tool for tool, where in found.items() if where is None]:
@@ -259,6 +187,8 @@ def _tools(
             _refuse(refused, repo, str(why))
     environment = tick_environment(home, slurm, setup)
     wanted = [need for each in needs.values() for need in each]
+    if not step.dry and (lagging := follow_uv()):
+        emit(f'[tools] {lagging}', err=True)
     installs, failed = tool_plan(wanted, found=lambda tool: _runs(step.tools.sh, environment, tool))
     for tool, script in installs:
         if step.change(f'install {tool}: {script}', [*step.tools.sh, script]):
@@ -277,13 +207,21 @@ def _tools(
 
 
 def _cron(
-    step: Step, spec: Deployment, home: Path, refused: Refused, *, slurm: Sequence[str], setup: Sequence[str]
+    step: Step,
+    spec: Deployment,
+    home: Path,
+    refused: Refused,
+    *,
+    serves: bool,
+    slurm: Sequence[str],
+    setup: Sequence[str],
 ) -> int:
     """One marked line per repo not refused; a refused repo's line is removed, so a broken line never runs."""
-    emit(f'[cron] one marked line per served repo ({spec.role} account: only verification serves)')
+    emit(f'[cron] one marked line per served repo ({spec.role} account: {"serves" if serves else "never serves"})')
     if not step.dry:
         (home / '.cache').mkdir(parents=True, exist_ok=True)
-    lines = cron_lines(replace(spec, repos=tuple(_healthy(spec, refused))), home, slurm=slurm, setup=setup)
+    healthy = replace(spec, repos=tuple(_healthy(spec, refused)))
+    lines = cron_lines(healthy, home, serves=serves, slurm=slurm, setup=setup)
     rc = crontab(step, lines)
     for line in lines:
         emit(f'  {line}')
@@ -291,9 +229,16 @@ def _cron(
 
 
 def _tick(
-    step: Step, spec: Deployment, home: Path, repo: Repo, *, slurm: Sequence[str] = (), setup: Sequence[str] = ()
+    step: Step,
+    spec: Deployment,
+    home: Path,
+    repo: Repo,
+    *,
+    serves: bool,
+    slurm: Sequence[str] = (),
+    setup: Sequence[str] = (),
 ) -> int:
-    if repo not in ticked(spec):
+    if repo not in ticked(spec, serves=serves):
         emit(f'  {repo.name}: not served by this {spec.role} account, not ticked')
         return 0
     command = tick_command(spec, home, repo, log=False, slurm=slurm, setup=setup)
@@ -332,22 +277,6 @@ def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink) -> 
     return 2
 
 
-def _login(step: Step, home: Path) -> int:
-    """One marked :func:`login_line` in each of :func:`login_files`, written once, each file backed up first."""
-    emit("[login] the login shell's PATH names the tick's user installs")
-    line = login_line(home)
-    for path in login_files(home):
-        if path.is_file() and LOGIN_MARK in path.read_text(encoding='utf-8', errors='replace'):
-            emit(f'  {path}: current')
-            continue
-        file, backup = shlex.quote(str(path)), shlex.quote(f'{path}.lab-deploy.bak')
-        keep = f'[ ! -e {file} ] || [ -e {backup} ] || cp -p {file} {backup}'
-        script = f'{{ {keep}; }} && echo {shlex.quote(line)} >> {file}'
-        if rc := step.change(f'{path}: back up, then append {line}', [*step.tools.sh, script]):
-            return rc
-    return 0
-
-
 def deploy(
     argv: Sequence[str],
     *,
@@ -355,31 +284,31 @@ def deploy(
     hostname: str,
     tools: Tools | None = None,
     api: ApiCheck | None = None,
+    role: RoleCheck | None = None,
     alarm: AlarmSink = _sound,
 ) -> int:
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
-    args = _parser().parse_args(list(argv))
+    args = parser(__doc__.splitlines()[0]).parse_args(list(argv))
     path = args.config or config_path()
-    spec = _resolve(args, path)
-    if isinstance(spec, str):
-        emit(f'deploy refused: {spec}', err=True)
+    spec = paused_refusal(home) or resolve(args, path)  # CI-PAUSED: only ci-resume-fleet brings the cron back
+    semantics = (
+        {} if isinstance(spec, str) or args.remove else account_role(spec.role, args.fleet_role, args.role_table)
+    )
+    if isinstance(spec, str) or isinstance(semantics, str):
+        emit(f'deploy refused: {spec if isinstance(spec, str) else semantics}', err=True)
         return 2
+    serves = bool(semantics.get('serves', False))
     short = hostname.split('.', 1)[0]
     emit(f'[host] account {os.environ.get("USER") or os.environ.get("USERNAME", "?")} on {short}')
-    if short != spec.host:
-        emit(
-            f'deploy refused: this account serves from {spec.host} ([deploy] host in '
-            f'{path}); this is {short}. ssh to {spec.host} and run it there.',
-            err=True,
-        )
+    if why := host_refusal(spec, path, short, serves=serves, table=args.grant_table):
+        emit(f'deploy refused: {why}', err=True)
         return 2
     path_env = os.pathsep.join([*tick_dirs(home)[:2], os.environ.get('PATH', '')])
     step = Step(tools or Tools(), dry=args.dry_run, path=path_env)
     if args.remove:
         emit('[cron] removing the marked lines')
         return crontab(step, [])
-    check = api or auth_check
-    slurm = _slurm_dirs()
+    slurm = slurm_dirs()
     if isinstance(slurm, str):
         emit(f'deploy refused: {slurm}', err=True)
         return 2
@@ -387,22 +316,23 @@ def deploy(
     setup: list[str] = []  # the grant's setup lines: every tick runs inside them
     artefacts = '[artefacts] the rclone remote, where a repo declares one'
     phases = (
-        lambda: credentials(step, spec, home, check),
-        lambda: grant(step, spec, path, hostname),
-        lambda: _declare(step, spec, path),
+        lambda: credentials(step, spec, home, api or auth_check, serves=serves),
+        lambda: reader(spec, home, role or role_of, semantics=semantics),
+        lambda: grant(step, path, args.grant_table),
+        lambda: store(step, spec, path),
         lambda: _serve_git(step, home, path, slurm, setup),
         lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
         lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
-        lambda: _login(step, home),
+        lambda: login(step, home),
         lambda: _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused),
         lambda: _each(step, spec, home, artefacts, _artefacts, refused=refused),
-        lambda: _cron(step, spec, home, refused, slurm=slurm, setup=setup),
+        lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
         lambda: _each(
             step,
             spec,
             home,
             '[tick] one now, per repo',
-            lambda *a: _tick(*a, slurm=slurm, setup=setup),
+            lambda *a: _tick(*a, serves=serves, slurm=slurm, setup=setup),
             refused=refused,
         ),
     )

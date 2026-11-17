@@ -1,0 +1,295 @@
+"""The ``[dev]`` table of a development machine's host file: its keys, its checks, and what they derive.
+
+:mod:`dev_lab.dev.devhost` renders and compares with it; :mod:`dev_lab.ops.configcheck` checks with it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Mapping
+from pathlib import Path
+from typing import Any, Final
+
+from dev_lab.dev.venvpath import running_interpreter
+
+__all__ = [
+    'BRIDGE',
+    'BRIDGE_HPC',
+    'CADENCE_HOURS',
+    'CHANNELS_TABLE',
+    'CPU_SHARES',
+    'DETECT_DOOR',
+    'FAMILY_ONLY',
+    'HELPERS',
+    'HOOK_MODES',
+    'HOST_ONLY',
+    'MACHINE_TABLES',
+    'RESOURCES',
+    'RETIRED_KEYS',
+    'SCHEMA',
+    'SSH',
+    'SSH_HOLD',
+    'UNFILLED',
+    'VENDOR',
+    'HomeUnfilled',
+    'channel_defects',
+    'check',
+    'check_family',
+    'fill_remedy',
+    'home_of',
+    'hpc_reach',
+    'ssh_defects',
+    'unfilled',
+    'usable',
+]  # fmt: skip
+
+#: Retired ``[dev]`` keys, each with its remedy (refused by name, never read).
+RETIRED_KEYS: Final = {
+    'role': (
+        'retired (user correction 2026-11-12): the integrator is a SESSION identity, never a host one -- a host '
+        'declares only what the machine may reach, [dev] hpc; a session proves the integrator role with a consent '
+        'credential (dev_lab.dev.hpcaccount.session)'
+    ),
+}
+#: One vendor install's keys.
+VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': str, 'licence_feature': str}
+#: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
+SCHEMA: Final = {
+    'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
+    'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict,
+}  # fmt: skip
+#: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
+#: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
+BRIDGE: Final = {'hpc': dict}
+#: ``[dev] bridge.hpc``: ``cadence_hours`` -- the read cadence (1..168; default 6).
+BRIDGE_HPC: Final = {'cadence_hours': int}
+#: ``cadence_hours`` bounds: an hourly read at most, a weekly one at least.
+CADENCE_HOURS: Final = (1, 168)
+#: ``[dev] hooks``: ``enforce`` -- a firing hook row refuses; ``warn`` -- it only warns (an unmanaged machine).
+HOOK_MODES: Final = ('enforce', 'warn')
+#: ``[dev]`` keys only the family declares: ``default`` -- the profile an undeclared machine renders
+#: (:mod:`dev_lab.dev.devprofile`).
+FAMILY_ONLY: Final = ('default',)
+#: ``[dev]`` keys that are one machine's facts and never the family's: ``channels`` -- session channel source ->
+#: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority).
+HOST_ONLY: Final = ('channels',)
+#: The machine-file table ``[dev] channels`` renders into, as ``[agent] channels``: its consumer is the agent session
+#: (the harness and its channel plugins), not the dev tooling, so the table is named for who reads it.
+CHANNELS_TABLE: Final = 'agent'
+#: The git credential helpers a ``[dev] helpers.<forge host>`` may declare: ``store`` -- that host reads ONLY
+#: ``~/.git-credentials`` (a narrowly scoped bot token), every other host keeps the machine's own helper.
+HELPERS: Final = ('store',)
+#: The box's hardware; a SHARED box also declares the part this user holds (``allotted_*``), read before the total.
+RESOURCES: Final = {
+    'cpu': str, 'cores': int, 'logical_cores': int, 'memory_gb': (int, float), 'gpu': str, 'shared': bool,
+    'allotted_cores': int, 'allotted_memory_gb': (int, float), 'cpu_share': str,
+}  # fmt: skip
+#: How a shared box splits its CPU: ``session-fair`` -- evenly among the ACTIVE login sessions (all of it when alone).
+CPU_SHARES: Final = ('session-fair',)
+#: The ONE placeholder for an install home not yet found on its machine: never a plausible path. configcheck accepts
+#: it; the session start names it first, the stop blocks once on it, and :func:`home_of` refuses it.
+UNFILLED: Final = 'FILL-ON-THIS-MACHINE'
+#: Keys the family and host ``[dev]`` must hold between them.
+REQUIRED: Final = ('ref',)
+#: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys).
+MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation')
+#: The machine file's ``[ssh]`` table as a host file declares it (rendered by :func:`dev_lab.dev.devhost.render`,
+#: read by :mod:`dev_lab.dev.sshhold`): ``jump`` -- destination -> bastion, the declared per-host route; ``hold`` --
+#: :data:`SSH_HOLD`.
+SSH: Final = {'jump': dict, 'hold': dict}
+#: ``[ssh.hold]``: the session ceiling and the idle limit.
+SSH_HOLD: Final = {'max_hours': (int, float), 'idle_minutes': (int, float)}
+#: The door that finds this machine's vendor install homes.
+DETECT_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost detect'
+
+
+def _typed(table: Mapping[str, Any], schema: Mapping[str, Any], where: str) -> list[str]:
+    found = []
+    for key, value in table.items():
+        if key not in schema:
+            found.append(f'{where}.{key} is not a declared key')
+        elif not isinstance(value, schema[key]) or (isinstance(value, bool) and schema[key] is not bool):
+            found.append(
+                f'{where}.{key} must be {schema[key].__name__ if isinstance(schema[key], type) else "a number"}'
+            )
+    return found
+
+
+def _named_lists(table: Mapping[str, Any], key: str, where: str, what: str) -> list[str]:
+    entries = table.get(key) if isinstance(table.get(key), dict) else {}
+    return [
+        f'{where}.{key}.{name} must be a non-empty list of {what}'
+        for name, items in entries.items()
+        if not (isinstance(items, list) and items and all(isinstance(item, str) for item in items))
+    ]
+
+
+def _resources(table: Mapping[str, Any], where: str) -> list[str]:
+    if 'resources' not in table:
+        return []
+    resources = table['resources']
+    if not isinstance(resources, dict):
+        return [f'{where}.resources must be a table']
+    found = _typed(resources, RESOURCES, f'{where}.resources')
+    if 'cpu_share' in resources and resources['cpu_share'] not in CPU_SHARES:
+        found.append(f'{where}.resources.cpu_share {resources["cpu_share"]!r} is not one of {list(CPU_SHARES)}')
+    return found
+
+
+def channel_defects(channels: object, where: str) -> list[str]:
+    """Defects of a channel declaration: it must map non-empty source strings to non-empty user strings."""
+    if not isinstance(channels, Mapping):
+        return [f'{where} must be a table of channel source -> user name']
+    return [
+        f'{where}.{source!r} = {user!r}: source and user must be non-empty strings'
+        for source, user in channels.items()
+        if not (isinstance(source, str) and source and isinstance(user, str) and user)
+    ]
+
+
+def ssh_defects(ssh: object, where: str = 'ssh') -> list[str]:
+    """Defects of an ``[ssh]`` table: only :data:`SSH` keys; ``jump`` maps destinations to bastions, both non-empty."""
+    if not isinstance(ssh, Mapping):
+        return [f'{where} must be a table']
+    found = _typed(ssh, SSH, where)
+    jump = ssh.get('jump')
+    if isinstance(jump, dict):
+        found += [
+            f'{where}.jump.{dest!r} = {bastion!r}: destination and bastion must be non-empty strings'
+            for dest, bastion in jump.items()
+            if not (isinstance(dest, str) and dest and isinstance(bastion, str) and bastion)
+        ]
+    hold = ssh.get('hold')
+    if isinstance(hold, dict):
+        found += _typed(hold, SSH_HOLD, f'{where}.hold')
+    return found
+
+
+def _bridge(table: Mapping[str, Any], where: str) -> list[str]:
+    bridge = table.get('bridge')
+    if not isinstance(bridge, dict):
+        return []
+    found = _typed(bridge, BRIDGE, f'{where}.bridge')
+    hpc = bridge.get('hpc')
+    if isinstance(hpc, dict):
+        found += _typed(hpc, BRIDGE_HPC, f'{where}.bridge.hpc')
+        hours = hpc.get('cadence_hours', 6)
+        if isinstance(hours, int) and not CADENCE_HOURS[0] <= hours <= CADENCE_HOURS[1]:
+            found.append(
+                f'{where}.bridge.hpc.cadence_hours must be {CADENCE_HOURS[0]}..{CADENCE_HOURS[1]}, not {hours}'
+            )
+    return found
+
+
+def _shape(table: Mapping[str, Any], where: str) -> list[str]:
+    """Defects of one ``[dev]`` table (host or family) by itself."""
+    found = [f'{where}.{key} is {remedy}' for key, remedy in RETIRED_KEYS.items() if key in table]
+    found += _typed({k: v for k, v in table.items() if k not in RETIRED_KEYS}, SCHEMA, where)
+    hpc = table.get('hpc', [])
+    if not (isinstance(hpc, list) and all(isinstance(role, str) and role for role in hpc)):
+        found.append(f'{where}.hpc must list account role names (e.g. ["research"]), or be [] for none')
+    found += _named_lists(table, 'forges', where, 'account names')
+    helpers = table.get('helpers') if isinstance(table.get('helpers'), dict) else {}
+    found += [
+        f'{where}.helpers.{host} {helper!r} is not one of {list(HELPERS)}'
+        for host, helper in helpers.items()
+        if helper not in HELPERS
+    ]
+    found += _bridge(table, where)
+    if 'hooks' in table and table['hooks'] not in HOOK_MODES:
+        found.append(f'{where}.hooks {table["hooks"]!r} is not one of {list(HOOK_MODES)}')
+    if 'channels' in table:
+        found += channel_defects(table['channels'], f'{where}.channels')
+    found += _named_lists(table, 'detect', where, 'glob patterns')
+    found += _resources(table, where)
+    vendors = table.get('vendors') if isinstance(table.get('vendors'), dict) else {}
+    for name, vendor in vendors.items():
+        if isinstance(vendor, dict):
+            found += _typed(vendor, VENDOR, f'{where}.vendors.{name}')
+        else:
+            found.append(f'{where}.vendors.{name} must be a table')
+    return found
+
+
+def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[str]:
+    for key, value in table.items():
+        if isinstance(value, Mapping):
+            yield from _leaves(value, f'{prefix}{key}.')
+        else:
+            yield f'{prefix}{key}'
+
+
+def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> list[str]:
+    """Defects of a development host file against the family: ``[dev]`` shape, a restated family key, a gap."""
+    shared = family or {}
+    found = _shape(host.get('dev', {}), '[dev]')
+    found += [f'[dev].{key} is the family default profile; it lives in family.toml' for key in FAMILY_ONLY
+              if key in host.get('dev', {})]  # fmt: skip
+    restated = sorted(set(_leaves(host)) & set(_leaves(shared)))
+    found += [f'{key} restates the family file; it lives there once' for key in restated]
+    merged = {**shared.get('dev', {}), **host.get('dev', {})}
+    found += [f'[dev].{key} is required (host or family file)' for key in REQUIRED if key not in merged]
+    return found
+
+
+def check_family(family: Mapping[str, Any]) -> list[str]:
+    """Defects of the family file's ``[dev]`` by itself, and a key only a host may declare."""
+    dev = family.get('dev', {})
+    host_only = [f'[dev].{key} is one machine fact; it lives in that host file' for key in HOST_ONLY if key in dev]
+    found = host_only + _shape(dev, '[dev]')
+    default = dev.get('default')
+    if isinstance(default, dict):
+        nested = [key for key in (*FAMILY_ONLY, *HOST_ONLY) if key in default]
+        found += [f'[dev].default.{key} may not be declared in the default profile' for key in nested]
+        found += _shape({k: v for k, v in default.items() if k not in nested}, '[dev].default')
+    return found
+
+
+def hpc_reach(dev: Mapping[str, Any]) -> list[str]:
+    """The account roles this machine may reach -- rendered as the machine file's ``[hpc] reach``; none undeclared."""
+    return list(dev.get('hpc', []))
+
+
+def usable(dev: Mapping[str, Any]) -> tuple[int | None, float | None]:
+    """The cores and memory (GB) this user may use: a shared box's fixed allotment, else the box's own.
+
+    ``None`` means SIZE FROM THE LIVE FIGURES at run time: a shared box with no fixed allotment (``cpu_share =
+    "session-fair"``, memory shared without a cap) is never sized from its declared total.
+    """
+    resources = dev.get('resources', {})
+    if resources.get('shared'):
+        return resources.get('allotted_cores'), resources.get('allotted_memory_gb')
+    return resources.get('cores'), resources.get('memory_gb')
+
+
+def unfilled(dev: Mapping[str, Any]) -> list[str]:
+    """The vendors whose install home this machine has yet to fill: the placeholder, or seats with no home."""
+    return [
+        name
+        for name, vendor in dev.get('vendors', {}).items()
+        if vendor.get('home') == UNFILLED or (vendor.get('seats') and not vendor.get('home'))
+    ]
+
+
+def fill_remedy(names: list[str]) -> str:
+    """What a machine does about *names*: detect here, then propose the lines through a config-source PR."""
+    return (
+        f'install home not filled for {", ".join(names)} ({UNFILLED}): run {DETECT_DOOR} on this machine and open a '
+        "pull request on the config source replacing the placeholder in this machine's host file"
+    )
+
+
+class HomeUnfilled(LookupError):
+    """A code path needs a vendor's install home this machine has not filled."""
+
+
+def home_of(dev: Mapping[str, Any], vendor: str) -> Path:
+    """*vendor*'s declared install home.
+
+    Raises:
+        HomeUnfilled: it is the placeholder or absent -- never a fallback guess.
+
+    """
+    home = dev.get('vendors', {}).get(vendor, {}).get('home')
+    if not home or home == UNFILLED:
+        raise HomeUnfilled(fill_remedy([vendor]))
+    return Path(home)

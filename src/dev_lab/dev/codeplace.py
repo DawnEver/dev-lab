@@ -16,7 +16,9 @@ THREE RULES OVER ONE MAP; the second's mechanism is its own module:
 * ``STRAY-FILE-REFUSED`` -- an UNTRACKED, non-ignored file outside the declared stray roots (the family's
   ``scratch/`` plus ``stray_roots``) is a defect the moment it appears: a file a person meant is STAGED,
   an artefact a program wrote belongs under ``output/logs/<yy>/<mm>/<dd>/<kind>/`` (ignored), a one-off
-  in scratch. Earned 2026-10-20 in consumer-a: a vendor controller run by hand with the checkout as its
+  in scratch, and a file a known retirement declares gone (:data:`RETIRED_FILES`) is deleted through its
+  door -- never staged (2026-11-17: twelve stale rem indexes, eleven under ``src/``, were told to be
+  ``git add``-ed). Earned 2026-10-20 in consumer-a: a vendor controller run by hand with the checkout as its
   cwd left seven log files in the root, and a ``uv`` run in a subdirectory left a ``uv.lock`` there; nothing
   said so until a human saw them. :func:`stray_files` is the census; the agent hooks (``PostToolUse`` on
   the shell tools and ``Stop``, ``python -m dev_lab.dev.codeplace stray``) report it the moment a
@@ -75,9 +77,12 @@ __all__ = [
     'FAMILY_HOMES',
     'FAMILY_STRAY_ROOTS',
     'PRUNED_NAMES',
+    'RETIRED_FILES',
     'SCRATCH_MAX_AGE_DAYS',
+    'TASK_ROOT',
     'Placement',
     'PlacementNotDeclared',
+    'RetiredFile',
     'StrayCensusUnreadable',
     'admits',
     'checkout_root',
@@ -101,7 +106,8 @@ CODE_SUFFIXES = frozenset({
 #: Directories never walked, matched by NAME at any depth: tool state, environments and build
 #: output, none of it written by a person.
 PRUNED_NAMES = frozenset({
-    '.git', '.venv', 'venv', 'node_modules', 'target', '__pycache__', '.pytest_cache', '.ruff_cache', '.mypy_cache',
+    '.git', '.venv', '.venvs', 'venv', 'node_modules', 'target', '__pycache__', '.pytest_cache', '.ruff_cache',
+    '.mypy_cache',
     # the cluster run's record, written INTO the tree it judges (lab_commons.hpc: streams, env.sh, job.sh)
     '.lab-ci', '.lab-hpc',
 })  # fmt: skip
@@ -131,6 +137,10 @@ FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
 
 #: Where an untracked file may sit in every repo: the family's scratch home, nothing else.
 FAMILY_STRAY_ROOTS: tuple[str, ...] = (FAMILY_HOMES['one-off experiment, probe or verification'],)
+
+#: Where the user's task command (``/rem:task open``) writes ``<slug>/TASK.md`` and ``JOURNAL.md``: its folder,
+#: not a stray. It is the repository's ledger (:func:`dev_lab.dev.taskbinding.ledger`), never committed on a branch.
+TASK_ROOT = '.claude/tasks/'
 
 #: The family default for ``max_age_days`` (:mod:`dev_lab.dev.scratch` reads it off the placement).
 SCRATCH_MAX_AGE_DAYS = 3.0
@@ -256,6 +266,39 @@ _SCRIPT_HOME = 'scratch/<yy>/<mm>/<dd>/<kind>/'
 _DATA_HOME = 'output/logs/<yy>/<mm>/<dd>/<kind>/'
 
 
+@dataclasses.dataclass(frozen=True)
+class RetiredFile:
+    """A file a known retirement declares GONE: a ``**/<tail>`` glob, what it was, and the door that deletes it.
+
+    A GLOB, not a path: the row names every copy at any depth in whichever checkout runs the check, never a file
+    of this tree -- so it is a shape the leaf may hold, and :mod:`dev_lab.dev.foreign` reads it as one.
+    """
+
+    glob: str
+    what: str
+    door: str
+
+    @property
+    def tail(self) -> str:
+        """The path every copy ends with: the glob without its any-depth ``**/`` prefix."""
+        return self.glob.removeprefix('**/')
+
+    def matches(self, rel: str) -> bool:
+        """Whether repo-relative POSIX *rel* is a copy of this file, at any depth, outside an archive."""
+        return (rel == self.tail or rel.endswith(f'/{self.tail}')) and not is_archived(rel)
+
+
+#: Every file a known retirement declares gone. A stray copy is named with its door, never offered to ``git add``.
+RETIRED_FILES: tuple[RetiredFile, ...] = (
+    RetiredFile(
+        '**/.claude/rules/MEMORY.md',
+        "rem's generated memory index; nothing rebuilds it",
+        "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs "
+        '<checkout> -- which removes every copy outside attic/',
+    ),
+)
+
+
 class StrayCensusUnreadable(RuntimeError):
     """git could not list a checkout's untracked files; a silent census is not a clean one."""
 
@@ -270,6 +313,15 @@ def stray_files(root: Path, *, stray_roots: Iterable[str], pruned_paths: Iterabl
         StrayCensusUnreadable: git could not list the untracked files of *root*.
 
     """
+    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths, TASK_ROOT))
+    return sorted(
+        rel
+        for rel in _untracked(root)
+        if not rel.startswith(allowed) and not PRUNED_NAMES.intersection(rel.split('/')[:-1])
+    )
+
+
+def _untracked(root: Path) -> list[str]:
     done = launch.run(
         ['git', '-C', str(root), 'ls-files', '--others', '--exclude-standard', '-z'],
         capture_output=True,
@@ -281,12 +333,7 @@ def stray_files(root: Path, *, stray_roots: Iterable[str], pruned_paths: Iterabl
     if done.returncode != 0:
         msg = f'git could not list the untracked files of {root}: {done.stderr.strip()}'
         raise StrayCensusUnreadable(msg)
-    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths))
-    return sorted(
-        rel
-        for rel in filter(None, done.stdout.split('\0'))
-        if not rel.startswith(allowed) and not PRUNED_NAMES.intersection(rel.split('/')[:-1])
-    )
+    return list(filter(None, done.stdout.split('\0')))
 
 
 def declared_strays(root: Path) -> list[str]:
@@ -299,9 +346,10 @@ def stray_refusal(root: Path) -> str | None:
     """The ``STRAY-FILE-REFUSED`` message for *root* in three lines; ``None`` if clean.
 
     The first line counts the strays and names a few; the second gives each file ONE exit chosen by its kind --
-    a file under a code root was meant (``git add``), a script is a one-off (``scratch/<yy>/<mm>/<dd>/<kind>/``),
-    anything else is a program's data (``output/logs/...``); the third points at the details. A checkout that
-    declares no placement is not judged: the adopter's own test reds on the missing table.
+    a retired file (:data:`RETIRED_FILES`) is deleted through its door, a file under a code root was meant
+    (``git add``), a script is a one-off (``scratch/<yy>/<mm>/<dd>/<kind>/``), anything else is a program's data
+    (``output/logs/...``); the third points at the details. A checkout that declares no placement is not judged:
+    the adopter's own test reds on the missing table.
     """
     try:
         placement = declared_placement(root)
@@ -311,11 +359,15 @@ def stray_refusal(root: Path) -> str | None:
     if not found:
         return None
     shown = ', '.join(found[:_SHOWN]) + (f' (+{len(found) - _SHOWN} more)' if len(found) > _SHOWN else '')
-    meant = [rel for rel in found if rel.startswith(placement.code_roots)]
-    scripts = [rel for rel in found if rel not in meant and Path(rel).suffix.lower() in CODE_SUFFIXES]
-    exits = [f'git add {" ".join(meant[:_SHOWN])}' if meant else '']
+    retired = {one: [rel for rel in found if one.matches(rel)] for one in RETIRED_FILES}
+    gone = {rel for copies in retired.values() for rel in copies}
+    rest = [rel for rel in found if rel not in gone]
+    meant = [rel for rel in rest if rel.startswith(placement.code_roots)]
+    scripts = [rel for rel in rest if rel not in meant and Path(rel).suffix.lower() in CODE_SUFFIXES]
+    exits = [f'{len(rels)} x {one.tail} retired ({one.what}): {one.door}' for one, rels in retired.items() if rels]
+    exits.append(f'git add {" ".join(meant[:_SHOWN])}' if meant else '')
     exits.append(f'{", ".join(scripts[:_SHOWN])} -> {_SCRIPT_HOME}' if scripts else '')
-    exits.append(f'data -> {_DATA_HOME}' if len(found) > len(meant) + len(scripts) else '')
+    exits.append(f'data -> {_DATA_HOME}' if len(rest) > len(meant) + len(scripts) else '')
     return (
         f'STRAY-FILE-REFUSED: {len(found)} untracked file(s) outside output/ and scratch/ in {root.as_posix()}: '
         f'{shown}.\n{"; ".join(one for one in exits if one)}.\n{details_for("STRAY-FILE-REFUSED")}'
@@ -384,7 +436,10 @@ def _stray_hook(payload: object) -> int:
         reason = f'STRAY-FILE-REFUSED: the stray census could not be read: {exc}'
     roots, excluded = tmpsweep.declared()  # WRITES-STAY-IN-THE-TREE: what the session left outside the checkout
     since = time.time() - tmpsweep.REPORT_WINDOW_S
-    outside = tmpsweep.session_report(roots, excluded, since=since, suffixes=CODE_SUFFIXES | {'.md', '.txt'})
+    mentions = tmpsweep.tool_text(payload.get('transcript_path'))
+    outside = tmpsweep.session_report(
+        roots, excluded, since=since, suffixes=CODE_SUFFIXES | {'.md', '.txt'}, mentions=mentions
+    )
     reason = '\n'.join(one for one in (reason, outside) if one) or None
     if reason is not None:
         emit(json.dumps({'decision': 'block', 'reason': reason}))

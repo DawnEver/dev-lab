@@ -4,17 +4,23 @@ User ruling 2026-10-19: every change is a short-lived branch returning by a PR t
 which takes ONLY server-side merges. THE TEST PARTS GATE THAT MERGE (user ruling 2026-11-04, superseding
 2026-10-29's "parts never gate", after dev-lab#78 merged with ``tests/base`` FAILED and reddened integration): every
 part the head needs stands PASS (:func:`dev_lab.dev.platformparts.standing`, the reading promotion uses at scope full
-in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses. Opted into by declaring
-``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration tick
-(:func:`dev_lab.dev.forgeintegration.tick`) asks :func:`decide` of each open PR into integration and,
-when nothing is missing, asks the forge to merge it (:func:`merge`). A client push adding a commit to the
-branch is refused at pre-push (:mod:`dev_lab.dev.sessionbranch`, P5).
+in :func:`dev_lab.dev.integrate.promote`); absent or pending waits, FAIL refuses -- every HOSTED part: a hand part
+(:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user ruling 2026-11-10) is named and tested later, never waited
+on. Opted into by declaring ``[tool.dev_lab.integrator] pr_merges_since = "<sha>"``; from then on the integration
+tick (:func:`dev_lab.dev.forgeintegration.tick`) asks :func:`decide` of each open PR into integration and, when
+nothing is missing, asks the forge to merge it (:func:`dev_lab.dev.forgemergecall.merge`). A client push adding a
+commit to the branch is refused at pre-push (:mod:`dev_lab.dev.sessionbranch`, P5).
+
+THIS MODULE DECIDES; it writes nothing. The status readings are :mod:`dev_lab.dev.forgemergewaits`, the forge's
+merge calls :mod:`dev_lab.dev.forgemergecall`, and posting the decision (``forge merge ready``)
+:mod:`dev_lab.dev.forgemergeready`.
 
 ONE DECISION ON BOTH FORGES (user ruling 2026-10-29); only who MERGES differs. :func:`judged` reads a PR's head and
-decides; a workflow job runs ``forge merge ready [--pr <N>]`` (:func:`ready`; no number: every open PR into
-integration), which posts the decision as ONE status, :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`,
-and on ``success`` asks the forge to merge that head itself (:func:`merge`, as the job's own token). That job
-merges on GitHub always, and on Gitea where the repo declares the CI merger (:data:`CI_MERGER`, :func:`ci_merges`;
+decides; a workflow job runs ``forge merge ready [--pr <N>]`` (:func:`dev_lab.dev.forgemergeready.ready`; no
+number: every open PR into integration), which posts the decision as ONE status,
+:data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`, and on ``success`` asks the forge to merge that head itself
+(:func:`~dev_lab.dev.forgemergecall.merge`, as the job's own token). That job merges on GitHub always, and on Gitea
+where the repo declares the CI merger (:data:`CI_MERGER`, :func:`ci_merges`;
 P3, user ruling 2026-11-02): Gitea's ``merge.yml`` runs it on the light runner, and the serve tick then only says
 the decision. A Gitea repo that does not declare it is still merged by the serve tick on the same :func:`judged`.
 GitHub still enforces the branch's required checks on that merge; one still pending refuses it, and the native
@@ -22,23 +28,26 @@ auto-merge ``forge pr create`` enabled merges once they are green. GitHub refuse
 that is already mergeable (dev-lab#15), which is why the job that posts ready merges rather than waiting on it.
 The PR base is :attr:`~dev_lab.dev.lanepolicy.Policy.integration`.
 
-A PR IS MERGED WHEN, and only when, read from the object store and the forge:
+A PR IS MERGED WHEN, and only when, read from the object store and the forge (a repo declaring
+``[tool.dev_lab.integrator] merge_checks`` -- one no serve host serves, user ruling 2026-11-12 -- reads its declared
+checks standing ``success`` (:func:`~dev_lab.dev.forgemergewaits.checks_wait`) IN PLACE of the first, fourth and
+fifth conditions, which a serve host posts):
 
-* its head's test parts all stand PASS (:func:`parts_wait`);
-* its head is REVIEWED (:func:`dev_lab.dev.forgereview_gate.review_gate`, user ruling 2026-10-31): the
-  latest ``tests/review`` is a ``success`` the FORGE posted (its recorded creator, D11) and no ``tests/review-hold``
-  is pending -- or, where the base declares ``where = "judge"``, the declared judge login's latest verdict review
-  at the head is APPROVED. The review is a one-shot acceptance with advice: it is ``success`` once it has run, and
-  ``failure`` only on a security finding. A review that DID NOT RUN never holds the merge (user rulings 2026-11-05,
-  2026-11-06): its recorded cause (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`, read from trusted comments)
-  waives it, and the merge proceeds WARNED, its commit message and decision carrying ``Unreviewed: ...``;
+* its head's HOSTED test parts all stand PASS (:func:`~dev_lab.dev.forgemergewaits.parts_wait`); a hand part is
+  named, never waited on (:func:`~dev_lab.dev.forgemergewaits.hand_parts`, user ruling 2026-11-10);
+* its review is ADVISORY and never a condition (user rulings 2026-11-11/12, both forges): the review still runs at
+  the PR's first merge-ready head (:mod:`dev_lab.dev.reviewturn`) and posts its comment and ``tests/review``; a head
+  whose review is not a forge-posted ``success`` (:func:`dev_lab.dev.forgereview_gate.review_gate`) merges WARNED --
+  the decision names why, and the merged PR gets a comment saying so. A review that did not run and left its
+  recorded cause (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`) carries ``Unreviewed: ...`` into the commit message;
 * it is an INTERNAL PR (:func:`external`, user ruling 2026-11-05): a fork's, or a non-writer's, is never merged by
   the forge -- ``tests/merge-ready`` stays ``pending`` :data:`EXTERNAL`;
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
 * its head's push-row GATES stand ``success`` (:func:`dev_lab.dev.forgeheadgate.gates_wait`: ``session-branch``,
-  ``pr-current``, user ruling 2026-11-07) -- the same judges the pre-push rows call, posted by the forge, so a
-  consumer's stale hook never disarms them; absent, ``error`` or ``failure`` waits;
+  user ruling 2026-11-07) -- the same judge the pre-push row calls, posted by the forge, so a consumer's stale hook
+  never disarms it; absent, ``error`` or ``failure`` waits. ``pr-current`` and ``lock/lag`` are ALARMS, never waited
+  on (W5, dev-lab#644): a stale head is judged by the trial merge below, at merge time;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
@@ -61,41 +70,29 @@ namespace is deleted by the forge with the merge.
 
 from __future__ import annotations
 
-import argparse
-import subprocess
-import sys
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.log import emit
-from lab_commons.outcomes import Conclusion
-
-from dev_lab.dev.branchset import declared_branchset
+from dev_lab.dev.failprint import Fingerprints, new_subjects, refusal
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
-from dev_lab.dev.forgedraft import WAITING, waiting
+from dev_lab.dev.forgedraft import WAITING
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgeheadgate import gates_wait
+from dev_lab.dev.forgeheadgate import alarms_said
+from dev_lab.dev.forgemergewaits import hand_note, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
-from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_gate import review_gate
-from dev_lab.dev.forgesecurity import security_wait
-from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import GITHUB, client_for
-from dev_lab.dev.jobparts import pull_request_waived
-from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.forgestatus import fingerprints_at, status_list
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.platformparts import standing
+from dev_lab.dev.producers import UndeclaredProducer, producer_at
 from dev_lab.dev.reviewcap import unreviewed_waiver
-from dev_lab.dev.reviewturn import review_turn
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
-from dev_lab.dev.unproduced import unproduced_waived
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -107,17 +104,13 @@ __all__ = [
     'CI_MERGER',
     'EXTERNAL',
     'FORGE_PULL',
-    'READY',
     'Decision',
-    'auto_merge',
     'ci_merges',
     'decide',
     'external',
+    'hidden_reds',
     'judged',
-    'main',
-    'merge',
     'merge_message',
-    'ready',
 ]  # fmt: skip
 
 #: The merge decision's ``pending`` line for a PR the forge never merges (:func:`external`).
@@ -137,30 +130,22 @@ def ci_merges(root: Path) -> bool:
 #: The trailer naming the pull request a forge merge closed.
 FORGE_PULL: Final = 'Forge-Pull'
 
-#: What a ``success`` :data:`MERGE_READY_CONTEXT` says.
-READY: Final = 'ready: every merge condition holds'
-
-#: GitHub's native auto-merge, as a merge commit (never squash or rebase: the merge audit reads merge commits).
-_AUTO_MERGE: Final = (
-    'mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) '
-    '{ clientMutationId } }'
-)
-
 
 @dataclass(frozen=True)
 class Decision:
     """Whether one PR may be merged now: what is missing (nothing, when it may), and the message it merges with."""
 
-    others: tuple[str, ...]  # every missing condition but the review
+    others: tuple[str, ...]  # every missing condition; the review is never one (advisory)
     message: str
-    review: str | None = None  # why the head is not reviewed; ``None``: it is (the last gate, reviewturn)
+    review: str | None = None  # why the head is not reviewed, REPORTED; ``None``: it is (reviewturn asks for it)
     unreviewed: str = ''  # the unreviewed warning (:mod:`dev_lab.dev.reviewcap`) when the review was waived
     notes: tuple[str, ...] = ()
+    waiting: bool = False  # every missing condition is a check not yet terminal: posted ``pending``, not ``failure``
 
     @property
     def missing(self) -> tuple[str, ...]:
-        """Every missing condition, the review first."""
-        return (*((f'its review: {self.review}',) if self.review is not None else ()), *self.others)
+        """Every missing condition: never the review, which is advisory (user rulings 2026-11-11/12)."""
+        return self.others
 
     @property
     def ready(self) -> bool:
@@ -174,18 +159,6 @@ def merge_message(branch: str, number: int, policy: Policy) -> str:
         f'chore(merge): {branch} into {policy.integration} (#{number})\n\n'
         f'{MERGED_BRANCH}: {branch}\n{FORGE_PULL}: {number}\n'
     )
-
-
-def parts_wait(root: Path, head: str, statuses: Sequence[CommitStatus]) -> str | None:
-    """Why *head*'s test parts do not all stand PASS, or ``None``: the one :func:`standing` reading, any scope.
-
-    An unproduced part and a hosted one (produced only on a full run, never for a pull request) are waived.
-    """
-    waived = unproduced_waived(root, head, statuses) | pull_request_waived(root, head)
-    parts = standing(statuses, head=head, waived=waived)
-    if parts.result is Conclusion.PASS:
-        return None
-    return '; '.join([f'they stand {parts.reading}', *parts.problems])
 
 
 def decide(
@@ -217,12 +190,11 @@ def decide(
         waived, unreviewed = waiver, None
         title, _, trailers = message.partition('\n\n')
         message = f'{title}\n\n{waiver}\n\n{trailers}'
-    if (unsafe := security_wait(statuses)) is not None:
-        missing.append(f'its security check: {unsafe}')
-    if (gated := gates_wait(statuses)) is not None:
-        missing.append(f'its head gates: {gated}')
-    if (red := parts_wait(root, head, statuses)) is not None:
-        missing.append(f'its test parts: {red}')
+    try:
+        waits = status_waits(policy, head, statuses, producer=producer_at(root))
+    except UndeclaredProducer as undeclared:  # a malformed producer is named, never merged
+        waits = [f'its producer: {undeclared}']
+    missing += waits
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)
@@ -248,8 +220,16 @@ def decide(
         f'file and push the redone branch'
         for sha, problems in undeclared
     ]
-    notes = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
-    return Decision(tuple(missing), message, unreviewed, waived, notes)
+    waiting = len(missing) == len(waits) and not red_checks(statuses)  # the review is never in missing
+    return Decision(tuple(missing), message, unreviewed, waived, _notes(root, statuses), waiting)
+
+
+def _notes(root: Path, statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
+    """What the decision says without waiting on it: an undeclared message row, the hand parts and the alarms."""
+    unjudged = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
+    alarmed = alarms_said(statuses)
+    alarm = f'alarms, never a merge condition: {alarmed}' if alarmed else None
+    return (*unjudged, *filter(None, [hand_note(statuses), alarm]))
 
 
 def external(client: Client, pull: PullRequest) -> bool:
@@ -262,11 +242,31 @@ def external(client: Client, pull: PullRequest) -> bool:
     return client.backend.vets_authors and (pull.fork or not client.trusts(pull.author))
 
 
+def hidden_reds(
+    read: Callable[[str], Fingerprints], head: str, base: str, statuses: Sequence[CommitStatus]
+) -> str | None:
+    """Why *head*'s reds name subjects *base*'s tip does not carry under the same test (D13), or ``None``.
+
+    *read* is a ref's fingerprints (:func:`dev_lab.dev.forgestatus.fingerprints_at`); the break-glass admission
+    asks this too. A head with no red reads no record, and one whose reds name no subject reads no base.
+    Pass-to-fail is not judged here: a red the base lacks is its own wait.
+    """
+    if all(status.state == 'success' for status in statuses):
+        return None
+    try:
+        mine = read(head)
+        if not any(subjects for nodes in mine.values() for subjects in nodes.values()):
+            return None
+        return refusal(new_subjects(mine, read(base)))
+    except (ForgeCallFailed, ValueError, KeyError, TypeError) as failed:
+        return f'its failure fingerprints against {base} cannot be read ({failed}); the forge must answer first'
+
+
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
     try:
-        reviewed = review_gate(client, head, base=policy.integration)
+        reviewed = review_gate(client, base=policy.integration)
     except ValueError as config:  # a declaration that cannot gate is this PR's wait, never the tick's crash
 
         def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:
@@ -277,152 +277,13 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, waiver=waiver
     )
     pull, others = client.pr_view(number), found.others
+    if (
+        hidden := hidden_reds(lambda ref: fingerprints_at(client, ref), head, policy.integration, statuses)
+    ) is not None:
+        others = (hidden, *others)
     if external(client, pull):  # INTERNAL-ONLY (2026-11-05): never merged by the forge, whatever else is green
         others = (EXTERNAL, *others)
     if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         others = (WAITING.format(n=number), *others)
-    return Decision(others, found.message, found.review, found.unreviewed, found.notes)
-
-
-def ready(root: Path, client: Client, number: int) -> str:
-    """Post PR *number*'s :func:`judged` decision as ONE :data:`MERGE_READY_CONTEXT` status on its head; the line.
-
-    ``success`` when nothing is missing, else ``failure`` naming what is (cut to the forge's description limit; the
-    workflow log carries the whole line). A PR into another branch than the PR base is ``failure`` saying so.
-    On GitHub, or where the repo :func:`ci_merges`, a ``success`` is followed by the merge of that judged head
-    (:func:`merge`); a refusal -- the head
-    moved, a required check still pending -- is said, never raised: the decision stands posted either way.
-    """
-    policy, pull = load_policy(root), client.pr_view(number)
-    if pull.base != policy.integration:
-        decision = Decision((f'a PR into {policy.integration}, not {pull.base}',), '')
-    elif pull.draft:  # D53: pending, naming the ready door -- it waits on its author, not on a check
-        return waiting(client, pull) or f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: draft'
-    elif external(client, pull):  # pending: it waits on a maintainer, never on a check
-        status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state='pending', description=EXTERNAL)
-        return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: {EXTERNAL}'
-    else:
-        decision = judged(root, client, policy, branch=pull.head, number=number, head=pull.head_sha)
-    missing = decision.missing
-    suffix = f' ({"; ".join(decision.notes)})' if decision.notes else ''
-    state, why = ('failure', 'waits on: ' + '; '.join(missing)) if missing else ('success', READY + suffix)
-    if decision.unreviewed and not missing:
-        why = f'{READY}{suffix}, WARNED -- {decision.unreviewed}'
-    status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
-    turn = review_turn(client, number, pull.head_sha, decision)  # the review is the last gate: asked here
-    said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}{turn}'
-    if missing or (client.backend is not GITHUB and not ci_merges(root)):
-        return said
-    ephemeral = declared_branchset(root).is_ephemeral(pull.head)
-    try:
-        merge(client, number, head=pull.head_sha, message=decision.message, delete_branch=ephemeral)
-    except ForgeCallFailed as refused:
-        return f'{said}; NOT merged -- {refused}'
-    if decision.unreviewed:
-        client.issue_comment(number, f'Merged WITHOUT a passing review -- {decision.unreviewed}')
-    return f'{said}; merged'
-
-
-def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
-    """``forge merge ready [--pr <N>]``: post the merge decision of PR *N*, else of every open PR into integration.
-
-    Exit 0 posted (ready or not), 2 refused.
-    """
-    parser = argparse.ArgumentParser(prog='dev_lab.dev.forge merge', description=__doc__.splitlines()[0])
-    verbs = parser.add_subparsers(dest='verb', required=True)
-    verbs.add_parser('ready', help=f'post the PR head its {MERGE_READY_CONTEXT} decision').add_argument(
-        '--pr', type=int, help='one PR; omitted: every open PR into the integration branch'
-    )
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    root = Path.cwd() if cwd is None else cwd
-    try:
-        built = client or client_for(root)
-        if args.pr is not None:
-            numbers = [args.pr]
-        else:
-            into = load_policy(root).integration
-            numbers = [pull.number for pull in pr_list(built) if pull.base == into]
-    except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
-        emit(f'[merge] refused: {failed}', err=True)
-        return 2
-    failed = [number for number in numbers if not _ready_or_said(root, built, number)]
-    if failed:
-        emit(
-            f'[merge] refused: {len(failed)} PR(s) could not be judged: {", ".join(f"#{n}" for n in failed)}', err=True
-        )
-        return 2
-    return 0
-
-
-def _ready_or_said(root: Path, client: Client, number: int) -> bool:
-    """Run :func:`ready` on PR *number*; whether it ran. ONE PR'S FAILURE NEVER STOPS THE TICK.
-
-    Any exception judging it (a forge call, an audit's git timing out) is that PR's ``error`` status naming the
-    cause, said on stderr; the PRs after it are still judged, and :func:`main` exits non-zero at the end.
-    """
-    try:
-        emit(f'[merge] {ready(root, client, number)}')
-    except Exception as error:  # noqa: BLE001 -- any cause is this PR's, never the tick's
-        why = f'could not be judged: {_cause(error)}'
-        emit(f'[merge] #{number} {why}', err=True)
-        try:
-            head = client.pr_view(number).head_sha
-            status_post(client, head, context=MERGE_READY_CONTEXT, state='error', description=why)
-        except Exception as unposted:  # noqa: BLE001 -- the line above already said it
-            emit(f'[merge] #{number} its error status was not posted: {unposted}', err=True)
-        return False
-    return True
-
-
-def _cause(error: BaseException) -> str:
-    """What went wrong, in one line: a timeout names the command and its limit."""
-    if isinstance(error, subprocess.TimeoutExpired):
-        argv = error.cmd if isinstance(error.cmd, str) else ' '.join(map(str, error.cmd[:4]))
-        return f'`{argv}` timed out after {error.timeout:g} s'
-    return f'{type(error).__name__}: {error}'
-
-
-def auto_merge(client: Client, number: int) -> str:
-    """Have PR *number* merged once its merge decision is green; the line said. Who MERGES is the forge's.
-
-    Gitea: nothing to ask -- the serve tick merges on the decision (:func:`judged`). GitHub: its native auto-merge,
-    a merge commit, which waits on the branch's required checks (:data:`MERGE_READY_CONTEXT` among them). A refusal
-    GitHub answers (auto-merge off for the repository, a PR already mergeable) is said, never raised: the job that
-    posts the decision merges a ready PR itself (:func:`ready`).
-    """
-    if client.backend is not GITHUB:
-        return f'#{number}: the forge serve tick merges it once its merge decision is green'
-    node = client.call('GET', f'{client.repo}/pulls/{number}')['node_id']
-    answer = client.call('POST', '/graphql', {'query': _AUTO_MERGE, 'variables': {'id': node}})
-    if errors := answer.get('errors'):
-        return f'#{number}: auto-merge NOT enabled -- {errors[0].get("message", errors[0])}'
-    return f'#{number}: auto-merge enabled -- GitHub merges it (a merge commit) once its required checks are green'
-
-
-def merge(client: Client, number: int, *, head: str, message: str, delete_branch: bool) -> None:
-    """Ask the forge to merge PR *number* at *head* with a merge commit saying *message*.
-
-    Both forges refuse a *head* that is no longer the PR's (Gitea ``head_commit_id``, GitHub ``sha``). On GitHub,
-    which deletes no branch with a merge, *delete_branch* deletes the PR's head branch after it.
-    """
-    title, _, body = message.partition('\n\n')
-    if client.backend is GITHUB:
-        client.call(
-            'PUT',
-            f'{client.repo}/pulls/{number}/merge',
-            {'commit_title': title, 'commit_message': body, 'sha': head, 'merge_method': 'merge'},
-        )
-        if delete_branch:
-            client.call('DELETE', f'{client.repo}/git/refs/heads/{client.pr_view(number).head}')
-        return
-    client.call(
-        'POST',
-        f'{client.repo}/pulls/{number}/merge',
-        {
-            'Do': 'merge',
-            'MergeTitleField': title,
-            'MergeMessageField': body,
-            'head_commit_id': head,
-            'delete_branch_after_merge': delete_branch,
-        },
-    )
+    waiting = found.waiting and len(others) == len(found.others)
+    return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting)

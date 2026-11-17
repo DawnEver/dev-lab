@@ -15,18 +15,18 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from dev_lab.dev import forgerecords
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgealarm import STORAGE
+from dev_lab.dev.forgerecordkeep import RECORDS_PER_ROW, kept_shas, sha_of
 from dev_lab.dev.forgerecords import (
     RECORDS_TITLE,
     attach,
-    kept_shas,
     listing,
     prune,
     read_named,
     records_issue,
     remove_named,
     replace_named,
-    sha_of,
 )
+from dev_lab.dev.forgework import GITHUB
 from dev_lab.dev.retentionplan import Policy
 
 FORGE = Forge('forge.example.org', 'o', 'r')
@@ -156,8 +156,8 @@ def test_the_prune_cli_fetches_then_keeps_live_tips(server, tmp_path: Path, caps
 def test_prune_keeps_only_the_newest_unit_results_the_retention_policy_allows(server) -> None:
     """PLANTED CONTROL: unit results (D16) beyond ``[retention] unit_results`` go oldest first; records unaffected."""
     assert Policy().unit_results > 0, 'the one retention policy declares the budget'
-    unit = [_asset(i, f'unit-{c * 64}-{"f" * 64}.tar.gz') for i, c in ((4, 'a'), (5, 'b'), (6, 'c'))]
-    legacy = _asset(2, f'unit-{"d" * 64}-{"f" * 64}.tar.zst')
+    unit = [_asset(i, f'unit-{c * 64}-g0-{"f" * 64}.tar.gz') for i, c in ((4, 'a'), (5, 'b'), (6, 'c'))]
+    legacy = _asset(2, f'unit-{"d" * 64}-g0-{"f" * 64}.tar.zst')
     answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': RECORDS_TITLE}]))
     answer('GET', f'{API}/issues/3/assets', (200, [_asset(1, f'run-{LIVE}-linux-r1.json.gz'), legacy, *unit]))
     built = client(FORGE, Loopback(server))
@@ -170,13 +170,13 @@ def test_the_serve_prune_runs_at_most_once_per_interval_with_the_retention_budge
     calls: list[tuple[frozenset[str], int]] = []
     monkeypatch.setattr(forgerecords, 'kept_shas', lambda _root, **_k: frozenset({LIVE}))
     monkeypatch.setattr(
-        forgerecords, 'prune', lambda _c, keep, *, unit_results: calls.append((keep, unit_results)) or ()
+        forgerecords, 'prune', lambda _c, keep, *, unit_results, **_k: calls.append((keep, unit_results)) or ()
     )
     alarms: list = []
     stamp, now = tmp_path / 'stamp', datetime(2026, 10, 17, tzinfo=UTC)
     run = functools.partial(
-        forgerecords.serve_prune, tmp_path, SimpleNamespace(forge=FORGE), stamp=stamp, table={'unit_results': 3},
-        say=lambda _l: None, alarm=alarms.append, trunk='main',
+        forgerecords.serve_prune, tmp_path, SimpleNamespace(forge=FORGE, backend=None), stamp=stamp,
+        table={'unit_results': 3}, say=lambda _l: None, alarm=alarms.append, trunk='main',
     )  # fmt: skip
     run(now=now)
     run(now=now + forgerecords.PRUNE_EVERY / 2)
@@ -203,3 +203,130 @@ def test_a_named_file_is_replaced_never_duplicated_and_read_back(server) -> None
     deleted = [r['path'] for r in Recorder.received if r['method'] == 'DELETE']
     assert deleted == [f'{API}/issues/3/assets/4'], 'only the named file goes; a run record stays'
     assert remove_named(built, 'absent.json') == 0
+
+
+def test_the_listing_reads_every_page_so_prune_sees_every_record(server) -> None:
+    """The listing reads every page, so prune sees every record.
+
+    2026-11-09: GitHub answers 30 assets a page; the listing read one page, so prune saw 30 of 1000 and the
+    release filled to GitHub's 1000-asset cap -- every later upload was refused (422) and its status dropped.
+
+    PLANTED CONTROL: a dead record on the SECOND page is listed and pruned.
+    """
+    answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
+    live = {f'{i:040x}' for i in range(1, 51)}  # one record per live sha, so no row is superseded
+    first = [_asset(i, f'run-{i:040x}-linux-r1.json.gz') for i in range(1, 51)]
+    answer('GET', '/repos/o/r/releases/9/assets', (200, first), (200, [_asset(51, f'run-{DEAD}-linux-r1.json.gz')]))
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    assert [a.id for a in prune(built, live, unit_results=1, dry_run=True)] == [51]
+
+
+def _full_github(names: list[str]) -> None:
+    """A GitHub records home holding *names* (ids from 1, oldest first), in pages of 50 then an empty page."""
+    answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
+    held = [_asset(i, name) for i, name in enumerate(names, start=1)]
+    listed = [(200, held[i : i + 50]) for i in range(0, len(held), 50)]
+    answer('GET', '/repos/o/r/releases/9/assets', *listed, (200, []))
+    for item in held:
+        answer('DELETE', f'/repos/o/r/releases/assets/{item["id"]}', (204, None))
+
+
+def _deleted() -> list[int]:
+    return [int(r['path'].rsplit('/', 1)[1]) for r in Recorder.received if r['method'] == 'DELETE']
+
+
+def test_a_full_records_home_whose_every_record_is_live_refuses_by_name_and_sends_nothing(
+    server, tmp_path: Path, monkeypatch
+) -> None:
+    """A full records home refuses the upload by name -- and only when nothing on it is prunable.
+
+    GitHub caps a release at 1000 assets; past it the upload's 422 was read as a FINAL refusal and the outbox
+    dropped the verdict. Now the refusal comes first and is a ValueError, which the outbox keeps queued.
+    """
+    monkeypatch.setattr(forgerecords, '_budget', lambda _t: 10)
+    _full_github([f'run-{i:040x}-linux-r1.json.gz' for i in range(1, forgerecords.GITHUB_ASSET_CAP + 1)])
+    record = tmp_path / f'run-{DEAD}-linux-r1.json.gz'
+    record.write_bytes(b'x')
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    with pytest.raises(forgerecords.RecordsHomeFull, match='every record on it is live'):
+        attach(built, record)
+    assert not [r for r in Recorder.received if r['method'] in {'POST', 'DELETE'}], 'nothing is sent to a full home'
+
+
+def test_a_record_of_an_os_row_carries_its_sha_so_prune_sees_it() -> None:
+    """2026-11-15: ``run-<sha>-base@windows-verify-...`` matched no record name, so no prune ever deleted one.
+
+    875 such records of 808 shas filled a records home to GitHub's cap. PLANTED CONTROL: a row naming an
+    unknown OS, or a part the grammar refuses, is still not a record.
+    """
+    assert sha_of(f'run-{LIVE}-base@windows-verify-20261030T041724Z-076dc7d44a4f48ee.json.gz') == LIVE
+    assert sha_of(f'run-{LIVE}-base+gpu@macos-r1.json.gz') == LIVE
+    assert sha_of(f'run-{LIVE}-base@amiga-r1.json.gz') is None
+    assert sha_of(f'run-{LIVE}-Base-r1.json.gz') is None
+
+
+def test_prune_deletes_os_row_records_of_dead_shas_and_superseded_records_of_live_ones(server) -> None:
+    """A re-run never grows the home: each sha's row keeps its newest *per_row* records; a dead sha keeps none."""
+    rows = [f'run-{DEAD}-base@windows-verify-{i}.json.gz' for i in range(3)]
+    live = [f'run-{LIVE}-base@macos-verify-{i}.json.gz' for i in range(4)]
+    answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': RECORDS_TITLE}]))
+    answer('GET', f'{API}/issues/3/assets', (200, [_asset(i, n) for i, n in enumerate(rows + live, start=1)]))
+    built = client(FORGE, Loopback(server))
+    doomed = prune(built, {LIVE}, unit_results=1, per_row=2, dry_run=True)
+    assert [a.id for a in doomed] == [1, 2, 3, 4, 5], 'every dead record, and the two oldest of the live row'
+    assert [a.id for a in prune(built, {LIVE}, unit_results=1, per_row=4, dry_run=True)] == [1, 2, 3]
+
+
+def test_attach_to_a_full_home_prunes_the_dead_and_superseded_records_then_uploads(
+    server, tmp_path: Path, monkeypatch
+) -> None:
+    """Attach never refuses a post while prunable records exist: it prunes the home, then posts."""
+    monkeypatch.setattr(forgerecords, '_budget', lambda _t: 10)
+    monkeypatch.setattr(forgerecords, 'fetch_origin', lambda _root: None)
+    monkeypatch.setattr(forgerecords, 'kept_shas', lambda _root, **_k: frozenset({LIVE}))
+    monkeypatch.setattr(forgerecords, 'load_policy', lambda _root: SimpleNamespace(trunk='main'))
+    cap = forgerecords.GITHUB_ASSET_CAP
+    _full_github([f'run-{DEAD}-base@windows-verify-{i}.json.gz' for i in range(cap - 3)] + [
+        f'run-{LIVE}-base@windows-verify-{i}.json.gz' for i in range(3)
+    ])  # fmt: skip
+    record = tmp_path / f'run-{LIVE}-base@windows-verify-new.json.gz'
+    record.write_bytes(b'x')
+    answer('POST', '/repos/o/r/releases/9/assets', (201, _asset(cap + 1, record.name)))
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    assert attach(built, record, root=tmp_path).id == cap + 1
+    per_row = RECORDS_PER_ROW
+    assert _deleted() == list(range(1, cap - per_row + 1)), 'the dead, and the live row down to its newest'
+
+
+def test_attach_without_a_checkout_still_prunes_what_needs_no_liveness(server, tmp_path: Path, monkeypatch) -> None:
+    """With no checkout to read live shas from, superseded records still go: a re-run cannot fill the home."""
+    monkeypatch.setattr(forgerecords, '_budget', lambda _t: 10)
+    cap = forgerecords.GITHUB_ASSET_CAP
+    _full_github([f'run-{i:040x}-base@windows-r1.json.gz' for i in range(1, cap - 4)] + [
+        f'run-{DEAD}-base@windows-verify-{i}.json.gz' for i in range(5)
+    ])  # fmt: skip
+    record = tmp_path / f'unit-{"a" * 64}-g0-{"f" * 64}.tar.gz'
+    record.write_bytes(b'x')
+    answer('POST', '/repos/o/r/releases/9/assets', (201, _asset(cap + 1, record.name)))
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    assert attach(built, record).id == cap + 1
+    per_row = RECORDS_PER_ROW
+    assert _deleted() == list(range(cap - 4, cap + 1 - per_row)), 'only the superseded records of the one row'
+
+
+def test_the_serve_prune_alarms_storage_well_before_the_cap(monkeypatch, tmp_path: Path) -> None:
+    """An alarm at ALARM_AT of the cap, so the home is pruned before it refuses. PLANTED CONTROL: below, none."""
+    monkeypatch.setattr(forgerecords, 'kept_shas', lambda _root, **_k: frozenset({LIVE}))
+    monkeypatch.setattr(forgerecords, 'prune', lambda *_a, **_k: ())
+    alarms: list = []
+    built = SimpleNamespace(forge=Forge('github.com', 'o', 'r'), backend=GITHUB)
+    cap = forgerecords.GITHUB_ASSET_CAP
+    line = int(cap * forgerecords.ALARM_AT)
+    assert line < cap
+    for held, stamp in ((line - 1, 'below'), (line, 'at')):
+        monkeypatch.setattr(forgerecords, 'listing', lambda _c, n=held: tuple(range(n)))
+        forgerecords.serve_prune(
+            tmp_path, built, now=datetime(2026, 11, 15, tzinfo=UTC), stamp=tmp_path / stamp,
+            table={'unit_results': 3}, say=lambda _l: None, alarm=alarms.append, trunk='main',
+        )  # fmt: skip
+    assert [(a.kind, a.subject) for a in alarms] == [(STORAGE, f'the records home holds {line} of {cap} assets')]

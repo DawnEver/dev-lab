@@ -20,7 +20,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from lab_commons.compute import learned
+from lab_commons.compute import learned, measured
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import records
 from lab_commons.hpc import run as hpc_run
@@ -59,7 +59,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart, PartRefusal, part_context
-from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
+from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owner_of, release_reason
 
 SHA = 'c' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -374,8 +374,8 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        release_reason(ProducerExit.INCONCLUSIVE, outage=False),
-    )
+        release_reason(ProducerExit.PART_REFUSED, outage=None, detail=': INCONCLUSIVE: 3 lost'),
+    ), 'W5 (dev-lab#644): a part refusal is its own class, requeued by it'
     assert routed == [{'sha': SHA}], 'its reported reds are real reds: an inconclusive record is still routed'
 
 
@@ -396,7 +396,7 @@ def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> N
     assert _tick(store, _Unbuilt(home / 'r')) is None, 'released and dropped'
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)} {log}',
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).replace(' class=', f' {log} class='),
     )
     assert forgerunstate.live('https://f/o/r.git') == ()
     _start(home, store)
@@ -444,18 +444,13 @@ def _plant_schema_1() -> dict[str, Any]:
 
 
 @pytest.mark.usefixtures('home')
-def test_a_live_schema_1_run_is_adopted_losslessly_and_written_back_at_this_schema() -> None:
-    """A tool redeployed under a live run adopts it: every field carried, the old job name kept as an alias."""
+def test_a_live_schema_1_run_is_refused_by_name_with_the_remedy_and_left_in_place() -> None:
+    """FORMATS-MIGRATE-ONCE: an older schema is never read; the file is named, its remedy given, and kept."""
     raw = _plant_schema_1()
-    (run,) = forgerunstate.live(raw['repo_url'])
-    carried = {key: value for key, value in dataclasses.asdict(run).items() if key in raw and key != 'schema'}
-    as_read = {k: tuple(v) if isinstance(v, list) else v for k, v in raw.items() if k != 'schema'}
-    assert carried == as_read
-    assert run.schema == forgerunstate.SCHEMA
-    assert run.job_aliases == (f'run-{raw["sha"][:12]}',), 'jobs sbatched under schema 1 bear the sha-only name'
     (path,) = forgerunstate.directory().glob('*.json')
-    assert json.loads(path.read_text(encoding='utf-8'))['schema'] == forgerunstate.SCHEMA, 'written back'
-    assert forgerunstate.live(raw['repo_url']) == (run,), 'deterministic: a second read of the upgraded file agrees'
+    with pytest.raises(forgerunstate.ForeignSchema, match=r'schema 1.*squeue --me'):
+        forgerunstate.live(raw['repo_url'])
+    assert json.loads(path.read_text(encoding='utf-8')) == raw, 'a refused file is not rewritten'
 
 
 def test_a_new_run_has_no_job_alias(home: Path) -> None:
@@ -1033,7 +1028,10 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
+    assert post['description'].startswith(
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).removesuffix(' class=environment')
+    ), post['description']
+    assert owner_of('error', post['description']) is Owner.ENVIRONMENT
 
 
 def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_failure_is_retried(
@@ -1071,7 +1069,10 @@ def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_fai
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
+    assert post['description'].startswith(
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).removesuffix(' class=environment')
+    ), post['description']
+    assert owner_of('error', post['description']) is Owner.ENVIRONMENT
     assert cause in post['description']
 
 
@@ -1316,7 +1317,9 @@ def test_the_standing_carries_the_most_any_grant_gives(tmp_path: Path, monkeypat
 
 def _snapshot_untagged() -> Snapshot:
     quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
-    return Snapshot(nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True),), partitions={}, quota=quota)
+    return Snapshot(
+        nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True, total_cpus=8),), partitions={}, quota=quota
+    )
 
 
 @pytest.mark.parametrize('ref', [INTEGRATION_REF, PR_REF])
@@ -1532,7 +1535,7 @@ def test_a_job_slurm_killed_for_memory_or_time_is_read_with_its_ask_and_use_and_
     state = {'rounds': [{'job_ids': ['7'], 'run_dir': '/r0'}, {'job_ids': ['8'], 'run_dir': '/r1'}]}
     monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
     monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: None)
-    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 6.0)
+    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 360.0)
     machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'), slurm_account='acct')])
     cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
     run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
@@ -1543,11 +1546,47 @@ def test_a_job_slurm_killed_for_memory_or_time_is_read_with_its_ask_and_use_and_
     assert (oom.job, oom.state, oom.asked_mb, oom.used_mb) == ('7_0', 'OUT_OF_MEMORY', 4096, 4199)
     assert (timeout.job, timeout.state, timeout.asked_s, timeout.used_s) == ('8_0', 'TIMEOUT', 3600, 3602)
     assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(
-        6.0 * learned.ASK_CEILING_SHARE, rel=1e-12, abs=0.0
-    ), 'held strictly below the grant ceiling'
+        measured.killed_need_mb(4199, 4096) / 1024, rel=1e-12, abs=0.0
+    ), 'grown from the measured peak; the ceiling hold is record_ask (lab-commons test_compute_learned)'
     # the OOM task's file is floored at its ask, locally and in the record every host folds; the TIMEOUT's is not
     assert learned.learned('https://f/o/r.git')['peaks_mb'] == {'tests/a.py': 4096.0}
     assert json.loads(gzip.decompress(record.read_bytes()))['peaks_mb'] == {'tests/a.py': 4096.0}
+
+
+#: Two OOM tasks of one round: 7_0 ran the run's heavy file, 7_1 a light one.
+_SACCT_HEAVY_AND_LIGHT = """7_0|OUT_OF_MEMORY|200G||00:03:10|01:00:00
+7_0.batch|OUT_OF_MEMORY||220200960K|00:03:10|
+7_1|OUT_OF_MEMORY|4G||00:03:10|01:00:00
+7_1.batch|OUT_OF_MEMORY||4300000K|00:03:10|
+"""
+
+
+def test_a_heavy_oom_kill_floors_its_file_and_only_a_light_kill_sizes_the_part(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-11-09: one heavy sdm file's kill raised ``slurm|`` to 324-412 GB, asked by ~7200 light files.
+
+    The run's ``heavy`` file's kill floors that file only (``forgeoom``); the part's row is raised by the light
+    kill alone, grown from its measured peak. PLANTED CONTROL: the light kill does raise it.
+    """
+    manifest = {'shards': [[0, 1], [1, 2]], 'items': [{'ids': ['tests/heavy.py::t']}, {'ids': ['tests/a.py::t']}]}
+
+    def runner(command: str, _stdin: object) -> str:
+        return json.dumps(manifest) if command.startswith('cat ') else _SACCT_HEAVY_AND_LIGHT
+
+    state = {'rounds': [{'job_ids': ['7'], 'run_dir': '/r0'}], 'heavy': ['tests/heavy.py']}
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: None)
+    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 360.0)
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'), slurm_account='acct')])
+    cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
+    run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
+    cluster.killed(run)
+    light_gb = measured.killed_need_mb(4199, 4096) / 1024
+    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(
+        light_gb, rel=1e-12, abs=0.0
+    )
+    assert learned.learned('https://f/o/r.git')['peaks_mb'] == {'tests/heavy.py': 204800.0, 'tests/a.py': 4096.0}
 
 
 class _Killed(_Slurm):
@@ -1858,3 +1897,29 @@ def test_an_incremental_run_submits_only_the_test_files_its_diff_reaches(
     assert 'tests/test_a.py::TestA::test_y[1]' in spec.only
     assert 'tests/test_c.py::test_c' not in spec.only
     assert list(spec.only) == ['tests/test_a.py'], 'a file collection error is matched by its path'
+
+
+def test_an_oom_ask_grows_from_the_measured_peak_not_the_limit(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """GROW FROM MEASUREMENT (lab-commons #147 B): the next ask is the read peak x MEASURED_GROWTH.
+
+    The kill read ``MaxRSS`` 4199 MB at a 4096 MB limit, so ``killed_need_mb`` of the two is asked -- never the
+    limit x OOM_GROWTH, which grows a part that measured its need past what it needs.
+    """
+    manifest = {'shards': [[0, 1], [1, 2]], 'items': [{'ids': ['tests/a.py::t']}, {'ids': ['tests/b.py::t']}]}
+
+    def runner(command: str, _stdin: object) -> str:
+        return json.dumps(manifest) if command.startswith('cat ') else _SACCT_KILLED
+
+    asks: list[float] = []
+    state = {'rounds': [{'job_ids': ['7'], 'run_dir': '/r0'}, {'job_ids': ['8'], 'run_dir': '/r1'}]}
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: None)
+    monkeypatch.setattr(forgeslurm, 'grantable_gb', lambda _snapshots: 1000.0)
+    monkeypatch.setattr(learned, 'record_ask', lambda _url, _kind, _needs, gb, **_k: asks.append(gb))
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'), slurm_account='acct')])
+    cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
+    run: Any = SimpleNamespace(job_aliases=(), sha='a' * 40, repo_url='https://f/o/r.git', platform='base')
+    record = home / 'run.json.gz'
+    record.write_bytes(gzip.compress(json.dumps({'peaks_mb': {}}).encode()))
+    cluster.killed(run, record)
+    assert asks == [pytest.approx(4199 / 1024 * measured.MEASURED_GROWTH, rel=1e-12, abs=0.0)]

@@ -18,6 +18,8 @@ from pathlib import Path
 
 from _arch_corpus import TEST_FLOOR, assert_floor, parse, rel, suite_modules
 
+from dev_lab.dev.failprint import subject_lines, subjects_of
+
 #: Test modules permitted to skip, each with the reason. EMPTY, measured 2026-09-15.
 ALLOWED_SKIPS: dict[str, str] = {}
 
@@ -47,16 +49,21 @@ def _name(path: Path) -> str:
         return path.name
 
 
+def skip_refusal(live: set[str], pinned: set[str]) -> str:
+    """The red of the skip ratchet: both sides by name, and one subject line per module that moved."""
+    return (
+        f'modules that skip and are not pinned: {sorted(live - pinned)} -- an xfail carries '
+        f'its residual, a skip carries nothing. Pinned but no longer skipping: '
+        f'{sorted(pinned - live)} -- delete the entry in the same edit.\n' + subject_lines(live ^ pinned)
+    )
+
+
 def test_no_test_module_skips() -> None:
     """THE CHECK, two-sided: an unpinned skip reds, and so would a pin nothing uses."""
     paths = suite_modules()
     assert_floor(len(paths), TEST_FLOOR, 'skip')
     live = {site.split(':')[0] for site in skip_sites(paths)}
-    assert live == set(ALLOWED_SKIPS), (
-        f'modules that skip and are not pinned: {sorted(live - set(ALLOWED_SKIPS))} -- an xfail carries '
-        f'its residual, a skip carries nothing. Pinned but no longer skipping: '
-        f'{sorted(set(ALLOWED_SKIPS) - live)} -- delete the entry in the same edit.'
-    )
+    assert live == set(ALLOWED_SKIPS), skip_refusal(live, set(ALLOWED_SKIPS))
 
 
 def test_a_planted_skip_is_refused(tmp_path: Path) -> None:
@@ -73,3 +80,10 @@ def test_a_planted_skip_is_refused(tmp_path: Path) -> None:
     assert any('skipif' in s for s in sites)
     assert any('marked.py' in s or 'marked' in s for s in sites)
     assert not any('clean' in s for s in sites), 'an xfail is the sanctioned disposition, not a violation'
+
+
+def test_the_skip_red_names_each_moved_module_as_a_subject() -> None:
+    """THE PLANTED CONTROL for the fingerprint: an unpinned and an orphaned module are each a subject line."""
+    said = skip_refusal({'a.py', 'kept.py'}, {'kept.py', 'gone.py'})
+    assert subjects_of(said) == {'a.py', 'gone.py'}, said
+    assert subjects_of(skip_refusal({'kept.py'}, {'kept.py'})) == frozenset()

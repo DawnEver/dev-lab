@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev._forgebackends import GITHUB
@@ -188,7 +189,10 @@ def _verdict_of(out: Findings, bundle: reviewbundle.Bundle, said: str) -> Verdic
     """The verdict on *out* only when every reviewer ran (``ok``/``skipped``, at least one ``ok``); else a line."""
     statuses = [one.status for one in out.reviewers]
     if not statuses or not set(statuses) <= _RAN or 'ok' not in statuses:
-        kinds = ', '.join(f'{one.name} {one.status}' for one in out.reviewers) or 'none planned'
+        kinds = (
+            '; '.join(f'{one.name} {one.status}' + (f': {one.error}' if one.error else '') for one in out.reviewers)
+            or 'none planned'
+        )
         return f'{said}: not every reviewer returned findings ({kinds}); nothing posted'
     return _rendered(out, bundle)
 
@@ -199,7 +203,7 @@ def judge_one(
 ) -> Verdict | str | None:  # fmt: skip
     """The verdict on *pull*'s head, a line when nothing can be posted yet (retried), ``None`` with no pointer."""
     said = f'#{pull.number} {pull.head_sha[:12]}'
-    with tempfile.TemporaryDirectory(prefix='review-judge-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-judge-') as scratch:
         where = Path(scratch)
         try:
             bundle = trusted_bundle(client, review, pull, where)

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Final, cast
 
 import pytest
+from lab_commons.hpc.cluster import Unreachable
+from lab_commons.hpc.grants import Budget, Grant
 from lab_commons.hpc.slurm import Node, Quota, Snapshot
 
 from dev_lab.dev import forgeslurm, hpcusage
@@ -71,7 +76,9 @@ def test_an_oom_or_timeout_job_takes_its_steps_state_and_an_oom_carries_ask_and_
 
 def _snapshot() -> Snapshot:
     quota = Quota(account='a', cpus=64, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
-    return Snapshot(nodes=(Node('n1', ('defq',), 64, 65536, 0, schedulable=True),), partitions={}, quota=quota)
+    return Snapshot(
+        nodes=(Node('n1', ('defq',), 64, 65536, 0, schedulable=True, total_cpus=64),), partitions={}, quota=quota
+    )
 
 
 def test_a_tick_reads_sacct_once_for_both_the_budget_and_the_card(
@@ -103,3 +110,100 @@ def test_the_card_renders_the_table_with_values_escaped() -> None:
     assert '<img' not in text
     plain = HostCard('ada/alice', 'bot', 'linux', '2026-11-02T10:00:00+00:00').text()
     assert 'last 24 h' not in plain, 'PLANTED CONTROL: a card with no usage carries no table'
+
+
+# THE READ DOOR: every declared grant's day as JSON, for a reader outside dev-lab (the agents dashboard's collector).
+# Planted controls: an unreachable grant is listed unread WITH its reason, never dropped; a free grant carries no
+# budget; a second grant of one login on one cluster is not read twice (its jobs would count twice).
+
+QUOTA_TEXT = (
+    'Disk quotas for user x (uid 1):\n'
+    '     Filesystem  blocks   quota   limit   grace   files   quota   limit   grace\n'
+    '     /dev/x 5000 10000 10000 300 1000 1000\n'
+)
+LEDGER = 'COMPLETED|4|60|36000000\nRUNNING|8|600|0\n'
+
+
+def _grant(user: str, *, billed: bool = False, cluster: str = 'c', account: str = 'acct') -> Grant:
+    budget = Budget(20000, '2026-08-01', '2027-08-01') if billed else None
+    return Grant(user, ('h',), account, billed=billed, budget=budget, role='research', cluster_name=cluster)
+
+
+UNREACHABLE: Final = 'no login host answered'
+
+
+def _connect(
+    fail: frozenset[str] = frozenset(), calls: list[str] | None = None
+) -> Callable[[Grant], Callable[[str, str | None], str]]:
+    def connect(grant: Grant) -> Callable[[str, str | None], str]:
+        if grant.user in fail:
+            raise Unreachable(UNREACHABLE)
+
+        def run(command: str, _stdin: str | None) -> str:
+            if calls is not None:
+                calls.append(f'{grant.cluster_name}/{grant.user}:{command.split(maxsplit=1)[0]}')
+            if command == hpcusage.COMMAND:
+                return SACCT
+            if command == hpcusage.QUOTA_COMMAND:
+                return QUOTA_TEXT
+            return LEDGER
+
+        return run
+
+    return connect
+
+
+def test_the_report_carries_each_grant_usage_quota_and_billed_budget() -> None:
+    out = hpcusage.report([_grant('svc'), _grant('lab', billed=True)], today=date(2027, 2, 1), connect=_connect())
+    free, billed = out['grants']
+    assert out['schema'] == hpcusage.REPORT_SCHEMA
+    assert free['read'] is True
+    assert (free['cluster'], free['account'], free['role']) == ('c', 'svc', 'research')
+    assert free['jobs'] == 7
+    assert free['core_hours'] == pytest.approx(ALLOC / 3600, abs=1e-3)
+    assert free['states']['OUT_OF_MEMORY'] == 2
+    assert 'sweep' not in json.dumps(free), 'numbers only: no job name leaves the door'
+    assert free['quota'] == {'bytes': 0.5, 'files': 0.3}
+    assert free['budget'] is None, 'a free grant has no budget'
+    assert billed['budget'] == {
+        'core_hours': 20000,
+        'spent': 10000.0,
+        'committed': 80.0,
+        'since': '2026-08-01',
+        'until': '2027-08-01',
+        'window': pytest.approx(184 / 365, abs=1e-4),
+    }
+
+
+def test_an_unread_grant_is_listed_with_its_reason() -> None:
+    connect = _connect(frozenset({'gone'}))
+    gone, svc = hpcusage.report([_grant('gone'), _grant('svc')], today=date(2027, 2, 1), connect=connect)['grants']
+    assert gone == {
+        'cluster': 'c',
+        'account': 'gone',
+        'slurm_account': 'acct',
+        'role': 'research',
+        'read': False,
+        'why': UNREACHABLE,
+    }
+    assert svc['read'] is True
+
+
+def test_one_login_on_one_cluster_is_read_once() -> None:
+    calls: list[str] = []
+    grants = [_grant('svc'), _grant('svc', account='other', billed=True), _grant('svc', cluster='d')]
+    out = hpcusage.report(grants, today=date(2027, 2, 1), connect=_connect(calls=calls))
+    assert [(g['cluster'], g['account']) for g in out['grants']] == [('c', 'svc'), ('d', 'svc')]
+    assert calls.count('c/svc:sacct') == 2, 'its day once and its billed ledger once'
+    assert calls.count('d/svc:sacct') == 1, 'another cluster is another login'
+    assert out['grants'][0]['budget']['core_hours'] == 20000, 'the login takes its billed grant budget'
+
+
+def test_the_door_prints_the_report_as_json(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hpcusage, 'declared', lambda: [_grant('svc')])
+    monkeypatch.setattr(hpcusage, 'runner_for', _connect())
+    assert hpcusage.main(['report', '--json']) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert [g['account'] for g in printed['grants']] == ['svc']

@@ -16,6 +16,8 @@ from dev_lab.dev.codeplace import (
     FAMILY_CODE_ROOTS,
     FAMILY_HOMES,
     FAMILY_STRAY_ROOTS,
+    RETIRED_FILES,
+    TASK_ROOT,
     PlacementNotDeclared,
     StrayCensusUnreadable,
     declared_misplaced,
@@ -295,3 +297,60 @@ def test_a_stray_under_a_code_root_is_a_file_meant_and_its_one_remedy_is_git_add
     assert reason is not None
     assert 'git add src/new_module.py' in reason.splitlines()[1]
     assert 'scratch/' not in reason.splitlines()[1]
+
+
+def test_a_retired_file_is_named_with_its_deletion_door_and_never_git_add(tmp_path) -> None:
+    """The 2026-11-17 wall: twelve stale rem indexes, eleven under src/, were told to be `git add`-ed."""
+    _repo(tmp_path)
+    scoped = [f'src/pkg{n}/.claude/rules/MEMORY.md' for n in range(11)]
+    for rel in ('.claude/rules/MEMORY.md', *scoped):
+        _plant(tmp_path, rel)
+    _plant(tmp_path, 'src/new_module.py')  # the planted control: a file meant still gets the add remedy
+    reason = stray_refusal(tmp_path)
+    assert reason is not None
+    assert problems(reason, 'refusal') == []
+    exits = reason.splitlines()[1]
+    retired = next(one for one in RETIRED_FILES if one.tail == '.claude/rules/MEMORY.md')
+    assert f'12 x {retired.tail} retired' in exits
+    assert retired.door in exits
+    assert 'git add src/new_module.py' in exits
+    assert 'MEMORY.md' not in exits.split('git add', 1)[1], 'a retired file is never offered to git add'
+    assert 'output/logs/' not in exits, 'the root copy is not data either'
+
+
+@pytest.mark.parametrize(
+    ('rel', 'retired'),
+    [
+        ('.claude/rules/MEMORY.md', True),
+        ('src/pkg/sub/.claude/rules/MEMORY.md', True),
+        ('attic/old/.claude/rules/MEMORY.md', False),  # an archive is frozen source: rem's migration skips it
+        ('.claude/rules/taste.md', False),
+        ('docs/rules/MEMORY.md', False),
+        ('src/pkg/x.claude/rules/MEMORY.md', False),
+    ],
+)
+def test_a_retired_file_is_matched_by_its_tail_at_any_depth_outside_an_archive(rel: str, *, retired: bool) -> None:
+    assert any(one.matches(rel) for one in RETIRED_FILES) is retired
+
+
+# -- the task ledger is repo state: never a stray, never a demand to commit it (W4) -------------------------------
+
+
+def _stop(root) -> str:
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        main(['stray'], stdin=io.StringIO(json.dumps({'hook_event_name': 'Stop', 'cwd': str(root)})))
+    return out.getvalue()
+
+
+def test_the_untracked_ledger_is_silent_at_stop_while_a_root_stray_still_blocks(tmp_path, monkeypatch) -> None:
+    """The Stop nag that told a session to commit its task on its branch is gone: the ledger is never committed."""
+    _repo(tmp_path)
+    for rel in ('plecs-alignment/TASK.md', 'plecs-alignment/JOURNAL.md', '.bindings/s1.json'):
+        _plant(tmp_path, f'{TASK_ROOT}{rel}')
+    assert declared_strays(tmp_path) == []
+    assert _stop(tmp_path) == ''
+    monkeypatch.chdir(tmp_path)
+    assert main(['stray-check']) == 0
+    _plant(tmp_path, 'status.txt')  # the planted control: a genuine stray still blocks
+    assert json.loads(_stop(tmp_path))['decision'] == 'block'

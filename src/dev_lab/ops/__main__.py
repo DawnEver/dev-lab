@@ -1,8 +1,12 @@
 """``python -m dev_lab.ops --config <toml> <verb>``: the one door of every host role.
 
-Verbs: ``install``, ``promote``, ``judge``, ``upgrade``, ``probe``, ``breakglass serve|tick``,
-``consent serve|enrol|keygen``, ``backup export|pull``, ``access enrol|adopt``, ``disk``, ``clean``
-(:mod:`dev_lab.ops.disk`), ``config apply`` (:mod:`dev_lab.ops.configdoor`).
+Verbs: ``install``, ``promote``, ``judge``,
+``upgrade [--sha S --credential F | --subject | --follow]`` (:mod:`.upgrade`, :mod:`.upgradefollow`),
+``probe``, ``breakglass serve|tick``,
+``consent serve|enrol|keygen|ready`` (:mod:`dev_lab.ops.consentverbs`), ``backup export|pull``,
+``access enrol|adopt``, ``disk``, ``clean`` (:mod:`dev_lab.ops.disk`), ``config apply|tick``
+(:mod:`dev_lab.ops.configdoor`), ``forge account ensure`` and ``forge token mint`` (:mod:`dev_lab.ops.forgeaccounts`),
+``forge protect plan|apply`` (:mod:`dev_lab.ops.forgeprotection`).
 
 Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` renders into a test root.
 """
@@ -10,303 +14,57 @@ Exit codes: 0 done, 1 a failure (alerted), 2 refused. ``install --root <dir>`` r
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import shutil
 import sys
-import time
-from collections.abc import Callable, Mapping, Sequence
-from datetime import UTC, datetime
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from lab_commons.log import emit
 
-from dev_lab.dev.forge import forge_of_url
-from dev_lab.dev.forgework import Client
-from dev_lab.dev.netverb import run_network_verb
 from dev_lab.ops import (
-    access,
-    backup,
-    breakglass,
-    configdoor,
+    alertless,
+    configverbs,
+    consentverbs,
     disk,
-    install,
-    judge,
-    offsite,
-    probe,
-    promote,
-    sshkey,
-    totp,
-    upgrade,
+    forgeaccounts,
+    githubwho,
+    secretplace,
 )
-from dev_lab.ops.config import Consent, OpsConfig, load
-from dev_lab.ops.consent import serve as consent_serve
-from dev_lab.ops.consent.client import public_key, redeem
-from dev_lab.ops.consent.credential import ConsentRefused, public_text
-from dev_lab.ops.consent.issuer import Issuer, keygen
-from dev_lab.supervise.alert import Notifier
-from dev_lab.supervise.notice import Context, Notice, host_label
+from dev_lab.ops.config import load
+from dev_lab.ops.hostverbs import (
+    access_verb,
+    alert,
+    backup_verb,
+    breakglass_verb,
+    install_verb,
+    judge_verb,
+    probe_verb,
+    promote_verb,
+    show,
+)
+from dev_lab.ops.redeemverbs import forge_verb, redeemer, secret_place, upgrade_verb
 
 __all__ = ['main']
-
-
-def _alert(config: OpsConfig, title: str, detail: str) -> bool:
-    """Send through every ``[alerts]`` channel; whether any channel took it."""
-    return any(
-        delivery.ok
-        for delivery in Notifier(config.merged).send(
-            Notice(
-                title,
-                host=host_label(config.merged.get('notify', {})),
-                context=Context(service='dev_lab.ops'),
-                findings=(detail,),
-            )
-        )
-    )
-
-
-def _secret(path: str) -> str:
-    return Path(path).read_text(encoding='utf-8').strip()
-
-
-def _show(link: str, *, uri_only: bool) -> None:
-    """The enrolment to the enrolling terminal only (stdout, never a log): a QR to scan, or the bare URI."""
-    if uri_only:
-        emit(link)
-        return
-    drawn = totp.qr(link)
-    if drawn is None:
-        emit(link)
-        emit('[ops] no QR: install dev-lab[ops] (segno) to draw one; scan or type this URI, it is shown once', err=True)
-        return
-    emit(drawn)
-    emit('[ops] scan this QR into the Authenticator; it is shown once (--uri prints the bare URI instead)', err=True)
-
-
-def _install(config: OpsConfig, root: Path) -> int:
-    as_root = sys.platform != 'win32' and os.geteuid() == 0
-    try:
-        done = install.install(config, root, chown=shutil.chown if as_root else None)
-    except ValueError as refused:
-        emit(f'[ops install] refused: {refused}', err=True)
-        return 2
-    for path, state in done.paths.items():
-        emit(f'{state:9} {path}')
-    emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in done.next_steps)]))
-    return 0
-
-
-def _promote(config: OpsConfig) -> int:
-    failed = [o for o in promote.run(config) if o.state == 'failed']
-    for outcome in failed:
-        _alert(config, f'promote FAILED {outcome.repo}', outcome.detail)
-    return 1 if failed else 0
-
-
-def _judge(config: OpsConfig) -> int:
-    if config.judge is None:
-        emit(f'[ops] {config.path} enables no [ops.judge]', err=True)
-        return 2
-    failed = [o for o in judge.run(config) if o.state == 'failed']
-    for outcome in failed:
-        _alert(config, f'judge FAILED {outcome.repo}', outcome.detail)
-    return 1 if failed else 0
-
-
-def _upgrade(config: OpsConfig) -> int:
-    if config.upgrade is None:
-        emit(f'[ops] {config.path} enables no [ops.upgrade]', err=True)
-        return 2
-    code, said = upgrade.run(config)
-    emit(f'[ops upgrade] {said}', err=code != 0)
-    return 0 if code == 0 else 1
-
-
-def _read_input(source: str) -> str:
-    """A secret from a file, or stdin for ``-``: never an argument, which a process listing would show."""
-    return sys.stdin.read() if source == '-' else Path(source).read_text(encoding='utf-8')
-
-
-def _access(config: OpsConfig, action: str, *, force: bool, uri_only: bool, secret_from: str) -> int:
-    if config.access is None:
-        emit(f'[ops] {config.path} enables no [ops.access]', err=True)
-        return 2
-    try:
-        if action == 'adopt':
-            emit(access.adopt(config, _read_input(secret_from)))
-        else:
-            _show(access.enrol(config, force=force), uri_only=uri_only)
-    except (totp.TotpRefused, ValueError, OSError) as refused:
-        emit(f'[ops access] refused: {refused}', err=True)
-        return 2
-    return 0
-
-
-def _backup(config: OpsConfig, verb: str) -> int:
-    role = config.backup
-    if role is None or not (role.dumpers if verb == 'export' else role.source):
-        emit(f'[ops] {config.path} declares no backup {verb} side', err=True)
-        return 2
-    try:
-        if verb == 'export':
-            backup.export(role, sys.stdout.buffer)
-            return 0
-        kept = backup.pull(role, datetime.now(UTC))
-        files = sorted(path for path in kept.iterdir())
-        if role.offsite is not None:
-            offsite.upload(role.offsite, offsite.AwsCli(role.offsite), kept.name, files)
-        emit(f'[ops backup] kept {kept} ({len(files)} file(s))' + (', off-site copied' if role.offsite else ''))
-    except (backup.BackupRefused, OSError, ValueError) as failed:
-        emit(f'[ops backup] {failed}', err=True)
-        _alert(config, f'backup {verb} FAILED', str(failed))
-        return 1
-    return 0
-
-
-def _issuer(config: OpsConfig, role: Consent) -> Issuer:
-    def locked(until: float) -> None:
-        when = datetime.fromtimestamp(until, UTC).isoformat(timespec='seconds')
-        _alert(config, 'consent LOCKED OUT', f'{role.lockout_after} wrong codes; every code refused until {when}')
-
-    return Issuer(Path(role.totp), Path(role.key), Path(role.state), role.issuer, time.time,
-                  role.lockout_after, role.lockout_minutes, locked)  # fmt: skip
-
-
-def _consent(config: OpsConfig, verb: str, *, force: bool, uri_only: bool) -> int:
-    role = config.consent
-    if role is None:
-        emit(f'[ops] {config.path} enables no [ops.consent]', err=True)
-        return 2
-    try:
-        if verb == 'enrol':
-            secret = totp.enrol(Path(role.totp), force=force)
-            _show(totp.uri(secret, issuer=role.issuer, account=role.account), uri_only=uri_only)
-        elif verb == 'keygen':  # the PUBLIC key goes to every verifier: [consent] public_key, or the package
-            emit(public_text(keygen(Path(role.key), force=force).public_key()))
-        else:
-            emit(consent_serve.handle(_issuer(config, role), sys.stdin.readline()))
-    except (ConsentRefused, totp.TotpRefused) as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    return 0
-
-
-def _unreachable(_credential: object, _amount: int) -> object:
-    msg = 'this host enables no [ops.consent] issuer'
-    raise ConnectionError(msg)
-
-
-def _breakglass(config: OpsConfig, verb: str) -> int:
-    role = config.breakglass
-    if role is None:
-        emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
-        return 2
-    issuer = _issuer(config, config.consent) if config.consent is not None else None
-    try:
-        verifier = issuer.public() if issuer is not None else public_key()
-    except ConsentRefused as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    server = breakglass.Server(
-        config,
-        forge_for=lambda url: breakglass.ClientForge(url, _secret(role.token_file(url))),
-        alert=lambda title, detail: _alert(config, title, detail),
-        now=time.time,
-        consent_key=verifier,
-        register=issuer.register if issuer is not None else _unreachable,
-        key=sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),
-    )
-    try:
-        said = server.tick() if verb == 'tick' else server.handle(sys.stdin.readline())
-    except breakglass.BreakglassRefused as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    emit(said)
-    return 0
-
-
-def _git_with_env(argv: list[str], env: Mapping[str, str]) -> tuple[int, str]:
-    report = run_network_verb(argv, env=os.environ | dict(env), timeout=300)  # the one retry door
-    return report.returncode, ''  # git's output may echo the header: never returned
-
-
-def _candidate_text(config: OpsConfig, candidate: Path | None) -> str:
-    """``--from <file>`` when given, else ``[ops.config]``'s reviewed file (:func:`configdoor.fetch`)."""
-    if candidate is not None:
-        return candidate.read_text(encoding='utf-8')
-    if config.config_source is None:
-        msg = f'{config.path} declares no [ops.config] source and no --from <file> was given'
-        raise configdoor.ConfigRefused(msg)
-    return configdoor.fetch(config.config_source, run=_git_with_env)
-
-
-def _config_apply(config: OpsConfig, candidate: Path | None, credential: str) -> int:
-    """``config apply [--from <file>] [--credential <file>]``: the one config door (:mod:`dev_lab.ops.configdoor`)."""
-    redeem_ = None
-    granted = None
-    if credential:
-        role = config.consent
-        issuer = _issuer(config, role) if role is not None else None
-        try:
-            verifier = issuer.public() if issuer is not None else public_key()
-        except ConsentRefused as refused:
-            emit(f'refused: {refused}', err=True)
-            return 2
-        granted = json.loads(Path(credential).read_text(encoding='utf-8'))
-
-        def redeem_(found: dict) -> str:
-            return redeem(
-                found,
-                action=configdoor.ACTION,
-                key=verifier,
-                register=issuer.register if issuer is not None else _unreachable,
-                now=time.time(),
-            ).subject
-
-    try:
-        done = configdoor.apply(
-            config.path, _candidate_text(config, candidate), loads=load, checks=upgrade.checks(config),
-            run=upgrade.run_check, redeem=redeem_, credential=granted,
-        )  # fmt: skip
-    except (configdoor.ConfigRefused, ConsentRefused) as refused:
-        emit(f'refused: {refused}', err=True)
-        return 2
-    if not done.changed:
-        emit('[ops config] unchanged')
-        return 0
-    emit(f'[ops config] applied; changed {list(done.changed)}; boundary {list(done.boundary)}; backup {done.backup}')
-    _alert(config, 'config applied', f'changed {list(done.changed)}; boundary {list(done.boundary)}')
-    return 0
-
-
-def _probe(config: OpsConfig) -> int:
-    role = config.probe
-    if role is None:
-        emit(f'[ops] {config.path} enables no [ops.probe]', err=True)
-        return 2
-    for line in probe.run(
-        config,
-        lambda url: Client(forge_of_url(url), _secret(role.token_file(url))),
-        lambda title, detail: _alert(config, title, detail),
-    ):
-        emit(f'[ops probe] {line}')
-    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Route one verb; see the module docstring."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops', description=__doc__.splitlines()[0])
     parser.add_argument('--config', type=Path, required=True)
+    parser.set_defaults(action=None, subject=False)  # every verb form reads both (alertless.sends_no_alert)
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('install').add_argument('--root', type=Path, default=Path('/'))
     verbs.add_parser('promote')
     verbs.add_parser('judge', help='one judging pass over [ops.judge] repos')
-    verbs.add_parser('upgrade', help='install dev-lab at the tip of [ops.upgrade] ref; takes no argument')
+    upgrading = verbs.add_parser('upgrade', help='install dev-lab at the tip of [ops.upgrade] ref')
+    upgrading.add_argument('--sha', default='', help='a plan step: the tip sha its ops.upgrade grant names')
+    upgrading.add_argument('--credential', default='', help='a plan step: a single-use ops.upgrade credential')
+    upgrading.add_argument('--subject', action='store_true', help="print the ref's tip sha a grant names; no install")
+    upgrading.add_argument('--follow', action='store_true', help='the timer: install [ops.upgrade] follow if it moved')
     verbs.add_parser('probe')
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'tick'))
     issuing = verbs.add_parser('consent')
-    issuing.add_argument('action', choices=('serve', 'enrol', 'keygen'))
+    issuing.add_argument('action', choices=consentverbs.VERBS)
     issuing.add_argument('--force', action='store_true', help='enrol / keygen: replace an existing secret / key')
     issuing.add_argument('--uri', action='store_true', help='enrol: print the otpauth URI, not its QR')
     verbs.add_parser('backup').add_argument('action', choices=('export', 'pull'))
@@ -316,40 +74,63 @@ def main(argv: Sequence[str] | None = None) -> int:
     opened.add_argument('--uri', action='store_true', help='print the otpauth URI, not its QR')
     opened.add_argument('--secret-file', default='-', help="adopt: the host's existing base32 secret (- reads stdin)")
     configured = verbs.add_parser('config', help='change this host config through the one door')
-    configured.add_argument('action', choices=('apply',))
+    configured.add_argument('action', choices=('apply', 'tick'))
     configured.add_argument(
         '--from', dest='candidate', type=Path, default=None, help='a local candidate file'
     )  # default: the [ops.config] source
     configured.add_argument('--credential', default='', help='an ops.config consent credential (boundary keys)')
+    configured.add_argument('--subject', action='store_true', help="apply: print the candidate's consent subject only")
+    forgeaccounts.add_parser(verbs)
+    secretplace.add_parser(verbs)
+    githubwho.add_parser(verbs)
     for name in ('disk', 'clean'):
         sized = verbs.add_parser(name)
         sized.add_argument('--gitea-data', default=disk.DEFAULT_GITEA_DATA)
         sized.add_argument('--journal-max-mb', type=int, default=disk.DEFAULT_JOURNAL_MAX_MB)
     args = parser.parse_args(argv)
     if args.verb in {'disk', 'clean'}:  # read only the disk: no role config is needed to measure or free it
-        return (
-            disk.measure(args.gitea_data) if args.verb == 'disk' else disk.clean(args.gitea_data, args.journal_max_mb)
-        )
+        sized = disk.measure(args.gitea_data) if args.verb == 'disk' else None
+        return sized if sized is not None else disk.clean(args.gitea_data, args.journal_max_mb)
     try:
-        config = load(args.config)
+        config = load(args.config, alerts=not alertless.sends_no_alert(args))
     except (ValueError, TypeError) as bad:
         emit(f'[ops] {bad}', err=True)
         return 2
     if args.verb == 'install':
-        return _install(config, args.root)
+        return install_verb(config, args.root)
     if args.verb == 'promote':
-        return _promote(config)
+        return promote_verb(config)
     verbs_of: dict[str, Callable[[], int]] = {
-        'backup': lambda: _backup(config, args.action),
-        'access': lambda: _access(
+        'backup': lambda: backup_verb(config, args.action),
+        'access': lambda: access_verb(
             config, args.action, force=args.force, uri_only=args.uri, secret_from=args.secret_file
         ),
-        'probe': lambda: _probe(config),
-        'breakglass': lambda: _breakglass(config, args.action),
-        'consent': lambda: _consent(config, args.action, force=args.force, uri_only=args.uri),
-        'judge': lambda: _judge(config),
-        'upgrade': lambda: _upgrade(config),
-        'config': lambda: _config_apply(config, args.candidate, args.credential),
+        'probe': lambda: probe_verb(config),
+        'breakglass': lambda: breakglass_verb(config, args.action),
+        'consent': lambda: consentverbs.run(
+            config,
+            args.action,
+            force=args.force,
+            alert=lambda title, detail: alert(config, title, detail),
+            show=lambda link: show(link, uri_only=args.uri),
+        ),
+        'judge': lambda: judge_verb(config),
+        'upgrade': lambda: upgrade_verb(config, args),
+        'config': lambda: (
+            configverbs.tick(config, alert=lambda title, detail: alert(config, title, detail))
+            if args.action == 'tick'
+            else configverbs.apply(
+                config,
+                args.candidate,
+                args.credential,
+                alert=lambda title, detail: alert(config, title, detail),
+                redeemer=lambda: redeemer(config),
+                subject=args.subject,
+            )
+        ),
+        'forge': lambda: forge_verb(config, args),
+        'secret': lambda: secret_place(config, args),
+        'github': lambda: githubwho.run(config, args),
     }
     return verbs_of[args.verb]()
 

@@ -14,7 +14,7 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import Loopback, Recorder, answer, client, git_out, run_git, serve
 
-from dev_lab.dev import forgesync
+from dev_lab.dev import forgesync, labsession
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import CONTEXT, retarget_note, tick
 from dev_lab.dev.forgelanes import OWNER_CLOSED, open_lanes
@@ -116,7 +116,11 @@ def test_sync_stops_on_a_conflict_naming_files_and_merges_nothing(tmp_path: Path
 
 
 def test_sync_relocks_the_floated_siblings_and_commits_the_lock_in_the_same_sync(tmp_path: Path) -> None:
-    """User ruling 2026-11-07: merge, then relock. PLANTED CONTROL: a door that moves nothing commits nothing."""
+    """User ruling 2026-11-07: merge, then relock. PLANTED CONTROL: a door that moves nothing commits nothing.
+
+    The render is the next test's. This repo declares ``[tool.dev_lab.integrator]``, so it is a family member and
+    every renderer is due (:func:`dev_lab.dev.famfiles.plan`); the real render needs the ``.venv`` it has not.
+    """
     work = _child(tmp_path)
     commit(work, 'uv.lock', 'lab-commons @ old\n')
     forgesync.sync(work, POLICY)
@@ -128,7 +132,7 @@ def test_sync_relocks_the_floated_siblings_and_commits_the_lock_in_the_same_sync
         (root / 'uv.lock').write_text('lab-commons @ new\n', encoding='utf-8')
         return ('dev-lab', 'lab-commons')
 
-    assert forgesync.relock(work, door=door) == ('dev-lab', 'lab-commons')
+    assert forgesync.relock(work, door=door, render=lambda _root: ()) == ('dev-lab', 'lab-commons')
     assert git_out(work, 'log', '-1', '--format=%s') == forgesync.RELOCK_TITLE
     assert 'Relocked: dev-lab, lab-commons' in git_out(work, 'log', '-1', '--format=%b')
     assert git_out(work, 'status', '--porcelain') == ''
@@ -329,7 +333,9 @@ def test_github_run_records_are_assets_of_one_release(server, tmp_path: Path) ->
     assert 'uploads.github.com' in loop.asked
     created = next(r for r in Recorder.received if r['path'] == f'{HAPI}/releases' and r['method'] == 'POST')
     assert created['body']['tag_name'] == RECORDS_TAG
-    upload = next(r for r in Recorder.received if r['path'].startswith(f'{HAPI}/releases/77/assets?'))
+    upload = next(
+        r for r in Recorder.received if r['method'] == 'POST' and r['path'].startswith(f'{HAPI}/releases/77/assets?')
+    )
     assert upload['raw'] == b'gz'
     assert [item.id for item in listing(built)] == [5]
 
@@ -386,3 +392,118 @@ def test_a_repo_without_ephemeral_lanes_lists_no_closed_pr(server, tmp_path: Pat
     built = client(GITEA, Loopback(server))
     assert open_lanes(work, built, POLICY, set()) == ([], []), 'no branch set declared: no namespace to open from'
     assert Recorder.received == []
+
+
+def test_a_moved_data_pin_alone_commits_pyproject_in_the_relock(tmp_path: Path) -> None:
+    """A data pin follows its line like a floated sibling (dev_lab.dev.datadeps). PLANTED: no sibling moved."""
+    work = _child(tmp_path)
+    commit(work, 'pyproject.toml', 'rev = "old"\n')
+    forgesync.sync(work, POLICY)
+
+    def data(root: Path) -> tuple[str, ...]:
+        (root / 'pyproject.toml').write_text('rev = "new"\n', encoding='utf-8')
+        return ('recipes',)
+
+    assert forgesync.relock(work, door=lambda _root: (), render=lambda _root: (), data=data) == ('recipes',)
+    assert 'Relocked: recipes' in git_out(work, 'log', '-1', '--format=%b')
+    assert git_out(work, 'show', 'HEAD:pyproject.toml') == 'rev = "new"'
+    assert git_out(work, 'status', '--porcelain') == ''
+
+
+_SESSION = '0f3c2a9e-5b1d-4e7a-9c11-2d3e4f5a6b7c'
+_BRIDGE = 'session_015BVi5YEVzxDoc8t7EkKMds'
+
+
+def _no_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (labsession.ENV, labsession.CLAUDE_ENV):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_the_syncs_own_commits_carry_the_sessions_trailers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """2026-11-13: a sync's merge and relock commits carried no session trailer, so they read as nobody's.
+
+    The commit-msg hook stamps ``Lab-Session`` only where it is installed; the sync stamps both trailers itself.
+    PLANTED CONTROL: with no session in the environment, neither commit carries one.
+    """
+    monkeypatch.setenv(labsession.ENV, _SESSION)
+    monkeypatch.setenv(labsession.CLAUDE_ENV, _BRIDGE)
+    work = _child(tmp_path)
+    forgesync.sync(work, POLICY)
+    merge = git_out(work, 'log', '-1', '--format=%(trailers)')
+    assert f'Lab-Session: {_SESSION}' in merge
+    assert f'Claude-Session: https://claude.ai/code/{_BRIDGE}' in merge
+
+    def door(root: Path) -> tuple[str, ...]:
+        (root / 'uv.lock').write_text('lab-commons @ new\n', encoding='utf-8')
+        return ('lab-commons',)
+
+    commit(work, 'uv.lock', 'lab-commons @ old\n')
+    forgesync.relock(work, door=door, render=lambda _root: (), data=lambda _root: ())
+    relocked = git_out(work, 'log', '-1', '--format=%(trailers)')
+    assert f'Claude-Session: https://claude.ai/code/{_BRIDGE}' in relocked
+    assert f'Lab-Session: {_SESSION}' in relocked
+
+
+def test_planted_control_a_sync_outside_a_session_stamps_no_trailer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_session(monkeypatch)
+    work = _child(tmp_path)
+    forgesync.sync(work, POLICY)
+    assert git_out(work, 'log', '-1', '--format=%(trailers)') == ''
+    assert git_out(work, 'log', '-1', '--format=%P').count(' ') == 1, 'still a merge commit'
+
+
+def _hook(work: Path, body: str) -> None:
+    """Install *body* as *work*'s pre-commit hook (``core.hooksPath``), as the family's hooks run on every commit."""
+    hooks = work.parent / 'hooks'
+    hooks.mkdir(exist_ok=True)
+    (hooks / 'pre-commit').write_text(f'#!/bin/sh\n{body}\n', encoding='utf-8', newline='\n')
+    (hooks / 'pre-commit').chmod(0o755)
+    run_git(work, 'config', 'core.hooksPath', hooks.as_posix())
+
+
+def test_a_sync_merge_commit_waits_for_hooks_slower_than_the_git_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 2026-11-13: the merge commit ran under the fixed 30 s git timeout and died mid-hook with a traceback.
+    work = _child(tmp_path)
+    monkeypatch.setattr(forgesync, '_GIT_TIMEOUT_S', 1)  # the planted control: the hook outlasts the git ceiling
+    _hook(work, 'sleep 3')
+    _, merged = forgesync.sync(work, POLICY)
+    assert merged == ('origin/integrate/main',)
+    assert git_out(work, 'rev-parse', '-q', '--verify', 'HEAD^2') == git_out(work, 'rev-parse', 'origin/integrate/main')
+
+
+def test_a_refused_sync_merge_commit_reports_its_state_and_remedy_in_one_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = _child(tmp_path)
+    head = git_out(work, 'rev-parse', 'HEAD')
+    _hook(work, 'echo the hook refused >&2; exit 1')
+    code = forgesync.main([], cwd=work, fetch=lambda _root: None, door=lambda _root: ())
+    err = capsys.readouterr().err
+    assert code == 2
+    assert 'Traceback' not in err
+    [line] = err.strip().splitlines()
+    assert 'origin/integrate/main was NOT committed (exit 1) and was aborted' in line
+    assert 'the hook refused' in line
+    assert 'Remedy: ' in line
+    assert git_out(work, 'rev-parse', 'HEAD') == head
+    assert not (work / '.git' / 'MERGE_HEAD').exists(), 'the uncommitted merge was aborted'
+
+
+def test_a_sync_refuses_a_half_done_merge_naming_it_and_the_remedy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 2026-11-13: a killed commit left the tree MERGING (MERGE_HEAD set, all staged); the next sync must say so.
+    work = _child(tmp_path)
+    run_git(work, 'merge', '--no-ff', '--no-commit', 'origin/integrate/main')
+    pending = git_out(work, 'rev-parse', 'MERGE_HEAD')
+    code = forgesync.main([], cwd=work, fetch=lambda _root: None, door=lambda _root: ())
+    [line] = capsys.readouterr().err.strip().splitlines()
+    assert code == 2
+    assert f'a merge of {pending[:10]} is in progress and uncommitted' in line
+    assert 'git commit --no-edit' in line
+    assert 'git merge --abort' in line
+    assert git_out(work, 'rev-parse', 'MERGE_HEAD') == pending, 'the half-done merge is reported, never discarded'

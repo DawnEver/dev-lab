@@ -16,6 +16,13 @@ extends it (``temp``, ``census``, ``excluded``: lists of absolute paths). Three 
 A root's KIND decides what the sweep may do: ``temp`` is swept by age, ``census`` (``var``, ``src``: may hold a
 person's work) and ``home`` (loose non-dot files directly in the home) are only ever reported.
 
+ONLY OUR OWN IS SWEPT (user ruling 2026-11-11): a temp root is shared with every program on the machine -- an
+installer's setup log, a browser's drag file, a runtime's cache -- and none of that is ours to delete (the sweep
+kept tripping over the VS Code installer's locked log). The family creates its temp entries under ONE prefix,
+:data:`lab_commons.temp.TEMP_PREFIX` (there because every repo's runtime code needs it and lab-commons never
+imports dev-lab), and :func:`owned_globs` (that prefix, plus the machine file's ``[writeroots] owned`` globs for
+a tool the family runs that names its own) is the whole of what the sweep may remove.
+
 NO CHECKOUT EXEMPTION, in either half: a write beneath a write-prone root is refused EVEN INSIDE A CHECKOUT
 there (user ruling 2026-11-06: a checkout under such a root, e.g. the home ``src``, is an abandoned old
 version, never a place to work).
@@ -33,6 +40,7 @@ from pathlib import Path
 from typing import Any, Final, Literal
 
 from lab_commons.config import section
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.disclosure import details_for
 
@@ -47,6 +55,7 @@ __all__ = [
     'declared',
     'excluded_paths',
     'fixed_drives',
+    'owned_globs',
     'refuse_outside_tree',
     'write_prone_roots',
 ]
@@ -54,8 +63,8 @@ __all__ = [
 RULE_ID: Final = 'WRITES-STAY-IN-THE-TREE'
 HAZARD: Final = 'outside every checkout nothing scans, ignores or cleans a file, so it outlives the session.'
 REMEDY: Final = (
-    "A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/ and an experiment to scratch/ "
-    'of the checkout you work in.'
+    "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/ and an "
+    'experiment to scratch/ of the checkout you work in.'
 )
 
 #: Directory names that are write-prone at a drive root and in the home, and the KIND each is.
@@ -101,8 +110,18 @@ def fixed_drives() -> list[Path]:
 
 
 def declared() -> dict[str, Any]:
-    """The machine file's ``[writeroots]`` table (``temp``, ``census``, ``excluded``), or ``{}``."""
+    """The machine file's ``[writeroots]`` table (``temp``, ``census``, ``excluded``, ``owned``), or ``{}``."""
     return section('writeroots')
+
+
+def owned_globs(machine: Mapping[str, Any] | None = None) -> tuple[str, ...]:
+    """The name globs of a temp root's entries that are OURS: :data:`TEMP_PREFIX`, plus ``[writeroots] owned``."""
+    machine = declared() if machine is None else machine
+    extra = machine.get('owned', [])
+    if not isinstance(extra, list) or not all(isinstance(one, str) and one for one in extra):
+        msg = f'[writeroots] owned is {extra!r}; it must be a list of entry-name globs (e.g. "pytest-of-*")'
+        raise ValueError(msg)
+    return (f'{TEMP_PREFIX}*', *extra)
 
 
 def _paths(machine: Mapping[str, Any], key: str) -> list[Path]:

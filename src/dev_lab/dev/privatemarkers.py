@@ -13,17 +13,29 @@ Two layers:
   literal or ``/regex/`` per line, ``#`` comments. It names the private values themselves, so it is
   never committed; absent, the layer is silent. A denylist hit is reported by KIND only, never by
   value, so a log of the check cannot leak what it guards.
+
+The TEXT scans (a PR title or body, a pushed commit message) guard PUBLIC repositories only: a private repo
+is where private names belong. Visibility is the forge's ``private`` flag (:func:`repo_is_private`); when it
+cannot be read, the text is scanned and the reason said -- fail closed.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Final
+from typing import Final, TextIO
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
+
+from dev_lab.dev.forge import NoCredential, Transport, forge_from_remote, forge_of_url, forge_transport
+from dev_lab.dev.forgehosts import is_private
+from dev_lab.dev.forgework import client_for
+from dev_lab.dev.githooks.runner import PUSH_URL_ENV
 
 __all__ = [
     'AUTHORSHIP',
@@ -31,9 +43,12 @@ __all__ = [
     'MARKERS_FILE',
     'PUBLIC_MASK',
     'load_markers',
+    'pushed_messages',
+    'repo_is_private',
     'scan_text',
     'scan_tree',
     'staged_added_lines',
+    'text_refusal',
     'tracked_files',
 ]
 
@@ -165,7 +180,77 @@ def staged_added_lines(root: Path, paths: list[str]) -> list[tuple[str, int, str
     return added
 
 
-def main(argv: list[str] | None = None) -> int:
+#: git's all-zero object name: a pushed ref's remote side when the remote has no such ref yet (or a deletion).
+_ZERO = re.compile(r'^0+$')
+
+
+def pushed_messages(root: Path, ref_lines: str) -> list[tuple[str, str]]:
+    """``(sha, message)`` of every commit a push publishes, from git's pre-push *ref_lines* on stdin.
+
+    The local sha minus the ref's remote sha (an existing ref) and minus every remote-tracking ref -- what no
+    remote holds yet. A commit another remote ref already published (integration's, merged by a sync) is public
+    already: refusing this push cannot un-publish it, and judging it refused every sync of an older branch.
+    A deletion publishes nothing.
+    """
+    found: dict[str, str] = {}
+    for line in ref_lines.splitlines():
+        match line.split():
+            case [_, local, _, remote] if not _ZERO.match(local):
+                span = [local, '--not', '--remotes', *(() if _ZERO.match(remote) else (remote,))]
+            case _:
+                continue
+        argv = ['git', 'log', '--format=%H%x00%B%x1e', *span]
+        out = _door.run(argv, cwd=root, capture_output=True, check=True).stdout.decode('utf-8', errors='replace')
+        for record in out.split('\x1e'):
+            sha, _, message = record.strip().partition('\0')
+            if sha:
+                found[sha] = message
+    return list(found.items())
+
+
+#: Each repository's answer, read once per process: ``(host, owner, repo) -> (private, why unread)``.
+_VISIBILITY: dict[tuple[str, str, str], tuple[bool, str]] = {}
+
+
+def repo_is_private(
+    root: Path, *, url: str = '', env: Mapping[str, str] | None = None, transport: Transport = forge_transport
+) -> tuple[bool, str]:
+    """``(private, why)``: whether the forge says *root*'s ``origin`` (or *url*) is private (the retrying client).
+
+    ``why`` is empty when the flag was read; otherwise it says why it was not, and ``private`` is ``False`` so the
+    caller scans -- an unreadable visibility fails closed. Cached per process by repository.
+    """
+    try:
+        forge = forge_of_url(url) if url else forge_from_remote(root)
+    except OSError as unread:
+        return False, f'repository unknown ({unread})'
+    key = (forge.host, forge.owner, forge.repo)
+    if key not in _VISIBILITY:
+        try:
+            _VISIBILITY[key] = is_private(client_for(root, env=env, transport=transport, url=url)), ''
+        except (OSError, NoCredential) as unread:
+            _VISIBILITY[key] = False, f'visibility of {forge.owner}/{forge.repo} unreadable ({unread})'
+    return _VISIBILITY[key]
+
+
+def text_refusal(text: str, what: str, markers: tuple[re.Pattern[str], ...] | None = None) -> str | None:
+    """The PRIVATE-MARKERS refusal for *what* (a PR body...) when *text* holds a marker, else ``None``.
+
+    The markers are the machine-local denylist (:data:`MARKERS_FILE`, read at call time) unless given; a hit is
+    named by line and kind only.
+    """
+    hits = scan_text(text, load_markers(MARKERS_FILE) if markers is None else markers)
+    if not hits:
+        return None
+    named = ', '.join(f'line {n}: {kind}' for n, kind, _ in hits)
+    return (
+        f'PRIVATE-MARKERS: the {what} names a private value ({named}) and the target repo is not known private; '
+        'rewrite the text neutrally (a placeholder for each name) and re-run.\n'
+        'details: docs-src/dev/refusals.md#private-markers (dev-lab)'
+    )
+
+
+def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """The local pre-commit row: refuse a marker on a line the index ADDS. Only this machine holds the denylist.
 
     Judging added lines, not whole files, is the point: a legacy hit on an untouched line is not this commit's,
@@ -174,9 +259,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.privatemarkers')
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--markers', type=Path, default=MARKERS_FILE)
+    parser.add_argument('--push', action='store_true', help="pre-push: judge the pushed commits' messages (stdin)")
+    parser.add_argument('--url', default='', help=f'--push: the pushed-to URL (default ${PUSH_URL_ENV}, else origin)')
     parser.add_argument('paths', nargs='*')
     args = parser.parse_args(argv)
     markers = load_markers(args.markers)
+    if args.push:
+        private, why = repo_is_private(args.root, url=args.url or os.environ.get(PUSH_URL_ENV, ''))
+        if private:
+            return 0
+        if why:
+            emit(f'[private-markers] scanning this push: {why}', err=True)
+        said = [
+            f'{sha[:12]} message line {n}: {kind}'
+            for sha, message in pushed_messages(args.root, (sys.stdin if stdin is None else stdin).read())
+            for n, kind, _ in scan_text(message, markers)
+        ]
+        if said:
+            emit('PRIVATE-MARKERS: a pushed commit message names a private value; reword it before pushing:', err=True)
+            emit('\n'.join(said), err=True)
+        return 1 if said else 0
     found = [
         f'{rel}:{number}: {kind}'
         for rel, number, text in staged_added_lines(args.root, args.paths)

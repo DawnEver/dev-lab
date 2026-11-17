@@ -13,8 +13,8 @@ cooperation, and it answers TWO questions, one lock each:
   so ``dep`` refuses to mutate it. A ``forge serve`` from main's venv locks the venv.
 * TREE LOCK (:func:`live_runs`): a process READS a checkout when it is a Python interpreter whose cwd is in it
   (``python -m`` puts the cwd first on ``sys.path``) -- unless the interpreter is from elsewhere and its ``-m``
-  module is not in the cwd, so nothing of the tree is imported -- or when an operand (never a ``--flag``'s value)
-  names an existing path in it (a ``scratch/*.sh`` chain, ``cases/...``).
+  module is not in the cwd, so nothing of the tree is imported -- or when an operand (never a ``--flag``'s value,
+  never a word of a shell's ``-c`` script) names an existing path in it (a ``scratch/*.sh`` chain, ``cases/...``).
   Measured 2026-10-19: the v3 sweep's interpreter works in its worktree; its bash chains name main's
   ``scratch/`` scripts; two dozen day-old ``tail -F output/...`` processes and Claude Code's own node processes
   sit in the checkout and read none of it. A serve works in its own root
@@ -27,6 +27,14 @@ WHAT IS NOT A RUN, each decided by evidence:
 * A process younger than :data:`RUN_FLOOR_S`. Claude Code starts every matching hook of a tool call at
   once, each through the checkout's own interpreter; a hook lives for well under a second, a run for
   minutes. A run started within the floor is caught by the next tool call.
+* git itself, and every process it started: git executes no code of the tree, and its descendants are hooks of
+  a git command, which end with that command. Measured 2026-11-16: another session's commit hook, a python older
+  than the floor, refused a merge.
+* A shell's ``-c`` script (``timeout 580 bash -c "until [ $(git -C <tree> rev-parse HEAD) ... ]"``, the Bash
+  tool's own ``bash -c -l "..."``): it is text, and each command it starts is a process of its own, judged by
+  what IT executes -- a ``python -m pytest`` it starts in the tree is still a run. Measured 2026-11-17: a wait
+  loop naming a tree in its script locked that tree, so the agent working there could never move the HEAD it
+  waited for.
 * A multiprocessing worker whose parent is gone (:data:`SPAWN_WORKER`). It serves its parent through a pipe,
   so without the parent it can never advance; it only holds the cwd it inherited. Measured 2026-10-24: two
   day-old spawn workers of a dead pid sat in a downstream worktree and refused every mutation there.
@@ -42,6 +50,7 @@ only after a mutating command matched; the Edit/Write half is :func:`main`'s ``h
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -63,10 +72,12 @@ __all__ = [
     'RULE_ID',
     'RUN_FLOOR_S',
     'SPAWN_WORKER',
+    'WATCH',
     'checkout_of',
     'env_in_use',
     'executing_from',
     'in_tree',
+    'is_transient',
     'live_runs',
     'main',
     'occupants',
@@ -77,7 +88,7 @@ __all__ = [
 RULE_ID: Final = str(LIVE_RUN['id'])
 
 #: Top-level directories of a checkout that no run reads: a write there never changes what a run executes.
-NOT_THE_TREE: Final = ('output', '.claude', '.venv')
+NOT_THE_TREE: Final = ('output', '.claude', '.venv', '.venvs', '.venv-current')
 
 #: The interpreter whose cwd is READ: ``python -m`` puts the cwd first on ``sys.path``. Not node: Claude Code and
 #: its MCP servers are node processes sitting in the checkout for the whole session (measured 2026-10-19).
@@ -85,6 +96,12 @@ _INTERPRETER: Final = re.compile(r'^python[\w.]*(?:\.exe)?$', re.IGNORECASE)
 
 #: A Git Bash spelling of a drive path, ``/<drive>/x`` -> ``<drive>:/x``.
 _DRIVE: Final = re.compile(r'^/([a-zA-Z])/')
+
+#: The executable that is never a run: it executes no code of the tree, and its descendants are its hooks.
+_GIT: Final = re.compile(r'^git(?:\.exe)?$', re.IGNORECASE)
+
+#: A shell: what follows its ``-c`` is a script, TEXT, whose every command is a process of its own.
+_SHELL: Final = re.compile(r'^(?:sh|bash|zsh|dash|ksh)(?:\.exe)?$', re.IGNORECASE)
 
 #: A process younger than this is a concurrent hook, not a run (seconds).
 RUN_FLOOR_S: Final = 5.0
@@ -147,10 +164,20 @@ def _others(table: Sequence[Process], inside: Callable[[Process], bool], me: int
             at = by_pid[at].ppid
         return False
 
+    def hook(one: Process) -> bool:
+        seen, at = set(), one.pid
+        while at in by_pid and at not in seen:
+            seen.add(at)
+            if _GIT.match(Path(by_pid[at].executable.replace('\\', '/')).name):
+                return True
+            at = by_pid[at].ppid
+        return False
+
     return tuple(
         one
         for one in table
         if one.pid != me
+        and not hook(one)
         and one.executable
         and inside(one)
         and not kin(one)
@@ -161,23 +188,40 @@ def _others(table: Sequence[Process], inside: Callable[[Process], bool], me: int
 
 def _arguments(one: Process) -> list[str]:
     """*one*'s command line split into words, its own executable excluded."""
+    return list(_words(one.command_line))
+
+
+@functools.lru_cache(maxsize=4096)
+def _words(command_line: str) -> tuple[str, ...]:
+    """*command_line* split into words past the executable: PURE, so cached.
+
+    MEASURED 2026-11-17: a prune judges every tree against one process snapshot, re-splitting every command line
+    per tree -- 48k ``shlex.split`` calls, ~40 s of a 264 s census over 94 trees.
+    """
     try:
-        return shlex.split(one.command_line, posix=False)[1:]
+        return tuple(shlex.split(command_line, posix=False)[1:])
     except ValueError:
-        return one.command_line.split()[1:]
+        return tuple(command_line.split()[1:])
 
 
 def _named_paths(one: Process) -> Iterable[Path]:
     """Every existing path *one*'s operands name, relative ones against its cwd.
 
     An option and the value a ``--long`` option takes are configuration the process reads, not code it executes
-    (measured 2026-11-07: ``--settings <checkout>/...`` made a session launcher a run of that checkout).
+    (measured 2026-11-07: ``--settings <checkout>/...`` made a session launcher a run of that checkout). A shell's
+    ``-c`` script -- the shell's own or one a wrapper starts (``timeout 580 bash -c ...``) -- is text whose every
+    command is a process of its own, judged by what IT executes (measured 2026-11-17: a wait loop whose script
+    read ``git -C <tree> rev-parse HEAD`` locked the tree whose HEAD it waited on).
     """
     words = _arguments(one)
+    shell = bool(_SHELL.match(Path(one.executable.replace('\\', '/')).name))
     for previous, word in zip(['', *words], words, strict=False):
+        bare = word.strip('"\'')
+        if shell and bare == '-c':
+            return
+        shell = shell or bool(_SHELL.match(Path(bare.replace('\\', '/')).name))
         if previous.startswith('--') and '=' not in previous:
             continue
-        bare = word.strip('"\'')
         text = _DRIVE.sub(lambda drive: f'{drive[1]}:/', bare, count=1) if os.name == 'nt' else bare
         if text.startswith('-') or ('/' not in text and '\\' not in text):
             continue
@@ -269,6 +313,39 @@ def removal_holders(root: Path | str, *, census: Census = processes, me: int | N
 _SESSION: Final = re.compile(r'-m\s+ai_lab\.session\b|(?:^|[\\/\s"])claude(?:\.exe)?(?:"|\s|$)')
 _MODULE: Final = re.compile(r'\s-m\s+([\w.]+)')
 
+#: A ``forge watch``: a READER of the forge, yet its interpreter holds its venv's files open, so it still locks the
+#: venv. Its state lives on the forge, so stopping and re-arming it loses nothing: the refusal names both doors.
+WATCH: Final = re.compile(r'-m\s+dev_lab.dev\.forge\s+watch\b')
+
+
+#: An sshhold HOLDER (:mod:`dev_lab.dev._sshholder`): it carries no run signature, so ``stoprun`` refuses it; the
+#: session's own ``close`` verb ends it. Group 1 is the held destination.
+_SSH_HOLDER: Final = re.compile(r'-m\s+dev_lab\.dev\._sshholder\s+(\S+)')
+
+
+def ssh_holder_dest(one: Process) -> str | None:
+    """The destination *one* holds when it is an sshhold holder, else ``None``."""
+    found = _SSH_HOLDER.search(one.command_line or '')
+    return found[1] if found else None
+
+
+#: A hook process: a ``dev_lab`` module started by a session hook (``agent_launcher.js``), alive for one tool call.
+_HOOK: Final = re.compile(r'agent_launcher\.js|-m\s+dev_lab\.[\w.]+\s+hook\b')
+
+
+def is_transient(one: Process) -> bool:
+    """Whether *one* holds an environment only in passing: an agent session or a hook it launched.
+
+    Neither is a verdict, and neither is the refused agent's to stop -- so the door is a new environment published
+    beside theirs (``dep --bootstrap ROOT``), never closing them (dev-lab #632: an upgrade never closes a session).
+    """
+    return is_session(one) or bool(_HOOK.search(one.command_line or ''))
+
+
+def is_watch(one: Process) -> bool:
+    """Whether *one* is a ``forge watch``."""
+    return bool(WATCH.search(one.command_line or ''))
+
 
 def is_session(one: Process) -> bool:
     """Whether *one* is an agent session: worked around by another agent, never stopped by it."""
@@ -279,6 +356,8 @@ def label(one: Process) -> str:
     """A short name for *one*: ``a Claude session``, else the module it runs (``app``), else its program."""
     if is_session(one):
         return 'a Claude session'
+    if is_watch(one):
+        return 'a forge watch'
     words = (one.command_line or one.executable or '?').split()
     program = Path(one.executable or words[0]).stem
     module = _MODULE.search(one.command_line or '')
@@ -294,7 +373,8 @@ def refusal(root: Path | str, runs: Sequence[Process]) -> str:
     """The deny text in three lines: who holds *root*, the one exit, the details pointer.
 
     A SESSION holder is worked around in another worktree, never offered to ``stoprun``: it is another
-    agent's live work, not a run the refused agent owns.
+    agent's live work, not a run the refused agent owns. An sshhold holder is offered ``sshhold close``, the
+    door that ends it (``stoprun`` refuses a process with no run signature).
     """
     rule = rules_by_id(DENY_RULES)[RULE_ID]
     first, more = runs[0], len(runs) - 1
@@ -307,9 +387,14 @@ def refusal(root: Path | str, runs: Sequence[Process]) -> str:
             '(a session is not yours to stop).'
         )
     else:
+        dest = ssh_holder_dest(stoppable)
+        door = (
+            f'end your own held session: {PYTHON_SLOT} -m dev_lab.dev.sshhold close {dest}'
+            if dest
+            else f'stop your own run: {PYTHON_SLOT} -m dev_lab.dev.stoprun --pid {stoppable.pid}'
+        )
         exit_text = expand_interpreter(
-            'Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait, or stop '
-            f'your own run: {PYTHON_SLOT} -m dev_lab.dev.stoprun --pid {stoppable.pid}.',
+            f'Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait, or {door}.',
             Path(root),
             os_name=current_os_name(),
         )
@@ -317,7 +402,25 @@ def refusal(root: Path | str, runs: Sequence[Process]) -> str:
 
 
 def env_in_use(name: str, prefix: str, users: Sequence[Process]) -> str:
-    """H1 WITHOUT A SEAT: a process executes from the environment, so moving it moves the files under that run."""
+    """H1 WITHOUT A SEAT: a process executes from the environment, so moving it moves the files under that run.
+
+    When every holder is a ``forge watch`` the exit is stop, change, re-arm -- the watch's own command line.
+    """
+    if users and all(is_transient(one) for one in users):
+        return (
+            f'{name}: {prefix} is held only by agent sessions or their hooks:\n{describe(users)}\n'
+            'Run dep --bootstrap ROOT instead: it publishes a new environment beside this one and the next '
+            'launch takes it; nothing else is required.'
+        )
+    if users and all(is_watch(one) for one in users):
+        stops = '; '.join(f'{running_interpreter()} -m dev_lab.dev.stoprun --pid {one.pid}' for one in users)
+        rearm = '\n'.join(f'  {one.command_line}' for one in users)
+        return (
+            f'{name}: {prefix} is the environment of a live forge watch (its interpreter holds the files a change '
+            f'replaces):\n{describe(users)}\nStop it ({stops}), '
+            "run this change, then re-arm it -- from another checkout's interpreter, so it never holds this one:"
+            f'\n{rearm}'
+        )
     return (
         f'{name}: {prefix} is the environment of a live process that holds no seat (2026-10-19: a `deck run` '
         f'held none and was re-synced under):\n{describe(users)}\nWait for it, stop it yourself '

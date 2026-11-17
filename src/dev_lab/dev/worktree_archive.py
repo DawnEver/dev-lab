@@ -6,7 +6,10 @@ adopting repo already allows, so a consumer gets it by bumping lab-commons and r
 THE INCIDENTS IT ENCODES (a consumer, 2026-10-04, 10-12, 10-18, 10-21):
 
 * removals deleted run archives twice -- a ``;`` let ``git worktree remove`` run after the move had failed.
-  So this module NEVER removes: it reports the tree safe to remove, and removal is a separate explicit step;
+  So this module NEVER removes: it reports the tree safe to remove, and removal is a separate explicit step --
+  ``worktrees --remove NAME`` (:func:`remove_door`), which refuses unless :func:`current_archive` finds a saved
+  archive that still holds the tree. Wall 2026-11-17: the verdict used to hand out the raw git removal, which
+  RECURSIVE-DELETE refuses, and a DETACHED tree had no door at all;
 * a COPY of ~90 GB of outputs nearly filled the volume, and whole ``.venv`` copies reached the archive. So a
   file is MOVED by ``os.replace`` (a rename, atomic on one volume), a tree on ANOTHER volume is refused rather
   than copied, and a directory holding ``pyvenv.cfg`` never travels;
@@ -50,11 +53,28 @@ from lab_commons.census import processes
 from dev_lab.dev.checkout import git_bytes, git_out, worktrees
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.liverun import describe, occupants
+from dev_lab.dev.venvpath import running_interpreter
 
 if TYPE_CHECKING:
     from dev_lab.dev.liverun import Census
 
-__all__ = ['ARCHIVE_TO', 'OUTPUTS', 'Archived', 'archive', 'home_outputs', 'outputs_held', 'volume']
+__all__ = [
+    'ARCHIVE_TO',
+    'OUTPUTS',
+    'Archived',
+    'archive',
+    'archive_door',
+    'archive_home',
+    'current_archive',
+    'home_outputs',
+    'linked',
+    'outputs_held',
+    'remove_door',
+    'save_work',
+    'unheld_head',
+    'volume',
+    'worktrees_door',
+]
 
 #: The family default of what a worktree's runs produce and the main checkout keeps (``docs-src/dev/output-tree``).
 OUTPUTS: Final = ('output/logs',)
@@ -68,6 +88,7 @@ class Archived:
     """What :func:`archive` did to one worktree; every path relative to its checkout."""
 
     name: str
+    main: Path
     saved: Path
     refused: str | None = None
     moved: tuple[Path, ...] = ()
@@ -93,11 +114,28 @@ class Archived:
         if self.unreachable:
             tail.append(f'  DETACHED {self.unreachable} (no ref contains it; branch or tag it first)')
         verdict = (
-            f'safe to remove: git worktree remove --force {self.name} (a separate, explicit step)'
+            f'safe to remove: {remove_door(self.main, self.name)}'
             if self.safe
             else 'NOT safe to remove: what is listed above is in the tree only'
         )
         return (head, *tail, verdict)
+
+
+def worktrees_door(main: Path, flags: str) -> str:
+    """The runnable ``worktrees`` door of checkout *main* with *flags*: what a printed line hands out."""
+    where = main.as_posix()
+    where = f'"{where}"' if any(c.isspace() for c in where) else where
+    return f'{running_interpreter()} -m dev_lab.dev.worktrees --root {where} {flags}'
+
+
+def archive_door(main: Path, name: str) -> str:
+    """The command that archives linked worktree *name* of *main*: this module's door."""
+    return worktrees_door(main, f'--archive {name}')
+
+
+def remove_door(main: Path, name: str) -> str:
+    """The ONE sanctioned removal of an archived worktree, branch or detached -- never the raw git removal."""
+    return worktrees_door(main, f'--remove {name}')
 
 
 def volume(path: Path) -> int:
@@ -118,30 +156,86 @@ def _declared(main: Path) -> tuple[tuple[str, ...], str]:
     return tuple(outputs), target
 
 
+def archive_home(main: Path) -> Path:
+    """Where *main* keeps saved work: its declared ``[tool.dev_lab.worktrees] archive-to`` (:data:`ARCHIVE_TO`)."""
+    return main / _declared(main)[1]
+
+
 def _in_venv(path: Path, top: Path) -> bool:
     """Whether *path* lies in a virtual environment below *top* (a directory holding ``pyvenv.cfg``)."""
     return any((parent / _VENV_MARK).is_file() for parent in (path, *path.parents) if parent.is_relative_to(top))
 
 
-def _save(tree: Path, saved: Path) -> None:
+def save_work(tree: Path, saved: Path) -> None:
+    """Save *tree*'s HEAD (``HEAD.txt``), uncommitted tracked work (``dirty.patch``) and untracked files in *saved*."""
     saved.mkdir(parents=True, exist_ok=True)
     head = (git_out(tree, 'rev-parse', 'HEAD') or '').strip()
     branch = (git_out(tree, 'branch', '--show-current') or '').strip() or '(detached)'
     (saved / 'HEAD.txt').write_text(f'{head}\n{branch}\n', encoding='utf-8')
+    (saved / 'dirty.patch').write_bytes(_patch(tree))
+    for rel in _untracked(tree):
+        target = saved / 'untracked' / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(tree / rel, target)
+
+
+def _patch(tree: Path) -> bytes:
+    """Every uncommitted tracked change of *tree*: ``git diff HEAD --binary``."""
     patch = git_bytes(tree, 'diff', 'HEAD', '--binary')
     if patch is None:
         msg = f'git could not diff {tree}'
         raise RuntimeError(msg)
-    (saved / 'dirty.patch').write_bytes(patch)
-    for rel in filter(None, (git_out(tree, 'ls-files', '--others', '--exclude-standard', '-z') or '').split('\0')):
-        source = tree / rel
-        if source.is_file() and not _in_venv(source.parent, tree):
-            target = saved / 'untracked' / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+    return patch
 
 
-def _unreachable(tree: Path) -> str:
+def _untracked(tree: Path) -> list[str]:
+    """The untracked, non-ignored files of *tree* that are work: none inside a virtual environment."""
+    out = git_out(tree, 'ls-files', '--others', '--exclude-standard', '-z')
+    if out is None:
+        msg = f'git could not list the untracked files of {tree}'
+        raise RuntimeError(msg)
+    rels = filter(None, out.split('\0'))
+    return [rel for rel in rels if (tree / rel).is_file() and not _in_venv((tree / rel).parent, tree)]
+
+
+def _differs(saved: Path, tree: Path, head: str, patch: bytes, untracked: list[str]) -> str:
+    """What of *tree* the archive at *saved* lacks, in words; ``''`` when it holds the tree as it is now."""
+    recorded = (saved / 'HEAD.txt').read_text(encoding='utf-8').split()
+    if not recorded or recorded[0] != head:
+        return f'HEAD is {head[:10]} now'
+    dirty = saved / 'dirty.patch'
+    if not dirty.is_file() or dirty.read_bytes() != patch:
+        return 'its tracked changes differ'
+    for rel in untracked:
+        copy = saved / 'untracked' / rel
+        if not copy.is_file() or not filecmp.cmp(tree / rel, copy, shallow=False):
+            return f'untracked {rel} is not saved'
+    return ''
+
+
+def current_archive(main: Path, tree: Path, name: str) -> tuple[Path | None, str]:
+    """The newest saved archive of *name* holding *tree* as it is NOW: ``(directory, '')``, else ``(None, why)``.
+
+    Holding means the same HEAD, byte-identical uncommitted tracked work, and every untracked file saved
+    byte-identical: a tree changed after its archive is not held by it.
+    """
+    home = archive_home(main)
+    saved = sorted((one.parent for one in home.glob(f'*/{name}/HEAD.txt')), reverse=True)
+    if not saved:
+        return None, f'no archive of {name} under {home}'
+    head = (git_out(tree, 'rev-parse', 'HEAD') or '').strip()
+    if not head:
+        return None, f'git could not read the HEAD of {tree}'
+    patch, untracked = _patch(tree), _untracked(tree)
+    newest = ''
+    for one in saved:
+        if not (differs := _differs(one, tree, head, patch, untracked)):
+            return one, ''
+        newest = newest or differs
+    return None, f'the tree changed since its archive at {saved[0]} ({newest})'
+
+
+def unheld_head(tree: Path) -> str:
     """The detached HEAD sha no ref contains, or ``''`` -- a branch's commits survive the tree in its ref."""
     if (git_out(tree, 'branch', '--show-current') or '').strip():
         return ''
@@ -186,33 +280,39 @@ def _move(main: Path, tree: Path, name: str, outputs: tuple[str, ...]) -> tuple[
     return moved, identical, renamed, conflicts
 
 
+def linked(main: Path, name: str) -> Path | str:
+    """The one LINKED worktree of *main* named *name* (never the main checkout), resolved; else why not."""
+    registered = worktrees(main)
+    if registered is None:
+        return f'git could not list the worktrees of {main}'
+    found = [path.resolve() for path, _ in registered[1:] if path.name == name]
+    return found[0] if len(found) == 1 else f'{len(found)} linked worktrees of {main} are named {name!r}'
+
+
 def archive(main: Path, name: str, *, census: Census = processes, today: date | None = None) -> Archived:
     """Move worktree *name*'s outputs into *main*, save its work, and say whether it is safe to remove."""
     main = main.resolve()
     outputs, target = _declared(main)
     saved = main / target / (today or datetime.now(UTC).astimezone().date()).strftime('%Y%m%d') / name
-    registered = worktrees(main)
-    if registered is None:
-        return Archived(name, saved, refused=f'git could not list the worktrees of {main}')
-    found = [path.resolve() for path, _ in registered[1:] if path.name == name]
-    if len(found) != 1:
-        return Archived(name, saved, refused=f'{len(found)} linked worktrees of {main} are named {name!r}')
-    tree = found[0]
+    tree = linked(main, name)
+    if isinstance(tree, str):
+        return Archived(name, main, saved, refused=tree)
     if live := occupants(tree, census=census):
-        return Archived(name, saved, refused=f'the tree is live:\n{describe(live)}')
+        return Archived(name, main, saved, refused=f'the tree is live:\n{describe(live)}')
     if volume(tree) != volume(main):
-        return Archived(name, saved, refused='the tree is on another volume, where a move is a copy')
-    _save(tree, saved)
+        return Archived(name, main, saved, refused='the tree is on another volume, where a move is a copy')
+    save_work(tree, saved)
     moved, identical, renamed, conflicts = _move(main, tree, name, outputs)
     return Archived(
         name,
+        main,
         saved,
         None,
         tuple(moved),
         tuple(identical),
         tuple(renamed),
         tuple(conflicts),
-        unreachable=_unreachable(tree),
+        unreachable=unheld_head(tree),
     )
 
 

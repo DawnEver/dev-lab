@@ -48,7 +48,9 @@ def _snapshot() -> Snapshot:
     quota = Quota(
         account='a', cpus=64, mem_mb=None, gpus=None, default_qos='normal', qos_max_submit={}, queued={},
     )  # fmt: skip
-    return Snapshot(nodes=(Node('n1', ('defq',), 64, 65536, 0, schedulable=True),), partitions={}, quota=quota)
+    return Snapshot(
+        nodes=(Node('n1', ('defq',), 64, 65536, 0, schedulable=True, total_cpus=64),), partitions={}, quota=quota
+    )
 
 
 def _supply(text: str) -> Supply:

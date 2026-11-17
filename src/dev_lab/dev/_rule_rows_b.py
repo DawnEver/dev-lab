@@ -46,7 +46,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'An untracked, non-ignored file outside the declared stray roots (scratch, plus what the repo '
             'declares) is a defect found the moment it appears, not at review: a file somebody meant is staged, '
             'an artefact a program wrote goes to the dated output tree and the program is fixed to write there, '
-            'a one-off goes to scratch, and the census runs after every shell command, at the end of a turn '
+            'a one-off goes to scratch, a file a known retirement declares gone is deleted through its door and '
+            'never staged, and the census runs after every shell command, at the end of a turn '
             'and after every commit, naming each one with its remedy.'
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
@@ -199,6 +200,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_hooks.py', 'tests/test_dev_agenthooks.py'),
     ),
     (
+        'HEAVY-IS-THE-MAIN-SESSIONS',
+        (
+            'The main session alone coordinates heavy testing: requesting a full or heavy run on the producer '
+            '(`forge request`, an HPC submit) and reading its verdict is its; a subagent runs only light local '
+            'measures of the paths it touched (`dev_lab.dev.verify -- <paths>`), never a heavy, gate or full '
+            'selection, and hands the request to the main session; no local machine runs heavy tests '
+            '(VERDICTS-FROM-THE-FORGE).'
+        ),
+        ('tests/test_dev_hooks.py',),
+    ),
+    (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',
         (
             'The PR review is ONE independent acceptance check per PR with advice: the repo-declared command '
@@ -213,16 +225,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_forgereview.py', 'tests/test_dev_forgeserve.py'),
     ),
     (
-        'FORMATS-UPGRADE-ON-READ',
+        'FORMATS-MIGRATE-ONCE',
         (
-            # Why the steps are DATA: a missing step is visible without running anything.
-            'A persisted format a tool writes -- a run journal, a record, a state file, a ledger -- READS every '
-            'older schema of itself by upgrading it, one step per schema declared as DATA beside the version, and '
-            'writes it back at the current one, refusing only a schema the reader does not know (newer, or never '
-            'issued), because a tool is redeployed under its own live data as a matter of course and refusing an '
-            'older file stalls whatever reads it.'
+            'A change to a persisted format a tool writes -- a run journal, a record, a state file, a ledger, a '
+            'config -- migrates the stored records ONCE and deletes the old reader in the same change, and a '
+            'record still at an older schema is refused by name with the instruction that migrates it, because '
+            'a reader that upgrades on read keeps every old shape a supported input forever '
+            '(no-backward-compatibility).'
         ),
-        ('tests/test_arch_formats_upgrade_on_read.py',),
+        ('tests/test_arch_formats_migrate_once.py',),
     ),
 )
 

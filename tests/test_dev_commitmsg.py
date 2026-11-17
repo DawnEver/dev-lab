@@ -166,3 +166,66 @@ def test_published_skips_what_the_base_holds_and_judges_the_rest(
 def test_published_without_a_range_is_a_usage_error() -> None:
     with pytest.raises(SystemExit):
         commitmsg.main(['--message', 'feat: x', '--published', 'base'])
+
+
+# --- a named lane's history (user ruling 2026-11-10) --------------------------------------------------------
+
+
+def _lane(tmp_path: Path) -> tuple[str, str]:
+    """A repo with a seed, an unpublished off-format lane ending at *through*; returns (seed, through)."""
+    _git(tmp_path, 'init', '-q')
+    _git(tmp_path, 'config', 'user.email', 't@t')
+    _git(tmp_path, 'config', 'user.name', 't')
+    _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'chore: seed')
+    seed = _git(tmp_path, 'rev-parse', 'HEAD')
+    _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'merge: the lane wrote this by hand')
+    _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'wip(x): before the 11-05 rule')
+    return seed, _git(tmp_path, 'rev-parse', 'HEAD')
+
+
+def _declare(tmp_path: Path, *entries: tuple[str, str]) -> None:
+    rows = ', '.join(f'{{ head = "{head}", through = "{through}" }}' for head, through in entries)
+    (tmp_path / 'pyproject.toml').write_text(f'[tool.dev_lab.commitmsg]\nhistory = [{rows}]\n', encoding='utf-8')
+
+
+def test_a_declared_lane_history_is_published(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seed, through = _lane(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert commitmsg.main(['--rev-range', f'{seed}..HEAD']) == 1  # PLANTED: undeclared, the lane refuses
+    _declare(tmp_path, ('pr/lane', through))
+    assert commitmsg.main(['--rev-range', f'{seed}..HEAD']) == 0
+
+
+def test_planted_an_off_format_commit_AFTER_through_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seed, through = _lane(tmp_path)
+    _declare(tmp_path, ('pr/lane', through))
+    _git(tmp_path, 'commit', '-q', '--allow-empty', '-m', 'wip(x): after the line')
+    monkeypatch.chdir(tmp_path)
+    capsys.readouterr()
+    assert commitmsg.main(['--rev-range', f'{seed}..HEAD']) == 1
+    assert 'after the line' in capsys.readouterr().out
+
+
+def test_the_history_ceiling_is_ONE_and_a_second_entry_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ESCAPE-HATCH-CEILING: one entry, and the ceiling only goes down."""
+    assert commitmsg.HISTORY_CEILING <= 1
+    seed, through = _lane(tmp_path)
+    _declare(tmp_path, ('pr/lane', through), ('pr/other', seed))
+    monkeypatch.chdir(tmp_path)
+    assert commitmsg.main(['--rev-range', f'{seed}..HEAD']) == 1
+
+
+def test_an_entry_the_base_already_holds_is_named_removable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seed, through = _lane(tmp_path)
+    _git(tmp_path, 'branch', 'base')
+    _declare(tmp_path, ('pr/lane', through))
+    monkeypatch.chdir(tmp_path)
+    capsys.readouterr()
+    assert commitmsg.main(['--rev-range', f'{seed}..HEAD', '--published', 'base']) == 0
+    assert 'removable' in capsys.readouterr().out

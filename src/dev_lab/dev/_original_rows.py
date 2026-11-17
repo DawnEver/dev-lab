@@ -15,22 +15,28 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
+    'callorigins',  # extracted in-kit lexical binding owner for reflection and tolerance scanners
     'ab_bench',
+    'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
+    'failprint',  # a failure fingerprint: test id plus the subjects its failure names (finding D13, 2026-11-16)
+    'producers',  # each repo's one producer, actions or hpc, and its optional parts (ruling 2026-11-16)
+    'producercheck',  # the guard refusing what contradicts a producer declaration (ruling 2026-11-16)
+    'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
     'verifybox',
     'verifysteps',
     'agent_guard',
+    'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
+    'backgroundrun',  # the background hooks' detach and per-repo lock, split from reclaimrun (dev-lab #640)
+    'hookdispatch',  # one interpreter per hook event, reading WIRING from its own install (dev-lab #640)
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
     # derives or admits. The row consumer-a added by hand on 2026-09-18 is the first thing it subsumes.
     'allow_adoption',
     'inflight',
     'runcache',
-    'forgeserve',
-    'forgeproduce',
-    'forgecarry',
     'footprint',
     'lockreach',
     'localpart',
@@ -44,6 +50,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'serialpass',
     'lanepolicy',
     'platformparts',
+    # ORIGINAL: a part status read as a (part, env, policy) fact; split from platformparts (2026-11-12).
+    'partfacts',
     'partrefs',
     'plugin_settings',
     'cjk',
@@ -58,80 +66,27 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'devdocs',
     'docwidth',
     'famconfig',
-    # See the module docstring above: declared original against a measured 2-name overlap.
-    'forge',
-    # No consumer had issue/PR verbs or a token installer to fork: each box ran ``gh``/``tea`` or a
-    # browser. Checked 2026-10-01 against every consumer's tracked files.
-    'forgeauth',
-    'forgecli',
-    'forgecred',
-    'forgefailure',
-    'forgework',
-    'forgestatus',
-    'forgeoutbox',
-    'forgelabels',
-    'forgepublish',
-    'forgeintent',
-    'forgenotice',
-    'forgetry',
-    'forgewait',
     'branchnotices',
     'lockcheck',
     'relock',
-    'forgerecords',
-    'forgetick',
-    'forgeautosync',
     'syncpins',
-    'forgeintegration',
-    'forgelanes',
-    'forgemerge',
-    'forgemessages',  # the message condition split out of forgemerge (2026-11-07)
     'reviewturn',
-    'forgereview',
-    'forgereview_declared',
-    'forgereview_findings',
-    # ORIGINAL: the review read the whole diff or nothing; the slice budget and lenses are new here.
-    'forgereview_command',
-    'forgereview_scope',
-    'forgereview_runtimes',
     # ORIGINAL (2026-11-05): a host's ai-lab was a hand-built venv the machine file named; CI alone built it locked.
     'reviewruntime',
     # ORIGINAL (2026-11-05): a task's key bundle moved whole -- no consumer named a task's secret or set one on a
     # forge; each box stored provider keys by hand.
     'taskkeys',
-    'forgesecrets',
     'integrate',
-    'forgepulls',
-    'forgesync',
     'trialmerge',
     'labsession',
     'pradmit',
-    'forgerun',
-    'forgesupersede',
-    'forgescope',
-    'forgerunpost',
-    'forgerunstate',
     'components',
     'componentbump',
     'shatree',
-    'forgeclaim',
-    'forgeschedule',
-    'forgequeue',
-    'forgehosts',
-    'forgepoller',
-    'forgesettled',
-    'forgeprovides',
-    'forgetidy',
     'branchprune',
     'branchdelete',
-    'forgereview_claim',
     'partrows',
-    'forgeoom',
-    'forgeslurm',
-    # ORIGINAL: a submit detached from the tick under its own lock was never done; split from forgeserve (2026-11-08).
-    'forgesubmit',
     'slurmkilled',
-    'forgeship',
     'artefacts',
     'artefactstores',
     # ORIGINAL: the artefact member index, split out of `artefacts` inside the kit; no consumer held them.
@@ -141,28 +96,14 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'artefactrestore',  # materializes selected members with a receipt
     'artefactfolder',  # the folder store's verified publication
     'selection',
-    'forgealarm',
-    'forgefleet',
-    # ORIGINAL: split out of forgetick/forgeserve inside the kit; no consumer held them.
-    'forgetake',
-    'forgerounds',
-    'forgecoalesce',
-    'forgeservesteps',
-    'forgeunit',
-    'forgeorigin',
     'breakglass',
-    'forgerequest',
     'retention',
     'retentionplan',
+    # ORIGINAL: no rule kept a rust toolchain by its pins; 135 k files per account sat in unpinned ones.
+    'retentionrust',
     'diskusage',
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'pushgate',
-    # ORIGINAL: shared demand derived from the forge's run records; no consumer read them (D4).
-    'forgedemand',
-    'forgeissue',
-    'forgeroute',
-    # ORIGINAL: both are forge mechanisms of 2026-10-22 with no consumer file before them.
-    'forgescarce',
     'prlanded',
     'issueref',
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
@@ -172,10 +113,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: a push onto a landed PR's branch was caught only by a manual ancestry check (2026-11-02); since
     # 2026-11-07 a merged PR's branch is continued (prcontinue, branchreview) and only a closed one refused.
     'closedpush',
+    # ORIGINAL: no push read the milestone tags before the 2026-11-13 ruling.
+    'milestonebase',
     'prcontinue',
     'branchreview',
-    # ORIGINAL: a standing verdict and 'review again' were read inline in forgereview; split out 2026-11-07.
-    'forgereview_stands',
     # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
     'prcurrent',
     # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).
@@ -206,13 +147,18 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'logref',
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset',
+    'branchfate',  # TWO-FATES: each local branch/tree is merged-and-cleaned or archived-and-cleaned (2026-11-15)
     'family',
+    # ORIGINAL: the family member list's check, its forge reading and its serve watch are new (2026-11-09).
+    'members',
+    'watch',
+    'horizontal',
+    # ORIGINAL: a member's content read from its origin integration branch, never its working tree (2026-11-10).
+    'origin',
     # ORIGINAL: one parse of git's pre-push refspec lines for every pre-push row.
     'refspec',
     # ORIGINAL: the lock PIN moved from a pre-push row into the repo's own forge-judged suite (2026-10-24).
     'lockpin',
-    # ORIGINAL: lock freshness and branch set as forge statuses on a PR head (2026-10-24).
-    'forgeheadgate',
     # ORIGINAL: the door table and its two renderings are new (AUTO-MODE-RUNS-THE-DOORS).
     'autodoors',
     # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).
@@ -220,11 +166,17 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'injectedtext',
     # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun',
+    # ORIGINAL: split from stoprun along its concepts (2026-11-15, module-size band); nothing else replaced.
+    'stopsignatures',
+    'stopapproved',
+    'proctable',
+    # ORIGINAL: the agent background-shell sweep, a session's shell lives fifty minutes (demand 2026-11-15).
+    'shellreaper',
+    # ORIGINAL: the launch-time bound of a background shell and its user grant (ruling 2026-11-15).
+    'shelllife',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
-    'servelanes',
     'servelock',
-    'servetask',
     'workstation',
     'workstationfile',
     'workstationprobe',
@@ -232,6 +184,14 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: user ruling 2026-10-30, a resource a repo produces no part for.
     'unproduced',
     'hostrefresh',
+    # ORIGINAL: no gate read a task ledger; the opt-in task-bound row (user ruling 2026-11-14) is new.
+    'taskgate',
+    # ORIGINAL: the one reader of rem's session-to-task binding (user ruling 2026-11-15); none existed.
+    'taskbinding',
+    # ORIGINAL: which rem the session's harness runs, read from its plugin registry, so an unbound push names it.
+    'remplugin',
+    # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
+    'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees',
     # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.
@@ -243,6 +203,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'profile',
     'quantity_values',
     'reports',
+    # ORIGINAL: the skip allowance split from reports (2026-11-15, module-size band).
+    'skipallowance',
     'reportplace',
     'rules',
     'supersede',
@@ -261,6 +223,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'units',
     'verdict',
     'remedypaths',
+    # ORIGINAL: tracked layout readings and the shared hard directory band (2026-11-15).
+    'modulealarm',
     # ORIGINAL, for `dep_observe`'s reason read the other way round: this is the VERDICT half whose
     # readings are `depversions`'s, so the consumer file it would supersede is the one this lane
     # EXISTS to write next -- a per-repo copy of `test_dependencies_take_the_latest.py` that reads a
@@ -316,6 +280,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
     # not a forked file.
     'venvpath',
+    # ORIGINAL (dev-lab #632): no consumer published an environment by pointer; the side-by-side layout is new.
+    'venvpointer',
+    'venvcurrent',
     # ORIGINAL: no consumer file ran JS on a declared engine; every JS test called `shutil.which('node')` until the
     # Node-free cluster verdict host (2026-10-28) made that host dependency red.
     'jsrun',
@@ -332,55 +299,50 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # -- `dev_lab.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
     'table',
     'runner',
+    'inprocess',  # ORIGINAL: split from runner: a `python -m` row run in the stage's one interpreter (2026-11-16)
     'filechecks',
     'ciworkflows',
-    # No consumer guard is superseded: these forge-launching verbs moved from the lab-commons
-    # owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
-    'account',
-    'allocate',
-    'checks',
-    'deploy',
-    'fleet',
-    'spec',
-    'steps',
-    'tick',
+    'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
-    'forgestuck',
-    'forgewatch',
     'jobparts',
-    'pushwatch',
-    'pushstop',
+    # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
+    'jobmeasure',
+    'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
+    'native_session',  # ORIGINAL: one validated native harness identity, apart from worktree provenance (2026-11-15)
+    'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
+    'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
+    'planrunpreflight',  # ORIGINAL: split from planrun: every door checked before the code is spent (2026-11-13)
+    'planrunsteps',  # ORIGINAL: split from planrun: the steps file a plan runs (2026-11-13)
+    'sshholdrun',  # ORIGINAL: split from sshhold: a command or credential sent through a held session (2026-11-13)
+    'sshholdplan',  # ORIGINAL: split from sshhold: one code opens a plan's hosts, a held one reused (2026-11-16)
+    'sshholdwire',  # ORIGINAL: split from sshhold: the client half of the holder's protocol (2026-11-13)
+    'walls',  # ORIGINAL: every refusal is one ledger line (2026-11-13)
+    'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
+    'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
+    'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
+    'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
     'venvfollow',
+    'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
+    'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
+    'devschema',
+    'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrolment (2026-11-16)
+    'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
+    'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
     'metrics',
     'monthsummary',
     'prsuperseded',
     'worktree_archive',
-    # ORIGINAL: the forge's review/security gate, new here; and the in-kit splits of `metrics` and
-    # `forge` (a split of a kit module supersedes no CONSUMER file, so it inherits the parent's kind).
-    'forgecontexts',
-    'forgereview_advice',
-    'forgereview_summary',
-    'forgesecurity',
-    'forgetakeover',
     'metrics_compute',
     'metrics_report',
     'reviewcommand',
     'reviewbudget',  # the review's dollar cap, new here
     'reviewcap',  # a review that did not run warns and merges, new here
     'commandpart',  # a non-pytest repo's one command part, new here
-    'forgeaffinity',  # HPC account affinity of verify parts, new here
-    'forgeapp',  # a GitHub App as a forge identity (the judge's), new here
-    'forgereview_gate',  # the one review gate every merge door reads, split from forgereview_declared
-    'forgereview_identity',  # who reviews: the forge's status, never a head's author, new here
-    'forgerunshow',  # a cluster run's findings published on the forge, new here
-    'memoryadds',  # memory is added to, never edited, new here
-    'remconfig',  # the family's rem.json, new here
     'reviewgate',  # the one reviewed-head predicate, new here
     'reviewgitauth',  # the review door's file-held tokens, new here
     'reviewpolicy',  # the review policy exported for every trigger, new here
-    'forgedraft',  # a PR opens as a draft until its author marks it ready (D53), new here
     'hostalarm',  # a pressed host tells its agents and its humans (D54), new here
     'drift',  # a lock pin left behind its dependency, or a host off its lock, alarms; new here
     'escapes',  # the tick's census of writes that escaped every allowed root, new here
@@ -388,29 +350,27 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'uvfollow',  # uv follows the version its pin needs, through the route it was installed by, new here
-    'forgebacklog',  # a ready head unreviewed past the bound pages once, new here
     'hpcusage',  # an HPC account's last day read from sacct, new here
     'security',
-    # ORIGINAL: the blobless-clone prefetch, the break-glass client and the review-code classification are
+    # ORIGINAL: the blobless-clone prefetch and the review-code classification are
     # forge mechanisms new to the family; no consumer held one.
     'blobfetch',
-    'forgebreakglass',
     'reviewcode',
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
-    'forgereview_bundle',
-    'forgereview_pointer',
-    'forgereview_job',  # an in-kit split of forgetakeover: the forge's review job
-    'forgereview_batch',  # the Batch API resume of a pending review, new here
-    'forgeprotect',  # branch protection declared, planned and applied on both forges, new here
     'actionsartifact',  # an Actions run's own artifact, new here
-    # ORIGINAL: split out of `forgework` inside the kit by concept; no consumer held it.
-    'forgestamp',
-    # ORIGINAL: the poller pass's read memo (2026-11-04); no consumer polled the forge.
-    'forgememo',
     # ORIGINAL: user ruling 2026-11-07, one table of agent doors; it replaces kit-internal copies, no consumer's.
     'agentpolicy',
-    # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
-    'opsserver',
-    'remote',
+    # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.
+    'doorrows',
+    # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-16); no consumer held it.
+    'remotedoors',
+    # ORIGINAL: the scratch-repo git environment (2026-11-10, the core.bare flip); no consumer held it.
+    'gitenv',
+    # ORIGINAL: pinned data dependencies (2026-11-10); no consumer pinned a data repo before.
+    'datadeps',
+    # ORIGINAL: a data PR's consumer runs (2026-11-10); no consumer judged a data PR before.
+    'dataconsumers',
+    # ORIGINAL: user ruling 2026-11-11, a data repo's tests/base is its consumers' tests; no consumer held it.
+    'verifiedby',
 )

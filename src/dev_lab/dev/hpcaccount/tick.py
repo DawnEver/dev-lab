@@ -22,6 +22,7 @@ naming the role; its own ``hpcaccount deploy`` removes the line (:func:`dev_lab.
 from __future__ import annotations
 
 import getpass
+import shutil
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -31,13 +32,26 @@ from lab_commons.config import config_path
 from lab_commons.hpc.declared import REFUSALS
 from lab_commons.log import emit
 
+from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.forgealarm import NEEDS, Alarm, sound
 from dev_lab.dev.forgefleet import serve_off
 from dev_lab.dev.hpcaccount.checks import runs
-from dev_lab.dev.hpcaccount.spec import VERIFICATION, Deployment, Repo, checkout_of, host_serve_argv, load
+from dev_lab.dev.hpcaccount.spec import (
+    KIT,
+    VERIFICATION,
+    Deployment,
+    Repo,
+    checkout_of,
+    host_serve_argv,
+    load,
+    served,
+    serves_here,
+)
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, update
+from dev_lab.dev.lockcheck import uv_version
+from dev_lab.dev.producers import UndeclaredProducer
 
-__all__ = ['account', 'tick']
+__all__ = ['account', 'follow_uv', 'tick']
 
 _runs = runs
 
@@ -45,6 +59,14 @@ _runs = runs
 def account() -> str:
     """The cluster account this tick runs as."""
     return getpass.getuser()
+
+
+def follow_uv(name: str) -> str:
+    """On the kit's tick (the host checkout's one writer), move this account's uv to the pin; ``''`` once it is."""
+    if name != KIT:
+        return ''
+    uv = shutil.which('uv')
+    return follow_pin(uv, uv_version()) if uv else 'this account has no uv on PATH'
 
 
 def _lacking(step: Step, needs: Iterable[str], probed: dict[str, bool]) -> list[str]:
@@ -84,7 +106,7 @@ def tick(
     whose old ``forge serve`` exited 2 every tick could never run the code that would update it). *name*
     follows its declared ref and its venv is rebuilt where its inputs (its committed lock among them) moved
     (:func:`dev_lab.dev.hpcaccount.steps.build`); a repo that cannot is RELEASED this tick with its reason,
-    exit 2, and is not served. A repo declared ``serve = false`` is refreshed and not served.
+    exit 2, and is not served. A repo whose checkout declares no ``hpc`` producer is refreshed and not served.
     One lacking a declared need also sounds a ``needs`` *alarm*; *probed* is the
     tick's probe cache, shared by every repo one tick serves.
 
@@ -100,6 +122,8 @@ def tick(
         emit(f'[tick] refused: {name} is not a served repo of [deploy] in {config or config_path()}', err=True)
         return 2
     step = Step(tools or Tools(), dry=False)
+    if lagging := follow_uv(name):
+        alarm(Alarm(NEEDS, repo.url, f'{account()} runs a uv that is not the pin', lagging, about='uv'))
     why, lacking = _refresh(step, spec, home, repo, {} if probed is None else probed)
     if lacking:
         alarm(Alarm(NEEDS, repo.url, f'{account()} lacks {", ".join(lacking)}: {name} is not served', why))
@@ -110,8 +134,14 @@ def tick(
         role = spec.role or 'undeclared'
         emit(f'[tick] {name} refused to serve: [deploy] role is {role}; only a {VERIFICATION} account serves', err=True)
         return 2
-    serve_off({one.name: one.serve for one in spec.repos}, account(), alarm=alarm, repo=repo.url)
-    if not repo.serve:
-        return 0  # checked out and fresh; this account does not serve its queue
+    try:
+        ours = serves_here(spec, home, repo)
+    except UndeclaredProducer as undeclared:
+        emit(f'[tick] {name} released, not served this tick: {undeclared}', err=True)
+        return 2
+    here = served(spec, home)
+    serve_off({one.name: one.name in here for one in spec.repos}, account(), alarm=alarm, repo=repo.url)
+    if not ours:
+        return 0  # checked out and fresh; its producer is not the HPC, so this account never serves its queue
     checkout = checkout_of(spec, home, repo)
     return run(host_serve_argv(), cwd=checkout, check=False).returncode

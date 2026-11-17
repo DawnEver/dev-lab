@@ -6,11 +6,18 @@ Nothing here parses YAML -- the comparison is between rendered bytes and file by
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
+import json
 import re
+import runpy
 import shutil
 import subprocess
 import sys
 import tomllib
+import urllib.error
+import urllib.request
+from email.message import Message
 from pathlib import Path
 from typing import Any
 
@@ -42,13 +49,19 @@ from dev_lab.dev.ciworkflows import (
 )
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
+from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
+#: An explicit Actions producer (dev_lab.dev.producers; absent reads the same); these render an Actions repo.
+ACTIONS_REPO = '[tool.dev_lab.protection]\nproducer = "actions"\n'
+
+
 _ROOT = Path(__file__).resolve().parents[1]
 #: A PR's run: the pull_request event, or ci.yml dispatched with the PR's number (continue.yml).
 _PR_RUN = "(github.event_name == 'pull_request' || inputs.pr != '')"
+_NO_MEASURE = "inputs.measurement_paths == '' && inputs.measurement_sha == ''"
 _JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
 
 _GITHUB_BASE = {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review-again.yml'}
@@ -61,17 +74,23 @@ def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
     assert git is not None
     subprocess.run([git, 'init', '-q', str(root)], check=True)
     subprocess.run([git, '-C', str(root), 'remote', 'add', 'origin', url], check=True)
+    if not (root / 'pyproject.toml').exists():
+        (root / 'pyproject.toml').write_text(ACTIONS_REPO, encoding='utf-8')
     return root
 
 
 def test_this_repo_s_workflows_are_exactly_their_render() -> None:
-    assert set(workflows(_ROOT)) == _GITHUB_BASE, 'a floor: an empty table drifts from nothing'
+    # dev-lab is a judge repo (user ruling 2026-11-10): its bundle prepare renders beside the base set, less the
+    # review-again workflow, whose one job reviews on the runner (ciworkflows.served_only).
+    assert set(workflows(_ROOT)) == {*_GITHUB_BASE - {'review-again.yml'}, PREPARE_WORKFLOW}, (
+        'a floor: an empty table drifts from nothing'
+    )
     assert drift(_ROOT) == []
 
 
 def test_a_repo_opts_in_and_its_layer_merges_over_the_base(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.ci."ci.yml".jobs.review.permissions]\nissues = "read"\n', encoding='utf-8'
+        ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml".jobs.review.permissions]\nissues = "read"\n', encoding='utf-8'
     )
     ci = workflows(tmp_path)['ci.yml']
     assert ci['jobs']['review']['permissions'] == {
@@ -83,7 +102,7 @@ def test_a_repo_opts_in_and_its_layer_merges_over_the_base(tmp_path: Path) -> No
 
 
 def _base_ci(tmp_path: Path) -> dict[str, Any]:
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
     return workflows(tmp_path)['ci.yml']
 
 
@@ -91,7 +110,7 @@ def test_the_lifecycle_runs_on_pull_request_and_never_on_pull_request_target(tmp
     ci = _base_ci(tmp_path)
     assert set(ci['on']) == {'push', 'pull_request', 'workflow_dispatch', 'schedule'}
     assert 'pull_request_target' not in render(ci), "a fork's code would run with this repository's secrets"
-    assert ci['jobs']['review']['if'] == _guarded(
+    assert ci['jobs']['review']['if'] == _ci_guarded(
         f"${{{{ always() && {_PR_RUN} && needs.merge-ready.outputs.due == 'true' }}}}"
     ), 'review is the last gate: it runs only once merge-ready called the head due'
 
@@ -101,13 +120,16 @@ def test_every_job_holds_least_permissions_and_the_workflow_only_reads(tmp_path:
     assert ci['permissions'] == {'contents': 'read'}
     granted = {name: job.get('permissions', {}) for name, job in ci['jobs'].items()}
     assert granted == {
+        'measurement': {'contents': 'read'},
         'parts': {},
         'part': {'contents': 'write', 'statuses': 'write'},
-        'absent-parts': {'contents': 'read', 'statuses': 'write'},
+        # actions: read -- jobparts.run_jobs lists the run's concluded jobs so a failed part reads error, not absent
+        'absent-parts': {'contents': 'read', 'statuses': 'write', 'actions': 'read'},
         'security': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'head-gates': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'read'},
         'review': {'contents': 'read', 'statuses': 'write', 'pull-requests': 'write', 'issues': 'write'},
         'merge-ready': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write', 'actions': 'write'},
+        'merge-rejudge': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write', 'actions': 'write'},
         'promote': {'contents': 'write', 'statuses': 'write', 'pull-requests': 'write'},
     }
 
@@ -126,12 +148,12 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_decides_before_the_r
     assert f'dev_lab.dev.jobparts matrix --runners hosted {event}' in computed['run'], 'the rows follow the event'
     assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
-    assert jobs['absent-parts']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
+    assert jobs['absent-parts']['if'].startswith(_ci_prefix() + 'always()')
     assert set(jobs['merge-ready']['needs']) == {'security', 'head-gates', 'part', 'absent-parts'}, (
         'a merge waits on its parts; the review runs after the decision'
     )
     assert jobs['review']['needs'] == ['merge-ready']
-    assert jobs['merge-ready']['if'].startswith(_guarded('${{ always() }}').removesuffix(') }}'))
+    assert jobs['merge-ready']['if'].startswith(_ci_prefix() + 'always()')
     ready, dispatch = jobs['merge-ready']['steps'][-2:]
     assert 'forge merge ready --pr' in ready['run']
     assert '"; merged") echo "merged=true" >> "$GITHUB_OUTPUT"' in ready['run']
@@ -177,7 +199,7 @@ def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_prov
     names = list(steps)
     assert names.index('Keep the review keys in memory') < names.index('tests/review')
     (tmp_path / 'hub').mkdir()
-    rendered = {**workflows(_ROOT), 'review.yml': _gitea_review(tmp_path / 'hub')}
+    rendered = {**workflows(_ROOT), **workflows(tmp_path), 'review.yml': _gitea_review(tmp_path / 'hub')}
     assert {key: _PROVIDERS.findall(render(body)) for key, body in rendered.items()} == {key: [] for key in rendered}
     again = rendered['review-again.yml']['jobs']['again']['steps'][-1]
     assert 'forge review run --pr ${{ github.event.issue.number }}' in again['run']
@@ -200,6 +222,7 @@ def _evaluated(rendered: str, event: str, *, smoke: bool | None = None, pr: str 
     """
     expression = rendered.removeprefix('${{').removesuffix('}}')
     python = expression.replace('&&', ' and ').replace('||', ' or ')
+    python = python.replace('inputs.measurement_paths', "''").replace('inputs.measurement_sha', "''")
     for name, short in (('github.event_name', 'event_name'), ('inputs.smoke', 'smoke'), ('inputs.pr', 'pr')):
         python = python.replace(name, short)
     names: dict[str, str | bool | None] = {'event_name': event, 'smoke': smoke, 'pr': pr}
@@ -240,7 +263,7 @@ def test_a_merge_runs_only_the_pr_part_set_as_its_smoke_and_never_promotes(tmp_p
     assert steps['pending']['if'] == (
         "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/integrate/main' }}"
     ), 'a smoke run never asks pending, so its pending output is empty'
-    assert ci['jobs']['promote']['if'] == _guarded("${{ needs.parts.outputs.pending == 'true' }}"), (
+    assert ci['jobs']['promote']['if'] == _ci_guarded("${{ needs.parts.outputs.pending == 'true' }}"), (
         'empty is never true'
     )
     dispatch = ci['jobs']['merge-ready']['steps'][-1]['run']
@@ -257,9 +280,10 @@ def test_a_new_push_cancels_only_its_own_prs_superseded_run(tmp_path: Path) -> N
     ci = _base_ci(tmp_path)
     group, cancel = ci['concurrency']['group'], ci['concurrency']['cancel-in-progress']
     assert group == (
-        f"ci-${{{{ {_PR_RUN} && format('pr-{{0}}', github.event.pull_request.number || inputs.pr) || github.run_id }}}}"
+        f"ci-${{{{ {_NO_MEASURE} && {_PR_RUN} && format('pr-{{0}}', github.event.pull_request.number || inputs.pr)"
+        ' || github.run_id }}'
     ), "a PR's dispatched run (continue.yml) shares its PR's group"
-    assert cancel == f'${{{{ {_PR_RUN} }}}}'
+    assert cancel == f'${{{{ {_NO_MEASURE} && {_PR_RUN} }}}}'
     cancels = {event: _evaluated(cancel, event) for event in set(ci['on'])}
     assert cancels == {'pull_request': True, 'push': False, 'schedule': False, 'workflow_dispatch': False}, (
         'PLANTED CONTROL: an integrate/main push, the nightly run and a merge smoke are never cancelled'
@@ -283,8 +307,8 @@ def test_a_dispatch_naming_a_pr_is_that_pr_s_run(tmp_path: Path) -> None:
     jobs = ci['jobs']
     for name in ('security', 'head-gates', 'merge-ready', 'review'):
         guard = jobs[name]['if']
-        assert guard.startswith(_guarded('${{ x }}').removesuffix('x) }}')), name
-        own = guard.removeprefix(_guarded('${{ x }}').removesuffix('x) }}')).removesuffix(') }}')
+        assert guard.startswith(_ci_prefix()), name
+        own = guard.removeprefix(_ci_prefix()).removesuffix(')) }}')
         own = own.replace('always() && ', '').replace(" && needs.merge-ready.outputs.due == 'true'", '')
         assert own == _PR_RUN, name
         assert _evaluated(own, 'pull_request') is True, name
@@ -324,8 +348,23 @@ def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_deci
     promote = ci['jobs']['promote']
     assert promote['needs'] == ['parts', 'absent-parts']
     (step,) = [one for one in promote['steps'] if 'integrate promote' in one.get('run', '')]
-    assert 'python -m dev_lab.dev.integrate promote "$HEAD_SHA"' in step['run']
-    assert 'git push origin main' in step['run']
+    assert 'python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA"' in step['run'], (
+        'a busy tip is never green: the nightly promotes the newest first parent that passes'
+    )
+    assert 'git push origin main' in step['run'], 'promote moved the local main to the chosen sha; this pushes it'
+
+
+def test_a_stale_render_promoting_only_the_tip_is_refused_by_check(tmp_path: Path, capsys) -> None:
+    """PLANTED CONTROL: a ci.yml whose promote step lacks --newest is a stale render, named by `check`."""
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    write(tmp_path)
+    assert main(['check', '--root', str(tmp_path)]) == 0
+    path = tmp_path / '.github' / 'workflows' / 'ci.yml'
+    text = path.read_text(encoding='utf-8')
+    assert 'integrate promote --newest' in text
+    path.write_text(text.replace('integrate promote --newest', 'integrate promote'), encoding='utf-8')
+    assert main(['check', '--root', str(tmp_path)]) == 1
+    assert 'ci.yml: differs' in capsys.readouterr().out
 
 
 def test_a_tip_main_already_holds_runs_no_part_no_absent_and_no_promote(tmp_path: Path) -> None:
@@ -338,7 +377,7 @@ def test_a_tip_main_already_holds_runs_no_part_no_absent_and_no_promote(tmp_path
     assert 'dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' in steps['pending']['run']
     assert steps['matrix']['if'] == "${{ steps.pending.outputs.pending != 'false' }}"
     assert ci['jobs']['parts']['outputs']['pending'] == '${{ steps.pending.outputs.pending }}'
-    assert ci['jobs']['part']['if'] == _guarded("${{ needs.parts.outputs.matrix != '' }}")
+    assert ci['jobs']['part']['if'] == _ci_guarded("${{ needs.parts.outputs.matrix != '' }}")
     assert "needs.parts.outputs.matrix != ''" in ci['jobs']['absent-parts']['if']
     assert 'pending' in ci['jobs']['promote']['if']
 
@@ -354,10 +393,13 @@ def test_after_promote_the_nightly_job_sweeps_every_branch_integration_now_conta
 
 def test_a_shared_step_list_is_declared_once_and_expanded_in_every_job(tmp_path: Path) -> None:
     ci = _base_ci(tmp_path)
-    setups = [job['steps'][:3] for name, job in ci['jobs'].items() if name != 'review']
+    setups = [job['steps'][:3] for name, job in ci['jobs'].items() if name not in ('review', 'measurement')]
     assert ci['jobs']['review']['steps'][0] == setups[0][0], 'the review checks the head out as DATA, no setup'
     assert all(steps == setups[0] for steps in setups)
     assert setups[0][0]['with'] == {'ref': '${{ env.HEAD_SHA }}', 'fetch-depth': 0}
+    measured = ci['jobs']['measurement']['steps'][:3]
+    assert measured[1:] == setups[0][1:]
+    assert measured[0] == {**setups[0][0], 'with': {**setups[0][0]['with'], 'persist-credentials': False}}
     assert '_steps' not in workflows(tmp_path)
     shared = {'a': [{'run': 'x'}]}
     assert expand({'jobs': {'j': {'steps': [{USE_STEPS: 'a'}, {'run': 'z'}]}}}, shared) == {
@@ -376,21 +418,21 @@ def test_a_repo_that_declares_nothing_renders_its_forge_s_whole_base(
 ) -> None:
     """The base is never an opt-in a repo can forget: merge-tick and the review-again workflow went undeployed so."""
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
-    (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '', encoding='utf-8')
     assert set(workflows(tmp_path)) == expected
     assert {path.name for path in write(tmp_path)} == expected
 
 
 def test_an_undeclared_github_ci_still_runs_the_nightly_schedule(tmp_path: Path) -> None:
     _hosted(tmp_path)
-    (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '', encoding='utf-8')
     assert workflows(tmp_path)['ci.yml']['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
 
 
 def test_a_repo_missing_a_base_workflow_is_refused_naming_it(tmp_path: Path) -> None:
     """PLANTED CONTROL: a full render drifts from nothing; deleting one base file is named."""
     _hosted(tmp_path)
-    (tmp_path / 'pyproject.toml').write_text('', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '', encoding='utf-8')
     write(tmp_path)
     assert drift(tmp_path) == []
     (tmp_path / '.github' / 'workflows' / 'merge-tick.yml').unlink()
@@ -404,7 +446,7 @@ def test_a_repo_missing_a_base_workflow_is_refused_naming_it(tmp_path: Path) -> 
 def test_with_no_origin_the_forge_is_the_one_the_declared_tables_are_placed_on(
     tmp_path: Path, tables: str, forge: str
 ) -> None:
-    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + tables, encoding='utf-8')
     assert repo_forge(tmp_path) == forge
 
 
@@ -412,7 +454,7 @@ def test_with_no_origin_the_forge_is_the_one_the_declared_tables_are_placed_on(
 def test_with_no_origin_and_no_single_declared_forge_the_render_is_refused_naming_the_remedy(
     tmp_path: Path, tables: str
 ) -> None:
-    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + tables, encoding='utf-8')
     with pytest.raises(ValueError, match='add the `origin` remote'):
         workflows(tmp_path)
 
@@ -427,7 +469,7 @@ def test_a_repo_s_forge_is_read_from_its_origin(tmp_path: Path, url: str, forge:
 
 def test_a_hand_edit_and_a_hand_written_workflow_are_refused_naming_the_render(tmp_path: Path, capsys) -> None:
     """PLANTED CONTROL: render, then edit one byte and add an undeclared file -- both must be named."""
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
     write(tmp_path)
     assert main(['check', '--root', str(tmp_path)]) == 0
     path = tmp_path / '.github' / 'workflows' / 'ci.yml'
@@ -466,11 +508,11 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
 ) -> None:
     planted = 'sk-planted-value-never-rendered'
     monkeypatch.setenv('AI_LAB_KEYS_LIVE', planted)
-    (tmp_path / 'pyproject.toml').write_text(_HOSTED, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _HOSTED, encoding='utf-8')
     ci = workflows(tmp_path)['ci.yml']
     job = ci['jobs']['part-live']
     assert job['runs-on'] == 'ubuntu-latest'
-    assert job['if'] == _guarded(
+    assert job['if'] == _ci_guarded(
         "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
     )
     assert job['name'] == 'tests/live'
@@ -496,10 +538,39 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
     others = {name: render({'j': body}) for name, body in ci['jobs'].items() if name not in {'part-live', 'review'}}
     assert all('AI_LAB_KEYS_LIVE' not in text for text in others.values()), 'no other job carries the secret'
     assert planted not in render(ci), 'the render never prints a secret value'
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
     assert not [name for name in workflows(tmp_path)['ci.yml']['jobs'] if name.startswith('part-')], (
         'PLANTED CONTROL: nothing declared, no hosted job'
     )
+
+
+_SETUP_HOSTED = """
+[tool.lab_commons.tests]
+resources = ["linux", "live"]
+
+[tool.dev_lab.parts]
+hosted = { linux = { setup = "sudo apt-get install -y xvfb" }, live = { tasks = ["live"], setup = "make x" } }
+
+[tool.dev_lab.ci."ci.yml"]
+"""
+
+
+def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pull_request(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _SETUP_HOSTED, encoding='utf-8')
+    jobs = workflows(tmp_path)['ci.yml']['jobs']
+    linux, live = jobs['part-linux'], jobs['part-live']
+    assert linux['if'] == _ci_guarded("${{ needs.parts.outputs.matrix != '' }}"), 'no secret: it runs on a PR too'
+    assert live['if'] == _ci_guarded(
+        "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
+    ), 'PLANTED CONTROL: a secret keeps it full-run only'
+    setup, produce = linux['steps'][-2:]
+    assert setup == {'name': 'Set up tests/linux', 'run': 'sudo apt-get install -y xvfb'}
+    assert produce['run'].endswith('jobparts produce linux')
+    assert not any('env' in step or 'credential' in step.get('run', '') for step in linux['steps']), 'no key store'
+    runs = [step.get('run', '') for step in live['steps']]
+    assert runs.index('make x') < next(i for i, run in enumerate(runs) if run.endswith('jobparts produce live'))
+    assert _forgets_keys(live)
+    assert {'part-linux', 'part-live'} <= set(jobs['absent-parts']['needs'])
 
 
 def _forgets_keys(job: dict[str, Any]) -> bool:
@@ -583,7 +654,7 @@ def test_every_job_installing_the_method_installs_the_door_first(tmp_path: Path)
     names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS, PREPARE}]
     tables = ''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names)
     _hosted(tmp_path)
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + tables, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + tables, encoding='utf-8')  # a serve repo: its jobs review
     all_jobs = [(f'{w}:{j}', job) for w, flow in workflows(tmp_path).items() for j, job in flow['jobs'].items()]
     users = 0
     for name, job in all_jobs:
@@ -814,8 +885,27 @@ def test_the_door_reads_the_locked_git_revision_and_refuses_any_other_source(tmp
         assert not done.stdout.strip(), refused
 
 
+def test_every_workflow_names_the_branches_the_repo_declares(tmp_path: Path) -> None:
+    """User ruling 2026-11-12: a one-branch repo (integration ``main``) runs the Gitea merge job against ``main``.
+
+    The integration and trunk names are read from ``[tool.dev_lab.integrator]``, never the family's spelled in the
+    base. PLANTED CONTROL: a repo declaring ``integrate/main`` renders it; the family's dev-lab door line
+    (``DEV_LAB_REF=integrate/main``) is dev-lab's own branch and stays in both.
+    """
+    one = '[tool.dev_lab.integrator]\ntrunk = "main"\nintegration = "main"\n[tool.dev_lab.ci."merge.yml"]\n'
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + one, encoding='utf-8')
+    merge = json.dumps(workflows(tmp_path)['merge.yml'])
+    assert 'origin/main' in merge
+    assert 'origin/integrate/main' not in merge
+    assert 'DEV_LAB_REF=integrate/main' in merge
+    assert '@integration@' not in merge
+    family = one.replace('integration = "main"', 'integration = "integrate/main"')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + family, encoding='utf-8')
+    assert 'origin/integrate/main' in json.dumps(workflows(tmp_path)['merge.yml']), 'PLANTED CONTROL'
+
+
 def _gitea_review(tmp_path: Path) -> dict[str, Any]:
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."review.yml"]\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '[tool.dev_lab.ci."review.yml"]\n', encoding='utf-8')
     return workflows(tmp_path)['review.yml']
 
 
@@ -957,7 +1047,8 @@ def test_every_workflow_that_installs_from_the_family_source_declares_it_once(tm
     """
     _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-again.yml"]\n',
+        ACTIONS_REPO
+        + '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-again.yml"]\n',
         encoding='utf-8',
     )
     rendered = workflows(tmp_path)
@@ -991,7 +1082,8 @@ def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None
 def _full_adoption(tmp_path: Path) -> dict[str, Any]:
     _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-again.yml"]\n',
+        ACTIONS_REPO
+        + '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."review.yml"]\n[tool.dev_lab.ci."review-again.yml"]\n',
         encoding='utf-8',
     )
     return workflows(tmp_path)
@@ -1145,7 +1237,7 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
     PLANTED CONTROL: a serve repo -- declared or by default -- renders no such workflow.
     """
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: 'gitea')
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _JUDGE_REVIEW, encoding='utf-8')
     prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
     assert set(prepare['on']) == {REVIEW_EVENT}
     (job,) = prepare['jobs'].values()
@@ -1155,12 +1247,38 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
     assert 'Install the review method' not in text
     assert job['runs-on'] in tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS]
     assert {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)} == {
-        f'.gitea/workflows/{name}' for name in {PREPARE_WORKFLOW, *_GITEA_BASE}
+        f'.gitea/workflows/{name}' for name in {PREPARE_WORKFLOW, *_GITEA_BASE - {'review.yml'}}
     }
     assert drift(tmp_path) == []
     for serve in ('', '[tool.dev_lab.review]\nwhere = "serve"\n'):
-        (tmp_path / 'pyproject.toml').write_text(serve, encoding='utf-8')
+        (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + serve, encoding='utf-8')
         assert PREPARE_WORKFLOW not in workflows(tmp_path)
+
+
+@pytest.mark.parametrize('forge', ['github', 'gitea'])
+def test_a_judge_repo_renders_no_job_that_reviews_on_the_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: str
+) -> None:
+    """``where = "judge"``: the judge host posts the verdict, so no rendered job runs ``forge review run``.
+
+    Such a job could only print "not reviewed here" and exit 1 -- a red check on every judge-reviewed PR (dev-lab
+    #413, 2026-11-11). A job marked ``served`` (:data:`~ciworkflows.SERVED_KEY`) renders only for a serve repo, a job
+    that ``needs`` one goes with it, and a workflow left with no job is not rendered; the key itself never is.
+    PLANTED CONTROL: the same tables in a serve repo render every review job.
+    """
+    monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
+    names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS, PREPARE}]
+    tables = ''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names)
+    for review, reviews in ((_JUDGE_REVIEW, False), ('', True)):
+        (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + review + tables, encoding='utf-8')
+        rendered = {name: render(flow) for name, flow in workflows(tmp_path).items()}
+        assert all(f'"{ciworkflows.SERVED_KEY}"' not in text for text in rendered.values())
+        running = sorted(name for name, text in rendered.items() if 'forge review run' in text)
+        assert bool(running) is reviews, running
+        for flow in workflows(tmp_path).values():
+            jobs = flow.get('jobs', {})
+            assert jobs, 'a workflow with no job is not rendered'
+            assert all(ciworkflows.needs(job) <= set(jobs) for job in jobs.values())
 
 
 def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path) -> None:
@@ -1172,7 +1290,7 @@ def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path)
     PLANTED CONTROL: none of Gitea's part -- the host runner's reach and mirror -- reaches GitHub's render.
     """
     layer = f'\n[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]\nforge = "github"\n'
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW + layer, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _JUDGE_REVIEW + layer, encoding='utf-8')
     prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
     assert set(prepare['on']) == {REVIEW_EVENT}
     assert BY_FORGE not in prepare
@@ -1192,8 +1310,51 @@ def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path)
     assert 'AI_LAB_KEYS_' not in text
     assert 'Install the review method' not in text
     written = {path.relative_to(tmp_path).as_posix() for path in write(tmp_path)}
-    assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE, PREPARE_WORKFLOW)}
+    assert written == {f'.github/workflows/{name}' for name in (*_GITHUB_BASE - {'review-again.yml'}, PREPARE_WORKFLOW)}
     assert drift(tmp_path) == []
+
+
+def test_the_settle_step_s_own_reads_retry_a_transient_and_report_a_refused_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The inline fetch runs before reviewcode exists on the runner, so it retries as reviewcode does.
+
+    PLANTED CONTROL: a 404 lock read is final after one attempt (the family line); a 401 is reported by host.
+    """
+    steps = _gitea_review(tmp_path)['jobs']['review']['steps']
+    (run,) = [step['run'] for step in steps if step.get('name') == 'Settle a PR with no code to review']
+    script = tmp_path / 'settle.py'
+    script.write_text(run.split("python3 -I -c '", 1)[1].rsplit("' ||", 1)[0], encoding='utf-8')
+    env = {'FORGE_URL': 'https://forge.example', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_TOKEN': 't', 'BASE_SHA': 'b',
+           'FAMILY_SOURCE': 'https://source.example/'}  # fmt: skip
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr('time.sleep', lambda _s: None)
+
+    def run_with(*answers: object) -> list[str]:
+        queue, opened = list(answers), []
+
+        def urlopen(request: urllib.request.Request, **_: object) -> io.BytesIO:
+            opened.append(request.full_url)
+            step = queue.pop(0)
+            if isinstance(step, int):
+                raise urllib.error.HTTPError(request.full_url, step, 'no', Message(), io.BytesIO(b''))
+            return io.BytesIO(bytes(step))  # a scripted answer
+
+        monkeypatch.setattr(urllib.request, 'urlopen', urlopen)
+        with contextlib.suppress(urllib.error.HTTPError, SystemExit):
+            runpy.run_path(str(script), run_name='__main__')
+        return opened
+
+    lock = b'[[package]]\nname = "dev-lab"\nsource = { editable = "." }\n'
+    opened = run_with(503, lock, b'reached = True\n')
+    assert len(opened) == 3, opened
+    assert opened[1] == opened[0], 'the transient lock read is retried'
+    assert len(run_with(404, b'reached = True\n')) == 2, 'an absent lock is final: the family line is fetched'
+    assert len(run_with(401)) == 1
+    said = capsys.readouterr().out
+    assert '::error' in said
+    assert 'forge.example refused' in said
 
 
 def test_a_pr_with_no_code_is_settled_before_any_clone_or_install(tmp_path: Path) -> None:
@@ -1233,6 +1394,25 @@ def test_the_mirror_follows_the_forge_when_it_moves_hosts(tmp_path: Path) -> Non
     assert set_url < run.index('git -C "$MIRROR" -c gc.auto=0 fetch')
 
 
+def test_the_scheduled_tick_prunes_the_records_home_nothing_else_does_on_github(tmp_path: Path) -> None:
+    """GitHub has no ``forge serve``, whose tick is the only other records prune.
+
+    LIVE 2026-11-13 (dev-lab 6cc2d023..cdb5439b): the records release reached its 1000-asset cap and every part's
+    post was refused.
+
+    The tick prunes on its schedule (and by hand), even when merge-ready failed; a ``status`` event, one per
+    posted part, never prunes. PLANTED CONTROL: merge-ready itself carries no such guard.
+    """
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8')
+    job = workflows(tmp_path)['merge-tick.yml']['jobs']['merge-tick']
+    pruned = [step for step in job['steps'] if 'dev_lab.dev.forge records prune' in step.get('run', '')]
+    assert len(pruned) == 1, 'the one prune a GitHub repo runs'
+    assert pruned[0]['if'] == "${{ !cancelled() && github.event_name != 'status' }}"
+    assert job['permissions']['contents'] == 'write', 'deleting a release asset needs contents: write'
+    ready = next(step for step in job['steps'] if step.get('id') == 'ready')
+    assert 'if' not in ready, 'control: merge-ready runs on every event the job runs on'
+
+
 def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: Path) -> None:
     """A part settling after ci.yml's merge-ready ran (a workstation or HPC part) re-judges the PR, no human.
 
@@ -1240,7 +1420,7 @@ def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: P
     merge-ready's own decision, and a pending part, start nothing (no loop, no judging a claim).
     """
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8'
+        ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8'
     )
     tick = workflows(tmp_path)['merge-tick.yml']
     assert {'status', 'schedule', 'workflow_dispatch'} <= set(tick['on'])
@@ -1250,7 +1430,8 @@ def test_a_part_posted_after_merge_ready_ran_re_judges_every_open_pr(tmp_path: P
     assert "startsWith(github.event.context, 'tests/')" in gate
     assert "github.event.context != 'tests/merge-ready'" in gate
     assert "github.event.state != 'pending'" in gate
-    ready, dispatch = job['steps'][-2:]
+    named = {step.get('name'): step for step in job['steps']}
+    ready, dispatch = named['tests/merge-ready'], named['Run CI on the merged integration']
     assert 'forge merge ready)' in ready['run'], 'no --pr: every open PR into integration'
     assert '*"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT"' in ready['run']
     assert dispatch['if'] == "${{ steps.ready.outputs.merged == 'true' }}"
@@ -1302,6 +1483,15 @@ def _guarded(expression: str) -> str:
     return ready_only({'on': {'pull_request': {}}, 'jobs': {'job': {'if': expression}}})['jobs']['job']['if']
 
 
+def _ci_guarded(expression: str) -> str:
+    """The original CI predicate, AND-ed with measurement isolation and the unchanged draft policy."""
+    return _guarded(f'${{{{ ({_NO_MEASURE}) && ({_bare(expression)}) }}}}')
+
+
+def _ci_prefix() -> str:
+    return _ci_guarded('${{ x }}').removesuffix('x)) }}')
+
+
 #: The PR actions that bring work to run: a new head, or a PR becoming ready. Any other action joining a
 #: cancel-in-progress group cancels the live run for nothing (F-6adfea8621bf).
 _BRINGS_WORK = frozenset({'opened', 'synchronize', 'reopened', 'ready_for_review'})
@@ -1332,7 +1522,7 @@ def test_no_pr_event_that_brings_no_work_can_cancel_a_live_run(
     group is not keyed on the label is caught.
     """
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _JUDGE_REVIEW, encoding='utf-8')
     rendered = workflows(tmp_path)
     assert {name: _cancels_for_nothing(w) for name, w in rendered.items() if _cancels_for_nothing(w)} == {}
     review = rendered.get('review.yml') or rendered[PREPARE_WORKFLOW]
@@ -1359,7 +1549,7 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
     condition survives the AND; a workflow no PR starts carries no guard.
     """
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
-    (tmp_path / 'pyproject.toml').write_text(_JUDGE_REVIEW, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _JUDGE_REVIEW, encoding='utf-8')
     rendered = workflows(tmp_path)
     events = {'pull_request', 'pull_request_target'}
     triggered = {name: w for name, w in rendered.items() if events & set(w['on'])}
@@ -1372,7 +1562,7 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
         for job_name, job in workflow['jobs'].items():
             assert _bare(job['if']).startswith(f'({READY_ONLY})'), f'{name} {job_name}: a draft runs it'
     if forge == 'github':
-        assert _bare(rendered['ci.yml']['jobs']['review']['if']).endswith("needs.merge-ready.outputs.due == 'true')")
+        assert rendered['ci.yml']['jobs']['merge-ready']['if'] == _ci_guarded(f'${{{{ always() && {_PR_RUN} }}}}')
     assert all(READY_ONLY not in render(w) for name, w in rendered.items() if name not in triggered)
     assert _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'draft': False, 'title': 'feat: x'}})
     assert _guard_holds(READY_ONLY, {'action': 'ready_for_review', 'pull_request': {'draft': False, 'title': 'x'}})
@@ -1380,3 +1570,88 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
     assert not _guard_holds(READY_ONLY, {'action': 'synchronize', 'pull_request': {'draft': True, 'title': 'x'}})
     for title in ('WIP: x', 'wip: x', '[WIP] x'):
         assert not _guard_holds(READY_ONLY, {'action': 'opened', 'pull_request': {'title': title}}), title
+
+
+def test_the_review_job_s_posted_status_is_judged_again_in_the_same_run(tmp_path: Path) -> None:
+    """After ``review`` posts tests/review (a verdict OR a named skip), ``merge-rejudge`` runs merge-ready's ONE step.
+
+    A status the job token posts starts no workflow on GitHub and a hosted runner has no tick, so without it a PR
+    whose review was its last gate sits at merge-ready=failure until a human re-runs the job (numerics-lab #19).
+    PLANTED CONTROL: the review job gains no write on contents, and the merge tick's decision is unchanged.
+    """
+    jobs = _base_ci(tmp_path)['jobs']
+    again = jobs['merge-rejudge']
+    assert again['needs'] == ['review']
+    assert "needs.review.result != 'skipped'" in again['if'], 'only after the review job ran'
+    assert again['if'].startswith(_ci_prefix() + 'always()'), 'a failed review is judged too'
+    assert again['steps'] == jobs['merge-ready']['steps'], 'one source for the decision step'
+    assert again['permissions'] == jobs['merge-ready']['permissions']
+    assert again['env'] == jobs['merge-ready']['env']
+    assert jobs['review']['permissions']['contents'] == 'read', 'the job holding the key never merges'
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8')
+    tick = workflows(tmp_path)['merge-tick.yml']['jobs']
+    assert set(tick) == {'merge-tick', 'review'}
+    ready = next(step for step in tick['merge-tick']['steps'] if step.get('id') == 'ready')
+    assert 'forge merge ready)' in ready['run']
+
+
+def test_both_merge_jobs_sync_through_the_repo_s_setup(tmp_path: Path) -> None:
+    """merge-ready and merge-rejudge sync through ``setup``, so a repo that narrows it narrows both.
+
+    document-lab 2026-11-10: dev-lab #365 inlined a copy of ``setup`` into the merge steps, so document-lab's narrowed
+    ``setup`` (no ``--all-extras``: its ``gpu`` extra has no wheel on a hosted runner) no longer reached the merge jobs
+    and its rendered-workflow test went red on every PR. PLANTED CONTROL: the base, un-narrowed, still syncs
+    ``--all-extras`` in both jobs.
+    """
+    base = _base_ci(tmp_path)['jobs']
+    for job in ('merge-ready', 'merge-rejudge'):
+        assert any(step.get('run') == 'uv sync --frozen --all-extras' for step in base[job]['steps']), job
+    (tmp_path / 'pyproject.toml').write_text(
+        ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci._steps]\n'
+        'setup = [{ name = "Sync the environment", run = "uv sync --frozen --extra dev" }]\n',
+        encoding='utf-8',
+    )
+    narrowed = workflows(tmp_path)['ci.yml']['jobs']
+    for job in ('merge-ready', 'merge-rejudge'):
+        runs = [str(step.get('run', '')) for step in narrowed[job]['steps']]
+        assert 'uv sync --frozen --extra dev' in runs, job
+        assert not any('--all-extras' in run for run in runs), job
+
+
+def _door_ref(run: str, workspace: Path, temp: Path) -> subprocess.CompletedProcess[str]:
+    """Run the door step up to its clone and print the ref it chose -- no network."""
+    head = run.split('git clone', 1)[0] + 'echo "$DEV_LAB_REF"\n'
+    head = head.replace('python3 -I', f'"{Path(sys.executable).as_posix()}" -I')  # the runner's python3, here
+    env = {**unlocated(), 'RUNNER_TEMP': str(temp), 'GITHUB_WORKSPACE': str(workspace), 'DOOR_SHA': 'HEAD'}
+    return subprocess.run(
+        [shutil.which('bash') or 'bash', '-c', head],
+        capture_output=True, text=True, encoding='utf-8', check=False, env=env,
+    )  # fmt: skip
+
+
+def test_a_repo_that_locks_no_python_runs_the_family_line_s_door(tmp_path: Path) -> None:
+    """A data repo has no uv.lock, so it pins no door: the door is dev-lab's integration line (data repos, 11-10).
+
+    PLANTED CONTROL: the same workspace WITH a lock reads the lock's revision, never the line.
+    """
+    run = _door_steps(tmp_path)[0]['run']
+    workspace = tmp_path / 'ws'
+    workspace.mkdir()
+    env = unlocated()
+    git = ['git', '-C', str(workspace), '-c', 'user.name=t', '-c', 'user.email=t@t']
+    subprocess.run([*git, 'init', '-q'], check=True, env=env)
+    (workspace / 'a.toml').write_text('a = 1\n', encoding='utf-8')
+    subprocess.run([*git, 'add', '.'], check=True, env=env)
+    subprocess.run([*git, 'commit', '-q', '-m', 'data'], check=True, env=env)
+    done = _door_ref(run, workspace, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == 'integrate/main'
+    pin = 'c' * 40
+    (workspace / 'uv.lock').write_text(
+        f'[[package]]\nname = "dev-lab"\nsource = {{ git = "https://example.org/dev-lab.git#{pin}" }}\n',
+        encoding='utf-8',
+    )
+    subprocess.run([*git, 'add', '.'], check=True, env=env)
+    subprocess.run([*git, 'commit', '-q', '-m', 'lock'], check=True, env=env)
+    locked = _door_ref(run, workspace, tmp_path)
+    assert locked.stdout.strip() == pin, locked.stderr

@@ -35,6 +35,7 @@ from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr, pr_close
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgememo import ReadMemo
+from dev_lab.dev.forgepages import ISSUE_PAGE
 from dev_lab.dev.forgestamp import provenance
 from dev_lab.dev.forgework import (
     ACTIONS_BOT,
@@ -118,8 +119,28 @@ def test_the_token_is_the_git_credential_and_a_token_variable_is_never_read(tmp_
 
 
 @pytest.mark.parametrize(('forge', 'host', 'root', 'auth'), CASES)
+def test_issue_list_reads_page_after_page_until_a_short_one(server, forge, host, root, auth) -> None:
+    """A forge serves one page of ISSUE_PAGE: a larger limit reads on until a page comes back short.
+
+    PLANTED CONTROL: the third page is never asked for once the second is short.
+    """
+    del host, auth
+    size = ISSUE_PAGE
+    base = '?state=open&type=issues&limit=' if forge.host != 'github.com' else '?state=open&per_page='
+    full = [{**_ISSUE, 'number': n} for n in range(size)]
+    _answer('GET', f'{root}/issues{base}{size}&page=1', (200, full))
+    _answer('GET', f'{root}/issues{base}{size}&page=2', (200, [_ISSUE]))
+    listed = _client(forge, _Loopback(server)).issue_list(limit=3 * size)
+    assert len(listed) == size + 1
+    asked = [r['path'] for r in _Recorder.received]
+    assert not any(path.endswith('&page=3') for path in asked), 'CONTROL: a short page ends the read'
+
+
+@pytest.mark.parametrize(('forge', 'host', 'root', 'auth'), CASES)
 def test_issue_list_reads_open_issues_and_drops_pull_requests(server, forge, host, root, auth) -> None:
-    query = '?state=open&type=issues&limit=30' if forge.host != 'github.com' else '?state=open&per_page=30'
+    query = (
+        '?state=open&type=issues&limit=30&page=1' if forge.host != 'github.com' else '?state=open&per_page=30&page=1'
+    )
     _answer('GET', f'{root}/issues{query}', (200, [_ISSUE, {**_PR, 'pull_request': {}}]))
     transport = _Loopback(server)
     assert _client(forge, transport).issue_list() == (_NORMAL_ISSUE,)
@@ -239,6 +260,38 @@ def test_a_refusal_whose_credential_still_authenticates_is_retried_and_names_no_
     assert 'auth login' not in str(caught.value)
     assert 'credential authenticates' in str(caught.value)
     assert 'retrying cannot change' not in str(caught.value)
+
+
+_NOT_ADMIN = {'message': 'user should be an owner or a collaborator with admin write of a repository'}
+
+
+def test_a_403_whose_credential_authenticates_is_a_permission_refusal_said_once(server) -> None:
+    """2026-11-10: a push-only account read ``branch_protections``; three retries then "transient" misled."""
+    _answer('GET', _STATUSES, (403, _NOT_ADMIN), (200, []))
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    with pytest.raises(ForgeCallFailed) as caught:
+        _client(Forge('f.example', 'o', 'r'), _Loopback(server)).call('GET', _STATUSES)
+    said = str(caught.value)
+    assert caught.value.report.diagnosis is Diagnosis.PERMISSION_REFUSED
+    assert len(caught.value.report.attempts) == 1, 'an answered permission refusal is never retried'
+    assert not caught.value.credential_refused
+    assert caught.value.final is None, 'a missing grant is the account, not the call: a queued post stays queued'
+    assert 'admin write of a repository' in said, "the forge's own reason is named"
+    assert 'grant' in said
+    assert 'admin account' in said
+    assert 'transient' not in said
+    assert 'auth login' not in said
+
+
+@pytest.mark.parametrize('answer', [(502, {'message': 'bad gateway'}), (401, _INVALID), (403, _INVALID)])
+def test_a_5xx_or_an_auth_glitch_stays_transient_beside_a_permission_refusal(server, answer) -> None:
+    """PLANTED CONTROL: only an answered 403 naming no credential fault is a permission refusal."""
+    _answer('GET', _STATUSES, answer)
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    with pytest.raises(ForgeCallFailed) as caught:
+        _client(Forge('f.example', 'o', 'r'), _Loopback(server)).call('GET', _STATUSES)
+    assert caught.value.report.diagnosis is not Diagnosis.PERMISSION_REFUSED
+    assert caught.value.report.disposition is Disposition.EXHAUSTED
 
 
 def _oauth_basic(secret: str) -> str:
@@ -436,7 +489,7 @@ def test_the_cli_stamps_from_the_environment(server, tmp_path: Path, capsys) -> 
     assert (
         issue_and_pr(['issue', 'comment', '7', '--body', 'hello'], cwd=repo, env=env, transport=_Loopback(server)) == 0
     )
-    assert _Recorder.received[0]['body'] == {'body': '[g · claude · lane]\n\nhello'}
+    assert _Recorder.received[-1]['body'] == {'body': '[g · claude · lane]\n\nhello'}
     assert 'u' in capsys.readouterr().out
 
 

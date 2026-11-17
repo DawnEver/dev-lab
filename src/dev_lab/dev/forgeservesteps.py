@@ -16,26 +16,29 @@ from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
-from dev_lab.dev import escapes, forgeship, hostalarm, retention
+from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, retention
 from dev_lab.dev.branchdelete import serve_sweep
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.drift import step as drift_step
-from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
+from dev_lab.dev.family.watch import step as family_step
+from dev_lab.dev.forgealarm import INTEGRATION, RUN, STORAGE, Alarm
 from dev_lab.dev.forgebacklog import alarms as late_reviews
 from dev_lab.dev.forgebacklog import declared_wait
 from dev_lab.dev.forgeclaim import forge_now
+from dev_lab.dev.forgedataruns import serve_step as data_runs
 from dev_lab.dev.forgedraft import alarms as idle_drafts
+from dev_lab.dev.forgedraft import ready_when_current
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeintegration import alarms as sync_alarms
 from dev_lab.dev.forgeintegration import tick as integration_tick
 from dev_lab.dev.forgemerge import CI_MERGER, ci_merges
+from dev_lab.dev.forgeorphan import alarms as orphans
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
 from dev_lab.dev.forgereview import step as review_step
-from dev_lab.dev.forgeroute import reconcile
 from dev_lab.dev.forgescarce import red_alarms as scarce_red
 from dev_lab.dev.forgeschedule import load_schedule, starved_alarms
 from dev_lab.dev.forgesecurity import step as security_step
@@ -47,6 +50,7 @@ from dev_lab.dev.integrator import observe
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.prcontinue import serve_continue_landed
+from dev_lab.dev.prcurrent import ready_refusals
 from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.relock import carry
@@ -55,11 +59,13 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgeproduce import Produced
 
 __all__ = [
+    'cancel_stalled',
+    'cancel_strays',
     'demote_unreachable',
+    'every_host',
     'hygiene',
     'pressed',
     'prompt',
-    'raise_once',
     'relock',
     'repo_wide',
     'retain_storage',
@@ -69,20 +75,22 @@ __all__ = [
 ]
 
 
-def raise_once(built: Client, kind: str, alarms: Sequence[Alarm], *, alarm: Callable[[Alarm], object]) -> None:
-    """Keep ONE forge issue per alarm of *kind* (``<kind>: <subject>``) and page only where it was written.
+def cancel_strays(
+    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
+) -> None:
+    """Cancel this account's forge jobs no run file holds, every tick, runs in flight or not: one alarm, counted."""
+    if stray := slurm.strays(forgerunstate.held_names):
+        body = f'jobs {" ".join(stray)} carried a forge job name no run file here holds; cancelled'
+        alarm(Alarm(RUN, repo, f'{len(stray)} orphaned forge job(s) cancelled on {seat}', body, about='strays'))
 
-    Any host may raise these; :func:`dev_lab.dev.forgeroute.reconcile` finds the issue by its title, so
-    N hosts deriving the same rows write one issue, the host that creates or changes it pages, and a row
-    no longer derived closes its issue. A kind outside :data:`~dev_lab.dev.forgealarm.ISSUE_KINDS` is refused.
-    """
-    if kind not in ISSUE_KINDS:
-        msg = f'{kind!r} is not an issue-kept alarm kind {ISSUE_KINDS} (dev_lab.dev.forgealarm.ISSUE_KINDS)'
-        raise ValueError(msg)
-    by_title = {f'{kind}: {one.subject}': one for one in alarms}
-    for done in reconcile(built, f'{kind}: ', {title: one.body for title, one in by_title.items()}):
-        if done.action in {'created', 'updated'} and done.area in by_title:
-            alarm(by_title[done.area])
+
+def cancel_stalled(
+    slurm: forgerunstate.Cluster, repo: str, seat: ClusterAccount | None, alarm: Callable[[Alarm], object]
+) -> None:
+    """Cancel this account's forge tasks past their stall bound, every tick: one alarm naming each sha and test."""
+    if stalled := slurm.stalled():
+        body = '\n'.join(one.text() for one in stalled)
+        alarm(Alarm(RUN, repo, f'{len(stalled)} stalled forge task(s) cancelled on {seat}', body, about='stalled'))
 
 
 def starved(
@@ -94,12 +102,13 @@ def starved(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """A ``starved`` issue for each part NO host admits, read across every card; the repo's poller raises it."""
+    """A ``starved`` alarm per part NO host admits, read across every card: on the host card, never an issue."""
     schedule = load_schedule(root)
     try:
         queue, _ = forge_queue(root, built, cards, now=forge_now(built), schedule=schedule)
         found = starved_alarms([item for item in queue if unadmitted(item.blocked)], schedule, repo)
-        raise_once(built, STARVED, found, alarm=alarm)
+        for one in found:
+            alarm(one)
     except ForgeCallFailed as failed:
         say(f'[serve] the starved parts were not raised: {failed}')
 
@@ -115,8 +124,9 @@ def prompt(
 ) -> None:
     """The integrator's prompts, each child's behind/conflict report, a red scarce part, a held or late review.
 
-    A forge or fetch failure is said, not raised -- and then NO row is reconciled, so a partial derivation
-    never closes an issue it merely failed to see.
+    Each is an alarm on the host card (:mod:`dev_lab.dev.forgehosts`), the one event stream every machine reads
+    (``forge queue``), never an issue: the card is rewritten each tick, so a cleared condition leaves it. A forge
+    or fetch failure is said, not raised.
     """
     try:
         found = observe(root, repo, statuses=lambda sha: status_list(built, sha))
@@ -124,24 +134,23 @@ def prompt(
         ticked = integration_tick(root, built, policy, host=host)  # the host claims each auto-sync
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
+        for line in ready_when_current(root, built, policy.integration, judge=ready_refusals):
+            say(f'[serve] ready-when: {line}')
         security_step(root, built, say=say)  # tests/security on each unjudged head: a merge condition
         glass = break_glass(root, policy, repo)
         red = scarce_red(root, policy.integration, repo, lambda sha: status_list(built, sha))
-        raise_once(
-            built,
-            INTEGRATION,
-            [
-                *found,
-                *sync_alarms(ticked.said, policy, repo, now=forge_now(built)),
-                *glass,
-                *red,
-                *idle_drafts(root, built, policy.integration, repo, now=forge_now(built)),  # D53: waits on its author
-                *late_reviews(  # a ready head nothing reviewed: the 11-02/03 backlog
-                    built, policy.integration, repo, now=forge_now(built), wait=declared_wait(root)
-                ),
-            ],
-            alarm=alarm,
-        )
+        for one in (
+            *found,
+            *sync_alarms(ticked.said, policy, repo, now=forge_now(built)),
+            *glass,
+            *red,
+            *idle_drafts(root, built, policy.integration, repo, now=forge_now(built)),  # D53: waits on its author
+            *orphans(root, built, policy.integration, repo, now=forge_now(built)),  # MERGE-OR-DELETE
+            *late_reviews(  # a ready head nothing reviewed: the 11-02/03 backlog
+                built, policy.integration, repo, now=forge_now(built), wait=declared_wait(root)
+            ),
+        ):
+            alarm(one)
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
 
@@ -253,7 +262,8 @@ def repo_wide(
 
     In order: open the continuations of landed branches (:mod:`dev_lab.dev.prcontinue`) -- before anything prunes a
     branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
-    and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. A repo that
+    and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. The
+    family watch is per machine, not here (:func:`family`). A repo that
     declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
     """
     serve_continue_landed(root, client(root), say=say, alarm=alarm)
@@ -268,10 +278,26 @@ def repo_wide(
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
     relock(root, repo, client(root), say=say, alarm=alarm)
+    data_runs(root, say=say, alarm=alarm)  # a data PR this checkout consumes runs its tests here
     try:
         drift_step(root, repo, say=say, alarm=alarm, now=clock())
     except (OSError, ValueError) as why:
         say(f'[serve] the drift census did not run: {why}')
+
+
+def every_host(
+    root: Path, repo: str, built: Client, *, say: Callable[[str], None], alarm: Callable[[Alarm], object], host: str
+) -> None:
+    """The passes every serving host runs, poller or not.
+
+    :func:`review` wherever its command can run, and the machine's own family watch
+    (:mod:`dev_lab.dev.family.watch`, daily) -- the family is the host's checkouts, so never only the poller's.
+    """
+    review(root, built, say=say, host=host)
+    try:
+        family_step(root, repo, say=say, alarm=alarm)
+    except (OSError, ValueError) as why:
+        say(f'[serve] the family watch did not run: {why}')
 
 
 def demote_unreachable(produced: Sequence[Produced]) -> None:

@@ -68,14 +68,26 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PUSHED-HEAD-IS-WATCHED',
         (
-            'A pushed head is watched to its verdict and the session acts on it, the same on both forges: '
-            '`forge watch <sha>... --stream` prints one line per status change and exits on the first listed sha '
-            'to settle, 0 green, 1 red, 3 at its deadline, to run as a Monitor; `forge pr create` and a successful '
-            'push through the family door print that exact command; a `PostToolUse` hook journals the push and '
-            'adds one reminder line when its head has no live `forge watch`; and a `Stop` hook (ruling '
-            '2026-11-04) refuses to end a turn while a journalled head is pending with no live watcher, naming '
-            'the watch to arm, or red, naming where to read it (once).'
+            'A pushed head is heard to its verdict, the same on both forges, by ONE hearer: the machine PR watcher '
+            '(SESSION-HEARS-ITS-PRS). `forge pr create` and a successful push through the family door print one '
+            'line naming the pushed head, that watcher and the idempotent `prwatcher start` door; no Monitor is '
+            'armed and no hook journals the push (dev-lab #640). `forge watch <sha>... --stream` still reads a head '
+            'on request: one line per status change, exiting on the first listed sha to settle, 0 green, 1 red, 3 '
+            'at its deadline.'
         ),
         ('tests/test_dev_pushwatch.py',),
+    ),
+    (
+        'SESSION-HEARS-ITS-PRS',
+        (
+            'A session hears every change on every PR it opened or pushed, in any repository and on both forges, '
+            'without the user telling it (ruling 2026-11-11): the door that acts records each such PR in the '
+            'machine home, one file per session (`forge pr create`, the family pre-push row `session-prs`); ONE '
+            'machine watcher (`prwatcher`, started at session start) polls every session record and says each red '
+            'check, all-green, merge or close at that session`s next prompt (dev-lab #640). `forge watch --session '
+            '<id> --stream` reads the same record on request, and `--ack <pr> --reason <why>` records why a red '
+            'stands.'
+        ),
+        ('tests/test_dev_sessionwatch.py',),
     ),
 )

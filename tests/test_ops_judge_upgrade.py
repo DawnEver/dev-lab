@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import sys
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.machinehome import default_layout
 from dev_lab.ops import __main__ as door
-from dev_lab.ops import install as install_module
-from dev_lab.ops import judge, upgrade
+from dev_lab.ops import hostverbs, installpaths, judge, upgrade
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.install import install
+from dev_lab.ops.installpaths import under
 
 ALPHA = 'https://gitea.example/owner/alpha'
 BETA = 'https://github.com/owner/beta'
@@ -26,11 +28,12 @@ def _config(tmp: Path, body: str) -> OpsConfig:
 
 
 def _judge_table(tmp: Path) -> str:
-    gitea, github = (tmp / 'judge-gitea').as_posix(), (tmp / 'judge-github').as_posix()
+    gitea, github = (tmp / 'judge-gitea').as_posix(), (tmp / 'judge-github.pem').as_posix()
     return (
         f'[ops.judge]\nuser = "judge"\nschedule = "*:0/5"\nrepos = ["{ALPHA}", "{BETA}"]\n'
         f'environment_file = "{(tmp / "judge.env").as_posix()}"\nmemory_max = "3G"\n'
-        f'[ops.judge.tokens]\n"gitea.example" = "{gitea}"\n"github.com" = "{github}"\n'
+        f'[ops.judge.tokens]\n"gitea.example" = "{gitea}"\n'
+        f'[ops.judge.apps]\n"github.com" = {{app_id = 7, key_file = "{github}"}}\n'
     )
 
 
@@ -62,7 +65,7 @@ def test_no_judge_table_renders_no_judge_unit(tmp_path: Path) -> None:
         ('', '', 'serves no repo'),
         (f'"{ALPHA}", "{ALPHA}"', '"gitea.example" = "t"\n', 'twice'),
         (f'"{ALPHA}", "{BETA}"', '"gitea.example" = "t"\n', 'names no token'),
-        (f'"{ALPHA}"', '"gitea.example" = "t"\n"github.com" = "u"\n', 'serves no repo in'),
+        (f'"{ALPHA}"', '"gitea.example" = "t"\n"other.example" = "u"\n', 'serves no repo in'),
     ],
 )
 def test_a_judge_declaration_that_lies_is_refused(tmp_path: Path, repos: str, tokens: str, why: str) -> None:
@@ -83,14 +86,14 @@ def test_the_judge_runs_one_pass_and_a_failing_repo_does_not_stop_the_next(tmp_p
     assert [o.state for o in outcomes] == ['failed', 'judged']
     assert ran[1] == [
         '/opt/ops/bin/python', '-m', 'dev_lab.dev.forge', 'review', 'judge', '--url', BETA,
-        '--token-file', (tmp_path / 'judge-github').as_posix(),
+        '--app-id', '7', '--app-key-file', (tmp_path / 'judge-github.pem').as_posix(),
     ]  # fmt: skip
 
 
 def test_the_judge_verb_alerts_a_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     host = _config(tmp_path, _judge_table(tmp_path))
     alerts: list[str] = []
-    monkeypatch.setattr(door, '_alert', lambda _c, title, _d: alerts.append(title))
+    monkeypatch.setattr(hostverbs, 'alert', lambda _c, title, _d: alerts.append(title))
     monkeypatch.setattr(judge, '_subprocess', lambda argv: 1 if BETA in argv else 0)
     assert door.main(['--config', str(host.path), 'judge']) == 1
     assert alerts == [f'judge FAILED {BETA}']
@@ -103,7 +106,7 @@ def test_the_judge_verb_refuses_a_host_with_no_judge(tmp_path: Path) -> None:
 
 UPGRADE = (
     '[ops.upgrade]\nsource = "https://forge.example/owner/dev-lab.git"\nref = "main"\nextras = ["ops"]\n'
-    'overrides = "/etc/dev-lab/overrides.txt"\nuv = "/usr/local/bin/uv"\n'
+    'uv ="/usr/local/bin/uv"\n'
     'packages = ["ai-lab @ git+https://forge.example/owner/ai-lab.git"]\n'
 )
 
@@ -155,11 +158,17 @@ def test_a_passing_self_check_keeps_the_tip(tmp_path: Path) -> None:
     """PLANTED CONTROL for the rollback: a passing check installs once and restores nothing."""
     host = _config(tmp_path, UPGRADE)
     installed, checked, install, probe = _upgrade_fakes([NEW], passes=True)
-    assert upgrade.run(host, install=install, probe=probe, fetch=_fetch) == (0, f'dev-lab {OLD} -> {NEW}')
+    assert upgrade.run(host, install=install, probe=probe, fetch=_fetch, follow=lambda _c, _p: '') == (
+        0,
+        f'dev-lab {OLD} -> {NEW}',
+    )
     assert [_dev_lab_at(line) for line in installed] == [
         f'dev-lab[ops] @ git+https://forge.example/owner/dev-lab.git@{NEW}'
     ]
     assert checked == list(upgrade.checks(host).values())
+    _i, _c, install, probe = _upgrade_fakes([NEW], passes=True)
+    lagging = upgrade.run(host, install=install, probe=probe, fetch=_fetch, follow=lambda _c, _p: 'uv did not follow')
+    assert lagging == (0, f'dev-lab {OLD} -> {NEW}; uv did not follow'), 'the upgrade stands; the line says so'
 
 
 def test_a_failing_self_check_restores_the_recorded_commit(tmp_path: Path) -> None:
@@ -252,7 +261,7 @@ def test_install_names_the_remedy_when_the_judge_cannot_enter_its_keys_directory
     where = tmp_path.as_posix()
     remedy = f'forge-judge cannot enter {where}: chown root:forge-judge {where} && chmod 750 {where}'
     for enters, named in ((False, True), (True, False)):
-        monkeypatch.setattr(install_module, '_may_enter', lambda path, _user, enters=enters: enters or path != keys)
+        monkeypatch.setattr(installpaths, '_may_enter', lambda path, _user, enters=enters: enters or path != keys)
         steps = install(host, root, chown=lambda *_: None).next_steps
         assert any(step.startswith(remedy) for step in steps) is named
 
@@ -260,11 +269,11 @@ def test_install_names_the_remedy_when_the_judge_cannot_enter_its_keys_directory
 @pytest.mark.parametrize(
     ('apps', 'tokens', 'why'),
     [
-        ('"github.com" = {app_id = 1, key_file = "k"}\n', '"github.com" = "t"\n', 'both a token and an app'),
-        ('"github.com" = {app_id = true, key_file = "k"}\n', '', 'must be'),
-        ('"github.com" = {app_id = 1}\n', '', 'must be'),
-        ('"github.com" = {app_id = 1, key_file = "k", slug = "x"}\n', '', 'must be'),
-        ('"gitea.example" = {app_id = 1, key_file = "k"}\n', '"github.com" = "t"\n', 'serves no repo in'),
+        (
+            '"github.com" = {app_id = 1, key_file = "k"}\n"gitea.example" = {app_id = 2, key_file = "k"}\n',
+            '',
+            'serves no repo in',
+        ),
     ],
 )
 def test_an_app_declaration_that_lies_is_refused(tmp_path: Path, apps: str, tokens: str, why: str) -> None:
@@ -276,6 +285,10 @@ def test_an_app_declaration_that_lies_is_refused(tmp_path: Path, apps: str, toke
         _config(tmp_path, table)
 
 
+NL = chr(10)
+BUNDLE = f'[keys]{NL}anthropic = ["k"]{NL}'
+
+
 def test_install_loads_the_judge_s_key_bundle_from_its_root_only_file(tmp_path: Path) -> None:
     """2026-11-05: the judge's model keys are the pr-review task's ONE bundle, loaded on stdin, naming no provider.
 
@@ -283,6 +296,9 @@ def test_install_loads_the_judge_s_key_bundle_from_its_root_only_file(tmp_path: 
     """
     bundle = (tmp_path / 'pr-review.toml').as_posix()
     table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle}"\nrepos = [', 1)
+    placed = under(tmp_path / 'root', bundle)
+    placed.parent.mkdir(parents=True)
+    placed.write_text(BUNDLE, encoding='utf-8')
     steps = install(_config(tmp_path, table), tmp_path / 'root').next_steps
     (load,) = [step for step in steps if 'ai_lab.auth' in step]
     assert load.startswith('sudo -u forge-judge ')
@@ -295,22 +311,24 @@ def test_install_loads_the_judge_s_key_bundle_from_its_root_only_file(tmp_path: 
     assert piped.endswith('--bundle -  (the pr-review key bundle on stdin)')
 
 
-NL = chr(10)
-BUNDLE = f'[keys]{NL}anthropic = ["k"]{NL}'
-
-
-@pytest.mark.parametrize(
-    ('content', 'why'),
-    [(None, 'unreadable'), ('not = [toml', 'not a key bundle'), (f'[other]{NL}a = 1{NL}', 'not a key bundle')],
-)
-def test_a_root_load_refuses_a_keys_file_missing_or_not_a_bundle(tmp_path: Path, content: str | None, why: str) -> None:
+@pytest.mark.parametrize('content', ['not = [toml', f'[other]{NL}a = 1{NL}'])
+def test_a_root_load_refuses_a_keys_file_not_a_bundle_and_loads_one_not_yet_placed(
+    tmp_path: Path, content: str
+) -> None:
     """F-62e1a094ad3a: ``keys_file`` takes ``environment_file``'s one root-secret read; the bundle is never echoed.
 
-    PLANTED CONTROL: a readable ``[keys]`` bundle is accepted, and a non-root load never reads the root-only file.
+    An ABSENT declared keys_file loads (not yet placed: ``secret place`` writes only a declared path, so the config
+    declaring it must apply first). PLANTED CONTROL: a readable ``[keys]`` bundle is accepted, and a non-root load
+    never reads the root-only file.
     """
     bundle = tmp_path / 'pr-review.toml'
-    if content is not None:
-        bundle.write_text(content, encoding='utf-8')
+    table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle.as_posix()}"{NL}repos = [', 1)
+    path = tmp_path / 'supervise.toml'
+    head = f'[ops]{NL}home = "{(tmp_path / "home").as_posix()}"{NL}python = "/p"{NL}'
+    path.write_text(head + table, encoding='utf-8')
+    assert load(path, environ={}, as_root=True).judge is not None  # absent: declared, not yet placed
+    bundle.write_text(content, encoding='utf-8')
+    why = 'not a key bundle'
     table = _app_table(tmp_path).replace('repos = [', f'keys_file = "{bundle.as_posix()}"{NL}repos = [', 1)
     path = tmp_path / 'supervise.toml'
     head = f'[ops]{NL}home = "{(tmp_path / "home").as_posix()}"{NL}python = "/p"{NL}'
@@ -321,6 +339,22 @@ def test_a_root_load_refuses_a_keys_file_missing_or_not_a_bundle(tmp_path: Path,
     assert load(path, environ={}, as_root=False).judge is not None
     bundle.write_text(BUNDLE, encoding='utf-8')
     assert load(path, environ={}, as_root=True).judge is not None
+
+
+def test_install_refuses_a_declared_keys_file_not_yet_placed(tmp_path: Path) -> None:
+    """The order is config apply (declares it) -> secret place -> install; install names the placing door.
+
+    PLANTED CONTROL: the same config installs once the bundle is placed.
+    """
+    root = tmp_path / 'root'
+    table = _app_table(tmp_path).replace('repos = [', f'keys_file = "/etc/pr-review.toml"{NL}repos = [', 1)
+    host = _config(tmp_path, table)
+    with pytest.raises(ValueError, match=r'declared but not placed: place it with `secret place --path /etc/pr-'):
+        install(host, root)
+    assert not (root / 'etc' / 'systemd').exists(), 'refused before anything is written'
+    (root / 'etc').mkdir(parents=True)
+    (root / 'etc' / 'pr-review.toml').write_text(BUNDLE, encoding='utf-8')
+    assert install(host, root).next_steps
 
 
 def test_install_narrows_a_0644_keys_file_to_root_0600(tmp_path: Path) -> None:
@@ -340,3 +374,28 @@ def test_install_narrows_a_0644_keys_file_to_root_0600(tmp_path: Path) -> None:
     assert ('pr-review.toml', 'root', 'root') in seen
     if sys.platform != 'win32':
         assert bundle.stat().st_mode & 0o777 == 0o600
+
+
+def test_install_renders_the_judges_machine_file_with_the_family_layer(tmp_path: Path) -> None:
+    """The judge reads its review month through lab-commons' family layer: install renders that one table."""
+    family = '[ops.judge.family]\nsource = "/srv/family-config"\nfile = "family.toml"\nmax_age = 172800\n'
+    host = _config(tmp_path, _judge_table(tmp_path) + family)
+    done = install(host, tmp_path / 'root')
+    machine_home, under_home = default_layout()
+    machine = tmp_path / 'root' / 'var/lib/judge' / machine_home / under_home
+    rendered = tomllib.loads(machine.read_text(encoding='utf-8'))
+    assert rendered == {'family': {'source': '/srv/family-config', 'file': 'family.toml', 'max_age': 172800}}
+    chown = f'chown -R judge: /var/lib/judge/{machine_home}'
+    assert chown in done.next_steps
+    useradd = next(i for i, step in enumerate(done.next_steps) if 'useradd' in step)
+    assert useradd < done.next_steps.index(chown)  # the account exists first
+
+
+def test_no_family_renders_no_judge_machine_file(tmp_path: Path) -> None:
+    install(_config(tmp_path, _judge_table(tmp_path)), tmp_path / 'root')
+    assert not (tmp_path / 'root' / 'var/lib/judge' / default_layout()[0]).exists()
+
+
+def test_a_family_with_no_source_is_refused_at_load(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match='names no source'):
+        _config(tmp_path, _judge_table(tmp_path) + '[ops.judge.family]\nfile = "family.toml"\n')

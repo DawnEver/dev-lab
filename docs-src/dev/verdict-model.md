@@ -33,6 +33,41 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - **What the partition removed is reported**: the run counts what it was asked to collect before deselection.
   A run with no census is INCONCLUSIVE, and one that executed nothing is an error.
 
+## A focused measurement on GitHub Actions
+
+The generated `ci.yml` also accepts an explicit **MEASUREMENT**, on its existing Ubuntu runner:
+
+```sh
+gh workflow run ci.yml --ref pr/my-feature \
+  -f measurement_sha="$SHA" \
+  -f 'measurement_paths=["tests/test_feature.py"]'
+```
+
+`SHA` is the full 40-hex commit at that branch. The checked-out HEAD and Actions event SHA must both match it.
+Selectors are a nonempty JSON array of repository-relative test files or `file.py::node` IDs, including parameter
+IDs. They are validated against the commit and checkout bytes, then passed as argv to the canonical
+`python -m dev_lab.dev.verify -- <selectors>` door, never interpolated into shell source. Empty, half-filled,
+outside-root, modified or escaping-symlink requests are named refusals. Do not combine these fields with `pr` or
+`smoke`. Supplying either measurement field disables **every normal job**, including consumer-added jobs.
+
+This job retains the repository's frozen setup, installs the normal measurement hooks, and changes no worker,
+memory, waiting or wall default. Its checkout persists no credential; its permissions are only `contents: read`.
+A setup carrying a forge token, family secret or write permission is refused rather than inherited. No part is
+posted, no review or merge runs, and no `tests/base` or promotion qualification is implied by a green measurement.
+
+When the wrapper produced a directory output, the always-on-failure upload names exactly three files in that
+directory, never the directory recursively: `receipt.json`, raw child `stdout.log`, and, when proved, `verify.log`.
+Other files placed there by tested code are not uploaded. With no directory output, upload is skipped.
+The wrapper retains its runner output channel; the child receives none of the Actions control-file variables
+(`GITHUB_OUTPUT`, `GITHUB_ENV`, `GITHUB_PATH`, `GITHUB_STATE`, `GITHUB_STEP_SUMMARY`). Ordinary commit metadata remains available. This is an environment authority
+boundary, not an operating-system sandbox for hostile same-user code. The receipt labels itself `MEASUREMENT` and
+indexes the actual canonical tree/environment/selector proof and exit code. No environment dump, credential,
+workspace, Git directory or cache is uploaded. Missing, corrupt, ambiguous or identity-mismatched evidence stays
+inconclusive, including an exit-zero child with no usable log. A stopped child leaves its initial incomplete
+receipt and whatever stdout was written; artifact upload itself cannot be guaranteed after a whole job is killed.
+Nested verify logs cannot replace this selection's proof. This is a focused diagnostic, not a replacement for a
+complete part or the forge's acceptance gates.
+
 ## What each destination needs
 
 | destination | the bar |

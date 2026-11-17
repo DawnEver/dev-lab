@@ -19,7 +19,8 @@ from test_dev_githook_scripts import _plant_checker
 from dev_lab.dev import forgeintegration, forgemessages
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import Ticked, tick
-from dev_lab.dev.forgemerge import FORGE_PULL, decide, merge, merge_message
+from dev_lab.dev.forgemerge import FORGE_PULL, Decision, decide, merge_message
+from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import Marker, marker
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import ACTIONS_BOT
@@ -30,7 +31,10 @@ from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
-_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+_MANIFEST = (
+    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+    "[tool.dev_lab.protection]\nproducer = 'hpc'\n"
+)
 
 
 def _green() -> list[dict[str, object]]:
@@ -61,6 +65,7 @@ def _tested(tmp_path: Path) -> Path:
     _, work = clone_pair(tmp_path)
     (work / 'tests').mkdir()
     advance(work, 'integrate/main', 'tests/test_a.py', 'def test_a():\n    assert True\n')
+    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')  # the serving checkout's producer
     return work
 
 
@@ -133,6 +138,62 @@ def test_a_pr_whose_parts_are_absent_or_pending_waits(tmp_path: Path) -> None:
             reviewed=status_gate(github_posted),
         )
         assert any(one.startswith('its test parts: ') for one in found.missing), (part, found.missing)
+
+
+_CHECK = 'check / check (pull_request)'
+_CHECKED = dataclasses.replace(POLICY, merge_checks=(_CHECK,))
+
+
+def _checked(work: Path, head: str, raw: list[dict[str, object]]) -> Decision:
+    return decide(
+        work, _CHECKED, branch='pr/x', number=4, head=head, statuses=_statuses(raw), reviewed=status_gate(github_posted)
+    )
+
+
+def test_a_repo_declaring_its_merge_check_merges_on_that_check_alone(tmp_path: Path) -> None:
+    """User ruling 2026-11-12: a repo with no serve host declares the forge check its merge waits on.
+
+    Its head carries no ``tests/base``, no ``tests/security`` and no head gates -- nothing posts them -- and it is
+    ready on the declared check's ``success``. PLANTED CONTROL: the same head with that check red or missing waits.
+    """
+    work, head = _work(tmp_path)
+    review = [r for r in _green() if r['context'] == 'tests/review']
+    check = {'id': 9, 'context': _CHECK, 'status': 'success', 'description': 'Successful in 22s'}
+    assert _checked(work, head, [*review, check]).ready, _checked(work, head, [*review, check]).missing
+    red = _checked(work, head, [*review, {**check, 'status': 'failure', 'description': 'Failure'}])
+    assert not red.ready, 'PLANTED CONTROL: a red declared check holds the merge'
+    assert not red.waiting
+    assert any(one.startswith(f'its merge checks: {_CHECK} FAILED (failure)') for one in red.missing), red.missing
+    absent = _checked(work, head, review)
+    assert not absent.ready, 'PLANTED CONTROL: a missing declared check holds the merge'
+    assert absent.waiting
+    assert any(f'{_CHECK} is not yet posted' in one for one in absent.missing), absent.missing
+
+
+def test_a_declared_check_whose_job_failed_reads_failed_and_a_running_one_reads_pending(tmp_path: Path) -> None:
+    """claude-code-config #6 (2026-11-13): a job that ended with no record read "is pending", so everyone waited.
+
+    PLANTED CONTROL both ways: the ``error`` a failed job posts says FAILED and is not waiting; a ``pending`` says
+    pending and waits.
+    """
+    work, head = _work(tmp_path)
+    review = [r for r in _green() if r['context'] == 'tests/review']
+    error = {'id': 9, 'context': _CHECK, 'status': 'error', 'description': "unreachable: cannot run 'npm'"}
+    failed = _checked(work, head, [*review, error])
+    assert not failed.waiting
+    assert any(f"{_CHECK} FAILED (error): unreachable: cannot run 'npm'" in one for one in failed.missing)
+    running = _checked(work, head, [*review, {**error, 'status': 'pending', 'description': 'running'}])
+    assert running.waiting
+    assert any(f'{_CHECK} is pending: running' in one for one in running.missing), running.missing
+    assert not any('FAILED' in one for one in running.missing)
+
+
+def test_a_declared_merge_check_is_not_satisfied_by_the_serve_parts(tmp_path: Path) -> None:
+    """Every serve-posted status green is no stand-in for the declared check: it still waits on it."""
+    work, head = _work(tmp_path)
+    found = _checked(work, head, _green())
+    assert not found.ready
+    assert any(one.startswith('its merge checks: ') for one in found.missing), found.missing
 
 
 def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_path: Path) -> None:
@@ -405,8 +466,8 @@ def test_a_unreviewed_review_with_red_tests_does_not_merge(tmp_path: Path) -> No
     assert not any(one.startswith('its review: ') for one in found.missing), found.missing
 
 
-def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
-    """PLANTED CONTROL: a security finding with no waiver recorded waits on the review, unwarned."""
+def test_a_review_finding_with_no_waiver_never_blocks_and_is_reported(tmp_path: Path) -> None:
+    """The review is ADVISORY (user rulings 2026-11-11/12): no waiver needed; the decision reports it, unwaived."""
     work, head = _work(tmp_path)
     raw = [
         {**r, 'status': 'failure', 'description': 'security finding(s) F-1'} if r['context'] == 'tests/review' else r
@@ -417,7 +478,8 @@ def test_a_security_finding_with_no_waiver_still_blocks(tmp_path: Path) -> None:
             work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(statuses),
             reviewed=status_gate(github_posted),
         )  # fmt: skip
-        assert any(one.startswith('its review: ') for one in found.missing), found.missing
+        assert found.ready, found.missing
+        assert found.review is not None
         assert not found.unreviewed
         assert 'Unreviewed' not in found.message
 
@@ -455,8 +517,7 @@ def test_a_ready_decision_with_no_message_row_SAYS_messages_are_not_declared(tmp
     assert 'messages: not declared' in found.notes
 
 
-@pytest.mark.parametrize('gate', ['session-branch', 'pr-current'])
-def test_a_failed_head_gate_holds_the_merge(tmp_path: Path, gate: str) -> None:
+def test_a_failed_head_gate_holds_the_merge(tmp_path: Path) -> None:
     """User ruling 2026-11-07: the push rows' forge statuses gate the merge, so a consumer's stale hook disarms nothing.
 
     PLANTED CONTROL: the same PR with every gate ``success`` merges (the green tests above).
@@ -464,9 +525,89 @@ def test_a_failed_head_gate_holds_the_merge(tmp_path: Path, gate: str) -> None:
     work, head = _work(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    red = {'id': 9, 'context': gate, 'status': 'failure', 'description': f'{gate} refused'}
-    forge.statuses[head] = [*(r for r in _green() if r['context'] != gate), red]
+    red = {'id': 9, 'context': 'session-branch', 'status': 'failure', 'description': 'session-branch refused'}
+    forge.statuses[head] = [*(r for r in _green() if r['context'] != 'session-branch'), red]
     _tick(work, forge, head, POLICY)
     assert forge.merges == []
     (comment,) = forge.comments[number]
-    assert f'its head gates: {gate} is failure: {gate} refused' in comment['body']
+    assert 'its head gates: session-branch is failure: session-branch refused' in comment['body']
+
+
+def test_a_stale_head_is_an_alarm_never_a_merge_wait(tmp_path: Path) -> None:
+    """W5 (dev-lab#644): a red ``pr-current`` is NAMED in the decision's notes and holds nothing.
+
+    PLANTED CONTROL: a red ``session-branch`` beside it still holds the merge (above).
+    """
+    work, head = _work(tmp_path)
+    red = {'id': 9, 'context': 'pr-current', 'status': 'failure', 'description': 'lacks integrate/main'}
+    statuses = [*(r for r in _green() if r['context'] != 'pr-current'), red]
+    found = decide(
+        work, POLICY, branch='pr/x', number=8, head=head, statuses=_statuses(statuses),
+        reviewed=status_gate(github_posted),
+    )  # fmt: skip
+    assert found.ready, found.missing
+    assert 'alarms, never a merge condition: pr-current is failure: lacks integrate/main' in found.notes
+
+
+def test_a_hand_part_never_holds_the_merge_and_is_named(tmp_path: Path) -> None:
+    """USER RULING 2026-11-10: a part only a hand host produces is tested later, never a merge condition.
+
+    document-lab#8: ``tests/base`` and ``tests/base@windows`` PASS handing ``gpu ocr vendor windows``, and
+    ``tests/windows`` is ``pending`` absent. Absent, unposted or RED, a hand part is NAMED in the decision's notes and
+    holds nothing -- forge code may be temporarily broken, and a later red is a finding. PLANTED CONTROLS: a red
+    hosted row, and a missing ``tests/base``, still hold it.
+    """
+    work, head = _work(tmp_path)
+    gates = [r for r in _green() if r['context'] != 'tests/base']
+    hands = 'scope=full ran=339 hands=gpu:1,ocr:1,vendor:3,windows:14'
+    base = [
+        {'id': 7, 'context': 'tests/base', 'status': 'success', 'description': hands},
+        {'id': 8, 'context': 'tests/base@windows', 'status': 'success', 'description': hands},
+    ]
+    absent = {'id': 9, 'context': 'tests/windows', 'status': 'pending', 'description': 'absent: no job settled'}
+    red = {'id': 9, 'context': 'tests/windows', 'status': 'failure', 'description': 'scope=full ran=14 hands=-'}
+
+    def judge(raw: list[dict[str, object]]) -> Decision:
+        return decide(
+            work,
+            POLICY,
+            branch='pr/x',
+            number=8,
+            head=head,
+            statuses=_statuses(raw),
+            reviewed=status_gate(github_posted),
+        )
+
+    for hand in (absent, red):
+        found = judge([*gates, *base, hand])
+        assert found.ready, found.missing
+        (note,) = [one for one in found.notes if one.startswith('hand parts, tested later')]
+        assert 'tests/windows' in note, note
+        assert 'tests/gpu not posted' in note, note
+    assert 'tests/windows FAIL' in next(one for one in judge([*gates, *base, red]).notes if 'hand' in one)
+    hosted_red = [*gates, base[0], {**base[1], 'status': 'failure'}, red]
+    assert not judge(hosted_red).ready, 'PLANTED CONTROL: a red hosted row holds the merge'
+    assert not judge([*gates, base[1], absent]).ready, 'PLANTED CONTROL: a missing tests/base holds the merge'
+
+
+def test_an_environment_or_scheduling_result_never_holds_the_merge(tmp_path: Path) -> None:
+    """W5 (dev-lab#644): a part released ``error`` under a non-code class is requeued, and the merge never waits on it.
+
+    PLANTED CONTROLS: the same part released ``class=code``, judged ``failure``, or ``error`` naming no class holds.
+    """
+    work, head = _work(tmp_path)
+
+    def judge(state: str, description: str) -> Decision:
+        part = {'id': 1, 'context': 'tests/base', 'status': state, 'description': description}
+        raw = [part, *(r for r in _green() if r['context'] != 'tests/base')]
+        return decide(
+            work, POLICY, branch='pr/x', number=8, head=head, statuses=_statuses(raw),
+            reviewed=status_gate(github_posted),
+        )  # fmt: skip
+
+    for owner in ('scheduling', 'environment', 'part-refusal', 'network'):
+        found = judge('error', f'released: no grant had room class={owner}')
+        assert found.ready, (owner, found.missing)
+    assert not judge('error', 'released: a defect of the commit class=code').ready, 'CONTROL: the code'
+    assert not judge('failure', 'scope=full ran=3 hands=-').ready, 'CONTROL: a judged FAIL'
+    assert not judge('error', 'released: something').ready, 'CONTROL: an unowned error'

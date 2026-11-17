@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import functools
-import http.client
 import json
 import os
 import sys
@@ -44,8 +43,9 @@ from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_o
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from dev_lab.dev.forgecoalesce import behind
-from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed
+from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
 from dev_lab.dev.forgehosts import HostCard, read_cards
+from dev_lab.dev.forgephases import FETCH, Phases
 from dev_lab.dev.forgeprovides import supplied, unserved
 from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, request_context
 from dev_lab.dev.forgescarce import unreached
@@ -138,6 +138,7 @@ def forge_queue(
         root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule, policy=policy, now=now,
         waived=lambda sha: unreached(root, client, policy.integration, sha, history(sha))
         | unproduced_waived(root, sha, history(sha)),
+        prefetch=history.prefetch,
     )  # fmt: skip
     waiting, in_flight = _standing(found, history, now)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
@@ -194,7 +195,7 @@ def _standing(
     in_flight: list[dict[str, Any]] = []
     for one in found:
         context = request_context(one.number) if one.kind == REQUEST else part_context(one.platform)
-        state, holder = assess(history(one.sha), context, me=nobody, now=now)
+        state, holder = assess(history(one.sha), context, me=nobody, now=now, newest=True)  # a candidate is a tip
         if state == DONE:
             continue
         if state == CLAIMED and holder is not None:
@@ -283,19 +284,6 @@ def render(view_: Mapping[str, Any]) -> list[str]:
     return lines
 
 
-def _within(transport: Transport, deadline: float, budget_s: float) -> Transport:
-    """*transport*, each connection's wait cut to what is left before *deadline*, and none opened past it."""
-
-    def opened(host: str, timeout: float) -> http.client.HTTPConnection:
-        left = deadline - time.monotonic()
-        if left <= 0:
-            msg = f'the queue spent its {budget_s:g} s read budget before asking {host}'
-            raise BudgetSpent(msg)
-        return transport(host, min(timeout, left))
-
-    return opened
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -315,13 +303,29 @@ def main(
     parser.add_argument('--json', action='store_true', help='print the whole view as JSON')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
+    phases = Phases()
     try:
         deadline = time.monotonic() + budget_s
-        bounded = _within(transport, deadline, budget_s)
+        bounded = within(phases.transport(transport), deadline, 'the queue', budget_s)
         built = client_for(root, env=dict(os.environ) if env is None else env, transport=bounded)
-        seen = view(root, built, fetch=fetch or functools.partial(fetch_origin, deadline=deadline))
+        fetching = phases.timed(FETCH, fetch or functools.partial(fetch_origin, deadline=deadline))
+        with phases.children():
+            seen = view(root, built, fetch=fetching)
     except (ForgeCallFailed, NoCredential, UnreadableRemote, OSError, ValueError) as failed:
-        emit(f'[queue] {failed}', err=True)
+        emit(f'[queue] {failed}{_where_it_went(failed, phases)}', err=True)
+        emit(f'[queue] {phases.line()}', err=True)
         return 1
     emit(json.dumps(seen, indent=2) if args.json else '\n'.join(render(seen)))
+    emit(f'[queue] {phases.line()}', err=bool(args.json))
     return 0
+
+
+def _where_it_went(failed: BaseException, phases: Phases) -> str:
+    """For a spent read budget, the phase that spent most of it -- so "the forge is slow" is answered, not guessed."""
+    spent = failed
+    while spent is not None and not isinstance(spent, BudgetSpent):
+        spent = spent.__cause__ or spent.__context__
+    if spent is None and 'read budget' not in str(failed):
+        return ''
+    phase, seconds = phases.dominant()
+    return f' -- most of it went to {phase} ({seconds:.1f} s)'

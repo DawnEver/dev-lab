@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 from lab_commons.box import Refused
 
-from dev_lab.dev import _dep_project, dep
+from dev_lab.dev import _dep_project, dep, venvpointer
 from dev_lab.dev.envseat import EnvironmentSeat
 
 
@@ -112,7 +112,8 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
     assert [sync[i + 1] for i, value in enumerate(sync) if value == '--extra'] == ['dev', 'img-to-cad', 'tooldrivers']
     assert sync[sync.index('--project') + 1] == str(root)
     options = next(options for argv, options in calls if 'sync' in argv)
-    assert options['env']['UV_PROJECT_ENVIRONMENT'] == str(root / '.venv')
+    assert options['env']['UV_PROJECT_ENVIRONMENT'] == str(venvpointer.current(root)), 'built beside, then published'
+    assert venvpointer.current(root).parent == root / venvpointer.HOME
     assert 'VIRTUAL_ENV' not in options['env']
     assert not any('venv' in argv for argv, _ in calls), 'uv sync owns creation; do not overwrite a venv'
 
@@ -131,7 +132,8 @@ def test_mutation_holds_the_same_environment_seat_until_the_child_finishes(tmp_p
         pass
 
 
-def test_real_bootstrap_B_runs_while_A_has_a_verdict_then_B_refuses_its_own_sync(tmp_path, monkeypatch, capsys) -> None:
+def test_real_bootstrap_B_runs_while_A_has_a_verdict_and_B_syncs_beside_its_own(tmp_path, monkeypatch, capsys) -> None:
+    """dev-lab #632: a verdict running in B's environment no longer refuses B's sync -- it builds beside it."""
     root = tmp_path / 'B'
     root.mkdir()
     (root / 'pyproject.toml').write_text(
@@ -146,14 +148,17 @@ def test_real_bootstrap_B_runs_while_A_has_a_verdict_then_B_refuses_its_own_sync
     monkeypatch.setenv('UV_OFFLINE', 'true')
     with _live_verdict(tmp_path, monkeypatch):
         assert dep.main(['--bootstrap', str(root)], cwd=tmp_path) == 0
-    python = root / ('.venv/Scripts/python.exe' if os.name == 'nt' else '.venv/bin/python')
+    first = venvpointer.current(root)
+    python = first / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     assert python.is_file()
     capsys.readouterr()
     with _live_verdict(tmp_path, monkeypatch, python=str(python)):
-        assert dep.main(['--root', str(root), '--sync'], cwd=tmp_path) == 1
-    refusal = capsys.readouterr().out
-    assert 'REFUSED:' in refusal
-    assert 'installed' not in refusal
+        assert dep.main(['--root', str(root), '--sync'], cwd=tmp_path) == 0
+        assert first.is_dir(), 'PLANTED CONTROL: the environment the verdict runs from is kept'
+    said = capsys.readouterr().out
+    assert 'REFUSED:' not in said
+    assert venvpointer.current(root) != first
+    python = venvpointer.current(root) / python.relative_to(first)
     failed = subprocess.run(
         [str(python), '-I', '-m', 'dev_lab.dev.dep', '--sync'],
         check=False,
@@ -171,7 +176,8 @@ def test_sync_refuses_anchors_outside_its_project_before_mutating(tmp_path, anch
         dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path)
 
 
-def test_sync_failure_is_nonzero_and_retires_only_changed_target_anchors(tmp_path, monkeypatch) -> None:
+def test_sync_failure_is_nonzero_publishes_nothing_and_keeps_the_anchors(tmp_path, monkeypatch) -> None:
+    """A failed build beside the live environment is dropped: the live one never moved, so no verdict is void."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nanchors=["verdict"]\n',
         encoding='utf-8',
@@ -187,7 +193,9 @@ def test_sync_failure_is_nonzero_and_retires_only_changed_target_anchors(tmp_pat
         return SimpleNamespace(returncode=17, stdout='', stderr='')
 
     assert dep.main(['--bootstrap', str(tmp_path)], run=run, cwd=tmp_path) == 17
-    assert not anchor.exists()
+    assert anchor.exists()
+    assert venvpointer.current(tmp_path) == tmp_path / '.venv'
+    assert not any((tmp_path / venvpointer.HOME).iterdir())
 
 
 def test_a_lane_cannot_target_main_but_main_can_bootstrap_the_lane(tmp_path) -> None:

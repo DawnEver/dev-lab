@@ -15,8 +15,10 @@ re-render; never hand-edit a rendered file.
   (`RENDERED` = byte equality, `REQUIRED` = base lines present); `_famconfig_sections` does the same for a table
   inside a file somebody else owns (`pyproject.toml`, `ruff.toml`); `agent_guard` and `hook_adoption` install
   and render the agent hook files.
-- **One command.** `python -m dev_lab.dev.famfiles --deltas <the repo's DELTAS module> [--check]` re-renders
-  every RENDERED artefact and reports the REQUIRED ones. `--check` writes nothing and exits 1 on any change.
+- **One door.** `python -m dev_lab.dev.famfiles` runs every renderer the repo's `[tool.dev_lab.render]` and its
+  files make due (`famfiles.render_repo`): CI workflows, the base + delta files, principles and rem pages, deny
+  rules, the guard engine and its settings wiring, the door rules, the dev-docs pointer table. `forge sync`'s
+  relock calls the same function. `--deltas <module> [--check]` runs the base + delta renderer alone.
 - **One check.** `dev_lab.dev.famtests.famfiles`:
   `assert_every_project_file_is_accounted_for(root=, owned_here=)` and
   `assert_every_managed_file_is_rendered(root=, deltas=, repo=, rerender_hint=)`.
@@ -26,11 +28,16 @@ re-render; never hand-edit a rendered file.
 - **Hooks are declared, not rendered.** The family base is `dev_lab/dev/githooks/base.toml`; a repo adds or
   narrows rows under `[[tool.dev_lab.hooks.<stage>]]` in `pyproject.toml` (the same `id` merges key by key,
   a new `id` appends). Keys: `id`, `run` (argv; a leading `python` is the repo venv's interpreter),
-  `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, and `refs` (pre-push only).
-  Stages: `pre-commit`, `commit-msg`, `pre-push`. `uv`/`uvx` as `run[0]` is refused.
+  `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, `refs` (pre-push only),
+  `advisory` (the row only speaks: shown, never a refusal), `isolate` (a subprocess even for `python -m`) and
+  `bootstraps`. Stages: `pre-commit`, `commit-msg`, `post-commit`, `pre-push`, `post-merge`, `post-checkout`; a check
+  runs at ONE of them. `uv`/`uvx` as `run[0]` is refused.
 - **One runner**: `python -m dev_lab.dev.githooks run <stage> [git args]`. At commit it selects among the
   STAGED paths and fails a hook that rewrites the working tree; at commit-msg it appends the message file; at
   pre-push it reads git's ref lines once and pipes the matching ones to every hook. No hook runs a test suite.
+  A `python -m <module>` row runs IN the runner's interpreter (same argv, cwd, stdin, env and exit code), so a
+  stage costs one interpreter start; a tool, a script and an `isolate` row run as subprocesses. The per-file
+  checks are ONE row, `filechecks all`; a repo narrows one check with `--skip CHECK` or `--exclude CHECK=REGEX`.
 - **One install**: `python -m dev_lab.dev.hook_install --install --repo .` writes one shim per declared stage
   into the directory git consults; the shim finds the checkout's venv and runs the runner. A worktree may point
   `core.hooksPath` at its own directory with `git config --worktree`. The `hooks-installed` verify step reports a
@@ -57,7 +64,7 @@ re-render; never hand-edit a rendered file.
 | `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.dev_lab.ci]` over `ci_base.toml` |
 | `ruff.toml` / `[tool.ruff*]` | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
 | `pyproject.toml` | section bases for `[project]` and `[tool.pytest.ini_options]`; the rest declined in `PYPROJECT_DECLINED` |
-| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption` |
+| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption`: one `hookdispatch` row per event, from `agent_wiring.WIRING` plus the repo's `[[tool.dev_lab.agent_hooks]]` rows (`events`, `module`, `args`, `tools`, `may_block`, `once`, `timeout`), run in the same dispatcher |
 | `.claude/hooks/deny-commands.js`, `deny-rules.json` | `agent_guard` install and `hook_adoption.render` |
 | `docs-src/dev/index.md` pointer table | `devdocs.pointer_table`, asserted by `famtests.devdocs` |
 | always-loaded rule pages | rule IDs from `dev_lab.dev.rules`, `famtests.rulespages` |
@@ -67,13 +74,13 @@ re-render; never hand-edit a rendered file.
 
 1. Keep the repo's `DELTAS` module and add a `Delta` for every base the kit publishes; a missing one is refused.
 2. Remove from each delta every line the base now holds; a restatement is refused at render time.
-3. `python -m dev_lab.dev.famfiles --deltas <that module>`; commit the rendered files.
+3. Declare it as `[tool.dev_lab.render] deltas`, run `python -m dev_lab.dev.famfiles`; commit the rendered files.
 4. One test file calling both `famtests.famfiles` bodies, with `owned_here` naming the repo's own files and why.
 
 ## The interpreter spelling
 
 One owner: `dev_lab.dev.venvpath` (`VENV_LAYOUTS`, `VENV_INTERPRETER_GLOB`). Rendered from it: one allow row
-per door and layout (`dev_lab.dev.agentpolicy.INTERPRETERS`; no blanket interpreter row, user ruling
+per door and layout (`dev_lab.dev.doorrows.INTERPRETERS`; no blanket interpreter row, user ruling
 2026-11-07), and the deny row `BARE-INTERPRETER`, which refuses
 `uv run`, `uvx` and a bare `python`/`python3`/`py` and names the venv interpreter instead. A repo whose
 user-facing CLI runs through `uv run` opens exactly that with its own `Remedy.allow`.

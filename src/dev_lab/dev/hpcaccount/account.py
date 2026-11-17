@@ -8,21 +8,32 @@ they apply are :mod:`dev_lab.dev.hpcaccount.checks`, and :mod:`dev_lab.dev.hpcac
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
+from urllib.parse import urlsplit
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.hpcaccount.checks import grant_of, store_problem
-from dev_lab.dev.hpcaccount.spec import Deployment, has_grant, render_grant
+from dev_lab.dev._forgebackends import GITHUB_HOST
+from dev_lab.dev.forgeauth import UNREACHABLE_EXIT
+from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
+from dev_lab.dev.hpcaccount.spec import (
+    Deployment,
+    grant_refusal,
+    has_grant,
+    render_grant,
+    unserved,
+    without_hpc,
+)
 from dev_lab.dev.hpcaccount.steps import Step
 
-__all__ = ['ApiCheck', 'auth_check', 'credentials', 'grant']
+__all__ = ['UNREACHED', 'ApiCheck', 'RoleCheck', 'auth_check', 'credentials', 'grant', 'reader', 'role_of']
 
 _CREDENTIAL_REMEDY: Final = (
     'store your OWN forge token for it once: `git config --global credential.helper store`, then '
@@ -30,8 +41,20 @@ _CREDENTIAL_REMEDY: Final = (
     '~/.git-credentials, chmod 600) and re-run'
 )
 
+_READER_REMEDY: Final = (
+    "place a read-only forge login's minted token (the role's reader when [hpc.roles.<role>] reader names one) "
+    'from the workstation: `python -m dev_lab.dev.hpcaccount credential <user>@<login host> --login <reader> '
+    "--host-config <the forge host's config>` "
+    "with the token on stdin; it replaces only this account's forge line. Then re-run"
+)
+
+#: The lead of an :data:`ApiCheck` answer saying the forge did not answer, which is no verdict on the token.
+UNREACHED: Final = 'unreachable'
+
 #: Reads the forge API a tick needs for one repo url; ``''`` when nothing is refused.
 ApiCheck = Callable[[str, Path], str]
+#: Who the stored credential is on one repo url: ``{login, push, admin}``, or ``{error}``.
+RoleCheck = Callable[[str, Path], dict[str, object]]
 
 
 def _store_mode(store: Path) -> int | None:
@@ -40,22 +63,27 @@ def _store_mode(store: Path) -> int | None:
     return stat.S_IMODE(store.stat().st_mode) if os.name == 'posix' else 0o600  # modes are POSIX's
 
 
-def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
+def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck, *, serves: bool) -> int:
     """Refuse (2) unless git can read every repo and the forge API answers what a tick needs on each served one.
 
-    Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81); an unserved
-    one is only cloned and fetched, so an anonymous ``git ls-remote`` -- no credential helper -- must succeed.
+    Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81) -- one whose
+    checkout does not declare another producer (:func:`~dev_lab.dev.hpcaccount.spec.unserved`; one not yet cloned
+    is checked as served, so a first deploy still proves its token); any other is only cloned and fetched, so an
+    anonymous ``git ls-remote`` -- no credential helper -- must succeed.
+    An account whose role never *serves* (research) ticks nothing, so no repo there needs the tick's scopes:
+    ``git ls-remote`` is its whole check (a server holds only a read token).
     """
     emit('[credentials] git credential helper and the forge API per served repo; git ls-remote per repo')
-    served = [repo for repo in spec.repos if repo.serve]
+    off = unserved(spec, home)
+    served_repos = [repo for repo in spec.repos if serves and repo.name not in off]
     helper = step.read([*step.tools.git, 'config', '--global', '--get', 'credential.helper']).stdout.strip()
     store = home / '.git-credentials'
-    if served and (problem := store_problem(helper, store, mode=_store_mode(store))):
+    if served_repos and (problem := store_problem(helper, store, mode=_store_mode(store))):
         emit(f'deploy refused: {problem}', err=True)
         return 2
     denied = []
     for repo in spec.repos:
-        anonymous = () if repo.serve else ('-c', 'credential.helper=', '-c', 'credential.interactive=never')
+        anonymous = () if repo.name not in off else ('-c', 'credential.helper=', '-c', 'credential.interactive=never')
         rc = step.read([*step.tools.git, *anonymous, 'ls-remote', repo.url, f'refs/heads/{repo.ref}']).returncode
         emit(f'  {repo.name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
         if rc:
@@ -63,7 +91,18 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
     if denied:
         emit(f'deploy refused: no read access to {", ".join(denied)}; {_CREDENTIAL_REMEDY}', err=True)
         return 2
-    refused = {repo.name: why for repo in served if (why := api(repo.url, home))}
+    if not serves:
+        emit(f'  {spec.role} account: not served here: read access only, no forge API scopes asked')
+        return 0
+    checked = {repo.name: why for repo in served_repos if (why := api(repo.url, home))}
+    unreachable = {name: why for name, why in checked.items() if why.startswith(UNREACHED)}
+    refused = {name: why for name, why in checked.items() if name not in unreachable}
+    for name, why in unreachable.items():
+        emit(f'  {name}: {why}', err=True)
+    if unreachable and not refused:
+        emit(f'deploy stopped: the forge API did not answer for {", ".join(unreachable)} -- the token is not '
+             'at fault; re-run the deploy', err=True)  # fmt: skip
+        return 2
     for name, why in refused.items():
         emit(f'  {name}: {why}', err=True)
     if refused:
@@ -77,30 +116,109 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
 
 
 def auth_check(url: str, home: Path) -> str:
-    """The forge's own ``auth check`` of *url*, run as a subprocess, as a person runs it."""
+    """The forge's own ``auth check`` of *url*, run as a subprocess, as a person runs it.
+
+    Its :data:`~dev_lab.dev.forgeauth.UNREACHABLE_EXIT` -- the forge did not answer -- leads with :data:`UNREACHED`.
+    """
     argv = [sys.executable, '-m', 'dev_lab.dev.forge', 'auth', 'check', '--url', url]
     done = _door.run(argv, cwd=home, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
-    return '' if done.returncode == 0 else done.stderr.strip() or f'auth check exited {done.returncode}'
+    said = done.stderr.strip() or f'auth check exited {done.returncode}'
+    if done.returncode == 0:
+        return ''
+    return f'{UNREACHED}: {said}' if done.returncode == UNREACHABLE_EXIT else said
 
 
-def grant(step: Step, spec: Deployment, path: Path, hostname: str) -> int:
-    """Write this account's own ``[[hpc.grant]]`` when the machine file has none for it."""
-    emit("[grant] this account's own [[hpc.grant]]")
+def role_of(url: str, home: Path) -> dict[str, object]:
+    """The forge's own ``auth role`` of *url*, as a subprocess: ``{login, push, admin}``, or ``{error}``.
+
+    It reads the stored credential as git does (``git credential fill``) and prints only the login and the
+    permissions -- the token never reaches this process.
+    """
+    argv = [sys.executable, '-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', url]
+    done = _door.run(argv, cwd=home, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
+    if done.returncode:
+        return {'error': done.stderr.strip() or f'auth role exited {done.returncode}'}
+    return json.loads(done.stdout)
+
+
+def _seen(name: str, seen: dict[str, object]) -> tuple[str, list[str]]:
+    login = str(seen.get('login') or '')
+    writes = [right for right in ('push', 'admin') if seen.get(right)]
+    emit(f'  {name}: {login or "no stored credential (anonymous)"}' + (f' with {"+".join(writes)}' if writes else ''))
+    return login, writes
+
+
+def reader(spec: Deployment, home: Path, role: RoleCheck, *, semantics: Mapping[str, Any]) -> int:
+    """Report the stored forge credential per forge-hosted repo; refuse (2) a writer when the role is read-only.
+
+    Also refused: a credential other than the role's declared ``reader``, when it names one.
+
+    User rulings 2026-11-09 (:mod:`dev_lab.dev.hpcaccount.division`): no stored credential (anonymous) cannot write
+    and passes; a role that is not ``read_only`` is only reported.
+    """
+    expected = str(semantics.get('reader', ''))
+    strict = bool(semantics.get('read_only', False))
+    emit(f'[reader] the stored forge credential per forge-hosted repo ({spec.role}: '
+         f'{"refused" if strict else "reported"} unless read-only{" as " + expected if expected else ""})')  # fmt: skip
+    refused = []
+    for repo in (repo for repo in spec.repos if urlsplit(repo.url).hostname != GITHUB_HOST):
+        seen = role(repo.url, home)
+        if 'error' in seen:
+            emit(f'  {repo.name}: {seen["error"]}', err=True)
+            refused.append(f'{repo.name}: the forge did not say who the credential is')
+            continue
+        login, writes = _seen(repo.name, seen)
+        if writes:
+            refused.append(f'{repo.name}: {login} holds {"+".join(writes)}')
+        elif expected and login and login != expected:
+            refused.append(f'{repo.name}: the credential is {login}, not the role reader {expected}')
+    if not refused:
+        return 0
+    why = '; '.join(refused)
+    if not strict:
+        emit(f'  [report only: {spec.role} is not read_only] {why}')
+        return 0
+    emit(f'deploy refused: this {spec.role} account must pull read-only -- {why}. {_READER_REMEDY}', err=True)
+    return 2
+
+
+def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
+    """Write this account's own ``[hpc]`` slice -- the one ``deploy-fleet`` passed -- when its file holds no grant.
+
+    The declaration is the family's (its cluster, its account, its role as this machine's reach); a hand-run deploy
+    has none to write and is refused, never a grant derived here. The declared Slurm account must be one of the
+    user's associations (``sacctmgr``).
+    """
+    emit("[grant] this account's own [hpc] slice")
     user = step.read([*step.tools.id, '-un']).stdout.strip()
-    if has_grant(path, user):
+    retired = grant_refusal(path) if has_grant(path, user) else ''
+    if has_grant(path, user) and not retired:
         emit(f'  {user} already holds a grant in {path}')
         return 0
-    sacct = step.read([*step.tools.sacctmgr, '-nP', 'show', 'assoc', f'user={user}', 'format=account,grptres'])
-    grant = grant_of(user, sacct.stdout, spec=spec, host=hostname)
-    if isinstance(grant, str):
-        emit(f'deploy refused: {grant}', err=True)
+    if table is None:
+        held = f'holds a grant this kit refuses ({retired})' if retired else f'holds no grant for {user}'
+        emit(
+            f'deploy refused: {path} {held} and none was passed: deploy it through deploy-fleet '
+            '(the family declaration is the one source of a grant)',
+            err=True,
+        )
         return 2
-    text = render_grant(grant)
+    rows = [row for row in table.get('grant', []) if row.get('user') == user]
+    if len(rows) != 1:
+        emit(f'deploy refused: the passed [hpc] slice declares {len(rows)} grants for {user}, not one', err=True)
+        return 2
+    sacct = step.read([*step.tools.sacctmgr, '-nP', 'show', 'assoc', f'user={user}', 'format=account,grptres'])
+    if why := association_refusal(user, sacct.stdout, rows[0]['slurm_account']):
+        emit(f'deploy refused: {why}', err=True)
+        return 2
+    text = render_grant(table)
     if step.dry:
-        emit(f'  [dry-run] write to {path}:{text}')
+        emit(f'  [dry-run] {"replace the [hpc] slice of" if retired else "write to"} {path}:{text}')
         return 0
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as out:
-        out.write(text)
-    emit(f'  wrote the grant of {user} ({grant["slurm_account"]}) to {path}')
+    held = path.read_text(encoding='utf-8') if path.is_file() else ''
+    # FORMATS-MIGRATE-ONCE: a refused slice is rewritten from the passed declaration; every other table is kept
+    path.write_text((without_hpc(held) if retired else held) + text, encoding='utf-8')
+    done = f'migrated the grant of {user} in {path}: the file held {retired}' if retired else 'wrote the grant'
+    emit(f'  {done} ({user}, {rows[0]["slurm_account"]}) to {path}')
     return 0

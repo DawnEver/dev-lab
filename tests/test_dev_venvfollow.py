@@ -2,7 +2,7 @@
 
 A session venv ran an older kit than its own ``uv.lock``: only a served checkout's host tick ever compared the two
 (:func:`dev_lab.dev.hostrefresh.sync_venv`). That one hash-and-stamp check now has one home, called by the host tick,
-the ``SessionStart`` hook and the ``post-merge``/``post-checkout`` git hooks alike.
+the ``SessionStart`` hook and the ``post-checkout`` git hook alike.
 """
 
 from __future__ import annotations
@@ -66,11 +66,16 @@ def test_a_live_run_skips_the_rebootstrap_and_a_failed_one_is_retried(tmp_path: 
     assert venvfollow.stale(root) is not None, 'a failed bootstrap writes no stamp, so the next one retries'
 
 
-def test_the_busy_reading_names_a_run_in_the_tree_or_its_venv(tmp_path: Path) -> None:
+def test_the_busy_reading_names_a_run_in_the_tree_but_not_one_only_using_its_venv(tmp_path: Path) -> None:
+    """dev-lab #632: the bootstrap builds beside the venv, so a process executing from it is no obstacle."""
     root = _checkout(tmp_path)
+    (root / '.git').mkdir()
+    (root / 'app.py').write_text('', encoding='utf-8')  # the run's module is IN the tree: it reads it
     python = str(venvfollow.venv_python(root))
     run = Process(4242, 1, python, f'{python} -m app run', 600.0, str(root))
     assert '4242' in venvfollow.busy(root, census=lambda: (run,))
+    elsewhere = Process(4343, 1, python, f'{python} -m app run', 600.0, str(tmp_path / 'elsewhere'))
+    assert venvfollow.busy(root, census=lambda: (elsewhere,)) == ''
     assert venvfollow.busy(root, census=lambda: ()) == ''
 
 
@@ -88,9 +93,31 @@ def test_the_session_start_hook_detaches_only_when_stale(tmp_path: Path, monkeyp
     assert len(started) == 1, 'PLANTED CONTROL: a current venv detaches nothing'
 
 
-def test_a_merge_and_a_checkout_run_the_follow_as_advisory_git_hooks() -> None:
+def test_a_checkout_runs_the_follow_as_its_one_advisory_git_hook() -> None:
+    """post-checkout is the one event a new worktree fires. PLANTED CONTROL: no other stage carries the row."""
     table = merge(base_rows(), {})
-    for stage in ('post-merge', 'post-checkout'):
-        assert stage in ADVISORY
-        assert {hook.id for hook in table[stage]} == {'venv-follows-lock'}
-        assert 'dev_lab.dev.venvfollow' in table[stage][0].run
+    follow = [(stage, hook) for stage, hooks in table.items() for hook in hooks if hook.id == 'venv-follows-lock']
+    assert [stage for stage, _ in follow] == ['post-checkout']
+    assert 'post-checkout' in ADVISORY
+    assert 'dev_lab.dev.venvfollow' in follow[0][1].run
+
+
+def test_the_follow_moves_the_checkout_then_the_venv_then_the_hooks_unprompted(tmp_path: Path, monkeypatch) -> None:
+    """User ruling 2026-11-12: a checkout, its venv and its hooks follow integration with no person asked."""
+    root, done = _checkout(tmp_path), []
+    monkeypatch.setattr(venvfollow.checkoutfollow, 'advance', lambda _r: done.append('checkout') or 'moved')
+    monkeypatch.setattr(venvfollow, 'follow', lambda _r: done.append('venv') or venvfollow.CURRENT)
+    monkeypatch.setattr(venvfollow.hook_install, 'rewire', lambda _r: done.append('hooks') or '')
+    assert venvfollow.main(['--root', str(root)]) == 0
+    assert done == ['checkout', 'venv', 'hooks'], 'the checkout moves first: the venv follows the moved lock'
+
+
+def test_the_background_follow_detaches_for_a_behind_checkout_or_unwired_hooks(tmp_path: Path, monkeypatch) -> None:
+    root, started = _checkout(tmp_path), []
+    venvfollow.stamp(root, venvfollow.env_key(root))
+    monkeypatch.setattr(venvfollow, 'detach_argv', lambda _r, args: started.append(args))
+    for behind, unwired in ((True, False), (False, True), (False, False)):
+        monkeypatch.setattr(venvfollow.checkoutfollow, 'behind', lambda _r, b=behind: b)
+        monkeypatch.setattr(venvfollow.hook_install, 'unwired', lambda _r, u=unwired: u)
+        venvfollow.main(['--root', str(root), '--background'])
+    assert len(started) == 2, 'PLANTED CONTROL: a current venv, checkout and hooks detach nothing'
