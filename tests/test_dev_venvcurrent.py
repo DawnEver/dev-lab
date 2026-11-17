@@ -130,3 +130,20 @@ def test_a_legacy_venv_directory_moves_aside_once_nothing_runs_from_it(tmp_path)
     assert legacy.is_dir()
     assert venvcurrent.reclaim(root, census=list)[0].startswith('legacy')
     assert legacy.resolve() == new.resolve(), '.venv is now the alias of the current env'
+
+
+def test_a_bootstrap_whose_venv_alias_stays_stale_fails_and_names_why(tmp_path, capsys) -> None:
+    """O16: the pointer moved but a held legacy ``.venv`` still runs the old env -- the door must not report success."""
+    root = tmp_path / 'main'
+    _project(root)
+    (root / venvpointer.POINTER).unlink()
+    legacy = root / venvpointer.ALIAS
+    legacy.unlink() if legacy.is_symlink() else legacy.rmdir()  # the junction _project published: now legacy
+    venv.EnvBuilder(with_pip=False).create(legacy)
+    holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 3600.0, str(tmp_path))
+    assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=lambda: [holder]) == 1
+    out = capsys.readouterr().out
+    assert f'{legacy} still runs' in out
+    assert str(venvpointer.current(root).joinpath(*TAIL)) in out, 'the door: the published interpreter'
+    assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=list) == 0, 'PLANTED CONTROL: unheld'
+    assert legacy.resolve() == venvpointer.current(root).resolve()
