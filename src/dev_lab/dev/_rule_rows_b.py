@@ -51,7 +51,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'never staged, and the census runs after every shell command, at the end of a turn '
             'and after every commit, naming each one with its remedy.'
         ),
-        ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
+        ('tests/test_arch_code_placement.py', 'tests/test_dev_strays.py'),
     ),
     (
         'WRITES-STAY-IN-THE-TREE',

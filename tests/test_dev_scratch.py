@@ -10,19 +10,19 @@ import time
 import pytest
 from lab_commons import launch
 
-from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement, stray_refusal
+from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement
 from dev_lab.dev.scratch import (
     SCRATCH_README,
     ScratchCommitted,
     assert_scratch_never_committed,
     discard_scratch,
     main,
-    overdue_declared,
     overdue_scratch,
     pending_scratch,
     scratch_reminder,
     staged_scratch,
 )
+from dev_lab.dev.strays import stray_refusal
 
 _DAY = 86400.0
 
@@ -136,7 +136,6 @@ def test_the_reminder_names_each_overdue_file_and_both_exits_and_is_silent_other
     assert main(['remind'], stdin=io.StringIO(payload)) == 0
     assert capsys.readouterr().out == ''
     _plant(tmp_path, 'scratch/old.py', age_days=4.0)
-    assert overdue_declared(tmp_path) == ['scratch/old.py']
     assert main(['remind'], stdin=io.StringIO(payload)) == 0
     out = capsys.readouterr().out
     assert 'scratch/old.py' in out

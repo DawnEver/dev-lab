@@ -52,7 +52,6 @@ __all__ = [
     'docs_dir',
     'main',
     'missing_pages',
-    'page_path',
     'pointer_table',
     'slugs',
     'write_pointer_table',
@@ -200,14 +199,6 @@ def slugs() -> tuple[str, ...]:
 def docs_dir(root: Path) -> Path:
     """The pages directory inside a lab-commons checkout rooted at *root*."""
     return root.joinpath(*CANONICAL_TREE.split('/'))
-
-
-def page_path(root: Path, slug: str) -> Path:
-    """The file one page is in. Raises :class:`KeyError` for a slug the registry does not declare."""
-    if slug not in slugs():
-        msg = f'{slug!r} is not a family mechanism page; declared: {", ".join(slugs())}'
-        raise KeyError(msg)
-    return docs_dir(root) / f'{slug}.md'
 
 
 def missing_pages(root: Path) -> tuple[str, ...]:

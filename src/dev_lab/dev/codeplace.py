@@ -4,7 +4,7 @@ Migrated 2026-09-25 from consumer-a, where a probe, a patch script and 132 one-o
 accumulated under ``output/logs/...``: untracked, untested, and never reaching the entry point the
 repo ships. One of them patched ``src/`` instead of the function it was changing being edited.
 
-THREE RULES OVER ONE MAP; the second's mechanism is its own module:
+THREE RULES OVER ONE MAP; this module holds the map and the first, the other two are their own modules:
 
 * ``CODE-IN-CODE-ROOTS`` -- a source file (:data:`CODE_SUFFIXES`) lives only under a root the repo
   DECLARES for code. An ALLOW-list, not a deny-list: a new directory is refused until it is added
@@ -12,21 +12,9 @@ THREE RULES OVER ONE MAP; the second's mechanism is its own module:
   ``git ls-files``, because the defect is precisely an untracked file.
 * ``SCRATCH-IS-NEVER-COMMITTED`` -- the one-off sink this map declares: visible to git, never
   committed beyond its README (nothing at all under ``scratch_anchor = false``), left by promotion
-  into ``src/`` with tests or by deletion. Its scan,
-  refusal, reminder and CLI are :mod:`dev_lab.dev.scratch`; only its declaration is read here.
-* ``STRAY-FILE-REFUSED`` -- an UNTRACKED, non-ignored file outside the declared stray roots (the family's
-  ``scratch/`` plus ``stray_roots``) is a defect the moment it appears: a file a person meant is STAGED,
-  an artefact a program wrote belongs under ``output/logs/<yy>/<mm>/<dd>/<kind>/`` (ignored), a one-off
-  in scratch, and a file a known retirement declares gone is deleted through its door -- never staged
-  (2026-11-17: twelve stale rem indexes, eleven under ``src/``, were told to be ``git add``-ed). Which files
-  are retired is the CHECKOUT's data, the ``retired`` rows of its table below (:mod:`dev_lab.dev.retiredfiles`),
-  passed to :func:`retired_copies`; the leaf holds no consumer's layout (:mod:`dev_lab.dev.foreign`), and a
-  checkout declaring none gets no such exit. Earned 2026-10-20 in consumer-a: a vendor controller run by hand
-  with the checkout as its cwd left seven log files in the root, and a ``uv`` run in a subdirectory left a
-  ``uv.lock`` there; nothing said so until a human saw them. :func:`stray_files` is the census; the agent
-  hooks (``PostToolUse`` on the shell tools and ``Stop``, ``python -m dev_lab.dev.codeplace stray``) report it
-  the moment a command made one, and the ``stray-files`` post-commit row names each one after a commit (a hint: the
-  forge cannot see an untracked file, and a style finding blocks nothing -- toolchain plan P3).
+  into ``src/`` with tests or by deletion: :mod:`dev_lab.dev.scratch`.
+* ``STRAY-FILE-REFUSED`` -- an untracked, non-ignored file outside the declared stray roots is a defect the
+  moment it appears: :mod:`dev_lab.dev.strays`, which reads ``stray_roots`` and ``retired`` off this map.
 
 THE PLACEMENT MAP IS THE FAMILY'S, THE EXTRA ROOTS ARE THE REPO'S (user ruling 2026-10-02). Every
 file kind has ONE home, :data:`FAMILY_HOMES`; the homes that hold code are :data:`FAMILY_CODE_ROOTS`.
@@ -48,8 +36,7 @@ the tree; the ``PreToolUse`` hook (``python -m dev_lab.dev.codeplace``, wired on
 decide through :func:`admits` over the same declaration, so the hook cannot refuse what the test
 admits or the reverse -- the second copy of the rule a hand-written hook would be.
 
-THE CLI: no argument is the write hook; ``stray`` / ``stray-check`` are the stray census. The scratch
-verbs are ``python -m dev_lab.dev.scratch``.
+THE CLI: ``python -m dev_lab.dev.codeplace`` is the write hook, its only mode.
 """
 
 from __future__ import annotations
@@ -58,19 +45,16 @@ import dataclasses
 import json
 import os
 import sys
-import time
 import tomllib
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import TextIO
 
-from lab_commons import launch
 from lab_commons.log import emit
 
-from dev_lab.dev import gitdirs, tmpsweep
+from dev_lab.dev import gitdirs
 from dev_lab.dev.consentguard import refuse_write as refuse_consent_write
 from dev_lab.dev.datedlog import TEST_TEMP_KIND, kind_dirs
-from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reportplace import refuse_report
 from dev_lab.dev.retiredfiles import RetiredFile, declared_retired
@@ -88,19 +72,14 @@ __all__ = [
     'TASK_ROOT',
     'Placement',
     'PlacementNotDeclared',
-    'StrayCensusUnreadable',
     'admits',
     'checkout_root',
     'declared_misplaced',
     'declared_placement',
-    'declared_strays',
     'is_archived',
     'main',
     'misplaced_code',
     'refuse_write',
-    'retired_copies',
-    'stray_files',
-    'stray_refusal',
 ]
 
 #: The file suffixes that are SOURCE CODE -- a language a machine executes or compiles.
@@ -158,7 +137,6 @@ ARCHIVE_DIRECTORY = 'attachments'
 #: ``archived/`` tree. With a memory day's :data:`ARCHIVE_DIRECTORY` these are every archive a scan
 #: skips; :func:`is_archived` is the one reading, so no scan keeps its own copy of the set.
 ARCHIVED_SEGMENTS = frozenset({'attic', 'archived'})
-_SECONDS_PER_DAY = 86400.0
 #: Where a repo declares its delta: ``[tool.dev_lab.placement]`` in this file.
 _MANIFEST = 'pyproject.toml'
 _TABLE = '[tool.dev_lab.placement]'
@@ -282,100 +260,6 @@ def declared_misplaced(root: Path) -> list[str]:
     return misplaced_code(root, code_roots=placement.code_roots, pruned_paths=pruned)
 
 
-#: How many strays a refusal names before it counts the rest -- the first line stays one short line.
-_SHOWN = 3
-#: Where a one-off script and a program's data go: a dated directory of their kind (user ruling 2026-11-03).
-_SCRIPT_HOME = 'scratch/<yy>/<mm>/<dd>/<kind>/'
-_DATA_HOME = 'output/logs/<yy>/<mm>/<dd>/<kind>/'
-
-
-def retired_copies(found: Iterable[str], *, retired: Iterable[RetiredFile]) -> dict[RetiredFile, list[str]]:
-    """Each *retired* row with a copy among repo-relative POSIX *found* outside an archive, mapped to its copies.
-
-    The table is the CALLER's, with no default: which files a tool retired is a fact of the checkout that used
-    the tool, declared in its own ``retired`` rows (:mod:`dev_lab.dev.retiredfiles`), and the leaf holds no
-    consumer's layout (:mod:`dev_lab.dev.foreign`).
-    """
-    paths = tuple(found)
-    copies = {one: [rel for rel in paths if one.matches(rel) and not is_archived(rel)] for one in retired}
-    return {one: rels for one, rels in copies.items() if rels}
-
-
-class StrayCensusUnreadable(RuntimeError):
-    """git could not list a checkout's untracked files; a silent census is not a clean one."""
-
-
-def stray_files(root: Path, *, stray_roots: Iterable[str], pruned_paths: Iterable[str] = ()) -> list[str]:
-    """Every UNTRACKED, non-ignored file of the checkout *root* outside *stray_roots*, repo-relative POSIX, sorted.
-
-    The index decides, not the filesystem: a staged file was meant, an ignored one is an artefact in its
-    place (``output/``), and what is left is a file nobody claimed.
-
-    Raises:
-        StrayCensusUnreadable: git could not list the untracked files of *root*.
-
-    """
-    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths, TASK_ROOT))
-    return sorted(
-        rel
-        for rel in _untracked(root)
-        if not rel.startswith(allowed) and not PRUNED_NAMES.intersection(rel.split('/')[:-1])
-    )
-
-
-def _untracked(root: Path) -> list[str]:
-    done = launch.run(
-        ['git', '-C', str(root), 'ls-files', '--others', '--exclude-standard', '-z'],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        check=False,
-    )
-    if done.returncode != 0:
-        msg = f'git could not list the untracked files of {root}: {done.stderr.strip()}'
-        raise StrayCensusUnreadable(msg)
-    return list(filter(None, done.stdout.split('\0')))
-
-
-def declared_strays(root: Path) -> list[str]:
-    """:func:`stray_files` over *root* with the placement *root* declares -- the adopter's scan."""
-    placement = declared_placement(root)
-    return stray_files(root, stray_roots=placement.stray_roots, pruned_paths=placement.pruned_paths)
-
-
-def stray_refusal(root: Path) -> str | None:
-    """The ``STRAY-FILE-REFUSED`` message for *root* in three lines; ``None`` if clean.
-
-    The first line counts the strays and names a few; the second gives each file ONE exit chosen by its kind --
-    a file the checkout's own ``retired`` rows declare gone is deleted through its door, a file under a code root
-    was meant (``git add``), a script is a one-off (``scratch/<yy>/<mm>/<dd>/<kind>/``), anything else is a
-    program's data (``output/logs/...``); the third points at the details. A checkout that declares no placement
-    is not judged: the adopter's own test reds on the missing table.
-    """
-    try:
-        placement = declared_placement(root)
-    except PlacementNotDeclared:
-        return None
-    found = stray_files(root, stray_roots=placement.stray_roots, pruned_paths=placement.pruned_paths)
-    if not found:
-        return None
-    shown = ', '.join(found[:_SHOWN]) + (f' (+{len(found) - _SHOWN} more)' if len(found) > _SHOWN else '')
-    retired = retired_copies(found, retired=placement.retired)
-    gone = {rel for copies in retired.values() for rel in copies}
-    rest = [rel for rel in found if rel not in gone]
-    meant = [rel for rel in rest if rel.startswith(placement.code_roots)]
-    scripts = [rel for rel in rest if rel not in meant and Path(rel).suffix.lower() in CODE_SUFFIXES]
-    exits = [f'{len(rels)} x {one.path} retired ({one.what}): {one.door}' for one, rels in retired.items()]
-    exits.append(f'git add {" ".join(meant[:_SHOWN])}' if meant else '')
-    exits.append(f'{", ".join(scripts[:_SHOWN])} -> {_SCRIPT_HOME}' if scripts else '')
-    exits.append(f'data -> {_DATA_HOME}' if len(rest) > len(meant) + len(scripts) else '')
-    return (
-        f'STRAY-FILE-REFUSED: {len(found)} untracked file(s) outside output/ and scratch/ in {root.as_posix()}: '
-        f'{shown}.\n{"; ".join(one for one in exits if one)}.\n{details_for("STRAY-FILE-REFUSED")}'
-    )
-
-
 def _home_for(rel: str) -> str:
     path = Path(rel)
     if path.name.startswith('test_') or path.stem.endswith('_test') or path.name == 'conftest.py':
@@ -420,55 +304,18 @@ def refuse_write(path: Path) -> str | None:
     )
 
 
-def _stray_hook(payload: object) -> int:
-    """``PostToolUse`` (shell tools) and ``Stop``: block with the stray census, else stay silent.
-
-    ``Stop`` is blocked once: with ``stop_hook_active`` the agent already saw the census, and a stray it
-    cannot clear (a human's file) must not hold the session in a loop.
-    """
-    if not isinstance(payload, dict) or payload.get('stop_hook_active'):
-        return 0
-    cwd = Path(payload.get('cwd') or Path.cwd()).resolve()
-    root = cwd if (cwd / '.git').exists() else checkout_root(cwd)
-    if root is None:
-        return 0
-    try:
-        reason = stray_refusal(root)
-    except StrayCensusUnreadable as exc:
-        reason = f'STRAY-FILE-REFUSED: the stray census could not be read: {exc}'
-    roots, excluded = tmpsweep.declared()  # WRITES-STAY-IN-THE-TREE: what the session left outside the checkout
-    since = time.time() - tmpsweep.REPORT_WINDOW_S
-    mentions = tmpsweep.tool_text(payload.get('transcript_path'))
-    outside = tmpsweep.session_report(
-        roots, excluded, since=since, suffixes=CODE_SUFFIXES | {'.md', '.txt'}, mentions=mentions
-    )
-    reason = '\n'.join(one for one in (reason, outside) if one) or None
-    if reason is not None:
-        emit(json.dumps({'decision': 'block', 'reason': reason}))
-    return 0
-
-
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """The agent and git hooks. No argument: ``PreToolUse`` on Write/Edit/MultiEdit/NotebookEdit.
+    """The ``PreToolUse`` agent hook on Write/Edit/MultiEdit/NotebookEdit; the payload is *stdin*.
 
     It refuses a report under ``output/`` and a write into a write-prone root, and hints a misplaced code file.
-
-    ``stray``: the ``PostToolUse``/``Stop`` stray census (:func:`_stray_hook`). ``stray-check``: the
-    post-commit hint row, exit 1 naming every stray of the current checkout. A payload naming no path is
-    allowed: the write hook judges a PATH, and such a payload names none.
+    A payload naming no path is allowed: the hook judges a PATH, and such a payload names none. The stray
+    census is :mod:`dev_lab.dev.strays`.
     """
-    mode = (argv or [None])[0]
-    if mode == 'stray-check':
-        reason = stray_refusal(Path.cwd())
-        if reason is not None:
-            emit(reason)
-        return 1 if reason is not None else 0
+    del argv  # the dispatcher passes the row's argv; this hook has one mode
     try:
         payload = json.load(stdin or sys.stdin)
     except ValueError:
         return 0
-    if mode == 'stray':
-        return _stray_hook(payload)
     tool_input = payload.get('tool_input') if isinstance(payload, dict) else None
     target = (tool_input.get('file_path') or tool_input.get('notebook_path')) if isinstance(tool_input, dict) else None
     if not isinstance(target, str) or not target:

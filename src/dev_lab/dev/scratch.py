@@ -9,7 +9,7 @@ dev mechanisms only. The archive-to-memory exit this replaced is retired with no
 VISIBLE, NEVER COMMITTED. The directory is never git-ignored (the family ``.gitignore`` bans the line),
 so an untracked one-off shows in ``git status``; it is anchored by one tracked :data:`SCRATCH_README`
 stating the two exits, and nothing else under it is ever committed. It is the stray census's declared
-sink (:func:`dev_lab.dev.codeplace.stray_files`), so a one-off there is never a stray.
+sink (:func:`dev_lab.dev.strays.stray_files`), so a one-off there is never a stray.
 
 ONE DECLARATION, read off the repo's ``[tool.dev_lab.placement]`` by
 :func:`dev_lab.dev.codeplace.declared_placement`: ``scratch`` (the directory, the family's
@@ -82,7 +82,6 @@ __all__ = [
     'clear_scratch',
     'discard_scratch',
     'main',
-    'overdue_declared',
     'overdue_scratch',
     'pending_scratch',
     'scratch_reminder',
@@ -118,12 +117,6 @@ def pending_scratch(scratch: Path, *, root: Path, now: float | None = None) -> l
 def overdue_scratch(scratch: Path, *, root: Path, max_age_days: float, now: float | None = None) -> list[str]:
     """The one-offs in *scratch* older than *max_age_days*, oldest first."""
     return [path for path, age in pending_scratch(scratch, root=root, now=now) if age > max_age_days]
-
-
-def overdue_declared(root: Path) -> list[str]:
-    """:func:`overdue_scratch` over the scratch directory and age *root* declares."""
-    placement = declared_placement(root)
-    return overdue_scratch(root / placement.scratch, root=root, max_age_days=placement.max_age_days)
 
 
 def staged_scratch(paths: Iterable[str], *, scratch: str, anchor: bool = True) -> list[str]:

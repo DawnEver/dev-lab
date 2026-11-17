@@ -1,9 +1,9 @@
 """WRITES-STAY-IN-THE-TREE, the census and the sweep over the write-prone roots of :mod:`dev_lab.dev.writeroots`.
 
-The shape of ``codeplace stray``: ONE census (:func:`census`, one level deep, never walked past a root's direct
+The shape of ``strays hook``: ONE census (:func:`census`, one level deep, never walked past a root's direct
 entries), read by three callers --
 
-* the ``Stop`` hook the stray census already rides (``python -m dev_lab.dev.codeplace stray``) REPORTS the scripts
+* the ``Stop`` hook the stray census already rides (``python -m dev_lab.dev.strays hook``) REPORTS the scripts
   and notes written into a root within :data:`REPORT_WINDOW_S` (:func:`session_report`), blocking the stop once;
   it never deletes -- one Stop hook, two placement questions, so no second wiring. A file counts only when one of
   the SESSION'S OWN tool calls names it (:func:`tool_text`): a shared temp dir also holds what other live programs
