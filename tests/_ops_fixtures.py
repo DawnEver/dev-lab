@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any
 
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.consent.credential import public_text
+from dev_lab.ops.consent.door import hello
 from dev_lab.ops.consent.issuer import keygen
 from dev_lab.ops.totp import STEP, code_at
 
@@ -15,6 +19,18 @@ from dev_lab.ops.totp import STEP, code_at
 RFC_KEY = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
 NOW = 1_800_000_000.0
 _GIT = shutil.which('git') or 'git'
+
+#: A fake issuer transport: ``(endpoint table, request)`` -> ``(exit status, output)``.
+type FakeSend = Callable[[Mapping[str, Any], dict[str, Any]], tuple[int, str]]
+
+
+def speaks(send: FakeSend) -> FakeSend:
+    """*send* behind an issuer that answers the version handshake as this client speaks it."""
+
+    def answered(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
+        return (0, json.dumps(hello())) if request.get('verb') == 'hello' else send(table, request)
+
+    return answered
 
 
 def git(cwd: Path, *args: str) -> str:

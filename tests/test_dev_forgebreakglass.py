@@ -13,9 +13,10 @@ from _ops_fixtures import git
 from dev_lab.dev import remote
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev.consentguard import state_dir
-from dev_lab.dev.forgebreakglass import merge_main, ssh_send, wave_main
+from dev_lab.dev.forgebreakglass import merge_main, wave_main
 from dev_lab.dev.forgecli import NOUNS, PR_VERBS
 from dev_lab.dev.forgework import Client
+from dev_lab.ops.consent.door import ssh_send
 
 _TABLE = {'endpoint': 'bg@host'}
 

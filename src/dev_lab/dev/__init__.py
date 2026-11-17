@@ -545,6 +545,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.sshholdstate` -- a held session's state file and the append-only audit of every verb.
 * :mod:`dev_lab.dev.sshholdwire` -- the client's half of the holder's protocol: the request and the marker frame.
 * :mod:`dev_lab.dev.sshholdrun` -- a command, or a forge credential, sent through a held session, and its audit.
+* :mod:`dev_lab.dev.sshholdplan` -- ``sshhold open --plan``: one code buys a plan's credentials and opens its hosts.
 * :mod:`dev_lab.dev.planrun` -- A CODE IS NEVER WASTED: preflight a consent plan's doors on its hosts, then run it.
 * :mod:`dev_lab.dev.planrunsteps` -- a plan's steps file: one step per grant, and how each is invoked.
 * :mod:`dev_lab.dev.planrunpreflight` -- every door of a plan checked on its hosts before the code is spent.

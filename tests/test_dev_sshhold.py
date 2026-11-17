@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import sshhold, sshholdrun, sshholdstate, sshholdwire
+from dev_lab.dev import sshhold, sshholdplan, sshholdrun, sshholdstate, sshholdwire
 from dev_lab.dev.sshholdwire import HoldRefused
 
 FAKE = (sys.executable, str(Path(__file__).with_name('_sshhold_fake.py')))
@@ -187,8 +187,11 @@ def test_the_cli_jump_rides_both_the_plain_and_the_planned_open(monkeypatch: pyt
     seen: list[tuple[str, ...]] = []
     monkeypatch.setattr(sshhold, 'section', lambda _name: {})  # no declared route: the flag alone decides
     monkeypatch.setattr(sshhold, 'open_session', lambda *_a, ssh: seen.append(ssh) or 'opened')
+    monkeypatch.setattr(sshholdplan, 'offered', lambda _plan: None)
     monkeypatch.setattr(
-        sshhold, 'open_planned', lambda *_a, routes: seen.append(routes('ops@inner')) or (True, ['granted', 'opened'])
+        sshholdplan,
+        'open_planned',
+        lambda *_a, routes, **_k: seen.append(routes('ops@inner')) or (True, ['granted', 'opened']),
     )
     assert sshhold.main(['open', 'ops@inner', '--hours', '1', '--code', CODE, '--jump', 'ops@bastion']) == 0
     plan = ['--plan', 'plan.json', '--digest', 'abc']
@@ -210,9 +213,9 @@ def test_each_plan_host_opens_on_the_route_the_machine_file_declares_for_it(tmp_
 
     def opened(declared: dict[str, object]) -> dict[str, tuple[str, ...]]:
         seen: dict[str, tuple[str, ...]] = {}
-        sshhold.open_planned(
+        sshholdplan.open_planned(
             1, CODE, plan, 'abc', grant=lambda *_a: [], routes=lambda dest: sshhold.route(dest, table=declared),
-            opener=lambda dest, *_a, ssh: seen.setdefault(dest, ssh) and f'{dest}: open',
+            opener=lambda dest, *_a, ssh: seen.setdefault(dest, ssh) and f'{dest}: open', held=lambda _d: False,
         )  # fmt: skip
         return seen
 
@@ -258,5 +261,7 @@ def test_a_plan_naming_an_action_this_client_lacks_is_refused_before_the_code_is
     plan.write_text(json.dumps({'hosts': ['ops@h'], 'grants': [unknown]}))
     sent: list[str] = []
     with pytest.raises(sshholdwire.HoldRefused, match='local dev-lab is older than the plan; update it'):
-        sshhold.open_planned(1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [])
+        sshholdplan.open_planned(
+            1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [], routes=sshhold.route, opener=str
+        )
     assert sent == []

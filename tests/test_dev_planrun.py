@@ -734,6 +734,28 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
     assert any('derived here' in line and want[:12] in line for line in lines), lines
 
 
+def test_a_derivable_subject_whose_door_waits_on_a_config_step_is_still_derived_here() -> None:
+    """2026-11-16: ``after step N`` skipped the subject, the plan was granted, and its code was wasted.
+
+    PLANTED CONTROL: the declaration that renders the granted subject is green, still after step 1.
+    """
+    want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
+    protect = {'host': HOST, 'action': forgeprotection.ACTION, 'subject': want}
+    plan = parsed({'hosts': [HOST], 'grants': [APPLY, protect]})
+    step = planrunsteps.Step(
+        ('forge', 'protect', 'apply', '--repo', 'owner/alpha'), HOST, CONF, PY, forge='gitea.example'
+    )
+    steps = planrunsteps.Steps((STEPS.steps[0], step))  # the host has no protect door until step 1 applies
+    other = planrunpreflight.Readers(declared=lambda *_: GITEA_TEXT.replace('promote-bot', 'other-bot'))
+    green, lines = planrunpreflight.preflight(plan, steps, lambda _d: FakeHost(), readers=other)
+    assert not green
+    assert lines[2].startswith('step 2 ops.forge.protect: BLOCKED -- derived here'), lines
+    same = planrunpreflight.Readers(declared=lambda *_: GITEA_TEXT)
+    green, lines = planrunpreflight.preflight(plan, steps, lambda _d: FakeHost(), readers=same)
+    assert green, lines
+    assert 'after step 1' in lines[2]
+
+
 def test_a_forge_key_on_a_step_that_is_not_protect_is_refused(tmp_path: Path) -> None:
     path = tmp_path / 'steps.json'
     body = {'config': CONF, 'python': PY, 'steps': [{'argv': ['config', 'apply'], 'forge': 'gitea.example'},
@@ -767,6 +789,7 @@ def test_a_blocked_preflight_is_this_sessions_wall_and_a_green_one_is_not(
     monkeypatch.setattr(planrun, 'load_steps', lambda _path, _plan: STEPS)
     said = ['host h: BLOCKED -- no consent key', 'preflight: BLOCKED (fix the named blocker before asking for a code)']
     monkeypatch.setattr(planrun, 'preflight', lambda *_a, **_k: (green, said))
+    monkeypatch.setattr(planrun, 'offered', lambda _plan, found: found)  # the issuer half: test_ops_consent_door
     assert planrun.main(['preflight', '--plan', str(plan), '--steps', str(plan)]) == (0 if green else 2)
     if green:
         assert not walls.ledger(tmp_path).exists()

@@ -68,7 +68,12 @@ def _host_rendered(tmp_path: Path, repo: Mapping[str, str]) -> str:
 
 
 def _readers(repo: Mapping[str, str] = REPO) -> planrunpreflight.Readers:
-    return planrunpreflight.Readers(text=_reader(repo), config_source=lambda: SOURCE)
+    return planrunpreflight.Readers(text=_reader(repo), config_source=lambda: SOURCE, issued=_no_issuer)
+
+
+def _no_issuer(dest: str, action: str, argv: list[str]) -> str:
+    msg = f'no issuer reads {dest} here ({action} {argv})'
+    raise ConsentRefused(msg)
 
 
 def test_the_subject_derived_here_is_the_one_the_host_renders(tmp_path: Path) -> None:
