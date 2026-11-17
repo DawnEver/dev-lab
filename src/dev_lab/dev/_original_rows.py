@@ -50,6 +50,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'lockwait',
     'test_outcomes',
     'serialpass',
+    'testtemp',
     'lanepolicy',
     'platformparts',
     # ORIGINAL: a part status read as a (part, env, policy) fact; split from platformparts (2026-11-12).

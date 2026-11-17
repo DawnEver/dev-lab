@@ -146,7 +146,8 @@ def test_required_family_checks_do_not_acquire_the_union_of_resource_probe_marke
     root = make_repo(tmp_path, 'https://forge.example.org/team/app.git')
     (root / 'pyproject.toml').write_text(
         '[tool.lab_commons.tests]\nresources = ["windows", "linux"]\n'
-        '[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n',
+        '[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n'
+        '[tool.pytest.ini_options]\n',  # the sandbox is its own pytest root, not the enclosing checkout
         encoding='utf-8',
     )
     (root / 'test_subject.py').write_text(

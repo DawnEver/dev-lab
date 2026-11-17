@@ -42,6 +42,7 @@ from lab_commons.config import config_path, section
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
+from dev_lab.dev import gitdirs
 from dev_lab.dev.agentpolicy import POLICY, USER
 from dev_lab.dev.autodoors import cli_doors
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
@@ -255,10 +256,7 @@ def leaks(texts: Sequence[str], fleet: Fleet | None = None) -> tuple[str, ...]:
 
 
 def _root_of(cwd: Path) -> Path | None:
-    for candidate in (cwd, *cwd.parents):
-        if (candidate / '.git').exists():
-            return candidate
-    return None
+    return gitdirs.checkout_of(cwd)
 
 
 def main(argv: Sequence[str] | None = None, *, stdin: TextIO | None = None) -> int:

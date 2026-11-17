@@ -37,7 +37,19 @@ from typing import Final
 
 from dev_lab.dev.family import declared_in
 
-__all__ = ['OUTPUT_KEY', 'UndeclaredOutput', 'date_parts', 'dated_log', 'declared_output', 'output_dir']
+__all__ = [
+    'OUTPUT_KEY',
+    'TEST_TEMP_KIND',
+    'UndeclaredOutput',
+    'date_parts',
+    'dated_log',
+    'declared_output',
+    'kind_dirs',
+    'output_dir',
+]
+
+#: The kind under which the test runner's base temp lives (:mod:`dev_lab.dev.testtemp`, user ruling D27).
+TEST_TEMP_KIND = 'pytest'
 
 #: The one key a repo answers "where does dated output live" with.
 OUTPUT_KEY: Final = '[tool.dev_lab.parts] output'
@@ -147,3 +159,12 @@ def output_dir(root: Path, kind: str) -> Path:
 
     """
     return dated_log(root, kind, base=declared_output(root), kind=kind).parent
+
+
+def kind_dirs(root: Path, kind: str) -> tuple[str, ...]:
+    """Every existing ``<output>/<yy>/<mm>/<dd>/<kind>`` under *root*, repo-relative POSIX; none if undeclared."""
+    try:
+        base = root / declared_output(root)
+    except UndeclaredOutput:
+        return ()
+    return tuple(sorted(path.relative_to(root).as_posix() for path in base.glob(f'*/*/*/{kind}') if path.is_dir()))

@@ -368,13 +368,20 @@ function ruleTarget(rule, cmd, cwd) {
   return targetDir(cmd, cwd, (text) => at.test(text));
 }
 
-/** The nearest directory at or above `dir` holding a `.git` (a worktree's `.git` is a file). */
+/** `dir` spelled for comparison: case-folded where the filesystem is (Windows), as Python's `os.path.normcase`. */
+const normcase = (dir) => (process.platform === 'win32' ? path.resolve(dir).toLowerCase() : path.resolve(dir));
+
+/** Directories git's discovery never climbs into: GIT_CEILING_DIRECTORIES, git's own contract. */
+const CEILINGS = new Set((process.env.GIT_CEILING_DIRECTORIES || '').split(path.delimiter).filter(Boolean).map(normcase));
+
+/** The nearest directory at or above `dir` holding a `.git` (a worktree's `.git` is a file), stopping where git
+ * does -- the walk dev_lab.dev.gitdirs.ancestors also takes. */
 function repoRoot(dir) {
   let at = path.resolve(dir);
   for (;;) {
     if (fs.existsSync(path.join(at, '.git'))) return at;
     const up = path.dirname(at);
-    if (up === at) return null;
+    if (up === at || CEILINGS.has(normcase(up))) return null;
     at = up;
   }
 }

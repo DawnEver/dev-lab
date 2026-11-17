@@ -1658,6 +1658,10 @@ def test_b_reads_what_a_wrote() -> None:
 
 def _planted_run(tmp_path: Path, *width: str) -> subprocess.CompletedProcess[str]:
     (tmp_path / 'test_planted.py').write_text(_ORDER_DEPENDENT, encoding='utf-8')
+    # Its own pytest root (not the checkout it sits in), declaring where its own temp dirs go (D27).
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.parts]\noutput = "out/logs"\n[tool.pytest.ini_options]\n', encoding='utf-8'
+    )
     argv = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *width, 'test_planted.py']
     return subprocess.run(
         argv, cwd=tmp_path, capture_output=True, text=True, encoding='utf-8', timeout=120, check=False
