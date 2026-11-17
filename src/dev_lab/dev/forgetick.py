@@ -143,6 +143,22 @@ class TickReport:
     #: The open parts this host could serve -- its needs all present here -- and did not claim: what makes it idle.
     pending: tuple[Work, ...] = ()
 
+    def idle(self) -> str:
+        """Why the *pending* parts sat unclaimed: each with its queue row's block, then the tick's refusals.
+
+        Every wall teaches: an idle alarm names each part's own cause (``not admitted: lacking mem_gb (...)``), so
+        a reader of the card sees which resource starves the account; only a part no row blocks reads as bare.
+        """
+        blocks = {(row.candidate.sha, row.candidate.platform): row.blocked for row in self.queue if row.blocked}
+        whys = [blocks.get((item.sha, item.platform), '') for item in self.pending]
+        named = ', '.join(
+            f'{item.ref} {item.sha[:12]} {item.platform}' + (f' -- {why}' if why else '')
+            for item, why in zip(self.pending, whys, strict=True)
+        )
+        told = any(whys)
+        refused = '; '.join(self.refused) or ('' if told else 'nothing was claimed')
+        return f'{named}: {refused}' if refused else named
+
 
 def tip_first(ranked: Sequence[Ranked], integration: str) -> tuple[Ranked, ...]:
     """*ranked* with the *integration* ref's parts moved ahead of every other, each side in its own order.

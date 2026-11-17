@@ -736,6 +736,25 @@ def test_an_idle_alarm_names_the_account_not_the_login_node(monkeypatch, tmp_pat
     assert raised.subject == f'{SEAT} is idle with work pending'
 
 
+def test_an_idle_alarm_names_what_blocks_each_pending_part(monkeypatch, tmp_path: Path) -> None:
+    """An idle account says WHY per part: its queue row's block, never a bare 'nothing was claimed'.
+
+    PLANTED CONTROL: a pending part with no queue row still reads 'nothing was claimed'.
+    """
+    pending = Work('integrate/main', SHA, 'base', OPEN)
+    block = 'not admitted: lacking mem_gb (161.286 asked, 25.4863 free)'
+    row = Ranked(Candidate('o/r', 'integrate/main', SHA, 'base', 'part', NOW, FULL), 60.0, 4.0, 15.0, 1.0, block)
+    idle = TickReport((pending,), (), ('tick',), (), queue=(row,), pending=(pending,))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, idle)
+    (raised,) = [a for a in alarms if a.kind == IDLE]
+    assert f'integrate/main {SHA[:12]} base -- {block}' in raised.body
+    assert 'nothing was claimed' not in raised.body
+    bare = TickReport((pending,), (), ('tick',), (), pending=(pending,))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, bare)
+    (raised,) = [a for a in alarms if a.kind == IDLE]
+    assert raised.body.endswith('nothing was claimed')
+
+
 def test_work_this_host_cannot_serve_never_makes_it_idle(monkeypatch, tmp_path: Path) -> None:
     """Another platform's open part is in every host's work; only the tick's servable *pending* alarms idle."""
     elsewhere = Work('integrate/main', SHA, 'linux', OPEN)
