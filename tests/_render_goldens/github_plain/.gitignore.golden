@@ -54,3 +54,4 @@ output/
 **/.claude/**/__pycache__/
 **/.claude/**/*.py[cod]
 **/.claude/automode.json
+**/.claude/tasks/.bindings/
