@@ -534,3 +534,25 @@ def test_the_docs_template_is_the_profile_rendered_never_a_hand_copy() -> None:
     assert [b['role'] for b in blocks] == ['light'], 'the page carries the one light template'
     for block in blocks:
         assert block['body'] == workstationfile.template(block['role'])
+
+
+def test_a_host_follow_never_moves_a_checkout_a_live_run_executes_from(tmp_path: Path) -> None:
+    """TREE-HAS-A-LIVE-RUN: the follow skips before its fetch and names the holder; PLANTED CONTROL: idle moves on."""
+    checkout = tmp_path / 'repo'
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(checkout)], check=True)
+    ran: list[str] = []
+
+    class _Step:
+        dry = True
+
+        def change(self, what: str, _argv: object, **_kw: object) -> int:
+            ran.append(what)
+            return 0
+
+    git = (shutil.which('git') or 'git',)
+    held = hostrefresh.follow(_Step(), git, checkout, busy=lambda _root: 'live run: pid 4242 (app)')
+    assert held.rc == 2
+    assert 'pid 4242 (app)' in held.why
+    assert not ran
+    assert hostrefresh.follow(_Step(), git, checkout, busy=lambda _root: '').rc == 0
+    assert ran
