@@ -88,6 +88,16 @@ def test_the_shell_twin_in_with_venv_is_the_rendering_of_the_js_rule() -> None:
     assert '%' not in rendered, 'a crontab line embeds it, and cron reads % as a newline'
 
 
+def test_every_case_arm_of_the_shell_twin_opens_its_paren() -> None:
+    """Every arm is written ``(pattern)``: macOS bash 3.2 ends a ``$(...)`` at an arm's bare ``)``.
+
+    :func:`venvpointer.shell_interpreter` puts the twin INSIDE a command substitution, so a bare arm broke it there.
+    """
+    body = venvpointer.shell_function()
+    arms = body[body.index(' in ') + 4 : body.index('esac')].split(';;')
+    assert [arm.strip()[0] for arm in arms if arm.strip()] == ['(', '('], body
+
+
 def test_no_door_carries_its_own_pointer_reader() -> None:
     dev = RESOLVER.parent
     for door in (dev / 'agent_launcher.js', dev / 'agenthooks' / 'deny-commands.js'):
