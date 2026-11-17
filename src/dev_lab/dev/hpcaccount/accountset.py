@@ -151,6 +151,7 @@ def main_fleet(
         parser.add_argument(
             flag, action='append_const', const=flag, dest='forwarded', help=f"forwarded to each account's {verb}"
         )
+    parser.set_defaults(credential=None)
     if ci_only:
         parser.add_argument('--credential', help=f'the id of a granted {cicron.ACTION} credential, redeemed here')
     args = parser.parse_args(list(argv))
@@ -163,8 +164,9 @@ def main_fleet(
         emit(f'{verb}-fleet: refused -- {refused}')
         return 2
     roles = division_of(machine).roles
-    credential = getattr(args, 'credential', None)
-    consent = consent_of(verb, credential) if credential is not None and '--dry-run' not in forwarded else None
+    consent = (
+        consent_of(verb, args.credential) if args.credential is not None and '--dry-run' not in forwarded else None
+    )
     return start_on_selected(
         machine.grants, args.account, args.cluster, home=Path.home(), source=source, say=emit, verb=verb,
         args=forwarded, sourced=sourced, consent=consent,

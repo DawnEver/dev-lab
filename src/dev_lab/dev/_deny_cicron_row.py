@@ -7,7 +7,9 @@ doors whose ``deny`` is this row (:func:`refused_verbs`), never a second list. T
 runs the verb, or approves a consent plan whose subject is the cluster and its account list and gives its code -- the
 granted step then runs the verb with ``--credential <id>``, which this row ADMITS: the verb redeems the credential
 against the subject it derives before any crontab change (:mod:`dev_lab.dev.hpcaccount.cicron`), so the grant check
-in the verb, not this guard, is what enforces the consent.
+in the verb, not this guard, is what enforces the consent. Codex keeps refusing the credential form (D15: a prefix
+rule cannot see an argument), so it is not a ``permits`` near-miss, which every engine must admit; the Claude-side
+admission is pinned in ``tests/test_dev_cicron_row.py``.
 """
 
 from __future__ import annotations
@@ -39,8 +41,7 @@ CI_CRON_NEEDS_CONSENT: dict[str, object] = {
     'hazard': "pausing or resuming CI rewrites a cluster account's crontab; an agent never does it on its own "
     '(user ruling 2026-11-16).',
     'remedy': 'Read first with hpcaccount drift-fleet. Then the user runs it, or approves a consent plan whose '
-    'subject is the cluster plus its account list (action hpcaccount.ci-cron): {python} -m dev_lab.ops.consent grant '
-    '<request.json> --code <code>, then the verb runs with --credential <id>, redeemed before any crontab change.',
+    'subject is the cluster plus its account list (consent grant), then runs it with --credential <id>.',
     'needs': None,
     'refuses': tuple(f'python -m {MODULE} {verb} --cluster c1' for verb in refused_verbs()),
     'permits': (
@@ -48,7 +49,6 @@ CI_CRON_NEEDS_CONSENT: dict[str, object] = {
         f'python -m {MODULE} drift --from /srv/clone --host h',
         f'python -m {MODULE} --help',
         f'python -m {MODULE} ci-pause-fleetx',
-        f'python -m {MODULE} ci-pause-fleet --cluster c1 --credential 0123abcd-ef',
         'git commit -m "ci-pause-fleet asks the user first"',
     ),
 }
