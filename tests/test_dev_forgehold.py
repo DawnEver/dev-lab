@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from _forge_state import StateForge
 from test_dev_forgemerge_ready import _CI_MERGER, _INTEGRATOR, _MANIFEST, _hub_pr, _merge_ready, _pr
 
 from dev_lab.dev import forgedraft, forgehold
@@ -58,5 +59,5 @@ def test_a_refused_draft_names_the_hold_door(
         raise ValueError(msg)
 
     monkeypatch.setattr(forgedraft, 'mark_draft', refuse)
-    assert forgedraft.main(['draft', '28'], judge=lambda *_a: (), client=object()) == 1  # type: ignore[arg-type]
+    assert forgedraft.main(['draft', '28'], judge=lambda *_a: (), client=StateForge()) == 1
     assert '`python -m dev_lab.dev.forge pr hold 28`' in capsys.readouterr().out
