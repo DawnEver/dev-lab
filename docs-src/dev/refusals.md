@@ -101,7 +101,7 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 
 ## PUSH-REMOTE-DELETE
 
-- **Why it is refused.** a main session may push without asking (MAIN-SESSION-PUBLISHES), and the allow row that opens the push is a glob -- it admits `--delete`, `-d`, `--prune`, `--mirror` and a `:<ref>` refspec exactly as readily as a plain push. Deleting a ref on origin is the one push nothing on the agent's side can undo: the local branch may already be gone, and another reader's verdict may cite the deleted tip. A raw delete checks nothing first; the 2026-10-21 ruling opened deletion only where it is PROVABLY lossless.
+- **Why it is refused.** a main session may push without asking (MAIN-SESSION-PUBLISHES), and the allow row that opens the push is a glob -- it admits `--delete`, `-d`, `--prune`, `--mirror` and a `:<ref>` refspec exactly as readily as a plain push. Deleting a ref on origin is the one push nothing on the agent's side can undo: the local branch may already be gone, and another reader's verdict may cite the deleted tip. A raw delete checks nothing first; the 2026-10-21 ruling opened deletion only where it is PROVABLY lossless. This row reads the command's text and is the EARLY refusal; the guarantee is the pre-push row (`LOSSLESS-DELETE`, below), which judges every delete however it was spelled.
 - **The exit.** LOSSLESS-DELETE: `{python} -m dev_lab.dev.branchprune delete <branch>...` fetches, deletes only when every commit on the branch is on integration or on another live origin branch / open PR head (naming that container) or, failing that, when every file the branch's own commits wrote is identical (mode and blob) on integration (a generated file, `famfiles.GENERATED`, never counts -- so a branch of sync merges deletes), and otherwise refuses naming the commits and the files carrying unlanded content. A TAG: `{python} -m dev_lab.dev.branchprune delete-tag <tag>... --approved "<the user's words>"` deletes it only with the user's words and only when its commit is on the integration branch or the trunk. Local cleanup stays a door: `python -m dev_lab.dev.branchset --apply` deletes merged LOCAL branches only and lists origin's.
 
 ## PUSH-NO-VERIFY
@@ -236,6 +236,16 @@ HINT: the hazard is minutes, not harm.
 
 - **Why it is refused.** a step of the sync failed -- the fetch, a merge commit the commit hooks refused, or the relock (the dependency door, a renderer, the data pins, the relock commit). No step leaves a half-done state: an uncommitted merge is aborted and a failed relock restores every file it touched (user ruling 2026-11-07), so the next sync is not refused by a dirty tree. The cause line carries the step's own error.
 - **The exit.** Fix what the cause line names (a merge commit that exited but left no pending merge names HEAD: `git log -1 <sha>`), then rerun forge sync.
+
+## LOSSLESS-DELETE
+
+- **Why it is refused.** a push deleted an origin branch whose content is held nowhere else, or one that is never deleted (the integration branch, the trunk, an open PR head). The pre-push row `lossless-delete` (`dev_lab.dev.pushdelete`) judges EVERY branch a push deletes on git's own ref lines, so a delete spelled any way -- a `$refs` variable assembled at run time, `xargs`, `eval`, a script -- meets the judgement `branchprune delete` makes (`dev_lab.dev.deletejudge.judge`): after `git fetch --prune origin`, the deleted sha must be on integration, on another live origin branch or an open PR head (a branch the same push deletes holds nothing), or every file its own commits wrote must be identical on integration, generated files aside. Measured 2026-11-17: nine branches holding unlanded commits went in one `git push origin $refs`, past the text-only `PUSH-REMOTE-DELETE` row.
+- **The exit.** Land the commits first (a PR into integration), then delete through `{python} -m dev_lab.dev.branchprune delete <branch>`, which judges afresh, names what holds the branch, and pushes its delete through this same hook. A branch whose commits are on it alone goes only APPROVED: tag its tip on origin, then add `--approved "<the user's words>"`. Close an open PR before deleting its head; the integration branch and the trunk are never deleted.
+
+## LOSSLESS-DELETE-UNJUDGED
+
+- **Why it is refused.** a push deletes a branch and the judgement could not be made: the repo declares no `[tool.dev_lab.integrator] integration`, the fetch of origin failed, or the forge's open PR heads (or, for an approved delete, origin's tags) could not be read. An unread answer is never a pass: the hook fails closed.
+- **The exit.** Fix what the cause line names -- declare the integration branch, or wait for origin and the forge to answer -- and push again (`{python} -m dev_lab.dev.netverb -- git push ...` retries a transient failure).
 
 ## Cross-repo refusals
 
