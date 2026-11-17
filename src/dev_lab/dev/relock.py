@@ -49,7 +49,7 @@ from collections.abc import Callable, Iterator, Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, NamedTuple
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs
 
 import lab_commons.launch as _door
 
@@ -127,8 +127,8 @@ DOOR_TIMEOUT_S: Final = 1800.0
 #: The verbs a resolution's change line opens with, and where the distribution sits after one.
 _VERBS: Final = frozenset({'Update', 'Add', 'Remove'})
 _NAME_INDEX: Final = 2
-#: A git source query that holds the package at one commit rather than following a line.
-_HELD_GIT: Final = re.compile(r'[?&](?:rev|tag)=')
+#: A full commit sha: the one ``rev`` that names a commit rather than a line.
+_FULL_SHA: Final = re.compile(r'[0-9a-f]{40}')
 
 
 class RelockFailed(OSError):
@@ -166,10 +166,26 @@ class Floated(NamedTuple):
     sha: str
 
 
-def floated(lock: str) -> tuple[Floated, ...]:
-    """The packages lock text *lock* sources from git FOLLOWING a line (no ``rev``/``tag``), in lock order.
+def line_of(query: str) -> str | None:
+    """The line a git source query *query* FOLLOWS; ``None`` when it HOLDS -- the one held-or-floated predicate.
 
-    The line is the source's ``branch`` query, else :data:`DEFAULT_LINE`. An unreadable lock follows nothing.
+    Judged by what the ref IS, URL-decoded: a ``tag`` holds (a tag is declared a fixed point), a ``rev`` holds only
+    as a full 40-hex commit sha -- any other ``rev`` names a branch and follows it, as ``branch`` does. No ref
+    follows :data:`DEFAULT_LINE`.
+    """
+    refs = parse_qs(query)
+    if 'tag' in refs:
+        return None
+    rev = refs.get('rev', [''])[0]
+    if _FULL_SHA.fullmatch(rev.lower()):
+        return None
+    return refs.get('branch', [rev or DEFAULT_LINE])[0]
+
+
+def floated(lock: str) -> tuple[Floated, ...]:
+    """The packages lock text *lock* sources from git FOLLOWING a line (:func:`line_of`), in lock order.
+
+    An unreadable lock follows nothing.
     """
     try:
         packages = tomllib.loads(lock).get('package', [])
@@ -182,11 +198,9 @@ def floated(lock: str) -> tuple[Floated, ...]:
         if not isinstance(locator, str) or not isinstance(entry.get('name'), str):
             continue
         address, _, sha = locator.partition('#')
-        if _HELD_GIT.search(address):
-            continue
         url, _, query = address.partition('?')
-        branch = parse_qs(query).get('branch', [DEFAULT_LINE])[0]
-        found.append(Floated(_canon(entry['name']), url, unquote(branch), sha))
+        if (line := line_of(query)) is not None:
+            found.append(Floated(_canon(entry['name']), url, line, sha))
     return tuple(found)
 
 
