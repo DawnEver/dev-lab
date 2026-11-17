@@ -67,7 +67,7 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 ## STRAY-FILE-REFUSED
 
 - **Why it is refused.** A file somebody meant is staged; a program's artefact belongs in `output/`; a one-off script belongs in `scratch/`. An untracked, non-ignored file anywhere else is a file nobody claimed -- the 2026-10-20 vendor logs in the checkout root and the stray `uv.lock` (`dev_lab.dev.codeplace.stray_files`). It reports after each shell call and at Stop.
-- **The exit.** One per file, by its kind: a file under a code root was meant -- `git add` it; a script is a one-off -- move it to `scratch/<yy>/<mm>/<dd>/<kind>/`; anything else is a program's data -- move it to `output/logs/<yy>/<mm>/<dd>/<kind>/` and make the program write there (a vendor tool writes into its cwd: give it a cwd under `output/`).
+- **The exit.** One per file, by its kind: a file a known retirement declares gone (`codeplace.RETIRED_FILES`: a stale `.claude/rules/MEMORY.md`, rem's retired generated index, at any depth) is deleted through the door it names -- rem's migration -- and never staged; a file under a code root was meant -- `git add` it; a script is a one-off -- move it to `scratch/<yy>/<mm>/<dd>/<kind>/`; anything else is a program's data -- move it to `output/logs/<yy>/<mm>/<dd>/<kind>/` and make the program write there (a vendor tool writes into its cwd: give it a cwd under `output/`).
 
 ## WRITES-STAY-IN-THE-TREE
 
