@@ -1,21 +1,17 @@
-"""A TRACKED render moves only in a linked worktree, under the checkout's OWN kit -- the one rule, two doors.
+"""A TRACKED RENDER IS THE CHECKOUT'S OWN KIT'S, AND NEVER A MAIN CHECKOUT'S (toolchain O14, 2026-11-17).
 
-THE INCIDENTS, 2026-11-17 (toolchain O14, O18). A consumer's MAIN checkout held hook files differing from HEAD:
+THE INCIDENT. A consumer's MAIN checkout held a ``deny-commands.js`` and a ``settings.json`` differing from HEAD:
 ``agent_guard --install`` ran there from a dev-lab its lock does not pin, and the dirt made the fast-forward
-refresh refuse the checkout until it was 180 commits behind. ``famfiles.render_repo`` -- the door that drives
-every family renderer -- wrote tracked files with no check at all, so the same dirt had a second door.
+refresh refuse the checkout until it was 180 commits behind.
 
-THE RULE. A write that would leave a TRACKED file differing from the index happens only when the rendering
-:class:`Kit` is the checkout's own -- its package IS the checkout's ``src/dev_lab`` (dev-lab itself), or it was
-installed from the commit the checkout's ``uv.lock`` pins -- AND the checkout is a linked worktree. A main
-checkout has one editor and moves only by fast-forward, so even its own kit's render belongs in a lane commit.
-The relock flow (a lane re-rendering under its NEW venv, then committing) is exactly what the rule lets through.
-An unchanged render, an untracked or ignored output and a checkout outside git are never refused.
-
-TWO SHAPES OF ONE CHECK. :func:`tracked_dirt` judges PLANNED bytes before anything is written (the install knows
-its bytes); :func:`guarded` judges renderers that are subprocesses and write for themselves: it snapshots the
-tracked files already dirty, renders, and when the rule refuses it puts every moved tracked file back -- so a
-refused render leaves nothing tracked behind -- and raises :class:`RenderRefused` naming files, cause and door.
+THE TENSION. The same install is how a LANE re-renders those files after a relock and commits them, so the rule
+is not "never write tracked files". It is: a write that would leave a TRACKED file differing from the index
+(:func:`tracked_dirt`, git's own ``hash-object --path`` so eol rules and clean filters count as git counts them)
+happens only when the running :class:`Kit` is the checkout's own -- its package IS the checkout's ``src/dev_lab``
+(dev-lab itself), or it was installed from the commit the checkout's ``uv.lock`` pins -- AND the checkout is a
+linked worktree. A main checkout has one editor and moves only by fast-forward, so even its own kit's render
+belongs in a lane commit. :func:`check_render` raises :class:`RenderRefused` naming the files, the cause and the
+door; an untracked or ignored write and a checkout outside git are not judged, which keeps a first adoption open.
 """
 
 from __future__ import annotations
@@ -27,6 +23,7 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.agent_wiring import REINSTALL_COMMAND
 from dev_lab.dev.backgroundrun import main_checkout
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.lockpins import installed_git, locked_git, sync_door
@@ -34,25 +31,30 @@ from dev_lab.dev.lockpins import installed_git, locked_git, sync_door
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-__all__ = ['Kit', 'RenderRefused', 'guarded', 'interpreter_kit', 'refusal', 'running_kit', 'tracked_dirt']
+__all__ = [
+    'Kit',
+    'RenderRefused',
+    'check_render',
+    'guard_render',
+    'interpreter_kit',
+    'refusal',
+    'running_kit',
+    'tracked_dirt',
+]
 
 #: The distribution whose kit renders these files, as :mod:`dev_lab.dev.lockpins` names packages.
 _KIT_DIST: Final = 'dev-lab'
 _GIT: Final = shutil.which('git') or 'git'
 #: Run under another interpreter: its dev_lab package directory, then its PEP 610 git commit ('' if none).
-_PROBE: Final = 'from dev_lab.dev.rendergate import running_kit as k; r = k(); print(r.package); print(r.commit)'
+_PROBE: Final = 'from dev_lab.dev.trackedrender import running_kit as k; r = k(); print(r.package); print(r.commit)'
 
 
 @dataclass(frozen=True, slots=True)
 class Kit:
-    """The dev-lab a render runs from: its package directory, and the git commit it was installed at ('' if none)."""
+    """The dev-lab an install runs from: its package directory, and the git commit it was installed at ('' if none)."""
 
     package: Path
     commit: str
-
-
-class RenderRefused(ValueError):
-    """A tracked file would move in a main checkout or under a kit not the checkout's own; nothing tracked moved."""
 
 
 def running_kit() -> Kit:
@@ -71,6 +73,10 @@ def interpreter_kit(python: str) -> Kit:
         return Kit(Path(python), '')
     lines = done.stdout.splitlines() if done.returncode == 0 else []
     return Kit(Path(lines[0]), lines[1] if len(lines) > 1 else '') if lines else Kit(Path(python), '')
+
+
+class RenderRefused(RuntimeError):
+    """A tracked file would move in a main checkout or under a kit not the checkout's own; nothing was written."""
 
 
 def _blob(repo: Path, rel: str, data: bytes) -> str:
@@ -107,10 +113,10 @@ def _foreign(repo: Path, kit: Kit) -> str | None:
     return f'the running kit is not its own: {running}, {pinned}'
 
 
-def refusal(repo: Path, dirt: tuple[str, ...], kit: Kit, command: str) -> str | None:
+def refusal(repo: Path, dirt: tuple[str, ...], kit: Kit, command: str = REINSTALL_COMMAND) -> str | None:
     """The refusal for moving *dirt* in *repo* under *kit*; ``None`` when nothing tracked moves or both rules pass.
 
-    *command* is the render the door names: run it in a lane, or under the checkout's own interpreter.
+    *command* is the render its door names (default: the guard install).
     """
     if not dirt:
         return None
@@ -125,15 +131,28 @@ def refusal(repo: Path, dirt: tuple[str, ...], kit: Kit, command: str) -> str | 
         )
     else:
         door = (
-            f"run the render under this checkout's own interpreter ({command}) once "
+            f"run the install under this checkout's own interpreter ({command}) once "
             f'`{sync_door(repo)} {repo}` has made its venv follow its uv.lock; to move the render to another '
             'dev-lab, relock this lane and commit the render with the lock'
         )
     cause = f'; {foreign}' if foreign else ''
     return (
         f'writing would leave {", ".join(dirt)} differing from what {repo} committed{cause} -- dirt its '
-        f'fast-forward refresh refuses. Nothing tracked was written. Door: {door}.'
+        f'fast-forward refresh refuses. Nothing was written. Door: {door}.'
     )
+
+
+def check_render(
+    repo: Path, writes: dict[Path, bytes], *, kit: Kit | None = None, command: str = REINSTALL_COMMAND
+) -> None:
+    """Raise :class:`RenderRefused` when *writes* would move a tracked file of *repo* that *kit* may not move.
+
+    *kit* defaults to :func:`running_kit`; *command* is the render its door names.
+    Writing is the caller's, and only after this returns.
+    """
+    refused = refusal(repo, tracked_dirt(repo, writes), running_kit() if kit is None else kit, command)
+    if refused is not None:
+        raise RenderRefused(refused)
 
 
 def _modified(repo: Path) -> set[str] | None:
@@ -146,12 +165,12 @@ def _read(path: Path) -> bytes | None:
     return path.read_bytes() if path.is_file() else None
 
 
-def guarded[T](repo: Path, render: Callable[[], T], kit: Callable[[], Kit], command: str) -> T:
-    """*render()* in *repo*, kept only if every TRACKED file it moved may move (:func:`refusal`).
+def guard_render[T](repo: Path, render: Callable[[], T], kit: Callable[[], Kit], command: str) -> T:
+    """*render()* -- renderers that write for themselves -- kept only where :func:`check_render` passes its moves.
 
-    *kit* is asked only when a tracked file moved. A refused render's tracked files are put back as they were
-    -- a file clean before returns to the index, one dirty before to its own bytes -- and :class:`RenderRefused`
-    is raised; a renderer's own failure is judged the same way first, then re-raised.
+    The tracked files already dirty are snapshotted first; after the render (or its failure) every tracked file it
+    moved is judged as a write of its current bytes, *kit* asked only then. A refused render is put back -- a file
+    clean before returns to the index, one dirty before to its own bytes -- and :class:`RenderRefused` is raised.
     """
     dirty = _modified(repo)
     if dirty is None:
@@ -162,12 +181,13 @@ def guarded[T](repo: Path, render: Callable[[], T], kit: Callable[[], Kit], comm
     finally:
         after = _modified(repo) or set()
         moved = sorted((after - set(before)) | {rel for rel, data in before.items() if _read(repo / rel) != data})
-        why = refusal(repo, tuple(moved), kit(), command) if moved else None
-        if why is not None:
-            clean = [rel for rel in moved if rel not in before]
-            if clean:
+        try:
+            if moved:
+                check_render(repo, {repo / rel: _read(repo / rel) or b'' for rel in moved}, kit=kit(), command=command)
+        except RenderRefused:
+            if clean := [rel for rel in moved if rel not in before]:
                 git_out(repo, 'checkout', '--', *clean)
             for rel in moved:
-                if rel in before and (data := before[rel]) is not None:
+                if (data := before.get(rel)) is not None:
                     (repo / rel).write_bytes(data)
-            raise RenderRefused(why)
+            raise

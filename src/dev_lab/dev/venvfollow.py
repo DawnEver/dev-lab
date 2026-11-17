@@ -20,7 +20,9 @@ detaches when any of the three is due.
 
 THE BEHIND NOTICE (``--session-start`` too, :func:`behind_notice`): one line when the trunk checkout's HEAD is
 behind its LAST-FETCHED ``origin/<trunk>``, or the venv's git-installed dev-lab is not the commit that ref's
-``uv.lock`` pins -- naming the update door. No network, no install, no prune: a few local git reads. The machine
+``uv.lock`` pins. A behind HEAD names what the follow does about it, or what stops it
+(:func:`dev_lab.dev.checkoutfollow.obstacle`) -- never a ``git pull`` for a person; a venv-only lag names its sync
+door. No network, no install, no prune: a few local git reads. The machine
 file's notice is devhost's own once-per-session row (``devhost session-start``), never repeated here.
 
 :func:`follow` skips while a run lives in the checkout or executes from its venv (TREE-HAS-A-LIVE-RUN,
@@ -188,8 +190,15 @@ def behind_notice(root: Path, *, installed: Iterable[Installed] | None = None) -
         lags.append(f'venv {FAMILY_KIT} {kit[:10]} is not {pinned[:10]}, the pin in {authority}')
     if not lags:
         return None
+    if branch == trunk and behind:
+        why = checkoutfollow.obstacle(root)
+        return f'BEHIND: {"; ".join(lags)}. ' + (
+            f'The follow leaves it: {why}.'
+            if why
+            else 'The follow fast-forwards it and syncs its venv in the background.'
+        )
     door = sync_door(root).replace('<venv python>', str(venv_python(root)))
-    return f'BEHIND: {"; ".join(lags)}. Update: git pull --ff-only, then {door} {root}'
+    return f'BEHIND: {"; ".join(lags)}. Sync it: {door} {root}'
 
 
 def toplevel(cwd: Path) -> Path | None:

@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.checkoutfollow import holders
 from dev_lab.dev.hpcaccount.steps import Step
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.venvfollow import stale, stamp
@@ -51,11 +52,13 @@ class Moved:
     why: str = ''
 
 
-def follow(step: Step, git: Sequence[str], checkout: Path) -> Moved:
-    """Fast-forward an existing CLEAN *checkout* to its upstream; a dirty one is refused, never touched."""
+def follow(step: Step, git: Sequence[str], checkout: Path, *, busy: Callable[[Path], str] = holders) -> Moved:
+    """Fast-forward a CLEAN, IDLE *checkout* to its upstream; a dirty or live one is refused, never touched."""
     here = [*git, '-C', str(checkout)]
     if read([*here, 'status', '--porcelain']).stdout.strip():
         return Moved(2, why=f'{checkout} has local changes; commit or clean them, then re-run')
+    if runs := busy(checkout):
+        return Moved(2, why=f'{checkout} is left where it is: a live run reads it ({runs}); it follows after the run')
     if step.dry:
         return Moved(step.change(f'{checkout.name}: git fetch, then fast-forward to its upstream when behind', []))
     return _fast_forward(step, here, checkout.name)

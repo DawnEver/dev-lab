@@ -20,6 +20,7 @@ from dev_lab.dev import planrunpreflight, sshhold
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.ops.consent import __main__ as consent_main
 from dev_lab.ops.consent import serve
+from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.client import grant
 from dev_lab.ops.consent.credential import FIELDS, ConsentRefused, public_text
 from dev_lab.ops.consent.door import (
@@ -116,6 +117,23 @@ def test_a_plan_is_offered_only_after_a_fresh_green_preflight(issuer: Issuer, tm
     assert wire.sent == []  # refused before the issuer was even asked
     offer(PLAN, {}, send=wire, home=tmp_path, now=NOW + 1)
     assert wire.sent == ['hello']
+
+
+def test_an_action_no_registry_holds_is_named_unregistered_not_an_old_client(issuer: Issuer, tmp_path: Path) -> None:
+    """O17: a plan carries no dev-lab version, so 'older than the plan' was a guess that blamed the wrong cause.
+
+    PLANTED CONTROL: the same plan with only registered actions is offered.
+    """
+    stray = parsed({'hosts': [HOST], 'grants': [{'host': HOST, 'action': 'hpcaccount.deploy', 'subject': 'a' * 64}]})
+    record_preflight(stray, home=tmp_path, now=NOW)
+    with pytest.raises(ConsentRefused) as refused:
+        offer(stray, {}, send=Wire(issuer), home=tmp_path, now=NOW + 1)
+    text = str(refused.value)
+    assert "['hpcaccount.deploy'] not a consent action; the registered ones are" in text
+    assert all(action in text for action in ACTIONS)
+    assert 'older than the plan' not in text
+    record_preflight(PLAN, home=tmp_path, now=NOW)
+    offer(PLAN, {}, send=Wire(issuer), home=tmp_path, now=NOW + 1)
 
 
 def test_consent_plan_shows_the_plan_and_offers_it_only_when_the_door_passes(

@@ -28,17 +28,9 @@ shared checkout is a mutation another party learns about by accident, and it wou
 and unrelated hooks in the Bash matcher are preserved, and an engine file that is somebody ELSE's
 (no stamp) refuses rather than being overwritten.
 
-A TRACKED RENDER IS THE CHECKOUT'S OWN KIT'S, AND NEVER A MAIN CHECKOUT'S (toolchain O14, 2026-11-17). A
-consumer's MAIN checkout held a ``deny-commands.js`` and a ``settings.json`` differing from HEAD: the install
-ran there from a dev-lab its lock does not pin, and the dirt made the fast-forward refresh refuse the checkout
-until it was 180 commits behind. The same install is how a LANE re-renders those files after a relock and
-commits them, so the rule is not "never write tracked files". It is: a write that would leave a TRACKED file
-differing from the index happens only when the running :class:`Kit` is the checkout's own -- its package IS
-the checkout's ``src/dev_lab`` (dev-lab itself), or it was installed from the commit the checkout's
-``uv.lock`` pins -- AND the checkout is a linked worktree. A main checkout has one editor and moves only by
-fast-forward, so even its own kit's render belongs in a lane commit. A refused install writes NOTHING
-(:class:`RenderRefused` names the files, the cause and the door); an untracked or ignored write and a
-checkout outside git are not judged, which keeps a repo's first adoption open.
+A TRACKED RENDER IS THE CHECKOUT'S OWN KIT'S, AND NEVER A MAIN CHECKOUT'S (toolchain O14): the install plans
+every write first and :func:`dev_lab.dev.trackedrender.check_render` decides whether the tracked ones may
+move; a refused install writes NOTHING.
 """
 
 from __future__ import annotations
@@ -57,7 +49,6 @@ from dev_lab.dev.agent_wiring import (
     ENGINE_REL,
     HOOK_COMMAND,
     LAUNCHER_REL,
-    REINSTALL_COMMAND,
     RULES_REL,
     SETTINGS_REL,
     SHELL_TOOLS,
@@ -67,8 +58,7 @@ from dev_lab.dev.agent_wiring import (
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
 from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
-from dev_lab.dev.rendergate import Kit, RenderRefused, running_kit, tracked_dirt
-from dev_lab.dev.rendergate import refusal as render_refusal
+from dev_lab.dev.trackedrender import Kit, RenderRefused, check_render
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -431,7 +421,8 @@ def install_guard(repo: Path, *, force: bool = False, kit: Kit | None = None) ->
     rules whose exits do not exist in the tree reading them -- the sealed-road failure the registry
     was built to prevent.
 
-    *kit* is the dev-lab rendering (default :func:`running_kit`); it decides whether a TRACKED file may move.
+    *kit* is the dev-lab rendering (default: the running one); :func:`~dev_lab.dev.trackedrender.check_render`
+    decides with it whether a TRACKED file may move.
 
     Raises:
         FileExistsError: when an engine file is present that lab-commons did not ship. Overwriting
@@ -443,9 +434,7 @@ def install_guard(repo: Path, *, force: bool = False, kit: Kit | None = None) ->
     """
     declared(repo)  # a refused declaration refuses the install before any file is written
     writes, actions = _planned(repo, force=force)
-    refusal = render_refusal(repo, tracked_dirt(repo, writes), kit or running_kit(), REINSTALL_COMMAND)
-    if refusal is not None:
-        raise RenderRefused(refusal)
+    check_render(repo, writes, kit=kit)
     for path, data in writes.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)

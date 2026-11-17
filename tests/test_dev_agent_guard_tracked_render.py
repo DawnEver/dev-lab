@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import agent_guard, agent_wiring, rendergate
+from dev_lab.dev import agent_guard, agent_wiring, trackedrender
 
 _GIT = shutil.which('git') or 'git'
 #: The tracked files an older kit rendered differently from the running one.
@@ -73,9 +73,9 @@ def _changed(root: Path) -> set[str]:
     return {line[3:] for line in _git(root, 'status', '--porcelain').splitlines()}
 
 
-def _kit(tmp_path: Path, commit: str) -> rendergate.Kit:
+def _kit(tmp_path: Path, commit: str) -> trackedrender.Kit:
     """A kit installed from git at *commit*, its package outside every planted checkout."""
-    return rendergate.Kit(package=tmp_path / 'site-packages' / 'dev_lab', commit=commit)
+    return trackedrender.Kit(package=tmp_path / 'site-packages' / 'dev_lab', commit=commit)
 
 
 def test_a_foreign_kit_leaves_the_main_checkout_clean_and_names_the_door(
@@ -83,7 +83,7 @@ def test_a_foreign_kit_leaves_the_main_checkout_clean_and_names_the_door(
 ) -> None:
     """PLANTED, the incident itself: kit a..., lock pins b..., on a MAIN checkout -- refused, nothing written."""
     main = _committed_older_render(tmp_path / 'consumer', pin='b' * 40)
-    monkeypatch.setattr(agent_guard, 'running_kit', lambda: _kit(tmp_path, 'a' * 40))
+    monkeypatch.setattr(trackedrender, 'running_kit', lambda: _kit(tmp_path, 'a' * 40))
     assert agent_guard.report_guard(['--install', '--repo', str(main)]) == 1
     assert _git(main, 'status', '--porcelain') == '', 'the refused install dirtied the checkout'
     out = capsys.readouterr().out
@@ -98,7 +98,7 @@ def test_a_foreign_kit_leaves_the_main_checkout_clean_and_names_the_door(
 def test_a_foreign_kit_writes_nothing_tracked_in_a_lane(tmp_path: Path) -> None:
     """PLANTED, the kit rule alone: a linked worktree, kit a..., lock pins b... -- refused naming the sync door."""
     lane = _lane(_committed_older_render(tmp_path / 'consumer', pin='b' * 40), 'stale-lane')
-    with pytest.raises(rendergate.RenderRefused) as refused:
+    with pytest.raises(trackedrender.RenderRefused) as refused:
         agent_guard.install_guard(lane, kit=_kit(tmp_path, 'a' * 40))
     assert _git(lane, 'status', '--porcelain') == ''
     message = str(refused.value)
@@ -120,7 +120,7 @@ def test_control_a_lane_whose_relocked_lock_pins_the_running_kit_receives_the_re
 def test_the_main_checkout_receives_no_tracked_render_even_from_its_own_kit(tmp_path: Path) -> None:
     """PLANTED, the main-checkout rule alone: the lock pins the running kit, and main still is not written."""
     main = _committed_older_render(tmp_path / 'consumer', pin='c' * 40)
-    with pytest.raises(rendergate.RenderRefused) as refused:
+    with pytest.raises(trackedrender.RenderRefused) as refused:
         agent_guard.install_guard(main, kit=_kit(tmp_path, 'c' * 40))
     assert _git(main, 'status', '--porcelain') == ''
     message = str(refused.value)
@@ -147,16 +147,16 @@ def test_dev_lab_running_its_own_source_is_its_own_kit(tmp_path: Path) -> None:
     _git(main, 'rm', '-q', 'uv.lock')
     _git(main, 'commit', '-q', '-m', 'dev-lab locks no dev-lab')
     lane = _lane(main, 'own-source')
-    elsewhere = rendergate.Kit(package=tmp_path / 'elsewhere' / 'src' / 'dev_lab', commit='')
-    with pytest.raises(rendergate.RenderRefused, match='installed from no git commit'):
+    elsewhere = trackedrender.Kit(package=tmp_path / 'elsewhere' / 'src' / 'dev_lab', commit='')
+    with pytest.raises(trackedrender.RenderRefused, match='installed from no git commit'):
         agent_guard.install_guard(lane, kit=elsewhere)
     assert _git(lane, 'status', '--porcelain') == ''
-    agent_guard.install_guard(lane, kit=rendergate.Kit(package=lane / 'src' / 'dev_lab', commit=''))
+    agent_guard.install_guard(lane, kit=trackedrender.Kit(package=lane / 'src' / 'dev_lab', commit=''))
     assert _changed(lane) == _RENDERED
 
 
 def test_the_running_kit_is_this_package() -> None:
     """:func:`running_kit` names the package this module was imported from, so the source rule reads the truth."""
-    kit = rendergate.running_kit()
-    assert kit.package == Path(rendergate.__file__).resolve().parent.parent
+    kit = trackedrender.running_kit()
+    assert kit.package == Path(trackedrender.__file__).resolve().parent.parent
     assert isinstance(kit.commit, str), 'the git commit it was installed at, or empty when none'

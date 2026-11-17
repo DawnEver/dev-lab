@@ -2,7 +2,7 @@
 
 THE GAP, 2026-11-17: ``famfiles.render_repo`` drives every family renderer and wrote tracked files with no check, so
 a MAIN checkout rendered from a kit its lock does not pin was left dirty and its fast-forward refresh stopped. The
-rule is :mod:`dev_lab.dev.rendergate`'s, applied ONCE at the door, not per renderer. Each refusal is planted beside
+rule is :mod:`dev_lab.dev.trackedrender`'s, applied ONCE at the door, not per renderer. Each refusal is planted beside
 the control it must not break: the relock lane that must still render, the unchanged render that is silent.
 """
 
@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import famfiles, rendergate
+from dev_lab.dev import famfiles, trackedrender
 
 _GIT = shutil.which('git') or 'git'
 _TRACKED = 'rendered.txt'
@@ -48,7 +49,7 @@ def _main(tmp_path: Path, *, pin: str) -> Path:
     return root
 
 
-def _writes(text: str):  # noqa: ANN202 -- a test renderer
+def _writes(text: str) -> Callable[[list[str], Path], int]:
     def run(_argv: list[str], root: Path) -> int:
         (root / _TRACKED).write_text(text, encoding='utf-8')
         (root / _UNTRACKED).write_text('any\n', encoding='utf-8')
@@ -57,14 +58,14 @@ def _writes(text: str):  # noqa: ANN202 -- a test renderer
     return run
 
 
-def _kit(tmp_path: Path, commit: str) -> rendergate.Kit:
-    return rendergate.Kit(package=tmp_path / 'site-packages' / 'dev_lab', commit=commit)
+def _kit(tmp_path: Path, commit: str) -> trackedrender.Kit:
+    return trackedrender.Kit(package=tmp_path / 'site-packages' / 'dev_lab', commit=commit)
 
 
 def test_a_main_checkout_under_a_foreign_kit_keeps_nothing_tracked_and_names_the_door(tmp_path: Path) -> None:
     """PLANTED, the incident: kit a..., lock pins b..., MAIN checkout -- the render is put back and refused."""
     main = _main(tmp_path, pin='b' * 40)
-    with pytest.raises(rendergate.RenderRefused) as refused:
+    with pytest.raises(trackedrender.RenderRefused) as refused:
         famfiles.render_repo(main, 'py', _writes('new render\n'), kit=_kit(tmp_path, 'a' * 40))
     assert _git(main, 'status', '--porcelain') == '', 'the refused render left tracked dirt'
     assert (main / _UNTRACKED).is_file(), 'an ignored output is not judged'
@@ -78,7 +79,7 @@ def test_a_main_checkout_keeps_its_own_dirt_when_a_render_is_refused(tmp_path: P
     """A tracked file the user had already edited returns to THEIR bytes, not to the index."""
     main = _main(tmp_path, pin='b' * 40)
     (main / _TRACKED).write_text('hand edit\n', encoding='utf-8')
-    with pytest.raises(rendergate.RenderRefused):
+    with pytest.raises(trackedrender.RenderRefused):
         famfiles.render_repo(main, 'py', _writes('new render\n'), kit=_kit(tmp_path, 'a' * 40))
     assert (main / _TRACKED).read_text(encoding='utf-8') == 'hand edit\n'
 
@@ -105,5 +106,5 @@ def test_control_an_unchanged_render_is_silent_even_on_main_under_a_foreign_kit(
 
 def test_an_interpreter_that_cannot_name_its_kit_is_never_trusted(tmp_path: Path) -> None:
     """A *python* that cannot answer the probe is a kit from no commit, so the rule refuses rather than guesses."""
-    kit = rendergate.interpreter_kit(str(tmp_path / 'no-such-python'))
+    kit = trackedrender.interpreter_kit(str(tmp_path / 'no-such-python'))
     assert kit.commit == ''

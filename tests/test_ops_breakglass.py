@@ -23,6 +23,7 @@ from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 from dev_lab.dev.breakglass import reason
 from dev_lab.dev.failprint import Fingerprints
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
 from dev_lab.dev.reviewgate import DeclarationUnread
@@ -768,22 +769,32 @@ _ALARM = 'tests/test_arch_module_size_alarm.py::test_the_debt_is_exactly_the_mod
 
 
 @pytest.mark.parametrize(
-    ('head', 'merges'),
-    [({'a.py', 'b.py'}, False), ({'a.py'}, True), (set(), True)],
-    ids=['a-new-subject-is-refused', 'the-same-subjects-merge', 'a-gone-subject-merges'],
+    'head', [{'a.py', 'b.py'}, {'a.py'}, set()], ids=['new-subject', 'same-subjects', 'gone-subject']
 )
-def test_a_red_the_base_carries_merges_only_without_a_new_subject(host: Host, head: set[str], *, merges: bool) -> None:
-    """D13, PLANTED: the base's alarm names a.py; a head naming b.py too under the same red is refused, naming b.py."""
+def test_a_red_the_base_carries_merges_and_records_only_its_new_subjects(host: Host, head: set[str]) -> None:
+    """D13/D18, PLANTED: the base's alarm names a.py; under the wave a head naming b.py too merges, b.py ON RECORD."""
     host.forge.posted = [GREEN[1], CommitStatus('tests/base', 'failure', 'VERDICT result=fail', '')]
     host.forge.prints = {
         HEAD: {'tests/base': {_ALARM: frozenset(head)}},
         'integrate/main': {'tests/base': {_ALARM: frozenset({'a.py'})}},
     }
     host.open()
-    if merges:
-        assert 'merged red (tests/base)' in host.merge()
+    assert 'merged red (tests/base)' in host.merge()
+    [tests] = [line['tests'] for line in _merged_lines(host)]
+    if 'b.py' not in head:
+        assert 'new failure subjects' not in str(tests)
         return
-    with pytest.raises(BreakglassRefused, match=r'new failure subjects .*b\.py') as refused:
-        host.merge()
-    assert 'a.py' not in str(refused.value).split('(', 1)[1].split(')')[0], 'only the NEW subject is named'
-    assert not [call for call in host.forge.calls if call[0] == 'merge']
+    recorded = str(tests).split('new failure subjects', 1)[1].split(')')[0]
+    assert 'b.py' in recorded, 'the new subject is recorded by name'
+    assert 'a.py' not in recorded, 'only the NEW subject is named'
+    assert any('b.py' in body for body in _comments(host))
+
+
+def test_with_no_wave_the_merge_check_still_refuses_the_new_subject() -> None:
+    """D18 CONTROL: outside break-glass the same new subject is the merge check's refusal, naming it."""
+    statuses = [CommitStatus('tests/base', 'failure', 'VERDICT result=fail', '')]
+    prints = {HEAD: {'tests/base': {_ALARM: frozenset({'a.py', 'b.py'})}},
+              'integrate/main': {'tests/base': {_ALARM: frozenset({'a.py'})}}}  # fmt: skip
+    why = hidden_reds(prints.__getitem__, HEAD, 'integrate/main', statuses)
+    assert why is not None
+    assert 'b.py' in why

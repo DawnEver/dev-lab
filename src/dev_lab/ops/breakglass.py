@@ -28,10 +28,11 @@ One request is one JSON line with an ``action``:
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
-  declared integration branch, or whose head is not the one shown, or whose reds name a failure subject the base's
-  same red does not (:mod:`dev_lab.dev.failprint`, finding D13) -- otherwise NEVER for its tests (user ruling
-  2026-11-11: the wave waives them too): unrun, pending or red, it merges, and its test state at merge time
-  (:func:`tests_at`) is named in the comment, the audit line and the wave's summary; then comment, merge at that
+  declared integration branch, or whose head is not the one shown -- NEVER for its tests (user ruling 2026-11-11: the
+  wave waives them too): unrun, pending or red, it merges, and its test state at merge time (:func:`tests_at`) is
+  named in the comment, the audit line and the wave's summary. A red naming a failure subject the base's same red
+  does not (:mod:`dev_lab.dev.failprint`, finding D13) is admitted ON RECORD too (user ruling D18, 2026-11-17): the
+  new subjects join that test state by name; then comment, merge at that
   head with a
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
   owes), audit ``(repo, pr, head, reason)`` under the id of the consent credential that opened the wave -- the
@@ -377,10 +378,9 @@ class Server:
             raise BreakglassRefused(msg)
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
         forge, integration = self._admit(asked)
-        if (hidden := hidden_reds(forge.fingerprints, head, integration, posted := forge.statuses(head))) is not None:
-            raise BreakglassRefused(hidden)
+        hidden = hidden_reds(forge.fingerprints, head, integration, posted := forge.statuses(head))
         producer = producer_from(forge.declaration(integration), f'{repo}@{integration}:pyproject.toml')
-        tests = tests_at(posted, head, producer=producer)
+        tests = tests_at(posted, head, producer=producer) + (f'; {hidden}' if hidden else '')  # D18: on record
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
                           f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
         forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))
