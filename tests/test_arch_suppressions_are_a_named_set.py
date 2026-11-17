@@ -42,6 +42,8 @@ from typing import Final
 
 from _arch_corpus import ROOT, SOURCE_FLOOR, TEST_FLOOR, assert_floor, rel, source_modules, suite_modules
 
+from dev_lab.dev.failprint import subject_lines, subjects_of
+
 #: A suppression site: ``(repo-relative path, rule code, anchor)``. The anchor is the suppressed
 #: source text with the comment stripped, or -- for a whole-line comment and for a ``pyproject.toml``
 #: per-file ignore -- the comment text and the file glob respectively.
@@ -79,6 +81,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'ANN401',
         'def _get(self, path: str) -> Any:',
     ): "the fake's GET router returns each endpoint's parsed JSON, whose shape is the route",
+    (
+        'tests/test_dev_failprint.py',
+        'arg-type',
+        'return lambda ref: fingerprints_at(_Forge(subjects), ref)',
+    ): 'a _Forge stands in for the Client fingerprints_at takes: a test double, not a subclass the type checker sees',
     (
         'tests/test_dev_forgereview_bundle.py',
         'arg-type',
@@ -582,6 +589,11 @@ def undeclared_and_orphaned(sites: tuple[Site, ...], declared: dict[Site, str]) 
     return tuple(problems)
 
 
+def subjects(sites: tuple[Site, ...], declared: dict[Site, str]) -> set[Site]:
+    """The suppression tuples the ratchet's red names: undeclared, orphaned and reasonless."""
+    return set(sites) ^ set(declared) | {site for site, why in declared.items() if not why.strip()}
+
+
 def _name(path: Path) -> str:
     try:
         return rel(path)
@@ -596,7 +608,9 @@ def test_every_suppression_is_declared_and_every_declaration_is_used() -> None:
     assert_floor(len(suite), TEST_FLOOR, 'suppression (tests)')
     sites = python_sites(source + suite) + pyproject_sites(ROOT / 'pyproject.toml')
     problems = undeclared_and_orphaned(sites, ALLOWED)
-    assert problems == (), 'the suppression ratchet moved:\n  ' + '\n  '.join(problems)
+    assert problems == (), (
+        'the suppression ratchet moved:\n  ' + '\n  '.join(problems) + '\n' + subject_lines(subjects(sites, ALLOWED))
+    )
 
 
 def test_a_planted_suppression_and_a_planted_orphan_are_refused(tmp_path: Path) -> None:
@@ -636,3 +650,14 @@ def test_a_planted_per_file_ignore_and_a_planted_bare_marker_are_seen(tmp_path: 
     )
     codes = {code for _, code, _ in python_sites((bare,))}
     assert codes == {'type-ignore:ALL', 'no-cover'}, codes
+
+
+def test_the_suppression_red_names_each_moved_tuple_as_a_subject() -> None:
+    """THE PLANTED CONTROL for the fingerprint: undeclared, orphaned and reasonless tuples are each a subject."""
+    new, gone, bare, kept = ('a.py', 'F401', 'x'), ('b.py', 'E501', 'y'), ('c.py', 'S101', 'z'), ('d.py', 'D1', 'w')
+    assert subjects_of(subject_lines(subjects((new, bare, kept), {gone: 'r', bare: ' ', kept: 'r'}))) == {
+        str(new),
+        str(gone),
+        str(bare),
+    }
+    assert subjects((kept,), {kept: 'r'}) == set()

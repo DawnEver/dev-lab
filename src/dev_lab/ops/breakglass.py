@@ -28,9 +28,11 @@ One request is one JSON line with an ``action``:
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
-  declared integration branch, or whose head is not the one shown -- NEVER for its tests (user ruling 2026-11-11: the
-  wave waives them too): unrun, pending or red, it merges, and its test state at merge time (:func:`tests_at`) is
-  named in the comment, the audit line and the wave's summary; then comment, merge at that head with a
+  declared integration branch, or whose head is not the one shown, or whose reds name a failure subject the base's
+  same red does not (:mod:`dev_lab.dev.failprint`, finding D13) -- otherwise NEVER for its tests (user ruling
+  2026-11-11: the wave waives them too): unrun, pending or red, it merges, and its test state at merge time
+  (:func:`tests_at`) is named in the comment, the audit line and the wave's summary; then comment, merge at that
+  head with a
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
   owes), audit ``(repo, pr, head, reason)`` under the id of the consent credential that opened the wave -- the
   wave's one grant has no subject, so each use is tied to it here; the merge that reaches the cap ends the wave;
@@ -51,6 +53,7 @@ import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -58,13 +61,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.log import emit
 
 from dev_lab.dev.breakglass import BREAK_GLASS
+from dev_lab.dev.failprint import Fingerprints
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgepulls import pr_list
-from dev_lab.dev.forgestatus import CommitStatus, status_list
+from dev_lab.dev.forgestatus import CommitStatus, fingerprints_at, status_list
 from dev_lab.dev.forgework import Client, Transport, forge_transport
 from dev_lab.dev.producers import producer_from
 from dev_lab.dev.reviewgate import manifest_at
@@ -122,6 +127,9 @@ class Forge(Protocol):
         """Every open PR (:mod:`dev_lab.ops.wavesweep` lands the green ones of an open wave)."""
         ...
 
+    #: The failure fingerprints of a ref (a sha, or a branch's tip), read from its run records.
+    fingerprints: Callable[[str], Fingerprints]
+
     def labels(self, number: int) -> tuple[str, ...]:
         """The labels PR *number* carries now."""
         ...
@@ -141,6 +149,7 @@ class ClientForge:
     def __init__(self, url: str, token: str, *, transport: Transport = forge_transport) -> None:
         """Reach *url*'s repository through *transport* (the network by default)."""
         self._client = Client(forge_of_url(url), token, transport=transport)
+        self.fingerprints = partial(fingerprints_at, self._client)  # :func:`~dev_lab.dev.forgestatus.fingerprints_at`
 
     def declaration(self, ref: str) -> str:
         """The ``pyproject.toml`` at *ref*, as the forge holds it (:func:`dev_lab.dev.reviewgate.manifest_at`)."""
@@ -189,11 +198,9 @@ def tests_at(posted: Sequence[CommitStatus], head: str, *, producer: str) -> str
 
 def _merged(tests: str) -> str:
     """How a merge names its test state: ``merged``, ``merged red (<contexts>)`` or ``merged untested``."""
-    if tests == 'passed':
-        return 'merged'
     if tests.startswith('red: '):
         return f'merged red ({tests.removeprefix("red: ").split("; ")[0]})'
-    return 'merged untested'
+    return 'merged' if tests == 'passed' else 'merged untested'
 
 
 def _installation_token(url: str, app_id: int, key_file: Path) -> str:
@@ -365,14 +372,15 @@ class Server:
         return said
 
     def _merge(self, asked: requests.Merge) -> str:
-        held = self._current()
-        if held is None:
+        if (held := self._current()) is None:
             msg = 'no break-glass wave is open: the user opens one (forge breakglass open, with their code)'
             raise BreakglassRefused(msg)
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
         forge, integration = self._admit(asked)
+        if (hidden := hidden_reds(forge.fingerprints, head, integration, posted := forge.statuses(head))) is not None:
+            raise BreakglassRefused(hidden)
         producer = producer_from(forge.declaration(integration), f'{repo}@{integration}:pyproject.toml')
-        tests = tests_at(forge.statuses(head), head, producer=producer)
+        tests = tests_at(posted, head, producer=producer)
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
                           f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
         forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.failprint import subjects_of
 from dev_lab.dev.famtests.venvspelling import (
     SANCTIONED_SPELLERS,
     Spelling,
@@ -285,3 +286,13 @@ def test_a_comment_is_not_scanned_because_nobody_pastes_one_as_code() -> None:
     """Comments record the retirement; the replacement is named in ``venvpath``."""
     windows = venv_interpreter(os_name='nt')
     assert not spellings_in({'x.py': f'# it used to read {windows} here\nX = 1\n'})
+
+
+def test_the_spelling_red_names_each_site_as_a_subject() -> None:
+    """THE PLANTED CONTROL for the fingerprint: each convicted site is one subject line."""
+    files = {'a.py': "PY = '.venv/Scripts/python.exe'\nQ = '.venv/bin/python'\n"}
+    found = spellings_in(files, frozenset())
+    assert len(found) == 2, found
+    with pytest.raises(AssertionError) as red:
+        assert_only_the_resolver_spells_a_venv_interpreter(files=files, sanctioned=(), floor=1, what='planted')
+    assert subjects_of(str(red.value)) == {str(item) for item in found}

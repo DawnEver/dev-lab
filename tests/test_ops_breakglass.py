@@ -21,6 +21,7 @@ from _forge_fake import Loopback, Recorder, answer, serve
 from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 
 from dev_lab.dev.breakglass import reason
+from dev_lab.dev.failprint import Fingerprints
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
@@ -56,6 +57,8 @@ class FakeForge:
     #: Each PR's labels (none by default); a PR in ``unreadable`` plants a forge that cannot answer for them.
     labelled: dict[int, tuple[str, ...]] = field(default_factory=dict)
     unreadable: frozenset[int] = frozenset()
+    #: Each ref's failure fingerprints (none by default: a green head reads no record).
+    prints: dict[str, Fingerprints] = field(default_factory=dict)
 
     def labels(self, number: int) -> tuple[str, ...]:
         if number in self.unreadable:
@@ -75,6 +78,9 @@ class FakeForge:
     def statuses(self, head: str) -> list[CommitStatus]:
         del head
         return list(self.posted)
+
+    def fingerprints(self, ref: str) -> Fingerprints:
+        return self.prints.get(ref, {})
 
     def comment(self, number: int, body: str) -> None:
         self.calls.append(('comment', number, body))
@@ -756,3 +762,28 @@ def test_every_declared_test_green_merges_as_passed(host: Host) -> None:
     host.open()
     assert 'merged' in host.merge()
     assert [line['tests'] for line in _merged_lines(host)] == ['passed']
+
+
+_ALARM = 'tests/test_arch_module_size_alarm.py::test_the_debt_is_exactly_the_modules_that_are_over_the_band'
+
+
+@pytest.mark.parametrize(
+    ('head', 'merges'),
+    [({'a.py', 'b.py'}, False), ({'a.py'}, True), (set(), True)],
+    ids=['a-new-subject-is-refused', 'the-same-subjects-merge', 'a-gone-subject-merges'],
+)
+def test_a_red_the_base_carries_merges_only_without_a_new_subject(host: Host, head: set[str], *, merges: bool) -> None:
+    """D13, PLANTED: the base's alarm names a.py; a head naming b.py too under the same red is refused, naming b.py."""
+    host.forge.posted = [GREEN[1], CommitStatus('tests/base', 'failure', 'VERDICT result=fail', '')]
+    host.forge.prints = {
+        HEAD: {'tests/base': {_ALARM: frozenset(head)}},
+        'integrate/main': {'tests/base': {_ALARM: frozenset({'a.py'})}},
+    }
+    host.open()
+    if merges:
+        assert 'merged red (tests/base)' in host.merge()
+        return
+    with pytest.raises(BreakglassRefused, match=r'new failure subjects .*b\.py') as refused:
+        host.merge()
+    assert 'a.py' not in str(refused.value).split('(', 1)[1].split(')')[0], 'only the NEW subject is named'
+    assert not [call for call in host.forge.calls if call[0] == 'merge']
