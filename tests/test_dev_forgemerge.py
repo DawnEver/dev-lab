@@ -17,6 +17,7 @@ from _forge_state import StateForge
 from test_dev_githook_scripts import _plant_checker
 
 from dev_lab.dev import forgeintegration, forgemessages
+from dev_lab.dev.branchset import FAMILY_EPHEMERAL, BranchSet
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeintegration import Ticked, tick
 from dev_lab.dev.forgemerge import FORGE_PULL, Decision, decide, merge_message
@@ -31,6 +32,7 @@ from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
+_BRANCHSET = BranchSet('main', frozenset({'integrate/main', 'session/keep'}), ephemeral=FAMILY_EPHEMERAL)
 _MANIFEST = (
     "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
     "[tool.dev_lab.protection]\nproducer = 'hpc'\n"
@@ -258,7 +260,8 @@ def test_a_pr_whose_head_holds_an_undeclared_conflicted_merge_waits_naming_it(tm
 def test_the_merge_door_is_a_merge_commit_pinned_to_the_judged_head() -> None:
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha='a' * 40)
-    merge(forge, number, head='a' * 40, message=merge_message('pr/x', number, POLICY), delete_branch=True)
+    message = merge_message('pr/x', number, POLICY)
+    merge(forge, number, head='a' * 40, branch='pr/x', branchset=_BRANCHSET, message=message)
     ((merged, body),) = forge.merges
     assert merged == number
     assert body['Do'] == 'merge'
@@ -269,8 +272,8 @@ def test_the_merge_door_is_a_merge_commit_pinned_to_the_judged_head() -> None:
 
 def test_on_github_the_merge_door_puts_a_merge_commit_pinned_to_the_head() -> None:
     github = StateForge(Forge('github.com', 'o', 'r'))
-    number = github.add_pull('pr/x', 'integrate/main', sha='a' * 40)
-    merge(github, number, head='a' * 40, message='subject\n\nbody', delete_branch=False)
+    number = github.add_pull('session/keep', 'integrate/main', sha='a' * 40)
+    merge(github, number, head='a' * 40, branch='session/keep', branchset=_BRANCHSET, message='subject\n\nbody')
     assert github.merges == [
         (number, {'commit_title': 'subject', 'commit_message': 'body', 'sha': 'a' * 40, 'merge_method': 'merge'})
     ]

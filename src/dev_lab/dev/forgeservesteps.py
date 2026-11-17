@@ -18,6 +18,7 @@ from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, retention
 from dev_lab.dev.branchdelete import serve_sweep
+from dev_lab.dev.branchidle import serve_report
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.drift import step as drift_step
@@ -261,7 +262,8 @@ def repo_wide(
     """The repo-wide passes only the elected poller runs (:func:`dev_lab.dev.forgepoller.polls`).
 
     In order: open the continuations of landed branches (:mod:`dev_lab.dev.prcontinue`) -- before anything prunes a
-    branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
+    branch whose PR merged -- close the landed PRs, sweep, report the idle
+    unmerged PR heads (:mod:`dev_lab.dev.branchidle`), prune, prune the records, tidy, starve, prompt, relock,
     and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. The
     family watch is per machine, not here (:func:`family`). A repo that
     declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
@@ -272,6 +274,7 @@ def repo_wide(
     else:
         serve_close_landed(root, client(root), say=say, alarm=alarm)
         serve_sweep(root, client(root), say=say, alarm=alarm)
+    serve_report(root, client(root), say=say, alarm=alarm)  # D25: an unmerged idle pr/* head, reported only
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     hygiene(root, client(root), say=say)

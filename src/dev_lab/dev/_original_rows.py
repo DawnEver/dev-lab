@@ -85,6 +85,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'shatree',
     'branchprune',
     'branchdelete',
+    'branchidle',  # D25: an unmerged idle pr/* head is reported to its owner, never deleted
     'partrows',
     'slurmkilled',
     'artefacts',

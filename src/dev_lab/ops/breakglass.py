@@ -67,7 +67,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemerge import hidden_reds
-from dev_lab.dev.forgemergecall import merge
+from dev_lab.dev.forgemergecall import merge_declared
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import CommitStatus, fingerprints_at, status_list
@@ -178,8 +178,8 @@ class ClientForge:
         self._client.issue_comment(number, body)
 
     def merge(self, number: int, *, head: str, message: str) -> None:
-        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemergecall.merge`, either backend); branch kept."""
-        merge(self._client, number, head=head, message=message, delete_branch=False)
+        """Merge PR *number* at *head*; its ephemeral head goes (:func:`~dev_lab.dev.forgemergecall.merge_declared`)."""
+        merge_declared(self._client, number, head=head, message=message)
 
 
 def tests_at(posted: Sequence[CommitStatus], head: str, *, producer: str) -> str:

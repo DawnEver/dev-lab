@@ -254,9 +254,9 @@ def _serve(
         'review_step',
         lambda _root, _built, **kw: (reviewed if reviewed is not None else []).append(kw),
     )
-    monkeypatch.setattr(forgeservesteps, 'serve_continue_landed', lambda *_a, **_k: None)  # its own tests
+    for own in ('serve_continue_landed', 'security_step', 'serve_report'):  # each has its own tests
+        monkeypatch.setattr(forgeservesteps, own, lambda *_a, **_k: None)
     monkeypatch.setattr(forgeservesteps, 'serve_close_landed', close_landed)
-    monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
     monkeypatch.setattr(forgeservesteps, 'serve_prune', prune)
     monkeypatch.setattr(forgeservesteps, 'serve_sweep', sweep)
     monkeypatch.setattr(forgeservesteps, 'serve_records_prune', records_prune)

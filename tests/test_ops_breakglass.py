@@ -528,6 +528,7 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
             'labels': [{'name': 'needs-consent'}]}  # fmt: skip
     manifest = base64.b64encode(
         b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\nproducer = "hpc"\n'
+        b'[tool.dev_lab.branchset]\ntrunk = "main"\nsessions = ["integrate/main"]\n'
     ).decode()
     answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': manifest}))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
@@ -544,11 +545,13 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     sent = Recorder.received
     assert {r['headers']['Authorization'] for r in sent} == {f'{auth} secret'}
     assert sent[0]['path'] == f'{prefix}/contents/pyproject.toml?ref=integrate/main'
-    merged = sent[-1]
-    assert (merged['method'], merged['path']) == (merge, f'{prefix}/pulls/7/merge')
+    (merged,) = [r for r in sent if (r['method'], r['path']) == (merge, f'{prefix}/pulls/7/merge')]
     body = json.dumps(merged['body'])
     assert HEAD in body
     assert 'Break-Glass: review-bot is down' in body
+    # D25: the pr/* head goes with the merge, by the branch set declared at the PR's base -- never kept
+    deleted = [r for r in sent if r['method'] == 'DELETE' and r['path'] == f'{prefix}/git/refs/heads/pr/x']
+    assert deleted if merge == 'PUT' else merged['body']['delete_branch_after_merge'] is True
 
 
 # User ruling 2026-11-04: "break glass still sends three messages -- one final acceptance is enough". A wave sends

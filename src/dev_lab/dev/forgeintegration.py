@@ -258,8 +258,8 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
         if found.unreviewed:
             line = f'{line}, WARNED -- {found.unreviewed}'
     elif found.ready:
-        ephemeral = declared_branchset(root).is_ephemeral(child.branch)
-        merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)
+        merge(child.client, child.pr, head=child.head, branch=child.branch, branchset=declared_branchset(root),
+              message=found.message)  # fmt: skip
         line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', _MERGED
         if found.unreviewed:
             line = f'{line} WITHOUT a passing review -- {found.unreviewed}'

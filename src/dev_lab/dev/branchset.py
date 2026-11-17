@@ -11,6 +11,7 @@ and read by :func:`declared_branchset`::
     ephemeral = ['pr/*']           # the DEFAULT, so omit it; PR-head globs, deleted once the PR goes; [] opts out
     prune_merged = true            # any host's serve tick DELETES merged idle origin branches (idempotent)
     grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
+    idle_report_days = 1           # an UNMERGED ephemeral head idle this long is reported to its owner, never deleted
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
 
@@ -74,7 +75,7 @@ __all__ = [
 ]
 
 _TABLE = '[tool.dev_lab.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours'})
+_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours', 'idle_report_days'})
 
 #: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
 #: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
@@ -118,6 +119,9 @@ class BranchSet:
     #: Glob namespaces (``pr/*``) of SHORT-LIVED branches: pushable undeclared, each the head of one pull
     #: request, deleted by the forge once no open PR has it as head (:mod:`dev_lab.dev.branchprune`).
     ephemeral: tuple[str, ...] = ()
+    #: How long an UNMERGED ephemeral head sits idle before the landed sweep reports it to its owner (user ruling
+    #: D25, 2026-11-17): reported only -- never archived (D22) and never deleted.
+    idle_report_days: float = 1.0
 
     @property
     def declared(self) -> frozenset[str]:
@@ -218,9 +222,14 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     if isinstance(grace, bool) or not isinstance(grace, int | float) or grace < 0:
         msg = f'{_TABLE} grace_hours in {manifest} is {grace!r}; it must be a non-negative number of hours'
         raise BranchSetNotDeclared(msg)
+    days = table.get('idle_report_days', 1.0)
+    if isinstance(days, bool) or not isinstance(days, int | float) or days < 0:
+        msg = f'{_TABLE} idle_report_days in {manifest} is {days!r}; it must be a non-negative number of days'
+        raise BranchSetNotDeclared(msg)
     return BranchSet(
-        trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace), ephemeral=tuple(ephemeral)
-    )
+        trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace), ephemeral=tuple(ephemeral),
+        idle_report_days=float(days),
+    )  # fmt: skip
 
 
 def _short_refs(root: Path, prefix: str) -> tuple[str, ...] | None:

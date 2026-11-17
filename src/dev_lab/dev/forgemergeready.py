@@ -106,8 +106,8 @@ def _merged(root: Path, client: Client, pull: PullRequest, message: str, said: s
     merged, naming what failed (cc-market #12, 2026-11-13); an unmerged one raises :class:`NotMerged`.
     """
     try:
-        number, ephemeral = pull.number, declared_branchset(root).is_ephemeral(pull.head)
-        merge(client, number, head=pull.head_sha, message=message, delete_branch=ephemeral)
+        number = pull.number
+        merge(client, number, head=pull.head_sha, branch=pull.head, branchset=declared_branchset(root), message=message)
     except ForgeCallFailed as refused:
         if not client.pr_view(pull.number).merged:
             refusal = f'{said}; NOT merged -- {refused}'

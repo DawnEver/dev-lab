@@ -9,13 +9,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev import sessionprs
+from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import GITHUB
+from dev_lab.dev.reviewgate import manifest_at
 
 if TYPE_CHECKING:
+    from dev_lab.dev.branchset import BranchSet
     from dev_lab.dev.forgework import Client
 
-__all__ = ['auto_merge', 'merge']
+__all__ = ['auto_merge', 'merge', 'merge_declared']
 
 #: GitHub's answer to deleting a ref that is already gone (a repo that auto-deletes head branches on merge).
 _REF_GONE: Final = 'Reference does not exist'
@@ -47,15 +50,20 @@ def auto_merge(client: Client, number: int) -> str:
     return f'#{number}: auto-merge enabled -- GitHub merges it (a merge commit) once its required checks are green'
 
 
-def merge(client: Client, number: int, *, head: str, message: str, delete_branch: bool) -> None:
-    """Ask the forge to merge PR *number* at *head* with a merge commit saying *message*.
+def merge(client: Client, number: int, *, head: str, branch: str, branchset: BranchSet, message: str) -> None:
+    """Ask the forge to merge PR *number* (head *branch*) at *head* with a merge commit saying *message*.
 
+    THE ONE head-delete decision of every merge path (user ruling D25, 2026-11-17): *branch* is deleted with the
+    merge exactly when *branchset* holds it ephemeral (``[tool.dev_lab.branchset] ephemeral``, ``pr/*``); a
+    long-lived branch is kept. No caller chooses -- a path that kept an ephemeral head is what piled ``pr/*`` heads
+    up on origin when break-glass passed ``delete_branch=False``.
     Both forges refuse a *head* that is no longer the PR's (Gitea ``head_commit_id``, GitHub ``sha``). On GitHub,
-    which deletes no branch with a merge, *delete_branch* deletes the PR's head branch after it: a branch already gone
+    which deletes no branch with a merge, the ephemeral head is deleted after it: a branch already gone
     (404, or 422 "Reference does not exist" -- the repo auto-deletes head branches; DawnEver/cc-market #12,
     2026-11-13) is the delete done, any other refusal raises. The merged PR ends in every session record holding it
     (:func:`dev_lab.dev.sessionprs.ended`) before that delete is asked.
     """
+    delete_branch = branchset.is_ephemeral(branch)
     title, _, body = message.partition('\n\n')
     if client.backend is GITHUB:
         client.call(
@@ -65,7 +73,7 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
         )
         sessionprs.ended(client.forge, number)
         if delete_branch:
-            _delete_head(client, client.pr_view(number).head)
+            _delete_head(client, branch)
         return
     client.call(
         'POST',
@@ -79,6 +87,17 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
         },
     )
     sessionprs.ended(client.forge, number)
+
+
+def merge_declared(client: Client, number: int, *, head: str, message: str) -> None:
+    """:func:`merge` by the branch set the forge declares at the PR's BASE -- for a host holding no checkout.
+
+    Break-glass reaches repos it never clones (:mod:`dev_lab.ops.breakglass`); the base branch's ``pyproject.toml``
+    is the declaration the merge lands on (:func:`dev_lab.dev.reviewgate.manifest_at`).
+    """
+    found = client.pr_view(number)
+    branchset = branchset_from(manifest_at(client, found.base), f'{found.base}:pyproject.toml')
+    merge(client, number, head=head, branch=found.head, branchset=branchset, message=message)
 
 
 def _delete_head(client: Client, branch: str) -> None:

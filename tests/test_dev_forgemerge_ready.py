@@ -11,6 +11,7 @@ from _forge_state import StateForge
 from test_dev_forgemerge import _MANIFEST, _work
 
 from dev_lab.dev import forgecli, forgemerge, forgemergecall, forgemergeready
+from dev_lab.dev.branchset import declared_branchset
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -265,8 +266,10 @@ def test_a_head_branch_delete_refused_for_another_reason_still_surfaces(
     """
     work, forge, number, _head = _hub_pr(tmp_path)
     _refusing_deletes(forge, monkeypatch, 422, 'Reference update failed')
+    pull = forge.pr_view(number)
     with pytest.raises(ForgeCallFailed, match='Reference update failed'):
-        forgemergecall.merge(forge, number, head=forge.pr_view(number).head_sha, message='t', delete_branch=True)
+        forgemergecall.merge(forge, number, head=pull.head_sha, branch=pull.head, branchset=declared_branchset(work),
+                             message='t')  # fmt: skip
     forge.pulls[number] |= {'state': 'open', 'merged': False}
     line = ready(work, forge, number)
     assert '; merged, but after it:' in line
