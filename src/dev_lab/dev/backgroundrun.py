@@ -20,6 +20,7 @@ from typing import Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.checkout import git_out, worktrees
+from dev_lab.dev.venvpointer import current_interpreter
 
 __all__ = ['RECLAIM_LOCK', 'STALE_LOCK_S', 'common_dir', 'detach_argv', 'held', 'main_checkout', 'repo_main']
 
@@ -79,8 +80,12 @@ def held(root: Path, *, name: str = RECLAIM_LOCK, stale_s: float = STALE_LOCK_S)
 
 
 def detach_argv(root: Path, args: list[str]) -> None:
-    """Start this interpreter with *args* in *root*, outliving this process and opening no window."""
-    argv = [sys.executable, *args]
+    """Start this interpreter with *args* in *root*, outliving this process and opening no window.
+
+    This interpreter as its checkout's CURRENT environment has it (:func:`dev_lab.dev.venvpointer.current_interpreter`):
+    a run detached by a process from a legacy ``.venv`` or an older ``.venvs/<name>`` never holds that one again.
+    """
+    argv = [current_interpreter(), *args]
     quiet = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL}
     if sys.platform != 'win32':
         _door.popen(argv, cwd=root, start_new_session=True, **quiet)

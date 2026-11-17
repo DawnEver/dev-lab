@@ -47,6 +47,7 @@ from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Record, 
 
 from dev_lab.dev import forgerequest, localpart, platformparts, serialpass, verify, verifybox, verifysteps
 from dev_lab.dev.datedlog import UndeclaredOutput, date_parts
+from dev_lab.dev.famtests import alwayson
 from dev_lab.dev.inflight import RunKey, seat
 from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -1894,7 +1895,8 @@ def test_a_planted_outage_never_reaches_the_serve_record_running_these_tests(tmp
         timeout=600, check=False,
     )  # fmt: skip
     assert done.returncode == 0, done.stdout + done.stderr
-    assert '2 passed' in done.stdout, done.stdout
+    # This checkout is a declared family checkout, so its required family items run beside the selection.
+    assert f'{2 + len(alwayson.rows())} passed' in done.stdout, done.stdout
     assert not real.exists(), f'a test wrote the real serve record: {real.read_text(encoding="utf-8")!r}'
 
 

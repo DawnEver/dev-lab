@@ -71,6 +71,7 @@ from dev_lab.dev.lockcheck import (
     stale,
 )
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.trackedrender import RenderRefused
 from dev_lab.dev.venvpointer import current
 
 if TYPE_CHECKING:
@@ -323,7 +324,7 @@ def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _exit) -> tu
     python = _tree_python(tree) if due_renderers(tree) else ''
     try:
         return render_repo(tree, python, run)
-    except ValueError as exc:
+    except (ValueError, RenderRefused) as exc:
         raise RelockFailed(str(exc)) from exc
 
 

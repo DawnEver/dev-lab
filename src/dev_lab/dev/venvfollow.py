@@ -16,7 +16,9 @@ of three things a checkout can be left behind on, and the follow takes them in d
 (:func:`dev_lab.dev.checkoutfollow.advance` -- a clean primary checkout fast-forwards onto integration, which may
 move the lock), then the VENV, then the HOOKS (:func:`dev_lab.dev.hook_install.rewire` -- a stale or predecessor
 shim never reaches the current table, so only something outside a git hook can replace it). ``--background``
-detaches when any of the three is due.
+detaches when any of the three is due -- or when a legacy ``.venv`` directory the pointer passed over is still
+in place: the follow retries its drain (:func:`dev_lab.dev.venvcurrent.retire_passed_over`), which waits for no holder.
+The bootstrap it runs starts from the checkout's current environment, never the one the follow was launched from.
 
 THE BEHIND NOTICE (``--session-start`` too, :func:`behind_notice`): one line when the trunk checkout's HEAD is
 behind its LAST-FETCHED ``origin/<trunk>``, or the venv's git-installed dev-lab is not the commit that ref's
@@ -46,12 +48,12 @@ import lab_commons.launch as _door
 from lab_commons.census import processes
 from lab_commons.log import emit
 
-from dev_lab.dev import checkoutfollow, hook_install, liverun
+from dev_lab.dev import checkoutfollow, hook_install, liverun, venvcurrent
 from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
 from dev_lab.dev.venvpath import VENV_LAYOUTS
-from dev_lab.dev.venvpointer import current
+from dev_lab.dev.venvpointer import current, current_interpreter
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -133,8 +135,8 @@ def busy(checkout: Path, *, census: Callable[[], Iterable[Process]] = processes)
 
 
 def _bootstrap(checkout: Path) -> int:
-    """``dep --bootstrap`` IN *checkout*: the door's own rule moves a primary checkout only from itself."""
-    argv = [sys.executable, '-m', 'dev_lab.dev.dep', '--bootstrap', str(checkout)]
+    """``dep --bootstrap`` IN *checkout* (it moves a primary checkout only from itself), from the current env."""
+    argv = [current_interpreter(), '-m', 'dev_lab.dev.dep', '--bootstrap', str(checkout)]
     return _door.run(argv, cwd=checkout, check=False).returncode
 
 
@@ -208,8 +210,13 @@ def toplevel(cwd: Path) -> Path | None:
 
 
 def due(checkout: Path) -> bool:
-    """*checkout*'s venv is :func:`stale`, the checkout is behind integration, or a declared hook is not live."""
-    return stale(checkout) is not None or checkoutfollow.behind(checkout) or hook_install.unwired(checkout)
+    """*checkout*'s venv is :func:`stale` or a legacy directory, it is behind integration, or a hook is not live."""
+    return (
+        stale(checkout) is not None
+        or venvcurrent.passed_over(checkout)
+        or checkoutfollow.behind(checkout)
+        or hook_install.unwired(checkout)
+    )
 
 
 def _session_root(stdin: TextIO) -> Path | None:
@@ -242,6 +249,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         if moved := checkoutfollow.advance(root):
             emit(moved)
         emit(f'venv {root}: {follow(root)}')
+        if retired := venvcurrent.retire_passed_over(root, census=processes):
+            emit(retired)
         if rewired := hook_install.rewire(root):
             emit(rewired)
     except OSError as exc:  # a hook never blocks the session or the git verb it serves

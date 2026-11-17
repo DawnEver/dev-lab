@@ -9,6 +9,7 @@ publishes and reclaims.
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 from typing import Final
@@ -19,6 +20,8 @@ __all__ = [
     'POINTER',
     'READ_TRIES',
     'current',
+    'current_interpreter',
+    'env_checkout',
     'named',
     'shell_function',
     'shell_interpreter',
@@ -61,14 +64,38 @@ def current(root: Path) -> Path:
     return named(root) or Path(root) / ALIAS
 
 
-def superseded(prefix: str | Path) -> bool:
-    """Whether a newer environment than *prefix* (a checkout's ``.venvs/<name>`` or ``.venv``) is now current."""
+def env_checkout(prefix: str | Path) -> Path | None:
+    """The checkout whose environment *prefix* is (a ``ROOT/.venvs/<name>`` or a ``ROOT/.venv``), else ``None``."""
     prefix = Path(prefix)
     if prefix.parent.name == HOME:
-        root = prefix.parent.parent
-    else:
-        return False  # a legacy .venv or no checkout's env: nothing was published beside it
-    return current(root).resolve() != prefix.resolve()
+        return prefix.parent.parent
+    return prefix.parent if prefix.name == ALIAS else None
+
+
+def superseded(prefix: str | Path) -> bool:
+    """Whether another environment than *prefix* (a checkout's ``.venvs/<name>`` or ``.venv``) is now current.
+
+    A legacy ``.venv`` directory is superseded once the pointer names another environment, so what runs from it
+    yields and the directory drains; ``.venv`` as the alias of the current environment is not.
+    """
+    root = env_checkout(prefix)
+    return root is not None and current(root).resolve() != Path(prefix).resolve()
+
+
+def current_interpreter(executable: str | Path | None = None) -> str:
+    """*executable* (default: this process's) re-resolved to its checkout's CURRENT environment.
+
+    The door every child launch takes: a process started from a legacy ``.venv`` or an older ``.venvs/<name>``
+    starts its children from the published one, so nothing new holds the environment it ran from. An interpreter
+    of no checkout, or a current environment without the same interpreter, is returned unchanged.
+    """
+    python = Path(sys.executable if executable is None else executable).absolute()
+    prefix = python.parent.parent
+    root = env_checkout(prefix)
+    if root is None or current(root).resolve() == prefix.resolve():
+        return str(python)
+    candidate = current(root) / python.parent.name / python.name
+    return str(candidate) if candidate.is_file() else str(python)
 
 
 #: The rendered POSIX twin's home and markers (``node venv_resolver.js --shell``).

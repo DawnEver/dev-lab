@@ -11,14 +11,13 @@ dev-lab's own runs. So this module defers the import to the collection hook, aft
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import pytest
+import pytest
 
 __all__ = ['pytest_collection_modifyitems']
 
 
+@pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
     """Append the always-on rows (:func:`dev_lab.dev.famtests.alwayson.append_rows`)."""
     importlib.import_module('dev_lab.dev.famtests.alwayson').append_rows(session, config, items)

@@ -234,6 +234,10 @@ RETIRED_SPELLINGS: Final = {
         "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to codeplace.retired_copies",
         "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",
     ),
+    '_adopt_plain_venv': (
+        'dev_lab.dev.venvcurrent.retire_passed_over, retried by every publish, reclaim and follow',
+        '2026-11-17: a held legacy .venv never drained; the follow retries the drain from the current environment',
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

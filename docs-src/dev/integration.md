@@ -319,6 +319,10 @@ push updating a branch whose newest PR into the integration branch was closed UN
 from the branch, or a new branch name); a forge that cannot be read refuses. A merged PR's branch passes: the forge
 continues it (LANDED-BRANCH-CONTINUES, above).
 
+The base row `lossless-delete` (`dev_lab.dev.pushdelete`) judges EVERY branch a push deletes, however the push was
+spelled, with the judgement `branchprune delete` makes (`dev_lab.dev.deletejudge`), after a fresh fetch and against
+the open PR heads; an unreadable forge or origin refuses (`docs-src/dev/refusals.md#lossless-delete`).
+
 The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) WARNS on a `pr/*` push whose tip
 lacks `origin/<integration>` (fetched afresh; a failed fetch is named) or whose lock lags a floated sibling's
 head, naming `forge sync`, and never refuses it (`advisory = true`, dev-lab #661): on the forge `pr-current` is an

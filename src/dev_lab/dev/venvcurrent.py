@@ -10,7 +10,9 @@ the pointer -- this module, ``agent_launcher.js`` and the githooks' ``with-venv.
 THE POINTER IS THE SOURCE OF TRUTH. ``ROOT/.venv`` stays as a junction (a symlink on POSIX) to the current
 environment for tools that only know that path; it is re-pointed best-effort after the swap. A checkout with
 no pointer is the legacy layout (a plain ``.venv`` directory) and resolves there: the one-time migration
-moves that directory aside into ``.venvs/`` the first time nothing executes from it (:func:`_adopt_plain_venv`).
+moves that directory aside into ``.venvs/`` the first time nothing executes from it (:func:`retire_passed_over`), and
+``.venv`` becomes the alias -- so a launcher or hook still spelling ``.venv`` runs the current environment. It is
+retried by every publish, every reclaim and every follow (:mod:`dev_lab.dev.venvfollow`) until it lands.
 
 An old environment is reclaimed (:func:`reclaim`) only when no process executes from it -- the holder census
 of :func:`dev_lab.dev.liverun.removal_holders` -- and never while it is being built (its :data:`BUILDING`
@@ -36,7 +38,19 @@ from dev_lab.dev.venvpointer import ALIAS, HOME, POINTER, named
 if sys.platform == 'win32':
     import _winapi
 
-__all__ = ['BUILDING', 'BUILD_WALL_S', 'RECLAIMING', 'abandon', 'fresh', 'publish', 'reclaim', 'stale_alias', 'target']
+__all__ = [
+    'BUILDING',
+    'BUILD_WALL_S',
+    'RECLAIMING',
+    'abandon',
+    'fresh',
+    'passed_over',
+    'publish',
+    'reclaim',
+    'retire_passed_over',
+    'stale_alias',
+    'target',
+]
 
 #: Suffix of the marker BESIDE an environment being built (``.venvs/<name>.building``): never reclaimed. Beside,
 #: not inside: uv refuses to sync into a non-empty directory that is not yet a venv.
@@ -124,7 +138,7 @@ def _link(alias: Path, env: Path) -> None:
 
 
 def _repoint(root: Path, env: Path) -> str:
-    """Point :data:`ALIAS` at *env*; a legacy directory there is left for :func:`_adopt_plain_venv`."""
+    """Point :data:`ALIAS` at *env*; a legacy directory there is left for :func:`retire_passed_over`."""
     alias = root / ALIAS
     if alias.exists() and not _is_link(alias):
         return f'{alias} is a legacy directory; it moves aside once nothing runs from it (the pointer already rules)'
@@ -151,11 +165,17 @@ def stale_alias(root: Path, env: Path, python: Path | None = None) -> str:
     )
 
 
-def _adopt_plain_venv(root: Path, *, census: Census = processes) -> str:
+def passed_over(root: Path) -> bool:
+    """Whether *root*'s :data:`ALIAS` is a plain directory the pointer passed over (:func:`retire_passed_over`)."""
+    alias = Path(root) / ALIAS
+    return named(root) is not None and alias.is_dir() and not _is_link(alias)
+
+
+def retire_passed_over(root: Path, *, census: Census = processes) -> str:
     """The ONE-TIME migration: a plain ``.venv`` directory moves into :data:`HOME` once nothing executes from it."""
     root = Path(root)
     alias, env = root / ALIAS, named(root)
-    if env is None or not alias.is_dir() or _is_link(alias):
+    if env is None or not passed_over(root):
         return ''
     if users := removal_holders(alias, census=census):
         return f'legacy {alias} kept: {len(users)} process(es) run from it ({label(users[0])})'
@@ -193,7 +213,7 @@ def _reclaimed(env: Path) -> str:
 def reclaim(root: Path, *, census: Census = processes) -> tuple[str, ...]:
     """Remove every environment of *root* that is not current, not being built, and that nothing executes from."""
     root = Path(root)
-    lines = [line] if (line := _adopt_plain_venv(root, census=census)) else []
+    lines = [line] if (line := retire_passed_over(root, census=census)) else []
     home, live = root / HOME, named(root)
     if not home.is_dir() or live is None:
         return tuple(lines)

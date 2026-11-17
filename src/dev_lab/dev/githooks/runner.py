@@ -458,7 +458,7 @@ def borrowed_interpreter(root: Path) -> bool:
     """Whether this interpreter is NOT *root*'s own environment.
 
     The shim falls back to the main checkout's venv, or the one recorded at install, only when *root* has no venv
-    that imports dev_lab.
+    that imports dev_lab. Its own is the one :func:`dev_lab.dev.venvpointer.current` names: a legacy ``.venv``
+    directory the pointer passed over is not.
     """
-    own = {(root / '.venv').resolve(), venvpointer.current(root).resolve()}
-    return Path(sys.prefix).resolve() not in own
+    return Path(sys.prefix).resolve() != venvpointer.current(root).resolve()

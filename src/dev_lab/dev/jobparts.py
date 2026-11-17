@@ -72,6 +72,7 @@ from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.family import declared_in
+from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import client_for
@@ -276,6 +277,7 @@ def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str
                 f'Rerun {shlex.join(command)} in the checkout and repair collection before producing parts.'
             )
             raise ValueError(msg)
+        assert_required_collected(root, ids)
         return ids
 
     return collect
@@ -346,7 +348,7 @@ def matrix(
     text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
     vocabulary = read_vocabulary(text)
     ids = list(collect(''))
-    carrying = {name: set(collect(name)) for name in vocabulary.resources}
+    carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
     derived = {BASE, *need_sets(ids, carrying).values()}
     names = sorted(derived - unproduced_parts(derived, unproduced(text)))
     declared = hosted_parts(text)

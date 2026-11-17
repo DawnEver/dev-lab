@@ -85,6 +85,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'shatree',
     'branchprune',
     'branchdelete',
+    'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
+    'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
     'artefacts',
