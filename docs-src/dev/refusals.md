@@ -214,7 +214,7 @@ HINT: the hazard is minutes, not harm.
 
 ## PRIVATE-MARKERS
 
-- **Why it is refused.** a pushed marker is public for good: the forge has no denylist, so only this machine can refuse a machine, person, home path, chat id or a `~/.claude/private-markers` entry before it leaves. One scan (`dev_lab.dev.privatemarkers`) judges a staged line at commit, a commit message at push, and the typed text of every forge write -- `pr create` title and body, `pr close` reason, `issue create` title and body, `issue comment` body -- BEFORE its first forge call. A target the forge reports private passes (private names belong there); an unreadable visibility is scanned (fail closed). A hit is named by line and kind, never echoed.
+- **Why it is refused.** a pushed marker is public for good: the forge has no denylist, so only this machine can refuse a machine, person, home path, chat id or a `~/.claude/private-markers` entry before it leaves. One scan (`dev_lab.dev.privatemarkers`) judges a staged line at commit, a commit message at push, and the typed text of every forge write -- `pr create` title and body, `pr close` reason, `issue create` title and body, `issue comment` body -- BEFORE its first forge call. A target the forge reports private passes (private names belong there); an unreadable visibility is scanned (fail closed). A hit is named by line and kind, never echoed. A forge write's refusal leads with `PRIVATE-MARKERS:`, puts its door on a line of its own and is recorded in the walls ledger (`dev_lab.dev.walls.refused_text`).
 - **The exit.** Rewrite the text neutrally -- a placeholder for each private name -- and re-run the same command.
 
 ## DOWNSTREAM-SYNCS-INTEGRATION
