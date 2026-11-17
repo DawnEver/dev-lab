@@ -20,7 +20,9 @@ keep running to :data:`~dev_lab.dev.agent_wiring.GUARD_BUDGET_S`; every other ro
 :data:`~dev_lab.dev.agent_wiring.DISPATCH_BUDGET_S` of the dispatcher's start. A ``detached`` row, a row the budget
 ran out before, and a row that outlived it are HANDED OFF (:mod:`dev_lab.dev.hookhandoff`): one background runner
 runs them to completion and their answer reaches the session at its next context event, which this dispatcher
-delivers. A hand-off past the budget is said in the answer, by name. ``--background <job>`` is that runner.
+delivers. A hand-off past the budget is said in the answer, by name. ``--background <job>`` is that runner. The
+queue is written BEFORE the first inline row runs -- the detached rows as a job, the inline rows as a write-ahead
+record the runner adopts if this process dies -- so a dispatcher the harness kills at its timeout loses no row.
 
 The dispatcher always exits 0: a block is its JSON answer, never an exit code.
 """
@@ -179,24 +181,52 @@ def _inline(wires: Sequence[Wire], text: str, started: float) -> tuple[list[Outc
     return outcomes, late
 
 
-def _hand_off(event: str, text: str, payload: dict[str, Any], wires: Sequence[Wire], late: Sequence[Wire]) -> str:
-    """Queue *wires* for the background runner; the message naming the *late* rows or a failed queue, else ``''``."""
-    if not wires:
-        return ''
+def _failed(wires: Sequence[Wire], failed: OSError, *, then: str = 'they did not run') -> str:
+    names = ', '.join(wire.name for wire in wires)
+    return f'{_RULE}: {names} could not be handed to the background ({failed}); {then}\n{details_for(_RULE)}'
+
+
+def _queue_first(
+    event: str, text: str, payload: dict[str, Any], wires: Sequence[Wire]
+) -> tuple[Path | None, list[str]]:
+    """Before any inline row runs: hand the detached rows off and record the inline ones (``hookhandoff``).
+
+    The record, and the messages naming what could not be queued. A dispatcher the harness kills from here on loses
+    nothing: the runner holds the detached job and adopts the record of a writer that died.
+    """
+    cwd, root = _cwd(payload), _repo_root(payload)
+    detached = [wire for wire in wires if wire.detached]
+    inline = [wire for wire in wires if not wire.detached]
+    said: list[str] = []
+    record = None
     try:
-        hookhandoff.hand_off(_cwd(payload), event, text, wires, _repo_root(payload))
+        record = hookhandoff.write_ahead(cwd, event, text, inline, root)
     except OSError as failed:
-        names = ', '.join(wire.name for wire in wires)
-        return f'{_RULE}: {names} could not be handed to the background ({failed}); they did not run\n' + details_for(
-            _RULE
-        )
+        said.append(_failed(inline, failed, then='they run inline, and a kill would lose them'))
+    if detached:
+        try:
+            hookhandoff.hand_off(cwd, event, text, detached, root)
+        except OSError as failed:
+            said.append(_failed(detached, failed))
+    return record, said
+
+
+def _settle(event: str, text: str, payload: dict[str, Any], record: Path | None, late: Sequence[Wire]) -> list[str]:
+    """The inline rows have run: drop the record, or hand the *late* ones off; the message naming them."""
+    try:
+        if record is None and late:  # the record could not be written: the late rows still go to the background
+            hookhandoff.hand_off(_cwd(payload), event, text, late, _repo_root(payload))
+        hookhandoff.settle(record, late, _repo_root(payload))
+    except OSError as failed:
+        return [_failed(late, failed)]
     if not late:
-        return ''
+        return []
     names = ', '.join(wire.name for wire in late)
-    return (
+    said = (
         f'{_RULE}: {names} ran past the hook budget ({DISPATCH_BUDGET_S:g} s, a guard {GUARD_BUDGET_S:g} s); it runs '
         f'to completion in the background and its answer arrives at the next prompt\n{details_for(_RULE)}'
     )
+    return [said]
 
 
 def _run_job(job: dict[str, Any]) -> None:
@@ -215,8 +245,9 @@ def _run_job(job: dict[str, Any]) -> None:
         hookhandoff.defer(_cwd(payload), str(payload.get('session_id') or ''), event, said)
 
 
-def _timing(event: str, outcomes: Sequence[Outcome], late: Sequence[Wire], started: float) -> str:
-    rows = [f'[hook-timing] {event} {one.wire.name} {one.elapsed * 1000:.0f} ms' for one in outcomes]
+def _timing(event: str, outcomes: Sequence[Outcome], late: Sequence[Wire], started: float, queued: float) -> str:
+    rows = [f'[hook-timing] {event} queue written {queued * 1000:.0f} ms']
+    rows += [f'[hook-timing] {event} {one.wire.name} {one.elapsed * 1000:.0f} ms' for one in outcomes]
     rows += [f'[hook-timing] {event} {wire.name} handed off' for wire in late]
     return '\n'.join([*rows, f'[hook-timing] {event} total {(time.monotonic() - started) * 1000:.0f} ms'])
 
@@ -254,6 +285,9 @@ def main(argv: list[str] | None = None) -> int:
     mine, refused = _repo_wires(root)
     wires = first_runs(selected(event, payload, (*WIRING, *mine)), payload, git_dir(_cwd(payload)))
     session = str(payload.get('session_id') or '')
+    before = time.monotonic()
+    record, handed = _queue_first(event, text, payload, wires)
+    queued = time.monotonic() - before
     deferred = hookhandoff.take_deferred(_cwd(payload), session) if event in CONTEXT_EVENTS else []
     streams = (sys.stdin, sys.stdout, sys.stderr)
     sys.stdin, sys.stdout, sys.stderr = (_Routed(stream) for stream in streams)
@@ -261,9 +295,9 @@ def main(argv: list[str] | None = None) -> int:
         outcomes, late = _inline([wire for wire in wires if not wire.detached], text, started)
     if not late:  # a row still running keeps writing into its own buffer
         sys.stdin, sys.stdout, sys.stderr = streams
-    handed = _hand_off(event, text, payload, [*(wire for wire in wires if wire.detached), *late], late)
-    said, notes = answer(event, outcomes, contexts=deferred, messages=[handed] if handed else [])
-    timed = _timing(event, outcomes, late, started) if timing else ''
+    handed += _settle(event, text, payload, record, late)
+    said, notes = answer(event, outcomes, contexts=deferred, messages=handed)
+    timed = _timing(event, outcomes, late, started, queued) if timing else ''
     notes = '\n'.join(line for line in (refused, notes, timed) if line)
     if notes:
         emit(notes, err=True)

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -64,6 +66,47 @@ def test_the_runner_skips_a_torn_job_runs_the_rest_and_lets_go(tmp_path: Path) -
     assert [job['rows'] for job in ran] == [['x'], ['y']]
     assert list(queue.glob('*.json')) == []
     assert not (queue / hookhandoff.RUNNER_LOCK).exists(), 'the runner lets go of its lock'
+
+
+def test_a_dead_writers_record_is_adopted_and_a_live_ones_waited_for(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The write-ahead record: a dead dispatcher's inline rows run; a live one's settle first, so nothing runs twice.
+
+    PLANTED CONTROL: the live writer's record (this process) settles with no late rows while the runner waits, and the
+    runner runs nothing of it.
+    """
+    root, started = _repo(tmp_path), _starts(monkeypatch)
+    queue = root / '.git' / hookhandoff.HANDOFF_DIR
+    dead = hookhandoff.write_ahead(root, 'Stop', '{}', _ROW)
+    assert dead is not None
+    body = json.loads(dead.read_text(encoding='utf-8'))
+    dead.write_text(json.dumps({**body, 'writer': {'pid': 999999999, 'created': 1}}), encoding='utf-8')
+    live = hookhandoff.write_ahead(root, 'Stop', '{}', (Wire(('Stop',), 'planted_live_row'),))
+    (queue / 'torn.pending').write_text('{"rows": [', encoding='utf-8')
+    ran: list[list[str]] = []
+    settler = threading.Timer(0.6, hookhandoff.settle, (live, (), root))
+    settler.start()
+    began = time.monotonic()
+    hookhandoff.drain(queue, lambda job: ran.append(job['rows']))
+    settler.join()
+    assert ran == [['planted_handoff_row']]
+    assert time.monotonic() - began >= 0.5, 'the runner waited for the live record to settle'
+    assert list(queue.glob('*.pending')) == [], 'the torn record is dropped'
+    assert started == []
+
+
+def test_late_rows_of_a_settled_record_become_a_job_and_start_a_runner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root, started = _repo(tmp_path), _starts(monkeypatch)
+    record = hookhandoff.write_ahead(root, 'Stop', '{}', (*_ROW, Wire(('Stop',), 'planted_done_row')))
+    hookhandoff.settle(record, _ROW, root)
+    [job] = started
+    assert json.loads(job.read_text(encoding='utf-8'))['rows'] == ['planted_handoff_row']
+    assert 'writer' not in json.loads(job.read_text(encoding='utf-8'))
+    assert record is not None
+    assert not record.exists()
 
 
 def test_deferred_answers_are_taken_once_and_a_torn_line_is_skipped(tmp_path: Path) -> None:
