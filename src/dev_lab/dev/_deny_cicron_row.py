@@ -40,8 +40,9 @@ CI_CRON_NEEDS_CONSENT: dict[str, object] = {
     'matches': 'command',
     'hazard': "pausing or resuming CI rewrites a cluster account's crontab; an agent never does it on its own "
     '(user ruling 2026-11-16).',
-    'remedy': 'Read first: -m dev_lab.dev.hpcaccount drift-fleet. Then the user runs it, or approves a consent '
-    'plan on the cluster and its accounts (-m dev_lab.dev.consent grant), then runs it with --credential <id>.',
+    'remedy': 'Read first: python -m dev_lab.dev.hpcaccount drift-fleet. Then the user runs it, or approves a '
+    'consent plan on the cluster plus its account list (python -m dev_lab.dev.consent grant), then runs it with '
+    '--credential <id>.',
     'needs': None,
     'refuses': tuple(f'python -m {MODULE} {verb} --cluster c1' for verb in refused_verbs()),
     'permits': (
