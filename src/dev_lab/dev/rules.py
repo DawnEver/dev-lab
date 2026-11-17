@@ -259,7 +259,7 @@ class Adoption:
         if pinned:
             msg = (
                 f'{self.app_name} lists {pinned}, which are always on: dev-lab enforces them in every repo '
-                f'through its pytest plugin (dev_lab.dev.famtests.alwayson), so a repo row is either a copy '
+                f'through its shared execution checks (dev_lab.dev.famtests.alwayson), so a repo row is either a copy '
                 f'or an opt-out, and neither exists. Delete the row.'
             )
             raise ValueError(msg)
