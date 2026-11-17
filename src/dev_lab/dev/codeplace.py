@@ -11,7 +11,8 @@ THREE RULES OVER ONE MAP; the second's mechanism is its own module:
   on purpose, so the next ``output/`` cannot happen silently. The walk is of the FILESYSTEM, never
   ``git ls-files``, because the defect is precisely an untracked file.
 * ``SCRATCH-IS-NEVER-COMMITTED`` -- the one-off sink this map declares: visible to git, never
-  committed beyond its README, left by promotion into ``src/`` with tests or by deletion. Its scan,
+  committed beyond its README (nothing at all under ``scratch_anchor = false``), left by promotion
+  into ``src/`` with tests or by deletion. Its scan,
   refusal, reminder and CLI are :mod:`dev_lab.dev.scratch`; only its declaration is read here.
 * ``STRAY-FILE-REFUSED`` -- an UNTRACKED, non-ignored file outside the declared stray roots (the family's
   ``scratch/`` plus ``stray_roots``) is a defect the moment it appears: a file a person meant is STAGED,
@@ -38,6 +39,7 @@ A repo declares ONLY what it adds, in ONE place -- ``[tool.dev_lab.placement]`` 
     stray_roots = []                        # where an untracked file may sit, beyond scratch
     scratch = 'scratch/'                    # the one-off sink; the family's home when omitted
     max_age_days = 3.0                      # when the SessionStart notice starts naming a one-off
+    scratch_anchor = true                   # false: no tracked README, nothing under scratch is tracked
     retired = []                            # files a tool this repo uses retired (dev_lab.dev.retiredfiles)
 
 ONE TABLE, ONE PREDICATE, TWO CALLERS. The architecture test calls :func:`declared_misplaced` over
@@ -210,6 +212,7 @@ class Placement:
     scratch: str = FAMILY_STRAY_ROOTS[0]
     max_age_days: float = SCRATCH_MAX_AGE_DAYS
     retired: tuple[RetiredFile, ...] = ()
+    scratch_anchor: bool = True
 
 
 def _strings(table: dict, key: str, manifest: Path) -> tuple[str, ...]:
@@ -247,6 +250,10 @@ def declared_placement(root: Path) -> Placement:
     if isinstance(age, bool) or not isinstance(age, int | float) or age <= 0:
         msg = f'{_TABLE} max_age_days in {manifest} is {age!r}; it must be a positive number of days'
         raise PlacementNotDeclared(msg)
+    anchor = table.get('scratch_anchor', True)
+    if not isinstance(anchor, bool):
+        msg = f'{_TABLE} scratch_anchor in {manifest} is {anchor!r}; it must be true (a tracked README) or false'
+        raise PlacementNotDeclared(msg)
     try:
         retired = declared_retired(table.get('retired', []))
     except ValueError as exc:
@@ -260,6 +267,7 @@ def declared_placement(root: Path) -> Placement:
         scratch,
         float(age),
         retired,
+        anchor,
     )
 
 

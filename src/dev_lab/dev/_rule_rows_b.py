@@ -35,7 +35,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'SCRATCH-IS-NEVER-COMMITTED',
         (
             'Scratch is the one place an agent may leave a one-off, visible to git status but never committed '
-            'beyond its README, and each one-off leaves by promotion into src with tests or by deletion, its '
+            'beyond its README (or at all, where the repo declares scratch_anchor = false), and each one-off '
+            'leaves by promotion into src with tests or by deletion, its '
             'finding recorded in memory as numbers, never by a move into scripts.'
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_scratch.py'),
