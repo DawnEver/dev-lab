@@ -23,7 +23,7 @@ optional_needs`` names RESOURCES; a part needing any of them is never a merge or
 wherever a host offers it -- the capability stays, only the requirement goes::
 
     [tool.dev_lab.parts]
-    optional_needs = ["jmag", "aedt", "femm", "windows"]
+    optional_needs = ["solverx", "windows"]
 
 :func:`producible` says which parts a producer can post; :mod:`dev_lab.dev.producercheck` refuses a declaration
 whose required part nothing produces.
@@ -97,7 +97,7 @@ def optional_needs_from(text: str) -> frozenset[str]:
     parts: Mapping[str, Any] = declared_table(tomllib.loads(text), 'parts', {})
     value = parts.get('optional_needs', [])
     if not isinstance(value, list) or not all(isinstance(one, str) and one for one in value):
-        msg = '[tool.dev_lab.parts] optional_needs must be an array of resource names, e.g. ["jmag", "windows"]'
+        msg = '[tool.dev_lab.parts] optional_needs must be an array of resource names, e.g. ["solverx", "windows"]'
         raise UndeclaredProducer(msg)
     return frozenset(value)
 
