@@ -20,8 +20,10 @@ Read by `dev_lab.dev.branchset.declared_branchset(root)`; a missing or malformed
 raises `BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
 
 A branch in an `ephemeral` namespace is the head of ONE pull request: the push hook and the census accept it
-without a row, and the forge deletes it once no open PR has it as head and it has sat idle `grace_hours` (merged
-or closed; `branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
+without a row, and the forge deletes it once it is MERGED, no open PR has it as head and it has sat idle
+`grace_hours` (`branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
+An UNMERGED one is never deleted by the survey (D30): it is listed and alarmed with its two doors -- MERGE it
+through a PR, or LAND it with a declared `git merge -s ours` PR, then `branchprune delete`.
 Registering a branch in `sessions` to get it pushed is never the remedy; push it under `pr/` instead.
 
 ## The census and the candidates
@@ -89,6 +91,8 @@ deletes anything. Undeclared branches whose tip has been idle for at least `grac
   An agent never deletes a remote ref by a raw push (`PUSH-REMOTE-DELETE`); it deletes one through LOSSLESS-DELETE,
   `python -m dev_lab.dev.branchprune delete <branch>...`, which refuses unless every commit lives elsewhere
   or, by content, every non-generated file its own commits wrote is identical on integration (fails closed).
+  The deny row reads text only; the guarantee is the base pre-push row `lossless-delete` (`dev_lab.dev.pushdelete`),
+  which judges EVERY branch a push deletes, however spelled, with that same judgement -- the door's push included.
 - **Each deletion is pinned to the sha the survey judged.** The live tip is read from the forge first. A branch
   that moved is kept, because its new tip is somebody's new work.
 - **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The

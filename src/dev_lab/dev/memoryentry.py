@@ -70,8 +70,9 @@ _NOTE_LINE = re.compile(r'> ' + re.escape(REDACTION_NOTE).replace(re.escape('{da
 # The entry gains this note (its reason and the user's words, both non-empty); every other change replaces
 # a line one-for-one, so nothing is added or removed and git history keeps the original. A disagreement
 # with a past conclusion is still a NEW entry with ``corrects:``: this note is for content that is wrong.
+# A quote translated in place (D26, 2026-11-17) is marked ``(user, translated)`` after it.
 AMENDMENT_NOTE: Final = 'Amended {day}: {reason} -- approved: "{approved}"'
-_AMEND_LINE = re.compile(r'> Amended \d{4}-\d{2}-\d{2}: \S.*? -- approved: "[^"]*\S[^"]*"')
+_AMEND_LINE = re.compile(r'> Amended \d{4}-\d{2}-\d{2}: \S.*? -- approved: "[^"]*\S[^"]*"(?: \(user, translated\))?')
 MANUAL_PATH = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
 MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
@@ -111,21 +112,43 @@ def _completed(old: str, new: str) -> list[str] | None:
     return ['---', *kept, '---', *lf(new)[match.end() :].splitlines()]
 
 
+_NOTE_HEAD: Final = len('> Amended yyyy-mm-dd: ')
+
+
+def _notes_rewritten(old_notes: list[str], new_notes: list[str]) -> bool | None:
+    """Whether the existing notes were rewritten in place; ``None`` when they were not kept one-for-one.
+
+    *new_notes* is *old_notes* plus ONE added note; each kept note is unchanged or keeps its date and
+    ``Amended`` prefix with only its reason and quote replaced (a quote translated per D26, 2026-11-17).
+    """
+    if len(new_notes) != len(old_notes) + 1:
+        return None
+    for skip in range(len(new_notes)):
+        kept = new_notes[:skip] + new_notes[skip + 1 :]
+        if all(was[:_NOTE_HEAD] == now[:_NOTE_HEAD] for was, now in zip(old_notes, kept, strict=True)):
+            return old_notes != kept
+    return None
+
+
 def only_amended(old: str, new: str) -> bool:
     """An approved amendment: ONE new note, plus one-for-one line replacements or a frontmatter completion.
 
-    One-for-one: the other lines replaced, none added or removed. Completion (user ruling 2026-11-13): the
-    missing :data:`REQUIRED_KEYS` added to a published entry's frontmatter and nothing else changed.
+    One-for-one: the other lines replaced, none added or removed -- an existing note included, which keeps
+    its date (:func:`_notes_rewritten`). Completion (user ruling 2026-11-13): the missing
+    :data:`REQUIRED_KEYS` added to a published entry's frontmatter and nothing else changed.
     """
     old_lines, new_lines = lf(old).splitlines(), lf(new).splitlines()
-    notes = sum(1 for line in new_lines if _AMEND_LINE.fullmatch(line))
-    if notes != 1 + sum(1 for line in old_lines if _AMEND_LINE.fullmatch(line)):
+    rewritten = _notes_rewritten(
+        [line for line in old_lines if _AMEND_LINE.fullmatch(line)],
+        [line for line in new_lines if _AMEND_LINE.fullmatch(line)],
+    )
+    if rewritten is None:
         return False
     before = [line for line in old_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
     if (completed := _completed(old, new)) is not None:
         return before == [line for line in completed if line.strip() and not _AMEND_LINE.fullmatch(line)]
     after = [line for line in new_lines if line.strip() and not _AMEND_LINE.fullmatch(line)]
-    return len(before) == len(after) and before != after
+    return len(before) == len(after) and (before != after or rewritten)
 
 
 def only_redacted(old: str, new: str) -> bool:

@@ -1,16 +1,18 @@
-"""PROMOTING THE TRUNK NEEDS NO WORKING TREE: fast-forward the trunk ref to an integration commit.
+"""PROMOTION MOVES ORIGIN'S TRUNK, NEVER A CHECKOUT: fast-forward origin's trunk to an integration commit.
 
 The trunk is one more session branch (:mod:`dev_lab.dev.sessionbranch`): what makes it legitimate is that
-it lands by fast-forward on an integration commit whose every part stands PASS, not which directory it was
-moved in. So the verb checks nothing out and pushes nothing -- the promoter publishes with a plain
-``git push origin <branch>``, which the pre-push guard judges.
+it lands by fast-forward on an integration commit whose every part stands PASS (TRUNK-MOVES-BY-FAST-FORWARD),
+not which directory it was moved in. So the verb decides against ``origin/<trunk>`` and publishes with a plain,
+non-forced ``git push origin <sha>:refs/heads/<trunk>`` through the network door -- a push git itself refuses
+unless it fast-forwards, and the pre-push guard judges. No local branch of the trunk is read, moved or required:
+one checked out somewhere (a live config checkout, say) is left alone and named stale -- pulling it is its owner's.
 
 WHO MAY PUBLISH THE TRUNK is the forge's protection: on GitHub the ruleset admits the nightly promote job's token
 alone (``ci.yml`` ``jobs.promote``, :data:`~dev_lab.dev.ciworkflows.NIGHTLY_CRON`; :mod:`dev_lab.dev._protect_github`),
 so anywhere else the verb DECIDES and moves nothing -- a local trunk no push can publish is a divergence, not a
 promotion -- and says ``promotable`` with when the job runs. On Gitea the host's promoter runs this verb and pushes.
 
-* ``promote <sha>`` -- fast-forward the LOCAL trunk ref to *sha*, an integration commit on origin whose
+* ``promote <sha>`` -- fast-forward ORIGIN's trunk to *sha*, an integration commit on origin whose
   every derived AND every declared-required ``tests/<part>`` (:func:`dev_lab.dev.platformparts.required_at`)
   stands PASS at scope full under the policy *sha* declares, each naming its env -- save a part needing a resource
   of `[tool.dev_lab.parts] optional_needs` (:mod:`dev_lab.dev.producers`), never a condition (:func:`decide`, the
@@ -25,8 +27,8 @@ promotion -- and says ``promotable`` with when the job runs. On Gitea the host's
 
 The integration branch is moved by the FORGE alone, server side, when it merges a reviewed, safe, clean pull request
 -- whose parts need NOT pass: they gate only this promotion
-(:mod:`dev_lab.dev.forgemerge`). A client has no verb for that, and this one is not a bypass: a ref that
-is checked out in some worktree is refused, and a trunk that cannot fast-forward is refused rather than merged.
+(:mod:`dev_lab.dev.forgemerge`). A client has no verb for that, and this one is not a bypass: a trunk
+that cannot fast-forward is refused rather than merged, and the push itself is non-forced.
 """
 
 from __future__ import annotations
@@ -49,14 +51,15 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import metrics
 from dev_lab.dev._forgebackends import FORGE_SERVE, GITHUB, actions_token, backend_for
-from dev_lab.dev.checkout import worktrees
 from dev_lab.dev.ciworkflows import NIGHTLY_CRON
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_history
 from dev_lab.dev.forgework import Client, client_for
-from dev_lab.dev.jobparts import hosted_parts, off_gate
+from dev_lab.dev.hostedparts import hosted_parts
+from dev_lab.dev.jobparts import off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at
+from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.platformparts import UndeclaredPart, derived, required_at, standing
 from dev_lab.dev.producers import optional_needs_from, optional_parts
 from dev_lab.dev.trialmerge import contains, rev
@@ -98,18 +101,20 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _unchecked_out(root: Path, branch: str) -> None:
-    held = [path for path, name in worktrees(root) or () if name == branch]
-    if held:
-        msg = f'{branch} is checked out at {held[0]}; it needs no working tree -- switch that checkout off it'
+def _publish(root: Path, trunk: str, new: str) -> None:
+    """Fast-forward origin's *trunk* to *new*: a non-forced push, so git refuses anything but a fast-forward."""
+    report = run_network_verb([_GIT, 'push', 'origin', f'{new}:refs/heads/{trunk}'], cwd=root)
+    if not report.ok:
+        msg = f'origin/{trunk} did not take {new[:12]}: {report.remedy}'
         raise IntegrateRefused(msg)
 
 
-def _move(root: Path, branch: str, new: str, old: str | None) -> None:
-    done = _git(root, 'update-ref', '-m', f'integrate: {branch}', f'refs/heads/{branch}', new, old or '')
-    if done.returncode != 0:
-        msg = f'{branch} moved while it was being updated: {done.stderr.strip()}'
-        raise IntegrateRefused(msg)
+def _stale_local(root: Path, trunk: str, sha: str) -> str | None:
+    """The note for a local *trunk* branch that is not at *sha*: promotion never moves it, its owner pulls."""
+    local = rev(root, f'refs/heads/{trunk}')
+    if local is None or local == sha:
+        return None
+    return f'local {trunk} stays at {local[:12]} (promotion moves origin only); its owner pulls it'
 
 
 def _policy(root: Path, at: str) -> Policy:
@@ -121,8 +126,8 @@ def _policy(root: Path, at: str) -> Policy:
 
 
 def _trunk(root: Path, policy: Policy) -> str | None:
-    """The trunk's commit: the local ref, else origin's."""
-    return rev(root, f'refs/heads/{policy.trunk}') or rev(root, f'origin/{policy.trunk}')
+    """The trunk's commit on origin: a local branch of it is never the trunk."""
+    return rev(root, f'origin/{policy.trunk}')
 
 
 def pending(root: Path, policy: Policy, sha: str) -> bool:
@@ -132,7 +137,7 @@ def pending(root: Path, policy: Policy, sha: str) -> bool:
 
 
 def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
-    """Whether the local trunk may fast-forward to *sha*; pure of any write. Reads origin's integration branch."""
+    """Whether origin's trunk may fast-forward to *sha*; pure of any write. Reads origin's integration branch."""
     found = rev(root, sha)
     trunk = _trunk(root, policy)
     published = rev(root, f'origin/{policy.integration}')
@@ -201,20 +206,20 @@ def publishes_trunk(client: Client, env: Mapping[str, str]) -> bool:
 def promote(
     root: Path, client: Client, sha: str, *, env: Mapping[str, str] = os.environ, walk: bool = False
 ) -> Promotion:
-    """:func:`decide` (*walk*: :func:`newest`), then the trunk ref's local fast-forward on ``promote`` when we publish.
+    """:func:`decide` (*walk*: :func:`newest`), then origin's trunk fast-forwarded on ``promote`` when we publish.
 
     A process that may not publish the trunk (:func:`publishes_trunk`) gets ``promotable``, the ref untouched.
 
     The declaration is the one *sha* -- the commit being promoted -- carries, never the working tree's.
     """
     policy = _policy(root, sha)
-    _unchecked_out(root, policy.trunk)
     found = (newest if walk else decide)(root, client, policy, sha)
     if found.action == 'promote':
         if not publishes_trunk(client, env):
             return Promotion('promotable', found.sha, found.reasons, found.passed_over)
-        _move(root, policy.trunk, found.sha, rev(root, f'refs/heads/{policy.trunk}'))
-    return found
+        _publish(root, policy.trunk, found.sha)
+    stale = _stale_local(root, policy.trunk, found.sha) if found.action in {'promote', 'current'} else None
+    return dataclasses.replace(found, reasons=(*found.reasons, stale)) if stale else found
 
 
 def _log(root: Path, kind: str, sha: str) -> None:
@@ -282,7 +287,7 @@ def main(
         )
         return 0
     verb = 'already at' if found.action == 'current' else 'fast-forwarded to'
-    emit(f'[integrate] {trunk} {verb} {found.sha}; publish it: git push origin {trunk}')
+    emit(f'[integrate] origin/{trunk} {verb} {found.sha}')
     return 0
 
 

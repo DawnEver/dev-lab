@@ -77,6 +77,7 @@ from dev_lab.dev import (
     servelock,
     taskbinding,
     taskgate,
+    walls,
 )
 from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
@@ -323,7 +324,8 @@ def issue_and_pr(
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     if (refused := _refused(parser, args, root, env, transport)) is not None:
-        emit(f'[forge] {refused}', err=True)
+        emit(refused, err=True)
+        walls.refused_text(root, refused, reason=f'forge {args.noun} {args.verb}')
         return 1
     client = client_for(root, env=env, transport=transport)
     try:

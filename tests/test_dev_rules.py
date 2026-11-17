@@ -93,6 +93,7 @@ _IDS = frozenset(
         'PUSHED-HEAD-IS-WATCHED',
         'SESSION-HEARS-ITS-PRS',
         'WALLS-ARE-RECORDED',
+        'HOOK-UNDER-FIVE-SECONDS',
         'ONE-BRANCH-PER-SESSION',
         'MERGE-OR-DELETE',
         'RECURSIVE-DELETE',

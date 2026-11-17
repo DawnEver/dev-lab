@@ -24,7 +24,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'untracked rename hides work and is debt -- `branchset` lists it, deletes it when a declared branch '
             'holds its tip, else names it to merge. A worktree is a lease for one task: `branchset --apply` (also run '
             'at session start) reclaims a landed clean tree, and gives every other local branch or tree one of two '
-            'fates (ruling 2026-11-15) -- kept for a NAMED live owner, else archived losslessly and cleaned up '
+            'fates (ruling 2026-11-15) -- kept for a NAMED live owner, else cleaned when merged with nothing unlanded, '
+            'else listed with its doors, never parked (D31) '
             '(`dev_lab.dev.reclaim`, `dev_lab.dev.branchfate`).'
         ),
         ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py', 'tests/test_dev_branchfate.py'),

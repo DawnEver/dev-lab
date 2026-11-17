@@ -114,7 +114,7 @@ def test_the_same_pr_door_does_not_invent_an_agent_for_an_ordinary_process() -> 
 def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
-    plant_codex_rem(tmp_path / 'home', '2.6.0')  # a current binder: the door is the user's prompt
+    plant_codex_rem(tmp_path / 'home', '2.7.0')  # a current binder: the door is the user's prompt
     refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, home=tmp_path / 'home')
     assert refusal is not None
     assert taskgate.RULE in refusal

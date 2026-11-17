@@ -31,6 +31,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
     'backgroundrun',  # the background hooks' detach and per-repo lock, split from reclaimrun (dev-lab #640)
     'hookdispatch',  # one interpreter per hook event, reading WIRING from its own install (dev-lab #640)
+    'gitdirs',  # a checkout's git and common dir read off .git without starting git (ruling D24)
+    'hookhandoff',  # the background runner a hook hands slow work to (HOOK-UNDER-FIVE-SECONDS, ruling D24)
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
     # derives or admits. The row consumer-a added by hand on 2026-09-18 is the first thing it subsumes.
@@ -48,6 +50,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'lockwait',
     'test_outcomes',
     'serialpass',
+    'testtemp',
     'lanepolicy',
     'platformparts',
     # ORIGINAL: a part status read as a (part, env, policy) fact; split from platformparts (2026-11-12).
@@ -85,6 +88,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'shatree',
     'branchprune',
     'branchdelete',
+    'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
+    'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
     'artefacts',
@@ -147,7 +152,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'logref',
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset',
-    'branchfate',  # TWO-FATES: each local branch/tree is merged-and-cleaned or archived-and-cleaned (2026-11-15)
+    'branchfate',  # TWO-FATES: each local branch/tree is merged-and-cleaned or listed with its doors (D31)
     'family',
     # ORIGINAL: the family member list's check, its forge reading and its serve watch are new (2026-11-09).
     'members',
@@ -190,6 +195,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'taskbinding',
     # ORIGINAL: which rem the session's harness runs, read from its plugin registry, so an unbound push names it.
     'remplugin',
+    'remhome',  # the machine home handed to rem as LAB_COMMONS_HOME (D34)
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
@@ -306,6 +312,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
     'jobparts',
+    'hostedparts',  # ORIGINAL: split from jobparts: the hosted-part declaration reader (2026-11-17)
     # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
     'jobmeasure',
     'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
@@ -331,10 +338,12 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'liverun',
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
     'trackedrender',  # ORIGINAL: split from agent_guard: a tracked render needs the checkout's kit (2026-11-17)
+    'retiredfiles',  # ORIGINAL: split from codeplace: a checkout's own declared retired-file rows (2026-11-17)
+    'strays',  # ORIGINAL: split from codeplace: the STRAY-FILE-REFUSED census and its hooks (2026-11-17)
     'metrics',
     'monthsummary',
     'prsuperseded',
-    'worktree_archive',
+    'worktree_outputs',
     'metrics_compute',
     'metrics_report',
     'reviewcommand',

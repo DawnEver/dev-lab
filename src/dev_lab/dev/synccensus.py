@@ -40,7 +40,6 @@ __all__ = [
     'ScopeDriftError',
     'ScopeRow',
     'ScopeRowError',
-    'UncensusedSiteError',
     'VacuousScopeCensusError',
     'assert_scopes',
     'measure',
@@ -68,10 +67,6 @@ class EvidenceGoneError(AssertionError):
 
 class ScopeDriftError(AssertionError):
     """A recorded selection no longer leaves what the table records, in either direction."""
-
-
-class UncensusedSiteError(AssertionError):
-    """A command that PRUNES a population exists in a declared door file and no row accounts for it."""
 
 
 class VacuousScopeCensusError(AssertionError):

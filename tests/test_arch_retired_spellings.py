@@ -103,6 +103,24 @@ RETIRED_SPELLINGS: Final = {
             'one trigger per check (2026-11-16): machine-file drift cannot change within a turn; no Stop re-reads it',
         ),
     ),
+    **dict.fromkeys(
+        (
+            'worktree_archive',
+            'worktree-archive',
+            'save_work',
+            'current_archive',
+            'archive_home',
+            'archive_door',
+            'ARCHIVE_TO',
+        ),
+        (
+            (
+                'dev_lab.dev.worktree_outputs (outputs home only); unlanded work is listed with its doors '
+                '(reclaim.unlanded_work, UNLANDED_DOORS); worktrees --remove removes a clean tree'
+            ),
+            'D31 (user 2026-11-17, restating 2026-11-05): a worktree is merged or cleaned, never parked in output/',
+        ),
+    ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
     'PR-REVIEW-IS-ADVISORY': (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',
@@ -229,6 +247,38 @@ RETIRED_SPELLINGS: Final = {
             ),
             "user ruling 2026-11-16: a workstation never serves a merge's parts; only Actions and the HPC produce",
         ),
+    ),
+    **dict.fromkeys(
+        ('delete_tags', 'judge_tag', 'TAG_DOOR', '_held_by_tag'),
+        (
+            (
+                'branchprune delete: a LOSSY branch is MERGED, or LANDED by a declared `git merge -s ours` PR and '
+                'deleted; `delete-tag` and `delete --approved` are refused by name (branchprune.RETIRED)'
+            ),
+            'user ruling D22 2026-11-17: no tags -- either merge or delete (dev-lab O23)',
+        ),
+    ),
+    **dict.fromkeys(
+        ('codeplace stray', 'stray-check'),
+        (
+            'python -m dev_lab.dev.strays hook|check (the STRAY-FILE-REFUSED census is its own module)',
+            'D40 2026-11-17: codeplace reached the 300-code-line band holding two rules; the stray rule split out',
+        ),
+    ),
+    'load_division': (
+        'dev_lab.dev.hpcaccount.division.division_of (the reached Machine is the one reader of the division)',
+        'D40 2026-11-17: a second reader of a raw [hpc] table no production path builds',
+    ),
+    **dict.fromkeys(
+        ('UncensusedSiteError', 'hook_table_from', 'declares_groups', 'overdue_declared', 'page_path'),
+        (
+            'nothing: no caller in dev-lab or any family repo',
+            'D40 2026-11-17: dead public names removed (a never-raised error and four uncalled readers)',
+        ),
+    ),
+    'RETIRED_FILES': (
+        "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
+        "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",
     ),
     '_adopt_plain_venv': (
         'dev_lab.dev.venvcurrent.retire_passed_over, retried by every publish, reclaim and follow',

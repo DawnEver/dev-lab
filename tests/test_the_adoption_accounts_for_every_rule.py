@@ -67,7 +67,7 @@ _ENFORCED = {
     'REPORTS-LIVE-IN-MEMORY': (guard('tests/test_dev_reportplace.py'),),
     'CODE-IN-CODE-ROOTS': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_codeplace.py')),
     'SCRATCH-IS-NEVER-COMMITTED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_scratch.py')),
-    'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_codeplace.py')),
+    'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_strays.py')),
     'WRITES-STAY-IN-THE-TREE': (guard('tests/test_dev_writeroots.py'), guard('tests/test_dev_tmpsweep.py')),
     'DECLARATION-LIES': (
         guard('tests/test_arch_public_surface.py'),
@@ -191,6 +191,8 @@ _ENFORCED = {
     'SESSION-HEARS-ITS-PRS': (guard('tests/test_dev_sessionwatch.py'),),
     # User ruling 2026-11-13: every wall teaches -- a refusal that named no door is a gap closed before the task.
     'WALLS-ARE-RECORDED': (guard('tests/test_dev_walls.py'), guard('tests/test_dev_hooks.py')),
+    # User ruling 2026-11-17 (D24): a slow hook let a 30-second TOTP code expire.
+    'HOOK-UNDER-FIVE-SECONDS': (guard('tests/test_dev_hook_budget.py'),),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'REFUSAL-NAMES-THE-REMEDY': (
         # The rule's OTHER two halves, added 2026-09-16 with `dev.bounded`: a wall that terminates

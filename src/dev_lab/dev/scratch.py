@@ -9,17 +9,20 @@ dev mechanisms only. The archive-to-memory exit this replaced is retired with no
 VISIBLE, NEVER COMMITTED. The directory is never git-ignored (the family ``.gitignore`` bans the line),
 so an untracked one-off shows in ``git status``; it is anchored by one tracked :data:`SCRATCH_README`
 stating the two exits, and nothing else under it is ever committed. It is the stray census's declared
-sink (:func:`dev_lab.dev.codeplace.stray_files`), so a one-off there is never a stray.
+sink (:func:`dev_lab.dev.strays.stray_files`), so a one-off there is never a stray.
 
 ONE DECLARATION, read off the repo's ``[tool.dev_lab.placement]`` by
 :func:`dev_lab.dev.codeplace.declared_placement`: ``scratch`` (the directory, the family's
-``scratch/`` when omitted) and ``max_age_days`` (when the notice starts naming a one-off).
+``scratch/`` when omitted), ``max_age_days`` (when the notice starts naming a one-off) and
+``scratch_anchor`` (default true: the tracked README anchors it; false, user ruling 2026-11-17 "scratch
+should hold nothing": no README, and the tracked set under scratch is EMPTY).
 
 TWO ENFORCEMENT POINTS, and only the forge blocks (toolchain plan P3: a local copy of a forge check
 refused the same commit twice; ``python -m dev_lab.dev.scratch check <paths>`` remains for a repo that
 declares it as a row of its own, naming both exits through :func:`staged_scratch`):
 
-* the forge body :func:`assert_scratch_never_committed` holds the TRACKED set to exactly the README,
+* the forge body :func:`assert_scratch_never_committed` holds the TRACKED set to exactly the README
+  (empty when unanchored),
   so a commit made with hooks off still reds on the forge;
 * the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age_days`` and prints
   NOTHING when there are none -- a reminder that never blocks and costs no tokens when clean.
@@ -79,7 +82,6 @@ __all__ = [
     'clear_scratch',
     'discard_scratch',
     'main',
-    'overdue_declared',
     'overdue_scratch',
     'pending_scratch',
     'scratch_reminder',
@@ -117,16 +119,11 @@ def overdue_scratch(scratch: Path, *, root: Path, max_age_days: float, now: floa
     return [path for path, age in pending_scratch(scratch, root=root, now=now) if age > max_age_days]
 
 
-def overdue_declared(root: Path) -> list[str]:
-    """:func:`overdue_scratch` over the scratch directory and age *root* declares."""
-    placement = declared_placement(root)
-    return overdue_scratch(root / placement.scratch, root=root, max_age_days=placement.max_age_days)
-
-
-def staged_scratch(paths: Iterable[str], *, scratch: str) -> list[str]:
-    """The repo-relative POSIX *paths* under *scratch* other than its README: what a commit may never carry."""
+def staged_scratch(paths: Iterable[str], *, scratch: str, anchor: bool = True) -> list[str]:
+    """The repo-relative POSIX *paths* under *scratch* a commit may never carry: all but an *anchor* README."""
     prefix = f'{scratch.strip("/")}/'
-    return sorted(p for p in paths if p.startswith(prefix) and p != f'{prefix}{SCRATCH_README}')
+    kept = f'{prefix}{SCRATCH_README}' if anchor else None
+    return sorted(p for p in paths if p.startswith(prefix) and p != kept)
 
 
 class ScratchCommitted(AssertionError):
@@ -134,16 +131,17 @@ class ScratchCommitted(AssertionError):
 
 
 def assert_scratch_never_committed(root: Path) -> None:
-    """THE FORGE BODY: the tracked files under *root*'s declared scratch are exactly its README.
+    """THE FORGE BODY: the tracked files under *root*'s declared scratch are exactly its README, or none.
 
-    A missing README reds too: it is the anchor that keeps the directory visible, and an empty tracked
-    set would read exactly like a clean one.
+    Anchored (the default), a missing README reds too: it keeps the directory visible, and an empty tracked
+    set would read exactly like a clean one. Declared ``scratch_anchor = false``, the tracked set is EMPTY.
 
     Raises:
-        ScratchCommitted: a one-off is committed, or the README is not.
+        ScratchCommitted: a one-off is committed, or the README's presence contradicts the declaration.
 
     """
-    scratch = declared_placement(root).scratch
+    placement = declared_placement(root)
+    scratch = placement.scratch
     done = launch.run(
         ['git', '-C', str(root), 'ls-files', '-z', '--', scratch],
         capture_output=True,
@@ -153,12 +151,21 @@ def assert_scratch_never_committed(root: Path) -> None:
     )
     tracked = set(filter(None, done.stdout.split('\0')))
     readme = f'{scratch}{SCRATCH_README}'
-    if tracked != {readme}:
-        msg = (
-            f'SCRATCH-IS-NEVER-COMMITTED: the tracked files under {scratch} must be exactly {{{readme}}}, '
-            f'and are {sorted(tracked)}. A committed one-off: git rm --cached it, then {_EXITS}'
-        )
-        raise ScratchCommitted(msg)
+    want = {readme} if placement.scratch_anchor else set()
+    if tracked == want:
+        return
+    door = (
+        f'git rm --cached each one-off (then {_EXITS}); a missing README: commit {readme}, or declare '
+        f'scratch_anchor = false in [tool.dev_lab.placement] so scratch holds nothing tracked'
+        if placement.scratch_anchor
+        else f'scratch_anchor = false in [tool.dev_lab.placement] declares no README: git rm --cached each '
+        f'(a README too), then {_EXITS}'
+    )
+    msg = (
+        f'SCRATCH-IS-NEVER-COMMITTED: the tracked files under {scratch} must be {sorted(want)}, '
+        f'and are {sorted(tracked)}. {door}'
+    )
+    raise ScratchCommitted(msg)
 
 
 def scratch_reminder(root: Path) -> str | None:
@@ -221,7 +228,7 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
         emit(str(exc))
         return 2
     if mode == 'check':
-        found = staged_scratch(rest, scratch=placement.scratch)
+        found = staged_scratch(rest, scratch=placement.scratch, anchor=placement.scratch_anchor)
         if found:
             emit(f'SCRATCH-IS-NEVER-COMMITTED: {", ".join(found)} staged; unstage (git restore --staged). {_EXITS}')
         return 1 if found else 0

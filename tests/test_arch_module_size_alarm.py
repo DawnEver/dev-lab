@@ -45,7 +45,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _arch_corpus import ROOT, SOURCE_FLOOR, assert_floor, parse, rel, source_modules
+from _arch_corpus import SOURCE_FLOOR, assert_floor, corpus_key, parse, rel, source_modules
 
 from dev_lab.dev.failprint import subject_lines
 from dev_lab.dev.famtests.density import code_only
@@ -96,7 +96,7 @@ def oversized(paths: tuple[Path, ...], band: int) -> dict[str, int]:
     for path in paths:
         lines = code_lines(path)
         if lines > band:
-            key = rel(path) if path.is_relative_to(ROOT) else path.name
+            key = corpus_key(path)
             out[key] = lines
     return out
 

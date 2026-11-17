@@ -135,7 +135,7 @@ runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
     { id = "pending", name = "Whether main still lacks the tip", if = "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/@integration@' }}", run = 'uv run --no-sync python -m dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' },
-    { id = "matrix", name = "The parts and their runners", if = "${{ steps.pending.outputs.pending != 'false' }}", run = 'echo "matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event "$PARTS_EVENT")" >> "$GITHUB_OUTPUT"' },
+    { id = "matrix", name = "The parts and their runners", if = "${{ steps.pending.outputs.pending != 'false' }}", run = 'matrix="$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event "$PARTS_EVENT")"; echo "matrix=$matrix" >> "$GITHUB_OUTPUT"' },
 ]
 
 # An empty matrix (a tip main already holds) runs no part, no absent-parts and no promote.
@@ -363,7 +363,7 @@ if = "${{ needs.parts.outputs.pending == 'true' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "Promote main", run = 'uv run --no-sync python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA" && git push origin main' },
+    { name = "Promote main", run = 'uv run --no-sync python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA"' },
     { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", run = "uv run --no-sync python -m dev_lab.dev.branchprune sweep" },
 ]
 

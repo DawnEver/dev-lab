@@ -134,6 +134,17 @@ id = "closed-pr"
 run = ["python", "-m", "dev_lab.dev.closedpush"]
 always_run = true
 
+# LOSSLESS-DELETE at push (dev_lab.dev.pushdelete, toolchain O22): EVERY branch a push deletes, however the push was
+# spelled -- a `$refs` variable, xargs, a script; the PUSH-REMOTE-DELETE deny row reads only text -- is judged on git's
+# own ref lines by the judgement `branchprune delete` makes (dev_lab.dev.deletejudge), after `git fetch --prune
+# origin`, against the open PR heads. Irreversible harm, so it refuses; no `refs`: a deletion is the very line a ref
+# filter drops. The door's own push passes it, no exemption. An unreadable forge or origin refuses (fails closed).
+# A tag holds nothing (D22); a branch `[tool.dev_lab.integrator] derived` declares with its producer goes (D23).
+[[pre-push]]
+id = "lossless-delete"
+run = ["python", "-m", "dev_lab.dev.pushdelete"]
+always_run = true
+
 # PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07; a TIME window 2026-11-15): a pr/* head lacks
 # no origin/<integration> landing older than locklag.LAG_WINDOW, its lock pins no floated sibling past that window,
 # and the pushing venv holds what that lock pins (else these hooks ran a stale kit); the remedy is `forge sync` (for
@@ -171,10 +182,10 @@ refs = '^refs/heads/'
 
 # STRAY-FILE-REFUSED as a HINT: an untracked, non-ignored file outside the declared stray roots
 # ([tool.dev_lab.placement] stray_roots, plus scratch/) is named with its remedy after the commit
-# (dev_lab.dev.codeplace). Untracked files are invisible to the forge, so this is the one place it is said.
+# (dev_lab.dev.strays). Untracked files are invisible to the forge, so this is the one place it is said.
 [[post-commit]]
 id = "stray-files"
-run = ["python", "-m", "dev_lab.dev.codeplace", "stray-check"]
+run = ["python", "-m", "dev_lab.dev.strays", "check"]
 always_run = true
 
 # A PRESSED HOST TELLS ITS AGENTS (ruling D54): this host's disk/memory/CPU alarms, the agent hook's own lines

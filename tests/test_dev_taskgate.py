@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from _rem_binding import bind_as_rem, plant_claude_rem
+from _rem_binding import bind_as_rem, bind_in_retired_store, plant_claude_rem
 
 from dev_lab.dev import taskbinding, taskgate, walls
 from dev_lab.dev.githooks.table import base_rows
@@ -27,7 +27,7 @@ def _current_rem(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     The binder skew (rem absent, disabled or old) has its own planted cases in test_dev_remplugin.py.
     """
     home = tmp_path_factory.mktemp('home')
-    plant_claude_rem(home, '2.6.0')
+    plant_claude_rem(home, '2.7.0')
     for key in ('HOME', 'USERPROFILE'):
         monkeypatch.setenv(key, str(home))
     for key in ('CLAUDE_CONFIG_DIR', 'CODEX_HOME'):
@@ -86,6 +86,8 @@ def test_an_unbound_session_is_refused_naming_rems_door(tmp_path: Path) -> None:
     assert '`task: <slug>`' in said
     assert "rem's UserPromptSubmit hook" in said
     assert '/rem:task open' in said
+    assert _SESSION in said, 'the refusal names the session it judged'
+    assert taskbinding.binding_path(_SESSION).as_posix() in said, 'and the exact file it read'
 
 
 def test_the_gate_is_one_pre_push_row_and_no_commit_is_judged() -> None:
@@ -102,10 +104,43 @@ def test_a_binding_rem_wrote_is_read_at_pre_push(tmp_path: Path, monkeypatch: py
     monkeypatch.chdir(root)
     monkeypatch.setenv(SESSION_ENV, _SESSION)
     assert taskgate.main([]) == 1, 'planted control: unbound, the push is refused'
-    binding = taskbinding.ledger(root) / taskbinding.BINDINGS / f'{_SESSION}.json'
+    binding = taskbinding.binding_path(_SESSION)
     binding.parent.mkdir(parents=True)
-    binding.write_text(f'{{"session": "{_SESSION}", "task": "toolchain@a1"}}', encoding='utf-8')  # rem's bytes
+    tasks = taskbinding.ledger(root).as_posix()
+    binding.write_text(  # rem's bytes (D34)
+        f'{{"session": "{_SESSION}", "task": "toolchain@a1", "ledger": {{"repo_key": "repo-0", "path": "{tasks}"}}}}',
+        encoding='utf-8',
+    )
     assert taskgate.main([]) == 0
+
+
+def test_a_binding_written_from_repo_a_admits_a_push_from_repo_b(tmp_path: Path) -> None:
+    """D34, measured O29: the session bound `toolchain` in one repo and was refused pushing from another."""
+    first, second = _repo(tmp_path / 'a', required=True), _repo(tmp_path / 'b', required=True)
+    (second / '.claude' / 'tasks' / 'toolchain' / 'TASK.md').unlink()  # the task lives in repo A only
+    assert taskgate.refusal(second, env=AGENT) is not None, 'planted control: unbound'
+    _bind(first)
+    assert taskgate.refusal(second, env=AGENT) is None
+    folder = first / '.claude' / 'tasks' / 'toolchain'
+    (folder / 'TASK.md').write_text('---\nauthority: a1\nstatus: closed\n---\n', encoding='utf-8')
+    closed = taskgate.refusal(second, env=AGENT)
+    assert closed is not None
+    assert 'no longer open' in closed, 'judged open in the ledger the record names (A)'
+    assert taskbinding.ledger(first).as_posix() in closed
+
+
+def test_a_binding_only_in_the_retired_store_is_refused_naming_its_migration(tmp_path: Path) -> None:
+    """FORMATS-MIGRATE-ONCE: the old per-repo record is never read, only refused by name with its migration."""
+    root = _repo(tmp_path, required=True)
+    old = bind_in_retired_store(root, _SESSION, 'toolchain')
+    said = taskgate.refusal(root, env=AGENT)
+    assert said is not None
+    assert old.as_posix() in said
+    assert _SESSION in said
+    assert taskbinding.binding_path(_SESSION).as_posix() in said
+    assert 'migrations/migrate.mjs' in said
+    _bind(root)
+    assert taskgate.refusal(root, env=AGENT) is None, 'planted control: migrated, admitted'
 
 
 def test_a_branch_named_after_a_task_binds_nothing(tmp_path: Path) -> None:
@@ -158,20 +193,26 @@ def test_the_hook_row_refuses_an_unbound_agent_push(tmp_path: Path, monkeypatch:
 
 
 def _every_refusal(tmp_path: Path) -> dict[str, str | None]:
-    """One text per refusal :func:`taskgate.refusal` can give, each produced by its real cause."""
+    """One text per refusal :func:`taskgate.refusal` can give, each produced by its real cause.
+
+    A binding is keyed by the session alone (D34), so each case is judged before the next one binds.
+    """
+    said: dict[str, str | None] = {}
     unbound = _repo(tmp_path / 'unbound', required=True)
     old_rem = tmp_path / 'old-rem-home'
-    plant_claude_rem(old_rem, '2.5.0')
+    plant_claude_rem(old_rem, '2.6.0')
+    said['unbound'] = taskgate.refusal(unbound, env=AGENT)
+    said['binder too old'] = taskgate.refusal(unbound, env=AGENT, home=old_rem)
+    said['session unreadable'] = taskgate.refusal(unbound, env={SESSION_ENV: ''})
+    retired = _repo(tmp_path / 'retired', required=True)
+    bind_in_retired_store(retired, _SESSION, 'toolchain')
+    said['unmigrated'] = taskgate.refusal(retired, env=AGENT)
     closed = _repo(tmp_path / 'closed', required=True)
     _bind(closed)
     task = closed / '.claude' / 'tasks' / 'toolchain' / 'TASK.md'
     task.write_text(task.read_text(encoding='utf-8').replace('status: open', 'status: closed'), encoding='utf-8')
-    return {
-        'unbound': taskgate.refusal(unbound, env=AGENT),
-        'binder too old': taskgate.refusal(unbound, env=AGENT, home=old_rem),
-        'task closed': taskgate.refusal(closed, env=AGENT),
-        'session unreadable': taskgate.refusal(unbound, env={SESSION_ENV: ''}),
-    }
+    said['task closed'] = taskgate.refusal(closed, env=AGENT)
+    return said
 
 
 def test_every_refusal_puts_its_door_on_a_line_of_its_own(tmp_path: Path) -> None:
@@ -260,7 +301,7 @@ def test_a_task_opened_in_one_worktree_is_bound_journaled_and_admitted_from_anot
     other = {SESSION_ENV: 'second-session-0001'}
     assert taskgate.refusal(tree_b, env=other) is not None
     assert bind_as_rem(tree_b, other[SESSION_ENV], 'opened-in-a') == 'opened-in-a@a9'
-    assert (ledger / taskbinding.BINDINGS / 'second-session-0001.json').is_file()
+    assert taskbinding.binding(other[SESSION_ENV]).ledger == ledger, 'the record names the one ledger'
     for tree in (tree_a, tree_b, main):
         assert taskbinding.session_task(other, start=tree) == 'opened-in-a@a9'
         assert taskgate.refusal(tree, env=other) is None

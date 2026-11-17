@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev.codeplace import main as codeplace_main
+from dev_lab.dev.strays import main as strays_main
 from dev_lab.dev.tmpsweep import census, main, session_report, sweep, tool_text
 from dev_lab.dev.writeroots import Root
 
@@ -183,13 +183,13 @@ def test_the_stop_hook_rides_the_stray_census_and_blocks_once(
     call = {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'input': {'file_path': 'fresh.py'}}]}}
     transcript.write_text(json.dumps(call), encoding='utf-8')
     payload = {'hook_event_name': 'Stop', 'cwd': str(checkout), 'transcript_path': str(transcript)}
-    assert codeplace_main(['stray'], stdin=io.StringIO(json.dumps(payload))) == 0
+    assert strays_main(['hook'], stdin=io.StringIO(json.dumps(payload))) == 0
     decision = json.loads(capsys.readouterr().out)
     assert decision['decision'] == 'block'
     assert 'WRITES-STAY-IN-THE-TREE' in decision['reason']
     assert 'fresh.py' in decision['reason']
     payload['stop_hook_active'] = True
-    assert codeplace_main(['stray'], stdin=io.StringIO(json.dumps(payload))) == 0
+    assert strays_main(['hook'], stdin=io.StringIO(json.dumps(payload))) == 0
     assert capsys.readouterr().out == ''
 
 
