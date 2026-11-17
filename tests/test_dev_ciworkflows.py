@@ -351,7 +351,7 @@ def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_deci
     assert 'python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA"' in step['run'], (
         'a busy tip is never green: the nightly promotes the newest first parent that passes'
     )
-    assert 'git push origin main' in step['run'], 'promote moved the local main to the chosen sha; this pushes it'
+    assert 'git push' not in step['run'], 'promote fast-forwards origin itself; there is no local main to push'
 
 
 def test_a_stale_render_promoting_only_the_tip_is_refused_by_check(tmp_path: Path, capsys) -> None:
