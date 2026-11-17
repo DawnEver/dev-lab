@@ -28,8 +28,10 @@ One request is one JSON line with an ``action``:
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
   the cap, for a repo not in
   ``[ops.breakglass] repos``, a short reason, a declaration the forge cannot serve, a PR not open, not into the repo's
-  declared integration branch, or whose head is not the one shown -- NEVER for its tests (user ruling 2026-11-11: the
-  wave waives them too): unrun, pending or red, it merges, and its test state at merge time (:func:`tests_at`) is
+  declared integration branch, whose head is not the one shown, or that carries the ``hold`` label (user ruling
+  D48, 2026-11-17: refused naming ``forge pr release <N>``, :mod:`dev_lab.dev.forgehold`) -- NEVER for its tests
+  (user ruling 2026-11-11: the wave waives them too): unrun, pending or red, it merges, and its test state at
+  merge time (:func:`tests_at`) is
   named in the comment, the audit line and the wave's summary. A red naming a failure subject the base's same red
   does not (:mod:`dev_lab.dev.failprint`, finding D13) is admitted ON RECORD too (user ruling D18, 2026-11-17): the
   new subjects join that test state by name; then comment, merge at that
@@ -66,6 +68,7 @@ from dev_lab.dev.failprint import Fingerprints
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR, is_held
 from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgemergewaits import green_waits
@@ -84,7 +87,7 @@ from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.wavesweep import Pull, integration_at, sweep
 
-__all__ = ['BreakglassRefused', 'ClientForge', 'ConsentWanted', 'Forge', 'Server', 'merge_message']
+__all__ = ['BreakglassRefused', 'ClientForge', 'ConsentWanted', 'Forge', 'Held', 'HeldBack', 'Server', 'merge_message']
 
 _HOUR = 3600.0
 
@@ -93,12 +96,20 @@ class BreakglassRefused(RuntimeError):
     """The request was refused; the message is what the client prints."""
 
 
-class ConsentWanted(BreakglassRefused):
+class HeldBack(BreakglassRefused):
+    """A label holds the PR back (or its labels cannot be read); the sweep skips it, logged once per wave."""
+
+
+class ConsentWanted(HeldBack):
     """The PR touches a boundary key (or its labels cannot be read): it lands only by its own consent."""
 
 
-def _consent_stands(forge: Forge, pr: int) -> None:
-    """Refuse PR *pr* while it carries :data:`LABEL`, or when its labels cannot be read (fail closed)."""
+class Held(HeldBack):
+    """The PR carries the hold label (:mod:`dev_lab.dev.forgehold`): it lands only once released."""
+
+
+def _labels_admit(forge: Forge, pr: int) -> None:
+    """Refuse PR *pr* while it carries :data:`LABEL` or the hold label, or when its labels cannot be read."""
     try:
         carried = forge.labels(pr)
     except (ForgeCallFailed, KeyError, TypeError, ValueError) as unread:
@@ -107,6 +118,9 @@ def _consent_stands(forge: Forge, pr: int) -> None:
     if LABEL in carried:
         msg = f'#{pr} is labelled {LABEL}: it touches a boundary key and lands only by its own consent'
         raise ConsentWanted(msg)
+    if is_held(carried):  # D48: break-glass honours the hold, as the merge tick does
+        msg = f'#{pr} is held (label `{HOLD_LABEL}`): release it with `{RELEASE_DOOR.format(n=pr)}` first'
+        raise Held(msg)
 
 
 class Forge(Protocol):
@@ -417,7 +431,7 @@ class Server:
         if found != asked.head:
             msg = f'#{asked.pr} head is {found[:12]}, not the {asked.head[:12]} you were shown: re-run the verb'
             raise BreakglassRefused(msg)
-        _consent_stands(forge, asked.pr)
+        _labels_admit(forge, asked.pr)
         return forge, integration
 
     def _close_verb(self, _asked: None) -> str:
@@ -455,10 +469,10 @@ class Server:
             return '\n'.join([*landed, self._status(None)])
 
     def _sweep_land(self, asked: requests.Merge) -> str | None:
-        """:meth:`_merge` for the sweep; a PR held for its own consent is ``None``, logged once per wave."""
+        """:meth:`_merge` for the sweep; a PR a label holds back (consent, hold) is ``None``, logged once per wave."""
         try:
             return self._merge(asked)
-        except ConsentWanted as wanted:
+        except HeldBack as wanted:
             held = self._current()
             if held is not None and (seen := f'{asked.repo}#{asked.pr}') not in held.held_back:
                 held.held_back.append(seen)

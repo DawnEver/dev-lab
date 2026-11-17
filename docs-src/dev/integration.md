@@ -389,7 +389,8 @@ ready (`ready_for_review`, or on Gitea the serve's next tick after the title edi
 
 HOLD: where `pr draft` is refused (GitHub, a caller without convert rights), `forge pr hold <N>` puts the `hold`
 label on the PR and `forge pr release <N>` takes it off; merge-ready posts `pending` naming the release door and
-the merge decision never lands a held head. The mechanism is `dev_lab.dev.forgehold`'s docstring.
+the merge decision never lands a held head. Break-glass honours it too (user ruling D48, 2026-11-17): a manual
+`forge pr breakglass` and a wave's sweep refuse a held PR, naming the release door. The mechanism is `dev_lab.dev.forgehold`'s docstring.
 
 ## The integration tick
 

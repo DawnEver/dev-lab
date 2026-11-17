@@ -12,6 +12,7 @@ from test_ops_breakglass import GREEN, HEAD, FakeForge, Host
 
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
+from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
 from dev_lab.ops.configcheck import LABEL
@@ -194,6 +195,14 @@ def test_a_held_back_pr_is_logged_once_per_wave_not_every_tick(tmp_path, capsys)
     assert _merged(host) == []
     err = capsys.readouterr().err
     assert (err.count('#7 skipped'), err.count('#8 skipped')) == (1, 1)
+
+
+def test_a_held_pr_is_skipped_by_the_sweep_naming_the_release_door(tmp_path, capsys) -> None:
+    host = _consent_host(tmp_path, labelled={7: (HOLD_LABEL,)})
+    host.open(max_merges=1)
+    host.server.tick()
+    assert _merged(host) == [8], 'a held PR does not count toward max_merges'
+    assert RELEASE_DOOR.format(n=7) in capsys.readouterr().err
 
 
 def test_a_label_the_forge_cannot_read_is_a_skip_not_a_merge(tmp_path, capsys) -> None:  # PLANTED CONTROL

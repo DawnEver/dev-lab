@@ -18,7 +18,8 @@ The sweep only decides WHICH PRs to ask for:
 - a PR whose admission or merge is refused (off the integration branch, the forge's own refusal) is
   skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick;
 - a PR the admission holds back for its own consent (``needs-consent``, :meth:`Server._admit`) is skipped and
-  logged once per wave by the server; *land* answers ``None`` for it. A skip spends none of the cap.
+  logged once per wave by the server; *land* answers ``None`` for it. A HELD PR (the ``hold`` label, user ruling
+  D48) is skipped the same way, its log naming the release door. A skip spends none of the cap.
 
 Every merge counts against the wave's cap; the merge that reaches it closes the wave, whose ONE summary is the alert.
 """

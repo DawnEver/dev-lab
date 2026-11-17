@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import json
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -23,6 +24,7 @@ from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 from dev_lab.dev.breakglass import reason
 from dev_lab.dev.failprint import Fingerprints
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR
 from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
@@ -225,6 +227,17 @@ def test_a_manual_merge_of_a_needs_consent_pr_is_refused(host: Host) -> None:
         host.merge()
     assert host.forge.calls == []
     host.forge.labelled[7] = ()  # PLANTED CONTROL: the same PR without the label merges
+    assert 'merged' in host.merge()
+
+
+def test_a_held_pr_is_refused_naming_the_release_door_and_merges_after_release(host: Host) -> None:
+    """User ruling D48 (2026-11-17): break-glass honours the hold label too."""
+    host.open()
+    host.forge.labelled[7] = (HOLD_LABEL,)
+    with pytest.raises(BreakglassRefused, match=re.escape(RELEASE_DOOR.format(n=7))):
+        host.merge()
+    assert host.forge.calls == []
+    host.forge.labelled[7] = ()  # PLANTED CONTROL: released, the same PR merges
     assert 'merged' in host.merge()
 
 

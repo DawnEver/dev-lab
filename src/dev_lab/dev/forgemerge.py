@@ -286,7 +286,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         others = (EXTERNAL, *others)
     if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         others = (WAITING.format(n=number), *others)
-    if is_held(pull):  # HOLD: a held PR never lands, on a forge that refuses its draft too
+    if is_held(pull.labels):  # HOLD: a held PR never lands, on a forge that refuses its draft too
         others = (HELD.format(n=number), *others)
     waiting = found.waiting and len(others) == len(found.others)
     return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting)
