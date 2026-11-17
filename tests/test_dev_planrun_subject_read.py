@@ -21,6 +21,7 @@ from _ops_fixtures import NOW, RFC_KEY, code
 from lab_commons.home import HOME_ENV
 
 from dev_lab.dev import planrunpreflight, planrunsteps, sshholdplan
+from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.credential import ConsentRefused
@@ -158,7 +159,8 @@ def test_the_subject_verb_refuses_every_form_that_could_write(
     line = json.dumps({'verb': 'subject', 'action': action, 'argv': argv})
     if not why:
         assert serve.handle(issuer, line, derive=wire.derive) == TIP
-        assert wire.derived == [[*argv, '--subject']]  # type: ignore[misc]
+        assert isinstance(argv, list)
+        assert wire.derived == [[*argv, '--subject']]
         return
     with pytest.raises(ConsentRefused, match=why):
         serve.handle(issuer, line, derive=wire.derive)
@@ -173,8 +175,6 @@ def test_an_issuer_given_no_reader_derives_nothing(issuer: Issuer) -> None:
 
 def test_every_declared_read_is_a_verb_with_a_subject_flag() -> None:
     """The registry's ``reads`` name real ops verbs whose ``--subject`` returns before acting (each parses)."""
-    from dev_lab.ops import __main__ as ops_main  # noqa: PLC0415 -- only this test needs the full parser
-
     seen = []
     for row in ACTIONS.values():
         if not row.reads:
