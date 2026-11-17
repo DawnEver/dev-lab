@@ -9,9 +9,10 @@ being too slow to run inline. So this module decides nothing; it RUNS that owner
 * ``--session-start`` is the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`): it reads the
   payload's ``cwd``, does nothing unless that is a MAIN checkout (a linked tree is somebody's lease), detaches
   a background run and returns at once;
-* ``--background`` is the git hooks' door (``githooks/base.toml``: ``post-merge``, ``post-checkout`` and
-  ``pre-push``, user ruling 2026-11-12): from ANY tree of the repo it detaches a run of the MAIN checkout and
-  returns at once, exit 0 whatever happens, so it never delays or fails the merge, checkout or push;
+* ``--background`` is the git hook's door (``githooks/base.toml``: ``post-merge``, user ruling 2026-11-12; a tree
+  becomes reclaimable when its branch lands, which a checkout learns when it takes in upstream): from ANY tree of
+  the repo it detaches a run of the MAIN checkout and returns at once, exit 0 whatever happens, so it never delays
+  or fails the merge;
 * a background run has no console, survives its parent, and holds a PER-REPO lock in the git common dir, so a
   second session's run is a no-op; a lock older than :data:`STALE_LOCK_S` is a crashed run's and is taken over;
 * each run removes at most :data:`BATCH` trees and writes every line -- removed, kept with its reason (a real

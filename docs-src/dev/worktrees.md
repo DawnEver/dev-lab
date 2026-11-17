@@ -47,8 +47,8 @@ and prints why. Each run ends with a summary line counting every kept tree by re
 home is judged the same way. What blocks reclaim: a tracked change (staged or not), commits not landed (`git cherry`), a
 live process, a `git worktree lock`. `dev_lab.dev.reclaim.reclaimable` is the
 one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
-and the session debris hook runs the former; a session start, and every merge, checkout and push
-(`githooks/base.toml`, `reclaimrun --background`), detach a background run of the latter, so a finished tree no
+and the session debris hook runs the former; a session start, and every merge (`githooks/base.toml`
+`post-merge`, `reclaimrun --background`), detach a background run of the latter, so a finished tree no
 longer pins its branch forever. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
 

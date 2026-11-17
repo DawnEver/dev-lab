@@ -26,9 +26,10 @@ Both name the one remedy, :data:`SYNC` (``forge sync`` merges integration and re
 same sync, :mod:`dev_lab.dev.forgesync`). The judgement is read at three doors: the forge's ``pr-current`` status on
 every open PR head, an ALARM the merge never waits on (:mod:`dev_lab.dev.forgeheadgate`, W5 dev-lab#644: the
 trial merge at merge time decides mergeability), ``forge pr ready`` (:func:`ready_refusals`), and the
-``pr-current`` pre-push row (:func:`main`, ``refs = '^refs/heads/pr/'``) -- EARLY FEEDBACK
-only; the forge decides. The forge's own pushers' branches (:data:`dev_lab.dev.sessionbranch.MACHINE_BRANCHES`) are
-not judged (:func:`judged`): the relock IS what makes a lock fresh.
+``pr-current`` pre-push row (:func:`main`, ``refs = '^refs/heads/pr/'``) -- a WARNING: the row is ``advisory``
+(dev-lab #661), because refusing a push on an alarm would be a merge gate that does not exist. The forge's own
+pushers' branches (:data:`dev_lab.dev.sessionbranch.MACHINE_BRANCHES`) are not judged (:func:`judged`): the relock
+IS what makes a lock fresh.
 Integration is the pushed tip's ``[tool.dev_lab.integrator] integration``.
 """
 
@@ -89,10 +90,10 @@ Fetch = Callable[[Path, str], str | None]
 #: Why lock text is not current enough, one sentence per sibling past the window (locklag.within_window).
 Read = Callable[[str], tuple[str, ...]]
 
-#: What every refusal here ends with: this hook is early feedback, the forge's status is the gate.
+#: What every warning here ends with: this hook is early feedback, and the forge's status is an alarm, not a gate.
 EARLY: Final = (
-    f'  (early feedback: the forge posts this judgement as the {HOOK_ID!r} status on the PR head, and the merge '
-    'requires it)'
+    f'  (early feedback: the forge posts this judgement as the {HOOK_ID!r} status on the PR head, an alarm the '
+    'merge does not wait on; the push goes ahead)'
 )
 
 
@@ -247,12 +248,12 @@ def ready_refusals(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """The pre-push hook: git's ref lines on stdin; exit 1 refuses, 0 publishes."""
+    """The pre-push row: git's ref lines on stdin; exit 1 names a stale head, which the ``advisory`` row shows."""
     del argv  # the remote name and url; the judgement reads origin
     top = _git(Path.cwd(), 'rev-parse', '--show-toplevel').stdout.strip()
     found = refusals(Path(top or Path.cwd()), '' if sys.stdin.isatty() else sys.stdin.read())
     if found:
-        emit('\n'.join(['', *(f'  REFUSED: {line}' for line in found), EARLY, '']), err=True)
+        emit('\n'.join(['', *(f'  WARNING: {line}' for line in found), EARLY, '']), err=True)
         return 1
     return 0
 
