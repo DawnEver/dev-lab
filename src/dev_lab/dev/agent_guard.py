@@ -27,12 +27,17 @@ shared checkout is a mutation another party learns about by accident, and it wou
 ``unguarded`` unobservable. The install NEVER clobbers: unrelated settings keys, unrelated matchers
 and unrelated hooks in the Bash matcher are preserved, and an engine file that is somebody ELSE's
 (no stamp) refuses rather than being overwritten.
+
+A TRACKED RENDER IS THE CHECKOUT'S OWN KIT'S, AND NEVER A MAIN CHECKOUT'S (toolchain O14): the install plans
+every write first and :func:`dev_lab.dev.trackedrender.check_render` decides whether the tracked ones may
+move; a refused install writes NOTHING.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +58,7 @@ from dev_lab.dev.agent_wiring import (
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
 from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
+from dev_lab.dev.trackedrender import Kit, RenderRefused, check_render
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -339,38 +345,31 @@ def _drift_lines(settings: dict[str, Any], repo: Path) -> list[str]:
     return [f'the hook rows differ from the rendered wiring on {", ".join(drifted)}'] if drifted else []
 
 
-def _install_resolver(dirs: set[Path]) -> list[str]:
+def _text(text: str) -> bytes:
+    """The bytes :meth:`Path.write_text` writes for *text*: UTF-8, every newline the platform's."""
+    return text.replace('\n', os.linesep).encode('utf-8')
+
+
+def _resolvers(dirs: set[Path]) -> tuple[dict[Path, bytes], list[str]]:
     """The ONE environment resolver into each of *dirs*: the launcher and the engine both require it."""
     shipped = _LAUNCHER_SHIPPED.with_name(_RESOLVER).read_bytes()
+    writes: dict[Path, bytes] = {}
     actions = []
     for beside in sorted(dirs):
         resolver = beside / _RESOLVER
         if resolver.exists() and resolver.read_bytes() == shipped:
             actions.append(f'environment resolver already present: {resolver}')
         else:
-            resolver.write_bytes(shipped)
+            writes[resolver] = shipped
             actions.append(f'environment resolver installed: {resolver}')
-    return actions
+    return writes, actions
 
 
-def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
-    """Install the engine into *repo* and wire it, returning what was DONE, one line per action.
-
-    THE RULES FILE IS NOT WRITTEN HERE, and that is the design rather than an omission: which rules a
-    repo can honestly ship depends on the remedies that repo offers, which only
-    :mod:`dev_lab.dev.hook_adoption` can answer. Shipping a default set from here would install
-    rules whose exits do not exist in the tree reading them -- the sealed-road failure the registry
-    was built to prevent.
-
-    Raises:
-        FileExistsError: when an engine file is present that lab-commons did not ship. Overwriting
-            somebody's hand-written hook is not an install, it is a deletion; pass *force* to mean it.
-        WireRefused: the repo's ``[[tool.dev_lab.agent_hooks]]`` declaration is refused; nothing is written.
-
-    """
-    declared(repo)  # a refused declaration refuses the install before any file is written
+def _planned(repo: Path, *, force: bool) -> tuple[dict[Path, bytes], list[str]]:
+    """Every file the install would write into *repo*, with its bytes, and the action line each one reports."""
     engine = repo / ENGINE_REL
     status, detail = _inspect_engine(engine)
+    writes: dict[Path, bytes] = {}
     actions: list[str] = []
     if status == FOREIGN and not force:
         msg = f'{engine}: {detail}. Re-run with force=True if replacing it is what you mean.'
@@ -378,16 +377,14 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
     if status == INSTALLED:
         actions.append(f'engine already current: {engine}')
     else:
-        engine.parent.mkdir(parents=True, exist_ok=True)
-        engine.write_text(engine_source(), encoding='utf-8')
+        writes[engine] = _text(engine_source())
         actions.append(f'engine {"replaced" if status != ABSENT else "installed"}: {engine}')
 
     launcher = repo / LAUNCHER_REL
     if launcher.exists():
         actions.append(f'launcher already present, kept: {launcher}')
     else:
-        launcher.parent.mkdir(parents=True, exist_ok=True)
-        launcher.write_text(launcher_source(), encoding='utf-8')
+        writes[launcher] = _text(launcher_source())
         actions.append(f'launcher installed: {launcher}')
 
     catalog = launcher.with_name('native_session.json')
@@ -395,10 +392,12 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
     if catalog.exists() and catalog.read_bytes() == catalog_bytes:
         actions.append(f'native session catalog already present: {catalog}')
     else:
-        catalog.write_bytes(catalog_bytes)
+        writes[catalog] = catalog_bytes
         actions.append(f'native session catalog installed: {catalog}')
 
-    actions.extend(_install_resolver({launcher.parent, engine.parent}))
+    resolvers, resolved = _resolvers({launcher.parent, engine.parent})
+    writes |= resolvers
+    actions += resolved
 
     settings_path = repo / SETTINGS_REL
     before: dict[str, Any] = {}
@@ -408,9 +407,37 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
     if after == before:
         actions.append(f'wiring already present: {settings_path}')
     else:
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(json.dumps(after, indent=2) + '\n', encoding='utf-8')
+        writes[settings_path] = _text(json.dumps(after, indent=2) + '\n')
         actions.append(f'wiring {"updated" if before else "written"}: {settings_path}')
+    return writes, actions
+
+
+def install_guard(repo: Path, *, force: bool = False, kit: Kit | None = None) -> tuple[str, ...]:
+    """Install the engine into *repo* and wire it, returning what was DONE, one line per action.
+
+    THE RULES FILE IS NOT WRITTEN HERE, and that is the design rather than an omission: which rules a
+    repo can honestly ship depends on the remedies that repo offers, which only
+    :mod:`dev_lab.dev.hook_adoption` can answer. Shipping a default set from here would install
+    rules whose exits do not exist in the tree reading them -- the sealed-road failure the registry
+    was built to prevent.
+
+    *kit* is the dev-lab rendering (default: the running one); :func:`~dev_lab.dev.trackedrender.check_render`
+    decides with it whether a TRACKED file may move.
+
+    Raises:
+        FileExistsError: when an engine file is present that lab-commons did not ship. Overwriting
+            somebody's hand-written hook is not an install, it is a deletion; pass *force* to mean it.
+        WireRefused: the repo's ``[[tool.dev_lab.agent_hooks]]`` declaration is refused; nothing is written.
+        RenderRefused: a tracked file would move in a main checkout or under a kit not the checkout's own;
+            nothing is written.
+
+    """
+    declared(repo)  # a refused declaration refuses the install before any file is written
+    writes, actions = _planned(repo, force=force)
+    check_render(repo, writes, kit=kit)
+    for path, data in writes.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
     return tuple(actions)
 
 
@@ -430,7 +457,7 @@ def report_guard(argv: list[str] | None = None) -> int:
     if args.install:
         try:
             actions = install_guard(root, force=args.force)
-        except WireRefused as refused:
+        except (WireRefused, RenderRefused) as refused:
             emit(f'[agent-guard] REFUSED -- {refused}')
             return 1
         for action in actions:
