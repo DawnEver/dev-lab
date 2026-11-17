@@ -61,6 +61,10 @@ RETIRED_SPELLINGS: Final = {
             'dev-lab #640 (W1): one dispatcher per hook event; the renderer owns every launcher row',
         ),
     ),
+    'serve = false': (
+        "the repo's own [tool.dev_lab.protection] producer (dev_lab.dev.producers); a host serves only hpc repos",
+        'user ruling 2026-11-16: a repo is produced by forge Actions or by the HPC, declared once in the repo',
+    ),
     **dict.fromkeys(
         ('check-case-conflict', 'check-json', 'check-merge-conflict', 'check-toml'),
         (

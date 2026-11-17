@@ -31,7 +31,7 @@ from dev_lab.dev.workstationverdict import Facts, posting_refusal
 SHA, OLD = 'a' * 40, 'c' * 40
 TREE, OTHER_TREE = 't' * 40, 'u' * 40
 ENV = 'e0e0e0e0'  # an env key is hex: a status description carries it (dev_lab.dev.partfacts)
-SERVE = {'repos': ['consumer'], 'parts': 'every'}
+SERVE = {'parts': 'every'}
 STRIKE_FILE = f'workstation-strike-BOXALPHA-{"0" * 32}.json'
 CLEAN = Facts(part='base@windows', full=True, declared='', revoked='', dirt=(), pushed=True, stale='')
 
@@ -58,29 +58,20 @@ def test_every_unmet_condition_refuses_and_names_itself(planted: dict[str, Any],
     assert named in refused
 
 
-def test_the_declaration_is_the_machine_files_serve_table_and_nothing_else() -> None:
-    """``[serve] repos`` names the repo and ``[serve] parts`` claims the part; the box has its needs."""
-    ok = workstationverdict.declared_refusal(SERVE, repo='consumer', part='base@windows', present={'windows'})
+def test_a_box_posts_only_an_optional_part_its_serve_rule_claims_and_its_needs_allow() -> None:
+    """A local machine is never a producer of a part a merge waits on (user ruling 2026-11-16)."""
+    windows = frozenset({'windows'})
+    ok = workstationverdict.declared_refusal(SERVE, part='windows', present={'windows'}, optional=windows)
     assert ok == ''
-    assert 'does not serve' in workstationverdict.declared_refusal(
-        {}, repo='consumer', part='base', present={'windows'}
+    assert 'never the producer of tests/base@windows' in workstationverdict.declared_refusal(
+        SERVE, part='base@windows', present={'windows'}, optional=windows
+    ), 'PLANTED: a base row is a merge condition, so no box posts it'
+    assert 'declares no [serve]' in workstationverdict.declared_refusal(
+        {}, part='windows', present={'windows'}, optional=windows
     ), 'PLANTED: a box with no [serve] table is no producer -- the default rule never declares a developer box'
-    assert 'does not serve' in workstationverdict.declared_refusal(
-        SERVE, repo='other-lab', part='base', present={'windows'}
+    assert 'lacks femm' in workstationverdict.declared_refusal(
+        SERVE, part='femm', present={'windows'}, optional=frozenset({'femm'})
     )
-    assert 'does not claim' in workstationverdict.declared_refusal(
-        {**SERVE, 'parts': 'needs-a-resource'}, repo='consumer', part='base', present={'windows'}
-    )
-    assert 'lacks femm' in workstationverdict.declared_refusal(SERVE, repo='consumer', part='femm', present={'windows'})
-
-
-def test_repos_that_is_not_a_list_is_a_refusal_never_a_substring_match() -> None:
-    """F-7718516ce1d6: ``repos = "consumer"`` must not declare the box a producer of ``lab``."""
-    one = {**SERVE, 'repos': 'consumer'}
-    refused = workstationverdict.declared_refusal(one, repo='lab', part='base', present={'windows'})
-    assert 'is not a list of repo names' in refused
-    refused = workstationverdict.declared_refusal(one, repo='consumer', part='base', present={'windows'})
-    assert 'is not a list of repo names' in refused
 
 
 class Store:
@@ -112,7 +103,7 @@ class Store:
 
 
 def _declared_box(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(workstationverdict, 'forge_from_remote', lambda _root: type('F', (), {'repo': 'consumer'}))
+    monkeypatch.setattr(workstationverdict, 'optional_here', lambda _root: frozenset({'windows'}))
     monkeypatch.setattr(workstationverdict, 'section', lambda _name: SERVE)
     monkeypatch.setattr(workstationverdict, 'present_here', lambda _root: frozenset({'windows'}))
     monkeypatch.setattr(workstationverdict, 'status_paths', lambda _root: ())
@@ -122,7 +113,7 @@ def _declared_box(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _refusal(tmp_path: Path, store: Store) -> str:
-    return str(workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=store.client))
+    return str(workstationverdict.workstation_refusal(tmp_path, 'windows', full=True, client=store.client))
 
 
 def test_an_unreadable_store_refuses_the_post_and_a_malformed_strike_is_ignored_with_a_warning(
@@ -131,10 +122,10 @@ def test_an_unreadable_store_refuses_the_post_and_a_malformed_strike_is_ignored_
     """FAIL CLOSED on a store that cannot be read; ONE bad strike file never locks out, or revokes, the fleet."""
     _declared_box(monkeypatch)
     store = Store(monkeypatch)
-    assert workstationverdict.workstation_refusal(tmp_path, 'base@windows', full=True, client=store.client) is None
+    assert workstationverdict.workstation_refusal(tmp_path, 'windows', full=True, client=store.client) is None
     for bad in (b'not json', b'{"a": 1}'):
         store.files[STRIKE_FILE] = bad
-        assert workstationverdict.workstation_refusal(tmp_path, 'base', full=True, client=store.client) is None
+        assert workstationverdict.workstation_refusal(tmp_path, 'windows', full=True, client=store.client) is None
         assert f'{STRIKE_FILE} is not a strike text -- ignored' in capsys.readouterr().err
 
     def down(_client: object) -> tuple[Attachment, ...]:
@@ -151,12 +142,12 @@ def test_an_unreadable_declaration_is_a_refusal_not_a_traceback(
     _declared_box(monkeypatch)
     store = Store(monkeypatch)
 
-    def no_origin(_root: Path) -> object:
-        message = 'no origin remote'
+    def no_manifest(_root: Path) -> object:
+        message = 'no pyproject.toml'
         raise OSError(message)
 
-    monkeypatch.setattr(workstationverdict, 'forge_from_remote', no_origin)
-    assert 'declaration could not be read (no origin remote)' in _refusal(tmp_path, store)
+    monkeypatch.setattr(workstationverdict, 'optional_here', no_manifest)
+    assert 'declaration could not be read (no pyproject.toml)' in _refusal(tmp_path, store)
 
 
 def _cell(status: str) -> Cell:

@@ -32,7 +32,8 @@ def origin(tmp: Path, name: str = 'alpha') -> tuple[str, str]:
     git(work, 'config', 'user.email', 't@t')
     git(work, 'config', 'user.name', 't')
     (work / 'pyproject.toml').write_text(
-        '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n', encoding='utf-8'
+        '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\nproducer = "hpc"\n',
+        encoding='utf-8',
     )
     git(work, 'add', '.')
     git(work, 'commit', '-qm', 'init')

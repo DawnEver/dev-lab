@@ -21,12 +21,16 @@ import pytest
 from dev_lab.dev.ciworkflows import BASE_PATH, LIGHT, follow_checks, runner_labels, workflows, write
 from dev_lab.dev.forgemerge import CI_MERGER
 
+#: An explicit Actions producer (dev_lab.dev.producers; absent reads the same); these render an Actions repo.
+ACTIONS_REPO = '[tool.dev_lab.protection]\nproducer = "actions"\n'
+
+
 _GITEA = ('review.yml', CI_MERGER)
 
 
 def _gitea(tmp_path: Path) -> dict[str, dict[str, Any]]:
     tables = ''.join(f'[tool.dev_lab.ci."{name}"]\n' for name in _GITEA)
-    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + tables, encoding='utf-8')
     return workflows(tmp_path)
 
 
@@ -116,7 +120,7 @@ def _only(body: dict[str, Any]) -> set[str]:
 def test_a_light_door_s_packages_are_every_import_its_verbs_make(tmp_path: Path) -> None:
     """DOOR_ONLY is MEASURED, not trusted: each module a step runs imports only the stdlib, dev_lab and DOOR_ONLY."""
     tables = '[tool.dev_lab.ci."merge.yml".jobs.merge.env]\nDOOR_ONLY = "lab-commons"\n'
-    (tmp_path / 'pyproject.toml').write_text(tables, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + tables, encoding='utf-8')
     jobs = [body for workflow in workflows(tmp_path).values() for body in workflow['jobs'].values()]
     narrowed = [body for body in jobs if _only(body)]
     assert narrowed, 'a repo layer narrows the merge job to lab-commons beside the door'

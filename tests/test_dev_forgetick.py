@@ -202,7 +202,9 @@ def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
 RETIRED_TABLE = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))
 
 PRODUCE = '[tool.lab_commons.tests]\nproduce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]\n'
-_INTEGRATOR = "\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
+_INTEGRATOR = (  # every repo declares it (D83)
+    "\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n[tool.dev_lab.protection]\nproducer = 'hpc'\n"
+)
 PRODUCE += _INTEGRATOR
 
 

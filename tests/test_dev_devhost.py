@@ -57,9 +57,6 @@ home = "C:/Program Files/SolverX"
 
 [capabilities.solverx]
 in_use = { process = ["solverx.exe"] }
-
-[serve]
-parts = "any"
 """
 
 LOCAL = """\
@@ -159,8 +156,8 @@ def test_a_fresh_render_has_no_drift_and_an_unrendered_file_is_silent(tmp_path: 
 def test_a_hand_edit_is_drift_named_by_table(tmp_path: Path) -> None:
     live = _rendered_machine(tmp_path)
     live['consent'] = {'endpoint': 'consent@elsewhere'}
-    del live['serve']
-    assert devhost.drift(live) == ['[consent] is not the render', '[serve] is absent']
+    del live['capabilities']
+    assert devhost.drift(live) == ['[capabilities] is absent', '[consent] is not the render']
     line = devhost.notice(live)
     assert line is not None
     assert devhost.RENDER_DOOR in line

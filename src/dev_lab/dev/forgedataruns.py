@@ -1,7 +1,7 @@
 """The serve's data-PR step: an open PR on a repo this checkout consumes runs this checkout's tests at its head.
 
 WHAT IS SCANNED IS DERIVED. The data repos are the urls of this served checkout's own
-``[tool.dev_lab.data.*]`` rows (:func:`dev_lab.dev.datadeps.declared`) -- no second ``[serve] repos`` entry
+``[tool.dev_lab.data.*]`` rows (:func:`dev_lab.dev.datadeps.declared`) -- no second list
 names them, and a checkout with no data row scans nothing.
 
 THE PLAN IS :func:`dev_lab.dev.dataconsumers.runs`; this step only carries it out, in the consumer's own
