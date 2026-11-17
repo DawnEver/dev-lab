@@ -54,6 +54,7 @@ __all__ = [
     'Verdict',
     'delete',
     'delete_tags',
+    'delete_task',
     'judge',
     'judge_tag',
     'landed',
@@ -344,6 +345,39 @@ def landed(root: Path, policy: Policy, ref: str) -> Verdict:
     files = ', '.join(unlanded)
     refused = NOT_LANDED.format(branch=branch, count=len(lost), integration=policy.integration, files=files)
     return Verdict(branch, sha, lost=tuple(lost), refused=refused)
+
+
+def delete_task(
+    root: Path,
+    slug: str,
+    *,
+    client: Client,
+    session: str,
+    fetch: Callable[[Path], None],
+    say: Callable[[str], None],
+    push: Callable[[Path, str, str], str] = _push_delete,
+    alarm: Callable[[Alarm], object] = sound,
+) -> int:
+    """LOSSLESS-DELETE every ``pr/<slug>/*`` head on origin: a closed task prunes its branches (user ruling D25).
+
+    Each head goes through :func:`delete`, so one with an open PR or unlanded content is kept and said by name;
+    0 when every head went (or none existed), else 1. Never approved: a closed task's refusals are the user's.
+    """
+    if not slug or any(c in slug for c in '/*?[\\ '):
+        msg = f'{slug!r} is not a task slug (one path segment, no glob characters)'
+        raise ValueError(msg)
+    fetch(root)
+    heads = [name for name in _origin_branches(root) if name.startswith(f'pr/{slug}/')]
+    if not heads:
+        say(f'task {slug}: no pr/{slug}/* head on origin')
+        return 0
+    code = delete(root, heads, client=client, session=session, fetch=lambda _r: None, say=say, push=push, alarm=alarm)
+    kept = [name for name in heads if git_out(root, 'rev-parse', '--verify', '--quiet', f'{ORIGIN}{name}')]
+    say(
+        f'task {slug}: {len(heads) - len(kept)} of {len(heads)} head(s) pruned'
+        + (f'; kept: {", ".join(kept)}' if kept else '')
+    )
+    return code
 
 
 def _origin_branches(root: Path) -> list[str]:

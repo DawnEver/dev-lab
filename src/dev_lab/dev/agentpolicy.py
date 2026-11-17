@@ -262,6 +262,12 @@ POLICY: Final[tuple[Door, ...]] = (
         'another live branch or open pull request; never a force push and never a lossy delete.',
     ),
     Door(
+        module_argv('branchprune', 'task'),
+        MAIN,
+        "Deleting a closed task's pull request branches, each only when every commit on it is already on the "
+        'integration branch or on another live branch or open pull request; every branch kept is named with why.',
+    ),
+    Door(
         module_argv('branchprune', 'delete-tag'),
         MAIN,
         'Deleting a remote tag the user approved in their own words, only when its commit is on the integration '

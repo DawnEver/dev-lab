@@ -19,6 +19,7 @@ a subagent never pushes.
 | `python -m dev_lab.dev.forge pr close-landed [N...]` | Closes an open PR whose head is already on its base, with an evidence comment. Never deletes its branch: the forge's prune of merged branches (`prune_merged`) is the one deleter. |
 | `python -m dev_lab.dev.forge pr close-superseded N... --by <M\|sha\|ref> [--why <line>]` | Closes each open PR salvaged into open, unmerged PR `M` or into a commit, and comments `superseded by #M: <line>` (or `superseded by <sha12>: <line>`). Never deletes its branch. Refuses a closed target, a closed or merged `M`, a commit that does not resolve, or `M` itself. |
 | `python -m dev_lab.dev.branchprune delete <branch>...` | LOSSLESS-DELETE: a remote branch only when every commit on it is on integration or another live branch or open PR head, or, by content, when every file its own commits wrote, generated ones aside, is identical (mode and blob) on integration; it fails closed. Refusals name the files carrying unlanded content. |
+| `python -m dev_lab.dev.branchprune task <slug>` | A closed task prunes its branches (user ruling D25): every `pr/<slug>/*` head on origin through LOSSLESS-DELETE; a head with an open PR or unlanded content is kept and named. rem's `onClose` (`.claude/rem.json`, `dev_lab.dev.remconfig`) runs it after a close passes its refusals; its refusals never block the close. |
 | `python -m dev_lab.dev.branchprune delete-tag <tag>... --approved "<the user's words>"` | LOSSLESS-DELETE of a remote tag: only with the user's own words (echoed into the record), and only when the tag's commit is on the integration branch or the trunk; a tag on anything else is refused naming its commit. Leased on the tag object it judged. |
 | `python -m dev_lab.dev.forge cancel-stuck <sha> [--factor N] [--bound-minutes M]` | Scancels only `run-<sha12>-<part>` tasks of the full 40-hex `<sha>` that run at 90 % CPU or more with no new test line in their stream for longer than N (default 3) x the longest MEASURED duration of the shard's tests (the forge's learned `durations`); a shard with an unmeasured test is floored at M (default 60), and the line says so. Every other task of the sha is listed as healthy; other jobs are never touched. |
 | `python -m dev_lab.dev.forge watch <sha>... [--deadline-minutes M]` | Read-only: prints each `tests/<part>` status change until the first listed sha is final (exit 0 green, 1 red) or the deadline (exit 3). |
@@ -38,7 +39,7 @@ row's provenance and the classifier's intent, and the deny row it is the exit fr
 - `subagent`: any agent (the verdict, stoprun, netverb, the censuses, the forge's read side, issue writes).
 - `main`: the main session alone -- a PR's lifecycle, `forge sync`, `integrate promote`, `forge pr breakglass`
   (inside a wave the user opened), `forge review takeover|again`, `forge security release`, `cancel-stuck`,
-  `git merge --ff-only`, `branchprune delete`, `branchprune delete-tag`. `SUBAGENT-NO-PUSH`'s pattern is derived from these rows.
+  `git merge --ff-only`, `branchprune delete`, `branchprune task`, `branchprune delete-tag`. `SUBAGENT-NO-PUSH`'s pattern is derived from these rows.
 - `user`: no agent -- opening a Break-Glass wave. It renders no allow row and no intent.
 
 A deny row's remedy that lists doors is derived from the rows linked to it (`exits_of`):
