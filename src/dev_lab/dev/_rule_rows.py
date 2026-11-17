@@ -222,10 +222,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MODULE-SIZE-ALARM',
         (
-            'A module past the size band MUST be refactored -- a new one, one that GROWS, or a pin for one that '
-            'was already fixed -- and while the band is repo data, that there IS one is not.'
+            'A tracked module past its declared inclusive size band, or a directory above 25 direct files, '
+            'MUST be refactored. The band and code/raw unit are explicit repo data; depth remains a watch reading.'
         ),
-        ('tests/architecture/ratchets/test_module_alarm.py',),
+        ('src/dev_lab/dev/famtests/modulealarm.py', 'src/dev_lab/dev/famtests/alwayson.py'),
     ),
     (
         'LATEST-DEPENDENCIES',

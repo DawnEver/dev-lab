@@ -321,6 +321,7 @@ the tranche at 387 lines against a 400-line band, so the reasoning stays in each
 docstring rather than being copied here -- and the NEXT module to arrive must split this inventory.
 
 * :mod:`dev_lab.dev.codeplace` -- code under DECLARED roots; no stray file.
+* :mod:`dev_lab.dev.retiredfiles` -- files a retirement declared gone: each checkout's own rows, never the leaf's.
 * :mod:`dev_lab.dev.scratch` -- scratch is visible to git, never committed; `clear` empties it, a Stop hook asks for it.
 * :mod:`dev_lab.dev.reportplace` -- no agent-written Markdown under ``output/``; a written report is a memory entry.
 * :mod:`dev_lab.dev.datedlog` -- one dated log layout; the base has NO DEFAULT (four repos, four answers).
