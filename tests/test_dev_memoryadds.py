@@ -578,6 +578,29 @@ def test_planted_an_amendment_needs_its_note_its_approval_and_one_for_one_lines(
     assert len(found) == 1, found
 
 
+_HEAD = '---\nname: an-entry\ndescription: d\n---\n\n'
+_NOTED = _HEAD + '> Amended 2026-11-13: a typo -- approved: "\u540c\u610f\u8865\u5168"\n\nBody.\n'
+_TRANSLATED = '> Amended 2026-11-13: a typo -- approved: "agreed, complete it" (user, translated)'
+_D26 = '> Amended 2026-11-17: translated to English (D26) -- approved: "translate memory to English"'
+
+
+@pytest.mark.parametrize(
+    ('after', 'accepted'),
+    [
+        (f'{_TRANSLATED}\n{_D26}\n\nBody.\n', True),  # the quote translated in place, beside the D26 note
+        (f'{_TRANSLATED}\n\nBody.\n', False),  # the same note edit without a new approved note
+        (f'{_D26}\n\nBody.\n', False),  # the existing note deleted
+        (f'{_TRANSLATED.replace("11-13", "11-14")}\n{_D26}\n\nBody.\n', False),  # its date changed
+        (f'> Revised 2026-11-13: a typo\n{_D26}\n\nBody.\n', False),  # its Amended prefix dropped
+    ],
+)
+def test_planted_a_quote_inside_an_existing_note_is_translated_only_beside_a_new_note(
+    *, after: str, accepted: bool
+) -> None:
+    """D26 (2026-11-17): an existing note keeps its date and prefix; only a NEW approved note admits its rewrite."""
+    assert memoryentry.only_amended(_NOTED, _HEAD + after) is accepted
+
+
 # --- a first adoption: origin holds no integration ref yet ---------------------------------------------------
 
 
