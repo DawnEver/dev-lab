@@ -86,7 +86,7 @@ def merge_main(
     table: Mapping[str, Any] | None = None,
     send: Send = ssh_send,
 ) -> int:
-    """``pr breakglass <N> --reason R``: merge inside the open wave; exit 0 merged, 2 refused, 1 unreachable."""
+    """``pr breakglass <N> --reason R``: merge inside the open wave; exit 0 merged or was, 2 refused, 1 unreachable."""
     parser = argparse.ArgumentParser(
         prog='python -m dev_lab.dev.forge pr breakglass', description='merge PR N inside the open break-glass wave'
     )
@@ -98,6 +98,17 @@ def merge_main(
     root = Path.cwd() if cwd is None else cwd
     pull = (client or client_for(root)).pr_view(args.number)
     repo = forge_from_remote(root).identity  # host/owner/name: never typed, never ambiguous across forges
+    if pull.merged:  # the wave sweep (or anyone) landed it: done, nothing to merge, never a refusal
+        emit(f'[breakglass] {repo}#{pull.number} is already merged as {pull.merge_sha or "(no merge sha reported)"}')
+        return 0
+    if pull.state != 'open':  # closed unmerged: its owner's "do not land", which nothing reopens
+        emit(
+            f'[breakglass] {repo}#{pull.number} was closed unmerged; a refused PR is not reopened -- open a new one '
+            f'from its branch: python -m dev_lab.dev.forge pr create --head {pull.head} --base {pull.base} '
+            f'--title "{pull.title}", then pr breakglass <new N>',
+            err=True,
+        )
+        return 2
     emit(f'BREAK-GLASS {repo}#{pull.number} [{pull.state}] {pull.title}: {pull.head} -> {pull.base} at {pull.head_sha}')
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
     code = _answer(send, config, request)
