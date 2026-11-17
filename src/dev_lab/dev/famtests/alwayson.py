@@ -125,6 +125,15 @@ def rows() -> dict[str, Callable[[Path], None]]:
     return {rule: _CHECKS[rule] for rule in sorted(ALWAYS_ON)}
 
 
+def _declared_checkout(root: Path) -> bool:
+    """A family CHECKOUT: a manifest declaring membership AND a ``.git`` at the root.
+
+    A declared tree with no ``.git`` (a test's temp project, an unpacked sdist) has no tracked corpus and is
+    not judged; a declared checkout whose ``.git`` exists but cannot be read is refused loudly.
+    """
+    return is_member(root) and (root / '.git').exists()
+
+
 def _declares_layout(root: Path) -> bool:
     """Opt-in: a ``[tool.dev_lab.layout]`` table, or a manifest too broken to say, enables the layout check."""
     try:
@@ -138,7 +147,7 @@ def _declares_layout(root: Path) -> bool:
 
 def _applicable(root: Path) -> dict[str, Callable[[Path], None]]:
     checks = rows()
-    if is_member(root) and _declares_layout(root):
+    if _declared_checkout(root) and _declares_layout(root):
         checks[_LAYOUT_RULE] = _CHECKS[_LAYOUT_RULE]
     return checks
 
@@ -148,12 +157,12 @@ def _identity(rule: str) -> str:
 
 
 def _catalog_ids(root: Path) -> tuple[str, ...]:
-    return tuple(_identity(rule) for rule in _applicable(root)) if is_member(root) else ()
+    return tuple(_identity(rule) for rule in _applicable(root)) if _declared_checkout(root) else ()
 
 
 def required_ids(root: Path) -> tuple[str, ...]:
     """Exact required identities after fresh family Git-root proof; no claim for other inputs."""
-    if not is_member(root):
+    if not _declared_checkout(root):
         return ()
     if _toplevel(root) != root.resolve():
         refused = _git_refusal('the declared family root is not the readable git toplevel')
@@ -180,7 +189,7 @@ def resource_nodes(root: Path, ids: Sequence[str]) -> list[str]:
 
 def run_checks(root: Path) -> dict[str, TestCell]:
     """Execute the same checks for non-pytest family producers, retaining their individual evidence."""
-    if not is_member(root):
+    if not _declared_checkout(root):
         return {}
     cells = {}
     for rule, check in _applicable(root).items():
@@ -219,12 +228,12 @@ def _toplevel(root: Path) -> Path | None:
     try:
         out = _git(root, 'rev-parse', '--show-toplevel')
     except (OSError, subprocess.TimeoutExpired) as exc:
-        if is_member(root):
+        if _declared_checkout(root):
             refused = _git_refusal(f'{type(exc).__name__}: {exc}')
             raise refused from exc
         return None
     if out.returncode != 0:
-        if is_member(root):
+        if _declared_checkout(root):
             refused = _git_refusal(f'exit {out.returncode}: {out.stderr.decode("utf-8", "replace").strip()}')
             raise refused
         return None
@@ -232,11 +241,11 @@ def _toplevel(root: Path) -> Path | None:
         text = out.stdout.decode('utf-8').strip()
         top = Path(text).resolve() if text else None
     except (UnicodeError, OSError, ValueError) as exc:
-        if is_member(root):
+        if _declared_checkout(root):
             refused = _git_refusal(str(exc))
             raise refused from exc
         return None
-    if top is None and is_member(root):
+    if top is None and _declared_checkout(root):
         refused = _git_refusal('git returned an empty toplevel')
         raise refused
     return top
@@ -253,7 +262,7 @@ def append_rows(session: pytest.Session, config: pytest.Config, items: list[pyte
     A declared family with unreadable Git retains failed runtime items, never an empty guard set.
     """
     root = Path(config.rootpath).resolve()
-    if is_member(root):
+    if _declared_checkout(root):
         try:
             required_ids(root)
         except ValueError as exc:

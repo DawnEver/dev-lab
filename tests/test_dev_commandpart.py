@@ -88,6 +88,7 @@ def test_no_command_is_refused_naming_the_shape(tmp_path: Path) -> None:
 
 
 def test_a_family_command_cannot_pass_with_a_malformed_layout_policy(tmp_path: Path, monkeypatch) -> None:
+    run_git(tmp_path, 'init', '-q')
     (tmp_path / 'pyproject.toml').write_text(
         '[tool.lab_commons.tests]\nresources = []\n'
         '[tool.dev_lab.layout]\nmodule_unit = "guessed"\nmodule_limit = 300\n',

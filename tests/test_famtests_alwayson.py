@@ -78,6 +78,29 @@ def test_no_item_outside_a_git_checkout(pytester: pytest.Pytester, monkeypatch: 
     _run(pytester, monkeypatch).assert_outcomes(passed=1)
 
 
+def test_a_declared_tree_that_is_not_a_checkout_gets_no_family_items(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A nested run in a temp project declaring [tool.dev_lab.*] but holding no .git is not judged."""
+    pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
+    pytester.makepyfile(test_x='def test_x():\n    pass\n')
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=1)
+    assert '::family::' not in result.stdout.str()
+
+
+def test_a_declared_checkout_with_a_broken_git_still_fails_loudly(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The planted negative: a .git that exists but cannot be read keeps every family item, failed."""
+    pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
+    (pytester.path / '.git').write_text('gitdir: missing/nowhere\n', encoding='utf-8')
+    pytester.makepyfile(test_x='def test_x():\n    pass\n')
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=1, failed=len(alwayson.rows()))
+    result.stdout.fnmatch_lines(['*git identity*'])
+
+
 def test_a_family_without_layout_policy_has_not_opted_into_the_layout_guard(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
