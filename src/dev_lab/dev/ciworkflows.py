@@ -47,6 +47,10 @@ WHO PRODUCES IS THE FORGE'S DATA (:attr:`~dev_lab.dev._forgebackends.Backend.pro
 a repo whose review is a producer its forge does not wire is refused at render (:func:`placed`). The judge host is
 wired on both forges, and ADVISORY: its verdict never gates a merge (:data:`~dev_lab.dev._forgebackends.ADVISORY`).
 
+THE PRODUCER DECIDES WHAT RUNS HERE (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16): an ``actions`` repo
+renders :data:`~dev_lab.dev.producers.CI_WORKFLOW`, whose ``jobparts produce`` posts ``tests/base``; an ``hpc``
+repo renders no ``ci.yml`` on any forge and nothing at all into ``.github/workflows`` -- the HPC posts its parts.
+
 A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix ``part`` job
 (:func:`dev_lab.dev.jobparts.hosted_jobs`): the one place a repo's
 ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
@@ -77,6 +81,7 @@ from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
 from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
+from dev_lab.dev.producers import producer_from, renders
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 __all__ = [
@@ -362,10 +367,13 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         raise ValueError(msg)
     hosted = hosted_parts(text)
     integration = _integration(text, origin)
+    producer = producer_from(text, origin)
     out = {}
     for name, layer in sorted(declared.items()):
         merged = merge(base.get(name, {}), layer)
         forge = merged.pop(FORGE_KEY, 'github')
+        if not renders(producer, name, forge):
+            continue  # an HPC repo: GitHub Actions never runs it, nothing posts its tests/base (2026-11-16)
         merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
         expanded = hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted)
         workflow = ready_only(measurement_isolated(expanded))

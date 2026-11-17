@@ -125,3 +125,10 @@ def test_an_ssh_key_or_value_off_the_schema_is_refused(tmp_path: Path, extra: st
     found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + extra))
     assert len(found) == 1, found
     assert named in found[0]
+
+
+def test_a_dev_host_file_carrying_serve_is_refused(tmp_path: Path) -> None:
+    """A workstation never serves a merge's parts (user ruling 2026-11-16); PLANTED CONTROL: the same card without."""
+    assert check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + SSH_ROUTES)) == []
+    found = check_host(_write(tmp_path, 'W.toml', DEV_HOST + '\n' + SSH_ROUTES + '\n[serve]\nparts = "every"\n'))
+    assert [line for line in found if line.startswith('W.toml: [serve] on a host that is no HPC account')]

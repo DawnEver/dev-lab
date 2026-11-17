@@ -12,7 +12,8 @@ promotion -- and says ``promotable`` with when the job runs. On Gitea the host's
 
 * ``promote <sha>`` -- fast-forward the LOCAL trunk ref to *sha*, an integration commit on origin whose
   every derived AND every declared-required ``tests/<part>`` (:func:`dev_lab.dev.platformparts.required_at`)
-  stands PASS at scope full under the policy *sha* declares, each naming its env (:func:`decide`, the
+  stands PASS at scope full under the policy *sha* declares, each naming its env -- save a part needing a resource
+  of `[tool.dev_lab.parts] optional_needs` (:mod:`dev_lab.dev.producers`), never a condition (:func:`decide`, the
   standing push admission reads, over the commit's whole status history). Never a merge onto the trunk.
 * ``promote --newest <tip>`` -- the same decision on each first parent of *tip* down to the trunk (at most
   :data:`DEPTH`), promoting the NEWEST that passes (W5, dev-lab#644: integration moves faster than a full run, so the
@@ -57,6 +58,7 @@ from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.jobparts import hosted_parts, off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.platformparts import UndeclaredPart, derived, required_at, standing
+from dev_lab.dev.producers import optional_needs_from, optional_parts
 from dev_lab.dev.trialmerge import contains, rev
 from dev_lab.dev.unproduced import unproduced_waived
 from dev_lab.dev.verdictenv import verdict_policy_at
@@ -147,7 +149,8 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
         required = required_at(root, found)
     except UndeclaredPart as why:
         return Promotion('refused', found, (str(why),))
-    waived = (unproduced_waived(root, found, statuses) | off) - required
+    optional = optional_parts(derived(statuses), optional_needs_from(pyproject_at(root, found)))
+    waived = (unproduced_waived(root, found, statuses) | off | optional) - required
     policy = verdict_policy_at(root, found)
     parts = standing(statuses, head=found, scope=FULL, waived=waived, required=required, policy=policy)
     if parts.result is not Conclusion.PASS:

@@ -33,6 +33,9 @@ pr_merges_since = 'abc'
 
 [tool.dev_lab.hooks]
 
+[tool.dev_lab.protection]
+producer = 'actions'
+
 [tool.lab_commons.tests]
 produce = ['-m', 'dev_lab.dev.verify', '--part', '{part}']
 """
@@ -74,9 +77,9 @@ def _origin(root: Path) -> Snapshot:
     return Snapshot('origin/integrate/main', paths, (root / 'pyproject.toml').read_text(encoding='utf-8'))
 
 
-def _check(tmp_path: Path, forge: FakeForge, served: tuple[str, ...] | None = ('a', 'b')) -> list[Finding]:
+def _check(tmp_path: Path, forge: FakeForge) -> list[Finding]:
     family = {'a': tmp_path / 'work' / 'a', 'b': tmp_path / 'work' / 'b'}
-    return members.check(family, forge=lambda _name, _root: forge, served=served, now=NOW,
+    return members.check(family, forge=lambda _name, _root: forge, now=NOW,
                          bundle_name='AI_LAB_KEYS_PR_REVIEW', read=_origin)  # fmt: skip
 
 
@@ -91,38 +94,27 @@ def test_a_half_onboarded_member_is_named_for_every_missing_fact(tmp_path: Path)
     _repo(tmp_path / 'work', 'b', ONBOARDED.replace("pr_merges_since = 'abc'\n", ''))
     half = FakeForge(branches={'integrate/main'}, drift=('integrate/main: requires tests/merge-ready',),
                      secrets=set(), oldest=(1, NOW - timedelta(days=30)))  # fmt: skip
-    found = {(f.member, f.what.split(':')[0]) for f in _check(tmp_path, half, served=('a',))}
+    found = {(f.member, f.what.split(':')[0]) for f in _check(tmp_path, half)}
     assert {
         ('b', 'onboarding'),
         ('b', 'trunk branch'),
         ('b', 'protection'),
         ('b', 'secret'),
         ('b', 'open PR'),
-        ('b', 'not served'),
     } <= found
     # PLANTED CONTROL: the onboarded sibling with the same fake forge is named only for the forge's facts
     assert ('a', 'onboarding') not in found
-    assert ('a', 'not served') not in found
 
 
 def test_a_member_not_beside_its_siblings_or_absent_is_named(tmp_path: Path) -> None:
     _repo(tmp_path / 'work', 'a')
     _repo(tmp_path / 'elsewhere', 'b')
     family = {'a': tmp_path / 'work' / 'a', 'b': tmp_path / 'elsewhere' / 'b', 'c': tmp_path / 'work' / 'c'}
-    found = members.check(
-        family, forge=lambda _n, _r: FakeForge(), served=None, now=NOW, bundle_name=REVIEW, read=_origin
-    )
+    found = members.check(family, forge=lambda _n, _r: FakeForge(), now=NOW, bundle_name=REVIEW, read=_origin)
     whats = {(f.member, f.what.split(':')[0]) for f in found}
     assert ('c', 'not cloned') in whats
     assert ('a', 'not beside') not in whats
     assert len([f for f in found if f.member == 'b' and f.what.startswith('not beside')]) == 1
-
-
-def test_a_served_repo_no_member_names_is_drift(tmp_path: Path) -> None:
-    _repo(tmp_path / 'work', 'a')
-    _repo(tmp_path / 'work', 'b')
-    found = _check(tmp_path, FakeForge(), served=('a', 'b', 'stray'))
-    assert [(f.member, f.what) for f in found] == [('stray', 'served but no [repos] member')]
 
 
 def test_join_records_the_member_and_prints_what_is_left(tmp_path: Path) -> None:
@@ -181,7 +173,7 @@ def test_a_gitea_member_is_never_owed_the_bundle_and_is_named_when_it_holds_one(
             def facts(self, held: Snapshot, trunk: str, integration: str) -> Facts:
                 return replace(super().facts(held, trunk, integration), host=host)
 
-        found = members.check(family, forge=lambda _n, _r: Hosted(secrets=secrets), served=None, now=NOW,
+        found = members.check(family, forge=lambda _n, _r: Hosted(secrets=secrets), now=NOW,
                               bundle_name=REVIEW, read=_origin)  # fmt: skip
         return {f.what.split(' --')[0] for f in found if f.member == 'a'}
 
@@ -211,7 +203,7 @@ def test_content_is_read_from_origin_and_an_unread_member_is_never_lacking(tmp_p
         compared.append(set(seen))
         return []
 
-    assert members.check(family, forge=lambda _n, _r: FakeForge(), served=None, now=NOW, bundle_name=REVIEW,
+    assert members.check(family, forge=lambda _n, _r: FakeForge(), now=NOW, bundle_name=REVIEW,
                          read=read, compare=compare) == []  # fmt: skip
     assert compared == [{'a', 'b'}]
 
@@ -221,7 +213,7 @@ def test_content_is_read_from_origin_and_an_unread_member_is_never_lacking(tmp_p
             raise OSError(msg)
         return _origin(root)
 
-    found = members.check(family, forge=lambda _n, _r: FakeForge(), served=None, now=NOW, bundle_name=REVIEW,
+    found = members.check(family, forge=lambda _n, _r: FakeForge(), now=NOW, bundle_name=REVIEW,
                           read=unreadable, compare=compare)  # fmt: skip
     assert [(f.member, f.what.split(' (')[0]) for f in found] == [('b', 'unread: its origin integration branch')]
     assert compared[-1] == {'a'}

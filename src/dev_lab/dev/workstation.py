@@ -5,8 +5,8 @@ deploy's run-or-print :class:`~dev_lab.dev.hpcaccount.steps.Step`.
 
 ``deploy --repos <repo>,... (--capabilities workstation,jmag:4 | --role light) [--forge <https base>]
 [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat. A ``--role`` is a declared profile
-(:data:`ROLES`: its capabilities and ``[serve]`` rule); ``template --role <role> --repos ...`` prints the tables
-it writes. The ``light`` role withholds every :data:`HEAVY` tool and refuses one in ``--capabilities``.
+(:data:`ROLES`: its capabilities); ``template --role <role>`` prints the tables it writes. The ``light`` role
+refuses every :data:`HEAVY` tool in ``--capabilities``.
 Nothing is reserved for the person at the box (user ruling 2026-10-25): they DECLARE their use as a ledger
 claim (``python -m lab_commons.box claim``).
 
@@ -22,9 +22,10 @@ claim (``python -m lab_commons.box claim``).
    or ``uv.lock`` changed since its last sync (a stamp in the venv, written only after a sync succeeds).
 5. HOOKS: ``-m dev_lab.dev.hook_install --install`` in each checkout whose hooks are not live.
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``; a ``jmag``
-   row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken) and
-   ``[serve] repos`` (with a role, also ``parts`` and ``withhold``) merged in place. A retired ``[serve] root``
-   and every RETIRED ``[capabilities.<name>]`` table are removed -- one retired into ``[runtimes.<name>]`` has
+   row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken),
+   merged in place. ``[serve]`` is never written and a present one is removed: a workstation never serves a
+   merge's parts (user ruling 2026-11-16, :func:`dev_lab.dev.producercheck.host_refusals`). Every RETIRED
+   ``[capabilities.<name>]`` table is removed -- one retired into ``[runtimes.<name>]`` has
    its keys carried there; every other table, key and comment is kept, and ``--dry-run`` prints the diff.
 7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`dev_lab.dev.servetask`), its action derived from
    the forge home alone (the dev-lab serve checkout's ``pythonw``), registered from its XML definition and
@@ -33,17 +34,17 @@ claim (``python -m lab_commons.box claim``).
 ``--dry-run`` reads but changes nothing. A second run changes nothing.
 
 A REFUSAL IN STEPS 3-5 BELONGS TO ITS REPO (incident 2026-10-13, the cluster deploy's twin): the repo is
-reported with its reason, skipped by the later steps and left out of ``[serve] repos`` so the Task never
-serves it; the deploy finishes for the others, raises one forge ``run`` alarm per refused repo
-(:mod:`dev_lab.dev.forgealarm`), and exits 2 naming each.
+reported with its reason and skipped by the later steps; the deploy finishes for the others, raises one forge
+``run`` alarm per refused repo (:mod:`dev_lab.dev.forgealarm`), and exits 2 naming each.
 
 ``serve`` IS THE TASK'S ACTION, and refuses (exit 2) to run from any interpreter outside the dev-lab serve
 checkout: a dev checkout's venv is never the kit (incident 2026-10-26). So the KIT'S OWN venv is resynced by
 the dev-lab refresh that runs first whenever its ``pyproject.toml``/``uv.lock`` moved, before any lane serves.
 Under the per-user serve lock (:mod:`dev_lab.dev.servelock`),
-dev-lab and then each ``[serve] repos`` entry is REFRESHED BY THE HOST -- fast-forwarded to its
-upstream and its venv synced when step 4 says so -- and only then THE HOST KIT runs ``forge serve`` in its
-checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`); the repo's venv only runs its producers.
+dev-lab and then each checkout declaring ``producer = "hpc"`` (:mod:`dev_lab.dev.producers`) is REFRESHED BY THE
+HOST -- fast-forwarded to its upstream and its venv synced when step 4 says so -- and only then THE HOST KIT runs
+``forge serve`` in its checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`); the repo's venv only runs its
+producers.
 The host owns the refresh because a repo's own kit cannot (incident 2026-10-13: a venv whose
 old ``forge serve`` exited 2 every tick could never run the code that would update it). A repo whose
 refresh fails is released with its reason in the serve log. Its exit is the worst child's; one repo's
@@ -65,7 +66,6 @@ from pathlib import Path
 from typing import IO, Any
 
 import lab_commons.launch as _door
-from lab_commons.compute.serves import SERVE_TABLE
 from lab_commons.config import section
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -78,11 +78,12 @@ from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv
 from dev_lab.dev.hpcaccount.spec import KIT
 from dev_lab.dev.hpcaccount.steps import Step, Tools
+from dev_lab.dev.producers import HPC, UndeclaredProducer, producer_from
 from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, forge_home, held
 from dev_lab.dev.venvfollow import ENV_STAMP, venv_python
 from dev_lab.dev.venvpointer import current
-from dev_lab.dev.workstationfile import ROLES, capabilities, machine_file, role_refusal, role_tables, template
+from dev_lab.dev.workstationfile import ROLES, capabilities, deploy_tables, machine_file, role_refusal, template
 from dev_lab.dev.workstationprobe import CREDENTIAL_REMEDY, com_server, missing, refused_credentials
 from dev_lab.dev.workstationregistry import NoRegistry, forge_refusal, this_computer
 
@@ -137,21 +138,13 @@ def _parser() -> argparse.ArgumentParser:
         help=f'comma-separated, the repos served; {KIT} only if its queue is served here',
     )
     dep.add_argument('--capabilities', type=capabilities, default=None, help='comma-separated name or name:seats')
-    dep.add_argument(
-        '--role', choices=sorted(ROLES), help='a declared profile (ROLES): its capabilities and [serve] rule'
-    )
+    dep.add_argument('--role', choices=sorted(ROLES), help='a declared profile (ROLES): its capabilities')
     dep.add_argument('--forge', default='', help='https base a missing checkout is cloned from: <forge>/<repo>.git')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
     dep.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
     tpl = verbs.add_parser('template', help='print the machine-file tables a --role deploy writes')
     tpl.add_argument('--role', choices=sorted(ROLES), required=True)
-    tpl.add_argument(
-        '--repos',
-        type=_repos,
-        required=True,
-        help=f'comma-separated, the repos served; {KIT} only if its queue is served here',
-    )
     return parser
 
 
@@ -258,17 +251,10 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
         return 2
     step = Step(Tools(git=tools.git), dry=args.dry_run)
     refused = _checkouts(step, tools, checkouts, urls, args.ref)
-    served = [name for name in args.repos if name not in refused]
-    if args.role:
-        tables = role_tables(ROLES[args.role], args.capabilities, served)
-    else:
-        tables = {f'capabilities.{name}': dict(facts) for name, facts in args.capabilities.items()}
-        tables[SERVE_TABLE] = {'repos': served}
-    tables[SERVE_TABLE].update(dict.fromkeys(servetask.RETIRED_SERVE_KEYS))  # a retired key merged as None is removed
-    rc = machine_file(step, tables) or _task(step, tools)
+    rc = machine_file(step, deploy_tables(args.capabilities)) or _task(step, tools)
     for name, why in refused.items():
         tools.alarm(Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not serve it', why))
-        emit(f'deploy refused {name} (left out of [serve] repos): {why}', err=True)
+        emit(f'deploy refused {name} (its checkout is not served): {why}', err=True)
     return rc or (2 if refused else 0)
 
 
@@ -293,6 +279,25 @@ def _skipping(done: str, refresh: Callable[[str], int]) -> Callable[[str], int]:
     return lambda name: 0 if name == done else refresh(name)
 
 
+def hpc_checkouts(root: Path) -> list[str]:
+    """Every serve checkout under *root* whose own declaration names the HPC its producer, by name.
+
+    A host serves by the repo's ``[tool.dev_lab.protection] producer`` (:mod:`dev_lab.dev.producers`, user ruling
+    2026-11-16), never a list it keeps; an ``actions`` repo is never served here.
+    """
+    found = []
+    for checkout in sorted(root.iterdir()) if root.is_dir() else ():
+        pyproject = checkout / 'pyproject.toml'
+        if not pyproject.is_file():
+            continue
+        try:
+            if producer_from(pyproject.read_text(encoding='utf-8'), str(pyproject)) == HPC:
+                found.append(checkout.name)
+        except UndeclaredProducer as undeclared:
+            emit(f'[serve] {checkout.name} not served: {undeclared}', err=True)
+    return found
+
+
 def serve(
     *,
     run: Callable[..., Any] = _door.run,
@@ -301,9 +306,11 @@ def serve(
     programs: Programs | None = None,
     period_s: float | None = None,
 ) -> int:
-    """Refresh, then ``forge serve``, each ``[serve] repos`` checkout under one lock, each in a LANE; the worst exit.
+    """Refresh, then ``forge serve``, each HPC-produced checkout under one lock, each in a LANE; the worst exit.
 
-    The kit (dev-lab) is refreshed first whether or not ``[serve] repos`` names it (ruling 2026-10-29), then
+    The checkouts are :func:`hpc_checkouts`.
+
+    The kit (dev-lab) is refreshed first, served or not (ruling 2026-10-29), then
     each repo in order (:func:`dev_lab.dev.hostrefresh.refresh`):
     a repo whose refresh fails is RELEASED this tick, its reason named in the serve log, and never stops the next one.
     The serving dev-lab checkout's own hooks are re-installed whenever they are not live (stale after a move).
@@ -324,7 +331,8 @@ def serve(
     if refused := servetask.serve_refusal(table, tools.executable, tools.home):
         emit(f'[serve] refused: {refused}', err=True)
         return 2
-    repos, root = table['repos'], servetask.repos(tools.home)
+    root = servetask.repos(tools.home)
+    repos = hpc_checkouts(root)
     try:
         why = forge_refusal(tools.computer)
     except NoRegistry as undeclared:
@@ -374,7 +382,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return deploy(args[1:])
     parsed = _parser().parse_args(args)
     if parsed.verb == 'template':
-        emit(template(parsed.role, parsed.repos).rstrip())
+        emit(template(parsed.role).rstrip())
         return 0
     if sys.stdout is not None:
         return serve()

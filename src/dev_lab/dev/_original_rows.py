@@ -21,6 +21,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
     'failprint',  # a failure fingerprint: test id plus the subjects its failure names (finding D13, 2026-11-16)
+    'producers',  # each repo's one producer, actions or hpc, and its optional parts (ruling 2026-11-16)
+    'producercheck',  # the guard refusing what contradicts a producer declaration (ruling 2026-11-16)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
     'verifybox',
