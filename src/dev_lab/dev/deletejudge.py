@@ -7,8 +7,14 @@ remote's -- so a delete spelled any way (a ``$refs`` variable, ``xargs``, a scri
 door's own push passes it with no exemption. Split from :mod:`dev_lab.dev.branchdelete` (2026-11-17), whose
 docstring states the ruling: a branch goes only when every commit on it is on integration or on another live origin
 branch or open PR head, or, by CONTENT, when no file its own commits wrote differs from integration, generated files
-aside. A branch deleted in the same push holds nothing (*gone*). A refused branch goes only APPROVED: the user's own
-words, and a tag on origin holding its tip (:func:`held_by_tag`).
+aside. A branch deleted in the same push holds nothing (*gone*), and a tag never holds anything (user ruling D22,
+2026-11-17: "no tags -- merge or delete, never an archive tag").
+
+A DERIVED branch (decision D23) is lossless whatever it carries: a machine branch whose whole content its producer
+regenerates -- ``pr/components-bump``, one gitlink commit read off the integration tip and the component heads -- is
+declared in ``[tool.dev_lab.integrator] derived`` with the producer that regenerates it
+(:class:`~dev_lab.dev.lanepolicy.Derived`). Declared, never a branch name in code: an undeclared branch that merely
+looks machine-made is judged like any other, and holds nothing for another branch either, since it may go any time.
 """
 
 from __future__ import annotations
@@ -20,16 +26,12 @@ from typing import Final
 
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.famfiles import GENERATED
-from dev_lab.dev.forge import _GIT
 from dev_lab.dev.lanepolicy import Policy
-from dev_lab.dev.netverb import run_network_verb
 
-__all__ = ['APPROVED_ENV', 'LOSSY', 'ORIGIN', 'PROTECTED', 'Verdict', 'held_by_tag', 'judge', 'remote_tags', 'unlanded']
+__all__ = ['LOSSY', 'ORIGIN', 'PROTECTED', 'Verdict', 'judge', 'unlanded']
 
 #: Where the fetched origin branches live.
 ORIGIN: Final = 'refs/remotes/origin/'
-#: The user's own words approving a tag-held delete, as the door hands them to the push it runs (the hook reads them).
-APPROVED_ENV: Final = 'DEV_LAB_DELETE_APPROVED'
 #: Its refusals, each said once, here.
 LOSSY: Final = '{branch}: refused -- {count} commit(s) exist on it alone ({commits}), with unlanded content in: {files}'
 PROTECTED: Final = '{branch}: refused -- it is {why}, never deleted'
@@ -53,20 +55,22 @@ def judge(
 ) -> Verdict:
     """Whether deleting origin's *branch* at *sha* loses nothing; read from the fetched remote-tracking refs.
 
-    Lossless when every commit on it is on integration, or on another live origin branch or open PR head -- never
-    one of the branches *gone* with it -- else, by content, when no file its own commits wrote differs from
-    integration (:func:`unlanded`). FAILS CLOSED: a *sha* this clone does not hold is refused, never judged empty.
+    Lossless when *policy* declares *branch* derived; else when every commit on it is on integration, or on another
+    live origin branch or open PR head -- never one of the branches *gone* with it, nor a derived one -- else, by
+    content, when no file its own commits wrote differs from integration (:func:`unlanded`). FAILS CLOSED: a *sha*
+    this clone does not hold is refused, never judged empty.
     """
-    if branch in {policy.integration, policy.trunk}:
-        return Verdict(branch, refused=PROTECTED.format(branch=branch, why='the integration branch or the trunk'))
-    if branch in open_heads:
-        why = f'the head of open PR #{open_heads[branch]}'
+    if why := _protected(policy, branch, open_heads):
         return Verdict(branch, refused=PROTECTED.format(branch=branch, why=why))
+    producers = {row.branch: row.producer for row in policy.derived}
+    if branch in producers:
+        return Verdict(branch, sha, container=f'its producer {producers[branch]} (derived: regenerated, never lost)')
     if not sha or git_out(root, 'cat-file', '-e', f'{sha}^{{commit}}') is None:
         why = _UNFETCHED.format(branch=branch, sha=sha[:12]) if sha else f'{branch}: not on origin (gone already)'
         return Verdict(branch, sha, refused=why)
     listed = (git_out(root, 'for-each-ref', '--format=%(refname)', ORIGIN) or '').split()
-    others = [name for name in (ref.removeprefix(ORIGIN) for ref in listed) if name not in {branch, 'HEAD', *gone}]
+    skipped = {branch, 'HEAD', *gone, *producers}
+    others = [name for name in (ref.removeprefix(ORIGIN) for ref in listed) if name not in skipped]
     others.sort(key=lambda name: (name != policy.integration, name not in open_heads, name))
     for name in others:
         if git_out(root, 'merge-base', '--is-ancestor', sha, f'{ORIGIN}{name}') is not None:
@@ -80,6 +84,13 @@ def judge(
     shown = ', '.join(one[:12] for one in lost[:_FIRST]) + (' ...' if len(lost) > _FIRST else '')
     refused = LOSSY.format(branch=branch, count=len(lost), commits=shown, files=', '.join(files))
     return Verdict(branch, sha, lost=tuple(lost), refused=refused)
+
+
+def _protected(policy: Policy, branch: str, open_heads: dict[str, int]) -> str:
+    """What makes *branch* never deleted -- the integration branch, the trunk, an open PR head -- else ``''``."""
+    if branch in {policy.integration, policy.trunk}:
+        return 'the integration branch or the trunk'
+    return f'the head of open PR #{open_heads[branch]}' if branch in open_heads else ''
 
 
 def unlanded(
@@ -120,26 +131,3 @@ def _entries(root: Path, rev: str, paths: Sequence[str]) -> dict[str, str] | Non
         mode, _, blob = meta.split()
         found[path] = f'{mode} {blob}'
     return found
-
-
-def remote_tags(root: Path) -> dict[str, str]:
-    """``{tag: peeled commit sha}`` of every tag on origin, through the network door; raises ``OSError`` unread."""
-    report = run_network_verb([_GIT, 'ls-remote', '--tags', 'origin'], cwd=root, timeout=120)
-    if not report.ok:
-        raise OSError(report.remedy)
-    lines = (line.partition('\t') for line in report.attempts[-1].output.splitlines())
-    pairs = [(ref.strip().removeprefix('refs/tags/'), sha.strip()) for sha, _, ref in lines]
-    peeled = {name.removesuffix('^{}'): sha for name, sha in pairs if name.endswith('^{}')}  # annotated: its commit
-    return {name: sha for name, sha in pairs if not name.endswith('^{}')} | peeled
-
-
-def held_by_tag(root: Path, found: Verdict, tags: dict[str, str], approved: str) -> Verdict:
-    """*found* (refused: commits on the branch alone) held by the first of origin's *tags* whose commit holds its tip.
-
-    FAILS CLOSED: a tag's commit not fetched here holds nothing.
-    """
-    for name, commit in sorted(tags.items()):
-        if git_out(root, 'merge-base', '--is-ancestor', found.sha, commit) is not None:
-            return Verdict(found.branch, found.sha, container=f'tag {name}; approved: "{approved}"', lost=found.lost)
-    why = f'{found.refused}; approved, but no tag on origin holds it (tag its tip first: nothing may be lost)'
-    return Verdict(found.branch, found.sha, lost=found.lost, refused=why)

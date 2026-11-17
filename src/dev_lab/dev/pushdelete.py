@@ -11,17 +11,18 @@ judgement the door makes (:func:`dev_lab.dev.deletejudge.judge`), of the sha the
 ``git fetch --prune origin``, so a branch origin no longer holds holds nothing, and against the open PR heads the
 forge lists. Branches the same push deletes hold nothing for each other. A refused branch is refused under
 :data:`RULE` naming the door, ``branchprune delete <branch>``; that door pushes its delete through this same hook and
-passes it with no exemption, an approved tag-held delete handing the user's words on as
-:data:`~dev_lab.dev.deletejudge.APPROVED_ENV`.
+passes it with no exemption. A tag on origin holds nothing (user ruling D22: "no tags -- merge or delete, never an
+archive tag"): a branch with unlanded work is MERGED through a PR, or LANDED by a declared ``git merge -s ours`` PR,
+and then deleted. A branch the policy declares DERIVED (decision D23, ``[tool.dev_lab.integrator] derived``) is
+regenerated whole by its producer and goes.
 
-FAILS CLOSED (:data:`UNJUDGED`): a repo declaring no integration branch, a failed fetch, an unreadable forge or tag
-listing refuses naming the cause and the retry, never passes unjudged. A tag deletion is not a branch and is not
-judged here (``branchprune delete-tag`` is its door); a deletion of a ref the remote does not hold drops nothing.
+FAILS CLOSED (:data:`UNJUDGED`): a repo declaring no integration branch (or a malformed ``derived`` row), a failed
+fetch or an unreadable forge refuses naming the cause and the retry, never passes unjudged. A tag deletion is not
+a branch and is not judged here; a deletion of a ref the remote does not hold drops nothing.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from collections.abc import Callable, Sequence
@@ -31,7 +32,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.deletejudge import APPROVED_ENV, held_by_tag, judge, remote_tags
+from dev_lab.dev.deletejudge import judge
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -69,7 +70,10 @@ def _refusal(rule: str, cause: str, door: str) -> str:
 def _door_for(branch: str, *, lost: bool) -> str:
     door = f'{_python()} -m dev_lab.dev.branchprune delete {branch}'
     if lost:
-        return f'{door} -- land its commits first, or tag its tip on origin and add --approved "<the user`s words>"'
+        return (
+            f'MERGE what is still wanted through a PR, or LAND the branch with a declared `git merge -s ours` PR '
+            f'into a pr/ branch, then {door}'
+        )
     return f'{door} -- it fetches afresh and names what holds the branch, or why it stays'
 
 
@@ -83,12 +87,8 @@ def refusals(
     *,
     client: Callable[[], Client] | None = None,
     fetch: Callable[[Path], None] = fetch_origin,
-    approved: str = '',
 ) -> list[str]:
-    """Every refusal for the branch deletions git's pre-push *lines* carry; none when the push deletes no branch.
-
-    *approved* is the user's words a tag-held delete was approved with (:data:`~dev_lab.dev.deletejudge.APPROVED_ENV`).
-    """
+    """Every refusal for the branch deletions git's pre-push *lines* carry; none when the push deletes no branch."""
     gone = {
         ref.branch: ref.remote_sha
         for ref in pushed_refs(lines.splitlines())
@@ -100,8 +100,8 @@ def refusals(
     try:
         policy = load_policy(root)
     except (OSError, ValueError) as failed:
-        cause = f'{named}: the delete cannot be judged -- this repo {failed}'
-        return [_refusal(UNJUDGED, cause, 'declare it as the line above says, then push again')]
+        cause = f'{named}: the delete cannot be judged -- its [tool.dev_lab.integrator] is unreadable: {failed}'
+        return [_refusal(UNJUDGED, cause, 'fix the declaration the line above names, then push again')]
     try:
         fetch(root)
     except OSError as failed:
@@ -112,19 +112,8 @@ def refusals(
     except _UNREADABLE as failed:
         cause = f'the forge cannot be read ({type(failed).__name__}: {failed}), so whether {named} is an open PR head'
         return [_refusal(UNJUDGED, f'{cause} is unknown', _retry('the forge'))]
-    tags: dict[str, str] | None = None
-    found: list[str] = []
-    for branch, sha in gone.items():
-        verdict = judge(root, policy, branch, sha, open_heads=heads, gone=gone)
-        if verdict.lost and approved:
-            try:
-                tags = remote_tags(root) if tags is None else tags
-            except OSError as failed:
-                return [_refusal(UNJUDGED, f'the tags on origin cannot be read: {failed}', _retry('origin'))]
-            verdict = held_by_tag(root, verdict, tags, approved)
-        if verdict.refused:
-            found.append(_refusal(RULE, verdict.refused, _door_for(branch, lost=bool(verdict.lost))))
-    return found
+    verdicts = (judge(root, policy, branch, sha, open_heads=heads, gone=gone) for branch, sha in gone.items())
+    return [_refusal(RULE, one.refused, _door_for(one.branch, lost=bool(one.lost))) for one in verdicts if one.refused]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -139,7 +128,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout=60,
     ).stdout.strip()
     stdin = '' if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
-    found = refusals(Path(top or Path.cwd()), stdin, approved=os.environ.get(APPROVED_ENV, '').strip())
+    found = refusals(Path(top or Path.cwd()), stdin)
     if found:
         emit('\n'.join(found), err=True)
         return 1

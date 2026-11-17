@@ -194,8 +194,8 @@ def _stale_entry(root: Path, row: Row, integration: str) -> str:
         f'{row.ref} {row.sha[:12]} idle {row.idle_h:.0f} h, not merged: {ahead} ahead, {behind} behind {integration}\n'
         f'  land it:   python -m dev_lab.dev.forge pr create --head {row.ref} --base {integration} '
         f'--title "<what it does>"\n'
-        f'  abandon it (the user approves; its {ahead} commit(s) exist nowhere else): tag its tip on origin, then '
-        f'python -m dev_lab.dev.branchprune delete {row.ref} --approved "<the user`s words>"'
+        f'  abandon it (the user decides; its {ahead} commit(s) exist nowhere else): LAND it with a declared '
+        f'`git merge -s ours` PR into a pr/ branch, then python -m dev_lab.dev.branchprune delete {row.ref}'
     )
 
 
