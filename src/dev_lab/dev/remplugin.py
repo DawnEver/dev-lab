@@ -29,8 +29,8 @@ from dev_lab.dev.native_session import primary_of
 
 __all__ = ['BINDS_SINCE', 'Binder', 'binder_door', 'find']
 
-#: The first rem release whose UserPromptSubmit hook writes the binding (cc-market #26, rem 2.6.0).
-BINDS_SINCE: Final = (2, 6, 0)
+#: The first rem release whose UserPromptSubmit hook writes the binding where every repo reads it (D34, rem 2.7.0).
+BINDS_SINCE: Final = (2, 7, 0)
 _PLUGIN: Final = 'rem@cc-market'
 _VERSION: Final = re.compile(r'(\d+)\.(\d+)\.(\d+)')
 

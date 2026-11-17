@@ -142,26 +142,32 @@ def _unbound(root: Path, env: Mapping[str, str], home: Path) -> tuple[str | None
     disabled or older than the binding release, :func:`dev_lab.dev.remplugin.binder_door`), else the user's prompt.
     """
     try:
-        task = taskbinding.session_task(env, start=root)
+        bound = taskbinding.session_binding(env, start=root)
     except ValueError as unread:
         return (
             None,
             f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}',
         )
-    if task is None:
+    if bound is None:
         # The binder's own text is a cause line and a door line; the user's prompt is a door line alone.
+        session = session_of(env)
         binder = remplugin.binder_door(env, home, root)
         door = f' {binder}' if binder else f'\nDoor: {taskbinding.DOOR}'
         return None, (
             f'{RULE}: this repo requires every agent session to work under the task its user bound it to, '
-            f'and none is bound.{door}.'
+            f'and none is bound: session {session} has no binding at {taskbinding.binding_path(session).as_posix()}.'
+            f'{door}.'
         )
+    task = bound.task
     try:
-        still = taskbinding.task_id(root, slug_of(task))
+        still = taskbinding.task_in(bound.ledger, slug_of(task))
     except ValueError:
         still = None
     if still != task:
-        closed = f'{RULE}: this session is bound to task {task}, which is no longer open.'
+        closed = (
+            f'{RULE}: this session is bound to task {task} ({bound.path.as_posix()}), which is no longer open '
+            f'in its ledger {bound.ledger.as_posix()}.'
+        )
         return None, f'{closed}\nDoor: {taskbinding.DOOR}.'
     return task, None
 
