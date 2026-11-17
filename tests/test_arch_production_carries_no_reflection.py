@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.failprint import subjects_of
 from dev_lab.dev.famtests.noreflection import assert_no_reflection, reflection_sites
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -151,3 +152,11 @@ def test_an_unread_tree_reds(tmp_path: Path) -> None:
     root = _repo(tmp_path, {'a.py': 'x = 1\n'})
     with pytest.raises(AssertionError):
         assert_no_reflection(root=root, allowed={}, floor=2)
+
+
+def test_the_reflection_red_names_each_site_and_entry_as_a_subject(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for the fingerprint: each new ``file:line`` and each bad entry is a subject line."""
+    root = _repo(tmp_path, {'a.py': 'setattr(o, "x", 1)\ngetattr(o, "y")\n', 'b.py': 'x = 1\n'})
+    with pytest.raises(AssertionError) as red:
+        assert_no_reflection(root=root, allowed={'b.py': 'gone'}, floor=1)
+    assert subjects_of(str(red.value)) == {'a.py:1', 'a.py:2', 'b.py'}

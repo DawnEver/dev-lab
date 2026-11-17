@@ -372,8 +372,7 @@ class Server:
         return said
 
     def _merge(self, asked: requests.Merge) -> str:
-        held = self._current()
-        if held is None:
+        if (held := self._current()) is None:
             msg = 'no break-glass wave is open: the user opens one (forge breakglass open, with their code)'
             raise BreakglassRefused(msg)
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason

@@ -20,10 +20,10 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Final
 
-__all__ = ['SUBJECT_PREFIX', 'Fingerprints', 'new_subjects', 'refusal', 'subject_lines', 'subjects_of']
+# lab-commons owns the prefix: the run record it writes keeps every such line of a failure, untruncated.
+from lab_commons.hpc.pytest_item import SUBJECT_PREFIX
 
-#: The marker a subject line starts with; the rest of the line, stripped, IS the subject.
-SUBJECT_PREFIX: Final = 'failure-subject: '
+__all__ = ['SUBJECT_PREFIX', 'Fingerprints', 'new_subjects', 'refusal', 'subject_lines', 'subjects_of']
 
 _LINE: Final = re.compile(rf'^\s*(?:E\s+)?{re.escape(SUBJECT_PREFIX.strip())}\s*(?P<subject>.+?)\s*$', re.MULTILINE)
 
