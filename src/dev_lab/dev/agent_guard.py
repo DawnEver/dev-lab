@@ -46,13 +46,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.agent_wiring import (
@@ -68,10 +66,9 @@ from dev_lab.dev.agent_wiring import (
     rows,
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
-from dev_lab.dev.backgroundrun import main_checkout
-from dev_lab.dev.checkout import git_out
-from dev_lab.dev.lockpins import installed_git, locked_git, sync_door
 from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
+from dev_lab.dev.rendergate import Kit, RenderRefused, running_kit, tracked_dirt
+from dev_lab.dev.rendergate import refusal as render_refusal
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -84,15 +81,12 @@ __all__ = [
     'STALE',
     'UNGUARDED',
     'GuardReport',
-    'Kit',
     'PartReport',
-    'RenderRefused',
     'engine_beside',
     'guard_installation',
     'install_guard',
     'launcher_source',
     'report_guard',
-    'running_kit',
     'wire_settings',
 ]
 
@@ -361,29 +355,6 @@ def _drift_lines(settings: dict[str, Any], repo: Path) -> list[str]:
     return [f'the hook rows differ from the rendered wiring on {", ".join(drifted)}'] if drifted else []
 
 
-#: The distribution whose kit renders these files, as :mod:`dev_lab.dev.lockpins` names packages.
-_KIT_DIST: Final = 'dev-lab'
-_GIT: Final = shutil.which('git') or 'git'
-
-
-@dataclass(frozen=True, slots=True)
-class Kit:
-    """The dev-lab an install runs from: its package directory, and the git commit it was installed at ('' if none)."""
-
-    package: Path
-    commit: str
-
-
-def running_kit() -> Kit:
-    """The kit THIS process runs: the package this module was imported from, and its PEP 610 git commit."""
-    commits = {one.name: one.commit for one in installed_git()}
-    return Kit(Path(__file__).resolve().parent.parent, commits.get(_KIT_DIST, ''))
-
-
-class RenderRefused(RuntimeError):
-    """A tracked file would move in a main checkout or under a kit not the checkout's own; nothing was written."""
-
-
 def _text(text: str) -> bytes:
     """The bytes :meth:`Path.write_text` writes for *text*: UTF-8, every newline the platform's."""
     return text.replace('\n', os.linesep).encode('utf-8')
@@ -451,66 +422,6 @@ def _planned(repo: Path, *, force: bool) -> tuple[dict[Path, bytes], list[str]]:
     return writes, actions
 
 
-def _blob(repo: Path, rel: str, data: bytes) -> str:
-    """The blob id git would store for *data* at *rel* (clean filters and eol rules applied); '' if git cannot say."""
-    done = _door.run(
-        [_GIT, 'hash-object', f'--path={rel}', '--stdin'], cwd=repo, input=data, capture_output=True, check=False
-    )
-    return done.stdout.decode('utf-8', 'replace').strip() if done.returncode == 0 else ''
-
-
-def _tracked_dirt(repo: Path, writes: dict[Path, bytes]) -> tuple[str, ...]:
-    """The TRACKED files *writes* would leave differing from the index, repo-relative; none outside git."""
-    data = {path.relative_to(repo).as_posix(): content for path, content in writes.items()}
-    staged = git_out(repo, 'ls-files', '--stage', '-z', '--', *data) if data else None
-    index: dict[str, str] = {}
-    for row in (staged or '').split('\0'):
-        meta, tab, rel = row.partition('\t')
-        if tab and rel in data:
-            index[rel] = meta.split()[1]
-    return tuple(sorted(rel for rel, blob in index.items() if _blob(repo, rel, data[rel]) != blob))
-
-
-def _foreign(repo: Path, kit: Kit) -> str | None:
-    """Why *kit* is not *repo*'s own; ``None`` when its package IS the repo's source or its commit is the lock's pin."""
-    if kit.package.resolve() == (repo / 'src' / 'dev_lab').resolve():
-        return None
-    pin = locked_git(repo / 'uv.lock').get(_KIT_DIST, '')
-    if pin and pin == kit.commit:
-        return None
-    running = (
-        f'dev-lab {kit.commit[:12]}' if kit.commit else f'the dev-lab at {kit.package}, installed from no git commit'
-    )
-    pinned = f'its uv.lock pins {pin[:12]}' if pin else 'its uv.lock pins no dev-lab commit'
-    return f'the running kit is not its own: {running}, {pinned}'
-
-
-def _render_refusal(repo: Path, dirt: tuple[str, ...], kit: Kit) -> str | None:
-    """The refusal for moving *dirt* in *repo* under *kit*; ``None`` when nothing tracked moves or both rules pass."""
-    if not dirt:
-        return None
-    main = main_checkout(repo) is not None
-    foreign = _foreign(repo, kit)
-    if not main and foreign is None:
-        return None
-    if main:
-        door = (
-            f'{repo} is a MAIN checkout, which moves only by fast-forward -- re-render in a lane worktree '
-            f'({REINSTALL_COMMAND}) and commit the render there with its lock; this checkout catches up by fast-forward'
-        )
-    else:
-        door = (
-            f"run the install under this checkout's own interpreter ({REINSTALL_COMMAND}) once "
-            f'`{sync_door(repo)} {repo}` has made its venv follow its uv.lock; to move the render to another '
-            'dev-lab, relock this lane and commit the render with the lock'
-        )
-    cause = f'; {foreign}' if foreign else ''
-    return (
-        f'writing would leave {", ".join(dirt)} differing from what {repo} committed{cause} -- dirt its '
-        f'fast-forward refresh refuses. Nothing was written. Door: {door}.'
-    )
-
-
 def install_guard(repo: Path, *, force: bool = False, kit: Kit | None = None) -> tuple[str, ...]:
     """Install the engine into *repo* and wire it, returning what was DONE, one line per action.
 
@@ -532,7 +443,7 @@ def install_guard(repo: Path, *, force: bool = False, kit: Kit | None = None) ->
     """
     declared(repo)  # a refused declaration refuses the install before any file is written
     writes, actions = _planned(repo, force=force)
-    refusal = _render_refusal(repo, _tracked_dirt(repo, writes), running_kit() if kit is None else kit)
+    refusal = render_refusal(repo, tracked_dirt(repo, writes), kit or running_kit(), REINSTALL_COMMAND)
     if refusal is not None:
         raise RenderRefused(refusal)
     for path, data in writes.items():
