@@ -334,7 +334,8 @@ class StateForge(Client):
     def _add_labels(self, key: str, body: dict[str, Any]) -> list[dict[str, Any]]:
         number = int(key.partition('/')[0])
         held = self.issue_labels.setdefault(number, [])
-        for label in body['labels']:
+        for given in body['labels']:  # gitea sends ids, GitHub names
+            label = next((one['id'] for one in self.labels if one['name'] == given), given)
             if label not in held:
                 held.append(label)
                 self.labeled.append((number, next(one['name'] for one in self.labels if one['id'] == label)))
@@ -342,7 +343,9 @@ class StateForge(Client):
 
     def _remove_label(self, key: str) -> None:
         number, _, label = key.partition('/')
-        self.issue_labels[int(number)].remove(int(label.strip('/')))
+        given = urllib.parse.unquote(label.strip('/'))
+        ident = next((one['id'] for one in self.labels if one['name'] == given), None)
+        self.issue_labels[int(number)].remove(ident if ident is not None else int(given))
 
     def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
         """Answer from the in-memory state, as gitea would; a create needs no read-back here."""
