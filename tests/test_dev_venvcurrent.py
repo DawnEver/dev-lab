@@ -138,6 +138,7 @@ def test_a_bootstrap_whose_venv_alias_stays_stale_fails_and_names_why(tmp_path, 
     _project(root)
     (root / venvpointer.POINTER).unlink()
     legacy = root / venvpointer.ALIAS
+    legacy.unlink() if legacy.is_symlink() else legacy.rmdir()  # the junction _project published: now legacy
     venv.EnvBuilder(with_pip=False).create(legacy)
     holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 3600.0, str(tmp_path))
     assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=lambda: [holder]) == 1
