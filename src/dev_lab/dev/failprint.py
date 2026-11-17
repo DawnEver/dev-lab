@@ -59,5 +59,5 @@ def refusal(new: Mapping[tuple[str, str], frozenset[str]]) -> str | None:
     said = '; '.join(f'{part} {node}: {", ".join(sorted(subjects))}' for (part, node), subjects in new.items())
     return (
         f'new failure subjects inside reds the base already carries ({said}) -- an inherited test id hides no new '
-        f'subject: fix each one (this check has no override; only a user ruling would add one)'
+        f'subject: fix each one (only an open break-glass wave admits them, on record: user ruling D18)'
     )
