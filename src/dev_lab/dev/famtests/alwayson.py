@@ -4,8 +4,9 @@ THE ONE EXCEPTION TO THIS PACKAGE'S SHAPE, and it is a user ruling (2026-11-07),
 NO-CJK-IN-TRACKED-SOURCE is enforced in every family repo from ONE place, with no per-repo copy and
 no opt-out. Every other body in :mod:`dev_lab.dev.famtests` is parametrized by a consumer file that
 names its repo's facts; this rule has none left to name -- the corpus is the repo's tracked files,
-the exemptions are :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`, and the declared set is empty in every
-repo -- so a consumer file could only be a copy, or a place to forget it.
+the exemptions are :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`, and the declared set is DATA in the repo's
+own manifest (``[tool.dev_lab.cjk] declared``, :func:`declared_cjk`; added for D26, 2026-11-17, when
+memory and tasks lost their exemption) -- so a consumer file could only be a copy, or a place to forget it.
 
 HOW IT REACHES A REPO. dev-lab registers :mod:`dev_lab.pytest_family` under pytest's ``pytest11``
 entry point, so any pytest session in an environment where dev-lab is installed loads it, and that
@@ -49,6 +50,7 @@ __all__ = [
     'candidates',
     'check_no_cjk',
     'cjk_pattern',
+    'declared_cjk',
     'exclude_pathspecs',
     'required_ids',
     'resource_nodes',
@@ -95,6 +97,24 @@ def candidates(root: Path) -> tuple[str, ...]:
     return tuple(sorted(name for name in out.stdout.decode('utf-8').split('\0') if name))
 
 
+def declared_cjk(root: Path) -> tuple[str, ...]:
+    """The repo's migration ledger: ``[tool.dev_lab.cjk] declared`` in *root*'s ``pyproject.toml``.
+
+    Repo-relative POSIX paths still carrying CJK; the set may only shrink (:func:`dev_lab.dev.cjk.ratchet`
+    refuses a declared file with none left). No manifest or no table is the empty set. A value that is
+    not a list of strings is refused by name rather than read as empty, which would hide every entry.
+    """
+    try:
+        text = (root / 'pyproject.toml').read_text(encoding='utf-8')
+    except OSError:
+        return ()
+    entries = declared_table(tomllib.loads(text), 'cjk', {}).get('declared', [])
+    if not isinstance(entries, list) or not all(isinstance(entry, str) for entry in entries):
+        msg = f'[tool.dev_lab.cjk] declared must be a list of repo-relative paths, not {entries!r}'
+        raise AssertionError(msg)
+    return tuple(entries)
+
+
 def check_no_cjk(root: Path) -> None:
     """Raise unless no tracked, non-exempt file under *root* carries CJK and no translation is orphaned."""
     tracked = tracked_files(root)  # raises rather than answering empty
@@ -103,7 +123,7 @@ def check_no_cjk(root: Path) -> None:
         problems.append('git ls-files listed no file, so a clean result would mean nothing')
     hits = [name for name in candidates(root) if not cjk.translation_exempted(name, tracked)]
     scan = cjk.scan_files([root / name for name in hits], exempt_prefixes=cjk.EXEMPT_PREFIXES, root=root)
-    problems.extend(cjk.ratchet(scan.occurrences, ()))
+    problems.extend(cjk.ratchet(scan.occurrences, declared_cjk(root)))
     if problems:
         raise AssertionError('\n  '.join(('NO-CJK-IN-TRACKED-SOURCE:', *problems)))
 
