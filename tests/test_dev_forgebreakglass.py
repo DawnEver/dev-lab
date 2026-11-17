@@ -16,6 +16,7 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forgebreakglass import merge_main, wave_main
 from dev_lab.dev.forgecli import NOUNS, PR_VERBS
 from dev_lab.dev.forgework import Client
+from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import ssh_send
 
 _TABLE = {'endpoint': 'bg@host'}
@@ -50,6 +51,56 @@ def test_open_without_a_granted_credential_is_refused_and_sends_nothing(tmp_path
     send = _Recorder()
     assert wave_main(['open', '--credential', 'missing'], table=_TABLE, send=send, home=tmp_path) == 2
     assert wave_main(['open'], table=_TABLE, send=send, home=tmp_path) == 2
+    assert send.sent == []
+
+
+def test_the_open_refusal_names_both_doors_and_the_window(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert wave_main(['open'], table=_TABLE, send=_Recorder(), home=tmp_path) == 2
+    said = capsys.readouterr().err
+    assert '--code <code>' in said
+    assert 'python -m dev_lab.ops.consent grant <request.json> --code <code>' in said
+    assert '"action": "breakglass.wave"' in said
+    assert '30 s' in said
+
+
+class _Grant:
+    def __init__(self, refusal: str = '') -> None:
+        self.calls: list[tuple[dict[str, Any], str]] = []
+        self.refusal = refusal
+
+    def __call__(self, request: Path, *, code: str, home: Path | None) -> Path:
+        self.calls.append((json.loads(request.read_text(encoding='utf-8')), code))
+        if self.refusal:
+            raise ConsentRefused(self.refusal)
+        written = state_dir(home) / 'g1.json'
+        written.write_text(json.dumps({'id': 'g1'}), encoding='utf-8')
+        return written
+
+
+def test_open_with_a_code_grants_then_opens_once_each(tmp_path: Path) -> None:
+    send, grant_ = _Recorder(), _Grant()
+    argv = ['open', '--code', '123456', '--hours', '2', '--max-merges', '3']
+    assert wave_main(argv, table=_TABLE, send=send, home=tmp_path, grant_=grant_) == 0
+    [(request, code)] = grant_.calls
+    assert code == '123456'
+    assert request['action'] == 'breakglass.wave'
+    assert request['subject']
+    assert request['params'] == {'max_merges': 3, 'hours': 2.0}
+    assert send.sent == [{'action': 'open', 'credential': {'id': 'g1'}}]
+
+
+def test_an_expired_code_is_refused_before_anything_opens(tmp_path: Path) -> None:
+    send, grant_ = _Recorder(), _Grant('the code is wrong or outside its 30-second window')
+    argv = ['open', '--code', '000000', '--hours', '1', '--max-merges', '1']
+    assert wave_main(argv, table=_TABLE, send=send, home=tmp_path, grant_=grant_) == 2
+    assert len(grant_.calls) == 1
+    assert send.sent == []
+
+
+def test_open_with_a_code_needs_its_bounds_and_spends_nothing(tmp_path: Path) -> None:
+    send, grant_ = _Recorder(), _Grant()
+    assert wave_main(['open', '--code', '123456'], table=_TABLE, send=send, home=tmp_path, grant_=grant_) == 2
+    assert grant_.calls == []
     assert send.sent == []
 
 
