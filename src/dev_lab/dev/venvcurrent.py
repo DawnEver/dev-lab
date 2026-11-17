@@ -36,7 +36,7 @@ from dev_lab.dev.venvpointer import ALIAS, HOME, POINTER, named
 if sys.platform == 'win32':
     import _winapi
 
-__all__ = ['BUILDING', 'BUILD_WALL_S', 'RECLAIMING', 'abandon', 'fresh', 'publish', 'reclaim', 'target']
+__all__ = ['BUILDING', 'BUILD_WALL_S', 'RECLAIMING', 'abandon', 'fresh', 'publish', 'reclaim', 'stale_alias', 'target']
 
 #: Suffix of the marker BESIDE an environment being built (``.venvs/<name>.building``): never reclaimed. Beside,
 #: not inside: uv refuses to sync into a non-empty directory that is not yet a venv.
@@ -135,6 +135,14 @@ def _repoint(root: Path, env: Path) -> str:
     except OSError as exc:
         return f'{alias} not re-pointed ({exc}); the pointer {root / POINTER} still names {env.name}'
     return f'{alias} -> {env}'
+
+
+def stale_alias(root: Path, env: Path) -> str:
+    """Why :data:`ALIAS` does not run the current *env*, ``''`` when it does (or is absent: the pointer rules)."""
+    alias = Path(root) / ALIAS
+    if not alias.exists() or alias.resolve() == Path(env).resolve():
+        return ''
+    return f'{alias} still runs {alias.resolve()}, not the published {env}'
 
 
 def _adopt_plain_venv(root: Path, *, census: Census = processes) -> str:

@@ -450,7 +450,7 @@ def main(
         )
     except (_dep_project.OtherUvRefused, _dep_local.OverlayRefused) as exc:
         emit(f'REFUSED: {exc}')
-        _publish(root, prefix, live, ok=False, census=census)
+        _publish(root, prefix, live, ok=False, census=census, base=base)
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
@@ -471,23 +471,31 @@ def main(
         emit(f'REFUSED: {exc}')
         return 1
     emit(result.render())
-    _publish(root, prefix, live, ok=not result.returncode, census=census)
+    stale = _publish(root, prefix, live, ok=not result.returncode, census=census, base=base)
     if syncing and not args.dry_run and not result.returncode:
         _refresh_automode(root, run=run)
-    return result.returncode or 0
+    return result.returncode or stale
 
 
-def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census) -> None:
-    """Publish the environment just built (or drop a failed build), then reclaim every one nothing runs from."""
-    if prefix == live:
-        return
-    if not ok:
-        venvcurrent.abandon(prefix)
-        return
+def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, base: str) -> int:
+    """Publish the environment just built (or drop a failed build), then reclaim every one nothing runs from.
+
+    Nonzero when the build is published but the :data:`~dev_lab.dev.venvpointer.ALIAS` still runs another
+    environment (a held legacy ``.venv`` directory): a caller of ``.venv`` would still meet the stale one.
+    """
+    if prefix == live or not ok:
+        if prefix != live:
+            venvcurrent.abandon(prefix)
+        return 0
     record(root, prefix)  # the trees this environment now holds its components at
     emit(f'published {prefix}: {venvcurrent.publish(root, prefix)}')
     for line in venvcurrent.reclaim(root, census=census):
         emit(line)
+    if why := venvcurrent.stale_alias(root, prefix):
+        python = prefix.joinpath(*Path(base).relative_to(live).parts)
+        emit(f'REFUSED: {why}. Stop what runs from it and re-run this bootstrap, or run {python} directly.')
+        return 1
+    return 0
 
 
 def _refresh_automode(root: Path, *, run: Callable[..., Any]) -> None:
