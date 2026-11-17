@@ -132,6 +132,7 @@ def uv_command(
         python if Path(python).is_file() else sys.executable,
     ]
     if syncing:
+        command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
         for extra in selected:
             command.extend(('--extra', extra))
         for package in reinstall_packages:
