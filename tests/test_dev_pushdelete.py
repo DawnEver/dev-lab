@@ -31,9 +31,15 @@ from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.githooks.runner import ZERO_SHA, run_stage
 from dev_lab.dev.githooks.table import base_rows, merge
+from dev_lab.dev.lanepolicy import Derived, policy_from
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 ROOT = Path(__file__).resolve().parents[1]
+#: The planted repo's integrator table declaring the component bump lane DERIVED (decision D23).
+_DERIVED = (
+    "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
+    "derived = [{ branch = 'pr/components-bump', producer = 'dev_lab.dev.componentbump' }]\n"
+)
 TESTS = Path(__file__).resolve().parent
 SH = shutil.which('sh')
 
@@ -98,11 +104,13 @@ def _landed(work: Path, branch: str) -> str:
     return tip
 
 
-def _shell_delete(work: Path, *branches: str, heads: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
+def _shell_delete(
+    work: Path, *branches: str, heads: tuple[str, ...] = (), env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """The incident's spelling: the refspecs assembled into ``$refs`` at run time, so no ``:ref`` is in the text."""
     assert SH is not None, 'no sh on PATH: the incident`s shell spelling cannot be replayed on this box'
     script = 'refs=$(printf ":refs/heads/%s " "$@"); git push origin $refs'
-    env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'PLANTED_OPEN_HEADS': ','.join(heads)}
+    env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'PLANTED_OPEN_HEADS': ','.join(heads), **(env or {})}
     return subprocess.run(
         [SH, '-c', script, 'sh', *branches],
         cwd=work,
@@ -114,6 +122,18 @@ def _shell_delete(work: Path, *branches: str, heads: tuple[str, ...] = ()) -> su
         timeout=300,
         check=False,
     )
+
+
+def _bump(work: Path, branch: str) -> str:
+    """A component bump as ``componentbump`` opens one -- one gitlink commit on integration's tip -- on *branch*."""
+    run_git(work, 'checkout', '-q', '-B', 'tmp-bump', 'origin/integrate/main')
+    engine = git_out(work, 'rev-parse', 'HEAD')
+    run_git(work, 'update-index', '--add', '--cacheinfo', f'160000,{engine},engines/core')
+    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--no-verify', '-m', 'bump core')
+    tip = git_out(work, 'rev-parse', 'HEAD')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', f'{tip}:refs/heads/{branch}')
+    run_git(work, 'fetch', '-q', 'origin')
+    return tip
 
 
 def _line(branch: str, sha: str) -> str:
@@ -170,25 +190,37 @@ def test_the_door_deletes_a_landed_branch_through_the_same_hook(tmp_path: Path) 
     assert 'refs/heads/feat/done' in log.read_text(encoding='utf-8'), 'the door`s push ran the hook'
 
 
-def test_an_approved_tag_held_delete_through_the_door_passes_the_hook(tmp_path: Path) -> None:
-    """``--approved`` with a tag on origin holding the tip: the door hands the words on, the hook sees the tag."""
-    work, log = _hooked(tmp_path)
+def test_a_tag_on_origin_holds_no_delete_whatever_the_env_says(tmp_path: Path) -> None:
+    """D22, no archive tags: a tag holding the tip, and the retired approval variable set, hold nothing."""
+    work, _ = _hooked(tmp_path)
     tip = advance(work, 'lane/old', 'o.txt', 'o\n')
     run_git(work, 'push', '-q', '--no-verify', 'origin', f'{tip}:refs/tags/keep/lane-old')
-    said: list[str] = []
-    code = delete(
-        work,
-        ['lane/old'],
-        client=StateForge(),
-        session='s',
-        fetch=fetch_origin,
-        say=said.append,
-        approved='drop the old lane',
-        alarm=said.append,
-    )
-    assert code == 0, said
-    assert not _on_origin(work, 'lane/old')
-    assert 'refs/heads/lane/old' in log.read_text(encoding='utf-8')
+    done = _shell_delete(work, 'lane/old', env={'DEV_LAB_DELETE_APPROVED': 'drop the old lane'})
+    assert done.returncode != 0, done.stderr
+    assert _on_origin(work, 'lane/old')
+    assert 'lane/old: refused -- 1 commit(s) exist on it alone' in done.stderr
+    assert '`git merge -s ours`' in done.stderr, 'the door names MERGE or LAND, never a tag'
+
+
+def test_a_held_red_bump_on_a_declared_derived_branch_deletes_through_the_hook(tmp_path: Path) -> None:
+    """D23: ``pr/components-bump`` is declared derived with its producer, so its held gitlink commit goes.
+
+    PLANTED CONTROL: the very same commit on ``pr/relock``, machine-looking but undeclared, is refused -- and the
+    derived branch, which may go any time, holds nothing for it.
+    """
+    work, _ = _hooked(tmp_path)
+    tip = _bump(work, 'pr/components-bump')
+    run_git(work, 'push', '-q', '--no-verify', 'origin', f'{tip}:refs/heads/pr/relock')
+    run_git(work, 'fetch', '-q', 'origin')
+    (work / 'pyproject.toml').write_text(_DERIVED, encoding='utf-8')
+    undeclared = _shell_delete(work, 'pr/relock')
+    assert undeclared.returncode != 0, undeclared.stderr
+    assert _on_origin(work, 'pr/relock')
+    assert 'pr/relock: refused -- 1 commit(s) exist on it alone' in undeclared.stderr
+    derived = _shell_delete(work, 'pr/components-bump')
+    assert derived.returncode == 0, derived.stderr
+    assert not _on_origin(work, 'pr/components-bump')
+    assert _on_origin(work, 'pr/relock'), 'the undeclared twin still stands'
 
 
 # ------------------------------------------------------------------------------------------- the runner
@@ -241,16 +273,34 @@ def test_a_deleted_sha_this_clone_never_fetched_is_refused(tmp_path: Path) -> No
     assert 'not a commit this clone holds' in found[0]
 
 
-def test_an_approved_delete_needs_a_tag_on_origin_holding_the_tip(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    'row',
+    [
+        "{ branch = 'pr/components-bump' }",
+        "{ branch = 'pr/components-bump', producer = '' }",
+        "{ producer = 'dev_lab.dev.componentbump' }",
+        "{ branch = 'pr/components-bump', producer = 'dev_lab.dev.componentbump', why = 'x' }",
+        "'pr/components-bump'",
+    ],
+)
+def test_a_derived_row_naming_no_producer_is_refused_at_policy_load(row: str) -> None:
+    text = f"[tool.dev_lab.integrator]\nintegration = 'integrate/main'\nderived = [{row}]\n"
+    with pytest.raises(ValueError, match='must name its branch AND the producer'):
+        policy_from(text, 'pyproject.toml')
+
+
+def test_a_derived_row_with_its_producer_is_read_and_a_malformed_one_refuses_the_delete(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the refusals above: the full row parses; the hook refuses a delete under a malformed one."""
+    assert policy_from(_DERIVED, 'pyproject.toml').derived == (
+        Derived('pr/components-bump', 'dev_lab.dev.componentbump'),
+    )
     _, work = clone_pair(tmp_path)
-    kept = advance(work, 'lane/kept', 'k.txt', 'k\n')
-    bare = advance(work, 'lane/bare', 'b.txt', 'b\n')
-    run_git(work, 'push', '-q', '--no-verify', 'origin', f'{kept}:refs/tags/keep/lane-kept')
-    assert _judged(work, _line('lane/kept', kept), approved='drop them') == []
-    found = _judged(work, _line('lane/bare', bare), approved='drop them')
-    assert len(found) == 1, 'PLANTED CONTROL: approved, but no tag holds it'
-    assert 'no tag on origin holds it' in found[0]
-    assert len(_judged(work, _line('lane/kept', kept))) == 1, 'the tag alone, unapproved, deletes nothing'
+    tip = _bump(work, 'pr/components-bump')
+    malformed = _DERIVED.replace(", producer = 'dev_lab.dev.componentbump'", '')
+    (work / 'pyproject.toml').write_text(malformed, encoding='utf-8')
+    found = _judged(work, _line('pr/components-bump', tip))
+    assert len(found) == 1
+    assert found[0].startswith(f'{pushdelete.UNJUDGED}:')
 
 
 # ------------------------------------------------------------------------------------- fail closed, teach

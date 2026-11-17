@@ -28,7 +28,6 @@ integration runs (``ci_base.toml``); on a workstation, :mod:`dev_lab.dev.reclaim
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -36,7 +35,7 @@ from typing import TYPE_CHECKING, Final
 from dev_lab.dev.backgroundrun import held
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, checked_out, declared_branchset
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.deletejudge import APPROVED_ENV, ORIGIN, Verdict, held_by_tag, judge, remote_tags, unlanded
+from dev_lab.dev.deletejudge import ORIGIN, Verdict, judge, unlanded
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.forgealarm import PRUNED, Alarm, sound
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -69,16 +68,14 @@ DOOR: Final = 'python -m dev_lab.dev.branchprune delete <branch>... [--approved 
 TAG_DOOR: Final = 'python -m dev_lab.dev.branchprune delete-tag <tag>... --approved "<the user`s words>"'
 
 
-def _push_delete(root: Path, branch: str, sha: str, approved: str) -> str:
+def _push_delete(root: Path, branch: str, sha: str) -> str:
     """Delete origin's *branch* if still at *sha* (a lease), through the network door; ``''``, or why not.
 
-    The push runs the pre-push ``lossless-delete`` row, which judges the delete again; *approved* (the user's words
-    a tag-held delete was approved with, else ``''``) reaches it as :data:`~dev_lab.dev.deletejudge.APPROVED_ENV`.
+    The push runs the pre-push ``lossless-delete`` row, which judges the delete again (:mod:`dev_lab.dev.pushdelete`).
     """
     report = run_network_verb(
         [_GIT, 'push', f'--force-with-lease=refs/heads/{branch}:{sha}', 'origin', '--delete', f'refs/heads/{branch}'],
         cwd=root,
-        env={**os.environ, APPROVED_ENV: approved} if approved else None,
         timeout=300,
     )
     return '' if report.ok else report.remedy
@@ -93,13 +90,14 @@ def delete(
     fetch: Callable[[Path], None],
     say: Callable[[str], None],
     approved: str = '',
-    push: Callable[[Path, str, str, str], str] = _push_delete,
+    push: Callable[[Path, str, str], str] = _push_delete,
     alarm: Callable[[Alarm], object] = sound,
+    remote_tags: Callable[[Path], dict[str, str]] | None = None,
 ) -> int:
     """LOSSLESS-DELETE each of *branches* after a fresh fetch; 0 when every one was deleted, else 1.
 
     A branch refused for commits on it alone goes when *approved* (the user's own words, echoed into the record)
-    and a tag on origin holds its tip (:func:`~dev_lab.dev.deletejudge.held_by_tag`); a protected branch never does.
+    and a tag on origin holds its tip (:func:`_held_by_tag`); a protected branch never does.
     """
     fetch(root)
     policy = load_policy(root)
@@ -110,9 +108,9 @@ def delete(
         tip = (git_out(root, 'rev-parse', '--verify', '--quiet', f'{ORIGIN}{branch}^{{commit}}') or '').strip()
         found = judge(root, policy, branch, tip, open_heads=heads)
         if found.lost and approved.strip():
-            tags = remote_tags(root) if tags is None else tags
-            found = held_by_tag(root, found, tags, approved.strip())
-        why = found.refused or push(root, branch, found.sha, approved.strip() if found.lost else '')
+            tags = (remote_tags or _remote_tags)(root) if tags is None else tags
+            found = _held_by_tag(root, found, tags, approved.strip())
+        why = found.refused or push(root, branch, found.sha)
         if why:
             say(why if found.refused else f'{branch}: the delete failed: {why}')
             failed += 1
@@ -124,6 +122,29 @@ def delete(
         alarm(Alarm(PRUNED, client.forge.repo, f'{branch} deleted (lossless)', body))
         say(f'{branch}: deleted at {found.sha[:12]} -- held by {found.container}')
     return 1 if failed else 0
+
+
+def _remote_tags(root: Path) -> dict[str, str]:
+    """``{tag: peeled commit sha}`` of every tag on origin, through the network door."""
+    report = run_network_verb([_GIT, 'ls-remote', '--tags', 'origin'], cwd=root, timeout=120)
+    if not report.ok:
+        raise OSError(report.remedy)
+    lines = (line.partition('	') for line in report.attempts[-1].output.splitlines())
+    pairs = [(ref.strip().removeprefix('refs/tags/'), sha.strip()) for sha, _, ref in lines]
+    peeled = {name.removesuffix('^{}'): sha for name, sha in pairs if name.endswith('^{}')}  # annotated: its commit
+    return {name: sha for name, sha in pairs if not name.endswith('^{}')} | peeled
+
+
+def _held_by_tag(root: Path, found: Verdict, tags: dict[str, str], approved: str) -> Verdict:
+    """*found* (refused: commits on the branch alone) held by the first of origin's *tags* whose commit holds its tip.
+
+    FAILS CLOSED: a tag's commit not fetched here holds nothing.
+    """
+    for name, commit in sorted(tags.items()):
+        if git_out(root, 'merge-base', '--is-ancestor', found.sha, commit) is not None:
+            return Verdict(found.branch, found.sha, container=f'tag {name}; approved: "{approved}"', lost=found.lost)
+    why = f'{found.refused}; approved, but no tag on origin holds it (tag its tip first: nothing may be lost)'
+    return Verdict(found.branch, found.sha, lost=found.lost, refused=why)
 
 
 def _remote_tag(root: Path, tag: str) -> tuple[str, str]:
@@ -251,7 +272,7 @@ def sweep(
     fetch: Callable[[Path], None],
     say: Callable[[str], None],
     local: bool = False,
-    push: Callable[[Path, str, str, str], str] = _push_delete,
+    push: Callable[[Path, str, str], str] = _push_delete,
     alarm: Callable[[Alarm], object] = sound,
 ) -> int:
     """Delete every undeclared branch integration now contains; 0 unless a landed branch failed to delete.
@@ -275,7 +296,7 @@ def sweep(
             continue
         if name in opened:
             close_pr(client, opened[name], head=found.sha, merged_by=tip, session=session, say=say)
-        why = push(root, name, found.sha, '')
+        why = push(root, name, found.sha)
         if why:
             say(f'{name}: the delete failed: {why}')
             failed += 1
