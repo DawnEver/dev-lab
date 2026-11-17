@@ -67,7 +67,13 @@ def _tree(work: Path, name: str) -> Path:
 
 def _registered(work: Path) -> str:
     return subprocess.run(
-        [_GIT, 'worktree', 'list', '--porcelain'], cwd=work, check=True, capture_output=True, text=True, timeout=60
+        [_GIT, 'worktree', 'list', '--porcelain'],
+        cwd=work,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        timeout=60,
     ).stdout
 
 
@@ -111,7 +117,13 @@ def test_an_archived_branch_tree_is_removed_and_its_branch_stays(work: Path) -> 
     assert ok, line
     assert not _tree(work, 'lane').exists()
     branches = subprocess.run(
-        [_GIT, 'branch', '--list', 'lane'], cwd=work, check=True, capture_output=True, text=True, timeout=60
+        [_GIT, 'branch', '--list', 'lane'],
+        cwd=work,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        timeout=60,
     )
     assert 'lane' in branches.stdout, 'the branch goes through branchset, never this door'
 
