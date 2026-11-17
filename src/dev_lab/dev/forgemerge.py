@@ -82,6 +82,7 @@ from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import alarms_said
+from dev_lab.dev.forgehold import HELD, is_held
 from dev_lab.dev.forgemergewaits import hand_note, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgereview_declared import load_review
@@ -285,5 +286,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         others = (EXTERNAL, *others)
     if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         others = (WAITING.format(n=number), *others)
+    if is_held(pull):  # HOLD: a held PR never lands, on a forge that refuses its draft too
+        others = (HELD.format(n=number), *others)
     waiting = found.waiting and len(others) == len(found.others)
     return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting)

@@ -110,6 +110,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgereview_identity',  # who reviews: the forge's status, never a head's author, new here
     'forgerunshow',  # a cluster run's findings published on the forge, new here
     'forgedraft',  # a PR opens as a draft until its author marks it ready (D53), new here
+    'forgehold',  # a PR held from the merge tick by a label where its draft is refused, new here
     'forgeorphan',  # MERGE-OR-DELETE executed: an orphaned PR is labelled to the integrator (2026-11-15)
     'forgebacklog',  # a ready head unreviewed past the bound pages once, new here
     'forgebreakglass',

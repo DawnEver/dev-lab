@@ -437,6 +437,16 @@ const posix = (p) => p.replace(/\\/g, '/');
  * exists (2026-11-03: a target with no venv was named `<target>/.venv/...python`, a command that cannot run); its
  * own spelling only when no interpreter exists anywhere. */
 function remedyPython(root) {
+  const checkout = checkoutPython(root);
+  if (checkout) return checkout;
+  const own = path.join(currentEnv(path.resolve(root)), ...VENV_TAIL);
+  const session = sessionRoot && path.join(currentEnv(sessionRoot), ...VENV_TAIL);
+  if (session && fs.existsSync(session)) return posix(session);
+  return posix(own);
+}
+
+/** `root`'s own venv interpreter, else its main checkout's (a linked worktree), else null: never another repo's. */
+function checkoutPython(root) {
   const own = path.join(currentEnv(path.resolve(root)), ...VENV_TAIL);
   if (fs.existsSync(own)) return posix(own);
   try {
@@ -447,11 +457,35 @@ function remedyPython(root) {
       if (fs.existsSync(main)) return posix(main);
     }
   } catch {
-    // a `.git` directory, or none: the session's interpreter, else the checkout's own spelling below
+    // a `.git` directory, or none: no checkout interpreter
   }
-  const session = sessionRoot && path.join(currentEnv(sessionRoot), ...VENV_TAIL);
-  if (session && fs.existsSync(session)) return posix(session);
-  return posix(own);
+  return null;
+}
+
+const listDir = (dir) => {
+  try {
+    return fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+};
+
+/** Whether `python`'s venv has dev_lab installed: a `dev_lab-*.dist-info` in its site-packages. */
+function carriesDevLab(python) {
+  const lib = path.join(path.dirname(path.dirname(python)), process.platform === 'win32' ? 'Lib' : 'lib');
+  const sites = process.platform === 'win32' ? [lib] : listDir(lib).map((version) => path.join(lib, version));
+  return sites.some((site) => listDir(path.join(site, 'site-packages')).some((name) => /^dev_lab-.*\.dist-info$/.test(name)));
+}
+
+/** The exit of a per-repo-door rule when `target` declares none (2026-11-17: a pytest in one repo was sent to the
+ * session repo's `scripts/gate/runner.py`, absent there): the family verify door when the target's OWN
+ * interpreter carries dev_lab, else the declaration to add -- never another repo's path. */
+function undeclaredDoor(rule, target, shown) {
+  const python = rule.needs === 'verdict-entry-point' ? checkoutPython(target) : null;
+  if (python && carriesDevLab(python)) {
+    return `${shown} declares no door for it; its own interpreter carries dev_lab: ${python} -m dev_lab.dev.verify -- <paths>`;
+  }
+  return `${shown} declares no door for it: declare one in its pyproject.toml as [tool.dev_lab.doors] ${rule.name} = "<the command that runs it there>"`;
 }
 
 /** `text` with `{root}` as the cwd and the interpreter tokens as `checkout`'s absolute interpreter. */
@@ -483,6 +517,7 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   if (door) {
     return [`${rule.name}: refused; ${shown} declares its own door for it:`, door, ...details].join('\n');
   }
+  if (rule.needs) return [reason.split('\n')[0], undeclaredDoor(rule, target, shown), ...details].join('\n');
   const session = sessionRoot.replace(/\\/g, '/');
   return `[targets ${shown}, which declares no door; repo files named below are ${session}'s]\n${reason}`;
 }

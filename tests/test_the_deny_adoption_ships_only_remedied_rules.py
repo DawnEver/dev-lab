@@ -135,7 +135,19 @@ def test_the_rendered_file_is_the_engine_s_own_schema() -> None:
     assert rows, 'the render read empty -- an unread registry is not a shipped one'
     assert render(_ADOPTION).endswith('\n')
     for row in rows:
-        engine_keys = {'name', 'pattern', 'matches', 'allow', 'scope', 'severity', 'when', 'admits', 'asks', 'reason'}
+        engine_keys = {
+            'name',
+            'pattern',
+            'matches',
+            'allow',
+            'scope',
+            'severity',
+            'when',
+            'admits',
+            'asks',
+            'needs',
+            'reason',
+        }
         assert set(row) <= engine_keys, f'unknown key in {row["name"]}'
         assert {'name', 'pattern', 'matches', 'reason'} <= set(row)
 
