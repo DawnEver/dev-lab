@@ -49,7 +49,10 @@ live process, a `git worktree lock`. `dev_lab.dev.reclaim.reclaimable` is the
 one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
 and the session debris hook runs the former; a session start, and every merge (`githooks/base.toml`
 `post-merge`, `reclaimrun --background`), detach a background run of the latter, so a finished tree no
-longer pins its branch forever. The exact
+longer pins its branch forever. `--prune` removes at most `--limit N` trees per run (default
+`reclaimrun.BATCH`, `0` for no bound) and ends with a `next` line naming the run that takes the deferred rest:
+each removal deletes a tree's `.venv` (~12.8k files, ~12 s measured 2026-11-17), so an unbounded prune over ~90
+trees outran an agent's 50-minute shell. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
 
 ## Archiving a tree before removing it

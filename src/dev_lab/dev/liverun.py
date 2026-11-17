@@ -44,6 +44,7 @@ only after a mutating command matched; the Edit/Write half is :func:`main`'s ``h
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -178,10 +179,20 @@ def _others(table: Sequence[Process], inside: Callable[[Process], bool], me: int
 
 def _arguments(one: Process) -> list[str]:
     """*one*'s command line split into words, its own executable excluded."""
+    return list(_words(one.command_line))
+
+
+@functools.lru_cache(maxsize=4096)
+def _words(command_line: str) -> tuple[str, ...]:
+    """*command_line* split into words past the executable: PURE, so cached.
+
+    MEASURED 2026-11-17: a prune judges every tree against one process snapshot, re-splitting every command line
+    per tree -- 48k ``shlex.split`` calls, ~40 s of a 264 s census over 94 trees.
+    """
     try:
-        return shlex.split(one.command_line, posix=False)[1:]
+        return tuple(shlex.split(command_line, posix=False)[1:])
     except ValueError:
-        return one.command_line.split()[1:]
+        return tuple(command_line.split()[1:])
 
 
 def _named_paths(one: Process) -> Iterable[Path]:
