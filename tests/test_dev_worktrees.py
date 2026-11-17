@@ -92,6 +92,33 @@ def test_a_landed_tree_goes_with_what_git_does_not_track_and_its_outputs_go_home
     assert main(['--root', str(work), '--prune']) == 0
 
 
+def test_a_bounded_prune_resumes_batch_by_batch(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Wall 2026-11-17: an unbounded ``--prune`` over ~90 trees outran an agent's 50-minute shell.
+
+    MEASURED that day on 94 trees: judging all of them took ~4.4 min, and each removal deletes ~12.8k files (a
+    tree's ``.venv``), ~12 s apiece -- the removals are the unbounded part. So ``--limit N`` removes at most N per
+    run, names the rest ``deferred`` and the command that takes the next batch; re-running it converges. The
+    CONTROL: the planted blocked trees survive every batch.
+    """
+    work = _planted(tmp_path)
+    home = work / '.claude' / 'worktrees'
+    runs = 0
+    while True:
+        runs += 1
+        assert main(['--root', str(work), '--prune', '--limit', '2'], stdin=io.StringIO('')) == 0
+        out = capsys.readouterr().out
+        assert sum(line.startswith('removed') for line in out.splitlines()) <= 2, out
+        if 'deferred' not in out:
+            break
+        assert '--prune --limit 2' in out, 'a deferred batch names the command that takes the next'
+        assert runs < 5, out
+    assert runs == 3, f'5 reclaimable trees in batches of 2 take 3 runs, took {runs}'
+    for name in _GONE:
+        assert not (home / name).exists(), f'{name} must be reclaimed by some batch'
+    for name in _BLOCKED:
+        assert (home / name).is_dir(), f'{name} must survive every batch'
+
+
 def _slow_prune(*_: object, **__: object) -> tuple[str, ...]:
     time.sleep(30)
     return ()
