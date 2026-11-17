@@ -151,7 +151,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'logref',
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset',
-    'branchfate',  # TWO-FATES: each local branch/tree is merged-and-cleaned or archived-and-cleaned (2026-11-15)
+    'branchfate',  # TWO-FATES: each local branch/tree is merged-and-cleaned or listed with its doors (D31)
     'family',
     # ORIGINAL: the family member list's check, its forge reading and its serve watch are new (2026-11-09).
     'members',
@@ -340,7 +340,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'metrics',
     'monthsummary',
     'prsuperseded',
-    'worktree_archive',
+    'worktree_outputs',
     'metrics_compute',
     'metrics_report',
     'reviewcommand',

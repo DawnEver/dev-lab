@@ -51,7 +51,7 @@ forge's job, not yours.
 - **Split by file-disjointness.** Shared hotspots (an entry-point module, the central chain, the registries
   every feature touches) go to ONE lane, or are serialised.
 - There is no lane ledger: `python -m dev_lab.dev.worktrees` lists the trees, `--prune` reclaims clean,
-  landed, unoccupied ones, and `--archive <name>` moves a tree's outputs home before a deliberate removal
+  landed, unoccupied ones holding nothing unlanded, and `--remove <name>` removes one named clean tree
   ([worktrees](worktrees.md), [auto mode runs the doors](auto-doors.md)).
 
 ## Subagents: give them a sha, not your HEAD

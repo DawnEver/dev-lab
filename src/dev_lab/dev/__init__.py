@@ -510,8 +510,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
-* :mod:`dev_lab.dev.branchfate` -- TWO-FATES: every local branch and worktree is kept for a named live owner, or
-  archived losslessly (bundle, uncommitted work, manifest) and cleaned up by ``branchset --apply``; none lingers.
+* :mod:`dev_lab.dev.branchfate` -- TWO-FATES: every local branch and worktree is kept for a named live owner,
+  cleaned when merged with nothing unlanded, or listed with its doors by ``branchset --apply``; never parked.
 * :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
 * :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (pre-push,
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
@@ -553,7 +553,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
 * :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
 * :mod:`dev_lab.dev.reclaimrun` -- reclaim as a SessionStart step: detached, locked, a bounded batch, never blocks.
-* :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
+* :mod:`dev_lab.dev.worktree_outputs` -- a removed tree's run outputs move home, verified; never its work.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
 * :mod:`dev_lab.dev.sshholdstate` -- a held session's state file and the append-only audit of every verb.
 * :mod:`dev_lab.dev.sshholdwire` -- the client's half of the holder's protocol: the request and the marker frame.

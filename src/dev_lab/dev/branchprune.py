@@ -13,10 +13,12 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``grac
   request has it as head. Deleted (:data:`DELETE`) when the repo declares ``prune_merged = true``, else
   listed as :data:`DELETABLE` -- what ``forge integration`` and ``forge queue`` print.
 * EPHEMERAL (:data:`EPHEMERAL`): it lies in a declared ephemeral namespace (``[tool.dev_lab.branchset]
-  ephemeral``, e.g. ``pr/*``) and no open pull request has it as head: its PR merged or closed. Always
-  DELETED -- declaring the namespace IS the opt-in, and a PR head outlives its PR by nothing but the grace.
-* UNMERGED (:data:`UNMERGED`): anything else. ALARMED with its age (:data:`STALE`), NEVER deleted: its
-  commits exist nowhere else.
+  ephemeral``, e.g. ``pr/*``), it is MERGED, and no open pull request has it as head. Always DELETED --
+  declaring the namespace IS the opt-in, and a landed PR head outlives its PR by nothing but the grace.
+* UNMERGED (:data:`UNMERGED`): anything else, ephemeral or not. LISTED and ALARMED with its age (:data:`STALE`)
+  and its two doors -- MERGE it through a PR, or LAND it with a declared ``git merge -s ours`` PR, then
+  ``branchprune delete`` -- NEVER deleted: its commits exist nowhere else, and the survey deletes nothing
+  LOSSLESS-DELETE would refuse (D30, user 2026-11-17, retiring the delete of an unmerged no-PR ephemeral head).
 
 THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.dev_lab.branchset]``.
 AN AGENT'S DELETION and THE LANDED SWEEP live in :mod:`dev_lab.dev.branchdelete` (LOSSLESS-DELETE,
@@ -137,13 +139,13 @@ def survey(
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
         if name in keep or idle_h < branchset.grace_hours:
             continue
-        if branchset.is_ephemeral(name):
-            if name not in heads:
-                rows.append(Row(name, sha, EPHEMERAL, DELETE, idle_h))
-            continue
+        if branchset.is_ephemeral(name) and name in heads:
+            continue  # its open PR owns it
         merged = any(git_out(root, 'merge-base', '--is-ancestor', sha, holder) is not None for holder in holders)
         if not merged:
             rows.append(Row(name, sha, UNMERGED, STALE, idle_h))
+        elif branchset.is_ephemeral(name):
+            rows.append(Row(name, sha, EPHEMERAL, DELETE, idle_h))
         elif name not in heads:
             rows.append(Row(name, sha, MERGED, DELETE if branchset.prune_merged else DELETABLE, idle_h))
     return tuple(sorted(rows, key=lambda row: row.ref))
