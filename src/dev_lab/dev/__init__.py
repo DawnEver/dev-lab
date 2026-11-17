@@ -163,6 +163,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   box at a declared, enforced demand; a producer serve spawned is not boxed twice.
 * :mod:`dev_lab.dev.serialpass` -- the family's ``serial`` marker: a marked test runs alone in verify's
   single-worker stage after the parallel one.
+* :mod:`dev_lab.dev.testtemp` -- pytest's base temp is ``<output>/<yy>/<mm>/<dd>/pytest/<session>/`` in every
+  family repo (D27); a ``--basetemp`` under system temp is refused.
 * :mod:`dev_lab.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
 * :mod:`dev_lab.dev.lockwait` -- verify's ``--lock-wait``: a duration quantity, a bare number refused.
