@@ -112,6 +112,23 @@ retired = [
 [tool.lab_commons.hpc]
 install = "uv sync --frozen --all-extras"
 
+# NO-CJK-IN-TRACKED-SOURCE migration set (D26): files still carrying CJK; it may only shrink
+# (dev_lab.dev.famtests.alwayson.declared_cjk; docs-src/dev/translations.md).
+[tool.dev_lab.cjk]
+declared = [
+    ".claude/memory/2026/10/06/a-scalar-over-a-plane-has-three-shapes.md",
+    ".claude/memory/2026/10/06/the-canvas-and-the-coordinate-system-come-apart.md",
+    ".claude/memory/2026/10/14/three-ways-a-box-or-a-run-stopped-producing.md",
+    ".claude/memory/2026/10/15/box-p3-one-ledger-decides-and-enforces.md",
+    ".claude/memory/2026/10/22/DECISIONS-integrator-autonomous-day.md",
+    ".claude/memory/2026/11/05/no-commit-message-exemptions-history-is-what-was-published.md",
+    ".claude/memory/2026/11/05/verify-writes-only-to-the-output-tree.md",
+    ".claude/memory/2026/11/07/DECISIONS-integrator-1107-gates-policy-consent.md",
+    ".claude/memory/2026/11/08/the-user-gives-the-consent-code-and-the-agent-runs-it.md",
+    ".claude/memory/2026/11/13/every-wall-teaches-and-the-walls-of-1113.md",
+    ".claude/memory/2026/11/15/declared-user-always-permits-necessary-anthropic-outbound.md",
+]
+
 # The run record's root (dev_lab.dev.platformparts).
 [tool.dev_lab.parts]
 output = "output/logs"
