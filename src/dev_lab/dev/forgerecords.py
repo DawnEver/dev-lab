@@ -59,6 +59,7 @@ __all__ = [
     'Attachment',
     'RecordsHomeFull',
     'attach',
+    'delete',
     'listing',
     'main',
     'prune',
@@ -101,15 +102,16 @@ ALARM_AT: Final = 0.8
 
 @dataclass(frozen=True)
 class Attachment:
-    """One attached file: its forge id, its name and where it downloads from."""
+    """One attached file: its forge id, its name, where it downloads from and its size (0: the forge named none)."""
 
     id: int
     name: str
     url: str
+    size: int = 0
 
 
 def _attachment(raw: Mapping[str, Any]) -> Attachment:
-    return Attachment(int(raw['id']), raw['name'], raw.get('browser_download_url') or '')
+    return Attachment(int(raw['id']), raw['name'], raw.get('browser_download_url') or '', int(raw.get('size') or 0))
 
 
 @dataclass(frozen=True)
@@ -252,14 +254,17 @@ def read_allocation(root: Path | None = None) -> bytes | None:
     return read_named(client_for(Path.cwd() if root is None else root), ALLOCATION)
 
 
+def delete(client: Client, items: Collection[Attachment]) -> None:
+    """Delete *items* from the records home (nothing when it does not exist)."""
+    store = _store(client, create=False)
+    for item in () if store is None else items:
+        client.call('DELETE', f'{cast("_Store", store).delete}{item.id}')
+
+
 def remove_named(client: Client, name: str) -> int:
     """Delete every file stored under *name*; how many went."""
-    store = _store(client, create=False)
-    if store is None:
-        return 0
     held = [item for item in listing(client) if item.name == name]
-    for item in held:
-        client.call('DELETE', f'{store.delete}{item.id}')
+    delete(client, held)
     return len(held)
 
 
@@ -281,13 +286,9 @@ def prune(
 
     Returns what was (or, dry, would be) deleted, oldest first. Any other file on the home is never touched.
     """
-    store = _store(client, create=False)
-    if store is None:
-        return ()
     doomed = doomed_of(listing(client), keep, unit_results=unit_results, per_row=per_row)
     if not dry_run:
-        for item in doomed:
-            client.call('DELETE', f'{store.delete}{item.id}')
+        delete(client, doomed)
     return doomed
 
 

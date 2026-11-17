@@ -1,8 +1,8 @@
 """WHAT A RECORDS PRUNE KEEPS -- the record names, the live shas and the selection, with no forge call.
 
 A run record is named ``run-<sha>-<row>-<req>.json.gz`` and a compute unit result
-``unit-<unit>-<result>.tar.<ext>``; :func:`doomed_of` reads only those names. A record stays while its sha is
-live (:func:`kept_shas`: every ``origin`` tip and the newest first-parent trunk commits) and it is among
+``unit-<unit>-g<generation>-<result>.tar.<ext>``; :func:`doomed_of` reads only those names. A record stays while
+its sha is live (:func:`kept_shas`: every ``origin`` tip and the newest first-parent trunk commits) and it is among
 the newest :data:`RECORDS_PER_ROW` of its row; a unit result stays while it is among the newest
 ``unit_results``. :mod:`dev_lab.dev.forgerecords` lists the home and deletes what this names.
 """
@@ -22,7 +22,16 @@ from dev_lab.dev.partrows import is_row
 if TYPE_CHECKING:
     from dev_lab.dev.forgerecords import Attachment
 
-__all__ = ['DEFAULT_KEEP_TRUNK', 'RECORDS_PER_ROW', 'UNIT_RESULT', 'doomed_of', 'kept_shas', 'sha_of']
+__all__ = [
+    'DEFAULT_KEEP_TRUNK',
+    'OLD_UNIT_RESULT',
+    'RECORDS_PER_ROW',
+    'UNIT_RESULT',
+    'doomed_of',
+    'kept_shas',
+    'old_format_of',
+    'sha_of',
+]
 
 #: How many first-parent trunk commits keep their records by default.
 DEFAULT_KEEP_TRUNK: Final = 20
@@ -38,6 +47,9 @@ _RECORD_NAME: Final = re.compile(r'^run-(?P<sha>[0-9a-f]{40})-(?P<row>[^-/]+)-[^
 UNIT_RESULT: Final = re.compile(
     r'^unit-(?P<unit>[0-9a-f]{64})-g(?P<generation>\d+)-(?P<result>[0-9a-f]{64})\.tar\.[a-z]+$'
 )
+#: A unit result named before results were keyed by generation (``unit-<unit>-<result>.tar.<ext>``): the old
+#: format, deleted once by ``records purge-old-format`` and never read (a stored format migrates once).
+OLD_UNIT_RESULT: Final = re.compile(r'^unit-[0-9a-f]{64}-[0-9a-f]{64}\.tar\.[a-z]+$')
 _TRACKING: Final = 'refs/remotes/origin/'
 
 
@@ -98,3 +110,8 @@ def doomed_of(
     for ids in rows.values():
         stale.update(sorted(ids)[: max(len(ids) - per_row, 0)])
     return tuple(item for item in found if item.id in stale)
+
+
+def old_format_of(found: Sequence[Attachment]) -> tuple[Attachment, ...]:
+    """The unit results of *found* named in the old, generation-less format; nothing else ever matches."""
+    return tuple(item for item in found if OLD_UNIT_RESULT.match(item.name))

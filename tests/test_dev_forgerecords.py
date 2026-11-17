@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from dev_lab.dev import forgerecords
+from dev_lab.dev import forgerecordpurge, forgerecords
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgealarm import STORAGE
 from dev_lab.dev.forgerecordkeep import RECORDS_PER_ROW, kept_shas, sha_of
@@ -330,3 +330,44 @@ def test_the_serve_prune_alarms_storage_well_before_the_cap(monkeypatch, tmp_pat
             table={'unit_results': 3}, say=lambda _l: None, alarm=alarms.append, trunk='main',
         )  # fmt: skip
     assert [(a.kind, a.subject) for a in alarms] == [(STORAGE, f'the records home holds {line} of {cap} assets')]
+
+
+def _purge(server, tmp_path: Path, mode: str) -> int:
+    old = {**_asset(2, f'unit-{"d" * 64}-{"f" * 64}.tar.gz'), 'size': 300}
+    kept = [
+        _asset(1, f'run-{LIVE}-linux-r1.json.gz'),
+        _asset(3, f'unit-{"a" * 64}-g4-{"f" * 64}.tar.gz'),  # PLANTED CONTROL: a generation-keyed result stays
+        _asset(4, 'hpc-allocation.json'),
+        _asset(5, f'grave-{"a" * 64}-3.json'),
+    ]
+    answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': RECORDS_TITLE}]))
+    answer('GET', f'{API}/issues/3/assets', (200, [*kept, old]))
+    answer('DELETE', f'{API}/issues/3/assets/2', (204, None))
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
+    return forgerecordpurge.main([mode], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server))
+
+
+def test_purge_old_format_dry_run_names_only_unkeyed_unit_results_and_deletes_nothing(
+    server, tmp_path: Path, capsys
+) -> None:
+    """A stored format migrates once: a result named without ``-g<n>-`` is the old format; nothing else is."""
+    assert _purge(server, tmp_path, '--dry-run') == 0
+    out = capsys.readouterr().out
+    assert f'would delete unit-{"d" * 64}-{"f" * 64}.tar.gz  300' in out
+    assert '-g4-' not in out
+    assert 'grave-' not in out
+    assert 'hpc-allocation' not in out
+    assert 'would delete 1 old-format result(s), 300 bytes' in out
+    assert 'DELETE' not in [r['method'] for r in Recorder.received]
+
+
+def test_purge_old_format_apply_deletes_exactly_the_old_format_results(server, tmp_path: Path, capsys) -> None:
+    assert _purge(server, tmp_path, '--apply') == 0
+    deleted = [r['path'] for r in Recorder.received if r['method'] == 'DELETE']
+    assert deleted == [f'{API}/issues/3/assets/2']
+    assert 'deleted 1 old-format result(s)' in capsys.readouterr().out
+
+
+def test_purge_old_format_names_its_mode_or_refuses(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        forgerecordpurge.main([], cwd=tmp_path, env={})
