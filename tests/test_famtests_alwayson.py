@@ -207,7 +207,43 @@ def test_the_git_grep_path_finds_a_planted_file_and_skips_exempt_and_binary(tmp_
     )
     (tmp_path / 'blob.bin').write_bytes(b'\x00' + _CHAR.encode())
     subprocess.run([_GIT, 'add', 'blob.bin'], cwd=tmp_path, check=True, timeout=60)
-    assert alwayson.candidates(tmp_path) == ('dirty.py', 'x/archived/b.md')
+    assert alwayson.candidates(tmp_path) == ('deep/.claude/memory/m.md', 'dirty.py', 'x/archived/b.md')
+
+
+def test_a_memory_file_with_cjk_is_refused_naming_both_doors_d26(tmp_path: Path) -> None:
+    """D26: memory and tasks are English only; the refusal names translate-or-declare."""
+    _git_repo(tmp_path, {'.claude/memory/m.md': f'{_CHAR}\n', 'attic/a.md': f'{_CHAR}\n'})
+    with pytest.raises(AssertionError) as caught:
+        alwayson.check_no_cjk(tmp_path)
+    text = str(caught.value)
+    assert '.claude/memory/m.md' in text
+    assert 'attic/a.md' not in text, 'attic stays exempt'
+    assert '(user, translated)' in text
+    assert '[tool.dev_lab.cjk]' in text
+
+
+def test_a_declared_file_passes_and_a_cleaned_declaration_is_refused(tmp_path: Path) -> None:
+    """The named set is read from ``[tool.dev_lab.cjk] declared``, and it may only shrink."""
+    manifest = '[tool.dev_lab.cjk]\ndeclared = [".claude/memory/m.md"]\n'
+    _git_repo(tmp_path, {'.claude/memory/m.md': f'{_CHAR}\n', 'pyproject.toml': manifest})
+    alwayson.check_no_cjk(tmp_path)
+    (tmp_path / '.claude/memory/m.md').write_text('translated to English\n', encoding='utf-8')
+    with pytest.raises(AssertionError, match='ORPHANED CJK declaration'):
+        alwayson.check_no_cjk(tmp_path)
+
+
+def test_a_malformed_declaration_is_refused_by_name(tmp_path: Path) -> None:
+    _git_repo(tmp_path, {'pyproject.toml': '[tool.dev_lab.cjk]\ndeclared = "one.md"\n', 'a.md': 'x\n'})
+    with pytest.raises(AssertionError, match=r'\[tool.dev_lab.cjk\] declared'):
+        alwayson.check_no_cjk(tmp_path)
+
+
+def test_a_zh_json_beside_its_json_passes_and_an_orphan_names_its_source(tmp_path: Path) -> None:
+    _git_repo(tmp_path, {'ui.json': '{}\n', 'ui.zh.json': f'"{_CHAR}"\n'})
+    alwayson.check_no_cjk(tmp_path)
+    _git_repo(tmp_path, {'lone.zh.toml': f'a = "{_CHAR}"\n'})
+    with pytest.raises(AssertionError, match=r"ORPHANED TRANSLATION 'lone.zh.toml'.*'lone.toml'"):
+        alwayson.check_no_cjk(tmp_path)
 
 
 def test_the_pattern_is_derived_from_the_shared_ranges() -> None:

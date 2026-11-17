@@ -65,9 +65,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   named slices (locals, attributes, output keys, Rust identifiers, comment units, absolute
   tolerances) and reported, never a verdict; ``python -m dev_lab.dev.units report <root>``.
 * :mod:`dev_lab.dev.cjk` — the family's ONE "no CJK in tracked source" guard (user directive,
-  2026-09-16): the scan, the five CJK ranges, the ``.claude/memory/``/``attic/``/``archived/``
-  exemptions and the floor are shared; each adopting repo supplies its own named-set declaration of
-  files still carrying CJK, exactly the shape the suppression ratchet already uses, so a population
+  2026-09-16): the scan, the five CJK ranges, the ``attic/``/``archived/`` exemptions (memory
+  and tasks are English only since D26, 2026-11-17), ``<stem>.zh.{md,toml,json}`` translations
+  and the floor are shared; each adopting repo declares its files still carrying CJK in
+  ``[tool.dev_lab.cjk] declared``, the shape the suppression ratchet already uses, so a population
   too large for one commit can be migrated as a ratchet instead of a flat assertion.
 * :mod:`dev_lab.dev.docwidth` — the family's ONE per-line WIDTH ceiling for every document
   injected into an agent's context (user directive, 2026-09-16): a line-COUNT ratchet is blind to
