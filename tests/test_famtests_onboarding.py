@@ -52,7 +52,14 @@ def test_a_bare_repo_names_every_missing_piece_at_once(tmp_path: Path) -> None:
     with pytest.raises(OnboardingViolation) as refused:
         assert_repo_is_onboarded(root=bare)
     text = str(refused.value)
-    pieces = ('branchset', 'integrator] integration', 'pr_merges_since', 'produce', 'hooks', 'AGENTS.md', 'producer')
+    pieces = (
+        'branchset',
+        'integrator] integration',
+        'pr_merges_since',
+        'produce',
+        'hooks',
+        'AGENTS.md',
+    )  # producer defaults to actions
     for piece in pieces:
         assert piece in text, f'{piece} is missing from:\n{text}'
     assert 'uv.lock' in text
