@@ -30,14 +30,16 @@ from typing import Protocol
 
 import pytest
 
-from dev_lab.dev.datedlog import UndeclaredOutput, declared_output, output_dir
+from dev_lab.dev.datedlog import TEST_TEMP_KIND, UndeclaredOutput, declared_output, output_dir
 
 __all__ = ['KIND', 'bound_sandbox', 'configure', 'session_basetemp']
 
 #: The kind directory under the date that holds every test-created temp dir.
-KIND = 'pytest'
+KIND = TEST_TEMP_KIND
 
 _CEILING = 'GIT_CEILING_DIRECTORIES'
+#: Set by xdist in every worker process: its basetemp came from the controller.
+_XDIST_WORKER = 'PYTEST_XDIST_WORKER'
 
 
 class _Option(Protocol):
@@ -83,7 +85,7 @@ def configure(config: _Config) -> None:
             )
             raise pytest.UsageError(msg)
         return
-    if hasattr(config, 'workerinput'):
+    if os.environ.get(_XDIST_WORKER):
         return
     root = Path(config.rootpath)
     try:

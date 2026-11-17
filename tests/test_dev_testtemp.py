@@ -21,8 +21,14 @@ def _dated(root: Path) -> Path:
     return root.joinpath('output', 'logs', *date_parts(), testtemp.KIND)
 
 
-def _config(root: Path, basetemp: str | None = None, **extra: object) -> SimpleNamespace:
-    return SimpleNamespace(option=SimpleNamespace(basetemp=basetemp), rootpath=root, **extra)
+@pytest.fixture(autouse=True)
+def _controller(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each case reads as the controller unless it says otherwise: this suite itself may run in an xdist worker."""
+    monkeypatch.delenv('PYTEST_XDIST_WORKER', raising=False)
+
+
+def _config(root: Path, basetemp: str | None = None) -> SimpleNamespace:
+    return SimpleNamespace(option=SimpleNamespace(basetemp=basetemp), rootpath=root)
 
 
 def test_this_sessions_tmp_path_lives_in_the_dated_pytest_dir(tmp_path: Path) -> None:
@@ -57,8 +63,9 @@ def test_a_root_without_a_declared_output_is_refused_by_key(tmp_path: Path) -> N
         testtemp.configure(_config(tmp_path))
 
 
-def test_an_xdist_worker_keeps_what_its_controller_gave(tmp_path: Path) -> None:
-    config = _config(tmp_path, workerinput={})
+def test_an_xdist_worker_keeps_what_its_controller_gave(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('PYTEST_XDIST_WORKER', 'gw0')
+    config = _config(tmp_path)
     testtemp.configure(config)
     assert config.option.basetemp is None
 

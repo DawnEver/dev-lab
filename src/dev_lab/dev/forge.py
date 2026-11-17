@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S, NoCredential, credential_for, store_credential
 
+from dev_lab.dev import gitdirs
 from dev_lab.dev.forgecred import (
     AUTH_GONE,
     AUTH_KEPT,
@@ -157,7 +158,7 @@ _REMOTES: dict[tuple[str, str, int, int], Forge] = {}
 
 def _git_config(root: Path) -> Path | None:
     """The config *root*'s checkout reads its remotes from (a worktree's: its common dir's); ``None``: unknown."""
-    for here in (root, *root.parents):
+    for here in gitdirs.ancestors(root):
         dot = here / '.git'
         if dot.is_dir():
             return dot / 'config'

@@ -63,6 +63,7 @@ from typing import Final, TextIO
 from lab_commons.census import Process, processes
 from lab_commons.log import emit
 
+from dev_lab.dev import gitdirs
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 from dev_lab.dev.venvpath import PYTHON_SLOT, current_os_name, expand_interpreter, running_interpreter
@@ -125,11 +126,7 @@ def _key(path: Path | str) -> str:
 
 def checkout_of(path: Path | str) -> Path | None:
     """The nearest directory at or above *path* holding a ``.git`` (a worktree's is a file); ``None`` outside one."""
-    at = Path(os.path.normpath(Path(path).absolute()))
-    for candidate in (at, *at.parents):
-        if (candidate / '.git').exists():
-            return candidate
-    return None
+    return gitdirs.checkout_of(Path(path))
 
 
 def in_tree(path: Path | str, root: Path | str) -> bool:

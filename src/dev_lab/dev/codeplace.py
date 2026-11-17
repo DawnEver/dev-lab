@@ -65,8 +65,9 @@ from typing import TextIO
 from lab_commons import launch
 from lab_commons.log import emit
 
-from dev_lab.dev import tmpsweep
+from dev_lab.dev import gitdirs, tmpsweep
 from dev_lab.dev.consentguard import refuse_write as refuse_consent_write
+from dev_lab.dev.datedlog import TEST_TEMP_KIND, kind_dirs
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.reportplace import refuse_report
@@ -264,9 +265,13 @@ def declared_placement(root: Path) -> Placement:
 
 
 def declared_misplaced(root: Path) -> list[str]:
-    """:func:`misplaced_code` over *root* with the placement *root* declares -- the adopter's scan."""
+    """:func:`misplaced_code` over *root* with the placement *root* declares -- the adopter's scan.
+
+    The test runner's dated temp dirs are pruned too: a planted file there is a fixture, not a one-off that escaped.
+    """
     placement = declared_placement(root)
-    return misplaced_code(root, code_roots=placement.code_roots, pruned_paths=placement.pruned_paths)
+    pruned = (*placement.pruned_paths, *kind_dirs(root, TEST_TEMP_KIND))
+    return misplaced_code(root, code_roots=placement.code_roots, pruned_paths=pruned)
 
 
 #: How many strays a refusal names before it counts the rest -- the first line stays one short line.
@@ -377,7 +382,7 @@ def _home_for(rel: str) -> str:
 
 def checkout_root(path: Path) -> Path | None:
     """The nearest ancestor of *path* holding ``.git`` -- a linked worktree's own; ``None`` outside any checkout."""
-    return next((candidate for candidate in path.parents if (candidate / '.git').exists()), None)
+    return gitdirs.checkout_of(path.parent)
 
 
 def refuse_write(path: Path) -> str | None:
