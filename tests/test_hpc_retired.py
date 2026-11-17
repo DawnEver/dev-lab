@@ -113,9 +113,12 @@ def test_a_serve_mode_is_refused_by_name_every_host_serves_every_class(argv: lis
     assert f'`forge {argv[0]} --mode` is retired' in capsys.readouterr().err
 
 
-def test_the_workstation_task_with_a_mode_is_refused_naming_the_redeploy(capsys) -> None:
+def test_the_old_workstation_task_with_a_mode_is_refused_naming_the_ruling_and_the_redeploy(capsys) -> None:
+    """The old Task action ``serve --mode ...``: the verb itself is retired (user ruling 2026-11-16)."""
     assert workstation.main(['serve', '--mode', 'integrate']) == 2
-    assert 'take no mode' in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert '`workstation serve` is retired' in err
+    assert 'workstation deploy' in err, 'the redeploy, which deletes the old Task, is named'
 
 
 @pytest.mark.parametrize('verb', ['reserve', 'release'])

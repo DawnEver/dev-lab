@@ -1,14 +1,13 @@
-"""THE HOST REFRESHES A SERVED CHECKOUT before that checkout's own ``forge serve`` runs -- never the repo's kit.
+"""THE HOST REFRESHES A CHECKOUT it keeps: fast-forward to its upstream, then sync its venv -- never the repo's kit.
 
-INCIDENT 2026-10-13: a workstation served each repo with the repo's OWN venv, and that venv held a
-lab-commons whose ``forge serve`` required a retired flag, so it exited 2 every tick -- and the code that
-would have updated it was the code that could not run. A repo's own stale kit cannot own its own update;
-the host's kit does, from outside it (:func:`refresh`): fast-forward the clean checkout to its upstream
-(:func:`follow`), then sync its venv through ``dep --bootstrap`` when :func:`dev_lab.dev.venvfollow.stale` says
-its inputs moved (:func:`sync_venv`) -- so a failed sync is retried by the next tick, and an unchanged checkout
+INCIDENT 2026-10-13: a host ran each repo with the repo's OWN venv, and that venv held a lab-commons too old
+to run, so the code that would have updated it was the code that could not run. A repo's own stale kit
+cannot own its own update; the host's kit does, from outside it: fast-forward the clean checkout to its
+upstream (:func:`follow`), then sync its venv through ``dep --bootstrap`` when
+:func:`dev_lab.dev.venvfollow.stale` says its inputs moved (:func:`sync_venv`) -- so an unchanged checkout
 costs one hash.
 
-Shared by ``workstation deploy`` (its checkout and venv steps) and ``workstation serve`` (every tick).
+Shared by ``workstation deploy`` (its checkout and venv steps) and :mod:`dev_lab.dev.mainsync`.
 A cluster account's tick is the same rule through its own keyed build (:func:`dev_lab.dev.hpcaccount.tick.tick`).
 """
 
@@ -32,7 +31,6 @@ __all__ = [
     'follow',
     'network',
     'read',
-    'refresh',
     'sync_venv',
 ]
 
@@ -97,18 +95,3 @@ def sync_venv(step: Step, bootstrap: Sequence[str], checkout: Path) -> int:
         return rc
     stamp(checkout, key)
     return 0
-
-
-def refresh(step: Step, *, git: Sequence[str], bootstrap: Sequence[str], checkout: Path) -> str:
-    """Bring a served *checkout* to its upstream and its venv in step with it; ``''``, else why it cannot be.
-
-    THE HOST OWNS THIS, never the repo's own kit (incident 2026-10-13): a venv holding a kit too old to
-    run its own ``forge serve`` can never update itself, so the host moves it before invoking it.
-    """
-    if not (checkout / '.git').exists():
-        return f'no checkout at {checkout}; re-run `workstation deploy`'
-    if (moved := follow(step, git, checkout)).rc:
-        return moved.why or f'its checkout exited {moved.rc}'
-    if rc := sync_venv(step, bootstrap, checkout):
-        return f'its venv sync exited {rc}'
-    return ''

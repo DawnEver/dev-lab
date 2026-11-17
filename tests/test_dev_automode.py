@@ -103,7 +103,7 @@ def test_the_render_equals_its_sources(tmp_path: Path) -> None:
         assert rendered[key][0] == '$defaults', key
         assert spelled_commands(rendered[key][1:]) == (), key
     environment = ' '.join(rendered['environment'])
-    for fact in ('G (computer G; address 192.0.2.1', 'serves the forge', 'HOST1 (computer BOXONE'):
+    for fact in ('G (computer G; address 192.0.2.1', 'the forge host', 'HOST1 (computer BOXONE'):
         assert fact in environment
     assert (
         'account alice9 at login hosts login1.example.ac.uk, login2.example.ac.uk (Slurm account acct)' in environment

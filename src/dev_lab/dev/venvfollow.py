@@ -5,7 +5,7 @@ its own ``uv.lock``, because only a served checkout's host tick compared the two
 home, :func:`stale`: the key of :data:`ENV_INPUTS` against the stamp the last successful bootstrap wrote, so an
 unchanged checkout costs one hash. Its callers:
 
-* :func:`dev_lab.dev.hostrefresh.sync_venv` -- a served checkout, every host tick;
+* :func:`dev_lab.dev.hostrefresh.sync_venv` -- a checkout a workstation deploy or main sync keeps;
 * ``--session-start``, the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`) -- a stale venv detaches
   a background :func:`follow` and the hook returns at once;
 * the ``post-checkout`` git hook (``githooks/base.toml``, advisory) -- ``--background``; it is the one event a

@@ -175,9 +175,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'shelllife',
     # ORIGINAL: the Stop hook sending a handed-over command back to the agent (2026-10-26).
     'handback',
-    'servelanes',
     'servelock',
-    'servetask',
     'workstation',
     'workstationfile',
     'workstationprobe',

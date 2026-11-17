@@ -170,7 +170,7 @@ def _workstation(entry: Mapping[str, Any]) -> str:
     facts += [f'address {entry["address"]}'] if entry.get('address') else []
     roles = list(entry.get('roles') or [])
     if roles:
-        facts.append(f'roles {", ".join(roles)}{", serves the forge" if FORGE_ROLE in roles else ""}')
+        facts.append(f'roles {", ".join(roles)}{", the forge host" if FORGE_ROLE in roles else ""}')
     return f'{entry.get("name", "?")} ({"; ".join(facts)})'
 
 

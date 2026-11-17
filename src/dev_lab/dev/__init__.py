@@ -573,17 +573,15 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,
   after the checkout follows integration and before stale hooks are reinstalled.
-* :mod:`dev_lab.dev.servelanes` -- one serve lane per repo, so one busy repo never starves the others.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
-* :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.
-* :mod:`dev_lab.dev.workstation` -- a Windows workstation as a serve host in one run, and the Task's serve loop.
+* :mod:`dev_lab.dev.workstation` -- a Windows workstation's deploy in one run; a workstation never serves.
 * :mod:`dev_lab.dev.workstationfile` -- the machine-file tables a workstation deploy writes, and its roles.
 * :mod:`dev_lab.dev.workstationprobe` -- the tools, COM classes and stored credentials a workstation deploy needs.
-* :mod:`dev_lab.dev.workstationregistry` -- which workstation serves the forge: the synced registry's roles.
+* :mod:`dev_lab.dev.workstationregistry` -- which workstation is the forge host: the synced registry's roles.
 * :mod:`dev_lab.dev.hpcaccount` -- a cluster account as a serve host: its deploy, cron tick and allocation record.
 * :mod:`dev_lab.dev.opsserver` -- the ops door: its fixed verbs on a declared server the integrator deploys.
 * :mod:`dev_lab.dev.remote` -- the one ssh transport both remote doors share: how a command reaches a host.
-* :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
+* :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a checkout it keeps and syncs its venv.
 * :mod:`dev_lab.dev.mainsync` -- a main checkout follows its branch: byte-identical untracked files are no obstacle,
   a differing one, a tracked change or a divergence refuses by name; then its venv follows.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.

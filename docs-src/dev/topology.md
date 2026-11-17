@@ -128,7 +128,7 @@ declares (`dev_lab.ops.config.load`).
 | forge host | `[ops]`, `[ops.promote]`, `[ops.breakglass]` (+ `.tokens`, `.apps`), `[ops.consent]`, `[ops.backup]` (export), `[ops.forge]` (+ `.accounts.*`), `[ops.caddy]`, `[ops.status]`, `[ops.access]`, `[ops.supervise]`, `[ops.upgrade]`, `[ops.config]` | the Gitea, promotion, the break-glass server and its `tick`, the consent issuer, backup export, the reverse proxy allowlist, supervision |
 | backup host | `[ops.backup]` (pull, `.offsite`), `[ops.supervise]`, `[ops.access]`, `[ops.upgrade]`, `[ops.config]` | backup pull and offsite copy, mirrors, a health probe of the forge host |
 | judge host | `[ops.judge]` (+ `.tokens`, `.apps`), `[ops.access]`, `[ops.upgrade]`, `[ops.config]` | `forge review judge` per declared repo on its schedule |
-| serve host (workstation) | the machine file's `[serve]`, `[capabilities.*]` | `forge serve` (claims shas, posts parts) -- [the forge](forge.md), [adding a workstation](adding-a-workstation.md) |
+| workstation | the machine file's `[capabilities.*]`, `[workstation]` | never serves (user ruling 2026-11-16): `workstation deploy` declares it and keeps its checkouts current -- [adding a workstation](adding-a-workstation.md) |
 | verify account (HPC) | a `[[hpc.grant]]` in `family.toml` | `hpcaccount tick` from cron: claims parts with the `write` login ([HPC](hpc.md)) |
 | research account / host | a grant or a host with the `read` login | pulls code, submits research jobs; never posts ([from a workstation](hpc-from-a-workstation.md)) |
 | CI runner | the forge's Actions runners | the rendered workflows (`dev_lab.dev.ciworkflows`) |
@@ -214,7 +214,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 
 | file | where | owns | reader |
 |---|---|---|---|
-| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]`, `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`), `[tools]` | `lab_commons.config`, `lab_commons.home` |
+| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`), `[tools]` | `lab_commons.config`, `lab_commons.home` |
 | family layer | `family.toml` in the host-configuration repo | `[[hpc.grant]]`, AI spend caps, the review month -- a machine file restating a key is refused | `lab_commons.config` `[family]` |
 | repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows` |
 | host file | `/etc/dev-lab/supervise.toml`, reviewed as `hosts/<server>.toml` | `[ops.*]`, `[components.*]`, `[alerts]`, `[cycle]` | `dev_lab.ops.config`, `dev_lab.supervise.config` |
@@ -232,7 +232,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 
 ### A new development workstation
 
-1. Install `git`, `uv`, `node` (and `codex` for a serving box) -- [adding a workstation](adding-a-workstation.md#deploy-step-by-step).
+1. Install `git`, `uv`, `node` and `codex` -- [adding a workstation](adding-a-workstation.md#deploy-step-by-step).
 2. Clone each member beside its siblings and record it in the machine file's `[repos]` (name -> absolute path).
    Further checkouts go under `<repo>/.claude/worktrees/<name>` ([worktrees](worktrees.md)).
 3. Bootstrap each repo's venv through its install door (`uv sync --frozen`, or the product's bootstrap script).
