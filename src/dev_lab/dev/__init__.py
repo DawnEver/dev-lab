@@ -485,6 +485,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
 * :mod:`dev_lab.dev.taskbinding` -- the ONE reader of rem's task ledger and session binding (rem writes both).
 * :mod:`dev_lab.dev.remplugin` -- which rem the session's harness runs: an unbound push names an absent or old one.
+* :mod:`dev_lab.dev.remhome` -- the machine home handed to rem: ``LAB_COMMONS_HOME`` in the user Claude settings.
 * :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent push off its bound task's pr/<task>/ heads.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
 * :mod:`dev_lab.dev.uvfollow` -- uv follows the version its pin needs, through WinGet or `uv self update`.
