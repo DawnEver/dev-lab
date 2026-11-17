@@ -39,6 +39,7 @@ from dev_lab.dev import (
     forgebreakglass,
     forgedraft,
     forgeheadgate,
+    forgehold,
     forgehosts,
     forgeintegration,
     forgeissue,
@@ -130,6 +131,8 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
     'continue': prcontinue.main,
     'ready': lambda argv: forgedraft.main(['ready', *argv], judge=prcurrent.ready_refusals),
     'draft': lambda argv: forgedraft.main(['draft', *argv], judge=prcurrent.ready_refusals),
+    'hold': lambda argv: forgehold.main(['hold', *argv]),
+    'release': lambda argv: forgehold.main(['release', *argv]),
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.

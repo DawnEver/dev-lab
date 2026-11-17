@@ -379,7 +379,7 @@ class StateForge(Client):
             ('DELETE', 'comment'): lambda: self._delete_comment(number),
             ('GET', 'pulls'): lambda: self._pulls_listed(query),
             ('POST', 'pulls'): lambda: self._create_pull(sent),
-            ('GET', 'pull'): lambda: self.pulls[number],
+            ('GET', 'pull'): lambda: self.pulls[number] | {'labels': self._issue_labels(str(number))},
             ('GET', 'reviews'): lambda: self._page(self.reviews.get(number, []), query),
             ('GET', 'commit_pull'): lambda: self._pull_of(key),
             ('GET', 'commit_pulls'): lambda: self._pulls_of(key),

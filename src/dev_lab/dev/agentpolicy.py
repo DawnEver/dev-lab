@@ -160,6 +160,18 @@ POLICY: Final[tuple[Door, ...]] = (
         _FORGE_WRITE,
     ),
     Door(
+        _forge('pr', 'hold'),
+        MAIN,
+        'Holding a pull request from the merge tick with the hold label, where its draft is refused.',
+        _FORGE_WRITE,
+    ),
+    Door(
+        _forge('pr', 'release'),
+        MAIN,
+        'Releasing a held pull request back to the merge tick.',
+        _FORGE_WRITE,
+    ),
+    Door(
         _forge('pr', 'close'),
         MAIN,
         'Closing a pull request with its reason posted first; its branch is never deleted.',

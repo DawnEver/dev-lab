@@ -481,6 +481,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
 * :mod:`dev_lab.dev.pradmit` -- PR advice: ONE-SESSION-ONE-PR and NO-STACKED-PRS told at ``pr create``, never a refusal.
 * :mod:`dev_lab.dev.forgedraft` -- DRAFT-UNTIL-READY: ``pr create`` opens a draft; ``pr ready|draft <N>``; idle alarm.
+* :mod:`dev_lab.dev.forgehold` -- HOLD: ``pr hold|release <N>``, a label the merge tick honours (draft refused).
 * :mod:`dev_lab.dev.forgeorphan` -- an open PR still 24 h with no live owner is labelled ``owner:integrator``.
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.

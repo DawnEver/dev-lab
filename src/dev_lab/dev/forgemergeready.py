@@ -22,6 +22,7 @@ from dev_lab.dev.branchset import declared_branchset
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgehold import HELD, is_held
 from dev_lab.dev.forgemerge import EXTERNAL, Decision, ci_merges, external, judged
 from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
@@ -73,6 +74,10 @@ def ready(root: Path, client: Client, number: int) -> str:
         decision = Decision((undeclared or f'a PR into {policy.integration}, not {pull.base}',), '')
     elif pull.draft:  # D53: pending, naming the ready door -- it waits on its author, not on a check
         return waiting(client, pull) or f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: draft'
+    elif is_held(pull):  # HOLD: pending, naming the release door -- it waits on its holder, not on a check
+        said = HELD.format(n=number)
+        status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state='pending', description=said)
+        return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: {said}'
     elif external(client, pull):  # pending: it waits on a maintainer, never on a check
         status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state='pending', description=EXTERNAL)
         return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: {EXTERNAL}'

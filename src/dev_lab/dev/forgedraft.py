@@ -63,6 +63,7 @@ from dev_lab.dev._forge_records import WIP_PREFIXES, draft_title, ready_title
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgehold import HOLD_DOOR
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import GITHUB, client_for
@@ -226,7 +227,12 @@ def main(argv: Sequence[str], *, judge: Judge, cwd: Path | None = None, client: 
     except (ForgeCallFailed, ValueError, OSError, subprocess.SubprocessError) as refused:
         said = ' '.join(str(refused).split())  # one line: a multi-line reason never hides the verdict
         stays = 'stays a DRAFT' if args.verb == 'ready' else 'is unchanged'
-        emit(f'#{args.number} {stays}: pr {args.verb} refused: {said}')
+        door = (
+            ''
+            if args.verb == 'ready'
+            else f'; hold it from the merge tick instead: `{HOLD_DOOR.format(n=args.number)}`'
+        )
+        emit(f'#{args.number} {stays}: pr {args.verb} refused: {said}{door}')
         return 1
     emit(f'#{pull.number} is {"a DRAFT" if pull.draft else "ready for review"}: {pull.title}')
     return 0

@@ -387,6 +387,10 @@ render by `forgedraft.READY_ONLY`, and the serve claims no part, syncs and gates
 ready (`ready_for_review`, or on Gitea the serve's next tick after the title edit) starts everything. A consumer takes it by re-rendering
 (`python -m dev_lab.dev.ciworkflows render`).
 
+HOLD: where `pr draft` is refused (GitHub, a caller without convert rights), `forge pr hold <N>` puts the `hold`
+label on the PR and `forge pr release <N>` takes it off; merge-ready posts `pending` naming the release door and
+the merge decision never lands a held head. The mechanism is `dev_lab.dev.forgehold`'s docstring.
+
 ## The integration tick
 
 ```
