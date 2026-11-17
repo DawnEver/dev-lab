@@ -417,9 +417,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
 * :mod:`dev_lab.dev.forgepulls` -- PR list/retarget, ONE marker-found comment per subject, the incremental issue
   read, both forges.
-* :mod:`dev_lab.dev.integrate` -- integration by refs alone: ``merge <branch>`` (merge-tree, the commit-msg
-  stage and the merge audit, compare-and-swap) and ``promote <sha>`` (the local trunk FAST-FORWARDS to a
-  full-PASS integration commit). Neither checks out nor pushes.
+* :mod:`dev_lab.dev.integrate` -- ``promote <sha>``: ORIGIN's trunk fast-forwards, by a non-forced push, to a
+  full-PASS integration commit; no checkout or local branch is touched.
 * :mod:`dev_lab.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
 * :mod:`dev_lab.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`dev_lab.dev.forgelanes` -- the origin branches tracked, a PR head fetched, the PR a pushed lane lands by.

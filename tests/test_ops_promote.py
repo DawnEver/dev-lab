@@ -1,4 +1,4 @@
-"""The promote role judges origin's integration tip by ``integrate promote`` and pushes only what it admits."""
+"""The promote role judges origin's integration tip by ``integrate promote`` and origin moves only on what it admits."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from dev_lab.ops.promote import Outcome, run
 
 def _admit(argv: list[str], root: Path) -> tuple[int, tuple[str, ...]]:
     assert argv[:2] == ['promote', '--newest'], 'W5: the host promotes the newest first parent that passes'
-    git(root, 'update-ref', 'refs/heads/main', argv[-1])
+    git(root, 'push', '-q', 'origin', f'{argv[-1]}:refs/heads/main')  # integrate promote moves origin itself
     return 0, ()
 
 
