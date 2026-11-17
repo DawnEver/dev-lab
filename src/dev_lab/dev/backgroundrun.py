@@ -56,9 +56,14 @@ def common_dir(root: Path) -> Path:
 
 
 @contextlib.contextmanager
-def held(root: Path, *, name: str = RECLAIM_LOCK, stale_s: float = STALE_LOCK_S) -> Iterator[bool]:
-    """Hold *root*'s lock *name* for the block; yields ``False`` (and holds nothing) when another run has it."""
-    lock = common_dir(root) / name
+def held(
+    root: Path, *, name: str = RECLAIM_LOCK, stale_s: float = STALE_LOCK_S, at: Path | None = None
+) -> Iterator[bool]:
+    """Hold *root*'s lock *name* for the block; yields ``False`` (and holds nothing) when another run has it.
+
+    *at* is the lock file itself, for a lock that belongs to one checkout rather than to the repository.
+    """
+    lock = at or common_dir(root) / name
     for _ in range(2):
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)

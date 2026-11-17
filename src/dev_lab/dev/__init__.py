@@ -150,7 +150,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   table of handlers per event, a repo's own ``[[tool.dev_lab.agent_hooks]]`` rows, and the rows
   :mod:`~dev_lab.dev.agent_guard` renders. Not re-exported below.
 * :mod:`dev_lab.dev.hookdispatch` -- one interpreter per hook event: every family and repo-declared row of it, its
-  ``may_block``/``once``/``timeout`` enforced, the answers merged into one. Not re-exported below.
+  ``may_block``/``once``/``timeout`` and five-second budget enforced, the answers merged into one.
+* :mod:`dev_lab.dev.hookhandoff` -- what a hook cannot finish in its budget: one queue and one runner per repo that
+  run it to completion, and the session's deferred answers.
+* :mod:`dev_lab.dev.gitdirs` -- a checkout's git dir and common dir, read off ``.git`` without starting git.
 * :mod:`dev_lab.dev.docsite` -- the documentation-site driver: a TABLE of sub-sites, every
   subprocess checked and bounded, and a missing toolchain that SKIPS and SAYS SO on the portal page
   rather than failing the build or vanishing from it. Not re-exported below.
@@ -638,43 +641,54 @@ a ``RepoProfile`` and are the next layer. :mod:`dev_lab.dev.rules` is NOT that l
 whether a named mechanism is still LIVE, and the five are the mechanisms an adopter would name.
 """
 
-from dev_lab.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
-from dev_lab.dev.cjk import CJK_RANGES, EXEMPT_PREFIXES
-from dev_lab.dev.cjk import Occurrence as CJKOccurrence
-from dev_lab.dev.cjk import Scan as CJKScan
-from dev_lab.dev.cjk import VacuousScan as VacuousCJKScan
-from dev_lab.dev.cjk import assert_floor as assert_cjk_floor
-from dev_lab.dev.cjk import ratchet as cjk_ratchet
-from dev_lab.dev.cjk import scan_files as scan_cjk_files
-from dev_lab.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
-from dev_lab.dev.docwidth import (
-    INJECTED_BASENAMES,
-    INJECTED_EXEMPT_PREFIXES,
-    INJECTED_PREFIXES,
-    WIDTH_CEILING,
-    Overwidth,
-    VacuousWidthScan,
-    WidthScan,
-    assert_width_floor,
-    injected_docs,
-    is_injected_doc,
-    line_widths,
-    scan_widths,
-    width_ratchet,
-    width_remedy,
-)
-from dev_lab.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
-from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
-from dev_lab.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
-from dev_lab.dev.units import (
-    SCANNED_SUFFIXES,
-    Scan,
-    Violation,
-    assert_registry_sane,
-    scan_files,
-    trailing_token,
-)
-from dev_lab.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
+import functools
+import importlib
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+# THE RE-EXPORTS ARE LAZY (HOOK-UNDER-FIVE-SECONDS, user ruling D24, 2026-11-17). Every submodule import runs this
+# file first, and importing these eagerly cost every hook interpreter about half a second (hook_adoption alone
+# pulled the box ledger through the deny rows) before its own row ran. The block below is the ONE list: type
+# checkers read it, and ``__getattr__`` reads the same lines off this file the first time a name is asked for.
+if TYPE_CHECKING:
+    from dev_lab.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
+    from dev_lab.dev.cjk import CJK_RANGES, EXEMPT_PREFIXES
+    from dev_lab.dev.cjk import Occurrence as CJKOccurrence
+    from dev_lab.dev.cjk import Scan as CJKScan
+    from dev_lab.dev.cjk import VacuousScan as VacuousCJKScan
+    from dev_lab.dev.cjk import assert_floor as assert_cjk_floor
+    from dev_lab.dev.cjk import ratchet as cjk_ratchet
+    from dev_lab.dev.cjk import scan_files as scan_cjk_files
+    from dev_lab.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
+    from dev_lab.dev.docwidth import (
+        INJECTED_BASENAMES,
+        INJECTED_EXEMPT_PREFIXES,
+        INJECTED_PREFIXES,
+        WIDTH_CEILING,
+        Overwidth,
+        VacuousWidthScan,
+        WidthScan,
+        assert_width_floor,
+        injected_docs,
+        is_injected_doc,
+        line_widths,
+        scan_widths,
+        width_ratchet,
+        width_remedy,
+    )
+    from dev_lab.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
+    from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
+    from dev_lab.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
+    from dev_lab.dev.units import (
+        SCANNED_SUFFIXES,
+        Scan,
+        Violation,
+        assert_registry_sane,
+        scan_files,
+        trailing_token,
+    )
+    from dev_lab.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
+
 
 __all__ = [
     'ABSENT',
@@ -734,3 +748,36 @@ __all__ = [
     'width_ratchet',
     'width_remedy',
 ]
+
+
+@functools.cache
+def _exports() -> dict[str, tuple[str, str]]:
+    """Each re-exported name and the ``(module, attribute)`` it comes from, read off the TYPE_CHECKING block."""
+    import ast  # noqa: PLC0415 -- HOOK-UNDER-FIVE-SECONDS: only asking for a re-export pays for the parser
+
+    tree = ast.parse(Path(__file__).read_text(encoding='utf-8'))
+    return {
+        alias.asname or alias.name: (str(node.module), alias.name)
+        for branch in tree.body
+        if isinstance(branch, ast.If) and isinstance(branch.test, ast.Name) and branch.test.id == 'TYPE_CHECKING'
+        for node in branch.body
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401 -- a re-export is whatever its module defines
+    """A re-exported name, imported from its module the first time it is asked for."""
+    try:
+        module, attribute = _exports()[name]
+    except KeyError:
+        msg = f'module {__name__!r} has no attribute {name!r}'
+        raise AttributeError(msg) from None
+    value = getattr(importlib.import_module(module), attribute)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    """The module's own names and every re-export, imported or not."""
+    return sorted({*globals(), *_exports()})

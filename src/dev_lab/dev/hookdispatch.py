@@ -10,62 +10,58 @@ The rows are the family's :data:`~dev_lab.dev.agent_wiring.WIRING` and the repo'
 (:func:`~dev_lab.dev.agent_wiring.declared`, read from ``$CLAUDE_PROJECT_DIR``, else the payload's ``cwd``), imported
 with the repo's root on the path. A refused declaration is one stderr line naming it; the family's rows still run.
 
-``python -m dev_lab.dev.hookdispatch <Event>`` reads the hook payload once, then for each row of the event whose
-``tools`` admit the payload's ``tool_name`` (and, for a ``once`` row, that has not run in this session) calls
-``<module>.main(argv)`` with the payload as its stdin, its own stdout and stderr, and its ``timeout``. The answers
-merge into one:
+``python -m dev_lab.dev.hookdispatch [--timing] <Event>`` reads the hook payload once, then for each row of the event
+whose ``tools`` admit the payload's ``tool_name`` (and, for a ``once`` row, that has not run in this session) calls
+``<module>.main(argv)`` with the payload as its stdin and its own stdout and stderr. The answers merge into one
+(:mod:`dev_lab.dev._hookanswer`); ``--timing`` adds one stderr line per row with its wall time.
 
-* a refusal -- exit 2, ``decision: block``, ``permissionDecision: deny`` -- counts only from a ``may_block`` row; any
-  other row's is a wiring fault, said on stderr and passed;
-* refusals join into one ``deny`` (``PreToolUse``) or one ``decision: block``; additional context and system
-  messages join; a row's plain stdout is context on ``UserPromptSubmit``/``SessionStart`` (the tool's own rule) and
-  stderr elsewhere;
-* a row that crashes, exits another nonzero code or outlives its bound is one stderr line, never a block.
+FIVE SECONDS, AND NOTHING DROPPED (``HOOK-UNDER-FIVE-SECONDS``, user ruling D24, 2026-11-17). Guards run first and
+keep running to :data:`~dev_lab.dev.agent_wiring.GUARD_BUDGET_S`; every other row must finish within
+:data:`~dev_lab.dev.agent_wiring.DISPATCH_BUDGET_S` of this interpreter's start. A ``detached`` row, a row the budget
+ran out before, and a row that outlived it are HANDED OFF (:mod:`dev_lab.dev.hookhandoff`): one background runner
+runs them to completion and their answer reaches the session at its next context event, which this dispatcher
+delivers. A hand-off past the budget is said in the answer, by name. ``--background <job>`` is that runner.
 
 The dispatcher always exits 0: a block is its JSON answer, never an exit code.
 """
 
 from __future__ import annotations
 
-import contextlib
-import importlib
-import io
-import json
-import os
-import sys
-import threading
-import traceback
-from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Final, TextIO
+import time
 
-from lab_commons.log import emit
+_STARTED = time.monotonic()  # the budget's clock, read as early as this interpreter reaches dispatcher code
 
-from dev_lab.dev.agent_wiring import WIRING, Wire, WireRefused, declared, import_root
+import contextlib  # noqa: E402 -- after the clock, so the budget counts this module's own imports
+import importlib  # noqa: E402
+import io  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+import threading  # noqa: E402
+import traceback  # noqa: E402
+from collections.abc import Iterator, Sequence  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Any, Final, TextIO  # noqa: E402
+
+from lab_commons.log import emit  # noqa: E402
+
+from dev_lab.dev import hookhandoff  # noqa: E402
+from dev_lab.dev._hookanswer import CONTEXT_EVENTS, Outcome, answer, deferred_text, parsed  # noqa: E402
+from dev_lab.dev._hookonce import first_runs  # noqa: E402
+from dev_lab.dev.agent_wiring import (  # noqa: E402
+    DISPATCH_BUDGET_S,
+    GUARD_BUDGET_S,
+    WIRING,
+    Wire,
+    WireRefused,
+    declared,
+    import_root,
+)
+from dev_lab.dev.disclosure import details_for  # noqa: E402
+from dev_lab.dev.gitdirs import git_dir  # noqa: E402
 
 __all__ = ['Outcome', 'answer', 'main', 'run_row', 'selected']
 
-#: Events whose plain stdout the tool hands the model as context.
-_TEXT_IS_CONTEXT: Final = frozenset({'UserPromptSubmit', 'SessionStart'})
-#: Events whose JSON answer carries ``hookSpecificOutput.additionalContext``.
-_CONTEXT_EVENTS: Final = frozenset(
-    {'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'UserPromptSubmit', 'SessionStart'}
-)
-#: A handler's refusing exit code (the tool's own convention).
-_REFUSED: Final = 2
-#: The sessions a ``once`` ledger keeps; older ones are forgotten.
-_ONCE_KEPT: Final = 64
-
-
-@dataclass(frozen=True, slots=True)
-class Outcome:
-    """What one row did: its exit code (``None``: outlived its bound), its stdout and its stderr."""
-
-    wire: Wire
-    code: int | None
-    out: str
-    err: str
+_RULE: Final = 'HOOK-UNDER-FIVE-SECONDS'
 
 
 class _Routed(io.TextIOBase):
@@ -116,9 +112,13 @@ def selected(event: str, payload: dict[str, Any], wires: Sequence[Wire]) -> tupl
     return tuple(wire for wire in wires if event in wire.events and (not wire.tools or tool in wire.tools))
 
 
+def _cwd(payload: dict[str, Any]) -> Path:
+    return Path(str(payload.get('cwd') or Path.cwd()))
+
+
 def _repo_root(payload: dict[str, Any]) -> Path:
     """The checkout whose settings run this hook: ``$CLAUDE_PROJECT_DIR``, else the payload's ``cwd``."""
-    return Path(os.environ.get('CLAUDE_PROJECT_DIR') or payload.get('cwd') or Path.cwd())
+    return Path(os.environ.get('CLAUDE_PROJECT_DIR') or _cwd(payload))
 
 
 def _repo_wires(root: Path) -> tuple[tuple[Wire, ...], str]:
@@ -144,7 +144,7 @@ def _call(wire: Wire) -> int:
 
 
 def run_row(wire: Wire, text: str, *, timeout: float | None = None) -> Outcome:
-    """Run *wire* on payload *text* in a thread of its own, bounded by its timeout."""
+    """Run *wire* on payload *text* in a thread of its own, bounded by *timeout* (default its inline bound)."""
     out, err = io.StringIO(), io.StringIO()
     done: list[int] = []
     stdin, stdout, stderr = sys.stdin, sys.stdout, sys.stderr
@@ -160,141 +160,113 @@ def run_row(wire: Wire, text: str, *, timeout: float | None = None) -> Outcome:
                 err.write(traceback.format_exc())
                 done.append(1)
 
+    began = time.monotonic()
     worker = threading.Thread(target=body, name=wire.name, daemon=True)
     worker.start()
-    worker.join(wire.timeout if timeout is None else timeout)
-    return Outcome(wire, done[0] if done else None, out.getvalue(), err.getvalue())
+    worker.join(wire.inline_bound if timeout is None else timeout)
+    ms = (time.monotonic() - began) * 1000
+    return Outcome(wire, done[0] if done else None, out.getvalue(), err.getvalue(), ms)
 
 
-def _json(text: str) -> dict[str, Any] | None:
+def _inline(wires: Sequence[Wire], text: str, started: float) -> tuple[list[Outcome], list[Wire]]:
+    """Run *wires*, guards first, each within its budget from *started*; the outcomes, and the rows to hand off."""
+    outcomes: list[Outcome] = []
+    late: list[Wire] = []
+    for wire in sorted(wires, key=lambda one: not one.may_block):
+        left = started + wire.budget - time.monotonic()
+        one = run_row(wire, text, timeout=min(wire.inline_bound, left)) if left > 0 else None
+        if one is None or one.code is None:
+            late.append(wire)
+        else:
+            outcomes.append(one)
+    return outcomes, late
+
+
+def _hand_off(event: str, text: str, payload: dict[str, Any], wires: Sequence[Wire], late: Sequence[Wire]) -> str:
+    """Queue *wires* for the background runner; the message naming the *late* rows or a failed queue, else ``''``."""
+    if not wires:
+        return ''
     try:
-        value = json.loads(text)
-    except ValueError:
-        return None
-    return value if isinstance(value, dict) else None
+        hookhandoff.hand_off(_cwd(payload), event, text, wires, _repo_root(payload))
+    except OSError as failed:
+        names = ', '.join(wire.name for wire in wires)
+        return f'{_RULE}: {names} could not be handed to the background ({failed}); they did not run\n' + details_for(
+            _RULE
+        )
+    if not late:
+        return ''
+    names = ', '.join(wire.name for wire in late)
+    return (
+        f'{_RULE}: {names} ran past the hook budget ({DISPATCH_BUDGET_S:g} s, a guard {GUARD_BUDGET_S:g} s); it runs '
+        f'to completion in the background and its answer arrives at the next prompt\n{details_for(_RULE)}'
+    )
 
 
-@dataclass(slots=True)
-class _Merged:
-    """The rows' answers, gathered: refusals, contexts, system messages and stderr notes."""
-
-    event: str
-    blocks: list[str] = field(default_factory=list)
-    contexts: list[str] = field(default_factory=list)
-    messages: list[str] = field(default_factory=list)
-    notes: list[str] = field(default_factory=list)
-
-    def take(self, one: Outcome) -> None:
-        name = one.wire.name
-        if one.code == _REFUSED and one.wire.may_block:
-            self.blocks.append(one.err.strip() or f'{name} refused')
-            return
-        if one.err:
-            self.notes.append(one.err.rstrip('\n'))
-        if one.code is None:
-            self.notes.append(f'[hook] {name} outlived its {one.wire.timeout}s bound; passed')
-        elif one.code:
-            self.notes.append(f'[hook] {name} exited {one.code}; not a refusal, so it passed')
-        elif (said := _json(one.out.strip())) is not None:
-            self._said(name, said, may_block=one.wire.may_block)
-        elif one.out.strip():
-            (self.contexts if self.event in _TEXT_IS_CONTEXT else self.notes).append(one.out.strip())
-
-    def _said(self, name: str, said: dict[str, Any], *, may_block: bool) -> None:
-        specific = said.get('hookSpecificOutput') if isinstance(said.get('hookSpecificOutput'), dict) else {}
-        refusal = said.get('reason') if said.get('decision') == 'block' else None
-        if specific.get('permissionDecision') == 'deny':
-            refusal = specific.get('permissionDecisionReason')
-        if refusal is not None and not may_block:
-            self.notes.append(f'[hook] {name} answered a refusal but is not wired may_block; passed: {refusal}')
-        elif refusal is not None:
-            self.blocks.append(str(refusal))
-        if specific.get('additionalContext'):
-            self.contexts.append(str(specific['additionalContext']))
-        if said.get('systemMessage'):
-            self.messages.append(str(said['systemMessage']))
+def _run_job(job: dict[str, Any]) -> None:
+    """The runner's half: run one handed-off job's rows to completion and defer what they said to its session."""
+    text, event = str(job.get('payload') or ''), str(job.get('event') or '')
+    payload = parsed(text) or {}
+    root = Path(str(job.get('root') or _repo_root(payload)))
+    mine, refused = _repo_wires(root)
+    by_name = {wire.name: wire for wire in (*WIRING, *mine)}
+    rows = job.get('rows') if isinstance(job.get('rows'), list) else []
+    wires = [by_name[name] for name in rows if isinstance(name, str) and name in by_name]
+    with import_root(root) if mine else contextlib.nullcontext():
+        outcomes = [run_row(wire, text, timeout=wire.background_bound) for wire in wires]
+    said = '\n'.join(line for line in (refused, deferred_text(event, outcomes)) if line)
+    if said:
+        hookhandoff.defer(_cwd(payload), str(payload.get('session_id') or ''), event, said)
 
 
-def answer(event: str, outcomes: Sequence[Outcome]) -> tuple[str, str]:
-    """``(stdout, stderr)`` of the dispatcher: the rows' answers merged into one."""
-    merged = _Merged(event)
-    for one in outcomes:
-        merged.take(one)
-    return _render(event, merged.blocks, merged.contexts, merged.messages), '\n'.join(merged.notes)
+def _timing(event: str, outcomes: Sequence[Outcome], late: Sequence[Wire], started: float) -> str:
+    rows = [f'[hook-timing] {event} {one.wire.name} {one.ms:.0f} ms' for one in outcomes]
+    rows += [f'[hook-timing] {event} {wire.name} handed off' for wire in late]
+    return '\n'.join([*rows, f'[hook-timing] {event} total {(time.monotonic() - started) * 1000:.0f} ms'])
 
 
-def _render(event: str, blocks: list[str], contexts: list[str], messages: list[str]) -> str:
-    out: dict[str, Any] = {}
-    if blocks and event == 'PreToolUse':
-        reason = '\n'.join(blocks)
-        out['hookSpecificOutput'] = {
-            'hookEventName': event,
-            'permissionDecision': 'deny',
-            'permissionDecisionReason': reason,
-        }
-    elif blocks:
-        out.update(decision='block', reason='\n'.join(blocks))
-    if contexts and event in _CONTEXT_EVENTS:
-        out.setdefault('hookSpecificOutput', {'hookEventName': event})['additionalContext'] = '\n'.join(contexts)
-    else:
-        messages = [*contexts, *messages]
-    if messages:
-        out['systemMessage'] = '\n'.join(messages)
-    return json.dumps(out) if out else ''
-
-
-def _ledger(payload: dict[str, Any]) -> Path | None:
-    """The ``once`` ledger in the git dir of *payload*'s ``cwd``; ``None`` outside a checkout."""
-    here = Path(str(payload.get('cwd') or Path.cwd()))
-    for folder in (here, *here.parents):
-        dot = folder / '.git'
-        if dot.is_dir():
-            return dot / 'dev-lab-hook-once.json'
-        if dot.is_file():
-            line = dot.read_text(encoding='utf-8').strip()
-            if line.startswith('gitdir:'):
-                return (folder / line.removeprefix('gitdir:').strip()) / 'dev-lab-hook-once.json'
-    return None
-
-
-def _first_runs(wires: Sequence[Wire], payload: dict[str, Any]) -> tuple[Wire, ...]:
-    """*wires* without the ``once`` rows this session already ran; records the ones it runs now."""
-    session = str(payload.get('session_id') or '')
-    ledger = _ledger(payload) if session and any(wire.once for wire in wires) else None
-    if ledger is None:
-        return tuple(wires)
+def _background(job: Path) -> int:
+    streams = (sys.stdin, sys.stdout, sys.stderr)
+    sys.stdin, sys.stdout, sys.stderr = (_Routed(stream) for stream in streams)
     try:
-        seen: dict[str, list[str]] = json.loads(ledger.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        seen = {}
-    ran = set(seen.get(session, ()))
-    keep = tuple(wire for wire in wires if not (wire.once and wire.name in ran))
-    seen[session] = sorted(ran | {wire.name for wire in keep if wire.once})
-    with contextlib.suppress(OSError):
-        ledger.write_text(json.dumps(dict(list(seen.items())[-_ONCE_KEPT:])), encoding='utf-8')
-    return keep
+        hookhandoff.drain(job.parent, _run_job)
+    finally:
+        sys.stdin, sys.stdout, sys.stderr = streams
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``python -m dev_lab.dev.hookdispatch <Event>``: run the event's rows on the payload on stdin; always exit 0."""
-    args = sys.argv[1:] if argv is None else argv
+    """``python -m dev_lab.dev.hookdispatch [--timing] <Event> | --background <job>``; always exit 0.
+
+    Run as the hook's process (no *argv*), the budget counts from this interpreter's arrival in this module; called
+    in-process with *argv*, from the call.
+    """
+    started = _STARTED if argv is None else time.monotonic()
+    args = list(sys.argv[1:] if argv is None else argv)
+    timing = '--timing' in args
+    args = [arg for arg in args if arg != '--timing']
+    if len(args) == 2 and args[0] == '--background':  # noqa: PLR2004 -- the flag and its job
+        return _background(Path(args[1]))
     if len(args) != 1:
-        emit('usage: python -m dev_lab.dev.hookdispatch <Event>', err=True)
+        emit('usage: python -m dev_lab.dev.hookdispatch [--timing] <Event> | --background <job>', err=True)
         return 0
     event = args[0]
     text = sys.stdin.read()
-    payload = _json(text) or {}
+    payload = parsed(text) or {}
     root = _repo_root(payload)
     mine, refused = _repo_wires(root)
-    wires = _first_runs(selected(event, payload, (*WIRING, *mine)), payload)
+    wires = first_runs(selected(event, payload, (*WIRING, *mine)), payload, git_dir(_cwd(payload)))
+    session = str(payload.get('session_id') or '')
+    deferred = hookhandoff.take_deferred(_cwd(payload), session) if event in CONTEXT_EVENTS else []
     streams = (sys.stdin, sys.stdout, sys.stderr)
     sys.stdin, sys.stdout, sys.stderr = (_Routed(stream) for stream in streams)
     with import_root(root) if mine else contextlib.nullcontext():
-        outcomes = [run_row(wire, text) for wire in wires]
-    if all(one.code is not None for one in outcomes):  # a row still running keeps writing into its own buffer
+        outcomes, late = _inline([wire for wire in wires if not wire.detached], text, started)
+    if not late:  # a row still running keeps writing into its own buffer
         sys.stdin, sys.stdout, sys.stderr = streams
-    said, notes = answer(event, outcomes)
-    notes = '\n'.join(line for line in (refused, notes) if line)
+    handed = _hand_off(event, text, payload, [*(wire for wire in wires if wire.detached), *late], late)
+    said, notes = answer(event, outcomes, contexts=deferred, messages=[handed] if handed else [])
+    timed = _timing(event, outcomes, late, started) if timing else ''
+    notes = '\n'.join(line for line in (refused, notes, timed) if line)
     if notes:
         emit(notes, err=True)
     if said:

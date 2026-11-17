@@ -620,13 +620,13 @@ def test_settings_carry_the_engine_and_one_dispatcher_row_per_event() -> None:
         assert not any(wire.module in c for c in commands), f'a rendered row names the handler {wire.name}'
 
 
-def test_a_rows_matcher_and_timeout_derive_from_its_handlers() -> None:
-    """The matcher is the union of the handlers' tools (none when one sees every call); the bound is their sum."""
+def test_a_rows_matcher_derives_from_its_handlers_and_its_timeout_is_the_ceiling() -> None:
+    """The matcher is the union of the handlers' tools (none when one sees every call); the bound is the ceiling."""
     by_event = {row.event: row for row in agent_wiring.rows() if row.command != agent_wiring.HOOK_COMMAND}
     assert by_event['PreToolUse'].matcher == 'Write|Edit|MultiEdit|NotebookEdit'
     assert by_event['UserPromptSubmit'].matcher is None
     for event, row in by_event.items():
-        assert row.timeout == sum(w.timeout for w in agent_wiring.WIRING if event in w.events), event
+        assert row.timeout == agent_wiring.HOOK_TIMEOUT_S, event
 
 
 @pytest.mark.parametrize('tool', agent_wiring.SHELL_TOOLS)
@@ -708,14 +708,14 @@ def _declare_wire(repo: Path, module: str, row: str) -> None:
     (repo / f'{module}.py').write_text('def main(argv):\n    return 0\n', encoding='utf-8')
 
 
-def test_rows_derive_matcher_and_timeout_from_the_family_and_the_repo_declaration(repo: Path) -> None:
-    _declare_wire(repo, 'planted_guard_wire_a', 'events = ["PreToolUse", "PreCompact"]\ntools = ["Read"]\ntimeout = 7')
+def test_rows_derive_matcher_from_the_family_and_the_repo_declaration(repo: Path) -> None:
+    _declare_wire(repo, 'planted_guard_wire_a', 'events = ["PreToolUse", "PreCompact"]\ntools = ["Read"]\ntimeout = 1')
     family = {row.event: row for row in agent_wiring.rows()}
     merged = {row.event: row for row in agent_wiring.rows(repo)}
     assert merged['PreToolUse'].matcher == f'{family["PreToolUse"].matcher}|Read'
-    assert merged['PreToolUse'].timeout == family['PreToolUse'].timeout + 7
+    assert merged['PreToolUse'].timeout == family['PreToolUse'].timeout == agent_wiring.HOOK_TIMEOUT_S
     assert merged['PreCompact'] == agent_wiring.Row(
-        'PreCompact', 'Read', agent_wiring.dispatch_command('PreCompact'), 7
+        'PreCompact', 'Read', agent_wiring.dispatch_command('PreCompact'), agent_wiring.HOOK_TIMEOUT_S
     )
     assert 'PreCompact' not in family, 'PLANTED CONTROL: the family alone serves no such event'
 
