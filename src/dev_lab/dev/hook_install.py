@@ -52,7 +52,7 @@ from lab_commons.log import emit
 from dev_lab.dev.githooks.table import ADVISORY, hook_table
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
-from dev_lab.dev.venvpointer import shell_function
+from dev_lab.dev.venvpointer import env_checkout, shell_function
 
 __all__ = [
     'ABSENT',
@@ -205,11 +205,23 @@ def declared_stages(repo: Path) -> dict[str, tuple[str, ...]]:
     return {stage: tuple(hook.id for hook in hooks) for stage, hooks in hook_table(repo).items()}
 
 
-_FALLBACK_LINE: Final = re.compile(r"^fallback='.*'$", re.MULTILINE)
+_FALLBACK_LINE: Final = re.compile(r'^fallback=.*$', re.MULTILINE)
 
 
 def _sh_quote(text: str) -> str:
     return "'" + text.replace("'", "'\\''") + "'"
+
+
+def _fallback_word(recorded: Path) -> str:
+    """*recorded* as one shell word: a checkout environment's interpreter re-resolves to that checkout's CURRENT one.
+
+    An install run from a legacy ``.venv`` (or an older ``.venvs/<name>``) would otherwise pin that environment in
+    every shim, and each commit would execute from it again -- so it never drains.
+    """
+    root = env_checkout(recorded.parent.parent)
+    if root is None:
+        return _sh_quote(recorded.as_posix())
+    return f'"$(_current_env {_sh_quote(root.as_posix())})/{recorded.parent.name}/{recorded.name}"'
 
 
 def shim(stage: str, fallback: str | None = None) -> str:
@@ -223,7 +235,7 @@ def shim(stage: str, fallback: str | None = None) -> str:
     anywhere the commit or push is REFUSED naming the bootstrap and install doors: a commit no hook judged was
     made silently, and a message or a marker it carried cannot be taken back once pushed.
     """
-    recorded = Path(fallback if fallback is not None else sys.executable).as_posix()
+    recorded = Path(fallback if fallback is not None else sys.executable)
     found = ' '.join(
         f'"$(_current_env "${root}")/{"/".join(parts[1:])}"'
         for root in ('top', 'main')
@@ -236,7 +248,7 @@ def shim(stage: str, fallback: str | None = None) -> str:
         'top=$(git rev-parse --show-toplevel) || exit 1\n'
         'main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")\n'
         f'{shell_function()}\n'
-        f'fallback={_sh_quote(recorded)}\n'
+        f'fallback={_fallback_word(recorded)}\n'
         f'for found in {found} "$fallback"; do\n'
         '  if [ -x "$found" ] && "$found" -c "import dev_lab.dev.githooks" >/dev/null 2>&1; then\n'
         f'    exec "$found" -m dev_lab.dev.githooks run {stage} "$@"\n'
