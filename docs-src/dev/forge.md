@@ -240,8 +240,8 @@ nothing. In order, it:
 3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
 4. merges into `~/.config/lab-commons/config.toml`: `[capabilities.<name>]` (`jmag:4` is `seats = 4`; a `jmag`
-   row also gets `in_use = { process = [...] }`, step 7) and, with a role, `[serve] parts`/`withhold` (a retired `[serve] root` or
-   `[serve] repos`, which `serve` refuses by name, is removed: a host serves a repo by its `producer`). It writes no `[reserve]`:
+   row also gets `in_use = { process = [...] }`, step 7); a present `[serve]` is removed, never written (a
+   workstation never serves a merge's parts, user ruling 2026-11-16). It writes no `[reserve]`:
    nothing is reserved for the person at the box (step 8). Every other table, key and comment is kept;
 5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
    different -- so a re-run replaces an older `cmd /c` Task.

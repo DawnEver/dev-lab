@@ -11,7 +11,7 @@ The role is declared ONCE, `dev_lab.dev.workstationfile.ROLES`, and the deploy r
 (`~/.config/lab-commons/config.toml`). Print it for your repos with
 
 ```
-.venv\Scripts\python.exe -m dev_lab.dev.workstation template --role light --repos dev-lab,lab-commons,consumer-a
+.venv\Scripts\python.exe -m dev_lab.dev.workstation template --role light
 ```
 
 which prints exactly this (a test pins this block to the command's output, so it cannot drift):
@@ -19,21 +19,16 @@ which prints exactly this (a test pins this block to the command's output, so it
 <!-- template: light -->
 ```toml
 [capabilities.workstation]
-
-[serve]
-parts = "every"
-withhold = ["aedt", "femm", "fluent", "jmag", "lsdyna", "mapdl", "matlab", "simba"]
 ```
 
 - `[capabilities.workstation]`: the live-checkout-and-agent-kit resource (`node` and `codex` on `PATH`); the
   `workstation` parts need it.
-- `withhold` is every tool the presence probe marks heavy (`workstationfile.HEAVY`, derived from
-  `lab_commons.compute.toolchecks.CHECKS`). A probe finds an installed JMAG whether or not it is declared, so
-  withholding is what keeps it off the forge: the host claims no part and no request needing one. A heavy
-  capability given to `--capabilities` with `--role light` is refused.
-- `parts = "every"`: it also produces `base`.
+- A heavy capability (`workstationfile.HEAVY`, every tool `lab_commons.compute.toolchecks.CHECKS` marks heavy)
+  given to `--capabilities` with `--role light` is refused.
 
-Nothing else is written: no `[reserve]`, no seats. Every other table, key and comment of the file is kept.
+No `[serve]` is written, and the deploy removes one it finds: a workstation never serves a merge's parts (user
+ruling 2026-11-16; `configcheck` refuses the table through `producercheck.host_refusals`). Nothing else is
+written: no `[reserve]`, no seats. Every other table, key and comment of the file is kept.
 
 ## Deploy, step by step
 

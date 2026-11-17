@@ -5,8 +5,8 @@ deploy's run-or-print :class:`~dev_lab.dev.hpcaccount.steps.Step`.
 
 ``deploy --repos <repo>,... (--capabilities workstation,jmag:4 | --role light) [--forge <https base>]
 [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat. A ``--role`` is a declared profile
-(:data:`ROLES`: its capabilities and ``[serve]`` rule); ``template --role <role> --repos ...`` prints the tables
-it writes. The ``light`` role withholds every :data:`HEAVY` tool and refuses one in ``--capabilities``.
+(:data:`ROLES`: its capabilities); ``template --role <role>`` prints the tables it writes. The ``light`` role
+refuses every :data:`HEAVY` tool in ``--capabilities``.
 Nothing is reserved for the person at the box (user ruling 2026-10-25): they DECLARE their use as a ledger
 claim (``python -m lab_commons.box claim``).
 
@@ -22,9 +22,10 @@ claim (``python -m lab_commons.box claim``).
    or ``uv.lock`` changed since its last sync (a stamp in the venv, written only after a sync succeeds).
 5. HOOKS: ``-m dev_lab.dev.hook_install --install`` in each checkout whose hooks are not live.
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``; a ``jmag``
-   row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken) and
-   with a role, ``[serve] parts`` and ``withhold``, merged in place. A retired ``[serve] root`` or ``repos``
-   and every RETIRED ``[capabilities.<name>]`` table are removed -- one retired into ``[runtimes.<name>]`` has
+   row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken),
+   merged in place. ``[serve]`` is never written and a present one is removed: a workstation never serves a
+   merge's parts (user ruling 2026-11-16, :func:`dev_lab.dev.producercheck.host_refusals`). Every RETIRED
+   ``[capabilities.<name>]`` table is removed -- one retired into ``[runtimes.<name>]`` has
    its keys carried there; every other table, key and comment is kept, and ``--dry-run`` prints the diff.
 7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`dev_lab.dev.servetask`), its action derived from
    the forge home alone (the dev-lab serve checkout's ``pythonw``), registered from its XML definition and
@@ -65,7 +66,6 @@ from pathlib import Path
 from typing import IO, Any
 
 import lab_commons.launch as _door
-from lab_commons.compute.serves import EVERY, SERVE_TABLE
 from lab_commons.config import section
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -83,7 +83,7 @@ from dev_lab.dev.servelanes import serve_lanes, serving
 from dev_lab.dev.servelock import default_lock, forge_home, held
 from dev_lab.dev.venvfollow import ENV_STAMP, venv_python
 from dev_lab.dev.venvpointer import current
-from dev_lab.dev.workstationfile import ROLES, capabilities, machine_file, role_refusal, role_tables, template
+from dev_lab.dev.workstationfile import ROLES, capabilities, deploy_tables, machine_file, role_refusal, template
 from dev_lab.dev.workstationprobe import CREDENTIAL_REMEDY, com_server, missing, refused_credentials
 from dev_lab.dev.workstationregistry import NoRegistry, forge_refusal, this_computer
 
@@ -138,21 +138,13 @@ def _parser() -> argparse.ArgumentParser:
         help=f'comma-separated, the repos served; {KIT} only if its queue is served here',
     )
     dep.add_argument('--capabilities', type=capabilities, default=None, help='comma-separated name or name:seats')
-    dep.add_argument(
-        '--role', choices=sorted(ROLES), help='a declared profile (ROLES): its capabilities and [serve] rule'
-    )
+    dep.add_argument('--role', choices=sorted(ROLES), help='a declared profile (ROLES): its capabilities')
     dep.add_argument('--forge', default='', help='https base a missing checkout is cloned from: <forge>/<repo>.git')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
     dep.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
     tpl = verbs.add_parser('template', help='print the machine-file tables a --role deploy writes')
     tpl.add_argument('--role', choices=sorted(ROLES), required=True)
-    tpl.add_argument(
-        '--repos',
-        type=_repos,
-        required=True,
-        help=f'comma-separated, the repos served; {KIT} only if its queue is served here',
-    )
     return parser
 
 
@@ -259,13 +251,7 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
         return 2
     step = Step(Tools(git=tools.git), dry=args.dry_run)
     refused = _checkouts(step, tools, checkouts, urls, args.ref)
-    if args.role:
-        tables = role_tables(ROLES[args.role], args.capabilities)
-    else:
-        tables = {f'capabilities.{name}': dict(facts) for name, facts in args.capabilities.items()}
-        tables[SERVE_TABLE] = {'parts': EVERY}
-    tables[SERVE_TABLE].update(dict.fromkeys(servetask.RETIRED_SERVE_KEYS))  # a retired key merged as None is removed
-    rc = machine_file(step, tables) or _task(step, tools)
+    rc = machine_file(step, deploy_tables(args.capabilities)) or _task(step, tools)
     for name, why in refused.items():
         tools.alarm(Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not serve it', why))
         emit(f'deploy refused {name} (its checkout is not served): {why}', err=True)
