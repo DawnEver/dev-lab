@@ -7,7 +7,7 @@ scratch, and a file a known retirement declares gone is deleted through its door
 twelve stale rem indexes, eleven under ``src/``, were told to be ``git add``-ed). Which files are retired is the
 CHECKOUT's data, the ``retired`` rows of its placement (:mod:`dev_lab.dev.retiredfiles`), passed to
 :func:`retired_copies`; the leaf holds no consumer's layout (:mod:`dev_lab.dev.foreign`), and a checkout
-declaring none gets no such exit. Earned 2026-10-20 in consumer-a: a vendor controller run by hand with the
+declaring none gets no such exit. Earned 2026-10-20 in a consumer: a vendor controller run by hand with the
 checkout as its cwd left seven log files in the root, and a ``uv`` run in a subdirectory left a ``uv.lock``
 there; nothing said so until a human saw them.
 
