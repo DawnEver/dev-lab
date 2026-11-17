@@ -30,10 +30,10 @@ def _catalog() -> dict:
             )
         )
     except (OSError, ValueError, KeyError, TypeError) as failed:
-        msg = 'native session catalog is missing or invalid. Door: restore the declared dev-lab installation.'
+        msg = 'native session catalog is missing or invalid.\nDoor: restore the declared dev-lab installation.'
         raise ValueError(msg) from failed
     if not readable:
-        msg = 'native session catalog is invalid. Door: restore the declared dev-lab installation.'
+        msg = 'native session catalog is invalid.\nDoor: restore the declared dev-lab installation.'
         raise ValueError(msg)
     return catalog
 
@@ -65,7 +65,7 @@ def primary_of(env: Mapping[str, object] | None = None) -> str:
         row for row in _catalog()['harnesses'] if any(field in env for field in [row['primary'], *row['auxiliary']])
     ]
     if len(declared) > 1:
-        msg = 'ambiguous native session harnesses. Door: run from exactly one native agent harness.'
+        msg = 'ambiguous native session harnesses.\nDoor: run from exactly one native agent harness.'
         raise ValueError(msg)
     return declared[0]['primary'] if declared else ''
 
@@ -78,6 +78,6 @@ def session_of(env: Mapping[str, object] | None = None) -> str:
         return ''
     session = env.get(primary)
     if not valid(session):
-        msg = f'native session {primary} is not a session id or is missing. Door: restore the native harness identity.'
+        msg = f'native session {primary} is not a session id or is missing.\nDoor: restore the native harness identity.'
         raise ValueError(msg)
     return session

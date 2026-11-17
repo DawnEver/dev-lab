@@ -114,6 +114,8 @@ def find(env: Mapping[str, str], home: Path, root: Path) -> Binder | None:
 def binder_door(env: Mapping[str, str], home: Path, root: Path) -> str | None:
     """Why rem cannot have bound this session -- absent, disabled or too old -- with its door; else ``None``.
 
+    The door is a line of its own, so the wall it ends names one (:func:`dev_lab.dev.walls.has_remedy`).
+
     ``None`` also when the registry cannot be read: the caller keeps the plain door (the user's ``task:`` prompt).
     """
     binder = find(env, home, root)
@@ -134,4 +136,5 @@ def binder_door(env: Mapping[str, str], home: Path, root: Path) -> str | None:
     else:
         return None
     how = f'Claude Code: `claude plugin {verb} {plugin}`; Codex: {codex}'
-    return f'{cause}, so no prompt can bind this session. Door: {door} ({how}), then the user binds with `task: <slug>`'
+    door_line = f'Door: {door} ({how}), then the user binds with `task: <slug>`'
+    return f'{cause}, so no prompt can bind this session.\n{door_line}'

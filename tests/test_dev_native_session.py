@@ -93,7 +93,7 @@ def test_a_missing_or_corrupt_identity_catalog_never_turns_into_a_human_bypass(
     monkeypatch.setattr(native, '__file__', str(tmp_path / 'native_session.py'))
     if contents is not None:
         (tmp_path / 'native_session.json').write_text(contents, encoding='utf-8')
-    with pytest.raises(ValueError, match=r'native session catalog.*Door:'):
+    with pytest.raises(ValueError, match=r'native session catalog[^\n]*\nDoor:'):
         native.session_of({})
 
 
