@@ -45,6 +45,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import principles, remconfig
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
+from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -305,24 +306,27 @@ def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
     return argv
 
 
-def render_repo(root: Path, python: str, run: Callable[[list[str], Path], int]) -> tuple[str, ...]:
+def render_repo(
+    root: Path, python: str, run: Callable[[list[str], Path], int], kit: Kit | None = None
+) -> tuple[str, ...]:
     """THE ONE DOOR: run every renderer due in *root* under *python* (``run(argv, root)``).
 
     Answers one line per renderer of :data:`RENDERERS`, ``"<name>: rendered"`` or ``"<name>: skipped -- <why>"``.
     RAISES :class:`ValueError` naming the renderer when a declared input is missing or it exits non-zero, before
-    any later renderer runs.
+    any later renderer runs. A TRACKED file moves only under the checkout's own kit in a linked worktree
+    (:mod:`dev_lab.dev.trackedrender`): *kit* is the one rendering, default the one *python* runs; otherwise every
+    moved tracked file is put back and :class:`~dev_lab.dev.trackedrender.RenderRefused` names files, kit and door.
     """
     steps = [(r, why, None if why else render_argv(r, root, python)) for r, why in plan(root)]
-    lines: list[str] = []
-    for renderer, why, argv in steps:
-        if argv is None:
-            lines.append(f'{renderer.name}: skipped -- {why}')
-        elif (exited := run(argv, root)) != 0:
-            msg = f'the renderer {renderer.name} exited {exited} in {root}: {" ".join(argv[1:])}'
-            raise ValueError(msg)
-        else:
-            lines.append(f'{renderer.name}: rendered')
-    return tuple(lines)
+
+    def render() -> tuple[str, ...]:
+        for renderer, _why, argv in steps:
+            if argv is not None and (exited := run(argv, root)) != 0:
+                msg = f'the renderer {renderer.name} exited {exited} in {root}: {" ".join(argv[1:])}'
+                raise ValueError(msg)
+        return tuple(f'{r.name}: skipped -- {why}' if why else f'{r.name}: rendered' for r, why, _argv in steps)
+
+    return guard_render(root, render, lambda: kit or interpreter_kit(python), RENDER_COMMAND)
 
 
 def _run(argv: list[str], root: Path) -> int:
@@ -447,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error('--check reads one renderer: name --files')
         try:
             lines = render_repo(root, sys.executable, _run)
-        except ValueError as exc:
+        except (ValueError, RenderRefused) as exc:
             emit(f'[famfiles] REFUSED -- {exc}', err=True)
             return 1
         for line in lines:
