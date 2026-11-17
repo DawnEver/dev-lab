@@ -24,6 +24,12 @@ judgement (:mod:`dev_lab.dev.prcurrent`), which names a ``pr/*`` head that lacks
 THE OWNER'S CHECKOUT, THE OWNER'S PUSH. Run by the owner's agent in develop mode on a clean tree.
 It merges locally and stops: the owner runs their tests and pushes. It never pushes, and it refuses on
 the trunk, on the integration branch and on a detached HEAD, where a sync has no meaning.
+
+EVERY REFUSAL TEACHES (principle ``every-wall-teaches``). Each refusal and stop is ``<RULE-ID>: <cause>``, its door on
+the next line and a ``details:`` pointer last, recorded through :func:`dev_lab.dev.walls.refused_text` -- so the
+ledger names the rule and that a door was named (measured 2026-11-17: a one-line refusal was a wall with no rule and
+no door). The rules: :data:`UPSTREAM_SET`, :data:`STARTS_FROM_A_COMMIT`, :data:`STOPS_ON_A_CONFLICT`,
+:data:`STEP_FAILED` (``docs-src/dev/refusals.md``), and the task gate's own.
 """
 
 from __future__ import annotations
@@ -40,7 +46,8 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import datadeps, taskgate
+from dev_lab.dev import datadeps, taskgate, walls
+from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.labsession import trailers
 from dev_lab.dev.lanepolicy import Policy, load_policy
@@ -49,8 +56,8 @@ from dev_lab.dev.relock import RelockFailed, door_upgrade, rerender, siblings
 from dev_lab.dev.trialmerge import Trial, rev, trial
 
 __all__ = [
-    'CONFIG_KEY', 'RELOCK_TITLE', 'Plan', 'main', 'plan', 'refused', 'relock', 'relock_floating', 'sync', 'unwatch',
-    'upstreams', 'watch',
+    'CONFIG_KEY', 'RELOCK_TITLE', 'STARTS_FROM_A_COMMIT', 'STEP_FAILED', 'STOPS_ON_A_CONFLICT', 'UPSTREAM_SET', 'Plan',
+    'main', 'plan', 'refused', 'relock', 'relock_floating', 'sync', 'unwatch', 'upstreams', 'watch',
 ]  # fmt: skip
 
 #: The per-branch git config key holding the opt-in refs (``branch.<child>.labSyncFrom``).
@@ -62,6 +69,21 @@ _ORIGIN: Final = 'origin/'
 PYPROJECT: Final = 'pyproject.toml'
 #: The subject of the commit a sync's relock lands as.
 RELOCK_TITLE: Final = 'build(deps): relock the floated siblings and data pins to their current heads'
+
+#: The registry row a sync of a ref outside the upstream set, or of no child branch, is refused under.
+UPSTREAM_SET: Final = 'DOWNSTREAM-SYNCS-INTEGRATION'
+#: A merge (and a relock commit) starts from a commit: a dirty tree, a half-done merge or a held index is refused.
+STARTS_FROM_A_COMMIT: Final = 'SYNC-STARTS-FROM-A-COMMIT'
+#: A ref whose trial merge conflicts stops the sync before anything is merged; the owner resolves it.
+STOPS_ON_A_CONFLICT: Final = 'SYNC-STOPS-ON-A-CONFLICT'
+#: A step (fetch, merge commit, relock) failed; a failed merge is aborted and a failed relock restored.
+STEP_FAILED: Final = 'SYNC-STEP-FAILED'
+_RERUN: Final = 'then rerun forge sync'
+
+
+def _refusal(rule: str, cause: str, door: str) -> str:
+    """``<rule>: <cause>`` with ``Door: <door>`` on a line of its own (:func:`dev_lab.dev.walls.has_remedy`)."""
+    return f'{rule}: {cause}\nDoor: {door}'
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -91,8 +113,8 @@ def upstreams(root: Path, branch: str, policy: Policy) -> tuple[str, ...]:
 def watch(root: Path, branch: str, ref: str) -> None:
     """Add *ref* to *branch*'s watched set (idempotent); a ref git cannot resolve is refused."""
     if rev(root, ref) is None:
-        msg = f'{ref!r} names no commit in {root}; fetch it first, or spell it as origin/<branch>'
-        raise ValueError(msg)
+        door = f'git fetch origin, or spell it as origin/<branch>, then rerun forge sync --watch {ref}'
+        raise ValueError(_refusal(UPSTREAM_SET, f'{ref!r} names no commit in {root}', door))
     if ref not in _git(root, 'config', '--get-all', _key(branch)).stdout.split():
         _git(root, 'config', '--add', _key(branch), ref)
 
@@ -106,10 +128,9 @@ def refused(ref: str, allowed: Sequence[str], branch: str) -> str | None:
     """Why merging *ref* into *branch* is refused, or ``None`` when *ref* is in its upstream set."""
     if ref in allowed:
         return None
-    return (
-        f'{ref} is not in the upstream set of {branch} ({", ".join(allowed)}): a child branch merges only '
-        f'integration (DOWNSTREAM-SYNCS-INTEGRATION). To opt in: forge sync --watch {ref}'
-    )
+    listed = ', '.join(allowed)
+    cause = f'{ref} is not in the upstream set of {branch} ({listed}): a child branch merges only integration'
+    return _refusal(UPSTREAM_SET, cause, f'opt in with python -m dev_lab.dev.forge sync --watch {ref}, {_RERUN}')
 
 
 @dataclass(frozen=True)
@@ -127,15 +148,12 @@ class Plan:
 
 def _current(root: Path, policy: Policy) -> str:
     branch = _git(root, 'symbolic-ref', '--short', '-q', 'HEAD').stdout.strip()
+    door = f'git switch <your child branch>, {_RERUN} there'
     if not branch:
-        msg = 'HEAD is detached: sync updates a child branch, so check one out'
-        raise ValueError(msg)
+        raise ValueError(_refusal(UPSTREAM_SET, 'HEAD is detached: sync updates a child branch', door))
     if branch in {policy.trunk, policy.integration}:
-        msg = (
-            f'{branch} is not a child branch: only the integrator moves {policy.integration}, '
-            f'only promote moves {policy.trunk}'
-        )
-        raise ValueError(msg)
+        cause = f'{branch} is not a child branch: only the integrator moves {policy.integration}, only promote moves'
+        raise ValueError(_refusal(UPSTREAM_SET, f'{cause} {policy.trunk}', door))
     return branch
 
 
@@ -148,8 +166,7 @@ def plan(root: Path, policy: Policy, refs: Sequence[str] | None = None) -> Plan:
         if (why := refused(ref, allowed, branch)) is not None:
             raise ValueError(why)
         if rev(root, ref) is None:
-            msg = f'{ref} names no commit in {root}; fetch it first'
-            raise ValueError(msg)
+            raise ValueError(_refusal(UPSTREAM_SET, f'{ref} names no commit in {root}', f'git fetch origin, {_RERUN}'))
     return Plan(branch, tuple((ref, trial(root, ref, 'HEAD')) for ref in chosen))
 
 
@@ -159,14 +176,12 @@ def sync(root: Path, policy: Policy, refs: Sequence[str] | None = None) -> tuple
     Returns the plan and the refs actually merged. A dirty tree is refused before anything is read.
     """
     if (pending := _git(root, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).returncode == 0:
-        msg = (
-            f'a merge of {pending.stdout.strip()[:10]} is in progress and uncommitted (an earlier run was killed '
-            'mid-commit?): Remedy: git commit --no-edit to conclude it, or git merge --abort, then rerun forge sync'
-        )
-        raise ValueError(msg)
+        cause = f'a merge of {pending.stdout.strip()[:10]} is in progress and uncommitted (an earlier run was killed?)'
+        door = f'git commit --no-edit to conclude it, or git merge --abort, {_RERUN}'
+        raise ValueError(_refusal(STARTS_FROM_A_COMMIT, cause, door))
     if _git(root, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
-        msg = 'the tree has uncommitted changes: commit them first, a merge must start from a commit'
-        raise ValueError(msg)
+        cause = 'the tree has uncommitted changes, and a merge must start from a commit'
+        raise ValueError(_refusal(STARTS_FROM_A_COMMIT, cause, f'commit them (git add <paths>; git commit), {_RERUN}'))
     found = plan(root, policy, refs)
     if found.conflicting:
         return found, ()
@@ -215,8 +230,9 @@ def relock(
     a sync failing partway never leaves a dirty tree for the next sync to refuse.
     """
     if held := _staged(root):
-        msg = f'the index already holds {", ".join(held)}, which a relock would sweep in: commit or unstage it first'
-        raise RelockFailed(msg)
+        cause = f'the index already holds {", ".join(held)}, which a relock would sweep in'
+        door = f'commit or unstage it first (git restore --staged -- <paths>), {_RERUN}'
+        raise RelockFailed(_refusal(STARTS_FROM_A_COMMIT, cause, door))
     clean = _touched(root)
     try:
         names = (*door(root), *data(root))
@@ -232,7 +248,7 @@ def relock(
         ).returncode != 0:
             msg = f'committing the relocked {LOCK} failed: {(done.stderr or done.stdout).strip()}'
             raise RelockFailed(msg)
-    except OSError:
+    except (OSError, datadeps.DataRefused):
         _restore(root, _touched(root) - clean)
         raise
     return names
@@ -260,17 +276,16 @@ def _hooked(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _failed_merge(root: Path, ref: str, merged: Sequence[str], done: subprocess.CompletedProcess[str]) -> str:
-    """One line naming the state a failed merge of *ref* left: aborted when uncommitted, else what HEAD holds."""
+    """The state a failed merge of *ref* left -- aborted when uncommitted, else what HEAD holds -- and its door."""
     why = ' '.join((done.stderr or done.stdout).split()) or f'exit {done.returncode}'
     so_far = f'merged so far: {", ".join(merged) or "nothing"}'
     if _git(root, 'rev-parse', '-q', '--verify', 'MERGE_HEAD').returncode != 0:
         head = _git(root, 'rev-parse', '--short', 'HEAD').stdout.strip()
-        return f'git merge {ref} exited {done.returncode} but no merge is pending; HEAD is {head} ({so_far}): {why}'
+        cause = f'git merge {ref} exited {done.returncode} but no merge is pending; HEAD is {head} ({so_far}): {why}'
+        return _refusal(STEP_FAILED, cause, f'git log -1 {head} to see what HEAD holds, {_RERUN}')
     _git(root, 'merge', '--abort')
-    return (
-        f'git merge {ref} was NOT committed (exit {done.returncode}) and was aborted ({so_far}): {why}. '
-        f'Remedy: fix what the commit hooks refused, then rerun forge sync'
-    )
+    cause = f'git merge {ref} was NOT committed (exit {done.returncode}) and was aborted ({so_far}): {why}'
+    return _refusal(STEP_FAILED, cause, f'fix what the commit hooks refused, {_RERUN}')
 
 
 def _trailer_args() -> list[str]:
@@ -313,6 +328,21 @@ def task_refusal(root: Path) -> str | None:
     return taskgate.refusal(root, env=os.environ)
 
 
+def _refuse(root: Path, text: str, *, reason: str) -> int:
+    """Print one refusal -- rule line, door line, ``details:`` pointer -- and record its wall; exit 2.
+
+    A text naming no rule (a failed fetch, a relock step) is a :data:`STEP_FAILED`: a step failing partway leaves no
+    half-done state (a failed merge is aborted, a failed relock restored), so fixing the cause and rerunning is the
+    door.
+    """
+    if walls.rule_of(text).startswith(walls.UNNAMED):
+        text = _refusal(STEP_FAILED, ' '.join(text.split()), f'fix what the line above names, {_RERUN}')
+    shown = f'{text}\n{details_for(walls.rule_of(text))}'
+    emit(shown, err=True)
+    walls.refused_text(root, shown, reason=reason)
+    return 2
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -329,8 +359,7 @@ def main(
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     if not (args.watch or args.unwatch or args.list) and (why := task_refusal(root)):
-        emit(f'[sync] refused before merging: {why}', err=True)
-        return 2
+        return _refuse(root, why, reason='task')
     policy = load_policy(root)
     try:
         branch = _current(root, policy)
@@ -342,16 +371,14 @@ def main(
         fetch(root)
         found, merged = sync(root, policy)
         relocked = () if found.conflicting else relock(root, door=door)
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
-        emit(f'[sync] refused: {" ".join(str(exc).split())}', err=True)
-        return 2
+    except (OSError, ValueError, subprocess.SubprocessError, datadeps.DataRefused) as exc:
+        return _refuse(root, str(exc), reason='refused')
     for line in _render(found):
         emit(line)
     if found.conflicting:
-        for ref, tried in found.conflicting:
-            emit(f'[sync] stopped: {ref} conflicts in {", ".join(tried.conflicts)}; nothing was merged.', err=True)
-            emit(f'[sync] Remedy: git merge {ref}, resolve those files, commit, run your tests, push.', err=True)
-        return 2
+        clashes = '; '.join(f'{ref} conflicts in {", ".join(tried.conflicts)}' for ref, tried in found.conflicting)
+        door = f'git merge {found.conflicting[0][0]}, resolve those files, commit, run your tests, {_RERUN}'
+        return _refuse(root, _refusal(STOPS_ON_A_CONFLICT, f'{clashes}; nothing was merged', door), reason='conflict')
     if relocked:
         emit(f'[sync] relocked {", ".join(relocked)} to their current heads; committed {LOCK} with what it renders')
     if not merged and not relocked:
