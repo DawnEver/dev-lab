@@ -152,16 +152,12 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
    `[capabilities.femm]`; one that should run Windows-only parts declares nothing (its OS is measured).
 6. **Promotion**: `integrate promote` now needs `tests/base` and every part a part hands to. A server-side
    required status context should be `tests/base` only.
-7. **On gitea, a new repo is served only once a host lists it.** A GitHub repo needs nothing here: its
-   rendered `ci.yml` is its producer. On gitea, declaring `produce` makes a sha claimable; nothing claims it
-   until some producer's machine file names the repo, so its PR shows no `tests/base` and cannot merge. Add it
-   on at least one host that has every resource the repo declares:
-   - a workstation re-runs its deploy with the repo appended
-     (`workstation deploy --forge <forge> --repos dev-lab,...,<repo> --capabilities <same> --dry-run`, then
-     without `--dry-run`), which clones it and merges `[serve] repos`
-     ([deploy a workstation](forge.md#deploy-a-windows-workstation));
-   - a cluster account adds a `[deploy] repos` row (`{ name, url, ref = "integrate/main" }`, plus
-     `verify = ["tests/*"]` on an affined account, [affinity](forge.md#hpc-account-affinity)).
+7. **On gitea, a new repo is served only once a cluster account lists it.** A GitHub repo needs nothing here:
+   its rendered `ci.yml` is its producer. On gitea, declaring `produce` makes a sha claimable; nothing claims it
+   until some cluster account's machine file names the repo, so its PR shows no `tests/base` and cannot merge. A
+   workstation never serves, so it cannot be that host. Add a `[deploy] repos` row (`{ name, url, ref =
+   "integrate/main" }`, plus `verify = ["tests/*"]` on an affined account,
+   [affinity](forge.md#hpc-account-affinity)) on at least one account that has every resource the repo declares.
 
    The edit is made ON that host by its operator: hosts meet only through the forge, never by a remote write.
 
