@@ -231,7 +231,7 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     '_adopt_plain_venv': (
-        'dev_lab.dev.venvcurrent.retire_legacy, retried by every publish, reclaim and follow',
+        'dev_lab.dev.venvcurrent.retire_passed_over, retried by every publish, reclaim and follow',
         '2026-11-17: a held legacy .venv never drained; the follow retries the drain from the current environment',
     ),
 }
