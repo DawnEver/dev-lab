@@ -87,6 +87,7 @@ from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
+from dev_lab.dev.producers import UndeclaredProducer, producer_at
 from dev_lab.dev.reviewcap import unreviewed_waiver
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
@@ -186,7 +187,10 @@ def decide(
         waived, unreviewed = waiver, None
         title, _, trailers = message.partition('\n\n')
         message = f'{title}\n\n{waiver}\n\n{trailers}'
-    waits = status_waits(policy, head, statuses)
+    try:
+        waits = status_waits(policy, head, statuses, producer=producer_at(root))
+    except UndeclaredProducer as undeclared:  # a malformed producer is named, never merged
+        waits = [f'its producer: {undeclared}']
     missing += waits
     tried = trial(root, base, head)
     if not tried.clean:

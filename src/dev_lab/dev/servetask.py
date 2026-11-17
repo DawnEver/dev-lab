@@ -1,8 +1,8 @@
 """THE ONE Scheduled Task that makes a Windows workstation a ``forge serve`` host: its name, definition and state.
 
 The workstation counterpart of a cluster account's crontab lines (:mod:`dev_lab.dev.hpcaccount.deploy`). ONE
-Task, ``lab-forge-serve``, serves every repo the machine file declares (``[serve] repos``): its action
-runs :mod:`dev_lab.dev.workstation` ``serve`` from the dev-lab SERVE checkout (:func:`kit`), which takes the
+Task, ``lab-forge-serve``, serves every checkout declaring the HPC its producer (:mod:`dev_lab.dev.producers`):
+its action runs :mod:`dev_lab.dev.workstation` ``serve`` from the dev-lab SERVE checkout (:func:`kit`), which takes the
 per-user serve lock once (:mod:`dev_lab.dev.servelock`) and serves each repo in a lane of its own from its
 checkout and venv. Every serve checkout is ``<forge home>/repos/<repo>`` (:func:`checkout`), derived from
 :func:`dev_lab.dev.servelock.forge_home` -- the platform data dir, never a dev checkout (user
@@ -42,8 +42,6 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import IO, Final
-
-from lab_commons.config import config_path
 
 from dev_lab.dev.hpcaccount.spec import KIT
 from dev_lab.dev.servelock import forge_home
@@ -152,7 +150,11 @@ _DERIVED: Final = 'serve checkouts are derived as <forge home>/repos/<repo> (dev
 #: A retired ``workstation deploy`` flag -> its remedy; refused by name, never silently ignored.
 RETIRED_FLAGS: Final = {'--root': f'{_DERIVED}; drop the flag'}
 #: A retired ``[serve]`` key -> its remedy; ``serve`` refuses it, ``deploy`` removes it.
-RETIRED_SERVE_KEYS: Final = {'root': f'{_DERIVED}; re-run `python -m dev_lab.dev.workstation deploy`'}
+RETIRED_SERVE_KEYS: Final = {
+    'root': f'{_DERIVED}; re-run `python -m dev_lab.dev.workstation deploy`',
+    'repos': "a host serves a repo by the repo's own [tool.dev_lab.protection] producer (dev_lab.dev.producers, "
+    'user ruling 2026-11-16); delete the key',
+}
 
 
 def retired_flag(word: str) -> str | None:
@@ -167,9 +169,8 @@ def serve_refusal(table: Mapping[str, object], executable: Path, home: Path) -> 
     """
     if retired := [key for key in table if key in RETIRED_SERVE_KEYS]:
         return f'[serve] {retired[0]} is retired: {RETIRED_SERVE_KEYS[retired[0]]}'
-    repos = table.get('repos')
-    if not (isinstance(repos, list) and repos):
-        return f'no [serve] repos in {config_path()}; run `workstation deploy`'
+    if not table:
+        return "no [serve] table here: a workstation never serves a merge's parts (user ruling 2026-11-16)"
     if not executable.is_relative_to(lab := kit(home)):
         return f'{executable} is not the serve kit in {lab} (never a dev checkout); run `workstation deploy`'
     return None

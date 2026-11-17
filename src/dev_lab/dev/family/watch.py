@@ -41,7 +41,6 @@ _LAST: Final = 'read'
 
 def findings() -> list[Finding]:
     """Every finding of this machine's family, read from its forges, and the horizontal comparison of its members."""
-    serve = section('serve')
     exceptions = section('family').get('exceptions', {})
 
     def horizontally(seen: Mapping[str, tuple[Snapshot, Facts]]) -> list[Finding]:
@@ -52,7 +51,7 @@ def findings() -> list[Finding]:
         )
 
     found = check(repos(), forge=lambda _name, root: ClientFacts(client_for(root)),
-                  served=serve.get('repos') if serve else None, now=datetime.now(UTC),
+                  now=datetime.now(UTC),
                   bundle_name=secret_name(REVIEW_TASK), read=snapshot, compare=horizontally)  # fmt: skip
     return found + uv_pin(uv_version(repos().get(KIT)), newest_uv)
 

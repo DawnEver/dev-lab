@@ -37,6 +37,7 @@ from dev_lab.dev.relock import (
     chosen,
     dist_of,
     in_house,
+    line_of,
     rerender,
 )
 
@@ -684,3 +685,46 @@ def test_a_lag_count_never_fetches_lazily_from_the_line(monkeypatch: pytest.Monk
     local = [(argv, env) for argv, env in seen if 'init' not in argv]
     assert local, 'the local graph reads ran'
     assert all(env.get('GIT_NO_LAZY_FETCH') == '1' for _argv, env in local)
+
+
+_A_SHA = '0123456789abcdef0123456789abcdef01234567'
+
+
+@pytest.mark.parametrize(
+    ('query', 'line'),
+    [
+        ('rev=integrate%2Fmain', 'integrate/main'),
+        ('rev=integrate/main', 'integrate/main'),
+        ('rev=main', 'main'),
+        ('branch=release%2Fx', 'release/x'),
+        ('', relock.DEFAULT_LINE),
+        (f'rev={_A_SHA}', None),
+        (f'rev={_A_SHA[:12]}', _A_SHA[:12]),
+        ('tag=v1', None),
+    ],
+)
+def test_a_rev_naming_a_branch_floats_and_only_a_full_sha_or_a_tag_holds(query: str, line: str | None) -> None:
+    """A rev is judged by what it IS, URL-decoded: a branch floats; a full sha holds; a tag is declared held.
+
+    PLANTED CONTROLS: the 40-hex sha and the tag hold; a 12-hex prefix is not a full sha and is not taken for one.
+    """
+    assert line_of(query) == line
+
+
+_BRANCH_REV = _LOCK.replace('lab-commons.git#', 'lab-commons.git?rev=integrate%2Fmain#').replace(
+    'held.git?tag=v1#', f'held.git?rev={_A_SHA}#'
+)
+
+
+def test_forge_sync_relocks_a_branch_rev_source_and_leaves_a_sha_pinned_one(tmp_path: Path) -> None:
+    """The consumer defect: ``?rev=integrate%2Fmain`` was read as held, so the relock skipped it.
+
+    PLANTED CONTROL: the source pinned at a full sha is never handed to the door.
+    """
+    (tmp_path / 'uv.lock').write_text(_BRANCH_REV, encoding='utf-8')
+    asked: list[Sequence[str]] = []
+    assert relock_floating(tmp_path, upgrade=lambda _t, names: asked.append(names) or 0) == ('lab-commons',)
+    assert asked == [('lab-commons',)]
+    reads: list[str] = []
+    floating_lag(_BRANCH_REV, _HOUR, behind=lambda _u, branch, _s: reads.append(branch) or _CURRENT)
+    assert reads == ['integrate/main'], 'the lag reads the branch the rev names'

@@ -126,7 +126,8 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
     (repo / 'pyproject.toml').write_text(
         '[tool.lab_commons.tests]\nproduce = ["x", "{part}"]\n'
-        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n",  # every repo declares it (D83)
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
+        "[tool.dev_lab.protection]\nproducer = 'hpc'\n",
         'utf-8',
     )
     tips = {}

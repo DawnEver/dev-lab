@@ -62,11 +62,11 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemergecall import merge
-from dev_lab.dev.forgemergewaits import parts_wait
+from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgepulls import pr_list
-from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import Client, Transport, forge_transport
+from dev_lab.dev.producers import producer_from
 from dev_lab.dev.reviewgate import manifest_at
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
@@ -172,14 +172,14 @@ class ClientForge:
         merge(self._client, number, head=head, message=message, delete_branch=False)
 
 
-def tests_at(posted: Sequence[CommitStatus], head: str) -> str:
+def tests_at(posted: Sequence[CommitStatus], head: str, *, producer: str) -> str:
     """*head*'s test state at merge time: ``passed``, ``red: <contexts>; <why>`` or ``untested: <why>``.
 
     User ruling 2026-11-11: break-glass waives the tests as well as the review -- the open wave is the authorization
     -- so this never refuses; it names what was waived, for the audit and the notice. The reading is merge-ready's
-    own (:func:`dev_lab.dev.forgesecurity.security_wait`, :func:`dev_lab.dev.forgemergewaits.parts_wait`).
+    own, by the repo's *producer* (:func:`dev_lab.dev.forgemergewaits.green_waits`).
     """
-    waits = [wait for wait in (security_wait(posted), parts_wait(head, posted)) if wait is not None]
+    waits = green_waits(head, posted, producer=producer)
     if not waits:
         return 'passed'
     latest = {one.context: one.state for one in reversed(posted)}  # newest first: the newest write wins
@@ -371,7 +371,8 @@ class Server:
             raise BreakglassRefused(msg)
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
         forge, integration = self._admit(asked)
-        tests = tests_at(forge.statuses(head), head)
+        producer = producer_from(forge.declaration(integration), f'{repo}@{integration}:pyproject.toml')
+        tests = tests_at(forge.statuses(head), head, producer=producer)
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
                           f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
         forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))
