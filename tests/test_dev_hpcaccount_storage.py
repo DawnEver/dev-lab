@@ -55,8 +55,9 @@ def _run(
         return _account(ticks=ticks, unreachable=grant.user in down, seen=seen[grant.user])
 
     code = retention_fleet(
-        _FLEET, accounts, apply=apply, say=said.append, connect=connect, pin=lambda grant, _host: connect(grant)
-    )
+        _FLEET, accounts, apply=apply, say=said.append, connect=connect, pin=lambda grant, _host: connect(grant),
+        serves=lambda grant: grant.user != 'bob',
+    )  # fmt: skip
     return code, said, seen
 
 
@@ -213,7 +214,7 @@ def test_a_walk_that_outlasts_the_timeout_is_one_line_naming_the_door() -> None:
 
 def test_the_timeout_reaches_the_ssh_runner(monkeypatch: pytest.MonkeyPatch) -> None:
     got: list[float] = []
-    monkeypatch.setattr(storage, 'reached_machine', lambda _a: SimpleNamespace(grants=_FLEET))
+    monkeypatch.setattr(storage, 'reached_machine', lambda _a: SimpleNamespace(grants=_FLEET, roles=None))
     monkeypatch.setattr(storage, 'emit', lambda _line: None)
 
     def runner(_grant: Grant, timeout: float) -> Runner:
@@ -262,3 +263,17 @@ def test_quota_tries_each_filesystem_tool_and_names_the_one_that_answered() -> N
     order = [storage.QUOTA.index(tool) for tool in ('mmlsquota', 'quota -s', 'lfs quota')]
     assert order == sorted(order)
     assert 'quota by' in storage.QUOTA
+
+
+def test_a_research_account_without_a_cron_is_as_designed_not_a_fault() -> None:
+    """A research account never carries a serve cron (``division.DEFAULT_ROLES``: research does not serve).
+
+    MEASURED 2026-11-17: the report said "0 -- serve never ticks" for a research account and was read as a fault.
+    PLANTED CONTROLS: a serving account at 0 is still named; a research account WITH tick lines is the fault.
+    """
+    _, said, _ = _run(ticks='0', accounts=('bob',))
+    line = next(text for text in said if text.startswith('bob: serve'))
+    assert 'never ticks' not in line
+    assert 'no serve cron, by design' in line
+    _, said, _ = _run(ticks='2', accounts=('bob',))
+    assert any('bob' in text and 'must carry none' in text for text in said)
