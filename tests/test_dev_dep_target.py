@@ -510,3 +510,24 @@ def test_a_lock_upgrade_naming_packages_holds_the_toolchain_where_it_is(tmp_path
     assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.0"\n'
     assert upgrade(stable=lambda: '1.99.1') == 0
     assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.1"\n'
+
+
+def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(tmp_path) -> None:
+    """D24 (2026-11-17): a hook's cold first run after a relock was 1.3-2.8 s, mostly compiling the import chain.
+
+    A bootstrap and a sync write the bytecode at install time (`--compile-bytecode`), so no hook pays it.
+    PLANTED CONTROL: a bare `uv lock` installs nothing and carries no such flag.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
+    calls, run = _recording()
+    assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
+    syncs = [call for call in calls if call[1] == 'sync']
+    assert syncs
+    assert all('--compile-bytecode' in call for call in syncs)
+    assert dep.main(['--root', str(tmp_path), '--sync'], cwd=tmp_path, run=run) == 0
+    syncs = [call for call in calls if call[1] == 'sync']
+    assert len(syncs) >= 2
+    assert all('--compile-bytecode' in call for call in syncs)
+    lock = _dep_project.uv_command(tmp_path, 'py', (), syncing=False, upgrade_packages=())
+    assert lock[1] == 'lock'
+    assert '--compile-bytecode' not in lock

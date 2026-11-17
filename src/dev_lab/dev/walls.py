@@ -80,6 +80,8 @@ _DENIAL: Final = re.compile(r'(?i)\b(?:hook error|denied|refused|blocked|not per
 #: after the harness's ``<Event>:<Tool> hook error:`` prefix if any. An id anywhere else is tool OUTPUT (a grep hit,
 #: quoted source) and names no wall -- measured: a docstring in grep output was recorded as a wall.
 _RULE_LINE: Final = re.compile(r'(?m)^(?:\w+:\w+ hook error:\s*)?([A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+):')
+#: The harness's first line of a failed shell call, before the program's own text.
+_EXIT_LINE: Final = re.compile(r'^Exit code -?\d+[^\n]*\n?')
 #: The harness's own wrapper of a hook's refusal: a refusal whatever its body names.
 _HOOK_ERROR: Final = re.compile(r'(?m)^\w+:\w+ hook error:')
 #: A refusal that names a door has at least its cause line and its door line.
@@ -186,11 +188,30 @@ def close(root: Path, *, rule: str, by: str, session: str | None = None) -> Path
     return _append(root, {'ts': _now(), 'session': _session(session), 'rule': rule, 'closed_by': by.strip()})
 
 
-def _read(root: Path) -> list[dict[str, object]]:
-    base = metrics.checkout(root)
+def _dirs(path: Path) -> list[Path]:
+    try:
+        return sorted(Path(entry.path) for entry in os.scandir(path) if entry.is_dir())
+    except OSError:
+        return []
+
+
+def _ledgers(base: Path) -> list[Path]:
+    """Every day's ledger under checkout *base*, oldest first: the date levels listed, one stat per day.
+
+    Never a glob: it lists every kind's directory of every day, and measured 2026-11-17 it took 0.3-0.5 s of the Stop
+    hook over five ledgers on a workstation.
+    """
+    days = (day for year in _dirs(base / metrics.BASE) for month in _dirs(year) for day in _dirs(month))
+    return [path for day in days if (path := day / LOG_KIND / f'{LOG_KIND}.jsonl').is_file()]
+
+
+def _read(root: Path, session: str) -> list[dict[str, object]]:
+    """Every ledger line of *session*, every day; a line not naming it is never parsed (the ledger only grows)."""
     found: list[dict[str, object]] = []
-    for path in sorted(base.glob(ledger(base, ('*', '*', '*')).relative_to(base).as_posix())):
-        for raw in path.read_text(encoding='utf-8').splitlines():
+    for path in _ledgers(metrics.checkout(root)):
+        for raw in path.read_text(encoding='utf-8', errors='replace').splitlines():
+            if session not in raw:
+                continue
             try:
                 found.append(json.loads(raw))
             except ValueError:
@@ -201,7 +222,7 @@ def _read(root: Path) -> list[dict[str, object]]:
 def open_walls(root: Path, session: str) -> tuple[str, ...]:
     """The rules of *session*'s walls with no remedy that no later closure answers, first seen first."""
     still: dict[str, None] = {}
-    for line in _read(root):
+    for line in _read(root, session):
         if line.get('session') != session:
             continue
         rule = str(line.get('rule', ''))
@@ -222,11 +243,20 @@ def _error_text(payload: dict) -> str:
     return response if isinstance(response, str) else ''
 
 
+def _leads_with_rule(text: str) -> bool:
+    """Whether *text*'s first line, past the harness's ``Exit code N``, is a rule line: a refusal leads its text.
+
+    MEASURED 2026-11-17: test and lint output QUOTING a rule (an assertion message, a refusal under test) was recorded
+    three times as an unremedied wall of a rule that did refuse nothing; a rule line deeper in the text is output.
+    """
+    return bool(_RULE_LINE.match(_EXIT_LINE.sub('', text.lstrip(), count=1).lstrip()))
+
+
 def _is_refusal(text: str) -> bool:
-    """Whether *text* carries a refusal LINE (a hook, rule, harness or door line), not a word in output."""
+    """Whether *text* carries a refusal LINE (a hook, harness or door line, or a leading rule line), not output."""
     if not _DENIAL.search(text):
         return False
-    return any(pattern.search(text) for pattern in (_HOOK_ERROR, _RULE_LINE, _HARNESS, _DOOR))
+    return _leads_with_rule(text) or any(pattern.search(text) for pattern in (_HOOK_ERROR, _HARNESS, _DOOR))
 
 
 def _post_tool(payload: dict) -> None:

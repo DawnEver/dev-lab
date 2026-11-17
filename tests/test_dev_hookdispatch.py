@@ -32,7 +32,15 @@ def _module(monkeypatch: pytest.MonkeyPatch, name: str, main: object) -> str:
 
 
 def _dispatch(monkeypatch: pytest.MonkeyPatch, wires: tuple[Wire, ...], event: str, payload: dict) -> tuple[str, str]:
+    """One dispatch of *wires*, the budgets lifted and no runner started.
+
+    These arms test the merge: a loaded box (measured: a swapping one) must not hand a fast row off. A row's own
+    ``timeout`` still bounds it.
+    """
     monkeypatch.setattr(hookdispatch, 'WIRING', wires)
+    monkeypatch.setattr(agent_wiring, 'DISPATCH_BUDGET_S', 60.0)
+    monkeypatch.setattr(agent_wiring, 'GUARD_BUDGET_S', 60.0)
+    monkeypatch.setattr(hookdispatch.hookhandoff, 'detach', lambda _root, _job: None)
     out, err = io.StringIO(), io.StringIO()
     monkeypatch.setattr(sys, 'stdin', io.StringIO(json.dumps(payload)))
     monkeypatch.setattr(sys, 'stdout', out)
@@ -101,7 +109,12 @@ def test_a_row_sees_only_its_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _dispatch(monkeypatch, wires, 'PreToolUse', {'tool_name': 'Write'})[0] == ''
 
 
-def test_a_crash_and_a_hung_row_pass_naming_themselves(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_crash_passes_and_a_hung_row_is_handed_off_naming_themselves(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A crash is one stderr line; a row past its bound is handed to the background (HOOK-UNDER-FIVE-SECONDS)."""
+    (tmp_path / '.git').mkdir()
+
     def crash(_argv: list[str]) -> int:
         msg = 'boom'
         raise RuntimeError(msg)
@@ -114,10 +127,12 @@ def test_a_crash_and_a_hung_row_pass_naming_themselves(monkeypatch: pytest.Monke
         Wire(('Stop',), _module(monkeypatch, 'planted_i', crash), may_block=True),
         Wire(('Stop',), _module(monkeypatch, 'planted_j', hang), may_block=True, timeout=1),
     )
-    out, err = _dispatch(monkeypatch, wires, 'Stop', {})
-    assert out == ''
+    out, err = _dispatch(monkeypatch, wires, 'Stop', {'cwd': str(tmp_path)})
     assert 'RuntimeError: boom' in err
-    assert 'planted_j outlived its 1s bound; passed' in err
+    said = json.loads(out)['systemMessage']
+    assert said.startswith('HOOK-UNDER-FIVE-SECONDS: planted_j ran past the hook budget')
+    [job] = (tmp_path / '.git' / hookdispatch.hookhandoff.HANDOFF_DIR).glob('*.json')
+    assert json.loads(job.read_text(encoding='utf-8'))['rows'] == ['planted_j'], 'queued, never dropped'
 
 
 def test_a_once_row_runs_once_per_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -236,7 +251,7 @@ def test_a_duplicate_or_malformed_declared_wire_is_refused_by_name(
 
 def test_a_well_formed_declared_wire_is_read_as_its_row(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """PLANTED CONTROL beside the refusals: the same table, well formed, is one Wire with every field carried."""
-    row = 'events = ["Stop"]\nmodule = "planted_repo_wire_d"\nargs = ["x"]\nonce = true\ntimeout = 7'
+    row = 'events = ["Stop"]\nmodule = "planted_repo_wire_d"\nargs = ["x"]\nonce = true\ntimeout = 1'
     root = _declaring(tmp_path, monkeypatch, 'planted_repo_wire_d', row)
-    assert agent_wiring.declared(root) == (Wire(('Stop',), 'planted_repo_wire_d', ('x',), once=True, timeout=7),)
+    assert agent_wiring.declared(root) == (Wire(('Stop',), 'planted_repo_wire_d', ('x',), once=True, timeout=1),)
     assert agent_wiring.declared(tmp_path) == (), 'no pyproject declares nothing'

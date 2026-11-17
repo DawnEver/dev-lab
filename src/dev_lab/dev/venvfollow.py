@@ -49,10 +49,11 @@ from lab_commons.census import processes
 from lab_commons.log import emit
 
 from dev_lab.dev import checkoutfollow, hook_install, liverun, venvcurrent
-from dev_lab.dev.backgroundrun import detach_argv
+from dev_lab.dev.backgroundrun import detach_argv, held
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
 from dev_lab.dev.venvpath import VENV_LAYOUTS
+from dev_lab.dev.venvpointer import HOME as VENV_HOME
 from dev_lab.dev.venvpointer import current, current_interpreter
 
 if TYPE_CHECKING:
@@ -93,6 +94,14 @@ FAILED: Final = 'bootstrap failed'
 SKIPPED: Final = 'skipped: a live run'
 #: The distribution whose installed commit the behind notice compares with the integration lock's pin.
 FAMILY_KIT: Final = 'dev-lab'
+#: One follow per checkout at a time (measured 2026-11-17: four session starts in a row detached four follows of one
+#: worktree, whose bootstraps published over and reclaimed each other until its venv pointer named a deleted env).
+FOLLOW_LOCK: Final = 'follow.lock'
+
+
+def follow_lock(checkout: Path) -> Path:
+    """*checkout*'s follow lock, beside its environments: one per checkout, not one per repository."""
+    return checkout / VENV_HOME / FOLLOW_LOCK
 
 
 def venv_python(checkout: Path) -> Path:
@@ -246,13 +255,18 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
             if args.session_start and (notice := behind_notice(root)):
                 emit(notice)
             return 0
-        if moved := checkoutfollow.advance(root):
-            emit(moved)
-        emit(f'venv {root}: {follow(root)}')
-        if retired := venvcurrent.retire_passed_over(root, census=processes):
-            emit(retired)
-        if rewired := hook_install.rewire(root):
-            emit(rewired)
+        follow_lock(root).parent.mkdir(parents=True, exist_ok=True)
+        with held(root, at=follow_lock(root)) as mine:
+            if not mine:
+                emit(f'venv {root}: another follow of this checkout is running; it covers this one')
+                return 0
+            if moved := checkoutfollow.advance(root):
+                emit(moved)
+            emit(f'venv {root}: {follow(root)}')
+            if retired := venvcurrent.retire_passed_over(root, census=processes):
+                emit(retired)
+            if rewired := hook_install.rewire(root):
+                emit(rewired)
     except OSError as exc:  # a hook never blocks the session or the git verb it serves
         emit(f'venv follow did not run: {exc}')
     return 0

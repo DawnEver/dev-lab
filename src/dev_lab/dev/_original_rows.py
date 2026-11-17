@@ -31,6 +31,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
     'backgroundrun',  # the background hooks' detach and per-repo lock, split from reclaimrun (dev-lab #640)
     'hookdispatch',  # one interpreter per hook event, reading WIRING from its own install (dev-lab #640)
+    'gitdirs',  # a checkout's git and common dir read off .git without starting git (ruling D24)
+    'hookhandoff',  # the background runner a hook hands slow work to (HOOK-UNDER-FIVE-SECONDS, ruling D24)
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
     # derives or admits. The row consumer-a added by hand on 2026-09-18 is the first thing it subsumes.

@@ -116,6 +116,31 @@ def test_the_follow_moves_the_checkout_then_the_venv_then_the_hooks_unprompted(t
     assert done == ['checkout', 'venv', 'hooks'], 'the checkout moves first: the venv follows the moved lock'
 
 
+def test_a_second_follow_of_one_checkout_waits_for_none_and_runs_nothing(tmp_path: Path, monkeypatch) -> None:
+    """One follow per checkout: a second one runs nothing and says why.
+
+    Measured 2026-11-17: four session starts detached four follows of one worktree, whose bootstraps published over
+    and reclaimed each other until the venv pointer named a deleted env. PLANTED CONTROL: once the lock is free, the
+    follow runs.
+    """
+    root, done = _checkout(tmp_path), []
+    monkeypatch.setattr(venvfollow.checkoutfollow, 'advance', lambda _r: done.append('checkout') or '')
+    monkeypatch.setattr(venvfollow, 'follow', lambda _r: done.append('venv') or venvfollow.CURRENT)
+    monkeypatch.setattr(venvfollow.hook_install, 'rewire', lambda _r: '')
+    lock = venvfollow.follow_lock(root)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(f'{os.getpid()}\n', encoding='utf-8')
+    out = io.StringIO()
+    monkeypatch.setattr(sys, 'stdout', out)
+    assert venvfollow.main(['--root', str(root)]) == 0
+    assert done == []
+    assert 'another follow of this checkout is running' in out.getvalue()
+    lock.unlink()
+    assert venvfollow.main(['--root', str(root)]) == 0
+    assert done == ['checkout', 'venv']
+    assert not lock.exists(), 'the follow lets go of its lock'
+
+
 def test_the_background_follow_detaches_for_a_behind_checkout_or_unwired_hooks(tmp_path: Path, monkeypatch) -> None:
     root, started = _checkout(tmp_path), []
     venvfollow.stamp(root, venvfollow.env_key(root))

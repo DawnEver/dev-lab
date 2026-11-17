@@ -173,10 +173,23 @@ _QUOTED_SOURCE = (
 )
 
 
+#: MEASURED 2026-11-17: test output quoting a rule's refusal under test was recorded as three unremedied walls.
+_QUOTED_REFUSAL = (
+    'Exit code 1\n'
+    'FAILED tests/test_x.py::test_budget - AssertionError\n'
+    'HOOK-UNDER-FIVE-SECONDS: planted_slow ran past the hook budget; the call was refused\n'
+)
+
+
 @pytest.mark.parametrize(
     ('text', 'rules'),
     [
         (_QUOTED_SOURCE, []),  # an id inside ordinary tool output is not a refusal
+        (_QUOTED_REFUSAL, []),  # a rule line under other output is quoted, not a refusal
+        (
+            _QUOTED_REFUSAL.replace('FAILED tests/test_x.py::test_budget - AssertionError\n', ''),
+            ['HOOK-UNDER-FIVE-SECONDS'],
+        ),
         ('PreToolUse:Bash hook error: OTHER-RULE: blocked -- quoted NEEDS-NEWEST-HEAD-ONLY', ['OTHER-RULE']),
         ("OTHER-RULE: refused -- a printer's own refusal line", ['OTHER-RULE']),
     ],
