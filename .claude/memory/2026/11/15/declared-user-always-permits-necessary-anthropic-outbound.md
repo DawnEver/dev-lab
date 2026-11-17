@@ -6,7 +6,7 @@ metadata:
 ---
 
 The integrator relayed a new explicit machine-declared user answer on2026-11-15:
-"始终允许 外发 anthropic" (always permit Anthropic outbound). It authorizes
+"Always permit Anthropic outbound" (user, translated). It authorizes
 necessary Anthropic outbound and the normal independent PR judge for the task.
 Root reported the concrete permission blocker on DawnEver/dev-lab584 resolved
 with comment6893218897 and closure. This is permission evidence, not evidence

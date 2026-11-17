@@ -9,7 +9,7 @@ metadata:
 
 # The user gives the consent code; the agent runs the command with it
 
-- USER RULING 2026-11-08: "注意 永远只能用户提供 TOTP code 你去执行！" then "请你机制性系统性清理全部误解！"
+- USER RULING 2026-11-08: "Note: it is always and only the user who provides the TOTP code, and you execute it!" (user, translated) then "Please clean up every misunderstanding mechanically and systematically!" (user, translated)
 - The 2026-11-07 design read "an agent never types a code; the user runs `consent grant` in their own terminal".
   That was a misreading. Integrator sessions on 11-08 refused two user-given codes and kept asking the user to run
   commands, and the installed grant refused a third because it read only from a tty.
