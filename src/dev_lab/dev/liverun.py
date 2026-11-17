@@ -13,8 +13,8 @@ cooperation, and it answers TWO questions, one lock each:
   so ``dep`` refuses to mutate it. A ``forge serve`` from main's venv locks the venv.
 * TREE LOCK (:func:`live_runs`): a process READS a checkout when it is a Python interpreter whose cwd is in it
   (``python -m`` puts the cwd first on ``sys.path``) -- unless the interpreter is from elsewhere and its ``-m``
-  module is not in the cwd, so nothing of the tree is imported -- or when an operand (never a ``--flag``'s value)
-  names an existing path in it (a ``scratch/*.sh`` chain, ``cases/...``).
+  module is not in the cwd, so nothing of the tree is imported -- or when an operand (never a ``--flag``'s value,
+  never a word of a shell's ``-c`` script) names an existing path in it (a ``scratch/*.sh`` chain, ``cases/...``).
   Measured 2026-10-19: the v3 sweep's interpreter works in its worktree; its bash chains name main's
   ``scratch/`` scripts; two dozen day-old ``tail -F output/...`` processes and Claude Code's own node processes
   sit in the checkout and read none of it. A serve works in its own root
@@ -27,8 +27,14 @@ WHAT IS NOT A RUN, each decided by evidence:
 * A process younger than :data:`RUN_FLOOR_S`. Claude Code starts every matching hook of a tool call at
   once, each through the checkout's own interpreter; a hook lives for well under a second, a run for
   minutes. A run started within the floor is caught by the next tool call.
-* A process git started, and its descendants: a hook of a git command, which ends with that command.
-  Measured 2026-11-16: another session's commit hook, a python older than the floor, refused a merge.
+* git itself, and every process it started: git executes no code of the tree, and its descendants are hooks of
+  a git command, which end with that command. Measured 2026-11-16: another session's commit hook, a python older
+  than the floor, refused a merge.
+* A shell's ``-c`` script (``timeout 580 bash -c "until [ $(git -C <tree> rev-parse HEAD) ... ]"``, the Bash
+  tool's own ``bash -c -l "..."``): it is text, and each command it starts is a process of its own, judged by
+  what IT executes -- a ``python -m pytest`` it starts in the tree is still a run. Measured 2026-11-17: a wait
+  loop naming a tree in its script locked that tree, so the agent working there could never move the HEAD it
+  waited for.
 * A multiprocessing worker whose parent is gone (:data:`SPAWN_WORKER`). It serves its parent through a pipe,
   so without the parent it can never advance; it only holds the cwd it inherited. Measured 2026-10-24: two
   day-old spawn workers of a dead pid sat in a downstream worktree and refused every mutation there.
@@ -90,8 +96,11 @@ _INTERPRETER: Final = re.compile(r'^python[\w.]*(?:\.exe)?$', re.IGNORECASE)
 #: A Git Bash spelling of a drive path, ``/<drive>/x`` -> ``<drive>:/x``.
 _DRIVE: Final = re.compile(r'^/([a-zA-Z])/')
 
-#: The executable whose descendants are its hooks, never a run.
+#: The executable that is never a run: it executes no code of the tree, and its descendants are its hooks.
 _GIT: Final = re.compile(r'^git(?:\.exe)?$', re.IGNORECASE)
+
+#: A shell: what follows its ``-c`` is a script, TEXT, whose every command is a process of its own.
+_SHELL: Final = re.compile(r'^(?:sh|bash|zsh|dash|ksh)(?:\.exe)?$', re.IGNORECASE)
 
 #: A process younger than this is a concurrent hook, not a run (seconds).
 RUN_FLOOR_S: Final = 5.0
@@ -155,7 +164,7 @@ def _others(table: Sequence[Process], inside: Callable[[Process], bool], me: int
         return False
 
     def hook(one: Process) -> bool:
-        seen, at = set(), one.ppid
+        seen, at = set(), one.pid
         while at in by_pid and at not in seen:
             seen.add(at)
             if _GIT.match(Path(by_pid[at].executable.replace('\\', '/')).name):
@@ -188,13 +197,20 @@ def _named_paths(one: Process) -> Iterable[Path]:
     """Every existing path *one*'s operands name, relative ones against its cwd.
 
     An option and the value a ``--long`` option takes are configuration the process reads, not code it executes
-    (measured 2026-11-07: ``--settings <checkout>/...`` made a session launcher a run of that checkout).
+    (measured 2026-11-07: ``--settings <checkout>/...`` made a session launcher a run of that checkout). A shell's
+    ``-c`` script -- the shell's own or one a wrapper starts (``timeout 580 bash -c ...``) -- is text whose every
+    command is a process of its own, judged by what IT executes (measured 2026-11-17: a wait loop whose script
+    read ``git -C <tree> rev-parse HEAD`` locked the tree whose HEAD it waited on).
     """
     words = _arguments(one)
+    shell = bool(_SHELL.match(Path(one.executable.replace('\\', '/')).name))
     for previous, word in zip(['', *words], words, strict=False):
+        bare = word.strip('"\'')
+        if shell and bare == '-c':
+            return
+        shell = shell or bool(_SHELL.match(Path(bare.replace('\\', '/')).name))
         if previous.startswith('--') and '=' not in previous:
             continue
-        bare = word.strip('"\'')
         text = _DRIVE.sub(lambda drive: f'{drive[1]}:/', bare, count=1) if os.name == 'nt' else bare
         if text.startswith('-') or ('/' not in text and '\\' not in text):
             continue

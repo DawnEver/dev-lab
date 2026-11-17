@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from _rem_binding import bind_as_rem, plant_claude_rem
 
-from dev_lab.dev import taskbinding, taskgate
+from dev_lab.dev import taskbinding, taskgate, walls
 from dev_lab.dev.githooks.table import base_rows
 
 SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
@@ -174,6 +174,39 @@ def test_the_hook_row_refuses_an_unbound_agent_push(tmp_path: Path, monkeypatch:
     assert taskgate.main([]) == 1
     _bind(root)
     assert taskgate.main([]) == 0, 'planted control: bound, on main (not a pr/ head)'
+
+
+def _every_refusal(tmp_path: Path) -> dict[str, str | None]:
+    """One text per refusal :func:`taskgate.refusal` can give, each produced by its real cause."""
+    unbound = _repo(tmp_path / 'unbound', required=True)
+    old_rem = tmp_path / 'old-rem-home'
+    plant_claude_rem(old_rem, '2.5.0')
+    closed = _repo(tmp_path / 'closed', required=True)
+    _bind(closed)
+    task = closed / '.claude' / 'tasks' / 'toolchain' / 'TASK.md'
+    task.write_text(task.read_text(encoding='utf-8').replace('status: open', 'status: closed'), encoding='utf-8')
+    bound = _repo(tmp_path / 'bound', required=True)
+    _bind(bound)
+    return {
+        'unbound': taskgate.refusal(unbound, env=AGENT, branch='pr/toolchain/a'),
+        'binder too old': taskgate.refusal(unbound, env=AGENT, branch='pr/toolchain/a', home=old_rem),
+        'task closed': taskgate.refusal(closed, env=AGENT, branch='pr/toolchain/a'),
+        'another task': taskgate.refusal(bound, env=AGENT, branch='pr/other/a'),
+        'session unreadable': taskgate.refusal(unbound, env={SESSION_ENV: ''}, branch='pr/toolchain/a'),
+    }
+
+
+def test_every_refusal_puts_its_door_on_a_line_of_its_own(tmp_path: Path) -> None:
+    """MEASURED 2026-11-17: the stop hook listed task-bound and SESSION-COMMITS-UNDER-ITS-TASK as doorless walls.
+
+    Every refusal here named its door, on the SAME line as its cause, and :func:`walls.has_remedy` -- the one test
+    every wall takes -- counts the lines beyond the cause, so each was recorded ``remedy_present: false``. PLANTED
+    CONTROL: the same text folded back onto one line names no door.
+    """
+    said = _every_refusal(tmp_path)
+    assert all(text is not None and text.startswith(f'{taskgate.RULE}:') for text in said.values()), said
+    assert {name for name, text in said.items() if not walls.has_remedy(text or '')} == set()
+    assert {name for name, text in said.items() if walls.has_remedy(' '.join((text or '').splitlines()))} == set()
 
 
 def test_a_missing_rem_cli_is_an_unreadable_ledger(tmp_path: Path) -> None:

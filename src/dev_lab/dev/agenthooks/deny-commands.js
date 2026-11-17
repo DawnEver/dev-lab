@@ -320,9 +320,17 @@ function namedDir(words) {
 
 /** The directory the command acts in -- the ONE answer to "which tree" every judge reads. A segment acts in the
  * call's cwd as moved by the `cd X` segments before it, or in the dir its git/uv/dep call names. The answer is
- * the dir of the first segment `acts` selects (the one a rule fired on), else of the first segment that is not
- * a `cd`, else the cwd the `cd`s leave. */
+ * the dir of the first segment `acts` selects at any command position (the one a rule fired on, behind a
+ * `timeout 50m` too), else of the first segment that is not a `cd`, else the cwd the `cd`s leave. A shell's
+ * `-c` script is a command line of its own starting in its segment's dir, so its `cd`s move it (2026-11-17:
+ * `timeout 50m bash -c 'cd B && ...'` from A, and a bounded `dep --bootstrap C`, were both judged against A). */
 function targetDir(cmd, cwd, acts = () => true) {
+  const found = targetIn(cmd, cwd, acts);
+  return found.hit ?? found.first ?? found.dir;
+}
+
+/** `targetDir`'s walk: {hit} the dir of the first acting segment, else {first, dir}. */
+function targetIn(cmd, cwd, acts) {
   let dir = cwd;
   let first = null;
   const word = String.raw`("[^"\n]*"|'[^'\n]*'|[^\s;&|()]+)`;
@@ -333,12 +341,20 @@ function targetDir(cmd, cwd, acts = () => true) {
       dir = path.resolve(dir, hostPath(cd[1]));
       continue;
     }
-    const named = namedDir(text.match(new RegExp(word, 'g')) || []);
+    const positions = commandPositions(text);
+    const acting = positions.find((position) => acts(position));
+    const named = namedDir((acting ?? positions[positions.length - 1] ?? text).match(new RegExp(word, 'g')) || []);
     const here = named ? path.resolve(dir, hostPath(named)) : dir;
-    if (acts(text)) return here;
+    if (acting !== undefined) return { hit: here };
+    if (positions.some((position) => SHELLS.test(commandWord(position)))) {
+      for (const script of inlineScripts(text)) {
+        const inner = targetIn(script, here, acts);
+        if (inner.hit) return inner;
+      }
+    }
     if (first === null && text) first = here;
   }
-  return first === null ? dir : first;
+  return { hit: null, first, dir };
 }
 
 /** The directory the segment `rule` fires on acts in (`targetDir`). */

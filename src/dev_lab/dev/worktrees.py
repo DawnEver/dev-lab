@@ -86,7 +86,12 @@ def hook_payload(stdin: TextIO, *, wait_s: float = HOOK_READ_S) -> dict[str, obj
         if stdin.isatty():
             return None
     box: list[str] = []
-    reader = threading.Thread(target=lambda: box.append(stdin.read()), daemon=True)
+
+    def read() -> None:  # a stdin that refuses a read (pytest's captured one) is no hook, not a thread crash
+        with contextlib.suppress(OSError, ValueError):
+            box.append(stdin.read())
+
+    reader = threading.Thread(target=read, daemon=True)
     reader.start()
     reader.join(wait_s)
     try:
