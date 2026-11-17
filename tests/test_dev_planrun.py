@@ -700,7 +700,7 @@ def test_a_grant_this_client_does_not_know_blocks_the_preflight_naming_the_updat
     assert not green
     blocked = [line for line in lines if 'ops.not.yet.known' in line and 'BLOCKED' in line]
     assert blocked, lines
-    assert 'local dev-lab is older than the plan; update it' in blocked[0]
+    assert 'not a consent action; the registered ones are' in blocked[0]
     assert planrunpreflight.preflight(PLAN, STEPS, lambda _dest: FakeHost())[0]  # the control: every action known
 
 
