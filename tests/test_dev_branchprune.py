@@ -222,7 +222,8 @@ def test_the_stale_alarm_names_ahead_behind_and_the_two_next_commands(tmp_path: 
     assert f'1 ahead, {behind} behind integrate/main' in stale.body, stale.body
     pr = 'python -m dev_lab.dev.forge pr create --head lane/unmerged --base integrate/main --title'
     assert pr in stale.body, stale.body
-    assert 'git push origin --delete lane/unmerged' in stale.body, stale.body
+    assert 'python -m dev_lab.dev.branchprune delete lane/unmerged --approved' in stale.body, stale.body
+    assert 'push origin --delete' not in stale.body, 'a raw delete is refused at pre-push; the door is named'
     assert 'lane/merged' not in stale.body, 'control: a merged branch is never offered for abandonment'
 
 
