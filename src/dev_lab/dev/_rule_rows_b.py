@@ -238,6 +238,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
 )
 
 
-#: The rows dev-lab enforces in EVERY repo through its ``pytest11`` plugin (user ruling 2026-11-07).
+#: Shared required checks; the execution owner also runs them for command/data family producers.
 #: Read by :mod:`dev_lab.dev.rules` into :attr:`Rule.always_on`; nothing else names them.
+#: MODULE-SIZE-ALARM is opt-in: a repo enables it once it declares [tool.dev_lab.layout] and its directories fit.
 ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE'})

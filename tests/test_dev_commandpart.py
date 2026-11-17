@@ -6,9 +6,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _forge_fake import make_repo, run_git
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import commandpart
-from dev_lab.dev.platformparts import part_context
+from dev_lab.dev.cjk import CJK_RANGES
+from dev_lab.dev.famtests.alwayson import required_ids
+from dev_lab.dev.platformparts import part_context, part_of
 from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit, producing
 
 _SHA = 'a' * 40
@@ -81,6 +85,65 @@ def test_a_command_that_cannot_start_is_unreachable_in_one_line(tmp_path: Path, 
 def test_no_command_is_refused_naming_the_shape(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
         commandpart.main(['--root', str(tmp_path), 'base', '--'])
+
+
+def test_a_family_command_cannot_pass_with_a_malformed_layout_policy(tmp_path: Path, monkeypatch) -> None:
+    run_git(tmp_path, 'init', '-q')
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.lab_commons.tests]\nresources = []\n'
+        '[tool.dev_lab.layout]\nmodule_unit = "guessed"\nmodule_limit = 300\n',
+        encoding='utf-8',
+    )
+    posted = _wired(tmp_path, monkeypatch, code=0)
+    started: list[list[str]] = []
+    execute = commandpart._door.run
+
+    def run(argv: list[str], **kwargs: object) -> object:
+        started.append(list(argv))
+        return execute(argv, **kwargs)
+
+    monkeypatch.setattr(commandpart._door, 'run', run)
+    assert commandpart.main(['--root', str(tmp_path), 'base', '--', 'npm', 'test']) == ProducerExit.FAIL
+    assert not any('test' in argv for argv in started), 'the external command must not run past a failed guard'
+    assert posted
+    assert all(cell['status'] != 'ok' for record in posted for cell in record['cells'].values())
+
+
+@pytest.mark.parametrize('violation', ['directory-width', 'cjk'])
+def test_a_non_pytest_command_must_execute_the_same_family_guards(tmp_path: Path, monkeypatch, violation: str) -> None:
+    root = make_repo(tmp_path, 'https://forge.example.org/team/app.git')
+    (root / 'pyproject.toml').write_text(
+        '[tool.lab_commons.tests]\nresources = []\n[tool.dev_lab.layout]\nmodule_unit = "raw"\nmodule_limit = 600\n',
+        encoding='utf-8',
+    )
+    if violation == 'cjk':
+        (root / 'subject.js').write_text('// ' + chr(CJK_RANGES[2][0]) + '\n', encoding='utf-8')
+    else:
+        (root / 'scripts').mkdir()
+        for number in range(26):
+            (root / 'scripts' / f'subject_{number}.py').write_text('value = 1\n', encoding='utf-8')
+    run_git(root, 'add', '.')
+    run_git(root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.org', 'commit', '-qm', 'fixture')
+    started: list[list[str]] = []
+    posted: list[dict[str, Any]] = []
+    execute = commandpart._door.run
+
+    def run(argv: list[str], **kwargs: object) -> object:
+        if argv[-1:] == ['test']:
+            started.append(list(argv))
+            return type('Done', (), {'returncode': 0})()
+        return execute(argv, **kwargs)
+
+    monkeypatch.setattr(commandpart._door, 'run', run)
+    monkeypatch.setattr(commandpart, 'record_directory', lambda _root, _sha: root / 'records')
+    monkeypatch.setattr(commandpart, 'post_local', lambda _root, record, _dir: posted.append(record) or 'posted')
+    monkeypatch.setenv(PRODUCING_VAR, producing(part_context('base'), _SHA)[PRODUCING_VAR])
+    assert commandpart.main(['--root', str(root), 'base', '--', 'npm', 'test']) == ProducerExit.FAIL
+    assert started == [], 'a failed family guard must stop the external command'
+    (record,) = posted
+    assert set(record['cells']) == set(required_ids(root))
+    assert {cell['status'] for cell in record['cells'].values()} == {'ok', 'rejected'}
+    assert part_of(record).result is Conclusion.FAIL
 
 
 def test_the_program_is_resolved_on_path_so_a_windows_cmd_shim_runs(tmp_path: Path, monkeypatch) -> None:
