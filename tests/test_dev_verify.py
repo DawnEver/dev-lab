@@ -1900,7 +1900,7 @@ def test_a_planted_outage_never_reaches_the_serve_record_running_these_tests(tmp
     )  # fmt: skip
     assert done.returncode == 0, done.stdout + done.stderr
     # This checkout is a declared family checkout, so its required family items run beside the selection.
-    assert f'{2 + len(alwayson.rows())} passed' in done.stdout, done.stdout
+    assert f'{2 + len(alwayson.required_ids(Path(__file__).resolve().parents[1]))} passed' in done.stdout, done.stdout
     assert not real.exists(), f'a test wrote the real serve record: {real.read_text(encoding="utf-8")!r}'
 
 
