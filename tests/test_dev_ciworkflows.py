@@ -348,8 +348,23 @@ def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_deci
     promote = ci['jobs']['promote']
     assert promote['needs'] == ['parts', 'absent-parts']
     (step,) = [one for one in promote['steps'] if 'integrate promote' in one.get('run', '')]
-    assert 'python -m dev_lab.dev.integrate promote "$HEAD_SHA"' in step['run']
-    assert 'git push origin main' in step['run']
+    assert 'python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA"' in step['run'], (
+        'a busy tip is never green: the nightly promotes the newest first parent that passes'
+    )
+    assert 'git push origin main' in step['run'], 'promote moved the local main to the chosen sha; this pushes it'
+
+
+def test_a_stale_render_promoting_only_the_tip_is_refused_by_check(tmp_path: Path, capsys) -> None:
+    """PLANTED CONTROL: a ci.yml whose promote step lacks --newest is a stale render, named by `check`."""
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n', encoding='utf-8')
+    write(tmp_path)
+    assert main(['check', '--root', str(tmp_path)]) == 0
+    path = tmp_path / '.github' / 'workflows' / 'ci.yml'
+    text = path.read_text(encoding='utf-8')
+    assert 'integrate promote --newest' in text
+    path.write_text(text.replace('integrate promote --newest', 'integrate promote'), encoding='utf-8')
+    assert main(['check', '--root', str(tmp_path)]) == 1
+    assert 'ci.yml: differs' in capsys.readouterr().out
 
 
 def test_a_tip_main_already_holds_runs_no_part_no_absent_and_no_promote(tmp_path: Path) -> None:
