@@ -79,6 +79,44 @@ def test_a_merge_sends_the_shown_head_and_no_code(tmp_path: Path) -> None:
     ]
 
 
+class _Shut:
+    """A fake forge holding PR 7 merged by someone else, and PR 8 closed unmerged."""
+
+    def pr_view(self, number: int) -> PullRequest:
+        merged = number == 7
+        return PullRequest(
+            number, 'fix', 'closed', '', 'u', 'a', 'pr/fix', 'integrate/main',
+            head_sha='c' * 40, merged=merged, merge_sha='d' * 40 if merged else '',
+        )  # fmt: skip
+
+
+def test_a_pr_already_merged_is_done_with_its_merge_sha_and_sends_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    git(tmp_path, 'init', '-q')
+    git(tmp_path, 'remote', 'add', 'origin', 'https://forge.example/owner/alpha.git')
+    send = _Recorder()
+    code = merge_main(['7', '--reason', 'r'], cwd=tmp_path, client=cast('Client', _Shut()), table=_TABLE, send=send)
+    assert code == 0
+    assert send.sent == []
+    said = capsys.readouterr()
+    assert 'already merged' in said.out
+    assert 'd' * 40 in said.out
+    assert 'refused' not in said.out + said.err
+
+
+def test_a_pr_closed_unmerged_is_refused_naming_the_door(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    git(tmp_path, 'init', '-q')
+    git(tmp_path, 'remote', 'add', 'origin', 'https://forge.example/owner/alpha.git')
+    send = _Recorder()
+    code = merge_main(['8', '--reason', 'r'], cwd=tmp_path, client=cast('Client', _Shut()), table=_TABLE, send=send)
+    assert code == 2
+    assert send.sent == []
+    err = capsys.readouterr().err
+    assert 'closed unmerged' in err
+    assert 'python -m dev_lab.dev.forge pr create --head pr/fix --base integrate/main' in err
+
+
 def test_no_endpoint_refuses_and_a_server_refusal_is_exit_2() -> None:
     assert wave_main(['status'], table={}, send=_Recorder()) == 2
     assert wave_main(['status'], table=_TABLE, send=_Recorder(status=2)) == 2
