@@ -107,6 +107,7 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.family import declared_in
+from dev_lab.dev.famtests.alwayson import resource_nodes
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
@@ -385,7 +386,7 @@ def select(
     vocabulary = vocabulary_at(root, sha)
     selecting(vocabulary, part)  # a part that is no need-set over the vocabulary is refused by name
     ids = list(collect(''))
-    carrying = {name: set(collect(name)) for name in vocabulary.resources}
+    carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
     return split(need_sets(ids, carrying), part)
 
 

@@ -45,9 +45,10 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, ORIGIN, delete, sweep
+from dev_lab.dev.branchdelete import DOOR, delete, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.deletejudge import ORIGIN
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -193,7 +194,8 @@ def _stale_entry(root: Path, row: Row, integration: str) -> str:
         f'{row.ref} {row.sha[:12]} idle {row.idle_h:.0f} h, not merged: {ahead} ahead, {behind} behind {integration}\n'
         f'  land it:   python -m dev_lab.dev.forge pr create --head {row.ref} --base {integration} '
         f'--title "<what it does>"\n'
-        f'  abandon it (a human; its {ahead} commit(s) exist nowhere else): git push origin --delete {row.ref}'
+        f'  abandon it (the user decides; its {ahead} commit(s) exist nowhere else): LAND it with a declared '
+        f'`git merge -s ours` PR into a pr/ branch, then python -m dev_lab.dev.branchprune delete {row.ref}'
     )
 
 

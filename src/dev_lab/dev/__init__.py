@@ -321,6 +321,7 @@ the tranche at 387 lines against a 400-line band, so the reasoning stays in each
 docstring rather than being copied here -- and the NEXT module to arrive must split this inventory.
 
 * :mod:`dev_lab.dev.codeplace` -- code under DECLARED roots; no stray file.
+* :mod:`dev_lab.dev.retiredfiles` -- files a retirement declared gone: each checkout's own rows, never the leaf's.
 * :mod:`dev_lab.dev.scratch` -- scratch is visible to git, never committed; `clear` empties it, a Stop hook asks for it.
 * :mod:`dev_lab.dev.reportplace` -- no agent-written Markdown under ``output/``; a written report is a memory entry.
 * :mod:`dev_lab.dev.datedlog` -- one dated log layout; the base has NO DEFAULT (four repos, four answers).
@@ -530,6 +531,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.branchdelete` -- LOSSLESS-DELETE and LANDED-BRANCHES-SWEPT: a branch is deleted only when
   its content is held elsewhere; ``sweep`` deletes every branch integration now contains (ancestry or content),
   after each integration move: the serve pass and GitHub's push job; a workstation's local half is reclaimrun.
+* :mod:`dev_lab.dev.deletejudge` -- LOSSLESS-DELETE's one judgement: whether deleting an origin branch at a sha
+  loses nothing (held by integration, another live branch or an open PR head, by content, or declared derived).
+* :mod:`dev_lab.dev.pushdelete` -- LOSSLESS-DELETE at pre-push: every branch a push deletes, however spelled, is
+  judged on git's ref lines; refused naming ``branchprune delete``; an unreadable forge or origin refuses.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``

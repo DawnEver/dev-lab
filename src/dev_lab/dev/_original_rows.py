@@ -85,6 +85,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'shatree',
     'branchprune',
     'branchdelete',
+    'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
+    'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
     'artefacts',
@@ -331,6 +333,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'liverun',
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
     'trackedrender',  # ORIGINAL: split from agent_guard: a tracked render needs the checkout's kit (2026-11-17)
+    'retiredfiles',  # ORIGINAL: split from codeplace: a checkout's own declared retired-file rows (2026-11-17)
     'metrics',
     'monthsummary',
     'prsuperseded',

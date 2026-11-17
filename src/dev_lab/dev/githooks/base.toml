@@ -134,6 +134,17 @@ id = "closed-pr"
 run = ["python", "-m", "dev_lab.dev.closedpush"]
 always_run = true
 
+# LOSSLESS-DELETE at push (dev_lab.dev.pushdelete, toolchain O22): EVERY branch a push deletes, however the push was
+# spelled -- a `$refs` variable, xargs, a script; the PUSH-REMOTE-DELETE deny row reads only text -- is judged on git's
+# own ref lines by the judgement `branchprune delete` makes (dev_lab.dev.deletejudge), after `git fetch --prune
+# origin`, against the open PR heads. Irreversible harm, so it refuses; no `refs`: a deletion is the very line a ref
+# filter drops. The door's own push passes it, no exemption. An unreadable forge or origin refuses (fails closed).
+# A tag holds nothing (D22); a branch `[tool.dev_lab.integrator] derived` declares with its producer goes (D23).
+[[pre-push]]
+id = "lossless-delete"
+run = ["python", "-m", "dev_lab.dev.pushdelete"]
+always_run = true
+
 # PR-HEAD-IS-CURRENT (dev_lab.dev.prcurrent, user ruling 2026-11-07; a TIME window 2026-11-15): a pr/* head lacks
 # no origin/<integration> landing older than locklag.LAG_WINDOW, its lock pins no floated sibling past that window,
 # and the pushing venv holds what that lock pins (else these hooks ran a stale kit); the remedy is `forge sync` (for
