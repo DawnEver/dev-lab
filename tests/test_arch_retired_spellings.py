@@ -103,6 +103,24 @@ RETIRED_SPELLINGS: Final = {
             'one trigger per check (2026-11-16): machine-file drift cannot change within a turn; no Stop re-reads it',
         ),
     ),
+    **dict.fromkeys(
+        (
+            'worktree_archive',
+            'worktree-archive',
+            'save_work',
+            'current_archive',
+            'archive_home',
+            'archive_door',
+            'ARCHIVE_TO',
+        ),
+        (
+            (
+                'dev_lab.dev.worktree_outputs (outputs home only); unlanded work is listed with its doors '
+                '(reclaim.unlanded_work, UNLANDED_DOORS); worktrees --remove removes a clean tree'
+            ),
+            'D31 (user 2026-11-17, restating 2026-11-05): a worktree is merged or cleaned, never parked in output/',
+        ),
+    ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
     'PR-REVIEW-IS-ADVISORY': (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',

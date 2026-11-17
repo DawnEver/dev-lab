@@ -1,8 +1,9 @@
 """The LOCAL worktree door on a real repository: a landed tree goes with what git does not TRACK (ruling 2026-11-12).
 
-Planted refusals: a modified tracked file, a staged file, a HEAD on no remote branch (holding an untracked file:
+Planted refusals: a modified tracked file, a staged file, a landed tree with an untracked not-ignored file (D31:
+merged or cleaned, never parked), a HEAD on no remote branch (holding an untracked file:
 the CONTROL that it is the unlanded HEAD that keeps it). Planted removals: a tree with ignored artefacts (a cache,
-``.venv``, a build-written ``__version__.py``), a landed tree with an untracked not-ignored file, an unregistered
+``.venv``, a build-written ``__version__.py``), an unregistered
 directory holding files, an EMPTY one, and a landed tree whose ``output/logs`` is moved home, verified, first.
 """
 
@@ -23,8 +24,8 @@ from dev_lab.dev.famtests.visibility import commit, plant_checkout
 from dev_lab.dev.worktrees import main, prune
 
 _GIT = shutil.which('git') or 'git'
-_BLOCKED = ('modified', 'staged', 'wip')
-_GONE = ('done', 'leftover', 'empty', 'untracked', 'ignored')
+_BLOCKED = ('modified', 'staged', 'wip', 'untracked')
+_GONE = ('done', 'leftover', 'empty', 'ignored')
 
 
 def _run(cwd: Path, *args: str) -> None:
@@ -89,6 +90,8 @@ def test_a_landed_tree_goes_with_what_git_does_not_track_and_its_outputs_go_home
         assert any(line.startswith('kept') and name in line for line in lines)
     assert (work / 'output' / 'logs' / 'result.txt').read_text(encoding='utf-8') == 'keep me', 'moved home first'
     assert (home / 'staged' / 'new.txt').is_file()
+    assert any(line.startswith('kept') and 'untracked work' in line and 'scratch.txt' in line for line in lines)
+    assert (home / 'untracked' / 'scratch.txt').is_file(), 'D31: untracked work stays in its tree'
     assert main(['--root', str(work), '--prune']) == 0
 
 
@@ -112,7 +115,7 @@ def test_a_bounded_prune_resumes_batch_by_batch(tmp_path: Path, capsys: pytest.C
             break
         assert '--prune --limit 2' in out, 'a deferred batch names the command that takes the next'
         assert runs < 5, out
-    assert runs == 3, f'5 reclaimable trees in batches of 2 take 3 runs, took {runs}'
+    assert runs == 2, f'4 reclaimable trees in batches of 2 take 2 runs, took {runs}'
     for name in _GONE:
         assert not (home / name).exists(), f'{name} must be reclaimed by some batch'
     for name in _BLOCKED:

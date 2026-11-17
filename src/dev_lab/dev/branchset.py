@@ -319,8 +319,8 @@ def apply_local(
     frees its branch for the delete below; every kept tree is listed with its reason. *limit* bounds the trees
     removed per run and *quiet_s* how long a tree's index must be still; a tree's run outputs move home, verified,
     before it goes (:func:`dev_lab.dev.reclaim.reclaim`). LAST, TWO-FATES (:func:`dev_lab.dev.branchfate.settle`,
-    ruling 2026-11-15): every local branch and tree still standing is kept for a named live owner, or archived
-    losslessly and cleaned up -- none lingers.
+    ruling 2026-11-15): every local branch and tree still standing is kept for a named live owner, cleaned when
+    merged and holding nothing unlanded, or listed with its doors (D31: never parked).
     """
     held_by = holders(root, branchset)
     trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s)
@@ -373,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--apply',
         action='store_true',
-        help='reclaim and delete landed LOCAL work, archive then clean ownerless work; origin gets its door',
+        help='reclaim and delete landed LOCAL work, list unlanded work with its doors; origin gets its door',
     )
     parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
     parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
