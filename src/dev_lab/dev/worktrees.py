@@ -6,7 +6,9 @@ everything else (scratch, untracked, ignored) goes with the tree. User ruling 20
 is a REQUIRED part of the workflow, so a reclaimable tree's run outputs move home, verified, before it goes.
 ``--archive NAME`` is the
 step before a deliberate removal (:mod:`dev_lab.dev.worktree_archive`): it moves the tree's outputs home,
-saves its work, and reports whether removing it loses anything -- it removes nothing itself.
+saves its work, and reports whether removing it loses anything -- it removes nothing itself. ``--remove NAME``
+(:func:`remove`) is that removal, the ONE door for an archived tree on a branch or DETACHED (wall 2026-11-17: the
+archive verdict named the raw git removal RECURSIVE-DELETE refuses, and ``branchset --discard`` takes a branch).
 
 THE INCIDENT IT ENCODES (a consumer, 2026-10-04): a cleanup loop ran ``mkdir -p "$D" && mv output "$D"``
 and then ``; git worktree remove --force``. The archive helper failed, ``mv`` never ran, and the ``;``
@@ -37,16 +39,24 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final, TextIO
 
+from lab_commons.census import processes
 from lab_commons.log import emit
 
 from dev_lab.dev import reclaimrun
 from dev_lab.dev.backgroundrun import repo_main
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
 from dev_lab.dev.checkout import authority_for, worktrees
-from dev_lab.dev.reclaim import blockers, reclaim
-from dev_lab.dev.worktree_archive import archive
+from dev_lab.dev.liverun import Census, describe, removal_holders
+from dev_lab.dev.reclaim import QUIET_S, blockers, reclaim, removed_approved
+from dev_lab.dev.worktree_archive import (
+    archive,
+    archive_door,
+    current_archive,
+    linked,
+    unheld_head,
+)
 
-__all__ = ['HOOK_READ_S', 'blockers', 'hook_payload', 'main', 'prune']
+__all__ = ['HOOK_READ_S', 'blockers', 'hook_payload', 'main', 'prune', 'remove']
 
 #: The longest a ``--prune`` waits on a piped stdin for a hook payload before running as a person's door.
 HOOK_READ_S: Final = 1.0
@@ -74,6 +84,33 @@ def prune(
     if apply:
         return apply_local(root, branchset, occupied=occupied)
     return reclaim(root, holders(root, branchset), occupied=occupied, apply=False)
+
+
+def remove(root: Path, name: str, *, census: Census = processes, quiet_s: float = QUIET_S) -> tuple[bool, str]:
+    """THE ARCHIVED-TREE REMOVAL DOOR: remove linked worktree *name*, branch or detached; ``(removed, the line)``.
+
+    Refused, nothing touched: no linked tree of that name (the main checkout never is one); a process holding it
+    (the REMOVAL lock, :func:`dev_lab.dev.liverun.removal_holders`); a detached commit no ref contains (the archive
+    saves no commit); no saved archive that holds the tree as it is NOW
+    (:func:`dev_lab.dev.worktree_archive.current_archive` -- the refusal names ``--archive``). Then the same
+    all-or-nothing delete ``branchset --discard`` uses (:func:`dev_lab.dev.reclaim.removed_approved`), whose own
+    refusals stand: a live session, outputs that cannot move home. A branch stays for ``branchset --apply``.
+    """
+    main = root.resolve()
+    tree = linked(main, name)
+    if isinstance(tree, str):
+        return False, f'refused  {name}: {tree}; nothing was removed'
+    if live := removal_holders(tree, census=census):
+        return False, f'refused  {name}: the tree is live; nothing was removed\n{describe(live)}'
+    if head := unheld_head(tree):
+        return False, f'refused  {name}: detached {head} -- no ref contains it; branch or tag it, then archive again'
+    saved, why = current_archive(main, tree, name)
+    if saved is None:
+        return False, f'refused  {name}: {why}; archive it first: {archive_door(main, name)}'
+    if why := removed_approved(main, tree, quiet_s=quiet_s):
+        wait = f'; re-run once it has been quiet {quiet_s / 60:g} min' if why.startswith('index changed') else ''
+        return False, f'refused  {name}: {why}{wait}'
+    return True, f'removed  {tree}  (its work is saved in {saved}; a branch it held stays for branchset --apply)'
 
 
 def hook_payload(stdin: TextIO, *, wait_s: float = HOOK_READ_S) -> dict[str, object] | None:
@@ -112,7 +149,19 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         metavar='NAME',
         help='move the outputs of worktree NAME home and save its work (worktree_archive); removes nothing',
     )
+    parser.add_argument(
+        '--remove',
+        action='append',
+        default=[],
+        metavar='NAME',
+        help='remove worktree NAME (branch or detached) once --archive NAME saved it as it is now',
+    )
     args = parser.parse_args(argv)
+    if args.remove:
+        removed = [remove(args.root, name) for name in args.remove]
+        for _, line in removed:
+            emit(line)
+        return 0 if all(ok for ok, _ in removed) else 1
     if args.archive:
         done = [archive(args.root.resolve(), name) for name in args.archive]
         for line in (line for one in done for line in one.lines()):

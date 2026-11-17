@@ -55,7 +55,12 @@ criteria are in [auto mode runs the doors](auto-doors.md).
 ## Archiving a tree before removing it
 
 `python -m dev_lab.dev.worktrees --archive <name>` (`dev_lab.dev.worktree_archive`) is the step before
-a deliberate removal. It removes nothing; it reports `safe to remove` or why not.
+a deliberate removal. It removes nothing; it reports `safe to remove` with the removal command, or why not.
+That command is `python -m dev_lab.dev.worktrees --remove <name>` (`dev_lab.dev.worktrees.remove`), the one door
+for a named tree on a branch or detached -- never the raw git removal, which `RECURSIVE-DELETE` refuses. It
+refuses unless a saved archive holds the tree as it is NOW (same HEAD, same `dirty.patch`, every untracked file
+saved), and refuses a detached commit no ref contains, a holding process, a live session and the main checkout. A
+branch the tree held stays for `branchset --apply`.
 
 - Saves no ignored file outside the outputs: what git does not track is not the work.
 - Refuses a tree with an occupant (`dev_lab.dev.liverun.occupants`: a process working in it, executing from
