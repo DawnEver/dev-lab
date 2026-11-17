@@ -190,7 +190,7 @@ def test_a_relock_commits_only_what_it_wrote_and_refuses_a_held_index(tmp_path: 
 
     (work / 'other.py').write_text('x = 2\n', encoding='utf-8')
     run_git(work, 'add', 'other.py')
-    with pytest.raises(RelockFailed, match=r'other\.py.*commit or unstage it first'):
+    with pytest.raises(RelockFailed, match=r'(?s)other\.py.*\nDoor: commit or unstage it first'):
         forgesync.relock(work, door=door, render=lambda _root: ())
     assert git_out(work, 'show', 'HEAD:uv.lock') == 'dev-lab @ old'
     run_git(work, 'restore', '--staged', '--', 'other.py')
@@ -475,7 +475,7 @@ def test_a_sync_merge_commit_waits_for_hooks_slower_than_the_git_timeout(
     assert git_out(work, 'rev-parse', '-q', '--verify', 'HEAD^2') == git_out(work, 'rev-parse', 'origin/integrate/main')
 
 
-def test_a_refused_sync_merge_commit_reports_its_state_and_remedy_in_one_line(
+def test_a_refused_sync_merge_commit_reports_its_state_then_its_door(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     work = _child(tmp_path)
@@ -485,10 +485,11 @@ def test_a_refused_sync_merge_commit_reports_its_state_and_remedy_in_one_line(
     err = capsys.readouterr().err
     assert code == 2
     assert 'Traceback' not in err
-    [line] = err.strip().splitlines()
-    assert 'origin/integrate/main was NOT committed (exit 1) and was aborted' in line
-    assert 'the hook refused' in line
-    assert 'Remedy: ' in line
+    cause, door, _details = err.strip().splitlines()
+    assert cause.startswith(f'{forgesync.STEP_FAILED}: ')
+    assert 'origin/integrate/main was NOT committed (exit 1) and was aborted' in cause
+    assert 'the hook refused' in cause
+    assert door.startswith('Door: fix what the commit hooks refused')
     assert git_out(work, 'rev-parse', 'HEAD') == head
     assert not (work / '.git' / 'MERGE_HEAD').exists(), 'the uncommitted merge was aborted'
 
@@ -501,9 +502,10 @@ def test_a_sync_refuses_a_half_done_merge_naming_it_and_the_remedy(
     run_git(work, 'merge', '--no-ff', '--no-commit', 'origin/integrate/main')
     pending = git_out(work, 'rev-parse', 'MERGE_HEAD')
     code = forgesync.main([], cwd=work, fetch=lambda _root: None, door=lambda _root: ())
-    [line] = capsys.readouterr().err.strip().splitlines()
+    cause, door, _details = capsys.readouterr().err.strip().splitlines()
     assert code == 2
-    assert f'a merge of {pending[:10]} is in progress and uncommitted' in line
-    assert 'git commit --no-edit' in line
-    assert 'git merge --abort' in line
+    assert cause.startswith(f'{forgesync.STARTS_FROM_A_COMMIT}: ')
+    assert f'a merge of {pending[:10]} is in progress and uncommitted' in cause
+    assert 'git commit --no-edit' in door
+    assert 'git merge --abort' in door
     assert git_out(work, 'rev-parse', 'MERGE_HEAD') == pending, 'the half-done merge is reported, never discarded'

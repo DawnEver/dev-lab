@@ -217,6 +217,26 @@ HINT: the hazard is minutes, not harm.
 - **Why it is refused.** a pushed marker is public for good: the forge has no denylist, so only this machine can refuse a machine, person, home path, chat id or a `~/.claude/private-markers` entry before it leaves. One scan (`dev_lab.dev.privatemarkers`) judges a staged line at commit, a commit message at push, and the typed text of every forge write -- `pr create` title and body, `pr close` reason, `issue create` title and body, `issue comment` body -- BEFORE its first forge call. A target the forge reports private passes (private names belong there); an unreadable visibility is scanned (fail closed). A hit is named by line and kind, never echoed.
 - **The exit.** Rewrite the text neutrally -- a placeholder for each private name -- and re-run the same command.
 
+## DOWNSTREAM-SYNCS-INTEGRATION
+
+- **Why it is refused.** `forge sync` (`dev_lab.dev.forgesync`) updates a CHILD branch from its upstream set: integration first, then the refs its owner watches (the rule's statement is the registry row, `dev_lab.dev.rules`). A ref outside that set would bring another child's work in sideways; a detached HEAD, the trunk and the integration branch are not child branches (only the integrator moves integration, only `integrate promote` moves the trunk); a ref that names no commit cannot be trial-merged.
+- **The exit.** Opt a ref in with `python -m dev_lab.dev.forge sync --watch <ref>`; `git switch <your child branch>` off a detached HEAD, the trunk or integration; `git fetch origin` for a ref that names no commit. Then rerun forge sync.
+
+## SYNC-STARTS-FROM-A-COMMIT
+
+- **Why it is refused.** a sync merges onto HEAD and commits the merge and its relock, so it starts from a commit: uncommitted tracked changes would ride into the merge commit, a half-done merge (`MERGE_HEAD` set, left by a killed commit, 2026-11-13) would be committed under the sync's message, and a path already staged would be swept into the relock commit (2026-11-07). Nothing is fetched, merged or relocked.
+- **The exit.** Commit the changes (`git add <paths>; git commit`); conclude a half-done merge with `git commit --no-edit` or drop it with `git merge --abort`; commit or unstage (`git restore --staged -- <paths>`) what the index holds. Then rerun forge sync.
+
+## SYNC-STOPS-ON-A-CONFLICT
+
+- **Why it is refused.** every upstream ref is trial-merged in the object store first (`dev_lab.dev.trialmerge`); when any would conflict, NOTHING is merged, so the tree is never left half-merged by the command. The refusal names each conflicting ref and its files. Resolving a conflict is a judgement (`MERGE-RESOLUTION-DECLARED`), so it is the owner's.
+- **The exit.** `git merge <the ref named>`, resolve those files, declare each in the merge commit, commit, run your tests, then rerun forge sync for the rest of the set.
+
+## SYNC-STEP-FAILED
+
+- **Why it is refused.** a step of the sync failed -- the fetch, a merge commit the commit hooks refused, or the relock (the dependency door, a renderer, the data pins, the relock commit). No step leaves a half-done state: an uncommitted merge is aborted and a failed relock restores every file it touched (user ruling 2026-11-07), so the next sync is not refused by a dirty tree. The cause line carries the step's own error.
+- **The exit.** Fix what the cause line names (a merge commit that exited but left no pending merge names HEAD: `git log -1 <sha>`), then rerun forge sync.
+
 ## Cross-repo refusals
 
 When a refused command targets a repo other than the session's (its cwd, `cd X &&`, `git -C X`), the engine in `dev_lab.dev.agenthooks` adds one header line. If the target repo declares a door for the rule in its pyproject `[tool.dev_lab.doors]`, the header names that door and the target repo's exit replaces the session's. If it declares none, the header says so, and the refusal below it is the session repo's: any repo file it names belongs to the session repo and may not exist in the target.
