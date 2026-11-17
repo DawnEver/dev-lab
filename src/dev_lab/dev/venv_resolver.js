@@ -64,8 +64,8 @@ function shellFunction() {
   return (
     '_current_env() { _n=""; ' +
     `if [ -f "$1/${POINTER}" ]; then _n="$(head -n 1 "$1/${POINTER}" | ${strip})"; fi; ` +
-    `case "$_n" in ""|.|..|*/*|*\\\\*|*:*) echo "$1/${ALIAS}" ;; ` +
-    `*) if [ -d "$1/${HOME}/$_n" ]; then echo "$1/${HOME}/$_n"; else echo "$1/${ALIAS}"; fi ;; ` +
+    `case "$_n" in (""|.|..|*/*|*\\\\*|*:*) echo "$1/${ALIAS}" ;; ` +
+    `(*) if [ -d "$1/${HOME}/$_n" ]; then echo "$1/${HOME}/$_n"; else echo "$1/${ALIAS}"; fi ;; ` +
     'esac; }'
   );
 }
