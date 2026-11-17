@@ -23,6 +23,12 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
   ``error`` naming that job (:func:`run_jobs`), so a watch reads it red and a merge reads it failed, never waiting.
   It is never a settled part (:func:`dev_lab.dev.platformparts.parts_of`), so merge-ready and promote still
   refuse until every row stands PASS; a re-run job settles it.
+* NO MATRIX IS A NAMED RED, NEVER A SILENT SKIP (2026-11-17, cc-market #29: collection failed, the matrix came out
+  empty, every part job skipped and merge-ready waited on ``tests/base`` forever). A ``matrix`` that cannot be
+  derived posts ``tests/base`` ``error`` saying :data:`NO_MATRIX` and why, and exits non-zero.
+
+A COMMAND-PART REPO (:mod:`dev_lab.dev.commandpart`, a JS suite) has ONE part, ``base``: there is no pytest
+collection to cut into need-sets, so its matrix never collects (:func:`command_part`).
 
 ACTIONS ALONE (user ruling 2026-11-11): a GitHub repo's parts are produced by these jobs on GitHub-hosted runners and
 nothing else -- no self-hosted runner, workstation or cluster. A part no hosted runner produces (a heavy test) is
@@ -66,6 +72,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.probe import OS_NAMES
+from lab_commons.hpc.declared import kit_tables
 from lab_commons.hpc.needsets import BASE, need_sets, read_vocabulary
 from lab_commons.hpc.shell import parse_collection_errors, parse_ids
 from lab_commons.log import emit
@@ -91,9 +98,11 @@ __all__ = [
     'ABSENT',
     'FAILED_JOB',
     'HOSTED_RUNNERS',
+    'NO_MATRIX',
     'Hosted',
     'Job',
     'absent',
+    'command_part',
     'hosted_jobs',
     'hosted_parts',
     'main',
@@ -115,6 +124,12 @@ PULL_REQUEST_SYSTEMS: Final = ('linux', 'windows')
 
 #: What an expected part no job settled says (``pending``): never a part's own description, so never a part.
 ABSENT: Final = 'absent: no job settled this part'
+
+#: What ``tests/base`` says when the parts matrix could not be derived: no part job can run, so none will post.
+NO_MATRIX: Final = 'no parts matrix (jobparts matrix failed; its job log says why)'
+
+#: The producer module of a repo whose suite is one command (:mod:`dev_lab.dev.commandpart`).
+_COMMAND_PART: Final = 'dev_lab.dev.commandpart'
 
 _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
 
@@ -346,15 +361,36 @@ def matrix(
     """
     pyproject = root / 'pyproject.toml'
     text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
-    vocabulary = read_vocabulary(text)
-    ids = list(collect(''))
-    carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
-    derived = {BASE, *need_sets(ids, carrying).values()}
+    if command_part(text):
+        derived = {BASE}
+    else:
+        vocabulary = read_vocabulary(text)
+        ids = list(collect(''))
+        carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
+        derived = {BASE, *need_sets(ids, carrying).values()}
     names = sorted(derived - unproduced_parts(derived, unproduced(text)))
     declared = hosted_parts(text)
     every = [row for name in names for row in rows(name, event, declared)]
     generic = [row for row in every if 'secrets' not in row]
     return {'include': generic if hosted else every}
+
+
+def command_part(text: str) -> bool:
+    """Whether pyproject *text* declares :mod:`dev_lab.dev.commandpart` its producer: one part, never collected."""
+    produce = kit_tables(text).get('tests', {}).get('produce')
+    return isinstance(produce, list) and _COMMAND_PART in produce
+
+
+def no_matrix(client: Client, sha: str, cause: Exception, env: Mapping[str, str]) -> str:
+    """Post ``tests/base`` ``error`` at *sha* saying :data:`NO_MATRIX` and *cause*; the line said.
+
+    The commit's own declaration or collection failed (:attr:`Owner.CODE`), so merge-ready reads a named red.
+    """
+    description = owned(Owner.CODE, f'{NO_MATRIX}: {cause}')
+    status_post(
+        client, sha, context=part_context(BASE), state='error', description=description, target_url=_run_url(env)
+    )
+    return f'{part_context(BASE)}: error {NO_MATRIX}: {cause}'
 
 
 def run_jobs(client: Client, run: str) -> dict[str, Job]:
@@ -422,10 +458,7 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     else its exit code's (:func:`release_reason`) -- naming this run, and exits non-zero.
     """
     given = os.environ if env is None else env
-    head = _door.run(
-        ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
-    )
-    sha = head.stdout.strip()
+    sha = _head(root)
     argv = producer_argv(root, part, sha=sha)
     context = part_context(part)
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
@@ -440,6 +473,14 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     status_post(client, sha, context=context, state='error', description=description, target_url=_run_url(given))
     emit(f'[jobparts] {context}: error {description}', err=True)
     return code or 1
+
+
+def _head(root: Path) -> str:
+    """*root*'s HEAD sha."""
+    head = _door.run(
+        ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
+    )
+    return head.stdout.strip()
 
 
 def _run_url(env: Mapping[str, str]) -> str:
@@ -468,7 +509,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     collect = pytest_collector(args.root)
     if args.verb == 'matrix':
-        emit(json.dumps(matrix(args.root, collect=collect, event=args.event, hosted=args.runners == 'hosted')))
+        try:
+            found = matrix(args.root, collect=collect, event=args.event, hosted=args.runners == 'hosted')
+        except ValueError as cause:  # UndeclaredPart among them
+            emit(f'[jobparts] {no_matrix(client_for(args.root), _head(args.root), cause, os.environ)}', err=True)
+            return 1
+        emit(json.dumps(found))
         return 0
     client = client_for(args.root)
     if args.verb == 'produce':

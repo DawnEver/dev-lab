@@ -37,9 +37,59 @@ def test_a_failed_collection_cannot_publish_a_partial_matrix(tmp_path: Path, mon
         'run',
         lambda *_args, **_kwargs: SimpleNamespace(returncode=code, stdout=partial, stderr=''),
     )
-    with pytest.raises(ValueError, match='collection'):
-        jobparts.main(['matrix', '--root', str(tmp_path)])
+    forge = StateForge()
+    monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
+    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    assert jobparts.main(['matrix', '--root', str(tmp_path)]) == 1
     assert capsys.readouterr().out == '', 'a failed collection must not become a complete workflow manifest'
+    (posted,) = status_list(forge, SHA)
+    assert (posted.context, posted.state) == ('tests/base', 'error')
+    assert posted.description.startswith(f'{jobparts.NO_MATRIX}: pytest collection failed')
+
+
+def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path: Path, monkeypatch) -> None:
+    """cc-market #29: the matrix came out empty, no part job ran, and merge-ready waited on tests/base forever."""
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    forge = StateForge()
+    assert 'not yet posted' in forgemergewaits.actions_wait(SHA, status_list(forge, SHA)), 'PLANTED CONTROL'
+
+    def broken(_expression: str) -> list[str]:
+        msg = 'pytest collection failed with exit 2'
+        raise ValueError(msg)
+
+    monkeypatch.setattr(jobparts, 'pytest_collector', lambda _root: broken)
+    monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
+    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    assert jobparts.main(['matrix', '--root', str(tmp_path), '--event', 'pull_request']) == 1
+    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA))
+    assert waited is not None
+    assert 'not yet posted' not in waited
+    assert jobparts.NO_MATRIX in waited
+
+
+CC_MARKET = """
+[tool.dev_lab.parts]
+output = "output/logs"
+
+[tool.lab_commons.tests]
+produce = ["-m", "dev_lab.dev.commandpart", "{part}", "--", "node", "--test", "tests/*.test.mjs"]
+"""
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push'])
+def test_a_command_part_repo_derives_base_without_collecting(tmp_path: Path, event: str) -> None:
+    """cc-market's shape: a JS suite as the one command part; stray Python under it never decides its parts."""
+    (tmp_path / 'pyproject.toml').write_text(CC_MARKET, encoding='utf-8')
+
+    def broken(_expression: str) -> list[str]:
+        msg = 'pytest collection failed with exit 2'
+        raise ValueError(msg)
+
+    found = jobparts.matrix(tmp_path, collect=broken, event=event, hosted=True)
+    assert {row['part'] for row in found['include']} >= {'base'}
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    with pytest.raises(ValueError, match='collection'):  # PLANTED CONTROL: a pytest repo still collects
+        jobparts.matrix(tmp_path, collect=broken, event=event, hosted=True)
 
 
 @pytest.mark.parametrize(
