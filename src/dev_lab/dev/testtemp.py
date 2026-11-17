@@ -10,7 +10,8 @@ numbered subdirectories beneath it. A test that wants a temp dir asks those fixt
 Loaded in every family repo by the ``pytest11`` shim :mod:`dev_lab.pytest_family`. There is NO
 fallback to system temp (D27, no backward compatibility): a root that declares no output refuses
 with the key it must declare, and an explicit ``--basetemp`` under the system temp dir is refused.
-An xdist worker is left alone -- xdist hands it a ``--basetemp`` below its controller's.
+An xdist worker needs no branch: xdist always hands it a ``--basetemp`` below its controller's, and an
+environment marker would mislead -- ``PYTEST_XDIST_WORKER`` is inherited by a pytest a worker's test spawns.
 
 A SANDBOX INSIDE A CHECKOUT FINDS THAT CHECKOUT: a ``pytester`` tree under system temp had no
 enclosing git repo, and under ``output/`` it would find the repo itself. So the output root is put in
@@ -32,14 +33,15 @@ import pytest
 
 from dev_lab.dev.datedlog import TEST_TEMP_KIND, UndeclaredOutput, declared_output, output_dir
 
-__all__ = ['KIND', 'bound_sandbox', 'configure', 'session_basetemp']
+__all__ = ['HOME_ENV', 'KIND', 'bound_sandbox', 'configure', 'session_basetemp']
 
 #: The kind directory under the date that holds every test-created temp dir.
 KIND = TEST_TEMP_KIND
 
 _CEILING = 'GIT_CEILING_DIRECTORIES'
-#: Set by xdist in every worker process: its basetemp came from the controller.
-_XDIST_WORKER = 'PYTEST_XDIST_WORKER'
+
+#: The dated test-temp dir the outermost session chose, exported so a nested pytest inherits it.
+HOME_ENV = 'DEV_LAB_TEST_TEMP'
 
 
 class _Option(Protocol):
@@ -56,10 +58,22 @@ def session_basetemp(root: Path) -> Path:
 
     The pid keeps two sessions started in the same second apart: pytest empties a given basetemp
     at start, so a shared one would wipe a concurrent run's files.
+
+    A root declaring no output -- a test's sandbox, a pytest run spawned inside another session --
+    takes the dated dir its enclosing session exported (:data:`HOME_ENV`): still the managed tree,
+    never system temp. With neither, :class:`~dev_lab.dev.datedlog.UndeclaredOutput` is raised.
     """
+    try:
+        dated = output_dir(root, KIND)
+    except UndeclaredOutput:
+        inherited = os.environ.get(HOME_ENV)
+        if not inherited:
+            raise
+        dated = Path(inherited)
+    os.environ.setdefault(HOME_ENV, str(dated))
     stamp = dt.datetime.now().astimezone().strftime('%H-%M-%S')
-    fresh = output_dir(root, KIND) / f'{stamp}-{os.getpid()}'
-    fresh.mkdir()
+    fresh = dated / f'{stamp}-{os.getpid()}'
+    fresh.mkdir(parents=True)
     return fresh
 
 
@@ -85,15 +99,16 @@ def configure(config: _Config) -> None:
             )
             raise pytest.UsageError(msg)
         return
-    if os.environ.get(_XDIST_WORKER):
-        return
     root = Path(config.rootpath)
     try:
         config.option.basetemp = str(session_basetemp(root))
     except UndeclaredOutput as exc:
         msg = f"{exc}: pytest's base temp lives under it (dev_lab.dev.testtemp, D27)."
         raise pytest.UsageError(msg) from exc
-    _cap_git_at(root / declared_output(root))
+    try:
+        _cap_git_at(root / declared_output(root))
+    except UndeclaredOutput:
+        return  # an inheriting sandbox: the enclosing session already set its ceiling
 
 
 def _cap_git_at(ceiling: Path) -> None:
