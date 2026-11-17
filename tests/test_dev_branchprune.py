@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from dev_lab.dev.branchprune import DELETABLE, DELETE, EPHEMERAL, MERGED, STALE, prune, serve_prune, survey
+from dev_lab.dev.branchprune import DELETABLE, DELETE, EPHEMERAL, MERGED, STALE, UNMERGED, prune, serve_prune, survey
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -283,17 +283,35 @@ def test_any_host_prunes_and_a_racing_second_delete_is_a_no_op(tmp_path: Path) -
 # ------------------------------------------------------------------------------------- ephemeral namespaces
 
 
-def test_an_ephemeral_branch_is_deleted_once_no_open_pr_heads_it_merged_or_not(tmp_path: Path) -> None:
-    """A ``pr/*`` head is the forge's to delete once its PR is gone -- even unmerged, even without the opt-in.
+def test_an_unmerged_ephemeral_branch_is_listed_with_its_doors_and_never_deleted(tmp_path: Path) -> None:
+    """D30 (user, 2026-11-17): survey never deletes what LOSSLESS-DELETE would refuse.
 
-    PLANTED controls: the same namespace with an OPEN PR on it is kept, and a young one is kept (grace).
+    An unmerged, no-PR, idle ``pr/*`` head is LISTED (``STALE``), its doors said by :func:`prune`'s alarm; only a
+    MERGED one is swept.
+
+    PLANTED controls: a landed ``pr/landed`` with no PR is still deleted; an open PR and a young one are kept.
     """
-    root, _ = _planted(tmp_path)
-    for name, date in (('pr/done', OLD), ('pr/open', OLD), ('pr/young', YOUNG)):
+    root, origin = _planted(tmp_path)
+    for name, date in (('pr/unmerged', OLD), ('pr/landed', OLD), ('pr/open', OLD), ('pr/young', YOUNG)):
         _git(root, 'checkout', '-qb', name, 'main')
         _commit(root, name.replace('/', '-'), date=date)
         _git(root, 'push', '-q', 'origin', name)
+    _git(root, 'checkout', '-q', 'integrate/main')
+    _git(root, 'merge', '-q', '--no-ff', '-m', 'merge pr/landed', 'pr/landed')
+    _git(root, 'push', '-q', 'origin', 'integrate/main')
     _git(root, 'fetch', '-q', 'origin')
     branchset = BranchSet('main', frozenset({'integrate/main', 'feat/session'}), ephemeral=('pr/*',))
     rows = survey(root, branchset, POLICY, open_heads=frozenset({'pr/open'}), now=NOW)
-    assert {(r.ref, r.rule, r.action) for r in rows if r.ref.startswith('pr/')} == {('pr/done', EPHEMERAL, DELETE)}
+    assert {(r.ref, r.rule, r.action) for r in rows if r.ref.startswith('pr/')} == {
+        ('pr/landed', EPHEMERAL, DELETE),
+        ('pr/unmerged', UNMERGED, STALE),
+    }
+    forge, alarms = BareForge(origin), []
+    prune(root, forge, now=NOW, say=lambda _l: None, alarm=alarms.append)
+    assert 'pr/landed' in forge.deleted
+    assert 'pr/unmerged' not in forge.deleted
+    assert 'pr/unmerged' in _on_origin(origin)
+    stale = next(a for a in alarms if a.kind == STALE_BRANCH)
+    assert 'pr/unmerged' in stale.body
+    assert 'pr create --head pr/unmerged' in stale.body
+    assert 'git merge -s ours' in stale.body

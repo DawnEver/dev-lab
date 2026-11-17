@@ -1,12 +1,12 @@
-"""TWO-FATES (user ruling 2026-11-15): a local branch or worktree is merged-and-cleaned, or cleaned; none lingers.
+"""TWO-FATES (user ruling 2026-11-15; D31 2026-11-17): a local branch or worktree is merged and cleaned, or listed.
 
 Every planted state below gets exactly one verdict with a reason, and each refusal side has its planted control:
-a live process, a live session and an origin-owned lane are kept and touched in nothing, archive included.
+a live process, a live session and an origin-owned lane are kept; unlanded work is listed with its doors and
+nothing is ever parked under ``output/``.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -62,34 +62,31 @@ def _quiet_lane(work: Path, tmp_path: Path, name: str, hours: float) -> Path:
     return tree
 
 
-def _archives(work: Path) -> list[Path]:
-    return sorted(work.glob('output/worktree-archive/*/*/manifest.json'))
+def _parked(work: Path) -> list[Path]:
+    """Anything written under the main checkout's ``output/`` -- D31: a fate parks nothing there."""
+    return sorted(p for p in (work / 'output').rglob('*') if p.is_file()) if (work / 'output').exists() else []
 
 
-def test_an_abandoned_lane_is_archived_losslessly_then_cleaned(tmp_path: Path) -> None:
+def test_an_unlanded_lane_with_uncommitted_work_is_listed_with_its_doors_and_touched_in_nothing(
+    tmp_path: Path,
+) -> None:
+    """D31 (user, 2026-11-17): unlanded work is MERGED or the user discards it -- never parked, never removed."""
     work = plant_checkout(tmp_path, trunk='main').work
     tree = _lane(work, tmp_path, 'lane/gone', dirty=True, untracked=True)
-    tip = _run(work, 'rev-parse', 'lane/gone').strip()
 
     lines = settle(work, ('refs/remotes/origin/main',), quiet_s=0, **_NOBODY) or ()
 
-    assert any(line.startswith('abandoned lane/gone') for line in lines), lines
-    assert not tree.exists()
-    assert 'lane/gone' not in _heads(work)
-    [manifest_path] = _archives(work)
-    saved = manifest_path.parent
-    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-    assert manifest['branch'] == 'lane/gone'
-    assert manifest['sha'] == tip
-    assert all(Path(saved / rel).is_file() for rel in manifest['files'])
-    assert 'untracked/notes.md' in manifest['files']
-    assert 'dirty.patch' in manifest['files']
-    _run(work, 'fetch', '-q', str(saved / 'branch.bundle'), 'refs/heads/lane/gone:refs/heads/restored')
-    assert _run(work, 'rev-parse', 'restored').strip() == tip, 'the bundle restores the very tip'
-    assert 'uncommitted tracked work' in (saved / 'dirty.patch').read_text(encoding='utf-8')
+    [line] = [one for one in lines if 'lane/gone' in one]
+    assert line.startswith('unlanded  lane/gone'), lines
+    assert 'land it through a PR' in line
+    assert '--discard lane/gone --approved' in line
+    assert (tree / 'notes.md').is_file()
+    assert (tree / 'base.txt').read_text(encoding='utf-8') == 'uncommitted tracked work'
+    assert 'lane/gone' in _heads(work)
+    assert _parked(work) == []
 
 
-def test_a_branch_with_no_worktree_is_archived_then_deleted(tmp_path: Path) -> None:
+def test_a_branch_with_no_worktree_and_unmerged_commits_is_listed_not_deleted(tmp_path: Path) -> None:
     work = plant_checkout(tmp_path, trunk='main').work
     _run(work, 'switch', '-q', '-c', 'lost')
     commit(work, 'lost.txt')
@@ -97,27 +94,31 @@ def test_a_branch_with_no_worktree_is_archived_then_deleted(tmp_path: Path) -> N
 
     lines = settle(work, ('refs/remotes/origin/main',), quiet_s=0, **_NOBODY) or ()
 
-    assert any(line.startswith('abandoned lost') for line in lines), lines
-    assert 'lost' not in _heads(work)
-    assert len(_archives(work)) == 1
+    assert any(line.startswith('unlanded  lost') and 'commits on no holder' in line for line in lines), lines
+    assert 'lost' in _heads(work)
+    assert _parked(work) == []
 
 
-def test_a_merged_but_dirty_tree_is_archived_then_cleaned(tmp_path: Path) -> None:
-    """Reclaim keeps a landed tree with a tracked change forever; this door saves the change and ends it."""
+def test_a_merged_tree_with_a_stray_edit_is_kept_and_a_clean_merged_one_is_cleaned(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the clean landed tree still goes, branch and all; the dirty one is listed, not parked."""
     work = plant_checkout(tmp_path, trunk='main').work
-    tree = tmp_path / 'merged-dirty'
-    _run(work, 'worktree', 'add', '-q', '-b', 'merged-dirty', str(tree))
-    (tree / 'base.txt').write_text('a stray edit', encoding='utf-8')
+    dirty, clean = tmp_path / 'merged-dirty', tmp_path / 'merged-clean'
+    _run(work, 'worktree', 'add', '-q', '-b', 'merged-dirty', str(dirty))
+    _run(work, 'worktree', 'add', '-q', '-b', 'merged-clean', str(clean))
+    (dirty / 'base.txt').write_text('a stray edit', encoding='utf-8')
 
     lines = settle(work, ('refs/remotes/origin/main',), quiet_s=0, **_NOBODY) or ()
 
-    assert any(line.startswith('merged    merged-dirty') for line in lines), lines
-    assert not tree.exists()
-    assert 'merged-dirty' not in _heads(work)
-    assert len(_archives(work)) == 1, 'the stray edit is saved before the tree goes'
+    assert any(line.startswith('unlanded  merged-dirty') and 'tracked changes' in line for line in lines), lines
+    assert (dirty / 'base.txt').read_text(encoding='utf-8') == 'a stray edit'
+    assert 'merged-dirty' in _heads(work)
+    assert any(line.startswith('merged    merged-clean') for line in lines), lines
+    assert not clean.exists()
+    assert 'merged-clean' not in _heads(work)
+    assert _parked(work) == []
 
 
-def test_owned_states_are_kept_with_their_owner_and_never_archived(tmp_path: Path) -> None:
+def test_owned_states_are_kept_with_their_owner(tmp_path: Path) -> None:
     """PLANTED CONTROLS: a live process, a live session, a lock and an origin lane each keep their tree."""
     work = plant_checkout(tmp_path, trunk='main').work
     busy = _lane(work, tmp_path, 'lane/busy')
@@ -138,11 +139,11 @@ def test_owned_states_are_kept_with_their_owner_and_never_archived(tmp_path: Pat
     assert 'live' in owned['lane/busy']
     assert 'locked' in owned['lane/locked']
     assert 'origin' in owned['pr/open']
-    assert any(line.startswith('abandoned lane/fresh') for line in lines), 'the control: an idle lane does go'
+    assert any(line.startswith('unlanded  lane/fresh') for line in lines), 'the control: an idle lane is listed'
     assert all(p.exists() for p in (busy, locked, pushed))
-    assert not fresh.exists()
-    assert len(_archives(work)) == 1, 'nothing of an owned tree is archived'
-    assert not any(line.startswith('abandoned') for line in live), 'a session active within the window is an owner'
+    assert fresh.exists(), 'D31: an unlanded lane is listed, never removed'
+    assert _parked(work) == []
+    assert not any(line.startswith('unlanded') for line in live), 'a session active within the window is an owner'
 
 
 def test_apply_local_gives_every_local_branch_one_of_two_fates(tmp_path: Path) -> None:
@@ -153,12 +154,12 @@ def test_apply_local_gives_every_local_branch_one_of_two_fates(tmp_path: Path) -
     lines = apply_local(work, _DECLARED, occupied=lambda _path: False, quiet_s=0) or ()
 
     assert any(line.startswith('deleted  local   landed') for line in lines), lines
-    assert any(line.startswith('abandoned lane/idle') for line in lines), lines
-    assert _heads(work) == {'main'}
+    assert any(line.startswith('unlanded  lane/idle') for line in lines), lines
+    assert _heads(work) == {'main', 'lane/idle'}
 
 
 def test_unmerged_work_is_abandoned_only_after_a_day_of_quiet(tmp_path: Path) -> None:
-    """PLANTED BOTH SIDES of ABANDONED_S: 23 h quiet is still a paused session; 25 h is abandoned."""
+    """PLANTED BOTH SIDES of ABANDONED_S: 23 h quiet is still a paused session; 25 h is listed as unlanded."""
     assert ABANDONED_S == 24 * 3600
     work = plant_checkout(tmp_path, trunk='main').work
     paused = _quiet_lane(work, tmp_path, 'lane/paused', hours=23)
@@ -169,7 +170,7 @@ def test_unmerged_work_is_abandoned_only_after_a_day_of_quiet(tmp_path: Path) ->
     owned = [line for line in lines if line.startswith('owned') and 'lane/paused' in line]
     assert owned, lines
     assert 'quiet less than 24 h' in owned[0]
-    assert any(line.startswith('abandoned lane/gone') for line in lines), lines
+    assert any(line.startswith('unlanded  lane/gone') for line in lines), lines
     assert paused.exists()
-    assert not gone.exists()
-    assert len(_archives(work)) == 1
+    assert gone.exists()
+    assert _parked(work) == []
