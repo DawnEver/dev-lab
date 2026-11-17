@@ -220,6 +220,16 @@ RETIRED_SPELLINGS: Final = {
             'H4 2026-11-16: a stale venv failed the binder and blocked every prompt; rem owns binding, the gate reads',
         ),
     ),
+    **dict.fromkeys(
+        ('servetask', 'servelanes', 'serve_lanes', 'serve_refusal', 'hpc_checkouts', 'RETIRED_SERVE_KEYS'),
+        (
+            (
+                'nothing: a workstation deploy keeps its checkouts current and deletes the retired Task '
+                '(dev_lab.dev.workstation.RETIRED_TASK); `workstation serve` is refused by name (RETIRED_VERBS)'
+            ),
+            "user ruling 2026-11-16: a workstation never serves a merge's parts; only Actions and the HPC produce",
+        ),
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a
