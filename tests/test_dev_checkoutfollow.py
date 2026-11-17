@@ -107,3 +107,61 @@ def test_a_linked_worktree_or_another_branch_is_not_the_follows_business(repo, t
     assert not checkoutfollow.behind(root)
     assert checkoutfollow.advance(root, fetch=_no_fetch) == ''
     assert _git(root, 'rev-parse', 'HEAD') == old
+
+
+def _clone_behind(tmp_path: Path) -> tuple[Path, Path, bytes]:
+    """A clone on integrate/main one commit behind its bare upstream, whose ``deny-rules.json`` changed upstream."""
+    bare, seed, clone = tmp_path / 'up.git', tmp_path / 'seed', tmp_path / 'clone'
+    subprocess.run([_GIT, 'init', '-q', '--bare', '-b', 'integrate/main', str(bare)], check=True)
+    subprocess.run([_GIT, 'clone', '-q', str(bare), str(seed)], check=True, capture_output=True)
+    rules = seed / '.claude' / 'hooks' / 'deny-rules.json'
+    rules.parent.mkdir(parents=True)
+    rules.write_bytes(b'{"rules": []}\n')
+    (seed / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
+    _git(seed, 'add', '.')
+    _git(seed, 'commit', '-q', '-m', 'old rules')
+    _git(seed, 'push', '-q', 'origin', 'HEAD:integrate/main')
+    subprocess.run([_GIT, 'clone', '-q', '-c', 'core.autocrlf=false', str(bare), str(clone)], check=True,
+                   capture_output=True)  # fmt: skip
+    rules.write_bytes(b'{"rules": [{"id": "NEW-ROW"}]}\n')
+    _git(seed, 'commit', '-q', '-am', 'new rules')
+    _git(seed, 'push', '-q', 'origin', 'HEAD:integrate/main')
+    return bare, clone, rules.read_bytes()
+
+
+def _idle(_root: Path) -> str:
+    return ''
+
+
+def test_a_clean_checkout_behind_its_upstream_fetches_and_serves_upstreams_rules_byte_for_byte(tmp_path) -> None:
+    """O14: per-call hook inputs are read from disk, so a checkout left behind serves stale rules to every session."""
+    _bare, clone, upstream_rules = _clone_behind(tmp_path)
+    rules = clone / '.claude' / 'hooks' / 'deny-rules.json'
+    assert rules.read_bytes() != upstream_rules, 'PLANTED CONTROL: the clone starts on the old rules'
+    assert not checkoutfollow.behind(clone), 'not fetched yet: behind is judged offline'
+    _git(clone, 'fetch', '-q')
+    said = checkoutfollow.advance(clone, busy=_idle)
+    assert 'integrate/main' in said
+    assert rules.read_bytes() == upstream_rules
+
+
+def test_a_live_run_in_the_checkout_leaves_head_and_names_the_holder(tmp_path) -> None:
+    _bare, clone, _rules = _clone_behind(tmp_path)
+    _git(clone, 'fetch', '-q')
+    head = _git(clone, 'rev-parse', 'HEAD')
+    said = checkoutfollow.advance(clone, fetch=_no_fetch, busy=lambda _root: 'live run: pid 4242 (app)')
+    assert 'pid 4242 (app)' in said
+    assert 'live run' in said
+    assert _git(clone, 'rev-parse', 'HEAD') == head
+    assert checkoutfollow.obstacle(clone, busy=lambda _root: 'live run: pid 4242 (app)')
+
+
+def test_a_dirty_behind_checkout_is_not_touched_and_its_obstacle_says_so(tmp_path) -> None:
+    _bare, clone, _rules = _clone_behind(tmp_path)
+    _git(clone, 'fetch', '-q')
+    head = _git(clone, 'rev-parse', 'HEAD')
+    (clone / 'pyproject.toml').write_text('edited\n', encoding='utf-8')
+    assert 'uncommitted' in checkoutfollow.obstacle(clone, busy=_idle)
+    assert 'uncommitted' in checkoutfollow.advance(clone, fetch=_no_fetch, busy=_idle)
+    assert _git(clone, 'rev-parse', 'HEAD') == head
+    assert (clone / 'pyproject.toml').read_text(encoding='utf-8') == 'edited\n'

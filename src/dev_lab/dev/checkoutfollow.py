@@ -7,18 +7,23 @@ under three conditions that make the move lossless:
 
 * the PRIMARY checkout only (a linked worktree is a lane, and its branch is its author's);
 * CLEAN in every tracked path (an untracked file the move would overwrite makes git refuse, and that is reported);
+* NO LIVE RUN reads it (TREE-HAS-A-LIVE-RUN, :func:`holders`): a run executing from the tree would report on a tree
+  that never existed, so the follow waits for it and names the holder;
 * HEAD is an ANCESTOR of ``origin/<integration>`` (a fast-forward), or -- when detached -- a commit some ``origin``
   ref holds, so leaving it loses nothing.
 
 The integration branch is the checkout's own ``[tool.dev_lab.integrator] integration``; a tree too old to declare
 it is read at ``origin/HEAD`` instead (:mod:`dev_lab.dev.lanepolicy`). Any other state is reported, never moved.
-Called by :mod:`dev_lab.dev.venvfollow` before the venv follows, so the venv follows the moved lock.
+Called by :mod:`dev_lab.dev.venvfollow` before the venv follows, so the venv follows the moved lock; its session-start
+notice reads :func:`obstacle` to say why a behind checkout stays (toolchain O14: the per-call hook inputs are read
+from disk, so a checkout left behind serves stale rules to every session).
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev import liverun
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.lanepolicy import load_policy, policy_at
 from dev_lab.dev.prcurrent import fetch_ref
@@ -27,7 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-__all__ = ['advance', 'behind', 'integration']
+__all__ = ['advance', 'behind', 'holders', 'integration', 'obstacle']
 
 #: Where a tree too old to declare its integration branch reads the declaration instead.
 UPSTREAM_DECLARATION: Final = 'refs/remotes/origin/HEAD'
@@ -112,10 +117,33 @@ def _move(root: Path, branch: str, name: str, tip: str) -> str | None:
     return None
 
 
-def advance(root: Path, *, fetch: Callable[[Path, str], str | None] = fetch_ref) -> str:
+def holders(root: Path) -> str:
+    """The live runs reading *root* (:func:`dev_lab.dev.liverun.live_runs`), one phrase; ``''`` when there are none."""
+    return '; '.join(line.strip() for line in liverun.describe(liverun.live_runs(root)).splitlines())
+
+
+def obstacle(root: Path, *, busy: Callable[[Path], str] = holders) -> str:
+    """Why the follow leaves a behind *root* where it is, judged on the last fetch; ``''`` when it would move it."""
+    state = _state(root)
+    if state is None:
+        return 'it is not a primary checkout on its declared integration branch'
+    if runs := busy(root):
+        return f'a live run reads it ({runs})'
+    return _refusal(root, *state) or ''
+
+
+def advance(
+    root: Path,
+    *,
+    fetch: Callable[[Path, str], str | None] = fetch_ref,
+    busy: Callable[[Path], str] = holders,
+) -> str:
     """Fast-forward *root* onto ``origin/<integration>`` when that is lossless; what was done, ``''`` for nothing."""
     if not behind(root):
         return ''
+    if runs := busy(root):
+        head = (git_out(root, 'rev-parse', 'HEAD') or '').strip()
+        return f'checkout {root}: left at {head[:12]} -- a live run reads it ({runs})'
     fetched = fetch(root, (_state(root) or ('', '', ''))[1])
     state = _state(root)
     if state is None or not behind(root):
