@@ -172,9 +172,9 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     # The auto-mode prose is MACHINE-LOCAL, derived from the synced fleet sources (dev_lab.dev.automode, user
     # ruling 2026-10-23): a committed copy would put fleet facts in history. Named so no re-inclusion tracks it.
     '**/.claude/automode.json',
-    # rem's injected memory view and a session's task binding are DEVICE-LOCAL (rem 2.6; hooks H4): each is
-    # regenerated per machine, so a committed copy would freeze one device's view into history.
-    '**/.claude/rules/MEMORY.md',
+    # A session's task binding is DEVICE-LOCAL (hooks H4): written per machine, so a committed copy would freeze
+    # one device's sessions into history. (`.claude/rules/MEMORY.md` is NOT here: rem retired it, so a stale
+    # one must show in `git status` -- see tests/test_the_kit_renders_its_own_gitignore.py.)
     '**/.claude/tasks/.bindings/',
 )
 
