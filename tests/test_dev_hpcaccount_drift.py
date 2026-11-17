@@ -6,12 +6,10 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from _hpcaccount_fakes import HOST, home_of, tools_of
-from lab_commons.hpc.grants import Grant
+from _hpcaccount_fakes import FLEET, HOST, fleet_source, home_of, tools_of
 
 from dev_lab.dev import hpcaccount
 from dev_lab.dev.hpcaccount import accountset, deploy, drift
-from dev_lab.dev.hpcaccount.fleet import ConfigSource
 from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, load
 
 TOKEN: Final = 'ghp_' + 'Zq9' * 14  # a long encoded value under an innocent key
@@ -85,34 +83,14 @@ def test_a_stale_clone_is_refused_not_crashed(tmp_path: Path, capsys: pytest.Cap
     assert 'deploy-fleet fetches that clone' in capsys.readouterr().err
 
 
-_HOSTS = ('login01.example',)
-_FLEET = (
-    Grant(user='alice', hosts=_HOSTS, slurm_account='a', cluster_name='c1'),
-    Grant(user='bob', hosts=_HOSTS, slurm_account='a', cluster_name='c2'),
-    Grant(user='rita', hosts=_HOSTS, slurm_account='a', cluster_name='c1'),
-)
-_ROLES = {'alice': 'verification', 'bob': 'verification', 'rita': 'research'}
-
-
-def _source(tmp_path: Path) -> ConfigSource:
-    clone = tmp_path / 'src'
-    (clone / 'hosts').mkdir(parents=True)
-    rows = (f'[[hpc.grant]]\nuser = "{g.user}"\ncluster = "{g.cluster_name}"\nslurm_account = "a"\n' for g in _FLEET)
-    (clone / 'family.toml').write_text(''.join(rows), encoding='utf-8')
-    for g in _FLEET:
-        layer = f'[deploy]\nhost = "login01.example"\nroot = "repos"\nrole = "{_ROLES[g.user]}"\n'
-        (clone / 'hosts' / f'{g.cluster_name}-{g.user}.toml').write_text(layer, encoding='utf-8')
-    return ConfigSource(clone, 'https://forge.example/config.git')
-
-
 def fleet(
     tmp_path: Path, accounts: tuple[str, ...], clusters: tuple[str, ...], *, verb: str = 'drift', ci: bool = False
 ) -> tuple[int, list[str], list[str]]:
-    """Run a fleet verb over :data:`_FLEET`; its code, the started ``dest command`` lines and what it said."""
+    """Run a fleet verb over :data:`FLEET`; its code, the started ``dest command`` lines and what it said."""
     started: list[str] = []
     said: list[str] = []
     code = accountset.start_on_selected(
-        _FLEET, accounts, clusters, home=tmp_path, source=_source(tmp_path), say=said.append, verb=verb,
+        FLEET, accounts, clusters, home=tmp_path, source=fleet_source(tmp_path), say=said.append, verb=verb,
         serving_only=(lambda target: target.role == 'verification') if ci else None,
         launch=lambda dest, command, _log: started.append(f'{dest} {command}'),
     )  # fmt: skip

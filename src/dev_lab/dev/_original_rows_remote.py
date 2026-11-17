@@ -39,6 +39,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: 2026-11-16, a verification account's CI cron paused and resumed around cluster maintenance.
     'cimark',
     'cipause',
+    # ORIGINAL: 2026-11-17, the hpcaccount.ci-cron consent a CI cron verb redeems before any crontab change.
+    'cicron',
     'checks',
     # ORIGINAL: 2026-11-16, what a deploy declares (flags, stored [deploy], first write), split at the size band.
     'declaration',

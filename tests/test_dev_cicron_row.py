@@ -77,3 +77,17 @@ def test_codex_forbids_the_same_verbs() -> None:
     text = codex_deny_rules()
     assert f'"{_MODULE}", [{", ".join(f"{chr(34)}{verb}{chr(34)}" for verb in refused_verbs())}]' in text
     assert f'{RULE_ID}:' in text
+
+
+@pytest.mark.parametrize('verb', ['ci-pause-fleet', 'ci-pause', 'ci-resume-fleet', 'ci-resume'])
+def test_a_verb_carrying_its_credential_is_admitted_for_the_verb_to_check(rules: Path, verb: str) -> None:
+    """The guard admits ``--credential``; the verb redeems it against its subject (test_dev_hpcaccount_cicron)."""
+    assert agenthooks.decide(f'{_PY} -m {_MODULE} {verb} --cluster c1 --credential 0123abcd-ef', rules) is None
+    assert agenthooks.decide(f'{_PY} -m {_MODULE} {verb} --cluster c1 --credential=0123abcd-ef', rules) is None
+
+
+def test_a_credential_in_a_chained_command_admits_nothing(rules: Path) -> None:
+    """PLANTED CONTROL: ``--credential`` must ride the verb's own invocation, not a neighbour's."""
+    reason = agenthooks.decide(f'{_PY} -m {_MODULE} ci-pause-fleet --cluster c1; echo --credential x', rules)
+    assert reason is not None
+    assert RULE_ID in reason

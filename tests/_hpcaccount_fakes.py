@@ -6,7 +6,10 @@ import sys
 from pathlib import Path
 from typing import Final
 
+from lab_commons.hpc.grants import Grant
+
 from dev_lab.dev import devhost
+from dev_lab.dev.hpcaccount.fleet import ConfigSource
 from dev_lab.dev.hpcaccount.steps import Tools
 
 FAKE_CRONTAB: Final = r"""
@@ -57,3 +60,25 @@ def home_of(tmp_path: Path, extra: str = '', family: str = FAMILY) -> tuple[Path
     machine = tmp_path / 'machine.toml'
     machine.write_text(devhost.render(clone, HOST, {}) + extra, encoding='utf-8')
     return home, clone, machine
+
+
+#: A three-account fleet over two clusters; ``rita`` is a research account (no CI cron).
+HOSTS = ('login01.example',)
+FLEET = (
+    Grant(user='alice', hosts=HOSTS, slurm_account='a', cluster_name='c1'),
+    Grant(user='bob', hosts=HOSTS, slurm_account='a', cluster_name='c2'),
+    Grant(user='rita', hosts=HOSTS, slurm_account='a', cluster_name='c1'),
+)
+ROLES = {'alice': 'verification', 'bob': 'verification', 'rita': 'research'}
+
+
+def fleet_source(tmp_path: Path) -> ConfigSource:
+    """A config-source clone declaring :data:`FLEET`, each account's layer with its :data:`ROLES` role."""
+    clone = tmp_path / 'src'
+    (clone / 'hosts').mkdir(parents=True)
+    rows = (f'[[hpc.grant]]\nuser = "{g.user}"\ncluster = "{g.cluster_name}"\nslurm_account = "a"\n' for g in FLEET)
+    (clone / 'family.toml').write_text(''.join(rows), encoding='utf-8')
+    for g in FLEET:
+        layer = f'[deploy]\nhost = "login01.example"\nroot = "repos"\nrole = "{ROLES[g.user]}"\n'
+        (clone / 'hosts' / f'{g.cluster_name}-{g.user}.toml').write_text(layer, encoding='utf-8')
+    return ConfigSource(clone, 'https://forge.example/config.git')
