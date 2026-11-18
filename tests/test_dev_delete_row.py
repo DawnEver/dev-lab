@@ -9,6 +9,9 @@ bypassed because no row refused the raw verb. Both shells are judged: the engine
 
 from __future__ import annotations
 
+import importlib
+import inspect
+import re
 from pathlib import Path
 
 import pytest
@@ -157,3 +160,27 @@ def test_an_archived_tree_branch_or_detached_names_the_remove_door() -> None:
     for text in (rule.remedy, section):
         assert 'dev_lab.dev.worktrees --remove <name>' in text
         assert 'detached' in text
+
+
+def _dead_doors(remedy: str) -> list[str]:
+    """Every ``dev_lab.dev.<module> <word>...`` the remedy names whose module or flag/subcommand does not exist."""
+    dead = []
+    for module, words in re.findall(r'dev_lab\.dev\.(\w+)((?:\s+(?:--)?[a-z][\w-]*)*)', remedy):
+        try:
+            source = inspect.getsource(importlib.import_module(f'dev_lab.dev.{module}'))
+        except ImportError:
+            dead.append(module)
+            continue
+        dead += [f'{module} {word}' for word in words.split() if word not in source]
+    return dead
+
+
+def test_every_door_the_remedy_names_is_real() -> None:
+    """O46: a wall naming a door that does not exist teaches nothing; each module and flag it names must resolve."""
+    remedy = str(rules_by_id(DENY_RULES)['RECURSIVE-DELETE'].remedy)
+    assert _dead_doors(remedy) == []
+    # Planted control: a missing flag and a missing module are both caught.
+    assert _dead_doors('dev_lab.dev.worktrees --no-such-flag; dev_lab.dev.no_such_module --x') == [
+        'worktrees --no-such-flag',
+        'no_such_module',
+    ]
