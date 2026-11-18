@@ -185,8 +185,11 @@ def _hub_pr(tmp_path: Path, *, green: bool = True) -> tuple[Path, StateForge, in
     return work, forge, number, head
 
 
-def test_on_github_a_ready_pr_is_merged_by_the_job_posting_ready_pinned_to_the_judged_head(tmp_path: Path) -> None:
+def test_on_github_a_ready_pr_is_merged_by_the_job_posting_ready_pinned_to_the_judged_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Issue #15: GitHub refuses auto-merge on an already-mergeable PR, so the job that posts ready merges it."""
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, head = _hub_pr(tmp_path)
     hub = _Asked(_HUB, {'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'},
                         'POST /graphql': {'errors': [{'message': 'Pull request is in unstable status'}]}})  # fmt: skip
@@ -212,6 +215,7 @@ def test_on_github_a_red_decision_is_never_merged(tmp_path: Path) -> None:
 def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_said(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, head = _hub_pr(tmp_path)
     original = forge.pr_view
 
@@ -482,3 +486,9 @@ def test_a_ready_status_without_a_message_row_says_messages_are_not_declared(tmp
     state, description = _merge_ready(forge, head)
     assert state == 'success'
     assert description == f'{READY} ({MESSAGES_NOT_DECLARED})'
+
+
+@pytest.fixture(autouse=True)
+def _bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Gitea repo merged by its HPC executor (planted); the CI merge tests carry EVERY_CI."""
+    carry(monkeypatch, HPC_REPO)

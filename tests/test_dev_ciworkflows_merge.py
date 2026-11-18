@@ -23,10 +23,10 @@ from dev_lab.dev.ciworkflows import BASE_PATH, LIGHT, follow_checks, runner_labe
 #: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
 ACTIONS_REPO = ''
 #: The Gitea merger workflow, rendered where merge is bound to ci.
-CI_MERGER = 'merge.yml'
+MERGER = 'merge.yml'
 
 
-_GITEA = ('review.yml', CI_MERGER)
+_GITEA = ('review.yml', MERGER)
 
 
 def _gitea(tmp_path: Path) -> dict[str, dict[str, Any]]:
@@ -36,7 +36,7 @@ def _gitea(tmp_path: Path) -> dict[str, dict[str, Any]]:
 
 
 def _merge_job(tmp_path: Path) -> dict[str, Any]:
-    return _gitea(tmp_path)[CI_MERGER]['jobs']['merge']
+    return _gitea(tmp_path)[MERGER]['jobs']['merge']
 
 
 def _runs(job: dict[str, Any]) -> list[str]:
@@ -48,13 +48,13 @@ def test_the_merger_renders_for_gitea_and_never_runs_from_a_pr_head(tmp_path: Pa
 
     Triggers: the Review workflow completing, a schedule fallback (statuses fire no Gitea event), and dispatch.
     """
-    found = _gitea(tmp_path)[CI_MERGER]
+    found = _gitea(tmp_path)[MERGER]
     assert set(found['on']) == {'workflow_run', 'schedule', 'workflow_dispatch'}
     assert found['on']['workflow_run'] == {'workflows': ['Review'], 'types': ['completed']}
     assert found['on']['workflow_run']['workflows'] == [_gitea(tmp_path)['review.yml']['name']]
     assert not [event for event in found['on'] if event.startswith('pull_request')]
     assert found['concurrency'] == {'group': 'merge', 'cancel-in-progress': False}, 'one merge job at a time'
-    assert tmp_path / '.gitea' / 'workflows' / CI_MERGER in write(tmp_path)
+    assert tmp_path / '.gitea' / 'workflows' / MERGER in write(tmp_path)
 
 
 def test_the_merge_job_runs_the_one_decision_then_closes_landed_prs_then_sweeps(tmp_path: Path) -> None:
@@ -83,7 +83,7 @@ def test_the_merge_job_judges_on_the_integration_tip_s_door_from_the_mirror(tmp_
     assert '$HOME/mirrors/' in fetch['run']
     assert "refs/pull/${{ github.event.pull_request.number || '*' }}/head" in fetch['run']
     assert 'git checkout -q --detach "${HEAD_SHA:-origin/integrate/main}"' in fetch['run']
-    assert 'HEAD_SHA' not in _gitea(tmp_path)[CI_MERGER].get('env', {}), 'no PR: the checkout is the tip'
+    assert 'HEAD_SHA' not in _gitea(tmp_path)[MERGER].get('env', {}), 'no PR: the checkout is the tip'
     assert 'echo "INTEGRATION_SHA=$(git rev-parse origin/integrate/main)" >> "$GITHUB_ENV"' in fetch['run']
     assert 'env.INTEGRATION_SHA' in door['env']['DOOR_SHA']
 
@@ -96,7 +96,7 @@ def test_every_gitea_job_runs_on_a_declared_label_and_review_alone_on_review(tmp
         for job, body in workflow['jobs'].items():
             assert body['runs-on'] in labels, f'{name} {job}: {body["runs-on"]} is no declared label'
             seen[name, job] = body['runs-on']
-    assert seen == {('review.yml', 'review'): 'review', (CI_MERGER, 'merge'): LIGHT}
+    assert seen == {('review.yml', 'review'): 'review', (MERGER, 'merge'): LIGHT}
 
 
 def test_no_light_job_installs_the_review_method_or_its_key(tmp_path: Path) -> None:
@@ -176,13 +176,13 @@ def test_the_merge_job_follows_the_check_workflows_the_repo_renders(tmp_path: Pa
     gitea, github = Path('.gitea/workflows'), Path('.github/workflows')
     merger = {'name': 'Merge', 'on': {'workflow_run': {'types': ['completed']}, 'schedule': []}}
     rendered = {
-        CI_MERGER: (gitea, merger),
+        MERGER: (gitea, merger),
         'checks.yml': (gitea, {'name': 'Checks', 'on': {'pull_request_target': {}}}),
         'ci.yml': (github, {'name': 'CI', 'on': {'pull_request': {}}}),
     }
     followed = follow_checks(rendered)
-    assert followed[CI_MERGER][1]['on']['workflow_run'] == {'workflows': ['Checks'], 'types': ['completed']}
+    assert followed[MERGER][1]['on']['workflow_run'] == {'workflows': ['Checks'], 'types': ['completed']}
     assert merger['on']['workflow_run'] == {'types': ['completed']}, 'PURE'
     del rendered['checks.yml']
-    assert set(follow_checks(rendered)[CI_MERGER][1]['on']) == {'schedule'}, 'no check to follow: the schedule'
-    assert _gitea(tmp_path)[CI_MERGER]['on']['workflow_run']['workflows'] == ['Review'], 'a review repo follows it'
+    assert set(follow_checks(rendered)[MERGER][1]['on']) == {'schedule'}, 'no check to follow: the schedule'
+    assert _gitea(tmp_path)[MERGER]['on']['workflow_run']['workflows'] == ['Review'], 'a review repo follows it'

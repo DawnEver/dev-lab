@@ -851,3 +851,9 @@ def test_a_login_declaration_is_never_judged_by_an_app(on_github: Prepared) -> N
 @pytest.mark.parametrize('half', [['--app-id', '5619495'], ['--app-key-file', 'k.pem']])
 def test_the_judge_cli_never_takes_half_an_app(tmp_path: Path, half: list[str]) -> None:
     assert fb.main(['judge', '--url', 'https://github.com/o/r', *half], cwd=tmp_path) == 2
+
+
+@pytest.fixture(autouse=True)
+def _judge_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos' review is bound to a host (the judge): the family binds it there (planted)."""
+    carry(monkeypatch, CI_REPO)

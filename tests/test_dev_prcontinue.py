@@ -17,7 +17,7 @@ import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import run_git
 from _forge_state import StateForge
-from _roles_fixtures import HPC_REPO, carry
+from _roles_fixtures import CI_REPO, HPC_REPO, carry
 
 from dev_lab.dev import forgeservesteps, prcontinue
 from dev_lab.dev.branchreview import read_record
@@ -224,3 +224,9 @@ def test_a_base_with_no_manifest_continues_nothing(tmp_path: Path, base: str, ca
     else:
         assert 'declares nothing' in said
         assert 'continues #' not in said
+
+
+@pytest.fixture(autouse=True)
+def _bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    """dev-lab's own render: review on a judge host, every other role on CI (planted)."""
+    carry(monkeypatch, CI_REPO)
