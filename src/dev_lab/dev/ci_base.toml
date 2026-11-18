@@ -511,11 +511,6 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 ''', env = { DOOR_SHA = "${{ github.event.pull_request.base.sha || env.INTEGRATION_SHA }}", FAMILY_READ_TOKEN = "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FAMILY_READ_TOKEN || '' }}", GITHUB_TOKEN = "${{ github.token }}" } },
 ]
 
-# THE BUNDLE ITSELF, once: both forges' prepare jobs run this step with the door's interpreter, isolated (-I).
-prepare = [
-    { name = "Prepare the review bundle", run = '"$REVIEW_PYTHON" -I -m dev_lab.dev.forge review prepare --pr ${{ github.event.pull_request.number }} --repo "$GITHUB_WORKSPACE"', env = { GITHUB_TOKEN = "${{ github.token }}" } },
-]
-
 # THE LEAN SETUP A GITEA HOST-MODE RUNNER TAKES (one `review` runner, behind a campus ACL). No `uses`
 # action -- a host runner behind the ACL fetches none -- and no sync of the repo's own dependencies: the `door` steps
 # install the review tooling the BASE's lock pins, never the PR's lock.
@@ -691,85 +686,6 @@ actions = "read"  # reviewgate reads the job's own run: GET actions/runs/{id} is
 contents = "write"
 pull-requests = "write"
 issues = "write"
-
-# THE BUNDLE PREPARE (forgereview_pointer): a repo whose review the family binds to a host (a judge) is reviewed by an
-# isolated judge host, which reads a bundle only as the `review-bundle` ARTIFACT of the newest concluded, successful
-# run of THIS workflow for the PR (event, workflow, pull request, head sha) -- located by the judge, never by a
-# status. Never declared by a repo and never keyed by its file name here: ciworkflows renders `_prepare` under
-# reviewgate.PREPARE_WORKFLOW -- the one name the judge lists runs by -- exactly when the repo is a judge repo.
-# pull_request_target ALONE (reviewgate.REVIEW_EVENT): the BASE's definition runs, so a PR can neither alter it nor
-# make its own run count. The head is checked out as DATA for the bundle -- read through git, never run; the door is
-# the base lock's (`door`), started isolated (-I). No review method and no key, and nothing is posted.
-# EITHER FORGE (`forge`, Gitea unless the repo's layer names "github"; its `by-forge` table is that forge's part):
-# * Gitea: the host runner's `reach`/`lean` setup; the bundle goes up with the run's own ACTIONS_RUNTIME_TOKEN
-#   (actionsartifact), which only this run's job holds. A fork PR's job still has no FAMILY_READ_TOKEN (the `door`
-#   guard).
-# * GitHub: a hosted runner, whose `run` steps are never handed the runtime token, so `prepare` leaves the bundle in
-#   $RUNNER_TEMP and actions/upload-artifact attaches it to this run (overwrite: a re-run attempt replaces it, so the
-#   run holds one). The checkout keeps no credential. A fork PR is not prepared: GitHub lists no pull request on a
-#   fork's run, so the judge could never bind it to the PR (reviewgate._of_workflow).
-[_prepare]
-forge = "gitea"
-name = "Review prepare"
-
-[_prepare.on.pull_request_target]
-types = ["opened", "synchronize", "reopened", "ready_for_review"]
-
-[_prepare.concurrency]
-group = "review-prepare-${{ github.event.pull_request.number }}"
-cancel-in-progress = true
-
-[_prepare.env]
-HEAD_SHA = "${{ github.event.pull_request.head.sha }}"
-
-# Read only: the artifact upload authenticates with the run's runtime token, not the job token; prepare reads the PR.
-[_prepare.jobs.prepare.permissions]
-contents = "read"
-pull-requests = "read"
-
-[_prepare.by-forge.gitea.env]
-FAMILY_SOURCE = "https://github.com/DawnEver/"
-UV_PYTHON = "python3"
-UV_PYTHON_DOWNLOADS = "never"
-UV_CONCURRENT_INSTALLS = "1"
-UV_CONCURRENT_BUILDS = "1"
-
-# Gitea prepares a head only once the merge decision calls its review due (the `review.yml` label, above); GitHub
-# starts no workflow for a label its job token applies, so there a push prepares (no model call) and the judge reads
-# only a head the decision called due (forgereview_bundle._called_due).
-[_prepare.by-forge.gitea.on.pull_request_target]
-types = ["labeled"]
-
-[_prepare.by-forge.gitea.concurrency]
-group = "review-prepare-${{ github.event.pull_request.number }}-${{ github.event.label.name }}"
-cancel-in-progress = true
-
-[_prepare.by-forge.gitea.jobs.prepare]
-role = "review"  # the judge reviews the bundle this job prepares: rendered where review is bound to a host (a judge)
-by = "host"
-if = "${{ github.event.label.name == 'review-due' }}"
-runs-on = "light"
-steps = [
-    { use-steps = "reach" },
-    { use-steps = "lean" },
-    { use-steps = "door" },
-    { use-steps = "prepare" },
-]
-
-[_prepare.by-forge.github.env]
-FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
-
-[_prepare.by-forge.github.jobs.prepare]
-role = "review"  # the judge reviews the bundle this job prepares: rendered where review is bound to a host (a judge)
-by = "host"
-if = "${{ github.event.pull_request.head.repo.full_name == github.repository }}"
-runs-on = "ubuntu-latest"
-steps = [
-    { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0, persist-credentials = false } },
-    { use-steps = "door" },
-    { use-steps = "prepare" },
-    { name = "Attach the review bundle to this run", uses = "actions/upload-artifact@v4", with = { name = "review-bundle", path = "${{ runner.temp }}/review-bundle/bundle.json", if-no-files-found = "error", overwrite = true } },
-]
 
 # A LANDED BRANCH CONTINUES (LANDED-BRANCH-CONTINUES, user-approved design 2026-11-07): a merged PR is never reused,
 # so a push onto its branch is carried by a continuation PR (`continues #N`) the forge opens -- on GitHub, this job, on

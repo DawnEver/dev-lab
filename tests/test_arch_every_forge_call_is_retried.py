@@ -1,8 +1,8 @@
 """EVERY FORGE CALL RETRIES: no HTTP exchange opens outside the one retrying loop, unless named here with its reason.
 
 The loop is :func:`dev_lab.dev.forgefailure.retried` (transient -> retry with backoff, rate limit -> wait, refused
-credential -> stop with the named remedy); :class:`dev_lab.dev.forgework.Client` and
-:func:`dev_lab.dev.actionsartifact.retrying` run every exchange through it. INCIDENT 2026-11-12: the review job's
+credential -> stop with the named remedy); :class:`dev_lab.dev.forgework.Client` runs every
+exchange through it. INCIDENT 2026-11-12: the review job's
 first step (``reviewcode``) called the forge raw, once, and swallowed every failure -- a refused job token included;
 ``ops.giteaadmin`` asked the host's Gitea with no retry, and the review workflow's inline fetch did the same.
 
@@ -24,8 +24,6 @@ from _arch_corpus import ROOT, assert_floor, parse, rel, source_modules
 #: Who opens an HTTP connection itself, and why that is not a forge call bypassing the loop.
 OPENS_A_CONNECTION: Final[dict[str, str]] = {
     'src/dev_lab/dev/forge.py': 'forge_transport: the connection every forgework.Client exchange opens inside '
-    'forgefailure.retried',
-    'src/dev_lab/dev/actionsartifact.py': '_urllib_once: the exchange actionsartifact.retrying runs through '
     'forgefailure.retried',
     'src/dev_lab/ops/giteaadmin.py': '_exchange: the exchange local_api runs through forgefailure.retried',
     'src/dev_lab/dev/reviewcode.py': 'stdlib only (fetched alone before any install): forge_call is the bare twin '

@@ -116,7 +116,7 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
   hosted runner produces (a heavy test) is kept and off its gate (`jobparts.off_gate`). Gitea wires every producer.
 - Review: the family layer's `review = { host = "<judge>" }` (`[roles.<forge>]`, `dev_lab.dev.roles`) sends every PR to the judge host, whose verdict is
   ADVISORY (`_forgebackends.ADVISORY`): posted as information, never waited on by `tests/merge-ready`
-  ([review](forge.md#a-review-judged-on-its-own-host-forge-review-prepare--judge)).
+  ([review](forge.md#a-review-judged-on-its-own-host-forge-review-judge)).
 
 ## 4. Hosts and their roles
 

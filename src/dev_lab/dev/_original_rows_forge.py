@@ -116,7 +116,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgebreakglass',
     'forgeauthnotice',  # the session-start token check: a refused forge token heard before an agent complains
     'forgereview_bundle',
-    'forgereview_pointer',
     'forgereview_job',  # an in-kit split of forgetakeover: the forge's review job
     'forgereview_batch',  # the Batch API resume of a pending review, new here
     'forgeprotect',  # branch protection declared, planned and applied on both forges, new here

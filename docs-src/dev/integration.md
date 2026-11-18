@@ -168,8 +168,8 @@ the merge audit, the messages, not a draft. The merge decision (`reviewturn.revi
 - only the review missing: `tests/review` is `pending` `due: ...`, and the review runs. GitHub: `ci.yml`'s
   `merge-ready` job and `merge-tick.yml` read `; review due` in the decision's line and start their `review` job
   (`forge review run --pr N` / `--due`, which also resumes pending batches); the next tick merges. Gitea: the
-  decision applies the PR label `review-due`, whose `pull_request_target` `labeled` event starts `review.yml` (and a
-  judge repo's prepare). Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision
+  decision applies the PR label `review-due`, whose `pull_request_target` `labeled` event starts `review.yml` (a judge
+  repo starts nothing: the judge fetches and prepares the head itself, D77). Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision
   only says the review is due and the serve's tick (its own login) asks;
 - `forgereview.review_pull` reviews nothing whose latest `tests/review` is absent or `waits`, whoever started it (a
   push, a hand-added label, a serve tick); the judge (review bound to a host) judges only a head called due.

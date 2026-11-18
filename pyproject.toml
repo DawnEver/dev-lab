@@ -305,10 +305,6 @@ ignore = [
 [tool.dev_lab.review]
 judge_app = 5619495
 
-# The bundle prepare the judge reads, on THIS forge (the base places it on Gitea unless a repo names GitHub).
-[tool.dev_lab.ci."review-prepare.yml"]
-forge = "github"
-
 # NO-CJK-IN-TRACKED-SOURCE (D26): files still carrying CJK, a set that may only shrink.
 [tool.dev_lab.cjk]
 declared = []

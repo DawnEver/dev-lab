@@ -1,20 +1,21 @@
-"""THE BUNDLE REVIEW: ``forge review prepare`` on the runner, ``forge review judge`` on the isolated judge host.
+"""THE BUNDLE REVIEW: ``forge review judge`` on the isolated judge host, which prepares and judges every bundle itself.
 
 A repo whose ``review`` the family binds to a host -- the judge, whose ``[ops.judge] repos`` the config check holds
 equal to that binding (:func:`dev_lab.dev.roles.host_refusals`) -- is reviewed this way, and only
 this way (the serve skips it, :func:`dev_lab.dev.forgereview.review_pull`). User decisions 2026-11-03; the judge
 trusts NOTHING the producer wrote that it can read or derive from the forge (D3):
 
-* PREPARE writes a bundle; where it goes, and the only two sources the judge reads one from -- the base's prepare
-  run's own artifact, or a declared preparer's bound pointer -- is :mod:`~dev_lab.dev.forgereview_pointer`.
+* PREPARE is the judge's own step (D77): it fetches the PR head from the forge into a bare, blobless repository
+  (:func:`~dev_lab.dev.reviewbundle.fetched`) and builds the bundle with the one builder
+  (:func:`~dev_lab.dev.reviewbundle.prepare`). No CI job, artifact or pointer stands between the forge and the
+  judge, and NOTHING the head carries runs: no checkout, no hook, no submodule, no install.
 * JUDGE (:func:`judge_pending`) runs on a host holding only its own forge token and model key, as the declared
   ``judge_login``. For each open, non-draft PR into the trusted integration branch whose head the merge decision
-  called due (:func:`_called_due`: the review runs last; advisory since 2026-11-11/12), whose head has a bundle from a
-  TRUSTED source (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) and no standing verdict of this
-  identity yet (idempotent per head):
+  called due (:func:`_called_due`: the review runs last; advisory since 2026-11-11/12) and no standing verdict of
+  this identity yet (idempotent per head):
 
-  - it reads only the bundle that source holds, located by data the judge derives itself, never by a status;
-  - it verifies the bundle (:func:`~dev_lab.dev.reviewbundle.load`, :func:`~dev_lab.dev.reviewbundle.current`
+  - it prepares the bundle of that head itself (above), never reading one any other process wrote;
+  - it verifies the bundle (:func:`~dev_lab.dev.reviewbundle.current`
     against the FORGE's merge base, :func:`~dev_lab.dev.reviewbundle.matches_forge` against the forge's own diff);
   - it reads the declaration FRESH from the forge's integration branch, and hands the reviewer the FORGE's diff,
     never the producer's;
@@ -27,8 +28,8 @@ trusts NOTHING the producer wrote that it can read or derive from the forge (D3)
     the check run :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` on the head, ``success`` or ``failure`` with the
     findings as its output -- the one verdict a ruleset can require from that App alone.
 
-  A bundle that fails verification -- a bad archive, a missing member, a malformed document -- is
-  ``REQUEST_CHANGES`` naming why; a failure to READ (a forge call, a download, the command) posts nothing and is
+  A bundle that fails verification -- one the forge's own diff or merge base disagrees with -- is
+  ``REQUEST_CHANGES`` naming why; a failure to READ (a forge call, a fetch, the command) posts nothing and is
   retried on the next run, and one PR's failure never stops the PRs after it.
 
 The forge's gate is that verdict: dev-lab's merge, merge-ready and Break-Glass read the declared identity's latest
@@ -53,9 +54,6 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev._forgebackends import GITHUB
-from dev_lab.dev.artefacts import (
-    ArtefactRefused,
-)
 from dev_lab.dev.forgeapp import app_client, app_of
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -70,7 +68,6 @@ from dev_lab.dev.forgereview_declared import (
     forge_review,
 )
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_findings
-from dev_lab.dev.forgereview_pointer import prepare, trusted_bundle
 from dev_lab.dev.forgereview_scope import gather, is_code
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import client_for
@@ -81,6 +78,7 @@ from dev_lab.dev.reviewgate import (
     app_verdicts,
     standing_verdicts,
 )
+from dev_lab.dev.reviewgitauth import hold
 from dev_lab.dev.reviewruntime import review_runtimes
 
 if TYPE_CHECKING:
@@ -89,7 +87,9 @@ if TYPE_CHECKING:
 __all__ = [
     'DEFAULT_TOKEN_FILE',
     'JUDGE_STATE_REL',
+    'Fetch',
     'Verdict',
+    'fetch_from',
     'forge_merge_base',
     'judge_one',
     'judge_pending',
@@ -108,7 +108,7 @@ _RAN: Final = frozenset({'ok', 'skipped'})
 _SUMMARY_MAX: Final = 65_535
 
 #: What a READ may fail with: posted as nothing, retried on the next run.
-_UNREAD: Final = (ForgeCallFailed, ArtefactRefused, OSError, DeclarationUnread)
+_UNREAD: Final = (ForgeCallFailed, OSError, DeclarationUnread)
 
 
 @dataclass(frozen=True)
@@ -197,18 +197,26 @@ def _verdict_of(out: Findings, bundle: reviewbundle.Bundle, said: str) -> Verdic
     return _rendered(out, bundle)
 
 
+#: How the judge fetches a head: the PR and an empty directory in, the bare repository holding it out.
+type Fetch = Callable[[PullRequest, Path], Path]
+
+
+def fetch_from(url: str) -> Fetch:
+    """The judge's fetch from the repository at *url* (its web URL is its git URL on both forges)."""
+    return lambda pull, where: reviewbundle.fetched(where, url, pull)
+
+
 def judge_one(
-    client: Client, review: Review, pull: PullRequest, *, runtimes: Mapping[str, Mapping[str, Any]],
+    client: Client, review: Review, pull: PullRequest, *, runtimes: Mapping[str, Mapping[str, Any]], fetch: Fetch,
     run: Callable[[Sequence[str], Path, Mapping[str, str]], str] = run_command,
-) -> Verdict | str | None:  # fmt: skip
-    """The verdict on *pull*'s head, a line when nothing can be posted yet (retried), ``None`` with no pointer."""
+) -> Verdict | str:  # fmt: skip
+    """The verdict on *pull*'s head, built from the head the judge fetched itself; a line when nothing can post yet."""
     said = f'#{pull.number} {pull.head_sha[:12]}'
     with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-judge-') as scratch:
         where = Path(scratch)
         try:
-            bundle = trusted_bundle(client, review, pull, where)
-            if bundle is None:
-                return None
+            repo = fetch(pull, where / 'head.git')
+            bundle = reviewbundle.prepare(repo, repo=client.forge.repo, pull=pull)
             diff, merge_base = client.pull_diff(pull.number), forge_merge_base(client, pull)
             reviewbundle.current(bundle, pull, repo=client.forge.repo, merge_base=merge_base)
             reviewbundle.matches_forge(bundle, diff)
@@ -274,10 +282,10 @@ def _not_the_judge(client: Client, review: Review, me: str) -> str | None:
 
 
 def judge_pending(
-    client: Client, *, runtimes: Mapping[str, Mapping[str, Any]],
+    client: Client, *, runtimes: Mapping[str, Mapping[str, Any]], fetch: Fetch,
     run: Callable[[Sequence[str], Path, Mapping[str, str]], str] = run_command,
 ) -> list[str]:  # fmt: skip
-    """Judge every open head into the trusted integration branch that has a bundle and no verdict of ours; lines.
+    """Judge every open head into the trusted integration branch called due with no verdict of ours; lines.
 
     One PR's failure is its own line: the PRs after it are judged all the same.
     """
@@ -293,11 +301,11 @@ def judge_pending(
         try:
             if not _called_due(client, pull.head_sha) or reviewed_by(client, pull, me):
                 continue
-            outcome = judge_one(client, review, pull, runtimes=runtimes, run=run)
+            outcome = judge_one(client, review, pull, runtimes=runtimes, fetch=fetch, run=run)
             if isinstance(outcome, Verdict):
                 post_verdict(client, pull, outcome)
                 said.append(f'#{pull.number} {pull.head_sha[:12]}: {outcome.event}')
-            elif outcome is not None:
+            else:
                 said.append(outcome)
         except (*_UNREAD, ValueError) as failed:
             said.append(f'#{pull.number} {pull.head_sha[:12]}: not judged, retried next run: {failed}')
@@ -322,10 +330,7 @@ def judge_state(env: Mapping[str, str] | None = None) -> Path:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge review', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
-    making = verbs.add_parser('prepare', help="build a PR head's review bundle and publish it to the judge")
-    making.add_argument('--pr', type=int, required=True)
-    making.add_argument('--repo', type=Path, help='the clone holding the head (default: the working directory)')
-    judging = verbs.add_parser('judge', help='review every prepared head as this host, posting PR reviews')
+    judging = verbs.add_parser('judge', help='prepare and review every due head as this host, posting verdicts')
     judging.add_argument('--url', required=True, help="the repository's web URL (the judge holds no checkout)")
     judging.add_argument('--token-file', type=Path, default=DEFAULT_TOKEN_FILE, help='the judge token')
     judging.add_argument('--state', type=Path, help="the judge's journal and caches (default: judge_state())")
@@ -350,19 +355,23 @@ def _judge_client(here: Path, args: argparse.Namespace) -> Client:
     return client_for(here, url=args.url, token=token, outbox=state)
 
 
+def _server_of(url: str) -> str:
+    """The forge server of the repository web URL *url*: its scheme and host."""
+    scheme, _, rest = url.partition('://')
+    return f'{scheme}://{rest.split("/", 1)[0]}'
+
+
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: Client | None = None) -> int:
-    """``forge review prepare --pr N`` | ``forge review judge --url U``: exit 0 done, 2 refused."""
+    """``forge review judge --url U``: exit 0 done, 2 refused."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     here = Path.cwd() if cwd is None else cwd
     try:
-        if args.verb == 'prepare':
-            root = args.repo or here
-            emit(f'[review] {prepare(root, client or client_for(root), args.pr)}')
-            return 0
         judge = client or _judge_client(here, args)
-        for line in judge_pending(judge, runtimes=review_runtimes(args.runtime)):
+        hold(_server_of(args.url), judge.token)  # the judge's own token, held in memory for its git fetches only
+        fetch = fetch_from(args.url)
+        for line in judge_pending(judge, runtimes=review_runtimes(args.runtime), fetch=fetch):
             emit(f'[review] {line}')
-    except (BundleRefused, ArtefactRefused, DeclarationUnread, ForgeCallFailed, OSError, ValueError) as failed:
+    except (BundleRefused, DeclarationUnread, ForgeCallFailed, OSError, ValueError) as failed:
         emit(f'[review] refused: {failed}', err=True)
         return 2
     return 0
