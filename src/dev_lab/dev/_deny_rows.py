@@ -117,7 +117,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         # hand-anchored rules drifted apart in the first place. `uv run pytest` stays in `refuses`.
         # A collection (`--collect-only` / `--co`) runs no test and claims no verdict, so it is the
         # door for LISTING tests in every repo, measure script or none: the lookahead admits it.
-        'pattern': r'(?:\S*python[\w.]*\s+-m\s+pytest\b|pytest\b)(?!.*\s--(?:collect-only|co)\b)',
+        # The lookahead stops at a shell separator, so a flag in a LATER segment admits no run.
+        'pattern': r'(?:\S*python[\w.]*\s+-m\s+pytest\b|pytest\b)(?![^;&|\n]*\s--(?:collect-only|co)\b)',
         'matches': 'command',
         'hazard': 'a hand-written test line has no verdict: its exit code '
         'cannot tell a covered run from a dead or truncated one.',

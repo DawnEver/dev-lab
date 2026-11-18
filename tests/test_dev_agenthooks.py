@@ -709,3 +709,7 @@ def test_a_collect_only_segment_admits_no_running_sibling(rules: Path) -> None:
     """THE PLANTED CONTROL: the admission is per segment, so a run chained after a collection is refused."""
     assert agenthooks.decide('pytest --collect-only tests && pytest tests', rules) is not None
     assert agenthooks.decide('pytest tests --cov', rules) is not None
+    # A flag in a LATER segment does not admit an earlier run.
+    assert agenthooks.decide('pytest tests && echo --co', rules) is not None
+    assert agenthooks.decide('pytest tests; echo --collect-only', rules) is not None
+    assert agenthooks.decide('pytest tests | grep --co', rules) is not None
