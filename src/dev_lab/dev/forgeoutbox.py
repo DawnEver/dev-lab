@@ -27,7 +27,7 @@ dropped and named once, since a definitive 4xx replayed every tick never lands.
 A post that could not be attempted -- no credential
 or no ``origin`` on this box -- is reported and kept, never raised: the box simply does not publish.
 
-WHERE IT LIVES. ``output/forge/outbox/`` in the MAIN checkout (resolved through git's common
+WHERE IT LIVES. ``forge/outbox/`` in the MAIN checkout's output kind (storage.md) (resolved through git's common
 directory, as the verdict ledger is), so every lane of one repository shares one queue. One JSON file
 per entry, so two runs never race on one document.
 
@@ -56,7 +56,7 @@ from typing import Final
 from lab_commons.compute.durable import durable_write
 from lab_commons.log import emit
 
-from dev_lab.dev._forge_journal import OUTBOX_REL, Journal, journal_for, outbox_dir
+from dev_lab.dev._forge_journal import OUTBOX_IN_OUTPUT, Journal, journal_for, outbox_dir
 from dev_lab.dev.forge import (
     NoCredential,
     Transport,
@@ -73,7 +73,7 @@ from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.supervise.notice import Context
 
 __all__ = [
-    'OUTBOX_REL',
+    'OUTBOX_IN_OUTPUT',
     'RESULTS',
     'Post',
     'PostFailed',

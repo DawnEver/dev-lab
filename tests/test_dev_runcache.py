@@ -17,7 +17,7 @@ import pytest
 
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.reports import StepReport
-from dev_lab.dev.runcache import CACHE_REL, CachedRun, RetiredCache, cache_path, cached, record, remember, runs
+from dev_lab.dev.runcache import CACHE_IN_OUTPUT, CachedRun, RetiredCache, cache_path, cached, record, remember, runs
 from dev_lab.dev.verdict import Verdict
 from dev_lab.dev.verifysteps import build_verdict
 
@@ -99,6 +99,6 @@ def test_the_cache_lives_in_the_main_checkout_even_from_a_worktree(tmp_path: Pat
     git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'root')
     lane = main / '.claude' / 'worktrees' / 'lane'
     git('worktree', 'add', '-q', '--detach', str(lane), 'HEAD')
-    expected = main.resolve() / CACHE_REL
+    expected = main.resolve().joinpath('output', *CACHE_IN_OUTPUT)
     assert cache_path(lane).resolve() == expected
     assert cache_path(main).resolve() == expected
