@@ -366,6 +366,39 @@ def run_stage(
     if stage not in STAGES:
         msg = f'unknown hook stage {stage!r}; the family runs {list(STAGES)}'
         raise ValueError(msg)
+    try:
+        return _run_stage(
+            stage, git_args, root=root, stdin=stdin, hooks=hooks, runner=runner, env=env, borrowed=borrowed
+        )
+    except subprocess.CalledProcessError as failed:
+        emit(git_failed(stage, failed), err=True)
+        return 1
+
+
+def git_failed(stage: str, failed: subprocess.CalledProcessError) -> str:
+    """A git query of the runner itself failed (O21): the rule, git's command and its own words, and the door."""
+    argv = [str(word) for word in (failed.cmd if isinstance(failed.cmd, (list, tuple)) else [failed.cmd])]
+    shown = ' '.join(['git', *argv[argv.index('-C') + 2 :]] if '-C' in argv else argv)
+    said = (failed.stderr or '').strip() if isinstance(failed.stderr, str) else ''
+    return (
+        f'[githooks] {stage}: GITHOOKS-GIT-FAILED -- `{shown}` exited {failed.returncode}'
+        f'{": " + said if said else ""}. The hooks could not read what this {stage} changes. '
+        f'Door: make that git command succeed in this checkout (`git status` names an unfinished merge, '
+        f'cherry-pick or a missing object), then re-run the {stage}.'
+    )
+
+
+def _run_stage(
+    stage: str,
+    git_args: Sequence[str],
+    *,
+    root: Path,
+    stdin: str,
+    hooks: Sequence[Hook] | None,
+    runner: Runner | None,
+    env: Mapping[str, str] | None,
+    borrowed: bool,
+) -> int:
     push = parse_push_lines(stdin) if stage == 'pre-push' else ()
     selected_hooks = _selected(stage, root, hooks, push, borrowed=borrowed)
     if selected_hooks is None:
