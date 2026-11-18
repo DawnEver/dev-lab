@@ -10,12 +10,13 @@ The client is ``forge pr breakglass`` / ``forge breakglass open|close|ack|status
 whose key authorizes nothing by itself.
 
 EVERY FORGE OF THE FAMILY (user ruling 2026-11-04). Each served repo is reached on ITS forge -- Gitea or GitHub, the
-backend its URL's host selects (:class:`ClientForge` over :mod:`dev_lab.dev.forgework`) -- as that forge's ONE
-break-glass identity (``[ops.breakglass.tokens]``). The repo's integration branch is read from its declaration on the
-forge (:func:`dev_lab.dev.reviewgate.manifest_at` at the PR's BASE branch, the one the merge lands on -- never the
-default branch, which may be a data commit that declares nothing), so a repo this host never clones is served as well
-as one it promotes. The identity must be able to bypass the branch's protection: on GitHub a user the
-ruleset lists as a bypass actor (or a repository admin where classic protection does not enforce on administrators);
+backend its URL's host selects (:mod:`dev_lab.ops.breakglassforge`, over :mod:`dev_lab.dev.forgework`) -- as that
+forge's ONE break-glass identity (``[ops.breakglass.tokens]``). The repo's integration branch is read from its
+declaration on the forge (:func:`dev_lab.dev.reviewgate.manifest_at` at the PR's BASE branch, the one the merge
+lands on -- never the default branch, which may be a data commit that declares nothing), so a repo this host never
+clones is served as well as one it promotes. The identity must be able to bypass the branch's protection:
+on GitHub a user the ruleset lists as a bypass actor
+(or a repository admin where classic protection does not enforce on administrators);
 on Gitea an account the protection's merge whitelist admits, or an admin.
 
 One request is one JSON line with an ``action``:
@@ -56,38 +57,30 @@ import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import partial
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.log import emit
 
 from dev_lab.dev.breakglass import BREAK_GLASS
-from dev_lab.dev.failprint import Fingerprints
-from dev_lab.dev.forge import forge_of_url
-from dev_lab.dev.forgeapp import installation
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR, is_held
 from dev_lab.dev.forgemerge import hidden_reds
-from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgemergewaits import green_waits
-from dev_lab.dev.forgepulls import pr_list
-from dev_lab.dev.forgestatus import CommitStatus, fingerprints_at, status_list
-from dev_lab.dev.forgework import Client, Transport, forge_transport
+from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.producers import producer_from
-from dev_lab.dev.reviewgate import manifest_at
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
+from dev_lab.ops.breakglassforge import Forge
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.statelock import exclusive
-from dev_lab.ops.wavesweep import Pull, integration_at, sweep
+from dev_lab.ops.wavesweep import integration_at, sweep
 
-__all__ = ['BreakglassRefused', 'ClientForge', 'ConsentWanted', 'Forge', 'Held', 'HeldBack', 'Server', 'merge_message']
+__all__ = ['BreakglassRefused', 'ConsentWanted', 'Held', 'HeldBack', 'Server', 'merge_message']
 
 _HOUR = 3600.0
 
@@ -123,79 +116,6 @@ def _labels_admit(forge: Forge, pr: int) -> None:
         raise Held(msg)
 
 
-class Forge(Protocol):
-    """The forge calls the role makes, on one repository, as the break-glass identity."""
-
-    def declaration(self, ref: str) -> str:
-        """The repository's ``pyproject.toml`` at *ref*; raises ``ValueError`` when it cannot be read."""
-        ...
-
-    def pull(self, number: int) -> tuple[str, str, str]:
-        """``(state, base, head_sha)`` of PR *number*."""
-        ...
-
-    def statuses(self, head: str) -> Sequence[CommitStatus]:
-        """The commit statuses *head* carries, newest first."""
-        ...
-
-    def open_pulls(self) -> Sequence[Pull]:
-        """Every open PR (:mod:`dev_lab.ops.wavesweep` lands the green ones of an open wave)."""
-        ...
-
-    #: The failure fingerprints of a ref (a sha, or a branch's tip), read from its run records.
-    fingerprints: Callable[[str], Fingerprints]
-
-    def labels(self, number: int) -> tuple[str, ...]:
-        """The labels PR *number* carries now."""
-        ...
-
-    def comment(self, number: int, body: str) -> None:
-        """Comment on PR *number*."""
-        ...
-
-    def merge(self, number: int, *, head: str, message: str) -> None:
-        """Merge PR *number* at *head* with a merge commit saying *message*."""
-        ...
-
-
-class ClientForge:
-    """:class:`Forge` over the family's forge client of *url*'s backend, presenting *token*."""
-
-    def __init__(self, url: str, token: str, *, transport: Transport = forge_transport) -> None:
-        """Reach *url*'s repository through *transport* (the network by default)."""
-        self._client = Client(forge_of_url(url), token, transport=transport)
-        self.fingerprints = partial(fingerprints_at, self._client)  # :func:`~dev_lab.dev.forgestatus.fingerprints_at`
-
-    def declaration(self, ref: str) -> str:
-        """The ``pyproject.toml`` at *ref*, as the forge holds it (:func:`dev_lab.dev.reviewgate.manifest_at`)."""
-        return manifest_at(self._client, ref)
-
-    def pull(self, number: int) -> tuple[str, str, str]:
-        """``(state, base, head_sha)`` of PR *number*."""
-        found = self._client.pr_view(number)
-        return found.state, found.base, found.head_sha
-
-    def statuses(self, head: str) -> Sequence[CommitStatus]:
-        """The commit statuses *head* carries (:func:`dev_lab.dev.forgestatus.status_list`)."""
-        return status_list(self._client, head)
-
-    def open_pulls(self) -> Sequence[Pull]:
-        """Every open PR (:func:`dev_lab.dev.forgepulls.pr_list`)."""
-        return [Pull(one.number, one.base, one.head_sha, one.draft) for one in pr_list(self._client)]
-
-    def labels(self, number: int) -> tuple[str, ...]:
-        """The labels PR *number* carries, read fresh (both backends' pull JSON lists them by name)."""
-        return self._client.pr_view(number).labels
-
-    def comment(self, number: int, body: str) -> None:
-        """Comment on PR *number*."""
-        self._client.issue_comment(number, body)
-
-    def merge(self, number: int, *, head: str, message: str) -> None:
-        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemergecall.merge`, either backend); branch kept."""
-        merge(self._client, number, head=head, message=message, delete_branch=False)
-
-
 def tests_at(posted: Sequence[CommitStatus], head: str, *, producer: str) -> str:
     """*head*'s test state at merge time: ``passed``, ``red: <contexts>; <why>`` or ``untested: <why>``.
 
@@ -216,24 +136,6 @@ def _merged(tests: str) -> str:
     if tests.startswith('red: '):
         return f'merged red ({tests.removeprefix("red: ").split("; ")[0]})'
     return 'merged' if tests == 'passed' else 'merged untested'
-
-
-def _installation_token(url: str, app_id: int, key_file: Path) -> str:
-    return installation(forge_of_url(url), app_id, key_file)[1]
-
-
-def credential(
-    role: Breakglass, url: str, *, secret: Callable[[str], str],
-    mint: Callable[[str, int, Path], str] = _installation_token,
-) -> str:  # fmt: skip
-    """The token break-glass presents on *url*'s forge: *mint* its App's installation token, else *secret* its file.
-
-    On a forge with an App (GitHub) the token is minted per wave by :func:`dev_lab.dev.forgeapp.installation`, the
-    ONE minting code; a token forge (Gitea) reads its declared file.
-    """
-    if (app := app_of_forge(role.apps, url)) is not None:
-        return mint(url, *app)
-    return secret(role.token_file(url))
 
 
 def merge_message(pr: int, integration: str, reason: str, wave: str) -> str:

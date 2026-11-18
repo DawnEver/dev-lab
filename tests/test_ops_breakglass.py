@@ -29,7 +29,8 @@ from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
 from dev_lab.dev.reviewgate import DeclarationUnread
-from dev_lab.ops.breakglass import BreakglassRefused, ClientForge, Server, merge_message
+from dev_lab.ops.breakglass import BreakglassRefused, Server, merge_message
+from dev_lab.ops.breakglassforge import ClientForge
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.issuer import Issuer

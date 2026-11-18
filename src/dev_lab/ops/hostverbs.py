@@ -21,6 +21,7 @@ from dev_lab.ops import (
     access,
     backup,
     breakglass,
+    breakglassforge,
     consentverbs,
     enableunits,
     install,
@@ -188,7 +189,7 @@ def breakglass_verb(config: OpsConfig, verb: str) -> int:
         return 2
     server = breakglass.Server(
         config,
-        forge_for=lambda url: breakglass.ClientForge(url, breakglass.credential(role, url, secret=_secret)),
+        forge_for=lambda url: breakglassforge.ClientForge(url, breakglassforge.credential(role, url, secret=_secret)),
         alert=lambda title, detail: alert(config, title, detail),
         now=time.time,
         consent_key=verifier,
