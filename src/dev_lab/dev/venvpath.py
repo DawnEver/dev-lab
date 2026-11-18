@@ -86,6 +86,7 @@ __all__ = [
     'portable',
     'remedy_interpreter',
     'running_interpreter',
+    'slotted',
     'unportable_row',
     'venv_interpreter',
 ]
@@ -281,6 +282,20 @@ def remedy_interpreter(root: Path, *, os_name: str) -> str:
     if main is not None and current(main).joinpath(*tail).is_file():
         return current(main).joinpath(*tail).as_posix()
     return own.as_posix()
+
+
+#: A RELATIVE venv interpreter: one no path segment precedes, so ``<checkout>/.venv/...`` is left alone.
+_RELATIVE_SPELLING: Final = re.compile(r'(?<![\w/\\:~-])' + _SPELLING.pattern)
+
+
+def slotted(command: str) -> str:
+    """*command* with every RELATIVE venv interpreter replaced by :data:`PYTHON_SLOT`, for the printer to expand.
+
+    A consumer authors a remedy concretely (its allow row derives from that spelling), but the text a refused agent
+    READS runs from wherever its cwd is, so the printed form carries the token and the engine names the target
+    checkout's interpreter by absolute path. An absolute spelling is returned unchanged.
+    """
+    return _RELATIVE_SPELLING.sub(PYTHON_SLOT, command)
 
 
 def expand_interpreter(text: str, root: Path, *, os_name: str) -> str:

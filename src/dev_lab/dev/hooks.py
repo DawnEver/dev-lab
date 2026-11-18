@@ -44,6 +44,7 @@ from typing import Any, Final
 
 from dev_lab.dev._deny_rows import DENY_ROWS
 from dev_lab.dev.disclosure import details_for
+from dev_lab.dev.venvpath import slotted
 
 __all__ = [
     'ADMITS',
@@ -259,7 +260,7 @@ class DenyRule:
                 f'answers a different question reads as an exit and is not one.'
             )
             raise UnremediedRule(msg)
-        return self._lines(self.remedy.replace(PLACEHOLDER, remedy.command))
+        return self._lines(self.remedy.replace(PLACEHOLDER, slotted(remedy.command)))
 
     def _lines(self, exit_text: str) -> str:
         """The clause, the exit and the pointer, one per line; a row with no pointer renders two."""
