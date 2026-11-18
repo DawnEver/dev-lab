@@ -58,6 +58,7 @@ failure exactly as it does on a success. The claim is then MEASURED instead of a
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -416,12 +417,32 @@ def main(
     if why := _dep_cli.argv_error(args, locking=locking):
         parser.error(why)
     root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
+    syncing = args.bootstrap is not None or args.sync or locking
+    if not syncing or args.dry_run:
+        return _run(args, root, syncing=syncing, locking=locking, run=run, census=census)
+    try:
+        with venvcurrent.exclusive_build(root):
+            return _run(args, root, syncing=True, locking=locking, run=run, census=census)
+    except venvcurrent.BuildBusy as exc:
+        emit(f'REFUSED: {exc}')
+        return 1
+
+
+def _run(
+    args: argparse.Namespace,
+    root: Path,
+    *,
+    syncing: bool,
+    locking: bool,
+    run: Callable[..., Any],
+    census: Census,
+) -> int:
+    """One ``dep`` run on *root*; a building one runs under :func:`venvcurrent.exclusive_build`."""
     base, selected, paths = _dep_project.read_project(root, args.extra)
     live = Path(base).parent.parent
     if Path(base).is_file() and Path(_snapshot(base)[0]).resolve() != live.resolve():
         msg = f'{base} does not execute in its own environment {live}'
         raise ValueError(msg)
-    syncing = args.bootstrap is not None or args.sync or locking
     environment = dict(os.environ)
     environment.pop('VIRTUAL_ENV', None)
     if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
