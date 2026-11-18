@@ -173,6 +173,7 @@ function commandWord(segment) {
  */
 function splitHeredocs(cmd) {
   const executed = [];
+  const shellBodies = [];
   let rest = '';
   let index = 0;
   const opener = /<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\1/g;
@@ -198,14 +199,18 @@ function splitHeredocs(cmd) {
     // EVERY command position, not just the first word: `timeout 900 python - <<PY` and
     // `uv run python - <<PY` both run an interpreter, and both read as `timeout`/`uv` at token
     // zero. Asking only `commandWord(opening)` reopened the 2026-08-22 evasion behind any wrapper.
-    if (commandPositions(opening).some((position) => INTERPRETERS.test(commandWord(position)))) executed.push(body);
+    const consumers = commandPositions(opening).map(commandWord);
+    if (consumers.some((word) => INTERPRETERS.test(word))) {
+      executed.push(body);
+      if (consumers.some((word) => SHELLS.test(word))) shellBodies.push(body);
+    }
 
     rest += cmd.slice(index, opener.lastIndex);
     index = bodyEnd;
     opener.lastIndex = bodyEnd;
   }
   rest += cmd.slice(index);
-  return { rest, executed };
+  return { rest, executed, shellBodies };
 }
 
 /** `-c <script>` payloads: executed text, whatever the surrounding quoting. */
@@ -222,7 +227,7 @@ function inlineScripts(line) {
  * 'code' for interpreter source, which anchor differently.
  */
 function executedTexts(cmd) {
-  const { rest, executed } = splitHeredocs(cmd);
+  const { rest, executed, shellBodies } = splitHeredocs(cmd);
   const out = [];
   for (const segment of segments(rest)) {
     const positions = commandPositions(segment);
@@ -236,6 +241,8 @@ function executedTexts(cmd) {
     }
   }
   for (const body of executed) out.push({ text: body, kind: 'code' });
+  // A body a SHELL consumes is a command line in its own right: its segments are shell text ('shell' rows read it).
+  for (const body of shellBodies) out.push(...executedTexts(body));
   return out;
 }
 
@@ -777,6 +784,8 @@ function fires(rule, texts, cmd) {
   // interpreter code. An 'argument' rule names an option, so it is searched within the text.
   const atSegment = new RegExp(argument ? rule.pattern : `^(?:${rule.pattern})`);
   const atLine = new RegExp(argument ? rule.pattern : `^[ \\t]*(?:${rule.pattern})`, 'm');
+  // A 'shell' rule names a shell verb: interpreter code (python/node source) never spells it as a command.
+  if (rule.matches === 'shell') return texts.some(({ text, kind }) => kind === 'segment' && atSegment.test(text));
   return texts.some(({ text, kind }) => (kind === 'segment' ? atSegment : atLine).test(text));
 }
 
