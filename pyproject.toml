@@ -67,6 +67,11 @@ forge = "dev_lab.dev.forgerecords:read_allocation"
 [project.entry-points."lab_commons.hpc.affinity"]
 forge = "dev_lab.dev.forgeaffinity:research_affinity"
 
+# The GUI-consent verifier a desktop-driving product looks up (it never imports the dev kit): spends one held
+# `desktop.open` / `desktop.focus` credential (dev_lab.ops.consent.client.verify_held).
+[project.entry-points."dev_lab.desktop.consent"]
+dev_lab = "dev_lab.ops.consent.client:verify_held"
+
 # THE FAMILY ROWS NO REPO CAN DROP (user ruling 2026-11-07): pytest autoloads this wherever dev-lab is
 # installed, so NO-CJK-IN-TRACKED-SOURCE runs in every family repo with no consumer file (famtests.alwayson).
 [project.entry-points.pytest11]

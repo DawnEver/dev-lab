@@ -97,5 +97,11 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         # One agent background shell may live ``minutes`` past the 50-minute default (user ruling 2026-11-15); subject =
         # the SHA-256 of the command after its ``timeout`` prefix. The ttl is the window to LAUNCH it, not its life.
         Action('shell.lifetime', {'minutes': int}, SINGLE, 1 * _HOUR, 1 * _DAY, boundary=False),
+        # One launch of a vendor GUI, shown WITHOUT activation and driven only by focus-free acts (user rulings
+        # 2026-11-17); subject = the product's SHA-256 of the exact launch plan. Spent by `client.verify_held`.
+        Action('desktop.open', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=False),
+        # One act that needs the keyboard foreground (not recommended: the user's, asked before it runs); subject =
+        # the product's SHA-256 of the act and its plan. Spent by `client.verify_held`.
+        Action('desktop.focus', {}, SINGLE, 15 * _MINUTE, 15 * _MINUTE, boundary=False),
     )
 })  # fmt: skip

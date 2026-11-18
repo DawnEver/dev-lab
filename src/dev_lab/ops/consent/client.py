@@ -12,12 +12,15 @@ The code is sent once and never echoed, logged or kept.
 
 :func:`redeem` is the gate of an IRREVERSIBLE action (a spend, a merge, a wave): the signature and expiry verify
 offline, then the use is registered online with the issuer; an issuer that cannot be reached REFUSES, never admits.
+:func:`verify_held` is :func:`redeem` for a credential the grant wrote, named by its id: the verifier a product that
+never imports the dev kit reaches through an entry point (the GUI-consent group in ``pyproject.toml``).
 """
 
 from __future__ import annotations
 
 import getpass
 import json
+import re
 import sys
 import time
 from collections import Counter
@@ -48,6 +51,7 @@ __all__ = [
     'redeem',
     'remote_register',
     'spent_ids',
+    'verify_held',
 ]
 
 #: The machine-file table.
@@ -57,6 +61,8 @@ _PROMPT: Final = 'Cluster code (not echoed): '
 _PACKAGED: Final = 'issuer.pub'
 #: The serve verb's exit status for a refusal (as every ops door's).
 _REFUSED: Final = 2
+#: A credential id as the grant names its file: never a path.
+_IDENT: Final = re.compile(r'[0-9A-Za-z-]{8,64}')
 
 #: Registers one use of a credential with the issuer: ``(credential, amount)``; raises :class:`ConsentRefused`.
 Register = Callable[[Mapping[str, Any], int], object]
@@ -106,6 +112,43 @@ def redeem(
         msg = f'the consent issuer could not register the use ({type(unreachable).__name__}): refused, never admitted'
         raise ConsentRefused(msg) from unreachable
     return found
+
+
+def verify_held(
+    credential_id: str, *, action: str, subject: str, home: Path | None = None,
+    table: Mapping[str, Any] | None = None, register: Register | None = None, now: Callable[[], float] = time.time,
+) -> None:  # fmt: skip
+    """Spend the HELD credential *credential_id* on ONE use of *action* on *subject*, or refuse.
+
+    Reads ``<state dir>/<id>.json`` (:func:`dev_lab.dev.consentguard.state_dir`, written only by :func:`grant`) and
+    spends it through :func:`redeem`: the signature against ``[consent] public_key``, then the action and the subject,
+    compared BEFORE the use is registered with ``[consent] endpoint`` (*register* replaces that transport) -- so a
+    credential shown to the wrong act is refused unspent, and a used one is refused by the issuer's ledger.
+
+    Raises:
+        ConsentRefused: *credential_id* is not an id or is not held; the machine file has no key or no endpoint; the
+            credential does not verify, names another action, subject or id, was used, or the issuer is unreachable.
+
+    """
+    if not _IDENT.fullmatch(credential_id):
+        msg = f'{credential_id!r} is not a credential id'
+        raise ConsentRefused(msg)
+    held = state_dir(home) / f'{credential_id}.json'
+    try:
+        credential = json.loads(held.read_text(encoding='utf-8'))
+    except OSError as missing:
+        msg = (f'no credential {credential_id} is held in {held.parent}: only `grant`, with the code the user gave, '
+               'writes one')  # fmt: skip
+        raise ConsentRefused(msg) from missing
+    except ValueError as bad:
+        msg = f'the held credential {credential_id} is not JSON'
+        raise ConsentRefused(msg) from bad
+    key = public_key(table)
+    use = remote_register(table) if register is None else register
+    if isinstance(credential, dict) and credential.get('id') != credential_id:
+        msg = f'the file {held.name} holds another credential'
+        raise ConsentRefused(msg)
+    redeem(credential, action=action, subject=subject, key=key, register=use, now=now())
 
 
 def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> Register:
