@@ -99,7 +99,10 @@ WHENS: Final = frozenset({'live-run', 'background'})
 #: checkouts, from a forge a sibling checkout already comes from. A closed set, because the engine reads an
 #: unknown admission as none, which narrows the rule rather than widening it. ``'file-operands'``: a grep
 #: whose every operand is an existing file reads only those files, whatever its recursion flag says.
-ADMITS: Final = frozenset({'family-sibling-clone', 'file-operands'})
+#: ``'bound-worktree-home'``: every ``worktree add|move`` / ``clone`` target of the line lies inside the repository's
+#: worktree home -- its in-tree default or the root this machine binds (``storage publish``,
+#: :func:`dev_lab.dev.storage.publish`); no published roots file admits nothing.
+ADMITS: Final = frozenset({'family-sibling-clone', 'file-operands', 'bound-worktree-home'})
 #: The shape of an ``asks`` value: a ``dev_lab`` module, the one whose ``--admit`` judges a row its pattern only
 #: prefilters. The engine runs it through the session checkout's interpreter after the pattern matched, so the
 #: common call spawns none; exit 1 with text refuses with that text, anything else admits.
@@ -185,8 +188,14 @@ class DenyRule:
     scope: str | None = None
     severity: str = 'deny'
     when: str | None = None
-    admits: str | None = None
+    admits: str | tuple[str, ...] | None = None
     asks: str | None = None
+
+    def admitted(self) -> tuple[str, ...]:
+        """Every filesystem admission the row carries, in order (a row may carry several)."""
+        if self.admits is None:
+            return ()
+        return (self.admits,) if isinstance(self.admits, str) else tuple(self.admits)
 
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
@@ -208,8 +217,9 @@ class DenyRule:
         if self.when is not None and self.when not in WHENS:
             msg = f'{self.id}: when={self.when!r} is not one of {sorted(WHENS)}; the engine would read it as none.'
             raise ValueError(msg)
-        if self.admits is not None and self.admits not in ADMITS:
-            msg = f'{self.id}: admits={self.admits!r} is not one of {sorted(ADMITS)}; the engine would admit nothing.'
+        unknown = [one for one in self.admitted() if one not in ADMITS]
+        if unknown:
+            msg = f'{self.id}: admits={unknown[0]!r} is not one of {sorted(ADMITS)}; the engine would admit nothing.'
             raise ValueError(msg)
         if self.asks is not None and not _judge_exists(self.asks):
             msg = f'{self.id}: asks={self.asks!r} names no dev_lab module; the engine would ask nobody and admit all.'
@@ -285,8 +295,8 @@ class DenyRule:
             row['severity'] = self.severity
         if self.when is not None:
             row['when'] = self.when
-        if self.admits is not None:
-            row['admits'] = self.admits
+        if admitted := self.admitted():
+            row['admits'] = admitted[0] if len(admitted) == 1 else list(admitted)
         if self.asks is not None:
             row['asks'] = self.asks
         if self.needs is not None:

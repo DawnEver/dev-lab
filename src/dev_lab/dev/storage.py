@@ -8,6 +8,8 @@ module is dev-lab's ONE adapter onto it (:func:`kind_root`, :func:`output_path`)
   secret, read ONLY from ``<[storage] secrets>/<name>.toml`` (placed there by ``ops secret place``) -- to an
   owner-only file outside every repo (:func:`dev_lab.dev.artefactstores.check_rclone_config`). Nobody
   hand-edits an rclone config; the secret never reaches argv, a log or this module's output.
+* ``publish [--to P]`` writes the bound roots as JSON (:func:`publish`) for the agent-guard engine, which reads no
+  TOML: a worktree under a bound ``worktrees`` root is admitted by WORKTREES-STAY-INSIDE only through it.
 * ``migrate <kind>`` moves the in-tree default of a bound kind to its bound root ONCE and leaves a marker; a
   later in-tree copy of a bound kind is refused by name (:func:`refuse_stale`) -- never read as a fallback.
 
@@ -18,6 +20,7 @@ shares one bound root.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import tomllib
@@ -28,25 +31,62 @@ from typing import Final
 from lab_commons import storage as _storage
 from lab_commons.log import emit
 
-from dev_lab.dev.worktreeplace import main_checkout
+from dev_lab.dev.gitdirs import common_dir
 
-__all__ = ['MARKER', 'StaleTree', 'kind_root', 'migrate', 'output_path', 'refuse_stale', 'render', 'rendered']
+__all__ = [
+    'MARKER',
+    'ROOTS_ENV',
+    'StaleTree',
+    'kind_root',
+    'main_of',
+    'migrate',
+    'output_path',
+    'publish',
+    'refuse_stale',
+    'render',
+    'rendered',
+    'roots_file',
+    'worktrees_root',
+]
 
 #: The file a migration leaves at the bound root, naming the tree it came from.
 MARKER: Final = '.storage-migrated'
 
 #: Where ``render`` writes when no ``--to`` is given: outside every repo, beside the machine's config.
 DEFAULT_RCLONE: Final = Path('~/.config/lab-commons/rclone.conf')
+#: Where ``publish`` writes the machine's bound roots for readers with no TOML parser (the agent-guard engine).
+DEFAULT_ROOTS: Final = Path('~/.config/lab-commons/storage-roots.json')
+#: The variable that moves :data:`DEFAULT_ROOTS` (a test's own file).
+ROOTS_ENV: Final = 'LAB_COMMONS_STORAGE_ROOTS'
 
 
 class StaleTree(RuntimeError):
     """A bound kind still has an in-tree copy: migrate it once, or delete the leftover."""
 
 
+def main_of(tree: Path) -> Path:
+    """The MAIN checkout of *tree*, read off ``.git``/``commondir`` (no git process); *tree* itself outside one.
+
+    Every writer asks this, the walls ledger on each stop among them, so it reads files rather than starting git
+    (:func:`dev_lab.dev.gitdirs.common_dir`).
+    """
+    common = common_dir(Path(tree))
+    return common.parent if common is not None else Path(tree)
+
+
 def kind_root(kind: str, tree: Path, *, declared: _storage.Storage | None = None) -> Path | None:
     """Where *kind* of the checkout *tree* lives: bound by this machine, or its in-tree default."""
-    main = main_checkout(tree)
+    main = main_of(tree)
     return _storage.root(kind, main.name, main, storage=declared)
+
+
+def worktrees_root(tree: Path, *, declared: _storage.Storage | None = None) -> Path:
+    """Where the linked worktrees of *tree*'s repository live: the bound ``worktrees`` root, else in-tree."""
+    found = kind_root('worktrees', tree, declared=declared)
+    if found is None:  # pragma: no cover -- worktrees always has an in-tree default
+        msg = 'the worktrees storage kind has no root'
+        raise _storage.StorageError(msg)
+    return found
 
 
 def output_path(tree: Path, *parts: str, declared: _storage.Storage | None = None) -> Path:
@@ -64,7 +104,7 @@ def refuse_stale(kind: str, tree: Path, *, declared: _storage.Storage | None = N
     default = _storage.KINDS[kind]
     if kind not in declared.roots or default is None:
         return
-    leftover = main_checkout(tree) / default
+    leftover = main_of(tree) / default
     if leftover.exists() and any(leftover.iterdir()):
         msg = (
             f'{leftover} holds {kind!r} data, but this machine binds {kind!r} to {declared.roots[kind]}: '
@@ -83,7 +123,7 @@ def migrate(kind: str, tree: Path, *, declared: _storage.Storage | None = None) 
     if default is None:
         msg = f'{kind!r} has no in-tree copy to migrate (its default is the tool cache)'
         raise _storage.StorageError(msg)
-    main = main_checkout(tree)
+    main = main_of(tree)
     source, target = main / default, kind_root(kind, tree, declared=declared)
     target = target if target is not None else source  # a bound kind always has a root
     if (target / MARKER).is_file():
@@ -101,6 +141,28 @@ def migrate(kind: str, tree: Path, *, declared: _storage.Storage | None = None) 
         target.mkdir(parents=True, exist_ok=True)
     (target / MARKER).write_text(f'{source}\n', encoding='utf-8')
     return target
+
+
+def roots_file(environ: dict[str, str] | None = None) -> Path:
+    """The published roots file: :data:`ROOTS_ENV` when set, else :data:`DEFAULT_ROOTS`."""
+    env = os.environ if environ is None else environ
+    return Path(env.get(ROOTS_ENV) or DEFAULT_ROOTS).expanduser()
+
+
+def publish(to: Path, *, declared: _storage.Storage | None = None) -> Path:
+    """Write every BOUND kind as ``{kind: {"root": <template>, "default": <in-tree default>}}`` JSON to *to*.
+
+    The agent-guard engine (node, no TOML) reads this to admit a worktree under a bound home
+    (``bound-worktree-home``, :mod:`dev_lab.dev._deny_worktree_row`): the binding stays ONE fact in the machine
+    file, and this file is its rendering. No kind bound: an empty object, which admits nothing.
+    """
+    declared = _storage.declared() if declared is None else declared
+    table = {kind: {'root': root, 'default': _storage.KINDS[kind]} for kind, root in sorted(declared.roots.items())}
+    to.parent.mkdir(parents=True, exist_ok=True)
+    temporary = to.with_name(f'{to.name}.{os.getpid()}.tmp')
+    temporary.write_text(f'{json.dumps(table, indent=2)}\n', encoding='utf-8')
+    temporary.replace(to)
+    return to
 
 
 def rendered(declared: _storage.Storage) -> str:
@@ -142,6 +204,16 @@ def render(to: Path, *, repo: Path, declared: _storage.Storage | None = None) ->
     return to
 
 
+def _rclone() -> str:
+    """The rclone the rendered config serves, from the pinned install place (:mod:`dev_lab.dev.toolrelease`)."""
+    from dev_lab.dev.toolrelease import ToolAbsent, resolve  # noqa: PLC0415 -- only render needs the tool table
+
+    try:
+        return str(resolve('rclone'))
+    except ToolAbsent as absent:
+        return f'not installed -- {absent}'
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one door; 2 on a refusal (named on stderr)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.storage', description=__doc__.split('\n')[0])
@@ -152,7 +224,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     out.add_argument('--to', type=Path, default=DEFAULT_RCLONE)
     move = sub.add_parser('migrate', help='move a bound kind out of the checkout once')
     move.add_argument('kind')
-    for each in (where, out, move):
+    shown = sub.add_parser('publish', help='write the bound roots for the agent-guard engine')
+    shown.add_argument('--to', type=Path, default=None)
+    for each in (where, out, move, shown):
         each.add_argument('--tree', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     try:
@@ -163,6 +237,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 emit(f'{kind}: {kind_root(kind, args.tree, declared=declared)} ({bound})')
         elif args.verb == 'render':
             emit(f'rendered {len(declared.reach)} remote(s) to {render(args.to, repo=args.tree, declared=declared)}')
+            emit(f'rclone: {_rclone()}')
+        elif args.verb == 'publish':
+            emit(
+                f'published {len(declared.roots)} bound root(s) to '
+                f'{publish(args.to or roots_file(), declared=declared)}'
+            )
         else:
             emit(f'{args.kind}: migrated to {migrate(args.kind, args.tree, declared=declared)}')
     except (_storage.StorageError, StaleTree, ValueError, RuntimeError) as refused:

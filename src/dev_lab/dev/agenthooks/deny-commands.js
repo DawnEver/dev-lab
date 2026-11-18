@@ -687,6 +687,103 @@ function familySiblingClone(cmd, cwd) {
   }
 }
 
+/* ================================ A WORKTREE UNDER THE MACHINE'S BOUND HOME ================================
+ *
+ * `admits: 'bound-worktree-home'` (WORKTREES-STAY-INSIDE): a machine may bind the `worktrees` storage kind outside
+ * the checkout ([storage.roots] worktrees), a path no committed pattern can name. The binding is ONE fact in the
+ * machine file; `python -m dev_lab.dev.storage publish` renders it as JSON for this engine (no TOML here). A line is
+ * admitted only when EVERY `worktree add|move` / `clone` target lies inside the repository's worktree home -- the
+ * published root with `{repo}` filled by the main checkout's name, or its in-tree default. No file, no binding, a
+ * target the engine cannot place: admits nothing.
+ */
+const STORAGE_ROOTS_ENV = 'LAB_COMMONS_STORAGE_ROOTS';
+
+function publishedWorktrees() {
+  const file =
+    process.env[STORAGE_ROOTS_ENV] || path.join(require('os').homedir(), '.config', 'lab-commons', 'storage-roots.json');
+  try {
+    const kind = JSON.parse(fs.readFileSync(file, 'utf8')).worktrees;
+    return kind && typeof kind.root === 'string' && typeof kind.default === 'string' ? kind : null;
+  } catch {
+    return null;
+  }
+}
+
+function insideDir(target, base) {
+  const folded = normcase(base);
+  return normcase(target).startsWith(folded + path.sep);
+}
+
+/** The positional words after `options`: `-b`, `-B` and `--reason` consume the next word. */
+function positionalWords(words) {
+  const found = [];
+  for (let i = 0; i < words.length; i += 1) {
+    if (words[i] === '-b' || words[i] === '-B' || words[i] === '--reason') i += 1;
+    else if (!words[i].startsWith('-')) found.push(words[i]);
+  }
+  return found;
+}
+
+function boundWorktreeHome(cmd, cwd) {
+  const kind = cwd && publishedWorktrees();
+  if (!kind) return false;
+  let dir = path.resolve(cwd);
+  let placed = 0;
+  for (const segment of segments(splitHeredocs(cmd).rest)) {
+    const text = segment.replace(ENV_PREFIX, '').trim();
+    if (!text) continue;
+    const words = (text.match(/"[^"\n]*"|'[^'\n]*'|\S+/g) || []).map((word) => word.replace(/^["']|["']$/g, ''));
+    if (words[0] === 'cd' || words[0] === 'pushd') {
+      dir = path.resolve(dir, hostPath(words[1] || '.'));
+      continue;
+    }
+    let base = dir;
+    let at;
+    if (/^git(?:\.exe)?$/i.test(words[0])) {
+      at = 1;
+      while (at + 1 < words.length && (words[at] === '-C' || words[at] === '-c')) {
+        if (words[at] === '-C') base = path.resolve(base, hostPath(words[at + 1]));
+        at += 2;
+      }
+    } else if (/^(?:sh|bash)$/.test(words[0]) && /retry/i.test(words[1] || '')) {
+      at = 2;
+    } else {
+      continue;
+    }
+    const rest = words.slice(at);
+    let index;
+    let positionals;
+    if (rest[0] === 'worktree' && (rest[1] === 'add' || rest[1] === 'move')) {
+      positionals = positionalWords(rest.slice(2));
+      index = rest[1] === 'add' ? 0 : 1;
+    } else if (rest[0] === 'clone') {
+      positionals = positionalWords(rest.slice(1));
+      index = 1;
+    } else {
+      continue;
+    }
+    if (positionals.length <= index) return false;
+    const target = path.resolve(base, hostPath(positionals[index]));
+    try {
+      const own = repoRoot(base);
+      const gitDir = own && commonGitDir(own);
+      if (!gitDir) return false;
+      const main = path.dirname(gitDir);
+      const home = path.resolve(kind.root.split('{repo}').join(path.basename(main)));
+      if (!insideDir(target, home) && !insideDir(target, path.join(main, ...kind.default.split('/')))) return false;
+    } catch {
+      return false;
+    }
+    placed += 1;
+  }
+  return placed > 0;
+}
+
+/** Whether `rule` carries the filesystem admission `name` (a row may carry one or several). */
+function admitsBy(rule, name) {
+  return Array.isArray(rule.admits) ? rule.admits.includes(name) : rule.admits === name;
+}
+
 /* ================================ A GREP WHOSE OPERANDS ARE FILES WALKS NOTHING ================================
  *
  * `admits: 'file-operands'` (RECURSIVE-GREP): `-r` names a WALK only when an operand is a directory, or when none is
@@ -818,8 +915,9 @@ for (const rule of rules) {
   } catch {
     continue; // one malformed rule never blocks the session
   }
-  if (hit && rule.admits === 'family-sibling-clone' && familySiblingClone(cmd, input.cwd)) continue;
-  if (hit && rule.admits === 'file-operands' && fileOperands(rule, cmd, input.cwd)) continue;
+  if (hit && admitsBy(rule, 'family-sibling-clone') && familySiblingClone(cmd, input.cwd)) continue;
+  if (hit && admitsBy(rule, 'bound-worktree-home') && boundWorktreeHome(cmd, input.cwd)) continue;
+  if (hit && admitsBy(rule, 'file-operands') && fileOperands(rule, cmd, input.cwd)) continue;
   let liveReason = '';
   if (hit && rule.asks) {
     liveReason = askedRefusal(rule.asks, sessionRoot);

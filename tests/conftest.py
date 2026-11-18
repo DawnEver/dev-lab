@@ -26,6 +26,7 @@ from dev_lab.dev.lockcheck import uv_version
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.producer import OUTCOME_VAR
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
+from dev_lab.dev.storage import ROOTS_ENV
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +34,8 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(BOX_ENV, str(tmp_path / 'lab-commons-box' / 'box.sqlite'))
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'lab-commons-machine' / 'config.toml'))
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'lab-commons-home'))
+    # The roots this machine PUBLISHED for the guard engine (storage publish): a test plants its own, never reads ours.
+    monkeypatch.setenv(ROOTS_ENV, str(tmp_path / 'lab-commons-storage' / 'storage-roots.json'))
     monkeypatch.delenv(INSIDE_ENV, raising=False)  # the verify running these tests is boxed; a test is not
     monkeypatch.delenv(CPU_ENV, raising=False)
     monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)  # a test plants the session it means

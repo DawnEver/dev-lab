@@ -17,9 +17,16 @@ Doors, `python -m dev_lab.dev.storage ...`:
   outside every repo. Nobody hand-edits an rclone config.
 - `migrate <kind>` -- move a bound kind's in-tree copy once, leaving a marker; a later in-tree copy is
   refused by name, never read as a fallback.
+- `publish [--to P]` -- the bound roots as JSON (`~/.config/lab-commons/storage-roots.json`) for the agent-guard
+  engine, which reads no TOML: WORKTREES-STAY-INSIDE admits a worktree under a bound `worktrees` root only
+  through it (`admits: bound-worktree-home`). Re-run it after changing `[storage.roots]`.
 
 The write guard (WRITES-STAY-IN-THE-TREE) admits a bound root and nothing else. Junctions are not used: they
 hide the real place from the cleaners and the guards, and break when the target drive is absent.
 
-Moved so far: the forge outbox and intent journal, the run cache. The other writers of the output kind, the
-venv and worktree layouts and the cleaners move next (task toolchain, D75).
+Moved: the forge outbox and intent journal, the run cache, the metrics and walls logs, the supervise journal
+and state, every dated log and the pytest base temp (`datedlog.dated_base`), a worktree's outputs going home, and
+the worktree home (`worktreeplace.home`: placement, the misplaced-tree detector, the shatree trees, orphan and
+retention scans, reclaim). Not moved: the venv layout -- its pointer rule has three twins (Python, the node
+resolver, the POSIX shell function) held to one answer, and a bound venv home needs all three to read it
+(task toolchain, D75).

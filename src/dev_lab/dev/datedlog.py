@@ -36,6 +36,8 @@ import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Final
 
+from lab_commons import storage as _storage
+
 from dev_lab.dev.family import declared_in
 
 if TYPE_CHECKING:
@@ -47,6 +49,7 @@ __all__ = [
     'TEST_TEMP_KIND',
     'UndeclaredOutput',
     'date_parts',
+    'dated_base',
     'dated_log',
     'declared_output',
     'kind_dirs',
@@ -139,9 +142,26 @@ def dated_log(root: Path, name: str, *, base: str, kind: str) -> Path:
             f'age out a file with no age. Pass just the filename.'
         )
         raise ValueError(msg)
-    dated = root.joinpath(*Path(base).parts, *date_parts(), kind)
+    dated = dated_base(root, base).joinpath(*date_parts(), kind)
     dated.mkdir(parents=True, exist_ok=True)
     return dated / given.name
+
+
+def dated_base(root: Path, base: str, *, declared: _storage.Storage | None = None) -> Path:
+    """Where *base* (relative to the checkout *root*) lives: under the BOUND ``output`` kind when it is output.
+
+    A *base* inside the in-tree ``output`` default (``output/logs``) moves with the ``output`` storage kind when this
+    machine binds it (``[storage.roots] output``, :mod:`dev_lab.dev.storage`): the bound root of the repository's
+    MAIN checkout, shared by its worktrees. Unbound, it is ``root/base`` -- the tree's own, as before. Any other
+    *base* is ``root/base``.
+    """
+    parts = Path(base).parts
+    declared = _storage.declared() if declared is None else declared
+    if parts and parts[0] == _storage.KINDS['output'] and 'output' in declared.roots:
+        from dev_lab.dev.storage import output_path  # noqa: PLC0415 -- storage imports nothing dated; keep it lazy
+
+        return output_path(root, *parts[1:], declared=declared)
+    return root.joinpath(*parts)
 
 
 def declared_output(root: Path) -> str:
@@ -171,7 +191,10 @@ def output_dir(root: Path, kind: str) -> Path:
 
 
 def kind_dirs(root: Path, kind: str) -> tuple[str, ...]:
-    """Every existing ``<output>/<yy>/<mm>/<dd>/<kind>`` under *root*, repo-relative POSIX; none if undeclared."""
+    """Every existing IN-TREE ``<output>/<yy>/<mm>/<dd>/<kind>`` under *root*, repo-relative POSIX; none if undeclared.
+
+    In-tree only: a bound output root lies outside the checkout, where no scan of the tree walks.
+    """
     try:
         base = root / declared_output(root)
     except UndeclaredOutput:
