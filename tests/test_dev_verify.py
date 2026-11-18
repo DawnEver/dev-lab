@@ -1161,6 +1161,32 @@ def test_a_selection_is_a_measure_needs_no_claim_and_waits_briefly(monkeypatch, 
     assert waits == [verifybox.MEASURE_WAIT_S]
 
 
+def test_a_selected_path_missing_from_the_checkout_is_refused_by_name(monkeypatch, tmp_path: Path, capsys) -> None:
+    """O38: a missing path is named with the checkout it was looked for in, before any step runs.
+
+    The planted control is the selection test above: an EXISTING path still runs unchanged.
+    """
+    _cached(monkeypatch, tmp_path)
+    monkeypatch.delenv(PRODUCING_VAR)
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a step ran for a missing path'))
+    argv = ['--', 'tests/a.py', 'tests/gone.mjs', '-k', 'not_a_path', 'tests/b.py::test_x']
+    assert verify.main(argv) == ProducerExit.USAGE
+    err = capsys.readouterr().err
+    assert 'tests/gone.mjs' in err
+    assert 'tests/b.py' in err
+    assert str(tmp_path) in err
+    assert 'not_a_path' not in err, 'an option VALUE is not a selected path'
+    assert 'full suite' not in err, 'the refusal names the missing path, not the full-suite rule'
+
+
+def test_missing_paths_reads_only_selected_paths(tmp_path: Path) -> None:
+    (tmp_path / 'tests').mkdir()
+    assert verify.missing_paths(tmp_path, ('tests', '-k', 'gone', '--deselect', 'x.py')) == ()
+    assert verify.missing_paths(tmp_path, ('tests::t', 'gone.py::t', '-q')) == ('gone.py',)
+
+
 def test_only_an_argument_naming_the_tree_makes_a_run_targeted(tmp_path: Path) -> None:
     (tmp_path / 'tests').mkdir()
     assert verify.is_targeted(tmp_path, ('tests',))
@@ -1217,7 +1243,8 @@ def test_every_verify_run_loads_the_durations_ledger_plugin() -> None:
 def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeypatch, tmp_path: Path) -> None:
     """THE 95-OF-98 PATTERN: a second verify of the same key reads the leader's answer and runs nothing."""
     root, box = tmp_path / 'root', tmp_path / 'inflight'
-    root.mkdir()
+    (root / 'tests').mkdir(parents=True)
+    (root / 'tests' / 'a.py').write_text('', encoding='utf-8')
     box.mkdir()
     monkeypatch.setattr(verify, 'project_root', lambda: root)
     monkeypatch.setattr(verify, 'box_directory', lambda: box)
@@ -1262,6 +1289,8 @@ def test_a_selection_the_cache_already_judged_is_cited_and_not_run(monkeypatch, 
     _unposted(monkeypatch)
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a judged selection ran again'))
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
     _plant(cache, verify.run_key(tmp_path, ('tests/a.py',)), 'FAIL')
     assert verify.main(['tests/a.py']) == EXIT_CODES[Conclusion.FAIL]
 
