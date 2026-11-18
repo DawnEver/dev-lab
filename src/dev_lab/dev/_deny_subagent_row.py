@@ -87,9 +87,6 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         'git commit --no-verify -m "x"',
         "$env:SKIP='ruff'; git commit -m 'x'",
         "$env:SKIP = 'ruff'",
-        # PLANTED CONTROL for 'shell': a body a SHELL consumes is still a command line.
-        'bash <<EOF\ngit push origin HEAD\nEOF',
-        'bash -c "git push origin HEAD"',
     ),
     'permits': (
         f'{VENV_PYTHONS[0]} scripts/gate/runner.py measure tests/test_x.py',
@@ -103,7 +100,5 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr close-landedness 3',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x --kind need',
         'gh workflow list -R o/r',
-        # O25: a python heredoc whose SOURCE names a push (an edit of this very row) runs no push.
-        "python - <<'EOF'\ntext = '''\ngit push origin HEAD\n'''\nEOF",
     ),
 }

@@ -488,6 +488,20 @@ def test_a_subagent_push_is_refused_and_the_main_session_keeps_its_own_door(rule
     assert outside.startswith('NETWORK-VERB:'), 'the main session lost its own (retry) door'
 
 
+def test_a_subagent_push_is_read_in_shell_text_never_in_python_source(rules: Path) -> None:
+    """O25: SUBAGENT-NO-PUSH (matches 'shell') reads what a SHELL runs, never interpreter source.
+
+    A python heredoc EDITING text that names a push runs no push. PLANTED CONTROLS: the same words handed to a
+    shell -- a heredoc body or a ``-c`` script -- are still a push and still refused.
+    """
+    edit = "python - <<'EOF'\ntext = '''\ngit push origin HEAD\n'''\nEOF"
+    assert agenthooks.decide(edit, rules, agent_id='a1') is None
+    for shell in ('bash <<EOF\ngit push origin HEAD\nEOF', 'bash -c "git push origin HEAD"'):
+        reason = agenthooks.decide(shell, rules, agent_id='a1')
+        assert reason is not None, shell
+        assert reason.startswith('SUBAGENT-NO-PUSH:'), reason
+
+
 def test_a_subagent_is_refused_through_the_powershell_tool_too(rules: Path) -> None:
     reason = agenthooks.decide('git push origin HEAD', rules, tool='PowerShell', agent_id='a1')
     assert reason is not None
