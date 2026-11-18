@@ -81,6 +81,44 @@ def missing_for_part(root: Path, part: str, *, installed: Callable[[str], bool] 
     )
 
 
+#: The frontmatter line a task record declares its needs on: ``needs: [simba, windows]`` (D79).
+_NEEDS_LINE: Final = re.compile(r'^needs:\s*(.*?)\s*$', re.MULTILINE)
+_NEED: Final = re.compile(r'[a-z0-9][a-z0-9_-]*')
+#: The line that closes a frontmatter block.
+_FENCE: Final = '\n---'
+
+
+def task_needs(ledger: Path, task: str) -> tuple[str, ...]:
+    """The needs the task record ``<ledger>/<slug>/TASK.md`` declares in its frontmatter (D79), else ``()``.
+
+    A TASK DECLARES THE NEEDS ITS WORK EXERCISES -- the same need names its tests' resource markers carry -- never
+    an extra: which extra serves a need is the REPO's fact (:func:`declared_needs`), stated once. A line that is no
+    ``[a, b]`` list of need names is refused by name, so a typo never silently installs nothing.
+    """
+    record = Path(ledger) / task.split('@', 1)[0] / 'TASK.md'
+    text = record.read_text(encoding='utf-8') if record.is_file() else ''
+    front = text[3:].partition(_FENCE)[0] if text.startswith('---') else ''
+    found = _NEEDS_LINE.search(front)
+    if found is None:
+        return ()
+    value = found.group(1)
+    names = [part.strip() for part in value.strip('[]').split(',')] if value.startswith('[') else None
+    if names is None or not value.endswith(']') or any(not _NEED.fullmatch(name) for name in names if name):
+        msg = f'{record}: needs must be a list of need names, e.g. needs: [simba, windows] -- got {value!r}'
+        raise ValueError(msg)
+    return tuple(name for name in names if name)
+
+
+def extras_for(root: Path, needs: tuple[str, ...]) -> tuple[str, ...]:
+    """The extras a sync selects for *needs*: the repo's declared extras plus every extra a need maps to, in order.
+
+    A need the repo maps to no extra (a platform, an external tool) installs nothing.
+    """
+    dep, _available = _table(root)
+    mapped = declared_needs(root)
+    return tuple(dict.fromkeys([*(str(e) for e in dep.get('extras', ())), *(mapped[n] for n in needs if n in mapped)]))
+
+
 def _names(requirements: list[str]) -> list[str]:
     """Distribution names of *requirements*, skipping any with an environment marker (not evaluated here)."""
     return [m.group(1) for req in requirements if ';' not in req and (m := _NAME.match(req))]
