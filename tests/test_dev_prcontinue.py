@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from _branch_repos import advance, clone_pair
@@ -22,6 +22,8 @@ from dev_lab.dev import forgeservesteps, prcontinue
 from dev_lab.dev.branchreview import read_record
 from dev_lab.dev.ciworkflows import workflows
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.prcontinue import candidates, continuation, continue_landed, continues_title
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -223,3 +225,34 @@ def test_a_base_with_no_manifest_continues_nothing(tmp_path: Path, base: str, ca
     else:
         assert 'declares nothing' in said
         assert 'continues #' not in said
+
+
+def _raced(forge: StateForge, *, open_one: bool) -> None:
+    """``pr_create`` refused 422, as when another pass opened the head's PR first (dev-lab #718, O27)."""
+
+    def refused(*_args: object, **_kwargs: object) -> NoReturn:
+        if open_one:
+            forge.add_pull('pr/x', _BASE, title='feat: x (continues #1)', sha=_TIP)
+        exists = Attempt(1, 422, 'a pull request already exists', Diagnosis.FORGE_REFUSED)
+        raise ForgeCallFailed(Report(('POST', 'pulls'), (exists,), 1))
+
+    forge.pr_create = refused  # type: ignore[method-assign]
+
+
+def test_a_422_with_an_open_pr_for_the_head_is_that_pr() -> None:
+    """Another pass opened the continuation between our read and our create: that open PR IS the result."""
+    forge = StateForge()
+    landed = _merged(forge)
+    _raced(forge, open_one=True)
+    [number] = _opened(forge, {'pr/x': _TIP})
+    assert number != landed
+    assert forge.pr_view(number).state == 'open'
+
+
+def test_a_refused_create_with_no_open_pr_still_fails() -> None:
+    """PLANTED CONTROL: a refusal no open PR explains is a failure, never a silent success."""
+    forge = StateForge()
+    _merged(forge)
+    _raced(forge, open_one=False)
+    with pytest.raises(ForgeCallFailed):
+        _opened(forge, {'pr/x': _TIP})
