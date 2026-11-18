@@ -28,6 +28,12 @@ resources = ["femm", "windows"]
 """
 
 
+@pytest.fixture(autouse=True)
+def _empty_outbox(monkeypatch) -> None:
+    """Every producer here is faked and queues nothing: its outbox is empty (the race test plants a held result)."""
+    monkeypatch.setattr(jobparts, 'deliver_unit', lambda *_args, **_kwargs: [])
+
+
 @pytest.mark.parametrize('code', [1, 2, 3, 4, -9])
 def test_a_failed_collection_cannot_publish_a_partial_matrix(tmp_path: Path, monkeypatch, capsys, code: int) -> None:
     (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
@@ -652,3 +658,21 @@ def test_a_manual_flag_that_is_not_a_boolean_is_refused() -> None:
     text = MANUAL.replace('manual = true', 'manual = "yes"')
     with pytest.raises(platformparts.UndeclaredPart, match='manual'):
         hostedparts.hosted_parts(text)
+
+
+def test_a_producer_whose_result_is_held_has_it_delivered_and_never_posts_error_over_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The lab-commons nightly race (2026-11-18): the pass waited in the outbox and the job posted error first."""
+    held: list[tuple[str, str]] = []
+
+    def deliver(_root: Path, forge: StateForge, sha: str, context: str) -> list[str]:
+        held.append((sha, context))
+        status_post(forge, sha, context=context, state='success', description='scope=full ran=1')
+        return [f'status: {context}=success on {sha[:12]}']
+
+    monkeypatch.setattr(jobparts, 'deliver_unit', deliver)
+    forge = _producing(monkeypatch, lambda _env, _forge: 0)
+    assert jobparts.produce(tmp_path, 'base@windows', forge, env={}) == 0
+    assert held == [(SHA, 'tests/base@windows')], 'the job delivers its own unit before it reads the forge'
+    assert [s.state for s in status_list(forge, SHA)] == ['success'], 'no error over its own pass'

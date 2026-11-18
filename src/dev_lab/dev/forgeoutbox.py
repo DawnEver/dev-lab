@@ -78,6 +78,7 @@ __all__ = [
     'Post',
     'PostFailed',
     'content_name',
+    'deliver_unit',
     'enqueue',
     'flush',
     'main',
@@ -292,6 +293,23 @@ def _elsewhere(root: Path, post: Post, alarm: Callable[[Alarm], object], failure
     except (ForgeCallFailed, OSError, ValueError, KeyError) as exc:
         failures.append(f'{post.context} on {post.sha[:12]} for {post.repo}: {exc}')
         return f'status: kept {post.context} on {post.sha[:12]} for {post.repo}'
+
+
+def deliver_unit(
+    root: Path, built: Client, sha: str, context: str, *, alarm: Callable[[Alarm], object] = sound
+) -> list[str]:
+    """Deliver the held entries of ONE unit (*sha*, *context*) now, whether or not an ``origin`` ref names *sha*.
+
+    For a job the forge started FOR *sha* (:func:`dev_lab.dev.jobparts.produce`): its checkout often names the commit
+    in no remote-tracking ref, so the producer's result stayed held, the job read no settled part and posted
+    ``error`` -- and the held pass, flushed later, met "the first result wins" and was dropped. The forge holds a
+    commit it started a job for, so that check is moot here; every other unit keeps waiting for :func:`flush`.
+    """
+    return [
+        _deliver(root, built, post, alarm)
+        for post in queued(root)
+        if not post.repo and post.sha == sha and post.context == context
+    ]
 
 
 def flush(
