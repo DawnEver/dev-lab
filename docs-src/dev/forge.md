@@ -87,7 +87,7 @@ What every host still reads, kept small:
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
   `--lock` is `<forge home>/serve.lock`. The FORGE HOME (`dev_lab.dev.servelock.forge_home`, the one place it is
   named) is `%LOCALAPPDATA%/lab-forge` on Windows, `${XDG_DATA_HOME:-~/.local/share}/lab-forge` elsewhere.
-- **A workstation never serves** (user ruling 2026-11-16): only GitHub Actions (an `actions` repo) and the HPC
+- **A workstation never serves** (user ruling 2026-11-16): only the executors the family binds -- the forge's CI and the HPC
   accounts (the roles the family binds to them, `dev_lab.dev.roles`) produce. `python -m dev_lab.dev.workstation serve` is
   refused by name with that ruling, and [the workstation deploy](#deploy-a-windows-workstation) deletes the
   retired `lab-forge-serve` Task where an older deploy registered it.

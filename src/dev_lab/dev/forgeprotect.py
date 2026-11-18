@@ -48,7 +48,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
 
-from lab_commons.config import family
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 
@@ -64,7 +63,7 @@ from dev_lab.dev.forgereview_declared import review_from
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.roles import retired_placement, roles_for
+from dev_lab.dev.roles import retired_placement, roles_of
 
 __all__ = [
     'INTEGRATION',
@@ -187,7 +186,7 @@ def required_contexts(
     The workflows render under the roles the family *layer* (default: this machine's) binds for the repo.
     """
     kind = backend_for(forge).name
-    roles = roles_for(family() if layer is None else layer, kind, f'{forge.owner}/{forge.repo}')
+    roles = roles_of(forge, layer=layer)
     directory = WORKFLOW_DIRS[kind]
     flows = [flow for where, flow in placed(text, origin, kind, roles).values() if where == directory]
     jobs = [job for flow in flows for job in flow.get('jobs', {}).values()]

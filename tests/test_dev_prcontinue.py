@@ -17,6 +17,7 @@ import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import run_git
 from _forge_state import StateForge
+from _roles_fixtures import HPC_REPO, carry
 
 from dev_lab.dev import forgeservesteps, prcontinue
 from dev_lab.dev.branchreview import read_record
@@ -118,7 +119,7 @@ def test_the_serve_pass_opens_continuations_before_anything_prunes(monkeypatch: 
                  'prompt', 'relock', 'drift_step'):  # fmt: skip
         monkeypatch.setattr(forgeservesteps, name, lambda *_a, _n=name, **_k: order.append(_n))
     monkeypatch.setattr(forgeservesteps, 'serve_continue_landed', lambda *_a, **_k: order.append('continue'))
-    monkeypatch.setattr(forgeservesteps, 'ci_merges', lambda _root: False)
+    carry(monkeypatch, HPC_REPO)  # the hpc tick merges and prunes
     forgeservesteps.repo_wide(
         Path(), 'r', lambda _root: StateForge(), 'box', (), clock=lambda: None, say=lambda _s: None,
         alarm=lambda _a: None,

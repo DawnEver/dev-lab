@@ -353,7 +353,9 @@ def serves_here(spec: Deployment, home: Path, repo: Repo) -> bool:
     if not (checkout / 'pyproject.toml').is_file():
         return False
     roles = roles_at(checkout)
-    return any(roles.kind(role) == HPC and roles.of(role).grant_role == spec.role for role in ROLES)
+    return any(  # a carried binding names kinds only (''): any hpc executor
+        roles.kind(role) == HPC and roles.of(role).grant_role in {spec.role, ''} for role in ROLES
+    )
 
 
 def merge_crontab(current: str, lines: Sequence[str]) -> str:

@@ -8,9 +8,10 @@ from typing import Any
 
 import pytest
 from _forge_state import StateForge
+from _roles_fixtures import EVERY_CI, HPC_REPO, carry
 from test_dev_forgemerge import _MANIFEST, _work
 
-from dev_lab.dev import forgecli, forgemerge, forgemergecall, forgemergeready
+from dev_lab.dev import forgecli, forgemergecall, forgemergeready
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -144,15 +145,15 @@ def test_on_github_a_created_pr_asks_for_native_auto_merge_as_a_merge_commit_and
     assert tea.sent == []
 
 
-_CI_MERGER = f'[tool.dev_lab.ci."{forgemerge.CI_MERGER}"]\n'
-
-
-def test_on_gitea_the_merge_job_merges_a_ready_pr_only_where_the_repo_declares_it(tmp_path: Path) -> None:
-    """P3: Gitea's merge job runs the same decision and merges; PLANTED CONTROL: undeclared, the job only posts."""
+def test_on_gitea_the_merge_job_merges_a_ready_pr_only_where_merge_is_bound_to_ci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3: Gitea's merge job runs the same decision and merges; PLANTED CONTROL: merge on hpc, the job only posts."""
     work, forge, number, head = _pr(tmp_path)
+    carry(monkeypatch, HPC_REPO)
     ready(work, forge, number)
-    assert forge.merges == [], 'undeclared: the serve tick merges it'
-    (work / 'pyproject.toml').write_text(_MANIFEST + _INTEGRATOR + _CI_MERGER, encoding='utf-8')
+    assert forge.merges == [], 'merge bound to hpc: the serve tick merges it'
+    carry(monkeypatch, EVERY_CI)
     said = ready(work, forge, number)
     [(merged, body)] = forge.merges
     assert merged == number

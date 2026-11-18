@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
+from _roles_fixtures import HPC_REPO, carry
 from lab_commons.compute.model import Candidate
 from lab_commons.hpc.shell import FULL
 from lab_commons.outcomes import Conclusion
@@ -126,8 +127,7 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
     (repo / 'pyproject.toml').write_text(
         '[tool.lab_commons.tests]\nproduce = ["x", "{part}"]\n'
-        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
-        "[tool.dev_lab.protection]\nproducer = 'hpc'\n",
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n",  # every repo declares it (D83)
         'utf-8',
     )
     tips = {}
@@ -413,3 +413,9 @@ def test_the_queue_says_where_its_time_went(server, tmp_path: Path, monkeypatch,
     assert code == 0
     json.loads(out.out)
     assert re.search(r'\[queue\] time [\d.]+ s -- .*forge HTTP [\d.]+ s', out.err), out.err
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

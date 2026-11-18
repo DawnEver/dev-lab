@@ -19,10 +19,11 @@ from typing import Any
 import pytest
 
 from dev_lab.dev.ciworkflows import BASE_PATH, LIGHT, follow_checks, runner_labels, workflows, write
-from dev_lab.dev.forgemerge import CI_MERGER
 
-#: An explicit Actions producer (dev_lab.dev.producers; absent reads the same); these render an Actions repo.
-ACTIONS_REPO = '[tool.dev_lab.protection]\nproducer = "actions"\n'
+#: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
+ACTIONS_REPO = ''
+#: The Gitea merger workflow, rendered where merge is bound to ci.
+CI_MERGER = 'merge.yml'
 
 
 _GITEA = ('review.yml', CI_MERGER)

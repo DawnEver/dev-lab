@@ -19,12 +19,13 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from _roles_fixtures import HPC_REPO, carry
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev import hostrefresh, venvfollow, workstation, workstationfile, workstationregistry
 from dev_lab.dev.forgealarm import Alarm
-from dev_lab.dev.producercheck import host_refusals
+from dev_lab.dev.rolecheck import host_refusals
 from dev_lab.dev.venvpath import venv_interpreter
 
 #: Every probed tool its probe marks heavy; a plain probed tool (ngspice, node) is never withheld.
@@ -44,8 +45,7 @@ if args[:2] == ['-c', 'credential.interactive=never']:
     sys.exit(128 if any(f'/{d}.git' in args[-2] for d in denied) else 0)
 if args[0] == 'clone':
     git = pathlib.Path(args[-1], '.git'); git.mkdir(parents=True)
-    producer = 'hpc'
-    (git.parent / 'pyproject.toml').write_text(f'[tool.dev_lab.protection]\nproducer = "{producer}"\n')
+    (git.parent / 'pyproject.toml').write_text('[project]\nname = "x"\n')
     for name, text in (('URL', args[-2]), ('HEAD_SHA', 'a' * 40), ('UP_SHA', 'a' * 40)): (git / name).write_text(text)
     sys.exit(0)
 git, rest = pathlib.Path(args[1], '.git'), args[2:]
@@ -358,6 +358,7 @@ def test_deploy_is_refused_on_a_host_without_the_forge_role(
 REAL_DOOR: Final = r"""
 import pathlib, sys
 from dev_lab.dev._dep_project import target_root
+
 target_root(pathlib.Path(sys.argv[-1]), pathlib.Path.cwd())
 """
 
@@ -556,3 +557,9 @@ def test_a_host_follow_never_moves_a_checkout_a_live_run_executes_from(tmp_path:
     assert not ran
     assert hostrefresh.follow(_Step(), git, checkout, busy=lambda _root: '').rc == 0
     assert ran
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

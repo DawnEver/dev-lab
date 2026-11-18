@@ -1,8 +1,8 @@
 # Adding a forge workstation
 
 A Windows workstation is deployed in one command: its capabilities declared, its checkouts and venvs kept current.
-It NEVER serves a merge's parts (user ruling 2026-11-16): only GitHub Actions (an `actions` repo) and the HPC
-accounts (an `hpc` repo) produce, and nothing on a workstation ticks. This page is the runbook for a LIGHT
+It NEVER serves a merge's parts (user ruling 2026-11-16): only the executors the family binds (`ci` -- GitHub Actions -- and the HPC
+accounts, `dev_lab.dev.roles`) produce, and nothing on a workstation ticks. This page is the runbook for a LIGHT
 workstation: one that never runs heavy compute -- no JMAG, FEMM, MATLAB or SIMBA, even when the tool is installed (user ruling 2026-10-28, both heavy boxes). A JMAG box is the
 same deploy with `--capabilities workstation,jmag:<N>` instead of a role ([the forge](forge.md#deploy-a-windows-workstation)).
 

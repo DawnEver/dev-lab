@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from _roles_fixtures import EVERY_CI, carry
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
@@ -47,6 +48,12 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 #: review door refuses them in its environment) and the workflow's ``GIT_CONFIG_COUNT``/``KEY_n``/``VALUE_n``
 #: auth header. A test that means one plants it with ``monkeypatch.setenv``.
 _CI_JOB_ENV: Final = re.compile(r'GITHUB_RUN_ID|GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)|' + '|'.join(FORGE_TOKEN_ENVS))
+
+
+@pytest.fixture(autouse=True)
+def _roles_carried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No family layer here (the machine file is empty): every test carries every role on CI unless it plants others."""
+    carry(monkeypatch, EVERY_CI)
 
 
 @pytest.fixture(autouse=True)

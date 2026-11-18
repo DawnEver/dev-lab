@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from _roles_fixtures import EVERY_CI, HPC_REPO, carry
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.retired import RETIRED
 
@@ -27,6 +28,7 @@ from dev_lab.dev.hpcaccount import steps as deploy_steps
 from dev_lab.dev.hpcaccount.account import UNREACHED
 from dev_lab.dev.hpcaccount.fleet import grant_slice
 from dev_lab.dev.hpcaccount.steps import Tools
+from dev_lab.dev.roles import ROLES_ENV
 
 URL: Final = 'https://forge.example/team'
 LAB: Final = ('--repo', f'dev-lab={URL}/dev-lab.git@trunk')
@@ -75,8 +77,7 @@ if 'ls-remote' in args:
 if args[0] == 'clone':
     target = pathlib.Path(args[-1])
     (target / '.git').mkdir(parents=True)
-    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n'
-                                           '[tool.dev_lab.protection]\nproducer = "hpc"\n')
+    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n')
 """
 
 FAKE_ANSWER: Final = r"""
@@ -561,6 +562,7 @@ def test_a_setup_with_spaces_semicolons_and_quotes_reaches_bash_verbatim(tmp_pat
 
 FAKE_RCLONE: Final = r"""
 import pathlib, sys
+
 with pathlib.Path(sys.argv[1]).open('a') as f: f.write('rclone ' + ' '.join(sys.argv[3:]) + '\n')
 if sys.argv[2] != 'present':
     sys.stderr.write("didn't find section in config file\n"); sys.exit(1)
@@ -770,24 +772,25 @@ def test_a_repo_row_declaring_the_retired_serve_flag_is_refused_by_name(box: Box
     assert box.run(*DECLARE) == 0
     text = box.machine.read_text(encoding='utf-8')
     box.machine.write_text(text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = true }'))
-    with pytest.raises(ValueError, match=r'beta declare serve, which is retired.*producer'):
+    with pytest.raises(ValueError, match=r'beta declare serve, which is retired.*family binds'):
         deploy_spec.load(box.machine)
 
 
-def test_a_checkout_declaring_a_malformed_producer_is_released_by_name(
-    box: Box, capsys: pytest.CaptureFixture[str]
+def test_a_checkout_whose_roles_are_unbound_is_released_by_name(
+    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every wall teaches: a malformed producer is named on the tick; an ABSENT one is actions, never served."""
+    """Every wall teaches: an unbound repo is named on the tick; one bound to CI is refreshed, never served."""
     assert box.run(*DECLARE) == 0
     pyproject = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
     served: list[tuple[list[str], Path, str]] = []
     _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n')
-    assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: absent reads as actions -- refreshed, not served'
-    _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n[tool.dev_lab.protection]\nproducer = "box"\n')
+    carry(monkeypatch, EVERY_CI)
+    assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: every role on CI -- refreshed, not served'
+    monkeypatch.delenv(ROLES_ENV)
     capsys.readouterr()
     assert _tick(box, 'beta', served) == 2
     assert served == []
-    assert "declares producer = 'box'" in capsys.readouterr().err
+    assert 'the roles binding lives in the family layer' in capsys.readouterr().err
 
 
 def _as_role(box: Box, role: str | None) -> None:
@@ -1016,3 +1019,9 @@ def test_a_research_deploy_naming_a_host_outside_its_grant_is_refused(
     assert box.run(*argv, host='login04.int.cluster') == 2
     assert 'elsewhere.example' in capsys.readouterr().err
     assert not box.machine.exists()
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

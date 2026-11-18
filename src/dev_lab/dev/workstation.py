@@ -1,7 +1,7 @@
 """A WINDOWS WORKSTATION'S DEPLOY, in one run: ``python -m dev_lab.dev.workstation deploy``.
 
-A WORKSTATION NEVER SERVES A MERGE'S PARTS (user ruling 2026-11-16): only GitHub Actions (an ``actions`` repo)
-and the HPC accounts (the roles the family binds to them, :mod:`dev_lab.dev.roles`) produce. The deploy makes the box a
+A WORKSTATION NEVER SERVES A MERGE'S PARTS (user ruling 2026-11-16): only the executors the family binds -- the
+forge's CI and the HPC accounts (:mod:`dev_lab.dev.roles`) -- produce. The deploy makes the box a
 declared, current client -- capabilities, checkouts, venvs, hooks -- and nothing on it ticks.
 
 It reuses the cluster deploy's run-or-print :class:`~dev_lab.dev.hpcaccount.steps.Step`.

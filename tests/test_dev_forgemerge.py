@@ -14,6 +14,7 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
+from _roles_fixtures import HPC_REPO, carry
 from test_dev_githook_scripts import _plant_checker
 
 from dev_lab.dev import forgeintegration, forgemessages
@@ -31,10 +32,7 @@ from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
-_MANIFEST = (
-    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
-    "[tool.dev_lab.protection]\nproducer = 'hpc'\n"
-)
+_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
 
 
 def _green() -> list[dict[str, object]]:
@@ -611,3 +609,9 @@ def test_an_environment_or_scheduling_result_never_holds_the_merge(tmp_path: Pat
     assert not judge('error', 'released: a defect of the commit class=code').ready, 'CONTROL: the code'
     assert not judge('failure', 'scope=full ran=3 hands=-').ready, 'CONTROL: a judged FAIL'
     assert not judge('error', 'released: something').ready, 'CONTROL: an unowned error'
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

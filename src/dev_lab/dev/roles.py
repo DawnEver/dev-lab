@@ -30,9 +30,9 @@ resolves is refused by name, naming the table to add (:class:`Unbound`). A proce
 CI job -- reads the KINDS the render carried into its environment (:data:`ROLES_ENV`, rendered from this same
 binding by :mod:`dev_lab.dev.ciworkflows`), never a default.
 
-A REPO DECLARES NO PLACEMENT (FORMATS-MIGRATE-ONCE): ``[tool.dev_lab.protection] producer``, ``[tool.dev_lab.review]
-where`` and the ``[tool.dev_lab.ci."merge.yml"]`` merge opt-in are refused by name with their one migration
-(:func:`retired_placement`).
+A REPO DECLARES NO PLACEMENT (FORMATS-MIGRATE-ONCE): the protection table's ``producer`` key, the review table's
+``where`` key and the ``merge.yml`` CI layer that opted a Gitea repo into CI merging are refused by name with their
+one migration (:func:`retired_placement`).
 
 A PART MAY BE NOT REQUIRED (user ruling 2026-11-16). ``[tool.dev_lab.parts] optional_needs`` names RESOURCES; a part
 needing one is never a merge or promotion condition, and still runs wherever a host offers it.
@@ -55,7 +55,7 @@ from lab_commons.hpc.needsets import BASE
 
 from dev_lab.dev._forgebackends import backend_for
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forge import forge_from_remote, forge_of_url
+from dev_lab.dev.forge import Forge, forge_from_remote, forge_of_url
 from dev_lab.dev.partrows import needs_of_row, row_part
 
 __all__ = [
@@ -84,6 +84,7 @@ __all__ = [
     'retired_placement',
     'roles_at',
     'roles_for',
+    'roles_of',
     'roles_of_url',
 ]
 
@@ -199,7 +200,7 @@ def accounts(executor: Executor, layer: Mapping[str, Any]) -> tuple[str, ...]:
     """The users of every declared ``[[hpc.grant]]`` of *layer* an :data:`HPC` *executor* names, in order."""
     if executor.kind != HPC or not isinstance(layer.get('hpc'), Mapping):
         return ()
-    grants, _ = declared_grants(dict(layer['hpc']))
+    grants, _ = declared_grants({**layer['hpc'], 'reach': []})  # every DECLARED grant; reach is a machine's, not ours
     named = (
         grant.user for grant in grants if grant.cluster_name == executor.cluster and grant.role == executor.grant_role
     )
@@ -251,8 +252,8 @@ def roles_for(layer: Mapping[str, Any], forge: str, repo: str) -> Roles:
     return Roles({role: _bound(layer, forge, repo, role) for role in ROLES})
 
 
-def roles_at(root: Path, *, layer: Mapping[str, Any] | None = None, env: Mapping[str, str] | None = None) -> Roles:
-    """The roles of the repo checked out at *root*: from the family layer, else the kinds a render carried.
+def roles_of(forge: Forge, *, layer: Mapping[str, Any] | None = None, env: Mapping[str, str] | None = None) -> Roles:
+    """The roles of the repo *forge* names: from the family layer, else the kinds a render carried.
 
     *layer* defaults to this machine's family layer; *env* to the process environment, read only when the layer is
     empty (a forge CI job carries :data:`ROLES_ENV`).
@@ -262,13 +263,13 @@ def roles_at(root: Path, *, layer: Mapping[str, Any] | None = None, env: Mapping
 
     """
     layer = family() if layer is None else layer
+    repo = f'{forge.owner}/{forge.repo}'
     if layer:
-        found = forge_from_remote(root)
-        return roles_for(layer, backend_for(found).name, f'{found.owner}/{found.repo}')
+        return roles_for(layer, backend_for(forge).name, repo)
     carried = (os.environ if env is None else env).get(ROLES_ENV, '')
     if not carried:
         msg = (
-            f'{root}: no family layer on this machine and no {ROLES_ENV} carried -- the roles binding lives in the '
+            f'{repo}: no family layer on this machine and no {ROLES_ENV} carried -- the roles binding lives in the '
             "family layer's [roles.<forge>]: declare [family] in this machine file (lab_commons.config)"
         )
         raise Unbound(msg)
@@ -279,15 +280,22 @@ def roles_at(root: Path, *, layer: Mapping[str, Any] | None = None, env: Mapping
     return Roles.of_kinds(**kinds)
 
 
-def roles_of_url(url: str, *, layer: Mapping[str, Any] | None = None) -> Roles:
-    """The roles family *layer* (default: this machine's) binds for the repo at remote *url* -- an ops host's read.
+def roles_at(root: Path, *, layer: Mapping[str, Any] | None = None, env: Mapping[str, str] | None = None) -> Roles:
+    """:func:`roles_of` the repo checked out at *root* (its ``origin``); with no layer, a remote is not needed.
 
     Raises:
-        Unbound: the layer binds no roles for it.
+        Unbound: neither source holds the binding, or the binding is refused.
 
     """
-    found = forge_of_url(url)
-    return roles_for(family() if layer is None else layer, backend_for(found).name, f'{found.owner}/{found.repo}')
+    layer = family() if layer is None else layer
+    if not layer:
+        return roles_of(Forge('', root.parent.name, root.name), layer=layer, env=env)
+    return roles_of(forge_from_remote(root), layer=layer, env=env)
+
+
+def roles_of_url(url: str, *, layer: Mapping[str, Any] | None = None, env: Mapping[str, str] | None = None) -> Roles:
+    """:func:`roles_of` the repo at remote *url* -- an ops host's read, which holds no checkout."""
+    return roles_of(forge_of_url(url), layer=layer, env=env)
 
 
 def _bindings(layer: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
