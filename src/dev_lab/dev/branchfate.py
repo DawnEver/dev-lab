@@ -31,7 +31,7 @@ door; the ``SessionStart`` reclaim (:mod:`dev_lab.dev.reclaimrun`) runs it in th
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -215,15 +215,18 @@ def discard(
 ) -> tuple[int, str]:
     """Drop ONE lane the user approved: its worktree, then its local branch; ``(exit code, the one line)``.
 
-    *approved* is the user's own words, echoed into the line so the record says who decided. Refused (exit 1,
-    nothing touched): no approval, a declared branch (trunk or session), no local branch of that name, the main
-    checkout's branch, a live session (:func:`dev_lab.dev.reclaim.removed_approved`).
+    *approved* is the user's own words, echoed into the line so the record says who decided. A COMMIT-FREE lane
+    (origin holds every commit, every worktree of it clean) loses nothing, so it needs none (O26: the narrow door
+    for ONE unused worktree). Refused (exit 1, nothing touched): no approval where one is needed, a declared
+    branch (trunk or session), no local branch of that name, the main checkout's branch,
+    a live session (:func:`dev_lab.dev.reclaim.removed_approved`).
     """
     ref = f'refs/heads/{branch}'
     sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
     trees = worktrees(root)
     held = [path for path, name in trees or () if name == branch]
-    if why := _discard_refusal(root, branchset, branch, approved, sha=sha, trees=trees):
+    free = bool(sha) and _commit_free(root, sha, held)
+    if why := _discard_refusal(root, branchset, branch, approved, sha=sha, trees=trees, free=free):
         return 1, f'refused  {branch}  ({why})'
     for tree in held:
         if why := removed_approved(root, tree, quiet_s=quiet_s):
@@ -231,7 +234,16 @@ def discard(
     if git_out(root, 'update-ref', '-d', ref, sha) is None:
         return 1, f'FAILED   {branch}  (its worktree is gone; the branch delete at {sha[:10]} failed)'
     where = f'worktree {held[0]} and ' if held else ''
+    if not approved.strip():
+        return 0, f'discarded {where}local {branch} ({sha[:10]}) -- commit-free: origin holds every commit'
     return 0, f'discarded {where}local {branch} ({sha[:10]}) -- approved: "{approved.strip()}"'
+
+
+def _commit_free(root: Path, sha: str, held: Sequence[Path]) -> bool:
+    """Origin holds every commit of *sha* and no worktree in *held* has a change: discarding it loses nothing."""
+    if (git_out(root, 'rev-list', '--count', sha, '--not', '--remotes=origin') or '').strip() != '0':
+        return False
+    return all(git_out(tree, 'status', '--porcelain') == '' for tree in held)
 
 
 def _discard_refusal(
@@ -242,10 +254,11 @@ def _discard_refusal(
     *,
     sha: str,
     trees: tuple[tuple[Path, str], ...] | None,
+    free: bool = False,
 ) -> str:
     """Why :func:`discard` touches nothing, read before any delete; ``''`` when it may go on."""
-    if not approved.strip():
-        return '--approved "<the user words>" is required: the user decides a discard'
+    if not approved.strip() and not free:
+        return '--approved "<the user words>" is required: the lane holds work origin lacks; the user decides'
     if branch in branchset.declared:
         return 'declared in [tool.dev_lab.branchset]: the trunk and sessions are never discarded'
     if not sha:
