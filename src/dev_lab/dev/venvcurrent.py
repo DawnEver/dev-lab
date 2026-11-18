@@ -230,9 +230,23 @@ def reclaimed(env: Path) -> str:
     return f'reclaimed {env}'
 
 
-def reclaim(root: Path, *, census: Census = processes) -> tuple[str, ...]:
-    """Remove every environment of *root* that is not current, not being built, and that nothing executes from."""
-    root = Path(root)
+def reclaim(root: Path, *, census: Census = processes, building_here: bool = False) -> tuple[str, ...]:
+    """Remove every environment of *root* that is not current, not being built, and that nothing executes from.
+
+    It reads the live pointer and then walks :data:`HOME`, so a build publishing between the two would lose its new
+    environment as "not current": a reclaim runs under :func:`exclusive_build` and skips while a build holds it.
+    *building_here* is the build's own reclaim, already inside that lock.
+    """
+    if building_here:
+        return _reclaim(Path(root), census=census)
+    try:
+        with exclusive_build(root):
+            return _reclaim(Path(root), census=census)
+    except BuildBusy as exc:
+        return (f'kept     every environment of {root}: {exc}',)
+
+
+def _reclaim(root: Path, *, census: Census) -> tuple[str, ...]:
     lines = [line] if (line := retire_passed_over(root, census=census)) else []
     home, live = root / HOME, named(root)
     if not home.is_dir() or live is None:
@@ -249,7 +263,7 @@ def reclaim(root: Path, *, census: Census = processes) -> tuple[str, ...]:
 
 
 class BuildBusy(RuntimeError):
-    """Another live ``dep`` run holds this worktree's :data:`BUILD_LOCK`."""
+    """Another live run (a ``dep`` build or a reclaim) holds this worktree's :data:`BUILD_LOCK`."""
 
 
 def _holder(lock: Path) -> str:
@@ -260,9 +274,9 @@ def _holder(lock: Path) -> str:
     except (OSError, UnicodeDecodeError):
         pid, start = '', ''
     if not pid.isdigit():
-        return f'another dep run holds {lock} (its pid is not yet written); wait for it'
+        return f'another run holds {lock} (its pid is not yet written); wait for it'
     return (
-        f'another dep run (pid {pid}, started {start}) is building this worktree and holds {lock}; '
+        f'another run (pid {pid}, started {start}) is building or reclaiming this worktree and holds {lock}; '
         f'wait for it, or stop it with dev_lab.dev.stoprun --pid {pid}'
     )
 

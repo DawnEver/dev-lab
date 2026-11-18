@@ -204,3 +204,26 @@ def test_a_single_bootstrap_holds_the_lock_only_while_it_runs(tmp_path) -> None:
     assert not any(seen), 'PLANTED CONTROL: the lock is held during the build'
     with venvcurrent.exclusive_build(root):
         pass  # released after the run
+
+
+def test_a_reclaim_while_a_build_holds_the_worktree_removes_nothing(tmp_path) -> None:
+    """A reclaim racing a build deleted the environment the build was about to publish (two runs, one worktree).
+
+    Reclaim reads the live pointer, then walks ``.venvs``; a build that publishes between the two had its new
+    environment reclaimed as 'not current'. So a reclaim outside the build takes the same build lock and skips.
+    """
+    root = tmp_path / 'wt'
+    _project(root)
+    fresh = root / venvpointer.HOME / 'fresh'  # unmarked and unpublished: exactly what the race sees
+    venv.EnvBuilder(with_pip=False).create(fresh)
+    child, pid = _holder(root)
+    try:
+        lines = venvcurrent.reclaim(root, census=list)
+        assert fresh.is_dir(), lines
+        assert any(f'pid {pid}' in line for line in lines), lines
+    finally:
+        os.kill(pid, signal.SIGTERM)
+        child.kill()
+        child.wait()
+    assert any(line.startswith('reclaimed') for line in venvcurrent.reclaim(root, census=list)), 'PLANTED CONTROL'
+    assert not fresh.exists(), 'PLANTED CONTROL: unheld, the same environment is reclaimed'

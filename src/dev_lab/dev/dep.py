@@ -510,7 +510,7 @@ def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, 
         return 0
     record(root, prefix)  # the trees this environment now holds its components at
     emit(f'published {prefix}: {venvcurrent.publish(root, prefix)}')
-    for line in venvcurrent.reclaim(root, census=census):
+    for line in venvcurrent.reclaim(root, census=census, building_here=True):
         emit(line)
     if why := venvcurrent.stale_alias(root, prefix, prefix.joinpath(*Path(base).relative_to(live).parts)):
         emit(f'REFUSED: {why}')
