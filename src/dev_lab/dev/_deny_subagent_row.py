@@ -66,7 +66,8 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         # PowerShell spells the same skip as an environment assignment.
         r"""|SKIP=|\$env:SKIP\s*=)"""
     ),
-    'matches': 'command',
+    # 'shell': a python heredoc EDITING text that names a push is not a push (O25, 2026-11-17).
+    'matches': 'shell',
     'scope': 'subagent',
     'hazard': 'publishing is the main session`s, and a skipped hook publishes what nobody checked.',
     'remedy': 'Commit on your lane and hand the commit SHA back to the main session, which merges and pushes; '
@@ -86,6 +87,9 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         'git commit --no-verify -m "x"',
         "$env:SKIP='ruff'; git commit -m 'x'",
         "$env:SKIP = 'ruff'",
+        # PLANTED CONTROL for 'shell': a body a SHELL consumes is still a command line.
+        'bash <<EOF\ngit push origin HEAD\nEOF',
+        'bash -c "git push origin HEAD"',
     ),
     'permits': (
         f'{VENV_PYTHONS[0]} scripts/gate/runner.py measure tests/test_x.py',
@@ -99,5 +103,7 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge pr close-landedness 3',
         f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x --kind need',
         'gh workflow list -R o/r',
+        # O25: a python heredoc whose SOURCE names a push (an edit of this very row) runs no push.
+        "python - <<'EOF'\ntext = '''\ngit push origin HEAD\n'''\nEOF",
     ),
 }
