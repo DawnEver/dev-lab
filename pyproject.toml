@@ -310,7 +310,6 @@ judge_app = 5619495
 [tool.dev_lab.ci."review-prepare.yml"]
 forge = "github"
 
-# NO-CJK-IN-TRACKED-SOURCE (D26): files still carrying CJK, a set that may only shrink. This entry's CJK sits inside an
-# existing Amended note, which memoryentry.only_amended cannot correct in place (O31).
+# NO-CJK-IN-TRACKED-SOURCE (D26): files still carrying CJK, a set that may only shrink.
 [tool.dev_lab.cjk]
-declared = [".claude/memory/2026/11/13/every-wall-teaches-and-the-walls-of-1113.md"]
+declared = []
