@@ -372,7 +372,11 @@ class Client:
         """A comment on an issue (or a PR, which both forges number as an issue)."""
         path, payload = f'{self.repo}/issues/{number}/comments', {'body': self._stamped(body)}
         probe = Probe(f'{path}?since={since(self.clock())}', payload)
-        return comment_of(self.call('POST', path, payload, Durable(probe=probe)))
+        posted = comment_of(self.call('POST', path, payload, Durable(probe=probe)))
+        from dev_lab.dev.forgefeed import record_own  # noqa: PLC0415 -- the hearer imports this module's callers
+
+        record_own(posted.id)  # TASK-HEARS-ITS-FORGE-EVENTS: this machine's own words are never news
+        return posted
 
     def issue_edit(self, number: int, body: str) -> Issue:
         """Replace an issue's body; the body is state, so no provenance line is added."""
@@ -387,7 +391,7 @@ class Client:
 
         GitHub takes ``draft: true``; Gitea has no draft field, and reads its ``WIP:`` title prefix as one. Every
         door that opens a PR comes through here, so here it is recorded as the running agent session's
-        (SESSION-HEARS-ITS-PRS, :func:`~dev_lab.dev.sessionprs.record_opened`), whatever a shell line printed.
+        (TASK-HEARS-ITS-FORGE-EVENTS, :func:`~dev_lab.dev.sessionprs.record_opened`), whatever a shell line printed.
         """
         if draft and self.backend is not GITHUB:
             title = draft_title(title)
