@@ -74,7 +74,7 @@ def ready(root: Path, client: Client, number: int) -> str:
         decision = Decision((undeclared or f'a PR into {policy.integration}, not {pull.base}',), '')
     elif pull.draft:  # D53: pending, naming the ready door -- it waits on its author, not on a check
         return waiting(client, pull) or f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: draft'
-    elif is_held(pull):  # HOLD: pending, naming the release door -- it waits on its holder, not on a check
+    elif is_held(pull.labels):  # HOLD: pending, naming the release door -- it waits on its holder, not on a check
         said = HELD.format(n=number)
         status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state='pending', description=said)
         return f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} pending: {said}'

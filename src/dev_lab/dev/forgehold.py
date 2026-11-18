@@ -8,14 +8,16 @@ needs only triage rights. Its parts and review still run; only the merge waits.
 
 The merge decision honours it: :func:`dev_lab.dev.forgemergeready.ready` posts ``tests/merge-ready`` ``pending``
 :data:`HELD` and :func:`dev_lab.dev.forgemerge.judged` names it as missing, so nothing merges a held head and the
-reason names the release door. ``python -m dev_lab.dev.forge pr hold <N>`` / ``pr release <N>`` (:func:`main`).
+reason names the release door. Break-glass honours it too (user ruling D48, 2026-11-17):
+:mod:`dev_lab.ops.breakglass` refuses a held PR, by hand or swept by a wave, naming the same release door.
+``python -m dev_lab.dev.forge pr hold <N>`` / ``pr release <N>`` (:func:`main`).
 """
 
 from __future__ import annotations
 
 import argparse
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -39,14 +41,14 @@ RELEASE_DOOR: Final = 'python -m dev_lab.dev.forge pr release {n}'
 HELD: Final = f'held (label `{HOLD_LABEL}`): release with `{RELEASE_DOOR}` -- nothing merges a held PR'
 
 
-def is_held(pull: PullRequest) -> bool:
-    """Whether *pull* carries :data:`HOLD_LABEL`."""
-    return HOLD_LABEL in pull.labels
+def is_held(labels: Iterable[str]) -> bool:
+    """Whether a PR carrying *labels* is held: the ONE reading of :data:`HOLD_LABEL` (merge tick and break-glass)."""
+    return HOLD_LABEL in labels
 
 
 def hold(client: Client, number: int) -> PullRequest:
     """Put :data:`HOLD_LABEL` on PR *number* (created in the repository first when missing); idempotent."""
-    if not is_held(client.pr_view(number)):
+    if not is_held(client.pr_view(number).labels):
         ensure_labels(client, [HOLD_LABEL])
         add_label(client, number, HOLD_LABEL)
     return client.pr_view(number)
@@ -54,7 +56,7 @@ def hold(client: Client, number: int) -> PullRequest:
 
 def release(client: Client, number: int) -> PullRequest:
     """Take :data:`HOLD_LABEL` off PR *number*; idempotent."""
-    if is_held(client.pr_view(number)):
+    if is_held(client.pr_view(number).labels):
         remove_label(client, number, HOLD_LABEL)
     return client.pr_view(number)
 
@@ -71,7 +73,7 @@ def main(argv: Sequence[str], *, cwd: Path | None = None, client: Client | None 
     except (ForgeCallFailed, LookupError, ValueError, OSError, subprocess.SubprocessError) as refused:
         emit(f'#{args.number} is unchanged: pr {args.verb} refused: {" ".join(str(refused).split())}')
         return 1
-    if is_held(pull):
+    if is_held(pull.labels):
         emit(f'#{pull.number} is HELD: nothing merges it until `{RELEASE_DOOR.format(n=pull.number)}`')
     else:
         emit(f'#{pull.number} is released: the merge tick judges it again')
