@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -69,10 +68,6 @@ def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, *, declare
     return 't/one.test.mjs'
 
 
-needs_node = pytest.mark.skipif(shutil.which('node') is None, reason='node is not on PATH')
-
-
-@needs_node
 @pytest.mark.parametrize(('body', 'outcome'), [(_PASSING, Conclusion.PASS), (_FAILING, Conclusion.FAIL)])
 def test_a_selected_node_test_settles_by_its_own_exit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, outcome: Conclusion
@@ -92,7 +87,6 @@ def test_an_undeclared_command_measures_nothing_and_names_its_door(
     assert 'dev_lab.dev.commandpart' in str(verdict.result)
 
 
-@needs_node
 def test_a_mixed_selection_runs_both_and_either_red_fails_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = _repo(tmp_path, monkeypatch, _FAILING)
     (tmp_path / 'tests').mkdir()
