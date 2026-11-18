@@ -26,6 +26,7 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.forgerecords import Attachment, attach, listing, records_issue
 from dev_lab.dev.forgework import GITHUB, Client
+from dev_lab.dev.toolrelease import ToolAbsent, resolve
 
 __all__ = [
     'ARCHIVE',
@@ -276,21 +277,30 @@ def check_rclone_config(
         raise ArtefactRefused(msg)
 
 
+def _installed_rclone() -> tuple[str, ...]:
+    """The installed rclone's argv; absent is an :class:`OSError` naming the install door."""
+    try:
+        return (str(resolve('rclone')),)
+    except ToolAbsent as absent:
+        raise OSError(str(absent)) from absent
+
+
 @dataclass(frozen=True)
 class RcloneStore:
     """Any rclone remote (``name:path``), driven through the ``rclone`` binary with argv lists only."""
 
     remote: str
     repo: str
-    rclone: Sequence[str] = ('rclone',)
+    rclone: Sequence[str] = ()  # empty: the installed rclone (toolrelease.resolve)
     backend: str = RCLONE
 
     def _at(self, key: str) -> str:
         return f'{self.remote.rstrip("/")}/{key}'
 
     def _run(self, *args: str, ok: Sequence[int] = (0,)) -> subprocess.CompletedProcess[str]:
+        rclone = self.rclone or _installed_rclone()
         done = _door.run(
-            [*self.rclone, *args], capture_output=True, text=True, encoding='utf-8', check=False,
+            [*rclone, *args], capture_output=True, text=True, encoding='utf-8', check=False,
             timeout=_RCLONE_TIMEOUT_S,
         )  # fmt: skip
         if done.returncode not in ok:
