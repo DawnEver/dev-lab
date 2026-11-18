@@ -445,3 +445,18 @@ def test_plain_http_is_spoken_only_to_a_loopback_host(host: str) -> None:
     """
     made = module.forge_transport(host, 0.1)
     assert type(made) is http.client.HTTPConnection
+
+
+def test_every_https_transport_shares_one_verified_tls_context() -> None:
+    """One TLS context per process: building one loads the system trust store (~80 loads on Windows).
+
+    A context per connection cost ``forge queue`` ~4 s of a 91 s read (2026-11-18). PLANTED CONTROL: the shared
+    context still verifies the certificate and the host name.
+    """
+    import ssl  # noqa: PLC0415
+
+    first = module.forge_transport('forge.example.org', 0.1)
+    second = module.forge_transport('other.example.org', 0.1)
+    assert first._context is second._context
+    assert first._context.verify_mode == ssl.CERT_REQUIRED
+    assert first._context.check_hostname

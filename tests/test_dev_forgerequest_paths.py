@@ -135,3 +135,31 @@ def test_a_selection_reads_its_files_in_one_git_process_however_many_it_names(
     assert len(reads) == one, reads
     with pytest.raises(UndeclaredRequest, match=r'tests/test_gone.py.*does not exist'):
         declared_request(root, sha, TESTS, (*names, 'tests/test_gone.py'))
+
+
+def test_a_selection_is_declared_from_one_git_child(repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The sha's pyproject and every selected file come from ONE ``git cat-file --batch``.
+
+    ``forge queue`` declares every request issue: three children each (``ls-tree`` and ``show`` for the
+    pyproject, then the blobs) cost ~0.1-0.25 s apiece on Windows, ~30 s of a 91 s read (2026-11-18).
+    PLANTED CONTROL: a path absent at the sha is still refused by name from that one read.
+    """
+    import lab_commons.launch as door  # noqa: PLC0415
+
+    spawned: list[list[str]] = []
+    real = door.run
+
+    def counted(argv, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        spawned.append([str(one) for one in argv])
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(door, 'run', counted)
+    root, sha = repo
+    declared_request(root, sha, TESTS, ('tests/test_a.py',))
+    assert [argv for argv in spawned if 'cat-file' in argv or 'ls-tree' in argv or 'show' in argv] == [
+        [spawned[0][0], '-C', str(root), 'cat-file', '--batch']
+    ]
+    spawned.clear()
+    with pytest.raises(UndeclaredRequest, match=r'tests/test_gone\.py'):
+        declared_request(root, sha, TESTS, ('tests/test_gone.py',))
+    assert sum('cat-file' in argv for argv in spawned) == 1

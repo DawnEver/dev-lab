@@ -177,13 +177,19 @@ def parse_paths(body: str) -> tuple[str, ...]:
     return tuple(str(one) for one in value) if isinstance(value, list) else ()
 
 
+#: The declaration a sha's test producer is read from, in the same ``git cat-file --batch`` as its selection.
+_PYPROJECT: Final = 'pyproject.toml'
+
+
 def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     """The repository's test producer over *paths*, each validated at *sha* (D5)."""
     if not paths:
         msg = f'producer {TESTS!r} runs named test files: the body names `paths = ["tests/test_x.py", ...]`'
         raise UndeclaredRequest(msg)
+    selected = [path for path in paths if not NOT_A_PATH & set(path)]
+    read = blobs(root, sha, [_PYPROJECT, *selected])  # ONE git child for the declaration and the selection
     try:
-        text = pyproject_at(root, sha)
+        text = read.get(_PYPROJECT, b'').decode('utf-8')
         produce = kit_tables(text).get('tests', {}).get('produce')
     except OutdatedKit:  # the READER is older than the sha: this host's defect, never the commit's
         raise
@@ -194,7 +200,7 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     if not isinstance(produce, list) or '--part' not in produce or not roots:
         msg = f'{sha[:12]} declares no [tool.lab_commons.tests] produce door with --part, or no pytest testpaths'
         raise UndeclaredRequest(msg)
-    files = blobs(root, sha, [path for path in paths if not NOT_A_PATH & set(path)])
+    files = {path: read[path] for path in selected if path in read}
     if refused := [why for path in paths if (why := path_refusal(path, roots, files, sha))]:
         msg = f'producer {TESTS!r} refused: ' + '; '.join(refused)
         raise UndeclaredRequest(msg)

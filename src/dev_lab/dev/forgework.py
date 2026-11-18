@@ -32,8 +32,10 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import http.client
 import json
 import os
+import threading
 import time
 import urllib.parse
 from collections.abc import Callable, Mapping
@@ -147,6 +149,8 @@ class Client:
     _kept: bool = dataclasses.field(default=False, init=False, repr=False)
     #: The ``Location`` of the latest answer, ``''`` when it named none: where a redirect points.
     _location: str = dataclasses.field(default='', init=False, repr=False)
+    #: Each thread's kept READ connection per host: a connect and a TLS handshake are paid once, not per GET.
+    _kept_reads: threading.local = dataclasses.field(default_factory=threading.local, init=False, repr=False)
 
     @property
     def backend(self) -> Backend:
@@ -159,20 +163,56 @@ class Client:
     ) -> Answer:  # fmt: skip
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
-        conn = self.transport(host or backend.host(self.forge), self.timeout)
+        target = host or backend.host(self.forge)
+        # authed: no credential follows a redirect; no token: an anonymous read of a public repo
+        sent = {'Authorization': auth} if authed and self.token else {}
+        sent |= {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)} | dict(backend.headers)
+        sent |= {'Accept': accept} if accept else {}
+        if method != 'GET':  # a write never rides a kept connection: a lost answer there reads as never sent
+            conn = self.transport(target, self.timeout)
+            try:
+                return self._exchange(conn, method, path, data, sent)[0]
+            finally:
+                conn.close()
+        kept: dict[str, Any] = self._kept_reads.__dict__
+        if (conn := kept.pop(target, None)) is not None:
+            try:
+                return self._read_on(kept, target, conn, path, sent)
+            except (ConnectionError, http.client.HTTPException):  # the forge closed it while idle: not a failure
+                conn.close()
+        return self._read_on(kept, target, self.transport(target, self.timeout), path, sent)
+
+    def _read_on(
+        self, kept: dict[str, Any], target: str, conn: http.client.HTTPConnection, path: str, sent: dict[str, str]
+    ) -> Answer:
+        """One GET on *conn*, kept for the next read unless it failed or the forge said it closes."""
         try:
-            # authed: no credential follows a redirect; no token: an anonymous read of a public repo
-            sent = {'Authorization': auth} if authed and self.token else {}
-            sent |= {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)} | dict(backend.headers)
-            sent |= {'Accept': accept} if accept else {}
-            conn.request(method, path, body=data, headers=sent)
-            response = conn.getresponse()
-            self.answered = response.getheader('Date') or self.answered
-            self._location = response.getheader('Location') or ''
-            said = {name: value for name in RATE_HEADERS if (value := response.getheader(name))}
-            return Answer(response.status, response.read(), said)
-        finally:
+            answer, closing = self._exchange(conn, 'GET', path, None, sent)
+        except BaseException:
             conn.close()
+            raise
+        if closing:
+            conn.close()
+        else:
+            kept[target] = conn
+        return answer
+
+    def _exchange(
+        self,
+        conn: http.client.HTTPConnection,
+        method: str,
+        path: str,
+        data: bytes | None,
+        sent: dict[str, str],
+    ) -> tuple[Answer, bool]:
+        """``(answer, whether the forge closes the connection after it)``."""
+        conn.request(method, path, body=data, headers=sent)
+        response = conn.getresponse()
+        self.answered = response.getheader('Date') or self.answered
+        self._location = response.getheader('Location') or ''
+        said = {name: value for name in RATE_HEADERS if (value := response.getheader(name))}
+        payload = response.read()  # read whole: a kept connection's next answer starts after it
+        return Answer(response.status, payload, said), bool(getattr(response, 'will_close', True))
 
     def _diagnosis(self, answer: Answer, text: str, path: str) -> Diagnosis:
         """:func:`~dev_lab.dev.forgefailure.diagnose`, but a 401/403 that is no rate limit is MEASURED first.

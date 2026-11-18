@@ -47,7 +47,7 @@ from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
 from dev_lab.dev.forgehosts import HostCard, read_cards
 from dev_lab.dev.forgephases import FETCH, Phases
 from dev_lab.dev.forgeprovides import supplied, unserved
-from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, request_context
+from dev_lab.dev.forgerequest import Declared, UndeclaredRequest, declared_request, request_context
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import (
     NO_HOST,
@@ -134,11 +134,13 @@ def forge_queue(
     history = SettledHistories(client)  # one read per sha, none once settled (dev_lab.dev.forgesettled)
 
     policy = load_policy(root)
+    declare = _declared_once()
     found = candidates(
         root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule, policy=policy, now=now,
         waived=lambda sha: unreached(root, client, policy.integration, sha, history(sha))
         | unproduced_waived(root, sha, history(sha)),
         prefetch=history.prefetch,
+        declare=declare,
     )  # fmt: skip
     waiting, in_flight = _standing(found, history, now)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
@@ -147,7 +149,7 @@ def forge_queue(
     def refused(one: Candidate) -> str:
         """Why *one* cannot be produced as its sha declares it: a request's producer, a part's vocabulary."""
         if one.kind == REQUEST:
-            return _refused(lambda: declared_request(root, one.sha, one.producer, one.paths) and '')
+            return _refused(lambda: declare(root, one.sha, one.producer, one.paths) and '')
         if one.sha not in read:
             read[one.sha] = _refused(lambda: declared_at(root, one.sha)[1] if one.sha else '')
         return read[one.sha]
@@ -171,6 +173,30 @@ def forge_queue(
         for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     ]
     return ranked, in_flight
+
+
+def _declared_once() -> Callable[..., Declared]:
+    """:func:`declared_request`, answering each ``(sha, producer, paths)`` ONCE for this read -- its refusal too.
+
+    The listing (:func:`~dev_lab.dev.forgeschedule.candidates`) and the refusal (:func:`forge_queue`) both ask of
+    every request; each answer reads git and the learned table, and asked twice it cost ``forge queue`` ~21 s
+    of a 91 s read (2026-11-18). Held for ONE read only: the learned price it carries moves between reads.
+    """
+    held: dict[tuple[str, str, tuple[str, ...]], Declared | UndeclaredRequest | OutdatedKit] = {}
+
+    def declare(root: Path, sha: str, producer: str, paths: Sequence[str] = ()) -> Declared:
+        key = (sha, producer, tuple(paths))
+        if key not in held:
+            try:
+                held[key] = declared_request(root, sha, producer, paths)
+            except (UndeclaredRequest, OutdatedKit) as why:
+                held[key] = why
+        answer = held[key]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    return declare
 
 
 def unadmitted(blocked: str) -> bool:

@@ -413,3 +413,34 @@ def test_the_queue_says_where_its_time_went(server, tmp_path: Path, monkeypatch,
     assert code == 0
     json.loads(out.out)
     assert re.search(r'\[queue\] time [\d.]+ s -- .*forge HTTP [\d.]+ s', out.err), out.err
+
+
+def test_a_request_is_declared_once_per_queue_read(server, tmp_path: Path, monkeypatch) -> None:
+    """A request issue's declaration is read ONCE per queue read, though the listing and the refusal both need it.
+
+    Each declaration reads git (the sha's pyproject and selected blobs) and the learned table; read twice it cost
+    ``forge queue`` ~21 s of a 91 s read (2026-11-18). PLANTED CONTROL: the refusal the one read raised still
+    blocks the request's row.
+    """
+    from dev_lab.dev import forgeschedule  # noqa: PLC0415 -- patched where the listing reads it
+    from dev_lab.dev.forgerequest import UndeclaredRequest  # noqa: PLC0415
+
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, tips = _origin(tmp_path)
+    _forge_of(tips, [])
+    body = f'producer = "tests"\nsha = "{tips["feat/a"]}"\npaths = ["tests/test_x.py"]\n'
+    issue = {**_issue(9, 'request'), 'body': body, 'created_at': NOW.isoformat(), 'labels': []}
+    monkeypatch.setattr(forgeschedule, 'labelled_issues', lambda _client, _label: (issue,))
+    asked: list[tuple[str, str, tuple[str, ...]]] = []
+
+    def declared(_root: Path, sha: str, producer: str, paths=()) -> object:
+        asked.append((sha, producer, tuple(paths)))
+        refusal = 'planted: no such producer'
+        raise UndeclaredRequest(refusal)
+
+    monkeypatch.setattr(forgeschedule, 'declared_request', declared)
+    monkeypatch.setattr(forgequeue, 'declared_request', declared)
+    seen = forgequeue.view(repo, client(FORGE, Loopback(server)), fetch=lambda _root: None)
+    assert asked == [(tips['feat/a'], 'tests', ('tests/test_x.py',))]
+    blocked = next(row['blocked'] for row in seen['queue'] if row['candidate'].startswith('issue/9'))
+    assert blocked == 'planted: no such producer'

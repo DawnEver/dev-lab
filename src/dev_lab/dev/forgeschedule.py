@@ -86,7 +86,14 @@ from dev_lab.dev.forgecoalesce import WAITING_BEHIND
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeorigin import head_login, origin_host_of
 from dev_lab.dev.forgepulls import pr_list
-from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_deadline, parse_paths
+from dev_lab.dev.forgerequest import (
+    Declared,
+    UndeclaredRequest,
+    declared_request,
+    parse_body,
+    parse_deadline,
+    parse_paths,
+)
 from dev_lab.dev.forgescope import scope_of
 from dev_lab.dev.forgestatus import CARRIED_FROM
 from dev_lab.dev.forgework import Client, is_pull
@@ -310,7 +317,14 @@ def _part_refs(
 
 
 def _requests(
-    root: Path, client: Client, repo: str, schedule: Schedule, now: datetime, *, say: Callable[[str], None]
+    root: Path,
+    client: Client,
+    repo: str,
+    schedule: Schedule,
+    now: datetime,
+    *,
+    say: Callable[[str], None],
+    declare: Callable[..., Declared] = declared_request,
 ) -> list[Candidate]:
     """Every request issue as a job: its producer and sha from the body, its need-set as that sha declares it.
 
@@ -329,7 +343,7 @@ def _requests(
         created = raw.get('created_at') or ''
         since = datetime.fromisoformat(created).astimezone(UTC) if created else now
         try:
-            platform = declared_request(root, sha, producer, paths).part
+            platform = declare(root, sha, producer, paths).part
         except UndeclaredRequest:
             platform = ''
         number = int(raw['number'])
@@ -370,6 +384,7 @@ def candidates(
     say: Callable[[str], None] = lambda _: None,
     waived: Callable[[str], frozenset[str]] = lambda _: frozenset(),
     prefetch: Callable[[Iterable[str]], None] = lambda _: None,
+    declare: Callable[..., Declared] = declared_request,
 ) -> tuple[Candidate, ...]:
     """Every candidate, ONE per ref and part: the ref's newest sha (coalesced). Fetches nothing.
 
@@ -383,6 +398,8 @@ def candidates(
     (:func:`dev_lab.dev.partrefs.part_refs`, the exclusion said through *say*) -- PRs and requests
     :func:`optional`, a failure said through *say*. *prefetch* is handed every served sha before *parts* asks of
     any one: the reads it may make concurrently (:meth:`~dev_lab.dev.forgesettled.SettledHistories.prefetch`).
+    *declare* reads a request's declaration (:func:`~dev_lab.dev.forgerequest.declared_request`); a reader that
+    asks it again of the same request passes one that answers once (:func:`dev_lab.dev.forgequeue.forge_queue`).
     A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
 
@@ -420,7 +437,9 @@ def candidates(
             )
             for platform in needed
         ]
-    found += optional('request issues', lambda: _requests(root, client, repo, schedule, now, say=say), say)
+    found += optional(
+        'request issues', lambda: _requests(root, client, repo, schedule, now, say=say, declare=declare), say
+    )
     return tuple(one for one in found if (one.ref, one.sha, one.platform) in reached or _ref_served(root, one, say))
 
 
