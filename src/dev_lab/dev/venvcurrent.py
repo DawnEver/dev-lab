@@ -43,10 +43,12 @@ __all__ = [
     'BUILD_WALL_S',
     'RECLAIMING',
     'abandon',
+    'building',
     'fresh',
     'passed_over',
     'publish',
     'reclaim',
+    'reclaimed',
     'retire_passed_over',
     'stale_alias',
     'target',
@@ -187,14 +189,15 @@ def retire_passed_over(root: Path, *, census: Census = processes) -> str:
     return f'legacy {alias} moved to {aside}; ' + _repoint(root, env)
 
 
-def _building(env: Path) -> bool:
+def building(env: Path) -> bool:
+    """Whether *env* carries a live :data:`BUILDING` marker (younger than :data:`BUILD_WALL_S`)."""
     try:
         return time.time() - _marker(env).stat().st_mtime < BUILD_WALL_S
     except OSError:
         return False
 
 
-def _reclaimed(env: Path) -> str:
+def reclaimed(env: Path) -> str:
     """Remove *env*, MOVED ASIDE first.
 
     Windows refuses to rename a directory a process runs from, so a holder the census missed keeps its environment
@@ -219,10 +222,10 @@ def reclaim(root: Path, *, census: Census = processes) -> tuple[str, ...]:
         return tuple(lines)
     table = tuple(census())
     for env in sorted(home.iterdir()):
-        if not env.is_dir() or env.name == live.name or _building(env):
+        if not env.is_dir() or env.name == live.name or building(env):
             continue
         if users := removal_holders(env, census=lambda: table):
             lines.append(f'kept     {env}  ({len(users)} holder(s): {label(users[0])})')
             continue
-        lines.append(_reclaimed(env))
+        lines.append(reclaimed(env))
     return tuple(lines)

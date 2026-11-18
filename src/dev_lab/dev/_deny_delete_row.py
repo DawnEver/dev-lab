@@ -72,8 +72,8 @@ RECURSIVE_DELETE: dict[str, object] = {
     'hazard': 'a raw recursive delete judges deletability by hand; on 2026-10-27 one took a MAIN checkout.',
     'remedy': (
         f'scratch/: {PYTHON_SLOT} -m dev_lab.dev.scratch clear --yes. dev_lab.dev.branchset --apply; '
-        'unlanded: dev_lab.dev.branchset --discard <branch> --approved "<words>"; '
-        'clean, detached too: dev_lab.dev.worktrees --remove <name>. Else (never a worktree) ask the user.'
+        'unlanded: --discard <branch> --approved "<words>"; clean/detached: dev_lab.dev.worktrees --remove <name>; '
+        '.venvs/: dev_lab.dev.venvprune --apply. Else ask the user.'
     ),
     'needs': None,
     'refuses': (
