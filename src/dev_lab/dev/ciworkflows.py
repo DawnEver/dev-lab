@@ -18,8 +18,10 @@ that exists, ignores ``.github/workflows``. Both forges' workflows draw on the s
 share -- the review itself -- has one source. A workflow either forge may run keeps what differs in its
 ``by-forge`` table (:data:`BY_FORGE`, never rendered): the part named by the merged ``forge`` is merged over the rest.
 
-THE NIGHTLY TIME IS DECLARED ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
-rendered) schedules that workflow at it. Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
+THE NIGHTLY TIME DEFAULTS ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
+rendered) schedules that workflow at it; ``nightly = "<5-field cron>"`` in a repo's layer schedules it at that time
+instead (user ruling D63, 2026-11-18: the time is a per-repo setting); a malformed cron is refused by name.
+Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
 
 THE BRANCHES ARE THE REPO'S DECLARATION: :data:`INTEGRATION_PLACEHOLDER` in any string renders as the repo's
 ``[tool.dev_lab.integrator] integration`` (user ruling 2026-11-12: a one-branch repo merges into ``main``).
@@ -143,7 +145,8 @@ FORGE_KEY: Final = 'forge'
 BY_FORGE: Final = 'by-forge'
 #: The table key asking for the nightly schedule; a trigger, never part of the rendered workflow.
 NIGHTLY_KEY: Final = 'nightly'
-#: When every nightly workflow runs (D48-1A, user ruling 2026-11-01): 02:00 UTC.
+#: When a nightly workflow runs unless its repo sets ``nightly = "<cron>"`` (D48-1A, user ruling 2026-11-01): 02:00
+#: UTC. GitHub starts it ~6-8 h late (measured 2026-11-18); D63 accepts the delay and makes the time per-repo.
 NIGHTLY_CRON: Final = '0 2 * * *'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 #: A job key, never rendered: ``served = true`` marks a job that reviews on the runner (``forge review run``).
@@ -339,6 +342,27 @@ def base_names(forge: str) -> set[str]:
     }
 
 
+_CRON_FIELDS: Final = 5
+_CRON_FIELD: Final = re.compile(r'[0-9*,/-]+')
+
+
+def nightly_cron(value: object, where: str) -> str | None:
+    """The cron a ``nightly`` *value* schedules: none for ``false``, :data:`NIGHTLY_CRON` for ``true``. PURE.
+
+    A string is the repo's own time and must be five cron fields of digits, ``*``, ``,``, ``/``, ``-``; anything
+    else is refused naming *where*.
+    """
+    if value is False:
+        return None
+    if value is True:
+        return NIGHTLY_CRON
+    fields = value.split() if isinstance(value, str) else []
+    if len(fields) != _CRON_FIELDS or not all(_CRON_FIELD.fullmatch(field) for field in fields):
+        msg = f'{where} = {value!r}: not a 5-field cron (e.g. {NIGHTLY_CRON!r}); give true for the default or a cron'
+        raise ValueError(msg)
+    return ' '.join(fields)
+
+
 def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
     """Every workflow *root*'s working tree declares (:func:`placed`), on the forge it is hosted on."""
     text, _ = _declared(root)
@@ -379,8 +403,8 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         workflow = ready_only(measurement_isolated(expanded))
         if 'jobs' in workflow and not workflow['jobs']:
             continue  # every job reviewed on the runner, in a judge repo: nothing to render
-        if workflow.pop(NIGHTLY_KEY, False):
-            workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
+        if cron := nightly_cron(workflow.pop(NIGHTLY_KEY, False), f'[tool.dev_lab.ci."{name}"] {NIGHTLY_KEY}'):
+            workflow['on'] = {**workflow['on'], 'schedule': [{'cron': cron}]}
         if forge not in WORKFLOW_DIRS:
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)
