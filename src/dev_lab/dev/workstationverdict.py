@@ -48,7 +48,7 @@ from dev_lab.dev.localpart import present_here
 from dev_lab.dev.lockpins import lock_freshness
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import part_context
-from dev_lab.dev.producers import optional_needs_from
+from dev_lab.dev.roles import optional_needs_from
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictstore import WORKSTATION_KEY, ContentKey, Found, cite, lookup
 from dev_lab.dev.workstationrevoke import box_of, clear_remedy, revoked, strike

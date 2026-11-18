@@ -36,10 +36,11 @@ from dev_lab.dev.forgeapp import App
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_claim import DUE
-from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, JUDGE, Review, command_for, review_from
+from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, Review, command_for, review_from
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
+from dev_lab.dev.roles import JUDGE
 
 _JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
 _JUDGE_TOML = '[tool.dev_lab.integrator]\nintegration = "main"\n' + _JUDGED

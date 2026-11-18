@@ -157,7 +157,7 @@ ready PR into `integrate/main` is reviewed by the command the repo declares; its
 JSON (`schema_version` 3, read by `dev_lab.dev.forgereview_findings`; any other version is refused by name). The
 forge posts ONE PR comment (`dev_lab.dev.forgereview_advice`) and a `tests/review` commit status.
 
-**Review is the last gate** (user ruling 2026-11-05; integrator ruling M8 2026-11-06: "first ready head" is the
+**Review runs last, and is advisory** (user ruling 2026-11-05; integrator ruling M8 2026-11-06: "first ready head" is the
 first MERGE-READY head). The review is the one merge condition that costs a model call, so it is asked for only
 once every OTHER condition stands for the head -- its test parts, `tests/security`, a clean merge with integration,
 the merge audit, the messages, not a draft. The merge decision (`reviewturn.review_turn`, run by

@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-
-from dev_lab.dev.ciworkflows import placed, render, repo_forge
 from dev_lab.dev.producercheck import host_refusals, repo_refusals
 from dev_lab.dev.producers import (
     ACTIONS,
@@ -23,6 +21,8 @@ from dev_lab.dev.producers import (
     producer_from,
     producible,
 )
+
+from dev_lab.dev.ciworkflows import placed, render, repo_forge
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 OWN: Final = (ROOT / 'pyproject.toml').read_text(encoding='utf-8')

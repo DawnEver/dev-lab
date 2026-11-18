@@ -11,11 +11,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dev_lab.dev._forgebackends import ADVISORY, JUDGE_HOST, require_producer
-from dev_lab.dev.forgereview_declared import JUDGE, forge_review
+from dev_lab.dev.forgereview_declared import forge_review
 from dev_lab.dev.reviewgate import (
     forge_posted,
     status_gate,
 )
+from dev_lab.dev.roles import JUDGE
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -37,8 +38,8 @@ def review_gate(client: Client, *, base: str) -> Reviewed:
 
     """
     review = forge_review(client, base)
-    if review.where == JUDGE:
-        require_producer(client.backend, JUDGE_HOST, f'[tool.dev_lab.review] where = "{JUDGE}" at {base}')
+    if review.by == JUDGE:
+        require_producer(client.backend, JUDGE_HOST, f'[tool.dev_lab.roles] review = "{JUDGE}" at {base}')
         if JUDGE_HOST in ADVISORY:  # posted as information, never waited on (user ruling 2026-11-11)
             return lambda _statuses: None
     return status_gate(forge_posted(client))

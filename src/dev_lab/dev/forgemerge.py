@@ -19,10 +19,10 @@ ONE DECISION ON BOTH FORGES (user ruling 2026-10-29); only who MERGES differs. :
 decides; a workflow job runs ``forge merge ready [--pr <N>]`` (:func:`dev_lab.dev.forgemergeready.ready`; no
 number: every open PR into integration), which posts the decision as ONE status,
 :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`, and on ``success`` asks the forge to merge that head itself
-(:func:`~dev_lab.dev.forgemergecall.merge`, as the job's own token). That job merges on GitHub always, and on Gitea
-where the repo declares the CI merger (:data:`CI_MERGER`, :func:`ci_merges`;
-P3, user ruling 2026-11-02): Gitea's ``merge.yml`` runs it on the light runner, and the serve tick then only says
-the decision. A Gitea repo that does not declare it is still merged by the serve tick on the same :func:`judged`.
+(:func:`~dev_lab.dev.forgemergecall.merge`, as the job's own token). WHO merges is the repo's
+``[tool.dev_lab.roles] merge`` (:mod:`dev_lab.dev.roles`, D70): on ``actions`` that job merges (GitHub's ``ci.yml``
+and merge tick, Gitea's ``merge.yml`` on the light runner) and the serve tick only says the decision; on ``serve``
+the serve tick merges on the same :func:`judged`.
 GitHub still enforces the branch's required checks on that merge; one still pending refuses it, and the native
 auto-merge ``forge pr create`` enabled merges once they are green. GitHub refuses to enable auto-merge on a PR
 that is already mergeable (dev-lab#15), which is why the job that posts ready merges rather than waiting on it.
@@ -70,14 +70,12 @@ namespace is deleted by the forge with the merge.
 
 from __future__ import annotations
 
-import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.failprint import Fingerprints, new_subjects, refusal
-from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -90,8 +88,8 @@ from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import fingerprints_at, status_list
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.producers import UndeclaredProducer, producer_at
 from dev_lab.dev.reviewcap import unreviewed_waiver
+from dev_lab.dev.roles import TESTS, UndeclaredRoles, roles_at
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -102,11 +100,9 @@ if TYPE_CHECKING:
     from dev_lab.dev.reviewgate import Reviewed
 
 __all__ = [
-    'CI_MERGER',
     'EXTERNAL',
     'FORGE_PULL',
     'Decision',
-    'ci_merges',
     'decide',
     'external',
     'hidden_reds',
@@ -116,17 +112,6 @@ __all__ = [
 
 #: The merge decision's ``pending`` line for a PR the forge never merges (:func:`external`).
 EXTERNAL: Final = 'external PR: a maintainer merges it'
-
-#: The Gitea workflow that merges, closes landed PRs and sweeps (``ci_base.toml``); declaring it is the opt-in.
-CI_MERGER: Final = 'merge.yml'
-
-
-def ci_merges(root: Path) -> bool:
-    """Whether *root* declares ``[tool.dev_lab.ci."merge.yml"]``: then serve neither merges, closes nor sweeps."""
-    pyproject = root / 'pyproject.toml'
-    data = tomllib.loads(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else {}
-    return CI_MERGER in declared_table(data, 'ci', {})
-
 
 #: The trailer naming the pull request a forge merge closed.
 FORGE_PULL: Final = 'Forge-Pull'
@@ -192,8 +177,8 @@ def decide(
         title, _, trailers = message.partition('\n\n')
         message = f'{title}\n\n{waiver}\n\n{trailers}'
     try:
-        waits = status_waits(policy, head, statuses, producer=producer_at(root))
-    except UndeclaredProducer as undeclared:  # a malformed producer is named, never merged
+        waits = status_waits(policy, head, statuses, tests=roles_at(root).of(TESTS))
+    except UndeclaredRoles as undeclared:  # a malformed producer is named, never merged
         waits = [f'its producer: {undeclared}']
     missing += waits
     tried = trial(root, base, head)

@@ -2,7 +2,8 @@
 
 Split out of :mod:`dev_lab.dev.forgemerge` (the merge DECISION), which asks :func:`status_waits` once per head.
 A repo declaring ``[tool.dev_lab.integrator] merge_checks`` waits on those checks (:func:`checks_wait`);
-an ``actions`` repo (:mod:`dev_lab.dev.producers`) only on the parts Actions post (:func:`actions_wait`);
+a repo whose ``tests`` are on ``actions`` (:mod:`dev_lab.dev.roles`) only on the parts Actions post
+(:func:`actions_wait`);
 otherwise on the serve-posted ones -- ``tests/security``, the head gates, and every HOSTED test part standing
 PASS (:func:`parts_wait`). A hand part (:func:`hand_parts`, user ruling 2026-11-10) is named, never waited on;
 nor is a part released under a class that is not the code's (:func:`requeued_parts`, W5 dev-lab#644): no part
@@ -23,7 +24,7 @@ from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import derived, part_context, parts_of, standing
 from dev_lab.dev.producer import Owner, owner_of
-from dev_lab.dev.producers import ACTIONS
+from dev_lab.dev.roles import ACTIONS
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -121,8 +122,8 @@ def checks_wait(checks: Sequence[str], statuses: Sequence[CommitStatus]) -> str 
 def actions_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
     """Why the parts forge Actions post for *head* -- the base rows -- do not all stand PASS, or ``None``.
 
-    An ``actions`` repo (:mod:`dev_lab.dev.producers`) has no serve host, so nothing here is UNCLAIMED or waits on
-    a host: a base part not yet posted is Actions' run still to come.
+    A repo whose ``tests`` are on ``actions`` (:mod:`dev_lab.dev.roles`) has no serve host, so nothing here is
+    UNCLAIMED or waits on a host: a base part not yet posted is Actions' run still to come.
     """
     if not any(status.context.startswith(part_context(BASE)) for status in statuses):
         return (
@@ -132,29 +133,30 @@ def actions_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
     return parts_wait(head, statuses)
 
 
-def green_waits(head: str, statuses: Sequence[CommitStatus], *, producer: str) -> list[str]:
-    """Why *head* is not green as its *producer* posts it; break-glass reads green through this alone.
+def green_waits(head: str, statuses: Sequence[CommitStatus], *, tests: str) -> list[str]:
+    """Why *head* is not green as *tests*, its ``tests`` executor, posts it; break-glass reads green through this.
 
     :func:`actions_wait` for ``actions``, else the security check and the test parts a serve host posts.
     """
-    if producer == ACTIONS:
+    if tests == ACTIONS:
         waits = [actions_wait(head, statuses)]
     else:
         waits = [security_wait(statuses), parts_wait(head, statuses)]
     return [wait for wait in waits if wait is not None]
 
 
-def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus], *, producer: str) -> list[str]:
-    """What *head*'s posted statuses lack: the repo's declared merge checks, else what its *producer* posts.
+def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus], *, tests: str) -> list[str]:
+    """What *head*'s posted statuses lack: the repo's declared merge checks, else what its *tests* executor posts.
 
     User ruling 2026-11-12: a repo declaring ``merge_checks`` waits on them IN PLACE of the test parts,
-    ``tests/security`` and the head gates, which only a serve host posts. User ruling 2026-11-16: an ``actions``
-    repo waits only on the parts forge Actions post (:func:`actions_wait`), never on a serve-posted status.
+    ``tests/security`` and the head gates, which only a serve host posts. User ruling 2026-11-16: a repo with
+    ``tests`` on ``actions`` waits only on the parts forge Actions post (:func:`actions_wait`), never on a
+    serve-posted status.
     """
     if policy.merge_checks:
         checked = checks_wait(policy.merge_checks, statuses)
         return [] if checked is None else [f'its merge checks: {checked}']
-    if producer == ACTIONS:
+    if tests == ACTIONS:
         waited = actions_wait(head, statuses)
         return [] if waited is None else [f'its test parts: {waited}']
     said = [

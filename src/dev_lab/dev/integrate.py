@@ -61,7 +61,7 @@ from dev_lab.dev.jobparts import off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.platformparts import UndeclaredPart, derived, required_at, standing
-from dev_lab.dev.producers import optional_needs_from, optional_parts
+from dev_lab.dev.roles import optional_needs_from, optional_parts
 from dev_lab.dev.trialmerge import contains, rev
 from dev_lab.dev.unproduced import unproduced_waived
 from dev_lab.dev.verdictenv import verdict_policy_at
