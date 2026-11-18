@@ -1,16 +1,17 @@
-"""THE ROLES DECLARATION HOLDS: every fact that would contradict a repo's ``[tool.dev_lab.roles]`` is refused by name.
+"""THE ROLES BINDING HOLDS: every fact of a repo that would contradict the family's binding of its roles is refused.
 
-D70/D71 (:mod:`dev_lab.dev.roles`). :func:`repo_refusals` reads a repo's working tree:
+D73 (:mod:`dev_lab.dev.roles`). :func:`repo_refusals` reads a repo's working tree under the family's binding:
 
-* a workflow file on the repo's forge that nothing renders is refused: its role is on another executor, so the
-  forge's CI never runs it (an all-``serve`` Gitea repo holds no ``.gitea/workflows`` at all);
-* ``tests`` on ``actions`` renders :data:`CI_WORKFLOW`, its ``jobparts produce`` posting ``tests/base``, and the
+* a retired placement the repo still declares (:func:`~dev_lab.dev.roles.retired_placement`);
+* a workflow file on the repo's forge that nothing renders is refused: the family binds its role to another
+  executor, so the forge's CI never runs it (a repo with no role on ``ci`` holds no workflow at all);
+* ``tests`` bound to ``ci`` renders :data:`CI_WORKFLOW`, its ``jobparts produce`` posting ``tests/base``, and the
   file stands on disk -- unless it declares ``[tool.dev_lab.integrator] merge_checks``, the Actions checks its merge
   waits on instead (a config-only repo);
-* ``tests`` on ``actions`` declares nothing only the serving hosts' queue reads (:data:`SERVE_ONLY`): no host would
+* ``tests`` on ``actions`` declares nothing only the serving hosts' queue reads (:data:`HPC_ONLY`): no host would
   ever read it -- ``[tool.lab_commons.hpc]`` is NOT among them: it says how a cluster BUILDS the repo, which dev-lab
   declares for the tooling it ships;
-* every required part (``base`` and ``[tool.dev_lab.parts] required``) is one the ``tests`` executor posts
+* every required part (``base`` and ``[tool.dev_lab.parts] required``) is one the ``tests`` executor's kind posts
   (:func:`~dev_lab.dev.roles.producible`), and none needs an ``optional_needs`` resource.
 
 :func:`host_refusals` reads a host card: a ``[serve]`` table belongs only to an HPC account (``[deploy]``) -- a
@@ -31,9 +32,9 @@ from lab_commons.hpc.needsets import BASE
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.hostedparts import hosted_parts
-from dev_lab.dev.roles import ACTIONS, TESTS, UndeclaredRoles, optional_needs_from, producible, roles_from
+from dev_lab.dev.roles import CI, TESTS, Roles, Unbound, optional_needs_from, producible, retired_placement, roles_at
 
-__all__ = ['CI_WORKFLOW', 'POSTS_BASE', 'SERVE_ONLY', 'host_refusals', 'repo_refusals']
+__all__ = ['CI_WORKFLOW', 'HPC_ONLY', 'POSTS_BASE', 'host_refusals', 'repo_refusals']
 
 #: The workflow whose ``jobparts produce`` posts ``tests/base``: rendered where ``tests`` is on ``actions``.
 CI_WORKFLOW: Final = 'ci.yml'
@@ -41,9 +42,9 @@ CI_WORKFLOW: Final = 'ci.yml'
 #: What a rendered ``ci.yml`` runs to post its parts, ``tests/base`` among them (:mod:`dev_lab.dev.jobparts`).
 POSTS_BASE: Final = 'dev_lab.dev.jobparts produce'
 
-#: Declarations only the serving hosts' queue reads (``tool`` path -> why): ``tests`` on ``actions`` carrying one
-#: is refused.
-SERVE_ONLY: Final = {
+#: Declarations only an HPC executor's queue reads (``tool`` path -> why): ``tests`` bound to ``ci`` carrying one is
+#: refused.
+HPC_ONLY: Final = {
     ('lab_commons', 'schedule'): 'the HPC queue ranks by it (dev_lab.dev.forgeschedule)',
     ('dev_lab', 'parts', 'refs'): 'the HPC queue filters the refs a part is offered on by it (dev_lab.dev.partrefs)',
 }
@@ -58,24 +59,24 @@ def _declares(data: Mapping[str, Any], path: tuple[str, ...]) -> bool:
     return True
 
 
-def _unrendered(root: Path, text: str, origin: str, forge: str) -> list[str]:
-    rendered = placed(text, origin, forge)
+def _unrendered(root: Path, text: str, origin: str, forge: str, roles: Roles) -> list[str]:
+    rendered = placed(text, origin, forge, roles)
     directory = root / WORKFLOW_DIRS[forge]
     found = sorted(p for p in directory.iterdir() if p.suffix in {'.yml', '.yaml'}) if directory.is_dir() else []
     return [
-        f'{path}: nothing renders it -- its role is on another executor ([tool.dev_lab.roles]), so {forge} Actions '
-        'never runs it; python -m dev_lab.dev.ciworkflows render removes it'
+        f'{path}: nothing renders it -- the family binds its role to another executor (dev_lab.dev.roles), so {forge} '
+        'Actions never runs it; python -m dev_lab.dev.ciworkflows render removes it'
         for path in found
         if path.name not in rendered
     ]
 
 
-def _ci_refusals(root: Path, text: str, origin: str, forge: str) -> list[str]:
+def _ci_refusals(root: Path, text: str, origin: str, forge: str, roles: Roles) -> list[str]:
     if declared_table(tomllib.loads(text), 'integrator', {}).get('merge_checks'):
         return []  # its merge waits on its declared Actions checks, never on tests/base (user ruling 2026-11-12)
-    rendered = placed(text, origin, forge)
+    rendered = placed(text, origin, forge, roles)
     if CI_WORKFLOW not in rendered:
-        return [f'{origin}: tests = "{ACTIONS}" but no {CI_WORKFLOW} renders on {forge}: nothing posts tests/base']
+        return [f'{origin}: tests bound to "{CI}" but no {CI_WORKFLOW} renders on {forge}: nothing posts tests/base']
     directory, workflow = rendered[CI_WORKFLOW]
     found = []
     if POSTS_BASE not in json.dumps(workflow):
@@ -91,28 +92,33 @@ def _required_refusals(text: str, origin: str, tests: str) -> list[str]:
     optional = optional_needs_from(text)
     hosted = set(hosted_parts(text))
     return [
-        f'{origin}: the required part tests/{part} has no producer under tests = "{tests}"'
-        + (' (Actions post base and hosted parts)' if tests == ACTIONS else ' (it needs an optional_needs resource)')
+        f'{origin}: the required part tests/{part} has no producer with tests bound to "{tests}"'
+        + (' (CI posts base and hosted parts)' if tests == CI else ' (it needs an optional_needs resource)')
         for part in sorted(required)
         if not producible(tests, part, hosted=hosted, optional=optional)
     ]
 
 
-def repo_refusals(root: Path, forge: str) -> list[str]:
-    """Every fact of *root*'s working tree contradicting its roles declaration; *forge* is where it is hosted."""
+def repo_refusals(root: Path, forge: str, roles: Roles | None = None) -> list[str]:
+    """Every fact of *root*'s working tree contradicting its roles; *forge* is where it is hosted.
+
+    *roles* default to the family's binding for the checkout (:func:`~dev_lab.dev.roles.roles_at`).
+    """
     origin = str(root / 'pyproject.toml')
     text = (root / 'pyproject.toml').read_text(encoding='utf-8')
+    found = retired_placement(text, origin)
     try:
-        tests = roles_from(text, origin).of(TESTS)
-    except UndeclaredRoles as undeclared:
-        return [str(undeclared)]
-    found = _unrendered(root, text, origin, forge)
-    if tests == ACTIONS:
-        found += _ci_refusals(root, text, origin, forge)
+        roles = roles_at(root) if roles is None else roles
+    except Unbound as unbound:
+        return [*found, str(unbound)]
+    tests = roles.kind(TESTS)
+    found += _unrendered(root, text, origin, forge, roles)
+    if tests == CI:
+        found += _ci_refusals(root, text, origin, forge, roles)
         data = tomllib.loads(text)
         found += [
-            f'{origin}: tests = "{ACTIONS}" yet it declares [tool.{".".join(path)}], which only {why}'
-            for path, why in SERVE_ONLY.items()
+            f'{origin}: tests bound to "{CI}" yet it declares [tool.{".".join(path)}], which only {why}'
+            for path, why in HPC_ONLY.items()
             if _declares(data, path)
         ]
     return found + _required_refusals(text, origin, tests)

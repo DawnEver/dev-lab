@@ -19,7 +19,7 @@ from dev_lab.dev.forgereview_claim import DUE, UNREVIEWED_STATUS, WAITS, live_cl
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewgate import forge_posted, review_missing
-from dev_lab.dev.roles import JUDGE
+from dev_lab.dev.roles import HOST, REVIEW, roles_at
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -45,8 +45,8 @@ def review_run(root: Path, client: Client, review: Review, number: int, *, base:
     pull = client.pr_view(number)
     if pull.base != base or pull.draft or not pull.head_sha:
         return f'#{number}: not reviewed -- only an open, non-draft PR into {base} is'
-    if review.by == JUDGE:  # one executor per repo: the judge host reviews it from a bundle
-        return f'#{number}: not reviewed here -- {base} declares review = "{JUDGE}"'
+    if roles_at(root).kind(REVIEW) == HOST:  # one executor per repo: the judge host reviews it from a bundle
+        return f'#{number}: not reviewed here -- the family binds its review to a host (a judge)'
     try:
         return review_pull(root, client, review, pull, runner) or _stood(client, pull.head_sha, number)
     except HostCannot as cannot:

@@ -2,7 +2,7 @@
 
 Split out of :mod:`dev_lab.dev.forgemerge` (the merge DECISION), which asks :func:`status_waits` once per head.
 A repo declaring ``[tool.dev_lab.integrator] merge_checks`` waits on those checks (:func:`checks_wait`);
-a repo whose ``tests`` are on ``actions`` (:mod:`dev_lab.dev.roles`) only on the parts Actions post
+a repo whose ``tests`` are bound to ``ci`` (:mod:`dev_lab.dev.roles`) only on the parts Actions post
 (:func:`actions_wait`);
 otherwise on the serve-posted ones -- ``tests/security``, the head gates, and every HOSTED test part standing
 PASS (:func:`parts_wait`). A hand part (:func:`hand_parts`, user ruling 2026-11-10) is named, never waited on;
@@ -24,7 +24,7 @@ from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import derived, part_context, parts_of, standing
 from dev_lab.dev.producer import Owner, owner_of
-from dev_lab.dev.roles import ACTIONS
+from dev_lab.dev.roles import CI
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -122,7 +122,7 @@ def checks_wait(checks: Sequence[str], statuses: Sequence[CommitStatus]) -> str 
 def actions_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
     """Why the parts forge Actions post for *head* -- the base rows -- do not all stand PASS, or ``None``.
 
-    A repo whose ``tests`` are on ``actions`` (:mod:`dev_lab.dev.roles`) has no serve host, so nothing here is
+    A repo whose ``tests`` are bound to ``ci`` (:mod:`dev_lab.dev.roles`) has no serve host, so nothing here is
     UNCLAIMED or waits on a host: a base part not yet posted is Actions' run still to come.
     """
     if not any(status.context.startswith(part_context(BASE)) for status in statuses):
@@ -134,14 +134,11 @@ def actions_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
 
 
 def green_waits(head: str, statuses: Sequence[CommitStatus], *, tests: str) -> list[str]:
-    """Why *head* is not green as *tests*, its ``tests`` executor, posts it; break-glass reads green through this.
+    """Why *head* is not green as *tests* (its ``tests`` kind) posts it; break-glass reads green through this alone.
 
-    :func:`actions_wait` for ``actions``, else the security check and the test parts a serve host posts.
+    :func:`actions_wait` for ``ci``, else the security check and the test parts a serve host posts.
     """
-    if tests == ACTIONS:
-        waits = [actions_wait(head, statuses)]
-    else:
-        waits = [security_wait(statuses), parts_wait(head, statuses)]
+    waits = [actions_wait(head, statuses)] if tests == CI else [security_wait(statuses), parts_wait(head, statuses)]
     return [wait for wait in waits if wait is not None]
 
 
@@ -150,13 +147,13 @@ def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus], *,
 
     User ruling 2026-11-12: a repo declaring ``merge_checks`` waits on them IN PLACE of the test parts,
     ``tests/security`` and the head gates, which only a serve host posts. User ruling 2026-11-16: a repo with
-    ``tests`` on ``actions`` waits only on the parts forge Actions post (:func:`actions_wait`), never on a
+    ``tests`` bound to ``ci`` waits only on the parts forge Actions post (:func:`actions_wait`), never on a
     serve-posted status.
     """
     if policy.merge_checks:
         checked = checks_wait(policy.merge_checks, statuses)
         return [] if checked is None else [f'its merge checks: {checked}']
-    if tests == ACTIONS:
+    if tests == CI:
         waited = actions_wait(head, statuses)
         return [] if waited is None else [f'its test parts: {waited}']
     said = [

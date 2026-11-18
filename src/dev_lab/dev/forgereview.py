@@ -99,7 +99,7 @@ from dev_lab.dev.reviewcap import unreviewed_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
 from dev_lab.dev.reviewruntime import review_runtimes
-from dev_lab.dev.roles import HPC
+from dev_lab.dev.roles import HPC, REVIEW, roles_at
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgereview_advice import Record
@@ -348,10 +348,10 @@ def review_tick(
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said.
 
     *quiet* is the debounce (D52): :func:`step` passes the declared ``quiet``; zero reviews every head now.
-    A base whose ``[tool.dev_lab.roles] review`` is not ``hpc`` is reviewed elsewhere -- the judge host
+    A repo whose ``review`` the family binds to no ``hpc`` executor is reviewed elsewhere -- the judge host
     (:mod:`forgereview_bundle`) or its forge's review job: nothing here.
     """
-    if review.by != HPC:  # the judge host or the forge's own review job reviews it: never this tick
+    if roles_at(root).kind(REVIEW) != HPC:  # a host (a judge) or the forge's CI reviews it: never this tick
         return ()
     runner = Runner(
         host=host,

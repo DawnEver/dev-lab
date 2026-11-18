@@ -19,10 +19,10 @@ ONE DECISION ON BOTH FORGES (user ruling 2026-10-29); only who MERGES differs. :
 decides; a workflow job runs ``forge merge ready [--pr <N>]`` (:func:`dev_lab.dev.forgemergeready.ready`; no
 number: every open PR into integration), which posts the decision as ONE status,
 :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`, and on ``success`` asks the forge to merge that head itself
-(:func:`~dev_lab.dev.forgemergecall.merge`, as the job's own token). WHO merges is the repo's
-``[tool.dev_lab.roles] merge`` (:mod:`dev_lab.dev.roles`, D70): on ``actions`` that job merges (GitHub's ``ci.yml``
-and merge tick, Gitea's ``merge.yml`` on the light runner) and the serve tick only says the decision; on ``serve``
-the serve tick merges on the same :func:`judged`.
+(:func:`~dev_lab.dev.forgemergecall.merge`, as the job's own token). WHO merges is the family's binding of
+``merge`` (:mod:`dev_lab.dev.roles`, D73): bound to ``ci``, that job merges (GitHub's ``ci.yml`` and merge tick,
+Gitea's ``merge.yml`` on the light runner) and the serve tick only says the decision; bound to an ``hpc`` executor,
+its serve tick merges on the same :func:`judged`.
 GitHub still enforces the branch's required checks on that merge; one still pending refuses it, and the native
 auto-merge ``forge pr create`` enabled merges once they are green. GitHub refuses to enable auto-merge on a PR
 that is already mergeable (dev-lab#15), which is why the job that posts ready merges rather than waiting on it.
@@ -89,7 +89,7 @@ from dev_lab.dev.forgestatus import fingerprints_at, status_list
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
 from dev_lab.dev.reviewcap import unreviewed_waiver
-from dev_lab.dev.roles import TESTS, UndeclaredRoles, roles_at
+from dev_lab.dev.roles import REVIEW, TESTS, Unbound, roles_at
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -177,8 +177,8 @@ def decide(
         title, _, trailers = message.partition('\n\n')
         message = f'{title}\n\n{waiver}\n\n{trailers}'
     try:
-        waits = status_waits(policy, head, statuses, tests=roles_at(root).of(TESTS))
-    except UndeclaredRoles as undeclared:  # a malformed producer is named, never merged
+        waits = status_waits(policy, head, statuses, tests=roles_at(root).kind(TESTS))
+    except Unbound as undeclared:  # a malformed producer is named, never merged
         waits = [f'its producer: {undeclared}']
     missing += waits
     tried = trial(root, base, head)
@@ -252,7 +252,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
     try:
-        reviewed = review_gate(client, base=policy.integration)
+        reviewed = review_gate(client, base=policy.integration, by=roles_at(root).kind(REVIEW))
     except ValueError as config:  # a declaration that cannot gate is this PR's wait, never the tick's crash
 
         def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:

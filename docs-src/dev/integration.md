@@ -172,7 +172,7 @@ the merge audit, the messages, not a draft. The merge decision (`reviewturn.revi
   judge repo's prepare). Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision
   only says the review is due and the serve's tick (its own login) asks;
 - `forgereview.review_pull` reviews nothing whose latest `tests/review` is absent or `waits`, whoever started it (a
-  push, a hand-added label, a serve tick); the judge (`where = "judge"`) judges only a head called due.
+  push, a hand-added label, a serve tick); the judge (review bound to a host) judges only a head called due.
 
 A push asks for nothing: a new head has no status, so it waits for the decision again, and a superseded head is
 never reviewed. A head whose PR already holds its one review is never reviewed again by this trigger: once called

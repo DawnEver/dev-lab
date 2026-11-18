@@ -35,7 +35,7 @@ it attaches the bundle to its own run as :data:`ARTIFACT`; inside a GitHub Actio
 workflow's next step, ``actions/upload-artifact``, attaches to the same run. On a preparer's host it uploads
 through the artefact store the BASE declares (:func:`~dev_lab.dev.artefacts.store_for` over ``origin/<base>``'s
 manifest -- the head is data and never chooses) and points the head at it (:func:`pointer`). The workflow is the
-base's ``_prepare`` table, which :mod:`~dev_lab.dev.ciworkflows` renders for every ``review = "judge"`` repo.
+base's ``_prepare`` table, which :mod:`~dev_lab.dev.ciworkflows` renders for every repo whose review is bound to a host.
 """
 
 from __future__ import annotations
@@ -71,11 +71,11 @@ from dev_lab.dev.artefacts import (
 )
 from dev_lab.dev.artefactstores import MB, parsed_run_id
 from dev_lab.dev.forgepulls import pages
-from dev_lab.dev.forgereview_declared import Review, base_manifest, review_from
+from dev_lab.dev.forgereview_declared import Review, base_manifest
 from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, RunsUnread, review_runs
-from dev_lab.dev.roles import JUDGE
+from dev_lab.dev.roles import HOST, REVIEW, roles_at
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -177,14 +177,13 @@ def prepare(
     Gitea, written for the workflow's upload step on GitHub -- and nothing is posted: the judge finds the run
     itself. Anywhere else -- a declared preparer's host -- it goes to the artefact
     store ``origin/<base>`` declares (the head is DATA and never chooses) and the head is pointed at it.
-    Refused unless ``origin/<base>`` declares ``review = "judge"``: any other repo has no judge to read it (the
-    judge re-reads the declaration from the forge, so this is a courtesy, never the check).
+    Refused unless the family binds the repo's review to a host (a judge): any other repo has no judge to read it.
     """
     env = os.environ if env is None else env
     pull = client.pr_view(number)
     manifest = base_manifest(root, pull.base)
-    if review_from(*manifest).by != JUDGE:
-        msg = f'#{number}: the base does not declare [tool.dev_lab.roles] review = "{JUDGE}": no judge reads it'
+    if roles_at(root).kind(REVIEW) != HOST:
+        msg = f'#{number}: the family binds its review to no host (a judge): no judge reads a bundle'
         raise BundleRefused(msg)
     bundle = reviewbundle.prepare(root, repo=client.forge.repo, pull=pull)
     data, digest = reviewbundle.dump(bundle)

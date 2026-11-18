@@ -32,19 +32,21 @@ THE GITEA RUNNER LABELS ARE DECLARED ONCE: the top-level ``_runners`` table (:da
 names each label a Gitea job may run on -- ``review`` for the review job alone, :data:`LIGHT` for the jobs that hold
 no review method and no key (user ruling 2026-11-02). It is never a workflow and never rendered.
 
-EVERY JOB NAMES ITS ROLE, AND RENDERS ONLY WHERE THE REPO PUTS THAT ROLE ON ITS EXECUTOR (D70/D71,
-:mod:`dev_lab.dev.roles`): a job's ``role`` (:data:`ROLE_KEY`) is one of :data:`~dev_lab.dev.roles.ROLES`, its
-``by`` (:data:`BY_KEY`, ``actions`` when omitted) the executor it works for; neither is rendered. A job renders only
-where the repo's ``[tool.dev_lab.roles]`` puts its role on its ``by`` (:func:`role_jobs`); a step may name its own
-``role`` (the sweep inside the promote job) and renders only where that role is on ``actions``. A kept job that
-``needs`` a job whose role is elsewhere is refused by name: that mix of executors has no workflow. A workflow left
-with no job is not rendered, so a repo with no role on ``actions`` renders no workflow at all.
+EVERY JOB NAMES ITS ROLE, AND RENDERS ONLY WHERE THE FAMILY BINDS THAT ROLE TO ITS KIND (D73,
+:mod:`dev_lab.dev.roles`): a job's ``role`` (:data:`ROLE_KEY`) is one of :data:`~dev_lab.dev.roles.ROLES` (a list
+for a job doing one role's work after another's), its ``by`` (:data:`BY_KEY`, ``ci`` when omitted) the executor kind
+it works for; neither is rendered. A job renders only where the repo's roles bind every role it names to its ``by``
+(:func:`role_jobs`); a step may name its own ``role`` (the sweep inside the promote job) and renders only where that
+role is on ``ci``. A kept job that ``needs`` a job whose role is elsewhere is refused by name: that mix of executors
+has no workflow. A workflow left with no job is not rendered, so a repo with no role on ``ci`` renders none at all.
+Every rendered workflow carries the repo's kinds as :data:`~dev_lab.dev.roles.ROLES_ENV`, so a job -- which holds no
+family layer -- reads the same binding the render did.
 
-THE JUDGE'S PREPARE: where ``review = "judge"``, the base's :data:`PREPARE` table (its job ``by = "judge"``) is
-rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one name the judge reads its runs by
-(:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that name merged over it; the layer's
-``forge`` picks the forge it runs on (Gitea by default). Any other repo renders none, and a layer of that name there
-is refused.
+THE JUDGE'S PREPARE: where ``review`` is bound to a ``host`` (a judge), the base's :data:`PREPARE` table (its job
+``by = "host"``) is rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one name the judge
+reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that name merged over
+it; the layer's ``forge`` picks the forge it runs on (Gitea by default). Any other repo renders none, and a layer of
+that name there is refused.
 
 A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of a workflow a PR event starts (:data:`PR_EVENTS`) is
 AND-guarded at render by :data:`~dev_lab.dev.forgedraft.READY_ONLY` (:func:`ready_only`) -- never typed per job.
@@ -83,7 +85,7 @@ from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
-from dev_lab.dev.roles import ACTIONS, JUDGE, REVIEW, ROLES, Roles, roles_from
+from dev_lab.dev.roles import CI, HOST, REVIEW, ROLES, ROLES_ENV, Roles, roles_at
 
 __all__ = [
     'BASE_PATH',
@@ -152,7 +154,7 @@ NIGHTLY_CRON: Final = '0 2 * * *'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 #: A job or step key, never rendered: the role (:data:`~dev_lab.dev.roles.ROLES`) its work belongs to.
 ROLE_KEY: Final = 'role'
-#: A job key, never rendered: the executor the job works for (``actions`` when omitted).
+#: A job key, never rendered: the executor kind the job works for (``ci`` when omitted).
 BY_KEY: Final = 'by'
 
 
@@ -281,11 +283,10 @@ def _job_roles(name: str, job: dict[str, Any], where: str) -> tuple[str, ...]:
 
 
 def role_jobs(workflow: dict[str, Any], roles: Roles, where: str) -> dict[str, Any]:
-    """*workflow* with only the jobs and steps *roles* puts on their executor, the role marks removed. PURE.
+    """*workflow* with only the jobs and steps *roles* binds to their kind, the role marks removed. PURE.
 
-    A job renders where *roles* puts every role it names (:data:`ROLE_KEY`) on its :data:`BY_KEY` (``actions`` when
-    omitted); a step naming a role renders where that role is on ``actions``. *where* names the workflow in a
-    refusal.
+    A job renders where *roles* binds every role it names (:data:`ROLE_KEY`) to its :data:`BY_KEY` kind (``ci`` when
+    omitted); a step naming a role renders where that role is on ``ci``. *where* names the workflow in a refusal.
 
     Raises:
         ValueError: a job names no role or an unknown one, or a kept job ``needs`` a job whose role is elsewhere.
@@ -296,16 +297,14 @@ def role_jobs(workflow: dict[str, Any], roles: Roles, where: str) -> dict[str, A
     named = {name: _job_roles(name, job, where) for name, job in workflow['jobs'].items()}
     kept: dict[str, Any] = {}
     for name, job in workflow['jobs'].items():
-        if any(roles.of(role) != job.get(BY_KEY, ACTIONS) for role in named[name]):
+        if any(roles.kind(role) != job.get(BY_KEY, CI) for role in named[name]):
             continue
         out = {key: value for key, value in job.items() if key not in {ROLE_KEY, BY_KEY}}
         if 'steps' in out:
             out['steps'] = [
                 {key: value for key, value in step.items() if key != ROLE_KEY} if isinstance(step, dict) else step
                 for step in out['steps']
-                if not isinstance(step, dict)
-                or roles.of(step.get(ROLE_KEY, named[name][0])) == ACTIONS
-                or ROLE_KEY not in step
+                if not isinstance(step, dict) or ROLE_KEY not in step or roles.kind(step[ROLE_KEY]) == CI
             ]
         kept[name] = out
     for name, job in kept.items():
@@ -313,8 +312,8 @@ def role_jobs(workflow: dict[str, Any], roles: Roles, where: str) -> dict[str, A
             theirs = sorted({role for other in lacking for role in named.get(other, ())})
             msg = (
                 f'{where} job {name!r} ({"+".join(named[name])}) needs {lacking}, whose role {theirs} is not on '
-                f'actions here: [tool.dev_lab.roles] puts {"+".join(named[name])} on "actions", so it needs {theirs} '
-                'there too -- that mix of executors has no workflow'
+                f'ci here: the family binds {"+".join(named[name])} to "ci", so it needs {theirs} there too -- that '
+                'mix of executors has no workflow'
             )
             raise ValueError(msg)
     return {**workflow, 'jobs': kept}
@@ -378,16 +377,17 @@ def base_names(forge: str) -> set[str]:
 
 
 def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
-    """Every workflow *root*'s working tree declares (:func:`placed`), on the forge it is hosted on."""
+    """Every workflow *root*'s working tree declares (:func:`placed`), on its forge, under its family roles."""
     text, _ = _declared(root)
-    return placed(text, str(root / 'pyproject.toml'), repo_forge(root))
+    return placed(text, str(root / 'pyproject.toml'), repo_forge(root), roles_at(root))
 
 
-def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str, Any]]]:
-    """Every workflow pyproject *text* declares on *forge*, by file name: its directory and the workflow, base under.
+def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """Every workflow pyproject *text* declares on *forge* under *roles*, by file name: its directory and workflow.
 
-    Every base workflow placed on *forge* is rendered, declared or not. *origin* names the text in a refusal; a
-    reader with no checkout (the protection door) passes the forge's copy.
+    Every base workflow placed on *forge* is rendered, declared or not, keeping the jobs *roles* binds to their kind
+    (:func:`role_jobs`). *origin* names the text in a refusal; a reader with no checkout (the protection door)
+    passes the forge's copy.
     """
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     declared = dict(declared_table(tomllib.loads(text), 'ci', {}))
@@ -395,13 +395,12 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         declared.setdefault(name, {})
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
     prepare = base.pop(PREPARE)
-    roles = roles_from(text, origin)
-    if roles.of(REVIEW) == JUDGE:
-        require_producer(BACKENDS[forge], JUDGE_HOST, f'{origin}: [tool.dev_lab.roles] review = "{JUDGE}"')
+    if roles.kind(REVIEW) == HOST:
+        require_producer(BACKENDS[forge], JUDGE_HOST, f'{origin}: review bound to a host (a judge)')
         base[PREPARE_WORKFLOW] = prepare
         declared.setdefault(PREPARE_WORKFLOW, {})
     elif PREPARE_WORKFLOW in declared:
-        msg = f'[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]: rendered only for [tool.dev_lab.roles] review = "{JUDGE}"'
+        msg = f'[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]: rendered only where review is bound to a host (a judge)'
         raise ValueError(msg)
     hosted = hostedparts.hosted_parts(text)
     integration = _integration(text, origin)
@@ -414,6 +413,7 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         workflow = ready_only(measurement_isolated(expanded))
         if 'jobs' in workflow and not workflow['jobs']:
             continue  # no job's role is on its executor here: the forge's CI runs nothing of this workflow
+        workflow['env'] = {**workflow.get('env', {}), ROLES_ENV: roles.env()}
         if workflow.pop(NIGHTLY_KEY, False):
             workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
         if forge not in WORKFLOW_DIRS:

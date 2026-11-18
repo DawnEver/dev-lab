@@ -117,7 +117,7 @@ PR_NUMBER = "${{ github.event.pull_request.number || inputs.pr }}"
 
 # ciworkflows isolates every other job and makes only this expanded setup's checkout credential-free.
 ["ci.yml".jobs.measurement]
-role = "tests"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 name = "MEASUREMENT (selected tests, not a part)"
 if = "${{ github.event_name == 'workflow_dispatch' && (inputs.measurement_paths != '' || inputs.measurement_sha != '') }}"
 runs-on = "ubuntu-latest"
@@ -131,7 +131,7 @@ steps = [
 ]
 
 ["ci.yml".jobs.parts]
-role = "tests"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
@@ -147,7 +147,7 @@ event = "${{ env.PARTS_EVENT }}"
 pending = "${{ steps.pending.outputs.pending }}"
 
 ["ci.yml".jobs.part]
-role = "tests"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = "parts"
 if = "${{ needs.parts.outputs.matrix != '' }}"
@@ -168,7 +168,7 @@ fail-fast = false
 matrix = "${{ fromJSON(needs.parts.outputs.matrix) }}"
 
 ["ci.yml".jobs.absent-parts]
-role = "tests"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["parts", "part"]
 if = "${{ always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '' }}"
@@ -184,7 +184,7 @@ actions = "read"  # jobparts.run_jobs: a part whose job concluded failed with no
 statuses = "write"
 
 ["ci.yml".jobs.security]
-role = "merge"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 if = "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
 runs-on = "ubuntu-latest"
@@ -199,7 +199,7 @@ statuses = "write"
 pull-requests = "read"
 
 ["ci.yml".jobs.head-gates]
-role = "merge"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 if = "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
 runs-on = "ubuntu-latest"
@@ -226,7 +226,7 @@ pull-requests = "read"
 # branch's review declaration (forgereview_declared.review_at) -> the command; a PR into any other base is not reviewed.
 # The dev_lab door is the shared `door` steps': the dev-lab DOOR_SHA's uv.lock pins.
 ["ci.yml".jobs.review]
-role = "review"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "review"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 needs = ["merge-ready"]
 if = "${{ always() && (github.event_name == 'pull_request' || inputs.pr != '') && needs.merge-ready.outputs.due == 'true' }}"
 runs-on = "ubuntu-latest"
@@ -250,7 +250,7 @@ pull-requests = "write"
 issues = "write"
 
 ["ci.yml".jobs.merge-ready]
-role = "merge"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["security", "head-gates", "part", "absent-parts"]
 if = "${{ always() && (github.event_name == 'pull_request' || inputs.pr != '') }}"
@@ -273,7 +273,7 @@ actions = "write"
 # condition now stands. A separate job, not a step of `review`: that job holds the review key and acts on nothing
 # the PR supplies, so it never gets `contents: write` nor runs the head's environment.
 ["ci.yml".jobs.merge-rejudge]
-role = ["merge", "review"]  # re-judges after the Actions review: rendered where both are on actions (roles, D70)
+role = ["merge", "review"]  # re-judges after the CI review: rendered where both are bound to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["review"]
 if = "${{ always() && needs.review.result != 'skipped' && needs.review.result != 'cancelled' }}"
@@ -316,7 +316,7 @@ HEAD_SHA = "${{ github.sha }}"
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
 
 ["merge-tick.yml".jobs.merge-tick]
-role = "merge"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 if = "${{ github.event_name != 'status' || (startsWith(github.event.context, 'tests/') && github.event.context != 'tests/merge-ready' && github.event.state != 'pending') }}"
 runs-on = "ubuntu-latest"
@@ -341,7 +341,7 @@ actions = "write"
 # its decision called a head due. It runs the default branch's file, never a PR head's, with the review method and
 # key as the review job holds them.
 ["merge-tick.yml".jobs.review]
-role = "review"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "review"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 needs = ["merge-tick"]
 if = "${{ always() && (github.event_name != 'status' || needs.merge-tick.outputs.due == 'true') }}"
 runs-on = "ubuntu-latest"
@@ -366,7 +366,7 @@ issues = "write"
 # Pushes the fast-forwarded main and deletes every branch integration now contains (LANDED-BRANCHES-SWEPT,
 # closing a landed PR first) with the job token, hence contents: write and pull-requests: write.
 ["ci.yml".jobs.promote]
-role = "promote"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "promote"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["parts", "absent-parts"]
 if = "${{ needs.parts.outputs.pending == 'true' }}"
@@ -636,7 +636,7 @@ UV_CONCURRENT_BUILDS = "1"
 # Its two reads retry as reviewcode.forge_call does (a transient or a rate limit: 3 attempts, 3 s apart; an answered
 # refusal is final; a refused job token is an error annotation naming the forge host), pinned by a test.
 ["review.yml".jobs.review]
-role = "review"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "review"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 if = "${{ github.event.label.name == 'review-due' }}"
 runs-on = "review"
 steps = [
@@ -692,7 +692,7 @@ contents = "write"
 pull-requests = "write"
 issues = "write"
 
-# THE BUNDLE PREPARE (forgereview_pointer): a repo declaring [tool.dev_lab.review] where = "judge" is reviewed by an
+# THE BUNDLE PREPARE (forgereview_pointer): a repo whose review the family binds to a host (a judge) is reviewed by an
 # isolated judge host, which reads a bundle only as the `review-bundle` ARTIFACT of the newest concluded, successful
 # run of THIS workflow for the PR (event, workflow, pull request, head sha) -- located by the judge, never by a
 # status. Never declared by a repo and never keyed by its file name here: ciworkflows renders `_prepare` under
@@ -745,8 +745,8 @@ group = "review-prepare-${{ github.event.pull_request.number }}-${{ github.event
 cancel-in-progress = true
 
 [_prepare.by-forge.gitea.jobs.prepare]
-role = "review"  # the judge reviews the bundle this job prepares: rendered where review = "judge"
-by = "judge"
+role = "review"  # the judge reviews the bundle this job prepares: rendered where review is bound to a host (a judge)
+by = "host"
 if = "${{ github.event.label.name == 'review-due' }}"
 runs-on = "light"
 steps = [
@@ -760,8 +760,8 @@ steps = [
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
 
 [_prepare.by-forge.github.jobs.prepare]
-role = "review"  # the judge reviews the bundle this job prepares: rendered where review = "judge"
-by = "judge"
+role = "review"  # the judge reviews the bundle this job prepares: rendered where review is bound to a host (a judge)
+by = "host"
 if = "${{ github.event.pull_request.head.repo.full_name == github.repository }}"
 runs-on = "ubuntu-latest"
 steps = [
@@ -797,7 +797,7 @@ HEAD_SHA = "${{ github.sha }}"
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
 
 ["continue.yml".jobs.continue]
-role = "merge"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
@@ -844,7 +844,7 @@ FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # th
 GITHUB_TOKEN = "${{ github.token }}"
 
 ["review-again.yml".jobs.again]
-role = "review"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "review"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 if = "${{ github.event.issue.pull_request && (contains(github.event.comment.body, '<!-- lab-commons:review-again:') || contains(github.event.comment.body, '<!-- lab-commons:review-carry:')) }}"
 runs-on = "ubuntu-latest"
 steps = [
@@ -860,15 +860,16 @@ statuses = "write"
 pull-requests = "write"
 issues = "write"
 
-# WHO PROMOTES IS THE REPO'S `[tool.dev_lab.roles] promote` (dev_lab.dev.roles, D70-D72): "actions" renders ci.yml's
-# promote job; "forge" is `dev_lab.ops` `[ops.promote]`, a timer on the Gitea host (src/dev_lab/ops/promote.py), and
-# nothing here -- one promoter per repo, never two racing their pushes to main.
+# WHO PROMOTES IS THE FAMILY'S BINDING of `promote` (dev_lab.dev.roles, D73): "ci" renders ci.yml's promote job; a
+# `{ host = ... }` is that host's `dev_lab.ops` `[ops.promote]` timer (src/dev_lab/ops/promote.py), and nothing
+# here -- one promoter per repo, never two racing their pushes to main.
 
-# A GITEA REPO WHOSE `merge` ROLE IS ON "actions" MERGES IN ITS OWN CI (P3 2026-11-02; D70): a PR into integration
-# whose head is safe and clean is merged by THIS job -- `forge merge ready` with no number judges every open PR into integration by
-# the ONE decision (dev_lab.dev.forgemergeready.ready) and merges each ready head as the job token -- then the landed PRs
-# are closed (dev_lab.dev.prlanded) and the landed branches swept (branchprune sweep) where `prune` is on "actions"
-# too. The hpc tick performs only the roles a repo puts on "hpc", so it then merges, closes and sweeps nothing.
+# A GITEA REPO WHOSE `merge` IS BOUND TO "ci" MERGES IN ITS OWN CI (P3 2026-11-02; D73): a PR into integration whose
+# head is safe and clean is merged by THIS job -- `forge merge ready` with no number judges every open PR into
+# integration by the ONE decision (dev_lab.dev.forgemergeready.ready) and merges each ready head as the job token --
+# then, where `prune` is bound to "ci" too, the landed PRs are closed (dev_lab.dev.prlanded) and the landed branches
+# swept (branchprune sweep). An hpc executor performs only the roles bound to it, so it then merges, closes and
+# sweeps nothing.
 # TRIGGERS. Gitea 1.27 has no `status` event, so a posted status starts nothing: a check workflow completing
 # (workflow_run, read from the DEFAULT branch; its `workflows` are DERIVED by ciworkflows.follow_checks from what
 # the repo renders, never named here) and a schedule are the triggers; tests/security, posted by a serve,
@@ -907,7 +908,7 @@ UV_CONCURRENT_BUILDS = "1"
 # The decision validates the review declaration (lab_commons.units: pint, numpy, pydantic) and runs the repo's
 # message row (dev_lab.dev.commitmsg), so this door installs the whole lock -- a hand list of that closure would be a second lock.
 ["merge.yml".jobs.merge]
-role = "merge"  # ciworkflows renders it only where the repo puts this role on actions (roles, D70)
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 runs-on = "light"
 steps = [
     { use-steps = "reach" },

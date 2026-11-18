@@ -27,19 +27,18 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     quiet = "10 min"           # the default (DEFAULT_QUIET): the serve reviews a head only once it is this old
     reviewers = []             # forge logins the review producers post as (serve hosts, jobs): their reviews are read
     bundle = [...]             # the judge's command over {bundle} (FAMILY_BUNDLE): declared only to differ
-    judge_login = "<login>"    # with review = "judge" on Gitea: the forge login whose PR review gates the merge
-    judge_app = 0              # with review = "judge" on GitHub, INSTEAD of judge_login: the App id whose
+    judge_login = "<login>"    # a judge on Gitea: the forge login whose PR review it posts
+    judge_app = 0              # on GitHub, INSTEAD of judge_login: the App id whose
                                # `review/judge` check run gates the merge (forgeapp); exactly one of the two
     preparers = []             # logins (never the Actions bot) whose review/bundle pointer the judge reads
     batch = true               # FAMILY_BATCH: model calls via the vendor batch endpoint ({batch}); false: at once
     on_expiry = "sync"         # a request the batch let expire (24 h): answered at once ("sync") or failed ("fail")
     batch_wait = "20 min"      # DEFAULT_BATCH_WAIT: one review waits this long on its batches, then pending
 
-WHO reviews is not declared here: it is ``[tool.dev_lab.roles] review`` (:mod:`dev_lab.dev.roles`, D70/D71) --
-``judge`` (the independent judge host over a verified bundle), ``hpc`` (the hpc tick runs ``command``) or
-``actions`` (the forge's review job runs it) -- read into :attr:`Review.by`. Retired keys (:data:`RETIRED_KEYS`:
-``max_tokens``, ``rules``, ``max_rounds``, ``judge``) are refused by name; the retired ``where`` by
-:func:`~dev_lab.dev.roles.roles_from`, with its one-shot migration.
+WHO reviews is never declared here: it is the family's binding of ``review`` (:mod:`dev_lab.dev.roles`, D73) -- a
+``host`` (the independent judge over a verified bundle), an ``hpc`` executor's serve tick, or ``ci`` (the forge's
+review job). Retired keys (:data:`RETIRED_KEYS`: ``max_tokens``, ``rules``, ``max_rounds``, ``judge``, ``where``) are
+refused by name.
 """
 
 from __future__ import annotations
@@ -64,7 +63,6 @@ from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, HOST_FIELD, RUNTI
 from dev_lab.dev.forgereview_scope import Budget
 from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
-from dev_lab.dev.roles import ALLOWED, HPC, JUDGE, REVIEW, roles_from
 from dev_lab.dev.rules import RULES
 
 if TYPE_CHECKING:
@@ -133,7 +131,7 @@ FAMILY_COMMAND: Final = (
 BUNDLE_FIELD: Final = '{bundle}'
 
 #: The family's review over a REVIEW BUNDLE (:mod:`dev_lab.dev.reviewbundle`): ai-lab reads the bundle's plain
-#: files, never git. Run by ``forge review judge`` when the base declares ``review = "judge"``.
+#: files, never git. Run by ``forge review judge`` where the family binds review to a host (a judge).
 FAMILY_BUNDLE: Final = (
     '{runtimes.ai_lab.python}', '-m', 'ai_lab.review', '--bundle', BUNDLE_FIELD, '--model', MODEL_FIELD,
     '--rules', RULES_FIELD, '--principles', forgereview_scope.PRINCIPLES_FIELD, forgereview_scope.SUMMARY_FIELD,
@@ -165,6 +163,7 @@ RETIRED_KEYS: Final = {
     'rules': 'the review command reads the rules and profiles of the method it packages',
     'max_rounds': 'a PR is reviewed once (user ruling 2026-11-06): there are no rounds to cap',
     'judge': 'a one-shot review re-judges nothing and adjudicates no claim (user ruling 2026-11-06)',
+    'where': "a repo declares no placement: bind review in the family layer's [roles.<forge>] (D73)",
 }
 
 _TABLE: Final = 'review'
@@ -194,26 +193,21 @@ class Review:
     quiet: str = DEFAULT_QUIET  # a duration: the serve reviews a head only once it is this old (D52)
     backlog: str = DEFAULT_BACKLOG  # a duration: a ready head unreviewed this long pages (forgebacklog)
     reviewers: tuple[str, ...] = ()  # the producer logins whose review records every host reads (never any writer)
-    by: str = HPC  # who reviews: [tool.dev_lab.roles] review (ALLOWED[REVIEW]), never declared here
     bundle: tuple[str, ...] = FAMILY_BUNDLE  # the judge's command over {bundle}
-    judge_login: str = ''  # by = JUDGE (Gitea): the ONE login whose PR review gates the merge, never inferred
-    judge_app: int = 0  # by = JUDGE (GitHub): the ONE App id whose JUDGE_CHECK run gates the merge
-    preparers: tuple[str, ...] = ()  # by = JUDGE: logins (never the Actions bot) whose bundle pointer is read
+    judge_login: str = ''  # a judge on Gitea: the ONE login whose PR review gates the merge, never inferred
+    judge_app: int = 0  # a judge on GitHub: the ONE App id whose JUDGE_CHECK run gates the merge
+    preparers: tuple[str, ...] = ()  # a judge: logins (never the Actions bot) whose bundle pointer is read
     batch: bool = batching_.FAMILY_BATCH  # via the vendor batch endpoint; False: at once (forgereview_batch)
     on_expiry: str = batching_.FAMILY_ON_EXPIRY  # an expired batch request: one of batching_.ON_EXPIRY
     batch_wait: str = batching_.DEFAULT_BATCH_WAIT  # a duration: one review waits this long, then posts pending
 
     def __post_init__(self) -> None:
-        """Refuse a ``by`` no place reviews on, a judge with no login, a bad ``bundle``."""
-        if self.by not in ALLOWED[REVIEW]:
-            msg = f'review = {self.by!r} is not one of {ALLOWED[REVIEW]}'
-            raise ValueError(msg)
+        """Refuse a bad ``judge_app``, a bad ``bundle`` or duration."""
         if isinstance(self.judge_app, bool) or not isinstance(self.judge_app, int) or self.judge_app < 0:
             msg = f'judge_app = {self.judge_app!r} is no GitHub App id (a positive integer)'
             raise ValueError(msg)
-        if self.by == JUDGE and bool(self.judge_login) == bool(self.judge_app):
-            said = 'both judge_login and judge_app' if self.judge_login else 'neither judge_login nor judge_app'
-            msg = f'review = "{JUDGE}" declares {said}: exactly ONE identity gates the merge'
+        if self.judge_login and self.judge_app:
+            msg = 'both judge_login and judge_app: exactly ONE identity names the judge'
             raise ValueError(msg)
         if BUNDLE_FIELD not in self.bundle:
             msg = f'bundle = {list(self.bundle)} names no {BUNDLE_FIELD}: the judge would read no bundle'
@@ -256,15 +250,12 @@ def review_from(text: str, origin: str) -> Review:
     if retired := [f'{key} is retired: {RETIRED_KEYS[key]}' for key in declared if key in RETIRED_KEYS]:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: ' + '; '.join(retired)
         raise ValueError(msg)
-    known = {field.name for field in dataclasses.fields(Review)} - {'by'}
+    known = {field.name for field in dataclasses.fields(Review)}
     if unknown := sorted(set(declared) - known):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     try:
-        by = roles_from(text, origin).of(REVIEW)
-        review = Review(
-            by=by, **{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()}
-        )
+        review = Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
     except ValueError as bad:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: {bad}'
         raise ValueError(msg) from bad

@@ -1,6 +1,7 @@
 """THE BUNDLE REVIEW: ``forge review prepare`` on the runner, ``forge review judge`` on the isolated judge host.
 
-A repo whose integration branch declares ``[tool.dev_lab.roles] review = "judge"`` is reviewed this way, and only
+A repo whose ``review`` the family binds to a host -- the judge, whose ``[ops.judge] repos`` the config check holds
+equal to that binding (:func:`dev_lab.dev.roles.host_refusals`) -- is reviewed this way, and only
 this way (the serve skips it, :func:`dev_lab.dev.forgereview.review_pull`). User decisions 2026-11-03; the judge
 trusts NOTHING the producer wrote that it can read or derive from the forge (D3):
 
@@ -81,7 +82,6 @@ from dev_lab.dev.reviewgate import (
     standing_verdicts,
 )
 from dev_lab.dev.reviewruntime import review_runtimes
-from dev_lab.dev.roles import JUDGE
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
@@ -283,8 +283,6 @@ def judge_pending(
     """
     integration = forge_integration(client)
     review = forge_review(client, integration)
-    if review.by != JUDGE:
-        return [f'{integration} declares review = {review.by!r}: the judge reviews no PR of this repo']
     me = client.whoami()
     if (other := _not_the_judge(client, review, me)) is not None:
         return [f'{integration} declares {other}: it judges nothing']

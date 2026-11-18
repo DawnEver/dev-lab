@@ -28,7 +28,7 @@ which prints exactly this (a test pins this block to the command's output, so it
   given to `--capabilities` with `--role light` is refused.
 
 No `[serve]` is written, and the deploy removes one it finds: a workstation never serves a merge's parts (user
-ruling 2026-11-16; `configcheck` refuses the table through `producercheck.host_refusals`). Nothing else is
+ruling 2026-11-16; `configcheck` refuses the table through `rolecheck.host_refusals`). Nothing else is
 written: no `[reserve]`, no seats. Every other table, key and comment of the file is kept.
 
 ## Deploy, step by step

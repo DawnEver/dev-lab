@@ -38,7 +38,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.roles import TESTS, roles_from
+from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
 
 __all__ = ['Listing', 'Pull', 'integration_at', 'reason_of', 'sweep']
@@ -121,7 +121,7 @@ def sweep(
         for pull in forge.open_pulls():
             if pull.draft or not _integrates(forge, pull.base, url):
                 continue
-            tests = roles_from(forge.declaration(pull.base), f'{url}@{pull.base}:pyproject.toml').of(TESTS)
+            tests = roles_of_url(url).kind(TESTS)
             if not _waits_for_the_wave(forge.statuses(pull.head), pull.head, tests=tests):
                 continue
             try:

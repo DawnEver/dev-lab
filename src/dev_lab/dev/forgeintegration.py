@@ -78,7 +78,7 @@ from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
 from dev_lab.dev.reviewturn import review_turn
-from dev_lab.dev.roles import ACTIONS, MERGE, roles_at
+from dev_lab.dev.roles import CI, MERGE, roles_at
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
 from dev_lab.dev.unproduced import unproduced_waived
 
@@ -246,15 +246,15 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     """Merge PR *child* through the forge when nothing is missing; *said* with the outcome added as a line.
 
     Only where ``pr_merges_since`` is declared and the forge is gitea; an already-merged child is left alone. A repo
-    whose ``[tool.dev_lab.roles] merge`` is on ``actions`` is merged by its forge's job on the same decision
-    (:func:`dev_lab.dev.forgemergeready.ready`): here it is only said.
+    whose ``merge`` the family binds to ``ci`` (:mod:`dev_lab.dev.roles`) is merged by its forge's job on the same
+    decision (:func:`dev_lab.dev.forgemergeready.ready`): here it is only said.
     """
     if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
         return said
     found = judged(root, child.client, policy, branch=child.branch, number=child.pr, head=child.head)
     turn = review_turn(child.client, child.pr, child.head, found)  # the advisory review is asked for here too
-    if found.ready and roles_at(root).of(MERGE) == ACTIONS:
-        line, summary = 'ready: its Actions merge job merges it', f'{said.summary}; ready for its Actions merge job'
+    if found.ready and roles_at(root).kind(MERGE) == CI:
+        line, summary = 'ready: its CI merge job merges it', f'{said.summary}; ready for its CI merge job'
         if found.unreviewed:
             line = f'{line}, WARNED -- {found.unreviewed}'
     elif found.ready:

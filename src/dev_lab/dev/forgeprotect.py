@@ -48,6 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
 
+from lab_commons.config import family
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 
@@ -63,7 +64,7 @@ from dev_lab.dev.forgereview_declared import review_from
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.roles import roles_from
+from dev_lab.dev.roles import retired_placement, roles_for
 
 __all__ = [
     'INTEGRATION',
@@ -173,14 +174,22 @@ def declaration_from(text: str, origin: str) -> Declaration:
     if approvals < 0:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} is below zero'
         raise ValueError(msg)
-    roles_from(text, origin)  # the one roles table (dev_lab.dev.roles), refused by name when malformed
+    if retired := retired_placement(text, origin):  # a repo declares no placement (dev_lab.dev.roles, D73)
+        raise ValueError('; '.join(retired))
     return Declaration(approvals, forges)
 
 
-def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[str, ...]]:
-    """Each role's required status contexts on *forge*, derived from the workflows *text* renders for it."""
-    directory = WORKFLOW_DIRS[backend_for(forge).name]
-    flows = [flow for where, flow in placed(text, origin, backend_for(forge).name).values() if where == directory]
+def required_contexts(
+    text: str, origin: str, forge: Forge, *, layer: Mapping[str, Any] | None = None
+) -> dict[str, tuple[str, ...]]:
+    """Each role's required status contexts on *forge*, derived from the workflows *text* renders for it.
+
+    The workflows render under the roles the family *layer* (default: this machine's) binds for the repo.
+    """
+    kind = backend_for(forge).name
+    roles = roles_for(family() if layer is None else layer, kind, f'{forge.owner}/{forge.repo}')
+    directory = WORKFLOW_DIRS[kind]
+    flows = [flow for where, flow in placed(text, origin, kind, roles).values() if where == directory]
     jobs = [job for flow in flows for job in flow.get('jobs', {}).values()]
     steps = {step.get('name') for job in jobs for step in job.get('steps', ())}
     integration = (MERGE_READY_CONTEXT,) if MERGE_READY_CONTEXT in steps else ()

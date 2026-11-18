@@ -7,10 +7,6 @@ clone (made on first run), the tip to judge
 fast-forward push of origin's trunk uses. NO REFUSAL IS QUIET (W5): a refusal, and each commit the walk
 passed over, is an alert naming its reason, as a fetch, promote or push FAILURE is, through ``[alerts]``
 (:func:`dev_lab.ops.hostverbs.promote_verb`). A frozen trunk was a consumer's ``main`` 639 commits behind.
-
-THE REPO'S OWN ROLES DECIDE (D70-D72, :mod:`dev_lab.dev.roles`): a configured repo whose ``[tool.dev_lab.roles]
-promote`` is not ``forge`` is refused, alerting -- the host's repo list and the repo's declaration disagree, and the
-declaration is the one source.
 """
 
 from __future__ import annotations
@@ -24,7 +20,6 @@ from lab_commons.log import emit
 
 from dev_lab.dev import integrate
 from dev_lab.dev.lanepolicy import Policy
-from dev_lab.dev.roles import FORGE, PROMOTE, UndeclaredRoles, roles_at
 from dev_lab.ops.clones import CloneUnusable, declared, git, sync
 from dev_lab.ops.config import OpsConfig, repo_name
 
@@ -48,20 +43,13 @@ class Outcome:
 
 
 def _prepare(config: OpsConfig, url: str, credentials: str) -> tuple[Path, Policy, str] | Outcome:
-    """The clone, its declaration and its integration tip, freshly fetched; else the failed or refused outcome."""
+    """The clone, its declaration and its integration tip, freshly fetched; else the failed :class:`Outcome`."""
     name = repo_name(url)
     try:
         sync(config, url, credentials=credentials)
         root, policy = declared(config, url)
     except CloneUnusable as unusable:
         return Outcome(name, 'failed', str(unusable))
-    try:
-        by = roles_at(root).of(PROMOTE)
-    except UndeclaredRoles as undeclared:
-        return Outcome(name, 'refused', str(undeclared))
-    if by != FORGE:
-        why = f'[tool.dev_lab.roles] promote = "{by}": this host promotes only promote = "{FORGE}" (D72)'
-        return Outcome(name, 'refused', f'{why} -- drop it from the [ops] repos or move its role')
     tip = git(root, 'rev-parse', '--verify', '--quiet', f'origin/{policy.integration}').stdout.strip()
     if not tip:
         return Outcome(name, 'failed', f'origin/{policy.integration} does not resolve')

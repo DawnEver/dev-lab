@@ -69,7 +69,7 @@ from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR, is_held
 from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.roles import TESTS, roles_from
+from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
 from dev_lab.ops.breakglassforge import Forge
@@ -295,7 +295,7 @@ class Server:
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
         forge, integration = self._admit(asked)
         hidden = hidden_reds(forge.fingerprints, head, integration, posted := forge.statuses(head))
-        by = roles_from(forge.declaration(integration), f'{repo}@{integration}:pyproject.toml').of(TESTS)
+        by = roles_of_url(self.role.repo(repo) or repo).kind(TESTS)
         tests = tests_at(posted, head, tests=by) + (f'; {hidden}' if hidden else '')  # D18: on record
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
                           f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip

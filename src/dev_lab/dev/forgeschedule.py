@@ -386,11 +386,11 @@ def candidates(
     A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
 
-    A repo whose serving checkout puts ``tests`` on another executor than ``hpc`` (:mod:`dev_lab.dev.roles`)
+    A repo whose serving checkout has ``tests`` bound to another kind than ``hpc`` (:mod:`dev_lab.dev.roles`)
     has NO candidate: that executor posts its parts, and no HPC host is ever offered one (D70-D72).
     """
-    if (tests := roles_at(root).of(TESTS)) != HPC:
-        say(f'[serve] {repo} declares tests = "{tests}": its parts are never offered here')
+    if (tests := roles_at(root).kind(TESTS)) != HPC:
+        say(f'[serve] the family binds {repo} tests to "{tests}": its parts are never offered here')
         return ()
     found, reached = [], set()
     served = _part_refs(root, client, schedule, policy, say=say)

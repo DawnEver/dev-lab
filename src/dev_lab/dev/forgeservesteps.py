@@ -156,13 +156,13 @@ def prompt(
 
 
 def review(root: Path, built: Client, *, say: Callable[[str], None], host: str) -> None:
-    """The PR review on EVERY serving host, poller or not, where the repo puts ``review`` on ``hpc``.
+    """The PR review on EVERY serving host, poller or not, where the family binds ``review`` to ``hpc``.
 
     The step itself skips a host that cannot run it.
     """
     try:
         policy = load_policy(root)
-        if (by := roles_at(root).of(REVIEW)) != HPC:
+        if (by := roles_at(root).kind(REVIEW)) != HPC:
             say(f'[serve] review = "{by}": its executor reviews the PRs, never this hpc tick')
             return
     except (OSError, ValueError) as failed:
@@ -270,12 +270,12 @@ def repo_wide(
     branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
     and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. The
     family watch is per machine, not here (:func:`family`). Closing landed PRs, the sweep and both prunes are the
-    ``prune`` role, run here only where the repo puts it on ``hpc`` (:mod:`dev_lab.dev.roles`, D70).
+    ``prune`` role, run here only where the family binds it to ``hpc`` (:mod:`dev_lab.dev.roles`, D70).
     """
     roles = roles_at(root)
-    if roles.of(MERGE) == HPC:
+    if roles.kind(MERGE) == HPC:
         serve_continue_landed(root, client(root), say=say, alarm=alarm)
-    if (prune := roles.of(PRUNE)) != HPC:
+    if (prune := roles.kind(PRUNE)) != HPC:
         say(f'[serve] prune = "{prune}": its executor closes landed PRs, sweeps and prunes, never this hpc tick')
     else:
         serve_close_landed(root, client(root), say=say, alarm=alarm)
