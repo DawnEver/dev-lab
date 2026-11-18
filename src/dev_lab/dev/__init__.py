@@ -557,6 +557,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
 * :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
 * :mod:`dev_lab.dev.reclaimrun` -- reclaim as a SessionStart step: detached, locked, a bounded batch, never blocks.
+* :mod:`dev_lab.dev.venvprune` -- superseded ``.venvs/`` across checkouts: listed with bytes, removed on ``--apply``.
 * :mod:`dev_lab.dev.worktree_outputs` -- a removed tree's run outputs move home, verified; never its work.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
 * :mod:`dev_lab.dev.sshholdstate` -- a held session's state file and the append-only audit of every verb.
