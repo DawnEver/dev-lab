@@ -63,7 +63,7 @@ from dev_lab.dev.logref import UnverifiableLog
 from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
 from dev_lab.dev.runcache import cache_path, cached, remember
-from dev_lab.dev.selection import is_targeted
+from dev_lab.dev.selection import is_targeted, missing_paths
 from dev_lab.dev.skipallowance import MalformedAllowance
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictenv import verdict_env
@@ -183,7 +183,11 @@ def main(argv: list[str] | None = None) -> int:
     arguments = tuple(parsed.pytest_args)
     targeted = is_targeted(root, arguments)
     outside, workstation = _outside(root, parsed.part, arguments, targeted=targeted)
-    refused = None if targeted else outside
+    missing = missing_paths(root, arguments)
+    refused = (
+        f'verify: refused -- selected path(s) not in the checkout {root}: {", ".join(missing)}' if missing else None
+    )
+    refused = refused or (None if targeted else outside)
     try:
         posted, arguments = arguments, (*part_selection(root, parsed.part), *arguments)
     except ValueError as why:
