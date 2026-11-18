@@ -689,3 +689,23 @@ def test_the_main_session_keeps_its_producer_request(rules: Path) -> None:
     command = f'{_PY} -m dev_lab.dev.forge request tests --sha 0123abc'
     assert agenthooks.decide(command, rules, agent_id='a1') is not None
     assert agenthooks.decide(command, rules) is None
+
+
+#: Collection runs no test, so it claims no verdict: the row's hazard cannot arise and the line
+#: is admitted as written -- in every repo, with or without a measure script of its own.
+_COLLECT_ONLY = (
+    'pytest --collect-only -q tests/',
+    'python -m pytest --co tests',
+    '.venv/Scripts/python.exe -m pytest -q --collect-only tests/unit/x.py',
+)
+
+
+@pytest.mark.parametrize('command', _COLLECT_ONLY)
+def test_a_collect_only_line_is_admitted(rules: Path, command: str) -> None:
+    assert agenthooks.decide(command, rules) is None, command
+
+
+def test_a_collect_only_segment_admits_no_running_sibling(rules: Path) -> None:
+    """THE PLANTED CONTROL: the admission is per segment, so a run chained after a collection is refused."""
+    assert agenthooks.decide('pytest --collect-only tests && pytest tests', rules) is not None
+    assert agenthooks.decide('pytest tests --cov', rules) is not None
