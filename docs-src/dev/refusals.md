@@ -21,6 +21,7 @@ When a command targets another repo, the engine adds one header line naming that
 
 - **Why it is refused.** a hand-written test line has no VERDICT. An exit code cannot say whether the run COVERED what it selected, so a dead worker, a truncated run or a collection error that reported nothing all read as green -- and the reader has merged "the tests passed" with "nobody knows".
 - **The exit.** Re-issue through the entry point that produces a verdict: {remedy}
+- **Listing tests.** A collection (`pytest --collect-only` or `--co`) runs no test and claims no verdict, so that segment is admitted as written in every repo; a run chained beside it is still refused.
 
 ## FORGE-WRITE-VIA-CLI
 
