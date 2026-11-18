@@ -353,6 +353,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'reviewbudget',  # the review's dollar cap, new here
     'reviewcap',  # a review that did not run warns and merges, new here
     'commandpart',  # a non-pytest repo's one command part, new here
+    'commandtests',  # the declared producer command cut to a verify selection, new here
     'reviewgate',  # the one reviewed-head predicate, new here
     'reviewgitauth',  # the review door's file-held tokens, new here
     'reviewpolicy',  # the review policy exported for every trigger, new here
