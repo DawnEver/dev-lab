@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from _forge_state import StateForge
-from _roles_fixtures import EVERY_CI, HPC_REPO, carry
+from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
 from test_dev_forgemerge import _MANIFEST, _work
 
 from dev_lab.dev import forgecli, forgemergecall, forgemergeready
@@ -150,7 +150,7 @@ def test_on_gitea_the_merge_job_merges_a_ready_pr_only_where_merge_is_bound_to_c
 ) -> None:
     """P3: Gitea's merge job runs the same decision and merges; PLANTED CONTROL: merge on hpc, the job only posts."""
     work, forge, number, head = _pr(tmp_path)
-    carry(monkeypatch, HPC_REPO)
+    carry(monkeypatch, HPC_REVIEWED)
     ready(work, forge, number)
     assert forge.merges == [], 'merge bound to hpc: the serve tick merges it'
     carry(monkeypatch, EVERY_CI)
@@ -491,4 +491,4 @@ def test_a_ready_status_without_a_message_row_says_messages_are_not_declared(tmp
 @pytest.fixture(autouse=True)
 def _bound(monkeypatch: pytest.MonkeyPatch) -> None:
     """A Gitea repo merged by its HPC executor (planted); the CI merge tests carry EVERY_CI."""
-    carry(monkeypatch, HPC_REPO)
+    carry(monkeypatch, HPC_REVIEWED)

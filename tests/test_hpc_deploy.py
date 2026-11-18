@@ -740,22 +740,17 @@ def test_a_tick_period_cron_cannot_keep_is_refused(tmp_path: Path, minutes: str)
         _cron_spec(f'\n[schedule]\ntick_minutes = {minutes}\n', tmp_path)
 
 
-def _produced_by(box: Box, name: str, producer: str) -> None:
-    """Rewrite checkout *name*'s declaration so its producer is *producer*."""
-    pyproject = box.home / deploy_spec.DEFAULT_ROOT / name / 'pyproject.toml'
-    text = pyproject.read_text(encoding='utf-8').replace('producer = "hpc"', f'producer = "{producer}"')
-    pyproject.write_text(text, encoding='utf-8')
+def test_an_actions_repo_is_kept_fresh_but_its_queue_is_never_served(
+    box: Box, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Serving is the family's binding (D73), never a flag in the account's file.
 
-
-def test_an_actions_repo_is_kept_fresh_but_its_queue_is_never_served(box: Box, tmp_path: Path) -> None:
-    """Serving is the repo's OWN declaration (user ruling 2026-11-16), never a flag in the account's file.
-
-    An ``actions`` checkout is ticked -- refreshed, the kit's own tick the one writer of the kit -- and never served.
-    PLANTED CONTROL: alpha, declaring ``hpc``, is served.
+    A checkout with no role bound to an HPC executor is ticked -- refreshed, the kit's own tick the one writer of the
+    kit -- and never served. PLANTED CONTROL: alpha, bound to the HPC, is served.
     """
     assert box.run(*DECLARE) == 0
-    _produced_by(box, 'dev-lab', 'actions')
-    _produced_by(box, 'beta', 'actions')
+    bound = {'alpha': HPC_REPO}
+    monkeypatch.setattr(deploy_spec, 'roles_at', lambda checkout: bound.get(checkout.name, EVERY_CI))
     spec = deploy_spec.load(box.machine)
     assert spec is not None
     assert deploy_spec.served(spec, box.home) == {'alpha'}

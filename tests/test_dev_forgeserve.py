@@ -19,7 +19,7 @@ import pytest
 from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
-from _roles_fixtures import EVERY_CI, HPC_REPO, carry
+from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
 from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused, hold
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
@@ -1757,4 +1757,4 @@ def test_an_os_row_reaching_the_producer_is_read_as_its_part(monkeypatch, tmp_pa
 @pytest.fixture(autouse=True)
 def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
-    carry(monkeypatch, HPC_REPO)
+    carry(monkeypatch, HPC_REVIEWED)

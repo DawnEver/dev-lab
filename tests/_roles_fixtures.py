@@ -13,7 +13,7 @@ import pytest
 
 from dev_lab.dev.roles import CI, HOST, HPC, ROLES_ENV, Roles
 
-__all__ = ['CI_REPO', 'EVERY_CI', 'HPC_REPO', 'carry']
+__all__ = ['CI_REPO', 'EVERY_CI', 'HPC_REPO', 'HPC_REVIEWED', 'carry']
 
 #: Every role on the forge's CI but review, which a judge host performs.
 CI_REPO: Final = Roles.of_kinds(tests=CI, review=HOST, merge=CI, promote=CI, prune=CI)
@@ -21,6 +21,8 @@ CI_REPO: Final = Roles.of_kinds(tests=CI, review=HOST, merge=CI, promote=CI, pru
 EVERY_CI: Final = Roles.of_kinds(tests=CI, review=CI, merge=CI, promote=CI, prune=CI)
 #: Tests, merge and prune on an HPC executor, review on a judge host, promote on a forge host: no role on CI.
 HPC_REPO: Final = Roles.of_kinds(tests=HPC, review=HOST, merge=HPC, promote=HOST, prune=HPC)
+#: As :data:`HPC_REPO`, its review on the HPC executor too: the serve tick reviews it.
+HPC_REVIEWED: Final = Roles.of_kinds(tests=HPC, review=HPC, merge=HPC, promote=HOST, prune=HPC)
 
 
 def carry(monkeypatch: pytest.MonkeyPatch, roles: Roles) -> None:

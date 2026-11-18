@@ -14,7 +14,7 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
-from _roles_fixtures import HPC_REPO, carry
+from _roles_fixtures import EVERY_CI, HPC_REPO, carry
 from test_dev_githook_scripts import _plant_checker
 
 from dev_lab.dev import forgeintegration, forgemessages
@@ -299,17 +299,19 @@ def test_the_tick_merges_a_green_pr_once_declared_and_never_without(tmp_path: Pa
     assert 'merged by the forge' in comment['body']
 
 
-def test_the_tick_leaves_the_merge_to_a_repo_s_merge_job_and_still_says_the_decision(tmp_path: Path) -> None:
-    """P3: a repo declaring the CI merger is merged by its Gitea job; PLANTED CONTROL: the test above merges."""
+def test_the_tick_leaves_the_merge_to_a_repo_s_merge_job_and_still_says_the_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3: merge bound to ci -- its Gitea job merges; PLANTED CONTROL: the test above (merge on hpc) merges."""
     work, head = _work(tmp_path)
-    (work / 'pyproject.toml').write_text(_MANIFEST + '[tool.dev_lab.ci."merge.yml"]\n', encoding='utf-8')
+    carry(monkeypatch, EVERY_CI)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     forge.statuses[head] = _green()
     _tick(work, forge, head, POLICY)
     assert forge.merges == []
     (comment,) = forge.comments[number]
-    assert 'ready: the merge.yml job merges it' in comment['body']
+    assert 'ready: its CI merge job merges it' in comment['body']
 
 
 def test_a_pr_with_a_failed_part_stays_open(tmp_path: Path) -> None:

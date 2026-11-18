@@ -202,7 +202,9 @@ def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_prov
     names = list(steps)
     assert names.index('Keep the review keys in memory') < names.index('tests/review')
     (tmp_path / 'hub').mkdir()
-    rendered = {**workflows(_ROOT), **workflows(tmp_path), 'review.yml': _gitea_review(tmp_path / 'hub')}
+    own = (_ROOT / 'pyproject.toml').read_text(encoding='utf-8')
+    mine = {name: flow for name, (_, flow) in ciworkflows.placed(own, 'dev-lab', 'github', CI_REPO).items()}
+    rendered = {**mine, **workflows(tmp_path), 'review.yml': _gitea_review(tmp_path / 'hub')}
     assert {key: _PROVIDERS.findall(render(body)) for key, body in rendered.items()} == {key: [] for key in rendered}
     again = rendered['review-again.yml']['jobs']['again']['steps'][-1]
     assert 'forge review run --pr ${{ github.event.issue.number }}' in again['run']
