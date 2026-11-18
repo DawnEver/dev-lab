@@ -216,14 +216,11 @@ def test_this_repo_declares_no_placement() -> None:
 def test_a_repo_with_no_role_on_ci_renders_no_workflow() -> None:
     """D77: the judge prepares its own bundle, so a Gitea repo of the HPC and a judge renders nothing at all.
 
-    PLANTED CONTROL: the same repo with only its tests moved onto the forge's CI renders ``ci.yml``.
+    PLANTED CONTROL: the same Gitea repo with every role on the forge's CI renders, and GitHub's ``ci.yml`` does.
     """
     assert placed(OWN, 'x', 'gitea', GITEA) == {}
-    for forge in ('gitea', 'github'):
-        tested = Roles.of_kinds(tests=CI, review=HOST, merge=HPC, promote=HOST, prune=HPC)
-        if forge == 'github':
-            tested = Roles.of_kinds(tests=CI, review=HOST, merge=CI, promote=CI, prune=CI)
-        assert CI_WORKFLOW in placed(OWN, 'x', forge, tested), forge
+    assert placed(OWN, 'x', 'gitea', EVERY_CI), 'PLANTED CONTROL: on the forge CI the same Gitea repo renders'
+    assert CI_WORKFLOW in placed(OWN, 'x', 'github', GITHUB)
 
 
 def test_a_retired_workflow_still_declared_is_refused_by_name() -> None:

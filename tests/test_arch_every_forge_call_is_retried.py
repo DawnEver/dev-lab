@@ -36,8 +36,9 @@ OPENS_A_CONNECTION: Final[dict[str, str]] = {
     'src/dev_lab/supervise/transport.py': 'alert webhooks, not a forge',
 }
 
-#: The openers the scan finds: MEASURED 2026-11-12 at 8 (every row above); a floor refuses an unread corpus.
-OPENER_FLOOR: Final = 8
+#: The openers the scan finds: MEASURED 2026-11-12 at 8, 7 since D77 deleted the Actions artifact client (each row above
+#: is one); a floor refuses an unread corpus.
+OPENER_FLOOR: Final = 7
 
 _CONNECTIONS: Final = frozenset({'HTTPConnection', 'HTTPSConnection'})
 

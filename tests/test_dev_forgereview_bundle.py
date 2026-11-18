@@ -367,18 +367,18 @@ def _as_app(forge: FakeForge, *, declared: int = _APP.app_id) -> FakeForge:
 
 def test_an_app_judge_posts_its_verdict_as_a_check_run_never_a_review(on_github: Prepared) -> None:
     forge = _as_app(on_github.forge)
-    said, _ = _judged(prepared, _findings(None))
+    said, _ = _judged(on_github, _findings(None))
     assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
     (run,) = forge.checks[forge.pull.head_sha]
     assert (run['name'], run['conclusion'], run['app']['id']) == (JUDGE_CHECK, 'success', _APP.app_id)
     assert run['output']['title'] == 'approved'
     assert forge.verdicts() == []
-    assert _judged(prepared, _findings(None)) == ([], [])  # idempotent per head
+    assert _judged(on_github, _findings(None)) == ([], [])  # idempotent per head
 
 
 def test_an_app_judge_concludes_failure_on_a_security_finding(on_github: Prepared) -> None:
     forge = _as_app(on_github.forge)
-    _judged(prepared, _findings('LOW', security=True))
+    _judged(on_github, _findings('LOW', security=True))
     (run,) = forge.checks[forge.pull.head_sha]
     assert run['conclusion'] == 'failure'
     assert 'Security' in run['output']['summary']
@@ -389,13 +389,13 @@ def test_a_same_named_run_from_another_app_is_not_this_judges_verdict(on_github:
     forge = _as_app(on_github.forge)
     impostor = {'id': 9, 'name': JUDGE_CHECK, 'status': 'completed', 'conclusion': 'success', 'app': {'id': 1}}
     forge.checks[forge.pull.head_sha] = [{**impostor, 'head_sha': forge.pull.head_sha}]
-    said, _ = _judged(prepared, _findings(None))
+    said, _ = _judged(on_github, _findings(None))
     assert said == [f'#7 {forge.pull.head_sha[:12]}: APPROVED']
 
 
 def test_an_app_that_is_not_the_declared_one_judges_nothing(on_github: Prepared) -> None:
     forge = _as_app(on_github.forge, declared=1)
-    said, seen = _judged(prepared, _findings(None))
+    said, seen = _judged(on_github, _findings(None))
     assert (seen, forge.checks) == ([], {})
     assert 'judge_app = 1; this host is App 5619495' in said[0]
 
@@ -403,7 +403,7 @@ def test_an_app_that_is_not_the_declared_one_judges_nothing(on_github: Prepared)
 def test_a_login_declaration_is_never_judged_by_an_app(on_github: Prepared) -> None:
     forge = on_github.forge
     forge.app = _APP
-    said, seen = _judged(prepared, _findings(None))
+    said, seen = _judged(on_github, _findings(None))
     assert (seen, forge.checks, forge.verdicts()) == ([], {}, [])
     assert 'judge_login' in said[0]
 

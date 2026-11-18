@@ -89,22 +89,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'tests/test_dev_forgereview_bundle.py',
         'arg-type',
-        'said = fp.prepare(root, forge, 7, env=env)',
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        "fp.prepare(on_github.root, on_github.forge, 7, env={'GITHUB_ACTIONS': 'true'})",
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        'said = fp.prepare(root, forge, 7, env={})',
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        'return fb.judge_pending(forge, runtimes=_RUNTIMES, run=run), seen',
+        'return fb.judge_pending(forge, runtimes=_RUNTIMES, fetch=prepared.fetch, run=run), seen',
     ): 'a FakeForge stands in for the Client the judge takes: a test double, not a subclass the type checker can see',
     (
         'tests/test_dev_forgereview_bundle.py',
