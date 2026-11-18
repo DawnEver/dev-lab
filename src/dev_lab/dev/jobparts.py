@@ -219,6 +219,17 @@ class Job:
     url: str
 
 
+#: How many of pytest's own lines a collection refusal quotes: enough for every distinct cause, bounded for a log.
+_CAUSE_LINES: Final = 20
+
+
+def collection_cause(stdout: str, stderr: str) -> list[str]:
+    """Pytest's own reason a collection failed: its ``E`` exception and ``ERROR`` summary lines, else stderr's tail."""
+    lines = [line.rstrip() for line in (*stdout.splitlines(), *stderr.splitlines())]
+    cause = list(dict.fromkeys(line for line in lines if line.startswith(('E   ', 'ERROR '))))
+    return (cause or [line for line in stderr.splitlines() if line.strip()])[-_CAUSE_LINES:]
+
+
 def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str], list[str]]:
     """A collector over *root*'s checkout: given a marker expression (``''`` for none), the ids pytest collects."""
 
@@ -230,10 +241,12 @@ def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str
         errors = parse_collection_errors(done.stdout + '\n' + done.stderr)
         empty = done.returncode == _NO_TESTS_COLLECTED and not ids and not errors
         if errors or (done.returncode != 0 and not empty):
+            cause = ''.join(f'\n  {line}' for line in collection_cause(done.stdout, done.stderr))
             msg = (
                 f'pytest collection failed with exit {done.returncode} for marker {expression!r}; '
                 f'{len(ids)} partial node(s) cannot define a complete part manifest. '
-                f'Rerun {shlex.join(command)} in the checkout and repair collection before producing parts.'
+                f'Rerun {shlex.join(command)} in the checkout and repair collection before producing parts. '
+                f'pytest said:{cause}'
             )
             raise ValueError(msg)
         assert_required_collected(root, ids)

@@ -121,6 +121,41 @@ def test_a_no_tests_exit_with_partial_ids_is_not_an_empty_collection(tmp_path: P
         jobparts.pytest_collector(tmp_path)('')
 
 
+def test_a_failed_collection_names_pytests_own_error(tmp_path: Path, monkeypatch) -> None:
+    """The refusal carries the cause -- pytest's error lines -- not only a hint to rerun collection."""
+    output = (
+        'tests/test_ok.py::test_ok\n'
+        '==================================== ERRORS ====================================\n'
+        '_____________ ERROR collecting tests/test_moved.py _____________\n'
+        "E   ImportError: cannot import name 'gone' from 'pkg.mod'\n"
+        '=========================== short test summary info ============================\n'
+        'ERROR tests/test_moved.py\n'
+        '!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n'
+    )
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=2, stdout=output, stderr=''),
+    )
+    with pytest.raises(ValueError, match='collection') as refused:
+        jobparts.pytest_collector(tmp_path)('')
+    assert "ImportError: cannot import name 'gone' from 'pkg.mod'" in str(refused.value)
+    assert 'ERROR tests/test_moved.py' in str(refused.value)
+
+
+def test_a_failed_collection_without_error_lines_names_its_stderr_tail(tmp_path: Path, monkeypatch) -> None:
+    """A usage error (exit 4) prints no ERROR summary; its stderr is the cause."""
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=4, stdout='', stderr='ERROR: usage: pytest\npytest: error: unrecognized arguments: --bogus\n'
+        ),
+    )
+    with pytest.raises(ValueError, match='unrecognized arguments: --bogus'):
+        jobparts.pytest_collector(tmp_path)('')
+
+
 @pytest.mark.parametrize('disabled', ['autoload', 'explicit'])
 def test_a_family_manifest_requires_actual_guard_nodes_even_when_plugin_loading_is_disabled(
     tmp_path: Path, monkeypatch, disabled: str
