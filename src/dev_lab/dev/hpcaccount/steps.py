@@ -16,7 +16,7 @@ import lab_commons.launch as _door
 from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
-from dev_lab.dev import venvpointer
+from dev_lab.dev import boxmigrate, venvpointer
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
 
@@ -105,6 +105,7 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
     if step.dry:
         step.change(f'{repo.name}: build .venv with its [tool.lab_commons.hpc] install (e.g. uv sync --extra dev)', [])
         step.change(f'{repo.name}: its native build, when declared, into {checkout / ".lab-native"}', [])
+        step.change(f'{repo.name}: box ledger migration, when its lab-commons provides the verb', [])
         return 0
     builds = declared(checkout)
     if not builds.install:
@@ -128,6 +129,9 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
             return rc
         stamp.parent.mkdir(parents=True, exist_ok=True)
         stamp.write_text(env_key, encoding='utf-8')
+    # LEDGER-MIGRATES-ON-INSTALL: every deploy, idempotent, so a venv stamped before the verb existed migrates too
+    if rc := boxmigrate.migrate(str(live / 'bin' / 'python')):
+        return rc
     return _native(step, home, checkout, builds, {**env, 'ENV_KEY': env_key}) if builds.native_build else 0
 
 

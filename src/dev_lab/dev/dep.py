@@ -79,6 +79,7 @@ from dev_lab.dev import _dep_cli, _dep_local, _dep_project, venvcurrent
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
+from dev_lab.dev.boxmigrate import migrate as migrate_box
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
 
@@ -472,9 +473,11 @@ def main(
         return 1
     emit(result.render())
     stale = _publish(root, prefix, live, ok=not result.returncode, census=census, base=base)
+    migrated = 0
     if syncing and not args.dry_run and not result.returncode:
+        migrated = migrate_box(python, run=run)  # LEDGER-MIGRATES-ON-INSTALL, before anything here opens it
         _refresh_automode(root, run=run)
-    return result.returncode or stale
+    return result.returncode or migrated or stale
 
 
 def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, base: str) -> int:
