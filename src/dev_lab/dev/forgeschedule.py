@@ -93,6 +93,7 @@ from dev_lab.dev.forgerequest import (
     parse_body,
     parse_deadline,
     parse_paths,
+    prefetch_requests,
 )
 from dev_lab.dev.forgescope import scope_of
 from dev_lab.dev.forgestatus import CARRIED_FROM
@@ -332,7 +333,11 @@ def _requests(
     One naming no full sha is work at no commit: it is SKIPPED and said, one line naming the issue.
     """
     found = []
-    for raw in labelled_issues(client, schedule.request_label):
+    issues = labelled_issues(client, schedule.request_label)
+    bodies = [raw.get('body') or '' for raw in issues]
+    asks = [(parse_body(body), parse_paths(body)) for body in bodies]
+    prefetch_requests(root, [(sha, producer, paths) for (producer, sha), paths in asks if sha])  # ONE git child
+    for raw in issues:
         producer, sha = parse_body(raw.get('body') or '')
         if not sha:
             named = _REQUEST_SHA.search(raw.get('body') or '')

@@ -69,7 +69,7 @@ from dev_lab.dev._forgesource import (
     unserved,
 )
 from dev_lab.dev.family import declared_in
-from dev_lab.dev.forgerequestpaths import NOT_A_PATH, blobs, path_refusal, placement, test_roots
+from dev_lab.dev.forgerequestpaths import NOT_A_PATH, blobs, path_refusal, placement, prefetch, test_roots
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.venvpath import running_interpreter
@@ -92,6 +92,7 @@ __all__ = [
     'parse_body',
     'parse_deadline',
     'parse_paths',
+    'prefetch_requests',
     'request_body',
     'request_context',
     'unreachable_source',
@@ -181,13 +182,28 @@ def parse_paths(body: str) -> tuple[str, ...]:
 _PYPROJECT: Final = 'pyproject.toml'
 
 
+def _selection(paths: Sequence[str]) -> list[str]:
+    """What a test request at a sha reads: its declaration and each selected file a path can name."""
+    return [_PYPROJECT, *(path for path in paths if not NOT_A_PATH & set(path))]
+
+
+def prefetch_requests(root: Path, requests: Sequence[tuple[str, str, Sequence[str]]]) -> None:
+    """Read every test request's declaration and selection, of all (*sha*, *producer*, *paths*), in ONE git child.
+
+    ``forge queue`` declared each request issue with its own ``git cat-file --batch``: 59 of a read's 218 git
+    children (measured on a consumer repository 2026-11-18). :func:`declared_request` then finds each answer held.
+    """
+    prefetch(root, [(sha, _selection(paths)) for sha, producer, paths in requests if producer == TESTS and paths])
+
+
 def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     """The repository's test producer over *paths*, each validated at *sha* (D5)."""
     if not paths:
         msg = f'producer {TESTS!r} runs named test files: the body names `paths = ["tests/test_x.py", ...]`'
         raise UndeclaredRequest(msg)
-    selected = [path for path in paths if not NOT_A_PATH & set(path)]
-    read = blobs(root, sha, [_PYPROJECT, *selected])  # ONE git child for the declaration and the selection
+    asked = _selection(paths)
+    selected = asked[1:]
+    read = blobs(root, sha, asked)  # ONE git child for the declaration and the selection
     try:
         text = read.get(_PYPROJECT, b'').decode('utf-8')
         produce = kit_tables(text).get('tests', {}).get('produce')

@@ -126,9 +126,8 @@ def test_a_selection_reads_its_files_in_one_git_process_however_many_it_names(
             reads.append(list(argv))
         return real(argv, *args, **kwargs)
 
-    declared_request(root, sha, TESTS, tuple(names[:1]))  # warm: per-sha reads (pyproject) are cached once
     monkeypatch.setattr(forgerequestpaths._door, 'run', counted)
-    declared_request(root, sha, TESTS, tuple(names[:1]))
+    declared_request(root, sha, TESTS, tuple(names[:1]))  # a selection never read at this commit before
     one = len(reads)
     reads.clear()
     declared_request(root, sha, TESTS, tuple(names))
@@ -163,3 +162,67 @@ def test_a_selection_is_declared_from_one_git_child(repo: tuple[Path, str], monk
     with pytest.raises(UndeclaredRequest, match=r'tests/test_gone\.py'):
         declared_request(root, sha, TESTS, ('tests/test_gone.py',))
     assert sum('cat-file' in argv for argv in spawned) == 1
+
+
+def test_the_same_selection_at_the_same_commit_is_read_once(
+    repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One ``forge queue`` read asked for the same (sha, selection) 59 times: 58 identical git children (2026-11-18).
+
+    A commit's blobs never change, so the answer is held per full commit id. PLANTED CONTROL: another selection
+    at the same commit, and a ref name (which can move), are read again.
+    """
+    import lab_commons.launch as door  # noqa: PLC0415
+
+    spawned: list[list[str]] = []
+    real = door.run
+
+    def counted(argv, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        spawned.append([str(one) for one in argv])
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(door, 'run', counted)
+    root, sha = repo
+    for _ in range(3):
+        declared_request(root, sha, TESTS, ('tests/test_a.py',))
+    assert sum('cat-file' in argv for argv in spawned) == 1, 'an identical commit read was repeated'
+    with pytest.raises(UndeclaredRequest):
+        declared_request(root, sha, TESTS, ('tools/test_b.py',))
+    assert sum('cat-file' in argv for argv in spawned) == 2, 'another selection was served from the held read'
+    declared_request(root, 'HEAD', TESTS, ('tests/test_a.py',))
+    declared_request(root, 'HEAD', TESTS, ('tests/test_a.py',))
+    assert sum('cat-file' in argv for argv in spawned) == 4, 'a movable ref name was served from the held read'
+
+
+def test_every_request_of_a_queue_read_is_declared_from_one_git_child(
+    repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``forge queue`` declared each request issue in its own ``git cat-file --batch``: 59 of 218 children (2026-11-18).
+
+    :func:`prefetch_requests` reads every test request's selection in one child; each declaration then finds its
+    answer held. PLANTED CONTROL: a request the prefetch did not name is still read (one more child) and judged.
+    """
+    import lab_commons.launch as door  # noqa: PLC0415
+
+    from dev_lab.dev.forgerequest import prefetch_requests  # noqa: PLC0415
+
+    root, sha = repo
+    (root / 'tests' / 'test_c.py').write_text('def test_c():\n    pass\n', encoding='utf-8')
+    run_git(root, 'add', '-A')
+    run_git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'c')
+    second = git_out(root, 'rev-parse', 'HEAD')
+    spawned: list[list[str]] = []
+    real = door.run
+
+    def counted(argv, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        spawned.append([str(one) for one in argv])
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(door, 'run', counted)
+    asks = [(sha, TESTS, ('tests/test_a.py',)), (second, TESTS, ('tests/test_c.py',)), (second, 'docs', ())]
+    prefetch_requests(root, asks)
+    for one, _, paths in asks[:2]:
+        assert declared_request(root, one, TESTS, paths).part
+    assert sum('cat-file' in argv for argv in spawned) == 1, 'a prefetched request was read again'
+    assert declared_request(root, second, TESTS, ('tests/test_a.py',)).part
+    assert sum('cat-file' in argv for argv in spawned) == 2, 'an unprefetched request was served without a read'
