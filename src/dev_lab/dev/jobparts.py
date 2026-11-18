@@ -73,12 +73,12 @@ from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.probe import OS_NAMES
-from lab_commons.hpc.declared import kit_tables
 from lab_commons.hpc.needsets import BASE, need_sets, read_vocabulary
 from lab_commons.hpc.shell import parse_collection_errors, parse_ids
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev.commandtests import declared_command
 from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list, status_post
@@ -127,8 +127,6 @@ ABSENT: Final = 'absent: no job settled this part'
 #: What ``tests/base`` says when the parts matrix could not be derived: no part job can run, so none will post.
 NO_MATRIX: Final = 'no parts matrix (jobparts matrix failed; its job log says why)'
 
-#: The producer module of a repo whose suite is one command (:mod:`dev_lab.dev.commandpart`).
-_COMMAND_PART: Final = 'dev_lab.dev.commandpart'
 
 _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
 
@@ -334,8 +332,7 @@ def matrix(
 
 def command_part(text: str) -> bool:
     """Whether pyproject *text* declares :mod:`dev_lab.dev.commandpart` its producer: one part, never collected."""
-    produce = kit_tables(text).get('tests', {}).get('produce')
-    return isinstance(produce, list) and _COMMAND_PART in produce
+    return declared_command(text) is not None
 
 
 def no_matrix(client: Client, sha: str, cause: Exception, env: Mapping[str, str]) -> str:
