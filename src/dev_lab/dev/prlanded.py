@@ -78,12 +78,17 @@ def close_landed(
     session: str,
     fetch: Callable[[Path], None],
     say: Callable[[str], None],
+    summarize: bool = False,
 ) -> int:
-    """Close every open PR (or those *numbers*) whose head is on its base; 1 when a named PR was refused."""
+    """Close every open PR (or those *numbers*) whose head is on its base; 1 when a named PR was refused.
+
+    *summarize* (the verb's) ends with one line naming what closed, or ``none landed``; the serve tick stays quiet.
+    """
     fetch(root)
     opened = pr_list(client)
     wanted = [pr for pr in opened if not numbers or pr.number in numbers]
     refused = [f'#{n}: refused -- not an open PR' for n in numbers if n not in {pr.number for pr in opened}]
+    closed: list[int] = []
     for pr in wanted:
         merged_by = landing(root, pr)
         if not merged_by:
@@ -91,8 +96,11 @@ def close_landed(
                 refused.append(f'#{pr.number}: refused -- head {_head_sha(root, pr)[:12]} is not on {pr.base}')
             continue
         close_pr(client, pr, head=_head_sha(root, pr), merged_by=merged_by, session=session, say=say)
+        closed.append(pr.number)
     for line in refused:
         say(line)
+    if summarize:
+        say(f'closed {len(closed)}: ' + ' '.join(f'#{n}' for n in closed) if closed else 'none landed')
     return 1 if refused else 0
 
 
@@ -114,7 +122,13 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     root = Path.cwd() if cwd is None else cwd
     try:
         return close_landed(
-            root, client_for(root), tuple(args.numbers), session=os.environ.get(ENV, ''), fetch=fetch_origin, say=emit
+            root,
+            client_for(root),
+            tuple(args.numbers),
+            session=os.environ.get(ENV, ''),
+            fetch=fetch_origin,
+            say=emit,
+            summarize=True,
         )
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         emit(f'[forge] pr close-landed: {failed}', err=True)
