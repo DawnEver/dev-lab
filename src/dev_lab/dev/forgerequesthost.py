@@ -117,7 +117,7 @@ def result(code: int, host: str, *, outage: Owner | None, detail: str = '') -> t
     return 'error', release_reason(code, outage=outage, detail=detail)
 
 
-#: The label a request whose producer exited 0 gets: done, awaiting its requester's sign-off.
+#: The label a request whose producer exited 0 gets as it is closed: done, its result on the closed issue.
 DONE_LABEL: Final = 'request:done'
 
 
@@ -133,8 +133,9 @@ def settle(
 ) -> None:
     """Comment the outcome, where its record is kept, each file's sha256 and the log's tail on issue *number*.
 
-    A success is labelled :data:`DONE_LABEL` and LEFT OPEN: exit 0 says the producer finished, not that the
-    requester accepts what it made -- the requester signs off by closing it.
+    A success is labelled :data:`DONE_LABEL` and CLOSED (user ruling 2026-11-19: issues never pile up as event
+    records); the result stays readable on the closed issue and on the sha's status. A failure stays OPEN: it is
+    a need the requester still holds.
     """
     tail = '\n'.join(log.rstrip().splitlines()[-TAIL_LINES:])
     kept, files = record
@@ -144,3 +145,4 @@ def settle(
     client.issue_comment(number, body)
     if state == 'success':
         add_label(client, number, DONE_LABEL)
+        client.issue_close(number)
