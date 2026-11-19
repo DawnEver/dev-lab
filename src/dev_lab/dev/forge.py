@@ -17,12 +17,15 @@ import os
 import pathlib
 import re
 import socket
+import ssl
 from dataclasses import dataclass
+from functools import cache
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S, NoCredential, credential_for, store_credential
 
+from dev_lab.dev import gitdirs
 from dev_lab.dev.forgecred import (
     AUTH_GONE,
     AUTH_KEPT,
@@ -125,7 +128,13 @@ def forge_transport(host: str, timeout: float) -> http.client.HTTPConnection:
     """
     if host.rpartition(':')[0] in _LOOPBACK_HOSTS or host in _LOOPBACK_HOSTS:
         return http.client.HTTPConnection(host, timeout=timeout)
-    return http.client.HTTPSConnection(host, timeout=timeout)
+    return http.client.HTTPSConnection(host, timeout=timeout, context=_tls())
+
+
+@cache
+def _tls() -> ssl.SSLContext:
+    """The process's ONE verifying TLS context: building one loads the system trust store, ~0.03 s on Windows."""
+    return ssl.create_default_context()
 
 
 @dataclass(frozen=True)
@@ -157,7 +166,7 @@ _REMOTES: dict[tuple[str, str, int, int], Forge] = {}
 
 def _git_config(root: Path) -> Path | None:
     """The config *root*'s checkout reads its remotes from (a worktree's: its common dir's); ``None``: unknown."""
-    for here in (root, *root.parents):
+    for here in gitdirs.ancestors(root):
         dot = here / '.git'
         if dot.is_dir():
             return dot / 'config'

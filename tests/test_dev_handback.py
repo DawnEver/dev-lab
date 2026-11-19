@@ -45,6 +45,9 @@ def test_a_command_handed_to_the_user_is_found(text: str) -> None:
         'Nothing for you to run; branch pr/x at abc123.',
         '! gh auth login',
         'Please run `gcloud auth login` -- it opens a browser I cannot drive.',
+        # A markdown image is no `! <cmd>` line (measured 2026-11-16: a hand-back's figure was read as one).
+        '![torque ripple](output/logs/26/11/16/plot/ripple.png)',
+        '- ![mesh](mesh.png) and `![x](y.png)` inline',
     ],
 )
 def test_a_report_or_an_interactive_login_is_let_through(text: str) -> None:

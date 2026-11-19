@@ -30,6 +30,8 @@ class PushedRef:
     local_sha: str = ''
     #: Whether the push CREATES *remote_ref* (the remote holds no commit for it yet).
     created: bool = False
+    #: The commit the remote holds on *remote_ref* now (the all-zero name when it holds none): what a deletion drops.
+    remote_sha: str = ''
 
     @property
     def branch(self) -> str | None:
@@ -40,6 +42,6 @@ class PushedRef:
 def pushed_refs(lines: Iterable[str] = ()) -> tuple[PushedRef, ...]:
     """What this push would move: one entry per well-formed refspec line; a malformed line is skipped."""
     return tuple(
-        PushedRef(remote, deleted=local == _ZERO, local_sha=local, created=remote_sha == _ZERO)
+        PushedRef(remote, deleted=local == _ZERO, local_sha=local, created=remote_sha == _ZERO, remote_sha=remote_sha)
         for _local_ref, local, remote, remote_sha in (line.split() for line in lines if len(line.split()) == _FIELDS)
     )

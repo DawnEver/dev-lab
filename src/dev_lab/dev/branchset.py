@@ -9,6 +9,7 @@ and read by :func:`declared_branchset`::
     trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
     ephemeral = ['pr/*']           # the DEFAULT, so omit it; PR-head globs, deleted once the PR goes; [] opts out
+    task_heads = 'pr/<task>/<feature>'  # the DEFAULT: the head an agent session bound to a task pushes; '' opts out
     prune_merged = true            # any host's serve tick DELETES merged idle origin branches (idempotent)
     grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
 
@@ -21,10 +22,9 @@ Three questions are asked of it, all through local refs (fetch first; the remote
   ``archive/*`` tag (MERGE-OR-DELETE: a tag nobody reads is not a place to keep work), and whether it may be
   DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
   first. ``python -m dev_lab.dev.branchset [--root R]`` prints this list; it deletes nothing.
-* :func:`discard` -- ``--discard <branch> --approved "<the user's words>"``: the door for ONE UNLANDED lane the user
-  approved dropping (user ruling 2026-11-13). It removes the lane's worktree (outputs moved home first) and its local
-  branch, pinned to the sha it saw; it refuses a declared branch, the main checkout's branch, a live session, a
-  name with no local branch, and an empty approval. Origin is never touched.
+* :func:`dev_lab.dev.branchfate.discard` -- ``--discard <branch> --approved "<the user's words>"``: the door for
+  ONE UNLANDED lane the user approved dropping (user ruling 2026-11-13): its worktree and local branch, pinned to
+  the sha it saw. Origin is never touched.
 
 The live set is judged by the forge alone (:mod:`dev_lab.dev.forgeheadgate`), never a test. ``prune_merged`` (default
 ``false``) lets the forge prune merged origin branches (:mod:`dev_lab.dev.branchprune`); an agent never deletes a remote
@@ -46,15 +46,17 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
-from dev_lab.dev.checkout import authority_for, git_out, origin_branches, worktrees
+from dev_lab.dev.branchfate import discard, settle
+from dev_lab.dev.checkout import authority_for, git_out, origin_branches
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.reclaim import QUIET_S, reclaim, removed_approved
+from dev_lab.dev.reclaim import QUIET_S, reclaim
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'ARCHIVE_PREFIX',
     'EPHEMERAL_OFF',
     'FAMILY_EPHEMERAL',
+    'FAMILY_TASK_HEADS',
     'ORIGIN_DOOR',
     'BranchSet',
     'BranchSetKeyRetired',
@@ -68,18 +70,21 @@ __all__ = [
     'census',
     'checked_out',
     'declared_branchset',
-    'discard',
     'holders',
     'main',
     'merge_candidates',
 ]
 
 _TABLE = '[tool.dev_lab.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours'})
+_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours', 'task_heads'})
 
 #: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
 #: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
 FAMILY_EPHEMERAL: Final[tuple[str, ...]] = ('pr/*',)
+#: The shape of a pushed PR head (user ruling D25, 2026-11-17): branch names follow the task, one feature per PR.
+#: Only the namespace before ``<task>`` is a choice; ``<task>/<feature>`` is the shape itself.
+FAMILY_TASK_HEADS: Final = 'pr/<task>/<feature>'
+_TASK_TAIL: Final = '<task>/<feature>'
 #: What a manifest that turned the namespace off is told, by every assertion that reads it.
 EPHEMERAL_OFF: Final = '[tool.dev_lab.branchset] ephemeral = [] turns off the family pr/* namespace -- delete the line'
 
@@ -119,6 +124,22 @@ class BranchSet:
     #: Glob namespaces (``pr/*``) of SHORT-LIVED branches: pushable undeclared, each the head of one pull
     #: request, deleted by the forge once no open PR has it as head (:mod:`dev_lab.dev.branchprune`).
     ephemeral: tuple[str, ...] = ()
+    #: The head shape an agent session bound to a task pushes (:data:`FAMILY_TASK_HEADS`); ``''``: not judged.
+    task_heads: str = FAMILY_TASK_HEADS
+
+    @property
+    def task_namespace(self) -> str:
+        """The namespace every task's heads live under (``pr/``), or ``''`` when task heads are not judged."""
+        return self.task_heads.removesuffix(_TASK_TAIL)
+
+    def task_head(self, slug: str, feature: str) -> str:
+        """The head task *slug* publishes *feature* on."""
+        return self.task_heads.replace('<task>', slug).replace('<feature>', feature)
+
+    def carries_task(self, name: str, slug: str) -> bool:
+        """Whether *name* is one of task *slug*'s heads -- never the bare ``pr/<slug>``."""
+        prefix = self.task_head(slug, '')
+        return name.startswith(prefix) and len(name) > len(prefix)
 
     @property
     def declared(self) -> frozenset[str]:
@@ -211,6 +232,13 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     if not isinstance(ephemeral, list) or not all(isinstance(glob, str) and glob for glob in ephemeral):
         msg = f'{_TABLE} ephemeral in {manifest} is {ephemeral!r}; it must be a list of branch globs (pr/*)'
         raise BranchSetNotDeclared(msg)
+    heads = table.get('task_heads', FAMILY_TASK_HEADS)
+    if not isinstance(heads, str) or (heads and (not heads.endswith(_TASK_TAIL) or heads == _TASK_TAIL)):
+        msg = (
+            f'{_TABLE} task_heads in {manifest} is {heads!r}; it must be <namespace>{_TASK_TAIL} '
+            f"(the default {FAMILY_TASK_HEADS!r}), or '' to judge no task head"
+        )
+        raise BranchSetNotDeclared(msg)
     prune = table.get('prune_merged', False)
     grace = table.get('grace_hours', 24.0)
     if not isinstance(prune, bool):
@@ -220,7 +248,12 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
         msg = f'{_TABLE} grace_hours in {manifest} is {grace!r}; it must be a non-negative number of hours'
         raise BranchSetNotDeclared(msg)
     return BranchSet(
-        trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace), ephemeral=tuple(ephemeral)
+        trunk,
+        frozenset(sessions),
+        prune_merged=prune,
+        grace_hours=float(grace),
+        ephemeral=tuple(ephemeral),
+        task_heads=heads,
     )
 
 
@@ -319,7 +352,9 @@ def apply_local(
     (:func:`dev_lab.dev.reclaim.reclaim`: clean, landed on a holder, unlocked, unoccupied), which is what
     frees its branch for the delete below; every kept tree is listed with its reason. *limit* bounds the trees
     removed per run and *quiet_s* how long a tree's index must be still; a tree's run outputs move home, verified,
-    before it goes (:func:`dev_lab.dev.reclaim.reclaim`).
+    before it goes (:func:`dev_lab.dev.reclaim.reclaim`). LAST, TWO-FATES (:func:`dev_lab.dev.branchfate.settle`,
+    ruling 2026-11-15): every local branch and tree still standing is kept for a named live owner, cleaned when
+    merged and holding nothing unlanded, or listed with its doors (D31: never parked).
     """
     held_by = holders(root, branchset)
     trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s)
@@ -347,54 +382,8 @@ def apply_local(
         else:
             done = git_out(root, 'update-ref', '-d', ref, sha) is not None
             out.append(f'{"deleted " if done else "FAILED  "} local   {row.name}  ({sha[:10]})')
-    return tuple(out)
-
-
-def discard(
-    root: Path, branchset: BranchSet, branch: str, approved: str, *, quiet_s: float = QUIET_S
-) -> tuple[int, str]:
-    """Drop ONE lane the user approved: its worktree, then its local branch; ``(exit code, the one line)``.
-
-    *approved* is the user's own words, echoed into the line so the record says who decided. Refused (exit 1,
-    nothing touched): no approval, a declared branch (trunk or session), no local branch of that name, the main
-    checkout's branch, a live session (:func:`dev_lab.dev.reclaim.removed_approved`).
-    """
-    ref = f'refs/heads/{branch}'
-    sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
-    trees = worktrees(root)
-    held = [path for path, name in trees or () if name == branch]
-    if why := _discard_refusal(root, branchset, branch, approved, sha=sha, trees=trees):
-        return 1, f'refused  {branch}  ({why})'
-    for tree in held:
-        if why := removed_approved(root, tree, quiet_s=quiet_s):
-            return 1, f'refused  {branch}  ({tree}: {why})'
-    if git_out(root, 'update-ref', '-d', ref, sha) is None:
-        return 1, f'FAILED   {branch}  (its worktree is gone; the branch delete at {sha[:10]} failed)'
-    where = f'worktree {held[0]} and ' if held else ''
-    return 0, f'discarded {where}local {branch} ({sha[:10]}) -- approved: "{approved.strip()}"'
-
-
-def _discard_refusal(
-    root: Path,
-    branchset: BranchSet,
-    branch: str,
-    approved: str,
-    *,
-    sha: str,
-    trees: tuple[tuple[Path, str], ...] | None,
-) -> str:
-    """Why :func:`discard` touches nothing, read before any delete; ``''`` when it may go on."""
-    if not approved.strip():
-        return '--approved "<the user words>" is required: the user decides a discard'
-    if branch in branchset.declared:
-        return f'declared in {_TABLE}: the trunk and sessions are never discarded'
-    if not sha:
-        return 'no local branch of that name; origin is never discarded here'
-    if trees is None:
-        return f'git could not list the worktrees of {root}'
-    if trees and trees[0][1] == branch:
-        return f'the main checkout holds it at {trees[0][0]}'
-    return ''
+    fates = settle(root, held_by, branchset.declared, occupied=occupied, quiet_s=quiet_s, limit=limit)
+    return None if fates is None else (*out, *fates)
 
 
 def _drop_tag(root: Path, row: Candidate, holders: tuple[str, ...]) -> str:
@@ -418,12 +407,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--apply',
         action='store_true',
-        help='reclaim landed worktrees, then delete deletable LOCAL branches; origin gets its agent door',
+        help='reclaim and delete landed LOCAL work, list unlanded work with its doors; origin gets its door',
     )
     parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
     parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
     args = parser.parse_args(argv)
-    root = args.root
+    top = git_out(args.root, 'rev-parse', '--show-toplevel')
+    if top is None:
+        emit(f'{args.root} is not inside a git checkout; run from the checkout or pass --root <checkout>')
+        return 2
+    root = Path(top.strip())
     if args.discard:
         code, line = discard(root, declared_branchset(root), args.discard, args.approved)
         emit(line)

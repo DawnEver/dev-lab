@@ -26,6 +26,7 @@ from dev_lab.dev.family import declared_table
 __all__ = [
     'FAMILY_INTEGRATION',
     'UNDECLARED_INTEGRATION',
+    'Derived',
     'IntegrationNotDeclared',
     'Policy',
     'load_policy',
@@ -45,6 +46,23 @@ UNDECLARED_INTEGRATION: Final = f'no [tool.dev_lab.{_TABLE}]: judged into {FAMIL
 
 class IntegrationNotDeclared(ValueError):
     """The manifest names no ``integration`` branch; the message names the declaration that is the exit."""
+
+
+@dataclass(frozen=True)
+class Derived:
+    """A DERIVED machine branch: its producer regenerates its WHOLE content (decision D23, 2026-11-17).
+
+    Deleting one loses nothing (:func:`dev_lab.dev.deletejudge.judge`). Declared with the producer that regenerates
+    it, never inferred from a name: ``derived = [{ branch = "pr/components-bump", producer =
+    "dev_lab.dev.componentbump" }]``.
+    """
+
+    branch: str
+    producer: str
+
+
+#: The one shape of a ``derived`` row, said in its refusal.
+_DERIVED_ROW: Final = '{ branch = "<branch>", producer = "<the module that regenerates its whole content>" }'
 
 
 @dataclass(frozen=True)
@@ -81,6 +99,9 @@ class Policy:
     notice_escalate: str = '2 h'
     #: A PR head whose parts are still unsettled this long after its commit is a ``stall`` notice.
     notice_stall: str = '6 h'
+    #: The DERIVED machine branches (:class:`Derived`): each regenerated whole by its producer, so LOSSLESS-DELETE
+    #: deletes it whatever it carries. ``()``: every branch is judged by its content.
+    derived: tuple[Derived, ...] = ()
 
 
 def load_policy(root: Path) -> Policy:
@@ -117,4 +138,22 @@ def policy_from(text: str, origin: str) -> Policy:
         )
         raise IntegrationNotDeclared(msg)
     declared = declared | {key: tuple(declared[key]) for key in ('test_roots', 'merge_checks') if key in declared}
+    if 'derived' in declared:
+        declared = declared | {'derived': _derived(declared['derived'], origin)}
     return Policy(**declared)
+
+
+def _derived(rows: object, origin: str) -> tuple[Derived, ...]:
+    """The declared ``derived`` rows; a row naming no branch or no producer, or any other key, is refused."""
+    found: list[Derived] = []
+    for row in rows if isinstance(rows, list) else [rows]:
+        fields = row if isinstance(row, dict) else {}
+        named = [fields.get(key) for key in ('branch', 'producer')]
+        if set(fields) != {'branch', 'producer'} or not all(isinstance(one, str) and one.strip() for one in named):
+            msg = (
+                f'[tool.dev_lab.{_TABLE}] derived in {origin}: {row!r} must name its branch AND the producer that '
+                f'regenerates it, each row {_DERIVED_ROW}'
+            )
+            raise ValueError(msg)
+        found.append(Derived(fields['branch'].strip(), fields['producer'].strip()))
+    return tuple(found)

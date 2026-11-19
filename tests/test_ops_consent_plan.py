@@ -10,13 +10,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _ops_fixtures import NOW, RFC_KEY, code
+from _ops_fixtures import NOW, RFC_KEY, code, speaks
 from lab_commons.home import HOME_ENV
 
-from dev_lab.dev import sshhold, sshholdwire
+from dev_lab.dev import sshhold, sshholdplan, sshholdwire
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import grant_plan, redeem
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
+from dev_lab.ops.consent.door import record_preflight
 from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.ops.consent.plan import DIGEST_SHOWN, load, parsed, request, show
 from dev_lab.ops.consentrole import Consent
@@ -40,6 +41,7 @@ def issuer(tmp_path: Path) -> Issuer:
 def _plan(tmp_path: Path, data: dict[str, Any] = PLAN) -> tuple[Path, str]:
     path = tmp_path / 'plan.json'
     path.write_text(json.dumps(data), encoding='utf-8')
+    record_preflight(parsed(data), home=tmp_path / 'home', now=NOW)  # preflight was green: the plan is offered
     return path, parsed(data).digest[:DIGEST_SHOWN]
 
 
@@ -94,10 +96,10 @@ def test_a_credential_issued_from_plan_a_is_refused_for_plan_b(
     path, shown = _plan(tmp_path)
     table = {'endpoint': 'consent@forge', 'public_key': public_text(issuer.public())}
     with pytest.raises(ConsentRefused, match='not of'):
-        grant_plan(path, shown, code(0), HOST, table=table, send=lambda _t, _p: (0, answered),
+        grant_plan(path, shown, code(0), HOST, table=table, send=speaks(lambda _t, _p: (0, answered)),
                    home=tmp_path / 'home', now=lambda: NOW)  # fmt: skip
     mine = json.dumps(issuer.issue_plan(PLAN, code(1)))  # the control: the plan's own credentials are accepted
-    assert len(grant_plan(path, shown, code(0), HOST, table=table, send=lambda _t, _p: (0, mine),
+    assert len(grant_plan(path, shown, code(0), HOST, table=table, send=speaks(lambda _t, _p: (0, mine)),
                           home=tmp_path / 'home', now=lambda: NOW)) == 2  # fmt: skip
 
 
@@ -210,7 +212,7 @@ def test_show_names_every_grant_and_the_digest(tmp_path: Path) -> None:
 
 
 def _open_two(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, refuse: str = '', late: bool = False
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, refuse: str = '', late: bool = False, held: tuple[str, ...] = ()
 ) -> tuple[bool, list[str], list[str]]:
     path, shown = _plan(tmp_path, {'hosts': [HOST, JUDGE], 'grants': [APPLY, REVOKE | {'host': JUDGE}]})
     order: list[str] = []
@@ -228,10 +230,11 @@ def _open_two(
             raise sshholdwire.HoldRefused(msg)
         return f'{dest}: open'
 
-    ticks = iter([0.0, sshhold.OPEN_WINDOW_S + 1 if late else 1.0])
-    opened, lines = sshhold.open_planned(
-        1, '123456', path, shown, grant=grant, opener=opener, clock=lambda: next(ticks)
-    )
+    ticks = iter([0.0, sshholdplan.OPEN_WINDOW_S + 1 if late else 1.0])
+    opened, lines = sshholdplan.open_planned(
+        1, '123456', path, shown, grant=grant, opener=opener, clock=lambda: next(ticks), routes=lambda _d: ('ssh',),
+        held=lambda dest: dest in held,
+    )  # fmt: skip
     return opened, lines, order
 
 
@@ -256,6 +259,16 @@ def test_a_host_unreachable_mid_open_is_reported_and_never_retried_with_the_code
     assert lines[-2] == f'{HOST}: open'  # the other host still opened
     assert lines[-1].startswith(f'{JUDGE}: NOT opened')
     assert f'sshhold open {JUDGE} --hours 1' in lines[-1]
+
+
+def test_a_plan_host_already_held_is_reused_and_the_plan_still_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-11-16: a held host refused the open, so a granted plan read as failed. PLANTED CONTROL: the test above."""
+    opened, lines, order = _open_two(tmp_path, monkeypatch, held=(HOST,))
+    assert opened
+    assert order == [f'grant 123456 {HOST}', f'open 123456 {JUDGE}']  # the held host is never sent the code
+    assert lines[-2:] == [f'{HOST}: held session reused (no code sent)', f'{JUDGE}: open']
 
 
 def test_a_grant_past_the_window_sends_the_code_to_no_host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -299,7 +312,7 @@ def test_two_json_answers_are_refused_rather_than_guessed(
     table = {'endpoint': 'consent@forge', 'public_key': public_text(issuer.public())}
     path, shown = _plan(tmp_path)
     with pytest.raises(ConsentRefused, match='2 JSON lines'):
-        grant_plan(path, shown, code(0), HOST, table=table, send=lambda _t, _p: (0, '[]\n[]\n'),
+        grant_plan(path, shown, code(0), HOST, table=table, send=speaks(lambda _t, _p: (0, '[]\n[]\n')),
                    home=tmp_path / 'home', now=lambda: NOW)  # fmt: skip
 
 

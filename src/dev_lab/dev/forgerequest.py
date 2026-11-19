@@ -70,12 +70,12 @@ from dev_lab.dev._forgesource import (
     unreproducible,
     unserved,
 )
-from dev_lab.dev.family import declared_in
-from dev_lab.dev.forgerequestpaths import NOT_A_PATH, blobs, path_refusal, placement, test_roots
+from dev_lab.dev.family import declared_in, declared_table
+from dev_lab.dev.forgerequestpaths import NOT_A_PATH, blobs, path_refusal, placement, prefetch, test_roots
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.venvpath import running_interpreter
-from dev_lab.dev.verifybox import SELECTION_WALL_S, selection_files, selection_mem_gb, selection_width
+from dev_lab.dev.verifybox import selection_files, selection_mem_gb, selection_width, wall_of
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -94,6 +94,7 @@ __all__ = [
     'parse_body',
     'parse_deadline',
     'parse_paths',
+    'prefetch_requests',
     'request_body',
     'request_context',
     'unreachable_source',
@@ -179,13 +180,34 @@ def parse_paths(body: str) -> tuple[str, ...]:
     return tuple(str(one) for one in value) if isinstance(value, list) else ()
 
 
+#: The declaration a sha's test producer is read from, in the same ``git cat-file --batch`` as its selection.
+_PYPROJECT: Final = 'pyproject.toml'
+
+
+def _selection(paths: Sequence[str]) -> list[str]:
+    """What a test request at a sha reads: its declaration and each selected file a path can name."""
+    return [_PYPROJECT, *(path for path in paths if not NOT_A_PATH & set(path))]
+
+
+def prefetch_requests(root: Path, requests: Sequence[tuple[str, str, Sequence[str]]]) -> None:
+    """Read every test request's declaration and selection, of all (*sha*, *producer*, *paths*), in ONE git child.
+
+    ``forge queue`` declared each request issue with its own ``git cat-file --batch``: 59 of a read's 218 git
+    children (measured on a consumer repository 2026-11-18). :func:`declared_request` then finds each answer held.
+    """
+    prefetch(root, [(sha, _selection(paths)) for sha, producer, paths in requests if producer == TESTS and paths])
+
+
 def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     """The repository's test producer over *paths*, each validated at *sha* (D5)."""
     if not paths:
         msg = f'producer {TESTS!r} runs named test files: the body names `paths = ["tests/test_x.py", ...]`'
         raise UndeclaredRequest(msg)
+    asked = _selection(paths)
+    selected = asked[1:]
+    read = blobs(root, sha, asked)  # ONE git child for the declaration and the selection
     try:
-        text = pyproject_at(root, sha)
+        text = read.get(_PYPROJECT, b'').decode('utf-8')
         produce = kit_tables(text).get('tests', {}).get('produce')
     except OutdatedKit:  # the READER is older than the sha: this host's defect, never the commit's
         raise
@@ -196,7 +218,7 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     if not isinstance(produce, list) or '--part' not in produce or not roots:
         msg = f'{sha[:12]} declares no [tool.lab_commons.tests] produce door with --part, or no pytest testpaths'
         raise UndeclaredRequest(msg)
-    files = blobs(root, sha, [path for path in paths if not NOT_A_PATH & set(path)])
+    files = {path: read[path] for path in selected if path in read}
     if refused := [why for path in paths if (why := path_refusal(path, roots, files, sha))]:
         msg = f'producer {TESTS!r} refused: ' + '; '.join(refused)
         raise UndeclaredRequest(msg)
@@ -218,7 +240,11 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     room = Resources(cpu=size.cpu, mem_gb=size.mem_bytes / GB)
     workers = selection_width(room, files=len(paths), per_gb=selection_mem_gb(repo, paths, 1))
     mem_gb = selection_mem_gb(repo, paths, workers)
-    return Declared(TESTS, (*door, '--', *paths), needs, float(workers), mem_gb, SELECTION_WALL_S / 3600)
+    try:
+        wall_s = wall_of(declared_table(tomllib.loads(text), 'verify', {}), f'pyproject.toml at {sha[:12]}')
+    except ValueError as why:
+        raise UndeclaredRequest(str(why)) from why
+    return Declared(TESTS, (*door, '--', *paths), needs, float(workers), mem_gb, wall_s / 3600)
 
 
 def _unit_request(_root: Path, _sha: str, paths: Sequence[str]) -> Declared:

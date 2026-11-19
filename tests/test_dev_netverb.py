@@ -521,11 +521,57 @@ def test_every_network_verb_is_recognised(argv: list[str]) -> None:
         ['uv', 'pip', 'list'],
         ['python', '-m', 'pip', 'list'],
         [],
+        # A repository named by a local path talks to no remote (measured 2026-11-16: a local fetch was hinted).
+        ['git', '-C', '.', 'fetch', '.', 'lane/x:lane/y'],
+        ['git', 'fetch', '../sibling', 'main'],
+        ['git', 'pull', './other', 'main'],
+        ['git', 'push', 'C:/x/repo', 'HEAD:lane/x'],
+        ['git', 'clone', '/c/x/repo', 'copy'],
+        ['git', 'fetch', 'file:///c/x/repo'],
     ],
 )
 def test_a_local_command_is_not_a_network_verb(argv: list[str]) -> None:
     """The planted near-misses: local git, a read-only uv, a `fetch` that is a pathspec."""
     assert not is_network_verb(argv)
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['cargo', 'update', '-p', 'contracts', '--dry-run'],
+        ['cargo', 'fetch', '--locked', '--target', 'x86_64-pc-windows-msvc'],
+        ['cargo', 'generate-lockfile', '--manifest-path', 'rust/Cargo.toml'],
+        ['C:/Rust/bin/cargo.EXE', '--color', 'never', 'fetch'],
+        ['cargo', '--config', 'net.git-fetch-with-cli=true', 'update', '-p', 'contracts'],
+        ['cargo', '+stable', 'fetch'],
+        ['cargo', '+nightly', '-Z', 'unstable-options', 'generate-lockfile'],
+    ],
+)
+def test_cargo_dependency_verbs_use_the_same_network_door_without_rewriting_options(argv: list[str]) -> None:
+    """Dependency resolution is a network operation, not a native build or test producer."""
+    assert is_network_verb(argv)
+    assert spelled(['--', *argv]) == argv
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['cargo', 'test', '--', 'fetch'],
+        ['cargo', 'build'],
+        ['cargo', 'check'],
+        ['cargo', 'run', '--', 'update'],
+        ['cargo', 'metadata', '--no-deps'],
+        ['cargo', '--version', 'fetch'],
+        ['cargo', '--list', 'update'],
+        ['cargo', '--help', 'fetch'],
+        ['cargo', '+stable', 'test'],
+    ],
+)
+def test_cargo_local_or_producer_commands_do_not_become_network_verbs(argv: list[str]) -> None:
+    """The dependency door must not masquerade as the native build/test admission door."""
+    assert not is_network_verb(argv)
+    with pytest.raises(NotANetworkVerb):
+        spelled(['--', *argv])
 
 
 @pytest.mark.parametrize(

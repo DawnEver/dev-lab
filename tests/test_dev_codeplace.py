@@ -1,35 +1,28 @@
-"""``dev_lab.dev.codeplace``: the code-root allow-list and the scratch lifecycle, on planted trees."""
+"""``dev_lab.dev.codeplace``: the placement map, the code-root allow-list and its write hook, on planted trees."""
 
 from __future__ import annotations
 
-import contextlib
 import io
 import json
 import os
 import time
 
 import pytest
-from lab_commons import launch
 
 from dev_lab.dev.codeplace import (
     ARCHIVED_SEGMENTS,
     FAMILY_CODE_ROOTS,
     FAMILY_HOMES,
-    FAMILY_STRAY_ROOTS,
     PlacementNotDeclared,
-    StrayCensusUnreadable,
     declared_misplaced,
     declared_placement,
-    declared_strays,
     is_archived,
     main,
     misplaced_code,
     refuse_write,
-    stray_files,
-    stray_refusal,
 )
-from dev_lab.dev.disclosure import problems
 from dev_lab.dev.famtests import noreflection
+from dev_lab.dev.retiredfiles import RetiredFile
 
 _ROOTS = ('src/', 'tests/', 'scratch/', '.claude/memory/')
 _DAY = 86400.0
@@ -203,95 +196,29 @@ def test_noreflection_excludes_the_same_archive_codeplace_writes() -> None:
     assert noreflection.is_archived is is_archived
 
 
-# -- STRAY-FILE-REFUSED: an untracked, non-ignored file outside the stray roots -------------------------------
+_INDEX = '.claude/rules/MEMORY.md'
+_DOOR = "delete them through rem's migration"
+_ROW = f'retired = [{{ path = "{_INDEX}", what = "a retired generated index", door = "{_DOOR}" }}]\n'
 
 
-def _repo(root, *, stray_roots: str = '[]') -> None:
-    launch.run(['git', 'init', '-q', str(root)], check=True)
-    (root / 'pyproject.toml').write_text(
-        f"[tool.dev_lab.placement]\npruned_paths = ['lanes']\nstray_roots = {stray_roots}\n", encoding='utf-8'
-    )
-    (root / '.gitignore').write_text('output/\n', encoding='utf-8')
-    launch.run(['git', '-C', str(root), 'add', 'pyproject.toml', '.gitignore'], check=True)
+def test_the_declared_rows_are_read_off_the_placement_table(tmp_path) -> None:
+    _declare(tmp_path, _ROW)
+    assert declared_placement(tmp_path).retired == (RetiredFile(_INDEX, 'a retired generated index', _DOOR),)
+    _declare(tmp_path, '')
+    assert declared_placement(tmp_path).retired == ()
 
 
-def test_the_incidents_vendor_logs_in_the_root_are_strays_and_staged_ignored_scratch_files_are_not(tmp_path) -> None:
-    _repo(tmp_path, stray_roots="['data/']")
-    for rel in (
-        'job_node_10_0_0_1_2026-10-20T12_19_56_1.log',  # the planted control: the 2026-10-20 incident
-        'rust/pybind/uv.lock',
-        'output/logs/26/10/20/jobsystem/status.txt',  # ignored: an artefact in its place
-        'scratch/probe.py',
-        'data/drop.csv',  # a repo-declared stray root
-        'lanes/x/junk.txt',  # a pruned path: another checkout, judged by its own run
-        'src/new_module.py',
-    ):
-        _plant(tmp_path, rel)
-    launch.run(['git', '-C', str(tmp_path), 'add', 'src/new_module.py'], check=True)  # meant: staged
-    assert declared_strays(tmp_path) == ['job_node_10_0_0_1_2026-10-20T12_19_56_1.log', 'rust/pybind/uv.lock']
-    reason = stray_refusal(tmp_path)
-    assert reason is not None
-    assert reason.startswith('STRAY-FILE-REFUSED: 2 untracked')
-    assert 'output/logs/<yy>/<mm>/<dd>/<kind>/' in reason
-
-
-def test_a_clean_checkout_and_an_undeclared_one_are_silent(tmp_path) -> None:
-    _repo(tmp_path)
-    assert stray_refusal(tmp_path) is None
-    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
-    _plant(tmp_path, 'stray.log')
-    assert stray_refusal(tmp_path) is None
-
-
-def test_a_census_git_cannot_read_is_refused_not_clean(tmp_path) -> None:
-    with pytest.raises(StrayCensusUnreadable):
-        stray_files(tmp_path / 'not-a-repo', stray_roots=FAMILY_STRAY_ROOTS)
-
-
-def test_the_shell_hook_blocks_naming_the_stray_and_a_repeated_stop_is_let_through(tmp_path) -> None:
-    _repo(tmp_path)
-    _plant(tmp_path, 'JobSystem.jlog')
-    out = io.StringIO()
-    payload = {'hook_event_name': 'PostToolUse', 'tool_name': 'Bash', 'cwd': str(tmp_path / 'scratch')}
-    (tmp_path / 'scratch').mkdir()
-    with contextlib.redirect_stdout(out):
-        assert main(['stray'], stdin=io.StringIO(json.dumps(payload))) == 0
-    decision = json.loads(out.getvalue())
-    assert decision['decision'] == 'block'
-    assert 'JobSystem.jlog' in decision['reason']
-    again = io.StringIO()
-    with contextlib.redirect_stdout(again):
-        main(['stray'], stdin=io.StringIO(json.dumps({'hook_event_name': 'Stop', 'stop_hook_active': True})))
-    assert again.getvalue() == ''
-
-
-def test_the_pre_commit_row_exits_non_zero_while_a_stray_exists(tmp_path, monkeypatch) -> None:
-    _repo(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    assert main(['stray-check']) == 0
-    _plant(tmp_path, 'status.txt')
-    assert main(['stray-check']) == 1
-
-
-def test_the_stray_refusal_fits_the_budget_and_gives_each_file_one_remedy_by_its_kind(tmp_path) -> None:
-    _repo(tmp_path)
-    for rel in ('probe.py', 'fr_parts.txt', *(f'log{n}.txt' for n in range(30))):
-        _plant(tmp_path, rel)
-    reason = stray_refusal(tmp_path)
-    assert reason is not None
-    assert problems(reason, 'refusal') == []
-    first, exits, _details = reason.splitlines()
-    assert first.startswith('STRAY-FILE-REFUSED: 32 untracked file(s)')
-    assert '(+29 more)' in first
-    assert 'probe.py -> scratch/<yy>/<mm>/<dd>/<kind>/' in exits
-    assert 'data -> output/logs/<yy>/<mm>/<dd>/<kind>/' in exits
-    assert 'git add' not in exits
-
-
-def test_a_stray_under_a_code_root_is_a_file_meant_and_its_one_remedy_is_git_add(tmp_path) -> None:
-    _repo(tmp_path)
-    _plant(tmp_path, 'src/new_module.py')
-    reason = stray_refusal(tmp_path)
-    assert reason is not None
-    assert 'git add src/new_module.py' in reason.splitlines()[1]
-    assert 'scratch/' not in reason.splitlines()[1]
+@pytest.mark.parametrize(
+    'body',
+    [
+        "retired = 'x'\n",
+        "retired = ['x']\n",
+        "retired = [{ path = 'a/b.md', what = 'w' }]\n",
+        "retired = [{ path = '', what = 'w', door = 'd' }]\n",
+        "retired = [{ path = 'a/b.md', what = 'w', door = 'd', extra = 'e' }]\n",
+    ],
+)
+def test_a_malformed_retired_row_is_REFUSED(tmp_path, body) -> None:
+    _declare(tmp_path, body)
+    with pytest.raises(PlacementNotDeclared, match='retired'):
+        declared_placement(tmp_path)

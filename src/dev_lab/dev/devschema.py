@@ -12,9 +12,35 @@ from typing import Any, Final
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'CHANNELS_TABLE', 'CPU_SHARES', 'DETECT_DOOR', 'HELPERS', 'HOST_ONLY', 'MACHINE_TABLES', 'RESOURCES',
-    'RETIRED_KEYS', 'SCHEMA', 'SSH', 'SSH_HOLD', 'UNFILLED', 'VENDOR', 'HomeUnfilled', 'channel_defects', 'check',
-    'check_family', 'fill_remedy', 'home_of', 'hpc_reach', 'ssh_defects', 'unfilled', 'usable',
+    'BRIDGE',
+    'BRIDGE_HPC',
+    'CADENCE_HOURS',
+    'CHANNELS_TABLE',
+    'CPU_SHARES',
+    'DETECT_DOOR',
+    'FAMILY_ONLY',
+    'HELPERS',
+    'HOOK_MODES',
+    'HOST_ONLY',
+    'MACHINE_TABLES',
+    'RESOURCES',
+    'RETIRED_KEYS',
+    'SCHEMA',
+    'SSH',
+    'SSH_HOLD',
+    'UNFILLED',
+    'VENDOR',
+    'HomeUnfilled',
+    'app_tables',
+    'channel_defects',
+    'check',
+    'check_family',
+    'fill_remedy',
+    'home_of',
+    'hpc_reach',
+    'ssh_defects',
+    'unfilled',
+    'usable',
 ]  # fmt: skip
 
 #: Retired ``[dev]`` keys, each with its remedy (refused by name, never read).
@@ -30,8 +56,20 @@ VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': st
 #: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
 SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
-    'helpers': dict, 'channels': dict,
+    'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict, 'apps': list,
 }  # fmt: skip
+#: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
+#: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
+BRIDGE: Final = {'hpc': dict}
+#: ``[dev] bridge.hpc``: ``cadence_hours`` -- the read cadence (1..168; default 6).
+BRIDGE_HPC: Final = {'cadence_hours': int}
+#: ``cadence_hours`` bounds: an hourly read at most, a weekly one at least.
+CADENCE_HOURS: Final = (1, 168)
+#: ``[dev] hooks``: ``enforce`` -- a firing hook row refuses; ``warn`` -- it only warns (an unmanaged machine).
+HOOK_MODES: Final = ('enforce', 'warn')
+#: ``[dev]`` keys only the family declares: ``default`` -- the profile an undeclared machine renders
+#: (:mod:`dev_lab.dev.devprofile`).
+FAMILY_ONLY: Final = ('default', 'apps')
 #: ``[dev]`` keys that are one machine's facts and never the family's: ``channels`` -- session channel source ->
 #: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority).
 HOST_ONLY: Final = ('channels',)
@@ -127,6 +165,22 @@ def ssh_defects(ssh: object, where: str = 'ssh') -> list[str]:
     return found
 
 
+def _bridge(table: Mapping[str, Any], where: str) -> list[str]:
+    bridge = table.get('bridge')
+    if not isinstance(bridge, dict):
+        return []
+    found = _typed(bridge, BRIDGE, f'{where}.bridge')
+    hpc = bridge.get('hpc')
+    if isinstance(hpc, dict):
+        found += _typed(hpc, BRIDGE_HPC, f'{where}.bridge.hpc')
+        hours = hpc.get('cadence_hours', 6)
+        if isinstance(hours, int) and not CADENCE_HOURS[0] <= hours <= CADENCE_HOURS[1]:
+            found.append(
+                f'{where}.bridge.hpc.cadence_hours must be {CADENCE_HOURS[0]}..{CADENCE_HOURS[1]}, not {hours}'
+            )
+    return found
+
+
 def _shape(table: Mapping[str, Any], where: str) -> list[str]:
     """Defects of one ``[dev]`` table (host or family) by itself."""
     found = [f'{where}.{key} is {remedy}' for key, remedy in RETIRED_KEYS.items() if key in table]
@@ -141,6 +195,9 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
         for host, helper in helpers.items()
         if helper not in HELPERS
     ]
+    found += _bridge(table, where)
+    if 'hooks' in table and table['hooks'] not in HOOK_MODES:
+        found.append(f'{where}.hooks {table["hooks"]!r} is not one of {list(HOOK_MODES)}')
     if 'channels' in table:
         found += channel_defects(table['channels'], f'{where}.channels')
     found += _named_lists(table, 'detect', where, 'glob patterns')
@@ -166,6 +223,8 @@ def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> l
     """Defects of a development host file against the family: ``[dev]`` shape, a restated family key, a gap."""
     shared = family or {}
     found = _shape(host.get('dev', {}), '[dev]')
+    found += [f'[dev].{key} is the family default profile; it lives in family.toml' for key in FAMILY_ONLY
+              if key in host.get('dev', {})]  # fmt: skip
     restated = sorted(set(_leaves(host)) & set(_leaves(shared)))
     found += [f'{key} restates the family file; it lives there once' for key in restated]
     merged = {**shared.get('dev', {}), **host.get('dev', {})}
@@ -177,7 +236,23 @@ def check_family(family: Mapping[str, Any]) -> list[str]:
     """Defects of the family file's ``[dev]`` by itself, and a key only a host may declare."""
     dev = family.get('dev', {})
     host_only = [f'[dev].{key} is one machine fact; it lives in that host file' for key in HOST_ONLY if key in dev]
-    return host_only + _shape(dev, '[dev]')
+    found = host_only + _shape(dev, '[dev]')
+    default = dev.get('default')
+    if isinstance(default, dict):
+        nested = [key for key in (*FAMILY_ONLY, *HOST_ONLY) if key in default]
+        found += [f'[dev].default.{key} may not be declared in the default profile' for key in nested]
+        found += _shape({k: v for k, v in default.items() if k not in nested}, '[dev].default')
+    return found
+
+
+def app_tables(family: Mapping[str, Any]) -> tuple[str, ...]:
+    """The consumer tables the family opens in every host and account file (``[dev] apps``, family-only).
+
+    A consumer application reads its own machine facts from a table named after it (e.g. ``[<app>.core]``); the
+    family names those applications ONCE, so a host file may carry ``[<app>]`` without this kit knowing the app.
+    """
+    apps = family.get('dev', {}).get('apps', [])
+    return tuple(name for name in apps if isinstance(name, str))
 
 
 def hpc_reach(dev: Mapping[str, Any]) -> list[str]:

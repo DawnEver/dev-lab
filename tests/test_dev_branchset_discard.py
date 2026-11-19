@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev.branchset import BranchSet, discard
+from dev_lab.dev.branchfate import discard
+from dev_lab.dev.branchset import BranchSet
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
 
 _GIT = shutil.which('git') or 'git'
@@ -93,3 +94,21 @@ def test_a_live_session_is_refused_and_the_same_tree_once_quiet_is_discarded(lan
 def test_a_remote_tracking_name_is_not_a_local_branch(lane: Path) -> None:
     code, line = discard(lane, _DECLARED, 'origin/main', _WORDS, quiet_s=0)
     assert (code, 'no local branch' in line) == (1, True), line
+
+
+def test_a_commit_free_worktree_needs_no_approval(lane: Path, tmp_path: Path) -> None:
+    """O26: a lane whose every commit origin already holds loses nothing, so it is the narrow door for ONE tree."""
+    _run(lane, 'worktree', 'add', '-q', '-b', 'lane/empty', str(tmp_path / 'empty-tree'), 'main')
+    code, line = discard(lane, _DECLARED, 'lane/empty', '', quiet_s=0)
+    assert code == 0, line
+    assert 'commit-free' in line
+    assert not (tmp_path / 'empty-tree').exists()
+    assert 'lane/empty' not in _heads(lane)
+    assert (tmp_path / 'lane-tree').exists(), "another lane's tree is untouched"
+
+
+def test_an_unlanded_commit_still_needs_approval(lane: Path) -> None:
+    """PLANTED CONTROL: the same empty approval on a lane holding a commit origin lacks is refused."""
+    code, line = discard(lane, _DECLARED, 'lane/x', '', quiet_s=0)
+    assert code == 1
+    assert '--approved' in line

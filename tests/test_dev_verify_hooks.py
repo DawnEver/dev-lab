@@ -13,9 +13,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Status
 
-from dev_lab.dev import verifysteps
+from dev_lab.dev import serialpass, verifysteps
 from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND, install, read_hooks
+from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder
 
 _GIT = shutil.which('git') or 'git'
 
@@ -60,7 +63,14 @@ def test_a_producer_run_does_not_judge_the_hooks_of_its_fresh_checkout(
     """A producer judges a sha whose commit already passed its hooks; a developer run (the control) still fails."""
     repo = _repo(tmp_path / 'r')
 
-    def step(command: list[str], *, handle: io.StringIO, **_where: object) -> int:
+    def step(
+        command: list[str], *, handle: io.StringIO, extra_env: dict[str, str] | None = None, **_where: object
+    ) -> int:
+        if 'pytest' in command and extra_env is not None:  # the live plugin's Record: verify judges cells, not text
+            stage = extra_env[serialpass.STAGE_ENV]
+            CellRecorder(Path(extra_env[OUTCOMES_DIR_VAR]) / 'cells.jsonl').record(
+                f'tests/test_planted.py::test_{stage}', TestCell(Cell(Status.OK))
+            )
         handle.write('1 passed in 0.1s\n' if 'pytest' in command else 'All checks passed!\n')
         handle.flush()
         return 0

@@ -7,7 +7,8 @@ connection, never an agent's own ssh (HPC-THROUGH-THE-DOOR).
 
 The accounts are the machine file's ``[[hpc.grant]]`` tables, exactly as ``deploy-fleet`` reads them
 (:mod:`~dev_lab.dev.hpcaccount.fleet`): an ``--account`` outside them refuses the whole run before any ssh, and
-each command runs through :func:`lab_commons.hpc.cluster.runner_for` -- the grant's own login hosts, nothing else.
+each command runs through :func:`dev_lab.dev.hpcaccount.transport.grant_runner` -- the grant's own login hosts,
+nothing else.
 Its checkout is the account's declared ``[deploy]`` root (:func:`~dev_lab.dev.hpcaccount.fleet.declared_target`).
 
 Per account it prints ``forgotten`` with the row and the backup path, ``absent`` (the row is not in its table; never
@@ -24,12 +25,13 @@ import tomllib
 from collections.abc import Callable, Sequence
 from typing import Final
 
-from lab_commons.hpc.cluster import Runner, runner_for
+from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.division import reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
+from dev_lab.dev.hpcaccount.transport import grant_runner
 
 __all__ = ['forget_command', 'forget_fleet', 'main', 'peek_command']
 
@@ -71,7 +73,7 @@ def forget_fleet(
     row: str,
     dry_run: bool,
     say: Callable[[str], None],
-    connect: Callable[[Grant], Runner] = runner_for,
+    connect: Callable[[Grant], Runner] = grant_runner,
 ) -> int:
     """Forget *row* on each of *accounts* (empty: every grant); 2 when any account was refused."""
     fleet = {grant.user: grant for grant in grants}

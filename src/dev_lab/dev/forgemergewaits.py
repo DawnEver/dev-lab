@@ -2,8 +2,12 @@
 
 Split out of :mod:`dev_lab.dev.forgemerge` (the merge DECISION), which asks :func:`status_waits` once per head.
 A repo declaring ``[tool.dev_lab.integrator] merge_checks`` waits on those checks (:func:`checks_wait`);
+an ``actions`` repo (:mod:`dev_lab.dev.producers`) only on the parts Actions post (:func:`actions_wait`);
 otherwise on the serve-posted ones -- ``tests/security``, the head gates, and every HOSTED test part standing
-PASS (:func:`parts_wait`). A hand part (:func:`hand_parts`, user ruling 2026-11-10) is named, never waited on.
+PASS (:func:`parts_wait`). A hand part (:func:`hand_parts`, user ruling 2026-11-10) is named, never waited on;
+nor is a part released under a class that is not the code's (:func:`requeued_parts`, W5 dev-lab#644): no part
+posted, no grant had room, a QOS refusal is the environment's or the schedule's, requeued
+(:mod:`dev_lab.dev.requeue`), never the author's wait.
 """
 
 from __future__ import annotations
@@ -18,12 +22,25 @@ from dev_lab.dev.forgeheadgate import gates_wait
 from dev_lab.dev.forgesecurity import security_wait
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import derived, part_context, parts_of, standing
+from dev_lab.dev.producer import Owner, owner_of
+from dev_lab.dev.producers import ACTIONS
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['RED', 'checks_wait', 'hand_note', 'hand_parts', 'parts_wait', 'red_checks', 'status_waits']
+__all__ = [
+    'RED',
+    'actions_wait',
+    'checks_wait',
+    'green_waits',
+    'hand_note',
+    'hand_parts',
+    'parts_wait',
+    'red_checks',
+    'requeued_parts',
+    'status_waits',
+]
 
 #: The terminal red states of a status, on both forges: the check FAILED, it is not waiting.
 RED: Final = frozenset({'failure', 'error'})
@@ -37,6 +54,16 @@ def hand_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
     """
     parts, _ = parts_of(statuses)
     return frozenset(name for name in {*derived(statuses), *parts} if row_part(name) != BASE)
+
+
+def requeued_parts(statuses: Sequence[CommitStatus]) -> frozenset[str]:
+    """The parts whose latest ``tests/<part>`` stands ``error`` under an owner class other than :attr:`Owner.CODE`."""
+    latest = {status.context: status for status in statuses}
+    return frozenset(
+        context.removeprefix(part_context(''))
+        for context, status in latest.items()
+        if context.startswith(part_context('')) and owner_of(status.state, status.description) not in {None, Owner.CODE}
+    )
 
 
 def hand_note(statuses: Sequence[CommitStatus]) -> str | None:
@@ -66,7 +93,7 @@ def parts_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
     Every hand part (:func:`hand_parts`) is waived -- an unproduced one and a secrets-hosted one (produced only on a
     full run, never for a pull request) among them.
     """
-    parts = standing(statuses, head=head, waived=hand_parts(statuses))
+    parts = standing(statuses, head=head, waived=hand_parts(statuses) | requeued_parts(statuses))
     if parts.result is Conclusion.PASS:
         return None
     return '; '.join([f'they stand {parts.reading}', *parts.problems])
@@ -91,15 +118,45 @@ def checks_wait(checks: Sequence[str], statuses: Sequence[CommitStatus]) -> str 
     return '; '.join(said) or None
 
 
-def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus]) -> list[str]:
-    """What *head*'s posted statuses lack: the repo's declared merge checks, else every serve-posted status.
+def actions_wait(head: str, statuses: Sequence[CommitStatus]) -> str | None:
+    """Why the parts forge Actions post for *head* -- the base rows -- do not all stand PASS, or ``None``.
+
+    An ``actions`` repo (:mod:`dev_lab.dev.producers`) has no serve host, so nothing here is UNCLAIMED or waits on
+    a host: a base part not yet posted is Actions' run still to come.
+    """
+    if not any(status.context.startswith(part_context(BASE)) for status in statuses):
+        return (
+            f'forge Actions has not yet posted {part_context(BASE)} for {head[:12]}: its ci.yml run is still to come '
+            '(a parts job that derives no matrix posts it red, naming why)'
+        )
+    return parts_wait(head, statuses)
+
+
+def green_waits(head: str, statuses: Sequence[CommitStatus], *, producer: str) -> list[str]:
+    """Why *head* is not green as its *producer* posts it; break-glass reads green through this alone.
+
+    :func:`actions_wait` for ``actions``, else the security check and the test parts a serve host posts.
+    """
+    if producer == ACTIONS:
+        waits = [actions_wait(head, statuses)]
+    else:
+        waits = [security_wait(statuses), parts_wait(head, statuses)]
+    return [wait for wait in waits if wait is not None]
+
+
+def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus], *, producer: str) -> list[str]:
+    """What *head*'s posted statuses lack: the repo's declared merge checks, else what its *producer* posts.
 
     User ruling 2026-11-12: a repo declaring ``merge_checks`` waits on them IN PLACE of the test parts,
-    ``tests/security`` and the head gates, which only a serve host posts.
+    ``tests/security`` and the head gates, which only a serve host posts. User ruling 2026-11-16: an ``actions``
+    repo waits only on the parts forge Actions post (:func:`actions_wait`), never on a serve-posted status.
     """
     if policy.merge_checks:
         checked = checks_wait(policy.merge_checks, statuses)
         return [] if checked is None else [f'its merge checks: {checked}']
+    if producer == ACTIONS:
+        waited = actions_wait(head, statuses)
+        return [] if waited is None else [f'its test parts: {waited}']
     said = [
         ('its security check', security_wait(statuses)),
         ('its head gates', gates_wait(statuses)),
@@ -109,7 +166,7 @@ def status_waits(policy: Policy, head: str, statuses: Sequence[CommitStatus]) ->
 
 
 def red_checks(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
-    """The contexts in *statuses* standing terminal red (``failure``/``error``), every hand part excluded."""
-    hands = {part_context(name) for name in hand_parts(statuses)}
+    """The contexts in *statuses* standing terminal red (``failure``/``error``), hand and requeued parts excluded."""
+    hands = {part_context(name) for name in hand_parts(statuses) | requeued_parts(statuses)}
     latest = {status.context: status for status in statuses}
     return tuple(c for c, s in latest.items() if s.state in RED and c not in hands)

@@ -67,7 +67,8 @@ from lab_commons.hpc.shell import FULL
 from dev_lab.dev.forgestatus import CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import ClusterPart, part_context
-from dev_lab.dev.producer import RETRYABLE, Owner, owned
+from dev_lab.dev.producer import Owner, owned
+from dev_lab.dev.requeue import requeued
 
 __all__ = [
     'CLAIMABLE',
@@ -214,15 +215,19 @@ def this_machine() -> str:
     return os.environ.get('HARNESS_MACHINE', '').strip() or socket.gethostname().split('.')[0]
 
 
-def assess(history: Sequence[CommitStatus], context: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:
+def assess(
+    history: Sequence[CommitStatus], context: str, *, me: Claim, now: datetime, newest: bool = False
+) -> tuple[str, Claim | None]:
     """Where the job posted in *context* stands on a commit whose every post is *history* (oldest first).
 
     *now* is the FORGE's time. Returns the state and the claim holding it (``None`` when nobody holds it); the
-    holder is :func:`holder`'s, and it is :data:`MINE` exactly when *me* is its owner.
+    holder is :func:`holder`'s, and it is :data:`MINE` exactly when *me* is its owner. *newest* says the commit is
+    still its ref's newest head (:func:`dev_lab.dev.requeue.newest_head`): only then is a bounded class requeued;
+    unvouched, a release stays settled.
     """
     posts = [status for status in history if status.context == context]
-    if posts and posts[-1].state != 'pending':  # a claim released by an outage is open again
-        return (OPEN if posts[-1].description.startswith(RETRYABLE) else DONE), None
+    if posts and posts[-1].state != 'pending':  # a release its class requeues is open again (requeue.RETRIES)
+        return (OPEN if requeued(posts, newest=newest) else DONE), None
     settled = max((index for index, status in enumerate(posts) if status.state != 'pending'), default=-1)
     held = holder(posts[settled + 1 :], now=now)
     if held is None:
@@ -277,7 +282,8 @@ def claim(client: Client, work: Work, me: Claim) -> Work:
     call RENEWS a lease when *me* is the holder's owner; another owner takes only a lapsed lease.
     """
     status_post(client, work.sha, context=work.context, state='pending', description=me.description())
-    state, held = assess(status_history(client, work.sha), work.context, me=me, now=forge_now(client))
+    now = forge_now(client)
+    state, held = assess(status_history(client, work.sha), work.context, me=me, now=now, newest=True)
     return dataclasses.replace(work, state=state, holder=held)
 
 
@@ -292,7 +298,7 @@ def publish(client: Client, work: Work, me: Claim, *, state: str, description: s
     posts = [status for status in history if status.context == work.context]
     if posts and posts[-1].state != 'pending':
         return False
-    if assess(history, work.context, me=me, now=forge_now(client))[0] != MINE:
+    if assess(history, work.context, me=me, now=forge_now(client), newest=True)[0] != MINE:
         return False
     status_post(client, work.sha, context=work.context, state=state, description=description, target_url=target_url)
     return True

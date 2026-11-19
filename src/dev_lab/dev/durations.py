@@ -125,6 +125,9 @@ LEDGER_KIND: Final = 'durations'
 
 #: One file per pytest process; :func:`read` merges them. See the docstring on sharding.
 _STEM: Final = 'durations'
+#: The last stamp this process wrote: Windows' ``time_ns`` can repeat across two writes, and a tie let the older
+#: reading win (:func:`read` keeps the strictly newer one).
+_LAST_NS = [0]
 
 #: THE SENTENCE THE SCHEDULER WRITES WHEN A WORKER DIES MID-TEST, and the whole reason this module
 #: does not trust a reported duration. Spelled here as the SUBSTRING that survives the ``!r``
@@ -324,7 +327,7 @@ def write(
     payload = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
     merged = {nodeid: float(value) for nodeid, value in dict(payload.get('seconds', {})).items()}
     provenance = dict(payload.get('provenance', {}))
-    now = time.time_ns()
+    now = _LAST_NS[0] = max(time.time_ns(), _LAST_NS[0] + 1)
     for row in rows:
         merged[row.nodeid] = round(float(row.seconds), 3)
         provenance[row.nodeid] = {'at_ns': now, 'tree': tree, 'env': env}
