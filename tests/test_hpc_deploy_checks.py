@@ -9,7 +9,6 @@ from typing import Final
 import pytest
 
 from dev_lab.dev.hpcaccount import checks as deploy_checks
-from dev_lab.dev.hpcaccount.spec import Deployment, Repo
 
 URL: Final = 'https://forge.example.org/o/r.git'
 
@@ -34,10 +33,10 @@ def test_the_credential_store_must_be_configured_and_private(
     assert (fix in problem) if fix else problem == ''
 
 
-def test_uv_is_always_needed_and_each_tool_is_installed_or_refused() -> None:
+def test_uv_and_rclone_are_always_needed_and_each_tool_is_installed_or_refused() -> None:
     """PLANTED CONTROL: a box that has everything installs nothing and refuses nothing."""
     installs, refused = deploy_checks.tool_plan(['cargo', 'cmake', 'cc'], found=lambda _t: False)
-    assert [tool for tool, _script in installs] == ['uv', 'cargo', 'cmake'], 'uv first: cmake comes through it'
+    assert [tool for tool, _script in installs] == ['uv', 'rclone', 'cargo', 'cmake'], 'uv first: cmake needs it'
     assert refused == ['cc']
     assert deploy_checks.tool_plan(['cargo', 'cc'], found=lambda _t: True) == ([], [])
 
@@ -64,30 +63,21 @@ def test_the_login_files_are_the_ones_bash_reads_and_the_line_names_the_tick_ins
     assert line.endswith(deploy_checks.LOGIN_MARK)
 
 
-SPEC: Final = Deployment('login02', 'src', '3.13', (Repo('dev-lab', URL, 'trunk'),), '', ('shortq', 'defq'))
-
-
-def test_the_grant_comes_from_slurm_and_the_declaration() -> None:
-    grant = deploy_checks.grant_of('alice', 'acct-free|cpu=96,mem=360G\nacct-free|cpu=96\n', spec=SPEC, host='h.x')
-    assert grant == {
-        'user': 'alice',
-        'hosts': ['h.x'],
-        'slurm_account': 'acct-free',
-        'partitions': ['shortq', 'defq'],
-    }
+def test_the_declared_slurm_account_must_be_one_of_the_users_associations() -> None:
+    """The grant is declared on the workstation; Slurm only confirms its account. PLANTED CONTROL: a match passes."""
+    sacct = 'acct-free|cpu=96,mem=360G\nacct-free|cpu=96\nacct-paid|cpu=8\n'
+    assert deploy_checks.association_refusal('alice', sacct, 'acct-paid') is None
 
 
 @pytest.mark.parametrize(
-    ('sacct', 'spec', 'named'),
+    ('sacct', 'account', 'named'),
     [
-        ('a|cpu=1\nb|cpu=2\n', SPEC, '--slurm-account'),
-        ('', SPEC, 'no Slurm association'),
-        ('a|cpu=1\n', Deployment('h', 'src', '3.13', (), '', ()), '--partition'),
-        ('a|cpu=1\n', Deployment('h', 'src', '3.13', (), 'zz', ('q',)), 'zz'),
+        ('a|cpu=1\nb|cpu=2\n', 'zz', 'zz'),
+        ('', 'a', 'no Slurm association'),
     ],
 )
-def test_a_grant_that_cannot_be_derived_is_refused_naming_why(sacct: str, spec: Deployment, named: str) -> None:
-    refused = deploy_checks.grant_of('alice', sacct, spec=spec, host='h')
+def test_an_account_slurm_does_not_associate_is_refused_naming_why(sacct: str, account: str, named: str) -> None:
+    refused = deploy_checks.association_refusal('alice', sacct, account)
     assert isinstance(refused, str)
     assert named in refused
 
@@ -115,3 +105,10 @@ def test_the_serve_git_floor_is_proven_by_a_toy_merge_tree_never_by_its_version(
 
 def test_a_git_that_does_not_run_is_refused(tmp_path: Path) -> None:
     assert 'does not run' in deploy_checks.merge_tree_refusal([str(tmp_path / 'absent-git')], tmp_path)
+
+
+def test_rclone_installs_through_the_pinned_release_door() -> None:
+    """D76: rclone is never a curl-pipe-shell; it is the sha256-checked pinned release, run by the kit's python."""
+    script = deploy_checks.INSTALLERS['rclone']
+    assert script.endswith('-m dev_lab.dev.toolrelease install rclone')
+    assert 'curl' not in script

@@ -67,7 +67,7 @@ _ENFORCED = {
     'REPORTS-LIVE-IN-MEMORY': (guard('tests/test_dev_reportplace.py'),),
     'CODE-IN-CODE-ROOTS': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_codeplace.py')),
     'SCRATCH-IS-NEVER-COMMITTED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_scratch.py')),
-    'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_codeplace.py')),
+    'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_strays.py')),
     'WRITES-STAY-IN-THE-TREE': (guard('tests/test_dev_writeroots.py'), guard('tests/test_dev_tmpsweep.py')),
     'DECLARATION-LIES': (
         guard('tests/test_arch_public_surface.py'),
@@ -107,7 +107,10 @@ _ENFORCED = {
     'INTEGRATION-IS-MERGES-ONLY': (guard('tests/test_dev_sessionbranch.py'), guard('tests/test_dev_integrate.py')),
     'PUBLISH-IS-THE-LOCAL-REF': (guard('tests/test_dev_sessionbranch.py'),),
     'ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES': (guard('tests/test_dev_sessionbranch.py'),),
+    'PUSHED-HEAD-CARRIES-ITS-TASK': (guard('tests/test_dev_sessionbranch.py'),),
     'NO-PUSH-ONTO-A-CLOSED-PR': (guard('tests/test_dev_closedpush.py'),),
+    'BASE-HOLDS-THE-MILESTONE': (guard('tests/test_dev_milestonebase.py'),),
+    'VERSION-TAG-NEEDS-APPROVAL': (guard('tests/test_dev_milestonebase.py'),),
     'LANDED-BRANCH-CONTINUES': (guard('tests/test_dev_prcontinue.py'), guard('tests/test_dev_branchreview.py')),
     'PR-HEAD-IS-CURRENT': (guard('tests/test_dev_prcurrent.py'),),
     'INTEGRATION-TAKES-ONLY-FORGE-MERGES': (
@@ -171,9 +174,8 @@ _ENFORCED = {
     'MERGE-RESOLUTION-DECLARED': (guard('tests/test_dev_mergeresolution.py'),),
     'AUTO-MODE-RUNS-THE-DOORS': (guard('tests/test_dev_autodoors.py'),),
     'MAIN-SESSION-PUBLISHES': (guard('tests/test_dev_autodoors.py'), guard('tests/test_dev_hooks.py')),
-    # Incident 2026-10-17 (Ada): a redeploy from journal schema 1 to 2 under 17 live schema-1 runs, refused
-    # by the reader, stopped every serve tick of four accounts.
-    'FORMATS-UPGRADE-ON-READ': (guard('tests/test_arch_formats_upgrade_on_read.py'),),
+    # User ruling 2026-11-11 (consumer-a D51/D52): no reader keeps an old schema alive.
+    'FORMATS-MIGRATE-ONCE': (guard('tests/test_arch_formats_migrate_once.py'),),
     # Incident 2026-10-21: 28 open consumer-a PRs, one session spread over several, one stalled base holding a dozen.
     'ONE-SESSION-ONE-PR': (guard('tests/test_dev_labsession.py'), guard('tests/test_dev_pradmit.py')),
     'NO-STACKED-PRS': (guard('tests/test_dev_pradmit.py'),),
@@ -186,6 +188,12 @@ _ENFORCED = {
     'DOCS-ONLY-CARRIES': (guard('tests/test_dev_forgecarry.py'), guard('tests/test_dev_forgetick.py')),
     # User ruling 2026-10-29 (D83): a pushed head nobody watches goes red unseen -- advised, never blocked.
     'PUSHED-HEAD-IS-WATCHED': (guard('tests/test_dev_pushwatch.py'),),
+    # User ruling 2026-11-11: lab-commons #158 went red and nothing told the session.
+    'TASK-HEARS-ITS-FORGE-EVENTS': (guard('tests/test_dev_sessionwatch.py'),),
+    # User ruling 2026-11-13: every wall teaches -- a refusal that named no door is a gap closed before the task.
+    'WALLS-ARE-RECORDED': (guard('tests/test_dev_walls.py'), guard('tests/test_dev_hooks.py')),
+    # User ruling 2026-11-17 (D24): a slow hook let a 30-second TOTP code expire.
+    'HOOK-UNDER-FIVE-SECONDS': (guard('tests/test_dev_hook_budget.py'),),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'REFUSAL-NAMES-THE-REMEDY': (
         # The rule's OTHER two halves, added 2026-09-16 with `dev.bounded`: a wall that terminates
@@ -195,6 +203,7 @@ _ENFORCED = {
     ),
     'PUBLIC-SURFACE-DECLARED': (guard('tests/test_arch_public_surface.py'),),
     'SUBAGENT-NO-PUSH': (guard('tests/test_dev_hooks.py'), guard('tests/test_dev_agenthooks.py')),
+    'HEAVY-IS-THE-MAIN-SESSIONS': (guard('tests/test_dev_hooks.py'),),
     'TOLERANCE-CARRIES-A-UNIT': (guard('tests/test_arch_every_approx_states_its_floor.py'),),
     'TRACKED-CITES-NO-EPHEMERAL': (guard('tests/test_famtests_ephemeralrefs.py'),),
     'MONTHLY-PLANS-CARRIED': (guard('tests/test_famtests_monthsummary.py'),),

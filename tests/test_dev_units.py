@@ -766,12 +766,14 @@ def test_the_single_descent_reports_exactly_what_the_enclosing_scope_walk_report
 
 
 def _python_corpus(root: Path) -> list[Path]:
-    """Every Python file under *root*, excluding environments, caches and agent state.
+    """Every Python file under *root*, excluding environments, caches, agent state and program output.
+
+    ``output/`` is git-ignored program output, never code -- and it holds the test runner's sandboxes (D27).
 
     The exclusion is judged RELATIVE TO *root*: a checkout that itself lives under ``.claude/worktrees``
     has ``.claude`` in every absolute path, and an absolute filter there drops the whole corpus.
     """
-    excluded = {'.venv', '__pycache__', '.claude'}
+    excluded = {'.venv', '__pycache__', '.claude', 'output'}
     return [p for p in sorted(root.glob('**/*.py')) if not excluded & set(p.relative_to(root).parts)]
 
 

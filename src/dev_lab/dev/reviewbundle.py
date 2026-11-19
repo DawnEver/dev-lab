@@ -49,6 +49,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.reviewgitauth import git_env
 
@@ -412,7 +413,19 @@ def _materialize(bundle: Bundle, diff: str, tree: Path) -> None:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(data)
     (tree / 'diff.patch').write_bytes(diff.encode('utf-8'))
-    (tree / 'bundle.json').write_bytes(dump(bundle)[0])
+    (tree / 'bundle.json').write_bytes(_reviewer_doc(bundle))
+
+
+def _reviewer_doc(bundle: Bundle) -> bytes:
+    """The ``bundle.json`` the reviewer reads: the bundle, each file row carrying the judge's ``binary`` verdict.
+
+    The reviewer (ai-lab's ``BundleSource``, which reads this :data:`VERSION`) never re-derives binary: it skips the
+    file the judge did not write, by this flag, so the NUL probe (:func:`is_binary`) stays this module's alone.
+    """
+    doc = asdict(bundle)
+    for row, one in zip(doc['files'], bundle.files, strict=True):
+        row['binary'] = one.binary
+    return json.dumps(doc, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
 
 
 def judge(
@@ -429,7 +442,7 @@ def judge(
     if BUNDLE_FIELD not in command:
         msg = f'the judge command {list(command)} names no {BUNDLE_FIELD}: it would read no bundle'
         raise BundleRefused(msg)
-    with tempfile.TemporaryDirectory(prefix='review-bundle-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-bundle-') as scratch:
         tree = Path(scratch) / 'bundle'
         tree.mkdir()
         _materialize(bundle, diff, tree)

@@ -14,8 +14,8 @@ from dev_lab.dev import forgeheadgate, prcurrent, sessionbranch
 from dev_lab.dev.forgeintegration import tick
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
-from dev_lab.dev.lockcheck import UNRESOLVED
-from dev_lab.dev.locklag import LAG_LIMIT
+from dev_lab.dev.lockcheck import NOT_RENDERED, UNRESOLVED
+from dev_lab.dev.locklag import LAG_WINDOW
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
@@ -56,31 +56,25 @@ def statuses(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Statuses:
             return None
 
     monkeypatch.setattr(forgeheadgate, 'detached_worktree', lambda _root, _sha: _Tree())
-    monkeypatch.setattr(forgeheadgate, 'merge_base', lambda _root, head, _integration: head)
     return store
 
 
-def _reads(*answers: tuple[str, ...]) -> Callable[[Path], tuple[str, ...]]:
+def _renders(*answers: tuple[str, str] | None) -> Callable[..., tuple[str, str] | None]:
     queue = list(answers)
-    return lambda _tree: queue.pop(0)
+    return lambda _root, _head: queue.pop(0)
+
+
+def _gate(tmp_path: Path, render: Callable[..., tuple[str, str] | None], branch: str = 'pr/x') -> list[str]:
+    return forgeheadgate.judge(tmp_path, None, _SHA, branch, integration='integrate/main', render=render)
 
 
 @pytest.mark.usefixtures('statuses')
 def test_an_error_is_re_judged_and_a_verdict_latches(tmp_path: Path) -> None:
     """SR-20261024-001: only success/failure are terminal; an error (or pending) is judged again on the same sha."""
-    read = _reads((f'{UNRESOLVED}: timeout',), (), ())
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=read) == [
-        'session-branch: success',
-        'pr-current: success',
-        'lock/fresh: error',
-        'lock/lag: success',
-    ]
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=read) == [
-        'lock/fresh: success'
-    ]
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=read) == [], (
-        'CONTROL: a verdict latches'
-    )
+    render = _renders(('error', f'{UNRESOLVED}: timeout'), None)
+    assert _gate(tmp_path, render) == ['session-branch: success', 'pr-current: success', 'lock/lag: error']
+    assert _gate(tmp_path, render) == ['lock/lag: success']
+    assert _gate(tmp_path, render) == [], 'CONTROL: a verdict latches, and rendering is not checked again'
 
 
 @pytest.mark.usefixtures('statuses')
@@ -90,19 +84,63 @@ def test_a_checkout_that_fails_is_an_error_and_is_retried(tmp_path: Path, monkey
         raise OSError(msg)
 
     monkeypatch.setattr(forgeheadgate, 'detached_worktree', broken)
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=_reads()) == [
+    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main') == [
         'session-branch: success',
         'pr-current: success',
-        'lock/fresh: error',
-        'lock/lag: success',
+        'lock/lag: error',
     ]
-    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main', read=_reads()) == [
-        'lock/fresh: error'
-    ], 'retried'
+    assert forgeheadgate.judge(tmp_path, None, _SHA, 'pr/x', integration='integrate/main') == [], (
+        'the same error is not posted again, and it is retried'
+    )
+
+
+def test_lock_lag_is_the_one_lock_status_and_freshness_never_waits_the_merge(
+    tmp_path: Path, statuses: _Statuses, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #575: ``lock/lag`` is the ONE freshness fact, and the merge decision waits on nothing of the lock.
+
+    A lock behind its siblings' heads within the band is ``success``.
+
+    PLANTED CONTROLS: the same head past the band reds ``lock/lag``; a lock its manifest no longer renders reds it
+    too, and that failure is a fact of the sha -- held, never re-checked, while the lag moves.
+    """
+    lagged: list[tuple[str, str]] = [('success', 'uv.lock pins every floated sibling within the window')]
+    monkeypatch.setattr(forgeheadgate, 'lag_verdict', lambda *_a: lagged[0])
+    assert _gate(tmp_path, _renders(None)) == ['session-branch: success', 'pr-current: success', 'lock/lag: success']
+    contexts = {context for context, _state, _text in statuses.posts[_SHA]}
+    assert contexts == {'session-branch', 'pr-current', 'lock/lag'}, 'the head carries one lock status'
+    assert forgeheadgate.gates_wait(statuses.listed(None, _SHA)) is None, 'merge-ready waits on no freshness'
+    lagged[0] = ('failure', 'dev-lab: 40 commits behind its line')
+    assert _gate(tmp_path, _renders()) == ['lock/lag: failure'], 'CONTROL: past the band reds lock/lag'
+    statuses.posts.clear()
+    unrendered = ('failure', f'{NOT_RENDERED}: run the door')
+    lagged[0] = ('success', 'within')
+    assert _gate(tmp_path, _renders(unrendered))[-1] == 'lock/lag: failure'
+    assert _gate(tmp_path, _renders()) == [], 'CONTROL: an unrendered lock stays red without a second check'
+
+
+def test_render_verdict_reads_the_heads_own_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``failure`` names the unrendered lock; a check that could not run is ``error``; a rendering lock is ``None``."""
+
+    class _Tree:
+        def __enter__(self) -> Path:
+            return tmp_path
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+    monkeypatch.setattr(forgeheadgate, 'detached_worktree', lambda _root, _sha: _Tree())
+    why = f'{NOT_RENDERED}: run the door'
+    assert forgeheadgate.render_verdict(tmp_path, _SHA, check=lambda tree: why if tree == tmp_path else None) == (
+        'failure',
+        why,
+    )
+    assert forgeheadgate.render_verdict(tmp_path, _SHA, check=lambda _t: f'{UNRESOLVED}: offline')[0] == 'error'
+    assert forgeheadgate.render_verdict(tmp_path, _SHA, check=lambda _t: None) is None, 'CONTROL'
 
 
 def _judge(tmp_path: Path, branch: str = 'pr/x') -> list[str]:
-    return forgeheadgate.judge(tmp_path, None, _SHA, branch, integration='integrate/main', read=_reads((), ()))
+    return _gate(tmp_path, _renders(None), branch)
 
 
 def test_session_branch_is_the_push_rows_own_judge(
@@ -128,9 +166,9 @@ def test_session_branch_is_the_push_rows_own_judge(
 def test_session_branch_reads_the_push_line_of_a_created_head(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The forge's caller hands :func:`sessionbranch.refusals` the pre-push line creating ``refs/heads/<branch>``."""
     lines: list[str] = []
-    monkeypatch.setattr(sessionbranch, 'refusals', lambda _root, text: lines.append(text) or [])
+    monkeypatch.setattr(sessionbranch, 'refusals', lambda _root, text, env: lines.extend([text, env]) or [])
     assert sessionbranch.head_refusals(tmp_path, _SHA, 'pr/x') == []
-    assert lines == [f'refs/heads/pr/x {_SHA} refs/heads/pr/x {"0" * 40}']
+    assert lines == [f'refs/heads/pr/x {_SHA} refs/heads/pr/x {"0" * 40}', {}], 'the forge pushes for no session (P7)'
 
 
 def test_pr_current_is_volatile_and_posts_only_a_change(
@@ -171,22 +209,24 @@ def test_pr_current_judges_only_what_the_row_judges(tmp_path: Path) -> None:
 def test_the_gates_wait_until_each_stands_success() -> None:
     """The merge reads :func:`forgeheadgate.gates_wait`: absent, ``error`` and ``failure`` wait.
 
-    PLANTED CONTROL: every gate ``success`` is ``None``, and ``lock/lag`` failing alone does not wait (an alarm).
+    W5 (dev-lab#644): ``pr-current`` and ``lock/lag`` are ALARMS -- mergeability is the trial merge at merge time.
+    PLANTED CONTROL: ``session-branch`` absent or red still waits; both alarms red alone never wait, and are said.
     """
 
     def status(context: str, state: str) -> CommitStatus:
         return CommitStatus(context=context, state=state, description='why', url='')
 
-    assert forgeheadgate.gates_wait(()) == 'session-branch is not yet judged; pr-current is not yet judged'
+    assert forgeheadgate.gates_wait(()) == 'session-branch is not yet judged'
     for state in ('failure', 'error', 'pending'):
-        waits = forgeheadgate.gates_wait((status('session-branch', 'success'), status('pr-current', state)))
-        assert waits == f'pr-current is {state}: why'
-    green = (status('session-branch', 'success'), status('pr-current', 'success'), status('lock/lag', 'failure'))
-    assert forgeheadgate.gates_wait(green) is None
+        assert forgeheadgate.gates_wait((status('session-branch', state),)) == f'session-branch is {state}: why'
+    alarmed = (status('session-branch', 'success'), status('pr-current', 'failure'), status('lock/lag', 'failure'))
+    assert forgeheadgate.gates_wait(alarmed) is None
+    assert forgeheadgate.alarms_said(alarmed) == 'pr-current is failure: why; lock/lag is failure: why'
+    assert forgeheadgate.alarms_said(alarmed[:1]) is None, 'CONTROL: an unjudged alarm says nothing'
 
 
 def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
-    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`locklag.LAG_LIMIT`.
+    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`locklag.LAG_WINDOW`.
 
     PLANTED CONTROLS: no lock is ``success``; an uncounted sibling is ``error``, never a pass.
     """
@@ -197,16 +237,16 @@ def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
     run_git(work, 'add', 'uv.lock')
     run_git(work, 'commit', '-q', '--no-verify', '-m', 'build: lock')
     head = git_out(work, 'rev-parse', 'HEAD')
-    seen: list[int] = []
+    seen: list[object] = []
 
     def lag(answer: tuple[str, ...]) -> Callable[..., tuple[str, ...]]:
         return lambda _text, limit: seen.append(limit) or answer
 
-    behind = 'uv.lock pins dev-lab 21 commits behind its integrate/main (limit 20)'
+    behind = 'uv.lock pins dev-lab 21 landings (9.0 h) behind its integrate/main (window 8.0 h)'
     assert forgeheadgate.lag_verdict(work, head, lag=lag((behind,))) == ('failure', behind)
     assert forgeheadgate.lag_verdict(work, head, lag=lag(()))[0] == 'success'
     assert forgeheadgate.lag_verdict(work, head, lag=lag((f'{UNRESOLVED}: dev-lab: offline',)))[0] == 'error'
-    assert set(seen) == {LAG_LIMIT}
+    assert set(seen) == {LAG_WINDOW}
 
 
 def _head(work: Path, branch: str) -> str:
@@ -241,7 +281,7 @@ def test_a_gate_that_raises_for_one_head_leaves_the_tick_and_the_next_head(tmp_p
             msg = 'boom'
             raise RuntimeError(msg)
         judged.append(head)
-        return ['lock/fresh: success']
+        return ['lock/lag: success']
 
     done = tick(work, forge, _DECLARED, fetch_pull=lambda _r, _m, n: heads[n], host='h1', gate=gate)
     assert judged == [heads[second]]
@@ -262,7 +302,7 @@ def test_a_draft_head_is_never_gated(tmp_path: Path) -> None:
     def gate(_root: Path, _client: object, head: str, _branch: str, *, integration: str) -> list[str]:
         assert integration == 'integrate/main'
         judged.append(head)
-        return ['lock/fresh: success']
+        return ['lock/lag: success']
 
     tick(work, forge, _DECLARED, fetch_pull=lambda _r, _m, n: heads[n], host='h1', gate=gate)
     assert judged == [heads[ready]]
@@ -278,7 +318,7 @@ def test_the_gate_runs_after_the_tick_work_within_a_budget_oldest_first(tmp_path
     def gate(_root: Path, _client: object, head: str, _branch: str, *, integration: str) -> list[str]:
         assert integration == 'integrate/main'
         order.append(head)
-        return ['lock/fresh: success']
+        return ['lock/lag: success']
 
     done = tick(
         work, forge, _DECLARED, fetch_pull=lambda _r, _m, n: heads[n], host='h1', gate=gate,
@@ -286,6 +326,6 @@ def test_the_gate_runs_after_the_tick_work_within_a_budget_oldest_first(tmp_path
     )  # fmt: skip
     assert order == [heads[first]], 'the oldest is judged; the budget is spent before the second'
     assert any('pr/b' in line and 'gate waits for the next tick' in line for line in done.lines), done.lines
-    gated = next(i for i, line in enumerate(done.lines) if 'lock/fresh' in line)
+    gated = next(i for i, line in enumerate(done.lines) if 'lock/lag' in line)
     published = max(i for i, line in enumerate(done.lines) if ' -- ' in line)
     assert gated > published, 'the gate runs after every child is published'

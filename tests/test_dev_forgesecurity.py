@@ -344,3 +344,63 @@ def test_a_workflow_job_judges_its_one_pr_through_the_step_s_judgement(monkeypat
     assert 'already judged' in forgesecurity.run_pull(Path(), client, 1, judged=fake)
     assert 'not judged' in forgesecurity.run_pull(Path(), client, 3, judged=fake)
     assert 'c' * 40 not in posted
+
+
+@pytest.mark.parametrize('base', ['bare', 'declared'])
+def test_a_first_adoption_pr_is_judged_under_its_own_table(monkeypatch: pytest.MonkeyPatch, base: str) -> None:
+    """A base with no pyproject.toml declares nothing: the head's own table judges it, and says so.
+
+    PLANTED control: a base WITH a manifest judges under the base's table exactly as before, never the head's.
+    """
+    posted: dict[str, list[CommitStatus]] = {}
+    _step(monkeypatch, posted, [])
+    head = 'a' * 40
+    git = {
+        ('rev-parse', '--verify', '-q', 'origin/integrate/main^{commit}'): b'i' * 40 + b'\n',
+        ('show', f'{head}:pyproject.toml'): b'[tool.dev_lab.security]\naccepted = { H = "the head says" }\n',
+    }
+    if base == 'declared':
+        git['show', 'origin/integrate/main:pyproject.toml'] = b'[tool.dev_lab.security]\naccepted = { B = "base" }\n'
+
+    def fake_git(_root: Path, *argv: str) -> bytes:
+        if argv not in git:
+            raise subprocess.CalledProcessError(128, ['git', *argv])
+        return git[argv]
+
+    monkeypatch.setattr(forgesecurity, '_git', fake_git)
+    client = SimpleNamespace(
+        pr_view={1: SimpleNamespace(number=1, base='integrate/main', draft=False, head_sha=head)}.__getitem__
+    )
+    seen: list[dict[str, str]] = []
+
+    def fake(_root: Path, _head: str, declaration: Declaration) -> Judgement:
+        seen.append(dict(declaration.accepted))
+        return Judgement('success', 'nothing found')
+
+    said = forgesecurity.run_pull(Path(), client, 1, judged=fake)
+    if base == 'declared':
+        assert seen == [{'B': 'base'}]
+        assert forgesecurity.FIRST_ADOPTION not in posted[head][-1].description
+    else:
+        assert seen == [{'H': 'the head says'}]
+        assert posted[head][-1].state == 'success'
+        assert posted[head][-1].description.startswith(forgesecurity.FIRST_ADOPTION)
+    assert said.startswith(f'#1 {"a" * 12} success')
+
+
+def test_a_missing_base_ref_is_still_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED control: only a base that EXISTS without a manifest is a first adoption; an unfetched base exits 2."""
+    posted: dict[str, list[CommitStatus]] = {}
+    _step(monkeypatch, posted, [])
+
+    def no_git(_root: Path, *argv: str) -> bytes:
+        raise subprocess.CalledProcessError(128, ['git', *argv])
+
+    monkeypatch.setattr(forgesecurity, '_git', no_git)
+    monkeypatch.setattr(forgesecurity, 'client_for', lambda _root: None)
+    posted.clear()  # the step _step ran judged the integration head; only this run counts
+    client = SimpleNamespace(
+        pr_view=lambda _n: SimpleNamespace(number=1, base='integrate/main', draft=False, head_sha='a' * 40)
+    )
+    assert forgesecurity.main(['run', '--pr', '1'], cwd=Path(), client=client) == 2
+    assert posted == {}

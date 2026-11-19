@@ -76,9 +76,15 @@ _can_run() {
 
 PYTHON=''
 _SAW_VENV=''
+# The current environment (dev-lab #641): rendered by `node venv_resolver.js --shell`, never edited here.
+# BEGIN venv_resolver.js --shell
+_current_env() { _n=""; if [ -f "$1/.venv-current" ]; then _n="$(head -n 1 "$1/.venv-current" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"; fi; case "$_n" in (""|.|..|*/*|*\\*|*:*) echo "$1/.venv" ;; (*) if [ -d "$1/.venvs/$_n" ]; then echo "$1/.venvs/$_n"; else echo "$1/.venv"; fi ;; esac; }
+# END venv_resolver.js --shell
+
 for root in "${THIS_ROOT}"; do
-  for candidate in "${root}/.venv/Scripts/python.exe" "${root}/.venv/bin/python"; do
-    if [ -x "${candidate}" ] && _has_distributions "${root}/.venv"; then
+  _ENV="$(_current_env "${root}")"
+  for candidate in "${_ENV}/Scripts/python.exe" "${_ENV}/bin/python"; do
+    if [ -x "${candidate}" ] && _has_distributions "${_ENV}"; then
       _SAW_VENV="yes"
       if [ -z "${PYTHON}" ] && _can_run "${candidate}"; then
         PYTHON="${candidate}"

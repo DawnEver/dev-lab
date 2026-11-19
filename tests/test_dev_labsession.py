@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import forgeautosync, labsession, relock
+from dev_lab.dev import forgeautosync, labsession, native_session, relock
 from dev_lab.dev.githooks.table import base_rows
 
 _GIT = shutil.which('git') or 'git'
@@ -60,6 +60,16 @@ def test_machine_env_drops_the_session() -> None:
     env = labsession.machine_env(env={labsession.ENV: _ID, 'PATH': 'p'})
     assert labsession.ENV not in env
     assert env['PATH'] == 'p'
+
+
+def test_machine_env_drops_every_native_harness_session_so_the_forge_commit_is_not_task_gated() -> None:
+    """dev-lab #630: forge sync's relock commit inherited CLAUDE_CODE_SESSION_ID and the session's task gate."""
+    keys = native_session.harness_keys()
+    assert {'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID'} <= keys
+    env = labsession.machine_env(env={**dict.fromkeys(keys, _ID), 'PATH': 'p'})
+    assert not keys & env.keys()
+    assert native_session.session_of(env) == '', 'the task gate judges no session'
+    assert env['PATH'] == 'p', 'planted control: the rest of the environment is kept'
 
 
 def test_sessions_reads_the_trailers_between_two_commits(tmp_path: Path) -> None:
@@ -122,3 +132,14 @@ def test_every_forge_git_call_runs_under_the_machine_env() -> None:
     for module in (forgeautosync, relock):
         source = inspect.getsource(module._git)
         assert 'env=machine_env(root)' in source, module.__name__
+
+
+def test_the_session_trailers_are_read_from_the_launcher_and_the_bridge() -> None:
+    """PLANTED CONTROL: an empty or malformed id stamps nothing."""
+    bridge = 'session_015BVi5YEVzxDoc8t7EkKMds'
+    assert labsession.trailers({labsession.ENV: _ID, labsession.CLAUDE_ENV: bridge}) == (
+        f'Lab-Session: {_ID}',
+        f'Claude-Session: https://claude.ai/code/{bridge}',
+    )
+    assert labsession.trailers({}) == ()
+    assert labsession.trailers({labsession.ENV: 'a b', labsession.CLAUDE_ENV: ''}) == ()

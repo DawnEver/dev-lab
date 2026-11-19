@@ -26,13 +26,30 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, forge_from_remote
+from dev_lab.dev.native_session import harness_keys
 
-__all__ = ['ENV', 'FORGE_NAME', 'TRAILER', 'forge_email', 'machine_env', 'main', 'sessions', 'stamp']
+__all__ = [
+    'CLAUDE_ENV',
+    'CLAUDE_TRAILER',
+    'ENV',
+    'FORGE_NAME',
+    'TRAILER',
+    'forge_email',
+    'machine_env',
+    'main',
+    'sessions',
+    'stamp',
+    'trailers',
+]
 
 #: The environment variable the launcher issues the session id in.
 ENV: Final = 'LAB_SESSION'
 #: The commit trailer this hook writes.
 TRAILER: Final = 'Lab-Session'
+#: The variable the Claude Code harness names its session in, as the ``session_...`` id of the session's page.
+CLAUDE_ENV: Final = 'CLAUDE_CODE_BRIDGE_SESSION_ID'
+#: The prose trailer naming that page (the commit attribution a Claude session writes by hand).
+CLAUDE_TRAILER: Final = 'Claude-Session'
 #: The author and committer name of every commit the forge makes.
 FORGE_NAME: Final = 'Forge'
 
@@ -51,11 +68,15 @@ def forge_email(root: Path | None) -> str:
 def machine_env(root: Path | None = None, *, env: Mapping[str, str] | None = None) -> dict[str, str]:
     """*env* (default: this process's) as the FORGE: no session, and the forge's identity, never the account's.
 
+    No session means neither the launcher's ``LAB_SESSION`` nor any native harness key (:func:`harness_keys`):
+    ``forge sync``'s relock commit inherited ``CLAUDE_CODE_SESSION_ID`` and so the session's task gate (#630).
+
     The ONE source of a forge-made commit's author and committer (user ruling 2026-10-25): on an HPC login
     node git would otherwise sign with the account's passwd GECOS name. The machine and account stay
     visible as data in the ``Forge-Host`` trailer (``<cluster>/<account>``), never as the author.
     """
-    out = {key: value for key, value in (os.environ if env is None else env).items() if key != ENV}
+    dropped = {ENV, *harness_keys()}  # a harness session key would put the forge's commit under the session's task gate
+    out = {key: value for key, value in (os.environ if env is None else env).items() if key not in dropped}
     email = forge_email(root)
     for role in ('AUTHOR', 'COMMITTER'):
         out[f'GIT_{role}_NAME'], out[f'GIT_{role}_EMAIL'] = FORGE_NAME, email
@@ -69,6 +90,20 @@ def sessions(root: Path, base: str, head: str) -> frozenset[str]:
         capture_output=True, text=True, encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False,
     )  # fmt: skip
     return frozenset(done.stdout.split()) if done.returncode == 0 else frozenset()
+
+
+def trailers(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """The session trailers a commit made inside a session carries, read from *env* (default: this process's).
+
+    ``Lab-Session`` (what the commit-msg hook stamps) and ``Claude-Session`` (its page's URL); a malformed or
+    absent id stamps nothing. For a commit a family door makes itself (``forge sync``), so it carries the session
+    whether or not the hook is installed where it runs.
+    """
+    env = os.environ if env is None else env
+    out = [f'{TRAILER}: {session}'] if _ID.match(session := env.get(ENV, '')) else []
+    if _ID.match(page := env.get(CLAUDE_ENV, '')):
+        out.append(f'{CLAUDE_TRAILER}: https://claude.ai/code/{page}')
+    return tuple(out)
 
 
 def stamp(message_file: str, session: str) -> None:

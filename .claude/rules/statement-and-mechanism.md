@@ -11,8 +11,7 @@ a check.
   Measured 2026-09-15 — when all 70 mechanisms were one repo's paths, lab-commons refused its own
   registry with 70 failures.
 - **A row with no mechanism may not exist**, and a rule this repo cannot yet refuse goes in the
-  ABSENT set BY NAME. Never an integer: a count cannot say which rule moved, and the honest-looking
-  repair when it disagrees is to edit the digit.
+  ABSENT set BY NAME (`NAMED-SETS-NOT-COUNTS`).
 - **A rule is added to `_rule_rows.py` only after the NOUN TEST**: delete every domain noun; if
   nothing constrains anything afterwards, the rule belongs to the repo that has that noun.
 - **Rows are never deleted to make something pass.** A mechanism that has gone is repointed or

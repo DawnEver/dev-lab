@@ -28,6 +28,7 @@ import http.client
 import inspect
 import json
 import shutil
+import ssl
 import subprocess
 import threading
 from collections.abc import Iterator
@@ -38,21 +39,19 @@ from typing import Any, ClassVar
 import pytest
 
 from dev_lab.dev import forge as module
-from dev_lab.dev.forge import (
+from dev_lab.dev import forgerule
+from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote, token_for
+from dev_lab.dev.forgerule import (
     APPLIED,
     INERT,
     NOT_APPLIED,
     UNREADABLE,
     Clause,
-    Forge,
     Protection,
-    UnreadableRemote,
     apply_protection,
     assess,
-    forge_from_remote,
     protection_body,
     read_rule,
-    token_for,
 )
 
 _GIT = shutil.which('git') or 'git'
@@ -181,6 +180,22 @@ def test_an_ssh_remote_yields_the_same_three_and_the_original_could_not(tmp_path
     assert forge_from_remote(scp) == Forge(host='forge.example.org', owner='someone', repo='something')
     ssh = _repo(tmp_path, 'ssh://git@forge.example.org/someone/something.git', name='ssh')
     assert forge_from_remote(ssh) == forge_from_remote(scp)
+
+
+def test_a_remote_is_read_once_and_again_after_set_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One ``forge queue`` asked ``git remote get-url`` 54 times: kept per version of the git config.
+
+    PLANTED CONTROL: ``git remote set-url`` rewrites the config, and the new remote is read, never the kept one.
+    """
+    repo = _repo(tmp_path, 'https://forge.example.org/someone/something.git')
+    assert forge_from_remote(repo).repo == 'something'
+    asked = []
+    real = module._door.run
+    monkeypatch.setattr(module._door, 'run', lambda *a, **k: asked.append(a) or real(*a, **k))
+    assert forge_from_remote(repo).repo == 'something'
+    assert asked == [], 'an unchanged remote was asked of git again'
+    _run(repo, 'remote', 'set-url', 'origin', 'https://forge.example.org/someone/other.git')
+    assert forge_from_remote(repo).repo == 'other', 'a changed remote was served stale'
 
 
 def test_a_remote_that_names_no_repository_is_refused_rather_than_half_parsed(tmp_path: Path) -> None:
@@ -417,7 +432,7 @@ def test_the_shipped_transport_cannot_speak_another_scheme() -> None:
 
     The connection class cannot open ``file://`` or ``ftp://`` because it speaks exactly one protocol.
     """
-    default = inspect.signature(module.read_rule).parameters['transport'].default
+    default = inspect.signature(forgerule.read_rule).parameters['transport'].default
     assert default is module.forge_transport
     assert isinstance(module.forge_transport('forge.example.org', 0.1), http.client.HTTPSConnection)
     assert isinstance(module.forge_transport('127.0.0.1.example.org:9000', 0.1), http.client.HTTPSConnection)
@@ -431,3 +446,16 @@ def test_plain_http_is_spoken_only_to_a_loopback_host(host: str) -> None:
     """
     made = module.forge_transport(host, 0.1)
     assert type(made) is http.client.HTTPConnection
+
+
+def test_every_https_transport_shares_one_verified_tls_context() -> None:
+    """One TLS context per process: building one loads the system trust store (~80 loads on Windows).
+
+    A context per connection cost ``forge queue`` ~4 s of a 91 s read (2026-11-18). PLANTED CONTROL: the shared
+    context still verifies the certificate and the host name.
+    """
+    first = module.forge_transport('forge.example.org', 0.1)
+    second = module.forge_transport('other.example.org', 0.1)
+    assert first._context is second._context
+    assert first._context.verify_mode == ssl.CERT_REQUIRED
+    assert first._context.check_hostname

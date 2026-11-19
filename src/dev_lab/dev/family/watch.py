@@ -26,7 +26,7 @@ from dev_lab.dev.family.horizontal import compare, features
 from dev_lab.dev.family.members import Facts, Finding, check
 from dev_lab.dev.family.origin import Snapshot, snapshot
 from dev_lab.dev.forgealarm import FAMILY, Alarm
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.hpcaccount.spec import KIT
 from dev_lab.dev.lockcheck import newest_uv, uv_version
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
@@ -41,7 +41,6 @@ _LAST: Final = 'read'
 
 def findings() -> list[Finding]:
     """Every finding of this machine's family, read from its forges, and the horizontal comparison of its members."""
-    serve = section('serve')
     exceptions = section('family').get('exceptions', {})
 
     def horizontally(seen: Mapping[str, tuple[Snapshot, Facts]]) -> list[Finding]:
@@ -52,7 +51,7 @@ def findings() -> list[Finding]:
         )
 
     found = check(repos(), forge=lambda _name, root: ClientFacts(client_for(root)),
-                  served=serve.get('repos') if serve else None, now=datetime.now(UTC),
+                  now=datetime.now(UTC),
                   bundle_name=secret_name(REVIEW_TASK), read=snapshot, compare=horizontally)  # fmt: skip
     return found + uv_pin(uv_version(repos().get(KIT)), newest_uv)
 

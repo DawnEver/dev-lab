@@ -8,7 +8,8 @@ branch the schedule's rule classes, and requests (:mod:`dev_lab.dev.forgeschedul
 it and the admission fits it.
 A part is claimed as a pending status with a lease (:mod:`dev_lab.dev.forgeclaim`).
 
-WHAT A TICK DOES, in order: flush the status outbox (:mod:`dev_lab.dev.forgeoutbox`), fetch
+WHAT A TICK DOES, in order: flush the status outbox (:mod:`dev_lab.dev.forgeoutbox`) and the results held offline
+(:meth:`dev_lab.dev.forgeunit.ForgeResults.flush`), fetch
 ``origin``, rank every candidate this box could serve (:mod:`dev_lab.dev.forgeschedule`:
 value per cost, each waiting one naming why), CLAIM IN RANK ORDER WHILE JOBS ADMIT
 (:func:`lab_commons.compute.admission.admit`: the part's need-set present here, its demand within the supply),
@@ -41,7 +42,7 @@ its selection, :func:`~lab_commons.compute.learned.selection_gb` at the ids it i
 admission and the box's enforced claim are one number -- and ONE CLAIM: given *reserve*, a local part's box
 claim is taken before the part is claimed, and its producer adopts it (:mod:`dev_lab.dev.forgetake`).
 A CLUSTER part asks what its
-last Slurm run measured (:func:`~lab_commons.compute.learned.cluster_demand`).
+last Slurm run measured (:func:`dev_lab.dev.forgedemand.part_demand`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 
 A WAIT IS ANSWERED, BOUNDED AND SEEN (:mod:`dev_lab.dev.forgewait`). Given its *box*, a tick tells every part
@@ -66,7 +67,7 @@ from typing import Any
 
 from lab_commons.box import Capacity
 from lab_commons.box.providers import box_engine
-from lab_commons.compute.learned import box_demand, cluster_demand, learned, request_demand
+from lab_commons.compute.learned import box_demand, learned, request_demand
 from lab_commons.compute.model import (
     REQUEST,
     Candidate,
@@ -103,25 +104,37 @@ from dev_lab.dev.forgeclaim import (
     this_machine,
     this_seat,
 )
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgerecords import read_named
-from dev_lab.dev.forgerequest import declared_request, remind, request_authors
+from dev_lab.dev.forgerequest import declared_request
+from dev_lab.dev.forgerequesthost import remind, request_authors
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
 from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass
+from dev_lab.dev.forgeunit import ForgeResults, pending_dir
 from dev_lab.dev.forgewait import Box, nowhere, tell
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import derived, origin_url, parts_of
 from dev_lab.dev.unproduced import unproduced_waived
 
 __all__ = ['TickReport', 'main', 'tick']
+
+
+def _status_flushed(root: Path, client: Callable[[Path], Client]) -> list[str]:
+    """The status outbox flushed: one line per entry, a failed post's lines included, never raised out of a tick."""
+    try:
+        return flush(root, client=client)
+    except PostFailed as failed:
+        return str(failed).splitlines()
 
 
 @dataclass(frozen=True)
@@ -140,6 +153,22 @@ class TickReport:
     artefacts: str = ''
     #: The open parts this host could serve -- its needs all present here -- and did not claim: what makes it idle.
     pending: tuple[Work, ...] = ()
+
+    def idle(self) -> str:
+        """Why the *pending* parts sat unclaimed: each with its queue row's block, then the tick's refusals.
+
+        Every wall teaches: an idle alarm names each part's own cause (``not admitted: lacking mem_gb (...)``), so
+        a reader of the card sees which resource starves the account; only a part no row blocks reads as bare.
+        """
+        blocks = {(row.candidate.sha, row.candidate.platform): row.blocked for row in self.queue if row.blocked}
+        whys = [blocks.get((item.sha, item.platform), '') for item in self.pending]
+        named = ', '.join(
+            f'{item.ref} {item.sha[:12]} {item.platform}' + (f' -- {why}' if why else '')
+            for item, why in zip(self.pending, whys, strict=True)
+        )
+        told = any(whys)
+        refused = '; '.join(self.refused) or ('' if told else 'nothing was claimed')
+        return f'{named}: {refused}' if refused else named
 
 
 def tip_first(ranked: Sequence[Ranked], integration: str) -> tuple[Ranked, ...]:
@@ -206,13 +235,10 @@ def tick(
     (:mod:`dev_lab.dev.forgeaffinity`). *borrow* is the user's unexpired ``verify->research`` opt-in (default: the
     allocation record on the forge, read only when a live affined card could defer something).
     """
-    lines: list[str] = []
-    try:
-        lines += flush(root, client=client)
-    except PostFailed as failed:
-        lines += str(failed).splitlines()
+    lines = _status_flushed(root, client)
     fetch(root)
     built = client(root)
+    lines += ForgeResults(built, pending=pending_dir(root)).flush()  # results and graves held while offline
     history = SettledHistories(built)  # one read per sha a tick, none once settled (dev_lab.dev.forgesettled)
 
     login = built.whoami()
@@ -346,7 +372,7 @@ def _demand_of(
     """
     repo_url = origin_url(root)
     if cluster:
-        asked = cluster_demand(repo_url)
+        asked = part_demand(repo_url, ceiling_gb=None)
         return lambda _wanted, needed: asked(needed)
     free = (room or _box_now()).resources
 

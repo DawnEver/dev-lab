@@ -15,6 +15,7 @@ from typing import Final
 
 import pytest
 
+from dev_lab.dev.agentpolicy import SUBAGENT, Door
 from dev_lab.dev.allow_adoption import (
     AllowAdoption,
     DeclaredAllow,
@@ -31,7 +32,7 @@ from dev_lab.dev.allow_adoption import (
     settings_problems,
 )
 from dev_lab.dev.autodoors import claude_rows
-from dev_lab.dev.doorrows import literal_rows
+from dev_lab.dev.doorrows import INTERPRETERS, literal_rows
 from dev_lab.dev.floors import FloorMisdeclared, FloorUnmet, SlackFloor
 from dev_lab.dev.hook_adoption import HookAdoption
 from dev_lab.dev.hooks import Remedy
@@ -402,3 +403,13 @@ def test_a_derived_row_a_door_already_covers_is_not_listed_twice() -> None:
     assert [entry for entry in entries if 'stoprun' in entry] == [
         f'Bash({head} -m dev_lab.dev.stoprun *)' for head in ('.venv/Scripts/python.exe', '.venv/bin/python')
     ]
+
+
+def test_the_permission_block_carries_the_declared_cli_doors() -> None:
+    """A consumer's declared read-only CLI verbs reach its settings rows, named as family doors."""
+    cli = (Door(('python', '-m', 'consumer', 'vendor', 'windows'), SUBAGENT, 'Read-only: windows, listed.'),)
+    allow = AllowAdoption('consumer_a', CONSUMER_A, cli=cli)
+    row = f'Bash({INTERPRETERS[0]} -m consumer vendor windows *)'
+    assert row in allow_entries(allow)
+    assert provenance(allow)[row] == 'family door: Read-only: windows, listed.'
+    assert row not in allow_entries(AllowAdoption('consumer_a', CONSUMER_A))

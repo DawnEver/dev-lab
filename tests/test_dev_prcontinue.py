@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from _branch_repos import advance, clone_pair
@@ -22,6 +22,8 @@ from dev_lab.dev import forgeservesteps, prcontinue
 from dev_lab.dev.branchreview import read_record
 from dev_lab.dev.ciworkflows import workflows
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.prcontinue import candidates, continuation, continue_landed, continues_title
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -189,3 +191,68 @@ def test_continue_yml_dispatches_ci_on_the_branch_for_the_pr_it_opened(tmp_path:
     }, 'actions: write dispatches; nothing more'
     nothing = _opened_says(tmp_path / 'none', '[forge] pr continue: no branch continues a merged PR\n')
     assert nothing == {'pr': ''}, 'PLANTED CONTROL: nothing opened, nothing dispatched'
+
+
+# --- a first adoption: the integration branch has no manifest yet -------------------------------------------
+
+
+@pytest.mark.parametrize('base', ['bare', 'declared'])
+def test_a_base_with_no_manifest_continues_nothing(tmp_path: Path, base: str, capsys: pytest.CaptureFixture) -> None:
+    """``continue.yml`` on a repo's first adoption: the base declares nothing, so nothing continues (exit 0, said).
+
+    PLANTED control: a base WITH a manifest continues the landed branch exactly as before.
+    """
+    manifest = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
+    git = shutil.which('git') or 'git'
+
+    def run(*args: str) -> None:
+        subprocess.run([git, '-C', str(tmp_path), *args], check=True, capture_output=True)
+
+    run('init', '-q', '-b', 'integrate/main')
+    run('config', 'user.email', 't@t')
+    run('config', 'user.name', 't')
+    (tmp_path / 'README.md').write_text('r\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(manifest, encoding='utf-8')
+    run('add', 'README.md', *(['pyproject.toml'] if base == 'declared' else []))
+    run('commit', '-q', '-m', 'base')
+    run('update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    forge = StateForge()
+    _merged(forge)
+    assert prcontinue.main(['--head', 'pr/x', '--sha', _TIP], cwd=tmp_path, client=forge) == 0
+    said = capsys.readouterr().out
+    if base == 'declared':
+        assert 'continues #' in said
+    else:
+        assert 'declares nothing' in said
+        assert 'continues #' not in said
+
+
+def _raced(forge: StateForge, monkeypatch: pytest.MonkeyPatch, *, open_one: bool) -> None:
+    """``pr_create`` refused 422, as when another pass opened the head's PR first (dev-lab #718, O27)."""
+
+    def refused(*_args: object, **_kwargs: object) -> NoReturn:
+        if open_one:
+            forge.add_pull('pr/x', _BASE, title='feat: x (continues #1)', sha=_TIP)
+        exists = Attempt(1, 422, 'a pull request already exists', Diagnosis.FORGE_REFUSED)
+        raise ForgeCallFailed(Report(('POST', 'pulls'), (exists,), 1))
+
+    monkeypatch.setattr(forge, 'pr_create', refused)
+
+
+def test_a_422_with_an_open_pr_for_the_head_is_that_pr(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Another pass opened the continuation between our read and our create: that open PR IS the result."""
+    forge = StateForge()
+    landed = _merged(forge)
+    _raced(forge, monkeypatch, open_one=True)
+    [number] = _opened(forge, {'pr/x': _TIP})
+    assert number != landed
+    assert forge.pr_view(number).state == 'open'
+
+
+def test_a_refused_create_with_no_open_pr_still_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL: a refusal no open PR explains is a failure, never a silent success."""
+    forge = StateForge()
+    _merged(forge)
+    _raced(forge, monkeypatch, open_one=False)
+    with pytest.raises(ForgeCallFailed):
+        _opened(forge, {'pr/x': _TIP})

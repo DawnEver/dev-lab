@@ -20,6 +20,8 @@ WHO OPENS IT, the same function on both forges:
 * GitHub: the ``continue.yml`` workflow on a push to any other branch runs ``forge pr continue --head <branch>
   --sha <sha>`` (:func:`main`). A PR the job token opens starts no workflow, so the job then dispatches ci.yml on
   the branch with the PR's number (``workflow_dispatch``, ``-f pr=<N>``): that run is the PR's, at its head sha.
+  An integration branch with no ``pyproject.toml`` -- a repo's first adoption -- declares nothing, so nothing
+  continues and the job exits 0, saying so.
 
 A person or agent runs ``python -m dev_lab.dev.forge pr continue [--head <branch> --sha <sha>]``.
 """
@@ -38,10 +40,10 @@ from lab_commons.log import emit
 from dev_lab.dev.branchreview import carried_after, chained, context
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.forgealarm import PRUNED, Alarm
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_by_head, pr_list
 from dev_lab.dev.forgereview_declared import review_at
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 
 if TYPE_CHECKING:
@@ -92,7 +94,15 @@ def open_continuation(client: Client, landed: PullRequest, *, reviewers: Sequenc
     record = chained(client, landed.head, landed.number)
     carry = carried_after(client, record, record.prs, reviewers)
     body = continues_body(landed, context(carry) if carry else '')
-    pull = client.pr_create(continues_title(landed), body, head=landed.head, base=landed.base, draft=False)
+    try:
+        pull = client.pr_create(continues_title(landed), body, head=landed.head, base=landed.base, draft=False)
+    except ForgeCallFailed:
+        # Another pass (the CI step or the serve tick) opened the head's PR between our read and this create: the
+        # forge refuses a second one (422), and that open PR IS the continuation. Anything else stays a failure.
+        newest = pr_by_head(client, landed.head, landed.base)
+        if newest is None or newest.state != 'open' or newest.number == landed.number:
+            raise
+        pull = newest
     chained(client, landed.head, pull.number)
     return pull
 
@@ -161,6 +171,11 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None, client: 
     root = Path.cwd() if cwd is None else cwd
     try:
         policy = load_policy(root)
+        if git_out(root, 'ls-tree', '--name-only', f'origin/{policy.integration}', '--', 'pyproject.toml') == '':
+            emit(
+                f'[forge] pr continue: origin/{policy.integration} declares nothing (first adoption); nothing continues'
+            )
+            return 0
         forge = client or client_for(root)
         if args.head:
             if args.head in {policy.integration, policy.trunk}:

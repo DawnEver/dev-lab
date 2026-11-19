@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
@@ -23,6 +24,7 @@ from lab_commons.home import HOME_ENV
 from dev_lab.dev import _dep_project, forgeserve, metrics, reviewruntime, uvfollow
 from dev_lab.dev.lockcheck import uv_version
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.producer import OUTCOME_VAR
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
 
 
@@ -33,6 +35,11 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'lab-commons-home'))
     monkeypatch.delenv(INSIDE_ENV, raising=False)  # the verify running these tests is boxed; a test is not
     monkeypatch.delenv(CPU_ENV, raising=False)
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)  # a test plants the session it means
+    monkeypatch.delenv('CODEX_THREAD_ID', raising=False)
+    monkeypatch.delenv('CODEX_SESSION_ID', raising=False)
+    # the serve running this suite named ITS outcome record here: a test's planted outage must never declare it
+    monkeypatch.delenv(OUTCOME_VAR, raising=False)
 
 
 #: What a CI job's environment carries that no test may inherit: the run id (every simulated review host would
@@ -137,6 +144,19 @@ def _the_declared_uv(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: uv_version())
     monkeypatch.setattr(uvfollow, 'run_network_verb', _no_installer)
+
+
+def _invoking_stands_in(_root: Path, python: str) -> str:
+    return python if Path(python).is_file() else sys.executable
+
+
+@pytest.fixture(autouse=True)
+def _an_env_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test's tmp project has no venv, so the invoking interpreter stands in as its own; every uv run is faked.
+
+    Planted control, restoring the real refusal: test_dev_sync_owns_its_env.
+    """
+    monkeypatch.setattr(_dep_project, 'own_interpreter', _invoking_stands_in)
 
 
 def _no_installer(argv: Sequence[str], **_kwargs: object) -> Report:

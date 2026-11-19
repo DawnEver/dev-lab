@@ -180,6 +180,7 @@ def test_metadata_reads_pulls_reviews_statuses_and_issues() -> None:
 
 class _Answer:
     status = 200
+    will_close = True
 
     def getheader(self, _name: str) -> None:
         return None

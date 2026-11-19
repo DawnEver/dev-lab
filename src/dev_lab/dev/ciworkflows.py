@@ -9,7 +9,8 @@ another forge's base workflow, or declares one of its own. The layers are
 deep-merged (tables key by key; anything else replaces) and each workflow is written to
 ``.github/workflows/<file>.yml`` as JSON -- JSON is YAML, so the stdlib renders it and no YAML library
 is needed. Nothing ever parses a workflow back: the drift check compares RENDERED BYTES to the file,
-and a workflow file the table does not declare is refused as hand-written.
+and a workflow file the table does not declare is refused as hand-written. ``render`` removes a file an
+earlier render stamped (:data:`RENDERED_BY`) that nothing declares now, and never a file without the stamp.
 
 A WORKFLOW NAMES ITS FORGE. A table's ``forge`` key (:data:`FORGE_KEY`, ``github`` when omitted) places it in that
 forge's directory (:data:`WORKFLOW_DIRS`) and is never rendered: Gitea Actions runs ``.gitea/workflows`` and, once
@@ -17,8 +18,13 @@ that exists, ignores ``.github/workflows``. Both forges' workflows draw on the s
 share -- the review itself -- has one source. A workflow either forge may run keeps what differs in its
 ``by-forge`` table (:data:`BY_FORGE`, never rendered): the part named by the merged ``forge`` is merged over the rest.
 
-THE NIGHTLY TIME IS DECLARED ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
-rendered) schedules that workflow at it. Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
+THE NIGHTLY TIME DEFAULTS ONCE (:data:`~dev_lab.dev.nightlycron.NIGHTLY_CRON`). A table's ``nightly = true`` (never
+rendered) schedules that workflow at it; ``nightly = "<5-field cron>"`` in a repo's layer schedules it at that time
+instead (user ruling D63, 2026-11-18: the time is a per-repo setting); a malformed cron is refused by name.
+Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
+
+THE BRANCHES ARE THE REPO'S DECLARATION: :data:`INTEGRATION_PLACEHOLDER` in any string renders as the repo's
+``[tool.dev_lab.integrator] integration`` (user ruling 2026-11-12: a one-branch repo merges into ``main``).
 
 SHARED STEPS ARE DECLARED ONCE. The top-level ``_steps`` table (the base's, the repo's ``[tool.dev_lab.ci._steps]``
 merged over it) names step lists; a step ``{ use-steps = "<name>" }`` in any job is replaced by that list at render,
@@ -32,13 +38,24 @@ A JUDGE REPO RENDERS ITS PREPARE WORKFLOW, undeclared: when the repo's ``[tool.d
 base's :data:`PREPARE` table is rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one
 name the judge reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that
 name merged over it; the layer's ``forge`` picks the forge it runs on (Gitea by default). Any other repo renders
-none, and a layer of that name there is refused.
+none, and a layer of that name there is refused. Such a repo renders no job the base marks ``served``
+(:data:`SERVED_KEY`, :func:`served_only`): its verdict is the judge's, so a job reviewing on the runner could only
+fail its check; a workflow left with no job is not rendered.
 
 A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of a workflow a PR event starts (:data:`PR_EVENTS`) is
 AND-guarded at render by :data:`~dev_lab.dev.forgedraft.READY_ONLY` (:func:`ready_only`) -- never typed per job.
 
-A PART FED BY A SECRET gets its own job, cut from the matrix ``part`` job (:func:`dev_lab.dev.jobparts.hosted_jobs`):
-the one place a repo's ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
+WHO PRODUCES IS THE FORGE'S DATA (:attr:`~dev_lab.dev._forgebackends.Backend.producers`, user ruling 2026-11-11):
+a repo whose review is a producer its forge does not wire is refused at render (:func:`placed`). The judge host is
+wired on both forges, and ADVISORY: its verdict never gates a merge (:data:`~dev_lab.dev._forgebackends.ADVISORY`).
+
+THE PRODUCER DECIDES WHAT RUNS HERE (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16): an ``actions`` repo
+renders :data:`~dev_lab.dev.producers.CI_WORKFLOW`, whose ``jobparts produce`` posts ``tests/base``; an ``hpc``
+repo renders no ``ci.yml`` on any forge and nothing at all into ``.github/workflows`` -- the HPC posts its parts.
+
+A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix ``part`` job
+(:func:`dev_lab.dev.jobparts.hosted_jobs`): the one place a repo's
+``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
 THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins
 (dev-lab #18), and the ``method`` steps the ai-lab commit THAT dev-lab's lock pins (its ``review`` group) --
@@ -52,29 +69,33 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import tomllib
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from lab_commons.log import emit
 
-from dev_lab.dev._forgebackends import backend_for
+from dev_lab.dev import hostedparts, jobparts
+from dev_lab.dev._forgebackends import BACKENDS, JUDGE_HOST, backend_for, require_producer
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_declared import JUDGE, review_from
-from dev_lab.dev.jobparts import hosted_jobs, hosted_parts
+from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
+from dev_lab.dev.nightlycron import scheduled
+from dev_lab.dev.producers import producer_from, renders
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
 __all__ = [
     'BASE_PATH',
     'BY_FORGE',
     'FORGE_KEY',
+    'INTEGRATION_PLACEHOLDER',
     'LIGHT',
-    'NIGHTLY_CRON',
-    'NIGHTLY_KEY',
     'PREPARE',
     'PR_EVENTS',
+    'RENDERED_BY',
     'RENDER_COMMAND',
     'RUNNERS',
     'SHARED',
@@ -82,8 +103,11 @@ __all__ = [
     'USE_STEPS',
     'WORKFLOW_DIRS',
     'base_names',
+    'declared_forge',
     'drift',
     'expand',
+    'follow_checks',
+    'measurement_isolated',
     'merge',
     'placed',
     'ready_only',
@@ -107,6 +131,8 @@ RUNNERS: Final = '_runners'
 #: The label of the small-memory runner every job that holds no review method nor key runs on.
 LIGHT: Final = 'light'
 
+#: In any base or layer string, the repo's declared integration branch (``[tool.dev_lab.integrator]``), at render.
+INTEGRATION_PLACEHOLDER: Final = '@integration@'
 #: The key of a step that stands for a named list of :data:`SHARED`.
 USE_STEPS: Final = 'use-steps'
 #: The directory each forge's Actions runs its workflows from.
@@ -116,11 +142,9 @@ WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('
 FORGE_KEY: Final = 'forge'
 #: The table key holding each forge's part of a workflow either may run; only the chosen forge's is merged in.
 BY_FORGE: Final = 'by-forge'
-#: The table key asking for the nightly schedule; a trigger, never part of the rendered workflow.
-NIGHTLY_KEY: Final = 'nightly'
-#: When every nightly workflow runs (D48-1A, user ruling 2026-11-01): 02:00 UTC.
-NIGHTLY_CRON: Final = '0 2 * * *'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
+#: A job key, never rendered: ``served = true`` marks a job that reviews on the runner (``forge review run``).
+SERVED_KEY: Final = 'served'
 
 
 def runner_labels() -> dict[str, str]:
@@ -128,9 +152,11 @@ def runner_labels() -> dict[str, str]:
     return dict(tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))[RUNNERS])
 
 
+#: How every rendered workflow's first line starts, whatever its stamp said then: the proof a file was rendered.
+RENDERED_BY: Final = '# Rendered by dev_lab.dev.ciworkflows '
 #: The first line of every rendered workflow -- a YAML comment, so the JSON body below stays valid YAML.
 STAMP: Final = (
-    f'# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + '
+    f'{RENDERED_BY}from TOML (dev_lab/dev/ci_base.toml + '
     f'[tool.dev_lab.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `{RENDER_COMMAND}`.'
 )
 
@@ -195,6 +221,64 @@ def ready_only(workflow: dict[str, Any]) -> dict[str, Any]:
     return {**workflow, 'jobs': {name: guarded(job) for name, job in workflow['jobs'].items()}}
 
 
+def measurement_isolated(workflow: dict[str, Any]) -> dict[str, Any]:
+    """A measurement dispatch cannot run ANY normal job, including a consumer-added job. PURE.
+
+    Applied after shared setup expansion so every consumer retains its own environment profile,
+    while this job alone leaves no checkout credential for tested code to inherit.
+    """
+    if 'measurement' not in workflow.get('jobs', {}):
+        return workflow
+    guard = "inputs.measurement_paths == '' && inputs.measurement_sha == ''"
+    jobs = {}
+    for name, job in workflow['jobs'].items():
+        if name == 'measurement':
+            if job.get('permissions') != {'contents': 'read'}:
+                msg = 'measurement requires exactly contents: read, never status or merge authority'
+                raise ValueError(msg)
+            environments = [job.get('env', {}), *(step.get('env', {}) for step in job['steps'])]
+            if any({'GITHUB_TOKEN', 'GH_TOKEN'} & set(env) for env in environments) or re.search(
+                r'\$\{\{[^}]*\bsecrets\.', json.dumps(job)
+            ):
+                msg = 'measurement setup may not receive forge tokens or family secrets'
+                raise ValueError(msg)
+            steps = [
+                {**step, 'with': {**step.get('with', {}), 'persist-credentials': False}}
+                if step.get('uses', '').startswith('actions/checkout@')
+                else step
+                for step in job['steps']
+            ]
+            jobs[name] = {**job, 'steps': steps}
+        else:
+            own = f' && ({_bare(job["if"])})' if 'if' in job else ''
+            jobs[name] = {**job, 'if': f'${{{{ ({guard}){own} }}}}'}
+    return {**workflow, 'jobs': jobs}
+
+
+def needs(job: dict[str, Any]) -> set[str]:
+    """The jobs *job* ``needs``: Actions takes one name or a list."""
+    named = job.get('needs', [])
+    return {named} if isinstance(named, str) else set(named)
+
+
+def served_only(workflow: dict[str, Any], *, judge: bool) -> dict[str, Any]:
+    """*workflow* without its :data:`SERVED_KEY` marks; for a *judge* repo, without the jobs they mark either. PURE.
+
+    A judge repo's verdict is the judge host's, so a job reviewing on the runner could only say "not reviewed
+    here" and fail its check. A job that ``needs`` a dropped job is dropped with it.
+    """
+    if 'jobs' not in workflow:
+        return workflow
+    jobs = dict(workflow['jobs'])
+    dropped = {name for name, job in jobs.items() if judge and job.get(SERVED_KEY)}
+    while grown := {n for n, job in jobs.items() if n not in dropped and dropped & needs(job)}:
+        dropped |= grown
+    kept = {
+        name: {k: v for k, v in job.items() if k != SERVED_KEY} for name, job in jobs.items() if name not in dropped
+    }
+    return {**workflow, 'jobs': kept}
+
+
 def _declared(root: Path) -> tuple[str, dict[str, Any]]:
     """*root*'s ``pyproject.toml`` text (empty when absent) and its ``[tool.dev_lab.ci]`` tables."""
     pyproject = root / 'pyproject.toml'
@@ -216,15 +300,25 @@ def repo_forge(root: Path) -> str:
         return backend_for(forge_from_remote(root)).name
     except UnreadableRemote:
         pass
+    return declared_forge(_declared(root)[0], str(root))
+
+
+def declared_forge(text: str, origin: str) -> str:
+    """The one forge every workflow pyproject *text* declares is placed on (its own ``forge`` key, else the base's).
+
+    Raises:
+        ValueError: the declarations name no single forge; *origin* names the text in the refusal.
+
+    """
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     forges = {
         layer.get(FORGE_KEY, base.get(name, {}).get(FORGE_KEY, 'github'))
-        for name, layer in _declared(root)[1].items()
+        for name, layer in declared_table(tomllib.loads(text), 'ci', {}).items()
         if name != SHARED
     }
     if len(forges) != 1:
         msg = (
-            f'{root}: no `origin` remote and its [tool.dev_lab.ci] tables name {sorted(forges) or "no"} forge(s) -- '
+            f'{origin}: no `origin` remote and its [tool.dev_lab.ci] tables name {sorted(forges) or "no"} forge(s) -- '
             f'add the `origin` remote, or declare a workflow placed on the one forge it is hosted on'
         )
         raise ValueError(msg)
@@ -260,26 +354,76 @@ def placed(text: str, origin: str, forge: str) -> dict[str, tuple[Path, dict[str
         declared.setdefault(name, {})
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
     prepare = base.pop(PREPARE)
-    if review_from(text, origin).where == JUDGE:
+    judge = review_from(text, origin).where == JUDGE
+    if judge:
+        require_producer(BACKENDS[forge], JUDGE_HOST, f'{origin}: [tool.dev_lab.review] where = "{JUDGE}"')
         base[PREPARE_WORKFLOW] = prepare
         declared.setdefault(PREPARE_WORKFLOW, {})
     elif PREPARE_WORKFLOW in declared:
         msg = f'[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]: rendered only for [tool.dev_lab.review] where = "{JUDGE}"'
         raise ValueError(msg)
-    hosted = hosted_parts(text)
+    hosted = hostedparts.hosted_parts(text)
+    integration = _integration(text, origin)
+    producer = producer_from(text, origin)
     out = {}
     for name, layer in sorted(declared.items()):
         merged = merge(base.get(name, {}), layer)
         forge = merged.pop(FORGE_KEY, 'github')
+        if not renders(producer, name, forge):
+            continue  # an HPC repo: GitHub Actions never runs it, nothing posts its tests/base (2026-11-16)
         merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
-        workflow = ready_only(hosted_jobs(expand(merged, shared), hosted))
-        if workflow.pop(NIGHTLY_KEY, False):
-            workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
+        expanded = jobparts.hosted_jobs(expand(served_only(merged, judge=judge), shared), hosted)
+        workflow = ready_only(measurement_isolated(expanded))
+        if 'jobs' in workflow and not workflow['jobs']:
+            continue  # every job reviewed on the runner, in a judge repo: nothing to render
+        workflow = scheduled(workflow, f'[tool.dev_lab.ci."{name}"]')
         if forge not in WORKFLOW_DIRS:
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)
-        out[name] = (WORKFLOW_DIRS[forge], workflow)
+        out[name] = (WORKFLOW_DIRS[forge], cast('dict[str, Any]', _named(workflow, integration)))
+    return follow_checks(out)
+
+
+def follow_checks(rendered: dict[str, tuple[Path, dict[str, Any]]]) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """*rendered* with each ``workflow_run`` trigger following the CHECK workflows rendered beside it. PURE.
+
+    A check workflow is one a PR runs (a ``pull_request``-family event) in the same forge directory; the trigger
+    names exactly those, so a repo without the Review workflow fires its merger on its own checks. With none, the
+    ``workflow_run`` trigger is dropped and the workflow's other triggers (the schedule) stand.
+    """
+    out = dict(rendered)
+    for name, (where, workflow) in rendered.items():
+        run = workflow.get('on', {}).get('workflow_run')
+        if run is None:
+            continue
+        checks = sorted(
+            other['name']
+            for key, (there, other) in rendered.items()
+            if key != name and there == where and any(e.startswith('pull_request') for e in other.get('on', {}))
+        )
+        on = {event: value for event, value in workflow['on'].items() if event != 'workflow_run'}
+        if checks:
+            on = {'workflow_run': {'workflows': checks, **run}, **on}
+        out[name] = (where, {**workflow, 'on': on})
     return out
+
+
+def _integration(text: str, origin: str) -> str:
+    """The integration branch pyproject *text* declares; :data:`FAMILY_INTEGRATION` when it declares no table."""
+    if not declared_table(tomllib.loads(text), 'integrator', {}):
+        return FAMILY_INTEGRATION
+    return policy_from(text, origin).integration
+
+
+def _named(value: object, integration: str) -> object:
+    """*value* with :data:`INTEGRATION_PLACEHOLDER` in every string replaced by *integration*. PURE."""
+    if isinstance(value, str):
+        return value.replace(INTEGRATION_PLACEHOLDER, integration)
+    if isinstance(value, dict):
+        return {key: _named(item, integration) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_named(item, integration) for item in value]
+    return value
 
 
 def workflows(root: Path) -> dict[str, dict[str, Any]]:
@@ -313,14 +457,30 @@ def drift(root: Path) -> list[str]:
     return out
 
 
+def _rendered_here(path: Path) -> bool:
+    """Whether *path*'s first line is a render's stamp (:data:`RENDERED_BY`) -- never true of a hand-written file."""
+    with path.open(encoding='utf-8') as text:
+        return text.readline().startswith(RENDERED_BY)
+
+
 def write(root: Path) -> list[Path]:
-    """Render every declared workflow of *root* to its forge's directory; returns the paths written."""
+    """Render every declared workflow of *root* to its forge's directory; returns the paths written.
+
+    A workflow file an earlier render wrote (its stamp says so) and no table declares now is removed and named: left
+    behind, :func:`drift` would call it hand-written. A file without the stamp is never touched.
+    """
     written = []
     for name, (directory, workflow) in _placed(root).items():
         path = root / directory / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(render(workflow), encoding='utf-8', newline='\n')
         written.append(path)
+    for directory in WORKFLOW_DIRS.values():
+        if (root / directory).is_dir():
+            for path in sorted((root / directory).iterdir()):
+                if path.suffix in {'.yml', '.yaml'} and path not in written and _rendered_here(path):
+                    path.unlink()
+                    emit(f'[ciworkflows] removed {path}: rendered before, declared no longer')
     return written
 
 

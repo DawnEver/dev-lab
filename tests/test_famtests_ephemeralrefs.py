@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import ephemeralrefs, floors
+from dev_lab.dev.failprint import subjects_of
 from dev_lab.dev.famtests.ephemeralrefs import (
     assert_no_tracked_file_cites_ephemeral,
     assert_the_scanner_still_convicts,
@@ -92,4 +93,15 @@ def test_an_unread_tree_reds_on_the_floor(tmp_path: Path) -> None:
 
 def test_this_repo_cites_no_ephemeral_path() -> None:
     # Floor re-taken 2026-10-22 at 594 after the split left lab-commons' trees behind.
-    assert_no_tracked_file_cites_ephemeral(root=_REPO, floor=540, headroom=60)
+    # RE-MEASURED 2026-11-14 AT 1082: 1030 keeps 52 inside the 60 headroom.
+    assert_no_tracked_file_cites_ephemeral(root=_REPO, floor=1030, headroom=60)
+
+
+def test_the_citation_red_names_each_refusal_as_a_subject(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for the fingerprint: each refusal of the scan is one subject line."""
+    root = _repo(tmp_path, 'see output/x.json and output/y.json\n')
+    problems, _ = ephemeralrefs.scan(root)
+    assert len(problems) == 2, problems
+    with pytest.raises(AssertionError) as red:
+        assert_no_tracked_file_cites_ephemeral(root=root, floor=1, headroom=10)
+    assert subjects_of(str(red.value)) == set(problems)

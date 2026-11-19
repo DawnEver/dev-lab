@@ -23,7 +23,7 @@ import hashlib
 import importlib.util
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Final
 
@@ -47,6 +47,7 @@ __all__ = [
     'WAIT_S',
     'boxed',
     'claimed_width',
+    'declared_wall_s',
     'declared_worker_gb',
     'ended_in_the_box',
     'free_room',
@@ -57,6 +58,7 @@ __all__ = [
     'selection_producer',
     'selection_workers',
     'serial_width',
+    'wall_of',
     'xdist_installed',
 ]
 
@@ -76,7 +78,7 @@ UNENFORCED_PLATFORMS: Final = frozenset({'darwin'})
 SELECTION_CPU: Final = 4
 
 #: The wall a selection declares, in seconds: killed past it.
-SELECTION_WALL_S: Final = 3600
+SELECTION_WALL_S: Final = 3600  # the default; a repo declares its own as [tool.dev_lab.verify] wall_s (declared_wall_s)
 
 
 #: The spellings of an explicit pytest-xdist width, and the ones that mean "as many as the box".
@@ -160,6 +162,30 @@ def selection_mem_gb(repo: str, files: Sequence[str], workers: int, *, declared_
     return max(priced, round(max(1, workers) * declared_gb * learned.BOX_HEADROOM, 3))
 
 
+def declared_wall_s(root: Path) -> int:
+    """``[tool.dev_lab.verify] wall_s``: the repo's selection wall in seconds; :data:`SELECTION_WALL_S` when undeclared.
+
+    One hard-coded wall killed a repo whose full selection outgrew it every night (learn-lab, 2026-11-18); the
+    repository is the one place both a CI run and a forge host read, so it declares its own.
+
+    Raises:
+        ValueError: the key is present and is not a positive number of seconds.
+
+    """
+    manifest = root / 'pyproject.toml'
+    table = declared_table(read_toml(manifest), 'verify', {}) if manifest.is_file() else {}
+    return wall_of(table, manifest)
+
+
+def wall_of(table: Mapping[str, object], where: object) -> int:
+    """The ``wall_s`` of one parsed ``[tool.dev_lab.verify]`` *table* (read at *where*), else the default."""
+    value = table.get('wall_s', SELECTION_WALL_S)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        msg = f'[tool.dev_lab.verify] wall_s in {where} is {value!r}: declare the selection wall in whole seconds (> 0)'
+        raise ValueError(msg)
+    return value
+
+
 def declared_worker_gb(root: Path) -> float:
     """``[tool.dev_lab.verify] worker_mem_gb``: one worker's MEASURED peak in GB, ``0.0`` when undeclared.
 
@@ -190,13 +216,17 @@ def selection_producer(files: Sequence[str]) -> str:
 
 
 def learn_ended(root: Path, argv: Sequence[str], record: Path | None) -> None:
-    """Keep what the box measured of this selection's whole tree; a memory kill is a floor that grows."""
+    """Keep what the box measured of this selection's whole tree, by how it ended.
+
+    ``record_run`` prices only an exit and a memory kill (a floor that grows): a run the wall cut stopped
+    mid-climb teaches nothing, so it never refuses the next measure for memory it was never shown to need.
+    """
     ended = None if record is None else read_ended(record)
     if not isinstance(ended, ProcessEnd) or ended.peak_mem_bytes <= 0:
         return
     run = learned.Run(ended.peak_mem_bytes / GB, ended.cpu_s, max(ended.wall_s, 1e-3))
     producer = selection_producer(selection_files(root, argv))
-    learned.record_run(_repo(root), producer, (), run, killed=ended.reason == 'memory')
+    learned.record_run(_repo(root), producer, (), run, ended=ended.reason)
 
 
 def claimed_width(argv: Sequence[str], cpu: str | None, *, xdist: bool) -> list[str]:
@@ -238,7 +268,7 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     return command(
         run,
         demand,
-        SELECTION_WALL_S,
+        declared_wall_s(root),
         queue_s,
         key=f'verify:{root}',
         what=f'verify:{root.name}',
@@ -267,7 +297,7 @@ def ended_in_the_box(record: Path | None) -> tuple[str, ...]:
     if ended is None:
         return (f'the box crashed: it left no record at {record} of how pytest ended',)
     if ended.killed:
-        return (f'the box killed pytest past its declared memory or {SELECTION_WALL_S} s ({ended.reason})',)
+        return (f'the box killed pytest past its declared memory or wall ({ended.reason})',)
     return ()
 
 

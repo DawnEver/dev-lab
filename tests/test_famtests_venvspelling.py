@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev.failprint import subjects_of
 from dev_lab.dev.famtests.venvspelling import (
     SANCTIONED_SPELLERS,
     Spelling,
@@ -95,7 +96,18 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-11-07 AT 442 (CI's walk; the consent ops, forgescope, partrefs, prcurrent, locklag): floor 415.
 #: RE-TAKEN 2026-11-08 AT 456 (the 11-08 wave: forgesubmit, prcontinue, agentpolicy, ops disk): floor 430.
 #: RE-TAKEN 2026-11-10 AT 471 (CI's walk; the 11-09/11-10 waves: hpcaccount forget, configcheck): floor 445.
-FILE_FLOOR = 445
+#: RE-TAKEN 2026-11-11 AT 485 (the 11-10 night wave: datadeps, dataconsumers, forgedataruns, giteaadmin, secretplace):
+#: floor 460.
+#: RE-TAKEN 2026-11-12 AT 501 (CI's walk; the 11-12 wave: sessionprs doors, reclaim triggers, ops protection):
+#: floor 476.
+#: RE-TAKEN 2026-11-12 AT 504 (the merged walk: the 11-12 wave plus the hpcaccount credential door): floor 479.
+#: RE-TAKEN 2026-11-13 AT 528 (CI's walk on e2d492ff, the 11-13 wave): floor 503.
+#: RE-TAKEN 2026-11-15 AT 544 (the 11-14 toolchain wave: taskgate, retention, mainsync, retentionrust): floor 519.
+#: RE-TAKEN 2026-11-16 AT 580 (the toolchain wave: hookdispatch, backgroundrun, venv_resolver, codexdeny,
+#: hpcaccount drift/declaration, the cicron and subagent-heavy rows): floor 555.
+#: RE-TAKEN 2026-11-17 AT 596 (the 11-17 wave: repostate, hostedparts, deletejudge, pushdelete): floor 571.
+#: RE-TAKEN 2026-11-19 AT 617 (the L3 refs: artefactfolder, artefactindex, artefactrestore, artefactstores): floor 592.
+FILE_FLOOR = 592
 
 
 def _tree() -> dict[str, str]:
@@ -276,3 +288,13 @@ def test_a_comment_is_not_scanned_because_nobody_pastes_one_as_code() -> None:
     """Comments record the retirement; the replacement is named in ``venvpath``."""
     windows = venv_interpreter(os_name='nt')
     assert not spellings_in({'x.py': f'# it used to read {windows} here\nX = 1\n'})
+
+
+def test_the_spelling_red_names_each_site_as_a_subject() -> None:
+    """THE PLANTED CONTROL for the fingerprint: each convicted site is one subject line."""
+    files = {'a.py': "PY = '.venv/Scripts/python.exe'\nQ = '.venv/bin/python'\n"}
+    found = spellings_in(files, frozenset())
+    assert len(found) == 2, found
+    with pytest.raises(AssertionError) as red:
+        assert_only_the_resolver_spells_a_venv_interpreter(files=files, sanctioned=(), floor=1, what='planted')
+    assert subjects_of(str(red.value)) == {str(item) for item in found}

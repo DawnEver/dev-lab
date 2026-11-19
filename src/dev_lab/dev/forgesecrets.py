@@ -49,6 +49,7 @@ from lab_commons.credentials import NoCredential, credential_for, store_credenti
 from lab_commons.home import repos
 from lab_commons.log import emit
 
+from dev_lab.dev import gitdirs
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgesecretnames import Reader, listed
@@ -208,7 +209,7 @@ def _store(
 
 def _in_checkout(path: Path) -> Path | None:
     """The git checkout *path* sits in (a ``.git`` dir or file above it), ``None`` when none."""
-    return next((parent for parent in path.parents if (parent / '.git').exists()), None)
+    return gitdirs.checkout_of(path.parent)
 
 
 def _read_source(task: str, source: Path) -> tuple[str, str]:

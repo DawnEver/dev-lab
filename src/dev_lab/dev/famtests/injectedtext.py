@@ -1,7 +1,7 @@
 """INJECTED-TEXT-IS-PROGRESSIVE, as the assertions a consumer runs over the refusals it ships.
 
 The budget is :data:`dev_lab.dev.disclosure.BUDGETS`; this module only applies it. Details:
-``docs-src/dev/refusals.md#the-shape-of-a-refusal`` (lab-commons).
+``docs-src/dev/refusals.md#the-shape-of-a-refusal`` (dev-lab).
 """
 
 from __future__ import annotations

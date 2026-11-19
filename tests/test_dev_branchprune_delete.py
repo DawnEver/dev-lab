@@ -10,11 +10,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
 from dev_lab.dev.branchdelete import delete
+from dev_lab.dev.branchprune import main
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
 
@@ -94,7 +96,11 @@ def test_a_raw_remote_delete_is_still_refused_and_its_remedy_names_the_door() ->
     """PLANTED control: the door's own invocation is permitted."""
     assert denies(DENY_RULES, 'git -C ../sib push origin --delete lane/x') == 'PUSH-REMOTE-DELETE'
     assert denies(DENY_RULES, 'sh scripts/hooks/with-retry.sh push origin :lane/x') == 'PUSH-REMOTE-DELETE'
-    assert 'dev_lab.dev.branchprune delete' in str(rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy)
+    remedy = str(rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy)
+    assert 'dev_lab.dev.branchprune delete <branch>' in remedy
+    assert 'delete-tag' not in remedy, 'D22 retired the tag delete'
+    assert '--approved' not in remedy, 'D22 retired the approved delete'
+    assert 'git merge -s ours' in remedy, 'a refused branch is merged or landed, never tagged'
     assert denies(DENY_RULES, '.venv/Scripts/python.exe -m dev_lab.dev.branchprune delete lane/x') is None
 
 
@@ -208,3 +214,41 @@ def test_a_line_deletion_is_refused(tmp_path: Path) -> None:
     run_git(work, 'push', '-q', '--no-verify', 'origin', 'HEAD:refs/heads/pr/x')
     run_git(work, 'fetch', '-q', 'origin')
     _refused_naming(work, 'pr/x', 'two.txt')
+
+
+def test_a_lossy_refusal_names_the_merge_door_never_a_tag(tmp_path: Path) -> None:
+    """D22 (2026-11-17): "either merge or delete" -- the refusal names MERGE and the declared `-s ours` landing.
+
+    PLANTED control: a contained branch beside it still deletes, so the refusal is the content, not the door.
+    """
+    _, work = clone_pair(tmp_path)
+    _branch_at(work, 'feat/done', advance(work, 'integrate/main', 'i.txt', 'i\n'))
+    advance(work, 'lane/mine', 'm.txt', 'm\n')
+    code, said, _ = _delete(work, StateForge(), 'lane/mine', 'feat/done')
+    assert code == 1
+    assert _on_origin(work, 'lane/mine')
+    assert not _on_origin(work, 'feat/done')
+    refusal = next(line for line in said if line.startswith('lane/mine: refused'))
+    assert 'MERGE what is still wanted' in refusal
+    assert 'merge origin/lane/mine into a pr/ branch with `git merge -s ours`' in refusal
+    assert '`<path>: <class> -- <why>`' in refusal
+    assert 'Merge-Audit:' in refusal
+    assert 're-run `branchprune delete lane/mine`' in refusal
+    assert 'tag' not in refusal.replace('no tags', ''), 'no tag door survives D22'
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['delete', 'lane/x', '--approved', 'drop it'],
+        ['delete', 'lane/x', '--approved=drop it'],
+        ['delete-tag', 'v1.0', '--approved', 'drop it'],
+    ],
+)
+def test_the_retired_tag_held_spellings_are_refused_by_name(argv: list[str], tmp_path: Path, capsys) -> None:
+    """RETIRED-NAMES-REGISTERED: refused before any fetch or forge call, naming the spelling and its door."""
+    assert main(argv, cwd=tmp_path) == 2
+    err = capsys.readouterr().err
+    spelling = argv[0] if argv[0] == 'delete-tag' else '--approved'
+    assert f'`{spelling}` is retired' in err
+    assert 'dev_lab.dev.branchprune delete <branch>' in err

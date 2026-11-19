@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from lab_commons.launch import run
 
 from dev_lab.dev import ephemeralrefs, floors, venvpath
+from dev_lab.dev.failprint import subject_lines
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,7 +35,7 @@ def assert_no_tracked_file_cites_ephemeral(*, root: Path, floor: int, headroom: 
     floors.assert_floor_still_binds(read, floor=floor, headroom=headroom, what=ephemeralrefs.RULE)
     if problems:
         head = f'{ephemeralrefs.RULE}: {len(problems)} refusal(s); {ephemeralrefs.REMEDY}:'
-        msg = '\n  '.join((head, *problems))
+        msg = '\n  '.join((head, *problems)) + '\n' + subject_lines(problems)
         raise AssertionError(msg)
 
 

@@ -31,26 +31,27 @@ set, every created issue body, PR body and comment opens with ``[<machine> · <a
 from __future__ import annotations
 
 import dataclasses
+import functools
 import hashlib
+import http.client
 import json
-import os
 import time
 import urllib.parse
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Final, cast
 
 from dev_lab.dev import forge as _forge
+from dev_lab.dev import sessionprs
 from dev_lab.dev._forge_journal import (
     LOOKBACK,
     Durable,
     Journal,
     Probe,
     Write,
-    journal_at,
-    outbox_dir,
     since,
     write_key,
 )
@@ -62,14 +63,12 @@ from dev_lab.dev._forgebackends import (
     GITHUB,
     GITHUB_HOST,
     Backend,
-    actions_token,
     backend_for,
 )
+from dev_lab.dev._forgework_kept import KeptReads
 from dev_lab.dev.forge import (
     Forge,
     Transport,
-    forge_from_remote,
-    forge_of_url,
     forge_transport,
 )
 from dev_lab.dev.forgecred import CredentialRefresh
@@ -80,11 +79,13 @@ from dev_lab.dev.forgefailure import (
     Answer,
     ForgeCallFailed,
     diagnose,
+    permission_refused,
     rate_limited,
     retried,
 )
 from dev_lab.dev.forgememo import ReadMemo
-from dev_lab.dev.forgestamp import provenance
+from dev_lab.dev.forgepages import issues
+from dev_lab.dev.forgethreads import record_own
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 __all__ = [
@@ -99,11 +100,9 @@ __all__ = [
     'Issue',
     'PullRequest',
     'backend_for',
-    'client_for',
     'comment_of',
     'is_pull',
     'pull_of',
-    'stored_client',
 ]
 
 #: What GitHub answers a workflow job token asking `/user`: only this answer, from GitHub, names the Actions bot.
@@ -144,6 +143,8 @@ class Client:
     _kept: bool = dataclasses.field(default=False, init=False, repr=False)
     #: The ``Location`` of the latest answer, ``''`` when it named none: where a redirect points.
     _location: str = dataclasses.field(default='', init=False, repr=False)
+    #: Each thread's kept READ connection per host: a connect and a TLS handshake are paid once, not per GET.
+    _kept_reads: KeptReads = dataclasses.field(default_factory=KeptReads, init=False, repr=False)
 
     @property
     def backend(self) -> Backend:
@@ -152,24 +153,41 @@ class Client:
 
     def _once(
         self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *,
-        accept: str = '', authed: bool = True,
+        accept: str = '', authed: bool = True, extra: Mapping[str, str] | None = None,
     ) -> Answer:  # fmt: skip
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
-        conn = self.transport(host or backend.host(self.forge), self.timeout)
-        try:
-            # authed: no credential follows a redirect; no token: an anonymous read of a public repo
-            sent = {'Authorization': auth} if authed and self.token else {}
-            sent |= {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)} | dict(backend.headers)
-            sent |= {'Accept': accept} if accept else {}
-            conn.request(method, path, body=data, headers=sent)
-            response = conn.getresponse()
-            self.answered = response.getheader('Date') or self.answered
-            self._location = response.getheader('Location') or ''
-            said = {name: value for name in RATE_HEADERS if (value := response.getheader(name))}
-            return Answer(response.status, response.read(), said)
-        finally:
-            conn.close()
+        target = host or backend.host(self.forge)
+        # authed: no credential follows a redirect; no token: an anonymous read of a public repo
+        sent = {'Authorization': auth} if authed and self.token else {}
+        sent |= {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)} | dict(backend.headers)
+        sent |= {'Accept': accept} if accept else {}
+        sent |= dict(extra or {})
+        if method != 'GET':  # a write never rides a kept connection: a lost answer there reads as never sent
+            conn = self.transport(target, self.timeout)
+            try:
+                return self._exchange(conn, method, path, data, sent)[0]
+            finally:
+                conn.close()
+        fresh = functools.partial(self.transport, target, self.timeout)
+        return self._kept_reads.read(target, fresh, lambda conn: self._exchange(conn, 'GET', path, None, sent))
+
+    def _exchange(
+        self,
+        conn: http.client.HTTPConnection,
+        method: str,
+        path: str,
+        data: bytes | None,
+        sent: dict[str, str],
+    ) -> tuple[Answer, bool]:
+        """``(answer, whether the forge closes the connection after it)``."""
+        conn.request(method, path, body=data, headers=sent)
+        response = conn.getresponse()
+        self.answered = response.getheader('Date') or self.answered
+        self._location = response.getheader('Location') or ''
+        said = {name: value for name in (*RATE_HEADERS, 'ETag') if (value := response.getheader(name))}
+        payload = response.read()  # read whole: a kept connection's next answer starts after it
+        return Answer(response.status, payload, said), bool(response.will_close)
 
     def _diagnosis(self, answer: Answer, text: str, path: str) -> Diagnosis:
         """:func:`~dev_lab.dev.forgefailure.diagnose`, but a 401/403 that is no rate limit is MEASURED first.
@@ -191,7 +209,7 @@ class Client:
             except OSError:
                 return Diagnosis.TRANSIENT
         if status not in _forge.AUTH_REFUSED:
-            return Diagnosis.TRANSIENT
+            return Diagnosis.PERMISSION_REFUSED if permission_refused(answer.status, text) else Diagnosis.TRANSIENT
         return Diagnosis.TRANSIENT if status == UNAUTHENTICATED and self._refresh() else Diagnosis.FORGE_REFUSED
 
     def _refresh(self) -> bool:
@@ -221,6 +239,25 @@ class Client:
         """
         data = json.dumps(dict(body)).encode() if body is not None else None
         return self._request(method, path, data, 'application/json', durable)
+
+    def call_conditional(self, method: str, path: str, etag: str = '') -> tuple[int, str, Any]:
+        """One read sent with ``If-None-Match: <etag>``: ``(status, new ETag, JSON)``; a 304 is ``(304, etag, None)``.
+
+        A 304 is the forge saying nothing changed (GitHub does not count it against the rate limit). Any other
+        answer that is not a success is read again through :meth:`call`, the one door that retries and reports.
+        """
+        try:
+            answer = self._once(
+                method, path, None, 'application/json', None, extra={'If-None-Match': etag} if etag else None
+            )
+        except OSError:
+            answer = None
+        if answer is not None and answer.status == HTTPStatus.NOT_MODIFIED:
+            return 304, etag, None
+        if answer is not None and answer.status < HTTP_ERROR_FLOOR:
+            text = answer.payload.decode('utf-8', 'replace')
+            return answer.status, answer.headers.get('ETag', ''), json.loads(text) if text.strip() else None
+        return 200, '', self.call(method, path)
 
     def upload(self, path: str, *, field: str, filename: str, content: bytes, durable: Durable | None = None) -> Any:  # noqa: ANN401 -- JSON
         """A ``multipart/form-data`` POST of one file under *field*; its boundary is its content's hash (one key)."""
@@ -352,10 +389,8 @@ class Client:
             raise
 
     def issue_list(self, *, state: str = 'open', limit: int = 30) -> tuple[Issue, ...]:
-        """Issues in *state*, pull requests excluded (GitHub lists both under ``issues``)."""
-        query = self.backend.list_query.format(state=state, limit=limit)
-        listed = self.call('GET', f'{self.repo}/issues?{query}')
-        return tuple(_issue(raw) for raw in listed if not is_pull(raw))
+        """Issues in *state* among the first *limit* rows, read page by page (:func:`forgepages.issues`)."""
+        return issues(self.call, f'{self.repo}/issues?{self.backend.list_query}', state, limit)
 
     def issue_view(self, number: int) -> Issue:
         """One issue."""
@@ -371,7 +406,9 @@ class Client:
         """A comment on an issue (or a PR, which both forges number as an issue)."""
         path, payload = f'{self.repo}/issues/{number}/comments', {'body': self._stamped(body)}
         probe = Probe(f'{path}?since={since(self.clock())}', payload)
-        return comment_of(self.call('POST', path, payload, Durable(probe=probe)))
+        posted = comment_of(self.call('POST', path, payload, Durable(probe=probe)))
+        record_own(f'{self.forge.identity}#{number}')  # TASK-HEARS-ITS-FORGE-EVENTS: own words are never news
+        return posted
 
     def issue_edit(self, number: int, body: str) -> Issue:
         """Replace an issue's body; the body is state, so no provenance line is added."""
@@ -384,68 +421,19 @@ class Client:
     def pr_create(self, title: str, body: str, *, head: str, base: str, draft: bool) -> PullRequest:
         """A new pull request from *head* into *base*; a *draft* in the forge's own way (:mod:`dev_lab.dev.forgedraft`).
 
-        GitHub takes ``draft: true``; Gitea has no draft field, and reads its ``WIP:`` title prefix as one.
+        GitHub takes ``draft: true``; Gitea has no draft field, and reads its ``WIP:`` title prefix as one. Every
+        door that opens a PR comes through here, so here it is recorded as the running agent session's
+        (TASK-HEARS-ITS-FORGE-EVENTS, :func:`~dev_lab.dev.sessionprs.record_opened`), whatever a shell line printed.
         """
         if draft and self.backend is not GITHUB:
             title = draft_title(title)
         payload: dict[str, Any] = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
         if draft and self.backend is GITHUB:
             payload['draft'] = True
-        probe = Probe(self._recent('pulls'), {'title': title, 'body': payload['body']})
-        return pull_of(self.call('POST', f'{self.repo}/pulls', payload, Durable(probe=probe)))
+        durable = Durable(probe=Probe(self._recent('pulls'), {'title': title, 'body': payload['body']}))
+        made = self.call('POST', f'{self.repo}/pulls', payload, durable)
+        return sessionprs.noted(self.forge, pull_of(made), branch=head)
 
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""
         return pull_of(self.call('GET', f'{self.repo}/pulls/{number}'))
-
-
-def client_for(
-    root: Path,
-    *,
-    env: Mapping[str, str] | None = None,
-    transport: Transport = forge_transport,
-    remote: str = 'origin',
-    url: str = '',
-    token: str = '',
-    outbox: Path | None = None,
-) -> Client:
-    """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp.
-
-    A *token* given is the job token a workflow handed over by file (the review door, :mod:`reviewgitauth`).
-    Its journal and caches live in *outbox*: given by a role that holds no checkout (the judge's declared state),
-    else *root*'s main checkout's (:func:`~dev_lab.dev._forge_journal.outbox_dir`).
-    """
-    forge = forge_of_url(url) if url else forge_from_remote(root, remote=remote)
-    stamp = provenance(root, os.environ if env is None else env)
-    built = stored_client(forge, cwd=root, env=env, transport=transport, stamp=stamp, token=token)
-    built.cache_dir = outbox_dir(root) if outbox is None else outbox
-    built.journal = journal_at(built.cache_dir)
-    return built
-
-
-def stored_client(
-    forge: Forge,
-    *,
-    cwd: Path,
-    env: Mapping[str, str] | None = None,
-    transport: Transport = forge_transport,
-    stamp: str | None = None,
-    token: str = '',
-) -> Client:
-    """A client presenting the credential git's store holds for *forge*, refreshed as git does on a 401.
-
-    Inside a workflow job on the forge's own Actions the job token is the credential, never refreshed: the
-    *token* given, else the job's env (:func:`actions_token`).
-
-    Raises:
-        NoCredential: the store holds no credential for the host.
-
-    """
-    if job := token or actions_token(forge, os.environ if env is None else env):
-        return Client(forge, job, transport=transport, username=backend_for(forge).actions_login, stamp=stamp)
-    username, secret = _forge.credential_for(forge.host, cwd=cwd, env=env)
-
-    def refresh(refused_user: str, refused: str) -> CredentialRefresh:
-        return _forge.refresh_credential(forge.host, (refused_user, refused), cwd=cwd, env=env)
-
-    return Client(forge, secret, transport=transport, username=username, stamp=stamp, refresh=refresh)

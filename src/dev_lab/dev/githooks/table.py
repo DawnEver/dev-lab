@@ -32,7 +32,6 @@ __all__ = [
     'HookTableError',
     'base_rows',
     'hook_table',
-    'hook_table_from',
     'merge',
     'repo_rows',
 ]
@@ -70,6 +69,13 @@ class Hook:
     always_run: bool = False
     refs: str | None = None
     env: dict[str, str] = field(default_factory=dict)
+    #: It CREATES the checkout's own venv, so it runs on whichever dev_lab interpreter the shim found: a checkout
+    #: with no venv is the case it exists for (2026-11-13: a new worktree's hooks all skipped, the venv never came).
+    bootstraps: bool = False
+    #: Run as its own subprocess even when it is a ``python -m`` row the runner would run in process.
+    isolate: bool = False
+    #: It only SPEAKS (a notice, a warning): its output is shown whatever its exit, which never fails the stage.
+    advisory: bool = False
 
     def selects(self, path: str) -> bool:
         """Whether *path* (repo-relative, POSIX) is one this hook judges."""
@@ -173,6 +179,15 @@ def merge(
                     raise HookTableError(msg)
                 seen.add(hook_id)
                 merged[hook_id] = {**merged.get(hook_id, {}), **row}
+        for hook_id, row in merged.items():
+            if 'run' not in row:
+                ids = [base_row.get('id') for base_row in base.get(stage, ())]
+                msg = (
+                    f'{origin}: {stage} hook {hook_id!r} names no base row, so it needs `run`; the base {stage} '
+                    f'rows are {ids}. A retired id was folded into one of them: narrow that row instead, as its '
+                    'comment in dev_lab/dev/githooks/base.toml says.'
+                )
+                raise HookTableError(msg)
         hooks = tuple(_hook(stage, row, origin) for row in merged.values())
         if hooks:
             out[stage] = hooks
@@ -188,9 +203,3 @@ def hook_table(root: Path) -> dict[str, tuple[Hook, ...]]:
     """
     layer = repo_rows(root)
     return {} if layer is None else merge(base_rows(), layer, origin=str(root / 'pyproject.toml'))
-
-
-def hook_table_from(text: str, origin: str) -> dict[str, tuple[Hook, ...]]:
-    """:func:`hook_table` for manifest *text* read anywhere (a commit or tree, not the working tree)."""
-    hooks = declared_table(tomllib.loads(text), 'hooks')
-    return {} if hooks is None else merge(base_rows(), _rows(hooks, origin), origin=origin)

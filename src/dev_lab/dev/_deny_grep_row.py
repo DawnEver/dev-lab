@@ -19,6 +19,8 @@ RECURSIVE_GREP: dict[str, object] = {
     'hazard': 'a recursive grep walks every git-ignored tree (.venv, output, target) and can run for minutes.',
     'remedy': 'Search tracked files: git grep -n <pattern> [-- <paths>], or use the built-in Grep tool.',
     'needs': None,
+    # Measured 2026-11-16: `-r` on one named FILE was hinted; the engine admits a line whose operands are all files.
+    'admits': 'file-operands',
     # A HINT (toolchain plan P3): the hazard is minutes, not harm, and as a refusal it fired on
     # recursive greps of one small source tree too.
     'severity': 'hint',

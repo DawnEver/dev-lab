@@ -8,7 +8,9 @@ cluster is doing, run `forge queue` from anywhere; ssh is only a human's debuggi
 ## Deploy: one line per account
 
 On the login host you chose, store your own forge token once (`git config --global credential.helper store`,
-`chmod 600 ~/.git-credentials`, then `python -m dev_lab.dev.forge auth login`), then paste:
+`chmod 600 ~/.git-credentials`, then `python -m dev_lab.dev.forge auth login`; or, from the workstation, an agent
+places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount credential <user>@<login host> --login
+<forge login> --host-config <the forge host's reviewed config file>` with the token on stdin), then paste:
 
 ```
 [ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/dev-lab; { [ -d $D/.git ] || git clone -q -b integrate/main $F/dev-lab.git $D; } && git -C $D pull -q --ff-only && cd $D && ~/.local/bin/uv run --python 3.13 python -m dev_lab.dev.hpcaccount deploy --host <login host> --repo dev-lab=$F/dev-lab.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ... --role <verification|research>
@@ -50,15 +52,17 @@ On the login host you chose, store your own forge token once (`git config --glob
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
 - **The crontab line**, per served repo and the kit, every `[schedule] tick_minutes` (a divisor of 60,
   default 5; the host card is judged stale against the same number) at a minute offset derived from the
-  account's home, so accounts never tick in lockstep. A `repos` entry with `serve = false` is checked out and
-  installed but its queue is not served here: the kit keeps its line (its tick is the one writer of the kit
-  checkout, and only refreshes), any other such repo gets none. The line:
+  account's home, so accounts never tick in lockstep. Each tick refreshes its repo and serves its queue only
+  where the repo itself declares `[tool.dev_lab.protection] producer = "hpc"` (`dev_lab.dev.producers`, user
+  ruling 2026-11-16); an `actions` repo is checked out, installed and never served. The line:
   `<offset>-59/<minutes> * * * * PATH=...; cd ~/src/dev-lab && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo> >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
   hosts. A second host finding a live run owned by another host of its account leaves it alone until that
-  owner's lease lapses on the forge's clock.
+  owner's lease lapses on the forge's clock. The pin is for a SERVING account only: a research account installs no
+  cron line, so its `[deploy] host` may be any login host its grant declares -- an alias that round-robins over
+  several nodes included.
 - **Identity is read, never typed**: the claim names `<cluster>/<account>` from Slurm's `ClusterName` and
   `id -un` (`lab_commons.hpc.account`).
 - The cron `PATH` is `~/.local/bin:~/.cargo/bin:/usr/local/bin:/usr/bin:/bin` plus the directories `sbatch`, `sacct` and `squeue` resolve in when the deploy runs (it refuses without them); the deploy checks every tool
@@ -69,6 +73,14 @@ Once every account is deployed, a workstation re-deploys the whole fleet with
 account it reads that account's own `[deploy]` host, root and role, then one detached `ssh` to that host runs its
 `deploy`, one log each under
 `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log`. An account outside the grants is refused.
+
+**An account is a render, never a backup** (user ruling 2026-11-16). The config source -- `family.toml`
+(`[hpc.clusters.*]`, `[[hpc.grant]]`) and `hosts/<cluster>-<user>.toml` -- is the one truth; an account's machine
+file and this tool's crontab lines are renders of it, its checkouts are copies of origin, and its results are each
+agent's own. Nothing on an account is backed up. What an account holds that the source cannot render is read with
+`python -m dev_lab.dev.hpcaccount drift-fleet (--cluster <name> | --account <user>)...` (read only; secret-looking
+values print as a hash): fold each item into the config source, or discard it. `ci-pause-fleet` refuses an account
+while it drifts, naming each item; `--discard-drift` accepts the loss (`dev_lab.dev.hpcaccount.drift`).
 
 A learned row no run can supersede (an OOM-inflated `slurm|` peak, say) is forgotten on the accounts that hold it
 with `python -m dev_lab.dev.hpcaccount forget --repo <url> --row "slurm|" (--fleet | --account <user>...) [--dry-run]`:

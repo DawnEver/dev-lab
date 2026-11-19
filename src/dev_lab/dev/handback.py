@@ -22,8 +22,10 @@ from typing import Final, TextIO
 
 from lab_commons.log import emit
 
+from dev_lab.dev import walls
 from dev_lab.dev.disclosure import details_for
 
+RULE: Final = 'AGENT-RUNS-ITS-OWN-COMMANDS'
 #: How many handed commands the refusal quotes before it counts the rest.
 _SHOWN: Final = 2
 
@@ -55,7 +57,8 @@ _ASKS: Final = re.compile(
     r'|\u5728\u7ec8\u7aef(?:\u4e2d)?\u8fd0\u884c|\u8bf7(?:\u5728\u7ec8\u7aef)?(?:\u6267\u884c|\u8fd0\u884c))',
     re.IGNORECASE | re.MULTILINE,
 )
-_BANG: Final = re.compile(r'^\s*(?:[-*>]\s*)?`?!\s*([^`\n]+?)`?\s*$|`!\s*([^`\n]+)`', re.MULTILINE)
+#: ``! <cmd>``; ``![alt](src)`` is a markdown image, never a command (2026-11-16: a hand-back's figure blocked).
+_BANG: Final = re.compile(r'^\s*(?:[-*>]\s*)?`?!(?!\[)\s*([^`\n]+?)`?\s*$|`!(?!\[)\s*([^`\n]+)`', re.MULTILINE)
 _FENCE: Final = re.compile(r'```[^\n]*\n(.*?)```', re.DOTALL)
 _INLINE: Final = re.compile(r'`([^`\n]+)`')
 #: How far past an imperative its command may sit (the "Please run:\n\n```" shape).
@@ -98,11 +101,11 @@ def refusal(text: str) -> str | None:
         f' (+{len(runnable) - len(shown)} more)' if runnable[len(shown) :] else ''
     )
     return (
-        f'AGENT-RUNS-ITS-OWN-COMMANDS: this turn hands the user a command to run ({listed}); only an interactive '
+        f'{RULE}: this turn hands the user a command to run ({listed}); only an interactive '
         'login may go to the user.\n'
         "Run it yourself with absolute paths and report the result; if a guard refused it, follow that refusal's "
         'remedy, and if a permission check refused it, ask the user for the decision rather than the command.\n'
-        f'{details_for("AGENT-RUNS-ITS-OWN-COMMANDS")}'
+        f'{details_for(RULE)}'
     )
 
 
@@ -164,6 +167,10 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     except OSError:
         return 0
     if reason is not None:
+        walls.refused_text(
+            Path(payload.get('cwd') or Path.cwd()), reason, reason='stop', rule=RULE,
+            session=str(payload.get('session_id') or ''),
+        )  # fmt: skip
         emit(json.dumps({'decision': 'block', 'reason': reason}))
     return 0
 
