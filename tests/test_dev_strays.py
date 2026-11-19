@@ -248,3 +248,63 @@ def test_the_untracked_ledger_is_silent_at_stop_while_a_root_stray_still_blocks(
     assert main(['check']) == 0
     _plant(tmp_path, 'status.txt')  # the planted control: a genuine stray still blocks
     assert json.loads(_stop(tmp_path))['decision'] == 'block'
+
+
+# -- O52: a stray already carried by a pushed PR head, the merges-only door, and another writer's file -----------
+
+
+def _commit(root, message: str = 'c') -> None:
+    run = ['git', '-C', str(root), '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'core.hooksPath=/dev/null']
+    launch.run([*run, 'commit', '-q', '-m', message], check=True)
+
+
+def _integrated(root) -> None:
+    _repo(root)
+    manifest = root / 'pyproject.toml'
+    manifest.write_text(
+        manifest.read_text(encoding='utf-8')
+        + "code_roots = ['src/']\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n",
+        encoding='utf-8',
+    )
+    launch.run(['git', '-C', str(root), 'add', 'pyproject.toml'], check=True)
+    _commit(root)
+    launch.run(['git', '-C', str(root), 'branch', '-q', '-M', 'integrate/main'], check=True)
+
+
+def _pushed_pr_head_holding(root, rel: str) -> None:
+    """A local remote-tracking pr/* ref whose tree holds *rel* with the content of the working file."""
+    launch.run(['git', '-C', str(root), 'add', rel], check=True)
+    _commit(root, 'pr')
+    launch.run(['git', '-C', str(root), 'update-ref', 'refs/remotes/origin/pr/t/f', 'HEAD'], check=True)
+    launch.run(['git', '-C', str(root), 'reset', '-q', '--soft', 'HEAD~1'], check=True)
+    launch.run(['git', '-C', str(root), 'rm', '-q', '--cached', rel], check=True)
+
+
+def test_a_stray_a_pushed_pr_head_already_carries_is_not_refused(tmp_path) -> None:
+    _integrated(tmp_path)
+    _plant(tmp_path, 'src/a.py')
+    _pushed_pr_head_holding(tmp_path, 'src/a.py')
+    assert stray_refusal(tmp_path) is None
+    (tmp_path / 'src' / 'a.py').write_text('changed\n', encoding='utf-8')  # PLANTED: other content is a stray
+    assert 'src/a.py' in (stray_refusal(tmp_path) or '')
+
+
+def test_on_the_integration_branch_the_door_is_the_pr_route_never_git_add(tmp_path) -> None:
+    _integrated(tmp_path)
+    _plant(tmp_path, 'src/b.py')
+    reason = stray_refusal(tmp_path) or ''
+    assert 'forge pr create' in reason
+    assert 'git add' not in reason
+    launch.run(['git', '-C', str(tmp_path), 'switch', '-q', '-c', 'lane/x'], check=True)
+    assert 'git add src/b.py' in (stray_refusal(tmp_path) or '')  # PLANTED: a lane still stages it
+
+
+def test_only_the_strays_this_session_wrote_are_judged(tmp_path) -> None:
+    _repo(tmp_path)
+    _plant(tmp_path, 'mine-notes.log')
+    _plant(tmp_path, 'someone-else.log')
+    reason = stray_refusal(tmp_path, mentions='wrote mine-notes.log here') or ''
+    assert 'mine-notes.log' in reason
+    assert 'someone-else.log' not in reason
+    assert stray_refusal(tmp_path, mentions='nothing of theirs') is None
+    assert 'someone-else.log' in (stray_refusal(tmp_path) or '')  # PLANTED: without a transcript, all are judged

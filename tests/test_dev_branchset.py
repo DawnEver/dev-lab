@@ -152,3 +152,22 @@ def test_an_ephemeral_glob_is_declared_and_a_malformed_one_refused(tmp_path: Pat
     control = census(work, _DECLARED)
     assert control is not None
     assert control.undeclared_origin == ('pr/topic',)
+
+
+def test_a_subdirectory_root_resolves_to_its_checkout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Run from .claude/tasks/x of a checkout, the declaration is the checkout's, not the subdirectory's."""
+    work = plant_checkout(tmp_path, trunk='main').work
+    _manifest(work, "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\n")
+    _run(work, 'branch', 'landed')
+    sub = work / '.claude' / 'tasks' / 'x'
+    sub.mkdir(parents=True)
+    assert main(['--root', str(sub)]) == 0
+    assert 'delete  local   landed' in capsys.readouterr().out
+
+
+def test_a_root_outside_any_checkout_is_refused_by_name(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """PLANTED CONTROL: no checkout above the root -> exit 2 naming it, never a TOML traceback."""
+    assert main(['--root', str(tmp_path)]) == 2
+    out = capsys.readouterr().out
+    assert 'is not inside a git checkout' in out
+    assert '--root' in out

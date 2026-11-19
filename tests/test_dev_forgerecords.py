@@ -15,6 +15,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from dev_lab.dev import forgerecords
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgealarm import STORAGE
+from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecordkeep import RECORDS_PER_ROW, kept_shas, sha_of
 from dev_lab.dev.forgerecords import (
     RECORDS_TITLE,
@@ -330,3 +331,26 @@ def test_the_serve_prune_alarms_storage_well_before_the_cap(monkeypatch, tmp_pat
             table={'unit_results': 3}, say=lambda _l: None, alarm=alarms.append, trunk='main',
         )  # fmt: skip
     assert [(a.kind, a.subject) for a in alarms] == [(STORAGE, f'the records home holds {line} of {cap} assets')]
+
+
+def test_a_records_home_past_the_page_bound_is_listed_whole(server) -> None:
+    """O20: a gitea records home sets no cap, so it outgrows ``pages``' 100-page bound; its listing reads on to the end.
+
+    2026-11-17 one repo's home passed 5,000 attachments and ``records list`` (and so every prune) refused it.
+    """
+    answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
+    held = [_asset(i, f'run-{i:040x}-linux-r1.json.gz') for i in range(1, 101 * 50 + 8)]
+    listed = [(200, held[i : i + 50]) for i in range(0, len(held), 50)]
+    answer('GET', '/repos/o/r/releases/9/assets', *listed)
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    assert [a.id for a in listing(built)] == [item['id'] for item in held]
+
+
+def test_a_forge_that_ignores_paging_is_refused_not_read_forever(server) -> None:
+    """PLANTED CONTROL: a full page answered again for the next page is a forge ignoring ``page``, not more records."""
+    answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
+    same = [_asset(i, f'run-{i:040x}-linux-r1.json.gz') for i in range(1, 51)]
+    answer('GET', '/repos/o/r/releases/9/assets', (200, same))
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    with pytest.raises(ListingIncomplete, match='answered page 2 with page 1'):
+        listing(built)

@@ -19,6 +19,7 @@ import pytest
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev import venvpointer
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount import deploy, tick
 from dev_lab.dev.hpcaccount import spec as deploy_spec
@@ -277,6 +278,28 @@ def test_the_venv_is_built_once_per_declaration(box: Box) -> None:
     assert box.logged().count('uv sync --extra dev') == 3  # one per repo, not per run
 
 
+def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(box: Box) -> None:
+    """W2: a build goes into a FRESH ``.venvs/<name>`` and only then becomes current; the live one is never touched.
+
+    PLANTED: alpha's install recipe (part of the env key) moves after the first deploy -- the second deploy must name
+    a different environment and leave the first one in place (a tick running from it keeps its files).
+    """
+    assert box.run(*DECLARE) == 0
+    alpha = box.home / deploy_spec.DEFAULT_ROOT / 'alpha'
+    first = venvpointer.named(alpha)
+    assert first is not None, 'the build is published through the pointer'
+    assert (first / '.lab-deploy-env').is_file()
+    pyproject = alpha / 'pyproject.toml'
+    pyproject.write_text(
+        pyproject.read_text(encoding='utf-8').replace('--extra dev', '--extra moved'), encoding='utf-8'
+    )
+    assert box.run() == 0
+    second = venvpointer.named(alpha)
+    assert second is not None
+    assert second != first, 'a moved key never syncs into the live environment'
+    assert (first / '.lab-deploy-env').is_file(), 'the passed-over environment is left for reclaim, not rewritten'
+
+
 def _overlays(box: Box) -> list[str]:
     return [line for line in box.logged().splitlines() if '--reinstall-package lab-commons' in line]
 
@@ -359,7 +382,7 @@ def test_a_tool_is_probed_by_its_version_in_the_tick_environment(box: Box, monke
     monkeypatch.setattr(deploy, '_runs', lambda _sh, env, tool: probed.append((env, tool)) or True)
     monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
     assert box.run(*DECLARE) == 0
-    assert {tool for _env, tool in probed} == {'uv', 'cargo'}
+    assert {tool for _env, tool in probed} == {'uv', 'rclone', 'cargo'}
     assert all(env == deploy_spec.tick_environment(box.home, [str(Path('/x'))]) for env, _tool in probed)
 
 

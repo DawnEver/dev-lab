@@ -75,7 +75,9 @@ _ID: Final = re.compile(r'[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*')
 #: What a pattern NAMES, in the engine's own vocabulary. A closed set, so a typo cannot become a
 #: fourth matching mode that the engine silently reads as its default. ``'line'`` searches the WHOLE command
 #: line, for a shape that spans segments (a write anywhere on the line: CONSENT-CODE-FROM-THE-USER).
-MATCH_KINDS: Final = frozenset({'command', 'argument', 'line'})
+#: ``'shell'`` is ``'command'`` read in SHELL text only (segments, and the bodies and ``-c`` scripts a shell runs),
+#: never in python/node code: a row naming a shell verb (``git push``) has no shape in another language's source.
+MATCH_KINDS: Final = frozenset({'command', 'argument', 'line', 'shell'})
 
 #: WHO a row binds, in the engine's own vocabulary. ``'subagent'`` judges the row only when the hook
 #: payload carries a non-empty ``agent_id`` -- present only inside a subagent call, fork included.
