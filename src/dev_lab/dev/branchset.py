@@ -412,7 +412,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
     parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
     args = parser.parse_args(argv)
-    root = args.root
+    top = git_out(args.root, 'rev-parse', '--show-toplevel')
+    if top is None:
+        emit(f'{args.root} is not inside a git checkout; run from the checkout or pass --root <checkout>')
+        return 2
+    root = Path(top.strip())
     if args.discard:
         code, line = discard(root, declared_branchset(root), args.discard, args.approved)
         emit(line)

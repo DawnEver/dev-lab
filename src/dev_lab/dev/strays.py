@@ -43,15 +43,19 @@ from dev_lab.dev.codeplace import (
     is_archived,
 )
 from dev_lab.dev.disclosure import details_for
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.retiredfiles import RetiredFile
 
 __all__ = [
     'StrayCensusUnreadable',
+    'carried',
     'declared_strays',
     'main',
+    'merges_only',
     'retired_copies',
     'stray_files',
     'stray_refusal',
+    'written_by',
 ]
 
 #: How many strays a refusal names before it counts the rest -- the first line stays one short line.
@@ -59,6 +63,10 @@ _SHOWN = 3
 #: Where a one-off script and a program's data go: a dated directory of their kind (user ruling 2026-11-03).
 _SCRIPT_HOME = 'scratch/<yy>/<mm>/<dd>/<kind>/'
 _DATA_HOME = 'output/logs/<yy>/<mm>/<dd>/<kind>/'
+#: Where a meant file lands when the checkout sits on a branch that takes only forge merges (O52): never `git add`.
+_PR_DOOR = 'land them through a PR: a worktree on pr/<task>/<feature>, commit there, push, forge pr create'
+#: The pushed heads whose content counts as already carried (local refs, as of the last fetch).
+_PR_HEADS = 'refs/remotes/origin/pr/'
 
 
 def retired_copies(found: Iterable[str], *, retired: Iterable[RetiredFile]) -> dict[RetiredFile, list[str]]:
@@ -110,13 +118,62 @@ def _untracked(root: Path) -> list[str]:
     return list(filter(None, done.stdout.split('\0')))
 
 
+def _git(root: Path, args: list[str], stdin: str = '') -> str:
+    done = launch.run(
+        ['git', '-C', str(root), *args],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=False,
+    )
+    return done.stdout if done.returncode == 0 else ''
+
+
+def carried(root: Path, found: Iterable[str]) -> set[str]:
+    """The strays among *found* whose exact content an already pushed ``pr/*`` head holds at the same path.
+
+    Such a file is not unclaimed: it is the working copy of work already on its way through a PR (O52). Read
+    from the local remote-tracking refs (the last fetch), in two git processes whatever the count.
+    """
+    rels = list(found)
+    heads = _git(root, ['for-each-ref', '--format=%(refname)', _PR_HEADS]).split()
+    if not rels or not heads:
+        return set()
+    blobs = _git(root, ['hash-object', '--stdin-paths'], ''.join(f'{root / rel}\n' for rel in rels)).split()
+    if len(blobs) != len(rels):
+        return set()
+    blob_of = dict(zip(rels, blobs, strict=True))
+    asked = [(rel, f'{head}:{rel}') for rel in rels for head in heads]
+    answers = _git(root, ['cat-file', '--batch-check'], ''.join(f'{spec}\n' for _, spec in asked)).splitlines()
+    return {rel for (rel, _), line in zip(asked, answers, strict=False) if line.split(' ', 1)[0] == blob_of[rel]}
+
+
+def merges_only(root: Path) -> bool:
+    """Does *root* sit on its declared integration or trunk branch, which nothing but a forge merge moves?"""
+    branch = _git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']).strip()
+    if not branch:
+        return False
+    try:
+        policy = load_policy(root)
+    except (OSError, ValueError):
+        return False
+    return branch in {policy.integration, policy.trunk}
+
+
+def written_by(found: Iterable[str], mentions: str) -> list[str]:
+    """The strays among *found* the session's tool inputs name (by path or by file stem) -- the ones it wrote."""
+    return [rel for rel in found if rel in mentions or Path(rel).stem in mentions]
+
+
 def declared_strays(root: Path) -> list[str]:
     """:func:`stray_files` over *root* with the placement *root* declares -- the adopter's scan."""
     placement = declared_placement(root)
     return stray_files(root, stray_roots=placement.stray_roots, pruned_paths=placement.pruned_paths)
 
 
-def stray_refusal(root: Path) -> str | None:
+def stray_refusal(root: Path, *, mentions: str | None = None) -> str | None:
     """The ``STRAY-FILE-REFUSED`` message for *root* in three lines; ``None`` if clean.
 
     The first line counts the strays and names a few; the second gives each file ONE exit chosen by its kind --
@@ -124,12 +181,20 @@ def stray_refusal(root: Path) -> str | None:
     was meant (``git add``), a script is a one-off (``scratch/<yy>/<mm>/<dd>/<kind>/``), anything else is a
     program's data (``output/logs/...``); the third points at the details. A checkout that declares no placement
     is not judged: the adopter's own test reds on the missing table.
+
+    A stray whose content a pushed ``pr/*`` head already carries is not one (:func:`carried`). With *mentions*
+    (the session's tool inputs), only what the session wrote is judged -- another writer's file is not this
+    session's to land. On a merges-only branch the meant files' exit is the PR door, never ``git add`` (O52).
     """
     try:
         placement = declared_placement(root)
     except PlacementNotDeclared:
         return None
     found = stray_files(root, stray_roots=placement.stray_roots, pruned_paths=placement.pruned_paths)
+    held = carried(root, found)
+    found = [rel for rel in found if rel not in held]
+    if mentions is not None:
+        found = written_by(found, mentions)
     if not found:
         return None
     shown = ', '.join(found[:_SHOWN]) + (f' (+{len(found) - _SHOWN} more)' if len(found) > _SHOWN else '')
@@ -139,7 +204,8 @@ def stray_refusal(root: Path) -> str | None:
     meant = [rel for rel in rest if rel.startswith(placement.code_roots)]
     scripts = [rel for rel in rest if rel not in meant and Path(rel).suffix.lower() in CODE_SUFFIXES]
     exits = [f'{len(rels)} x {one.path} retired ({one.what}): {one.door}' for one, rels in retired.items()]
-    exits.append(f'git add {" ".join(meant[:_SHOWN])}' if meant else '')
+    door = _PR_DOOR if merges_only(root) else 'git add'
+    exits.append(f'{door} {" ".join(meant[:_SHOWN])}' if meant else '')
     exits.append(f'{", ".join(scripts[:_SHOWN])} -> {_SCRIPT_HOME}' if scripts else '')
     exits.append(f'data -> {_DATA_HOME}' if len(rest) > len(meant) + len(scripts) else '')
     return (
@@ -161,7 +227,7 @@ def _hook(payload: object) -> int:
     if root is None:
         return 0
     try:
-        reason = stray_refusal(root)
+        reason = stray_refusal(root, mentions=tmpsweep.tool_text(payload.get('transcript_path')) or None)
     except StrayCensusUnreadable as exc:
         reason = f'STRAY-FILE-REFUSED: the stray census could not be read: {exc}'
     roots, excluded = tmpsweep.declared()  # WRITES-STAY-IN-THE-TREE: what the session left outside the checkout

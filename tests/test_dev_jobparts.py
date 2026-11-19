@@ -610,3 +610,45 @@ def test_run_jobs_reads_the_concluded_jobs_by_name_and_an_unreadable_run_is_none
         raise ForgeCallFailed(Report(('GET', 'jobs'), (Attempt(1, 403, 'forbidden', Diagnosis.FORGE_REFUSED),), 1))
 
     assert jobparts.run_jobs(SimpleNamespace(repo='r', call=refused), '7') == {}
+
+
+MANUAL = """
+[tool.lab_commons.tests]
+resources = ["live"]
+
+[tool.dev_lab.parts]
+hosted = { live = { tasks = ["live"], manual = true } }
+"""
+
+
+@pytest.mark.parametrize(
+    ('event', 'live_rows'), [('workflow_dispatch', 1), ('schedule', 0), ('push', 0), ('pull_request', 0)]
+)
+def test_a_manual_hosted_part_runs_only_on_a_manual_dispatch(tmp_path: Path, event: str, live_rows: int) -> None:
+    """User ruling D66 (2026-11-18): ai-lab's live part (real provider calls) leaves the nightly; a dispatch runs it.
+
+    PLANTED CONTROL: the same declaration without ``manual`` has its row on the nightly ``schedule``.
+    """
+    (tmp_path / 'pyproject.toml').write_text(MANUAL, encoding='utf-8')
+    carrying = {'': ['t::a', 't::l'], 'live': ['t::l']}
+    rows = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event)['include']
+    assert len([row for row in rows if row['part'] == 'live']) == live_rows
+    (tmp_path / 'pyproject.toml').write_text(MANUAL.replace(', manual = true', ''), encoding='utf-8')
+    nightly = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event='schedule')['include']
+    assert [row['part'] for row in nightly if row['part'] == 'live'] == ['live'], 'PLANTED CONTROL'
+
+
+def test_a_manual_hosted_part_is_off_the_gate_and_its_job_runs_only_on_a_dispatch() -> None:
+    declared = hostedparts.hosted_parts(MANUAL)
+    assert declared == {'live': hostedparts.Hosted(('live',), manual=True)}
+    assert jobparts.off_gate(['base', 'live'], declared) == {'live'}
+    assert jobparts.off_gate(['base', 'live'], {'live': hostedparts.Hosted(('live',))}) == set(), 'PLANTED CONTROL'
+    workflow = {'jobs': {'part': {'steps': [{'run': 'x'}, {'run': 'produce ${{ matrix.part }}'}]}}}
+    job = jobparts.hosted_jobs(workflow, declared)['jobs']['part-live']
+    assert "needs.parts.outputs.event == 'workflow_dispatch'" in job['if']
+
+
+def test_a_manual_flag_that_is_not_a_boolean_is_refused() -> None:
+    text = MANUAL.replace('manual = true', 'manual = "yes"')
+    with pytest.raises(platformparts.UndeclaredPart, match='manual'):
+        hostedparts.hosted_parts(text)
