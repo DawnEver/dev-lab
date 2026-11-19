@@ -17,10 +17,15 @@ from _forge_state import FORGE, StateForge
 
 from dev_lab.dev import forgefeed, sessionprs, taskbinding
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_post
 
 SHA = 'a' * 40
+
+
+@pytest.fixture(autouse=True)
+def _no_declared_repositories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The PR-status tests hear no repository listing: the machine file's ``[repos]`` is never this box's."""
+    monkeypatch.setattr(forgefeed, '_forges', list)
 
 
 def _open(forge: StateForge, session: str = 's1', branch: str = 'pr/x') -> str:
@@ -112,40 +117,43 @@ def test_the_prompt_hook_surfaces_unread_events_once(capsys: pytest.CaptureFixtu
     assert capsys.readouterr().out == ''
 
 
-# --- D79: one notification-feed read per forge, routed to tasks by label -------------------------------------------
+# --- D81: one issues-since read per repository, routed to tasks by inline label ----------------------------------
 
 HOST = 'forge.example'
 
 
-class FeedForge:
-    """A forge host's notification feed and each issue's labels; it counts every request."""
+class RepoForge:
+    """One repository's ``issues`` listing; it counts every request and answers 304 to a matching ETag."""
 
-    def __init__(self, threads: list[dict], labels: dict[int, list[str]], *, refuse: int = 0) -> None:
-        """*threads* is the feed, *labels* each issue's labels; *refuse* answers the feed with that status."""
-        self.forge = Forge(HOST, 'o', 'r')
+    def __init__(self, rows: list[dict], *, name: str = 'r', etag: str = 'v1') -> None:
+        """*rows* is what ``issues?since=`` returns; *etag* the version the forge reports for it."""
+        self.forge = Forge(HOST, 'o', name)
         self.backend = SimpleNamespace(api_root='/api/v1')
-        self.repo = '/api/v1/repos/o/r'
-        self.threads, self.labels, self.refuse = threads, labels, refuse
+        self.repo = f'/api/v1/repos/o/{name}'
+        self.rows, self.etag = rows, etag
         self.calls: list[str] = []
 
-    def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
+    def call_conditional(self, method: str, path: str, etag: str = '') -> tuple[int, str, object]:
         assert method == 'GET'
+        assert path.startswith(f'{self.repo}/issues?'), 'only the repository listing is ever read'
         self.calls.append(path)
-        if path.startswith('/api/v1/notifications'):
-            if self.refuse:
-                failed = ForgeCallFailed.__new__(ForgeCallFailed)
-                failed.report = SimpleNamespace(attempts=[SimpleNamespace(returncode=self.refuse)])
-                raise failed
-            return self.threads
-        number = int(path.rsplit('/', 2)[-2])
-        return [{'name': name} for name in self.labels.get(number, [])]
+        if etag and etag == self.etag:
+            return 304, etag, None
+        return 200, self.etag, self.rows
+
+    def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
+        msg = f'no other read is made: {method} {path}'
+        raise AssertionError(msg)
 
 
-def _thread(number: int, updated: str, *, comment: int | None = None) -> dict:
-    subject = {'type': 'Issue', 'title': f'issue {number}', 'url': f'https://{HOST}/api/v1/repos/o/r/issues/{number}'}
-    if comment is not None:
-        subject['latest_comment_url'] = f'https://{HOST}/api/v1/repos/o/r/issues/comments/{comment}'
-    return {'subject': subject, 'repository': {'full_name': 'o/r'}, 'updated_at': updated}
+def _row(number: int, updated: str, labels: tuple[str, ...] = (), *, pull: bool = False) -> dict:
+    row = {
+        'number': number,
+        'title': f'thread {number}',
+        'updated_at': updated,
+        'labels': [{'name': n} for n in labels],
+    }
+    return row | ({'pull_request': {}} if pull else {})
 
 
 def _bind(session: str, slug: str, ledger: os.PathLike) -> None:
@@ -155,61 +163,77 @@ def _bind(session: str, slug: str, ledger: os.PathLike) -> None:
     path.write_text(json.dumps(record), encoding='utf-8')
 
 
-def _hear(forge: FeedForge) -> tuple[str, ...]:
-    return forgefeed.hear_feed(lambda _f: forge, [forge.forge])
+def _hear(*forges: RepoForge) -> tuple[str, ...]:
+    by = {f.forge: f for f in forges}
+    return forgefeed.hear_feed(lambda f: by[f], list(by))
 
 
-def test_one_feed_read_per_forge_whatever_the_number_of_subscribed_issues(tmp_path: os.PathLike) -> None:
+def test_one_read_per_repository_whatever_the_number_of_subscribed_issues(tmp_path: os.PathLike) -> None:
     _bind('s1', 'alpha', tmp_path)
-    subscribed = {n: ['task:alpha'] for n in range(1, 51)}  # fifty subscribed issues, ONE of them changed
-    forge = FeedForge([_thread(7, '2026-11-18T10:00:00Z')], subscribed)
-    assert _hear(forge) == (HOST,)
-    feed_reads = [p for p in forge.calls if '/notifications' in p]
-    assert len(feed_reads) == 1, 'one feed request per forge per tick'
-    assert len(forge.calls) == 1 + 1, 'plus one label read for the one CHANGED thread'
-    per_issue_shape = len(subscribed)  # the retired shape asked every subscribed issue every tick
-    assert len(forge.calls) < per_issue_shape, 'PLANTED CONTROL: a request per subscribed issue fails this bound'
+    rows = [_row(n, f'2026-11-18T10:{n:02d}:00Z', ('task:alpha',)) for n in range(1, 31)]
+    one, two = RepoForge(rows), RepoForge([], name='q')
+    _hear(one, two)
+    assert (len(one.calls), len(two.calls)) == (1, 1), 'one request per repository per tick, labels inline'
+    per_issue_shape = len(rows)  # the retired shape read every subscribed issue (or its labels) each tick
+    assert len(one.calls) + len(two.calls) < per_issue_shape, 'PLANTED CONTROL: per-issue reads fail this bound'
+    assert len(forgefeed.take_unread('s1')) == len(rows)
 
 
-def test_a_thread_reaches_only_the_sessions_of_the_tasks_its_labels_name(tmp_path: os.PathLike) -> None:
+def test_a_labelled_thread_reaches_its_tasks_sessions_and_an_unlabelled_one_reaches_none(tmp_path: os.PathLike) -> None:
     _bind('s1', 'alpha', tmp_path)
     _bind('s2', 'beta', tmp_path)
-    forge = FeedForge([_thread(3, '2026-11-18T10:00:00Z')], {3: ['task:alpha', 'bug']})
-    _hear(forge)
-    assert any('#3' in line for line in forgefeed.take_unread('s1'))
+    _hear(
+        RepoForge([_row(3, '2026-11-18T10:00:00Z', ('task:alpha', 'bug')), _row(4, '2026-11-18T10:01:00Z', ('bug',))])
+    )
+    said = forgefeed.take_unread('s1')
+    assert any('#3 ' in line for line in said)
+    assert not any('#4 ' in line for line in said), 'PLANTED CONTROL: an unlabelled thread is routed nowhere'
     assert forgefeed.take_unread('s2') == [], 'PLANTED CONTROL: a task the labels do not name hears nothing'
 
 
-def test_the_cursor_resumes_where_the_last_read_stopped(tmp_path: os.PathLike) -> None:
+def test_the_cursor_resumes_per_repository_and_a_thread_at_the_cursor_is_not_heard_twice(
+    tmp_path: os.PathLike,
+) -> None:
     _bind('s1', 'alpha', tmp_path)
-    forge = FeedForge([_thread(3, '2026-11-18T10:00:00Z')], {3: ['task:alpha']})
+    forge = RepoForge([_row(3, '2026-11-18T10:00:00Z', ('task:alpha',))])
     _hear(forge)
     assert 'since=' not in forge.calls[0], 'PLANTED CONTROL: the first read has no cursor'
-    forge.threads = []
+    forge.etag = 'v2'  # the forge answers again, with the same row at the cursor
     _hear(forge)
     assert forge.calls[-1].endswith('&since=2026-11-18T10:00:00Z')
-    assert forgefeed.cursor(HOST) == '2026-11-18T10:00:00Z'
+    assert forgefeed.cursor(forge.forge) == '2026-11-18T10:00:00Z'
+    assert len([line for line in forgefeed.take_unread('s1') if '#3 ' in line]) == 1, 'not heard again at the cursor'
 
 
-def test_a_comment_this_machine_posted_is_not_news(tmp_path: os.PathLike) -> None:
+def test_a_304_to_the_stored_etag_costs_nothing(tmp_path: os.PathLike) -> None:
     _bind('s1', 'alpha', tmp_path)
-    forgefeed.record_own(77)
-    forge = FeedForge(
-        [_thread(3, '2026-11-18T10:00:00Z', comment=77), _thread(4, '2026-11-18T10:01:00Z', comment=78)],
-        {3: ['task:alpha'], 4: ['task:alpha']},
-    )
+    forge = RepoForge([_row(3, '2026-11-18T10:00:00Z', ('task:alpha',))])
     _hear(forge)
+    forgefeed.take_unread('s1')
+    _hear(forge)
+    assert len(forge.calls) == 2
+    assert forgefeed.take_unread('s1') == [], 'a 304 delivers nothing'
+    forge.etag = 'v2'
+    forge.rows = [_row(5, '2026-11-18T11:00:00Z', ('task:alpha',))]
+    _hear(forge)
+    assert any('#5 ' in line for line in forgefeed.take_unread('s1')), 'PLANTED CONTROL: a new version is read'
+
+
+def test_this_machines_own_comment_is_not_news(tmp_path: os.PathLike) -> None:
+    _bind('s1', 'alpha', tmp_path)
+    forgefeed.record_own(f'{Forge(HOST, "o", "r").identity}#3', at=1_794_996_000.0)  # 2026-11-18T10:00:00Z
+    rows = [_row(3, '2026-11-18T10:00:02Z', ('task:alpha',)), _row(4, '2026-11-18T10:00:02Z', ('task:alpha',))]
+    _hear(RepoForge(rows))
     said = forgefeed.take_unread('s1')
     assert not any('#3 ' in line for line in said), 'its own comment is skipped'
-    assert any('#4 ' in line for line in said), "PLANTED CONTROL: another's comment is news"
+    assert any('#4 ' in line for line in said), 'PLANTED CONTROL: another thread changed at the same time is news'
 
 
 def test_a_task_no_session_is_bound_to_keeps_its_events_for_the_next_binding(
     tmp_path: os.PathLike, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _bind('s1', 'alpha', tmp_path)
-    forge = FeedForge([_thread(9, '2026-11-18T10:00:00Z')], {9: ['task:gamma']})
-    _hear(forge)
+    _hear(RepoForge([_row(9, '2026-11-18T10:00:00Z', ('task:gamma',))]))
     assert forgefeed.take_unread('s1') == [], 'PLANTED CONTROL: a bound session of another task hears nothing'
     assert any('#9' in line for line in forgefeed.task_pending('gamma'))
     _bind('s3', 'gamma', tmp_path)
@@ -218,14 +242,9 @@ def test_a_task_no_session_is_bound_to_keeps_its_events_for_the_next_binding(
     assert forgefeed.task_pending('gamma') == [], 'heard once, by the first session that binds it'
 
 
-def test_a_feed_the_token_may_not_read_is_refused_by_name_with_its_scope(tmp_path: os.PathLike) -> None:
-    _bind('s1', 'alpha', tmp_path)
-    forge = FeedForge([], {}, refuse=403)
-    assert _hear(forge) == (), 'a refused host is not heard'
-    said = forgefeed.take_unread('s1')
-    assert any(forgefeed.RULE in line and 'read:notification' in line for line in said)
-    with pytest.raises(PermissionError, match='notifications'):
-        forgefeed.read_feed(forge)
-    other = FeedForge([], {}, refuse=500)
-    with pytest.raises(ForgeCallFailed):
-        forgefeed.read_feed(other)  # PLANTED CONTROL: another failure is not called a missing scope
+def test_the_tick_is_the_machine_files_setting_and_a_bad_value_is_refused_by_name() -> None:
+    assert forgefeed.tick_s({}) == forgefeed.DEFAULT_TICK_S == 120
+    assert forgefeed.tick_s({'tick_s': 60}) == 60
+    for bad in (0, -5, 1.5, '60', True):
+        with pytest.raises(ValueError, match=r'\[forgefeed\] tick_s'):
+            forgefeed.tick_s({'tick_s': bad})  # PLANTED CONTROL: each non-positive-int is refused

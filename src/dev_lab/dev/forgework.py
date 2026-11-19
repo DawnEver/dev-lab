@@ -155,7 +155,7 @@ class Client:
 
     def _once(
         self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *,
-        accept: str = '', authed: bool = True,
+        accept: str = '', authed: bool = True, extra: Mapping[str, str] | None = None,
     ) -> Answer:  # fmt: skip
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
@@ -165,11 +165,12 @@ class Client:
             sent = {'Authorization': auth} if authed and self.token else {}
             sent |= {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)} | dict(backend.headers)
             sent |= {'Accept': accept} if accept else {}
+            sent |= dict(extra or {})
             conn.request(method, path, body=data, headers=sent)
             response = conn.getresponse()
             self.answered = response.getheader('Date') or self.answered
             self._location = response.getheader('Location') or ''
-            said = {name: value for name in RATE_HEADERS if (value := response.getheader(name))}
+            said = {name: value for name in (*RATE_HEADERS, 'ETag') if (value := response.getheader(name))}
             return Answer(response.status, response.read(), said)
         finally:
             conn.close()
@@ -224,6 +225,25 @@ class Client:
         """
         data = json.dumps(dict(body)).encode() if body is not None else None
         return self._request(method, path, data, 'application/json', durable)
+
+    def call_conditional(self, method: str, path: str, etag: str = '') -> tuple[int, str, Any]:
+        """One read sent with ``If-None-Match: <etag>``: ``(status, new ETag, JSON)``; a 304 is ``(304, etag, None)``.
+
+        A 304 is the forge saying nothing changed (GitHub does not count it against the rate limit). Any other
+        answer that is not a success is read again through :meth:`call`, the one door that retries and reports.
+        """
+        try:
+            answer = self._once(
+                method, path, None, 'application/json', None, extra={'If-None-Match': etag} if etag else None
+            )
+        except OSError:
+            answer = None
+        if answer is not None and answer.status == 304:  # noqa: PLR2004 - HTTP Not Modified
+            return 304, etag, None
+        if answer is not None and answer.status < HTTP_ERROR_FLOOR:
+            text = answer.payload.decode('utf-8', 'replace')
+            return answer.status, answer.headers.get('ETag', ''), json.loads(text) if text.strip() else None
+        return 200, '', self.call(method, path)
 
     def upload(self, path: str, *, field: str, filename: str, content: bytes, durable: Durable | None = None) -> Any:  # noqa: ANN401 -- JSON
         """A ``multipart/form-data`` POST of one file under *field*; its boundary is its content's hash (one key)."""
@@ -375,7 +395,7 @@ class Client:
         posted = comment_of(self.call('POST', path, payload, Durable(probe=probe)))
         from dev_lab.dev.forgefeed import record_own  # noqa: PLC0415 -- the hearer imports this module's callers
 
-        record_own(posted.id)  # TASK-HEARS-ITS-FORGE-EVENTS: this machine's own words are never news
+        record_own(f'{self.forge.identity}#{number}')  # TASK-HEARS-ITS-FORGE-EVENTS: own words are never news
         return posted
 
     def issue_edit(self, number: int, body: str) -> Issue:

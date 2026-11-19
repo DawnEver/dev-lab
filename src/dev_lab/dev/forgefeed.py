@@ -4,16 +4,21 @@ How a task hears the forge (docs-src/dev/forgefeed.md):
 
 * SUBSCRIPTION IS A LABEL. An issue or PR carrying the label ``task:<slug>`` belongs to task ``<slug>``; a PR a
   session of the task opened or pushed (:mod:`dev_lab.dev.sessionprs`) belongs to it too. Nothing else subscribes.
-* ONE FEED READ PER FORGE PER TICK. :func:`read_feed` asks each forge host's notification feed once for the threads
-  changed since a persisted cursor (``/notifications?all=true&since=<cursor>``, the same on GitHub and Gitea) --
-  never a request per issue or per PR. Only a CHANGED thread costs one more read: its labels.
+* ONE READ PER REPOSITORY PER TICK. :func:`read_feed` asks each declared repository (the machine file's ``[repos]``)
+  for its issues and PRs updated since that repository's persisted cursor
+  (``/repos/<o>/<r>/issues?state=all&since=<cursor>``, the same on GitHub and Gitea; further pages only while full) --
+  never a request per issue or per PR. Labels come inline, so routing costs no further read; adding a label moves the
+  thread's ``updated_at`` (measured on Gitea 2026-11-18), so a labelled thread is heard on the next tick. A reply of
+  304 to the stored ETag costs nothing.
 * ROUTED TO THE TASK'S SESSIONS. Each changed thread goes to every task it belongs to, then to every session bound to
   that task on this machine (:func:`dev_lab.dev.taskbinding.binding`), into that session's INBOX; a task with no bound
-  session keeps its events (:func:`task_pending`) for the next session that binds it. A thread whose latest comment
-  this machine posted (:func:`record_own`, called by the one comment door) is not news.
+  session keeps its events (:func:`task_pending`) for the next session that binds it. A thread whose newest change
+  is this machine's own comment (:func:`record_own`, called by the one comment door, within :data:`OWN_WINDOW_S`) is
+  not news.
 * COMMIT STATUSES ARE NOT IN ANY FEED: neither forge notifies a status change, so a session's OPEN PRs keep their
   status read (:func:`dev_lab.dev.sessionpoll.poll_session`) -- the only per-PR read left.
-* A FEED THE TOKEN MAY NOT READ is refused by name (:data:`SCOPE_REMEDY`) into every bound session's inbox, once.
+* THE TICK IS A SETTING: ``[forgefeed] tick_s`` in the machine file (:func:`tick_s`), default :data:`DEFAULT_TICK_S`;
+  anything but a positive integer is refused by name.
 
 ``python -m dev_lab.dev.forgefeed run | start | session-start | inbox | task-pending <slug>``; hooks always exit 0.
 """
@@ -22,6 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import datetime as dt
 import json
 import os
 import subprocess
@@ -37,7 +43,6 @@ from lab_commons.log import emit
 from dev_lab.dev import native_session, sessionprs, taskbinding
 from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forge import Forge, forge_from_remote
-from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, env_superseded
 from dev_lab.dev.sessionpoll import poll_session
 
@@ -47,11 +52,11 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
+    'DEFAULT_TICK_S',
     'FRESH_S',
     'LABEL',
     'POLL_S',
     'RULE',
-    'SCOPE_REMEDY',
     'YIELDED',
     'Thread',
     'bound_sessions',
@@ -72,25 +77,42 @@ __all__ = [
     'take_task_pending',
     'take_unread',
     'task_pending',
+    'tick_s',
 ]
 
-#: The watcher's poll period: the session watch's (two reads per open PR per poll).
+#: The tick when the machine file declares none (user ruling D81, 2026-11-19: 2 min until measured live).
+DEFAULT_TICK_S: Final = 120
+#: The session watch's poll period.
 POLL_S: Final = SESSION_EVERY_S
-#: A beat older than this is a watcher that stopped polling: two polls missed.
-FRESH_S: Final = 2 * POLL_S
+#: A beat older than this is a watcher that stopped polling: two default ticks missed.
+FRESH_S: Final = 2 * max(POLL_S, DEFAULT_TICK_S)
 #: The directory, under the machine home, holding the hearer's lock, beat, cursors and task queues.
 WATCHER: Final = 'forgefeed'
 #: The rule this hearer serves.
 RULE: Final = 'TASK-HEARS-ITS-FORGE-EVENTS'
 #: The label prefix that subscribes a thread to a task: ``task:<slug>``.
 LABEL: Final = 'task:'
-#: Said when a forge refuses the notification feed: the scope the token lacks, by forge.
-SCOPE_REMEDY: Final = (
-    'the forge token may not read the notification feed (HTTP 403): add the scope `read:notification` (Gitea) or '
-    '`notifications` (GitHub classic token; a fine-grained token cannot read it) to the stored token, then '
-    '`python -m dev_lab.dev.forgefeed start`'
-)
-_FORBIDDEN: Final = 403
+#: Issues per page; a shorter page is the last.
+PAGE: Final = 50
+_NOT_MODIFIED: Final = 304
+
+
+def tick_s(table: object = None) -> int:
+    """The hearer's tick in seconds: the machine file's ``[forgefeed] tick_s``, else :data:`DEFAULT_TICK_S`.
+
+    Raises:
+        ValueError: the declared value is not a positive integer (named, with its key).
+
+    """
+    if table is None:
+        from lab_commons.config import section  # noqa: PLC0415 - the machine file, read when the hearer starts
+
+        table = section('forgefeed')
+    value = table.get('tick_s', DEFAULT_TICK_S) if isinstance(table, dict) else DEFAULT_TICK_S
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        msg = f'[forgefeed] tick_s must be a positive integer of seconds, not {value!r}'
+        raise ValueError(msg)
+    return value
 
 
 def _dir() -> Path:
@@ -195,14 +217,14 @@ def take_unread(session: str) -> list[str]:
 
 @dataclasses.dataclass(frozen=True)
 class Thread:
-    """One changed notification thread: the repository, the issue or PR number, when it changed, its latest comment."""
+    """One changed issue or PR: its repository, number, kind, title, when it last changed, and its labels."""
 
     forge: Forge
     number: int
     kind: str
     title: str
     updated: str
-    comment: int | None
+    labels: tuple[str, ...] = ()
 
     @property
     def key(self) -> str:
@@ -210,81 +232,97 @@ class Thread:
         return f'{self.forge.identity}#{self.number}'
 
 
-def _tail_int(url: object) -> int | None:
-    try:
-        return int(str(url).rstrip('/').rsplit('/', 1)[1])
-    except (IndexError, ValueError):
+def _thread(forge: Forge, raw: dict) -> Thread | None:
+    """One issue or PR of *forge* from its ``issues`` listing row, labels inline."""
+    number = raw.get('number')
+    if not isinstance(number, int):
         return None
+    kind = 'pull' if raw.get('pull_request') else 'issue'
+    labels = tuple(str(one.get('name') or '') for one in raw.get('labels') or () if isinstance(one, dict))
+    return Thread(forge, number, kind, str(raw.get('title') or ''), str(raw.get('updated_at') or ''), labels)
 
 
-def _thread(host: str, raw: dict) -> Thread | None:
-    subject, repo = raw.get('subject') or {}, raw.get('repository') or {}
-    owner, _, name = str(repo.get('full_name') or '').partition('/')
-    number = _tail_int(subject.get('url') or subject.get('html_url'))
-    if not owner or not name or number is None:
-        return None
-    return Thread(
-        Forge(host, owner, name), number, str(subject.get('type') or ''), str(subject.get('title') or ''),
-        str(raw.get('updated_at') or ''), _tail_int(subject.get('latest_comment_url')),
-    )  # fmt: skip
+def _cursor_path(forge: Forge) -> Path:
+    return _dir() / 'cursor' / forge.host / forge.owner / f'{forge.repo}.json'
 
 
-def _cursor_path(host: str) -> Path:
-    return _dir() / 'cursor' / f'{host}.json'
+def cursor(forge: Forge) -> str:
+    """The cursor of *forge*'s repository: the newest ``updated_at`` already heard, ``''`` before the first read."""
+    return str(_read(_cursor_path(forge)).get('since') or '')
 
 
-def cursor(host: str) -> str:
-    """The feed cursor of *host*: the newest ``updated_at`` already heard, ``''`` before the first read."""
-    return str(_read(_cursor_path(host)).get('since') or '')
+def _etag(forge: Forge) -> str:
+    return str(_read(_cursor_path(forge)).get('etag') or '')
 
 
 def read_feed(client: Client) -> list[Thread]:
-    """ONE request: *client*'s host's threads changed since its cursor; the cursor moves to the newest one seen.
+    """ONE read (more only while pages are full): *client*'s repository's issues and PRs updated since its cursor.
 
-    Raises:
-        PermissionError: the token may not read the feed (:data:`SCOPE_REMEDY`).
-
+    The cursor moves to the newest ``updated_at`` seen; a thread exactly at the cursor is not heard twice.
     """
-    host = client.forge.host
-    since = cursor(host)
-    query = '?all=true' + (f'&since={since}' if since else '')
-    try:
-        found = client.call('GET', f'{client.backend.api_root}/notifications{query}')
-    except ForgeCallFailed as failed:
-        attempt = failed.report.attempts[-1] if failed.report.attempts else None
-        if attempt is not None and attempt.returncode == _FORBIDDEN:
-            msg = f'{host}: {SCOPE_REMEDY}'
-            raise PermissionError(msg) from failed
-        raise
-    threads = [t for raw in (found if isinstance(found, list) else []) if (t := _thread(host, raw)) is not None]
+    forge = client.forge
+    since, etag = cursor(forge), _etag(forge)
+    threads: list[Thread] = []
+    page, new_etag = 1, etag
+    while True:
+        query = f'?state=all&limit={PAGE}&per_page={PAGE}&page={page}' + (f'&since={since}' if since else '')
+        status, header, found = client.call_conditional(
+            'GET', f'{client.repo}/issues{query}', etag if page == 1 else ''
+        )
+        if status == _NOT_MODIFIED:
+            return []
+        if page == 1 and header:
+            new_etag = header
+        rows = found if isinstance(found, list) else []
+        threads += [t for raw in rows if (t := _thread(forge, raw)) is not None and t.updated != since]
+        if len(rows) < PAGE:
+            break
+        page += 1
     newest = max([since, *(t.updated for t in threads)])
-    if newest != since:
-        _cursor_path(host).parent.mkdir(parents=True, exist_ok=True)
-        _cursor_path(host).write_text(json.dumps({'since': newest}), encoding='utf-8')
+    if newest != since or new_etag != etag:
+        _cursor_path(forge).parent.mkdir(parents=True, exist_ok=True)
+        _cursor_path(forge).write_text(json.dumps({'since': newest, 'etag': new_etag}), encoding='utf-8')
     return threads
 
 
-def _labels(client: Client, number: int) -> tuple[str, ...]:
-    found = client.call('GET', f'{client.repo}/issues/{number}/labels')
-    return tuple(str(one.get('name') or '') for one in (found if isinstance(found, list) else []))
+#: A thread changed within this many seconds of this machine's own comment on it is that comment, not news.
+OWN_WINDOW_S: Final = 5.0
 
 
 def _own_path() -> Path:
-    return _dir() / 'own-comments.txt'
+    return _dir() / 'own-comments.jsonl'
 
 
-def record_own(comment_id: int) -> None:
-    """Remember a comment this machine posted, so its own words never come back as news (the comment door calls it)."""
+def record_own(key: str, at: float | None = None) -> None:
+    """Remember that this machine commented on thread *key* at *at* (the one comment door calls it)."""
     _own_path().parent.mkdir(parents=True, exist_ok=True)
     with _own_path().open('a', encoding='utf-8') as out:
-        out.write(f'{comment_id}\n')
+        out.write(json.dumps({'key': key, 'at': time.time() if at is None else at}) + '\n')
 
 
-def _own() -> frozenset[int]:
+def _own() -> dict[str, list[float]]:
+    found: dict[str, list[float]] = {}
     try:
-        return frozenset(int(x) for x in _own_path().read_text(encoding='utf-8').split())
-    except (OSError, ValueError):
-        return frozenset()
+        lines = _own_path().read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return found
+    for raw in lines:
+        with contextlib.suppress(ValueError, KeyError, TypeError):
+            row = json.loads(raw)
+            found.setdefault(str(row['key']), []).append(float(row['at']))
+    return found
+
+
+def _is_own(thread: Thread, own: dict[str, list[float]]) -> bool:
+    """Whether *thread*'s newest change is this machine's own comment: within :data:`OWN_WINDOW_S` of one."""
+    stamps = own.get(thread.key)
+    if not stamps or not thread.updated:
+        return False
+    try:
+        changed = dt.datetime.fromisoformat(thread.updated).timestamp()
+    except ValueError:
+        return False
+    return any(abs(changed - at) <= OWN_WINDOW_S for at in stamps)
 
 
 def bound_sessions() -> dict[str, tuple[str, ...]]:
@@ -350,27 +388,16 @@ def _say(thread: Thread) -> str:
 
 
 def hear_feed(clients: Callable[[Forge], Client], forges: Iterable[Forge]) -> tuple[str, ...]:
-    """One feed read per forge HOST among *forges*; each changed thread to its tasks' sessions; the hosts heard."""
-    by_host: dict[str, Forge] = {}
-    for forge in forges:
-        by_host.setdefault(forge.host, forge)
+    """One read per declared repository; each changed thread to its tasks' sessions; the repositories heard."""
     sessions_of = bound_sessions()
-    pr_tasks, own, heard_hosts = _pr_tasks(sessions_of), _own(), []
-    for host, forge in sorted(by_host.items()):
-        try:
-            threads = read_feed(clients(forge))
-        except PermissionError as refused:
-            for names in sessions_of.values():
-                for session in names:
-                    deliver(session, f'{RULE}: {refused}')
-            continue
-        heard_hosts.append(host)
+    pr_tasks, own, heard_repos = _pr_tasks(sessions_of), _own(), []
+    for forge in sorted(set(forges), key=lambda f: f.identity):
+        threads = read_feed(clients(forge))
+        heard_repos.append(forge.identity)
         for thread in threads:
-            if thread.comment is None or thread.comment not in own:
-                _deliver_thread(
-                    thread, route(thread, _labels(clients(thread.forge), thread.number), pr_tasks), sessions_of
-                )
-    return tuple(heard_hosts)
+            if not _is_own(thread, own):
+                _deliver_thread(thread, route(thread, thread.labels, pr_tasks), sessions_of)
+    return tuple(heard_repos)
 
 
 def _deliver_thread(thread: Thread, tasks: set[str], sessions_of: dict[str, tuple[str, ...]]) -> None:
@@ -384,27 +411,25 @@ def _deliver_thread(thread: Thread, tasks: set[str], sessions_of: dict[str, tupl
 
 
 def _forges() -> list[Forge]:
-    """The forges to hear: every repository a bound session's PRs live in and each bound task's ledger checkout."""
+    """The repositories to hear: every checkout the machine file declares under ``[repos]`` -- no list of its own."""
+    from lab_commons.config import section  # noqa: PLC0415 - the machine file, read per tick
+
     forges = []
-    for names in bound_sessions().values():
-        for session in names:
-            forges += [row.forge for row in sessionprs.open_rows(session)]
-            with contextlib.suppress(OSError, ValueError, subprocess.CalledProcessError):
-                bound = taskbinding.binding(session)
-                if bound is not None:
-                    forges.append(forge_from_remote(taskbinding.checkout_root(bound.ledger)))
+    for path in (section('repos') or {}).values():
+        with contextlib.suppress(OSError, ValueError, subprocess.CalledProcessError):
+            forges.append(forge_from_remote(Path(str(path))))
     return forges
 
 
 def poll_once(
-    *, clients: Callable[[Forge], Client], forges: Callable[[], Iterable[Forge]] = _forges, now: float | None = None
+    *, clients: Callable[[Forge], Client], forges: Callable[[], Iterable[Forge]] | None = None, now: float | None = None
 ) -> tuple[str, ...]:
-    """ONE tick: one feed read per forge host, then each session's OPEN PR statuses (no feed carries a status).
+    """ONE tick: one read per declared repository, then each session's OPEN PR statuses (no listing carries one).
 
     The beat records the hosts whose feed was read and the PR keys whose statuses were read.
     """
     started = time.time() if now is None else now
-    hosts = hear_feed(clients, forges())
+    hosts = hear_feed(clients, (forges or _forges)())
     covers: list[str] = []
     for session in sessions():
         polled = {row.key for row in sessionprs.open_rows(session)}
@@ -441,17 +466,18 @@ def heard(session: str, *, now: float | None = None) -> bool:
 def run(
     *,
     clients: Callable[[Forge], Client],
-    every_s: float = POLL_S,
+    every_s: float | None = None,
     sleep: Callable[[float], None] = time.sleep,
     yielding: Callable[[], str] = env_superseded,
 ) -> int:
     """Hold the machine lock and poll until the venv is wanted (:data:`YIELDED`); 1 when another watcher runs."""
+    period = tick_s() if every_s is None else every_s
     with held() as mine:
         if not mine:
             return 1
         while not yielding():
             poll_once(clients=clients)
-            sleep(every_s)
+            sleep(period)
         return YIELDED
 
 

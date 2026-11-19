@@ -83,11 +83,12 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A task hears every change on what it subscribes to, in any repository and on both forges, without the '
             'user telling it (D79): an issue or PR labelled `task:<slug>` and every PR a session of the task opened '
             'or pushed (recorded by the door that acts: `forge pr create`, the family pre-push row `session-prs`). '
-            'ONE machine hearer (`forgefeed`, started at session start) reads each forge host`s notification feed '
-            'ONCE per tick from a persisted cursor -- never a request per issue or PR -- routes each changed thread '
+            'ONE machine hearer (`forgefeed`, started at session start) reads each declared repository`s issues and '
+            'PRs updated since a persisted cursor ONCE per tick -- never a request per issue or PR -- routes each '
+            'changed thread '
             'to the sessions bound to its tasks (a task with none keeps it for the next binding) and reads the commit '
-            'statuses of open PRs, which no feed carries; each is said at the session`s next prompt. A feed the '
-            'token may not read is refused by name with the scope to add. `forge watch --session <id> --stream` '
+            'statuses of open PRs, which no listing carries; each is said at the session`s next prompt. '
+            '`forge watch --session <id> --stream` '
             'reads the PR record on request, and `--ack <pr> --reason <why>` records why a red stands.'
         ),
         ('tests/test_dev_sessionwatch.py',),
