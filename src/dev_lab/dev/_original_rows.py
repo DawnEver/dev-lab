@@ -15,6 +15,7 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
+    'vscodesettings',  # ORIGINAL: the editor excludes a checkout carries, derived from the storage kinds (2026-11-19)
     'callorigins',  # extracted in-kit lexical binding owner for reflection and tolerance scanners
     'ab_bench',
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
