@@ -309,6 +309,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'table',
     'runner',
     'inprocess',  # ORIGINAL: split from runner: a `python -m` row run in the stage's one interpreter (2026-11-16)
+    'gitfailure',  # ORIGINAL: split from runner: the runner's own failed git query, named (O21, 2026-11-19)
     'filechecks',
     'ciworkflows',
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
