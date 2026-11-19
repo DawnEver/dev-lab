@@ -75,7 +75,7 @@ from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_cli, _dep_local, _dep_project, venvcurrent
+from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
 from dev_lab.dev._dep_aftersync import after_sync
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
@@ -417,7 +417,7 @@ def main(
     if why := _dep_cli.argv_error(args, locking=locking):
         parser.error(why)
     root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
-    base, selected, paths = _dep_project.read_project(root, args.extra)
+    base, selected, paths = _dep_project.read_project(root, args.extra or depneeds.bound_task_extras(root))
     live = Path(base).parent.parent
     if Path(base).is_file() and Path(_snapshot(base)[0]).resolve() != live.resolve():
         msg = f'{base} does not execute in its own environment {live}'
