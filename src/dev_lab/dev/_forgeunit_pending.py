@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from lab_commons.compute.durable import durable_write
+from lab_commons.compute.store import Nondeterministic
 from lab_commons.log import emit
 
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -46,8 +47,6 @@ def unread(pending: Path | None, failed: OSError, what: str) -> None:
 
 def flush_held(pending: Path | None, land: Callable[[Path], None]) -> list[str]:
     """Land every held result, then every held grave; stop at the first the forge still cannot take."""
-    from dev_lab.dev.forgeunit import Nondeterministic  # noqa: PLC0415 -- the store's own error; no import cycle
-
     if pending is None or not pending.is_dir():
         return []
     lines: list[str] = []
