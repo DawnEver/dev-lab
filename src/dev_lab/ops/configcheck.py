@@ -88,6 +88,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         'dev': {},
         **({key: {} for key in devschema.MACHINE_TABLES} if 'dev' in parsed else {}),
         **({'ssh': {}} if 'dev' in parsed else {}),
+        **({app: {} for app in devschema.app_tables(shared)} if 'dev' in parsed else {}),
     }
     return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
 
