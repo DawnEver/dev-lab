@@ -732,7 +732,9 @@ def test_pr_close_without_a_reason_is_refused_before_any_call(server, tmp_path: 
     _answer('PATCH', '/api/v1/repos/o/r/pulls/9', (200, {**_PR, 'state': 'closed'}))
     argv = ['pr', 'close', '9', '--reason', 'superseded']
     assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
-    assert [r['method'] for r in _Recorder.received] == ['POST', 'PATCH']
+    # The writes only: the visibility and public-name reads before them are cached per process, so whether they are
+    # sent here depends on which parametrized case ran first (the flake seen 2026-11-19).
+    assert [r['method'] for r in _Recorder.received if r['method'] != 'GET'] == ['POST', 'PATCH']
 
 
 class _Answer:

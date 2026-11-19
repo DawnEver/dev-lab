@@ -18,6 +18,7 @@ from _forge_fake import run_git
 
 from dev_lab.dev import privatemarkers, walls
 from dev_lab.dev.forgecli import issue_and_pr
+from dev_lab.dev.forgehosts import public_siblings
 
 _MARKERS = (re.compile('zorblaxhost', re.IGNORECASE),)
 
@@ -53,3 +54,43 @@ def test_the_create_door_records_the_wall_with_its_rule_and_a_door(
     assert not any(line.startswith('[forge] PRIVATE-MARKERS') for line in lines), err
     rows = [json.loads(line) for line in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
     assert [(row['rule'], row['remedy_present']) for row in rows] == [('PRIVATE-MARKERS', True)]
+
+
+def test_a_public_sibling_named_in_the_text_is_not_a_private_marker() -> None:
+    """A public sibling named in a public text is not a private marker (dev-lab#791 wall 3).
+
+    A PR title naming a public sibling repo was refused: the machine denylist names every family repo and the TEXT
+    scans masked no public name. PLANTED CONTROLS: the same entry, not published, still refuses; a private value
+    beside the public name on the same line still refuses.
+    """
+    markers = (re.compile('zorblax-lab', re.IGNORECASE), re.compile('quuxhost', re.IGNORECASE))
+    assert privatemarkers.text_refusal('relock zorblax-lab', 'PR title', markers, public=('zorblax-lab',)) is None
+    assert privatemarkers.text_refusal('relock zorblax-lab', 'PR title', markers) is not None
+    assert (
+        privatemarkers.text_refusal('relock zorblax-lab on quuxhost', 'PR title', markers, public=('zorblax-lab',))
+        is not None
+    )
+
+
+class _Owner:
+    """A forge client whose owner publishes two repos and keeps one private."""
+
+    repo = '/repos/someone/zorblax-lab'
+
+    def __init__(self) -> None:
+        self.paths: list[str] = []
+
+    def call(self, method: str, path: str) -> object:
+        self.paths.append(path)
+        return [
+            {'name': 'zorblax-lab', 'private': False},
+            {'name': 'flimflam-lab', 'private': False},
+            {'name': 'secret-lab', 'private': True},
+        ]
+
+
+def test_the_public_siblings_are_the_owners_repos_the_forge_says_are_public() -> None:
+    client = _Owner()
+    assert public_siblings(client) == ('zorblax-lab', 'flimflam-lab')
+    assert client.paths
+    assert client.paths[0].startswith('/users/someone/repos')
