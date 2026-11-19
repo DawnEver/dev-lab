@@ -285,7 +285,11 @@ def _drift(path: Path, live: Mapping[str, Any], clone: Path | None) -> int:
 
 def _detect(source: Path | None) -> int:
     if source is None:
-        emit('refused: detect needs --from (no [devhost] in the machine file)', err=True)
+        emit(
+            "refused: detect needs --from <the config source's checkout> (no [devhost] in the machine file): "
+            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
+            err=True,
+        )
         return 2
     homes = vendordetect.detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
     for name, home in homes.items():
@@ -309,7 +313,11 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
     own = live.get(OWN_TABLE, {})
     host, clone = args.host or own.get('host') or platform.node(), _source(args.clone, own)
     if not host or clone is None:
-        emit('refused: render needs --from, the config-source clone (no [devhost] in the machine file)', err=True)
+        emit(
+            "refused: render needs --from <the config source's checkout> (no [devhost] in the machine file): "
+            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
+            err=True,
+        )
         return 2
     try:
         text = render(clone, host, live)
