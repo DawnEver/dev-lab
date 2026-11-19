@@ -139,6 +139,7 @@ PAGES: Final[tuple[Page, ...]] = (
     Page(
         'forgefeed', 'How a task hears the forge', 'One issues-since read per repository, task:<slug> labels, inboxes'
     ),
+    Page('storage', 'Storage kinds', 'Where output, venvs, worktrees and caches live; one resolver, machine-bound'),
     Page(
         'adding-a-workstation',
         'Adding a forge workstation',
