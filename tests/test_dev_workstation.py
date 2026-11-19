@@ -101,6 +101,10 @@ class Box:
         return workstation.deploy([*DEPLOY, *extra], programs=self.programs)
 
 
+#: A fake ``-m dev_lab.dev.toolrelease``: it logs ``toolrelease <verb> <tool>`` and installs nothing.
+_FAKE_TOOLRELEASE = 'import sys; open(sys.argv[1], "a").write("toolrelease " + " ".join(sys.argv[2:]) + chr(10))'
+
+
 @pytest.fixture
 def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
     fakes = tmp_path / 'fakes'
@@ -123,6 +127,8 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
         windows=True,
         home=tmp_path / 'home',
         computer='BOX',
+        toolrelease=(py, '-c', _FAKE_TOOLRELEASE, str(log)),
+        tool_dir=tmp_path / 'tools',
     )
     return Box(tmp_path / 'home' / 'repos', machine, task, log, programs)
 
@@ -563,3 +569,16 @@ def test_a_host_follow_never_moves_a_checkout_a_live_run_executes_from(tmp_path:
 def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
     carry(monkeypatch, HPC_REPO)
+
+
+def test_a_box_without_rclone_installs_the_pinned_release(box: Box) -> None:
+    """D76: the setup installs every pinned-release tool that resolves nowhere, through its one door."""
+    lacking = replace(box, programs=replace(box.programs, which=lambda t: None if t == 'rclone' else f'/bin/{t}'))
+    assert lacking.deploy() == 0
+    assert 'toolrelease install rclone' in lacking.calls()
+
+
+def test_a_box_with_rclone_installs_nothing(box: Box) -> None:
+    """PLANTED CONTROL for the install test: a resolvable rclone is left alone."""
+    assert box.deploy() == 0
+    assert not [call for call in box.calls() if call.startswith('toolrelease')]

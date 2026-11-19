@@ -33,10 +33,10 @@ def test_the_credential_store_must_be_configured_and_private(
     assert (fix in problem) if fix else problem == ''
 
 
-def test_uv_is_always_needed_and_each_tool_is_installed_or_refused() -> None:
+def test_uv_and_rclone_are_always_needed_and_each_tool_is_installed_or_refused() -> None:
     """PLANTED CONTROL: a box that has everything installs nothing and refuses nothing."""
     installs, refused = deploy_checks.tool_plan(['cargo', 'cmake', 'cc'], found=lambda _t: False)
-    assert [tool for tool, _script in installs] == ['uv', 'cargo', 'cmake'], 'uv first: cmake comes through it'
+    assert [tool for tool, _script in installs] == ['uv', 'rclone', 'cargo', 'cmake'], 'uv first: cmake needs it'
     assert refused == ['cc']
     assert deploy_checks.tool_plan(['cargo', 'cc'], found=lambda _t: True) == ([], [])
 
@@ -105,3 +105,10 @@ def test_the_serve_git_floor_is_proven_by_a_toy_merge_tree_never_by_its_version(
 
 def test_a_git_that_does_not_run_is_refused(tmp_path: Path) -> None:
     assert 'does not run' in deploy_checks.merge_tree_refusal([str(tmp_path / 'absent-git')], tmp_path)
+
+
+def test_rclone_installs_through_the_pinned_release_door() -> None:
+    """D76: rclone is never a curl-pipe-shell; it is the sha256-checked pinned release, run by the kit's python."""
+    script = deploy_checks.INSTALLERS['rclone']
+    assert script.endswith('-m dev_lab.dev.toolrelease install rclone')
+    assert 'curl' not in script

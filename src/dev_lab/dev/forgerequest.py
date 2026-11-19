@@ -68,12 +68,12 @@ from dev_lab.dev._forgesource import (
     unreproducible,
     unserved,
 )
-from dev_lab.dev.family import declared_in
+from dev_lab.dev.family import declared_in, declared_table
 from dev_lab.dev.forgerequestpaths import NOT_A_PATH, blobs, path_refusal, placement, test_roots
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.venvpath import running_interpreter
-from dev_lab.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_files, selection_mem_gb
+from dev_lab.dev.verifybox import SELECTION_CPU, selection_files, selection_mem_gb, wall_of
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -213,7 +213,11 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     except ValueError as why:
         raise UndeclaredRequest(str(why)) from why
     mem_gb = selection_mem_gb(repo, paths, SELECTION_CPU)
-    return Declared(TESTS, (*door, '--', *paths), needs, float(SELECTION_CPU), mem_gb, SELECTION_WALL_S / 3600)
+    try:
+        wall_s = wall_of(declared_table(tomllib.loads(text), 'verify', {}), f'pyproject.toml at {sha[:12]}')
+    except ValueError as why:
+        raise UndeclaredRequest(str(why)) from why
+    return Declared(TESTS, (*door, '--', *paths), needs, float(SELECTION_CPU), mem_gb, wall_s / 3600)
 
 
 def _unit_request(_root: Path, _sha: str, paths: Sequence[str]) -> Declared:
