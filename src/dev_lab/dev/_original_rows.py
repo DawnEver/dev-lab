@@ -331,7 +331,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
-    'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
+    'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
+    'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
     'venvfollow',
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
@@ -387,6 +388,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'dataconsumers',
     # ORIGINAL: user ruling 2026-11-11, a data repo's tests/base is its consumers' tests; no consumer held it.
     'verifiedby',
+    # ORIGINAL: D78 (2026-11-18), a part's needs refused by name when their extra is missing; no consumer held it.
+    'depneeds',
     # ORIGINAL: D76 (2026-11-18), a pinned, sha256-checked tool installed user-space; no consumer held one.
     'toolrelease',
 )

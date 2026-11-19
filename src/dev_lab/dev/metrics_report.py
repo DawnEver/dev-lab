@@ -19,8 +19,8 @@ from lab_commons.config import config_path
 from lab_commons.home import repos
 from lab_commons.log import emit
 
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgepulls import pages
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.metrics import KINDS, read, record, repo_of
 from dev_lab.dev.metrics_compute import Metrics, compute, landings

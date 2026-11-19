@@ -1,7 +1,7 @@
 """PUSHED-HEAD-IS-WATCHED: a push door names who hears the head it pushed -- the machine PR watcher.
 
 User ruling 2026-10-29 (D83), then dev-lab #640: ONE hearer of a session's PRs, the machine watcher
-(:mod:`dev_lab.dev.prwatcher`), which polls every PR a session opened or pushed (:mod:`dev_lab.dev.sessionprs`, the
+(:mod:`dev_lab.dev.forgefeed`), which polls every PR a session opened or pushed (:mod:`dev_lab.dev.sessionprs`, the
 record the doors write) and says each change at the session's next prompt. So:
 
 * ``forge pr create`` and a successful push through the family door (:mod:`dev_lab.dev.netverb`) print
@@ -50,7 +50,7 @@ def heard_line(sha: str) -> str:
     """The one line a push door prints for pushed *sha*: the machine PR watcher hears it, and how to start one."""
     return (
         f"{RULE}: {sha[:12]} pushed; the machine PR watcher hears this session's PRs and says each change at your "
-        f'next prompt -- if none runs, start it: {running_interpreter()} -m dev_lab.dev.prwatcher start'
+        f'next prompt -- if none runs, start it: {running_interpreter()} -m dev_lab.dev.forgefeed start'
     )
 
 
