@@ -66,7 +66,8 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         # PowerShell spells the same skip as an environment assignment.
         r"""|SKIP=|\$env:SKIP\s*=)"""
     ),
-    'matches': 'command',
+    # 'shell': a python heredoc EDITING text that names a push is not a push (O25, 2026-11-17).
+    'matches': 'shell',
     'scope': 'subagent',
     'hazard': 'publishing is the main session`s, and a skipped hook publishes what nobody checked.',
     'remedy': 'Commit on your lane and hand the commit SHA back to the main session, which merges and pushes; '

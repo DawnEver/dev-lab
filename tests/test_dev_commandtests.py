@@ -95,8 +95,8 @@ def test_a_mixed_selection_runs_both_and_either_red_fails_it(tmp_path: Path, mon
 
     def step(command: list[str], *, handle, extra_env=None, **where: object) -> int:
         ran.append(command)
-        if not extra_env:
-            return real(command, handle=handle, **where)
+        if OUTCOMES_DIR_VAR not in (extra_env or {}):  # the script step: run it for real (its temp env included)
+            return real(command, handle=handle, extra_env=extra_env, **where)
         CellRecorder(Path(extra_env[OUTCOMES_DIR_VAR]) / 'cells.jsonl').record(
             'tests/test_one.py::test_one', TestCell(Cell(Status.OK))
         )

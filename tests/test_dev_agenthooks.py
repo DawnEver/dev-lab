@@ -488,6 +488,20 @@ def test_a_subagent_push_is_refused_and_the_main_session_keeps_its_own_door(rule
     assert outside.startswith('NETWORK-VERB:'), 'the main session lost its own (retry) door'
 
 
+def test_a_subagent_push_is_read_in_shell_text_never_in_python_source(rules: Path) -> None:
+    """O25: SUBAGENT-NO-PUSH (matches 'shell') reads what a SHELL runs, never interpreter source.
+
+    A python heredoc EDITING text that names a push runs no push. PLANTED CONTROLS: the same words handed to a
+    shell -- a heredoc body or a ``-c`` script -- are still a push and still refused.
+    """
+    edit = "python - <<'EOF'\ntext = '''\ngit push origin HEAD\n'''\nEOF"
+    assert agenthooks.decide(edit, rules, agent_id='a1') is None
+    for shell in ('bash <<EOF\ngit push origin HEAD\nEOF', 'bash -c "git push origin HEAD"'):
+        reason = agenthooks.decide(shell, rules, agent_id='a1')
+        assert reason is not None, shell
+        assert reason.startswith('SUBAGENT-NO-PUSH:'), reason
+
+
 def test_a_subagent_is_refused_through_the_powershell_tool_too(rules: Path) -> None:
     reason = agenthooks.decide('git push origin HEAD', rules, tool='PowerShell', agent_id='a1')
     assert reason is not None
@@ -713,3 +727,26 @@ def test_a_collect_only_segment_admits_no_running_sibling(rules: Path) -> None:
     assert agenthooks.decide('pytest tests && echo --co', rules) is not None
     assert agenthooks.decide('pytest tests; echo --collect-only', rules) is not None
     assert agenthooks.decide('pytest tests | grep --co', rules) is not None
+
+
+def test_interpreter_code_is_read_without_its_string_literals(rules: Path) -> None:
+    """O48: a python heredoc whose STRING holds ``rmtree(`` (source it writes) was refused RECURSIVE-DELETE.
+
+    Code is read with its string literals blanked, so text a program only carries is never a command it runs.
+    PLANTED CONTROLS: the same heredoc CALLING ``shutil.rmtree`` is still refused, and so is a bash ``rm -rf``.
+    """
+    writes = (
+        'python - <<\'EOF\'\nsrc = """\nimport shutil\nshutil.rmtree(target)\n"""\nopen("f.py", "w").write(src)\nEOF'
+    )
+    assert agenthooks.decide(writes, rules) is None, 'a string the program only writes was read as its command'
+    single = "python - <<'EOF'\nnote = 'shutil.rmtree(x)'\nprint(note)\nEOF"
+    assert agenthooks.decide(single, rules) is None
+    calls = "python - <<'EOF'\nimport shutil\nshutil.rmtree('C:/work/repo')\nEOF"
+    reason = agenthooks.decide(calls, rules)
+    assert reason is not None, 'a real rmtree call in a heredoc went unrefused'
+    assert reason.startswith('RECURSIVE-DELETE:'), reason
+    after = 'python - <<\'EOF\'\nx = """doc"""\nshutil.rmtree(p)\nEOF'
+    assert (agenthooks.decide(after, rules) or '').startswith('RECURSIVE-DELETE:'), 'a call after a string was hidden'
+    bash = agenthooks.decide('rm -rf .claude/worktrees/lane', rules)
+    assert bash is not None
+    assert bash.startswith('RECURSIVE-DELETE:'), bash

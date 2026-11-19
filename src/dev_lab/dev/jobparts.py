@@ -140,6 +140,9 @@ _ANY_RUN: Final = "${{ needs.parts.outputs.matrix != '' }}"
 #: macos, D84; a merge's smoke takes the PR's set, D48-1A), never one main already holds (an empty matrix).
 _FULL_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
 
+#: The ``if`` of a ``manual`` hosted part's job: a manual dispatch only, never the nightly (user ruling D66).
+_DISPATCH_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event == 'workflow_dispatch' }}"
+
 
 #: The hosted job's key store: ai-lab reads keys from the git credential store ONLY, so the job keeps an in-memory
 #: one of its own under RUNNER_TEMP (F-83bc8b74b803). Its lifetime is the review's rule (ci_base.toml, 30 min):
@@ -190,7 +193,7 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
         steps = [*one['steps'][:-1], *before, one['steps'][-1], *after]
         added[f'part-{name}'] = {
             **one,
-            'if': _FULL_ONLY if part.tasks else _ANY_RUN,
+            'if': _DISPATCH_ONLY if part.manual else _FULL_ONLY if part.tasks else _ANY_RUN,
             'runs-on': hosted_runner(name),
             'steps': steps,
         }
@@ -273,8 +276,10 @@ def hosted_runner(part: str) -> str:
 
 
 def off_gate(parts: Iterable[str], declared: Mapping[str, Hosted]) -> frozenset[str]:
-    """The *parts* no Actions job produces: neither *declared* hosted nor with a hosted runner."""
-    return frozenset(part for part in parts if part not in declared and runner_for(row_part(part)) is None)
+    """The *parts* no gating Actions job produces: a ``manual`` hosted one, or neither hosted nor hosted-runnable."""
+    return frozenset(
+        part for part in parts if (declared[part].manual if part in declared else runner_for(row_part(part)) is None)
+    )
 
 
 def systems_for(event: str) -> tuple[str, ...]:
@@ -286,8 +291,10 @@ def rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str
     """*part*'s matrix rows: one per OS of *event* when it runs hosted and names no OS, else its one runner.
 
     A *declared* hosted part has one :func:`hosted_runner` row carrying its secrets' names (its own job's mark),
-    and none on a pull request when it names any.
+    and none on a pull request when it names any; a ``manual`` one has a row on a manual dispatch alone.
     """
+    if part in declared and declared[part].manual and event != 'workflow_dispatch':
+        return []
     if part in declared:
         row = {'part': part, 'runs-on': hosted_runner(part), 'secrets': list(declared[part].secrets)}
         return [] if event == 'pull_request' and row['secrets'] else [row]
