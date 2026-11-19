@@ -40,10 +40,10 @@ from lab_commons.log import emit
 from dev_lab.dev.branchreview import carried_after, chained, context
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.forgealarm import PRUNED, Alarm
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_by_head, pr_list
 from dev_lab.dev.forgereview_declared import review_at
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 
 if TYPE_CHECKING:
@@ -94,7 +94,15 @@ def open_continuation(client: Client, landed: PullRequest, *, reviewers: Sequenc
     record = chained(client, landed.head, landed.number)
     carry = carried_after(client, record, record.prs, reviewers)
     body = continues_body(landed, context(carry) if carry else '')
-    pull = client.pr_create(continues_title(landed), body, head=landed.head, base=landed.base, draft=False)
+    try:
+        pull = client.pr_create(continues_title(landed), body, head=landed.head, base=landed.base, draft=False)
+    except ForgeCallFailed:
+        # Another pass (the CI step or the serve tick) opened the head's PR between our read and this create: the
+        # forge refuses a second one (422), and that open PR IS the continuation. Anything else stays a failure.
+        newest = pr_by_head(client, landed.head, landed.base)
+        if newest is None or newest.state != 'open' or newest.number == landed.number:
+            raise
+        pull = newest
     chained(client, landed.head, pull.number)
     return pull
 

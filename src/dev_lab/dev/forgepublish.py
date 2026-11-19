@@ -20,6 +20,7 @@ from pathlib import Path
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelabels import add_label, ensure_labels
 from dev_lab.dev.forgerequest import (
@@ -31,7 +32,7 @@ from dev_lab.dev.forgerequest import (
 )
 from dev_lab.dev.forgerequesthost import DONE_LABEL
 from dev_lab.dev.forgeschedule import load_schedule
-from dev_lab.dev.forgework import Client, Issue, client_for
+from dev_lab.dev.forgework import Client, Issue
 
 __all__ = ['RequestRefused', 'main', 'publish']
 

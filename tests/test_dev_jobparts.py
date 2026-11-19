@@ -13,9 +13,10 @@ from _forge_state import StateForge
 
 from dev_lab.dev import forgemergewaits, hostedparts, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
-from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, client_for
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.producer import OUTCOME_VAR, Owner, full_suite_refusal, owner_of, unreachable
 

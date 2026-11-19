@@ -80,10 +80,10 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.commandtests import declared_command
 from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import deliver_unit
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostedparts import Hosted, hosted_parts
 from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row, row_part
 from dev_lab.dev.platformparts import part_context, producer_argv

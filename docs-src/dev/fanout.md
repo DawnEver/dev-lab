@@ -18,13 +18,20 @@ forge's job, not yours.
   ```
 
   The target is always `<worktree>/.venv`, never an inherited `VIRTUAL_ENV`. Failures exit non-zero.
-- A consumer declares its complete selection in `pyproject.toml`; with no `--extra`, sync realises all of it,
-  and explicit `--extra` flags narrow it. `--dry-run` checks without mutating.
+- Extras are installed ON DEMAND (D78). With no `--extra` and nothing declared, a sync installs the base
+  dependencies and NO extra -- never every available one. A consumer declares the extras every worktree needs, and
+  maps each test need (a resource marker, the need-set a part is named for) to the extra that serves it; explicit
+  `--extra` flags replace the declared list. `--dry-run` checks without mutating.
 
   ```toml
   [tool.dev_lab.dep]
-  extras = ["all", "dev"]
+  extras = ["dev"]
+  needs = { simba = "simba" }   # need -> declared extra
   ```
+
+  `verify --part <part>` refuses a part whose need maps to an extra this environment lacks, naming the exact sync
+  that adds it (the declared extras plus the missing one, `python -m dev_lab.dev.dep --sync <tree> --extra ...`).
+  Add an extra when a task needs it; never bootstrap a lane with every extra.
 
 - An environment is the lock. To run against a family sibling's LOCAL checkout instead of its locked version,
   declare it: per machine in the machine file, or for one run with `--local <name>` (repeatable). The sync

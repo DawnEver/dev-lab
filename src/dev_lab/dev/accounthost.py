@@ -19,6 +19,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from dev_lab.dev.devschema import app_tables
 from dev_lab.dev.hpcaccount.spec import load
 
 __all__ = ['TABLES', 'check', 'derived', 'grant_of', 'is_account']
@@ -81,7 +82,8 @@ def check(path: Path, host: Mapping[str, Any], family: Mapping[str, Any]) -> lis
         f'{key} restates the family file; it lives there once'
         for key in sorted(set(_leaves(host)) & set(_leaves(family)))
     ]
-    found += [f'{key} is not an account table' for key in _undeclared(host, TABLES)]
+    opened = {**TABLES, **{app: {} for app in app_tables(family)}}
+    found += [f'{key} is not an account table' for key in _undeclared(host, opened)]
     try:
         load(path)
     except ValueError as bad:
