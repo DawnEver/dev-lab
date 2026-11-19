@@ -57,6 +57,7 @@ from dev_lab.dev.agent_wiring import (
     rows,
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
+from dev_lab.dev.launcherplan import launcher_plan
 from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
 from dev_lab.dev.trackedrender import Kit, RenderRefused, check_render
 from dev_lab.dev.venvpath import running_interpreter
@@ -96,8 +97,6 @@ UNGUARDED: Final = 'unguarded'
 NOTHING_DECLARED: Final = 'nothing-declared'
 
 _LAUNCHER_SHIPPED: Final = Path(__file__).resolve().with_name('agent_launcher.js')
-#: The line every launcher dev-lab ever shipped carries: present with other bytes means a STALE shipped launcher.
-_LAUNCHER_PROVENANCE: Final = 'Launcher shipped by dev-lab'
 #: The one environment resolver the launcher and the engine require, installed beside each (dev-lab #641).
 _RESOLVER: Final = 'venv_resolver.js'
 
@@ -383,16 +382,10 @@ def _planned(repo: Path, *, force: bool) -> tuple[dict[Path, bytes], list[str]]:
         actions.append(f'engine {"replaced" if status != ABSENT else "installed"}: {engine}')
 
     launcher = repo / LAUNCHER_REL
-    shipped_launcher = launcher_source()
-    present = launcher.read_text(encoding='utf-8') if launcher.exists() else None
-    if present is not None and present.replace('\r\n', '\n') == shipped_launcher.replace('\r\n', '\n'):
-        actions.append(f'launcher already current: {launcher}')
-    elif present is not None and _LAUNCHER_PROVENANCE not in present:
-        actions.append(f'launcher is the repo own, kept: {launcher}')
-    else:
-        writes[launcher] = _text(shipped_launcher)
-        replaced = 'replaced (a stale dev-lab launcher)' if present is not None else 'installed'
-        actions.append(f'launcher {replaced}: {launcher}')
+    write, action = launcher_plan(launcher, launcher_source())
+    if write is not None:
+        writes[launcher] = _text(write)
+    actions.append(action)
 
     catalog = launcher.with_name('native_session.json')
     catalog_bytes = _LAUNCHER_SHIPPED.with_name('native_session.json').read_bytes()

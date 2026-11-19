@@ -134,6 +134,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   whose stdout is a JSON decision. It MOVES verbatim: two answers to "what will this shell line
   execute" is the fork these modules exist to remove. Unlike a git hook it is INSTALLED into the
   consumer, its command line in a committed ``.claude/settings.json``.
+* :mod:`dev_lab.dev.launcherplan` -- keep, keep the repo's own, or rewrite a repo's agent launcher.
 * :mod:`dev_lab.dev.agent_guard` -- AGENT-GUARD-IS-LIVE, the hook-install question one layer up:
   a rendered ``deny-rules.json`` is a DECLARATION, and installing the engine plus its ``PreToolUse``
   wiring is a separate act. MEASURED 2026-09-17: the registry and its wiring recipe existed while the
