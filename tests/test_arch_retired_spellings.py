@@ -322,6 +322,10 @@ RETIRED_SPELLINGS: Final = {
             'D40 2026-11-17: dead public names removed (a never-raised error and four uncalled readers)',
         ),
     ),
+    'Ref.of(': (
+        'artefactstores.ref_of_entry (the Ref is lab_commons.compute.store.Ref; .key is .ref)',
+        'L3 Ref half 2026-11-19: one Ref for artefacts and large objects; run_id_of / manifest_of are functions',
+    ),
     'RETIRED_FILES': (
         "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
         "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",

@@ -145,3 +145,20 @@ def test_git_dirs_are_read_off_the_files_without_git(tmp_path: Path) -> None:
     outside.mkdir()
     assert gitdirs.git_dir(outside) is None
     assert metrics.checkout(outside) == outside
+
+
+def test_two_files_written_in_one_clock_tick_never_share_a_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """PLANTED: a clock that does not advance (Windows' coarse ``time_ns``) between the record and the detached job.
+
+    Shared names let the late record's adoption overwrite the detached job, and the runner then unlinked it unrun.
+    """
+    root, _ = _repo(tmp_path), _starts(monkeypatch)
+    monkeypatch.setattr(hookhandoff.time, 'time_ns', lambda: 1_700_000_000_000_000_000)
+    record = hookhandoff.write_ahead(root, 'Stop', '{}', _ROW)
+    job = hookhandoff.hand_off(root, 'Stop', '{}', _ROW)
+    assert record is not None
+    assert record.with_suffix('.json') != job, 'the record, once adopted, would overwrite the queued job'
+    hookhandoff.settle(record, _ROW, root)
+    assert len(list(job.parent.glob('*.json'))) == 2, 'the adopted record and the queued job are both still queued'
