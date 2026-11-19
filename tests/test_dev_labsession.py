@@ -65,7 +65,13 @@ def test_machine_env_drops_the_session() -> None:
 def test_machine_env_drops_every_native_harness_session_so_the_forge_commit_is_not_task_gated() -> None:
     """dev-lab #630: forge sync's relock commit inherited CLAUDE_CODE_SESSION_ID and the session's task gate."""
     keys = native_session.harness_keys()
-    assert {'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID'} <= keys
+    assert {
+        'CLAUDE_CODE_SESSION_ID',
+        'CODEX_THREAD_ID',
+        'CODEX_SESSION_ID',
+        'ANTIGRAVITY_CONVERSATION_ID',
+        'ANTIGRAVITY_TRAJECTORY_ID',
+    } <= keys
     env = labsession.machine_env(env={**dict.fromkeys(keys, _ID), 'PATH': 'p'})
     assert not keys & env.keys()
     assert native_session.session_of(env) == '', 'the task gate judges no session'

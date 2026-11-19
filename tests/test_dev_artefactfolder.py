@@ -11,6 +11,7 @@ import os
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -80,7 +81,10 @@ def test_folder_concurrent_publishers_are_write_once(
 
     def competing_link(source: Path, destination: Path) -> None:
         if str(destination).endswith(ARCHIVE):
-            barrier.wait(timeout=5)
+            # Both publishers meet here, so the two links race. A publisher that fails first aborts the barrier
+            # (below): the other is released at once and the failure shows as a result, not a BrokenBarrierError.
+            with suppress(threading.BrokenBarrierError):
+                barrier.wait(timeout=5)
         link(source, destination)
 
     monkeypatch.setattr(artefactfolder.os, 'link', competing_link)
@@ -89,15 +93,16 @@ def test_folder_concurrent_publishers_are_write_once(
         try:
             return store.put(RUN, source)
         except (ArtefactRefused, OSError) as error:
+            barrier.abort()
             return error
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(publish, sources))
     refs = [value for value in results if isinstance(value, Ref)]
     failures = [value for value in results if isinstance(value, Exception)]
-    assert len(refs) == (2 if same else 1)
+    assert len(refs) == (2 if same else 1), results
     assert len(failures) == (0 if same else 1)
-    assert all(isinstance(value, ArtefactRefused) for value in failures)
+    assert all(isinstance(value, ArtefactRefused) for value in failures), failures
     assert store.list(None) == (refs[0],)
     assert not list(store.root.rglob('*.partial'))
 

@@ -70,7 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             emit(f'commandpart: {node}: {cells[node].why}', err=True)
         # Resolved on PATH first: on Windows `npm` is `npm.cmd`, which a bare name cannot start (WinError 2).
         program = shutil.which(command[0]) or command[0]
-        # D27: the suite's temp dirs land in the dated tree (TMPDIR/TEMP/TMP), asked only when the command runs.
+        # D27: the suite temp dirs (the TMPDIR, TEMP and TMP variables) land in the dated tree, asked at run.
         code = (
             1
             if failed

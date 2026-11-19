@@ -13,7 +13,7 @@ deduplicated per path by the alarm's repeat window).
 
 WHAT IS ALLOWED is the machine home's resolver's, never restated here: a home entry is no escape when it holds
 or lies in one of ``lab_commons.home``'s write roots or agent repos (:func:`allowed_roots`), or when the resolver
-exempts it -- Claude's configuration and git's credential store (user ruling 2026-11-07).
+exempts it -- agent host configuration and git's credential store (user ruling 2026-11-07).
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def _changed(entries: Iterable[Path], since: float) -> list[Path]:
 def scan(roots: Sequence[Path], *, home: Path, allowed: Sequence[Path], since: float) -> list[Path]:
     """Every entry of a watched root, and every top-level home entry outside *allowed*, changed after *since*.
 
-    A home entry ``lab_commons.home`` exempts (Claude's configuration, git's credential store) is never one.
+    A home entry ``lab_commons.home`` exempts (agent host configuration, git's credential store) is never one.
     """
     found: list[Path] = []
     for root in roots:

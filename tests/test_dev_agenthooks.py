@@ -242,11 +242,12 @@ def _conditional_misses(rule_id: str, when: str, command: str, rules: Path) -> l
         if decided is not None and decided.startswith(f'{rule_id}:'):
             misses.append(f'{rule_id}: refused on its prefilter with nobody asked on {command!r}')
         return misses
-    if when == 'live-run':
-        # No run is live in a scan tree: the row must stay SILENT (its live half is test_dev_liverun's).
+    if when in {'live-run', 'declared-repo'}:
+        # A scan tree has no live run and no machine file declaring a forge.example repo: the row stays SILENT
+        # (its live halves are test_dev_liverun's and test_dev_familyrepos').
         decided = agenthooks.decide(command, rules)
         if decided is not None and decided.startswith(f'{rule_id}:'):
-            misses.append(f'{rule_id}: fired with no live run on {command!r}')
+            misses.append(f'{rule_id}: fired with its condition ({when}) unmet on {command!r}')
         return misses
     # 'background': it fires on a background call, and the same line run in the foreground is free.
     decided = agenthooks.decide(command, rules, background=True)

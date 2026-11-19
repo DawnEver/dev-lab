@@ -464,7 +464,7 @@ def _venv_with_dev_lab_at(root: Path, installed: str, locked: str) -> dict[str, 
     (root / 'uv.lock').write_text(f'[[package]]\nname = "dev-lab"\nversion = "0"\n{pin}\n', encoding='utf-8')
     node = node_path().parent.as_posix()
     return {
-        **os.environ,
+        **{k: v for k, v in os.environ.items() if k not in native_session.harness_keys()},
         'CLAUDE_PROJECT_DIR': str(root),
         'CLAUDE_CODE_SESSION_ID': 'planted',
         'PATH': f'{node}{os.pathsep}{os.environ["PATH"]}',
@@ -554,7 +554,13 @@ def test_the_installed_node_launcher_and_python_share_the_exact_native_identity_
 ) -> None:
     agent_guard.install_guard(tmp_path)
     env = {**os.environ, 'CODEX_THREAD_ID': value}
-    for field in ('CLAUDE_CODE_SESSION_ID', 'CLAUDE_PROJECT_DIR', 'CODEX_SESSION_ID'):
+    for field in (
+        'CLAUDE_CODE_SESSION_ID',
+        'CLAUDE_PROJECT_DIR',
+        'CODEX_SESSION_ID',
+        'ANTIGRAVITY_CONVERSATION_ID',
+        'ANTIGRAVITY_TRAJECTORY_ID',
+    ):
         env.pop(field, None)
     done = subprocess.run(
         [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL)],
@@ -591,6 +597,7 @@ def test_the_installed_launcher_refuses_a_missing_or_corrupt_identity_companion(
     done = subprocess.run(
         [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL)],
         cwd=tmp_path,
+        env={k: v for k, v in os.environ.items() if k not in native_session.harness_keys()},
         capture_output=True,
         text=True,
         encoding='utf-8',

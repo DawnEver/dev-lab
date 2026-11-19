@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from datetime import timedelta
 from pathlib import Path
@@ -728,3 +729,32 @@ def test_forge_sync_relocks_a_branch_rev_source_and_leaves_a_sha_pinned_one(tmp_
     reads: list[str] = []
     floating_lag(_BRANCH_REV, _HOUR, behind=lambda _u, branch, _s: reads.append(branch) or _CURRENT)
     assert reads == ['integrate/main'], 'the lag reads the branch the rev names'
+
+
+def _ran_door(monkeypatch, tree: Path) -> list[str]:
+    seen: list[list[str]] = []
+
+    def fake(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 0, '', '')
+
+    monkeypatch.setattr(relock._door, 'run', fake)
+    assert relock.door_upgrade(tree, ('dev-lab',)) == 0
+    return seen[0]
+
+
+def test_the_lock_door_runs_the_trees_own_interpreter_not_the_callers(monkeypatch, tmp_path: Path) -> None:
+    """The door runs from the tree's own environment, which holds the dev_lab its lock pins.
+
+    2026-11-19: ``forge sync`` launched it from a STALE caller env whose older dev_lab refused the tree's alias.
+    """
+    for python in (tmp_path / '.venv' / 'Scripts' / 'python.exe', tmp_path / '.venv' / 'bin' / 'python'):
+        python.parent.mkdir(parents=True, exist_ok=True)
+        python.write_text('', encoding='utf-8')
+    argv = _ran_door(monkeypatch, tmp_path)
+    assert Path(argv[0]).parent.parent == tmp_path / '.venv'
+    assert argv[1:] == ['-m', 'dev_lab.dev.dep', '--lock-upgrade', str(tmp_path), '--upgrade-package=dev-lab']
+
+
+def test_planted_control_a_tree_without_an_environment_runs_the_door_from_the_caller(monkeypatch, tmp_path) -> None:
+    assert _ran_door(monkeypatch, tmp_path)[0] == sys.executable
