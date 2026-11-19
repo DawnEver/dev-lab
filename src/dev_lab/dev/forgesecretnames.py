@@ -1,6 +1,6 @@
 """``forge secrets list [--org]``: the Actions secret NAMES a repository, or its owner org, holds.
 
-Read only, through the family door (:func:`dev_lab.dev.forgework.client_for`: the credential git's store holds for
+Read only, through the family door (:func:`dev_lab.dev.forgeclient.client_for`: the credential git's store holds for
 the checkout's ``origin``, never one read by hand). ``GET <repo>/actions/secrets`` or ``GET /orgs/<owner>/actions/
 secrets``: Gitea answers a list, GitHub ``{"secrets": [...]}``, and neither returns a value. Only each row's ``name``
 is ever printed, one per line, sorted -- any other field an answer carries is dropped unread. A read the forge

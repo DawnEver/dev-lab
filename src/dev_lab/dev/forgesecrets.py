@@ -52,8 +52,8 @@ from lab_commons.log import emit
 from dev_lab.dev import gitdirs
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgesecretnames import Reader, listed
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.taskkeys import secret_name
 
