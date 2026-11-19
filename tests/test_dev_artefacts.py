@@ -33,6 +33,7 @@ from dev_lab.dev.artefacts import (
     RcloneStore,
     Ref,
 )
+from dev_lab.dev.artefactstores import manifest_of
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgework import GITEA, Client
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
@@ -279,7 +280,7 @@ def _policy_repo(root: Path, policy: dict[str, int]) -> Path:
 def _catalogue_record() -> tuple[dict[str, Any], Ref]:
     ref = Ref('folder', 'lab/archive.tar.gz', 42, 'a' * 64)
     member = MemberFact('dir/é.bin', 0, hashlib.sha256(b'').hexdigest())
-    return {'artefacts': [ref.manifest()], 'artefact_indexes': StoredOutputs(ref, (member,)).index()}, ref
+    return {'artefacts': [manifest_of(ref)], 'artefact_indexes': StoredOutputs(ref, (member,)).index()}, ref
 
 
 @pytest.mark.parametrize('missing', list(_QUERY_POLICY))
@@ -350,7 +351,7 @@ def test_write_once_an_existing_object_is_never_overwritten(tmp_path: Path, rclo
 def test_get_refuses_bytes_whose_sha256_does_not_match(tmp_path: Path) -> None:
     store = FolderStore(tmp_path / 'folder', 'lab')
     ref = store.put(RUN, _archive(tmp_path))
-    (tmp_path / 'folder' / ref.key).write_bytes(b'tampered')
+    (tmp_path / 'folder' / ref.ref).write_bytes(b'tampered')
     with pytest.raises(ArtefactRefused, match='sha256'):
         store.get(ref, tmp_path / 'dest')
     assert not (tmp_path / 'dest').exists(), 'a mismatching download is never left behind'
@@ -486,7 +487,7 @@ def test_the_forge_backend_is_write_once_and_verified_too(tmp_path: Path) -> Non
     forge = _Forge()
     store = ForgeStore(cast('Client', forge))
     ref = store.put(RUN, _archive(tmp_path))
-    assert ref.key == f'{RUN}.tar.gz'
+    assert ref.ref == f'{RUN}.tar.gz'
     assert store.get(ref, tmp_path / 'd').read_bytes() == b'payload'
     with pytest.raises(ArtefactRefused, match='write-once'):
         store.put(RUN, _archive(tmp_path, b'other'))
