@@ -17,7 +17,9 @@ import os
 import pathlib
 import re
 import socket
+import ssl
 from dataclasses import dataclass
+from functools import cache
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import lab_commons.launch as _door
@@ -126,7 +128,13 @@ def forge_transport(host: str, timeout: float) -> http.client.HTTPConnection:
     """
     if host.rpartition(':')[0] in _LOOPBACK_HOSTS or host in _LOOPBACK_HOSTS:
         return http.client.HTTPConnection(host, timeout=timeout)
-    return http.client.HTTPSConnection(host, timeout=timeout)
+    return http.client.HTTPSConnection(host, timeout=timeout, context=_tls())
+
+
+@cache
+def _tls() -> ssl.SSLContext:
+    """The process's ONE verifying TLS context: building one loads the system trust store, ~0.03 s on Windows."""
+    return ssl.create_default_context()
 
 
 @dataclass(frozen=True)

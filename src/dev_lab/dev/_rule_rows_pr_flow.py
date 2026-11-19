@@ -68,9 +68,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PUSHED-HEAD-IS-WATCHED',
         (
-            'A pushed head is heard to its verdict, the same on both forges, by ONE hearer: the machine PR watcher '
-            '(SESSION-HEARS-ITS-PRS). `forge pr create` and a successful push through the family door print one '
-            'line naming the pushed head, that watcher and the idempotent `prwatcher start` door; no Monitor is '
+            'A pushed head is heard to its verdict, the same on both forges, by ONE hearer: the machine forge hearer '
+            '(TASK-HEARS-ITS-FORGE-EVENTS). `forge pr create` and a successful push through the family door print one '
+            'line naming the pushed head, that hearer and the idempotent `forgefeed start` door; no Monitor is '
             'armed and no hook journals the push (dev-lab #640). `forge watch <sha>... --stream` still reads a head '
             'on request: one line per status change, exiting on the first listed sha to settle, 0 green, 1 red, 3 '
             'at its deadline.'
@@ -78,15 +78,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_pushwatch.py',),
     ),
     (
-        'SESSION-HEARS-ITS-PRS',
+        'TASK-HEARS-ITS-FORGE-EVENTS',
         (
-            'A session hears every change on every PR it opened or pushed, in any repository and on both forges, '
-            'without the user telling it (ruling 2026-11-11): the door that acts records each such PR in the '
-            'machine home, one file per session (`forge pr create`, the family pre-push row `session-prs`); ONE '
-            'machine watcher (`prwatcher`, started at session start) polls every session record and says each red '
-            'check, all-green, merge or close at that session`s next prompt (dev-lab #640). `forge watch --session '
-            '<id> --stream` reads the same record on request, and `--ack <pr> --reason <why>` records why a red '
-            'stands.'
+            'A task hears what it subscribes to without the user relaying it (D79, D81): an issue or PR labelled '
+            '`task:<slug>`, and every PR a session of the task opened or pushed. ONE machine hearer (`forgefeed`) '
+            'reads each declared repository`s issues and PRs updated since a saved cursor ONCE per tick -- never a '
+            'request per thread -- and routes each change to the sessions bound to its task (none bound: kept for '
+            'the next binding); open PRs` commit statuses are still read per PR. Each is said at the next prompt. '
+            'Detail: docs-src/dev/forgefeed.md.'
         ),
         ('tests/test_dev_sessionwatch.py',),
     ),
