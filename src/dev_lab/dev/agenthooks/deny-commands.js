@@ -607,6 +607,28 @@ function liveRunRefusal(target, sessionRoot) {
     `${remedyPython(sessionRoot)} -m dev_lab.dev.liverun --tree ${target} answers.`;
 }
 
+/* ================================ A ROW THAT BINDS ONLY ON A DECLARED REPO ================================
+ *
+ * `when: 'declared-repo'` (FAMILY-REPO-IS-CHECKED-OUT): the pattern names a clone, refused only when its url is a
+ * family repo this machine already checks out. That is the machine file's answer (the family layer's remotes, the
+ * local layer's paths), which this engine does not parse: it asks `python -m dev_lab.dev.familyrepos clone-check`
+ * with the command on stdin, only AFTER the pattern matched. Exit 1 prints the refusal; anything else -- no
+ * interpreter, no kit, a crash -- refuses NOTHING, because a duplicate clone is removable and a guard that cannot
+ * read the declaration must not block every clone.
+ */
+function declaredRepoRefusal(command, sessionRoot) {
+  const python = venvPython(sessionRoot);
+  if (!python) return '';
+  const done = spawnSync(python, ['-m', 'dev_lab.dev.familyrepos', 'clone-check'], {
+    input: command,
+    encoding: 'utf8',
+    timeout: 15000,
+    windowsHide: true,
+  });
+  const said = String(done.stdout || '').trim();
+  return done.status === 1 && said ? said : '';
+}
+
 /* `when: 'background'`: `python -m dev_lab.dev.shelllife --admit` judges the line on stdin -- exit 0 admitted, exit 1
  * prints the refusal. '' admits; null is nobody to ask (no interpreter, no kit, a crash), and the row's pattern decides. */
 function lifetimeRefusal(cmd, sessionRoot) {
@@ -982,6 +1004,10 @@ for (const rule of rules) {
     // The DIRECTORY, never its repoRoot: a worktree the line is about to create does not exist yet, and walking up
     // from it lands on the checkout holding it -- whose run is not this command's (2026-11-07). liverun resolves it.
     liveReason = liveRunRefusal(input.cwd ? ruleTarget(rule, cmd, input.cwd) : null, sessionRoot);
+    hit = liveReason !== '';
+  }
+  if (hit && rule.when === 'declared-repo') {
+    liveReason = declaredRepoRefusal(cmd, sessionRoot);
     hit = liveReason !== '';
   }
   if (hit && rule.severity === 'hint') {

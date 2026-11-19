@@ -102,7 +102,7 @@ from lab_commons.hpc.tree import NotSubmitted
 
 from dev_lab.dev import forgerunpost, forgerunshow, forgeship
 from dev_lab.dev.artefacts import MissingOutput, OutputBudgetRefused, run_id
-from dev_lab.dev.artefactstores import OutputIntegrityRefused
+from dev_lab.dev.artefactstores import OutputIntegrityRefused, manifest_of
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgecarry import publish
 from dev_lab.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
@@ -360,9 +360,9 @@ def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callab
         root, client, cluster.tree(run), run.outputs, ident=run.artefact, workdir=Path(run.output)
     )
     ref = stored.ref
-    shipped = {**record, 'artefacts': [ref.manifest()], 'artefact_indexes': stored.index()}
+    shipped = {**record, 'artefacts': [manifest_of(ref)], 'artefact_indexes': stored.index()}
     run = forgerunpost.step(run, record=str(write_record(shipped, Path(run.record).parent)))
-    say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.key} ({ref.bytes} bytes)')
+    say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.ref} ({ref.bytes} bytes)')
     return run
 
 

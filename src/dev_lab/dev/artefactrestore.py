@@ -36,7 +36,7 @@ from typing import IO, TYPE_CHECKING, Final, cast
 from dev_lab.dev.artefactindex import MemberFact, require_positive, select_members, validate_ref
 from dev_lab.dev.artefactpack import file_identity
 from dev_lab.dev.artefactscan import check_compressed_budget, validated_facts, verified_archive, write_all
-from dev_lab.dev.artefactstores import ArtefactRefused, OutputBudgetRefused, Ref
+from dev_lab.dev.artefactstores import ArtefactRefused, OutputBudgetRefused, Ref, manifest_of
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -162,7 +162,7 @@ class _Owned:
 
 def _receipt(ref: Ref, selected: tuple[MemberFact, ...], max_entries: int, max_bytes: int) -> bytes:
     receipt = json.dumps(
-        {'schema': RECEIPT_SCHEMA, 'archive': ref.manifest(), 'selected_paths': [member.path for member in selected]},
+        {'schema': RECEIPT_SCHEMA, 'archive': manifest_of(ref), 'selected_paths': [member.path for member in selected]},
         sort_keys=True,
         ensure_ascii=True,
     ).encode()

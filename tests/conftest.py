@@ -41,6 +41,8 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)  # a test plants the session it means
     monkeypatch.delenv('CODEX_THREAD_ID', raising=False)
     monkeypatch.delenv('CODEX_SESSION_ID', raising=False)
+    monkeypatch.delenv('ANTIGRAVITY_CONVERSATION_ID', raising=False)
+    monkeypatch.delenv('ANTIGRAVITY_TRAJECTORY_ID', raising=False)
     # the serve running this suite named ITS outcome record here: a test's planted outage must never declare it
     monkeypatch.delenv(OUTCOME_VAR, raising=False)
 
