@@ -87,8 +87,8 @@ What every host still reads, kept small:
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
   `--lock` is `<forge home>/serve.lock`. The FORGE HOME (`dev_lab.dev.servelock.forge_home`, the one place it is
   named) is `%LOCALAPPDATA%/lab-forge` on Windows, `${XDG_DATA_HOME:-~/.local/share}/lab-forge` elsewhere.
-- **A workstation never serves** (user ruling 2026-11-16): only GitHub Actions (an `actions` repo) and the HPC
-  accounts (an `hpc` repo, `dev_lab.dev.producers`) produce. `python -m dev_lab.dev.workstation serve` is
+- **A workstation never serves** (user ruling 2026-11-16): only the executors the family binds -- the forge's CI and the HPC
+  accounts (the roles the family binds to them, `dev_lab.dev.roles`) produce. `python -m dev_lab.dev.workstation serve` is
   refused by name with that ruling, and [the workstation deploy](#deploy-a-windows-workstation) deletes the
   retired `lab-forge-serve` Task where an older deploy registered it.
 - **The producer argv is declared ONCE**, never typed: `[tool.lab_commons.tests] produce`, the argv after the
@@ -518,7 +518,7 @@ email's plain part carry that Markdown; Telegram and the email's HTML part rende
 
 ## A review judged on its own host: `forge review prepare` / `judge`
 
-A repo whose integration branch declares `[tool.dev_lab.review] where = "judge"` is reviewed by an isolated judge
+A repo whose review the family binds to a host (`dev_lab.dev.roles`) is reviewed by an isolated judge
 host and never by `forge serve` (one mode per repo). The runner runs
 `python -m dev_lab.dev.forge review prepare --pr <n>` (no reviewer token): it attaches the
 review bundle to its own run as the `review-bundle` artifact, which the judge finds by listing the base's prepare

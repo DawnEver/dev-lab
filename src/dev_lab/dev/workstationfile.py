@@ -3,7 +3,7 @@
 A ``--role`` is a declared profile (:data:`ROLES`: its capabilities); ``template --role <role>`` prints the tables
 it writes. The ``light`` role refuses every :data:`HEAVY` tool in ``--capabilities``. A deploy writes NO ``[serve]``
 and removes one it finds: a workstation never serves a merge's parts (user ruling 2026-11-16,
-:func:`dev_lab.dev.producercheck.host_refusals`). The merge (:func:`machine_file`) keeps every other table, key
+:func:`dev_lab.dev.rolecheck.host_refusals`). The merge (:func:`machine_file`) keeps every other table, key
 and comment, removes a RETIRED ``[capabilities.<name>]`` -- one naming a runtime
 (:data:`~dev_lab.dev.forgereview_declared.FAMILY_RUNTIMES`, or a registry row whose remedy is
 ``[runtimes.<name>]``) is RENAMED in place, keys and comment kept, after a one-time ``<file>.lab-deploy.bak`` --

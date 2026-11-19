@@ -12,6 +12,7 @@ import pytest
 from _branch_repos import advance
 from _forge_state import StateForge
 from _review_doubles import _doc, _state
+from _roles_fixtures import HPC_REVIEWED, carry
 from test_dev_forgereview import FakeCommand, _forge, _tick, _work
 
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
@@ -21,6 +22,12 @@ from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
+
+
+@pytest.fixture(autouse=True)
+def _review_on_the_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bind review on hpc: these tests drive the serve's review tick, which reviews nothing else (D73)."""
+    carry(monkeypatch, HPC_REVIEWED)
 
 
 def test_the_ci_identity_is_the_tokens_login_never_a_variable(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,7 +5,7 @@ about which machine produced it, so a workstation the repo's serving setup alrea
 it -- under every condition below, each one REFUSING when unmet (:func:`posting_refusal`):
 
 * OPTIONAL: the part needs a resource of the repo's ``[tool.dev_lab.parts] optional_needs`` -- a local machine is
-  never a producer of a part a merge waits on (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16) -- and the
+  never a producer of a part a merge waits on (:mod:`dev_lab.dev.roles`, user ruling 2026-11-16) -- and the
   box's ``[serve]`` ``parts`` rule claims it (:class:`lab_commons.compute.serves.Serves`). The box has the part's
   needs (its OS row included).
 * NOT REVOKED: the box has fewer than :data:`~dev_lab.dev.workstationrevoke.STRIKES_TO_REVOKE` strikes
@@ -48,7 +48,7 @@ from dev_lab.dev.localpart import present_here
 from dev_lab.dev.lockpins import lock_freshness
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import part_context
-from dev_lab.dev.producers import optional_needs_from
+from dev_lab.dev.roles import optional_needs_from
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictstore import WORKSTATION_KEY, ContentKey, Found, cite, lookup
 from dev_lab.dev.workstationrevoke import box_of, clear_remedy, revoked, strike
@@ -96,7 +96,7 @@ def declared_refusal(
     """Why this box may not post *part*; ``''`` when it may.
 
     A local machine is never a producer (user ruling 2026-11-16): it posts only a part needing a resource of the
-    repo's *optional* needs (:mod:`dev_lab.dev.producers`), a part no merge waits on, and only as its ``[serve]``
+    repo's *optional* needs (:mod:`dev_lab.dev.roles`), a part no merge waits on, and only as its ``[serve]``
     rule and its present resources allow. A box with no ``[serve]`` table is no producer of anything.
     """
     if not serve:
@@ -152,7 +152,7 @@ def pushed(root: Path) -> bool:
 
 
 def optional_here(root: Path) -> frozenset[str]:
-    """The ``optional_needs`` *root*'s working tree declares (:mod:`dev_lab.dev.producers`)."""
+    """The ``optional_needs`` *root*'s working tree declares (:mod:`dev_lab.dev.roles`)."""
     return optional_needs_from((root / 'pyproject.toml').read_text(encoding='utf-8'))
 
 

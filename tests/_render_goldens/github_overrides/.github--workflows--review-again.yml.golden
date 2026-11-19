@@ -20,7 +20,8 @@
     "HEAD_SHA": "${{ github.sha }}",
     "INTEGRATION_SHA": "${{ github.sha }}",
     "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/",
-    "GITHUB_TOKEN": "${{ github.token }}"
+    "GITHUB_TOKEN": "${{ github.token }}",
+    "DEV_LAB_ROLES": "{\"merge\": \"ci\", \"promote\": \"ci\", \"prune\": \"ci\", \"review\": \"ci\", \"tests\": \"ci\"}"
   },
   "jobs": {
     "again": {

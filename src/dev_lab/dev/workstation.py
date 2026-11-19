@@ -1,7 +1,7 @@
 """A WINDOWS WORKSTATION'S DEPLOY, in one run: ``python -m dev_lab.dev.workstation deploy``.
 
-A WORKSTATION NEVER SERVES A MERGE'S PARTS (user ruling 2026-11-16): only GitHub Actions (an ``actions`` repo)
-and the HPC accounts (an ``hpc`` repo, :mod:`dev_lab.dev.producers`) produce. The deploy makes the box a
+A WORKSTATION NEVER SERVES A MERGE'S PARTS (user ruling 2026-11-16): only the executors the family binds -- the
+forge's CI and the HPC accounts (:mod:`dev_lab.dev.roles`) -- produce. The deploy makes the box a
 declared, current client -- capabilities, checkouts, venvs, hooks -- and nothing on it ticks.
 
 It reuses the cluster deploy's run-or-print :class:`~dev_lab.dev.hpcaccount.steps.Step`.
@@ -27,7 +27,7 @@ claim (``python -m lab_commons.box claim``).
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``; a ``jmag``
    row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken),
    merged in place. ``[serve]`` is never written and a present one is removed
-   (:func:`dev_lab.dev.producercheck.host_refusals`). Every RETIRED ``[capabilities.<name>]`` table is
+   (:func:`dev_lab.dev.rolecheck.host_refusals`). Every RETIRED ``[capabilities.<name>]`` table is
    removed -- one retired into ``[runtimes.<name>]`` has its keys carried there; every other table, key and
    comment is kept, and ``--dry-run`` prints the diff.
 7. RETIRED TASK: the ``lab-forge-serve`` Scheduled Task an older deploy registered (:data:`RETIRED_TASK`) is
@@ -77,8 +77,8 @@ __all__ = ['RETIRED_FLAGS', 'RETIRED_TASK', 'RETIRED_VERBS', 'Programs', 'checko
 RETIRED_TASK: Final = 'lab-forge-serve'
 
 _PRODUCERS: Final = (
-    "a workstation never serves a merge's parts (user ruling 2026-11-16): GitHub Actions produces an actions "
-    "repo and the HPC accounts an hpc repo, by the repo's own [tool.dev_lab.protection] producer"
+    "a workstation never serves a merge's parts (user ruling 2026-11-16): the executors the family layer binds "
+    'each role to produce them (dev_lab.dev.roles)'
 )
 #: A retired ``workstation`` verb -> its ruling and door; refused by name, never parsed.
 RETIRED_VERBS: Final = {
