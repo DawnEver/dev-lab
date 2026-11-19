@@ -31,7 +31,10 @@ from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
-_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+_MANIFEST = (
+    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+    "[tool.dev_lab.protection]\nproducer = 'hpc'\n"
+)
 
 
 def _green() -> list[dict[str, object]]:
@@ -62,6 +65,7 @@ def _tested(tmp_path: Path) -> Path:
     _, work = clone_pair(tmp_path)
     (work / 'tests').mkdir()
     advance(work, 'integrate/main', 'tests/test_a.py', 'def test_a():\n    assert True\n')
+    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')  # the serving checkout's producer
     return work
 
 
@@ -513,8 +517,7 @@ def test_a_ready_decision_with_no_message_row_SAYS_messages_are_not_declared(tmp
     assert 'messages: not declared' in found.notes
 
 
-@pytest.mark.parametrize('gate', ['session-branch', 'pr-current'])
-def test_a_failed_head_gate_holds_the_merge(tmp_path: Path, gate: str) -> None:
+def test_a_failed_head_gate_holds_the_merge(tmp_path: Path) -> None:
     """User ruling 2026-11-07: the push rows' forge statuses gate the merge, so a consumer's stale hook disarms nothing.
 
     PLANTED CONTROL: the same PR with every gate ``success`` merges (the green tests above).
@@ -522,12 +525,28 @@ def test_a_failed_head_gate_holds_the_merge(tmp_path: Path, gate: str) -> None:
     work, head = _work(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    red = {'id': 9, 'context': gate, 'status': 'failure', 'description': f'{gate} refused'}
-    forge.statuses[head] = [*(r for r in _green() if r['context'] != gate), red]
+    red = {'id': 9, 'context': 'session-branch', 'status': 'failure', 'description': 'session-branch refused'}
+    forge.statuses[head] = [*(r for r in _green() if r['context'] != 'session-branch'), red]
     _tick(work, forge, head, POLICY)
     assert forge.merges == []
     (comment,) = forge.comments[number]
-    assert f'its head gates: {gate} is failure: {gate} refused' in comment['body']
+    assert 'its head gates: session-branch is failure: session-branch refused' in comment['body']
+
+
+def test_a_stale_head_is_an_alarm_never_a_merge_wait(tmp_path: Path) -> None:
+    """W5 (dev-lab#644): a red ``pr-current`` is NAMED in the decision's notes and holds nothing.
+
+    PLANTED CONTROL: a red ``session-branch`` beside it still holds the merge (above).
+    """
+    work, head = _work(tmp_path)
+    red = {'id': 9, 'context': 'pr-current', 'status': 'failure', 'description': 'lacks integrate/main'}
+    statuses = [*(r for r in _green() if r['context'] != 'pr-current'), red]
+    found = decide(
+        work, POLICY, branch='pr/x', number=8, head=head, statuses=_statuses(statuses),
+        reviewed=status_gate(github_posted),
+    )  # fmt: skip
+    assert found.ready, found.missing
+    assert 'alarms, never a merge condition: pr-current is failure: lacks integrate/main' in found.notes
 
 
 def test_a_hand_part_never_holds_the_merge_and_is_named(tmp_path: Path) -> None:
@@ -569,3 +588,26 @@ def test_a_hand_part_never_holds_the_merge_and_is_named(tmp_path: Path) -> None:
     hosted_red = [*gates, base[0], {**base[1], 'status': 'failure'}, red]
     assert not judge(hosted_red).ready, 'PLANTED CONTROL: a red hosted row holds the merge'
     assert not judge([*gates, base[1], absent]).ready, 'PLANTED CONTROL: a missing tests/base holds the merge'
+
+
+def test_an_environment_or_scheduling_result_never_holds_the_merge(tmp_path: Path) -> None:
+    """W5 (dev-lab#644): a part released ``error`` under a non-code class is requeued, and the merge never waits on it.
+
+    PLANTED CONTROLS: the same part released ``class=code``, judged ``failure``, or ``error`` naming no class holds.
+    """
+    work, head = _work(tmp_path)
+
+    def judge(state: str, description: str) -> Decision:
+        part = {'id': 1, 'context': 'tests/base', 'status': state, 'description': description}
+        raw = [part, *(r for r in _green() if r['context'] != 'tests/base')]
+        return decide(
+            work, POLICY, branch='pr/x', number=8, head=head, statuses=_statuses(raw),
+            reviewed=status_gate(github_posted),
+        )  # fmt: skip
+
+    for owner in ('scheduling', 'environment', 'part-refusal', 'network'):
+        found = judge('error', f'released: no grant had room class={owner}')
+        assert found.ready, (owner, found.missing)
+    assert not judge('error', 'released: a defect of the commit class=code').ready, 'CONTROL: the code'
+    assert not judge('failure', 'scope=full ran=3 hands=-').ready, 'CONTROL: a judged FAIL'
+    assert not judge('error', 'released: something').ready, 'CONTROL: an unowned error'

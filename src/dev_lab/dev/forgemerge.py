@@ -45,8 +45,9 @@ fifth conditions, which a serve host posts):
 * its head's ``tests/security`` stands ``success`` (:mod:`dev_lab.dev.forgesecurity`): ``failure`` names the
   findings, ``error`` is a scan that gave no answer, and both wait;
 * its head's push-row GATES stand ``success`` (:func:`dev_lab.dev.forgeheadgate.gates_wait`: ``session-branch``,
-  ``pr-current``, user ruling 2026-11-07) -- the same judges the pre-push rows call, posted by the forge, so a
-  consumer's stale hook never disarms them; absent, ``error`` or ``failure`` waits;
+  user ruling 2026-11-07) -- the same judge the pre-push row calls, posted by the forge, so a consumer's stale hook
+  never disarms it; absent, ``error`` or ``failure`` waits. ``pr-current`` and ``lock/lag`` are ALARMS, never waited
+  on (W5, dev-lab#644): a stale head is judged by the trial merge below, at merge time;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
@@ -70,21 +71,26 @@ namespace is deleted by the forge with the merge.
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev.failprint import Fingerprints, new_subjects, refusal
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgeheadgate import alarms_said
+from dev_lab.dev.forgehold import HELD, is_held
 from dev_lab.dev.forgemergewaits import hand_note, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_gate import review_gate
-from dev_lab.dev.forgestatus import status_list
+from dev_lab.dev.forgestatus import fingerprints_at, status_list
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
+from dev_lab.dev.producers import UndeclaredProducer, producer_at
 from dev_lab.dev.reviewcap import unreviewed_waiver
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
@@ -103,6 +109,7 @@ __all__ = [
     'ci_merges',
     'decide',
     'external',
+    'hidden_reds',
     'judged',
     'merge_message',
 ]  # fmt: skip
@@ -184,7 +191,10 @@ def decide(
         waived, unreviewed = waiver, None
         title, _, trailers = message.partition('\n\n')
         message = f'{title}\n\n{waiver}\n\n{trailers}'
-    waits = status_waits(policy, head, statuses)
+    try:
+        waits = status_waits(policy, head, statuses, producer=producer_at(root))
+    except UndeclaredProducer as undeclared:  # a malformed producer is named, never merged
+        waits = [f'its producer: {undeclared}']
     missing += waits
     tried = trial(root, base, head)
     if not tried.clean:
@@ -216,9 +226,11 @@ def decide(
 
 
 def _notes(root: Path, statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
-    """What the decision says without waiting on it: an undeclared message row, and the hand parts."""
+    """What the decision says without waiting on it: an undeclared message row, the hand parts and the alarms."""
     unjudged = () if message_row(root) is not None else (MESSAGES_NOT_DECLARED,)
-    return (*unjudged, *filter(None, [hand_note(statuses)]))
+    alarmed = alarms_said(statuses)
+    alarm = f'alarms, never a merge condition: {alarmed}' if alarmed else None
+    return (*unjudged, *filter(None, [hand_note(statuses), alarm]))
 
 
 def external(client: Client, pull: PullRequest) -> bool:
@@ -229,6 +241,26 @@ def external(client: Client, pull: PullRequest) -> bool:
     so nothing on it is external (user ruling 2026-11-06). It is still tested and reviewed; a human merges it.
     """
     return client.backend.vets_authors and (pull.fork or not client.trusts(pull.author))
+
+
+def hidden_reds(
+    read: Callable[[str], Fingerprints], head: str, base: str, statuses: Sequence[CommitStatus]
+) -> str | None:
+    """Why *head*'s reds name subjects *base*'s tip does not carry under the same test (D13), or ``None``.
+
+    *read* is a ref's fingerprints (:func:`dev_lab.dev.forgestatus.fingerprints_at`); the break-glass admission
+    asks this too. A head with no red reads no record, and one whose reds name no subject reads no base.
+    Pass-to-fail is not judged here: a red the base lacks is its own wait.
+    """
+    if all(status.state == 'success' for status in statuses):
+        return None
+    try:
+        mine = read(head)
+        if not any(subjects for nodes in mine.values() for subjects in nodes.values()):
+            return None
+        return refusal(new_subjects(mine, read(base)))
+    except (ForgeCallFailed, ValueError, KeyError, TypeError) as failed:
+        return f'its failure fingerprints against {base} cannot be read ({failed}); the forge must answer first'
 
 
 def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: int, head: str) -> Decision:
@@ -246,9 +278,15 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, waiver=waiver
     )
     pull, others = client.pr_view(number), found.others
+    if (
+        hidden := hidden_reds(lambda ref: fingerprints_at(client, ref), head, policy.integration, statuses)
+    ) is not None:
+        others = (hidden, *others)
     if external(client, pull):  # INTERNAL-ONLY (2026-11-05): never merged by the forge, whatever else is green
         others = (EXTERNAL, *others)
     if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         others = (WAITING.format(n=number), *others)
+    if is_held(pull.labels):  # HOLD: a held PR never lands, on a forge that refuses its draft too
+        others = (HELD.format(n=number), *others)
     waiting = found.waiting and len(others) == len(found.others)
     return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting)

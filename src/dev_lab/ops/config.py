@@ -31,7 +31,7 @@ from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.caddy import Caddy, Status
-from dev_lab.ops.configupgrade import upgraded
+from dev_lab.ops.configretired import refuse as refuse_retired
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
 from dev_lab.ops.giteaadmin import Forge
 from dev_lab.ops.placement import Placement
@@ -393,7 +393,7 @@ def load(
     if not isinstance(ops, dict):
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
-    ops = upgraded(ops)
+    refuse_retired(ops)
     if unknown := sorted(set(ops) - OPS_KEYS):
         msg = f'[ops] has unknown keys {unknown}; known: {sorted(OPS_KEYS)}'
         raise ValueError(msg)

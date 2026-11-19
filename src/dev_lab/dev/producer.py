@@ -13,6 +13,8 @@ producer's mind, only its exit code, so every code means ONE thing:
 * ``4`` UNREACHABLE -- infrastructure it needs did not answer (no login host, no forge), or the box had
   no room for it (capacity, never a verdict). It says nothing about the code: the claim is released as
   retryable and the next tick claims it again.
+* ``5`` PART_REFUSED -- it ran, but the forge or the record refused its part (an inconclusive record, a post
+  refused): ``class=part-refusal``, its own class, requeued by its class (:mod:`dev_lab.dev.requeue`, W5, dev-lab#644).
 
 Any other code is a CRASH. Live finding 2026-10-11: a consumer runner returned ``2`` for INCONCLUSIVE
 and serve reported "the producer refused its argv" -- two meanings sharing one code is the bug.
@@ -36,7 +38,10 @@ back by :func:`owner_of`. A ``failure`` is a judged FAIL and always :attr:`Owner
 the author's red only when it says ``class=code``. Every other class is not the author's: it still blocks
 promoting ``main`` and is never a PASS. A producer DECLARES an outage it did not cause -- infrastructure
 that did not answer (:func:`unreachable`) or a vendor licence it could not check out (:func:`licence_outage`)
--- and either is released RETRYABLE under its class.
+-- and either is released RETRYABLE under its class. EVERY CLASS HAS ONE RETRY POLICY
+(:mod:`dev_lab.dev.requeue`): ``code`` is never retried, a part refusal until its limit, the rest only when
+RETRYABLE -- environment and scheduling results never block a merge
+(:mod:`dev_lab.dev.forgemergewaits`).
 """
 
 from __future__ import annotations
@@ -109,6 +114,7 @@ class ProducerExit(IntEnum):
     USAGE = 2
     INCONCLUSIVE = 3
     UNREACHABLE = 4
+    PART_REFUSED = 5
 
 
 class Owner(StrEnum):
@@ -120,6 +126,7 @@ class Owner(StrEnum):
     VENDOR_LICENCE = 'vendor-licence'  # a vendor tool's licence could not be checked out
     NETWORK = 'network'  # infrastructure it needs did not answer: a login host, the forge
     STATUS_PUBLISHING = 'status-publishing'  # the verdict exists but its status could not be posted (the outbox)
+    PART_REFUSAL = 'part-refusal'  # it ran, but its part was refused (an inconclusive record, a refused post)
 
 
 #: The description field naming a non-PASS's owner: ``class=<owner>``.
@@ -258,6 +265,8 @@ def release_reason(code: int, *, outage: Owner | None, detail: str = '') -> str:
     """
     if code == ProducerExit.UNREACHABLE and outage is not None:
         return owned(outage, f'{RETRYABLE} (exit 4) -- {_OUTAGE[outage]}; retried next tick{detail}')
+    if code == ProducerExit.PART_REFUSED:
+        return owned(Owner.PART_REFUSAL, f'released: part refused (exit 5) -- requeued by its class{detail}')
     if code == ProducerExit.UNREACHABLE:
         return owned(
             Owner.ENVIRONMENT, f'released: producer exited {code} without declaring an outage -- not retried{detail}'

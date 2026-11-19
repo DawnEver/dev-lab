@@ -66,6 +66,7 @@ from lab_commons.log import emit
 from dev_lab.dev import forgerunstate, hpcusage
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
@@ -76,7 +77,7 @@ from dev_lab.dev.forgepulls import (
     marker,
     marker_kinds,
 )
-from dev_lab.dev.forgework import Client, Comment, client_for
+from dev_lab.dev.forgework import Client, Comment
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import origin_url
 

@@ -32,13 +32,14 @@ import tomllib
 from collections.abc import Callable, Sequence
 from typing import Final
 
-from lab_commons.hpc.cluster import Runner, Unreachable, runner_for, ssh_runner
+from lab_commons.hpc.cluster import Runner, Unreachable
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
-from dev_lab.dev.hpcaccount.division import reached_machine
+from dev_lab.dev.hpcaccount.division import division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.spec import MARK
+from dev_lab.dev.hpcaccount.transport import grant_runner, host_runner
 
 __all__ = [
     'CENSUS_DEEP',
@@ -139,10 +140,20 @@ def retention_command(target: Target, *, apply: bool) -> str:
 
 def on_host(grant: Grant, host: str, timeout: float = TIMEOUT) -> Runner:
     """A runner pinned to *host*: what lives on one login host (its crontab) is read there, never on a failover."""
-    return ssh_runner(f'{grant.user}@{host}', timeout)
+    return host_runner(f'{grant.user}@{host}', timeout)
 
 
-def _one(grant: Grant, shell: Runner, pin: Pin, *, apply: bool, census: bool) -> tuple[bool, list[str]]:
+def tick_line(user: str, host: str, count: str, *, serves: bool) -> str:
+    """The crontab line judged by ROLE: a serving account ticks; a research one never carries a cron."""
+    head = f'{user}: serve tick lines in crontab on {host}: {count}'
+    if serves:
+        return head + (' -- serve never ticks' if count == '0' else '')
+    if count == '0':
+        return head + ' -- a non-serving (research) account: no serve cron, by design'
+    return head + ' -- a non-serving (research) account must carry none: remove them (hpcaccount deploy --remove)'
+
+
+def _one(grant: Grant, shell: Runner, pin: Pin, *, apply: bool, census: bool, serves: bool) -> tuple[bool, list[str]]:
     target = declared_target(grant, shell)
     if isinstance(target, str):
         return False, [target]
@@ -150,10 +161,7 @@ def _one(grant: Grant, shell: Runner, pin: Pin, *, apply: bool, census: bool) ->
     ticks = pin(grant, target.host)(ticks_command(), None).strip().splitlines()
     count = ticks[-1] if ticks else '0'
     lines = [f'{grant.user}: quota', *shell(QUOTA, None).rstrip().splitlines()]
-    lines.append(
-        f'{grant.user}: serve tick lines in crontab on {target.host}: {count}'
-        + ('' if count != '0' else ' -- serve never ticks')
-    )
+    lines.append(tick_line(grant.user, target.host, count, serves=serves))
     if census:
         lines.append(f'{grant.user}: census (files, path; most files first)')
         lines.extend(census_rows(shell(CENSUS, None)))
@@ -170,8 +178,9 @@ def retention_fleet(
     apply: bool,
     say: Callable[[str], None],
     census: bool = False,
-    connect: Callable[[Grant], Runner] = runner_for,
+    connect: Callable[[Grant], Runner] = grant_runner,
     pin: Pin = on_host,
+    serves: Callable[[Grant], bool] = lambda _grant: True,
 ) -> int:
     """Read (and with *apply* reclaim) each of *accounts*' storage (empty: every grant); 2 when any was refused."""
     fleet = {grant.user: grant for grant in grants}
@@ -184,7 +193,9 @@ def retention_fleet(
     refused = 0
     for user in accounts or sorted(fleet):
         try:
-            ok, lines = _one(fleet[user], connect(fleet[user]), pin, apply=apply, census=census)
+            ok, lines = _one(
+                fleet[user], connect(fleet[user]), pin, apply=apply, census=census, serves=serves(fleet[user])
+            )
         except subprocess.TimeoutExpired as slow:
             ok, lines = False, [f'{user}: refused -- {_too_slow(slow)}']
         except Unreachable:
@@ -209,12 +220,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--timeout', type=float, default=TIMEOUT, help='seconds per remote command (default 3600)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
-        grants = reached_machine(args.account).grants
+        machine = reached_machine(args.account)
+        grants, division = machine.grants, division_of(machine)
     except (PermissionError, LookupError, ValueError) as refused:
         emit(f'retention: refused -- {refused}')
         return 2
-    connect = functools.partial(runner_for, timeout=args.timeout)
+    connect = functools.partial(grant_runner, timeout=args.timeout)
     pin = functools.partial(on_host, timeout=args.timeout)
     return retention_fleet(
-        grants, args.account, apply=args.apply, census=args.census, say=emit, connect=connect, pin=pin
-    )
+        grants, args.account, apply=args.apply, census=args.census, say=emit, connect=connect, pin=pin,
+        serves=lambda grant: bool(division.roles.get(grant.role, {}).get('serves', True)),
+    )  # fmt: skip

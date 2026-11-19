@@ -6,21 +6,21 @@ listed sha that settles (a session watching several pushed PRs wakes on each res
 exit 0 settled and every part ``success``, 1 settled with a red or an error, 3 when the deadline passed first.
 It never posts, claims or cancels anything.
 
-``--stream`` is the shape a Claude Code ``Monitor`` reads (PUSHED-HEAD-IS-WATCHED, :mod:`dev_lab.dev.pushwatch`):
-ONE flushed line per status CHANGE of any context -- ``<sha12> <context> <state>`` -- and a last line
-``<sha12> green|red|deadline``; a re-read status that did not change prints nothing.
+``--stream`` is the shape a Claude Code ``Monitor`` reads: ONE flushed line per status CHANGE of any context --
+``<sha12> <context> <state>`` -- and a last line ``<sha12> green|red|deadline``; a re-read status that did not
+change prints nothing.
 
-``--session <id> --stream`` (SESSION-HEARS-ITS-PRS, user ruling 2026-11-11: lab-commons #158 went red and the
+``--session <id> --stream`` (TASK-HEARS-ITS-FORGE-EVENTS, user ruling 2026-11-11: lab-commons #158 went red and the
 session heard nothing) watches every PR the session opened or pushed, in any repository, on either forge
 (:mod:`dev_lab.dev.sessionprs`, its record): ONE line per change -- ``<key> <sha12> <context> failure|error
 <description>``, ``<key> <sha12> green`` once every ``tests/*`` check is final and green, ``<key> merged`` /
-``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. :func:`unacknowledged_reds` is what
-the ``Stop`` hook (:mod:`dev_lab.dev.pushstop`) refuses on, until a newer head is pushed or
-``--ack <key> --reason <why>`` records why the red stands.
+``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. ``--ack <key> --reason <why>``
+records why a red stands; :func:`unacknowledged_reds` lists the reds no reason answers, until a newer head.
+The machine forge hearer (:mod:`dev_lab.dev.forgefeed`) is the one hearer a session relies on (dev-lab #640).
 
-A WATCH YIELDS ITS VENV (2026-11-14): a watch runs from a venv for hours, so a queued
-``dep --bootstrap --when-free`` (:mod:`dev_lab.dev._dep_pending`) of that venv makes it exit at its next poll
--- one line ``venv update pending ...: re-arm this watch`` and exit 4 -- instead of holding the update off.
+A WATCH YIELDS ITS VENV (dev-lab #641): a watch runs from a venv for hours, so once a newer environment is
+published beside it (:func:`dev_lab.dev.venvpointer.superseded`) it exits at its next poll -- one line
+``a newer environment is published ...: re-arm this watch`` and exit 4 -- so the old one can be reclaimed.
 """
 
 from __future__ import annotations
@@ -29,21 +29,18 @@ import argparse
 import re
 import sys
 import time
-import urllib.parse
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_pending, sessionprs, taskgate
-from dev_lab.dev.forgecontexts import CONTEXT_PREFIX
+from dev_lab.dev import native_session, sessionprs, taskgate, venvpointer
+from dev_lab.dev.forgeclient import client_for, stored_client
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgepulls import pr_by_head, pr_list
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, PullRequest, client_for, stored_client
-from dev_lab.dev.platformparts import BASE
-from dev_lab.dev.pushwatch import record_deadline
+from dev_lab.dev.forgework import Client
+from dev_lab.dev.sessionpoll import TESTS, green, poll_session, pull_of, reds
 
 if TYPE_CHECKING:
     from dev_lab.dev.forge import Forge
@@ -51,10 +48,9 @@ if TYPE_CHECKING:
 __all__ = [
     'EVERY_S',
     'FLOOR_S',
-    'RED',
-    'TESTS',
     'YIELDED',
     'clients_at',
+    'env_superseded',
     'main',
     'session_main',
     'settled',
@@ -63,19 +59,16 @@ __all__ = [
     'watch_session',
 ]
 
-_NOT_FOUND: Final = 404
-#: The context prefix a part's verdict is posted under.
-TESTS: Final = 'tests/'
 _DEADLINE: Final = 3
-#: The exit code of a watch that yielded its venv to a queued update; its session re-arms it.
+#: The exit code of a watch that yielded its venv to a newer published one; its session re-arms it.
 YIELDED: Final = 4
 
 
-def _update_waits() -> str:
-    """The line a watch ends on when an update of the venv it runs from is queued, else ``''``."""
-    if _dep_pending.pending(sys.prefix) is None:
+def env_superseded() -> str:
+    """The line a watch ends on when a newer environment than the one it runs from is published, else ``''``."""
+    if not venvpointer.superseded(sys.prefix):
         return ''
-    return f'venv update pending for {sys.prefix}: this watch exits so it can run; re-arm this watch'
+    return f'a newer environment is published beside {sys.prefix}: this watch exits so it can go; re-arm this watch'
 
 
 #: The default poll period, and the fastest ``--every-seconds`` honours. A verdict is claimed on a serve tick
@@ -101,7 +94,7 @@ def watch(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     stream: bool = False,
-    yielding: Callable[[], str] = _update_waits,
+    yielding: Callable[[], str] = env_superseded,
 ) -> int:
     """Poll each of *shas*, printing each change, until one settles or *deadline_s* has passed (``--stream``: above)."""
     end, seen = clock() + deadline_s, set()
@@ -121,12 +114,12 @@ def watch(
                     seen.add(line)
                     say(line)
             if settled(statuses):
-                green = _green(statuses)
-                if green is None:
+                is_green = green(statuses)
+                if is_green is None:
                     continue
                 if stream or len(shas) > 1:
-                    say(f'{sha[:12]} {"green" if green else "red"}')
-                return 0 if green else 1
+                    say(f'{sha[:12]} {"green" if is_green else "red"}')
+                return 0 if is_green else 1
         if clock() >= end:
             named = ' '.join(sha[:12] for sha in shas)
             say(f'{named} deadline' if stream else f'watch: {named} not settled by the deadline')
@@ -134,8 +127,6 @@ def watch(
         sleep(every_s)
 
 
-#: The states a check reads red in, on both forges.
-RED: Final = frozenset({'failure', 'error'})
 #: The session watch's poll period and floor: each open PR costs two reads per poll, and GitHub allows 5000 an hour.
 SESSION_EVERY_S: Final = 90.0
 SESSION_FLOOR_S: Final = 60.0
@@ -153,90 +144,6 @@ def clients_at(root: Path) -> Callable[[Forge], Client]:
     return client
 
 
-def _branch(client: Client, name: str) -> dict | None:
-    """The forge's record of branch *name*; ``None`` when it is gone."""
-    try:
-        return client.call('GET', f'{client.repo}/branches/{urllib.parse.quote(name, safe="/")}')
-    except ForgeCallFailed as failed:
-        if failed.report.attempts and failed.report.attempts[-1].returncode == _NOT_FOUND:
-            return None
-        raise
-
-
-def _pull(session: str, row: sessionprs.Row, client: Client) -> tuple[sessionprs.Row, PullRequest | None]:
-    """*row*'s PR as the forge holds it, ``None`` when it has none.
-
-    A branch row is resolved to its open PR, else to its newest PR into the default branch in any state (a
-    merge no watch saw); with none, a protected or gone branch can never have one and the row is closed with
-    the reason, while a live lane branch stays pending (:func:`~dev_lab.dev.sessionprs.pending_rows`).
-    """
-    if row.number:
-        return row, client.pr_view(row.number)
-    found = [pr for pr in pr_list(client) if pr.head == row.branch]
-    pr = max(found, key=lambda one: one.number) if found else None
-    if pr is None:
-        pr = pr_by_head(client, row.branch, str(client.call('GET', client.repo)['default_branch']))
-    if pr is not None:
-        return sessionprs.resolve(session, row, pr.number), pr
-    branch = _branch(client, row.branch)
-    if branch is None:
-        return sessionprs.close(session, row, 'closed', reason='the branch is gone and no PR had it as head'), None
-    if branch.get('protected'):
-        return sessionprs.close(session, row, 'closed', reason='a protected branch, never a PR head'), None
-    return row, None
-
-
-def _reds(statuses: Sequence[CommitStatus]) -> list[CommitStatus]:
-    return [status for status in statuses if status.state in RED]
-
-
-#: The contexts a head is never green without: the base test part, whatever else has already ended.
-REQUIRED: Final = (f'{CONTEXT_PREFIX}{BASE}',)
-
-
-def _green(statuses: Sequence[CommitStatus]) -> bool | None:
-    """THE ONE GREEN of both watches: every :data:`REQUIRED` context and every posted test status ended ``success``.
-
-    ``False`` once a posted test status is red; ``None`` while a required context is absent or a test status pends
-    (2026-11-14: the sha watch said ``green`` on ``tests/security`` alone while ``tests/base`` was unclaimed).
-    """
-    latest = {s.context: s.state for s in statuses if s.context.startswith(TESTS)}
-    if any(state in RED for state in latest.values()):
-        return False
-    if all(c in latest for c in REQUIRED) and all(state == 'success' for state in latest.values()):
-        return True
-    return None
-
-
-def _poll(session: str, row: sessionprs.Row, client: Client, say: Callable[[str], None], seen: set[str]) -> bool:
-    """Say each new change on *row*; whether it is still open."""
-    row, pr = _pull(session, row, client)
-    if pr is None:
-        if row.done:
-            _say_once(session, f'{row.key} {row.done}: {row.reason}', say, seen)
-        return False
-    if pr.merged or pr.state == 'closed':
-        done = 'merged' if pr.merged else 'closed'
-        sessionprs.close(session, row, done)
-        _say_once(session, f'{row.key} {done}', say, seen)
-        return False
-    statuses = status_list(client, pr.head_sha) if pr.head_sha else ()
-    lines = [f'{row.key} {pr.head_sha[:12]} {s.context} {s.state} {s.description}'.rstrip() for s in _reds(statuses)]
-    if _green(statuses) is True:
-        lines.append(f'{row.key} {pr.head_sha[:12]} green')
-    for line in lines:
-        _say_once(session, line, say, seen)
-    return True
-
-
-def _say_once(session: str, line: str, say: Callable[[str], None], seen: set[str]) -> None:
-    """Say *line* unless this session already heard it (persisted: a re-armed watch repeats nothing)."""
-    if line not in seen:
-        seen.add(line)
-        sessionprs.hear(session, line)
-        say(line)
-
-
 def watch_session(
     session: str,
     *,
@@ -246,12 +153,12 @@ def watch_session(
     deadline_s: float = 4 * 3600.0,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
-    yielding: Callable[[], str] = _update_waits,
+    yielding: Callable[[], str] = env_superseded,
 ) -> int:
     """Report each change on *session*'s open PRs until none is open (0) or *deadline_s* passed (3).
 
-    While it runs it holds the session's liveness marker (:func:`~dev_lab.dev.sessionprs.watch`): the Stop gate
-    reads it as "a watch is armed".
+    While it runs it holds the session's liveness marker (:func:`~dev_lab.dev.sessionprs.watch`): the orphan
+    sweep reads it as a live owner (:mod:`dev_lab.dev.forgeorphan`).
     """
     sessionprs.watch(session)
     try:
@@ -285,13 +192,7 @@ def _session_loop(
         if why := yielding():
             say(why)
             return YIELDED
-        live = 0
-        for row in (*sessionprs.open_rows(session), *sessionprs.pending_rows(session)):
-            try:
-                live += _poll(session, row, clients(row.forge), say, seen)
-            except (ForgeCallFailed, ValueError) as failed:
-                live += 1  # an unreadable PR is still open: read again next poll
-                _say_once(session, f'{row.key} unreadable: {failed}'.splitlines()[0], say, seen)
+        live = poll_session(session, clients=clients, say=say, seen=seen)
         if not live:
             say(f'session {session}: no open PR left')
             return 0
@@ -309,10 +210,10 @@ def unacknowledged_reds(session: str, *, clients: Callable[[Forge], Client]) -> 
     said = []
     for recorded in sessionprs.open_rows(session):
         client = clients(recorded.forge)
-        row, pr = _pull(session, recorded, client)
+        row, pr = pull_of(session, recorded, client)
         if pr is None or pr.merged or pr.state == 'closed' or not pr.head_sha or pr.head_sha in row.acks:
             continue
-        said += [f'{pr.url} {pr.head_sha[:12]} {s.context} {s.state}' for s in _reds(status_list(client, pr.head_sha))]
+        said += [f'{pr.url} {pr.head_sha[:12]} {s.context} {s.state}' for s in reds(status_list(client, pr.head_sha))]
     return said
 
 
@@ -332,7 +233,7 @@ def _ack(session: str, key: str, reason: str, clients: Callable[[Forge], Client]
     if len(found) != 1:
         emit(f'watch: {key!r} names {len(found)} PR(s) of session {session}; give the key it prints', err=True)
         return 2
-    row, pr = _pull(session, found[0], clients(found[0].forge))
+    row, pr = pull_of(session, found[0], clients(found[0].forge))
     if pr is None or not pr.head_sha or row.done:
         emit(f'watch: {row.key} has no open PR head to acknowledge', err=True)
         return 2
@@ -355,8 +256,8 @@ def session_main(argv: Sequence[str] | None = None, *, clients: Callable[[Forge]
     )
     parser.add_argument('--reason', default='', help='why the red stands (required with --ack)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if not sessionprs.valid(args.session):
-        parser.error(f'--session {args.session!r} is not a session id')
+    if not native_session.valid(args.session):
+        parser.error('--session is not a session id. Door: supply the actual native harness identity.')
     if args.ack and not args.reason.strip():
         parser.error('--ack: --reason must say why the red stands')
     made = clients or clients_at(Path.cwd())
@@ -407,7 +308,4 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ForgeCallFailed, ValueError) as failed:
         emit(f'watch: {failed}', err=True)
         return 2
-    if done == _DEADLINE:  # the Stop gate releases a head whose watch ran out (pushstop)
-        for sha in args.sha:
-            record_deadline(Path.cwd(), sha)
     return done

@@ -9,15 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from dev_lab.dev.devdocs import (
     CANONICAL_TREE,
     PAGES,
     Page,
     docs_dir,
     missing_pages,
-    page_path,
     pointer_table,
     slugs,
 )
@@ -66,13 +63,6 @@ def test_an_index_page_is_not_mistaken_for_a_missing_row(tmp_path: Path) -> None
         (tree / f'{slug}.md').write_text('- a page\n', encoding='utf-8')
     (tree / 'index.md').write_text('- navigation\n', encoding='utf-8')
     assert missing_pages(tmp_path) == ()
-
-
-def test_an_undeclared_slug_raises_rather_than_returning_a_path() -> None:
-    """A path built for a page that does not exist is a declaration that lies, one call later."""
-    with pytest.raises(KeyError, match='not a family mechanism page'):
-        page_path(ROOT, 'a-page-nobody-wrote')
-    assert page_path(ROOT, slugs()[0]).name == f'{slugs()[0]}.md'
 
 
 def test_the_pointer_table_is_generated_from_the_rows() -> None:

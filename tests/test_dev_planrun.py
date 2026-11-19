@@ -402,7 +402,7 @@ WIDE_STEPS = planrunsteps.Steps((
     STEPS.steps[0],
     planrunsteps.Step(('config', 'apply', '--from', '/srv/plan/judge.toml'), JUDGE, '/etc/dev-lab/judge.toml', PY),
     STEPS.steps[1],
-    planrunsteps.Step(('breakglass', 'open'), local=True),
+    planrunsteps.Step(('dev_lab.dev.forge', 'breakglass', 'open'), local=True),
 ))  # fmt: skip
 ENDPOINT = {'endpoint': 'breakglass@forge'}
 
@@ -424,7 +424,9 @@ def test_a_plan_across_hosts_and_a_local_wave_is_green_with_every_check_on_its_o
     assert green, lines
     assert lines[:2] == [f'host {HOST}: ready', f'host {JUDGE}: ready']
     assert lines[3] == f'step 2 ops.config: green on {JUDGE}'
-    assert lines[5].startswith('step 4 breakglass.wave: green (here: forge breakglass open via breakglass@forge')
+    assert lines[5].startswith(
+        'step 4 breakglass.wave: green (here: python -m dev_lab.dev.forge breakglass open via breakglass@forge'
+    )
     judged = [command for command in hosts[JUDGE].commands if '--subject' in command]
     assert judged == [planrunsteps.ops_command(WIDE_STEPS.steps[1], [*WIDE_STEPS.steps[1].argv, '--subject'])]
     assert all('judge.toml' not in command for command in hosts[HOST].commands)
@@ -471,7 +473,7 @@ def test_one_plan_runs_across_its_hosts_and_redeems_the_wave_here(tmp_path: Path
     assert finished, lines
     assert [json.loads(text)['id'] for text in hosts[HOST].carried] == ['id-0', 'id-2']
     assert [json.loads(text)['id'] for text in hosts[JUDGE].carried] == ['id-1']
-    assert opened == [['breakglass', 'open', '--credential', 'id-3']]
+    assert opened == [['dev_lab.dev.forge', 'breakglass', 'open', '--credential', 'id-3']]
     assert lines[3] == 'step 4 breakglass.wave here: ran ([breakglass] wave open); credential spent, deleted'
     assert not any(path.exists() for path in written)
 
@@ -527,7 +529,7 @@ def test_a_steps_file_names_each_steps_host_and_a_local_wave(tmp_path: Path) -> 
     ]  # fmt: skip
     with pytest.raises(ConsentRefused, match='"argv"'):  # the plan names where a grant runs; a step never does
         planrunsteps.load_steps(_steps_file(tmp_path, [good[0], {**good[1], 'dest': JUDGE}, *good[2:]]), WIDE)
-    assert steps[3].argv == ('breakglass', 'open')
+    assert steps[3].argv == ('dev_lab.dev.forge', 'breakglass', 'open')
     with pytest.raises(ConsentRefused, match='redeemed here'):
         planrunsteps.load_steps(_steps_file(tmp_path, [*good[:3], {'argv': ['breakglass', 'open']}]), WIDE)
     with pytest.raises(ConsentRefused, match='redeemed on a host'):
@@ -698,7 +700,7 @@ def test_a_grant_this_client_does_not_know_blocks_the_preflight_naming_the_updat
     assert not green
     blocked = [line for line in lines if 'ops.not.yet.known' in line and 'BLOCKED' in line]
     assert blocked, lines
-    assert 'local dev-lab is older than the plan; update it' in blocked[0]
+    assert 'not a consent action; the registered ones are' in blocked[0]
     assert planrunpreflight.preflight(PLAN, STEPS, lambda _dest: FakeHost())[0]  # the control: every action known
 
 
@@ -730,6 +732,28 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
     green, lines = planrunpreflight.preflight(plan, planrunsteps.Steps((step,)), lambda _d: host, readers=readers)
     assert not green
     assert any('derived here' in line and want[:12] in line for line in lines), lines
+
+
+def test_a_derivable_subject_whose_door_waits_on_a_config_step_is_still_derived_here() -> None:
+    """2026-11-16: ``after step N`` skipped the subject, the plan was granted, and its code was wasted.
+
+    PLANTED CONTROL: the declaration that renders the granted subject is green, still after step 1.
+    """
+    want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
+    protect = {'host': HOST, 'action': forgeprotection.ACTION, 'subject': want}
+    plan = parsed({'hosts': [HOST], 'grants': [APPLY, protect]})
+    step = planrunsteps.Step(
+        ('forge', 'protect', 'apply', '--repo', 'owner/alpha'), HOST, CONF, PY, forge='gitea.example'
+    )
+    steps = planrunsteps.Steps((STEPS.steps[0], step))  # the host has no protect door until step 1 applies
+    other = planrunpreflight.Readers(declared=lambda *_: GITEA_TEXT.replace('promote-bot', 'other-bot'))
+    green, lines = planrunpreflight.preflight(plan, steps, lambda _d: FakeHost(), readers=other)
+    assert not green
+    assert lines[2].startswith('step 2 ops.forge.protect: BLOCKED -- derived here'), lines
+    same = planrunpreflight.Readers(declared=lambda *_: GITEA_TEXT)
+    green, lines = planrunpreflight.preflight(plan, steps, lambda _d: FakeHost(), readers=same)
+    assert green, lines
+    assert 'after step 1' in lines[2]
 
 
 def test_a_forge_key_on_a_step_that_is_not_protect_is_refused(tmp_path: Path) -> None:
@@ -765,6 +789,7 @@ def test_a_blocked_preflight_is_this_sessions_wall_and_a_green_one_is_not(
     monkeypatch.setattr(planrun, 'load_steps', lambda _path, _plan: STEPS)
     said = ['host h: BLOCKED -- no consent key', 'preflight: BLOCKED (fix the named blocker before asking for a code)']
     monkeypatch.setattr(planrun, 'preflight', lambda *_a, **_k: (green, said))
+    monkeypatch.setattr(planrun, 'offered', lambda _plan, found: found)  # the issuer half: test_ops_consent_door
     assert planrun.main(['preflight', '--plan', str(plan), '--steps', str(plan)]) == (0 if green else 2)
     if green:
         assert not walls.ledger(tmp_path).exists()
@@ -793,3 +818,81 @@ def test_one_pair_granted_on_two_hosts_carries_one_distinct_credential_to_each(t
     carried = [json.loads(text)['id'] for host in (HOST, JUDGE) for text in hosts[host].carried]
     assert sorted(carried) == ['id-0', 'id-1']
     assert not any(path.exists() for path in written)
+
+
+BATCH = tuple(f'forge-PLANTED-{n}-c0ffee' for n in range(6))
+LOGIN = 'reader-bot'
+
+
+def _token_run(tmp_path: Path, argv: tuple[str, ...], said: str, status: int = 0) -> tuple[bool, list[str]]:
+    """Step 2 is the token verb *argv*; the host prints *said* (merged output) and exits *status*."""
+    host, _ = FakeHost(), _granted(tmp_path)
+    host.doors.add(argv[:2])
+    host.outcomes[argv[0]] = (said, status, True)
+    steps = planrunsteps.Steps((STEPS.steps[0], dataclasses.replace(STEPS.steps[1], argv=argv, stdin_local=None)))
+    return planrun.run_plan(
+        PLAN, steps, lambda _dest: host, spent=lambda ids: set(ids) & host.ledger, home=tmp_path, now=lambda: NOW
+    )
+
+
+def _batch_argv() -> tuple[str, ...]:
+    items = [word for n in range(6) for word in ('--item', f'tok{n}:read:repository')]
+    return ('forge', 'token', 'mint-batch', '--login', LOGIN, *items)
+
+
+def test_a_six_item_batch_lands_six_token_files_and_prints_no_token(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    said = ''.join(_batch_line(n) for n in range(6))
+    finished, lines = _token_run(tmp_path, _batch_argv(), said)
+    assert finished, lines
+    shown = '\n'.join(lines) + capsys.readouterr().out + capsys.readouterr().err
+    outputs = tmp_path / 'state' / 'consent' / 'outputs'
+    files = sorted(outputs.glob('*.token'))
+    assert [path.name for path in files] == [f'{LOGIN}-tok{n}.token' for n in range(6)]
+    assert [path.read_text(encoding='utf-8') for path in files] == [f'{token}\n' for token in BATCH]
+    assert not [token for token in BATCH if token in shown]  # 0 values on the terminal
+    assert all(str(path) in lines[1] for path in files)
+    assert 'PLANTED' in said  # control: the output the run read DID carry every value
+
+
+def _batch_line(n: int) -> str:
+    return json.dumps({'name': f'tok{n}', 'token': BATCH[n]}) + '\n'
+
+
+def test_a_batch_that_failed_midway_still_lands_the_tokens_it_minted(tmp_path: Path) -> None:
+    said = _batch_line(0) + _batch_line(1) + 'refused: gitea said no; minted [tok0, tok1]\n'
+    finished, lines = _token_run(tmp_path, _batch_argv(), said, status=2)
+    assert not finished
+    outputs = tmp_path / 'state' / 'consent' / 'outputs'
+    assert sorted(path.name for path in outputs.glob('*.token')) == [f'{LOGIN}-tok0.token', f'{LOGIN}-tok1.token']
+    assert 'gitea said no' in lines[-1]
+    assert BATCH[0] not in '\n'.join(lines)
+
+
+def test_a_single_mint_lands_its_token_by_login_and_name(tmp_path: Path) -> None:
+    argv = ('forge', 'token', 'mint', '--login', LOGIN, '--name', 'read', '--scope', 'read:repository')
+    finished, lines = _token_run(tmp_path, argv, f'{BATCH[0]}\n')
+    assert finished, lines
+    kept = tmp_path / 'state' / 'consent' / 'outputs' / f'{LOGIN}-read.token'
+    assert kept.read_text(encoding='utf-8') == f'{BATCH[0]}\n'
+    assert BATCH[0] not in '\n'.join(lines)
+
+
+def test_a_token_output_that_does_not_parse_stops_naming_its_raw_file(tmp_path: Path) -> None:
+    said = _batch_line(0) + f'garbled {BATCH[1]}\n' + _batch_line(2)
+    finished, lines = _token_run(tmp_path, _batch_argv(), said)
+    assert not finished
+    outputs = tmp_path / 'state' / 'consent' / 'outputs'
+    raws = list(outputs.glob('*.raw'))
+    assert len(raws) == 1
+    assert raws[0].read_text(encoding='utf-8') == said  # never truncated
+    assert str(raws[0]) in lines[-1]
+    assert not [token for token in BATCH if token in '\n'.join(lines)]
+    assert not list(outputs.glob('*.token'))
+
+
+def test_a_token_step_refuses_stdout_local(tmp_path: Path) -> None:
+    bad = [{'argv': ['config', 'apply']}, {'argv': ['forge', 'token', 'mint-batch'], 'stdout_local': 'x'}]
+    with pytest.raises(ConsentRefused, match='own outputs'):
+        planrunsteps.load_steps(_steps_file(tmp_path, bad), PLAN)

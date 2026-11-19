@@ -1,7 +1,7 @@
 """A consumer's local dev page under a FAMILY page's name is a RESIDUE, never a copy.
 
 WHAT THIS REFUSES. :mod:`dev_lab.dev.devdocs` declares the family's mechanism pages, and each
-exists ONCE, in lab-commons' ``docs-src/dev/``. A consuming repo may keep a page of the same STEM --
+exists ONCE, in dev-lab's ``docs-src/dev/``. A consuming repo may keep a page of the same STEM --
 but only as that repo's DELTA: it links the family page in its first lines, and it repeats almost
 none of it. Two drifts re-open the fork the sharing removed, and both had happened by 2026-09-30:
 
@@ -93,7 +93,7 @@ def family_subjects(text: str) -> frozenset[str]:
 
 def _links_family_page(text: str, slug: str) -> bool:
     lead = '\n'.join(text.splitlines()[:LINK_WINDOW])
-    return f'lab-commons/{CANONICAL_TREE}/{slug}.md)' in lead
+    return f'dev-lab/{CANONICAL_TREE}/{slug}.md)' in lead
 
 
 def _residue_problems(stem: str, text: str, family: Mapping[str, str]) -> list[str]:
@@ -101,7 +101,7 @@ def _residue_problems(stem: str, text: str, family: Mapping[str, str]) -> list[s
     if not _links_family_page(text, stem):
         out.append(
             f'{stem}.md: under a family page`s name and does not link '
-            f'`.../lab-commons/{CANONICAL_TREE}/{stem}.md` in its first {LINK_WINDOW} lines'
+            f'`.../dev-lab/{CANONICAL_TREE}/{stem}.md` in its first {LINK_WINDOW} lines'
         )
     if stem in family:
         fraction = copied_fraction(family[stem], text)
@@ -147,7 +147,7 @@ def residue_problems(
         if subjects and stem not in subject_allowlist:
             out.append(
                 f'{stem}.md: its lead takes {sorted(subjects)} as its subject, which is a FAMILY module with no '
-                f'family page here -- upstream it to lab-commons `{CANONICAL_TREE}/`, or allowlist it with a reason'
+                f'family page here -- upstream it to dev-lab `{CANONICAL_TREE}/`, or allowlist it with a reason'
             )
     out += _allowlist_problems(local, subject_allowlist)
     return tuple(out)
@@ -169,7 +169,7 @@ def assert_local_dev_pages_are_residues(
 ) -> None:
     """The consumer's verdict: every local dev page is a residue, and none adopts a family subject.
 
-    *root* is the consumer's checkout, *family_root* a lab-commons checkout (the pages are not in the
+    *root* is the consumer's checkout, *family_root* a dev-lab checkout (the pages are not in the
     wheel). Both REFUSE when absent: "I could not look" is not "nothing was copied".
     """
     pages = local_pages(root)
@@ -178,7 +178,7 @@ def assert_local_dev_pages_are_residues(
         raise AssertionError(msg)
     family_dir = family_root.joinpath(*CANONICAL_TREE.split('/'))
     if not family_dir.is_dir():
-        msg = f'no family tree at {family_dir}; clone lab-commons there'
+        msg = f'no family tree at {family_dir}; clone dev-lab there'
         raise AssertionError(msg)
     family = {
         slug: (family_dir / f'{slug}.md').read_text(encoding='utf-8')

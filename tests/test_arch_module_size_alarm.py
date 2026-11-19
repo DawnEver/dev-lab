@@ -45,8 +45,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _arch_corpus import ROOT, SOURCE_FLOOR, assert_floor, parse, rel, source_modules
+from _arch_corpus import SOURCE_FLOOR, assert_floor, corpus_key, parse, rel, source_modules
 
+from dev_lab.dev.failprint import subject_lines
 from dev_lab.dev.famtests.density import code_only
 
 #: This repo's band, in CODE lines. A module past it is refactored, or pinned below with its
@@ -95,7 +96,7 @@ def oversized(paths: tuple[Path, ...], band: int) -> dict[str, int]:
     for path in paths:
         lines = code_lines(path)
         if lines > band:
-            key = rel(path) if path.is_relative_to(ROOT) else path.name
+            key = corpus_key(path)
             out[key] = lines
     return out
 
@@ -109,7 +110,7 @@ def test_the_debt_is_exactly_the_modules_that_are_over_the_band() -> None:
         f'past the {BAND}-line band and not pinned: {sorted(set(live) - set(DEBT))} -- refactor it, or '
         f'pin it here with its measurement. Pinned but no longer over the band: '
         f'{sorted(set(DEBT) - set(live))} -- delete the entry in the same edit that shrank the module; '
-        f'a waiver nothing uses is a hole that reads as a decision.'
+        f'a waiver nothing uses is a hole that reads as a decision.\n' + subject_lines(set(live) ^ set(DEBT))
     )
 
 

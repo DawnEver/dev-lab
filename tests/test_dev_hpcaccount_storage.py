@@ -12,6 +12,7 @@ from lab_commons.hpc.grants import AccessRefused, Grant
 from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.hpcaccount import storage
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE, retention_fleet
+from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
 _FLEET = (
@@ -20,6 +21,11 @@ _FLEET = (
 )
 _DEPLOY = '[deploy]\nhost = "login01.example"\nroot = "src"\n'
 _QUOTA = 'Disk quotas for user alice\n  /home  29G  30G  30G  999k* 1000k 1000k'
+
+
+def _line(argv: str) -> str:
+    """The remote line in the account's dev-lab checkout, run by its current environment (the one resolver)."""
+    return f'cd ~/src/dev-lab && {shell_interpreter(".")} {argv}'
 
 
 def _account(*, ticks: str = '2', unreachable: bool = False, seen: list[str]) -> Runner:
@@ -49,8 +55,9 @@ def _run(
         return _account(ticks=ticks, unreachable=grant.user in down, seen=seen[grant.user])
 
     code = retention_fleet(
-        _FLEET, accounts, apply=apply, say=said.append, connect=connect, pin=lambda grant, _host: connect(grant)
-    )
+        _FLEET, accounts, apply=apply, say=said.append, connect=connect, pin=lambda grant, _host: connect(grant),
+        serves=lambda grant: grant.user != 'bob',
+    )  # fmt: skip
     return code, said, seen
 
 
@@ -61,7 +68,7 @@ def _retentions(seen: list[str]) -> list[str]:
 def test_a_dry_run_runs_the_accounts_own_retention_without_apply() -> None:
     code, said, seen = _run()
     assert code == 0
-    assert _retentions(seen['alice']) == ['cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.retention --cluster']
+    assert _retentions(seen['alice']) == [_line('-m dev_lab.dev.retention --cluster')]
     assert not any('--apply' in cmd for cmd in seen['alice'] + seen['bob'])  # PLANTED: a dry run deletes nothing
     assert any('999k' in line for line in said)  # the files column of the quota is printed
     assert 'alice: retention (dry run)' in said
@@ -70,9 +77,7 @@ def test_a_dry_run_runs_the_accounts_own_retention_without_apply() -> None:
 def test_apply_passes_apply_to_the_accounts_retention() -> None:
     code, said, seen = _run(apply=True, accounts=('bob',))
     assert code == 0
-    assert _retentions(seen['bob']) == [
-        'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.retention --cluster --apply'
-    ]
+    assert _retentions(seen['bob']) == [_line('-m dev_lab.dev.retention --cluster --apply')]
     assert seen['alice'] == []  # only the named account is reached
     assert 'bob: retention --apply' in said
 
@@ -209,7 +214,7 @@ def test_a_walk_that_outlasts_the_timeout_is_one_line_naming_the_door() -> None:
 
 def test_the_timeout_reaches_the_ssh_runner(monkeypatch: pytest.MonkeyPatch) -> None:
     got: list[float] = []
-    monkeypatch.setattr(storage, 'reached_machine', lambda _a: SimpleNamespace(grants=_FLEET))
+    monkeypatch.setattr(storage, 'reached_machine', lambda _a: SimpleNamespace(grants=_FLEET, roles=None))
     monkeypatch.setattr(storage, 'emit', lambda _line: None)
 
     def runner(_grant: Grant, timeout: float) -> Runner:
@@ -220,7 +225,7 @@ def test_the_timeout_reaches_the_ssh_runner(monkeypatch: pytest.MonkeyPatch) -> 
         got.append(timeout)
         return _census_account([])
 
-    monkeypatch.setattr(storage, 'runner_for', runner)
+    monkeypatch.setattr(storage, 'grant_runner', runner)
     monkeypatch.setattr(storage, 'on_host', pinned)
     assert storage.main(['--account', 'alice', '--census', '--timeout', '7200']) == 0
     assert got == [7200.0, 7200.0]  # the failover runner and the deploy host's pinned one alike
@@ -258,3 +263,17 @@ def test_quota_tries_each_filesystem_tool_and_names_the_one_that_answered() -> N
     order = [storage.QUOTA.index(tool) for tool in ('mmlsquota', 'quota -s', 'lfs quota')]
     assert order == sorted(order)
     assert 'quota by' in storage.QUOTA
+
+
+def test_a_research_account_without_a_cron_is_as_designed_not_a_fault() -> None:
+    """A research account never carries a serve cron (``division.DEFAULT_ROLES``: research does not serve).
+
+    MEASURED 2026-11-17: the report said "0 -- serve never ticks" for a research account and was read as a fault.
+    PLANTED CONTROLS: a serving account at 0 is still named; a research account WITH tick lines is the fault.
+    """
+    _, said, _ = _run(ticks='0', accounts=('bob',))
+    line = next(text for text in said if text.startswith('bob: serve'))
+    assert 'never ticks' not in line
+    assert 'no serve cron, by design' in line
+    _, said, _ = _run(ticks='2', accounts=('bob',))
+    assert any('bob' in text and 'must carry none' in text for text in said)

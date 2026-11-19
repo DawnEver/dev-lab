@@ -15,7 +15,8 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev.milestonebase import APPROVED_ENV, BASE_RULE, TAG_RULE, milestone_version, refusals
-from dev_lab.dev.sessionprs import SESSION_ENV
+
+SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
 _GIT = shutil.which('git') or 'git'
 _ZERO = '0' * 40
@@ -178,3 +179,18 @@ def test_an_existing_tag_on_origin_is_not_a_new_one(repo: Path) -> None:
     sha = _git(repo, 'rev-parse', 'v0.2.13.dev1')
     line = f'refs/tags/v0.2.13.dev1 {sha} refs/tags/v0.2.13.dev1 {sha}\n'
     assert refusals(repo, line, env={SESSION_ENV: 's1'}) == []
+
+
+def test_a_native_codex_thread_cannot_push_an_unapproved_version_tag(repo: Path) -> None:
+    _git(repo, 'tag', '-a', 'v0.2.14.dev0', '-m', 'v0.2.14.dev0')
+    found = refusals(repo, _tag(repo, 'v0.2.14.dev0'), env={'CODEX_THREAD_ID': 'native-codex'})
+    assert len(found) == 1
+    assert found[0].startswith(f'{TAG_RULE}:')
+    assert APPROVED_ENV in found[0]
+
+
+def test_the_same_codex_tag_requires_real_nonempty_approval_words(repo: Path) -> None:
+    _git(repo, 'tag', '-a', 'v0.2.14.dev0', '-m', 'v0.2.14.dev0')
+    line = _tag(repo, 'v0.2.14.dev0')
+    assert refusals(repo, line, env={'CODEX_THREAD_ID': 'native-codex', APPROVED_ENV: 'tag dev0 now'}) == []
+    assert refusals(repo, line, env={'CODEX_THREAD_ID': 'native-codex', APPROVED_ENV: '  '}) != []

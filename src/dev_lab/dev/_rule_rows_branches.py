@@ -9,10 +9,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ONE-BRANCH-PER-SESSION',
         (
-            'Each working session maintains exactly ONE long-lived branch and merges its work into it, every other '
-            'branch is merged and then deleted, never left behind, a repo`s long-lived branches are DECLARED (the '
-            'trunk plus one branch per declared session or lane owner) so anything else on origin or on this box '
-            'is debt, and unpushed work is reported, never deleted silently.'
+            'The integration branch is the only long-lived branch a session works into: a pushed head is '
+            '`pr/<task-slug>/<feature>`, one feature per PR, and every other branch is merged and then deleted, '
+            'never left behind; a repo`s long-lived branches are DECLARED (the trunk plus the integration branch) '
+            'so anything else on origin or on this box is debt, and unpushed work is reported, never deleted '
+            'silently.'
         ),
         ('tests/test_dev_branchset.py',),
     ),
@@ -20,13 +21,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'MERGE-OR-DELETE',
         (
             'A merged branch is DELETED and an unmerged one is MERGED, no third state: an `archive/*` tag or '
-            'untracked rename hides work and is debt like an undeclared branch -- `branchset` lists it, deletes it '
-            'when a declared branch holds its tip, else names it to merge; a worktree is a lease for one task, so '
-            'a tree unlocked, unoccupied, with no TRACKED change and its content landed on the trunk or a declared '
-            'session is reclaimed by `branchset --apply` and the session debris hook, each kept tree listed with '
-            'its reason: what git does not track goes with it, its run outputs moved home and verified first.'
+            'untracked rename hides work and is debt -- `branchset` lists it, deletes it when a declared branch '
+            'holds its tip, else names it to merge. A worktree is a lease for one task: `branchset --apply` (also run '
+            'at session start) reclaims a landed clean tree, and gives every other local branch or tree one of two '
+            'fates (ruling 2026-11-15) -- kept for a NAMED live owner, else cleaned when merged with nothing unlanded, '
+            'else listed with its doors, never parked (D31) '
+            '(`dev_lab.dev.reclaim`, `dev_lab.dev.branchfate`).'
         ),
-        ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py'),
+        ('tests/test_dev_branchset_apply.py', 'tests/test_dev_reclaim.py', 'tests/test_dev_branchfate.py'),
     ),
     (
         'RECURSIVE-DELETE',
@@ -117,13 +119,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PR-HEAD-IS-CURRENT',
         (
-            'A push creating or updating a `pr/*` branch is refused at pre-push when its tip lacks more than the one '
-            'lag window (`locklag.LAG_LIMIT`) of first-parent commits of `origin/<integration>` fetched afresh '
-            '(a fetch that fails refuses with its reason), or when its lock '
-            'pins a floated sibling past the one lag window `lock/lag` reads (`locklag.within_window`); '
-            '`forge pr ready` refuses on the same '
-            'judgement and on uncommitted tracked changes. Each refusal names `forge sync`, which merges '
-            'integration and relocks the floated siblings in one sync (user ruling 2026-11-07; `prcurrent`).'
+            '`forge pr ready` refuses a `pr/*` head whose tip lacks a first-parent landing of `origin/<integration>` '
+            '(fetched afresh) older than the TIME window `locklag.LAG_WINDOW` (a failed fetch refuses with its '
+            'reason), whose lock pins a floated sibling past the lag window `lock/lag` reads '
+            '(`locklag.within_window`), or with uncommitted tracked changes. A `pr/*` push is WARNED at pre-push on '
+            'the same judgement and when the pushing venv lacks what that lock pins (`prcurrent.kit_stale`, naming '
+            'the bootstrap door): the forge status `pr-current` is an alarm, never a merge gate (dev-lab #661). Each '
+            'names `forge sync`, which merges integration and relocks the floated siblings (user ruling 2026-11-07).'
         ),
         ('tests/test_dev_prcurrent.py', 'tests/test_dev_branchflow.py', 'tests/test_dev_forgedraft.py'),
     ),
@@ -211,9 +213,23 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A push that creates or updates `refs/heads/<X>` on origin is refused at pre-push unless the branch '
             'set its pushed tip declares admits `<X>` (the trunk, a `sessions` branch, or a branch in an '
-            '`ephemeral` namespace, default `pr/*`): a session publishes its one `pr/<feature>` branch and its '
-            'fan-out `lane/` `feat/` `fix/` branches stay local. Deletions and tags are not judged, so an '
+            '`ephemeral` namespace, default `pr/*`, whose `*` crosses `/`): a session publishes each feature as its '
+            'task`s `pr/<task>/<feature>` head (PUSHED-HEAD-CARRIES-ITS-TASK), and its fan-out `lane/` `feat/` '
+            '`fix/` branches stay local. '
+            'Deletions and tags are not judged, so an '
             'existing undeclared origin branch takes no new push and is deleted by a human.'
+        ),
+        ('tests/test_dev_sessionbranch.py',),
+    ),
+    (
+        'PUSHED-HEAD-CARRIES-ITS-TASK',
+        (
+            'Branch names follow the task (user ruling D25, 2026-11-17): an agent session creates or updates a '
+            'head in the task namespace (`[tool.dev_lab.branchset] task_heads`, default `pr/<task>/<feature>`) '
+            'only under the task its user bound it to (`dev_lab.dev.taskbinding`), one feature per PR. Another '
+            'task`s head, a flat `pr/<feature>` and the bare `pr/<task>` (which git cannot hold beside its heads) '
+            'are refused at pre-push in the `session-branch` row naming `pr/<task>/`; with no bound task the '
+            'refusal names how a task is bound. A human push and the forge are not judged.'
         ),
         ('tests/test_dev_sessionbranch.py',),
     ),

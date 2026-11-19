@@ -29,6 +29,9 @@ pr_merges_since = 'abc123'
 produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
 [tool.dev_lab.hooks]
+
+[tool.dev_lab.protection]
+producer = "actions"
 """
 
 
@@ -49,7 +52,15 @@ def test_a_bare_repo_names_every_missing_piece_at_once(tmp_path: Path) -> None:
     with pytest.raises(OnboardingViolation) as refused:
         assert_repo_is_onboarded(root=bare)
     text = str(refused.value)
-    for piece in ('branchset', 'integrator] integration', 'pr_merges_since', 'produce', 'hooks', 'AGENTS.md'):
+    pieces = (
+        'branchset',
+        'integrator] integration',
+        'pr_merges_since',
+        'produce',
+        'hooks',
+        'AGENTS.md',
+    )  # producer defaults to actions
+    for piece in pieces:
         assert piece in text, f'{piece} is missing from:\n{text}'
     assert 'uv.lock' in text
 
@@ -103,6 +114,7 @@ def test_the_built_in_ephemeral_default_needs_no_restating() -> None:
         "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
         "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\npr_merges_since = 'abc'\n"
         "[tool.dev_lab.hooks]\n[tool.lab_commons.tests]\nproduce = ['-m', 'dev_lab.dev.verify', '--part', '{part}']\n"
+        "[tool.dev_lab.protection]\nproducer = 'actions'\n"
     )
     assert onboarding_gaps(text, {'AGENTS.md', 'uv.lock'}.__contains__, 'origin/x') == []
     off = text.replace("sessions = ['integrate/main']\n", "sessions = ['integrate/main']\nephemeral = ['wip/*']\n")

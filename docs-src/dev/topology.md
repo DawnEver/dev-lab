@@ -39,12 +39,13 @@ host configuration (private): data only, consumed by the dev kit's ops door on e
 
 ```
 lane/* feat/* fix/*   (local only; fan-out in worktrees)
-   -> pr/<feature>    (one long-lived pushed branch per session)
+   -> pr/<task-slug>/<feature>   (the pushed head: one feature per PR)
         -> integrate/main   (the forge merges a green, reviewed PR; merges only)
              -> main        (integrate promote: fast-forward only, every part a full PASS)
 ```
 
-- Child branches are local; one `pr/<feature>` per session is what is pushed ([one branch per session](branch-set.md)).
+- Child branches are local; a pushed head is `pr/<task-slug>/<feature>`, one feature per PR, and `integrate/main` is
+  the only long-lived branch ([branch set](branch-set.md), `PUSHED-HEAD-CARRIES-ITS-TASK`).
 - A PR targets the integration branch (`PRS-TARGET-INTEGRATION`); the integration branch takes only forge merges
   (`INTEGRATION-IS-MERGES-ONLY`, from `[tool.dev_lab.integrator] merges_only_since` / `pr_merges_since`).
 - A child takes integration by `forge sync` (a merge, never a rebase); the forge auto-syncs a head whose lock alone
@@ -128,7 +129,7 @@ declares (`dev_lab.ops.config.load`).
 | forge host | `[ops]`, `[ops.promote]`, `[ops.breakglass]` (+ `.tokens`, `.apps`), `[ops.consent]`, `[ops.backup]` (export), `[ops.forge]` (+ `.accounts.*`), `[ops.caddy]`, `[ops.status]`, `[ops.access]`, `[ops.supervise]`, `[ops.upgrade]`, `[ops.config]` | the Gitea, promotion, the break-glass server and its `tick`, the consent issuer, backup export, the reverse proxy allowlist, supervision |
 | backup host | `[ops.backup]` (pull, `.offsite`), `[ops.supervise]`, `[ops.access]`, `[ops.upgrade]`, `[ops.config]` | backup pull and offsite copy, mirrors, a health probe of the forge host |
 | judge host | `[ops.judge]` (+ `.tokens`, `.apps`), `[ops.access]`, `[ops.upgrade]`, `[ops.config]` | `forge review judge` per declared repo on its schedule |
-| serve host (workstation) | the machine file's `[serve]`, `[capabilities.*]` | `forge serve` (claims shas, posts parts) -- [the forge](forge.md), [adding a workstation](adding-a-workstation.md) |
+| workstation | the machine file's `[capabilities.*]`, `[workstation]` | never serves (user ruling 2026-11-16): `workstation deploy` declares it and keeps its checkouts current -- [adding a workstation](adding-a-workstation.md) |
 | verify account (HPC) | a `[[hpc.grant]]` in `family.toml` | `hpcaccount tick` from cron: claims parts with the `write` login ([HPC](hpc.md)) |
 | research account / host | a grant or a host with the `read` login | pulls code, submits research jobs; never posts ([from a workstation](hpc-from-a-workstation.md)) |
 | CI runner | the forge's Actions runners | the rendered workflows (`dev_lab.dev.ciworkflows`) |
@@ -190,10 +191,18 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
    `{"host", "grants"}` shape is refused by name with its one-time migration, never upgraded on read.
 2. `sshhold open --plan` grants first (the issuer), then opens every host's session concurrently with the same code,
    each started inside ONE TOTP step of it; a host that fails or misses the window is reported, never retried with
-   the code, and is re-opened alone with a new code (`dev_lab.dev.sshhold.open_planned`). Granting spends nothing.
+   the code, and is re-opened alone with a new code (`dev_lab.dev.sshholdplan.open_planned`). Granting spends
+   nothing. A plan host already held is reused: the code goes to the issuer alone.
 3. `grant_plan` checks the session host is one of the plan's hosts; `planrun` runs each step on its grant's host,
    first asking every pending host to answer -- one that does not stops the run before any step, so no grant on
    another host is spent -- and resumes per plan digest; `recover` stays per plan digest.
+4. Before any code is asked, ONE door (`dev_lab.ops.consent.door`) refuses what would waste it: every code intake
+   runs the issuer `hello` handshake (credential field set and registry actions; a skewed pair names the side to
+   upgrade), and a plan is offered (`consent plan`, `sshhold open --plan`, `grant_plan`) only after `planrun
+   preflight` was green for its digest -- every door and every subject -- and recorded it.
+   A subject only an unreached plan host derives is READ, no code, through the issuer's `subject` verb: it runs only
+   the registry's declared read form (`Action.reads` + `--subject`; a credential, `--follow` or another verb is
+   refused) on the issuer's own host, so a plan takes exactly ONE code (user ruling 2026-11-16).
 
 ## 6. Break-glass waves
 
@@ -204,7 +213,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 - It runs only inside a WAVE the user opened with a `breakglass.wave` credential whose params are the window
   (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_hours_max` / `max_merges_max`
   -- above a ceiling it is refused, never clamped. The merge that reaches the cap ends the wave.
-- While a wave is open, the host's `tick` sweeps it: each green, non-draft, CURRENT (`pr-current` success) PR in
+- While a wave is open, the host's `tick` sweeps it: each green, non-draft PR (`pr-current` is an alarm, never a condition) in
   `[ops.breakglass] repos` lands; a refused one is skipped with its reason (`dev_lab.ops.wavesweep`).
 - Each merge carries a `Break-Glass: <reason>` trailer (at least `min_reason` characters) that opens a follow-up
   issue; the wave sends ONE summary alert when it ends. Client: `python -m dev_lab.dev.forge breakglass
@@ -214,7 +223,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 
 | file | where | owns | reader |
 |---|---|---|---|
-| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]`, `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`), `[tools]` | `lab_commons.config`, `lab_commons.home` |
+| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`), `[tools]` | `lab_commons.config`, `lab_commons.home` |
 | family layer | `family.toml` in the host-configuration repo | `[[hpc.grant]]`, AI spend caps, the review month -- a machine file restating a key is refused | `lab_commons.config` `[family]` |
 | repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows` |
 | host file | `/etc/dev-lab/supervise.toml`, reviewed as `hosts/<server>.toml` | `[ops.*]`, `[components.*]`, `[alerts]`, `[cycle]` | `dev_lab.ops.config`, `dev_lab.supervise.config` |
@@ -223,8 +232,8 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
   on the operator's word, every other key with an `ops.config` credential bound to the candidate's sha256. A host
   whose `[ops.config]` declares a `schedule` runs `config tick`: routine changes merged in the host-configuration
   repo apply by themselves; a boundary change is parked until consented ([forge](forge.md#changing-a-forge-hosts-configuration)).
-- A retired `[ops]` shape is upgraded on read in ONE place, `dev_lab.ops.configupgrade` (an `OLD-SHAPE-READER` owed its one-time migration under `FORMATS-MIGRATE-ONCE`);
-  the next `config apply` writes the new shape. A file holding both the old and the new shape is refused.
+- A retired `[ops]` shape is refused by name with its migration (`dev_lab.ops.configretired.RETIRED`,
+  `FORMATS-MIGRATE-ONCE`), by the live loader and by `configcheck` alike: migrate the host's reviewed file once.
 - No secret value enters any of these files: they name paths only. `python -m dev_lab.ops.configcheck` enforces it
   on every PR of the host-configuration repo and labels a boundary change `needs-consent`.
 
@@ -232,7 +241,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 
 ### A new development workstation
 
-1. Install `git`, `uv`, `node` (and `codex` for a serving box) -- [adding a workstation](adding-a-workstation.md#deploy-step-by-step).
+1. Install `git`, `uv`, `node` and `codex` -- [adding a workstation](adding-a-workstation.md#deploy-step-by-step).
 2. Clone each member beside its siblings and record it in the machine file's `[repos]` (name -> absolute path).
    Further checkouts go under `<repo>/.claude/worktrees/<name>` ([worktrees](worktrees.md)).
 3. Bootstrap each repo's venv through its install door (`uv sync --frozen`, or the product's bootstrap script).
@@ -240,8 +249,8 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
    per forge host, or move them from an old box with `forge auth export | ssh <box> "... auth login --from-file -"`;
    verify with `auth status` ([credentials](forge.md#credentials)).
 5. Install the hooks: `python -m dev_lab.dev.hook_install --install`.
-6. To also SERVE parts: `python -m dev_lab.dev.workstation template --role light --repos ...`, then the deploy
-   ([adding a workstation](adding-a-workstation.md)).
+6. To declare its capabilities: `python -m dev_lab.dev.workstation template --role light`, then the deploy
+   ([adding a workstation](adding-a-workstation.md)). A workstation never serves a merge's parts.
 7. For hosts behind a TOTP: optionally set `[ssh.hold] max_hours` / `idle_minutes` in the machine file.
 
 ### A forge host

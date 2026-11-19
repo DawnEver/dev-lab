@@ -19,6 +19,12 @@ re-render; never hand-edit a rendered file.
   files make due (`famfiles.render_repo`): CI workflows, the base + delta files, principles and rem pages, deny
   rules, the guard engine and its settings wiring, the door rules, the dev-docs pointer table. `forge sync`'s
   relock calls the same function. `--deltas <module> [--check]` runs the base + delta renderer alone.
+- **A tracked render moves in a lane, under its own kit** (`trackedrender`). `agent_guard --install` and the one door
+  (`famfiles.render_repo`, which puts a refused render back) leave a TRACKED file
+  differing from the index only in a linked worktree whose kit is its own (its `src/dev_lab`, or the dev-lab
+  commit its `uv.lock` pins); a main checkout moves only by fast-forward (`trackedrender.check_render`).
+  Otherwise it writes nothing and names the door: re-render under the checkout's own interpreter, or relock in
+  a lane and commit the render there.
 - **One check.** `dev_lab.dev.famtests.famfiles`:
   `assert_every_project_file_is_accounted_for(root=, owned_here=)` and
   `assert_every_managed_file_is_rendered(root=, deltas=, repo=, rerender_hint=)`.
@@ -28,11 +34,16 @@ re-render; never hand-edit a rendered file.
 - **Hooks are declared, not rendered.** The family base is `dev_lab/dev/githooks/base.toml`; a repo adds or
   narrows rows under `[[tool.dev_lab.hooks.<stage>]]` in `pyproject.toml` (the same `id` merges key by key,
   a new `id` appends). Keys: `id`, `run` (argv; a leading `python` is the repo venv's interpreter),
-  `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, and `refs` (pre-push only).
-  Stages: `pre-commit`, `commit-msg`, `pre-push`. `uv`/`uvx` as `run[0]` is refused.
+  `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, `refs` (pre-push only),
+  `advisory` (the row only speaks: shown, never a refusal), `isolate` (a subprocess even for `python -m`) and
+  `bootstraps`. Stages: `pre-commit`, `commit-msg`, `post-commit`, `pre-push`, `post-merge`, `post-checkout`; a check
+  runs at ONE of them. `uv`/`uvx` as `run[0]` is refused.
 - **One runner**: `python -m dev_lab.dev.githooks run <stage> [git args]`. At commit it selects among the
   STAGED paths and fails a hook that rewrites the working tree; at commit-msg it appends the message file; at
   pre-push it reads git's ref lines once and pipes the matching ones to every hook. No hook runs a test suite.
+  A `python -m <module>` row runs IN the runner's interpreter (same argv, cwd, stdin, env and exit code), so a
+  stage costs one interpreter start; a tool, a script and an `isolate` row run as subprocesses. The per-file
+  checks are ONE row, `filechecks all`; a repo narrows one check with `--skip CHECK` or `--exclude CHECK=REGEX`.
 - **One install**: `python -m dev_lab.dev.hook_install --install --repo .` writes one shim per declared stage
   into the directory git consults; the shim finds the checkout's venv and runs the runner. A worktree may point
   `core.hooksPath` at its own directory with `git config --worktree`. The `hooks-installed` verify step reports a
@@ -41,6 +52,9 @@ re-render; never hand-edit a rendered file.
   `[tool.dev_lab.ci."<file>.yml"]` (deep-merged over the base) or declares its own.
   `python -m dev_lab.dev.ciworkflows render` writes `.github/workflows/*.yml` as stamped JSON (JSON is YAML);
   `check` refuses a hand edit or an undeclared workflow, naming the render command.
+  A table's `nightly = true` schedules it at the default 02:00 UTC (`nightlycron.NIGHTLY_CRON`); a repo sets its
+  own time with `nightly = "<5-field cron>"` in that table (D63), and a malformed cron is refused by name. GitHub
+  starts a scheduled run ~6-8 h late (measured 2026-11-18, `.claude/memory/2026/11/18/`).
 - **A relock re-renders.** Every generated row of `famfiles.PROJECT_FILES` names its renderer, and
   `famfiles.RENDERERS` is read off those rows. After a relock moves the lock, `forge sync` and the forge relock
   run each renderer whose file the tree holds, with the tree's re-synced `.venv`, and commit the output with the
@@ -59,7 +73,7 @@ re-render; never hand-edit a rendered file.
 | `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.dev_lab.ci]` over `ci_base.toml` |
 | `ruff.toml` / `[tool.ruff*]` | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
 | `pyproject.toml` | section bases for `[project]` and `[tool.pytest.ini_options]`; the rest declined in `PYPROJECT_DECLINED` |
-| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption` |
+| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption`: one `hookdispatch` row per event, from `agent_wiring.WIRING` plus the repo's `[[tool.dev_lab.agent_hooks]]` rows (`events`, `module`, `args`, `tools`, `may_block`, `once`, `timeout`, `detached`), run in the same dispatcher; every row's `timeout` is 5 (`HOOK-UNDER-FIVE-SECONDS`) |
 | `.claude/hooks/deny-commands.js`, `deny-rules.json` | `agent_guard` install and `hook_adoption.render` |
 | `docs-src/dev/index.md` pointer table | `devdocs.pointer_table`, asserted by `famtests.devdocs` |
 | always-loaded rule pages | rule IDs from `dev_lab.dev.rules`, `famtests.rulespages` |

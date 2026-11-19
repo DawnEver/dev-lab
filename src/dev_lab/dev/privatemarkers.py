@@ -33,8 +33,8 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import NoCredential, Transport, forge_from_remote, forge_of_url, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgehosts import is_private
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.githooks.runner import PUSH_URL_ENV
 
 __all__ = [
@@ -187,14 +187,16 @@ _ZERO = re.compile(r'^0+$')
 def pushed_messages(root: Path, ref_lines: str) -> list[tuple[str, str]]:
     """``(sha, message)`` of every commit a push publishes, from git's pre-push *ref_lines* on stdin.
 
-    An existing remote ref: ``<remote sha>..<local sha>``; a new one: the local sha minus every remote-tracking
-    ref -- what no remote holds yet. A deletion publishes nothing.
+    The local sha minus the ref's remote sha (an existing ref) and minus every remote-tracking ref -- what no
+    remote holds yet. A commit another remote ref already published (integration's, merged by a sync) is public
+    already: refusing this push cannot un-publish it, and judging it refused every sync of an older branch.
+    A deletion publishes nothing.
     """
     found: dict[str, str] = {}
     for line in ref_lines.splitlines():
         match line.split():
             case [_, local, _, remote] if not _ZERO.match(local):
-                span = [local, '--not', '--remotes'] if _ZERO.match(remote) else [f'{remote}..{local}']
+                span = [local, '--not', '--remotes', *(() if _ZERO.match(remote) else (remote,))]
             case _:
                 continue
         argv = ['git', 'log', '--format=%H%x00%B%x1e', *span]
@@ -235,13 +237,18 @@ def text_refusal(text: str, what: str, markers: tuple[re.Pattern[str], ...] | No
     """The PRIVATE-MARKERS refusal for *what* (a PR body...) when *text* holds a marker, else ``None``.
 
     The markers are the machine-local denylist (:data:`MARKERS_FILE`, read at call time) unless given; a hit is
-    named by line and kind only.
+    named by line and kind only. The rule leads line one and the door has a line of its own, so
+    :func:`dev_lab.dev.walls.refused_text` records the rule and that a door was named.
     """
     hits = scan_text(text, load_markers(MARKERS_FILE) if markers is None else markers)
     if not hits:
         return None
     named = ', '.join(f'line {n}: {kind}' for n, kind, _ in hits)
-    return f'PRIVATE-MARKERS: the {what} names a private value ({named}); neutralise it before it is published.'
+    return (
+        f'PRIVATE-MARKERS: the {what} names a private value ({named}) and the target repo is not known private\n'
+        'Door: drop or neutralise each named marker (a placeholder for each name), then re-run the same command\n'
+        'details: docs-src/dev/refusals.md#private-markers (dev-lab)'
+    )
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:

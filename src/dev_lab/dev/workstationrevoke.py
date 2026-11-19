@@ -28,8 +28,8 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgerecords import listing, remove_named, replace_named
-from dev_lab.dev.forgework import client_for
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

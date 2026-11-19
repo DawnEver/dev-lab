@@ -26,6 +26,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, forge_from_remote
+from dev_lab.dev.native_session import harness_keys
 
 __all__ = [
     'CLAUDE_ENV',
@@ -67,11 +68,15 @@ def forge_email(root: Path | None) -> str:
 def machine_env(root: Path | None = None, *, env: Mapping[str, str] | None = None) -> dict[str, str]:
     """*env* (default: this process's) as the FORGE: no session, and the forge's identity, never the account's.
 
+    No session means neither the launcher's ``LAB_SESSION`` nor any native harness key (:func:`harness_keys`):
+    ``forge sync``'s relock commit inherited ``CLAUDE_CODE_SESSION_ID`` and so the session's task gate (#630).
+
     The ONE source of a forge-made commit's author and committer (user ruling 2026-10-25): on an HPC login
     node git would otherwise sign with the account's passwd GECOS name. The machine and account stay
     visible as data in the ``Forge-Host`` trailer (``<cluster>/<account>``), never as the author.
     """
-    out = {key: value for key, value in (os.environ if env is None else env).items() if key != ENV}
+    dropped = {ENV, *harness_keys()}  # a harness session key would put the forge's commit under the session's task gate
+    out = {key: value for key, value in (os.environ if env is None else env).items() if key not in dropped}
     email = forge_email(root)
     for role in ('AUTHOR', 'COMMITTER'):
         out[f'GIT_{role}_NAME'], out[f'GIT_{role}_EMAIL'] = FORGE_NAME, email

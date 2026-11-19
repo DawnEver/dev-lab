@@ -31,6 +31,7 @@ from dev_lab.dev.actionsartifact import zipped
 from dev_lab.dev.artefactfolder import FolderStore
 from dev_lab.dev.artefactpack import pack
 from dev_lab.dev.artefacts import Config, Ref
+from dev_lab.dev.artefactstores import ref_of_entry
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeapp import App
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
@@ -271,7 +272,7 @@ def _prepared(
 
     def resolve(entry: dict[str, Any], dest: Path, **_k: object) -> Path:
         fetched.append(entry['ref'])
-        return store.get(Ref.of(entry), dest)
+        return store.get(ref_of_entry(entry), dest)
 
     def store_for(config: Config, *_a: object, **_k: object) -> FolderStore:
         if configs is not None:
@@ -588,6 +589,15 @@ def test_a_reviewer_that_did_not_run_posts_nothing(prepared: Prepared, statuses:
     said, _ = _judged(prepared.forge, _findings(None, statuses=statuses))
     assert prepared.forge.verdicts() == []
     assert 'nothing posted' in said[0]
+
+
+def test_a_reviewer_that_did_not_run_is_said_with_its_reason(prepared: Prepared) -> None:
+    """The line names WHY each reviewer has no findings: a host missing its keys is otherwise undiagnosable."""
+    doc = json.loads(_findings(None, statuses=('ok', 'unsupported')))
+    doc['reviewers'][1]['error'] = 'anthropic has no pr-review task key stored for api.anthropic.com'
+    said, _ = _judged(prepared.forge, json.dumps(doc))
+    assert prepared.forge.verdicts() == []
+    assert 'r1 unsupported: anthropic has no pr-review task key stored for api.anthropic.com' in said[0]
 
 
 def test_a_bundle_the_forge_diff_disowns_is_refused_as_request_changes(prepared: Prepared) -> None:

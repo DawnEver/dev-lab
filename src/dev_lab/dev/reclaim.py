@@ -3,16 +3,18 @@
 Worktrees created for a task (by an agent, a human, codex) were never reclaimed: :mod:`dev_lab.dev.checkout`
 DETECTED them and ``branchset --apply`` deleted merged local branches but skipped every branch checked out in a
 worktree, so a finished tree pinned its branch forever. First principles: a lease ends when its branch's CONTENT
-is landed (or its PR closed and its origin ref deleted after a squash merge) AND no TRACKED file is changed:
-what git does not track is not the work and goes with the tree, untracked files included (user rulings
-2026-10-25 and 2026-11-12, the latter ending 10-27's untracked keep). Run outputs move home first: user ruling
+is landed (or its PR closed and its origin ref deleted after a squash merge) AND it holds nothing unlanded: no
+TRACKED change and no UNTRACKED, NOT-IGNORED file (D31, user 2026-11-17: a worktree's work is MERGED or the tree
+is CLEANED, never parked -- what ``.gitignore`` names is regenerable and goes with the tree; anything else
+untracked keeps it, listed with its doors). Run outputs move home first: user ruling
 2026-11-12 (replacing 11-09's keep-as-writer-defect) makes reclaiming useless trees a REQUIRED part of the
 workflow, so every reclaimable tree's outputs are moved into the main checkout, VERIFIED, and only then is it
 deleted; a move that fails keeps the tree and names the failure.
 :func:`reclaimable` is that one decision, built on :mod:`dev_lab.dev.checkout`'s readings (content
 by ``git cherry``, never ancestry; ``None`` when git cannot answer); :func:`reclaim` acts on it. The doors are
-``python -m dev_lab.dev.worktrees --prune`` (which the session debris hook runs) and ``python -m
-dev_lab.dev.branchset --apply``, which reclaims first so the freed branch is deleted in the same run.
+``python -m dev_lab.dev.worktrees --prune`` and ``python -m dev_lab.dev.branchset --apply``, which reclaims
+first so the freed branch is deleted in the same run; hooks never run either inline, they detach
+:mod:`dev_lab.dev.reclaimrun`.
 """
 
 from __future__ import annotations
@@ -43,16 +45,19 @@ from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.liverun import Census, removal_holders
-from dev_lab.dev.worktree_archive import home_outputs
+from dev_lab.dev.worktree_outputs import home_outputs
 
 __all__ = [
     'DISPOSABLE',
     'QUIET_S',
+    'UNLANDED_DOORS',
     'Lease',
     'blockers',
     'declared_generated',
     'discard',
     'disposable_base',
+    'index_age_s',
+    'locked_trees',
     'orphan_reason',
     'reclaim',
     'reclaimable',
@@ -61,6 +66,8 @@ __all__ = [
     'repository_at',
     'runtime_of',
     'scratch',
+    'unlanded_work',
+    'untracked_work',
 ]
 
 #: How many paths a kept line names before it counts the rest.
@@ -87,10 +94,10 @@ def declared_generated(main: Path) -> tuple[str, ...]:
 
 
 def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | None:
-    """Every TRACKED path really changed in *tree* against HEAD, staged or not; untracked and ignored are not work.
+    """Every TRACKED path really changed in *tree* against HEAD, staged or not (untracked work: :func:`untracked_work`).
 
-    User rulings 2026-10-25 and 2026-11-12: the work is committed; what git does not track (scratch, untracked,
-    ignored: ``.venv``, caches, builds) goes with the tree, its run outputs moved home first (:func:`reclaim`).
+    What git IGNORES (``.venv``, caches, builds) goes with the tree, its run outputs moved home first
+    (:func:`reclaim`); untracked, not-ignored files are work and keep it (D31, 2026-11-17).
     Ruling 2026-10-27: a change that is only CR/LF at line ends (``--ignore-cr-at-eol``: line-ending churn of a
     checkout) or only to a path matching a *generated* glob is not work either.
     """
@@ -101,7 +108,7 @@ def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | N
     return tuple(p for p in paths if not any(fnmatch.fnmatchcase(p, glob) for glob in generated))
 
 
-def _index_age_s(tree: Path) -> float | None:
+def index_age_s(tree: Path) -> float | None:
     """Seconds since *tree*'s index last changed; ``None`` when it has none to read."""
     index = (git_out(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index') or '').strip()
     try:
@@ -150,7 +157,8 @@ class Lease:
         return not self.reason
 
 
-def _locked(root: Path) -> frozenset[Path] | None:
+def locked_trees(root: Path) -> frozenset[Path] | None:
+    """The resolved paths of every ``git worktree lock``-ed tree of *root*; ``None`` when git could not answer."""
     out = git_out(root, 'worktree', 'list', '--porcelain')
     if out is None:
         return None
@@ -214,12 +222,33 @@ class _Judge:
     quiet_s: float
 
 
-def _unsaved(tree: Path, generated: tuple[str, ...]) -> str:
-    """Why *tree* holds work that exists nowhere else -- a tracked change; ``''`` when none."""
+#: The doors of a tree holding unlanded work (D31): it is merged, or the user discards it -- never parked.
+UNLANDED_DOORS: Final = (
+    'commit it on its branch and land it through a PR; or the user discards it: '
+    'python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>"'
+)
+
+
+def untracked_work(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | None:
+    """Every UNTRACKED, NOT-IGNORED file of *tree* outside the *generated* globs; ``None`` when git cannot say.
+
+    What ``.gitignore`` names (a ``.venv``, caches, run outputs) is regenerable; anything else untracked is work.
+    """
+    out = git_out(tree, 'ls-files', '--others', '--exclude-standard', '-z')
+    if out is None:
+        return None
+    return tuple(p for p in out.split('\0') if p and not any(fnmatch.fnmatchcase(p, g) for g in generated))
+
+
+def unlanded_work(tree: Path, generated: tuple[str, ...] = ()) -> str:
+    """Why *tree* holds work that exists nowhere else -- a tracked change or untracked work; ``''`` when none."""
     blocking = blockers(tree, generated) if tree.is_dir() else None
-    if blocking is None:
+    loose = untracked_work(tree, generated) if blocking is not None else None
+    if blocking is None or loose is None:
         return 'unreadable'
-    return f'tracked changes -- commit or revert first: {_shown(blocking)}' if blocking else ''
+    if blocking:
+        return f'tracked changes -- {UNLANDED_DOORS}: {_shown(blocking)}'
+    return f'untracked work -- {UNLANDED_DOORS}: {_shown(loose)}' if loose else ''
 
 
 #: The file in a linked tree's OWN git admin directory that declares it DISPOSABLE; it holds the sha it was made at.
@@ -267,14 +296,15 @@ def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str
     if locked:
         return 'locked (git worktree unlock first)'
     base = disposable_base(tree)
-    if unsaved := _scrap_unsaved(tree, base, judge.generated) if base else _unsaved(tree, judge.generated):
+    unsaved = _scrap_unsaved(tree, base, judge.generated) if base else unlanded_work(tree, judge.generated)
+    if unsaved and (base or not unsaved.startswith('untracked')):
         return unsaved
-    age = _index_age_s(tree)
+    age = index_age_s(tree)
     if age is not None and age < judge.quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
     if not base and not _landed(tree, branch, holders):
         return f'not landed -- its content is on none of {", ".join(holders)}'
-    return ''
+    return unsaved
 
 
 #: Why an orphan that was a worktree is kept: its repository is gone, so its files may be the only copy.
@@ -334,8 +364,8 @@ def reclaimable(
     A linked worktree (never the main one) is reclaimable iff ALL hold, checked in this order:
 
     * not ``git worktree lock``-ed;
-    * no TRACKED change, staged or not (:func:`blockers`) -- untracked and ignored files, CR/LF-only changes
-      and declared generated paths never block;
+    * no TRACKED change, staged or not (:func:`blockers`), and no untracked NOT-IGNORED file
+      (:func:`untracked_work`) -- ignored files, CR/LF-only changes and declared generated paths never block;
     * QUIET: its index unchanged for *quiet_s* seconds (a session that stages, commits or checks out is live);
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
@@ -349,7 +379,7 @@ def reclaimable(
     as landed: the trunk's authority and every declared session (``dev_lab.dev.branchset.holders``).
     """
     trees = worktrees(root)
-    locked = _locked(root)
+    locked = locked_trees(root)
     orphans = orphan_directories(root, home=home)
     if trees is None or locked is None or orphans is None:
         return None
@@ -428,7 +458,7 @@ def removed_approved(root: Path, tree: Path, *, quiet_s: float = QUIET_S) -> str
     """
     if refused := repository_at(root, tree):
         return refused
-    if (age := _index_age_s(tree)) is not None and age < quiet_s:
+    if (age := index_age_s(tree)) is not None and age < quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
     if unmoved := home_outputs(root, tree):
         return unmoved
@@ -457,9 +487,9 @@ def reclaim(
 ) -> tuple[str, ...] | None:
     """Remove every reclaimable lease; one line per lease, then a summary line. ``None``: unreadable.
 
-    A reclaimable lease's run outputs are moved HOME first (:func:`dev_lab.dev.worktree_archive.home_outputs`)
+    A reclaimable lease's run outputs are moved HOME first (:func:`dev_lab.dev.worktree_outputs.home_outputs`)
     and verified, CHAINED: only a verified move (or none to make) lets :func:`remove_tree` delete it -- its
-    untracked and ignored content is disposable -- and git's registration is pruned; a failed move keeps the
+    ignored content is regenerable -- and git's registration is pruned; a failed move keeps the
     tree, with the failure. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``, which
     deletes it pinned to its sha. *runtimes* is :func:`reclaimable`'s. Without *apply* nothing is touched;
     past *limit* removals the rest are ``deferred`` to a later run. The last line counts the verdicts and every
@@ -536,7 +566,7 @@ def discard(
     their repositories in the tree's admin directory, which the prune removes.
     """
     place = _scratch_path(root, name, home)
-    locked = _locked(root)
+    locked = locked_trees(root)
     trees = worktrees(root)
     if place is None or locked is None or trees is None:
         return f'refused: {name!r} is not one plain directory name, or git cannot read {root}'

@@ -1,10 +1,11 @@
 """A worktree is a LEASE on a branch for one task: reclaimed once its content is landed and it holds nothing else.
 
 Planted on a real repository, every criterion on both sides: a landed tree, a squash-landed one whose origin
-ref is gone, go (their branch with them through ``branchset --apply``), and so does a landed tree holding
-untracked files (user ruling 2026-11-12, restoring 10-25: what git does not track goes with the tree). A tree
-with a modified TRACKED file, an unlanded one (untracked files planted in it: the CONTROL that untracked files
-never decide), a pushed-but-unmerged one, a locked one, an occupied one and the main checkout stay, each with its
+ref is gone, go (their branch with them through ``branchset --apply``), and so does a landed tree holding only
+IGNORED files (a ``.venv``, run outputs: regenerable). D31 (user, 2026-11-17): a landed tree holding an UNTRACKED,
+NOT-IGNORED file is kept, listed with its doors, and nothing of it is parked anywhere. A tree with a modified
+TRACKED file, an unlanded one, a pushed-but-unmerged one, a locked one, an occupied one and the main checkout
+stay, each with its
 reason, counted by reason on the summary line, and a kept tree is not touched. Run outputs of a reclaimable tree
 move home, verified, before it goes; a planted move failure keeps that tree whole and names the failure.
 """
@@ -30,8 +31,8 @@ if sys.platform == 'win32':
 _GIT = shutil.which('git') or 'git'
 _HOLDERS = ('origin/main',)
 _LOG = Path('output/logs/26/10/25/run')
-_GONE = {'landed', 'squashed', 'cache', 'notes', 'untracked', 'wrote'}
-_KEPT = ('dirty', 'locked', 'occupied', 'open', 'pushed')
+_GONE = {'landed', 'squashed', 'cache', 'notes', 'outputs', 'wrote'}
+_KEPT = ('dirty', 'locked', 'occupied', 'open', 'pushed', 'untracked')
 
 
 def _run(cwd: Path, *args: str) -> str:
@@ -70,13 +71,13 @@ def _planted(tmp_path: Path) -> Path:
     _run(work, 'push', '-q', 'origin', 'main')
     _run(work, 'push', '-q', 'origin', '--delete', 'squashed')
     _run(work, 'fetch', '-q', '--prune', 'origin')
-    for name in ('dirty', 'locked', 'occupied', 'untracked'):
+    for name in ('dirty', 'locked', 'occupied', 'untracked', 'outputs'):
         _run(work, 'worktree', 'add', '-q', '--detach', str(home / name), 'origin/main')
     (home / 'dirty' / '.gitignore').write_text('changed\n', encoding='utf-8')
     _plant(home / 'untracked' / 'scratch' / 'probe.py', 'one-off')
     _plant(home / 'untracked' / 'loose.txt', 'untracked')
-    _plant(home / 'untracked' / '.venv' / 'pyvenv.cfg', '')
-    _plant(home / 'untracked' / _LOG / 'r.txt', 'result')
+    _plant(home / 'outputs' / '.venv' / 'pyvenv.cfg', '')
+    _plant(home / 'outputs' / _LOG / 'r.txt', 'result')
     _run(work, 'worktree', 'lock', str(home / 'locked'))
     _run(work, 'worktree', 'add', '-q', '-b', 'open', str(home / 'open'), 'origin/main')
     commit(home / 'open', 'open.txt')
@@ -115,6 +116,10 @@ def test_every_tree_is_judged_with_its_reason(tmp_path: Path) -> None:
     leases = {lease.path.name: lease for lease in reclaimable(work, _HOLDERS, occupied=_occupied) or ()}
     assert {n for n, lease in leases.items() if lease.reclaimable} == _GONE
     assert 'tracked changes' in leases['dirty'].reason
+    assert leases['untracked'].reason.startswith('untracked work -- commit it on its branch'), leases['untracked']
+    assert '--discard <branch> --approved' in leases['untracked'].reason
+    assert 'loose.txt' in leases['untracked'].reason
+    assert 'scratch/probe.py' in leases['untracked'].reason
     assert 'locked' in leases['locked'].reason
     assert 'live' in leases['occupied'].reason
     assert 'not landed' in leases['open'].reason
@@ -137,6 +142,8 @@ def test_reclaim_removes_only_the_reclaimable_and_lists_the_rest(tmp_path: Path)
     assert not (work / _LOG / 'o.txt').exists(), 'CONTROL: a kept tree moves nothing home'
     assert not any('untracked files' in line for line in lines), lines
     assert (home / 'dirty' / '.gitignore').read_text(encoding='utf-8') == 'changed\n'
+    assert (home / 'untracked' / 'loose.txt').is_file(), 'D31: untracked work stays in its tree'
+    assert {p.relative_to(work).parts[:2] for p in (work / 'output').rglob('*') if p.is_file()} <= {('output', 'logs')}
 
 
 def test_a_reclaimed_trees_run_outputs_move_home_verified_then_it_goes(tmp_path: Path) -> None:
@@ -144,7 +151,7 @@ def test_a_reclaimed_trees_run_outputs_move_home_verified_then_it_goes(tmp_path:
     work = _planted(tmp_path)
     home = work / '.claude' / 'worktrees'
     lines = reclaim(work, _HOLDERS, occupied=_occupied) or ()
-    for name in ('wrote', 'untracked'):
+    for name in ('wrote', 'outputs'):
         assert not (home / name).exists(), lines
         assert any(line.startswith('removed') and name in line for line in lines), lines
     assert (work / _LOG / 'n.txt').read_text(encoding='utf-8') == 'orphan result', 'the orphan output went home'
@@ -159,9 +166,9 @@ def test_a_home_move_that_cannot_be_verified_keeps_the_tree_and_names_the_failur
     (work / 'output').write_text('in the way', encoding='utf-8')
     lines = reclaim(work, _HOLDERS, occupied=_occupied) or ()
     assert (home / 'wrote' / _LOG / 'n.txt').is_file(), 'wrote lost its output'
-    assert (home / 'untracked' / 'scratch' / 'probe.py').is_file(), 'nothing of a kept tree is deleted'
-    for name in ('wrote', 'untracked'):
-        assert any(line.startswith('kept') and name in line and 'not archived' in line for line in lines), lines
+    assert (home / 'outputs' / _LOG / 'r.txt').is_file(), 'nothing of a kept tree is deleted'
+    for name in ('wrote', 'outputs'):
+        assert any(line.startswith('kept') and name in line and 'not moved home' in line for line in lines), lines
     assert not (home / 'landed').exists(), 'a tree with no outputs still goes: the failure is per tree'
     assert 'outputs not moved home 2' in lines[-1], lines[-1]
 
@@ -169,7 +176,7 @@ def test_a_home_move_that_cannot_be_verified_keeps_the_tree_and_names_the_failur
 def test_the_summary_line_counts_every_kept_tree_by_reason(tmp_path: Path) -> None:
     work = _planted(tmp_path)
     census = reclaim(work, _HOLDERS, occupied=_occupied, apply=False) or ()
-    kept = 'kept 5 (live 1, locked 1, not landed 2, tracked changes 1)'
+    kept = 'kept 6 (live 1, locked 1, not landed 2, tracked changes 1, untracked work 1)'
     assert census[-1] == f'summary  prunable 6, {kept}', census
     lines = reclaim(work, _HOLDERS, occupied=_occupied) or ()
     assert lines[-1] == f'summary  removed 6, {kept}', lines

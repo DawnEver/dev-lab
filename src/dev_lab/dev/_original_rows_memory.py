@@ -11,7 +11,7 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
-    # ORIGINAL: the PreToolUse door judging a rem task-journal append before it is written (dev-lab#419).
+    # ORIGINAL: the judge the engine asks before a rem task-journal append is written (dev-lab#419).
     'journaldoor',
     'memoryadds',  # memory is added to, never edited, new here
     'memoryentry',  # one memory entry's text judged, split from memoryadds (module-size band)

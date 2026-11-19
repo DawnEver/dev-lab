@@ -38,18 +38,23 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 ## Reclaiming a finished tree
 
 A worktree is a lease on a branch for one task. It ends when the branch's content is landed (on the trunk or a
-declared session) and no TRACKED file is changed. What git does not track -- scratch one-offs, untracked files,
-ignored `.venv`, caches, builds -- is not the work (the work is committed; a finding belongs in memory) and goes
-with the tree (user rulings 2026-10-25 and 2026-11-12). Run output is moved first (user ruling 2026-11-12:
+declared session) and it holds nothing unlanded: no TRACKED change and no untracked, not-ignored file (D31, user
+2026-11-17: a worktree's work is MERGED or the tree CLEANED, never parked aside). What git IGNORES -- `.venv`,
+caches, builds -- is regenerable and goes with the tree. A tree holding unlanded work is kept and listed with its
+doors: commit it on its branch and land it through a PR, or the user discards it with
+`python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>"`. Run output is moved first (user ruling 2026-11-12:
 reclaiming useless trees is a required part of the workflow): a reclaimable tree's `archive-outputs` are moved
 into the MAIN checkout's `output/` and verified, and only then does it go; a move that cannot be verified keeps it
 and prints why. Each run ends with a summary line counting every kept tree by reason. An orphan directory under the worktree
-home is judged the same way. What blocks reclaim: a tracked change (staged or not), commits not landed (`git cherry`), a
+home is judged the same way. What blocks reclaim: a tracked change (staged or not), an untracked not-ignored file, commits not landed (`git cherry`), a
 live process, a `git worktree lock`. `dev_lab.dev.reclaim.reclaimable` is the
 one decision; `python -m dev_lab.dev.worktrees --prune` and `python -m dev_lab.dev.branchset --apply` act on it,
-and the session debris hook runs the former; a session start, and every merge, checkout and push
-(`githooks/base.toml`, `reclaimrun --background`), detach a background run of the latter, so a finished tree no
-longer pins its branch forever. The exact
+and the session debris hook runs the former; a session start, and every merge (`githooks/base.toml`
+`post-merge`, `reclaimrun --background`), detach a background run of the latter, so a finished tree no
+longer pins its branch forever. `--prune` removes at most `--limit N` trees per run (default
+`reclaimrun.BATCH`, `0` for no bound) and ends with a `next` line naming the run that takes the deferred rest:
+each removal deletes a tree's `.venv` (~12.8k files, ~12 s measured 2026-11-17), so an unbounded prune over ~90
+trees outran an agent's 50-minute shell. The exact
 criteria are in [auto mode runs the doors](auto-doors.md).
 
 
@@ -69,25 +74,20 @@ scratch and it waits for no landing; `--prune` and `branchset --apply` also take
 still refuses an undeclared tree, a main checkout, a lock, a tracked change, a HEAD no ref holds, a live process
 (the asker's own included) and run outputs inside it.
 
-## Archiving a tree before removing it
+## Removing one named tree
 
-`python -m dev_lab.dev.worktrees --archive <name>` (`dev_lab.dev.worktree_archive`) is the step before
-a deliberate removal. It removes nothing; it reports `safe to remove` or why not.
+`python -m dev_lab.dev.worktrees --remove <name>` (`dev_lab.dev.worktrees.remove`) is the one door for a named
+tree on a branch or detached -- never the raw git removal, which `RECURSIVE-DELETE` refuses. It refuses a tree
+holding unlanded work (a tracked change or an untracked, not-ignored file, named with its doors), a detached
+commit no ref contains, a holding process, a live session and the main checkout; otherwise it moves the tree's
+run outputs home, verified (`dev_lab.dev.worktree_outputs.home_outputs`), then removes it. A branch the tree held
+stays for `branchset --apply`. D31 retired the flag that saved a tree's work aside; it is refused by name.
 
-- Saves no ignored file outside the outputs: what git does not track is not the work.
-- Refuses a tree with an occupant (`dev_lab.dev.liverun.occupants`: a process working in it, executing from
-  it, or reading it -- another session's tree is live) and a tree on another volume (a move there is a copy).
-- Saves `HEAD.txt`, `dirty.patch` (`git diff HEAD --binary`) and the untracked non-ignored files under
-  `<archive-to>/<yyyymmdd>/<name>/`.
 - MOVES (renames) every file under each `archive-outputs` directory to the same relative path in the main
   checkout: identical bytes are skipped, differing bytes land as `<file>.<name>`, a directory holding
-  `pyvenv.cfg` never travels.
+  `pyvenv.cfg` never travels; a tree on another volume is refused (a move there is a copy).
 
 ```toml
-[tool.dev_lab.worktrees]            # the main checkout's pyproject.toml; both keys optional
-archive-outputs = ["<dir>"]             # default: worktree_archive.OUTPUTS
-archive-to = "<dir>"                    # default: worktree_archive.ARCHIVE_TO
+[tool.dev_lab.worktrees]            # the main checkout's pyproject.toml; optional
+archive-outputs = ["<dir>"]             # default: worktree_outputs.OUTPUTS
 ```
-
-It is a flag of the `worktrees` door, whose allow row every adopting repo already renders, so a consumer gets it
-by upgrading lab-commons alone.

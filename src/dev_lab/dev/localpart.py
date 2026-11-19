@@ -32,6 +32,7 @@ from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.hpc.testcells import TestCell
 
+from dev_lab.dev.famtests.alwayson import resource_nodes
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import verdict_commit
 from dev_lab.dev.jobparts import pytest_collector
@@ -65,7 +66,7 @@ def owners(root: Path, sha: str, reported: Collection[str], collect: Callable[[s
     if not vocabulary.resources:
         return dict.fromkeys(reported, BASE)
     ids = list(dict.fromkeys([*reported, *collect('')]))
-    return need_sets(ids, {name: set(collect(name)) for name in vocabulary.resources})
+    return need_sets(ids, {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources})
 
 
 def local_record(
