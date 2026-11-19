@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import urllib.error
 import zipfile
 from collections.abc import Callable
 from dataclasses import replace
@@ -108,3 +109,30 @@ def test_an_absent_tool_names_its_install_door(tmp_path: Path) -> None:
     """PLANTED CONTROL for the resolve test: neither place holds it, so the refusal carries the door."""
     with pytest.raises(ToolAbsent, match=r'python -m dev_lab\.dev\.toolrelease install rclone'):
         toolrelease.resolve('rclone', directory=tmp_path, which=lambda _n: None, windows=False)
+
+
+def test_a_download_sends_the_generic_client_name_not_urllibs(tmp_path: Path) -> None:
+    """downloads.rclone.org refuses urllib's default ``Python-urllib`` client with 403; the request carries ours."""
+    seen: list[str] = []
+
+    def opener(req: object, **_: object) -> io.BytesIO:
+        seen.append(req.get_header('User-agent'))  # type: ignore[attr-defined]
+        return io.BytesIO(b'body')
+
+    toolrelease._download('https://downloads.rclone.org/v1.76.0/x.zip', tmp_path / 'x.zip', opener=opener)
+    assert seen == [toolrelease.USER_AGENT]
+    assert 'python-urllib' not in seen[0].lower()
+    assert (tmp_path / 'x.zip').read_bytes() == b'body'
+
+
+def test_an_http_refusal_names_its_status_and_its_door(tmp_path: Path) -> None:
+    def opener(*_: object, **__: object) -> object:
+        url, reason = 'u', 'Forbidden'
+        raise urllib.error.HTTPError(url, 403, reason, None, None)  # type: ignore[arg-type]
+
+    with pytest.raises(toolrelease.DownloadRefused) as caught:
+        toolrelease._download('https://downloads.rclone.org/v1.76.0/x.zip', tmp_path / 'x.zip', opener=opener)
+    text = str(caught.value)
+    assert 'HTTP 403' in text
+    assert 'python -m dev_lab.dev.toolrelease install rclone' in text
+    assert not (tmp_path / 'x.zip').exists()

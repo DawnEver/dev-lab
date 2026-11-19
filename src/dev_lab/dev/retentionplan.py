@@ -86,6 +86,7 @@ from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 
 from dev_lab.dev import retentionrust as _rust
 from dev_lab.dev.forgecarry import read_by
+from dev_lab.dev.storage import worktrees_root
 
 __all__ = [
     'Doomed',
@@ -437,7 +438,7 @@ def workstation_plan(checkouts: Sequence[Path], policy: Policy, *, now: datetime
     for checkout in checkouts:
         stale = [
             Doomed(t, 'forge-tree-stale')
-            for t in _entries(checkout / '.claude' / 'worktrees')
+            for t in _entries(worktrees_root(checkout))
             if t.name.startswith('forge-') and _age(t, now) >= young
         ]
         doomed += stale

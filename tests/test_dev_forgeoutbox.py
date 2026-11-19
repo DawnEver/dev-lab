@@ -228,3 +228,24 @@ def test_a_held_status_whose_credential_is_refused_stays_queued(server, tmp_path
     with pytest.raises(PostFailed, match='forge-refused'):
         flush(repo, client=lambda _root: client(FORGE, Loopback(server)))
     assert len(queued(repo)) == 1
+
+
+def test_a_job_delivers_its_own_held_result_though_no_origin_ref_holds_the_commit(server, tmp_path: Path) -> None:
+    """A CI job's checkout often names its commit in no ``origin`` ref, so the producer's result stayed HELD.
+
+    The job then read no settled part and posted ``error``; the held pass, flushed later, met "the first result
+    wins" and was dropped (lab-commons nightly, 2026-11-18). A job was started BY the forge for that commit, so it
+    delivers the held result of its own unit at once. Planted control: another unit's held entry stays held.
+    """
+    repo, sha = _committed(tmp_path)
+    enqueue(repo, Post(sha, 'tests/linux', 'success', 'scope=full ran=1'))
+    enqueue(repo, Post(sha, 'tests/windows', 'success', 'scope=full ran=1'))
+
+    def built(_root: Path) -> Client:
+        return client(FORGE, Loopback(server))
+
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/linux', 'status': 'success'}))
+    lines = forgeoutbox.deliver_unit(repo, built(repo), sha, 'tests/linux')
+    assert lines == [f'status: tests/linux=success on {sha[:12]}'], lines
+    assert [post.context for post in queued(repo)] == ['tests/windows'], 'PLANTED CONTROL: only its own unit'

@@ -65,7 +65,10 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
     # A family repo's checkout lives BESIDE its siblings, so cloning one there is the one placement outside
     # the worktrees directory that is right -- and only the filesystem can tell it apart (the target is new, named
     # for its repo, beside a checkout from the same forge). 2026-11-08: adopting learn-lab was refused here.
-    'admits': 'family-sibling-clone',
+    # A machine may bind the worktrees storage kind outside the checkout ([storage.roots] worktrees), a path no
+    # committed pattern can name: the engine reads the roots this machine PUBLISHED (storage publish) and admits a
+    # line whose every target lies in the repository's worktree home, bound or in-tree (D75). No roots file: none.
+    'admits': ('family-sibling-clone', 'bound-worktree-home'),
     'refuses': (
         'git worktree add --detach ../lab-commons-wt-cf 4ad12b6',
         'git worktree add -b feat/x ../ms-placement origin/main',

@@ -40,6 +40,7 @@ from dev_lab.dev import metrics
 from dev_lab.dev.datedlog import date_parts
 from dev_lab.dev.disclosure import DETAILS_PREFIX
 from dev_lab.dev.native_session import session_of
+from dev_lab.dev.storage import output_path
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -91,8 +92,13 @@ _TARGET_HEADER: Final = re.compile(r'^\[targets .*\]$')
 
 
 def ledger(root: Path, day: tuple[str, str, str] | None = None) -> Path:
-    """``<checkout>/output/logs/<yy>/<mm>/<dd>/walls/walls.jsonl`` for *day* (today); ``'*'`` parts glob."""
-    return metrics.checkout(root).joinpath(metrics.BASE, *(day or date_parts()), LOG_KIND, f'{LOG_KIND}.jsonl')
+    """``<output kind>/logs/<yy>/<mm>/<dd>/walls/walls.jsonl`` for *day* (today); ``'*'`` parts glob."""
+    return _logs(metrics.checkout(root)).joinpath(*(day or date_parts()), LOG_KIND, f'{LOG_KIND}.jsonl')
+
+
+def _logs(checkout: Path) -> Path:
+    """The dated-log root of *checkout*: its ``output`` storage kind (bound or in-tree), then ``logs``."""
+    return output_path(checkout, *metrics.BASE.parts)
 
 
 def digest(command: str) -> str:
@@ -201,7 +207,7 @@ def _ledgers(base: Path) -> list[Path]:
     Never a glob: it lists every kind's directory of every day, and measured 2026-11-17 it took 0.3-0.5 s of the Stop
     hook over five ledgers on a workstation.
     """
-    days = (day for year in _dirs(base / metrics.BASE) for month in _dirs(year) for day in _dirs(month))
+    days = (day for year in _dirs(_logs(base)) for month in _dirs(year) for day in _dirs(month))
     return [path for day in days if (path := day / LOG_KIND / f'{LOG_KIND}.jsonl').is_file()]
 
 

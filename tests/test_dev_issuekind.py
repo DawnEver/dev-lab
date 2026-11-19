@@ -6,7 +6,8 @@ import pytest
 from _forge_state import StateForge
 
 from dev_lab.dev import forgecli, issuekind
-from dev_lab.dev.issuekind import KINDS, MOVED, create, retire_notices
+from dev_lab.dev.forgerequesthost import DONE_LABEL
+from dev_lab.dev.issuekind import KINDS, MOVED, SETTLED, create, retire_notices
 
 
 @pytest.mark.parametrize('kind', KINDS)
@@ -94,3 +95,22 @@ def test_the_migration_verb_defaults_to_a_dry_run(monkeypatch, capsys, tmp_path)
     assert out.count('would close #') == 2
     assert 'dry run: pass --apply' in out
     assert not any(forge.comments.values())
+
+
+def _requests() -> tuple[StateForge, int, int]:
+    forge = StateForge()
+    done = forge.add_issue('request tests at 0123456789ab', labels=[{'name': 'forge:request'}, {'name': DONE_LABEL}])
+    live = forge.add_issue('request tests at abcdef012345', labels=[{'name': 'forge:request'}])
+    return forge, done, live
+
+
+def test_the_migration_closes_a_settled_request_and_keeps_a_live_one() -> None:
+    """PLANTED CONTROL: a request no host settled yet is a live need and stays open, uncommented."""
+    forge, done, live = _requests()
+    found = retire_notices(forge, apply=True)
+    assert [one.number for one in found] == [done]
+    assert forge.issues_by_number[done]['state'] == 'closed'
+    assert [c['body'] for c in forge.comments[done]] == [SETTLED]
+    assert forge.issues_by_number[live]['state'] == 'open'
+    assert forge.comments[live] == []
+    assert 'forge queue' in SETTLED

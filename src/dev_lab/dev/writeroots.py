@@ -39,7 +39,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Literal
 
+from lab_commons import storage as storages
 from lab_commons.config import section
+from lab_commons.storage import Storage
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.disclosure import details_for
@@ -160,16 +162,30 @@ def write_prone_roots(
 
 
 def excluded_paths(
-    roots: Iterable[Root], *, machine: Mapping[str, Any] | None = None, env: Mapping[str, str] | None = None
+    roots: Iterable[Root],
+    *,
+    machine: Mapping[str, Any] | None = None,
+    env: Mapping[str, str] | None = None,
+    storage: Storage | None = None,
 ) -> tuple[Path, ...]:
-    """What no caller refuses, reports or sweeps: :data:`EXCLUDED_IN_TEMP`, the cache variables, the machine's."""
+    """What no caller refuses, reports or sweeps: :data:`EXCLUDED_IN_TEMP`, the cache variables, the machine's.
+
+    The machine's are its ``[writeroots] excluded`` and every root it binds a storage kind to
+    (:mod:`lab_commons.storage`): a declared place, never a stray.
+    """
     env = os.environ if env is None else env
     machine = declared() if machine is None else machine
     names = [name for name in EXCLUDED_IN_TEMP if name not in EXCLUDED_GLOBS_IN_TEMP]  # a glob is matched by name
     found = [root.path / name for root in roots if root.kind == 'temp' for name in names]
     found += [Path(env[var]) for var in _CACHE_VARS if env.get(var)]
     found += _paths(machine, 'excluded')
+    found += storage_roots(storages.declared() if storage is None else storage)
     return tuple(dict.fromkeys(found))
+
+
+def storage_roots(storage: Storage) -> list[Path]:
+    """Every bound storage root; a ``{repo}`` placeholder admits every repo's directory under the part before it."""
+    return [Path(value.split('{repo}', 1)[0]).expanduser() for value in storage.roots.values()]
 
 
 def _within(path: Path, base: Path) -> bool:
