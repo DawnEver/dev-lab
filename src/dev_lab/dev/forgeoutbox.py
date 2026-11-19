@@ -65,10 +65,11 @@ from dev_lab.dev.forge import (
     on_origin,
 )
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerecords import attach
 from dev_lab.dev.forgestatus import STATES, CommitStatus, status_history, status_post
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.supervise.notice import Context
 

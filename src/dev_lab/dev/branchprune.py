@@ -53,9 +53,9 @@ from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.labsession import ENV
 from dev_lab.dev.lanepolicy import Policy, load_policy
 

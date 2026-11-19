@@ -43,7 +43,7 @@ from lab_commons.config import section
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgeclaim import this_machine
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.localpart import present_here
 from dev_lab.dev.lockpins import lock_freshness
 from dev_lab.dev.partrows import needs_of_row

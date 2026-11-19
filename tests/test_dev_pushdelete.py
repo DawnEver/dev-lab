@@ -25,7 +25,7 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev import disclosure, forgework, pushdelete, walls
+from dev_lab.dev import disclosure, forgeclient, pushdelete, walls
 from dev_lab.dev.branchdelete import delete
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -50,13 +50,13 @@ import os, sys
 from pathlib import Path
 sys.path.insert(0, {tests!r})
 from _forge_state import StateForge
-from dev_lab.dev import forgework
+from dev_lab.dev import forgeclient
 from dev_lab.dev.githooks.runner import run_stage
 from dev_lab.dev.githooks.table import base_rows, merge
 forge = StateForge()
 for head in filter(None, os.environ.get('PLANTED_OPEN_HEADS', '').split(',')):
     forge.add_pull(head, 'integrate/main')
-forgework.client_for = lambda root, **_: forge
+forgeclient.client_for = lambda root, **_: forge
 stdin = sys.stdin.read()
 with Path({log!r}).open('a', encoding='utf-8') as seen:
     seen.write(stdin)
@@ -229,7 +229,7 @@ def test_a_held_red_bump_on_a_declared_derived_branch_deletes_through_the_hook(t
 def test_run_stage_refuses_a_zero_sha_line_for_an_unlanded_sha(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bare, work = clone_pair(tmp_path)
     sha = advance(work, 'lane/mine', 'm.txt', 'm\n')
-    monkeypatch.setattr(forgework, 'client_for', lambda _root, **_: StateForge())
+    monkeypatch.setattr(forgeclient, 'client_for', lambda _root, **_: StateForge())
     rows = _rows()
     assert len(rows) == 1, 'the base declares one lossless-delete pre-push row'
     assert rows[0].always_run, 'it judges every push, a delete-only one included'

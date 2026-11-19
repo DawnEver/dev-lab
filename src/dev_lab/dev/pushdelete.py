@@ -35,9 +35,9 @@ from lab_commons.log import emit
 from dev_lab.dev.deletejudge import judge
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.forge import fetch_origin
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.refspec import pushed_refs
 

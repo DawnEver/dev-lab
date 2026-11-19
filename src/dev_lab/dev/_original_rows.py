@@ -28,6 +28,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'verifybox',
     'verifysteps',
     'agent_guard',
+    'launcherplan',  # ORIGINAL: split from agent_guard: keep, keep-own or rewrite the agent launcher (2026-11-19)
     'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
     'backgroundrun',  # the background hooks' detach and per-repo lock, split from reclaimrun (dev-lab #640)
     'hookdispatch',  # one interpreter per hook event, reading WIRING from its own install (dev-lab #640)
@@ -309,8 +310,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'table',
     'runner',
     'inprocess',  # ORIGINAL: split from runner: a `python -m` row run in the stage's one interpreter (2026-11-16)
+    'gitfailure',  # ORIGINAL: split from runner: the runner's own failed git query, named (O21, 2026-11-19)
     'filechecks',
     'ciworkflows',
+    'nightlycron',  # ORIGINAL: split from ciworkflows: a workflow's nightly declaration as a cron (D63, 2026-11-19)
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
@@ -331,7 +334,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
-    'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
+    'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
+    'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
     'venvfollow',
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
@@ -369,6 +373,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the blobless-clone prefetch and the review-code classification are
     # forge mechanisms new to the family; no consumer held one.
     'blobfetch',
+    'boxmigrate',  # the one box-ledger migration step every installing door runs (lab-commons #208)
     'reviewcode',
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
@@ -389,6 +394,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'verifiedby',
     # ORIGINAL: D80 (2026-11-18), an untracked-and-ignored path is kept across a tree move; no consumer held it.
     'keepignored',
+    # ORIGINAL: D78 (2026-11-18), a part's needs refused by name when their extra is missing; no consumer held it.
+    'depneeds',
     # ORIGINAL: D76 (2026-11-18), a pinned, sha256-checked tool installed user-space; no consumer held one.
     'toolrelease',
 )

@@ -710,3 +710,24 @@ def test_no_base_module_runs_at_two_stages() -> None:
     assert _modules_at_two_stages(merge(base_rows(), planted)) == {
         'dev_lab.dev.filechecks': ['pre-commit', 'post-commit']
     }
+
+
+def test_a_failing_git_query_of_the_runner_names_its_cause_and_door(repo: Path, capsys, monkeypatch) -> None:
+    """O21: the runner's own ``git diff`` exiting 128 printed a bare traceback and no rule name.
+
+    It must refuse by name: the git command, git's own stderr, and the door. PLANTED CONTROL: the same
+    stage with a working git passes (the clean-file test above).
+    """
+
+    def broken(_root: Path, *args: str) -> str:
+        raise subprocess.CalledProcessError(128, ['git', *args], stderr='fatal: bad object deadbeef\n')
+
+    (repo / 'clean.txt').write_text('clean\n', encoding='utf-8')
+    _git(repo, 'add', 'clean.txt')
+    monkeypatch.setattr(runner, '_git', broken)
+    assert run_stage('pre-commit', root=repo) == 1
+    said = capsys.readouterr().err
+    assert 'GITHOOKS-GIT-FAILED' in said
+    assert 'fatal: bad object deadbeef' in said
+    assert 'git diff' in said
+    assert 'Traceback' not in said
