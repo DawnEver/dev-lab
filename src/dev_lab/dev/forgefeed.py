@@ -43,7 +43,7 @@ from lab_commons.config import section
 from lab_commons.liveness import creation_stamp, still_the_same_process
 from lab_commons.log import emit
 
-from dev_lab.dev import branchpolicy, native_session, sessionprs, taskbinding
+from dev_lab.dev import branchpolicy, forgewaves, native_session, sessionprs, taskbinding
 from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forge import Forge, forge_from_remote
 from dev_lab.dev.forgethreads import (
@@ -58,6 +58,7 @@ from dev_lab.dev.forgethreads import (
 )
 from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, env_superseded
 from dev_lab.dev.sessionpoll import poll_session
+from dev_lab.ops.consent.door import ssh_send
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
@@ -352,6 +353,8 @@ def run(
         while not yielding():
             poll_once(clients=clients)
             branchpolicy.duty_once(clients=clients, now=time.time(), every_s=duty_every, checkouts=_checkouts())
+            with contextlib.suppress(OSError, ValueError):  # the wave audit is news, never a reason to stop hearing
+                forgewaves.refresh(ssh_send)
             sleep(period)
         return YIELDED
 
@@ -388,6 +391,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         case ['inbox']:
             session = str(_payload(stdin or sys.stdin).get('session_id') or '')
             lines = take_unread(session)
+            if native_session.valid(session):
+                lines += forgewaves.news(session)
             with contextlib.suppress(OSError, ValueError, taskbinding.UnmigratedBindingError):
                 bound = taskbinding.binding(session) if native_session.valid(session) else None
                 if bound is not None:

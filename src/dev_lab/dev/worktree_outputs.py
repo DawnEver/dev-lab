@@ -28,8 +28,11 @@ import tomllib
 from pathlib import Path
 from typing import Final
 
+from lab_commons import storage as storage_kinds
+
 from dev_lab.dev.checkout import git_out, worktrees
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.storage import output_path
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -58,6 +61,11 @@ def worktrees_door(main: Path, flags: str) -> str:
 def volume(path: Path) -> int:
     """The volume *path* lives on; a rename is a move only within one."""
     return path.stat().st_dev
+
+
+def _volume_anchor(path: Path) -> Path:
+    """The nearest existing ancestor of *path*: a home not yet created sits on its parent's volume."""
+    return next(folder for folder in (path, *path.parents) if folder.exists())
 
 
 def _declared(main: Path) -> tuple[str, ...]:
@@ -102,23 +110,34 @@ def _files(top: Path) -> list[Path]:
     return found
 
 
+def _home(main: Path, rel: Path) -> Path:
+    """Where *rel* (a path relative to a checkout) lives for *main*: under its ``output`` kind when it is output.
+
+    A path inside the in-tree ``output`` default lands in *main*'s output storage kind -- the bound root when the
+    machine binds one (:mod:`dev_lab.dev.storage`) -- every other declared output at the same path in *main*.
+    """
+    if rel.parts and rel.parts[0] == storage_kinds.KINDS['output']:
+        return output_path(main, *rel.parts[1:])
+    return main / rel
+
+
 def _move(main: Path, tree: Path, name: str, outputs: tuple[str, ...]) -> tuple[list[Path], ...]:
-    """Rename every file under *outputs* of *tree* to the same path in *main*: moved, identical, renamed, conflicts."""
+    """Rename every file under *outputs* of *tree* to its home for *main*: moved, identical, renamed, conflicts."""
     moved, identical, renamed, conflicts = [], [], [], []
     for rel_top in outputs:
         for source in _files(tree / rel_top):
             rel = source.relative_to(tree)
-            home = main / rel
+            home = _home(main, rel)
             beside = home.with_name(f'{home.name}.{name}')
             if home.exists() and filecmp.cmp(source, home, shallow=False):
-                identical.append(rel)
+                identical.append(home)
             elif not home.exists() or not beside.exists():
                 landing = beside if home.exists() else home
                 landing.parent.mkdir(parents=True, exist_ok=True)
                 source.replace(landing)  # a rename: same volume, checked by the caller
-                (renamed if landing == beside else moved).append(landing.relative_to(main))
+                (renamed if landing == beside else moved).append(landing)
             elif filecmp.cmp(source, beside, shallow=False):
-                identical.append(beside.relative_to(main))
+                identical.append(beside)
             else:
                 conflicts.append(rel)
     return moved, identical, renamed, conflicts
@@ -141,14 +160,15 @@ def home_outputs(main: Path, tree: Path) -> str:
     main = main.resolve()
     try:
         outputs = _declared(main)
-        if any((tree / top).exists() for top in outputs) and volume(tree) != volume(main):
-            return 'outputs not moved home: the tree is on another volume, where a move is a copy'
+        homes = {_volume_anchor(_home(main, Path(top))) for top in outputs if (tree / top).exists()}
+        if any(volume(home) != volume(tree) for home in homes):
+            return 'outputs not moved home: the tree is on another volume than their home, where a move is a copy'
         moved, identical, renamed, conflicts = _move(main, tree, tree.name, outputs)
     except (OSError, ValueError) as error:
         return f'outputs not moved home: {error}'
     if conflicts:
         return f'outputs not moved home: both names taken by different bytes for {conflicts[0]}'
-    missing = [rel for rel in (*moved, *renamed, *identical) if not (main / rel).is_file()]
+    missing = [home for home in (*moved, *renamed, *identical) if not home.is_file()]
     if missing:
         return f'outputs not verified home: {missing[0]} is not there'
     return ''

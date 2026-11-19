@@ -148,6 +148,31 @@ def test_every_merge_a_head_adds_is_judged_and_only_the_undeclared_ones_are_name
     assert mergeresolution.unresolved(conflicting, 'HEAD', 'HEAD') == ()
 
 
+def test_a_retired_branchs_own_merge_is_its_history_and_the_retire_is_still_judged(conflicting: Path) -> None:
+    """A retired branch's own undeclared merge is exempt; the retire merge and a normal head are still judged.
+
+    A retire (``-s ours``) must keep the retired head's sha, so a merge INSIDE that branch cannot be redone. The
+    retire merge itself still declares, and the same merge reached as a normal head is refused (planted control).
+    """
+    _git(conflicting, 'merge', '--abort')
+    _git(conflicting, 'checkout', '-q', '-b', 'old', 'lane')
+    _git(conflicting, 'merge', '-q', '-s', 'ours', '-m', 'old merged main, undeclared', 'main')
+    inner = _git(conflicting, 'rev-parse', 'HEAD')
+    _git(conflicting, 'checkout', '-q', 'main')
+    _commit(conflicting, {'src/a.py': 'X = 5\n'}, 'main moves')
+    _git(conflicting, 'checkout', '-q', '-b', 'retire')
+    declared = 'retire old\n\nsrc/a.py: deleted-as-baggage -- superseded by main'
+    _git(conflicting, 'merge', '-q', '-s', 'ours', '-m', declared, 'old')
+    assert mergeresolution.unresolved(conflicting, 'main', 'retire') == ()
+    _git(conflicting, 'checkout', '-q', '-b', 'undeclared-retire', 'main')
+    _git(conflicting, 'merge', '-q', '-s', 'ours', '-m', 'retire old, undeclared', 'old')
+    ((sha, _),) = mergeresolution.unresolved(conflicting, 'main', 'undeclared-retire')
+    assert sha == _git(conflicting, 'rev-parse', 'HEAD')
+    ((sha, problems),) = mergeresolution.unresolved(conflicting, 'main', 'old')
+    assert sha == inner
+    assert problems[0].startswith('src/a.py: not declared')
+
+
 def test_a_plain_commit_is_not_judged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _git(tmp_path, 'init', '-q', '-b', 'main')
     monkeypatch.chdir(tmp_path)

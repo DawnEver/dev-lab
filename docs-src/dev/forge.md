@@ -356,8 +356,8 @@ newest commit lacks, or a request issue.
   a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
   branch and trunk only for a login its machine file lists in `[requests] authors`; it waits, named, while a
   git source of its lock or submodules is unreachable here, and is told once on its issue after
-  `request_unadmitted_hours`. A success is labelled `request:done` with its record path and sha256s, and the
-  requester closes it. A ref's tip is one candidate per
+  `request_unadmitted_hours`. A success is labelled `request:done` with its record path and sha256s, and
+  closed (user ruling 2026-11-19); a failure stays open. A ref's tip is one candidate per
   part it needs (`base`, and every part its posted parts hand to). The same rule names those
   children ([the integration branch](integration.md)).
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
@@ -530,7 +530,8 @@ integration branch, and posts one PR review per head as its own login. The mecha
 
 ## Records and the outbox
 
-- **Statuses wait in an outbox** (`<main-checkout>/output/forge/outbox/`) until the commit is on origin.
+- **Statuses wait in an outbox** (`forge/outbox/` under the main checkout's `output` storage kind -- `output/` unless
+  the machine binds it, [storage](storage.md)) until the commit is on origin.
   `python -m dev_lab.dev.forge publish` posts what is reachable; `verify` and every tick flush it too.
 - **Run records are attachments** of one closed issue titled `run records`, never refs.
   `python -m dev_lab.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin
@@ -547,7 +548,7 @@ integration branch, and posts one PR review per head as its own login. The mecha
 Agents read and write the forge only through `python -m dev_lab.dev.forge` (`FORGE-THROUGH-THE-DOOR`);
 no `gh` or `tea` binary is needed.
 
-- Verbs: `issue list|view|create|comment|close|claim|status|comments`, `issue comments-since ISO8601`,
+- Verbs: `issue list|view|create|comment|close|label|claim|status|comments`, `issue comments-since ISO8601`,
   `pr create|view|close N --reason R` (the reason is commented first; no branch is deleted), `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
 - The backend is read off `origin`: `github.com` is GitHub REST, any other host is Gitea (`<host>/api/v1`).
 - When `HARNESS_MACHINE` and `HARNESS_AGENT` are set, every created body opens with
@@ -661,6 +662,13 @@ probe commands) and needs an `ops.config` consent credential whose subject is th
 code, about once a year. The candidate is loaded by the current code first, the live file is backed up beside itself,
 replaced atomically, self-checked, and restored on a failed check. Grant the line in `[ops.access] commands`:
 `<python> -m dev_lab.ops --config /etc/dev-lab/supervise.toml config apply *`.
+
+A host that is NOT the consent issuer verifies through `[ops.consent_client]`, itself a boundary key: on first
+contact it could verify nothing, so the table could never land. A bare `config apply` (no `--from`, no
+`--credential`) on a host whose live file has neither `[ops.consent]` nor `[ops.consent_client]` first takes exactly
+that one table from the reviewed `[ops.config]` file -- the merged hosts-config `main`, never a local candidate --
+backs the live file up and prints the endpoint and the key's fingerprint (`configdoor.anchor`); every other boundary
+change in that file still needs consent. Once the table exists, changing it is a boundary change.
 
 ## Making the forge's machine accounts
 

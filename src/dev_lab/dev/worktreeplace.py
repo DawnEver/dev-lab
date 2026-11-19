@@ -27,11 +27,15 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons import storage as _storage
+
+from dev_lab.dev.storage import worktrees_root
 
 __all__ = [
     'WORKTREES_REL',
     'Misplaced',
     'family_root',
+    'home',
     'is_inside',
     'listed_worktrees',
     'main_checkout',
@@ -40,9 +44,11 @@ __all__ = [
     'work_root',
 ]
 
-#: Where every linked worktree of a repository lives, relative to that repository's MAIN toplevel.
-#: The single source: the deny row's path regex and the gitignore base line are both derived from it.
-WORKTREES_REL: Final = '.claude/worktrees'
+#: Where every linked worktree of a repository lives by default, relative to that repository's MAIN toplevel:
+#: the in-tree default of the ``worktrees`` storage kind (:data:`lab_commons.storage.KINDS`), its one spelling.
+#: A machine may bind the kind elsewhere (:func:`home`); the deny row's text match and the gitignore base line
+#: are derived from this default, and the row asks :mod:`dev_lab.dev.worktreeadmit` about a bound root.
+WORKTREES_REL: Final = str(_storage.KINDS['worktrees'])
 
 _GIT = shutil.which('git') or 'git'
 
@@ -57,7 +63,7 @@ class Misplaced:
     @property
     def move_to(self) -> Path:
         """The allowed destination: the same leaf name, inside the repository."""
-        return self.main / WORKTREES_REL / self.path.name
+        return home(self.main) / self.path.name
 
 
 def _norm(path: Path) -> str:
@@ -65,9 +71,14 @@ def _norm(path: Path) -> str:
     return os.path.normcase(str(path.resolve())).replace('\\', '/').rstrip('/')
 
 
+def home(main: Path) -> Path:
+    """Where *main*'s linked worktrees live: the bound ``worktrees`` root, else ``<main>/.claude/worktrees``."""
+    return worktrees_root(main)
+
+
 def is_inside(path: Path, main: Path) -> bool:
-    """Does *path* lie strictly inside ``<main>/.claude/worktrees/``? PURE apart from ``resolve``."""
-    base = _norm(main / WORKTREES_REL)
+    """Does *path* lie strictly inside *main*'s worktree home (:func:`home`)? PURE apart from config and ``resolve``."""
+    base = _norm(home(main))
     return _norm(path).startswith(base + '/')
 
 
@@ -148,6 +159,6 @@ def work_root(root: Path) -> Path:
     A ``python -m`` process puts its cwd on ``sys.path``, so a serve whose cwd were the checkout would READ that
     tree for its whole life and lock it against every edit (TREE-HAS-A-LIVE-RUN, :mod:`dev_lab.dev.liverun`).
     """
-    work = root / WORKTREES_REL
+    work = home(root)
     work.mkdir(parents=True, exist_ok=True)
     return work

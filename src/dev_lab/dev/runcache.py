@@ -15,7 +15,7 @@ decision writes nothing, so the first log is the one cited.
 A cache of the retired line shape (one JSON object per run, no schema) is refused by name with
 :class:`RetiredCache`: it is regenerable -- delete it and the next runs re-fill it.
 
-WHERE IT LIVES. ``output/runcache/record.jsonl`` in the MAIN checkout -- resolved through git's common
+WHERE IT LIVES. ``runcache/record.jsonl`` in the MAIN checkout's output kind -- resolved through git's common
 directory, so every lane worktree shares one cache. It is a NEW file, not the retired line-shape file
 renamed in place: a checkout still at the retired code keeps appending its own file, so the two shapes never
 meet in one file while the family converges (the retired file is regenerable; delete it at will).
@@ -33,11 +33,12 @@ import lab_commons.launch as _door
 from lab_commons.outcomes import OUTCOME, Cell, Conclusion, Event, FinalityError, Identity, Reason, Record, Status
 
 from dev_lab.dev.forge import _GIT
+from dev_lab.dev.storage import output_path
 from dev_lab.dev.verdict import Verdict
 
 __all__ = [
     'CACHED',
-    'CACHE_REL',
+    'CACHE_IN_OUTPUT',
     'FLAKY',
     'CachedRun',
     'RetiredCache',
@@ -49,7 +50,8 @@ __all__ = [
 ]
 
 #: The cache, relative to the MAIN checkout's root.
-CACHE_REL: Final = 'output/runcache/record.jsonl'
+#: The run cache, inside the checkout's ``output`` storage kind.
+CACHE_IN_OUTPUT: Final = ('runcache', 'record.jsonl')
 
 #: The only results cached. INCONCLUSIVE says nothing about the tree.
 CACHED: Final = frozenset(outcome.value.upper() for outcome in Conclusion if outcome.settled)
@@ -93,7 +95,7 @@ def cache_path(root: Path) -> Path:
         check=True,
         timeout=_GIT_TIMEOUT_S,
     ).stdout.strip()
-    return Path(common).parent / CACHE_REL
+    return output_path(Path(common).parent, *CACHE_IN_OUTPUT)
 
 
 def _key(run: CachedRun) -> str:

@@ -467,11 +467,10 @@ carries no state: it only means "derive again now". Polling is the floor that ma
 
 **The observer is `forge serve`, on EVERY host.** No host owns integration. Each serve tick derives the
 queue (`integrator.observe`), and every row that asks a session to act -- a PR READY to merge, the
-integration tip PROMOTE-able, a child or tip BLOCKED on a red to route -- is kept as ONE forge issue titled
-`integration: <subject>` (`forgeroute.reconcile`, the found-by-title rule failure routing keeps an `area:*`
-issue by). N hosts deriving the same row write one issue; only the host that creates or changes it raises the
-alarm (the stderr JSONL line, the host card, `[alerts]`), and a row no longer derived closes its issue. The
-`starved` alarm is kept the same way, one `starved: <subject>` issue per part.
+integration tip PROMOTE-able, a child or tip BLOCKED on a red to route -- is an ALARM (the stderr JSONL line,
+the host card `forge queue` prints, `[alerts]`), re-derived each tick, so a row no longer derived simply
+leaves. It is never an issue (user rulings 2026-11-14 and 2026-11-19), nor is a `starved` part or a
+break-glass commit: a break-glass wave's audit is the wave ledger's (`forge breakglass status` / `ack`).
 
 ## Failure modes
 

@@ -1,0 +1,115 @@
+"""``dev_lab.dev.storage``: dev-lab's one adapter onto the storage kinds, and its where/render/migrate doors."""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+from lab_commons.storage import StorageError, declared
+
+from dev_lab.dev import storage
+from dev_lab.dev.artefactstores import SCRATCH_PREFIX, ArtefactRefused, check_key
+from dev_lab.dev.writeroots import Root, excluded_paths, refuse_outside_tree
+
+GIT = shutil.which('git') or 'git'
+
+
+def _repo(tmp_path: Path, name: str = 'repo-a') -> Path:
+    tree = tmp_path / name
+    tree.mkdir()
+    subprocess.run([GIT, 'init', '-q', str(tree)], check=True)
+    return tree
+
+
+def _bound(**roots: str) -> object:
+    return declared({'storage': {'roots': roots}}, {})
+
+
+def test_an_unbound_output_stays_in_the_checkout(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the binding: nothing declared, every writer's output/... is the checkout's."""
+    tree = _repo(tmp_path)
+    assert (
+        storage.output_path(tree, 'forge', 'outbox', declared=declared({}, {}))
+        == tree.resolve() / 'output/forge/outbox'
+    )
+
+
+def test_a_bound_output_moves_every_writer_with_the_main_checkout_name(tmp_path: Path) -> None:
+    tree = _repo(tmp_path)
+    bound = _bound(output=str(tmp_path / 'big' / '{repo}'))
+    assert storage.output_path(tree, 'runcache', declared=bound) == tmp_path / 'big' / 'repo-a' / 'runcache'
+
+
+def test_migrate_moves_the_tree_once_and_a_later_leftover_is_refused(tmp_path: Path) -> None:
+    tree = _repo(tmp_path)
+    (tree / 'output' / 'logs').mkdir(parents=True)
+    (tree / 'output' / 'logs' / 'a.log').write_text('x', encoding='utf-8')
+    bound = _bound(output=str(tmp_path / 'big' / '{repo}'))
+    target = storage.migrate('output', tree, declared=bound)
+    assert (target / 'logs' / 'a.log').read_text(encoding='utf-8') == 'x'
+    assert (target / storage.MARKER).is_file()
+    assert not (tree / 'output').exists()
+    assert storage.migrate('output', tree, declared=bound) == target, 'a second migrate is a no-op'
+    (tree / 'output').mkdir()
+    (tree / 'output' / 'stray').write_text('y', encoding='utf-8')
+    with pytest.raises(storage.StaleTree, match=r'holds .output. data'):
+        storage.refuse_stale('output', tree, declared=bound)
+
+
+def test_migrate_refuses_an_unbound_kind_and_a_foreign_target(tmp_path: Path) -> None:
+    tree = _repo(tmp_path)
+    with pytest.raises(StorageError, match='not bound on this machine'):
+        storage.migrate('output', tree, declared=declared({}, {}))
+    foreign = tmp_path / 'big' / 'repo-a'
+    foreign.mkdir(parents=True)
+    (foreign / 'theirs').write_text('z', encoding='utf-8')
+    with pytest.raises(StorageError, match='not empty and carries no'):
+        storage.migrate('output', tree, declared=_bound(output=str(tmp_path / 'big' / '{repo}')))
+
+
+def _reaching(tmp_path: Path) -> object:
+    family = {'storage': {'remotes': {'results': {'type': 's3', 'endpoint': 'https://objects.example'}}}}
+    return declared({'storage': {'reach': ['results'], 'secrets': str(tmp_path / 'secrets')}}, family)
+
+
+def test_render_joins_family_options_and_the_placed_secret_outside_the_repo(tmp_path: Path) -> None:
+    tree = _repo(tmp_path)
+    reach = _reaching(tmp_path)
+    (tmp_path / 'secrets').mkdir()
+    (tmp_path / 'secrets' / 'results.toml').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
+    out = storage.render(tmp_path / 'conf' / 'rclone.conf', repo=tree, declared=reach)
+    assert out.read_text(encoding='utf-8') == (
+        '[results]\ntype = s3\nendpoint = https://objects.example\nsecret_access_key = s3cr3t\n'
+    )
+
+
+def test_render_refuses_a_missing_secret_and_a_path_inside_the_repo(tmp_path: Path) -> None:
+    tree = _repo(tmp_path)
+    reach = _reaching(tmp_path)
+    with pytest.raises(StorageError, match=r'no secret for remote .results.'):
+        storage.render(tmp_path / 'rclone.conf', repo=tree, declared=reach)
+    (tmp_path / 'secrets').mkdir()
+    (tmp_path / 'secrets' / 'results.toml').write_text('type = "s3"\n', encoding='utf-8')
+    with pytest.raises(StorageError, match=r'restates .type.'):
+        storage.rendered(reach)
+    with pytest.raises(ValueError, match='never in a repo'):
+        storage.render(tree / 'rclone.conf', repo=tree, declared=reach)
+
+
+def test_a_bound_storage_root_is_admitted_by_the_write_guard_and_nothing_else(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a write under a write-prone root is refused unless it is under a bound storage root."""
+    prone = (Root(tmp_path / 'tmp', 'temp'),)
+    bound = _bound(output=str(tmp_path / 'tmp' / 'work' / '{repo}'))
+
+    admitted = excluded_paths(prone, machine={}, env={}, storage=bound)
+    assert refuse_outside_tree(tmp_path / 'tmp' / 'work' / 'repo-a' / 'x', roots=prone, excluded=admitted) is None
+    assert refuse_outside_tree(tmp_path / 'tmp' / 'elsewhere' / 'x', roots=prone, excluded=admitted) is not None
+
+
+def test_a_durable_key_never_lands_under_the_aged_out_scratch_prefix() -> None:
+    """A remote's lifecycle rule deletes scratch/ after a while; a durable result there would vanish silently."""
+    with pytest.raises(ArtefactRefused, match='the prefix a remote ages out'):
+        check_key(f'{SCRATCH_PREFIX}/vendor/abc.tar.gz')
+    check_key('vendor/scratch/abc.tar.gz')  # PLANTED CONTROL: only the FIRST segment is the aged-out prefix
