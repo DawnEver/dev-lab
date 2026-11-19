@@ -189,13 +189,43 @@ def unresolved(root: Path, base: str, head: str) -> tuple[tuple[str, tuple[str, 
     if done.returncode:
         msg = f'git log failed: {done.stderr.decode("utf-8", "replace").strip()}'
         raise MergeAuditError(msg)
-    found = []
+    merges = []
     for record in filter(None, done.stdout.decode('utf-8', 'surrogateescape').split('\0')):
         line, _, message = record.partition('\n')
         sha, *parents = line.split()
-        if problems := judge(root, parents, message):
+        merges.append((sha, parents, message))
+    inherited = _retired_history(root, base, [(sha, parents) for sha, parents, _ in merges])
+    found = []
+    for sha, parents, message in merges:
+        if sha not in inherited and (problems := judge(root, parents, message)):
             found.append((sha, problems))
     return tuple(found)
+
+
+def _retired_history(root: Path, base: str, merges: Sequence[tuple[str, Sequence[str]]]) -> frozenset[str]:
+    """The commits a RETIRE merge brings in only as history: its second parent's side, never its resolution.
+
+    A retire (``-s ours``) keeps its first parent's tree whole, so its second parent's commits reach the head as
+    the retired branch's own past -- including any merge that branch made, whose message this PR cannot redo
+    without dropping the very sha the retire exists to contain. Recognised by CONTENT (tree equal to the first
+    parent's), never by message; the retire merge itself is still judged like any other.
+    """
+    exempt: set[str] = set()
+    for sha, parents in merges:
+        if len(parents) != _PARENTS or _git_out(root, 'rev-parse', f'{sha}^{{tree}}') != _git_out(
+            root, 'rev-parse', f'{parents[0]}^{{tree}}'
+        ):
+            continue
+        exempt.update(_git_out(root, 'rev-list', parents[1], f'^{parents[0]}', f'^{base}').split())
+    return frozenset(exempt)
+
+
+def _git_out(root: Path, *args: str) -> str:
+    done = _door.run([_GIT, '-C', str(root), *args], capture_output=True, check=False, timeout=_GIT_TIMEOUT_S)
+    if done.returncode:
+        msg = f'git {args[0]} failed: {done.stderr.decode("utf-8", "replace").strip()}'
+        raise MergeAuditError(msg)
+    return done.stdout.decode('utf-8', 'surrogateescape').strip()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
