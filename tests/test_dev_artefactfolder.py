@@ -11,6 +11,7 @@ import os
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -43,7 +44,7 @@ def test_folder_refuses_inconsistent_archive_or_manifest(tmp_path: Path, fault: 
     store = FolderStore(tmp_path / 'store', 'lab')
     ref = store.put(RUN, source)
     assert store.put(RUN, source) == ref, 'PLANTED CONTROL: the same bytes again is the object already landed'
-    target = store.root / ref.key
+    target = store.root / ref.ref
     manifest = target.with_name(RUN + MANIFEST)
     if fault == 'orphan':
         manifest.unlink()
@@ -80,7 +81,10 @@ def test_folder_concurrent_publishers_are_write_once(
 
     def competing_link(source: Path, destination: Path) -> None:
         if str(destination).endswith(ARCHIVE):
-            barrier.wait(timeout=5)
+            # Both publishers meet here, so the two links race. A publisher that fails first aborts the barrier
+            # (below): the other is released at once and the failure shows as a result, not a BrokenBarrierError.
+            with suppress(threading.BrokenBarrierError):
+                barrier.wait(timeout=5)
         link(source, destination)
 
     monkeypatch.setattr(artefactfolder.os, 'link', competing_link)
@@ -89,15 +93,16 @@ def test_folder_concurrent_publishers_are_write_once(
         try:
             return store.put(RUN, source)
         except (ArtefactRefused, OSError) as error:
+            barrier.abort()
             return error
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(publish, sources))
     refs = [value for value in results if isinstance(value, Ref)]
     failures = [value for value in results if isinstance(value, Exception)]
-    assert len(refs) == (2 if same else 1)
+    assert len(refs) == (2 if same else 1), results
     assert len(failures) == (0 if same else 1)
-    assert all(isinstance(value, ArtefactRefused) for value in failures)
+    assert all(isinstance(value, ArtefactRefused) for value in failures), failures
     assert store.list(None) == (refs[0],)
     assert not list(store.root.rglob('*.partial'))
 
@@ -114,7 +119,7 @@ def test_folder_refuses_leaf_and_parent_aliases(tmp_path: Path, role: str) -> No
         alias = store.root / 'lab'
     else:
         ref = store.put(RUN, source)
-        alias = store.root / ref.key
+        alias = store.root / ref.ref
         if role == 'manifest':
             alias = alias.with_name(RUN + MANIFEST)
         external.write_bytes(alias.read_bytes())
