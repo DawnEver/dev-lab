@@ -21,7 +21,9 @@ collection and is not checked.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 import tomllib
 from collections.abc import Callable, Mapping
 from importlib import metadata
@@ -30,7 +32,9 @@ from typing import Final
 
 from lab_commons.hpc.needsets import BASE
 
-__all__ = ['declared_needs', 'missing_for_part']
+from dev_lab.dev import taskbinding
+
+__all__ = ['bound_task_extras', 'declared_needs', 'extras_for', 'missing_for_part', 'task_needs']
 
 #: A requirement's distribution name: the leading identifier, before extras, versions, URLs or markers.
 _NAME: Final = re.compile(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
@@ -87,6 +91,60 @@ def missing_for_part(root: Path, part: str, *, installed: Callable[[str], bool] 
     )
 
 
+#: The frontmatter line a task record declares its needs on: ``needs: [simba, windows]`` (D79).
+_NEEDS_LINE: Final = re.compile(r'^needs:\s*(.*?)\s*$', re.MULTILINE)
+_NEED: Final = re.compile(r'[a-z0-9][a-z0-9_-]*')
+#: The line that closes a frontmatter block.
+_FENCE: Final = '\n---'
+
+
+def task_needs(ledger: Path, task: str) -> tuple[str, ...]:
+    """The needs the task record ``<ledger>/<slug>/TASK.md`` declares in its frontmatter (D79), else ``()``.
+
+    A TASK DECLARES THE NEEDS ITS WORK EXERCISES -- the same need names its tests' resource markers carry -- never
+    an extra: which extra serves a need is the REPO's fact (:func:`declared_needs`), stated once. A line that is no
+    ``[a, b]`` list of need names is refused by name, so a typo never silently installs nothing.
+    """
+    record = Path(ledger) / task.split('@', 1)[0] / 'TASK.md'
+    text = record.read_text(encoding='utf-8') if record.is_file() else ''
+    front = text[3:].partition(_FENCE)[0] if text.startswith('---') else ''
+    found = _NEEDS_LINE.search(front)
+    if found is None:
+        return ()
+    value = found.group(1)
+    names = [part.strip() for part in value.strip('[]').split(',')] if value.startswith('[') else None
+    if names is None or not value.endswith(']') or any(not _NEED.fullmatch(name) for name in names if name):
+        msg = f'{record}: needs must be a list of need names, e.g. needs: [simba, windows] -- got {value!r}'
+        raise ValueError(msg)
+    return tuple(name for name in names if name)
+
+
+def extras_for(root: Path, needs: tuple[str, ...]) -> tuple[str, ...]:
+    """The extras a sync selects for *needs*: the repo's declared extras plus every extra a need maps to, in order.
+
+    A need the repo maps to no extra (a platform, an external tool) installs nothing.
+    """
+    dep, _available = _table(root)
+    mapped = declared_needs(root)
+    return tuple(dict.fromkeys([*(str(e) for e in dep.get('extras', ())), *(mapped[n] for n in needs if n in mapped)]))
+
+
 def _names(requirements: list[str]) -> list[str]:
     """Distribution names of *requirements*, skipping any with an environment marker (not evaluated here)."""
     return [m.group(1) for req in requirements if ';' not in req and (m := _NAME.match(req))]
+
+
+def bound_task_extras(root: Path, env: Mapping[str, str] | None = None) -> tuple[str, ...] | None:
+    """The extras the session's bound task asks for through its declared needs (D79), else ``None`` (the default).
+
+    An explicit ``--extra`` still overrides. No bound session, or a task declaring no needs, keeps the repo's
+    declared extras (``None`` lets :func:`~dev_lab.dev._dep_project.read_project` read them).
+    """
+    try:
+        bound = taskbinding.session_binding(os.environ if env is None else env, start=root)
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        return None
+    if bound is None:
+        return None
+    needs = task_needs(bound.ledger, bound.task)
+    return extras_for(root, needs) if needs else None
