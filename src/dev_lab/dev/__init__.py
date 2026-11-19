@@ -346,6 +346,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   GitHub ruleset or a Gitea branch protection per branch role, contexts derived from the rendered workflows.
 * :mod:`dev_lab.dev.forgefailure` -- how a forge answer reads: an answer, transient, a refused call or credential.
 * :mod:`dev_lab.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``.
+* :mod:`dev_lab.dev.forgeclient` -- the one place a forge ``Client`` is built (``client_for``, ``stored_client``).
 * :mod:`dev_lab.dev.forgestamp` -- the ``HARNESS_*`` provenance line a created body opens with.
 * :mod:`dev_lab.dev.forgememo` -- one poller pass's forge reads, answered once (a write empties it).
 * :mod:`dev_lab.dev.forgelabels` -- labels by NAME on both forges: resolved to ids, created, put on an issue.
@@ -587,7 +588,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   push door prints naming its hearer, the machine PR watcher.
 * :mod:`dev_lab.dev.sessionprs` -- TASK-HEARS-ITS-FORGE-EVENTS: every PR a session opened or pushed, in any repository.
 * :mod:`dev_lab.dev.sessionpoll` -- TASK-HEARS-ITS-FORGE-EVENTS: one status read of a session's open PRs.
-* :mod:`dev_lab.dev.forgefeed` -- TASK-HEARS-ITS-FORGE-EVENTS: the one hearer, one feed read per forge per tick.
+* :mod:`dev_lab.dev.forgefeed` -- TASK-HEARS-ITS-FORGE-EVENTS: the one hearer, one issues read per repository per tick.
+* :mod:`dev_lab.dev.forgethreads` -- the threads a task hears: the issues-since read, its cursor, own comments.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
 * :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrolment door, ``[bridge]``.

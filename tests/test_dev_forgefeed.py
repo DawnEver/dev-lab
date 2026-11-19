@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 from _forge_state import FORGE, StateForge
 
-from dev_lab.dev import forgefeed, sessionprs, taskbinding
+from dev_lab.dev import forgefeed, forgethreads, sessionprs, taskbinding
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgestatus import status_post
 
@@ -201,7 +201,7 @@ def test_the_cursor_resumes_per_repository_and_a_thread_at_the_cursor_is_not_hea
     forge.etag = 'v2'  # the forge answers again, with the same row at the cursor
     _hear(forge)
     assert forge.calls[-1].endswith('&since=2026-11-18T10:00:00Z')
-    assert forgefeed.cursor(forge.forge) == '2026-11-18T10:00:00Z'
+    assert forgethreads.cursor(forge.forge) == '2026-11-18T10:00:00Z'
     assert len([line for line in forgefeed.take_unread('s1') if '#3 ' in line]) == 1, 'not heard again at the cursor'
 
 
@@ -221,7 +221,7 @@ def test_a_304_to_the_stored_etag_costs_nothing(tmp_path: os.PathLike) -> None:
 
 def test_this_machines_own_comment_is_not_news(tmp_path: os.PathLike) -> None:
     _bind('s1', 'alpha', tmp_path)
-    forgefeed.record_own(f'{Forge(HOST, "o", "r").identity}#3', at=1_794_996_000.0)  # 2026-11-18T10:00:00Z
+    forgethreads.record_own(f'{Forge(HOST, "o", "r").identity}#3', at=1_794_996_000.0)  # 2026-11-18T10:00:00Z
     rows = [_row(3, '2026-11-18T10:00:02Z', ('task:alpha',)), _row(4, '2026-11-18T10:00:02Z', ('task:alpha',))]
     _hear(RepoForge(rows))
     said = forgefeed.take_unread('s1')

@@ -24,8 +24,8 @@ from typing import Any, Final
 from lab_commons.config import section
 
 from dev_lab.dev import devhost, forgesecrets, sshholdwire
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.planremote import Remote
 from dev_lab.dev.planrunsteps import (
     CONFIG_ACTION,

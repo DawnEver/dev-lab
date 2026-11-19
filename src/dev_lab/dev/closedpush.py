@@ -26,9 +26,9 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_by_head
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.refspec import pushed_refs
 

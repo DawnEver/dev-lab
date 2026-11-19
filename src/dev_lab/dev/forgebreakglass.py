@@ -30,7 +30,8 @@ from lab_commons.log import emit
 from dev_lab.dev import sessionprs
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.ops.consent.client import grant
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import Send, ssh_send
