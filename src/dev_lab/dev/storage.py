@@ -37,6 +37,7 @@ __all__ = [
     'MARKER',
     'ROOTS_ENV',
     'StaleTree',
+    'checkout_output_path',
     'kind_root',
     'main_of',
     'migrate',
@@ -96,6 +97,20 @@ def output_path(tree: Path, *parts: str, declared: _storage.Storage | None = Non
         msg = 'the output storage kind has no root'
         raise _storage.StorageError(msg)
     return found.joinpath(*parts)
+
+
+def checkout_output_path(tree: Path, *parts: str, declared: _storage.Storage | None = None) -> Path:
+    """:func:`output_path` for a writer that belongs to a checkout (the forge outbox, the intent journal).
+
+    Raises:
+        RuntimeError: when *tree* is in no git repository -- a deployed judge runs from ``/`` and must never
+            write a checkout-shaped tree under whatever directory it was started in.
+
+    """
+    if common_dir(Path(tree)) is None:
+        msg = f'not a git repository: {tree} -- this journal lives in a checkout'
+        raise RuntimeError(msg)
+    return output_path(tree, *parts, declared=declared)
 
 
 def refuse_stale(kind: str, tree: Path, *, declared: _storage.Storage | None = None) -> None:

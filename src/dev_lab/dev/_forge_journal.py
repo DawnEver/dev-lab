@@ -38,7 +38,7 @@ from typing import Any, Final
 
 from lab_commons.compute.durable import durable_write
 
-from dev_lab.dev.storage import output_path
+from dev_lab.dev.storage import checkout_output_path
 
 __all__ = [
     'LOOKBACK', 'OUTBOX_IN_OUTPUT', 'RETAIN_S', 'WRITES', 'Durable', 'Journal', 'Probe', 'Write', 'journal_at',
@@ -182,7 +182,7 @@ class Journal:
 
 def outbox_dir(root: Path) -> Path:
     """The outbox of the repository *root* belongs to, in its MAIN checkout (shared by every lane)."""
-    return output_path(root, *OUTBOX_IN_OUTPUT)
+    return checkout_output_path(root, *OUTBOX_IN_OUTPUT)
 
 
 def journal_at(outbox: Path) -> Journal:

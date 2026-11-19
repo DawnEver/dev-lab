@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons import storage as _storage
 
 from dev_lab.dev.family import declared_in
+from dev_lab.dev.storage import output_path
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -158,8 +159,6 @@ def dated_base(root: Path, base: str, *, declared: _storage.Storage | None = Non
     parts = Path(base).parts
     declared = _storage.declared() if declared is None else declared
     if parts and parts[0] == _storage.KINDS['output'] and 'output' in declared.roots:
-        from dev_lab.dev.storage import output_path  # noqa: PLC0415 -- storage imports nothing dated; keep it lazy
-
         return output_path(root, *parts[1:], declared=declared)
     return root.joinpath(*parts)
 

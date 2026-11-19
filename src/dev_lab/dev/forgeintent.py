@@ -38,7 +38,7 @@ from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.producer import RETRYABLE, Owner, owned
 from dev_lab.dev.shatree import close_tree
-from dev_lab.dev.storage import output_path
+from dev_lab.dev.storage import checkout_output_path
 
 __all__ = ['RUNS_IN_OUTPUT', 'Intent', 'forget', 'journal', 'journaled', 'reattach']
 
@@ -62,7 +62,7 @@ class Intent:
 @functools.cache
 def _runs(root: Path) -> Path:
     """The journal directory of *root*'s repository, asked of git once per process (a producer's hot path)."""
-    return output_path(root, *RUNS_IN_OUTPUT)
+    return checkout_output_path(root, *RUNS_IN_OUTPUT)
 
 
 def _path(root: Path, sha: str, context: str) -> Path:
