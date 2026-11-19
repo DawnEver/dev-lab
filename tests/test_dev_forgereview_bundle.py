@@ -31,6 +31,7 @@ from dev_lab.dev.actionsartifact import zipped
 from dev_lab.dev.artefactfolder import FolderStore
 from dev_lab.dev.artefactpack import pack
 from dev_lab.dev.artefacts import Config, Ref
+from dev_lab.dev.artefactstores import ref_of_entry
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeapp import App
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
@@ -271,7 +272,7 @@ def _prepared(
 
     def resolve(entry: dict[str, Any], dest: Path, **_k: object) -> Path:
         fetched.append(entry['ref'])
-        return store.get(Ref.of(entry), dest)
+        return store.get(ref_of_entry(entry), dest)
 
     def store_for(config: Config, *_a: object, **_k: object) -> FolderStore:
         if configs is not None:

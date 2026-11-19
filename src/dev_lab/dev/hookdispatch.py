@@ -172,8 +172,10 @@ def _inline(wires: Sequence[Wire], text: str, started: float) -> tuple[list[Outc
     outcomes: list[Outcome] = []
     late: list[Wire] = []
     for wire in sorted(wires, key=lambda one: not one.may_block):
+        # A row past the budget and every row after it are late: a timed wait may return early (Windows' timer), so
+        # time still "left" after a late row never starts the next one on that sliver.
         left = started + wire.budget - time.monotonic()
-        one = run_row(wire, text, timeout=min(wire.inline_bound, left)) if left > 0 else None
+        one = run_row(wire, text, timeout=min(wire.inline_bound, left)) if left > 0 and not late else None
         if one is None or one.code is None:
             late.append(wire)
         else:
