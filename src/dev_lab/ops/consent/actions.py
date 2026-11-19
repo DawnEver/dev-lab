@@ -97,5 +97,10 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         # One agent background shell may live ``minutes`` past the 50-minute default (user ruling 2026-11-15); subject =
         # the SHA-256 of the command after its ``timeout`` prefix. The ttl is the window to LAUNCH it, not its life.
         Action('shell.lifetime', {'minutes': int}, SINGLE, 1 * _HOUR, 1 * _DAY, boundary=False),
+        # One vendor-GUI open, and one focus take (user ruling 2026-11-17: no agent opens a vendor GUI or takes the
+        # user's focus without the user's authorization); subject = the SHA-256 of the consumer's canonical plan JSON
+        # (a focus act's plan is ``{'act', 'plan'}``). Spent through :func:`dev_lab.ops.consent.client.verify_held`.
+        Action('desktop.open', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=False),
+        Action('desktop.focus', {}, SINGLE, 15 * _MINUTE, 15 * _MINUTE, boundary=False),
     )
 })  # fmt: skip

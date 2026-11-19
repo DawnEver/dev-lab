@@ -12,6 +12,7 @@ from functools import partial
 from pathlib import Path
 from typing import Protocol
 
+from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.failprint import Fingerprints
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeapp import installation
@@ -96,8 +97,16 @@ class ClientForge:
         self._client.issue_comment(number, body)
 
     def merge(self, number: int, *, head: str, message: str) -> None:
-        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemergecall.merge`, either backend); branch kept."""
-        merge(self._client, number, head=head, message=message, delete_branch=False)
+        """Merge PR *number* at *head* (:func:`dev_lab.dev.forgemergecall.merge`, either backend).
+
+        Its head branch is deleted exactly when the integration path would delete it (D18): when the branch set
+        the repo declares AT THE PR'S BASE (:func:`dev_lab.dev.branchset.branchset_from`, the one parser) puts the
+        head name in an ephemeral namespace. A long-lived branch (the trunk, a declared session) is never deleted.
+        The forge refuses a *head* that moved, so a moved head is neither merged nor deleted.
+        """
+        found = self._client.pr_view(number)
+        declared = branchset_from(manifest_at(self._client, found.base), f'pyproject.toml at {found.base}')
+        merge(self._client, number, head=head, message=message, delete_branch=declared.is_ephemeral(found.head))
 
 
 def _installation_token(url: str, app_id: int, key_file: Path) -> str:
