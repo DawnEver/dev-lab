@@ -57,7 +57,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.box import GB, Capacity
 from lab_commons.box.machine import RESOURCE_NAME
+from lab_commons.compute.model import Resources
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name, read_vocabulary
 
@@ -73,7 +75,7 @@ from dev_lab.dev.forgerequestpaths import NOT_A_PATH, blobs, path_refusal, place
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.venvpath import running_interpreter
-from dev_lab.dev.verifybox import SELECTION_CPU, selection_files, selection_mem_gb, wall_of
+from dev_lab.dev.verifybox import selection_files, selection_mem_gb, selection_width, wall_of
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -234,12 +236,15 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
         needs = placement(files, sha, resources)
     except ValueError as why:
         raise UndeclaredRequest(str(why)) from why
-    mem_gb = selection_mem_gb(repo, paths, SELECTION_CPU)
+    size = Capacity.read()
+    room = Resources(cpu=size.cpu, mem_gb=size.mem_bytes / GB)
+    workers = selection_width(room, files=len(paths), per_gb=selection_mem_gb(repo, paths, 1))
+    mem_gb = selection_mem_gb(repo, paths, workers)
     try:
         wall_s = wall_of(declared_table(tomllib.loads(text), 'verify', {}), f'pyproject.toml at {sha[:12]}')
     except ValueError as why:
         raise UndeclaredRequest(str(why)) from why
-    return Declared(TESTS, (*door, '--', *paths), needs, float(SELECTION_CPU), mem_gb, wall_s / 3600)
+    return Declared(TESTS, (*door, '--', *paths), needs, float(workers), mem_gb, wall_s / 3600)
 
 
 def _unit_request(_root: Path, _sha: str, paths: Sequence[str]) -> Declared:

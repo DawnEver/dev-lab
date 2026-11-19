@@ -91,9 +91,10 @@ SCOPES: Final = frozenset({'subagent'})
 SEVERITIES: Final = frozenset({'deny', 'hint'})
 #: WHEN a row binds, beyond its pattern. ``'live-run'``: only while the checkout the command targets has a
 #: live run (:mod:`dev_lab.dev.liverun`), which the engine asks after the pattern matched. ``'background'``: only
-#: on a Bash call the agent runs in the background (``run_in_background``). A closed set, because the engine
-#: reads an unknown condition as none, which widens the rule.
-WHENS: Final = frozenset({'live-run', 'background'})
+#: on a Bash call the agent runs in the background (``run_in_background``). ``'declared-repo'``: only while the
+#: cloned url is a family repo this machine already checks out (:mod:`dev_lab.dev.familyrepos`). A closed set,
+#: because the engine reads an unknown condition as none, which widens the rule.
+WHENS: Final = frozenset({'live-run', 'background', 'declared-repo'})
 #: WHAT A FIRING ROW STILL ADMITS, which only the filesystem can judge. ``'family-sibling-clone'``: a line
 #: that is one clone (after any ``cd``) of a repo into a NEW directory named for it, beside the family's
 #: checkouts, from a forge a sibling checkout already comes from. A closed set, because the engine reads an
@@ -379,13 +380,16 @@ def denies(
     scope: str | None = None,
     live: bool = False,
     background: bool = False,
+    declared: bool = False,
 ) -> str | None:
     """The ID of the first rule that REFUSES *segment*, or ``None`` -- openings applied; a hint row refuses nothing.
 
     *live* says whether the checkout the command targets has a live run, as the engine asks
     :mod:`dev_lab.dev.liverun`; a ``when='live-run'`` row binds only then. *background* says the call runs in
-    the background; a ``when='background'`` row binds only then. An ``asks`` row is judged by its pattern alone,
-    the prefilter: its judge needs a repo, so a near-miss its pattern names reads as refused here.
+    the background; a ``when='background'`` row binds only then. *declared* says whether the cloned url is a
+    family repo this machine checks out (:mod:`dev_lab.dev.familyrepos`); a ``when='declared-repo'`` row binds
+    only then. An ``asks`` row is judged by its pattern alone, the prefilter: its judge needs a repo, so a
+    near-miss its pattern names reads as refused here.
 
     An opening is tested against the whole text, as the engine tests it against the whole command:
     an ``allow`` is a statement about the invocation, not about the token the pattern landed on.
@@ -396,7 +400,11 @@ def denies(
     for rule in rules:
         if rule.severity != 'deny' or (rule.scope is not None and rule.scope != scope):
             continue
-        if (rule.when == 'live-run' and not live) or (rule.when == 'background' and not background):
+        if (
+            (rule.when == 'live-run' and not live)
+            or (rule.when == 'background' and not background)
+            or (rule.when == 'declared-repo' and not declared)
+        ):
             continue
         if not fires(rule, segment):
             continue
