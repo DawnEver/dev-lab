@@ -282,7 +282,8 @@ def _refused(
         return None
     if why:
         emit(f'[forge] scanning the {what} for private markers: {why}', err=True)
-    return privatemarkers.text_refusal('\n'.join(texts(args)), what)
+    public = privatemarkers.public_names(root, env=env, transport=transport)
+    return privatemarkers.text_refusal('\n'.join(texts(args)), what, public=public)
 
 
 #: Each write verb that publishes typed text: what a refusal calls it, and the argument fields that hold it.

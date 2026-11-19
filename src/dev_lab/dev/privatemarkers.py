@@ -34,7 +34,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forge import NoCredential, Transport, forge_from_remote, forge_of_url, forge_transport
 from dev_lab.dev.forgeclient import client_for
-from dev_lab.dev.forgehosts import is_private
+from dev_lab.dev.forgehosts import is_private, public_siblings
 from dev_lab.dev.githooks.runner import PUSH_URL_ENV
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     'MARKERS_FILE',
     'PUBLIC_MASK',
     'load_markers',
+    'public_names',
     'pushed_messages',
     'repo_is_private',
     'scan_text',
@@ -233,14 +234,41 @@ def repo_is_private(
     return _VISIBILITY[key]
 
 
-def text_refusal(text: str, what: str, markers: tuple[re.Pattern[str], ...] | None = None) -> str | None:
+#: Each owner's public repository names, read once per process: ``(host, owner) -> names``.
+_PUBLIC: dict[tuple[str, str], tuple[str, ...]] = {}
+
+
+def public_names(
+    root: Path, *, url: str = '', env: Mapping[str, str] | None = None, transport: Transport = forge_transport
+) -> tuple[str, ...]:
+    """The repos *root*'s owner publishes, which a public text may name (dev-lab#791 wall 3); ``()`` when unread.
+
+    An unread list masks nothing, so the scan fails closed. Cached per process by owner.
+    """
+    try:
+        forge = forge_of_url(url) if url else forge_from_remote(root)
+    except OSError:
+        return ()
+    key = (forge.host, forge.owner)
+    if key not in _PUBLIC:
+        try:
+            _PUBLIC[key] = public_siblings(client_for(root, env=env, transport=transport, url=url))
+        except (OSError, NoCredential):
+            _PUBLIC[key] = ()
+    return _PUBLIC[key]
+
+
+def text_refusal(
+    text: str, what: str, markers: tuple[re.Pattern[str], ...] | None = None, *, public: tuple[str, ...] = ()
+) -> str | None:
     """The PRIVATE-MARKERS refusal for *what* (a PR body...) when *text* holds a marker, else ``None``.
 
     The markers are the machine-local denylist (:data:`MARKERS_FILE`, read at call time) unless given; a hit is
-    named by line and kind only. The rule leads line one and the door has a line of its own, so
+    named by line and kind only. *public* names the target owner's published repos (:func:`public_names`), masked
+    out first as :func:`scan_text` does. The rule leads line one and the door has a line of its own, so
     :func:`dev_lab.dev.walls.refused_text` records the rule and that a door was named.
     """
-    hits = scan_text(text, load_markers(MARKERS_FILE) if markers is None else markers)
+    hits = scan_text(text, load_markers(MARKERS_FILE) if markers is None else markers, public=public)
     if not hits:
         return None
     named = ', '.join(f'line {n}: {kind}' for n, kind, _ in hits)
