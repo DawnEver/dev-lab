@@ -27,7 +27,6 @@ from _roles_fixtures import CI_REPO, EVERY_CI, carry
 from dev_lab.dev import ciworkflows
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
-    NIGHTLY_CRON,
     PR_EVENTS,
     RENDER_COMMAND,
     RUNNERS,
@@ -49,6 +48,7 @@ from dev_lab.dev.ciworkflows import (
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
+from dev_lab.dev.nightlycron import NIGHTLY_CRON
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
 #: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
@@ -426,6 +426,18 @@ def test_an_undeclared_github_ci_still_runs_the_nightly_schedule(tmp_path: Path)
     _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '', encoding='utf-8')
     assert workflows(tmp_path)['ci.yml']['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
+
+
+def test_a_repo_sets_its_own_nightly_cron_and_a_malformed_one_is_refused_by_name(tmp_path: Path) -> None:
+    """D63: the nightly time is per-repo; unset renders the default (planted control above), set renders it."""
+    _hosted(tmp_path)
+    pyproject = tmp_path / 'pyproject.toml'
+    pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\nnightly = "30 4 * * 1-5"\n', encoding='utf-8')
+    assert workflows(tmp_path)['ci.yml']['on']['schedule'] == [{'cron': '30 4 * * 1-5'}]
+    for bad in ('"0 2 * *"', '"at two"', '3'):
+        pyproject.write_text(ACTIONS_REPO + f'[tool.dev_lab.ci."ci.yml"]\nnightly = {bad}\n', encoding='utf-8')
+        with pytest.raises(ValueError, match=r'\[tool\.dev_lab\.ci\."ci\.yml"\] nightly = .*not a 5-field cron'):
+            workflows(tmp_path)
 
 
 def test_a_repo_missing_a_base_workflow_is_refused_naming_it(tmp_path: Path) -> None:

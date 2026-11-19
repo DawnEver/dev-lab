@@ -13,6 +13,7 @@ from typing import Any, Final
 
 import pytest
 from _ops_fixtures import git
+from lab_commons.config import CONFIG_ENV
 
 from dev_lab.dev.ciworkflows import placed, render, role_jobs
 from dev_lab.dev.rolecheck import CI_WORKFLOW, host_refusals, repo_refusals
@@ -26,12 +27,14 @@ from dev_lab.dev.roles import (
     Roles,
     Unbound,
     accounts,
+    machine_layer,
     optional_needs_from,
     optional_parts,
     producible,
     retired_placement,
     roles_at,
     roles_for,
+    roles_of_url,
 )
 from dev_lab.dev.roles import host_refusals as role_host_refusals
 from dev_lab.ops.configcheck import check_roles
@@ -321,3 +324,39 @@ def test_an_optional_part_is_named_and_still_producible_where_offered() -> None:
     assert not producible(HPC, 'jmag', hosted=(), optional=optional)
     assert producible(CI, 'base@windows', hosted=(), optional=optional)
     assert not producible(CI, 'heavy', hosted=(), optional=optional)
+
+
+# -- where a machine's binding is read (machine_layer) ---------------------------------------------------------------
+
+
+def _machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(text, encoding='utf-8')
+    monkeypatch.setenv(CONFIG_ENV, str(machine))
+
+
+def test_a_rendered_machine_file_carrying_the_family_inline_binds_the_roles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dev machine or HPC account renders the family's tables INTO its machine file and declares no [family]."""
+    _machine(tmp_path, monkeypatch, FAMILY)
+    git(tmp_path, 'init', '-q')
+    git(tmp_path, 'remote', 'add', 'origin', 'https://forge.example/team/app.git')
+    assert roles_at(tmp_path, env={}).env() == GITEA.env()
+
+
+def test_an_ops_host_reads_the_family_file_its_machine_file_points_at(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    family = tmp_path / 'family.toml'
+    family.write_text(FAMILY, encoding='utf-8')
+    _machine(tmp_path, monkeypatch, f'[family]\nsource = "{family.as_posix()}"\n')
+    assert roles_of_url('https://forge.example/team/app.git', env={}).env() == GITEA.env()
+
+
+def test_a_machine_with_no_roles_reads_no_layer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL: grants without [roles] are no binding -- the reader falls to the carried kinds, else refuses."""
+    _machine(tmp_path, monkeypatch, '[hpc.clusters.c]\nhosts = ["login.example"]\n')
+    assert machine_layer() == {}
+    with pytest.raises(Unbound, match='no family layer on this machine'):
+        roles_of_url('https://forge.example/team/app.git', env={})

@@ -208,7 +208,7 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
     declaration = declared_table(manifest, 'dep', {})
     available = manifest.get('project', {}).get('optional-dependencies', {})
-    selected = requested if requested is not None else declaration.get('extras', tuple(available))
+    selected = requested if requested is not None else declaration.get('extras', ())
     if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
         msg = 'tool.dev_lab.dep.extras must be an array of declared extra names'
         raise ValueError(msg)

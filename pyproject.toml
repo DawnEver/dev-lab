@@ -95,6 +95,10 @@ packages = ["src/dev_lab"]
 lab-commons = { git = "https://github.com/DawnEver/lab-commons.git" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
+# D78: extras install on demand; this repo's own suite needs both.
+[tool.dev_lab.dep]
+extras = ["test", "ops"]
+
 [tool.dev_lab.placement]
 code_roots = []
 # A worktree is a real second tree with its own src/, judged by the run inside it.

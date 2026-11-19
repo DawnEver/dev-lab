@@ -51,6 +51,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import metrics, venvpointer, walls
 from dev_lab.dev.githooks import inprocess
+from dev_lab.dev.githooks.gitfailure import git_failed
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
@@ -366,6 +367,26 @@ def run_stage(
     if stage not in STAGES:
         msg = f'unknown hook stage {stage!r}; the family runs {list(STAGES)}'
         raise ValueError(msg)
+    try:
+        return _run_stage(
+            stage, git_args, root=root, stdin=stdin, hooks=hooks, runner=runner, env=env, borrowed=borrowed
+        )
+    except subprocess.CalledProcessError as failed:
+        emit(git_failed(stage, failed), err=True)
+        return 1
+
+
+def _run_stage(
+    stage: str,
+    git_args: Sequence[str],
+    *,
+    root: Path,
+    stdin: str,
+    hooks: Sequence[Hook] | None,
+    runner: Runner | None,
+    env: Mapping[str, str] | None,
+    borrowed: bool,
+) -> int:
     push = parse_push_lines(stdin) if stage == 'pre-push' else ()
     selected_hooks = _selected(stage, root, hooks, push, borrowed=borrowed)
     if selected_hooks is None:

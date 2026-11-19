@@ -55,6 +55,7 @@ from lab_commons.temp import TEMP_PREFIX
 from dev_lab.dev import reviewbundle
 from dev_lab.dev._forgebackends import GITHUB
 from dev_lab.dev.forgeapp import app_client, app_of
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pr_list
@@ -70,7 +71,6 @@ from dev_lab.dev.forgereview_declared import (
 from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_findings
 from dev_lab.dev.forgereview_scope import gather, is_code
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import (

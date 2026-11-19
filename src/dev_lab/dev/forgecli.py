@@ -82,8 +82,9 @@ from dev_lab.dev import (
 )
 from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest, client_for
+from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
 from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
 

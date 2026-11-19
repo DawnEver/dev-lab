@@ -7,7 +7,7 @@ A new repo is configured ONCE, and the configuration is one statement rather tha
 ```python
 from pathlib import Path
 from dev_lab.dev.famtests.onboarding import assert_repo_is_onboarded, assert_the_forge_takes_pull_requests
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgeclient import client_for
 
 assert_repo_is_onboarded(root=Path(__file__).resolve().parents[2])
 assert_the_forge_takes_pull_requests(client_for(Path.cwd()))

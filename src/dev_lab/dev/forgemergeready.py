@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.branchset import declared_branchset
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -27,7 +28,6 @@ from dev_lab.dev.forgemerge import EXTERNAL, Decision, external, judged
 from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgestatus import status_post
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import (
     FAMILY_INTEGRATION,
     UNDECLARED_INTEGRATION,

@@ -1,6 +1,6 @@
-"""SESSION-HEARS-ITS-PRS, one read: a session PR as the forge holds it, its reds, its one green, and one poll.
+"""TASK-HEARS-ITS-FORGE-EVENTS, one read: a session PR as the forge holds it, its reds, its one green, and one poll.
 
-The session watch (:mod:`dev_lab.dev.forgewatch`) and the machine watcher (:mod:`dev_lab.dev.prwatcher`) both
+The session watch (:mod:`dev_lab.dev.forgewatch`) and the machine forge hearer (:mod:`dev_lab.dev.forgefeed`) both
 read a session's PRs through :func:`poll_session`; the ``Stop`` gate's red check reads :func:`pull_of` and
 :func:`reds`. Each line said is recorded as heard (:func:`dev_lab.dev.sessionprs.hear`), so no reader repeats it.
 """
@@ -132,7 +132,7 @@ def poll_session(
 ) -> int:
     """ONE read of every open or pending PR of *session*, saying each change not in *seen*; how many are still open.
 
-    The session watch and the machine watcher (:mod:`dev_lab.dev.prwatcher`) both poll through it.
+    The session watch and the machine forge hearer (:mod:`dev_lab.dev.forgefeed`) both poll through it.
     """
     live = 0
     for row in (*sessionprs.open_rows(session), *sessionprs.pending_rows(session)):

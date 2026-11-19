@@ -34,6 +34,7 @@ class _Response:
     status: int
     body: bytes
     headers: dict[str, str]
+    will_close: bool = True
 
     def getheader(self, name: str) -> str | None:
         return self.headers.get(name)

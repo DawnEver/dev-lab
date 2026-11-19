@@ -182,6 +182,7 @@ def breakglass_verb(config: OpsConfig, verb: str) -> int:
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
         return 2
+    os.environ.update(install.family_env(role))  # its roles binding comes from the family layer install rendered
     try:
         verifier, register = consentverbs.ends(config, alert=lambda title, detail: alert(config, title, detail))
     except ConsentRefused as refused:
