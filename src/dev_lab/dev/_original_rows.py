@@ -208,6 +208,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
     'privatemarkers',
+    'reword',  # ORIGINAL: the door between PRIVATE-MARKERS and GIT-COMMIT-AMEND (2026-11-19)
     'profile',
     'quantity_values',
     'reports',
