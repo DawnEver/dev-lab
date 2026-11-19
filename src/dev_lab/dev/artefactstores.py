@@ -62,6 +62,9 @@ __all__ = [
     'verified_copy',
 ]
 
+#: The first key segment a remote may age out (a lifecycle rule deletes it): never a durable result's place.
+SCRATCH_PREFIX: Final = 'scratch'
+
 FORGE: Final = 'forge'
 RCLONE: Final = 'rclone'
 FOLDER: Final = 'folder'
@@ -139,6 +142,8 @@ def object_key(repo: str, ident: str) -> str:
 def check_key(key: str) -> None:
     """Refuse a key a cloud drive cannot hold: non-ASCII, forbidden characters, trailing dot/space, too long."""
     problems = []
+    if key.split('/', 1)[0] == SCRATCH_PREFIX:
+        problems.append(f'under {SCRATCH_PREFIX}/, the prefix a remote ages out -- a durable result never lands there')
     if not key.isascii():
         problems.append('non-ASCII')
     if len(key) > _PATH_LIMIT:

@@ -82,6 +82,7 @@ from dev_lab.dev.commandtests import declared_command
 from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgeoutbox import deliver_unit
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.hostedparts import Hosted, hosted_parts
 from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row, row_part
@@ -172,6 +173,8 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     if not declared or 'part' not in jobs:
         return workflow
     template = json.dumps({key: value for key, value in jobs['part'].items() if key != 'strategy'})
+    # The produce step by what it runs, never by place: the verify-log step follows it in the template.
+    at = next(i for i, step in enumerate(jobs['part']['steps']) if 'produce ${{ matrix.part }}' in step.get('run', ''))
     added = {}
     for name, part in sorted(declared.items()):
         one = json.loads(template.replace('${{ matrix.part }}', name))
@@ -190,7 +193,7 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
                 }
             )
             after.append(_FORGET_KEYS)
-        steps = [*one['steps'][:-1], *before, one['steps'][-1], *after]
+        steps = [*one['steps'][:at], *before, *one['steps'][at:], *after]
         added[f'part-{name}'] = {
             **one,
             'if': _DISPATCH_ONLY if part.manual else _FULL_ONLY if part.tasks else _ANY_RUN,
@@ -427,6 +430,8 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
         child = {**given, **producing(context, sha), OUTCOME_VAR: str(outcome)}
         code = _door.run([sys.executable, *argv], cwd=root, env=child, check=False).returncode
         said = outcome.read_text(encoding='utf-8') if outcome.is_file() else ''
+    for line in deliver_unit(root, client, sha, context):  # its own held result first (forgeoutbox.deliver_unit)
+        emit(f'[jobparts] {line}', err=True)
     latest = {status.context: status for status in status_list(client, sha)}
     if context in latest and latest[context].state in _SETTLED:
         return code

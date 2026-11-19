@@ -56,6 +56,12 @@ pass_files = true
 id = "conventional-commit"
 run = ["python", "-m", "dev_lab.dev.commitmsg", "--commit-msg-file"]
 
+# PRIVATE-MARKERS on the message, judged BEFORE the commit exists: the pre-push scan of the same message refuses
+# a commit amend may no longer reword (GIT-COMMIT-AMEND), so the marker is caught while the reword is free.
+[[commit-msg]]
+id = "private-markers-message"
+run = ["python", "-m", "dev_lab.dev.privatemarkers", "--commit-msg-file"]
+
 # Warns on a malformed `Refs #N` / `Closes #N` / `Fixes #N` and never blocks (dev_lab.dev.issueref): `advisory`, so
 # the warning is shown although the row passes.
 [[commit-msg]]
@@ -205,6 +211,20 @@ advisory = true
 [[post-merge]]
 id = "reclaim"
 run = ["python", "-m", "dev_lab.dev.reclaimrun", "--background"]
+always_run = true
+
+# KEEP WHAT GIT STOPPED TRACKING BUT THE REPO NOW IGNORES (dev_lab.dev.keepignored): a commit that untracks a path
+# beside a .gitignore line (local state moved out of git) would have git DELETE it from every checkout that takes the
+# commit in; the row writes the previous head's bytes back, never over a file, never for a path still tracked or not
+# ignored. A merge's previous head is ORIG_HEAD; a checkout's (a rebase checks out too) is HEAD@{1}.
+[[post-merge]]
+id = "keep-ignored"
+run = ["python", "-m", "dev_lab.dev.keepignored", "--since", "ORIG_HEAD"]
+always_run = true
+
+[[post-checkout]]
+id = "keep-ignored"
+run = ["python", "-m", "dev_lab.dev.keepignored", "--since", "HEAD@{1}"]
 always_run = true
 
 # VENV-FOLLOWS-THE-LOCK (user ruling 2026-11-04): a checkout that moved pyproject.toml/uv.lock detaches a

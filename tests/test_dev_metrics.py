@@ -21,6 +21,7 @@ from dev_lab.dev.metrics import BYPASS, HAND_ACTION, HOST_FAILURE, PUSH, REFUSAL
 from dev_lab.dev.metrics_compute import Landing, compute, landings
 from dev_lab.dev.metrics_report import family
 from dev_lab.dev.metrics_report import main as metrics_main
+from dev_lab.dev.storage import output_path
 
 REPO = 'https://forge.example/o/r.git'
 SINCE = datetime(2026, 10, 1, tzinfo=UTC)
@@ -292,7 +293,7 @@ def test_a_test_run_never_writes_the_real_log(tmp_path: Path) -> None:
     """
     here = Path(__file__).resolve().parent
     real = Path(_git(here, 'rev-parse', '--path-format=absolute', '--git-common-dir')).parent
-    real_file = real.joinpath(metrics.BASE, *date_parts(), metrics.LOG_KIND, 'push.jsonl')
+    real_file = output_path(real, *metrics.BASE.parts, *date_parts(), metrics.LOG_KIND, 'push.jsonl')
     marker = f'https://forge.example/planted/{uuid.uuid4().hex}.git'
     path = record(PUSH, root=here, repo=marker)
     assert path.is_relative_to(tmp_path), f'a test wrote {path}, outside its own tree'

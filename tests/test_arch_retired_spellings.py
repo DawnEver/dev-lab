@@ -31,6 +31,10 @@ MOVED_TABLES: Final = (
 
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
+    'forgeroute.reconcile': (
+        'alarms on the host card (forge queue); the audit of a break-glass wave in the wave ledger',
+        'user ruling 2026-11-19: issues never record events (break-glass, starved, integration rows)',
+    ),
     **dict.fromkeys(
         ('prwatcher', 'SESSION-HEARS-ITS-PRS'),
         (

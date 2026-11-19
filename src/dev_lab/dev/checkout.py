@@ -49,9 +49,10 @@ from pathlib import Path
 
 import lab_commons.launch as _door
 
+from dev_lab.dev.storage import worktrees_root
+
 __all__ = [
     'DEFAULT_PROTECTED',
-    'DEFAULT_WORKTREE_HOME',
     'Debris',
     'OriginBranch',
     'WorktreeBranch',
@@ -60,6 +61,7 @@ __all__ = [
     'debris',
     'git_bytes',
     'git_out',
+    'locked_trees',
     'origin_branches',
     'orphan_directories',
     'stale_branches',
@@ -81,11 +83,6 @@ _GIT_TIMEOUT_S = 30
 #: Branch names that are never debris and never deletion candidates, whatever their merge state.
 #: A DEFAULT rather than a law: a repo whose trunk is not called ``main`` passes its own.
 DEFAULT_PROTECTED = frozenset({'main', 'HEAD'})
-
-#: Where a repo that runs parallel lanes keeps their worktrees. A DEFAULT for the same reason; a
-#: repo that keeps none simply has no orphans to find, which :func:`orphan_directories` reports as
-#: an empty list rather than as an unreadable tree.
-DEFAULT_WORKTREE_HOME = Path('.claude') / 'worktrees'
 
 
 @dataclass(frozen=True)
@@ -292,8 +289,12 @@ def survey(root: Path, base: str, *, protected: frozenset[str] = DEFAULT_PROTECT
     return tuple(rows)
 
 
-def orphan_directories(root: Path, *, home: Path = DEFAULT_WORKTREE_HOME) -> tuple[Path, ...] | None:
+def orphan_directories(root: Path, *, home: Path | None = None) -> tuple[Path, ...] | None:
     """Directories under *home* that git no longer calls worktrees.
+
+    *home* defaults to the repository's worktree home: the machine's bound ``worktrees`` storage root, else
+    ``.claude/worktrees`` (:func:`dev_lab.dev.storage.worktrees_root`). A repo that keeps none has no orphans,
+    reported as an empty tuple rather than as an unreadable tree.
 
     Nested ONE level, because a lane may be named ``feat/<slug>`` and land two directories down: a
     directory whose CHILD is a registered worktree is not itself an orphan.
@@ -304,7 +305,7 @@ def orphan_directories(root: Path, *, home: Path = DEFAULT_WORKTREE_HOME) -> tup
     registered = {
         Path(line[len('worktree ') :].strip()).resolve() for line in listed.splitlines() if line.startswith('worktree ')
     }
-    base = (root / home).resolve()
+    base = (root / home if home is not None else worktrees_root(root)).resolve()
     if not base.is_dir():
         return ()
     orphans: list[Path] = []
@@ -338,9 +339,24 @@ def stale_branches(root: Path, *, protected: frozenset[str] = DEFAULT_PROTECTED)
     return tuple(stale)
 
 
-def debris(root: Path, *, home: Path = DEFAULT_WORKTREE_HOME, protected: frozenset[str] = DEFAULT_PROTECTED) -> Debris:
+def debris(root: Path, *, home: Path | None = None, protected: frozenset[str] = DEFAULT_PROTECTED) -> Debris:
     """The whole census as data, so a caller can render it or assert on it."""
     return Debris(
         orphan_directories=orphan_directories(root, home=home),
         stale_branches=stale_branches(root, protected=protected),
     )
+
+
+def locked_trees(root: Path) -> frozenset[Path] | None:
+    """The resolved paths of every ``git worktree lock``-ed tree of *root*; ``None`` when git could not answer."""
+    out = git_out(root, 'worktree', 'list', '--porcelain')
+    if out is None:
+        return None
+    found: set[Path] = set()
+    path: Path | None = None
+    for line in out.splitlines():
+        if line.startswith('worktree '):
+            path = Path(line.removeprefix('worktree ').strip()).resolve()
+        elif (line == 'locked' or line.startswith('locked ')) and path is not None:
+            found.add(path)
+    return frozenset(found)

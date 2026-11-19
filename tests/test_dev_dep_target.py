@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 from lab_commons.box import Refused
 
-from dev_lab.dev import _dep_project, dep, venvpointer
+from dev_lab.dev import _dep_project, dep, venvcurrent, venvpointer
 from dev_lab.dev.envseat import EnvironmentSeat
 
 
@@ -195,7 +195,8 @@ def test_sync_failure_is_nonzero_publishes_nothing_and_keeps_the_anchors(tmp_pat
     assert dep.main(['--bootstrap', str(tmp_path)], run=run, cwd=tmp_path) == 17
     assert anchor.exists()
     assert venvpointer.current(tmp_path) == tmp_path / '.venv'
-    assert not any((tmp_path / venvpointer.HOME).iterdir())
+    built = [p.name for p in (tmp_path / venvpointer.HOME).iterdir() if p.name != venvcurrent.BUILD_LOCK]
+    assert not built, 'only the worktree build lock stays'
 
 
 def test_a_lane_cannot_target_main_but_main_can_bootstrap_the_lane(tmp_path) -> None:

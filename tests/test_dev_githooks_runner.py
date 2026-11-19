@@ -89,6 +89,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'lab-session',
         'merge-audit',
         'merge-resolution',
+        'private-markers-message',
     }
     assert {hook.id for hook in table['pre-commit']} == {
         'filechecks',
@@ -684,13 +685,19 @@ def test_an_advisory_row_speaks_and_never_fails_the_stage(repo: Path, capsys, mo
 
 #: Owned by the task-gating lane, which judges a commit and a push apart; not this table test's to fold.
 _TWO_STAGES_OWNED_ELSEWHERE = frozenset({'dev_lab.dev.taskgate'})
+#: A tree moves by a merge OR a checkout (a rebase checks out); the check keeping untracked-now-ignored files
+#: must hear both, and git offers no one stage for the two.
+_TWO_STAGES_BY_NATURE = frozenset({'dev_lab.dev.keepignored'})
 
 
 def _modules_at_two_stages(table: dict[str, tuple[Hook, ...]]) -> dict[str, list[str]]:
     stages: dict[str, list[str]] = {}
     for stage, hooks in table.items():
         for hook in hooks:
-            if hook.run[:2] == ('python', '-m') and hook.run[2] not in _TWO_STAGES_OWNED_ELSEWHERE:
+            if (
+                hook.run[:2] == ('python', '-m')
+                and hook.run[2] not in _TWO_STAGES_OWNED_ELSEWHERE | _TWO_STAGES_BY_NATURE
+            ):
                 stages.setdefault(hook.run[2], []).append(stage)
     return {module: found for module, found in stages.items() if len(found) > 1}
 

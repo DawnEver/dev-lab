@@ -10,6 +10,9 @@ A task hears what it subscribes to without anyone relaying it (`TASK-HEARS-ITS-F
   read; adding a label moves the thread's `updated_at`, so it is heard on the next tick. A 304 to the stored ETag
   costs nothing. Commit statuses are in no listing, so open PRs still have their statuses read.
 - **The tick is a setting:** `[forgefeed] tick_s` in the machine file, default 120 seconds.
+- **A break-glass wave awaiting review is news, never an issue.** Where the machine file declares a `[breakglass]`
+  endpoint, the hearer asks its status at most every 30 minutes and each session is told each wave in `audit`
+  once, with its door (`forge breakglass status`, then `forge breakglass ack <wave>`): `dev_lab.dev.forgewaves`.
 - **Heard at the next prompt.** Each change lands in the inbox of every session bound to the task on that machine.
   A task with no bound session keeps it: `python -m dev_lab.dev.forgefeed task-pending <slug>` lists it, and the
   next session that binds the task hears it. A comment this machine posted is not news.
