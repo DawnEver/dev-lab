@@ -173,6 +173,7 @@ function commandWord(segment) {
  */
 function splitHeredocs(cmd) {
   const executed = [];
+  const shellBodies = [];
   let rest = '';
   let index = 0;
   const opener = /<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\1/g;
@@ -198,14 +199,18 @@ function splitHeredocs(cmd) {
     // EVERY command position, not just the first word: `timeout 900 python - <<PY` and
     // `uv run python - <<PY` both run an interpreter, and both read as `timeout`/`uv` at token
     // zero. Asking only `commandWord(opening)` reopened the 2026-08-22 evasion behind any wrapper.
-    if (commandPositions(opening).some((position) => INTERPRETERS.test(commandWord(position)))) executed.push(body);
+    const consumers = commandPositions(opening).map(commandWord);
+    if (consumers.some((word) => INTERPRETERS.test(word))) {
+      executed.push(body);
+      if (consumers.some((word) => SHELLS.test(word))) shellBodies.push(body);
+    }
 
     rest += cmd.slice(index, opener.lastIndex);
     index = bodyEnd;
     opener.lastIndex = bodyEnd;
   }
   rest += cmd.slice(index);
-  return { rest, executed };
+  return { rest, executed, shellBodies };
 }
 
 /** `-c <script>` payloads: executed text, whatever the surrounding quoting. */
@@ -218,11 +223,51 @@ function inlineScripts(line) {
 }
 
 /**
+ * Interpreter source with the CONTENT of its string literals blanked (quotes and newlines kept), so text a
+ * program only carries -- source it writes to a file, a message it prints -- is never read as a call it makes
+ * (O48, 2026-11-18: a heredoc writing a file whose text held `rmtree(` was refused RECURSIVE-DELETE).
+ * Triple quotes first, then ' " and `; a backslash escapes the next character. A call outside every literal
+ * still reads exactly as written.
+ */
+function withoutStrings(code) {
+  let out = '';
+  let i = 0;
+  while (i < code.length) {
+    const triple = code.startsWith('"""', i) ? '"""' : code.startsWith("'''", i) ? "'''" : null;
+    const quote = triple || (`'"\``.includes(code[i]) ? code[i] : null);
+    if (!quote) {
+      out += code[i];
+      i += 1;
+      continue;
+    }
+    out += quote;
+    i += quote.length;
+    while (i < code.length && !code.startsWith(quote, i)) {
+      if (code[i] === '\\' && i + 1 < code.length) {
+        out += code[i + 1] === '\n' ? '\n' : ' ';
+        out += ' ';
+        i += 2;
+        continue;
+      }
+      // A one-line literal ends at its line: an unbalanced quote never swallows the code after it.
+      if (code[i] === '\n' && !triple && quote !== '`') break;
+      out += code[i] === '\n' ? '\n' : ' ';
+      i += 1;
+    }
+    if (code.startsWith(quote, i)) {
+      out += quote;
+      i += quote.length;
+    }
+  }
+  return out;
+}
+
+/**
  * Everything the shell will execute, as {text, kind}. `kind` is 'segment' for a shell command and
  * 'code' for interpreter source, which anchor differently.
  */
 function executedTexts(cmd) {
-  const { rest, executed } = splitHeredocs(cmd);
+  const { rest, executed, shellBodies } = splitHeredocs(cmd);
   const out = [];
   for (const segment of segments(rest)) {
     const positions = commandPositions(segment);
@@ -236,6 +281,8 @@ function executedTexts(cmd) {
     }
   }
   for (const body of executed) out.push({ text: body, kind: 'code' });
+  // A body a SHELL consumes is a command line in its own right: its segments are shell text ('shell' rows read it).
+  for (const body of shellBodies) out.push(...executedTexts(body));
   return out;
 }
 
@@ -777,7 +824,9 @@ function fires(rule, texts, cmd) {
   // interpreter code. An 'argument' rule names an option, so it is searched within the text.
   const atSegment = new RegExp(argument ? rule.pattern : `^(?:${rule.pattern})`);
   const atLine = new RegExp(argument ? rule.pattern : `^[ \\t]*(?:${rule.pattern})`, 'm');
-  return texts.some(({ text, kind }) => (kind === 'segment' ? atSegment : atLine).test(text));
+  // A 'shell' rule names a shell verb: interpreter code (python/node source) never spells it as a command.
+  if (rule.matches === 'shell') return texts.some(({ text, kind }) => kind === 'segment' && atSegment.test(text));
+  return texts.some(({ text, kind }) => (kind === 'segment' ? atSegment.test(text) : atLine.test(withoutStrings(text))));
 }
 
 let input;

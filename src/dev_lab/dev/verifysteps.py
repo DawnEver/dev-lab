@@ -34,7 +34,7 @@ from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
 from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
 from dev_lab.dev.content import ABSENT, content_address, file_digest
-from dev_lab.dev.datedlog import output_dir
+from dev_lab.dev.datedlog import UndeclaredOutput, output_dir, script_temp_env
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.jsrun import NoEngine, node_path
@@ -325,8 +325,8 @@ def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepR
         # `node` is the LOCKED engine (:mod:`dev_lab.dev.jsrun`), never the host's; any other program is resolved
         # on PATH (Windows: `npm` is `npm.cmd`, which a bare name cannot start).
         program = str(node_path()) if command[0] == 'node' else shutil.which(command[0]) or command[0]
-        code = _tee([program, *command[1:]], cwd=root, handle=handle)
-    except (OSError, NoEngine) as cannot:
+        code = _tee([program, *command[1:]], cwd=root, handle=handle, extra_env=script_temp_env(root, {}))
+    except (OSError, NoEngine, UndeclaredOutput) as cannot:
         return StepReport(name=name, truncated=(f'{name}: cannot start {command[0]!r} here: {cannot}',))
     return StepReport(name=name, reported=(name, *paths), failures=() if code == 0 else paths)
 
