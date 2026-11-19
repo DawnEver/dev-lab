@@ -16,7 +16,7 @@ import lab_commons.launch as _door
 from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
-from dev_lab.dev import venvpointer
+from dev_lab.dev import venvcurrent, venvpointer
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
 
@@ -100,6 +100,10 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
 
     The venv is exactly what the repo's committed lock pins (PIN + FRESHNESS, user ruling 2026-10-17): nothing is
     installed over it, so the lab-commons a repo's producers import is the one its commit was tested with.
+
+    A changed key BUILDS BESIDE (:func:`dev_lab.dev.venvcurrent.fresh`) and is published only after the install
+    succeeded: a tick running from the live environment never sees it rewritten under it, and a failed build is
+    abandoned with the live one untouched. The passed-over environment is left for ``venvprune``.
     """
     checkout = checkout_of(spec, home, repo)
     if step.dry:
@@ -120,14 +124,17 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
     env_key = _key(step, checkout, inputs, builds.install, spec.python, *builds.needs)
     live = venvpointer.current(checkout)  # the one rule (dev-lab #641): the env a launch there takes
     env['UV_PROJECT_ENVIRONMENT'] = str(live)
-    stamp = live / '.lab-deploy-env'
-    if _stamped(stamp, env_key):
+    if _stamped(live / '.lab-deploy-env', env_key):
         emit(f'  {repo.name}: {live.name} current (key {env_key[:12]})')
     else:
+        beside = venvcurrent.fresh(checkout)
+        env['UV_PROJECT_ENVIRONMENT'] = str(beside)
         if rc := step.change(f'{repo.name}: {builds.install}', [*step.tools.sh, builds.install], cwd=checkout, env=env):
+            venvcurrent.abandon(beside)
             return rc
-        stamp.parent.mkdir(parents=True, exist_ok=True)
-        stamp.write_text(env_key, encoding='utf-8')
+        beside.mkdir(parents=True, exist_ok=True)
+        (beside / '.lab-deploy-env').write_text(env_key, encoding='utf-8')
+        emit(f'  {repo.name}: {venvcurrent.publish(checkout, beside)}')
     return _native(step, home, checkout, builds, {**env, 'ENV_KEY': env_key}) if builds.native_build else 0
 
 

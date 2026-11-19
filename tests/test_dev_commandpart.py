@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from _forge_fake import make_repo, run_git
@@ -11,20 +11,24 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import commandpart
 from dev_lab.dev.cjk import CJK_RANGES
+from dev_lab.dev.datedlog import SCRIPT_TEST_TEMP_KIND, output_dir
 from dev_lab.dev.famtests.alwayson import required_ids
 from dev_lab.dev.platformparts import part_context, part_of
 from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit, producing
 
 _SHA = 'a' * 40
+_ENVS: list[dict[str, str]] = []
 
 
 def _wired(tmp_path: Path, monkeypatch, *, code: int | None, part: str = 'base') -> list[dict[str, Any]]:
     """The command exits *code* (``None``: it cannot be started) inside serve's producer of *part*; the posts."""
     posted: list[dict[str, Any]] = []
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
 
-    def run(argv: list[str], **_kwargs: object) -> object:
+    def run(argv: list[str], **kwargs: object) -> object:
         if argv[:2] == ['git', 'rev-parse']:
             return type('Done', (), {'returncode': 0, 'stdout': _SHA + '\n'})()
+        _ENVS.append(cast('dict[str, str]', kwargs.get('env')))
         if code is None:
             raise FileNotFoundError(2, 'not found', argv[0])
         return type('Done', (), {'returncode': code, 'stdout': ''})()
@@ -164,3 +168,14 @@ def test_the_program_is_resolved_on_path_so_a_windows_cmd_shim_runs(tmp_path: Pa
     assert commandpart.main(['--root', str(tmp_path), 'base', '--', 'npm', 'test']) == ProducerExit.PASS
     assert started[-1] == ['C:/node/npm.cmd', 'test']
     assert list(posted[0]['cells']) == ['npm test']
+
+
+def test_the_command_s_temp_is_the_dated_tree_never_system_temp(tmp_path: Path, monkeypatch) -> None:
+    """D27 for a script suite: the command runs with TMPDIR/TEMP/TMP under ``<output>/<date>/scripttest/``."""
+    _ENVS.clear()
+    _wired(tmp_path, monkeypatch, code=0)
+    assert commandpart.main(['--root', str(tmp_path), 'base', '--', 'npm', 'test']) == ProducerExit.PASS
+    (env,) = _ENVS
+    temp = Path(env['TMPDIR'])
+    assert env['TEMP'] == env['TMP'] == env['TMPDIR']
+    assert temp.parent == output_dir(tmp_path, SCRIPT_TEST_TEMP_KIND)
