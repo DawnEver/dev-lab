@@ -214,6 +214,18 @@ ALLOWED: Final[dict[Site, str]] = {
         'run(pdoc_argv(modules, out_dir, **options), cwd=root)',
     ): 'pdoc_argv takes `**options: object` so any caller option reaches it; run() is typed on str',
     (
+        'src/dev_lab/dev/storage.py',
+        'PLC0415',
+        'from dev_lab.dev.artefactstores import ArtefactRefused, check_rclone_config',
+    ): 'the forge journal and intent writers import storage.output_path, and artefactstores reaches them '
+    'through the forge layer, so a module-scope import here is a cycle; render() is a rare door',
+    (
+        'src/dev_lab/dev/storage.py',
+        'no-cover',
+        'if found is None:',
+    ): 'output always has an in-tree default (lab_commons.storage.root), so the refusal is a guard no '
+    'declaration can reach; it keeps the return type a Path instead of Path | None',
+    (
         'src/dev_lab/dev/forgerecords.py',
         'PLC0415',
         'from dev_lab.dev.retentionplan import load_policy as retention',
