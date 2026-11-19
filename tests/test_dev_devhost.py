@@ -153,14 +153,53 @@ def test_a_fresh_render_has_no_drift_and_an_unrendered_file_is_silent(tmp_path: 
     assert devhost.notice(tomllib.loads(LOCAL)) is None
 
 
-def test_a_hand_edit_is_drift_named_by_table(tmp_path: Path) -> None:
+def test_a_hand_edit_is_drift_named_by_key_and_its_owning_layer(tmp_path: Path) -> None:
     live = _rendered_machine(tmp_path)
     live['consent'] = {'endpoint': 'consent@elsewhere'}
     del live['capabilities']
-    assert devhost.drift(live) == ['[capabilities] is absent', '[consent] is not the render']
+    live['hpc']['reach'] = ['verification']
+    edit = f'change it there through its pull request, then {devhost.RENDER_DOOR}'
+    assert devhost.drift(live) == [
+        f'[capabilities].solverx.in_use.process is absent -- host layer (hosts/ws.toml): {edit}',
+        f'[capabilities].solverx.seats is absent -- host layer (hosts/ws.toml [dev], rendered): {edit}',
+        f'[consent].endpoint is not the render -- family layer (family.toml): {edit}',
+        f'[hpc].reach is not the render -- host layer (hosts/ws.toml [dev], rendered): {edit}',
+    ]
     line = devhost.notice(live)
     assert line is not None
     assert devhost.RENDER_DOOR in line
+
+
+def test_a_family_repo_without_a_path_is_drift_with_its_door(tmp_path: Path) -> None:
+    clone = _clone(tmp_path)
+    family = (clone / 'family.toml').read_text(encoding='utf-8')
+    (clone / 'family.toml').write_text(
+        family + '\n[family_repos]\ndev-lab = { remote = "https://forge.example/o/dev-lab.git", branch = "main" }\n'
+        'other = { remote = "https://forge.example/o/other.git", branch = "main" }\n',
+        encoding='utf-8',
+    )
+    live = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+    found = devhost.drift(live)
+    assert len(found) == 1, found
+    assert found[0].startswith('family repo other has no [repos] path')
+
+
+def test_the_local_door_refuses_a_rendered_table(tmp_path: Path) -> None:
+    live = _rendered_machine(tmp_path)
+    with pytest.raises(ValueError, match=r'\[consent\] is rendered from the config source'):
+        devhost.local_set(live, 'consent.endpoint', 'x')
+    assert devhost.local_set(live, 'user.text_editor_command', 'vi')['user'] == {'text_editor_command': 'vi'}
+
+
+def test_the_local_door_re_renders_a_rendered_machine_file(tmp_path: Path) -> None:
+    clone = _clone(tmp_path)
+    machine = _write(tmp_path, 'machine/m.toml', devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+    other = (tmp_path / 'other').as_posix()
+    argv = ['--machine', str(machine), 'local', 'set', 'repos.other', other, '--backups', str(tmp_path / 'b')]
+    assert devhost.main(argv) == 0
+    live = tomllib.loads(machine.read_text(encoding='utf-8'))
+    assert live['repos'] == {'dev-lab': 'C:/src/dev-lab', 'other': other}
+    assert devhost.drift(live) == []
 
 
 def test_a_dev_lab_checkout_off_the_declared_ref_is_drift(tmp_path: Path) -> None:
@@ -178,7 +217,8 @@ def test_a_stale_source_path_is_one_drift_line_and_from_names_the_clone(tmp_path
     (stale,) = devhost.drift(live)
     assert 'is not a clone here' in stale
     assert '--from' in stale
-    assert '[devhost] is not the render' in devhost.drift(live, clone)  # the control: --from renders, so it compares
+    compared = devhost.drift(live, clone)  # the control: --from renders, so it compares key by key
+    assert any(line.startswith('[devhost].source is not the render') for line in compared), compared
     machine = _write(tmp_path, 'machine/m.toml', devhost.dumps(live))
     assert devhost.main(['--machine', str(machine), 'drift', '--from', str(clone)]) == 1
 

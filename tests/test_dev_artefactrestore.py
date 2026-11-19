@@ -17,7 +17,7 @@ import pytest
 
 from dev_lab.dev import artefactpack, artefactrestore, artefactscan
 from dev_lab.dev.artefactindex import MemberFact
-from dev_lab.dev.artefactstores import ARCHIVE, ArtefactRefused, OutputBudgetRefused, Ref
+from dev_lab.dev.artefactstores import ARCHIVE, ArtefactRefused, OutputBudgetRefused, Ref, manifest_of
 
 PACK_LIMITS = {'max_members': 100, 'max_index_bytes': 65536, 'max_path_bytes': 4096}
 
@@ -99,7 +99,7 @@ def test_materialize_newpack_receipt_last_and_exact_budget(
     archive, ref, facts, parent = _fixture(tmp_path, monkeypatch, fault)
     paths = [] if fault == 'empty' else ['selected', 'zero']
     receipt = json.dumps(
-        {'schema': 'lab-commons-materialized-v1', 'archive': ref.manifest(), 'selected_paths': paths},
+        {'schema': 'lab-commons-materialized-v1', 'archive': manifest_of(ref), 'selected_paths': paths},
         sort_keys=True,
         ensure_ascii=True,
     ).encode()

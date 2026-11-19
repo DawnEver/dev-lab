@@ -290,8 +290,13 @@ def detached_worktree(root: Path, sha: str) -> Iterator[Path]:
 
 
 def door_upgrade(tree: Path, packages: Sequence[str] = ()) -> int:
-    """The one writer of a lock: ``dev_lab.dev.dep --lock-upgrade <tree>``, moving only *packages* when named."""
-    argv = [sys.executable, '-m', 'dev_lab.dev.dep', '--lock-upgrade', str(tree)]
+    """The one writer of a lock: ``dev_lab.dev.dep --lock-upgrade <tree>``, moving only *packages* when named.
+
+    It runs from *tree*'s own environment when it has one: that holds the dev_lab *tree*'s lock pins, while the
+    caller's may be older and refuse what the tree's bootstrap made (a ``.venv`` alias, 2026-11-19).
+    """
+    owned = [candidate for candidate in _interpreters(tree) if candidate.is_file()]
+    argv = [str(owned[0]) if owned else sys.executable, '-m', 'dev_lab.dev.dep', '--lock-upgrade', str(tree)]
     argv += [f'--upgrade-package={package}' for package in packages]
     return _exit(argv, tree)
 
@@ -300,13 +305,17 @@ def _exit(argv: list[str], tree: Path) -> int:
     return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
 
 
+def _interpreters(tree: Path) -> tuple[Path, Path]:
+    return current(tree) / 'Scripts' / 'python.exe', current(tree) / 'bin' / 'python'
+
+
 def _tree_python(tree: Path) -> str:
     """The interpreter the door synced into *tree*: it holds the NEW pin.
 
     Raises RelockFailed when *tree* has no ``.venv``: this interpreter holds the OLD pin, and rendering with it
     would carry the stale workflow the relock exists to replace.
     """
-    for candidate in (current(tree) / 'Scripts' / 'python.exe', current(tree) / 'bin' / 'python'):
+    for candidate in _interpreters(tree):
         if candidate.is_file():
             return str(candidate)
     msg = f'{tree} has no .venv: the render needs the interpreter that holds the new pin; run the lock door first'
