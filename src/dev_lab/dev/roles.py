@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.config import family
+from lab_commons.config import section
 from lab_commons.hpc.grants import declared_grants
 from lab_commons.hpc.needsets import BASE
 
@@ -78,6 +78,7 @@ __all__ = [
     'accounts',
     'executor_from',
     'host_refusals',
+    'machine_layer',
     'optional_needs_from',
     'optional_parts',
     'producible',
@@ -234,6 +235,19 @@ def _bound(layer: Mapping[str, Any], forge: str, repo: str, role: str) -> Execut
     return executor
 
 
+def machine_layer() -> dict[str, Any]:
+    """The machine's ``[roles]`` and ``[hpc]`` as lab-commons reads them; ``{}`` with no ``[roles]``.
+
+    :func:`lab_commons.config.section` reads the machine file over the family layer it declares.
+
+    A RENDERED machine file (a dev machine, an HPC account: :mod:`dev_lab.dev.devhost`) carries the family's tables
+    inline and declares no ``[family]``; an ops host points at the family file through ``[family]``. Both are read
+    here, so no tick refuses a binding its machine file holds.
+    """
+    roles = section('roles')
+    return {'roles': roles, 'hpc': section('hpc')} if roles else {}
+
+
 def roles_for(layer: Mapping[str, Any], forge: str, repo: str) -> Roles:
     """The roles family *layer* binds for *repo* (``<owner>/<repo>``) hosted on *forge* (``github`` or ``gitea``).
 
@@ -262,7 +276,7 @@ def roles_of(forge: Forge, *, layer: Mapping[str, Any] | None = None, env: Mappi
         Unbound: neither source holds the binding, or the binding is refused.
 
     """
-    layer = family() if layer is None else layer
+    layer = machine_layer() if layer is None else layer
     repo = f'{forge.owner}/{forge.repo}'
     if layer:
         return roles_for(layer, backend_for(forge).name, repo)
@@ -287,7 +301,7 @@ def roles_at(root: Path, *, layer: Mapping[str, Any] | None = None, env: Mapping
         Unbound: neither source holds the binding, or the binding is refused.
 
     """
-    layer = family() if layer is None else layer
+    layer = machine_layer() if layer is None else layer
     if not layer:
         return roles_of(Forge('', root.parent.name, root.name), layer=layer, env=env)
     return roles_of(forge_from_remote(root), layer=layer, env=env)
