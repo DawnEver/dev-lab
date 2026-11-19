@@ -12,7 +12,7 @@ from _arch_corpus import module_names
 from _rem_binding import bind_as_rem, repo_key
 from lab_commons.home import HOME_ENV
 
-from dev_lab.dev import agent_wiring, forgecli, taskbinding
+from dev_lab.dev import agent_wiring, forgetask, taskbinding
 from dev_lab.dev.branchset import FAMILY_EPHEMERAL, BranchSet
 from dev_lab.dev.sessionbranch import rename_remedy
 
@@ -66,14 +66,14 @@ def test_pr_create_suggests_the_bound_tasks_head(tmp_path: Path, monkeypatch: py
     env = {'CLAUDE_CODE_SESSION_ID': _SESSION}
     _task(tmp_path)
     monkeypatch.chdir(tmp_path)
-    assert forgecli._task_head_advice('pr/x', env) == (), 'planted control: unbound, nothing suggested'
+    assert forgetask.head_advice('pr/x', env) == (), 'planted control: unbound, nothing suggested'
     assert bind_as_rem(tmp_path, _SESSION, 'toolchain') == 'toolchain@a1'
-    [said] = forgecli._task_head_advice('pr/x', env)
+    [said] = forgetask.head_advice('pr/x', env)
     assert 'pr/toolchain/<feature>' in said
     assert 'git branch -m pr/x pr/toolchain/x' in said
-    assert forgecli._task_head_advice('pr/toolchain/x', env) == ()
+    assert forgetask.head_advice('pr/toolchain/x', env) == ()
     monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', _SESSION)
-    assert forgecli._task_head_advice('pr/x', None) == (said,), 'the process environment is the default'
+    assert forgetask.head_advice('pr/x', None) == (said,), 'the process environment is the default'
 
 
 def test_dev_lab_binds_nothing_so_its_venv_cannot_block_a_prompt() -> None:
