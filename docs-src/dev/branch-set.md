@@ -12,19 +12,37 @@ what to merge and what to delete, and `--apply` to delete the merged local ones.
 trunk = 'main'                 # required
 sessions = ['integrate/main']  # one per session or lane owner; [] when there are none
 ephemeral = ['pr/*']           # default []: glob namespaces of short-lived PR heads, pushable with no row
-prune_merged = true            # default false: every serving host deletes merged idle origin branches
-grace_hours = 24               # default 24: idle time before a branch is pruned (merged) or alarmed (unmerged)
+prune_merged = true            # default false: the prune role's executor deletes merged idle origin branches
+max_idle_hours = 24            # default 24: idle time before a branch is pruned (merged) or STALE (unmerged)
+max_ahead = 10                 # default unjudged: commits integration may hold that an unlanded branch lacks
 ```
+
+`grace_hours` is retired: renamed `max_idle_hours` (D46), refused by name.
 
 Read by `dev_lab.dev.branchset.declared_branchset(root)`; a missing or malformed table, or an unknown key,
 raises `BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
 
 A branch in an `ephemeral` namespace is the head of ONE pull request: the push hook and the census accept it
 without a row, and the forge deletes it once it is MERGED, no open PR has it as head and it has sat idle
-`grace_hours` (`branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
+`max_idle_hours` (`branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
 An UNMERGED one is never deleted by the survey (D30): it is listed and alarmed with its two doors -- MERGE it
 through a PR, or LAND it with a declared `git merge -s ours` PR, then `branchprune delete`.
 Registering a branch in `sessions` to get it pushed is never the remedy; push it under `pr/` instead.
+
+## The branch policy (D46)
+
+The `prune` role's executor (`dev_lab.dev.roles`: an hpc tick, or the forge feed of the host it is bound to,
+`[roles.<forge>] prune = { host = "<name>" }`) observes every unlanded origin branch (`dev_lab.dev.branchpolicy`):
+
+| row | when | doors |
+|---|---|---|
+| `over-ahead` | integration holds more than `max_ahead` commits the branch lacks | sync it through a sync PR, or retire it |
+| `stale` | its tip is idle `max_idle_hours` | land it through a PR, or retire it |
+
+Each row keeps ONE open issue titled `integration: branch policy <kind> <branch>` -- no sha, so a moved branch keeps
+it; re-observing writes nothing, and a cleared row closes it. Retiring is the user's call: LAND the branch with a
+declared `git merge -s ours` PR, then `branchprune delete`. A merged branch is never a row; the prune owns it, and
+re-checks at DELETE time, after a fresh fetch, that integration or the trunk still holds the judged sha.
 
 ## The census and the candidates
 
@@ -73,15 +91,13 @@ the pruner below alarms or deletes an undeclared origin branch.
 
 ## Pruning origin
 
-Finished branches still pile up on origin, so the forge prunes them (`dev_lab.dev.branchprune`). The host
-EVERY serving host -- no host owns this; a deletion is pinned to the judged sha, so a raced second delete is a no-op --
-surveys origin on every `forge serve` tick, after the tick's `git fetch --prune`. No other host reads or
-deletes anything. Undeclared branches whose tip has been idle for at least `grace_hours` are judged:
+Finished branches still pile up on origin, so the `prune` role's executor prunes them (`dev_lab.dev.branchprune`),
+after its `git fetch --prune`; a deletion is pinned to the judged sha, so a raced second delete is a no-op. Undeclared branches whose tip has been idle for at least `max_idle_hours` are judged:
 
 | origin branch | rule | what happens |
 |---|---|---|
 | declared (`trunk`, `sessions`, the integration branch) | none | never touched |
-| idle less than `grace_hours` | none | never touched |
+| idle less than `max_idle_hours` | none | never touched |
 | head of an open pull request | none | never touched |
 | tip is an ancestor of `origin/<integration>` or `origin/<trunk>` | `merged-idle` | DELETED through the forge API when `prune_merged = true`; otherwise listed as `deletable` |
 | anything else | `unmerged-stale` | ALARMED (`stale-branch`) with its age, never deleted |
@@ -98,7 +114,7 @@ deletes anything. Undeclared branches whose tip has been idle for at least `grac
 - **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The
   tick then raises one `pruned` alarm naming every deleted branch and its sha, so a deletion can be undone by
   pushing that sha back.
-- **Idle means the tip's committer date.** A branch nobody has committed to for `grace_hours` is idle, whenever
+- **Idle means the tip's committer date.** A branch nobody has committed to for `max_idle_hours` is idle, whenever
   it was pushed.
 
 ### Landed pull requests close

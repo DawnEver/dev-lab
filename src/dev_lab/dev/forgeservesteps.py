@@ -17,8 +17,7 @@ from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import escapes, forgerunstate, forgeship, hostalarm, retention
-from dev_lab.dev.branchdelete import serve_sweep
-from dev_lab.dev.branchprune import serve_prune
+from dev_lab.dev.branchpolicy import prune_duty
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.drift import step as drift_step
 from dev_lab.dev.family.watch import step as family_step
@@ -36,7 +35,6 @@ from dev_lab.dev.forgeintegration import tick as integration_tick
 from dev_lab.dev.forgeorphan import alarms as orphans
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
-from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
 from dev_lab.dev.forgereview import step as review_step
 from dev_lab.dev.forgescarce import red_alarms as scarce_red
 from dev_lab.dev.forgeschedule import load_schedule, starved_alarms
@@ -50,7 +48,6 @@ from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.prcontinue import serve_continue_landed
 from dev_lab.dev.prcurrent import ready_refusals
-from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.relock import carry
 from dev_lab.dev.roles import HPC, MERGE, PRUNE, REVIEW, roles_at
@@ -267,10 +264,10 @@ def repo_wide(
     """The repo-wide passes only the elected poller runs (:func:`dev_lab.dev.forgepoller.polls`).
 
     In order: open the continuations of landed branches (:mod:`dev_lab.dev.prcontinue`) -- before anything prunes a
-    branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
-    and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. The
-    family watch is per machine, not here (:func:`family`). Closing landed PRs, the sweep and both prunes are the
-    ``prune`` role, run here only where the family binds it to ``hpc`` (:mod:`dev_lab.dev.roles`, D70).
+    branch whose PR merged -- the prune duty (:func:`dev_lab.dev.branchpolicy.prune_duty`), tidy, starve, prompt,
+    relock, and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. The
+    family watch is per machine, not here (:func:`family`). The prune duty is the ``prune`` role's, run here only
+    where the family binds it to ``hpc`` (:mod:`dev_lab.dev.roles`, D70).
     """
     roles = roles_at(root)
     if roles.kind(MERGE) == HPC:
@@ -278,10 +275,7 @@ def repo_wide(
     if (prune := roles.kind(PRUNE)) != HPC:
         say(f'[serve] prune = "{prune}": its executor closes landed PRs, sweeps and prunes, never this hpc tick')
     else:
-        serve_close_landed(root, client(root), say=say, alarm=alarm)
-        serve_sweep(root, client(root), say=say, alarm=alarm)
-        serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
-        serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+        prune_duty(root, client(root), now=clock(), say=say, alarm=alarm)
     hygiene(root, client(root), say=say)
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)

@@ -88,6 +88,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'componentbump',
     'shatree',
     'branchprune',
+    'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)
     'branchdelete',
     'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)

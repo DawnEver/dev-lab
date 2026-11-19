@@ -10,8 +10,9 @@ and read by :func:`declared_branchset`::
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
     ephemeral = ['pr/*']           # the DEFAULT, so omit it; PR-head globs, deleted once the PR goes; [] opts out
     task_heads = 'pr/<task>/<feature>'  # the DEFAULT: the head an agent session bound to a task pushes; '' opts out
-    prune_merged = true            # any host's serve tick DELETES merged idle origin branches (idempotent)
-    grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
+    prune_merged = true            # the ``prune`` role's executor DELETES merged idle origin branches (idempotent)
+    max_idle_hours = 24            # how long a branch's tip sits idle before it is pruned (merged) or STALE (unmerged)
+    max_ahead = 10                 # how far integration may run ahead of an unlanded branch before it is OVER_AHEAD
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
 
@@ -76,7 +77,9 @@ __all__ = [
 ]
 
 _TABLE = '[tool.dev_lab.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours', 'task_heads'})
+_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'max_idle_hours', 'max_ahead', 'task_heads'})
+#: RETIRED-NAMES-REGISTERED: a key this module renamed, refused by name with its replacement (D46, 2026-11-19).
+_RENAMED: Final = {'grace_hours': 'renamed max_idle_hours (one idle bound for prune and STALE, D46)'}
 
 #: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
 #: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
@@ -117,10 +120,12 @@ class BranchSet:
 
     trunk: str
     sessions: frozenset[str]
-    #: Whether every host's serve tick deletes merged, idle origin branches; off, it only lists them.
+    #: Whether the ``prune`` role's executor deletes merged, idle origin branches; off, it only lists them.
     prune_merged: bool = False
-    #: How long a branch tip sits idle before it is pruned (merged) or alarmed (unmerged).
-    grace_hours: float = 24.0
+    #: How long a branch tip sits idle before it is pruned (merged) or STALE (unmerged).
+    max_idle_hours: float = 24.0
+    #: How many commits integration may hold that an unlanded branch lacks before it is OVER_AHEAD; ``None``: unjudged.
+    max_ahead: int | None = None
     #: Glob namespaces (``pr/*``) of SHORT-LIVED branches: pushable undeclared, each the head of one pull
     #: request, deleted by the forge once no open PR has it as head (:mod:`dev_lab.dev.branchprune`).
     ephemeral: tuple[str, ...] = ()
@@ -217,7 +222,7 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
         raise BranchSetNotDeclared(msg)
     if retired := [
         f'{key} is retired: {RETIRED[f"branchset.{key}"]}' for key in table if f'branchset.{key}' in RETIRED
-    ]:
+    ] + [f'{key} is retired: {_RENAMED[key]}' for key in table if key in _RENAMED]:
         msg = f'{_TABLE} in {manifest}: ' + '; '.join(retired)
         raise BranchSetKeyRetired(msg)
     unknown = sorted(set(table) - _KEYS)
@@ -239,22 +244,33 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
             f"(the default {FAMILY_TASK_HEADS!r}), or '' to judge no task head"
         )
         raise BranchSetNotDeclared(msg)
-    prune = table.get('prune_merged', False)
-    grace = table.get('grace_hours', 24.0)
-    if not isinstance(prune, bool):
-        msg = f'{_TABLE} prune_merged in {manifest} is {prune!r}; it must be true or false'
-        raise BranchSetNotDeclared(msg)
-    if isinstance(grace, bool) or not isinstance(grace, int | float) or grace < 0:
-        msg = f'{_TABLE} grace_hours in {manifest} is {grace!r}; it must be a non-negative number of hours'
-        raise BranchSetNotDeclared(msg)
+    prune, idle, ahead = _bounds(table, manifest)
     return BranchSet(
         trunk,
         frozenset(sessions),
         prune_merged=prune,
-        grace_hours=float(grace),
+        max_idle_hours=idle,
+        max_ahead=ahead,
         ephemeral=tuple(ephemeral),
         task_heads=heads,
     )
+
+
+def _bounds(table: dict, manifest: str) -> tuple[bool, float, int | None]:
+    """``prune_merged``, ``max_idle_hours`` and ``max_ahead`` of *table*, each refused by name when malformed."""
+    prune = table.get('prune_merged', False)
+    idle = table.get('max_idle_hours', 24.0)
+    ahead = table.get('max_ahead')
+    if not isinstance(prune, bool):
+        msg = f'{_TABLE} prune_merged in {manifest} is {prune!r}; it must be true or false'
+        raise BranchSetNotDeclared(msg)
+    if isinstance(idle, bool) or not isinstance(idle, int | float) or idle < 0:
+        msg = f'{_TABLE} max_idle_hours in {manifest} is {idle!r}; it must be a non-negative number of hours'
+        raise BranchSetNotDeclared(msg)
+    if ahead is not None and (isinstance(ahead, bool) or not isinstance(ahead, int) or ahead < 0):
+        msg = f'{_TABLE} max_ahead in {manifest} is {ahead!r}; it must be a non-negative whole number of commits'
+        raise BranchSetNotDeclared(msg)
+    return prune, float(idle), ahead
 
 
 def _short_refs(root: Path, prefix: str) -> tuple[str, ...] | None:

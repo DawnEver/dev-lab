@@ -10,6 +10,9 @@ A task hears what it subscribes to without anyone relaying it (`TASK-HEARS-ITS-F
   read; adding a label moves the thread's `updated_at`, so it is heard on the next tick. A 304 to the stored ETag
   costs nothing. Commit statuses are in no listing, so open PRs still have their statuses read.
 - **The tick is a setting:** `[forgefeed] tick_s` in the machine file, default 120 seconds.
+- **The prune duty rides on its own interval.** Where the family binds `prune = { host = "<this machine>" }`, every
+  `[forgefeed] prune_duty_s` (default 1800 s) the hearer fetches each declared checkout and runs the prune duty:
+  close landed PRs, sweep, prune merged heads, observe the branch policy ([branch set](branch-set.md)).
 - **Heard at the next prompt.** Each change lands in the inbox of every session bound to the task on that machine.
   A task with no bound session keeps it: `python -m dev_lab.dev.forgefeed task-pending <slug>` lists it, and the
   next session that binds the task hears it. A comment this machine posted is not news.
