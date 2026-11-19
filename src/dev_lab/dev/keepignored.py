@@ -20,23 +20,26 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from subprocess import CompletedProcess
 from typing import TYPE_CHECKING, Final
 
+from lab_commons import launch
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+__all__ = ['main', 'restore']
+
 #: git, resolved once.
 _GIT: Final = shutil.which('git') or 'git'
 
 
-def _git(root: Path, *args: str, stdin: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run([_GIT, *args], cwd=root, input=stdin, capture_output=True, check=False)
+def _git(root: Path, *args: str, stdin: bytes | None = None) -> CompletedProcess[bytes]:
+    return launch.run([_GIT, *args], cwd=root, input=stdin, capture_output=True, check=False)
 
 
 def _tracked(root: Path, rev: str) -> set[str]:
