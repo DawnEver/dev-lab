@@ -256,7 +256,8 @@ def test_bootstrap_refuses_an_own_venv_alias_to_another_environment(tmp_path) ->
         dep.main(['--bootstrap', str(lane)], cwd=tmp_path, run=run)
 
 
-def test_sync_defaults_to_cwd_full_extras_and_upgrades_each_git_requirement(tmp_path) -> None:
+def test_sync_defaults_to_no_extras_and_upgrades_each_git_requirement(tmp_path) -> None:
+    """D78: with nothing declared and no --extra, no extra is installed -- never every available one."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n'
         '[project.optional-dependencies]\ndev=[]\ngeometry=[]\n',
@@ -270,7 +271,7 @@ def test_sync_defaults_to_cwd_full_extras_and_upgrades_each_git_requirement(tmp_
 
     assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
     command = calls[0]
-    assert [command[i + 1] for i, flag in enumerate(command) if flag == '--extra'] == ['dev', 'geometry']
+    assert '--extra' not in command
     assert command[command.index('--upgrade-package') + 1] == 'peer'
 
 
@@ -388,7 +389,7 @@ def test_lock_upgrade_rewrites_the_lock_at_the_newest_then_builds_exactly_it(tmp
     assert sync[1] == 'sync'
     assert '--frozen' in sync
     assert '--upgrade-package' not in sync
-    assert sync[sync.index('--extra') + 1] == 'dev'
+    assert '--extra' not in sync, 'D78: nothing declared installs no extra'
 
 
 def test_lock_upgrade_refuses_an_unreasoned_hold_before_resolving_anything(tmp_path, capsys) -> None:
@@ -532,3 +533,20 @@ def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(t
     lock = _dep_project.uv_command(tmp_path, 'py', (), syncing=False, upgrade_packages=())
     assert lock[1] == 'lock'
     assert '--compile-bytecode' not in lock
+
+
+def test_an_explicit_extra_still_selects_it(tmp_path) -> None:
+    """PLANTED CONTROL for the no-extras default: an explicit --extra (e.g. all) is honoured."""
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\n[project.optional-dependencies]\ndev=[]\nall=[]\n',
+        encoding='utf-8',
+    )
+    calls = []
+
+    def run(argv, **_kwargs: object) -> SimpleNamespace:
+        calls.append(tuple(argv))
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+    assert dep.main(['--sync', '--extra', 'all'], cwd=tmp_path, run=run) == 0
+    command = calls[0]
+    assert [command[i + 1] for i, flag in enumerate(command) if flag == '--extra'] == ['all']

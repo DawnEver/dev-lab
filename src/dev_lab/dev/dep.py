@@ -77,10 +77,11 @@ from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
 from dev_lab.dev import _dep_cli, _dep_local, _dep_project, venvcurrent
+from dev_lab.dev._dep_aftersync import after_sync
 from dev_lab.dev._dep_components import changed
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
-from dev_lab.dev._dep_publish import publish_built, refresh_automode
+from dev_lab.dev._dep_publish import publish_built
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
 
@@ -494,9 +495,8 @@ def _run(
         return 1
     emit(result.render())
     stale = publish_built(root, prefix, live, ok=not result.returncode, census=census, base=base)
-    if syncing and not args.dry_run and not result.returncode:
-        refresh_automode(root, run=run)
-    return result.returncode or stale
+    synced = syncing and not args.dry_run and not result.returncode
+    return result.returncode or (after_sync(root, python, run=run) if synced else 0) or stale
 
 
 if __name__ == '__main__':

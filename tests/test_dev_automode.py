@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from lab_commons.hpc.grants import Grant
 
+from dev_lab.dev._dep_aftersync import refresh_automode
 from dev_lab.dev._famconfig_rows import GITIGNORE_CLAUDE_SECTION
 from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.dev.agentpolicy import POLICY, USER
@@ -34,7 +35,6 @@ from dev_lab.dev.automode import (
     refresh,
     spelled_commands,
 )
-from dev_lab.dev.dep import _refresh_automode
 from dev_lab.dev.famtests.visibility import plant_checkout
 
 _GIT = shutil.which('git') or 'git'
@@ -180,7 +180,7 @@ def test_an_unreadable_source_writes_nothing_and_says_why(tmp_path: Path, monkey
 
 def test_the_dependency_door_renders_it_in_its_own_process(tmp_path: Path) -> None:
     calls: list[list[str]] = []
-    _refresh_automode(tmp_path, run=lambda argv, **_kw: calls.append(list(argv)))
+    refresh_automode(tmp_path, run=lambda argv, **_kw: calls.append(list(argv)))
     ((*_, module, verb, flag, repo),) = calls
     assert (module, verb, flag, repo) == ('dev_lab.dev.automode', 'write', '--repo', str(tmp_path))
 
