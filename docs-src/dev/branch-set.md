@@ -14,7 +14,7 @@ sessions = ['integrate/main']  # one per session or lane owner; [] when there ar
 ephemeral = ['pr/*']           # default []: glob namespaces of short-lived PR heads, pushable with no row
 prune_merged = true            # default false: the prune role's executor deletes merged idle origin branches
 max_idle_hours = 24            # default 24: idle time before a branch is pruned (merged) or STALE (unmerged)
-max_ahead = 10                 # default unjudged: commits integration may hold that an unlanded branch lacks
+max_ahead = 10                 # default unjudged: unlanded commits a branch may hold
 ```
 
 `grace_hours` is retired: renamed `max_idle_hours` (D46), refused by name.
@@ -36,7 +36,7 @@ The `prune` role's executor (`dev_lab.dev.roles`: an hpc tick, or the forge feed
 
 | row | when | doors |
 |---|---|---|
-| `over-ahead` | integration holds more than `max_ahead` commits the branch lacks | sync it through a sync PR, or retire it |
+| `over-ahead` | the branch holds more than `max_ahead` commits integration lacks | land it now, and record why it ran past the limit (no test producer, nobody integrating, lane withheld finished work) -- never split it |
 | `stale` | its tip is idle `max_idle_hours` | land it through a PR, or retire it |
 
 Each row keeps ONE open issue titled `integration: branch policy <kind> <branch>` -- no sha, so a moved branch keeps

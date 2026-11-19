@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import branchpolicy, forgefeed
-from dev_lab.dev.branchpolicy import OVER_AHEAD, PREFIX, STALE, derive, observe, run_here
+from dev_lab.dev.branchpolicy import OVER_AHEAD, PREFIX, STALE, derive, observe, run_here, wanted
 from dev_lab.dev.branchprune import prune
 from dev_lab.dev.branchset import BranchSetKeyRetired, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.lanepolicy import load_policy
@@ -52,23 +52,43 @@ def test_the_retired_grace_hours_is_refused_naming_its_replacement(tmp_path: Pat
 # ---------------------------------------------------------------------------------------------- the rows
 
 
-def _behind(root: Path, commits: int) -> None:
-    """Move origin's integration *commits* ahead of every lane."""
-    _git(root, 'checkout', '-q', 'integrate/main')
+def _heavy(root: Path, commits: int) -> None:
+    """Give lane/unmerged *commits* more unlanded commits (it already holds one)."""
+    _git(root, 'checkout', '-q', 'lane/unmerged')
     for n in range(commits):
-        _commit(root, f'base-{n}', date='2026-10-13T11:30:00+00:00')
-    _git(root, 'push', '-q', 'origin', 'integrate/main')
+        _commit(root, f'work-{n}')
+    _git(root, 'push', '-q', 'origin', 'lane/unmerged')
     _git(root, 'fetch', '-q', '--prune', 'origin')
 
 
 def test_rows_name_the_unmerged_stale_and_the_over_ahead_lane_and_acquit_the_rest(tmp_path: Path) -> None:
-    """lane/unmerged is idle 72 h and 3 behind; merged, declared and young lanes are never rows (by NAME)."""
+    """lane/unmerged holds 3 unlanded commits and is idle 72 h; merged, declared and young lanes are never rows."""
     root, _ = _planted(tmp_path, extra='max_ahead = 2\nmax_idle_hours = 12\n')
-    _behind(root, 3)
+    _heavy(root, 2)
     rows = derive(root, declared_branchset(root), load_policy(root), now=NOW)
     assert {(row.kind, row.branch) for row in rows} == {(OVER_AHEAD, 'lane/unmerged'), (STALE, 'lane/unmerged')}
     over = next(row for row in rows if row.kind == OVER_AHEAD)
-    assert (over.ahead, over.behind) == (1, 11)  # 4 landed lanes x (commit + merge) + 3 base commits it lacks
+    assert over.ahead == 3
+
+
+def test_a_lane_at_its_bound_is_not_over_ahead(tmp_path: Path) -> None:
+    """PLANTED: exactly max_ahead unlanded commits is inside the bound."""
+    root, _ = _planted(tmp_path, extra='max_ahead = 3\nmax_idle_hours = 1000\n')
+    _heavy(root, 2)
+    assert derive(root, declared_branchset(root), load_policy(root), now=NOW) == ()
+
+
+def test_an_over_ahead_row_says_land_it_now_and_record_why_and_never_split(tmp_path: Path) -> None:
+    """User correction 2026-11-19: the doors are landing and recording the cause; no door splits the work."""
+    root, _ = _planted(tmp_path, extra='max_ahead = 0\nmax_idle_hours = 1000\n')
+    branchset, policy = declared_branchset(root), load_policy(root)
+    (row,) = derive(root, branchset, policy, now=NOW)
+    body = wanted((row,), branchset, policy.integration)[row.title]
+    assert 'land it now' in body
+    assert 'record why it ran past' in body
+    assert all(word in body for word in ('no test producer', 'nobody integrating', 'withheld finished work'))
+    lowered = body.lower()
+    assert not any(word in lowered for word in ('split', 'slice', 'smaller')), body
 
 
 def test_a_lane_inside_both_bounds_is_no_row(tmp_path: Path) -> None:

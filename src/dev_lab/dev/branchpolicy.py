@@ -1,10 +1,12 @@
-"""BRANCH-POLICY-OBSERVED: an unlanded origin branch too far behind integration, or idle too long, is an issue.
+"""BRANCH-POLICY-OBSERVED: an unlanded origin branch holding too much unlanded work, or idle too long, is an issue.
 
 User ruling D46 (integrator, 2026-11-19): the branch policy is a per-repo DECLARATION in
 ``[tool.dev_lab.branchset]`` (:mod:`dev_lab.dev.branchset`) and an OBSERVER derives what breaks it:
 
-* :data:`OVER_AHEAD` -- integration holds more than ``max_ahead`` commits the branch lacks (unjudged when the key
-  is absent). Its doors: SYNC it (merge integration into it through a sync PR), or RETIRE it.
+* :data:`OVER_AHEAD` -- the branch holds more than ``max_ahead`` commits integration lacks (unjudged when the key
+  is absent). Its doors (user correction 2026-11-19): LAND IT NOW, and RECORD WHY it ran past the limit -- no test
+  producer, nobody integrating, or the lane withheld finished work. Never "split it": the work is done, and the
+  cause of the backlog is what is recorded.
 * :data:`STALE` -- its tip has sat idle for ``max_idle_hours`` (the same bound the prune deletes a merged branch
   by). Its doors: LAND it through a PR, or RETIRE it.
 
@@ -75,12 +77,17 @@ class PolicyRow:
 
     def body(self, integration: str, bound: str) -> str:
         """The row, the bound it breaks, and its doors."""
-        first = 'sync it: merge {i} into it through a sync PR' if self.kind == OVER_AHEAD else 'land it: open its PR'
-        return (
+        head = (
             f'{self.branch} at {self.tip[:12]}: {self.ahead} ahead, {self.behind} behind {integration}, '
             f'idle {self.idle_h:.0f} h -- {bound}\n'
-            f'- {first.format(i=integration)}: python -m dev_lab.dev.forge pr create --head <pr/ head> '
-            f'--base {integration if self.kind == STALE else self.branch}\n'
+            f'- land it now: python -m dev_lab.dev.forge pr create --head {self.branch} --base {integration}\n'
+        )
+        if self.kind == OVER_AHEAD:
+            return head + (
+                f'- record why it ran past {bound}: no test producer, nobody integrating, or the lane withheld '
+                'finished work -- a comment on this issue\n'
+            )
+        return head + (
             f'- retire it (the user decides; its {self.ahead} commit(s) exist nowhere else): LAND it with a declared '
             f'`git merge -s ours` PR into a pr/ head, then {DOOR} {self.branch}\n'
         )
@@ -113,7 +120,7 @@ def derive(root: Path, branchset: BranchSet, policy: Policy, *, now: datetime) -
         counted = git_out(root, 'rev-list', '--left-right', '--count', f'{sha}...{ORIGIN}{policy.integration}')
         ahead, behind = (int(n) for n in counted.split()) if counted else (0, 0)
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
-        if branchset.max_ahead is not None and behind > branchset.max_ahead:
+        if branchset.max_ahead is not None and ahead > branchset.max_ahead:
             rows.append(PolicyRow(OVER_AHEAD, name, sha, ahead, behind, idle_h))
         if idle_h >= branchset.max_idle_hours:
             rows.append(PolicyRow(STALE, name, sha, ahead, behind, idle_h))

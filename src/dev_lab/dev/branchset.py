@@ -12,7 +12,7 @@ and read by :func:`declared_branchset`::
     task_heads = 'pr/<task>/<feature>'  # the DEFAULT: the head an agent session bound to a task pushes; '' opts out
     prune_merged = true            # the ``prune`` role's executor DELETES merged idle origin branches (idempotent)
     max_idle_hours = 24            # how long a branch's tip sits idle before it is pruned (merged) or STALE (unmerged)
-    max_ahead = 10                 # how far integration may run ahead of an unlanded branch before it is OVER_AHEAD
+    max_ahead = 10                 # how many unlanded commits a branch may hold before it is OVER_AHEAD
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
 
@@ -124,7 +124,7 @@ class BranchSet:
     prune_merged: bool = False
     #: How long a branch tip sits idle before it is pruned (merged) or STALE (unmerged).
     max_idle_hours: float = 24.0
-    #: How many commits integration may hold that an unlanded branch lacks before it is OVER_AHEAD; ``None``: unjudged.
+    #: How many commits a branch may hold that integration lacks before it is OVER_AHEAD; ``None``: unjudged.
     max_ahead: int | None = None
     #: Glob namespaces (``pr/*``) of SHORT-LIVED branches: pushable undeclared, each the head of one pull
     #: request, deleted by the forge once no open PR has it as head (:mod:`dev_lab.dev.branchprune`).
