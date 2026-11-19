@@ -53,9 +53,10 @@ from dev_lab.dev import metrics
 from dev_lab.dev._forgebackends import FORGE_SERVE, GITHUB, actions_token, backend_for
 from dev_lab.dev.ciworkflows import NIGHTLY_CRON
 from dev_lab.dev.forge import fetch_origin
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_history
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.hostedparts import hosted_parts
 from dev_lab.dev.jobparts import off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at

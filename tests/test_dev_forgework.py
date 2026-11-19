@@ -33,21 +33,12 @@ from dev_lab.dev import branchnotices, forge, forgecred, pradmit
 from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr, pr_close
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgememo import ReadMemo
 from dev_lab.dev.forgepages import ISSUE_PAGE
 from dev_lab.dev.forgestamp import provenance
-from dev_lab.dev.forgework import (
-    ACTIONS_BOT,
-    GITEA,
-    GITHUB,
-    Client,
-    Comment,
-    Issue,
-    PullRequest,
-    backend_for,
-    client_for,
-)
+from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITHUB, Client, Comment, Issue, PullRequest, backend_for
 from dev_lab.dev.netverb import Diagnosis, Disposition
 
 

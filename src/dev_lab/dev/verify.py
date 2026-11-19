@@ -51,9 +51,10 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import verifiedby
 from dev_lab.dev.forgeclaim import this_machine
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgerequest import offer_line
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
 from dev_lab.dev.localpart import part_selection, post_cited, post_part

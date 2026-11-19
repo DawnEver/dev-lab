@@ -53,12 +53,13 @@ from dev_lab.dev.artefactpack import pack, unpack
 from dev_lab.dev.artefacts import load_config, resolve, store_for
 from dev_lab.dev.artefactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, Ref, run_id
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgepublish import publish
 from dev_lab.dev.forgerecordkeep import UNIT_RESULT
 from dev_lab.dev.forgerecords import attach, listing
 from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from dev_lab.dev.forgeschedule import load_schedule
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 
 __all__ = [
     'GRAVE',

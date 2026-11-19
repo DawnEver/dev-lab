@@ -36,9 +36,10 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import native_session, sessionprs, taskgate, venvpointer
+from dev_lab.dev.forgeclient import client_for, stored_client
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, client_for, stored_client
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.sessionpoll import TESTS, green, poll_session, pull_of, reds
 
 if TYPE_CHECKING:

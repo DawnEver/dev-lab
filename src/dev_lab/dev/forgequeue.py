@@ -42,6 +42,7 @@ from dev_lab.dev.branchset import BranchSetNotDeclared
 from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecoalesce import behind
 from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
 from dev_lab.dev.forgehosts import HostCard, read_cards
@@ -59,7 +60,7 @@ from dev_lab.dev.forgeschedule import (
 )
 from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import derived, origin_url, part_context
