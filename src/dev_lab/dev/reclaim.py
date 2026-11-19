@@ -225,6 +225,22 @@ UNLANDED_DOORS: Final = (
 )
 
 
+#: The door of a submodule checked out at another commit than its tree records (dev-lab#791 wall 2): check out the
+#: recorded one; a commit of its own lands in the submodule's repository first.
+_SUBMODULE_DOOR: Final = (
+    'land any commit of its own in the submodule repository, then check out the recorded one: '
+    'git -C {tree} submodule update --checkout -- <path>'
+)
+
+
+def gitlinks(tree: Path, paths: tuple[str, ...]) -> tuple[str, ...]:
+    """The *paths* that are submodules (gitlinks, mode 160000) in *tree*'s index."""
+    if not paths:
+        return ()
+    out = git_out(tree, 'ls-files', '--stage', '-z', '--', *paths) or ''
+    return tuple(row.split('\t', 1)[1] for row in out.split('\0') if row.startswith('160000 '))
+
+
 def untracked_work(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | None:
     """Every UNTRACKED, NOT-IGNORED file of *tree* outside the *generated* globs; ``None`` when git cannot say.
 
@@ -242,8 +258,11 @@ def unlanded_work(tree: Path, generated: tuple[str, ...] = ()) -> str:
     loose = untracked_work(tree, generated) if blocking is not None else None
     if blocking is None or loose is None:
         return 'unreadable'
-    if blocking:
-        return f'tracked changes -- {UNLANDED_DOORS}: {_shown(blocking)}'
+    drifted = gitlinks(tree, blocking)
+    if edits := tuple(p for p in blocking if p not in drifted):
+        return f'tracked changes -- {UNLANDED_DOORS}: {_shown(edits)}'
+    if drifted:
+        return f'submodules at another commit than recorded -- {_SUBMODULE_DOOR.format(tree=tree)}: {_shown(drifted)}'
     return f'untracked work -- {UNLANDED_DOORS}: {_shown(loose)}' if loose else ''
 
 

@@ -50,7 +50,7 @@ from lab_commons.log import emit
 from dev_lab.dev import reclaimrun
 from dev_lab.dev.backgroundrun import repo_main
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
-from dev_lab.dev.checkout import authority_for, worktrees
+from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
 from dev_lab.dev.reclaim import QUIET_S, blockers, reclaim, removed_approved, unlanded_work
 from dev_lab.dev.worktree_outputs import linked, unheld_head, worktrees_door
@@ -104,6 +104,22 @@ def _next_batch(root: Path, lines: tuple[str, ...], limit: int | None) -> tuple[
     return (f'next     {deferred} deferred past the batch of {limit}; run it again to take the next: {door}',)
 
 
+def _standing(main: Path, name: str) -> Path | tuple[bool, str]:
+    """Linked tree *name* when its directory stands; else the removal's whole answer.
+
+    dev-lab#791: a timed-out removal left the record but not the directory, and the next ``--remove`` crashed in
+    ``unheld_head``. A gone directory holds nothing, so its stale record is pruned.
+    """
+    tree = linked(main, name)
+    if isinstance(tree, str):
+        return False, f'refused  {name}: {tree}; nothing was removed'
+    if tree.is_dir():
+        return tree
+    if git_out(main, 'worktree', 'prune') is None:
+        return False, f'refused  {name}: {tree} is already gone and git could not prune its record'
+    return True, f'removed  {tree}  (its directory was already gone; its stale record was pruned)'
+
+
 def remove(root: Path, name: str, *, census: Census = processes, quiet_s: float = QUIET_S) -> tuple[bool, str]:
     """THE NAMED-TREE REMOVAL DOOR: remove linked worktree *name*, branch or detached; ``(removed, the line)``.
 
@@ -115,9 +131,9 @@ def remove(root: Path, name: str, *, census: Census = processes, quiet_s: float 
     refusals stand: a live session, outputs that cannot move home. A branch stays for ``branchset --apply``.
     """
     main = root.resolve()
-    tree = linked(main, name)
-    if isinstance(tree, str):
-        return False, f'refused  {name}: {tree}; nothing was removed'
+    tree = _standing(main, name)
+    if isinstance(tree, tuple):
+        return tree
     if live := removal_holders(tree, census=census):
         return False, f'refused  {name}: the tree is live; nothing was removed\n{describe(live)}'
     if head := unheld_head(tree):
