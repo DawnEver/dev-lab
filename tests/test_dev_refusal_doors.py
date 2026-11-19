@@ -74,9 +74,11 @@ def test_the_key_only_hpc_doors_are_admitted() -> None:
 
 # ------------------------------------------------------------------- the door a refusal teaches is admitted
 
-#: A door the reason spells: a ``{python} -m`` module, a ``git`` verb, or a ``timeout`` bound, up to its clause end.
+#: A door the reason spells: a ``{python} -m`` / ``{door} -m`` module, a ``git`` verb, or a ``timeout`` bound, up to
+#: its clause end.
 _TAUGHT = re.compile(
-    r'(?:\{python\} -m [a-z_]+(?:\.[a-z_]+)+|\.venv/Scripts/python\.exe -m [a-z_]+(?:\.[a-z_]+)+|\bgit [a-z][a-z-]+'
+    r'(?:\{(?:python|door)\} -m [a-z_]+(?:\.[a-z_]+)+'
+    r'|\.venv/Scripts/python\.exe -m [a-z_]+(?:\.[a-z_]+)+|\bgit [a-z][a-z-]+'
     r'|\btimeout \d+m)[^;,()`\n]*?(?=[;,()`]|\. |\.$|$)'
 )
 _VERIFY = '.venv/Scripts/python.exe -m dev_lab.dev.verify -- tests/test_a.py'
@@ -91,7 +93,9 @@ def taught_doors(reason: str) -> list[str]:
     exits = '\n'.join(line for line in reason.splitlines()[1:] if not line.startswith('details: '))
     found = []
     for match in _TAUGHT.finditer(exits):
-        text = match.group(0).replace('{python}', '.venv/Scripts/python.exe')
+        text = (
+            match.group(0).replace('{python}', '.venv/Scripts/python.exe').replace('{door}', '.venv/Scripts/python.exe')
+        )
         text = re.sub(r'<[^>]*>', 'x', text)
         text = re.sub(r'([\w-]+)(?:\|[\w-]+)+', r'\1', text)
         found.append(re.sub(r'\s*\[[^\]]*\]', '', text).strip())
