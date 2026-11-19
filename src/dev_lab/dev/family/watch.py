@@ -26,7 +26,7 @@ from dev_lab.dev.family.horizontal import compare, features
 from dev_lab.dev.family.members import Facts, Finding, check
 from dev_lab.dev.family.origin import Snapshot, snapshot
 from dev_lab.dev.forgealarm import FAMILY, Alarm
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.hpcaccount.spec import KIT
 from dev_lab.dev.lockcheck import newest_uv, uv_version
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
