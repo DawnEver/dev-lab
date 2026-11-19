@@ -276,6 +276,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   generic patterns (home paths, non-reserved e-mails, chat ids, cloud folder names) plus an optional
   machine-local denylist reported by kind only. Each consumer calls ``scan_tree`` over its own
   checkout from one test. Not re-exported below.
+* :mod:`dev_lab.dev.reword` -- a new message for an UNPUSHED commit, re-committed onto a fresh ``-reworded`` branch.
 * :mod:`dev_lab.dev.security` -- the three scans a head passes before a merge: ruff ``S`` under the
   family's declared ignores, a tracked-credential scan reported by digest only, and the ``uv.lock`` pins
   against OSV. Not re-exported below.

@@ -56,6 +56,12 @@ pass_files = true
 id = "conventional-commit"
 run = ["python", "-m", "dev_lab.dev.commitmsg", "--commit-msg-file"]
 
+# PRIVATE-MARKERS on the message, judged BEFORE the commit exists: the pre-push scan of the same message refuses
+# a commit amend may no longer reword (GIT-COMMIT-AMEND), so the marker is caught while the reword is free.
+[[commit-msg]]
+id = "private-markers-message"
+run = ["python", "-m", "dev_lab.dev.privatemarkers", "--commit-msg-file"]
+
 # Warns on a malformed `Refs #N` / `Closes #N` / `Fixes #N` and never blocks (dev_lab.dev.issueref): `advisory`, so
 # the warning is shown although the row passes.
 [[commit-msg]]
