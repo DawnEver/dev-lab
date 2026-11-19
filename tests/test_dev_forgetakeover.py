@@ -256,3 +256,20 @@ def test_the_offline_verbs_name_the_integration_without_asking_the_forge(
     run_git(work, 'symbolic-ref', '--delete', 'refs/remotes/origin/HEAD')
     assert main(['plan', head], cwd=work, client=forge, fetch=lambda _r, _n: None) == 2, 'no origin/HEAD refuses'
     assert 'origin/HEAD' in capsys.readouterr().err
+
+
+def test_a_ref_name_finds_its_pr_because_the_door_resolves_it_first(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#9 F-0561b58ee833: ``HEAD``, a branch name or an upper-case sha is resolved BEFORE the forge is asked.
+
+    PLANTED CONTROL: the full sha finds the same PR, and a name nothing resolves is refused, naming its door.
+    """
+    work, forge, number, head = _open(tmp_path)
+    for spelling in ('HEAD', head.upper(), head):
+        fetched: list[int] = []
+        assert main(['plan', spelling], cwd=work, client=forge, fetch=lambda _r, n, got=fetched: got.append(n)) == 0
+        assert fetched == [number], spelling
+    capsys.readouterr()
+    assert main(['plan', 'no-such-branch'], cwd=work, client=forge, fetch=lambda _r, _n: None) == 2
+    assert 'pass its sha' in capsys.readouterr().err

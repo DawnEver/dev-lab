@@ -17,6 +17,7 @@ never the forge's -- only the forge posts ``tests/review``.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -115,6 +116,25 @@ def _commit(root: Path, sha: str) -> str:
     except OSError as missing:
         msg = f'{sha} is not a commit of {root}: name the checkout that holds it with --repo'
         raise TakeoverRefused(msg) from missing
+
+
+#: A sha prefix the forge can match without the checkout: hex, at least git's default abbreviation.
+_HEX_PREFIX: Final = re.compile(r'[0-9a-fA-F]{7,40}')
+
+
+def _lookup_key(root: Path, given: str) -> str:
+    """What the forge is asked with: *given* resolved in the checkout, else a bare sha prefix (lower-cased).
+
+    A ref name (``HEAD``, a branch, ``<sha>^``) means nothing to the forge's head match (#9 F-0561b58ee833), so it is
+    resolved first; only a hex prefix the checkout lacks yet goes to the forge as is -- its PR fetch brings the head.
+    """
+    try:
+        return _commit(root, given)
+    except TakeoverRefused:
+        if _HEX_PREFIX.fullmatch(given):
+            return given.lower()
+        msg = f'{given} names no commit of {root}: fetch it, or pass its sha (the forge matches heads by sha)'
+        raise TakeoverRefused(msg) from None
 
 
 def scope_of(root: Path, review: Review, head: str, *, base: str) -> Scope:
@@ -318,7 +338,7 @@ def main(
         if args.verb in _ON_A_PR:
             emit(f'[review] {_on_a_pr(args, root, origin, base, me)}')
             return 0
-        review, pull = review_at(root, base), pull_for(origin, args.sha)  # the forge first: the PR brings its head
+        review, pull = review_at(root, base), pull_for(origin, _lookup_key(root, args.sha))  # the PR brings its head
         if pull is not None:
             pull_in(root, pull.number)
         head = _commit(root, pull.head_sha if pull is not None else args.sha)
