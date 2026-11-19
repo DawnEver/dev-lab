@@ -5,7 +5,9 @@
 
 WHAT A STAGE HANDS A HOOK IS GIT'S OWN CONTRACT, read here once:
 
-* ``pre-commit`` -- the STAGED paths (``git diff --cached``, added/copied/modified/renamed). A hook
+* ``pre-commit`` -- the STAGED paths (``git diff --cached``, added/copied/modified/renamed); during a merge, only
+  the paths whose staged content differs from EVERY parent -- the merge's own content (a resolution), never a
+  file it merely brings in from the other side (user ruling 2026-11-13: whole-tree checks are the forge's). A hook
   selects among them with ``files``/``exclude``, gets them appended when ``pass_files``, and is skipped
   when it selects none unless ``always_run``. A hook that changes the working tree FAILS, so a
   formatter's rewrite is seen and staged by a person rather than committed unseen. Nothing is stashed:
@@ -13,14 +15,23 @@ WHAT A STAGE HANDS A HOOK IS GIT'S OWN CONTRACT, read here once:
 * ``commit-msg`` -- git's one argument, the message file, appended to every hook's ``run``.
 * ``pre-push`` -- git's ref lines (``<local ref> <local sha> <remote ref> <remote sha>``) read from
   stdin ONCE and piped to every hook's stdin; a hook with ``refs`` runs only when a pushed remote ref
-  matches and sees only those lines. Paths are the ones the pushed commits change, selected as above.
+  matches and sees only those lines. Paths are the ones the pushed commits change -- a merge commit counts only
+  its own content (git's dense combined diff), and a commit the remote already holds counts nothing.
 * ``post-commit`` -- no input; ADVISORY (``table.ADVISORY``): the commit is made, so the stage exits 0
   whatever its rows do.
 
-Every hook runs; the stage fails when any hook failed (an advisory stage never). Exit codes are each hook's own.
+Every hook runs; the stage fails when any hook failed (an advisory stage never, nor an ``advisory`` row). Exit codes
+are each hook's own.
+
+ONE INTERPRETER SERVES A STAGE. A row whose ``run`` is ``python -m <module>`` runs IN THIS PROCESS
+(:mod:`~dev_lab.dev.githooks.inprocess`: as ``__main__``, with the row's argv, cwd, stdin and env, its output
+captured, its exit code read off ``SystemExit``), so a stage of seven Python rows costs one interpreter start, not
+eight. Any other row -- a tool (``ruff``), a script path, a shell payload -- and a row declaring ``isolate = true``
+runs as its own subprocess (:func:`_subprocess_runner`).
 
 QUIET BY DEFAULT: a hook's output is captured, and a passing or skipped hook prints nothing. A failing
-hook's own output is replayed, then one summary line. ``LAB_HOOKS_VERBOSE=1`` also reports passes and skips.
+hook's own output is replayed, then one summary line. ``LAB_HOOKS_VERBOSE=1`` also reports passes and skips. An
+``advisory`` row only SPEAKS: its output is shown whatever its exit, and no exit of its fails the stage or is a wall.
 """
 
 from __future__ import annotations
@@ -38,12 +49,17 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import metrics
+from dev_lab.dev import metrics, venvpointer, walls
+from dev_lab.dev.githooks import inprocess
+from dev_lab.dev.githooks.gitfailure import git_failed
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
 __all__ = [
+    'PUSH_URL_ENV',
     'ZERO_SHA',
     'PushLine',
+    'borrowed_interpreter',
+    'in_process',
     'parse_push_lines',
     'pushed_paths',
     'resolve',
@@ -66,9 +82,6 @@ _ARG_BUDGET: Final = 24_000
 
 #: Set to ``1`` to report every pass and skip as well as the failures.
 VERBOSE_ENV: Final = 'LAB_HOOKS_VERBOSE'
-
-#: Set by a hook shim running the stage under the interpreter recorded at install, not the checkout's venv.
-FOREIGN_INTERPRETER_ENV: Final = 'LAB_COMMONS_HOOK_FOREIGN_INTERPRETER'
 
 
 @dataclass(frozen=True)
@@ -111,24 +124,47 @@ def _git(root: Path, *args: str) -> str:
 
 
 def staged_paths(root: Path) -> tuple[str, ...]:
-    """The paths a commit would add or change -- deletions name no file a hook could read."""
-    out = _git(root, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z')
+    """The paths a commit would add or change -- deletions name no file a hook could read.
+
+    During a merge (``MERGE_HEAD``), a path counts only when it differs from HEAD AND from every merged head: what
+    the merge itself writes, never what one side already held.
+    """
+    found = _diff_names(root, '--cached')
+    for parent in _merge_heads(root):
+        theirs = set(_diff_names(root, '--cached', parent))
+        found = tuple(path for path in found if path in theirs)
+    return found
+
+
+def _diff_names(root: Path, *args: str) -> tuple[str, ...]:
+    out = _git(root, 'diff', *args, '--name-only', '--diff-filter=ACMR', '-z')
     return tuple(path for path in out.split('\0') if path)
 
 
+def _merge_heads(root: Path) -> tuple[str, ...]:
+    """The heads an in-progress merge brings in (git's ``MERGE_HEAD`` file, one per line); none outside a merge."""
+    path = Path(_git(root, 'rev-parse', '--git-path', 'MERGE_HEAD').strip())
+    path = path if path.is_absolute() else root / path
+    return tuple(path.read_text(encoding='utf-8').split()) if path.is_file() else ()
+
+
 def pushed_paths(root: Path, lines: Sequence[PushLine], remote: str) -> tuple[str, ...]:
-    """The paths the pushed commits change: from the remote's sha when it has one, else what *remote* lacks."""
+    """The paths the pushed commits change: commits the remote lacks, a merge counting only its own content.
+
+    ``--cc`` (dense combined diff) names a merge's path only when it differs from every parent, so a merge of the
+    integration branch into a lane carries none of integration's files. The remote's old sha and its
+    remote-tracking refs bound the walk: a commit already published is not this push's.
+    """
     found: dict[str, None] = {}
     for line in lines:
         if line.deleted:
             continue
-        if line.remote_sha != ZERO_SHA and _has_commit(root, line.remote_sha):
-            out = _git(root, 'diff', '--name-only', '--diff-filter=ACMR', '-z', line.remote_sha, line.local_sha)
-        else:
-            exclude = [f'--remotes={remote}'] if remote else []
-            out = _git(
-                root, 'log', '--name-only', '--diff-filter=ACMR', '-z', '--format=', line.local_sha, '--not', *exclude
-            )
+        known = [line.remote_sha] if line.remote_sha != ZERO_SHA and _has_commit(root, line.remote_sha) else []
+        exclude = [f'--remotes={remote}'] if remote else []
+        out = _git(
+            root, 'log', '--cc', '--name-only', '--diff-filter=ACMR', '-z', '--format=', line.local_sha, '--not',
+            *known, *exclude,
+        )  # fmt: skip
         found.update(dict.fromkeys(path.strip() for path in out.split('\0') if path.strip()))
     return tuple(found)
 
@@ -155,11 +191,6 @@ def resolve(run: Sequence[str], python: str = sys.executable) -> list[str]:
         return [python, *rest]
     found = shutil.which(first, path=str(Path(python).parent)) or shutil.which(first)
     return [found or first, *rest]
-
-
-def needs_only_lab_commons(hook: Hook) -> bool:
-    """Whether *hook* runs under any lab_commons interpreter: ``python -m lab_commons...`` and nothing else."""
-    return ' '.join(hook.run).startswith('python -m lab_commons')
 
 
 def _chunks(paths: Sequence[str]) -> list[list[str]]:
@@ -194,6 +225,20 @@ def _subprocess_runner(argv: list[str], cwd: Path, stdin: str | None, env: Mappi
     return done.returncode, done.stdout or ''
 
 
+#: How a row that runs in this interpreter begins (:func:`in_process`); the module follows.
+_PYTHON_M: Final = ('python', '-m')
+
+
+def in_process(hook: Hook) -> bool:
+    """Whether *hook* runs in this interpreter: a ``python -m <module>`` row not declaring ``isolate``."""
+    return not hook.isolate and len(hook.run) > len(_PYTHON_M) and hook.run[: len(_PYTHON_M)] == _PYTHON_M
+
+
+def _in_process_runner(argv: list[str], cwd: Path, stdin: str | None, env: Mapping[str, str]) -> tuple[int, str]:
+    """:data:`Runner` for a ``[python, -m, module, *args]`` argv, run in this interpreter (:func:`in_process`)."""
+    return inprocess.run(argv[2], argv[3:], cwd, stdin, env)
+
+
 def _argvs(hook: Hook, stage: str, git_args: Sequence[str], chosen: Sequence[str]) -> list[list[str]]:
     base = resolve(hook.run)
     if stage == 'commit-msg':
@@ -204,20 +249,33 @@ def _argvs(hook: Hook, stage: str, git_args: Sequence[str], chosen: Sequence[str
 
 
 def _run_hook(
-    hook: Hook, argvs: list[list[str]], root: Path, stdin: str | None, runner: Runner, *, env: Mapping[str, str]
-) -> tuple[int, str]:
-    """Each argv in turn, stopping at the first failure; at pre-commit a rewrite of the tree fails too."""
-    before = worktree_diff(root) if hook.stage == 'pre-commit' else ''
-    output = ''
+    hook: Hook,
+    argvs: list[list[str]],
+    root: Path,
+    stdin: str | None,
+    runner: Runner | None,
+    *,
+    env: Mapping[str, str],
+    tree: str,
+) -> tuple[int, str, str]:
+    """Each argv in turn, stopping at the first failure; ``(exit, output, the working tree's diff after it)``.
+
+    *runner* ``None`` runs the row in this interpreter when :func:`in_process`, else as a subprocess. At pre-commit
+    a hook that changes the working tree (*tree*, the diff before it) FAILS, so a formatter's rewrite is seen and
+    staged by a person; the tree it leaves is the next hook's baseline, so each hook costs one diff and only the
+    rewriter is blamed.
+    """
+    run = runner or (_in_process_runner if in_process(hook) else _subprocess_runner)
+    code, output = 0, ''
     for argv in argvs:
-        code, out = runner(argv, root, stdin, {**env, **hook.env})
+        code, out = run(argv, root, stdin, {**env, **hook.env})
         output += out
         if code:
-            return code, output
-    if hook.stage == 'pre-commit' and worktree_diff(root) != before:
+            break
+    if hook.stage == 'pre-commit' and (after := worktree_diff(root)) != tree:
         rewrote = f'[githooks] pre-commit {hook.id}: it changed the working tree; review, stage, commit again'
-        return 1, f'{output}{rewrote}\n'
-    return 0, output
+        return code or 1, f'{output}{rewrote}\n', after
+    return code, output, tree
 
 
 def _note(line: str) -> None:
@@ -226,8 +284,14 @@ def _note(line: str) -> None:
         emit(line)
 
 
-def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequence[PushLine]) -> tuple[Hook, ...]:
-    """The hooks of *stage* to run -- none for a pre-push with no ref line.
+def _selected(
+    stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequence[PushLine], *, borrowed: bool
+) -> tuple[Hook, ...] | None:
+    """The hooks of *stage* to run -- none for a pre-push with no ref line; ``None`` when *stage* is refused.
+
+    Under a BORROWED interpreter (the shim found no venv of this checkout's own that imports dev_lab) every row
+    would run in the wrong environment, so a judged stage is REFUSED naming the bootstrap door, and an advisory
+    stage runs only its ``bootstraps`` rows -- the ones that create the missing venv (dev-lab #639).
 
     Git's protocol: a push whose every ref is already up to date (a retry after an attempt that
     landed) still runs pre-push, with no ref line. It publishes nothing, so nothing is judged.
@@ -236,18 +300,39 @@ def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequen
         _note('[githooks] pre-push: no ref line on stdin -- this push publishes nothing, so nothing is judged')
         return ()
     chosen = tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
-    if os.environ.get(FOREIGN_INTERPRETER_ENV) != '1':
+    if not borrowed:
         return chosen
+    door = f'{Path(sys.executable).as_posix()} -m dev_lab.dev.dep --bootstrap {root.as_posix()}'
+    if stage not in ADVISORY:
+        emit(
+            f'[githooks] {stage}: refused -- {root.as_posix()} has no venv of its own that imports dev_lab '
+            f'(missing or half-built), and its rows run only there. Bootstrap it: {door}',
+            err=True,
+        )
+        return None
     for hook in chosen:
-        if not needs_only_lab_commons(hook):
-            _note(f'[githooks] {stage} {hook.id}: skipped -- needs the repo venv, which this checkout lacks')
-    return tuple(hook for hook in chosen if needs_only_lab_commons(hook))
+        if hook.bootstraps:
+            emit(
+                f'[githooks] {stage}: this checkout has no venv -- {hook.id} bootstraps it; else run: {door}', err=True
+            )
+    return tuple(hook for hook in chosen if hook.bootstraps)
 
 
-def _report(stage: str, hook_id: str, code: int, output: str) -> int:
-    """*code*, after showing a failure's own output -- a pass is shown only under :data:`VERBOSE_ENV`."""
+def _report(stage: str, hook: Hook, code: int, output: str) -> int:
+    """*code*, after showing a failure's own output -- a pass is shown only under :data:`VERBOSE_ENV`.
+
+    An ``advisory`` row's output is shown whatever its exit, and its exit is never a failure: ``0``.
+    """
+    if hook.advisory:
+        if output.strip():
+            emit(output.rstrip(), err=True)
+        if code:
+            emit(f'[githooks] {stage} {hook.id}: advisory (exit {code}); not a refusal', err=True)
+        else:
+            _note(f'[githooks] {stage} {hook.id}: passed')
+        return 0
     if not code:
-        _note(f'[githooks] {stage} {hook_id}: passed')
+        _note(f'[githooks] {stage} {hook.id}: passed')
     elif output.strip():
         emit(output.rstrip(), err=True)
     return code
@@ -260,8 +345,9 @@ def run_stage(
     root: Path,
     stdin: str = '',
     hooks: Sequence[Hook] | None = None,
-    runner: Runner = _subprocess_runner,
+    runner: Runner | None = None,
     env: Mapping[str, str] | None = None,
+    borrowed: bool = False,
 ) -> int:
     """Run every hook of *stage* in *root*; ``0`` when all passed or were skipped, else ``1``.
 
@@ -271,20 +357,45 @@ def run_stage(
         root: the checkout's top level; every hook runs there.
         stdin: what git wrote on the hook's stdin (pre-push: the ref lines).
         hooks: the hooks to run; the merged table of *root* when omitted.
-        runner: runs ``(argv, cwd, stdin, env)`` and returns ``(exit code, output)``; injected for tests only.
+        runner: runs ``(argv, cwd, stdin, env)`` and returns ``(exit code, output)``; injected for tests only. When
+            omitted, a row runs in this interpreter when :func:`in_process`, else as a subprocess.
         env: variables every hook of the stage runs with (beneath its own ``env``): ``integrate`` points git at
             the repository while *root* holds the merged tree's manifest.
+        borrowed: the running interpreter is not *root*'s own venv (:func:`borrowed_interpreter`).
 
     """
     if stage not in STAGES:
         msg = f'unknown hook stage {stage!r}; the family runs {list(STAGES)}'
         raise ValueError(msg)
+    try:
+        return _run_stage(
+            stage, git_args, root=root, stdin=stdin, hooks=hooks, runner=runner, env=env, borrowed=borrowed
+        )
+    except subprocess.CalledProcessError as failed:
+        emit(git_failed(stage, failed), err=True)
+        return 1
+
+
+def _run_stage(
+    stage: str,
+    git_args: Sequence[str],
+    *,
+    root: Path,
+    stdin: str,
+    hooks: Sequence[Hook] | None,
+    runner: Runner | None,
+    env: Mapping[str, str] | None,
+    borrowed: bool,
+) -> int:
     push = parse_push_lines(stdin) if stage == 'pre-push' else ()
-    selected_hooks = _selected(stage, root, hooks, push)
+    selected_hooks = _selected(stage, root, hooks, push, borrowed=borrowed)
+    if selected_hooks is None:
+        return 1
     paths: tuple[str, ...] = ()
+    tree = ''
     if stage == 'pre-commit':
-        paths = staged_paths(root)
-    failed: list[str] = []
+        paths, tree = staged_paths(root), worktree_diff(root)
+    failed: dict[str, str] = {}
     for hook in selected_hooks:
         lines = push
         if hook.refs is not None:
@@ -300,19 +411,35 @@ def run_stage(
             continue
         hook_stdin = ''.join(f'{line.line}\n' for line in lines) if stage == 'pre-push' else None
         argvs = _argvs(hook, stage, git_args, chosen)
-        if _report(stage, hook.id, *_run_hook(hook, argvs, root, hook_stdin, runner, env=env or {})):
-            failed.append(hook.id)
+        code, output, tree = _run_hook(
+            hook, argvs, root, hook_stdin, runner, env=_stage_env(stage, git_args, env), tree=tree
+        )
+        if _report(stage, hook, code, output):
+            failed[hook.id] = output
     _log(root, stage, failed, push)
-    return _verdict(stage, failed)
+    return _verdict(stage, list(failed))
 
 
-def _log(root: Path, stage: str, failed: Sequence[str], push: Sequence[PushLine] = ()) -> None:
+#: The URL git pushes to (its second pre-push argument), handed to every pre-push hook; a hook's argv cannot carry it.
+PUSH_URL_ENV: Final = 'DEV_LAB_PUSH_URL'
+
+
+def _stage_env(stage: str, git_args: Sequence[str], env: Mapping[str, str] | None) -> dict[str, str]:
+    """*env*, plus at pre-push :data:`PUSH_URL_ENV`."""
+    pushed = {PUSH_URL_ENV: git_args[1]} if stage == 'pre-push' and len(git_args) > 1 else {}
+    return {**(env or {}), **pushed}
+
+
+def _log(root: Path, stage: str, failed: Mapping[str, str], push: Sequence[PushLine] = ()) -> None:
     """The stage's metrics (:mod:`dev_lab.dev.metrics`): one refusal per failed hook, and every pre-push as a push.
+
+    A refusal goes through :func:`dev_lab.dev.walls.refused`, so it is this session's wall too: the failed hook's
+    *failed* output (``hook id -> output``) is what says whether it named a door.
 
     A push line names the branch and tip it publishes (the first ref it does not delete): a branch's first push
     is where its edit starts.
     """
-    refused = () if stage in ADVISORY else failed
+    refused = {} if stage in ADVISORY else failed
     if stage != 'pre-push' and not refused:
         return
     repo = metrics.repo_of(root)
@@ -326,8 +453,8 @@ def _log(root: Path, stage: str, failed: Sequence[str], push: Sequence[PushLine]
             vcs_ref_head_name=branch,
             vcs_ref_head_revision=head.local_sha if head else '',
         )
-    for hook_id in refused:
-        metrics.record(metrics.REFUSAL, root=root, repo=repo, rule=hook_id, reason=stage)
+    for hook_id, output in refused.items():
+        walls.refused(root, repo=repo, rule=hook_id, reason=stage, remedy=walls.has_remedy(output))
 
 
 def _verdict(stage: str, failed: Sequence[str]) -> int:
@@ -345,4 +472,14 @@ def main(stage: str, git_args: Sequence[str]) -> int:
     """The ``run`` subcommand: the checkout's top level from git, stdin read once when the stage has one."""
     root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').strip())
     stdin = sys.stdin.read() if stage == 'pre-push' and not sys.stdin.isatty() else ''
-    return run_stage(stage, git_args, root=root, stdin=stdin)
+    return run_stage(stage, git_args, root=root, stdin=stdin, borrowed=borrowed_interpreter(root))
+
+
+def borrowed_interpreter(root: Path) -> bool:
+    """Whether this interpreter is NOT *root*'s own environment.
+
+    The shim falls back to the main checkout's venv, or the one recorded at install, only when *root* has no venv
+    that imports dev_lab. Its own is the one :func:`dev_lab.dev.venvpointer.current` names: a legacy ``.venv``
+    directory the pointer passed over is not.
+    """
+    return Path(sys.prefix).resolve() != venvpointer.current(root).resolve()

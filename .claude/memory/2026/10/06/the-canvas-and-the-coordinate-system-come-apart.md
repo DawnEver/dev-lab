@@ -9,8 +9,8 @@ accessed: 2026-10-06
 
 # The canvas and the coordinate system come apart
 
-The user directive for this slice was *"允许彻底重构！"* under 第一性原理 / 抛弃历史包袱 / 奥卡姆剃刀 /
-唯一真相源 / 分层解耦 / 不要向后兼容, and the defect a sibling measured against the consumer that must
+The user directive for this slice was *"A thorough refactor is allowed!"* (user, translated) under first principles / discard historical baggage / Occam's razor /
+single source of truth / layered decoupling / no backward compatibility, and the defect a sibling measured against the consumer that must
 merge in was: **`Renderer` conflated the CANVAS, the COORDINATE SYSTEM and the BACKEND.** Because it
 collapsed them it had to invent an answer to "which coordinate system?" — and it invented "the one
 and only one, plain cartesian, built at construction". Three shapes were therefore INEXPRESSIBLE:
@@ -84,3 +84,5 @@ Ratchet: `CONSTANT_FLOOR` re-measured 357 → 358 (448 constants read, the same 
 stays 90). Everything else passed unchanged, including the module-size band and the verb-parity
 guard, which now checks TWO protocols and reads them from the source so it holds with neither
 plotting library installed.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

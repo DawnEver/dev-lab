@@ -51,6 +51,7 @@ from dev_lab.dev import (
 )
 from dev_lab.dev.artefactfolder import FolderStore
 from dev_lab.dev.artefactindex import MemberFact
+from dev_lab.dev.artefactstores import manifest_of, run_id_of
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, DONE, OPEN, Claim, Work, assess
 from dev_lab.dev.forgecoalesce import DRAINING
@@ -59,7 +60,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart, PartRefusal, part_context
-from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
+from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owner_of, release_reason
 
 SHA = 'c' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -374,8 +375,8 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        release_reason(ProducerExit.INCONCLUSIVE, outage=False),
-    )
+        release_reason(ProducerExit.PART_REFUSED, outage=None, detail=': INCONCLUSIVE: 3 lost'),
+    ), 'W5 (dev-lab#644): a part refusal is its own class, requeued by it'
     assert routed == [{'sha': SHA}], 'its reported reds are real reds: an inconclusive record is still routed'
 
 
@@ -396,7 +397,7 @@ def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> N
     assert _tick(store, _Unbuilt(home / 'r')) is None, 'released and dropped'
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)} {log}',
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).replace(' class=', f' {log} class='),
     )
     assert forgerunstate.live('https://f/o/r.git') == ()
     _start(home, store)
@@ -444,18 +445,13 @@ def _plant_schema_1() -> dict[str, Any]:
 
 
 @pytest.mark.usefixtures('home')
-def test_a_live_schema_1_run_is_adopted_losslessly_and_written_back_at_this_schema() -> None:
-    """A tool redeployed under a live run adopts it: every field carried, the old job name kept as an alias."""
+def test_a_live_schema_1_run_is_refused_by_name_with_the_remedy_and_left_in_place() -> None:
+    """FORMATS-MIGRATE-ONCE: an older schema is never read; the file is named, its remedy given, and kept."""
     raw = _plant_schema_1()
-    (run,) = forgerunstate.live(raw['repo_url'])
-    carried = {key: value for key, value in dataclasses.asdict(run).items() if key in raw and key != 'schema'}
-    as_read = {k: tuple(v) if isinstance(v, list) else v for k, v in raw.items() if k != 'schema'}
-    assert carried == as_read
-    assert run.schema == forgerunstate.SCHEMA
-    assert run.job_aliases == (f'run-{raw["sha"][:12]}',), 'jobs sbatched under schema 1 bear the sha-only name'
     (path,) = forgerunstate.directory().glob('*.json')
-    assert json.loads(path.read_text(encoding='utf-8'))['schema'] == forgerunstate.SCHEMA, 'written back'
-    assert forgerunstate.live(raw['repo_url']) == (run,), 'deterministic: a second read of the upgraded file agrees'
+    with pytest.raises(forgerunstate.ForeignSchema, match=r'schema 1.*squeue --me'):
+        forgerunstate.live(raw['repo_url'])
+    assert json.loads(path.read_text(encoding='utf-8')) == raw, 'a refused file is not rewritten'
 
 
 def test_a_new_run_has_no_job_alias(home: Path) -> None:
@@ -556,11 +552,11 @@ def test_declared_outputs_are_stored_and_named_in_the_record_before_it_is_posted
     assert _tick(store, slurm, root=root) is None
     (entry,) = records.read_record(posted[0])['artefacts']
     (ref,) = FolderStore(big, 'r').list(None)
-    assert entry == ref.manifest()
+    assert entry == manifest_of(ref)
     assert ref.backend == 'folder'
     index = records.read_record(posted[0])['artefact_indexes']
     assert index == {ref.sha256: {'schema': 'lab-commons-members-v1', 'members': [_b_member(slurm)]}}
-    assert artefacts.parsed_run_id(ref.run_id)['account'] == 'alice', "the claim owner's cluster account writes it"
+    assert artefacts.parsed_run_id(run_id_of(ref))['account'] == 'alice', "the claim owner's cluster account writes it"
     fetched = FolderStore(big, 'r').get(ref, home / 'fetched')
     with tarfile.open(fileobj=io.BytesIO(fetched.read_bytes())) as tar:
         assert tar.getnames() == ['fields/b.h5'], 'only the declared output; undeclared.log stays on the cluster'
@@ -617,7 +613,7 @@ def test_shipping_exact_expanded_budget_keeps_reference_contract(home: Path, mon
     assert _tick(store, slurm, root=root) is None
     (entry,) = records.read_record(posted[0])['artefacts']
     (ref,) = FolderStore(big, 'r').list(None)
-    assert entry == ref.manifest()
+    assert entry == manifest_of(ref)
     assert set(entry) == {'backend', 'ref', 'bytes', 'sha256'}
 
 
@@ -638,7 +634,7 @@ def test_store_filesystem_failure_remains_live_and_unpublished(home: Path, monke
     assert forgerunstate.live('https://f/o/r.git') == ()
     (entry,) = records.read_record(posted[0])['artefacts']
     (ref,) = FolderStore(big, 'r').list(None)
-    assert entry == ref.manifest()
+    assert entry == manifest_of(ref)
     assert list(Path(run.output).glob(f'*{artefacts.ARCHIVE}')) == [], 'the packed archive is never left behind'
     assert alarms == []
 
@@ -686,8 +682,8 @@ def test_real_shipment_record_catalogue_and_selection_need_no_archive(
     record = records.read_record(
         posted[0], max_compressed_bytes=65536, max_decompressed_bytes=262144, expected_sha256=digest
     )
-    ref = artefacts.Ref.of(record['artefacts'][0])
-    (big / ref.key).unlink()  # a catalogue is an index declaration, never an archive verification
+    ref = artefacts.ref_of_entry(record['artefacts'][0])
+    (big / ref.ref).unlink()  # a catalogue is an index declaration, never an archive verification
     _policy(
         root,
         'record_max_compressed_bytes = 65536\nrecord_max_decompressed_bytes = 262144\n'
@@ -741,7 +737,7 @@ def test_real_shipment_record_query_fetch_and_selective_materialization(
         expected_sha256=record_sha,
     )
     (declaration,) = record['artefacts']
-    ref = artefacts.Ref.of(declaration)
+    ref = artefacts.ref_of_entry(declaration)
     limits = {
         'max_members': cast('int', config.member_index_max_members),
         'max_index_bytes': cast('int', config.member_index_max_bytes),
@@ -755,7 +751,7 @@ def test_real_shipment_record_query_fetch_and_selective_materialization(
     assert selected == tuple(member for member in complete if member.path == 'fields/b.h5')
     destination = home / 'materialization'
     destination.mkdir()
-    stored = big / ref.key
+    stored = big / ref.ref
     store = FolderStore(big, 'r')
     if corrupt == 'stored':
         with stored.open('r+b') as stream:
@@ -791,7 +787,7 @@ def test_real_shipment_record_query_fetch_and_selective_materialization(
             receipt = json.loads((recovered / 'materialization-complete.json').read_bytes())
             assert receipt == {
                 'schema': 'lab-commons-materialized-v1',
-                'archive': ref.manifest(),
+                'archive': manifest_of(ref),
                 'selected_paths': ['fields/b.h5'],
             }
             assert hashlib.sha256(stored.read_bytes()).hexdigest() == ref.sha256
@@ -1033,7 +1029,10 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
+    assert post['description'].startswith(
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).removesuffix(' class=environment')
+    ), post['description']
+    assert owner_of('error', post['description']) is Owner.ENVIRONMENT
 
 
 def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_failure_is_retried(
@@ -1071,7 +1070,10 @@ def test_a_run_whose_own_sha_refuses_to_publish_settles_once_and_a_transient_fai
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
-    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False)), post['description']
+    assert post['description'].startswith(
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).removesuffix(' class=environment')
+    ), post['description']
+    assert owner_of('error', post['description']) is Owner.ENVIRONMENT
     assert cause in post['description']
 
 

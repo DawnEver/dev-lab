@@ -39,11 +39,13 @@ from dev_lab.dev import (
     forgebreakglass,
     forgedraft,
     forgeheadgate,
+    forgehold,
     forgehosts,
     forgeintegration,
     forgeissue,
     forgelabel,
-    forgemerge,
+    forgemergecall,
+    forgemergeready,
     forgenotice,
     forgeoutbox,
     forgeprotect,
@@ -64,19 +66,26 @@ from dev_lab.dev import (
     forgetidy,
     forgetry,
     forgewatch,
+    issuekind,
     metrics,
     pradmit,
     prcontinue,
     prcurrent,
+    privatemarkers,
     prlanded,
     prsuperseded,
     pushwatch,
     servelock,
+    taskbinding,
+    taskgate,
+    walls,
 )
 from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest, client_for
+from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
+from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
 
 if TYPE_CHECKING:
@@ -98,7 +107,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'queue': forgequeue.main,
     'sync': forgesync.main,
     'integration': forgeintegration.main,
-    'merge': forgemerge.main,
+    'merge': forgemergeready.main,
     'notices': forgenotice.main,
     'review': lambda argv: (forgereview_bundle.main if argv[:1] in (['prepare'], ['judge']) else forgetakeover.main)(
         argv
@@ -123,6 +132,8 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
     'continue': prcontinue.main,
     'ready': lambda argv: forgedraft.main(['ready', *argv], judge=prcurrent.ready_refusals),
     'draft': lambda argv: forgedraft.main(['draft', *argv], judge=prcurrent.ready_refusals),
+    'hold': lambda argv: forgehold.main(['hold', *argv]),
+    'release': lambda argv: forgehold.main(['release', *argv]),
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
@@ -179,6 +190,7 @@ def _parser() -> argparse.ArgumentParser:
     create = _verb(issue, 'create')
     create.add_argument('--title', required=True)
     create.add_argument('--body', default='')
+    create.add_argument('--kind', required=True, choices=KINDS, help='an issue is a need, defect or decision')
     comment = _verb(issue, 'comment')
     comment.add_argument('number', type=int)
     comment.add_argument('--body', required=True)
@@ -197,6 +209,10 @@ def _parser() -> argparse.ArgumentParser:
     opened.add_argument(
         '--ready', action='store_true',
         help='open it ready for review; the default is a DRAFT, marked ready by `forge pr ready N` (D53)',
+    )  # fmt: skip
+    opened.add_argument(
+        '--ready-when-current', action='store_true',
+        help=f'open a DRAFT the serve marks ready once its head is current (`{forgedraft.READY_WHEN}` in the body)',
     )  # fmt: skip
     return parser
 
@@ -217,11 +233,11 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit),
         ('issue', 'view'): lambda: client.issue_view(args.number),
-        ('issue', 'create'): lambda: client.issue_create(args.title, args.body),
+        ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
         ('pr', 'create'): lambda: client.pr_create(
-            args.title, args.body, head=args.head, base=args.base, draft=not args.ready
+            args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
         ('pr', 'close'): lambda: pr_close(client, args.number, args.reason),
@@ -229,10 +245,75 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
     return verbs[args.noun, args.verb]()
 
 
+def _declared_body(args: argparse.Namespace) -> str:
+    """*args*' PR body, with :data:`~dev_lab.dev.forgedraft.READY_WHEN` as its last line when the author declared it."""
+    if not args.ready_when_current:
+        return args.body
+    return '\n\n'.join([*([args.body] if args.body else []), forgedraft.READY_WHEN])
+
+
 def _render(item: Issue | PullRequest | Comment) -> str:
     if isinstance(item, Comment):
         return item.url
     return f'#{item.number} [{item.state}] {item.title}  {item.url}'
+
+
+def _refused(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    root: Path,
+    env: Mapping[str, str] | None,
+    transport: Transport,
+) -> str | None:
+    """Why the verb is refused before any write: a reasonless close, a PUBLIC repo's text naming a private value.
+
+    Every verb in :data:`_PUBLISHED_TEXT` publishes what a person typed; a private repository is where private
+    names belong, and an unreadable visibility is scanned (fail closed).
+    """
+    if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
+        parser.error('pr close: --reason must say why')
+    if (args.noun, args.verb) == ('pr', 'create') and args.ready and args.ready_when_current:
+        parser.error('pr create: --ready opens it ready; --ready-when-current opens a draft -- choose one')
+    if (published := _PUBLISHED_TEXT.get((args.noun, args.verb))) is None:
+        return None
+    what, texts = published
+    private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
+    if private:
+        return None
+    if why:
+        emit(f'[forge] scanning the {what} for private markers: {why}', err=True)
+    return privatemarkers.text_refusal('\n'.join(texts(args)), what)
+
+
+#: Each write verb that publishes typed text: what a refusal calls it, and the argument fields that hold it.
+_PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace], tuple[str, ...]]]] = {
+    ('pr', 'create'): ('PR title or body', lambda a: (a.title, a.body)),
+    ('pr', 'close'): ('close reason', lambda a: (a.reason,)),
+    ('issue', 'create'): ('issue title or body', lambda a: (a.title, a.body)),
+    ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
+}
+
+
+def _task_head_advice(head: str, env: Mapping[str, str] | None) -> tuple[str, ...]:
+    """A session bound to a task is told its PR heads are ``pr/<task>/<feature>`` (:mod:`dev_lab.dev.taskbinding`)."""
+    try:
+        task = taskbinding.session_task(os.environ if env is None else env)
+    except ValueError:
+        return ()
+    said = None if task is None else taskbinding.head_advice(head, taskbinding.slug_of(task))
+    return () if said is None else (said,)
+
+
+def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
+    """An opened PR or issue is appended to the bound rem task's journal (:func:`taskgate.record`)."""
+    if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
+        return
+    if (
+        isinstance(result, (PullRequest, Issue))
+        and (url := result.url)
+        and (said := taskgate.record(root, args.noun, url, env=env, read=taskgate.reader_for(env, Path.home())))
+    ):
+        emit(f'[forge] {said}', err=True)  # the task names its own PRs and issues
 
 
 def issue_and_pr(
@@ -245,26 +326,30 @@ def issue_and_pr(
     """``python -m dev_lab.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy."""
     parser = _parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
-        parser.error('pr close: --reason must say why')
     root = Path.cwd() if cwd is None else cwd
+    if (refused := _refused(parser, args, root, env, transport)) is not None:
+        emit(refused, err=True)
+        walls.refused_text(root, refused, reason=f'forge {args.noun} {args.verb}')
+        return 1
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            said := pradmit.create_advice(root, client, head=args.head, base=args.base)
+            said := _task_head_advice(args.head, env)
+            + pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
             args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
         result = _dispatch(client, args)
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
-            emit(f'[forge] {forgemerge.auto_merge(client, result.number)}', err=True)
+            emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
-                emit(f'[forge] {pushwatch.arm_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
+                emit(f'[forge] {pushwatch.heard_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
+    _record_in_task(args, result, root, os.environ if env is None else env)
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
         data = [dataclasses.asdict(item) for item in items]

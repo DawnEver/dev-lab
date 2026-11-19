@@ -6,16 +6,20 @@ the sweep runs there and nowhere else -- never on an agent. It needs no credenti
 
 Each candidate goes through the SAME admission as ``forge pr breakglass`` (:meth:`Server._merge`): the repo is one the
 host serves, the PR targets its integration branch at the head it was judged at, and its security check and test
-parts stand green (``_tests_stand``). The sweep only decides WHICH PRs to ask for:
+parts stand green (merge-ready's own reading, ``_waits_for_the_wave``) -- checked HERE, since the admission no
+longer refuses on tests (user ruling 2026-11-11: an explicit break-glass merge waives them; the sweep never does).
+The sweep only decides WHICH PRs to ask for:
 
 - a draft is left alone (a draft runs nothing, so it is never judged);
 - a PR whose ``tests/merge-ready`` already stands ``success`` lands by the normal path, which wins;
-- a PR whose head is not current (``pr-current`` does not stand ``success``: it lacks the integration branch or its
-  lock is stale) is left alone -- a wave lands only what is current, never a stale green head;
-- a PR whose admission or merge is refused (red, pending, off the integration branch, the forge's own refusal) is
+- a PR whose head is not current (``pr-current`` red) still lands: freshness is an ALARM (W5, dev-lab#644) and the
+  forge's own merge refuses a head that does not merge cleanly;
+- a PR whose security check or test parts do not stand green (red, pending, unrun) is left alone;
+- a PR whose admission or merge is refused (off the integration branch, the forge's own refusal) is
   skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick;
 - a PR the admission holds back for its own consent (``needs-consent``, :meth:`Server._admit`) is skipped and
-  logged once per wave by the server; *land* answers ``None`` for it. A skip spends none of the cap.
+  logged once per wave by the server; *land* answers ``None`` for it. A HELD PR (the ``hold`` label, user ruling
+  D48) is skipped the same way, its log naming the release door. A skip spends none of the cap.
 
 Every merge counts against the wave's cap; the merge that reaches it closes the wave, whose ONE summary is the alert.
 """
@@ -31,12 +35,13 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
+from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.producers import producer_from
 from dev_lab.ops import request as requests
 
-__all__ = ['Listing', 'Pull', 'reason_of', 'sweep']
+__all__ = ['Listing', 'Pull', 'integration_at', 'reason_of', 'sweep']
 
 
 @dataclass(frozen=True)
@@ -52,8 +57,8 @@ class Pull:
 class Listing(Protocol):
     """What the sweep reads of one served repository's forge."""
 
-    def declaration(self) -> str:
-        """The repository's ``pyproject.toml`` at its default branch."""
+    def declaration(self, ref: str) -> str:
+        """The repository's ``pyproject.toml`` at *ref*; raises ``ValueError`` when it cannot be read."""
         ...
 
     def open_pulls(self) -> Sequence[Pull]:
@@ -65,13 +70,37 @@ class Listing(Protocol):
         ...
 
 
+def integration_at(forge: Listing, base: str, repo: str) -> str:
+    """The integration branch *repo*'s declaration AT *base* names -- the branch a PR into *base* lands on.
+
+    The ONE reading break-glass makes (admission and sweep): never the default branch, which may hold no declaration
+    (2026-11-12: a member's ``main`` an old data commit, ``integrate/main`` the declared one).
+    """
+    return policy_from(forge.declaration(base), f'{repo}@{base}:pyproject.toml').integration
+
+
 def reason_of(wave: str) -> str:
     """The reason a swept merge records: which wave landed it, and what it waived."""
     return f'wave {wave} lands what is green: the review is waived, its security and test parts stand green'
 
 
+def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, producer: str) -> bool:
+    """Whether *head* is green as its *producer* posts it (:func:`green_waits`) yet not already merge-ready."""
+    if _stands(posted, MERGE_READY_CONTEXT):
+        return False
+    return not green_waits(head, posted, producer=producer)
+
+
 def _stands(posted: Sequence[CommitStatus], context: str) -> bool:
     return any(one.context == context and one.state == 'success' for one in posted)
+
+
+def _integrates(forge: Listing, base: str, url: str) -> bool:
+    """Whether *base* is the integration branch its own declaration names; unreadable there is ``False``."""
+    try:
+        return integration_at(forge, base, url) == base
+    except ValueError:
+        return False
 
 
 def sweep(
@@ -89,15 +118,11 @@ def sweep(
         if (held := wave()) is None:
             return said
         forge = forge_for(url)
-        try:
-            integration = policy_from(forge.declaration(), f'{url}:pyproject.toml').integration
-        except ValueError:
-            continue
         for pull in forge.open_pulls():
-            if pull.draft or pull.base != integration:
+            if pull.draft or not _integrates(forge, pull.base, url):
                 continue
-            posted = forge.statuses(pull.head)
-            if _stands(posted, MERGE_READY_CONTEXT) or not _stands(posted, PR_CURRENT_CONTEXT):
+            producer = producer_from(forge.declaration(pull.base), f'{url}@{pull.base}:pyproject.toml')
+            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head, producer=producer):
                 continue
             try:
                 landed = land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held)))

@@ -319,9 +319,22 @@ push updating a branch whose newest PR into the integration branch was closed UN
 from the branch, or a new branch name); a forge that cannot be read refuses. A merged PR's branch passes: the forge
 continues it (LANDED-BRANCH-CONTINUES, above).
 
-The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) refuses a `pr/*` push whose tip
-lacks `origin/<integration>` (fetched afresh; a failed fetch refuses) or whose lock lags a floated sibling's
-head, naming `forge sync`; `forge pr ready` refuses on the same judgement and on a dirty tree.
+The base row `lossless-delete` (`dev_lab.dev.pushdelete`) judges EVERY branch a push deletes, however the push was
+spelled, with the judgement `branchprune delete` makes (`dev_lab.dev.deletejudge`), after a fresh fetch and against
+the open PR heads; an unreadable forge or origin refuses (`docs-src/dev/refusals.md#lossless-delete`). A tag holds
+nothing (D22). A machine branch its producer regenerates whole is declared DERIVED (D23) and goes whatever it carries:
+
+```toml
+[tool.dev_lab.integrator]
+derived = [{ branch = "pr/components-bump", producer = "dev_lab.dev.componentbump" }]
+```
+
+The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) WARNS on a `pr/*` push whose tip
+lacks `origin/<integration>` (fetched afresh; a failed fetch is named) or whose lock lags a floated sibling's
+head, naming `forge sync`, and never refuses it (`advisory = true`, dev-lab #661): on the forge `pr-current` is an
+ALARM, never a merge condition (W5, dev-lab#644; the trial merge at merge time decides). `forge pr ready` refuses on
+the same judgement of the pushed head -- never on the local tree, so it works from any checkout (user ruling
+2026-11-13).
 
 Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the
 integration branch after `merges_only_since` that is not a two-parent merge with a `Merged-Branch:` trailer
@@ -367,11 +380,17 @@ head it names that head's branch, on stderr and as an `Admission:` line in the P
 not hold (`trialmerge.shares_unmerged`) that it is stacked and lands only after that PR, and opens it anyway.
 
 `DRAFT-UNTIL-READY` (D53): the rule row states it; the mechanism -- each forge's draft, the `pr ready`/`pr draft`
-doors, the pending `tests/merge-ready` and the idle-draft alarm -- is `dev_lab.dev.forgedraft`'s docstring.
+doors, the pending `tests/merge-ready`, the idle-draft alarm and `pr create --ready-when-current` (the serve readies
+the draft once its head is current) -- is `dev_lab.dev.forgedraft`'s docstring.
 A draft RUNS NOTHING (user ruling 2026-11-05): every job of a PR-started workflow on either forge is guarded at
 render by `forgedraft.READY_ONLY`, and the serve claims no part, syncs and gates no head of a draft; marking it
 ready (`ready_for_review`, or on Gitea the serve's next tick after the title edit) starts everything. A consumer takes it by re-rendering
 (`python -m dev_lab.dev.ciworkflows render`).
+
+HOLD: where `pr draft` is refused (GitHub, a caller without convert rights), `forge pr hold <N>` puts the `hold`
+label on the PR and `forge pr release <N>` takes it off; merge-ready posts `pending` naming the release door and
+the merge decision never lands a held head. Break-glass honours it too (user ruling D48, 2026-11-17): a manual
+`forge pr breakglass` and a wave's sweep refuse a held PR, naming the release door. The mechanism is `dev_lab.dev.forgehold`'s docstring.
 
 ## The integration tick
 

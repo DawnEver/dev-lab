@@ -65,8 +65,8 @@ from dev_lab.dev.forgerequest import (
     unreachable_source,
     unreproducible,
     unserved,
-    untrusted,
 )
+from dev_lab.dev.forgerequesthost import untrusted
 from dev_lab.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgewait import Box, Outlook
@@ -141,7 +141,7 @@ class ClaimPass:
         """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
         wanted = item.candidate
         context = request_context(wanted.number) if wanted.kind == REQUEST else part_context(wanted.platform)
-        state, holder = assess(self.history(wanted.sha), context, me=self.me, now=self.now)
+        state, holder = assess(self.history(wanted.sha), context, me=self.me, now=self.now, newest=True)
         one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder, request=context, scope=wanted.scope)
         blocked, needed = '', frozenset[str]()
         if state in CLAIMABLE and wanted.kind != REQUEST:  # DOCS-ONLY-CARRIES: no claim, no run

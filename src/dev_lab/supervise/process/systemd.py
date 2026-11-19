@@ -28,8 +28,8 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.box import Refused, command, read_ended
 from lab_commons.compute.model import Demand
+from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev.writeroots import TEMP_PREFIX
 from dev_lab.supervise.notify import NOTIFY_SOCKET
 from dev_lab.supervise.process.base import Ran
 
@@ -108,7 +108,7 @@ def subprocess_runner(argv: list[str], timeout: int, cwd: str | None) -> Ran:
     # the journal names a pid, and the pid is gone by the time anybody reads it.
     environment = {key: value for key, value in os.environ.items() if key != NOTIFY_SOCKET}
     try:
-        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        with tempfile.TemporaryFile(prefix=TEMP_PREFIX) as out, tempfile.TemporaryFile(prefix=TEMP_PREFIX) as err:
             done = _door.run(argv, stdout=out, stderr=err, timeout=timeout, cwd=cwd, check=False, env=environment)
             out.seek(0)
             err.seek(0)

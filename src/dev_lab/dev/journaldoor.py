@@ -6,24 +6,30 @@ rem's task guard refused every repair (the journal is append-only), the escape c
 hand-back hook refused the ``! sed`` the agent proposed. Four guards, each right, and no remedy any of them allowed.
 
 THE CAUSE is the order: the check ran at COMMIT time on a line written at APPEND time through a door with no undo.
-So this ``PreToolUse`` hook runs the SAME predicate (:func:`dev_lab.dev.ephemeralrefs.cited_in_text`) on the text a
-``task.js log|decide|open-item|close-item|handoff`` command is about to append, and denies the call naming a
+So before the call runs, the SAME predicate (:func:`dev_lab.dev.ephemeralrefs.cited_in_text`) judges the text a
+``task.js log|decide|open-item|close-item|handoff`` command is about to append, and the call is denied naming a
 rephrase every other guard allows: a memory name or a ``<placeholder>`` shape. Only the appended words are
 judged -- a chained ``&& cat output/x`` is not the journal's text. A command the lexer cannot split is judged
 whole from the verb on, so a heredoc-built line is refused rather than missed.
+
+ONE INTERPRETER PER SHELL CALL, NOT TWO: this is no hook of its own. The deny row
+(:mod:`dev_lab.dev._deny_journal_row`) prefilters in the node engine and only a match asks ``--admit`` here, with
+the hook payload on stdin: exit 1 with the refusal on stdout, else 0. The engine records the wall.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shlex
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TextIO
+from typing import TYPE_CHECKING, BinaryIO, Final
 
 import lab_commons.launch as _door
 
+from dev_lab.dev._deny_journal_row import JOURNAL_VERBS, REMEDY
 from dev_lab.dev.agent_wiring import SHELL_TOOLS
 from dev_lab.dev.ephemeralrefs import RULE, cited_in_text
 
@@ -32,16 +38,9 @@ if TYPE_CHECKING:
 
 __all__ = ['JOURNAL_VERBS', 'RULE', 'appended_texts', 'main', 'refusal']
 
-#: rem's journal verbs: the ones whose words ``task.js`` appends to ``JOURNAL.md`` (rem ``scripts/task.js``).
-JOURNAL_VERBS: Final = frozenset({'log', 'decide', 'open-item', 'close-item', 'handoff'})
 #: ``task.js`` flags that take a value; the value is routing, not journal text.
 _VALUED: Final = frozenset({'--task', '--scope', '--owner'})
 _DOOR: Final = 'task.js'
-_REMEDY: Final = (
-    'rephrase the text before it is appended: cite a memory entry by name or the path as a <placeholder> shape '
-    '(output/logs/<yy>/<mm>/<dd>/<kind>/) -- a written journal line is append-only, so this is the last point '
-    'the agent can still change it'
-)
 
 
 def _words_after(words: list[str], start: int) -> list[str]:
@@ -105,24 +104,29 @@ def refusal(payload: Mapping[str, object]) -> str | None:
     if not refused:
         return None
     cites = '; '.join(f'cites {why} {token!r}' for token, why in sorted(refused.items()))
-    return f'[{RULE}] the task journal line {cites}. Remedy: {_REMEDY}.'
+    return f'[{RULE}] the task journal line {cites}.\nRemedy: {REMEDY}.'
 
 
-def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, stdout: TextIO | None = None) -> int:
-    """The hook: deny the call with a reason, or stay silent. Never exits nonzero; an unreadable payload is silent."""
-    del argv
+def main(argv: list[str] | None = None, *, stdin: BinaryIO | None = None, stdout: BinaryIO | None = None) -> int:
+    """``--admit``: judge the hook payload on stdin; exit 1 with the refusal on stdout, else 0.
+
+    UTF-8 both ways, whatever the console's code page: a cited path is judged and shown byte for byte. An
+    unreadable payload, or a repo git cannot answer for, admits -- the commit-time check still stands behind it.
+    """
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.journaldoor', description=main.__doc__)
+    parser.add_argument('--admit', action='store_true', required=True)
+    parser.parse_args(argv)
     try:
-        payload = json.load(stdin or sys.stdin)
-    except ValueError:
-        return 0
-    try:
+        payload = json.loads((stdin or sys.stdin.buffer).read().decode('utf-8'))
         reason = refusal(payload) if isinstance(payload, dict) else None
-    except (OSError, RuntimeError):
+    except (ValueError, OSError, RuntimeError):
         return 0
-    if reason is not None:
-        decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': reason}
-        (stdout or sys.stdout).write(json.dumps({'hookSpecificOutput': decision}) + '\n')
-    return 0
+    if reason is None:
+        return 0
+    out = stdout or sys.stdout.buffer
+    out.write(reason.encode('utf-8'))
+    out.flush()
+    return 1
 
 
 if __name__ == '__main__':

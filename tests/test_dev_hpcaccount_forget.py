@@ -9,6 +9,7 @@ from lab_commons.hpc.grants import Grant
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR, exits, remedy
 from dev_lab.dev.agentpolicy import exits_of
 from dev_lab.dev.hpcaccount.forget import forget_fleet
+from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
 _FLEET = (
@@ -18,6 +19,11 @@ _FLEET = (
 _REPO = 'https://forge.example/org/repo.git'
 _DEPLOY = '[deploy]\nhost = "login01.example"\nroot = "src"\n'
 _ROW = '{"peak_mem_gb": 412.0, "cpu_s": 1.0, "wall_s": 1.0, "files": 9.0, "ended": "asked"}'
+
+
+def _line(argv: str) -> str:
+    """The remote line in the account's dev-lab checkout, run by its current environment (the one resolver)."""
+    return f'cd ~/src/dev-lab && {shell_interpreter(".")} {argv}'
 
 
 def _account(row: str | None, *, unreachable: bool = False, seen: list[str]) -> Runner:
@@ -55,9 +61,7 @@ def test_each_account_forgets_the_row_in_its_declared_checkout() -> None:
     assert code == 0
     assert all(line.split(': ')[1].startswith('forgotten') and 'backup' in line for line in said)
     forgets = [cmd for cmd in seen['alice'] if 'learned forget' in cmd]
-    assert forgets == [
-        f"cd ~/src/dev-lab && .venv/bin/python -m lab_commons.compute.learned forget --repo {_REPO} --row 'slurm|'"
-    ]
+    assert forgets == [_line(f"-m lab_commons.compute.learned forget --repo {_REPO} --row 'slurm|'")]
 
 
 def test_dry_run_prints_the_peak_and_changes_nothing() -> None:
@@ -106,14 +110,14 @@ def test_forget_is_an_exit_of_hpc_through_the_door() -> None:
 def test_the_hpc_refusal_names_forget_among_the_deploy_doors() -> None:
     """User ruling 2026-11-11: per purpose the door's shape; forget's flags live in refusals.md."""
     text = str(HPC_THROUGH_THE_DOOR['remedy'])
-    assert 'deploy `hpcaccount deploy-fleet|forget|deploy`' in text
+    assert 'deploy `hpcaccount <verb>`' in text
     assert '-m dev_lab.dev.<door>' in text
 
 
 def test_a_verb_removed_from_the_exits_leaves_the_refusal() -> None:
     """PLANTED CONTROL: without the hpcaccount exits, the rendered refusal drops the deploy purpose."""
     kept = [argv for argv in exits() if argv[0] != 'dev_lab.dev.hpcaccount']
-    assert len(kept) == len(exits()) - 3
+    assert len(kept) == len(exits()) - 5
     assert 'hpcaccount' not in remedy(kept)
 
 

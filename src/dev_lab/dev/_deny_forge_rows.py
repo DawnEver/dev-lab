@@ -64,7 +64,7 @@ FORGE_WRITE_ROWS: tuple[dict[str, object], ...] = (
             'gh issue view 7 --comments',
             'tea issues list',
             'tea pulls 9',
-            f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x --body y',
+            f'{VENV_PYTHONS[0]} -m dev_lab.dev.forge issue create --title x --body y --kind need',
             'git commit -m "gh issue create is refused now"',
         ),
     },

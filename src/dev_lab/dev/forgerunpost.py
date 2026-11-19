@@ -21,8 +21,8 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerunstate import Killed, Run, save
 from dev_lab.dev.forgestatus import status_post
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.platformparts import part_context, run_tag
-from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
+from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
+from dev_lab.dev.producer import RETRYABLE, Owner, ProducerExit, owned, release_reason
 from dev_lab.supervise.notice import Context
 
 if TYPE_CHECKING:
@@ -49,52 +49,35 @@ def report(client: Client, run: Run, progress: str, lease: timedelta, say: Calla
     return step(run, owner=dataclasses.replace(renewed, progress='').description(), progress=progress)
 
 
+#: A terminal output refusal, one row per class: ``(class, alarm subject with {sha}, owner, release prefix)``.
+#: A declared output is part of the request, so its absence fails the run; an unchanged oversized output is never
+#: retried; sealed bytes and their index disagreeing is the environment's.
+_OUTPUT_REFUSALS: Final[tuple[tuple[type[Exception], str, Owner, str], ...]] = (
+    (MissingOutput, 'the run of {sha} lacks a declared output', Owner.CODE, 'declared outputs missing'),
+    (OutputBudgetRefused, 'output budget refused for the run of {sha}', Owner.CODE, 'output budget refused'),
+    (OutputIntegrityRefused, 'the run of {sha} failed output integrity', Owner.ENVIRONMENT, 'output integrity refused'),
+)
+
+
 def release_reason_for(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:
     """Why a run that ran no judged test is released: a missing, over-budget or corrupt declared output alarms."""
-    if isinstance(why, MissingOutput):  # a declared output is part of the request: its absence fails the run
-        alarm(
-            Alarm(
-                RUN,
-                run.repo_url,
-                f'the run of {run.sha[:12]} lacks a declared output',
-                str(why),
-                context=Context(sha=run.sha),
-            )
-        )
-        return f'declared outputs missing: {why}'[:DESCRIPTION_MAX]
-    if isinstance(why, OutputBudgetRefused):  # terminal: an unchanged oversized output is never retried
-        alarm(
-            Alarm(
-                RUN,
-                run.repo_url,
-                f'output budget refused for the run of {run.sha[:12]}',
-                str(why),
-                context=Context(sha=run.sha),
-            )
-        )
-        return f'output budget refused: {why}'[:DESCRIPTION_MAX]
-    if isinstance(why, OutputIntegrityRefused):  # terminal: sealed bytes and their index disagree
-        alarm(
-            Alarm(
-                RUN,
-                run.repo_url,
-                f'the run of {run.sha[:12]} failed output integrity',
-                str(why),
-                context=Context(sha=run.sha),
-            )
-        )
-        return f'output integrity refused: {why}'[:DESCRIPTION_MAX]
+    for kind, subject, owner, prefix in _OUTPUT_REFUSALS:
+        if isinstance(why, kind):
+            alarm(Alarm(RUN, run.repo_url, subject.format(sha=run.sha[:12]), str(why), context=Context(sha=run.sha)))
+            return owned(owner, f'{prefix}: {why}')
     if isinstance(why, RetiredTable):  # fixed AT THE SHA: no retry publishes it, so it settles once
         alarm(
             Alarm(
                 RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', str(why), context=Context(sha=run.sha)
             )
         )
-        return f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)}: {why}'[:DESCRIPTION_MAX]
+        return release_reason(ProducerExit.INCONCLUSIVE, outage=None, detail=f': {why}')
+    if isinstance(why, PartRefusal):  # it ran; its record was refused a part: its own class (dev-lab#644)
+        return release_reason(ProducerExit.PART_REFUSED, outage=None, detail=f': {why}')
     if isinstance(why, NoRoom):  # a fact about this HOST: the part stays open to every host (forgeclaim.assess)
-        return f'{RETRYABLE} -- this host had no room: {why}'[:DESCRIPTION_MAX]
+        return owned(Owner.SCHEDULING, f'{RETRYABLE} -- this host had no room: {why}')
     log = next((word for word in str(why).split() if word.startswith('log=')), '')  # the build log, named
-    return f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)} {log}'.strip()
+    return release_reason(ProducerExit.INCONCLUSIVE, outage=None, detail=f' {log}' if log else '')
 
 
 def step(run: Run, **changes: object) -> Run:

@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
+from _forge_state import StateForge
 from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused, hold
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
@@ -27,6 +28,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import (
+    forgeclaim,
     forgehosts,
     forgepoller,
     forgeproduce,
@@ -46,12 +48,11 @@ from dev_lab.dev.forgeclaim import OPEN, Claim, Work
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeintegration import Child, Feedback, Ticked
 from dev_lab.dev.forgeproduce import Produced
-from dev_lab.dev.forgeroute import Routed
 from dev_lab.dev.forgetick import TickReport
 from dev_lab.dev.forgetidy import Hygiene
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart
-from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, outage_env, release_reason
+from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, outage_env, owner_of, release_reason
 from dev_lab.dev.shatree import Tree, TreeFailed
 
 _DECLARED = "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
@@ -112,11 +113,25 @@ class _Forge:
     def __init__(self) -> None:
         self.posts: list[tuple[str, str, str]] = []
 
-    def post(self, _client, _sha, *, context, state, description) -> None:
+    def post(self, _client, _sha, *, context, state, description, target_url='') -> None:
         self.posts.append((context, state, description))
 
     def history(self, _client, _sha) -> tuple[SimpleNamespace, ...]:
-        return tuple(SimpleNamespace(context=c, state=s, description=d) for c, s, d in self.posts)
+        return tuple(SimpleNamespace(context=c, state=s, description=d, created=None) for c, s, d in self.posts)
+
+    def claimed(self, client, sha) -> tuple[SimpleNamespace, ...]:
+        """The history as the claim gate reads it: ``ME``'s claim on each part heads it."""
+        head = [SimpleNamespace(context=f'tests/{part}', state='pending', description=ME.description(), created=None)
+                for part in ('windows', 'linux')]  # fmt: skip
+        return (*head, *self.history(client, sha))
+
+    def route(self, monkeypatch) -> None:
+        """Every forge seam the producer reaches -- its own, and the claim gate's -- onto this forge."""
+        monkeypatch.setattr(forgeproduce, 'status_post', self.post)
+        monkeypatch.setattr(forgeproduce, 'status_history', self.history)
+        monkeypatch.setattr(forgeclaim, 'status_post', self.post)
+        monkeypatch.setattr(forgeclaim, 'status_history', self.claimed)
+        monkeypatch.setattr(forgeclaim, 'forge_now', lambda _client: NOW)
 
 
 class _Trees:
@@ -150,24 +165,6 @@ def _client(_root: Path) -> SimpleNamespace:
     return SimpleNamespace(answered=format_datetime(FORGE_NOW, usegmt=True), whoami=lambda: 'alice')
 
 
-class _Issues:
-    """The forge's open issues, shared by every host a test serves: ``reconcile``'s contract, by title."""
-
-    def __init__(self) -> None:
-        self.open: dict[str, str] = {}
-
-    def reconcile(self, _client: object, prefix: str, wanted: dict[str, str]) -> tuple[Routed, ...]:
-        done = []
-        for title, body in sorted(wanted.items()):
-            action = 'created' if title not in self.open else 'updated' if self.open[title] != body else 'unchanged'
-            self.open[title] = body
-            done.append(Routed(title, action, 1))
-        for title in [t for t in self.open if t.startswith(prefix) and t not in wanted]:
-            del self.open[title]
-            done.append(Routed(title, 'closed', 1))
-        return tuple(done)
-
-
 def _serve(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -190,7 +187,6 @@ def _serve(
     retain=lambda _root, **_kw: None,
     observe=None,
     drafts=None,
-    issues: _Issues | None = None,
     prune=lambda _root, _client, **_kw: (),
     close_landed=lambda *_a, **_k: None,
     sweep=lambda *_a, **_k: 0,
@@ -229,8 +225,7 @@ def _serve(
     monkeypatch.setattr(forgehosts, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
     monkeypatch.setattr(forgeship, 'tidy', tidy)
     trees = trees or _Trees(tmp_path)
@@ -249,13 +244,16 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeservesteps, 'idle_drafts', drafts or (lambda *_a, **_k: []))  # reads open PRs (D53)
     monkeypatch.setattr(forgeservesteps, 'late_reviews', lambda *_a, **_k: [])  # reads open PRs too (backlog)
+    monkeypatch.setattr(
+        forgeservesteps, 'orphans', lambda *_a, **_k: []
+    )  # reads open PRs: tests/test_dev_forgeorphan.py
+    monkeypatch.setattr(forgeservesteps, 'ready_when_current', lambda *_a, **_k: [])  # its own tests
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(
         forgeservesteps,
         'review_step',
         lambda _root, _built, **kw: (reviewed if reviewed is not None else []).append(kw),
     )
-    monkeypatch.setattr(forgeservesteps, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeservesteps, 'serve_continue_landed', lambda *_a, **_k: None)  # its own tests
     monkeypatch.setattr(forgeservesteps, 'serve_close_landed', close_landed)
     monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
@@ -396,10 +394,10 @@ def test_the_cli_exits_two_on_a_broken_contract(monkeypatch, tmp_path: Path, cap
 
 
 def test_any_host_prompts_the_integrator_and_n_hosts_page_once(monkeypatch, tmp_path: Path) -> None:
-    """No owner: every host derives the queue; the forge keeps one issue per row, so only its writer pages.
+    """No owner: every host derives the queue and alarms each row on its card, re-derived every tick.
 
-    PLANTED CONTROLS: a second host deriving the same row pages nothing; a changed row pages again; a row
-    no longer derived closes its issue.
+    User ruling 2026-11-14: a routine notice is never an issue. PLANTED CONTROLS: a changed row is alarmed
+    changed; a row no longer derived is alarmed no more -- the card leaves it by itself.
     """
     prompt = Alarm(INTEGRATION, 'o/r', 'feat/a is READY', 'merge it', about='merge feat/a@abc')
     rows = [prompt]
@@ -408,16 +406,12 @@ def test_any_host_prompts_the_integrator_and_n_hosts_page_once(monkeypatch, tmp_
         assert callable(statuses)
         return list(rows)
 
-    forge = _Issues()
-    first = _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)[2]
-    assert prompt in first
-    assert forge.open == {'integration: feat/a is READY': 'merge it'}
-    assert _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)[2] == []
+    assert prompt in _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe)[2]
+    assert prompt in _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe)[2]
     rows[:] = [dataclasses.replace(prompt, body='merge it now')]
-    assert _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)[2] == rows
+    assert _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe)[2] == rows
     rows[:] = []
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)
-    assert forge.open == {}
+    assert _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe)[2] == []
 
 
 def test_every_host_runs_the_review_step_poller_or_not(monkeypatch, tmp_path: Path) -> None:
@@ -443,25 +437,24 @@ def test_every_host_runs_the_review_step_poller_or_not(monkeypatch, tmp_path: Pa
 
 
 def test_every_tick_reports_behind_and_conflicts_and_alarms_past_the_bound(monkeypatch, tmp_path: Path) -> None:
-    """D12: the behind/conflict report runs each tick; a child past ``behind_max`` or conflicting is an issue.
+    """D12: the behind/conflict report runs each tick; a child past ``behind_max`` or conflicting is an alarm.
 
     PLANTED CONTROL: a child at the bound and clean raises nothing; the same set with a conflicting and a
     far-behind child raises exactly those two, beside the integrator's prompts.
     """
     (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     calm = (Child('lane/ok', 'a' * 40, None), Feedback('t', 'pending', 's', behind=20))
-    forge = _Issues()
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), issues=forge, children=(calm,))
-    assert forge.open == {}
+    assert _serve(monkeypatch, tmp_path, TickReport((), (), ()), children=(calm,))[2] == []
     far = (Child('lane/far', 'b' * 40, None), Feedback('t', 'pending', 's', behind=21))
     torn = (Child('lane/torn', 'c' * 40, None), Feedback('t', 'failure', 's', conflicts=('x.py',)))
-    raised = _serve(monkeypatch, tmp_path, TickReport((), (), ()), issues=forge, children=(calm, far, torn))[2]
-    assert sorted(forge.open) == [
-        'integration: lane/far needs a sync with integrate/main',
-        'integration: lane/torn needs a sync with integrate/main',
+    raised = _serve(monkeypatch, tmp_path, TickReport((), (), ()), children=(calm, far, torn))[2]
+    subjects = {one.subject: one.body for one in raised}
+    assert sorted(subjects) == [
+        'lane/far needs a sync with integrate/main',
+        'lane/torn needs a sync with integrate/main',
     ]
     assert {one.kind for one in raised} == {INTEGRATION}
-    assert 'forge sync' in forge.open['integration: lane/far needs a sync with integrate/main']
+    assert 'forge sync' in subjects['lane/far needs a sync with integrate/main']
 
 
 def test_a_live_local_producer_renews_its_claim_on_the_forges_clock(monkeypatch, tmp_path: Path) -> None:
@@ -488,8 +481,7 @@ def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(mon
     """The card beats at the tick period; the claim is still renewed on its own, longer, cadence."""
     forge, beats = _Forge(), []
     item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
@@ -512,7 +504,7 @@ def test_a_crashed_producer_releases_its_claim(monkeypatch, tmp_path: Path) -> N
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(-9)}, forge)
-    assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer crashed (exit -9)')
+    assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer crashed (exit -9) class=environment')
 
 
 def test_a_local_part_is_judged_in_its_own_tree_at_the_claimed_sha(monkeypatch, tmp_path: Path) -> None:
@@ -548,7 +540,7 @@ def test_a_tree_that_cannot_be_built_spawns_nothing_and_names_the_step(monkeypat
     assert forge.posts[-1] == (
         'tests/windows',
         'error',
-        f'released: no tree at {SHA[:12]} -- dep --bootstrap exited 1: no lock',
+        f'released: no tree at {SHA[:12]} -- dep --bootstrap exited 1: no lock class=environment',
     )
     assert trees.closed == [SHA], 'a half-built tree is removed too'
 
@@ -571,7 +563,7 @@ def test_a_tree_the_box_did_not_admit_is_released_retryable_never_an_error_verdi
     context, _state, description = forge.posts[-1]
     assert context == 'tests/windows'
     assert description.startswith(RETRYABLE), 'the next tick claims it again (forgeclaim.assess: OPEN)'
-    assert "queued behind 'verify:p8'" in description
+    assert owner_of('error', description) is Owner.SCHEDULING, 'not the author red: the box had no room'
     assert trees.closed == [SHA]
 
 
@@ -586,7 +578,7 @@ def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Pa
 def test_inconclusive_and_unreachable_producers_are_released_never_red(monkeypatch, tmp_path: Path) -> None:
     """PLANTED (live 2026-10-11): a runner over its wall said INCONCLUSIVE; serve said "refused its argv"."""
     for proc, reason in (
-        (_Proc(ProducerExit.INCONCLUSIVE), release_reason(ProducerExit.INCONCLUSIVE, outage=False)),
+        (_Proc(ProducerExit.INCONCLUSIVE), 'released: inconclusive (exit 3) -- no part'),
         (_Proc(ProducerExit.UNREACHABLE, said='unreachable: npm is missing'), RETRYABLE),
         (_Proc(ProducerExit.UNREACHABLE), 'released: producer exited 4 without declaring an outage'),
         (_Proc(1, box=Refused('cpu: wants 4 of 3')), RETRYABLE),  # the box had no room in time: open, never red
@@ -616,7 +608,10 @@ def test_an_inconclusive_part_without_its_record_names_the_missing_record(
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(ProducerExit.INCONCLUSIVE)}, forge)
     assert forge.posts[-1][1] == 'error'
-    assert forge.posts[-1][2].startswith(release_reason(ProducerExit.INCONCLUSIVE, outage=False))
+    assert forge.posts[-1][2].startswith(
+        release_reason(ProducerExit.INCONCLUSIVE, outage=None).removesuffix(' class=environment')
+    )
+    assert owner_of('error', forge.posts[-1][2]) is Owner.ENVIRONMENT
     assert ('the run wrote no record' in forge.posts[-1][2]) is not kept[0]
 
 
@@ -632,7 +627,7 @@ def test_a_producer_exiting_a_former_box_sentinel_on_its_own_is_judged_by_its_co
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(code)}, forge)
-    assert forge.posts[-1][1:] == ('error', release_reason(code, outage=False))
+    assert forge.posts[-1][1:] == ('error', release_reason(code, outage=None))
     assert not forge.posts[-1][2].startswith(RETRYABLE)
 
 
@@ -741,6 +736,25 @@ def test_an_idle_alarm_names_the_account_not_the_login_node(monkeypatch, tmp_pat
     assert raised.subject == f'{SEAT} is idle with work pending'
 
 
+def test_an_idle_alarm_names_what_blocks_each_pending_part(monkeypatch, tmp_path: Path) -> None:
+    """An idle account says WHY per part: its queue row's block, never a bare 'nothing was claimed'.
+
+    PLANTED CONTROL: a pending part with no queue row still reads 'nothing was claimed'.
+    """
+    pending = Work('integrate/main', SHA, 'base', OPEN)
+    block = 'not admitted: lacking mem_gb (161.286 asked, 25.4863 free)'
+    row = Ranked(Candidate('o/r', 'integrate/main', SHA, 'base', 'part', NOW, FULL), 60.0, 4.0, 15.0, 1.0, block)
+    idle = TickReport((pending,), (), ('tick',), (), queue=(row,), pending=(pending,))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, idle)
+    (raised,) = [a for a in alarms if a.kind == IDLE]
+    assert f'integrate/main {SHA[:12]} base -- {block}' in raised.body
+    assert 'nothing was claimed' not in raised.body
+    bare = TickReport((pending,), (), ('tick',), (), pending=(pending,))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, bare)
+    (raised,) = [a for a in alarms if a.kind == IDLE]
+    assert raised.body.endswith('nothing was claimed')
+
+
 def test_work_this_host_cannot_serve_never_makes_it_idle(monkeypatch, tmp_path: Path) -> None:
     """Another platform's open part is in every host's work; only the tick's servable *pending* alarms idle."""
     elsewhere = Work('integrate/main', SHA, 'linux', OPEN)
@@ -777,24 +791,18 @@ def test_any_host_raises_starved_for_a_part_no_host_admits_and_n_hosts_page_once
     """Every host reads the queue ACROSS hosts; a part some host admits is no starvation, only a wait.
 
     PLANTED CONTROLS: a blocked wait under the bound and a wait one host only has to finish raise nothing,
-    and a second host reading the same queue writes the same issue and pages nothing.
+    and a second host reading the same queue raises the same alarm on its own card.
     """
     nobody = 'no host admits it -- G lacking cpu; ada/alice lacking mem_gb'
     queue = [_waiting('pr', 13, nobody), _waiting('pr', 11, nobody), _waiting('pr', 14, 'the tree is busy here')]
 
-    forge = _Issues()
-    _report, _said, alarms = _serve(
-        monkeypatch, tmp_path, TickReport((), (), ('tick',)), issues=forge, starving=tuple(queue)
-    )
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ('tick',)), starving=tuple(queue))
     (alarm,) = alarms
     assert (alarm.kind, alarm.about) == (STARVED, f'feat/x@{SHA[:12]}:windows')
     assert 'waited 13.0 h, past its 12 h bound' in alarm.body
     assert nobody in alarm.body, 'the starved alarm names every host and what it lacks'
-    assert len(forge.open) == 1
-    again = _serve(
-        monkeypatch, tmp_path, TickReport((), (), ('tick',)), issues=forge, host='other', starving=tuple(queue)
-    )
-    assert again[2] == []
+    again = _serve(monkeypatch, tmp_path, TickReport((), (), ('tick',)), host='other', starving=tuple(queue))
+    assert [one.subject for one in again[2]] == [alarm.subject]
 
 
 def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None:
@@ -1137,10 +1145,29 @@ def test_a_repo_whose_ci_merges_is_never_closed_or_swept_by_serve(monkeypatch, t
     assert ran == ['prune', 'records', 'tidy', 'observe', 'drafts']
 
 
-def test_only_a_declared_issue_kind_is_kept_as_an_issue() -> None:
-    """``forge tidy`` exempts exactly ISSUE_KINDS as machine-kept, so raise_once may keep no other kind."""
-    with pytest.raises(ValueError, match='ISSUE_KINDS'):
-        forgeservesteps.raise_once(SimpleNamespace(), RUN, [], alarm=lambda _a: None)
+def test_a_routine_notice_is_an_alarm_on_the_card_and_never_an_issue(tmp_path: Path, monkeypatch) -> None:
+    """User ruling 2026-11-14: prompt() hands each notice to ``alarm`` and opens no issue, tick after tick.
+
+    PLANTED CONTROL: with no notice found, nothing is alarmed -- the assertion can say no.
+    """
+    forge = StateForge()
+    notice = Alarm(INTEGRATION, 'o/r', 'integrate/main took break-glass #7', 'merged without a verdict')
+    found: list[Alarm] = []
+    for name in ('observe', 'sync_alarms', 'scarce_red', 'idle_drafts', 'late_reviews'):
+        monkeypatch.setattr(forgeservesteps, name, lambda *_a, **_k: [])
+    monkeypatch.setattr(forgeservesteps, 'load_policy', lambda _root: SimpleNamespace(integration='integrate/main'))
+    monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: SimpleNamespace(lines=(), said=()))
+    monkeypatch.setattr(forgeservesteps, 'ready_when_current', lambda *_a, **_k: [])
+    monkeypatch.setattr(forgeservesteps, 'security_step', lambda *_a, **_k: None)
+    monkeypatch.setattr(forgeservesteps, 'declared_wait', lambda _root: timedelta(hours=1))
+    monkeypatch.setattr(forgeservesteps, 'break_glass', lambda *_a: [])
+    forgeservesteps.prompt(tmp_path, 'o/r', forge, say=lambda _l: None, alarm=found.append, host='h')
+    assert found == []
+    monkeypatch.setattr(forgeservesteps, 'break_glass', lambda *_a: [notice])
+    for _tick in range(2):
+        forgeservesteps.prompt(tmp_path, 'o/r', forge, say=lambda _l: None, alarm=found.append, host='h')
+    assert found == [notice, notice], 'derived anew each tick: the card dedupes by subject'
+    assert forge.issues_by_number == {}, 'no issue was opened'
 
 
 def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch, tmp_path: Path) -> None:
@@ -1151,15 +1178,14 @@ def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch
     proc = _Proc(1, pid=77)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda pid: pid == 77)
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': proc}, forge)
-    assert forge.posts[-1] == ('tests/windows', 'error', 'stopped')
+    assert forge.posts[-1] == ('tests/windows', 'error', 'stopped class=scheduling')
 
 
 def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> forgeproduce.Produced:
     """One local part through :func:`forgeproduce.produce`, every forge and tree seam faked."""
     forge = _Forge()
     item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    forge.route(monkeypatch)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)
@@ -1182,7 +1208,7 @@ def test_a_finished_box_run_learns_its_peak_wall_and_measured_cpu(monkeypatch, t
         learn=lambda *a, **k: learnt.append((a, k)),
     )  # fmt: skip
     ((root, done, run), how) = learnt[0]
-    assert (root, done.platform, run.peak_mem_gb, run.cpu_s, how) == (tmp_path, 'windows', 3.5, 45.0, {'killed': False})
+    assert (root, done.platform, run.peak_mem_gb, run.cpu_s, how) == (tmp_path, 'windows', 3.5, 45.0, {'ended': 'exit'})
     assert run.wall_s > 0
 
 
@@ -1220,7 +1246,7 @@ def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatc
     _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learnt.append((a, k)))
     declared = forgeproduce.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
     ((_root, _item, run), how) = learnt[0]
-    assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'killed': True})
+    assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'ended': 'memory'})
 
 
 def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Path) -> None:

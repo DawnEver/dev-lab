@@ -49,9 +49,9 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.reviewgitauth import git_env
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.dev._forge_records import PullRequest

@@ -10,18 +10,25 @@ from __future__ import annotations
 import configparser
 import json
 import re
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons import launch
 
+from dev_lab.dev.forgefailure import RATE_HEADERS, UNAUTHENTICATED, Answer, ForgeCallFailed, diagnose, retried
+from dev_lab.dev.netverb import Diagnosis
+
 __all__ = [
+    'BREAKGLASS_SCOPES',
     'READ',
     'ROLE_GRANTS',
     'Forge',
@@ -30,6 +37,7 @@ __all__ = [
     'Http',
     'Runner',
     'TokenStore',
+    'audit',
     'local_api',
     'run_argv',
 ]
@@ -38,8 +46,12 @@ __all__ = [
 READ: Final = 'read'
 #: Each declared machine-account role and the narrowest Gitea collaborator permission that serves it. A review
 #: posts a pull review and a commit status; Gitea routes ``POST /repos/{o}/{r}/statuses/{sha}`` behind
-#: ``reqRepoWriter(unit.TypeCode)``, so a reviewer is a WRITE collaborator and its token's scopes are its limit.
-ROLE_GRANTS: Final = {'read': READ, 'write': 'write', 'review': 'write'}
+#: ``reqRepoWriter(unit.TypeCode)``, so a reviewer is a WRITE collaborator and its token's scopes are its limit. A
+#: break-glass merger merges past branch protection, which Gitea allows only a REPOSITORY admin -- never org or site.
+ROLE_GRANTS: Final = {'read': READ, 'write': 'write', 'review': 'write', 'breakglass': 'admin'}
+#: The only scopes a ``breakglass`` login's token may hold: merge (repository), post its reason comment (issue)
+#: and name itself (``GET /user``).
+BREAKGLASS_SCOPES: Final = frozenset({'read:repository', 'write:repository', 'read:issue', 'write:issue', 'read:user'})
 #: Runs one argv; its exit code and output.
 type Runner = Callable[[list[str]], tuple[int, str]]
 #: One local API call ``(method, path, token, body) -> (status, json)``.
@@ -53,7 +65,8 @@ class Forge:
     ``api`` is the local Gitea's base URL; ``admin`` the Gitea admin whose SHORT-LIVED token (minted by the CLI per
     use, deleted after it) grants a repository collaborator, which the Gitea CLI cannot. ``binary``, ``config`` and
     ``user`` run the Gitea CLI as the Gitea user. ``accounts`` declares each machine account,
-    ``{login: {role, repos}}`` with a role of :data:`ROLE_GRANTS`; a ``read`` login may hold ``read:*`` scopes only;
+    ``{login: {role, repos}}`` with a role of :data:`ROLE_GRANTS`; a ``read`` login may hold ``read:*`` scopes only, a
+    ``breakglass`` login :data:`BREAKGLASS_SCOPES` only;
     ``email_domain`` the address a made account gets; ``log`` the audit (who, what -- never a token).
     """
 
@@ -212,7 +225,8 @@ class GiteaCli:
             raise ForgeRefused(msg)
         return said
 
-    def _api(self, method: str, path: str, *, body: Mapping[str, Any] | None = None) -> tuple[int, Any]:
+    def api(self, method: str, path: str, *, body: Mapping[str, Any] | None = None) -> tuple[int, Any]:
+        """One local API call (*path* under ``/api/v1``) as the site admin; its status and parsed body."""
         if self._admin is None:
             name = f'dev-lab-ops-{uuid.uuid4().hex[:12]}'
             self._admin = (name, self.generate_token(self.role.admin, name, 'write:repository,write:user,write:admin'))
@@ -237,7 +251,7 @@ class GiteaCli:
 
     def permission(self, repo: str, login: str) -> str | None:
         """*login*'s permission on *repo* (``none`` when it holds none)."""
-        status, found = self._api('GET', f'/repos/{repo}/collaborators/{login}/permission')
+        status, found = self.api('GET', f'/repos/{repo}/collaborators/{login}/permission')
         if status == HTTPStatus.NOT_FOUND:
             msg = f'no repository {repo} (or no login {login})'
             raise ForgeRefused(msg)
@@ -245,7 +259,7 @@ class GiteaCli:
 
     def grant(self, repo: str, login: str, permission: str) -> None:
         """Make *login* a collaborator of *repo* holding *permission*."""
-        status, _ = self._api('PUT', f'/repos/{repo}/collaborators/{login}', body={'permission': permission})
+        status, _ = self.api('PUT', f'/repos/{repo}/collaborators/{login}', body={'permission': permission})
         if status not in {HTTPStatus.OK, HTTPStatus.NO_CONTENT}:
             msg = f'granting {login} {permission} on {repo} failed (HTTP {status})'
             raise ForgeRefused(msg)
@@ -264,23 +278,71 @@ class GiteaCli:
                          '--scopes', scopes, '--raw').strip()  # fmt: skip
 
 
+def audit(log: str, by: str, line: Mapping[str, Any]) -> None:
+    """Append one audit *line* to *log* (``[ops.forge] log``): when, who, what -- never a token."""
+    path = Path(log)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a', encoding='utf-8') as out:
+        out.write(json.dumps({'at': datetime.now(UTC).isoformat(timespec='seconds'), 'by': by, **line}) + '\n')
+
+
 def run_argv(argv: list[str]) -> tuple[int, str]:
     """One Gitea CLI argv through the launch door; its exit code and stdout."""
     done = launch.run(argv, capture_output=True, text=True, encoding='utf-8', check=False)
     return done.returncode, done.stdout
 
 
-def local_api(method: str, url: str, token: str, body: Mapping[str, Any] | None) -> tuple[int, Any]:
-    """One call to the host's own Gitea API (``[ops.forge] api``); its status and parsed body, ``None`` if none."""
+def _exchange(method: str, url: str, token: str, body: Mapping[str, Any] | None) -> Answer:
+    """One HTTP exchange with the host's Gitea, a refusal included; a dropped connection raises :class:`OSError`."""
     headers = {'Authorization': f'token {token}', 'Content-Type': 'application/json'}
     data = None if body is None else json.dumps(body).encode('utf-8')
     request = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310
     try:
         with urllib.request.urlopen(request, timeout=30) as answer:  # noqa: S310
-            status, raw = answer.status, answer.read()
+            return Answer(answer.status, answer.read())
     except urllib.error.HTTPError as refused:
-        status, raw = refused.code, b''
+        rate = {name: value for name in RATE_HEADERS if refused.headers and (value := refused.headers.get(name))}
+        return Answer(refused.code, b'', rate)
+
+
+def _read(answer: Answer, text: str) -> Diagnosis:
+    """:func:`~dev_lab.dev.forgefailure.diagnose`, but a 401 is final: the admin token was minted for this use."""
+    if answer.status == UNAUTHENTICATED:
+        return Diagnosis.FORGE_REFUSED
+    return diagnose(answer.status, text, answer.headers)
+
+
+def local_api(
+    method: str,
+    url: str,
+    token: str,
+    body: Mapping[str, Any] | None,
+    *,
+    exchange: Callable[[str, str, str, Mapping[str, Any] | None], Answer] = _exchange,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[int, Any]:
+    """One call to the host's own Gitea API (``[ops.forge] api``); its status and parsed body, ``None`` if none.
+
+    Through the family's one forge loop (:func:`~dev_lab.dev.forgefailure.retried`): a 5xx or a dropped connection
+    is retried, a rate limit waits, an answered refusal (a 401 included: the admin token is minted per use, so no
+    retry can clear it) is returned at once as its status for the caller to refuse by name. A forge never reached
+    reads status ``0``.
+    """
+    seen: list[Answer] = []
+
+    def once() -> Answer:
+        try:
+            seen.append(exchange(method, url, token, body))
+        except OSError as dropped:
+            seen.append(Answer(0, str(dropped).encode()))
+        return seen[-1]
+
     try:
-        return status, json.loads(raw) if raw else None
+        retried((method, urllib.parse.urlsplit(url).path), once, diagnosis=_read, sleep=sleep)
+    except ForgeCallFailed:
+        return seen[-1].status, None
+    raw = seen[-1].payload
+    try:
+        return seen[-1].status, json.loads(raw) if raw else None
     except ValueError:
-        return status, None
+        return seen[-1].status, None

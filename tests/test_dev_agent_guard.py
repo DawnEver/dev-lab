@@ -15,23 +15,32 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
+import venv
 from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import agent_guard, agent_wiring, agenthooks, hook_adoption
+from dev_lab.dev import agent_guard, agent_wiring, agenthooks, hook_adoption, native_session
 from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, Remedy, UnremediedRule
 from dev_lab.dev.jsrun import node_path
 from dev_lab.dev.plugin_settings import DISABLED_PLUGINS, live_disabled_plugins
 
-_ENGINE = {'type': 'command', 'command': agent_wiring.HOOK_COMMAND}
-#: TRACKED-CITES-NO-EPHEMERAL at the door (dev-lab#419): beside the engine, before every shell call.
-_JOURNALDOOR = {
-    'type': 'command',
-    'command': agent_wiring.JOURNALDOOR_COMMAND,
+
+def _row(command: str) -> dict[str, object]:
+    """The settings row the install writes for *command*, its declared timeout included."""
+    [timeout] = {row.timeout for row in agent_wiring.rows() if row.command == command}
+    return {'type': 'command', 'command': command, 'timeout': timeout}
+
+
+_ENGINE = _row(agent_wiring.HOOK_COMMAND)
+#: The PreToolUse dispatcher: the codeplace write hook before every write. A shell call meets the engine alone.
+_PRE = {
+    'matcher': 'Write|Edit|MultiEdit|NotebookEdit',
+    'hooks': [_row(agent_wiring.dispatch_command('PreToolUse'))],
 }
 
 # THE ENGINE RUNS ON THE LOCKED NODE (dev.jsrun), so this file needs no host resource and runs on every part.
@@ -146,7 +155,7 @@ def test_unrelated_settings_survive_the_install(repo: Path) -> None:
     pre = after['hooks']['PreToolUse']
     assert pre[0] == planted['hooks']['PreToolUse'][0], 'an unrelated matcher was rewritten'
     assert pre[1] == planted['hooks']['PreToolUse'][1], "another agent's Bash hook was moved or widened"
-    assert pre[2] == {'matcher': 'Bash|PowerShell', 'hooks': [_ENGINE, _JOURNALDOOR]}
+    assert pre[2:] == [{'matcher': 'Bash|PowerShell', 'hooks': [_ENGINE]}, _PRE]
 
 
 def test_wiring_that_runs_the_engine_with_other_arguments_is_stale(repo: Path) -> None:
@@ -258,7 +267,32 @@ def test_a_missing_engine_fails_closed_with_a_blocking_exit(repo: Path) -> None:
     done = _run_hook(repo, _wired_line(repo), 'git status')
     assert done.returncode == 2, (done.returncode, done.stderr)
     assert 'fail closed' in done.stderr
-    assert 'hook_install' in done.stderr
+    assert 'dev_lab.dev.agent_guard --install' in done.stderr
+    assert 'hook_install' not in done.stderr, 'the git-hook installer does not restore the agent guard'
+
+
+_REPAIR = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/py.js" -m dev_lab.dev.agent_guard --install'
+
+
+@pytest.mark.parametrize('part', [agent_wiring.ENGINE_REL, agent_wiring.RULES_REL])
+def test_a_missing_engine_or_rules_share_one_policy_the_repair_passes(repo: Path, part: str) -> None:
+    """dev-lab #639: either part gone refuses every command but the reinstall, naming it."""
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / part).unlink()
+    refused = _run_hook(repo, _wired_line(repo), 'git status')
+    assert refused.returncode == 2, (refused.returncode, refused.stderr)
+    assert 'dev_lab.dev.agent_guard --install' in refused.stderr
+    assert _run_hook(repo, _wired_line(repo), _REPAIR).returncode == 0, 'the guard refused its own repair'
+    smuggled = _run_hook(repo, _wired_line(repo), f'git status; {_REPAIR}')
+    assert smuggled.returncode == 2, 'PLANTED CONTROL: a command riding along with the repair is still refused'
+
+
+def test_the_repair_passes_even_a_crashing_engine(repo: Path) -> None:
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / agent_wiring.ENGINE_REL).write_text('process.exit(1);\n', encoding='utf-8')
+    assert _run_hook(repo, _wired_line(repo), f'{_REPAIR} --force').returncode == 0
 
 
 def test_an_engine_that_crashes_fails_closed_with_a_blocking_exit(repo: Path) -> None:
@@ -276,118 +310,7 @@ def test_the_wiring_matches_every_shell_tool(repo: Path) -> None:
     agent_guard.install_guard(repo)
     settings = json.loads((repo / agent_wiring.SETTINGS_REL).read_text(encoding='utf-8'))
     matchers = [entry['matcher'] for entry in settings['hooks']['PreToolUse']]
-    assert matchers == ['Bash|PowerShell']
-
-
-def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: Path) -> None:
-    """The old wiring is STALE; the install widens OUR hook without widening anybody else's."""
-    settings = repo / agent_wiring.SETTINGS_REL
-    settings.parent.mkdir(parents=True)
-    ours = {'type': 'command', 'command': agent_wiring.HOOK_COMMAND}
-    theirs = {'type': 'command', 'command': 'node theirs.js'}
-    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [theirs, ours]}]}}
-    settings.write_text(json.dumps(old), encoding='utf-8')
-    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.STALE
-    agent_guard.install_guard(repo)
-    pre = json.loads(settings.read_text(encoding='utf-8'))['hooks']['PreToolUse']
-    assert pre == [
-        {'matcher': 'Bash', 'hooks': [theirs]},
-        {'matcher': 'Bash|PowerShell', 'hooks': [ours, _JOURNALDOOR]},
-    ]
-    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
-
-
-#: PUSHED-HEAD-IS-WATCHED: the advisory reminder after every shell call, beside the stray census.
-_PUSHWATCH = {'type': 'command', 'command': agent_wiring.PUSHWATCH_COMMAND}
-_SWEEP = {'type': 'command', 'command': agent_wiring.SWEEP_COMMAND}
-#: A PRESSED HOST TELLS ITS AGENTS (D54): after every shell call, and on each prompt.
-_PRESSURE = {'type': 'command', 'command': agent_wiring.PRESSURE_COMMAND}
-#: PUSHED-HEAD-IS-WATCHED, the Stop half (ruling 2026-11-04): after the hand-back check.
-_PUSHSTOP = {'type': 'command', 'command': agent_wiring.PUSHSTOP_COMMAND}
-
-
-def test_the_install_wires_the_stray_census_once_at_stop() -> None:
-    """STRAY-FILE-REFUSED is live only when wired: at Stop, once -- not again after every shell call."""
-    after = agent_guard.wire_settings({})
-    stray = {'type': 'command', 'command': agent_wiring.STRAY_COMMAND}
-    handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
-    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
-    assert after['hooks']['UserPromptSubmit'] == [{'hooks': [_PRESSURE]}]
-    assert 'dev_lab.dev.codeplace stray' in agent_wiring.STRAY_COMMAND
-    assert agent_wiring.PUSHWATCH_COMMAND.startswith('node ')
-    assert 'dev_lab.dev.pushwatch' in agent_wiring.PUSHWATCH_COMMAND
-
-
-def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() -> None:
-    """Idempotent, and another author's PostToolUse/Stop hooks stay where they were."""
-    planted = {
-        'hooks': {
-            'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': 'node log.js'}]}],
-            'Stop': [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}],
-        },
-    }
-    once = agent_guard.wire_settings(planted)
-    assert agent_guard.wire_settings(once) == once
-    stray = {'type': 'command', 'command': agent_wiring.STRAY_COMMAND}
-    assert once['hooks']['PostToolUse'] == [
-        {
-            'matcher': 'Bash|PowerShell',
-            'hooks': [{'type': 'command', 'command': 'node log.js'}, _PUSHWATCH, _SWEEP, _PRESSURE],
-        }
-    ]
-    handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
-    assert once['hooks']['Stop'] == [
-        planted['hooks']['Stop'][0],
-        {'hooks': [stray]},
-        {'hooks': [handback]},
-        {'hooks': [_PUSHSTOP]},
-    ]
-    assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
-
-
-def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census() -> None:
-    """Every exit of the wiring wires the census: our PreToolUse hook already present is the upgrade path."""
-    ours = {'type': 'command', 'command': agent_wiring.HOOK_COMMAND}
-    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
-    after = agent_guard.wire_settings(old)
-    stray = {'type': 'command', 'command': agent_wiring.STRAY_COMMAND}
-    handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
-    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [_PUSHWATCH, _SWEEP, _PRESSURE]}]
-    assert after['hooks']['Stop'] == [{'hooks': [stray]}, {'hooks': [handback]}, {'hooks': [_PUSHSTOP]}]
-
-
-def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(repo: Path) -> None:
-    """The report reads the SAME wiring table the install writes, so a pre-census settings file is STALE."""
-    settings = repo / agent_wiring.SETTINGS_REL
-    settings.parent.mkdir(parents=True)
-    ours = {'type': 'command', 'command': agent_wiring.HOOK_COMMAND}
-    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
-    settings.write_text(json.dumps(old), encoding='utf-8')
-    part = agent_guard.guard_installation(repo).by_part['wiring']
-    assert part.status == agent_guard.STALE, part.detail
-    assert 'PostToolUse' in part.detail
-    agent_guard.install_guard(repo)
-    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
-
-
-def test_the_stray_hook_spells_no_interpreter_and_runs_through_the_launcher() -> None:
-    """One door resolves the venv per platform: a hook naming ``.venv`` drifts from it (consumer-a pins this)."""
-    assert '.venv' not in agent_wiring.STRAY_COMMAND
-    assert agent_wiring.STRAY_COMMAND.startswith('node ')
-    assert agent_wiring.LAUNCHER_REL in agent_wiring.STRAY_COMMAND
-
-
-def test_the_hand_back_check_is_wired_at_every_stop_through_the_launcher() -> None:
-    """AGENT-RUNS-ITS-OWN-COMMANDS reaches every Stop and SubagentStop; a wiring missing it is STALE."""
-    handback = {'type': 'command', 'command': agent_wiring.HANDBACK_COMMAND}
-    after = agent_guard.wire_settings({})
-    assert after['hooks']['SubagentStop'] == [{'hooks': [handback]}]
-    assert any(handback in entry['hooks'] for entry in after['hooks']['Stop'])
-    assert agent_wiring.HANDBACK_COMMAND.startswith('node ')
-    assert '.venv' not in agent_wiring.HANDBACK_COMMAND
-    del after['hooks']['SubagentStop']
-    assert agent_guard._unwired(after) == ['SubagentStop']
+    assert matchers == ['Bash|PowerShell', _PRE['matcher']]
 
 
 def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Path) -> None:
@@ -401,6 +324,20 @@ def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Pa
     assert (other / agent_wiring.LAUNCHER_REL).read_text(encoding='utf-8') == '// the repo own launcher\n'
 
 
+def test_the_install_replaces_a_stale_launcher_dev_lab_shipped(tmp_path: Path) -> None:
+    """A launcher carrying dev-lab's provenance line but older bytes is ours and stale: it is replaced.
+
+    The incident (2026-11-18): a kept old launcher ran the legacy .venv, whose dev-lab had no
+    hookdispatch, so every project dispatch row failed silently. The foreign launcher above is the control.
+    """
+    launcher = tmp_path / agent_wiring.LAUNCHER_REL
+    launcher.parent.mkdir(parents=True)
+    provenance = agent_guard.launcher_source().splitlines()[1]
+    launcher.write_text(f'// an older shipped launcher\n{provenance}\n', encoding='utf-8')
+    agent_guard.install_guard(tmp_path)
+    assert launcher.read_text(encoding='utf-8') == agent_guard.launcher_source()
+
+
 def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
     """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
     agent_guard.install_guard(tmp_path)
@@ -408,7 +345,7 @@ def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -
     node = node_path().parent.as_posix()
     env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path), 'PATH': f'{node}{os.pathsep}{os.environ["PATH"]}'}
     done = subprocess.run(
-        [_SHELL, '-c', agent_wiring.STRAY_COMMAND],
+        [_SHELL, '-c', agent_wiring.dispatch_command('Stop')],
         input='{}',
         capture_output=True,
         text=True,
@@ -428,28 +365,6 @@ def test_the_engine_reads_the_live_run_absent_key_python_writes() -> None:
     engine = (Path(agenthooks.__file__).parent / 'deny-commands.js').read_text(encoding='utf-8')
     assert f'input.{agenthooks.LIVE_RUN_ABSENT} === true' in engine
     assert 'input.dev_lab_renamed_key === true' not in engine, 'CONTROL: the probe is a literal match'
-
-
-def test_a_retired_wire_is_removed_from_an_installed_settings_file() -> None:
-    """No dual path: the old PostToolUse stray census leaves when the wiring is re-installed; foreign hooks stay."""
-    stray = {'type': 'command', 'command': agent_wiring.STRAY_COMMAND}
-    foreign = {'type': 'command', 'command': 'node log.js'}
-    old = {'hooks': {'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [foreign, stray]}]}}
-    after = agent_guard.wire_settings(old)
-    assert after['hooks']['PostToolUse'] == [
-        {'matcher': 'Bash|PowerShell', 'hooks': [foreign, _PUSHWATCH, _SWEEP, _PRESSURE]}
-    ]
-
-
-def test_the_pushed_head_gate_stops_the_main_session_and_the_venv_follow_starts_it() -> None:
-    """Rulings 2026-11-04: the pushed-head gate at Stop (never a subagent's), the venv follow at SessionStart."""
-    after = agent_guard.wire_settings({})
-    assert any(_PUSHSTOP in entry['hooks'] for entry in after['hooks']['Stop'])
-    assert all(_PUSHSTOP not in entry['hooks'] for entry in after['hooks']['SubagentStop'])
-    follow = {'type': 'command', 'command': agent_wiring.VENVFOLLOW_COMMAND}
-    assert any(follow in entry['hooks'] for entry in after['hooks']['SessionStart'])
-    assert 'dev_lab.dev.venvfollow --session-start' in agent_wiring.VENVFOLLOW_COMMAND
-    assert agent_wiring.PUSHSTOP_COMMAND.startswith('node ')
 
 
 def test_the_install_turns_off_every_disabled_plugin_and_keeps_a_repo_own() -> None:
@@ -532,3 +447,316 @@ def test_a_local_rule_shadowing_a_family_rule_is_refused() -> None:
     """A local row reusing a family id is the fork the split exists to prevent; the render refuses it."""
     with pytest.raises(UnremediedRule, match=DENY_RULES[0].id):
         render(HookAdoption(app_name='planted'), local=(DENY_RULES[0],))
+
+
+def _venv_with_dev_lab_at(root: Path, installed: str, locked: str) -> dict[str, str]:
+    """*root* a checkout whose venv holds a dev-lab at *installed* and whose ``uv.lock`` pins *locked*."""
+    agent_guard.install_guard(root)
+    venv.EnvBuilder(with_pip=False).create(root / '.venv')
+    site = next((root / '.venv').glob('**/site-packages'))
+    info = site / 'dev_lab-0.dist-info'
+    info.mkdir()
+    (info / 'METADATA').write_text('Metadata-Version: 2.1\nName: dev-lab\nVersion: 0\n', encoding='utf-8')
+    origin = {'url': 'https://example.invalid/dev-lab.git', 'vcs_info': {'vcs': 'git', 'commit_id': installed}}
+    (info / 'direct_url.json').write_text(json.dumps(origin), encoding='utf-8')
+    pin = f'source = {{ git = "{origin["url"]}#{locked}" }}'
+    # Text mode: CRLF on Windows, as a checked-out lock may be -- the launcher reads both.
+    (root / 'uv.lock').write_text(f'[[package]]\nname = "dev-lab"\nversion = "0"\n{pin}\n', encoding='utf-8')
+    node = node_path().parent.as_posix()
+    return {
+        **os.environ,
+        'CLAUDE_PROJECT_DIR': str(root),
+        'CLAUDE_CODE_SESSION_ID': 'planted',
+        'PATH': f'{node}{os.pathsep}{os.environ["PATH"]}',
+    }
+
+
+def _bind(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [_SHELL, '-c', agent_wiring.dispatch_command('UserPromptSubmit')],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, check=False,
+    )  # fmt: skip
+
+
+def test_a_stale_venv_names_its_fix_and_records_the_wall(tmp_path: Path) -> None:
+    """2026-11-13: a venv behind its lock failed a hook with only ``No module named``; now cause, door, wall, exit 0."""
+    done = _bind(_venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40))
+    assert done.returncode == 0, done.stderr
+    [line] = done.stderr.splitlines()
+    assert 'aaaaaaaaaa is behind' in line, line
+    assert "lock's bbbbbbbbbb" in line, line
+    assert f'-m dev_lab.dev.dep --bootstrap {tmp_path}' in line, line
+    [wall] = [
+        json.loads(raw)
+        for path in tmp_path.glob('output/logs/*/*/*/walls/walls.jsonl')
+        for raw in path.read_text(encoding='utf-8').splitlines()
+    ]
+    assert (wall['rule'], wall['remedy_present'], wall['session']) == ('VENV-FOLLOWS-THE-LOCK', True, 'planted')
+
+
+def test_a_stale_venv_missing_a_verb_names_its_fix_and_lets_the_prompt_through(tmp_path: Path) -> None:
+    """2026-11-16: an older dev-lab whose argparse lacks the hook's verb exited 2 and blocked every prompt."""
+    env = _venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40)
+    probe = 'import sys; sys.stderr.write("error: argument verb: invalid choice: \'bind\'\\n"); sys.exit(2)'
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-c', probe],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=tmp_path, check=False,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr
+    assert 'bind missing' in done.stderr
+    assert '-m dev_lab.dev.dep --bootstrap' in done.stderr
+    current = _venv_with_dev_lab_at(tmp_path / 'current', 'c' * 40, 'c' * 40)
+    same = subprocess.run(
+        [str(node_path()), str(tmp_path / 'current' / agent_wiring.LAUNCHER_REL), '-c', probe],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=current, cwd=tmp_path / 'current',
+        check=False,
+    )  # fmt: skip
+    assert same.returncode == 0, 'dev-lab #639: a current venv lacking the verb is a wiring fault, never a block'
+    assert 'behind' not in same.stderr
+    assert 'agent_guard --install' in same.stderr, 'a current venv is told to re-render the wiring'
+
+
+def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path: Path) -> None:
+    env = _venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40)
+    env.pop('CLAUDE_CODE_SESSION_ID', None)
+    env.pop('CLAUDE_PROJECT_DIR', None)
+    env['CODEX_THREAD_ID'] = 'native-codex'
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-m', 'dev_lab.dev.forgefeed', 'inbox'],
+        input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=tmp_path, check=False,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr
+    assert '-m dev_lab.dev.dep --bootstrap' in done.stderr
+    [wall] = [
+        json.loads(raw)
+        for path in tmp_path.glob('output/logs/*/*/*/walls/walls.jsonl')
+        for raw in path.read_text(encoding='utf-8').splitlines()
+    ]
+    assert (wall['rule'], wall['remedy_present'], wall['session']) == ('VENV-FOLLOWS-THE-LOCK', True, 'native-codex')
+
+
+@pytest.mark.parametrize(
+    ('value', 'accepted'),
+    [
+        ('é_9.-', True),
+        ('𐐀' * 128, True),
+        ('Ⅳ²', True),
+        ('a' * 128, True),
+        ('𐐀' * 129, False),
+        ('valid\n', False),
+        ('e\u0301', False),
+        ('x\u200b', False),
+        ('role:integrator', False),
+    ],
+)
+def test_the_installed_node_launcher_and_python_share_the_exact_native_identity_grammar(
+    tmp_path: Path, value: str, *, accepted: bool
+) -> None:
+    agent_guard.install_guard(tmp_path)
+    env = {**os.environ, 'CODEX_THREAD_ID': value}
+    for field in ('CLAUDE_CODE_SESSION_ID', 'CLAUDE_PROJECT_DIR', 'CODEX_SESSION_ID'):
+        env.pop(field, None)
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+    )
+    if accepted:
+        assert native_session.session_of({'CODEX_THREAD_ID': value}) == value
+        assert done.returncode == 0, done.stderr
+        assert 'no .venv interpreter' in done.stderr
+    else:
+        with pytest.raises(ValueError, match='Door:'):
+            native_session.session_of({'CODEX_THREAD_ID': value})
+        assert done.returncode == 1
+        assert 'native session' in done.stderr
+        assert 'Door:' in done.stderr
+        assert value not in done.stderr
+
+
+@pytest.mark.parametrize('contents', [None, '{', '{}', '[]'])
+def test_the_installed_launcher_refuses_a_missing_or_corrupt_identity_companion(
+    tmp_path: Path, contents: str | None
+) -> None:
+    agent_guard.install_guard(tmp_path)
+    catalog = (tmp_path / agent_wiring.LAUNCHER_REL).with_name('native_session.json')
+    if contents is None:
+        catalog.unlink()
+    else:
+        catalog.write_text(contents, encoding='utf-8')
+    done = subprocess.run(
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+    )
+    assert done.returncode == 1
+    assert 'native session catalog' in done.stderr
+    assert 'Door:' in done.stderr
+
+
+def test_a_missing_module_from_a_current_venv_lets_the_prompt_through_naming_itself(tmp_path: Path) -> None:
+    """dev-lab #639: a venv matching its lock but missing the module still never blocks; it is no stale-venv wall."""
+    done = _bind(_venv_with_dev_lab_at(tmp_path, 'c' * 40, 'c' * 40))
+    assert done.returncode == 0, done.stderr
+    [line] = done.stderr.splitlines()
+    assert '(dev_lab' in line, line
+    assert '-m dev_lab.dev.dep --bootstrap' in line, line
+    assert 'behind' not in done.stderr
+    assert not list(tmp_path.glob('output/logs/*/*/*/walls/walls.jsonl'))
+
+
+def _ours(settings: dict) -> list[dict]:
+    return [h for es in settings['hooks'].values() for e in es for h in e['hooks'] if h in _RENDERED]
+
+
+_RENDERED = [_row(row.command) for row in agent_wiring.rows()]
+
+
+def test_settings_carry_the_engine_and_one_dispatcher_row_per_event() -> None:
+    """dev-lab #640: a settings row names only its event, so no handler a lagging venv lacks is ever named.
+
+    PLANTED CONTROL: a module path in a rendered row other than the dispatcher's would be a row naming a handler.
+    """
+    after = agent_guard.wire_settings({})
+    commands = [h['command'] for h in _ours(after)]
+    assert len(commands) == 1 + len(agent_wiring.events())
+    dispatched = [c for c in commands if c != agent_wiring.HOOK_COMMAND]
+    assert all(c.endswith(f'-m {agent_wiring.DISPATCH_MODULE} {c.split()[-1]}') for c in dispatched), dispatched
+    assert {c.split()[-1] for c in dispatched} == set(agent_wiring.events())
+    for wire in agent_wiring.WIRING:
+        assert not any(wire.module in c for c in commands), f'a rendered row names the handler {wire.name}'
+
+
+def test_a_rows_matcher_derives_from_its_handlers_and_its_timeout_is_the_ceiling() -> None:
+    """The matcher is the union of the handlers' tools (none when one sees every call); the bound is the ceiling."""
+    by_event = {row.event: row for row in agent_wiring.rows() if row.command != agent_wiring.HOOK_COMMAND}
+    assert by_event['PreToolUse'].matcher == 'Write|Edit|MultiEdit|NotebookEdit'
+    assert by_event['UserPromptSubmit'].matcher is None
+    for event, row in by_event.items():
+        assert row.timeout == agent_wiring.HOOK_TIMEOUT_S, event
+
+
+@pytest.mark.parametrize('tool', agent_wiring.SHELL_TOOLS)
+def test_a_shell_call_meets_exactly_one_pre_tool_command_the_engine(tool: str) -> None:
+    """ONE interpreter per shell call: every PreToolUse check of a command is an engine row, never a Python handler.
+
+    PLANTED CONTROL: the codeplace write hook's row does match a Write call, so the matcher test can say yes.
+    """
+    pre = agent_guard.wire_settings({})['hooks']['PreToolUse']
+
+    def commands_for(name: str) -> list[str]:
+        return [
+            hook['command']
+            for entry in pre
+            if 'matcher' not in entry or re.fullmatch(entry['matcher'], name)
+            for hook in entry['hooks']
+        ]
+
+    assert commands_for(tool) == [agent_wiring.HOOK_COMMAND]
+    assert agent_wiring.dispatch_command('PreToolUse') in commands_for('Write')
+
+
+def test_the_renderer_owns_every_launcher_row_and_keeps_foreign_hooks() -> None:
+    """No retired-wire list: any launcher row running a dev_lab.dev module is ours, removed unless rendered.
+
+    Planted: a retired handler, a hand-wired cwd-relative codeplace row beside a repo's own launcher script, a
+    foreign hook. Only the foreign hook and the repo's own script survive; wiring twice changes nothing.
+    """
+    own = {'type': 'command', 'command': 'node .claude/hooks/py.js scripts/hooks/doc_principles.py'}
+    foreign = {'type': 'command', 'command': 'node log.js'}
+    retired = {'type': 'command', 'command': 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/py.js" -m dev_lab.dev.pushwatch'}
+    hand = {'type': 'command', 'command': 'node .claude/hooks/py.js -m dev_lab.dev.codeplace'}
+    planted = {
+        'hooks': {
+            'PreToolUse': [{'matcher': 'Edit|Write', 'hooks': [own, hand]}],
+            'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [foreign, retired]}],
+            'Notification': [{'hooks': [retired]}],
+        }
+    }
+    after = agent_guard.wire_settings(planted)
+    assert agent_guard.wire_settings(after) == after
+    assert after['hooks']['PreToolUse'][0] == {'matcher': 'Edit|Write', 'hooks': [own]}
+    assert after['hooks']['PostToolUse'][0] == {'matcher': 'Bash|PowerShell', 'hooks': [foreign]}
+    assert 'Notification' not in after['hooks'], 'an event left with no hook stays as an empty list'
+    assert sorted(map(json.dumps, _ours(after))) == sorted(map(json.dumps, _RENDERED))
+    assert planted['hooks']['PostToolUse'][0]['hooks'] == [foreign, retired], 'the input was mutated'
+
+
+def test_a_drifted_or_extra_owned_row_is_stale_and_the_install_restores_it(repo: Path) -> None:
+    """The report reads what the renderer writes. PLANTED: a stripped timeout, a lost event, an extra handler row."""
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    path = repo / agent_wiring.SETTINGS_REL
+    rendered = json.loads(path.read_text(encoding='utf-8'))
+    extra = {'type': 'command', 'command': 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/py.js" -m dev_lab.dev.handback'}
+    plants = {
+        'timeout': lambda s: s['hooks']['Stop'][-1]['hooks'][0].pop('timeout'),
+        'event': lambda s: s['hooks'].pop('SubagentStop'),
+        'extra': lambda s: s['hooks']['Stop'].append({'hooks': [extra]}),
+    }
+    for name, plant in plants.items():
+        settings = json.loads(json.dumps(rendered))
+        plant(settings)
+        path.write_text(json.dumps(settings), encoding='utf-8')
+        part = agent_guard.guard_installation(repo).by_part['wiring']
+        assert part.status == agent_guard.STALE, name
+        agent_guard.install_guard(repo)
+        assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED, name
+
+
+# ------------------------------------------------------------------------------------- a repo's own declared wires
+
+
+def _declare_wire(repo: Path, module: str, row: str) -> None:
+    """The repo declares one ``[[tool.dev_lab.agent_hooks]]`` row, its handler a module at the repo's root."""
+    (repo / 'pyproject.toml').write_text(
+        f'[[tool.dev_lab.agent_hooks]]\nmodule = "{module}"\n{row}\n', encoding='utf-8'
+    )
+    (repo / f'{module}.py').write_text('def main(argv):\n    return 0\n', encoding='utf-8')
+
+
+def test_rows_derive_matcher_from_the_family_and_the_repo_declaration(repo: Path) -> None:
+    _declare_wire(repo, 'planted_guard_wire_a', 'events = ["PreToolUse", "PreCompact"]\ntools = ["Read"]\ntimeout = 1')
+    family = {row.event: row for row in agent_wiring.rows()}
+    merged = {row.event: row for row in agent_wiring.rows(repo)}
+    assert merged['PreToolUse'].matcher == f'{family["PreToolUse"].matcher}|Read'
+    assert merged['PreToolUse'].timeout == family['PreToolUse'].timeout == agent_wiring.HOOK_TIMEOUT_S
+    assert merged['PreCompact'] == agent_wiring.Row(
+        'PreCompact', 'Read', agent_wiring.dispatch_command('PreCompact'), agent_wiring.HOOK_TIMEOUT_S
+    )
+    assert 'PreCompact' not in family, 'PLANTED CONTROL: the family alone serves no such event'
+
+
+def test_the_drift_check_counts_a_repo_declared_wire_and_the_install_renders_it(repo: Path) -> None:
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+    _declare_wire(repo, 'planted_guard_wire_b', 'events = ["PreCompact"]')
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE
+    assert 'PreCompact' in part.detail
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+    settings = json.loads((repo / agent_wiring.SETTINGS_REL).read_text(encoding='utf-8'))
+    [entry] = settings['hooks']['PreCompact']
+    assert entry['hooks'][0]['command'] == agent_wiring.dispatch_command('PreCompact')
+
+
+def test_a_refused_declaration_is_stale_by_name_and_the_install_refuses_it(repo: Path) -> None:
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / 'pyproject.toml').write_text(
+        '[[tool.dev_lab.agent_hooks]]\nevents = ["Stop"]\nmodule = "missing_guard_wire"\n', encoding='utf-8'
+    )
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE
+    assert 'missing_guard_wire' in part.detail
+    with pytest.raises(agent_wiring.WireRefused, match='missing_guard_wire'):
+        agent_guard.install_guard(repo)

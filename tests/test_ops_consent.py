@@ -12,12 +12,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _ops_fixtures import NOW, RFC_KEY, code
+from _ops_fixtures import NOW, RFC_KEY, code, speaks
 from lab_commons.home import HOME_ENV
 
 from dev_lab.dev.consentguard import refuse_write, state_dir
-from dev_lab.ops import __main__ as ops_main
-from dev_lab.ops import consentverbs
+from dev_lab.ops import consentverbs, redeemverbs
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.actions import ACTIONS
@@ -72,8 +71,8 @@ def test_a_valid_credential_verifies_and_registers(host: Host) -> None:
 def test_tampering_with_any_field_fails_verification(host: Host, name: str) -> None:
     credential = host.issue(WAVE)
     changed = {'id': 'other', 'action': 'review.raise-cap', 'subject': 'x', 'params': {'hours': 24, 'max_merges': 3},
-               'params_hash': '0' * 64, 'scope': 'campaign', 'cap': 9, 'issued': NOW - 1, 'expires': NOW + 9e4,
-               'issuer': 'mallory'}  # fmt: skip
+               'params_hash': '0' * 64, 'scope': 'campaign', 'cap': 9, 'plan': 'f' * 64, 'issued': NOW - 1,
+               'expires': NOW + 9e4, 'issuer': 'mallory'}  # fmt: skip
     with pytest.raises(ConsentRefused):
         verify(credential | {name: changed[name]}, host.issuer.public(), now=host.clock[0])
     verify(credential, host.issuer.public(), now=host.clock[0])  # the control
@@ -235,6 +234,7 @@ def test_a_code_that_is_not_six_digits_is_refused_before_it_is_sent(host: Host, 
     request.write_text(json.dumps(WAVE), encoding='utf-8')
     sent: list[object] = []
 
+    @speaks
     def send(_table: object, line: dict[str, Any]) -> tuple[int, str]:
         sent.append(line)
         return 1, 'unreached'
@@ -295,11 +295,11 @@ def test_a_host_that_is_not_the_issuer_redeems_at_the_issuer_over_its_endpoint(
             return 2, str(refused)
 
     monkeypatch.setattr(consentverbs, 'remote_register', lambda table: remote_register(table, send=send))
-    monkeypatch.setattr(ops_main.time, 'time', lambda: host.clock[0])
+    monkeypatch.setattr(redeemverbs.time, 'time', lambda: host.clock[0])
     judge = _judge_host(host.tmp, _client(host))
     assert judge.consent is None
     credential = host.issue(WAVE)
-    redeem_wave = ops_main._redeemer(judge)('breakglass.wave')
+    redeem_wave = redeemverbs.redeemer(judge)('breakglass.wave')
     assert redeem_wave(credential, None).action == 'breakglass.wave'
     assert sent == [('consent@issuer', '/srv/ops/ssh/consent_known_hosts')]
     with pytest.raises(ConsentRefused, match='already used'):  # registered AT the issuer: its ledger refuses a reuse
@@ -308,5 +308,5 @@ def test_a_host_that_is_not_the_issuer_redeems_at_the_issuer_over_its_endpoint(
 
 def test_a_host_with_neither_issuer_nor_client_table_names_the_key_to_set(host: Host) -> None:
     with pytest.raises(ConsentRefused, match=r'\[ops\.consent_client\] endpoint'):
-        ops_main._redeemer(_judge_host(host.tmp, ''))
-    ops_main._redeemer(_judge_host(host.tmp, _client(host)))  # the control
+        redeemverbs.redeemer(_judge_host(host.tmp, ''))
+    redeemverbs.redeemer(_judge_host(host.tmp, _client(host)))  # the control

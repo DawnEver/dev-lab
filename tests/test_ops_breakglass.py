@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import json
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -21,11 +22,15 @@ from _forge_fake import Loopback, Recorder, answer, serve
 from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 
 from dev_lab.dev.breakglass import reason
+from dev_lab.dev.failprint import Fingerprints
 from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR
+from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
 from dev_lab.dev.reviewgate import DeclarationUnread
-from dev_lab.ops.breakglass import BreakglassRefused, ClientForge, Server, merge_message
+from dev_lab.ops.breakglass import BreakglassRefused, Server, merge_message
+from dev_lab.ops.breakglassforge import ClientForge
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.issuer import Issuer
@@ -35,6 +40,7 @@ from dev_lab.ops.totp import STEP
 HEAD = 'a' * 40
 KEY = 'SHA256:agentkey'
 HOUR = 3600.0
+DECLARED = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\nproducer = "hpc"\n'
 GREEN = (
     CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=-', ''),
     CommitStatus('tests/security', 'success', 'nothing found', ''),
@@ -49,22 +55,25 @@ class FakeForge:
     calls: list[tuple[str, int, str]] = field(default_factory=list)
     #: The head's statuses; green tests by default, as every break-glass merge needs.
     posted: list[CommitStatus] = field(default_factory=lambda: list(GREEN))
-    #: The repo's ``pyproject.toml`` at its default branch; ``None`` plants one the forge cannot serve.
-    manifest: str | None = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+    #: The repo's ``pyproject.toml`` per ref; an absent ref is one the forge cannot serve. The default branch
+    #: (``main``) declares nothing, as a member's old data commit did: only the PR's base may be read.
+    manifests: dict[str, str] = field(default_factory=lambda: {'integrate/main': DECLARED})
     #: Each PR's labels (none by default); a PR in ``unreadable`` plants a forge that cannot answer for them.
     labelled: dict[int, tuple[str, ...]] = field(default_factory=dict)
     unreadable: frozenset[int] = frozenset()
+    #: Each ref's failure fingerprints (none by default: a green head reads no record).
+    prints: dict[str, Fingerprints] = field(default_factory=dict)
 
     def labels(self, number: int) -> tuple[str, ...]:
         if number in self.unreadable:
             raise ForgeCallFailed(Report(f'GET /pulls/{number}', (), 1))
         return self.labelled.get(number, ())
 
-    def declaration(self) -> str:
-        if self.manifest is None:
-            unread = 'pyproject.toml at main cannot be read: 404'
+    def declaration(self, ref: str) -> str:
+        if ref not in self.manifests:
+            unread = f'pyproject.toml at {ref} cannot be read: 404'
             raise DeclarationUnread(unread)
-        return self.manifest
+        return self.manifests[ref]
 
     def pull(self, number: int) -> tuple[str, str, str]:
         del number
@@ -73,6 +82,9 @@ class FakeForge:
     def statuses(self, head: str) -> list[CommitStatus]:
         del head
         return list(self.posted)
+
+    def fingerprints(self, ref: str) -> Fingerprints:
+        return self.prints.get(ref, {})
 
     def comment(self, number: int, body: str) -> None:
         self.calls.append(('comment', number, body))
@@ -219,6 +231,17 @@ def test_a_manual_merge_of_a_needs_consent_pr_is_refused(host: Host) -> None:
     assert 'merged' in host.merge()
 
 
+def test_a_held_pr_is_refused_naming_the_release_door_and_merges_after_release(host: Host) -> None:
+    """User ruling D48 (2026-11-17): break-glass honours the hold label too."""
+    host.open()
+    host.forge.labelled[7] = (HOLD_LABEL,)
+    with pytest.raises(BreakglassRefused, match=re.escape(RELEASE_DOOR.format(n=7))):
+        host.merge()
+    assert host.forge.calls == []
+    host.forge.labelled[7] = ()  # PLANTED CONTROL: released, the same PR merges
+    assert 'merged' in host.merge()
+
+
 def test_a_manual_merge_whose_labels_cannot_be_read_is_refused(host: Host) -> None:  # PLANTED CONTROL
     host.open()
     host.forge.unreadable = frozenset({7})
@@ -293,7 +316,7 @@ def test_ack_needs_no_code_and_records_who(host: Host) -> None:
         ({'repo': 'alpha'}, FakeForge(), 'not a repository this host serves'),
         ({'reason': 'short'}, FakeForge(), 'at least 10'),
         ({}, FakeForge(state='closed'), 'closed, not open'),
-        ({}, FakeForge(base='main'), 'not the integration branch integrate/main'),
+        ({}, FakeForge(base='main', manifests={'main': DECLARED}), 'not the integration branch integrate/main'),
         ({}, FakeForge(head='b' * 40), 'not the aaaaaaaaaaaa you were shown'),
     ],
 )
@@ -325,6 +348,22 @@ def test_the_key_is_in_the_wave_record_and_every_audit_line(host: Host) -> None:
     assert json.loads(record.read_text(encoding='utf-8'))['merges'][0]['key'] == KEY
     lines = Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()
     assert {json.loads(line)['key'] for line in lines} == {KEY}
+
+
+def test_every_merge_is_audited_under_the_one_consent_that_opened_its_wave(host: Host) -> None:
+    """The wave has no subject: each merge's (repo, PR, head, reason) is tied to the user's grant by its id."""
+    host.open()
+    host.merge()
+    host.merge(reason='a second emergency fix')
+    assert host.config.breakglass is not None
+    lines = [json.loads(line) for line in Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()]
+    [opened] = [line for line in lines if line['outcome'] == 'opened']
+    merged = [line for line in lines if line['outcome'] == 'merged']
+    assert len(merged) == 2  # the control: both merged
+    assert {line['consent'] for line in merged} == {opened['consent']}
+    assert all({'repo', 'pr', 'head', 'reason'} <= set(line) for line in merged)
+    [record] = (Path(host.config.breakglass.state) / 'waves').glob('*.json')
+    assert json.loads(record.read_text(encoding='utf-8'))['consent'] == opened['consent']
 
 
 def _race(count: int, run: Callable[[], object]) -> None:
@@ -411,12 +450,19 @@ def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
 
 
 def test_an_unreadable_declaration_is_a_refusal_audited_and_alerted(host: Host) -> None:
-    host.forge = FakeForge(manifest=None)
+    host.forge = FakeForge(manifests={'main': DECLARED})  # PLANTED CONTROL: only the default branch declares
     host.open()
-    with pytest.raises(BreakglassRefused, match='cannot be read'):
+    with pytest.raises(BreakglassRefused, match=r'pyproject\.toml at integrate/main cannot be read'):
         host.merge()
     assert host.forge.calls == []
     assert any('REFUSED' in a[0] for a in host.alerts)
+
+
+def test_the_declaration_is_read_at_the_prs_base_not_the_default_branch(host: Host) -> None:
+    host.forge = FakeForge()  # the default branch ``main`` declares nothing; the base ``integrate/main`` does
+    host.open()
+    assert 'merged' in host.merge()
+    assert [call[0] for call in host.forge.calls] == ['comment', 'merge']
 
 
 def test_each_repo_is_merged_on_its_own_forge(host: Host) -> None:
@@ -494,15 +540,14 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
             'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'},
             'labels': [{'name': 'needs-consent'}]}  # fmt: skip
-    manifest = base64.b64encode(b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n').decode()
-    answer('GET', prefix, (200, {'default_branch': 'main'}))
+    manifest = base64.b64encode(_MANIFEST).decode()
     answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': manifest}))
-    answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('POST', f'{prefix}/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': '', 'user': {'login': 'u'}}))
     answer(merge, f'{prefix}/pulls/7/merge', (200, {'merged': True}))
+    answer('DELETE', f'{prefix}/git/refs/heads/pr/x', (204, None))
     forge = ClientForge(url, 'secret', transport=loopback)
-    assert 'integrate/main' in forge.declaration()
+    assert 'integrate/main' in forge.declaration('integrate/main')
     assert forge.pull(7) == ('open', 'integrate/main', HEAD)
     assert forge.labels(7) == ('needs-consent',)
     forge.comment(7, 'BREAK-GLASS')
@@ -510,12 +555,68 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     assert set(loopback.asked) == {api}
     sent = Recorder.received
     assert {r['headers']['Authorization'] for r in sent} == {f'{auth} secret'}
-    assert sent[1]['path'] == f'{prefix}/contents/pyproject.toml?ref=main'
-    merged = sent[-1]
-    assert (merged['method'], merged['path']) == (merge, f'{prefix}/pulls/7/merge')
+    assert sent[0]['path'] == f'{prefix}/contents/pyproject.toml?ref=integrate/main'
+    (merged,) = [r for r in sent if r['path'] == f'{prefix}/pulls/7/merge']
+    assert merged['method'] == merge
     body = json.dumps(merged['body'])
     assert HEAD in body
     assert 'Break-Glass: review-bot is down' in body
+
+
+#: A repo declaring its branch set: the trunk, one long-lived session branch, and the family's ephemeral ``pr/*``.
+_MANIFEST = (
+    b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+    b'[tool.dev_lab.branchset]\ntrunk = "main"\nsessions = ["integrate/main"]\nephemeral = ["pr/*"]\n'
+)
+
+_BACKENDS = [
+    ('https://github.com/owner/gamma.git', '/repos/owner/gamma', 'PUT'),
+    ('https://gitea.example/owner/alpha.git', '/api/v1/repos/owner/alpha', 'POST'),
+]
+
+
+def _merge_head(loopback: Loopback, url: str, prefix: str, verb: str, *, head_ref: str, status: int = 200) -> list[Any]:
+    """Break-glass-merge PR 7 whose head branch is *head_ref*; return what the fake forge received."""
+    pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
+            'head': {'ref': head_ref, 'sha': HEAD}, 'base': {'ref': 'integrate/main'}, 'labels': []}  # fmt: skip
+    answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': base64.b64encode(_MANIFEST).decode()}))
+    answer('GET', f'{prefix}/pulls/7', (200, pull))
+    answer(verb, f'{prefix}/pulls/7/merge', (status, {'merged': status == 200, 'message': 'head moved'}))
+    answer('DELETE', f'{prefix}/git/refs/heads/{head_ref}', (204, None))
+    forge = ClientForge(url, 'secret', transport=loopback)
+    with contextlib.suppress(ForgeCallFailed):
+        forge.merge(7, head=HEAD, message=merge_message(7, 'integrate/main', 'review-bot is down', 'w'))
+    return list(Recorder.received)
+
+
+def _deleted(sent: list[Any], prefix: str, head_ref: str) -> bool:
+    """Whether the head was deleted: GitHub by a ref DELETE, Gitea by the merge's own delete flag."""
+    if any(r['method'] == 'DELETE' and r['path'] == f'{prefix}/git/refs/heads/{head_ref}' for r in sent):
+        return True
+    merges = [r for r in sent if r['path'] == f'{prefix}/pulls/7/merge']
+    return any((r['body'] or {}).get('delete_branch_after_merge') is True for r in merges)
+
+
+@pytest.mark.parametrize(('url', 'prefix', 'verb'), _BACKENDS)
+def test_a_break_glass_merge_deletes_its_ephemeral_head(loopback: Loopback, url: str, prefix: str, verb: str) -> None:
+    """D18: every merge path deletes its pr/ head -- break-glass as the integration path does."""
+    assert _deleted(_merge_head(loopback, url, prefix, verb, head_ref='pr/task/feature'), prefix, 'pr/task/feature')
+
+
+@pytest.mark.parametrize('head_ref', ['main', 'integrate/main', 'lane/not-ephemeral'])
+@pytest.mark.parametrize(('url', 'prefix', 'verb'), _BACKENDS)
+def test_a_break_glass_merge_never_deletes_a_long_lived_or_undeclared_head(
+    loopback: Loopback, url: str, prefix: str, verb: str, head_ref: str
+) -> None:
+    """PLANTED CONTROL: the trunk, a declared session and a head outside every ephemeral glob are kept."""
+    assert not _deleted(_merge_head(loopback, url, prefix, verb, head_ref=head_ref), prefix, head_ref)
+
+
+def test_a_moved_head_is_neither_merged_nor_deleted(loopback: Loopback) -> None:
+    """PLANTED CONTROL: GitHub refuses a moved head (409); no delete follows the refused merge."""
+    url, prefix, verb = _BACKENDS[0]
+    sent = _merge_head(loopback, url, prefix, verb, head_ref='pr/task/feature', status=409)
+    assert not any(r['method'] == 'DELETE' for r in sent)
 
 
 # User ruling 2026-11-04: "break glass still sends three messages -- one final acceptance is enough". A wave sends
@@ -563,7 +664,7 @@ def test_closing_a_wave_that_merged_sends_one_summary_of_every_merge(host: Host)
     assert title == _summary(host)
     assert f'{ALPHA}#7 at {HEAD} by key {KEY}: review-bot is down' in body
     assert f'{ALPHA}#8 at {HEAD} by key {KEY}: numerics-lab gate is wedged' in body
-    assert f'by key {KEY}, ended' in body  # who opened it
+    assert f'by key {KEY} under consent ' in body  # who opened it, under which grant
     assert 'opened 20' in body  # the window: when it opened and when it ended
     assert 'ended 20' in body
 
@@ -684,22 +785,84 @@ def test_a_wave_written_before_summaries_reads_as_already_summarized(host: Host)
     assert _titles(host) == [_summary(host)]  # the close's try only: an old wave is never re-alerted
 
 
-def test_a_head_with_no_test_status_is_refused_naming_what_is_missing(host: Host) -> None:
-    # PLANTED: a Gitea head with no test part posted, only a lock failure
+def _merged_lines(host: Host) -> list[dict[str, object]]:
+    assert host.config.breakglass is not None
+    lines = Path(host.config.breakglass.log).read_text(encoding='utf-8').splitlines()
+    return [json.loads(line) for line in lines if json.loads(line)['outcome'] == 'merged']
+
+
+def _comments(host: Host) -> list[str]:
+    return [str(call[2]) for call in host.forge.calls if call[0] == 'comment']
+
+
+def test_an_untested_head_merges_in_an_open_wave_and_says_untested(host: Host) -> None:
+    # User ruling 2026-11-11: break-glass bypasses the tests too -- and the audit says so.
     host.forge.posted = [CommitStatus('pr-current', 'failure', 'stale lock', '')]
     host.open()
-    with pytest.raises(BreakglassRefused, match=r'(?s)bypasses only the review.*tests/security.*not yet judged'):
+    said = host.merge()
+    assert 'merged untested' in said
+    assert [call for call in host.forge.calls if call[0] == 'merge']
+    (line,) = _merged_lines(host)
+    assert str(line['tests']).startswith('untested: ')
+    assert 'tests/security is not yet judged' in str(line['tests'])
+    assert any('merged untested' in body for body in _comments(host))
+
+
+def test_planted_control_the_same_untested_head_without_a_wave_is_refused(host: Host) -> None:
+    host.forge.posted = [CommitStatus('pr-current', 'failure', 'stale lock', '')]
+    with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):
         host.merge()
     assert not [call for call in host.forge.calls if call[0] == 'merge']
+    assert not _merged_lines(host)
 
 
-def test_a_red_test_part_is_refused(host: Host) -> None:
+def test_a_red_head_merges_with_its_reds_named(host: Host) -> None:
     host.forge.posted = [GREEN[1], CommitStatus('tests/base', 'failure', 'VERDICT result=fail', '')]
     host.open()
-    with pytest.raises(BreakglassRefused, match=r'never the tests.*tests/base is failure'):
-        host.merge()
+    assert 'merged red (tests/base)' in host.merge()
+    (line,) = _merged_lines(host)
+    assert str(line['tests']).startswith('red: tests/base; ')
+    assert any('merged red (tests/base)' in body for body in _comments(host))
+    host.ask('close')
+    assert 'red: tests/base' in host.alerts[-1][1]  # the wave's one summary names it too
 
 
-def test_every_declared_test_green_merges(host: Host) -> None:
+def test_every_declared_test_green_merges_as_passed(host: Host) -> None:
     host.open()
     assert 'merged' in host.merge()
+    assert [line['tests'] for line in _merged_lines(host)] == ['passed']
+
+
+_ALARM = 'tests/test_arch_module_size_alarm.py::test_the_debt_is_exactly_the_modules_that_are_over_the_band'
+
+
+@pytest.mark.parametrize(
+    'head', [{'a.py', 'b.py'}, {'a.py'}, set()], ids=['new-subject', 'same-subjects', 'gone-subject']
+)
+def test_a_red_the_base_carries_merges_and_records_only_its_new_subjects(host: Host, head: set[str]) -> None:
+    """D13/D18, PLANTED: the base's alarm names a.py; under the wave a head naming b.py too merges, b.py ON RECORD."""
+    host.forge.posted = [GREEN[1], CommitStatus('tests/base', 'failure', 'VERDICT result=fail', '')]
+    host.forge.prints = {
+        HEAD: {'tests/base': {_ALARM: frozenset(head)}},
+        'integrate/main': {'tests/base': {_ALARM: frozenset({'a.py'})}},
+    }
+    host.open()
+    assert 'merged red (tests/base)' in host.merge()
+    [tests] = [line['tests'] for line in _merged_lines(host)]
+    if 'b.py' not in head:
+        assert 'new failure subjects' not in str(tests)
+        return
+    recorded = str(tests).split('new failure subjects', 1)[1].split(')')[0]
+    assert 'b.py' in recorded, 'the new subject is recorded by name'
+    assert 'a.py' not in recorded, 'only the NEW subject is named'
+    assert any('b.py' in body for body in _comments(host))
+
+
+def test_with_no_wave_the_merge_check_still_refuses_the_new_subject() -> None:
+    """D18 CONTROL: outside break-glass the same new subject is the merge check's refusal, naming it."""
+    statuses = [CommitStatus('tests/base', 'failure', 'VERDICT result=fail', '')]
+    prints = {HEAD: {'tests/base': {_ALARM: frozenset({'a.py', 'b.py'})}},
+              'integrate/main': {'tests/base': {_ALARM: frozenset({'a.py'})}}}  # fmt: skip
+    why = hidden_reds(prints.__getitem__, HEAD, 'integrate/main', statuses)
+    assert why is not None
+    assert 'b.py' in why

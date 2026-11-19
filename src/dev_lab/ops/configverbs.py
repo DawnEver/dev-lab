@@ -26,10 +26,10 @@ __all__ = ['apply', 'source_text', 'tick']
 type Alert = Callable[[str, str], object]
 
 
-def source_text(config: OpsConfig, candidate: Path | None) -> str:
-    """``--from <file>`` when given, else ``[ops.config]``'s reviewed file (:func:`configdoor.fetch`)."""
+def source_text(config: OpsConfig, candidate: Path | None) -> configdoor.Fetched:
+    """``--from <file>`` when given (no family file), else ``[ops.config]``'s reviewed files (:func:`.fetch`)."""
     if candidate is not None:
-        return candidate.read_text(encoding='utf-8')
+        return configdoor.Fetched(candidate.read_text(encoding='utf-8'))
     if config.config_source is None:
         msg = f'{config.path} declares no [ops.config] source and no --from <file> was given'
         raise configdoor.ConfigRefused(msg)
@@ -52,16 +52,20 @@ def apply(
     """
     try:
         if subject:
-            emit(configdoor.digest(source_text(config, candidate)))
+            fetched = source_text(config, candidate)
+            configdoor.loadable(  # a host that cannot load it has no subject; loading needs no alert environment
+                fetched.host, config.path.name, lambda path: load(path, alerts=False)
+            )
+            emit(configdoor.digest(fetched.host, fetched.family))
             return 0
-        text = source_text(config, candidate)
+        fetched = source_text(config, candidate)
         if candidate is None and not credential:  # first contact reads only the reviewed source
-            _anchor(config, text, alert=alert)
+            _anchor(config, fetched.host, alert=alert)
         redeem_ = redeemer()(configdoor.ACTION) if credential else None
         granted = json.loads(Path(credential).read_text(encoding='utf-8')) if credential else None
         done = configdoor.apply(
-            config.path, text, loads=load, checks=upgrade.checks(config),
-            run=upgrade.run_check, redeem=redeem_, credential=granted,
+            config.path, fetched.host, loads=load, checks=upgrade.checks(config),
+            run=upgrade.run_check, redeem=redeem_, credential=granted, family=fetched.family,
         )  # fmt: skip
     except (configdoor.ConfigRefused, ConsentRefused) as refused:
         emit(f'refused: {refused}', err=True)
@@ -95,10 +99,11 @@ def _said(done: configdoor.Applied, *, alert: Alert) -> int:
 def tick(config: OpsConfig, *, alert: Alert) -> int:
     """``config tick``: apply the merged source's routine change; park a boundary one and alert the user once."""
     try:
+        fetched = source_text(config, None)
         said = configdoor.tick(
-            config.path, source_text(config, None), pending=config.home / 'config-pending.sha256',
+            config.path, fetched.host, pending=config.home / 'config-pending.sha256',
             notify=lambda detail: alert('config needs consent', detail), loads=load,
-            checks=upgrade.checks(config), run=upgrade.run_check,
+            checks=upgrade.checks(config), run=upgrade.run_check, family=fetched.family,
         )  # fmt: skip
     except configdoor.ConfigRefused as refused:
         emit(f'refused: {refused}', err=True)

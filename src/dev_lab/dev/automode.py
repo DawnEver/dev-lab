@@ -42,7 +42,9 @@ from lab_commons.config import config_path, section
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.log import emit
 
+from dev_lab.dev import gitdirs
 from dev_lab.dev.agentpolicy import POLICY, USER
+from dev_lab.dev.autodoors import cli_doors
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
@@ -130,7 +132,7 @@ def spelled_commands(entries: Sequence[str]) -> tuple[str, ...]:
 
 
 def _declared(root: Path) -> tuple[str, ...]:
-    """The repo's own intents, ``[tool.dev_lab.policy] intents``; a retired ``[tool.dev_lab.automode]`` is refused."""
+    """The repo's own intents (``[tool.dev_lab.policy] intents``, its :func:`cli_doors`); a retired table is refused."""
     manifest = root / 'pyproject.toml'
     data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
     if declared_table(data, 'automode', {}):
@@ -139,7 +141,10 @@ def _declared(root: Path) -> tuple[str, ...]:
             f'[tool.dev_lab.{POLICY_TABLE}] intents (user ruling 2026-11-07: a repo row lives in its own pyproject)'
         )
         raise ValueError(msg)
-    intents = tuple(declared_table(data, POLICY_TABLE, {}).get('intents', ()))
+    intents = (
+        *declared_table(data, POLICY_TABLE, {}).get('intents', ()),
+        *(door.intent for door in cli_doors(root)),
+    )
     if spelled := spelled_commands(intents):
         msg = f'{manifest}: [tool.dev_lab.{POLICY_TABLE}] intents spell a command, not an intent: {list(spelled)}'
         raise ValueError(msg)
@@ -166,7 +171,7 @@ def _workstation(entry: Mapping[str, Any]) -> str:
     facts += [f'address {entry["address"]}'] if entry.get('address') else []
     roles = list(entry.get('roles') or [])
     if roles:
-        facts.append(f'roles {", ".join(roles)}{", serves the forge" if FORGE_ROLE in roles else ""}')
+        facts.append(f'roles {", ".join(roles)}{", the forge host" if FORGE_ROLE in roles else ""}')
     return f'{entry.get("name", "?")} ({"; ".join(facts)})'
 
 
@@ -251,10 +256,7 @@ def leaks(texts: Sequence[str], fleet: Fleet | None = None) -> tuple[str, ...]:
 
 
 def _root_of(cwd: Path) -> Path | None:
-    for candidate in (cwd, *cwd.parents):
-        if (candidate / '.git').exists():
-            return candidate
-    return None
+    return gitdirs.checkout_of(cwd)
 
 
 def main(argv: Sequence[str] | None = None, *, stdin: TextIO | None = None) -> int:

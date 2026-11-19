@@ -41,6 +41,7 @@ from dev_lab.ops.config import Judge, OpsConfig, Probe
 from dev_lab.ops.installpaths import Chown, keys_dir, prepare_paths, under
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.totp import write_private
+from dev_lab.ops.upgradefollow import AUDIT
 from dev_lab.supervise.daemon import watchdog_seconds
 
 __all__ = ['Rendered', 'files', 'install']
@@ -187,23 +188,35 @@ def _probe(config: OpsConfig) -> dict[str, str]:
     return _timer(config, role, 'probe', 'Probe forge protection and CI runs', _door(config, 'probe'))
 
 
+def _root_timer(config: OpsConfig, name: str, what: str, schedule: str, *verb: str) -> dict[str, str]:
+    """A root oneshot service running the door's *verb*, and its ``OnCalendar`` timer."""
+    env = [f'EnvironmentFile={config.environment_file}'] if config.environment_file else []
+    service = (
+        f'[Unit]\nDescription={what}\nWants=network-online.target\nAfter=network-online.target\n[Service]\n'
+        + ''.join(f'{line}\n' for line in (*env, 'Type=oneshot', f'ExecStart={_door(config, *verb)}'))
+    )
+    timer = (
+        f'[Unit]\nDescription={what}\n'
+        f'[Timer]\nOnCalendar={schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
+    )
+    unit = f'etc/systemd/system/{_UNIT}-{name}'
+    return {f'{unit}.service': service, f'{unit}.timer': timer}
+
+
+def _upgrade_follow(config: OpsConfig) -> dict[str, str]:
+    """The ``upgrade --follow`` timer: root, since it installs into ``[ops] python``'s environment."""
+    if (role := config.upgrade) is None or not role.follow:
+        return {}
+    what = f'Follow {role.follow} of the dev-lab source (dev_lab.ops)'
+    return _root_timer(config, 'upgrade-follow', what, role.schedule, 'upgrade', '--follow')
+
+
 def _config_tick(config: OpsConfig) -> dict[str, str]:
     """The ``config tick`` timer: root, since it replaces the root-owned live file through the door."""
     if (source := config.config_source) is None or not source.schedule:
         return {}
     what = 'Apply the merged config source (dev_lab.ops)'
-    env = [f'EnvironmentFile={config.environment_file}'] if config.environment_file else []
-    exec_start = _door(config, 'config', 'tick')
-    service = (
-        f'[Unit]\nDescription={what}\nWants=network-online.target\nAfter=network-online.target\n[Service]\n'
-        + ''.join(f'{line}\n' for line in (*env, 'Type=oneshot', f'ExecStart={exec_start}'))
-    )
-    timer = (
-        f'[Unit]\nDescription={what}\n'
-        f'[Timer]\nOnCalendar={source.schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
-    )
-    name = f'etc/systemd/system/{_UNIT}-config-tick'
-    return {f'{name}.service': service, f'{name}.timer': timer}
+    return _root_timer(config, 'config-tick', what, source.schedule, 'config', 'tick')
 
 
 def _supervise(config: OpsConfig) -> dict[str, str]:
@@ -211,7 +224,17 @@ def _supervise(config: OpsConfig) -> dict[str, str]:
     if role is None:
         return {}
     serve = shlex.join(
-        [config.python, '-m', 'dev_lab.supervise', 'serve', '--project', role.project, '--config', str(config.path)]
+        [
+            config.python,
+            '-m',
+            'dev_lab.supervise',
+            'serve',
+            '--project',
+            role.project,
+            '--config',
+            str(config.path),
+            *(config.status.flags(f'{config.home.as_posix()}/{AUDIT}') if config.status else []),
+        ]
     )
     # THE DAEMON SPEAKS sd_notify (`supervise.notify`): READY once, WATCHDOG once per cycle. Under
     # Type=simple nobody listens, and the timeout is the loop's own cycle, never a second literal.
@@ -243,6 +266,7 @@ def files(config: OpsConfig) -> dict[str, str]:
         **_backup(config),
         **_probe(config),
         **_config_tick(config),
+        **_upgrade_follow(config),
         **access,
         **_supervise(config),
     }
@@ -281,6 +305,8 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
     steps += _probe_steps(config)
     if config.config_source is not None and config.config_source.schedule:
         steps += ['systemctl daemon-reload', f'systemctl enable --now {_UNIT}-config-tick.timer']
+    if config.upgrade is not None and config.upgrade.follow:
+        steps += ['systemctl daemon-reload', f'systemctl enable --now {_UNIT}-upgrade-follow.timer']
     if (role := config.access) is not None:
         steps += ['apt-get install -y libpam-oath', f'id {role.account} || useradd --create-home {role.account}',
                   'sshd -t && systemctl reload ssh']  # fmt: skip
@@ -289,8 +315,12 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                 f'{_door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
                 f'secret: {_door(config, "access", "adopt", "--secret-file", "-")})'
             )
-    if config.supervise is not None:
-        steps += ['systemctl daemon-reload', f'systemctl enable --now {_SUPERVISE}.service']
+    if (role := config.supervise) is not None:
+        steps += [
+            *([config.status.directory_step(role.user)] if config.status else []),
+            'systemctl daemon-reload',
+            f'systemctl enable --now {_SUPERVISE}.service',
+        ]
     return tuple(steps)
 
 
@@ -325,20 +355,24 @@ def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Ren
     The ``[ops.access]`` pam_oath users file is derived here (mode 600) from the host's one TOTP secret, once it exists.
 
     Raises:
-        ValueError: ``[ops.access]`` is declared and the sshd PAM stack is absent or of an unexpected shape, or the
-            host declares two TOTP secrets.
+        ValueError: ``[ops.access]`` is declared and the sshd PAM stack is absent or of an unexpected shape, the
+            host declares two TOTP secrets, or the judge's declared ``keys_file`` is not placed yet.
 
     Then prepare the promote home, its credential and the environment file (see the module docstring): *chown* is
     applied where given, and what it could not apply is a next step.
 
     """
+    if (judged := config.judge) is not None and judged.keys_file and not under(root, judged.keys_file).is_file():
+        msg = (f'keys_file {judged.keys_file} is declared but not placed: place it with '
+               f'`secret place --path {judged.keys_file}`')  # fmt: skip
+        raise ValueError(msg)
     rendered = files(config)
     # refuses an unexpected PAM stack (or two secrets) before anything is written
     access = prepare(config, root) if config.access is not None else None
     private = access.private if access is not None else {}
     rendered |= (access.public if access is not None else {}) | private
     done, prepared = prepare_paths(config, root, chown)
-    prepared += install_caddy(config.caddy, root, rendered)
+    prepared += install_caddy(config.caddy, root, rendered, config.status)
     accounts = (config.breakglass, config.consent, config.access)
     if any(role is not None for role in accounts) or (config.backup and config.backup.dumpers):
         prepared += keys_dir(root, chown, done)

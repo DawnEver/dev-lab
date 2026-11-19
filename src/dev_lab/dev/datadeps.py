@@ -143,7 +143,8 @@ def stale(root: Path, dep: DataDep) -> str | None:
 def sync(root: Path, dep: DataDep) -> str:
     """Make *root*/``path`` a checkout of *dep*'s pin; what it did. RAISES :class:`DataRefused`."""
     checkout = root / dep.path
-    if not (checkout / '.git').exists():
+    cloned = not (checkout / '.git').exists()
+    if cloned:
         if checkout.exists() and any(checkout.iterdir()):
             msg = f'{checkout} exists and is not a git checkout: move it aside, then run `{SYNC}`'
             raise DataRefused(msg)
@@ -154,7 +155,7 @@ def sync(root: Path, dep: DataDep) -> str:
     elif _git(checkout, 'status', '--porcelain').stdout.strip():
         msg = f'{checkout} has local changes: commit them to {dep.url} or discard them, then run `{SYNC}`'
         raise DataRefused(msg)
-    if _head(checkout) == dep.rev:
+    if not cloned and _head(checkout) == dep.rev:  # a --no-checkout clone at the rev has no files yet
         return f'{dep.name}: already at {dep.rev[:12]}'
     if _git(checkout, 'cat-file', '-e', f'{dep.rev}^{{commit}}').returncode != 0:
         _network('fetch', '-q', '--no-tags', 'origin', dep.rev, cwd=checkout)

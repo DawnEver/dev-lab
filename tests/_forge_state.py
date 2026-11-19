@@ -44,6 +44,8 @@ class StateForge(Client):
         self.runs: list[dict[str, Any]] = []
         #: The repository's default branch, as ``GET /repos/{o}/{r}`` names it.
         self.default_branch = 'main'
+        #: Every branch the forge holds, by name: whether it is protected (``GET .../branches/<b>``).
+        self.branches: dict[str, bool] = {'main': True}
         self.fail_lists = False
         self.deny_delete = False
         #: Every branch the forge was asked to delete by ref (GitHub's ``DELETE .../git/refs/heads/<b>``).
@@ -121,6 +123,8 @@ class StateForge(Client):
         self, head: str, base: str, *, title: str = 't', body: str = '', sha: str = '', fork: bool = False
     ) -> int:
         number = self._number()
+        self.branches.setdefault(head, False)
+        self.branches.setdefault(base, False)
         self.pulls[number] = {
             'number': number,
             'title': title,
@@ -182,6 +186,7 @@ class StateForge(Client):
             (f'{api}/contents/', 'contents'),
             (f'{api}/statuses/', 'statuses'),
             (f'{api}/git/refs/heads/', 'ref'),
+            (f'{api}/branches/', 'branch'),
             (f'{api}/collaborators/', 'permission'),  # the key is ``<quoted login>/permission``
         ):
             if route.startswith(prefix):
@@ -256,6 +261,12 @@ class StateForge(Client):
             raise ForgeCallFailed(Report(('GET', 'pull'), (Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED),), 1))
         return found[-1]
 
+    def _branch(self, name: str) -> dict[str, Any]:
+        """``GET .../branches/<name>``: the branch and its protection, else 404."""
+        if name not in self.branches:
+            raise ForgeCallFailed(Report(('GET', 'branch'), (Attempt(1, 404, 'not found', Diagnosis.UNCLASSIFIED),), 1))
+        return {'name': name, 'protected': self.branches[name], 'commit': {'id': ''}}
+
     def _create_pull(self, body: dict[str, Any]) -> dict[str, Any]:
         number = self.add_pull(body['head'], body['base'], title=body['title'], body=body['body'])
         return self.pulls[number]
@@ -284,7 +295,13 @@ class StateForge(Client):
         # Gitea records a job token's status as its Actions ghost (user -2) and answers ``"creator": null``, while
         # the same token's comments name its Actions user (D11, measured 2026-11-01).
         creator = None if self.login == GITEA_ACTIONS_LOGIN else {'login': self.login}
-        made = {'id': self._next_comment, 'status': body['state'], 'creator': creator} | body
+        # Gitea stamps every status with its own post time, which a reader parses into a datetime.
+        made = {
+            'id': self._next_comment,
+            'status': body['state'],
+            'creator': creator,
+            'created_at': self._updated(),
+        } | body
         self.statuses.setdefault(sha, []).append(made)
         return made
 
@@ -317,7 +334,8 @@ class StateForge(Client):
     def _add_labels(self, key: str, body: dict[str, Any]) -> list[dict[str, Any]]:
         number = int(key.partition('/')[0])
         held = self.issue_labels.setdefault(number, [])
-        for label in body['labels']:
+        for given in body['labels']:  # gitea sends ids, GitHub names
+            label = next((one['id'] for one in self.labels if one['name'] == given), given)
             if label not in held:
                 held.append(label)
                 self.labeled.append((number, next(one['name'] for one in self.labels if one['id'] == label)))
@@ -325,7 +343,9 @@ class StateForge(Client):
 
     def _remove_label(self, key: str) -> None:
         number, _, label = key.partition('/')
-        self.issue_labels[int(number)].remove(int(label.strip('/')))
+        given = urllib.parse.unquote(label.strip('/'))
+        ident = next((one['id'] for one in self.labels if one['name'] == given), None)
+        self.issue_labels[int(number)].remove(ident if ident is not None else int(given))
 
     def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
         """Answer from the in-memory state, as gitea would; a create needs no read-back here."""
@@ -362,7 +382,7 @@ class StateForge(Client):
             ('DELETE', 'comment'): lambda: self._delete_comment(number),
             ('GET', 'pulls'): lambda: self._pulls_listed(query),
             ('POST', 'pulls'): lambda: self._create_pull(sent),
-            ('GET', 'pull'): lambda: self.pulls[number],
+            ('GET', 'pull'): lambda: self.pulls[number] | {'labels': self._issue_labels(str(number))},
             ('GET', 'reviews'): lambda: self._page(self.reviews.get(number, []), query),
             ('GET', 'commit_pull'): lambda: self._pull_of(key),
             ('GET', 'commit_pulls'): lambda: self._pulls_of(key),
@@ -371,6 +391,7 @@ class StateForge(Client):
             ('POST', 'merge'): lambda: self._merge(number, sent),
             ('PUT', 'merge'): lambda: self._merge_github(number, sent),
             ('DELETE', 'ref'): lambda: self.deleted_refs.append(key),
+            ('GET', 'branch'): lambda: self._branch(urllib.parse.unquote(key)),
             ('GET', 'statuses'): lambda: self.statuses.get(key, []),
             ('POST', 'statuses'): lambda: self._post_status(key, sent),
             ('GET', 'labels'): lambda: list(self.labels),

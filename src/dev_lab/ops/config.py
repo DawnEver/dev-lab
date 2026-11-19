@@ -30,8 +30,9 @@ from typing import Any, Final
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
 from dev_lab.ops.backuprole import Backup, Offsite
-from dev_lab.ops.caddy import Caddy
-from dev_lab.ops.configupgrade import upgraded
+from dev_lab.ops.caddy import Caddy, Status
+from dev_lab.ops.configretired import refuse as refuse_retired
+from dev_lab.ops.consentrole import Access, Consent, ConsentClient
 from dev_lab.ops.giteaadmin import Forge
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.served import app_of_forge, credential_files, served, served_by
@@ -39,10 +40,9 @@ from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = [
     'INTEGRATION_REF',
+    'OPS_KEYS',
     'Breakglass',
     'ConfigSource',
-    'Consent',
-    'ConsentClient',
     'Forge',
     'Judge',
     'OpsConfig',
@@ -133,6 +133,9 @@ class ConfigSource:
     ``token_file`` holds a read-only forge token (root 600); it is sent as an HTTP header in the git process's
     environment, never on argv. The whole table is security boundary: a change to it needs consent -- except
     ``schedule`` (when ``config tick`` runs as a root timer; empty: never), which is routine.
+
+    ``family``, ``{file, to}``: the family file (``file`` in the same source, at the same ref) the door also puts at
+    the absolute ``to`` on this host, where ``[ops.judge.family] source`` reads it (:mod:`.configdoor`).
     """
 
     source: str
@@ -140,6 +143,13 @@ class ConfigSource:
     token_file: str
     ref: str = 'main'
     schedule: str = ''
+    family: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Refuse a family declaration that is not exactly ``{file, to}`` with ``to`` absolute."""
+        if self.family and (set(self.family) != {'file', 'to'} or not str(self.family['to']).startswith('/')):
+            msg = f'[ops.config] family is {{file = "<in the source>", to = "/<absolute>"}}, not {dict(self.family)}'
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -150,6 +160,11 @@ class Upgrade:
     reviewer, ``ai-lab``, which dev-lab declares only as its ``review`` dependency GROUP, which a git requirement
     cannot carry); ``uv`` the binary (empty: from ``PATH``). The family's revisions (lab-commons, ai-lab) come from
     dev-lab's own lock at the installed commit (:func:`dev_lab.ops.upgrade.locked_family`), never from this table.
+
+    ``follow`` (a branch of ``source``; empty: off) makes the host upgrade ITSELF to that branch's tip on the
+    ``schedule`` timer (a systemd ``OnCalendar``), authorized by this declaration instead of a consent grant
+    (:mod:`dev_lab.ops.upgradefollow`). ``follow`` is boundary (only a consented ``config apply`` sets it);
+    ``schedule`` is routine.
     """
 
     source: str
@@ -157,6 +172,8 @@ class Upgrade:
     extras: tuple[str, ...] = ()
     packages: tuple[str, ...] = ()
     uv: str = ''
+    follow: str = ''
+    schedule: str = '*:0/15'
 
 
 @dataclass(frozen=True)
@@ -210,53 +227,6 @@ class Breakglass(Placement):
 
 
 @dataclass(frozen=True)
-class Consent:
-    """The consent ISSUER (:mod:`dev_lab.ops.consent.issuer`): the cluster's TOTP seed, its signing key, its ledger.
-
-    ``account`` is the restricted ssh account whose ForceCommand is ``consent serve``, ``keys`` its ssh keys; ``totp``
-    the cluster's ONE TOTP secret (base32, root 600); ``key`` the Ed25519 private key (PEM, root 600); ``state`` the
-    directory of the append-only ledger, the last accepted TOTP step and the lockout. ``issuer`` names it in each
-    credential and labels the Authenticator entry; ``lockout_after`` consecutive wrong codes refuse every code for
-    ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`).
-    """
-
-    account: str
-    totp: str
-    key: str
-    state: str
-    keys: tuple[str, ...] = ()
-    issuer: str = 'forge consent'
-    lockout_after: int = 5
-    lockout_minutes: float = 15.0
-
-
-@dataclass(frozen=True)
-class ConsentClient:
-    """Where a host that is NOT the issuer verifies and registers a consent (:mod:`dev_lab.ops.consent.client`).
-
-    ``endpoint`` is the issuer's ``<account>@<host>`` (its ForceCommand ``consent serve``), ``identity`` the ssh key
-    this host's root signs in with (empty: ssh's default), ``known_hosts`` the file the issuer's host key is checked
-    against strictly (empty: ssh's default) -- both may live in the ops user's home, made by that user and readable
-    by root, since root keeps no ``~/.ssh`` -- and ``public_key`` the issuer's (empty: the packaged ``issuer.pub``).
-    Read from THIS file, never root's machine file: an ops verb runs as root under ``sudo``.
-    """
-
-    endpoint: str
-    public_key: str = ''
-    identity: str = ''
-    known_hosts: str = ''
-
-    def table(self) -> dict[str, str]:
-        """The client table :func:`~dev_lab.ops.consent.client.public_key` and ``remote_register`` read."""
-        return {
-            'endpoint': self.endpoint,
-            'public_key': self.public_key,
-            'identity': self.identity,
-            'known_hosts': self.known_hosts,
-        }
-
-
-@dataclass(frozen=True)
 class Probe(Placement):
     """The forge probe (:mod:`dev_lab.ops.probe`): the repos it reads, a READ-ONLY token per forge, when, as whom.
 
@@ -279,26 +249,6 @@ class Probe(Placement):
     def token_file(self, url: str) -> str:
         """The file holding the probe token of *url*'s forge."""
         return self.tokens[forge_of_url(url).host]
-
-
-@dataclass(frozen=True)
-class Access:
-    """The troubleshooting account: ssh key AND a TOTP code (pam_oath), sudo limited to declared commands.
-
-    ``keys`` are its ssh keys, ``oath`` the root-only pam_oath users file, ``commands`` what sudo may run (each a full
-    command line, ``*`` as sudoers reads it), ``issuer`` the Authenticator's label. ``permit_open`` is the
-    ``host:port`` targets the account may forward to (``ssh -J`` through this host); empty, it forwards nothing.
-    ``totp`` is the host's ONE TOTP secret (base32, root 600); empty, the consent issuer's ``totp`` is it. ``oath``
-    is DERIVED from it at install, never a second secret.
-    """
-
-    account: str
-    keys: tuple[str, ...] = ()
-    commands: tuple[str, ...] = ()
-    permit_open: tuple[str, ...] = ()
-    totp: str = ''
-    oath: str = '/etc/dev-lab/ops/users.oath'
-    issuer: str = 'forge ops'
 
 
 @dataclass(frozen=True)
@@ -336,10 +286,20 @@ class OpsConfig:
     forge: Forge | None = None
     environment_file: str = ''
     caddy: Caddy | None = None
+    status: Status | None = None
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
         return self.home / repo_name(url)
+
+
+#: Every key ``[ops]`` declares: its scalars and its role tables (``config`` is :class:`ConfigSource`). A key
+#: outside it is refused at load, as each role refuses a key outside its own fields.
+OPS_KEYS: Final = frozenset({
+    'home', 'python', 'repos', 'environment_file',
+    'promote', 'breakglass', 'consent', 'consent_client', 'backup', 'access', 'caddy', 'supervise', 'judge',
+    'upgrade', 'probe', 'config', 'forge', 'status',
+})  # fmt: skip
 
 
 def repo_name(url: str) -> str:
@@ -363,6 +323,7 @@ def _role[
         ConfigSource,
         Forge,
         Caddy,
+        Status,
     )
 ](cls: type[T], table: object, where: str) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -417,13 +378,13 @@ def _is_root() -> bool:
 
 
 def load(
-    path: Path, *, environ: dict[str, str] | None = None, as_root: bool | None = None, structure_only: bool = False
-) -> OpsConfig:
+    path: Path, *, environ: dict[str, str] | None = None, as_root: bool | None = None, structure_only: bool = False,
+    alerts: bool = True,
+) -> OpsConfig:  # fmt: skip
     """Read *path*'s ``[ops]`` table and its environment (see the module docstring).
 
-    *structure_only* checks the file OFF its host (a config-source repository's CI): the declared environment
-    file and secret files are named but never read, so only the shape is judged.
-
+    *structure_only* checks the file OFF its host (a config-source repository's CI): only the shape is judged.
+    ``alerts=False`` is a verb that sends none (:mod:`dev_lab.ops.alertless`): no ``SUPERVISE_*`` is required.
     *as_root* defaults to the process's own euid. Refuses a missing table, a declared environment that did not
     arrive (root: the file unreadable; non-root: no ``SUPERVISE_*`` variable), a duplicate repo name, a bad role.
     """
@@ -432,17 +393,23 @@ def load(
     if not isinstance(ops, dict):
         msg = f'{path} has no [ops] table'
         raise TypeError(msg)
-    ops = upgraded(ops)
+    refuse_retired(ops)
+    if unknown := sorted(set(ops) - OPS_KEYS):
+        msg = f'[ops] has unknown keys {unknown}; known: {sorted(OPS_KEYS)}'
+        raise ValueError(msg)
     root = (_is_root() if as_root is None else as_root) and not structure_only
     judge_table = ops.get('judge')
-    if root and isinstance(judge_table, dict) and (keys_file := str(judge_table.get('keys_file', ''))):
+    # a declared keys_file ABSENT is "not yet placed" (`secret place` writes only a declared path, so `config apply`
+    # must declare it first; install refuses until it is placed); a PRESENT one must be a bundle
+    keys_file = str(judge_table.get('keys_file', '')) if isinstance(judge_table, dict) else ''
+    if root and keys_file and os.path.lexists(keys_file):
         where, keyless = f'[ops.judge] keys_file {keys_file}', 'the reviewer would run keyless'
         require_bundle(_root_secret(Path(keys_file), '[ops.judge] keys_file', keyless), where)
     if (environment_file := str(ops.get('environment_file', ''))) and not structure_only:
         process = dict(os.environ if environ is None else environ)
         if root:
             merged = load_config(path, environ=process | _environment(Path(environment_file)))
-        elif not any(name.startswith(ENV_PREFIX) for name in process):
+        elif alerts and not any(name.startswith(ENV_PREFIX) for name in process):
             msg = (
                 f'[ops] environment_file {environment_file} is declared but no {ENV_PREFIX}* variable reached this '
                 'non-root process (its unit must carry EnvironmentFile=); refusing, alerts would be off'
@@ -455,7 +422,7 @@ def load(
     if not ops.get('home') or not ops.get('python'):
         msg = '[ops] needs home (where the clones live) and python (the interpreter the units run)'
         raise ValueError(msg)
-    return OpsConfig(
+    found = OpsConfig(
         path=path,
         home=Path(ops['home']),
         python=str(ops['python']),
@@ -475,7 +442,15 @@ def load(
         config_source=_role(ConfigSource, ops.get('config'), '[ops.config]'),
         forge=_role(Forge, ops.get('forge'), '[ops.forge]'),
         environment_file=environment_file,
+        status=_role(Status, ops.get('status'), '[ops.status]'),
     )
+    if found.status is not None and (found.caddy is None or found.supervise is None):
+        msg = (
+            '[ops.status] needs [ops.caddy] (the allowlist the card is served behind) and [ops.supervise] '
+            '(the supervisor that writes it)'
+        )
+        raise ValueError(msg)
+    return found
 
 
 def _backup(table: object) -> Backup | None:

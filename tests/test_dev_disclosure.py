@@ -5,6 +5,8 @@ Details: docs-src/dev/refusals.md#the-shape-of-a-refusal.
 
 from __future__ import annotations
 
+import importlib
+import re
 from pathlib import Path
 
 import pytest
@@ -119,3 +121,41 @@ def test_an_unreasoned_relaxation_is_refused() -> None:
     assert disclosure.unreasoned_relaxations({'planted': bare}) == ['planted']
     reasoned = disclosure.Budget(max_lines=1, max_line_chars=wide, reason='planted')
     assert disclosure.unreasoned_relaxations({'planted': reasoned}) == []
+
+
+def test_every_pointer_names_dev_lab_whose_page_holds_it() -> None:
+    """MEASURED 2026-11-16: every refusal said `(lab-commons)`, a repo that deleted the page on 2026-10-23.
+
+    The page lives in dev-lab, this repo, so the pointer names it and the resolver runs against this checkout.
+    """
+    assert disclosure.details_for('GIT-STASH').endswith(f'#git-stash ({disclosure.REFUSALS_REPO})')
+    assert disclosure.REFUSALS_REPO == 'dev-lab'
+    assert (ROOT / disclosure.REFUSALS_DOC).is_file()
+    assert disclosure.pointer('X: y\nz\ndetails: docs-src/dev/refusals.md#a (lab-commons)') is None
+
+
+def _details_callers() -> dict[str, str]:
+    """Every rule ID a module passes to ``details_for``, a literal or one of its own constants, by module."""
+    found = {}
+    for path in sorted((ROOT / 'src' / 'dev_lab' / 'dev').rglob('*.py')):
+        text = path.read_text(encoding='utf-8')
+        if path.name == 'disclosure.py' or 'details_for(' not in text:
+            continue
+        name = '.'.join(path.relative_to(ROOT / 'src').with_suffix('').parts)
+        module = importlib.import_module(name)
+        for argument in re.findall(r'details_for\(([^()]+)\)', text):
+            literal = re.fullmatch(r"""['"]([A-Z0-9-]+)['"]""", argument.strip())
+            value = literal[1] if literal else getattr(module, argument.strip(), None)
+            if isinstance(value, str):
+                found[f'{name}:{value}'] = 'X: y\nz\n' + disclosure.details_for(value)
+    return found
+
+
+def test_every_refusal_outside_the_registry_points_at_a_section_that_exists() -> None:
+    """The Edit/Write, Stop and lifetime guards cite their rule too; each anchor resolves on the page.
+
+    PLANTED CONTROL: famtests' own budget control cites ``PLANTED``, which has no section, and is the one dead hop.
+    """
+    callers = _details_callers()
+    assert len(callers) >= 7, sorted(callers)
+    assert disclosure.unresolved_pointers(callers, ROOT) == ['dev_lab.dev.famtests.injectedtext:PLANTED']

@@ -19,7 +19,6 @@ from dev_lab.dev.syncscope import (
     Selection,
     UnknownExtraError,
     canon,
-    declares_groups,
     extras,
     scope,
     selection,
@@ -140,8 +139,6 @@ def test_a_selection_composed_elsewhere_is_unmeasured_and_not_empty() -> None:
 def test_a_dependency_group_is_measured_separately_from_an_extra() -> None:
     """Default dev supplies pytest, but not the ruff verdict dependency in the extra."""
     with_group = MANIFEST + '\n[dependency-groups]\ndev = ["pytest"]\n'
-    assert declares_groups(with_group)
-    assert not declares_groups(MANIFEST)
     assert scope(_selecting(), with_group) is Scope.STRANDS
     assert scope(_selecting('dev'), with_group) is Scope.COMPLETE
 

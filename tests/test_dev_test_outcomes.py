@@ -84,6 +84,37 @@ def test_no_directory_reads_as_none_recorded(tmp_path: Path) -> None:
     assert read_cells(tmp_path / 'absent') == ({}, frozenset())
 
 
+def test_real_stage_directories_preserve_full_ids_and_union_with_the_existing_record_codec(tmp_path: Path) -> None:
+    identities = ('tests/a.py::test_a[white space - [a]]', 'tests/a.py::test_a[white space - [b]]')
+    for stage, node in zip(('parallel', 'serial'), identities, strict=True):
+        recorder = CellRecorder(tmp_path / stage / 'cells-gw0.jsonl')
+        _test(recorder, node, ('call', 'failed', 'E   assert False'))
+    cells, flaky = read_cells(tmp_path)
+    assert set(cells) == set(identities)
+    assert all(one.red for one in cells.values())
+    assert flaky == frozenset()
+
+
+def test_a_same_identity_disagreeing_across_stages_is_still_flaky(tmp_path: Path) -> None:
+    node = 'tests/a.py::test_a[one identity - [space]]'
+    _test(CellRecorder(tmp_path / 'parallel' / 'cells.jsonl'), node)
+    _test(CellRecorder(tmp_path / 'serial' / 'cells.jsonl'), node, ('call', 'failed', 'E   assert False'))
+    cells, flaky = read_cells(tmp_path)
+    assert set(cells) == {node}
+    assert flaky == {node}
+
+
+@pytest.mark.parametrize('unexpected', ['other-stage', 'root-flat'])
+def test_mixed_or_unknown_record_layout_is_refused_instead_of_silently_ignoring_a_stage(
+    tmp_path: Path, unexpected: str
+) -> None:
+    _test(CellRecorder(tmp_path / 'parallel' / 'cells.jsonl'), 'tests/a.py::test_a')
+    path = tmp_path / 'cells.jsonl' if unexpected == 'root-flat' else tmp_path / unexpected / 'cells.jsonl'
+    _test(CellRecorder(path), 'tests/a.py::test_hidden')
+    with pytest.raises(ValueError, match=r'stage|layout|mixed'):
+        read_cells(tmp_path)
+
+
 def test_a_directory_of_the_retired_word_files_is_refused_by_name(tmp_path: Path) -> None:
     """Regenerable: no dual-format reading, the verify re-runs."""
     (tmp_path / 'outcomes-gw0.json').write_text('{"a::t": "passed"}\n', encoding='utf-8')

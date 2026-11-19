@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
-__all__ = ['CONTEXT', 'ConsumerRun', 'main', 'runs']
+__all__ = ['CONTEXT', 'ConsumerRun', 'main', 'runs', 'same_repo']
 
 #: The status a consumer's run posts on the data PR, ``tests/consumer:<member>``.
 CONTEXT: Final = 'tests/consumer:'
@@ -46,7 +46,9 @@ class ConsumerRun:
     argv: tuple[str, ...]
 
 
-def _same_repo(left: str, right: str) -> bool:
+def same_repo(left: str, right: str) -> bool:
+    """Whether two urls name one repo: case, a trailing slash and ``.git`` aside."""
+
     def bare(url: str) -> str:
         return url.strip().rstrip('/').removesuffix('.git').lower()
 
@@ -58,7 +60,7 @@ def runs(url: str, head: str, members: Mapping[str, Path]) -> tuple[ConsumerRun,
     planned = []
     for member, root in sorted(members.items()):
         for dep in datadeps.declared(root, overridden=False):
-            if _same_repo(dep.url, url):
+            if same_repo(dep.url, url):
                 argv = (*_VERIFY, '--', *dep.tests) if dep.tests else _VERIFY
                 planned.append(ConsumerRun(f'{CONTEXT}{member}', root, {datadeps.OVERRIDE: f'{dep.name}={head}'}, argv))
     return tuple(planned)

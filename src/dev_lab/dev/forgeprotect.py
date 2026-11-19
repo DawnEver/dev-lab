@@ -10,22 +10,20 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
 * the REQUIRED CONTEXTS are derived from the rendered workflows (:mod:`dev_lab.dev.ciworkflows`,
   :func:`required_contexts`): a forge whose workflows post the merge decision requires
   :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT` on integration; a forge whose serve host merges requires
-  ``tests/base`` and ``tests/security``, never ``tests/review`` (user ruling 2026-11-05: the merge decision enforces
-  the review itself, and a review that did not run merges WARNED, :mod:`dev_lab.dev.reviewcap`). The trunk requires the
+  NO context there, save the checks a repo declares as its merge gate (``[tool.dev_lab.integrator] merge_checks``)
+  (user ruling 2026-11-12, RED-INTEGRATION-MERGES: integration may be red, so a required part would
+  let the forge refuse a red-on-record merge the serve host decided). The trunk requires the
   base part's rows the promotion event runs (``tests/base`` and, where workflows fan
   parts out per OS, ``tests/base@<os>``) -- the floor every promotion stands on -- and NO other part: a part a
   declared resource derives (``tests/windows``) is a hand part, tested later and never a merge condition (user ruling
-  2026-11-10, :func:`dev_lab.dev.forgemerge.hand_parts`);
-* the APPROVER is ``[tool.dev_lab.review] judge_login``: only a judge posts an approving PR review, so approvals
-  are required only where one is declared -- a count with nobody to approve would hold every merge forever;
-* a GitHub repo judged by an App (``judge_app``) requires the App's
-  :data:`~dev_lab.dev.forgecontexts.JUDGE_CHECK` FROM THAT APP (``integration_id``) on integration, and no approval:
-  the App posts a check run, never an approving review;
+  2026-11-10, :func:`dev_lab.dev.forgemergewaits.hand_parts`);
+* NO APPROVAL AND NO JUDGE CHECK is ever required: the judge's verdict is ADVISORY on every forge
+  (:data:`~dev_lab.dev._forgebackends.ADVISORY`, user ruling 2026-11-11), so ``approvals`` above 0 is refused;
 * what THIS table declares, once, is the rest -- per forge host, the ONE bypass identity (break-glass) and the
   identities that may push the trunk (promote)::
 
     [tool.dev_lab.protection]
-    approvals = 1                                  # optional; default 1 with a judge, else 0 (more needs a judge)
+    producer = "hpc"                               # who posts the parts; absent: "actions" (dev_lab.dev.producers)
     [tool.dev_lab.protection.forges."github.com"]
     breakglass = ["app:<id>", "role:admin"]        # GitHub: a list of role:<admin|maintain|write>|app:<id>|team:<id>
     [tool.dev_lab.protection.forges."gitea.example"]
@@ -35,7 +33,10 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
 ``python -m dev_lab.dev.forge protect plan|check|apply`` renders the declaration onto the repository's forge
 (:mod:`dev_lab.dev._protect_github`, :mod:`dev_lab.dev._protect_gitea`): ``plan`` prints every difference, ``check``
 exits 1 on any, ``apply`` writes them and re-reads -- an administrator's verb, never CI's: the job token cannot and
-must not change the rules that judge it.
+must not change the rules that judge it. ``plan`` and ``check`` need no admin: a fact the credential cannot read is
+said unanswered (a difference, never "as declared"). On a self-hosted Gitea no workstation credential applies at
+all: the forge host does, behind one consent (``python -m dev_lab.ops ... forge protect``,
+:mod:`dev_lab.ops.forgeprotection`).
 """
 
 from __future__ import annotations
@@ -57,12 +58,13 @@ from dev_lab.dev._protect_steps import Step
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT, SECURITY_CONTEXT
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgereview_declared import JUDGE, review_from
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgereview_declared import review_from
 from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.producers import producer_from
 
 __all__ = [
     'INTEGRATION',
@@ -148,8 +150,11 @@ def declaration_from(text: str, origin: str) -> Declaration:
     if not isinstance(table, dict) or not table.get('forges'):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} declares no forges: whose identity bypasses is undecided'
         raise ValueError(msg)
-    if unknown := sorted(set(table) - {'approvals', 'forges'}):
-        msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are approvals, forges'
+    if unknown := sorted(set(table) - {'approvals', 'forges', 'producer'}):
+        msg = (
+            f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; '
+            'the keys are approvals, forges, producer'
+        )
         raise ValueError(msg)
     forges = {}
     for host, entry in table['forges'].items():
@@ -162,21 +167,17 @@ def declaration_from(text: str, origin: str) -> Declaration:
         named = entry['breakglass']
         bypass = (str(named),) if isinstance(named, str) else tuple(str(one) for one in named)
         forges[host] = Identities(bypass, tuple(entry.get('promote', ())))
-    review = review_from(text, origin)
-    judged = review.where == JUDGE and not review.judge_app
-    approvals = int(table.get('approvals', 1 if judged else 0))
-    if approvals and review.judge_app:
-        msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} with judge_app -- the App posts a check'
-        raise ValueError(msg)
-    if approvals and not judged:
+    approvals = int(table.get('approvals', 0))
+    if approvals > 0:  # only a judge approves, and its verdict is ADVISORY on every forge (user ruling 2026-11-11)
         msg = (
-            f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} with no [tool.dev_lab.review] '
-            f'where = "{JUDGE}" -- nobody posts an approving review, so every merge would wait forever'
+            f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} -- only the judge posts an approving '
+            f'review, and the judge is advisory: no merge waits on it (user ruling 2026-11-11)'
         )
         raise ValueError(msg)
     if approvals < 0:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} is below zero'
         raise ValueError(msg)
+    producer_from(text, origin)  # the one producer (dev_lab.dev.producers), refused by name when malformed
     return Declaration(approvals, forges)
 
 
@@ -186,10 +187,8 @@ def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[s
     flows = [flow for where, flow in placed(text, origin, backend_for(forge).name).values() if where == directory]
     jobs = [job for flow in flows for job in flow.get('jobs', {}).values()]
     steps = {step.get('name') for job in jobs for step in job.get('steps', ())}
-    if MERGE_READY_CONTEXT in steps:
-        integration: tuple[str, ...] = (MERGE_READY_CONTEXT,)
-    else:
-        integration = tuple(sorted({f'{CONTEXT_PREFIX}{BASE}', SECURITY_CONTEXT}))
+    integration = (MERGE_READY_CONTEXT,) if MERGE_READY_CONTEXT in steps else ()
+    integration += policy_from(text, origin).merge_checks  # the repo's declared merge checks (2026-11-12)
     if any(job.get('name') == _PART_JOB for job in jobs):
         trunk = tuple(sorted(f'{CONTEXT_PREFIX}{row["part"]}' for row in rows(BASE, _PROMOTION_EVENT, {})))
     else:
@@ -198,7 +197,11 @@ def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[s
 
 
 def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
-    """The integration branch's and the trunk's :class:`Target` on *forge*, from pyproject *text* alone."""
+    """The integration branch's and the trunk's :class:`Target` on *forge*, from pyproject *text* alone.
+
+    A ONE-BRANCH repo (``trunk`` IS ``integration``) takes every change by a merged pull request, so its one branch
+    holds the integration rule alone: a trunk rule on the same branch would forbid the very merge it takes.
+    """
     policy = policy_from(text, origin)
     declared = declaration_from(text, origin)
     ours = declared.forges.get(forge.host)
@@ -208,11 +211,11 @@ def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
     contexts = required_contexts(text, origin, forge)
     review = review_from(text, origin)
     approver = review.judge_login if declared.approvals else ''
-    return (
-        Target(INTEGRATION, policy.integration, contexts[INTEGRATION], ours.breakglass, (),
-               declared.approvals, approver, review.judge_app),
-        Target(TRUNK, policy.trunk, contexts[TRUNK], ours.breakglass, ours.promote),
-    )  # fmt: skip
+    integration = Target(INTEGRATION, policy.integration, contexts[INTEGRATION], ours.breakglass, (),
+                         declared.approvals, approver)  # fmt: skip
+    if policy.trunk == policy.integration:
+        return (integration,)
+    return (integration, Target(TRUNK, policy.trunk, contexts[TRUNK], ours.breakglass, ours.promote))
 
 
 def plan(api: Api, forge: Forge, wanted: Sequence[Target]) -> list[Step]:
@@ -274,6 +277,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         for line in refusal(failed, wanted):
             emit(line, err=True)
         return 1
+    except PermissionError as refused:  # a read credential's plan: the forge host writes (_protect_gitea)
+        emit(f'[protect] {refused}', err=True)
+        return 2
     emit(f'[protect] {client.forge.identity}: ' + (f'{len(steps)} difference(s)' if steps else 'as declared'))
     for line in render(steps):
         emit(f'  {line}')

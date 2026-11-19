@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -33,10 +34,12 @@ from lab_commons.hpc.shell import FULL
 from lab_commons.hpc.testcells import upgraded
 from lab_commons.log import emit
 
+from dev_lab.dev.datedlog import UndeclaredOutput, script_temp_env
+from dev_lab.dev.famtests.alwayson import run_checks
 from dev_lab.dev.localpart import local_record, post_local
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import part_context, record_directory
-from dev_lab.dev.producer import ProducerExit, full_suite_refusal, unreachable
+from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -61,21 +64,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         head = _door.run(
             ['git', 'rev-parse', 'HEAD'], cwd=args.root, capture_output=True, text=True, encoding='utf-8', check=True
         )
-        code = _door.run(command, cwd=args.root, check=False).returncode
-    except (OSError, subprocess.CalledProcessError) as cannot:
+        cells = run_checks(args.root)
+        failed = [node for node, cell in cells.items() if cell.met is not True]
+        for node in failed:
+            emit(f'commandpart: {node}: {cells[node].why}', err=True)
+        # Resolved on PATH first: on Windows `npm` is `npm.cmd`, which a bare name cannot start (WinError 2).
+        program = shutil.which(command[0]) or command[0]
+        # D27: the suite temp dirs (the TMPDIR, TEMP and TMP variables) land in the dated tree, asked at run.
+        code = (
+            1
+            if failed
+            else _door.run(
+                [program, *command[1:]], cwd=args.root, env=script_temp_env(args.root, os.environ), check=False
+            ).returncode
+        )
+    except (OSError, subprocess.CalledProcessError, UndeclaredOutput) as cannot:
         emit(f'commandpart: unreachable -- cannot run {command[0]!r} here: {cannot}', err=True)
-        return unreachable(f'cannot run {command[0]!r}: {cannot}')
+        return unreachable(f'cannot run {command[0]!r}: {cannot}', Owner.ENVIRONMENT)
     sha = head.stdout.strip()
     node = ' '.join(command)
-    cell = upgraded('passed') if code == 0 else upgraded('failed', f'{node} exited {code}')
+    if not failed:
+        cells[node] = upgraded('passed') if code == 0 else upgraded('failed', f'{node} exited {code}')
     record = local_record(
         args.root,
         sha=sha,
         part=args.part,
         scope=FULL,
         req='command',
-        cells={node: cell},
-        owned={node: row_part(args.part)},
+        cells=cells,
+        owned=dict.fromkeys(cells, row_part(args.part)),
     )
     emit(post_local(args.root, record, record_directory(args.root, sha)))
     return ProducerExit.PASS if code == 0 else ProducerExit.FAIL

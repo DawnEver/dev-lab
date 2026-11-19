@@ -1,11 +1,13 @@
 """WRITES-STAY-IN-THE-TREE, the census and the sweep over the write-prone roots of :mod:`dev_lab.dev.writeroots`.
 
-The shape of ``codeplace stray``: ONE census (:func:`census`, one level deep, never walked past a root's direct
+The shape of ``strays hook``: ONE census (:func:`census`, one level deep, never walked past a root's direct
 entries), read by three callers --
 
-* the ``Stop`` hook the stray census already rides (``python -m dev_lab.dev.codeplace stray``) REPORTS the scripts
+* the ``Stop`` hook the stray census already rides (``python -m dev_lab.dev.strays hook``) REPORTS the scripts
   and notes written into a root within :data:`REPORT_WINDOW_S` (:func:`session_report`), blocking the stop once;
-  it never deletes -- one Stop hook, two placement questions, so no second wiring;
+  it never deletes -- one Stop hook, two placement questions, so no second wiring. A file counts only when one of
+  the SESSION'S OWN tool calls names it (:func:`tool_text`): a shared temp dir also holds what other live programs
+  write (a service's port file), and laying that at the session's door asks it to break that program (#561);
 * the command (``python -m dev_lab.dev.tmpsweep``) prints the census; ``--apply`` removes what :func:`sweep`
   admits, for a person or a scheduled task to run;
 * :func:`sweep` itself, which removes an entry only when its root is a ``temp`` root, its name is OURS
@@ -21,7 +23,9 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -43,7 +47,18 @@ from dev_lab.dev.writeroots import (
     write_prone_roots,
 )
 
-__all__ = ['MAX_AGE_DAYS', 'REPORT_WINDOW_S', 'Entry', 'census', 'declared', 'main', 'session_report', 'sweep']
+__all__ = [
+    'MAX_AGE_DAYS',
+    'REPORT_WINDOW_S',
+    'Entry',
+    'census',
+    'declared',
+    'main',
+    'named',
+    'session_report',
+    'sweep',
+    'tool_text',
+]
 
 #: The age past which a ``temp`` root's entry is swept.
 MAX_AGE_DAYS: Final = 7.0
@@ -51,6 +66,10 @@ MAX_AGE_DAYS: Final = 7.0
 REPORT_WINDOW_S: Final = 12 * 3600.0
 _SHOWN: Final = 5
 _DAY: Final = 86400.0
+#: A JSON escape in the tool-call text (``\\n``, a path's ``\\\\``): a separator, never a name's first letter.
+_ESCAPE: Final = re.compile(r'\\.')
+#: What cannot be part of a file name a tool call names: path separators, quotes, blanks and shell punctuation.
+_SEPARATORS: Final = re.compile(r'[/"\'\s:;,|<>*?()\[\]{}=&`]+')
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +93,18 @@ def _harness_named(name: str) -> bool:
     return any(fnmatch.fnmatchcase(name, glob) for glob in EXCLUDED_GLOBS_IN_TEMP)
 
 
+def _entry(child: Path, root: Root, skip: Sequence[Path]) -> Entry | None:
+    """*child* of *root* as an entry, or ``None``: excluded, harness-named in temp, not a loose home file, or gone."""
+    if _excluded(child, skip) or (root.kind == 'temp' and _harness_named(child.name)):
+        return None
+    try:
+        if root.kind == 'home' and (child.name.startswith('.') or _linked(child) or not child.is_file()):
+            return None
+        return Entry(child, root, child.lstat().st_mtime)
+    except OSError:
+        return None  # absent, or gone between listing and stat
+
+
 def census(roots: Iterable[Root], excluded: Iterable[Path]) -> list[Entry]:
     """Every direct entry of each root that exists, minus *excluded*; a ``home`` root lists loose non-dot files."""
     skip = tuple(excluded)
@@ -83,16 +114,19 @@ def census(roots: Iterable[Root], excluded: Iterable[Path]) -> list[Entry]:
             children = sorted(root.path.iterdir())
         except OSError:
             continue  # absent or unreadable: nothing written there to name
-        for child in children:
-            if _excluded(child, skip) or (root.kind == 'temp' and _harness_named(child.name)):
-                continue
-            if root.kind == 'home' and (child.name.startswith('.') or _linked(child) or not child.is_file()):
-                continue
-            try:
-                found.append(Entry(child, root, child.lstat().st_mtime))
-            except OSError:
-                continue  # gone between listing and stat
+        found.extend(entry for child in children if (entry := _entry(child, root, skip)) is not None)
     return found
+
+
+def named(roots: Iterable[Root], excluded: Iterable[Path], names: Iterable[str]) -> list[Entry]:
+    """The :func:`census` entries called one of *names*, found by name: one stat per name and root, no listing.
+
+    The Stop report's half (HOOK-UNDER-FIVE-SECONDS, D24): a shared temp dir holds tens of thousands of entries, and
+    listing it on every stop measured 18-33 s on a workstation; the session's own tool calls name a few files.
+    """
+    skip = tuple(excluded)
+    wanted = sorted({name for name in names if name not in {'', '.', '..'}})
+    return [entry for root in roots for name in wanted if (entry := _entry(root.path / name, root, skip)) is not None]
 
 
 def _newest(path: Path) -> float:
@@ -160,15 +194,46 @@ def sweep(
     return removed, kept
 
 
+def tool_text(transcript: str | None) -> str:
+    """Every input the session's tool calls carried, read from its transcript; ``''`` when there is none.
+
+    Only ``tool_use`` inputs count: prose and tool RESULTS name files the session did not write.
+    """
+    if not transcript:
+        return ''
+    try:
+        lines = Path(transcript).read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return ''
+    said: list[str] = []
+    for line in lines:
+        if '"tool_use"' not in line:  # most of a long transcript is prose and results: never parsed
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        message = record.get('message') if isinstance(record, dict) else None
+        content = message.get('content') if isinstance(message, dict) else None
+        if isinstance(content, list):
+            said.extend(
+                json.dumps(item.get('input'))
+                for item in content
+                if isinstance(item, dict) and item.get('type') == 'tool_use'
+            )
+    return '\n'.join(said)
+
+
 def session_report(
-    roots: Iterable[Root], excluded: Iterable[Path], *, since: float, suffixes: Collection[str]
+    roots: Iterable[Root], excluded: Iterable[Path], *, since: float, suffixes: Collection[str], mentions: str
 ) -> str | None:
-    """The ``WRITES-STAY-IN-THE-TREE`` report: *suffixes* files written into a root after *since*, or ``None``."""
-    found = [
-        entry.path.as_posix()
-        for entry in census(roots, excluded)
-        if entry.mtime >= since and entry.path.suffix.lower() in suffixes
-    ]
+    """The ``WRITES-STAY-IN-THE-TREE`` report, or ``None``: *suffixes* files the session wrote into a root.
+
+    A file counts when it was written after *since* AND the session's own tool calls (*mentions*,
+    :func:`tool_text`) name it -- a file nothing of the session named is another program's.
+    """
+    names = (token for token in _SEPARATORS.split(_ESCAPE.sub(' ', mentions)) if Path(token).suffix.lower() in suffixes)
+    found = [entry.path.as_posix() for entry in named(roots, excluded, names) if entry.mtime >= since]
     if not found:
         return None
     shown = ', '.join(found[:_SHOWN]) + (f' (+{len(found) - _SHOWN} more)' if len(found) > _SHOWN else '')

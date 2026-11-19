@@ -23,7 +23,7 @@ reader's open handle refusing a rename on Windows) and a second copy would not c
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -49,10 +49,6 @@ __all__ = [
 #: The state file's format version. Written into every new state and checked on read, so a future
 #: change to the shape is something a run can DETECT rather than silently misinterpret.
 SCHEMA_VERSION: Final = 1
-
-#: Each older version this build reads, and the step that takes it one version on (FORMATS-UPGRADE-ON-READ):
-#: a file of an older version is upgraded on read, never discarded; only an unknown version starts afresh.
-_UPGRADES: Final[dict[int, Callable[[dict[str, Any]], dict[str, Any]]]] = {}
 
 #: How many remedy attempts are kept. A report shows the tail; an unbounded list would make the
 #: state file grow for the life of the deployment, which is the defect the predecessor had in its
@@ -259,8 +255,6 @@ class StateStore:
                 flush=True,
             )
             return new_state()
-        while isinstance(parsed, dict) and parsed.get('version') in _UPGRADES:
-            parsed = _UPGRADES[parsed['version']](parsed)
         if not isinstance(parsed, dict) or parsed.get('version') != SCHEMA_VERSION:
             # SCHEMA_VERSION's own docstring says the check exists "so a future change to the shape
             # is something a run can DETECT rather than silently misinterpret". Detecting it and

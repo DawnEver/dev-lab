@@ -73,7 +73,7 @@ def test_planted_an_inherited_git_dir_turns_the_pushing_repository_bare(pushing,
 
 def test_the_lock_lag_count_leaves_the_pushing_repository_alone(pushing, source) -> None:
     url, sha = source
-    assert locklag._commits_behind(url, 'main', sha) == 0
+    assert locklag._behind(url, 'main', sha).landings == 0
     assert _bare(pushing) == 'false'
 
 

@@ -12,6 +12,7 @@ from test_ops_breakglass import GREEN, HEAD, FakeForge, Host
 
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
+from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
 from dev_lab.ops.configcheck import LABEL
@@ -143,17 +144,22 @@ def test_a_refused_merge_is_skipped_and_the_next_pr_still_merges(tmp_path) -> No
     assert _merged(host) == [8]
 
 
-def test_a_green_pr_that_is_not_current_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
+def test_a_green_pr_that_is_not_current_still_lands(tmp_path) -> None:
+    """W5 (dev-lab#644): ``pr-current`` is an alarm -- a stale green head lands; the forge's merge decides the rest.
+
+    PLANTED CONTROL: a red head beside them stays.
+    """
     stale = (*GREEN, CommitStatus(PR_CURRENT_CONTEXT, 'failure', 'lacks integrate/main', ''))
     host = _host(
         tmp_path,
         [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)],
-        {HEAD: stale, 'c' * 40: GREEN},
+        {HEAD: stale, 'c' * 40: GREEN, 'd' * 40: RED},
     )
     host.forge.pulls.append(Pull(9, 'integrate/main', 'c' * 40, draft=False))  # green, pr-current absent
+    host.forge.pulls.append(Pull(10, 'integrate/main', 'd' * 40, draft=False))
     host.open(max_merges=5)
     host.server.tick()
-    assert _merged(host) == [8]
+    assert _merged(host) == [7, 8, 9]
 
 
 # User ruling 2026-11-11: a hosts-config PR touching a boundary key (configcheck labels it) lands only by its own
@@ -191,9 +197,54 @@ def test_a_held_back_pr_is_logged_once_per_wave_not_every_tick(tmp_path, capsys)
     assert (err.count('#7 skipped'), err.count('#8 skipped')) == (1, 1)
 
 
+def test_a_held_pr_is_skipped_by_the_sweep_naming_the_release_door(tmp_path, capsys) -> None:
+    host = _consent_host(tmp_path, labelled={7: (HOLD_LABEL,)})
+    host.open(max_merges=1)
+    host.server.tick()
+    assert _merged(host) == [8], 'a held PR does not count toward max_merges'
+    assert RELEASE_DOOR.format(n=7) in capsys.readouterr().err
+
+
 def test_a_label_the_forge_cannot_read_is_a_skip_not_a_merge(tmp_path, capsys) -> None:  # PLANTED CONTROL
     host = _consent_host(tmp_path, unreadable=frozenset({7}))
     host.open(max_merges=5)
     host.server.tick()
     assert _merged(host) == [8]
     assert '#7 skipped' in capsys.readouterr().err
+
+
+# --- the wave reads its waits from forgemergewaits (the merge split, dev-lab #493) --------------------------
+
+
+def _current(*statuses: CommitStatus) -> tuple[CommitStatus, ...]:
+    return (*statuses, CommitStatus(PR_CURRENT_CONTEXT, 'success', 'holds integrate/main', ''))
+
+
+def test_a_pending_test_part_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
+    pending = 'e' * 40
+    statuses = _current(CommitStatus('tests/base', 'pending', 'running', ''), GREEN[1])
+    host = _host(tmp_path, [Pull(7, 'integrate/main', pending, draft=False)], {pending: statuses})
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [], 'a part still running waits (forgemergewaits.parts_wait), never lands'
+
+
+def test_a_head_without_its_security_check_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
+    unchecked = 'f' * 40
+    host = _host(tmp_path, [Pull(7, 'integrate/main', unchecked, draft=False)], {unchecked: _current(GREEN[0])})
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [], 'no tests/security posted: the wave waits'
+
+
+def test_an_unproduced_hand_part_does_not_hold_a_green_base_back(tmp_path) -> None:
+    """User ruling 2026-11-10: a hand part is never a merge condition -- the wave reads parts_wait, which says so.
+
+    Its planted control is :func:`test_a_pending_test_part_is_not_merged`: the HOSTED part still waits.
+    """
+    handed = '1' * 40
+    statuses = _current(CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=windows:2', ''), GREEN[1])
+    host = _host(tmp_path, [Pull(7, 'integrate/main', handed, draft=False)], {handed: statuses})
+    host.open(max_merges=5)
+    host.server.tick()
+    assert _merged(host) == [7]

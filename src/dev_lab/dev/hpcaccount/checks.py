@@ -8,12 +8,14 @@ Measured 2026-10-12 deploying three accounts on one cluster: every one of these 
   :func:`dev_lab.dev.forgeauth.tick_refusal`); the deploy runs it as a subprocess, as a person runs it.
 * THE CREDENTIAL STORE (:func:`store_problem`). A tick reads its token through git's credential helper;
   no helper means no token, and a ``store`` file another user can read is a leaked token.
-* THE TOOLS (:func:`tool_plan`). ``uv`` always, plus every ``needs`` a served repo declares. Present is
+* THE TOOLS (:func:`tool_plan`). ``uv`` and ``rclone`` always (:data:`ALWAYS`), plus every ``needs`` a served repo
+  declares. Present is
   CAPABILITY, not lookup (:func:`runs`): ``<tool> --version`` exits 0 in the TICK'S environment (cron's
   PATH, then the grant setup) -- a rustup shim with no toolchain is on the PATH and is not a cargo.
   ``uv`` and the Rust toolchain come from their OFFICIAL installers into ``~/.local/bin`` and
   ``~/.cargo/bin`` -- user-space and removable; the installers edit no shell file, and ``cmake`` comes
-  through ``uv tool``. Anything else is the cluster's to provide, so it is refused by name.
+  through ``uv tool``. ``rclone`` comes from its PINNED, sha256-checked release
+  (:mod:`dev_lab.dev.toolrelease`, D76). Anything else is the cluster's to provide, so it is refused by name.
 * ONE LOGIN ENVIRONMENT (:func:`login_files`, :func:`login_line`). The tick's PATH names those two
   directories; the account's login shell must too, or a tool runs for cron and not for its person (Ada
   2026-10-25: three accounts had cargo only for cron). The deploy writes one marked line into the files
@@ -22,7 +24,7 @@ Measured 2026-10-12 deploying three accounts on one cluster: every one of these 
   ``git merge-tree --write-tree`` (git >= 2.38); cron's ``/usr/bin/git`` can be older (Ada 2026-10-17:
   2.31.1, every tick refused with merge-tree's usage). The floor is PROVEN on a toy repository, never read
   from ``--version`` -- a vendor build's version string is not the capability.
-* THE GRANT (:func:`grant_of`). A tick on a cluster needs this account's own ``[[hpc.grant]]``
+* THE GRANT (:func:`association_refusal`). A tick on a cluster needs this account's own ``[[hpc.grant]]``
   (:mod:`lab_commons.hpc.grants`): the user from ``id -un``, the account and its CPU limit from
   ``sacctmgr``, this host, and the partitions the deployment declares (a partition list is a choice,
   not a fact Slurm can answer).
@@ -33,22 +35,24 @@ from __future__ import annotations
 import re
 import shlex
 import shutil
+import sys
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 import lab_commons.launch as _door
 
 from dev_lab.dev._dep_project import follow_pin
-from dev_lab.dev.hpcaccount.spec import Deployment, tick_dirs
+from dev_lab.dev.hpcaccount.spec import tick_dirs
 from dev_lab.dev.lockcheck import uv_version
 
 __all__ = [
+    'ALWAYS',
     'INSTALLERS',
     'LOGIN_MARK',
     'MERGE_TREE_GIT',
+    'association_refusal',
     'follow_uv',
-    'grant_of',
     'login_files',
     'login_line',
     'merge_tree_refusal',
@@ -69,7 +73,11 @@ INSTALLERS: Final = {
     'cargo': "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
     'rustc': "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
     'cmake': 'uv tool install cmake',
+    'rclone': f'{shlex.quote(sys.executable)} -m dev_lab.dev.toolrelease install rclone',
 }
+
+#: The tools every account needs whatever its repos declare: ``uv`` runs every tick, ``rclone`` every store (D76).
+ALWAYS: Final = ('uv', 'rclone')
 
 _PRIVATE: Final = 0o077
 
@@ -157,10 +165,10 @@ def merge_tree_refusal(git: Sequence[str], scratch: Path) -> str:
 
 
 def tool_plan(needs: Iterable[str], *, found: Callable[[str], bool]) -> tuple[list[tuple[str, str]], list[str]]:
-    """``(installs, refused)``: ``uv`` and each of *needs* not *found*, as ``(tool, installer)`` or refused by name."""
+    """``(installs, refused)``: :data:`ALWAYS` and each of *needs* not *found*, as ``(tool, installer)`` or refused."""
     installs: list[tuple[str, str]] = []
     refused: list[str] = []
-    for tool in dict.fromkeys(['uv', *needs]):
+    for tool in dict.fromkeys([*ALWAYS, *needs]):
         if found(tool):
             continue
         script = INSTALLERS.get(tool)
@@ -171,33 +179,14 @@ def tool_plan(needs: Iterable[str], *, found: Callable[[str], bool]) -> tuple[li
     return installs, refused
 
 
-def grant_of(user: str, sacct: str, *, spec: Deployment, host: str) -> dict[str, Any] | str:
-    """The account's ``[[hpc.grant]]`` from ``sacctmgr -nP show assoc ... format=account,grptres``; else why not."""
-    if not spec.partitions:
-        return (
-            'declare the partitions its grant may use: --partition <name> (repeatable; partitions = [...] in [deploy])'
-        )
-    limits: dict[str, str] = {}
-    for line in sacct.splitlines():
-        account, _, tres = line.strip().partition('|')
-        if account:
-            limits.setdefault(account, tres)
-    if not limits:
+def association_refusal(user: str, sacct: str, slurm_account: str) -> str | None:
+    """Why *slurm_account* is not one of *user*'s Slurm associations (``sacctmgr -nP show assoc``); ``None``: it is."""
+    accounts = {line.strip().partition('|')[0] for line in sacct.splitlines()} - {''}
+    if not accounts:
         return f'no Slurm association for {user} (sacctmgr show assoc): the cluster has given this account none'
-    if spec.slurm_account:
-        if spec.slurm_account not in limits:
-            return f"[deploy] slurm_account {spec.slurm_account!r} is not one of {user}'s: {', '.join(limits)}"
-        account = spec.slurm_account
-    elif len(limits) > 1:
-        return f'{user} has several Slurm accounts ({", ".join(limits)}): declare one with --slurm-account <account>'
-    else:
-        (account,) = limits
-    return {
-        'user': user,
-        'hosts': [host],
-        'slurm_account': account,
-        'partitions': list(spec.partitions),
-    }
+    if slurm_account not in accounts:
+        return f"the declared slurm_account {slurm_account!r} is not one of {user}'s: {', '.join(sorted(accounts))}"
+    return None
 
 
 def follow_uv() -> str:

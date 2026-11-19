@@ -64,17 +64,35 @@ def test_an_escape_sequence_is_ascii_source_and_passes(tmp_path: Path) -> None:
 
 
 def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
-    assert exempted('.claude/memory/2026/09/16/x.md')
     assert exempted('attic/motor_solver/old.py')
     assert exempted('archived/thing.py')
     assert not exempted('src/dev_lab/dev/cjk.py')
-    assert EXEMPT_PREFIXES == ('.claude/memory/', 'attic/', '/archived/')
+    assert EXEMPT_PREFIXES == ('attic/', '/archived/')
+
+
+def test_memory_and_tasks_are_english_only_d26(tmp_path: Path) -> None:
+    """D26 (user, 2026-11-17): `.claude/memory/` and `.claude/tasks/` lost their exemption, at any depth."""
+    assert not exempted('.claude/memory/2026/09/16/x.md')
+    assert not exempted('.claude/tasks/some-task/JOURNAL.md')
+    assert not exempted('src/pkg/.claude/memory/x.md')
+    memory = tmp_path / '.claude' / 'memory' / 'note.md'
+    memory.parent.mkdir(parents=True)
+    memory.write_text(chr(0x4E2D) + '\n', encoding='utf-8')
+    attic = tmp_path / 'attic' / 'old.md'
+    attic.parent.mkdir(parents=True)
+    attic.write_text(chr(0x4E2D) + '\n', encoding='utf-8')
+    scan = scan_files((memory, attic), root=tmp_path)
+    assert [o.path for o in scan.occurrences] == ['.claude/memory/note.md']
+    assert scan.exempted == ('attic/old.md',)
+    refusal = ratchet(scan.occurrences, ())[0]
+    assert '(user, translated)' in refusal, 'the refusal must name how to translate a quoted ruling'
+    assert '[tool.dev_lab.cjk]' in refusal, 'the refusal must name the declaration door'
+    assert 'move the content under .claude/memory' not in refusal
 
 
 def test_exempted_matches_a_nested_directory_and_not_a_nested_lookalike() -> None:
-    assert exempted('src/consumer_a/hamilton/.claude/memory/x.md')
+    assert exempted('src/consumer_a/hamilton/attic/x.md')
     assert exempted('src/pkg/attic/old.py')
-    assert exempted('rust/.claude/memory/note.md')
     assert not exempted('src/pkg/notattic/x.py')
     assert not exempted('src/lab_commons/attic_style/x.py')
 
@@ -107,7 +125,7 @@ def test_a_nested_exemption_directory_is_recognised_and_a_nested_lookalike_is_no
     planted here: a nested memory file and a nested `attic/` file are exempt, while a nested file
     that merely starts with the same letters (`notattic/`) is still caught.
     """
-    nested_memory = tmp_path / 'src' / 'consumer_a' / 'hamilton' / '.claude' / 'memory' / 'note.md'
+    nested_memory = tmp_path / 'src' / 'consumer_a' / 'hamilton' / 'attic' / 'note.md'
     nested_memory.parent.mkdir(parents=True)
     nested_memory.write_text(chr(0x4E2D) + chr(0x6587) + ' nested and exempt\n', encoding='utf-8')
 
@@ -121,7 +139,7 @@ def test_a_nested_exemption_directory_is_recognised_and_a_nested_lookalike_is_no
 
     scan = scan_files((nested_memory, nested_attic, lookalike), root=tmp_path)
     assert scan.exempted == (
-        'src/consumer_a/hamilton/.claude/memory/note.md',
+        'src/consumer_a/hamilton/attic/note.md',
         'src/pkg/attic/old.py',
     )
     assert [o.path for o in scan.occurrences] == ['src/pkg/notattic/x.py']
@@ -198,7 +216,7 @@ def test_the_prefilter_skips_work_without_changing_one_reported_occurrence(tmp_p
     han, full_width_a = chr(0x4E2D), chr(0xFF21)
     dirty = tmp_path / 'dirty.py'
     dirty.write_text(f'clean first line\nx = 1  # {han}{full_width_a}\n', encoding='utf-8')
-    exempt = tmp_path / '.claude' / 'memory' / 'note.md'
+    exempt = tmp_path / 'attic' / 'note.md'
     exempt.parent.mkdir(parents=True)
     exempt.write_text(f'{han} is allowed to live here\n', encoding='utf-8')
     undecodable = tmp_path / 'blob.bin'
@@ -218,7 +236,7 @@ def test_the_prefilter_skips_work_without_changing_one_reported_occurrence(tmp_p
 
     scan = scan_files((dirty, exempt, clean, undecodable), root=tmp_path)
     assert scan.occurrences == (Occurrence('dirty.py', 2, 10, han), Occurrence('dirty.py', 2, 11, full_width_a))
-    assert scan.exempted == ('.claude/memory/note.md',)
+    assert scan.exempted == ('attic/note.md',)
     assert scan.undecodable == ('blob.bin',)
     assert scan.files_read == 2
 
@@ -293,6 +311,24 @@ def test_a_translation_is_exempt_only_beside_its_english_source(tmp_path: Path) 
     assert orphaned_translations(('docs/page.md', 'docs/page.zh.md')) == ()
 
 
+def test_locale_data_is_a_translation_only_beside_its_source_d26(tmp_path: Path) -> None:
+    """D26: `.zh.json` / `.zh.toml` are translations too -- exempt beside their source, refused orphaned."""
+    han = chr(0x4E2D)
+    for name in ('ui.json', 'ui.zh.json', 'lone.zh.json', 'lone.zh.toml'):
+        (tmp_path / name).write_text(f'{han}\n' if '.zh.' in name else '{}\n', encoding='utf-8')
+    scan = scan_files(sorted(tmp_path.iterdir()), root=tmp_path)
+    assert scan.exempted == ('ui.zh.json',)
+    assert [o.path for o in scan.occurrences] == ['lone.zh.json', 'lone.zh.toml']
+    problems = orphaned_translations(('ui.json', 'ui.zh.json', 'lone.zh.json', 'lone.zh.toml'))
+    assert len(problems) == 2
+    assert "'lone.json'" in problems[0]
+    assert "'lone.toml'" in problems[1]
+    assert orphaned_translations(('ui.json', 'ui.zh.json', 'c.toml', 'c.zh.toml')) == ()
+    assert translation_source('ui.zh.json') == 'ui.json'
+    assert translation_source('c.zh.toml') == 'c.toml'
+    assert translation_source('c.zh.yaml') is None
+
+
 def test_translation_source_names_the_sibling_and_ignores_everything_else() -> None:
     assert translation_source('a/b.zh.md') == 'a/b.md'
     assert translation_source('b.zh.md') == 'b.md'
@@ -307,7 +343,7 @@ def test_the_non_ascii_census_counts_per_file_and_per_class_and_reports_the_dist
     dirty.write_text('a \u2014 b \u00d7 c ' + chr(0x4E2D) + '\n', encoding='utf-8')
     clean = tmp_path / 'clean.md'
     clean.write_text('ascii only\n', encoding='utf-8')
-    memory = tmp_path / '.claude' / 'memory' / 'n.md'
+    memory = tmp_path / 'attic' / 'n.md'
     memory.parent.mkdir(parents=True)
     memory.write_text('\u2014\n', encoding='utf-8')
     scan = scan_non_ascii((dirty, clean, memory), root=tmp_path)

@@ -1,6 +1,6 @@
 """The provenance stamp a created issue, PR body or comment opens with: ``[<machine> · <agent> · <branch>]``.
 
-Read from the ``HARNESS_*`` variables and the checkout's branch; :func:`dev_lab.dev.forgework.client_for` stamps it.
+Read from the ``HARNESS_*`` variables and the checkout's branch; :func:`dev_lab.dev.forgeclient.client_for` stamps it.
 """
 
 from __future__ import annotations

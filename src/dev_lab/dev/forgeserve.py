@@ -41,7 +41,7 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read
   The tick TAKES a local part's box claim before it claims the part, and the producer adopts it: the one
   admission is the tick's, so a started part is never box-refused and a refused one posts nothing.
 * RUNNING -- each cluster run in flight here, at its learned demand
-  (:func:`~lab_commons.compute.learned.cluster_demand`).
+  (:func:`dev_lab.dev.forgedemand.part_demand`).
 
 SEVERAL LOCAL PARTS AT ONCE, ONE THREAD EACH, and why that shape: ``produce`` already owns one child --
 its stream, its beats, its renewals, its release -- and is blocking, so N admitted parts are N calls of
@@ -76,18 +76,18 @@ reads its standing locally -- its supply, the last day's core-hours, partitions 
 (:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
 other waits. After it, a run whose ref moved on is SUPERSEDED (pending withdrawn, started drained -- and a drained
 task is judged by the same stall watch as any other, below); on the poller,
-a part no host admits waiting past its class's bound keeps one ``starved`` forge issue (:func:`raise_once`),
+a part no host admits waiting past its class's bound raises a ``starved`` alarm,
 read across every host card; and this host's CARD is published on the forge
 (:mod:`dev_lab.dev.forgehosts`):
 who it is, what it serves, its supply, what it holds with progress, and the queue as it saw it.
 
 THE FORGE PROMPTS THE INTEGRATOR: the repo's poller derives the integration queue
-(:func:`dev_lab.dev.integrator.observe`) and keeps ONE ``integration`` forge issue per row that asks
-for action (:func:`raise_once`): two hosts racing for the lease still write one issue, and only the host
-that creates or changes it pages. No host OWNS integration: whoever holds the lease derives it. The same
-tick runs the behind/conflict report on every child branch (:func:`dev_lab.dev.forgeintegration.tick`),
-and a child conflicting with integration or past the lane policy's ``behind_max`` joins those rows as one
-more ``integration`` issue.
+(:func:`dev_lab.dev.integrator.observe`) and raises ONE ``integration`` alarm per row that asks for action -- on the
+host card, the event stream ``forge queue`` prints, never an issue (user ruling 2026-11-14: the issue tracker holds
+only needs, defects and decisions). No host OWNS integration: whoever holds the lease derives it. The same tick runs
+the behind/conflict report on every child branch (:func:`dev_lab.dev.forgeintegration.tick`), and a child
+conflicting with integration or past the lane policy's ``behind_max`` joins those rows as one more ``integration``
+alarm.
 
 RUNNING IS NOT HEALTHY: every tick on a cluster seat cancels this account's forge tasks whose stream stopped
 past their bound, whatever their run (:meth:`dev_lab.dev.forgeslurm.SlurmCluster.stalled`; Ada 2026-10-24..26,
@@ -121,7 +121,6 @@ import lab_commons.launch as _door
 from lab_commons.box import Holding, holdings
 from lab_commons.box.machine import provided
 from lab_commons.box.providers import inventory
-from lab_commons.compute.learned import cluster_demand
 from lab_commons.compute.model import Supply
 from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
@@ -132,6 +131,7 @@ from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
 from dev_lab.dev import forgerun, forgerunstate, forgesubmit, metrics, retention
+from dev_lab.dev._forgebackends import FORGE_SERVE, NotWired, require_producer
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgeaffinity import declared
 from dev_lab.dev.forgealarm import (
@@ -143,6 +143,8 @@ from dev_lab.dev.forgealarm import (
     sound,
 )
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import card_host, card_owners, read_cards, recording
 from dev_lab.dev.forgeintent import reattach
@@ -164,7 +166,7 @@ from dev_lab.dev.forgeservesteps import (
 )
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
@@ -252,7 +254,7 @@ def serve(
         say(line)
     ceiling = standing.ceiling_gb if standing is not None else None  # a demand above it is never admitted
     host_rounds = Rounds(
-        root, repo, alarm, runs, slurm=slurm, say=say, sized=cluster_demand(repo, ceiling_gb=ceiling),
+        root, repo, alarm, runs, slurm=slurm, say=say, sized=part_demand(repo, ceiling_gb=ceiling),
         supplied=functools.partial(supplied, name=name, standing=standing),
         holding=(lambda: ()) if seat is not None else holding,
         ticking={
@@ -285,9 +287,7 @@ def serve(
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     pressed(root, repo, who=name, say=say, alarm=alarm)
     if ticked.pending and not claimed and not left:
-        refused = '; '.join(ticked.refused) or 'nothing was claimed'
-        named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
-        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
+        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', ticked.idle()))
     card(claimed)
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
         repo_wide(root, repo, remembering(client), name, cards, clock=clock, say=say, alarm=alarm)
@@ -403,7 +403,9 @@ def main(
         os.chdir(work_root(root))  # the serve reads its venv, never this tree (work_root)
 
     def build(here: Path) -> Client:
-        return client_for(here, env=env, transport=transport) if env is not None else unprompted_client(here)
+        built = client_for(here, env=env, transport=transport) if env is not None else unprompted_client(here)
+        require_producer(built.backend, FORGE_SERVE, f'forge serve of {here}')  # GitHub: Actions alone (2026-11-11)
+        return built
 
     seat = seat_of()
     machine = this_machine()
@@ -427,7 +429,7 @@ def main(
         sound(Alarm(AUTH, str(root), f'no stored forge credential on {card_host(machine, seat)}', str(missing)))
         emit(f'[serve] {missing}', err=True)
         return 1
-    except (ForgeCallFailed, PostFailed, forgerunstate.ForeignSchema, OSError) as failed:
+    except (ForgeCallFailed, PostFailed, NotWired, forgerunstate.ForeignSchema, OSError) as failed:
         _host_failure(root, failed)
         emit(f'[serve] {failed}', err=True)
         return 1

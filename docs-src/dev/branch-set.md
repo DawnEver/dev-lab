@@ -1,7 +1,7 @@
 # One branch per session
 
-Each working session keeps exactly ONE long-lived branch, declared in `pyproject.toml`, and merges its work into
-it (`ONE-BRANCH-PER-SESSION`). Every other branch is merged and then deleted (`MERGE-OR-DELETE`): there is no
+The integration branch is the only long-lived branch, declared in `pyproject.toml`; a pushed head is
+`pr/<task-slug>/<feature>`, one feature per PR (`ONE-BRANCH-PER-SESSION`, `PUSHED-HEAD-CARRIES-ITS-TASK`). Every other branch is merged and then deleted (`MERGE-OR-DELETE`): there is no
 third state, and a parked tag or renamed branch is the same debt. Run `python -m dev_lab.dev.branchset` to see
 what to merge and what to delete, and `--apply` to delete the merged local ones.
 
@@ -20,8 +20,10 @@ Read by `dev_lab.dev.branchset.declared_branchset(root)`; a missing or malformed
 raises `BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
 
 A branch in an `ephemeral` namespace is the head of ONE pull request: the push hook and the census accept it
-without a row, and the forge deletes it once no open PR has it as head and it has sat idle `grace_hours` (merged
-or closed; `branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
+without a row, and the forge deletes it once it is MERGED, no open PR has it as head and it has sat idle
+`grace_hours` (`branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
+An UNMERGED one is never deleted by the survey (D30): it is listed and alarmed with its two doors -- MERGE it
+through a PR, or LAND it with a declared `git merge -s ours` PR, then `branchprune delete`.
 Registering a branch in `sessions` to get it pushed is never the remedy; push it under `pr/` instead.
 
 ## The census and the candidates
@@ -33,14 +35,14 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 | `census(root, branchset)` | `undeclared_origin` (debt), `local_debt`, `unpushed` (undeclared, holding commits no origin ref has) |
 | `merge_candidates(root, branchset)` | every undeclared branch and parked tag, `deletable` when its tip is in the trunk's authority or a session branch; anything else is merged first |
 | `python -m dev_lab.dev.branchset [--root R]` | prints the candidates as `delete` / `merge` rows; deletes nothing |
-| `python -m dev_lab.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists origin's for a human |
+| `python -m dev_lab.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists landed origin ones with the `branchprune delete` door |
 
 - **Merged means merged into the REMOTE authority.** A local `main` that is ahead and unpushed answers "merged"
   about work whose only published copy is the branch you are about to delete.
 - The question is whether the CHANGE is there, so the instrument is `git cherry` against the remote, which sees
   through cherry-picks and rebases; the ancestor test does not.
-- Deleting a branch on origin BY HAND is a human's action (the forge's automatic prune, below, is the same
-  human decision made once as data): the door prints `git push origin --delete <b>`.
+- An origin branch is never deleted BY HAND: the door prints `python -m dev_lab.dev.branchprune delete <b>`
+  (LOSSLESS-DELETE) on each landed one; the forge's automatic prune, below, is the other deleter.
 
 ## The assertion consumers run
 
@@ -54,8 +56,13 @@ and reds every unrelated PR (ruling 2026-10-24).
 ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES: the base pre-push row `session-branch` (`dev_lab.dev.sessionbranch`)
 refuses a push that creates or updates `refs/heads/X` unless `BranchSet.admits(X)` -- the trunk, a `sessions`
 branch, or a branch in an `ephemeral` namespace -- by the set the PUSHED tip declares. The refusal names `X`,
-the declared branches, the ephemeral globs and the remedy: publish the feature as its one `pr/<feature>`, or keep
-the branch local. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
+the declared branches, the ephemeral globs and the remedy: publish the feature as its task's head, or keep
+the branch local. PUSHED-HEAD-CARRIES-ITS-TASK, in the same row: an agent session's head in the task namespace
+(`[tool.dev_lab.branchset] task_heads`, default `pr/<task>/<feature>`; `''` judges none) carries the task its user
+bound it to (`task: <slug>`, bound by rem, read by `dev_lab.dev.taskbinding`) -- another task's head, a flat
+`pr/<feature>` and a bare `pr/<task>` are refused naming `pr/<task>/`, and an unbound session is told how a task is
+bound. A human push and the forge's own status are not judged; `pr/*` admits the head (fnmatch's `*` crosses `/`), and a task never publishes a bare
+`pr/<task>`, which git cannot hold beside `pr/<task>/<x>`. Agent fan-out (`lane/` `feat/` `fix/`) is local by construction. Deletions are judged by
 SESSION-HISTORY-ONLY-GROWS alone, and tags are not branches, so an existing undeclared origin branch takes no new
 push and is deleted by a human. The machine pushers all land: relock (`pr/relock`), forge autosync (`pr/*`
 heads only), the component bump (`pr/components-bump`), and the declared trunk and integration branch.
@@ -84,6 +91,8 @@ deletes anything. Undeclared branches whose tip has been idle for at least `grac
   An agent never deletes a remote ref by a raw push (`PUSH-REMOTE-DELETE`); it deletes one through LOSSLESS-DELETE,
   `python -m dev_lab.dev.branchprune delete <branch>...`, which refuses unless every commit lives elsewhere
   or, by content, every non-generated file its own commits wrote is identical on integration (fails closed).
+  The deny row reads text only; the guarantee is the base pre-push row `lossless-delete` (`dev_lab.dev.pushdelete`),
+  which judges EVERY branch a push deletes, however spelled, with that same judgement -- the door's push included.
 - **Each deletion is pinned to the sha the survey judged.** The live tip is read from the forge first. A branch
   that moved is kept, because its new tip is somebody's new work.
 - **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The

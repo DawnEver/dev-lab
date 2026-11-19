@@ -20,6 +20,7 @@ import getpass
 import json
 import sys
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping
 from importlib import resources
 from pathlib import Path
@@ -29,10 +30,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.config import section
 
 from dev_lab.dev.consentguard import state_dir
-from dev_lab.dev.forgebreakglass import Send, ssh_send
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
+from dev_lab.ops.consent.door import Send, handshake, offer, ssh_send
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
+from dev_lab.ops.consent.plan import request as plan_request
 from dev_lab.ops.totp import write_private
 
 __all__ = [
@@ -46,6 +48,7 @@ __all__ = [
     'redeem',
     'remote_register',
     'spent_ids',
+    'verify_held',
 ]
 
 #: The machine-file table.
@@ -104,6 +107,34 @@ def redeem(
         msg = f'the consent issuer could not register the use ({type(unreachable).__name__}): refused, never admitted'
         raise ConsentRefused(msg) from unreachable
     return found
+
+
+def verify_held(
+    credential_id: str, *, action: str, subject: str, key: Ed25519PublicKey | None = None,
+    register: Register | None = None, now: float | None = None,
+) -> Credential:  # fmt: skip
+    """Spend the HELD credential *credential_id* (``state_dir()/<id>.json``) on one use of *action* on *subject*.
+
+    The one door a consumer outside this package verifies a granted consent through (an entry point names it): the
+    file is read from the consent state the user's ``grant`` wrote, then :func:`redeem`ed -- verified offline against
+    the machine's issuer key, compared on action and subject BEFORE the use is registered, and registered once.
+
+    Raises:
+        ConsentRefused: no such held credential (naming the grant door), or anything :func:`redeem` refuses.
+
+    """
+    path = state_dir() / f'{credential_id}.json'
+    try:
+        credential = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as missing:
+        msg = (f'no held {action} credential {credential_id!r} at {path} ({type(missing).__name__}): ask the user for '
+               f'a code and run `python -m dev_lab.ops.consent grant <request.json> --code <code>` for action '
+               f'{action} and subject {subject[:12]}..., then pass the granted id')  # fmt: skip
+        raise ConsentRefused(msg) from missing
+    return redeem(
+        credential, action=action, subject=subject, key=public_key() if key is None else key,
+        register=remote_register() if register is None else register, now=time.time() if now is None else now,
+    )  # fmt: skip
 
 
 def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> Register:
@@ -168,11 +199,13 @@ def _json_line(line: str) -> object:
 
 def _issued(
     found: Mapping[str, Any], payload: dict[str, Any], *, send: Send, home: Path | None, now: float,
-    within: set[tuple[str, str]] | None = None,
+    within: Counter[tuple[str, str]] | None = None, plan: str | None = None,
 ) -> list[Path]:  # fmt: skip
     """Send *payload* to the issuer; each credential it answered, verified and written private, by path.
 
-    *within*, when given, is the closed set of ``(action, subject)`` pairs an answer may hold, each at most once.
+    *within*, when given, counts the ``(action, subject)`` pairs an answer may hold: each at most as often as the
+    plan grants it (one pair on two hosts is two grants).
+    Every answer signs *plan*, the digest of the plan asked for (``None``: a lone request), or it is refused.
     """
     key = public_key(found)
     status, said = send(found, payload)
@@ -186,14 +219,17 @@ def _issued(
         raise ConsentRefused(msg)
     answered = answers[0]
     written = []
-    seen: set[tuple[str, str]] = set()
+    seen: Counter[tuple[str, str]] = Counter()
     for credential in answered if isinstance(answered, list) else [answered]:
         issued = verify(credential, key, now=now)
         pair = (issued.action, issued.subject)
-        if within is not None and (pair not in within or pair in seen):
+        if within is not None and seen[pair] >= within[pair]:
             msg = f'the issuer answered a credential the plan does not grant once: {pair[0]} {pair[1][:12]}'
             raise ConsentRefused(msg)
-        seen.add(pair)
+        if issued.plan != plan:
+            msg = f'the issuer answered a credential of plan {issued.plan}, not of {plan}: {pair[0]} {pair[1][:12]}'
+            raise ConsentRefused(msg)
+        seen[pair] += 1
         target = state_dir(home) / f'{issued.id}.json'
         write_private(target, json.dumps(credential, indent=1, sort_keys=True) + '\n')
         written.append(target)
@@ -215,13 +251,15 @@ def grant(
     """Ask the issuer for the credential *request_file* describes; the file it was written to.
 
     Raises:
-        ConsentRefused: the code is not six digits, the request is malformed, or the issuer refused.
+        ConsentRefused: the issuer fails the handshake (:func:`.door.handshake`), the code is not six digits, the
+            request is malformed, or the issuer refused.
 
     """
     found = _endpoint(table)
     public_key(found)  # refused here, before the user spends a code
     request = json.loads(request_file.read_text(encoding='utf-8'))
     requested(request)
+    handshake(found, send=send, actions=[request['action']])  # before the code is asked
     given = _six_digits(given_code(code, tty=tty, ask=ask, read=read))
     return _issued(found, {'verb': 'issue', 'request': request, 'code': given}, send=send, home=home, now=now())[0]
 
@@ -237,24 +275,29 @@ def grant_plan(
     home: Path | None = None,
     now: Callable[[], float] = time.time,
 ) -> list[Path]:
-    """One credential per grant of the plan at *plan_file*, the one the user was *shown* for *host*, for ONE *code*.
+    """One credential per grant of the plan at *plan_file*, the one the user was *shown*, for ONE *code*.
+
+    *host* is a session the code opens; it must be one of the plan's hosts (a code given for one plan's hosts never
+    opens another).
 
     Raises:
-        ConsentRefused: the plan is not the one shown or names another host, a grant is malformed, the code is not
-            six digits, or the issuer refused.
+        ConsentRefused: the plan is not the one shown or does not name *host*, a grant is malformed, it is not
+            offered (:func:`.door.offer`: no green preflight, or a skewed issuer), the code is not six digits, or
+            the issuer refused.
 
     """
     found = _endpoint(table)
     public_key(found)
     plan = load_plan(plan_file, shown)
-    if plan.host != host:
-        msg = f'the plan opens {plan.host}, not {host}: a code given for one host never opens another'
+    if host not in plan.hosts:
+        msg = f'the plan opens {list(plan.hosts)}, not {host}: a code given for one plan never opens another host'
         raise ConsentRefused(msg)
     for grant_ in plan.grants:
-        requested(grant_)  # refused here, before the user spends a code
-    payload = {'verb': 'issue-plan', 'plan': {'host': plan.host, 'grants': list(plan.grants)},
+        requested(plan_request(grant_))  # refused here, before the user spends a code
+    offer(plan, found, send=send, home=home, now=now())  # green preflight, and an issuer this client agrees with
+    payload = {'verb': 'issue-plan', 'plan': {'hosts': list(plan.hosts), 'grants': list(plan.grants)},
                'code': _six_digits(code)}  # fmt: skip
-    return _issued(found, payload, send=send, home=home, now=now())
+    return _issued(found, payload, send=send, home=home, now=now(), plan=plan.digest)
 
 
 def recover(
@@ -273,6 +316,6 @@ def recover(
     """
     found = _endpoint(table)
     plan = load_plan(plan_file, shown)
-    within = {(grant_['action'], grant_['subject']) for grant_ in plan.grants}
+    within = Counter((grant_['action'], grant_['subject']) for grant_ in plan.grants)
     payload = {'verb': 'fetch-unspent', 'plan': plan.digest}
-    return _issued(found, payload, send=send, home=home, now=now(), within=within)
+    return _issued(found, payload, send=send, home=home, now=now(), within=within, plan=plan.digest)

@@ -4,9 +4,10 @@ A verdict is a fact about a content key (:class:`dev_lab.dev.verdictstore.Conten
 about which machine produced it, so a workstation the repo's serving setup already declares a producer may post
 it -- under every condition below, each one REFUSING when unmet (:func:`posting_refusal`):
 
-* DECLARED: this box's machine file ``[serve]`` table lists the repo in ``repos`` and its ``parts`` rule claims
-  the part (:class:`lab_commons.compute.serves.Serves`) -- the same declaration ``workstation deploy`` writes and
-  ``forge serve`` claims by; there is no second roster. The box has the part's needs (its OS row included).
+* OPTIONAL: the part needs a resource of the repo's ``[tool.dev_lab.parts] optional_needs`` -- a local machine is
+  never a producer of a part a merge waits on (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16) -- and the
+  box's ``[serve]`` ``parts`` rule claims it (:class:`lab_commons.compute.serves.Serves`). The box has the part's
+  needs (its OS row included).
 * NOT REVOKED: the box has fewer than :data:`~dev_lab.dev.workstationrevoke.STRIKES_TO_REVOKE` strikes
   (:mod:`dev_lab.dev.workstationrevoke`). An unreadable store, a malformed strike file, an unreadable origin or
   machine file each REFUSE, never crash.
@@ -41,13 +42,13 @@ from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgeclaim import this_machine
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.localpart import present_here
 from dev_lab.dev.lockpins import lock_freshness
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import part_context
+from dev_lab.dev.producers import optional_needs_from
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictstore import WORKSTATION_KEY, ContentKey, Found, cite, lookup
 from dev_lab.dev.workstationrevoke import box_of, clear_remedy, revoked, strike
@@ -89,13 +90,22 @@ class Facts:
     stale: str
 
 
-def declared_refusal(serve: Mapping[str, Any], *, repo: str, part: str, present: Collection[str]) -> str:
-    """Why this box is no declared producer of *part* of *repo* by its ``[serve]`` table; ``''`` when it is."""
-    repos = serve.get('repos', [])
-    if not isinstance(repos, list) or not all(isinstance(one, str) for one in repos):
-        return f'machine file [{SERVE_TABLE}] repos = {repos!r} is not a list of repo names'
-    if repo not in repos:
-        return f'this box does not serve {repo} (machine file [{SERVE_TABLE}] repos)'
+def declared_refusal(
+    serve: Mapping[str, Any], *, part: str, present: Collection[str], optional: Collection[str]
+) -> str:
+    """Why this box may not post *part*; ``''`` when it may.
+
+    A local machine is never a producer (user ruling 2026-11-16): it posts only a part needing a resource of the
+    repo's *optional* needs (:mod:`dev_lab.dev.producers`), a part no merge waits on, and only as its ``[serve]``
+    rule and its present resources allow. A box with no ``[serve]`` table is no producer of anything.
+    """
+    if not serve:
+        return f'this box declares no [{SERVE_TABLE}] table: a developer box is never a producer'
+    if not needs_of_row(part) & set(optional):
+        return (
+            f'a local machine is never the producer of {part_context(part)}: it posts only a part needing '
+            '[tool.dev_lab.parts] optional_needs (user ruling 2026-11-16)'
+        )
     try:
         skipped = Serves.of(serve).skips(needs_of_row(part))
     except ValueError as why:
@@ -141,11 +151,16 @@ def pushed(root: Path) -> bool:
     return bool(_git(root, 'for-each-ref', '--contains', 'HEAD', '--format=%(refname)', 'refs/remotes/origin').strip())
 
 
+def optional_here(root: Path) -> frozenset[str]:
+    """The ``optional_needs`` *root*'s working tree declares (:mod:`dev_lab.dev.producers`)."""
+    return optional_needs_from((root / 'pyproject.toml').read_text(encoding='utf-8'))
+
+
 def _declared(root: Path, part: str) -> str:
     """:func:`declared_refusal` of this box; an unreadable origin or machine file is a refusal naming it."""
     try:
-        repo = forge_from_remote(root).repo
-        return declared_refusal(section(SERVE_TABLE), repo=repo, part=part, present=present_here(root))
+        here = optional_here(root)
+        return declared_refusal(section(SERVE_TABLE), part=part, present=present_here(root), optional=here)
     except (OSError, ValueError) as unread:
         return f'its declaration could not be read ({unread})'
 

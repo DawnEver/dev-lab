@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import accounthost
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configcheck import check_family, check_host, needs_consent
 
@@ -53,6 +54,28 @@ def test_check_host_reports_a_structural_defect(tmp_path: Path) -> None:
     assert any('twice' in found for found in check_host(_write(tmp_path, 'bad.toml', bad)))
 
 
+@pytest.mark.parametrize(
+    ('extra', 'named'),
+    [
+        ('[bogus_section]\nx = 1\n', 'bogus_section'),
+        ('[alerts]\ncooldwon = 600\n', 'alerts.cooldwon'),
+        ('[ops.bogus]\nx = 1\n', 'bogus'),
+        ('[ops.judge.bogus]\nx = 1\n', 'bogus'),
+    ],
+)
+def test_check_host_refuses_an_undeclared_table_or_key_by_name(tmp_path: Path, extra: str, named: str) -> None:
+    assert check_host(_write(tmp_path, 'ok.toml', HOST + '\n[components.anything]\nenabled = true\n')) == []
+    found = check_host(_write(tmp_path, 'bad.toml', HOST + '\n' + extra))
+    assert len(found) == 1
+    assert named in found[0]
+
+
+def test_a_misspelt_ops_scalar_is_refused_at_load(tmp_path: Path) -> None:
+    host = _write(tmp_path, 'h.toml', HOST.replace('[ops]\n', '[ops]\npyhton = "x"\n', 1))
+    with pytest.raises(ValueError, match='pyhton'):
+        opsconfig.load(host, environ={}, as_root=False, structure_only=True)
+
+
 @pytest.mark.parametrize('table', ['repos', 'writeroots', 'sync'])
 def test_the_family_file_refuses_a_local_only_table(tmp_path: Path, table: str) -> None:
     found = check_family(_write(tmp_path, 'family.toml', f'[{table}]\nx = "y"\n'))
@@ -78,3 +101,64 @@ def test_needs_consent_names_the_boundary_keys_a_change_touches() -> None:
     assert needs_consent(old, old.replace('/opt/dev-lab', '/srv/dev-lab')) == ('ops.python',)
     assert needs_consent(old, old.replace('repos = ["https://forge.example/o/a.git"]\nkeys', 'repos = []\nkeys')) == ()
     assert needs_consent('', old)[0].startswith('ops.')
+
+
+DEV_HOST = '[dev]\nhpc = []\nref = "integrate/main"\n'
+SSH_ROUTES = '[ssh.jump]\n"node.example" = "bastion.example"\n\n[ssh.hold]\nmax_hours = 8\nidle_minutes = 30\n'
+
+
+def test_a_dev_host_file_declares_its_ssh_routes(tmp_path: Path) -> None:
+    assert check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + SSH_ROUTES)) == []
+
+
+@pytest.mark.parametrize(
+    ('extra', 'named'),
+    [
+        ('[ssh]\nbogus = 1\n', 'ssh.bogus'),
+        ('[ssh.hold]\nmax_hour = 8\n', 'ssh.hold.max_hour'),
+        ('[ssh.jump]\n"node.example" = 22\n', 'ssh.jump'),
+        ('[ssh.jump]\n"node.example" = ""\n', 'ssh.jump'),
+        ('[ssh]\njump = "bastion.example"\n', 'ssh.jump'),
+        ('[ssh.hold]\nmax_hours = "8"\n', 'ssh.hold.max_hours'),
+    ],
+)
+def test_an_ssh_key_or_value_off_the_schema_is_refused(tmp_path: Path, extra: str, named: str) -> None:
+    found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + extra))
+    assert len(found) == 1, found
+    assert named in found[0]
+
+
+def test_a_dev_host_file_carrying_serve_is_refused(tmp_path: Path) -> None:
+    """A workstation never serves a merge's parts (user ruling 2026-11-16); PLANTED CONTROL: the same card without."""
+    assert check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + SSH_ROUTES)) == []
+    found = check_host(_write(tmp_path, 'W.toml', DEV_HOST + '\n' + SSH_ROUTES + '\n[serve]\nparts = "every"\n'))
+    assert [line for line in found if line.startswith('W.toml: [serve] on a host that is no HPC account')]
+
+
+APP_FAMILY = '[dev]\nref = "integrate/main"\napps = ["demo"]\n'
+APP_TABLE = '[demo.core]\ncache_cap_gb = 10\n'
+
+
+def test_a_family_declared_app_table_is_open_in_a_dev_host_file(tmp_path: Path) -> None:
+    """[dev] apps (family-only) opens [<app>] for every host; PLANTED CONTROL: without it the table is refused."""
+    host = DEV_HOST.replace('ref = "integrate/main"\n', '') + '\n' + APP_TABLE
+    family = _write(tmp_path, 'family.toml', APP_FAMILY)
+    assert check_host(_write(tmp_path, 'G.toml', host), family) == []
+    bare = _write(tmp_path, 'bare.toml', '[dev]\nref = "integrate/main"\n')
+    assert [line for line in check_host(_write(tmp_path, 'H.toml', host), bare) if 'demo is not a declared key' in line]
+
+
+def test_apps_is_a_family_fact_never_a_host_one(tmp_path: Path) -> None:
+    family = _write(tmp_path, 'family.toml', APP_FAMILY)
+    found = check_host(_write(tmp_path, 'G.toml', '[dev]\nhpc = []\napps = ["demo"]\n'), family)
+    assert [line for line in found if 'apps' in line and 'family' in line], found
+
+
+def test_a_family_declared_app_table_is_open_in_an_account_file() -> None:
+    """The same opening reaches an HPC account file; PLANTED CONTROL: an undeclared app stays refused."""
+    host = {'deploy': {'host': 'login01'}, 'demo': {'core': {'cache_cap_gb': 10}}}
+    opened = {'dev': {'apps': ['demo']}}
+    assert not [
+        line for line in accounthost.check(Path('c-u.toml'), host, opened) if 'demo is not an account table' in line
+    ]
+    assert [line for line in accounthost.check(Path('c-u.toml'), host, {}) if 'demo is not an account table' in line]

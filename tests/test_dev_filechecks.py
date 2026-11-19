@@ -1,4 +1,8 @@
-"""The base's per-file checks: each convicts its planted defect, passes a clean file, and rewrites nothing."""
+"""The base's per-file checks: each convicts its planted defect, passes a clean file, and rewrites nothing.
+
+ONE invocation runs every check (``all``) over the paths once; each check stays selectable, skippable and
+excludable by name, because a repo narrows one check without restating the rest.
+"""
 
 from __future__ import annotations
 
@@ -69,6 +73,70 @@ def test_a_case_conflict_with_a_tracked_path_is_a_finding(tmp_path: Path, monkey
     assert main(['case-conflict', 'README.md']) == 1
 
 
-def test_every_check_the_base_names_exists() -> None:
-    named = {row['run'][3] for row in base_rows()['pre-commit'] if row['run'][1:3] == ['-m', 'dev_lab.dev.filechecks']}
-    assert named == set(CHECKS)
+def test_the_base_runs_every_check_in_one_row() -> None:
+    rows = [row for row in base_rows()['pre-commit'] if row['run'][1:3] == ['-m', 'dev_lab.dev.filechecks']]
+    assert [row['run'][3:] for row in rows] == [['all']]
+
+
+def test_all_reports_every_check_a_file_fails_each_under_its_own_name(tmp_path: Path, capsys) -> None:
+    """PLANTED: one file failing several checks reports each by name; a clean sibling reports nothing."""
+    bad, good = tmp_path / 'bad.py', tmp_path / 'good.py'
+    bad.write_bytes(b'x = 1  \nimport pdb')
+    good.write_bytes(b'x = 1\n')
+    assert main(['all', str(bad), str(good)]) == 1
+    said = capsys.readouterr().out
+    assert {line.split(']')[0] + ']' for line in said.splitlines()} == {
+        '[trailing-whitespace]',
+        '[end-of-file]',
+        '[debug-statements]',
+    }
+    assert 'good.py' not in said
+
+
+def test_a_check_reads_only_the_paths_its_kind_selects(tmp_path: Path) -> None:
+    """``ast`` judges Python only: a .txt that would not parse is no finding; PLANTED the same bytes in .py are."""
+    (tmp_path / 'notes.txt').write_bytes(b'def f(:\n')
+    (tmp_path / 'm.py').write_bytes(b'def f(:\n')
+    assert main(['all', str(tmp_path / 'notes.txt')]) == 0
+    assert main(['all', str(tmp_path / 'm.py')]) == 1
+
+
+def test_a_skipped_check_is_not_run_and_the_rest_still_are(tmp_path: Path, capsys) -> None:
+    path = tmp_path / 't.txt'
+    path.write_bytes(b'a \nb')
+    assert main(['all', '--skip', 'trailing-whitespace', str(path)]) == 1
+    said = capsys.readouterr().out
+    assert '[trailing-whitespace]' not in said
+    assert '[end-of-file]' in said, 'PLANTED CONTROL: the check not skipped still reports'
+    assert main(['all', '--skip', 'trailing-whitespace', '--skip', 'end-of-file', str(path)]) == 0
+
+
+def test_an_exclude_narrows_one_check_and_no_other(tmp_path: Path, capsys) -> None:
+    path = tmp_path / 'data.tsv'
+    path.write_bytes(b'a\t\nb')
+    assert main(['all', '--exclude', r'trailing-whitespace=\.tsv$', str(path)]) == 1
+    said = capsys.readouterr().out
+    assert '[trailing-whitespace]' not in said
+    assert '[end-of-file]' in said, 'PLANTED CONTROL: the exclude is that one check`s'
+
+
+def test_every_check_stays_selectable_by_name(tmp_path: Path) -> None:
+    path = tmp_path / 'clean.txt'
+    path.write_bytes(b'a\n')
+    assert all(main([check, str(path)]) == 0 for check in CHECKS)
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['nope', 'x'],
+        ['all', '--skip', 'nope'],
+        ['all', '--exclude', 'nope=x'],
+        ['all', '--exclude', 'ast=('],
+        ['all', '--exclude', 'ast'],
+    ],
+)
+def test_a_check_name_or_regex_that_does_not_exist_is_refused(argv: list[str]) -> None:
+    with pytest.raises(SystemExit) as stop:
+        main(argv)
+    assert stop.value.code == 2

@@ -17,8 +17,9 @@ from pathlib import Path
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import Transport, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgework import GITHUB, Client, client_for
+from dev_lab.dev.forgework import GITHUB, Client
 
 __all__ = ['label_create', 'main']
 

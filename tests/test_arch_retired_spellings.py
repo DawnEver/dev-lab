@@ -12,11 +12,15 @@ That is why the scan reads every tracked text file in those roots, not just iden
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from pathlib import Path
 from typing import Final
 
-from _arch_corpus import assert_floor, docs_pages, rel, rules_pages, source_modules, suite_modules
+import pytest
+from _arch_corpus import assert_floor, docs_pages, module_names, rel, rules_pages, source_modules, suite_modules
+
+from dev_lab.dev import branchprune, pushwatch, sessionprs
 
 #: dev-lab's own tables, moved from ``[tool.lab_commons]`` to ``[tool.dev_lab]`` (plan A3); ``schedule``,
 #: ``tools``, ``hpc``, ``tests`` and ``artefacts`` stay, because lab-commons code reads them.
@@ -27,6 +31,103 @@ MOVED_TABLES: Final = (
 
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
+    **dict.fromkeys(
+        ('prwatcher', 'SESSION-HEARS-ITS-PRS'),
+        (
+            'forgefeed and TASK-HEARS-ITS-FORGE-EVENTS: one notification-feed read per forge, routed to tasks',
+            'D79 (user, 2026-11-18): the hearer is named for what it reads, and a task, not a session, subscribes',
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            'RETIRED_WIRING',
+            'PUSHWATCH_COMMAND',
+            'SESSIONPRS_COMMAND',
+            'PUSHSTOP_COMMAND',
+            'SWEEP_COMMAND',
+            'PRESSURE_COMMAND',
+            'STRAY_COMMAND',
+            'HANDBACK_COMMAND',
+            'JOURNALDOOR_COMMAND',
+            'TASKBIND_COMMAND',
+            'WALLSPOST_COMMAND',
+            'WALLSSTOP_COMMAND',
+            'RECLAIM_COMMAND',
+            'REAPER_COMMAND',
+            'VENVFOLLOW_COMMAND',
+            'FORGEAUTH_COMMAND',
+            'AUTOMODE_COMMAND',
+            'SCRATCHSTOP_COMMAND',
+            'SCRATCHSNAP_COMMAND',
+            'DEVHOSTSTOP_COMMAND',
+            'PRWATCHER_START_COMMAND',
+            'PRWATCHER_INBOX_COMMAND',
+        ),
+        (
+            'agent_wiring.WIRING rows run by dev_lab.dev.hookdispatch; settings carry dispatch_command(event)',
+            'dev-lab #640 (W1): one dispatcher per hook event; the renderer owns every launcher row',
+        ),
+    ),
+    'serve = false': (
+        "the repo's own [tool.dev_lab.protection] producer (dev_lab.dev.producers); a host serves only hpc repos",
+        'user ruling 2026-11-16: a repo is produced by forge Actions or by the HPC, declared once in the repo',
+    ),
+    **dict.fromkeys(
+        ('check-case-conflict', 'check-json', 'check-merge-conflict', 'check-toml'),
+        (
+            'the one `filechecks` hook row (`dev_lab.dev.filechecks all`; a check is skipped or narrowed by name)',
+            (
+                'toolchain H3 2026-11-16: ten per-check rows cost ten interpreters per commit (check-ast stays: it '
+                'is pre-commit-hooks` own id, which the famconfig fixtures spell)'
+            ),
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            'pushstop',
+            'unwatched_refusal',
+            'red_refusal',
+            'stop_refusal',
+            'record_deadline',
+            'deadline_reached',
+            'pushed_by',
+            'pushed_at',
+            'arm_line',
+            'said_after',
+            'watch_session_command',
+            'post_push',
+            'post-push',
+        ),
+        (
+            'forgefeed, the one hearer of a task (D79); push doors print pushwatch.heard_line',
+            'dev-lab #640 unwired the push journal, its Stop gate, the shell-line hooks and post-push; deleted after',
+        ),
+    ),
+    **dict.fromkeys(
+        ('stop_block', 'devhost-stop'),
+        (
+            'devhost session-start, a once-per-session SessionStart notice (agent_wiring.WIRING)',
+            'one trigger per check (2026-11-16): machine-file drift cannot change within a turn; no Stop re-reads it',
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            'worktree_archive',
+            'worktree-archive',
+            'save_work',
+            'current_archive',
+            'archive_home',
+            'archive_door',
+            'ARCHIVE_TO',
+        ),
+        (
+            (
+                'dev_lab.dev.worktree_outputs (outputs home only); unlanded work is listed with its doors '
+                '(reclaim.unlanded_work, UNLANDED_DOORS); worktrees --remove removes a clean tree'
+            ),
+            'D31 (user 2026-11-17, restating 2026-11-05): a worktree is merged or cleaned, never parked in output/',
+        ),
+    ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
     'PR-REVIEW-IS-ADVISORY': (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',
@@ -35,6 +136,13 @@ RETIRED_SPELLINGS: Final = {
     'PR-REVIEW-BLOCKS-ON-HIGH-OR-SECURITY': (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',
         'user ruling 2026-11-06: the review is a one-shot independent acceptance with advice; only security blocks',
+    ),
+    **dict.fromkeys(
+        ('lock/fresh', 'LOCK_CONTEXT', 'LOCK_REMEDY', 'lock_verdict'),
+        (
+            'lock/lag (dev_lab.dev.forgeheadgate), with lockcheck.unrendered folded into it',
+            'user ruling 2026-11-14 (issue #575): one lock freshness fact on a PR head, never two',
+        ),
     ),
     **dict.fromkeys(
         (
@@ -108,6 +216,85 @@ RETIRED_SPELLINGS: Final = {
         )
         for table in MOVED_TABLES
     },
+    **dict.fromkeys(
+        ('FORMATS-UPGRADE-ON-READ', 'test_arch_formats_upgrade_on_read'),
+        (
+            'FORMATS-MIGRATE-ONCE (tests/test_arch_formats_migrate_once.py)',
+            'user ruling 2026-11-11 (consumer-a D51/D52): migrate stored records once, refuse the rest',
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            '_dep_pending',
+            'when-free',
+            'when_free',
+            'update_waits',
+            'TransientlyHeldError',
+            'performPendingUpdate',
+            'dev-lab-pending-bootstrap',
+        ),
+        (
+            'dep --bootstrap publishes beside the live env (venvcurrent); a watch yields on venvpointer.superseded',
+            'dev-lab #641 (epic #648): an environment is published beside the live one, so nothing queues or replays',
+        ),
+    ),
+    **dict.fromkeys(
+        ('taskbinding bind', 'taskbinding status', 'binding_gap', 'BIND_PROMPT'),
+        (
+            "rem's UserPromptSubmit task hook binds (rem's task.js status shows it); dev_lab.dev.taskbinding reads",
+            'H4 2026-11-16: a stale venv failed the binder and blocked every prompt; rem owns binding, the gate reads',
+        ),
+    ),
+    **dict.fromkeys(
+        ('servetask', 'servelanes', 'serve_lanes', 'serve_refusal', 'hpc_checkouts', 'RETIRED_SERVE_KEYS'),
+        (
+            (
+                'nothing: a workstation deploy keeps its checkouts current and deletes the retired Task '
+                '(dev_lab.dev.workstation.RETIRED_TASK); `workstation serve` is refused by name (RETIRED_VERBS)'
+            ),
+            "user ruling 2026-11-16: a workstation never serves a merge's parts; only Actions and the HPC produce",
+        ),
+    ),
+    **dict.fromkeys(
+        ('delete_tags', 'judge_tag', 'TAG_DOOR', '_held_by_tag'),
+        (
+            (
+                'branchprune delete: a LOSSY branch is MERGED, or LANDED by a declared `git merge -s ours` PR and '
+                'deleted; `delete-tag` and `delete --approved` are refused by name (branchprune.RETIRED)'
+            ),
+            'user ruling D22 2026-11-17: no tags -- either merge or delete (dev-lab O23)',
+        ),
+    ),
+    **dict.fromkeys(
+        ('codeplace stray', 'stray-check'),
+        (
+            'python -m dev_lab.dev.strays hook|check (the STRAY-FILE-REFUSED census is its own module)',
+            'D40 2026-11-17: codeplace reached the 300-code-line band holding two rules; the stray rule split out',
+        ),
+    ),
+    'load_division': (
+        'dev_lab.dev.hpcaccount.division.division_of (the reached Machine is the one reader of the division)',
+        'D40 2026-11-17: a second reader of a raw [hpc] table no production path builds',
+    ),
+    **dict.fromkeys(
+        ('UncensusedSiteError', 'hook_table_from', 'declares_groups', 'overdue_declared', 'page_path'),
+        (
+            'nothing: no caller in dev-lab or any family repo',
+            'D40 2026-11-17: dead public names removed (a never-raised error and four uncalled readers)',
+        ),
+    ),
+    'Ref.of(': (
+        'artefactstores.ref_of_entry (the Ref is lab_commons.compute.store.Ref; .key is .ref)',
+        'L3 Ref half 2026-11-19: one Ref for artefacts and large objects; run_id_of / manifest_of are functions',
+    ),
+    'RETIRED_FILES': (
+        "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
+        "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",
+    ),
+    '_adopt_plain_venv': (
+        'dev_lab.dev.venvcurrent.retire_passed_over, retried by every publish, reclaim and follow',
+        '2026-11-17: a held legacy .venv never drained; the follow retries the drain from the current environment',
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a
@@ -150,3 +337,19 @@ def test_planted_retired_spelling_is_found() -> None:
 def test_every_row_names_its_replacement_and_decision() -> None:
     blank = sorted(old for old, (new, why) in RETIRED_SPELLINGS.items() if not new.strip() or not why.strip())
     assert blank == []
+
+
+def test_the_retired_push_entry_points_are_absent() -> None:
+    """dev-lab #640 unwired them; deleted, no shim. Their spellings live only here, so their absence is pinned here.
+
+    PLANTED CONTROL: the live neighbours of each stay -- the module that kept its parsing, the pre-push verb.
+    """
+    assert importlib.util.find_spec('dev_lab.dev.pushstop') is None
+    assert importlib.util.find_spec('dev_lab.dev.pushwatch') is not None
+    assert 'said_after' not in module_names(sessionprs)
+    assert 'record_pushed' in module_names(sessionprs)
+    assert {'arm_line', 'record_deadline', 'pushed_by', 'pushed_at'}.isdisjoint(module_names(pushwatch))
+    assert 'post_push' not in module_names(branchprune)
+    with pytest.raises(SystemExit) as refused:
+        branchprune.main(['post-push'])
+    assert refused.value.code == 2, 'argparse refuses the retired verb by name'

@@ -36,7 +36,7 @@ def test_every_python_door_names_a_module_that_exists() -> None:
 def test_the_forge_write_remedy_names_every_door_it_is_the_exit_of() -> None:
     """The defect the table ends: the hand-copied remedy said `pr create|close`, omitting ready, draft (and close)."""
     exits = exits_of('FORGE-WRITE-VIA-CLI', 'dev_lab.dev.forge')
-    assert exits == 'issue create|comment|close, pr create|ready|draft|close|continue, review carry'
+    assert exits == 'issue create|comment|close, pr create|ready|draft|hold|release|close|continue, review carry'
     assert exits in _RULES['FORGE-WRITE-VIA-CLI'].remedy
 
 
@@ -70,7 +70,6 @@ def test_each_granted_main_door_of_the_ruling_is_in_the_table() -> None:
         ('pr', 'create'),
         ('pr', 'ready'),
         ('pr', 'draft'),
-        ('sync',),
         ('pr', 'breakglass'),
         ('breakglass', 'open'),
         ('review', 'takeover'),
@@ -78,6 +77,10 @@ def test_each_granted_main_door_of_the_ruling_is_in_the_table() -> None:
     ):
         assert verb in forge, verb
     assert ('promote',) in module_verbs(MAIN)['dev_lab.dev.integrate']
+    # 2026-11-13: `forge sync` merges, relocks and commits LOCALLY and never pushes, so it is every agent's --
+    # a subagent refused it could not take integration into its own lane.
+    assert ('sync',) in module_verbs(SUBAGENT)['dev_lab.dev.forge']
+    assert ('sync',) not in forge
     granted = {door.argv[2:] for door in POLICY if door.actor != USER and door.argv[:2] == ('python', '-m')}
     assert {('dev_lab.dev.forge', 'queue'), ('dev_lab.dev.forge', 'status', 'list')} <= granted
     assert ('dev_lab.dev.hook_install', '--install') in granted
@@ -132,11 +135,11 @@ def test_the_user_gives_the_code_and_the_main_session_runs_the_grant() -> None:
     assert grant.intent in INTENTS
 
 
-def test_a_break_glass_merge_waits_for_the_heads_three_test_statuses() -> None:
-    """Integrator ruling 2026-11-08: a wave merge follows a green head, never an unverified push."""
+def test_a_break_glass_merge_waives_the_tests_and_names_their_state() -> None:
+    """User ruling 2026-11-11: a wave merge needs no green test; what it waived is named, never hidden."""
     merge = _door(('python', '-m', 'dev_lab.dev.forge', 'pr', 'breakglass'))
-    assert 'only after' in merge.intent
-    assert all(word in merge.intent for word in ('base', 'windows', 'security'))
+    assert 'only after' not in merge.intent
+    assert all(phrase in merge.intent for phrase in ('AND its tests', 'test state at merge time', 'audit'))
 
 
 @pytest.mark.parametrize(

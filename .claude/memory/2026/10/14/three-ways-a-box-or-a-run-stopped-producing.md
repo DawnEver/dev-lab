@@ -17,5 +17,7 @@ created: 2026-10-14
   (PERFBOOSTMODE 0) on 10-14. Crashes leave NUL records -- the pre-boot rule is what makes them harmless.
 - Merges today redded on rules I did not run locally (module size band, suppressions, reflection, subprocess
   encoding): run every `tests/test_arch_*.py` before an integrate merge.
-- Next: one box manager (`lab_commons.box`), user ruling 2026-10-14 "A 删除": reservations/leases, lending
+- Next: one box manager (`lab_commons.box`), user ruling 2026-10-14 "A: delete" (user, translated): reservations/leases, lending
   and preemption are deleted -- a claim exists only for a running process, is its kernel limit, and has a deadline.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

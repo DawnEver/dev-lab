@@ -1,7 +1,7 @@
 """NO CJK IN TRACKED SOURCE -- the VERDICTS over :mod:`dev_lab.dev.cjk`'s readings, and the control.
 
 WHAT THE CONSUMER'S FILE ASSERTS. Across every repo in this family, no content git tracks may contain
-CJK characters, outside the three exempt prefixes :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES` names.
+CJK characters, outside the exempt prefixes :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES` names.
 The scan, the ranges, the exemption match and the two-sided ratchet are all
 :mod:`dev_lab.dev.cjk`'s and are not restated here; what was missing was everything a consumer
 still had to write around them, and the three copies of it measure as near-twins.

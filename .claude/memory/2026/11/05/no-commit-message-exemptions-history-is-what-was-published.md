@@ -16,7 +16,7 @@ Supersedes the `allowed_prefixes` paragraph of `one-test-kit-and-an-in-repo-comm
   declaring it widens nothing (test: `rem(`/`data(`/`wip` refused through `main`). `DEFAULT_PREFIXES` is only
   what git writes: Merge, Revert, fixup!, squash!, amend! (`Pull request` dropped: no family flow writes it,
   the forge merges as `chore(merge): ...`). `LAB_CZ_EXEMPT` is removed from `cz-push-range.sh`.
-- RULING 2: "rem( 和 data( 这类前缀 已有的 可以豁免！避免影响太深的历史！" -- EXISTING ones stand, NEW ones are
+- RULING 2: "Existing prefixes like rem( and data( can be exempted! Avoid affecting history too deeply!" (user, translated) -- EXISTING ones stand, NEW ones are
   refused, with no name or sha list. "Existing" = PUBLISHED: `commitmsg --published REV` (repeatable, passed to
   `git log <range> --not REV...`). A commit is judged once, when first published.
 - TWO MODES of `cz-push-range.sh`: pre-push (no argument) excludes LAB_CZ_BASE_REF AND `--remotes`, so an old
@@ -24,3 +24,5 @@ Supersedes the `allowed_prefixes` paragraph of `one-test-kit-and-an-in-repo-comm
   base only, because a PR's own commits are on the remote by then and would otherwise never be judged.
 - The reason the holes existed (a published off-format commit made every later push unpushable) is answered by
   the published-exclusion, not by an exemption.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

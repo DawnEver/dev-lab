@@ -2,7 +2,7 @@
 
 User ruling 2026-10-21: a try NEVER BLOCKS. It runs the repository's test producer over *paths* at ``HEAD`` as a
 request (:data:`dev_lab.dev.forgerequest.TESTS`), PLACED by the markers its files carry
-(:func:`dev_lab.dev.forgerequest.placement`): on Linux for anything Linux can run, on a Windows host only for a
+(:func:`dev_lab.dev.forgerequestpaths.placement`): on Linux for anything Linux can run, on a Windows host only for a
 selection holding a ``jmag`` test.
 
 ROOM IS READ, NOT WAITED FOR. The hosts' cards (:mod:`dev_lab.dev.forgehosts`) say what each host admitted against
@@ -30,13 +30,13 @@ from lab_commons.log import emit
 from lab_commons.resources import admits
 
 from dev_lab.dev.forge import _GIT, NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard, read_cards
 from dev_lab.dev.forgenotice import duration
 from dev_lab.dev.forgepublish import RequestRefused, publish
 from dev_lab.dev.forgerequest import TESTS, Declared, UndeclaredRequest, declared_request
 from dev_lab.dev.forgeschedule import load_schedule
-from dev_lab.dev.forgework import client_for
 
 __all__ = ['NO_ROOM_EXIT', 'main', 'room']
 

@@ -17,14 +17,14 @@ from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import recover
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.issuer import Issuer, keygen
-from dev_lab.ops.consent.plan import DIGEST_SHOWN, parsed
+from dev_lab.ops.consent.plan import DIGEST_SHOWN, parsed, request
 from dev_lab.ops.totp import STEP
 
 HOST = 'ops@forge.example.org'
-APPLY = {'action': 'ops.config', 'subject': 'a' * 64}
-REVOKE = {'action': 'ops.forge.revoke', 'subject': 'b' * 64}
-PLAN = {'host': HOST, 'grants': [APPLY, REVOKE]}
-OTHER = {'host': HOST, 'grants': [{'action': 'ops.forge.token', 'subject': 'c' * 64}]}
+APPLY = {'host': HOST, 'action': 'ops.config', 'subject': 'a' * 64}
+REVOKE = {'host': HOST, 'action': 'ops.forge.revoke', 'subject': 'b' * 64}
+PLAN = {'hosts': [HOST], 'grants': [APPLY, REVOKE]}
+OTHER = {'hosts': [HOST], 'grants': [{'host': HOST, 'action': 'ops.forge.token', 'subject': 'c' * 64}]}
 
 
 class Clock:
@@ -118,7 +118,7 @@ def test_another_plans_credentials_are_never_returned(tmp_path: Path, issuer: Is
 
 
 def test_a_lone_grant_is_never_fetched(tmp_path: Path, issuer: Issuer, clock: Clock) -> None:
-    issuer.issue(APPLY, code(0))  # no plan: nothing is kept to re-deliver
+    issuer.issue(request(APPLY), code(0))  # no plan: nothing is kept to re-deliver
     assert not (issuer.state / 'issued').exists()
     assert _recover(tmp_path, issuer, clock) == []
 
@@ -138,3 +138,17 @@ def test_the_client_refuses_a_credential_outside_the_plan(tmp_path: Path, issuer
         recover(path, parsed(PLAN).digest[:DIGEST_SHOWN], table=table, send=lambda _t, _p: (0, json.dumps(foreign)),
                 home=tmp_path / 'home', now=clock)  # fmt: skip
     assert not (tmp_path / 'home').exists() or not any((tmp_path / 'home').rglob('*.json'))
+
+
+TWO_HOSTS = {'hosts': [HOST, 'ops@judge.example.org'],
+             'grants': [APPLY, APPLY | {'host': 'ops@judge.example.org'}]}  # fmt: skip
+
+
+def test_one_pair_on_two_hosts_comes_back_once_per_grant(tmp_path: Path, issuer: Issuer, clock: Clock) -> None:
+    first, second = issuer.issue_plan(TWO_HOSTS, code(0))
+    assert _same(_recover(tmp_path, issuer, clock, TWO_HOSTS)) == _same([first, second])
+    issuer.register(first)  # the first host's step ran: only the second host's credential is still owed
+    assert _recover(tmp_path, issuer, clock, TWO_HOSTS) == [second]
+    clock.now += STEP
+    issuer.issue_plan(TWO_HOSTS, code(1))  # a second code never returns more than the plan's two grants
+    assert len(_recover(tmp_path, issuer, clock, TWO_HOSTS)) == 1

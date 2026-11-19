@@ -10,11 +10,14 @@ stays in ``docs-src/dev/refusals.md``; the remedy is the command, the page is th
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import agenthooks
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
-from dev_lab.dev.hooks import DENY_RULES
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import DENY_RULES, Remedy
 
 #: The door shapes a remedy may name, else the explicit no-door opener.
 _DOOR = re.compile(r'-m [a-z_]+(?:\.[a-z_]+)+|\{remedy\}|\bgit [a-z][a-z-]+|^No door: ')
@@ -44,13 +47,75 @@ def test_a_remedy_naming_no_door_fails(vague: str) -> None:
 
 
 def test_the_hpc_refusal_names_every_door_by_purpose() -> None:
-    """User ruling 2026-11-11: an account shell, deploy, verify work and a research batch, each with its shape."""
+    """User ruling 2026-11-11: an account shell, deploy, verify work and a research batch; flags in refusals.md."""
     text = str(HPC_THROUGH_THE_DOOR['remedy'])
     for door in (
-        '`sshhold open <user>@<host> --hours N --code <code>`',
-        "`sshhold run <dest> '<cmd>'`",
-        '`hpcaccount deploy-fleet|forget|deploy`',
+        '`sshhold open|run --code`',
+        '`hpcaccount <verb>`',
         '`forge queue|run show <sha>`',
-        '`-m lab_commons.hpc submit|gather -c <job>`',
+        '`lab_commons.hpc plan|submit|status|gather|retry|run`',
+        '`lab_commons.hpc clean`',
     ):
         assert door in text
+    assert 'TOTP host `sshhold open|run --code` (key-only: no code)' in text  # user ruling 2026-11-11: no code
+
+
+def test_the_key_only_hpc_doors_are_admitted() -> None:
+    """The doors the refusal names must not themselves be refused, even when they name a login host."""
+    pattern = re.compile(str(HPC_THROUGH_THE_DOOR['pattern']))
+    for door in (
+        'python -m lab_commons.hpc clean --root /gpfs01/home/alice/out --at alice@hpclogin01.example.org e69',
+        'python -m lab_commons.hpc gather -c job.toml --wait',
+        'python -m lab_commons.hpc run submit --sha 0123abc',
+    ):
+        assert door in HPC_THROUGH_THE_DOOR['permits']
+        assert not pattern.search(door)
+
+
+# ------------------------------------------------------------------- the door a refusal teaches is admitted
+
+#: A door the reason spells: a ``{python} -m`` module, a ``git`` verb, or a ``timeout`` bound, up to its clause end.
+_TAUGHT = re.compile(
+    r'(?:\{python\} -m [a-z_]+(?:\.[a-z_]+)+|\.venv/Scripts/python\.exe -m [a-z_]+(?:\.[a-z_]+)+|\bgit [a-z][a-z-]+'
+    r'|\btimeout \d+m)[^;,()`\n]*?(?=[;,()`]|\. |\.$|$)'
+)
+_VERIFY = '.venv/Scripts/python.exe -m dev_lab.dev.verify -- tests/test_a.py'
+_REMEDIES = {rule.id: Remedy(rule.needs, _VERIFY) for rule in DENY_RULES if rule.needs}
+
+
+def taught_doors(reason: str) -> list[str]:
+    """The runnable commands *reason* teaches, placeholders filled: ``<x>`` -> ``x``, ``a|b`` -> ``a``.
+
+    Read off the exit lines only: the first line quotes the refused shape itself, and ``details:`` is a page.
+    """
+    exits = '\n'.join(line for line in reason.splitlines()[1:] if not line.startswith('details: '))
+    found = []
+    for match in _TAUGHT.finditer(exits):
+        text = match.group(0).replace('{python}', '.venv/Scripts/python.exe')
+        text = re.sub(r'<[^>]*>', 'x', text)
+        text = re.sub(r'([\w-]+)(?:\|[\w-]+)+', r'\1', text)
+        found.append(re.sub(r'\s*\[[^\]]*\]', '', text).strip())
+    return found
+
+
+@pytest.fixture(scope='module')
+def rendered(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    path = tmp_path_factory.mktemp('rules') / 'deny-rules.json'
+    path.write_text(render(HookAdoption(app_name='suite', remedies=_REMEDIES)), encoding='utf-8')
+    return path
+
+
+@pytest.mark.parametrize('rule', DENY_RULES, ids=lambda rule: rule.id)
+def test_every_door_a_refusal_teaches_is_admitted_by_the_guard(rule, rendered: Path) -> None:
+    """A refusal whose door the guard itself refuses is a sealed road: the agent is taught a wall.
+
+    Driven through the real engine over the shipped rules, so a SIBLING row refusing the door counts too.
+    """
+    for door in taught_doors(rule.reason(_REMEDIES.get(rule.id))):
+        assert agenthooks.decide(door, rendered) is None, f'{rule.id} teaches {door!r}, which the guard refuses'
+
+
+def test_a_taught_door_the_guard_refuses_is_caught(rendered: Path) -> None:
+    """PLANTED CONTROL: a reason teaching `git reset --hard` names a door GIT-RESET refuses."""
+    (door,) = taught_doors('X: `git reset` is shared\nStart over: git reset --hard x.')
+    assert agenthooks.decide(door, rendered) is not None

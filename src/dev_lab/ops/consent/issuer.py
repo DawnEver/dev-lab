@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,16 +31,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_private_key
 
 from dev_lab.ops.consent.actions import ACTIONS, CAMPAIGN, Action
-from dev_lab.ops.consent.credential import ConsentRefused, Credential, params_hash, sign, verify
-from dev_lab.ops.consent.plan import parsed
+from dev_lab.ops.consent.credential import ConsentRefused, Credential, full_digest, params_hash, sign, verify
+from dev_lab.ops.consent.plan import parsed, request
+from dev_lab.ops.consentrole import Consent
 from dev_lab.ops.lockout import guarded
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.totp import TotpRefused, accept, write_private
 
 __all__ = ['Issuer', 'keygen', 'requested']
 
-#: Hex characters of a full plan digest.
-_DIGEST_HEX = 64
 #: One checked request: ``(row, subject, params, cap, ttl)``.
 type _Row = tuple[Action, str, dict[str, Any], int | None, float]
 
@@ -118,6 +118,7 @@ class Issuer:
     lockout_after: int = 5
     lockout_minutes: float = 15.0
     on_lock: Callable[[float], None] = lambda _until: None
+    max_grants: int = Consent.max_grants
 
     @property
     def ledger(self) -> Path:
@@ -168,10 +169,17 @@ class Issuer:
     def issue_plan(self, plan: object, code: str) -> list[dict[str, Any]]:
         """One single-use credential per grant of *plan* (:mod:`.plan`), all paid for with ONE TOTP *code*.
 
-        Every grant is checked as a lone request is, before the code; the ledger records the plan's digest on each.
+        Every grant is checked as a lone request is, before the code; each credential SIGNS the plan's digest (its
+        ``plan`` field), and the ledger records it on each.
         """
         found = parsed(plan)
-        return self._issue([requested(grant) for grant in found.grants], code, plan=found.digest)
+        if len(found.grants) > self.max_grants:
+            msg = (
+                f'the plan grants {len(found.grants)}; [ops.consent] max_grants = {self.max_grants} on this issuer '
+                '(the user approves the whole plan by its digest; raise the declared cap, or split the plan)'
+            )
+            raise ConsentRefused(msg)
+        return self._issue([requested(request(grant)) for grant in found.grants], code, plan=found.digest)
 
     def _issue(self, rows: list[_Row], code: str, *, plan: str | None) -> list[dict[str, Any]]:
         with exclusive(self.state):
@@ -181,8 +189,8 @@ class Issuer:
             issued = []
             for row, subject, params, cap, ttl in rows:
                 fields = {'id': str(uuid.uuid4()), 'action': row.name, 'subject': subject, 'params': params,
-                          'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'issued': now,
-                          'expires': now + ttl, 'issuer': self.name}  # fmt: skip
+                          'params_hash': params_hash(params), 'scope': row.scope, 'cap': cap, 'plan': plan,
+                          'issued': now, 'expires': now + ttl, 'issuer': self.name}  # fmt: skip
                 credential = sign(fields, key)
                 self._record('granted', verify(credential, key.public_key(), now=now), plan=plan)
                 if plan is not None:
@@ -202,7 +210,7 @@ class Issuer:
         returns at most one credential per grant of the plan (the newest live one); none for a grant any of whose
         credentials was USED (the step happened); none that no longer verifies (expired); none of another plan.
         """
-        if not isinstance(plan, str) or len(plan) != _DIGEST_HEX or set(plan) - set('0123456789abcdef'):
+        if not full_digest(plan):
             msg = 'fetch-unspent names a plan by its full SHA-256 digest'
             raise ConsentRefused(msg)
         with exclusive(self.state):
@@ -210,20 +218,29 @@ class Issuer:
             events = [json.loads(line) for line in lines if line]
             used = {event.get('id') for event in events if event.get('event') == 'used'}
             granted = [event for event in events if event.get('event') == 'granted' and event.get('plan') == plan]
-            done = {(event['action'], event['subject']) for event in granted if event['id'] in used}
-            public, newest = self.public(), {}
+            spent = Counter((event['action'], event['subject']) for event in granted if event['id'] in used)
+            public, live, batches = self.public(), defaultdict(list), Counter()
             for event in granted:
                 pair, kept = (event['action'], event['subject']), self._kept(event['id'])
-                if pair in done or not kept.is_file():
+                if not kept.is_file():
                     continue
                 credential = json.loads(kept.read_text(encoding='utf-8'))
+                batches[pair, credential['issued']] += 1  # one code issues each grant of the pair together
+                if event['id'] in used:
+                    continue
                 try:
                     verify(credential, public, now=self.now())
                 except ConsentRefused:
                     continue  # expired: never revived
-                if pair not in newest or credential['issued'] >= newest[pair]['issued']:
-                    newest[pair] = credential
-            return list(newest.values())
+                live[pair].append(credential)
+            # One pair is granted once per plan grant naming it (one sha on two hosts: twice). The grants still owed
+            # are the most one code issued less the uses registered, so a second code never returns more.
+            owed = {pair: max(n for (p, _), n in batches.items() if p == pair) - spent[pair] for pair in live}
+            return [
+                credential
+                for pair, found in live.items()
+                for credential in sorted(found, key=lambda c: c['issued'], reverse=True)[: max(owed[pair], 0)]
+            ]
 
     def spent(self, ids: object) -> list[str]:
         """Which of *ids* the ledger records a use of: what a runner asks before it deletes a local credential."""

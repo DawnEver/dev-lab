@@ -23,13 +23,13 @@ __all__ = [
 CONTEXT_PREFIX: Final = 'tests/'
 
 #: The review's context (:mod:`dev_lab.dev.forgereview`): under the prefix so it reads beside the parts, and never a
-#: part -- :data:`NOT_PARTS` holds it, so no promotion waits on it; every merge requires it ``success``
-#: (:func:`dev_lab.dev.reviewgate.review_missing`).
+#: part -- :data:`NOT_PARTS` holds it, so no promotion waits on it; ADVISORY (user rulings 2026-11-11/12): no merge
+#: requires it, the merge decision reports it (:func:`dev_lab.dev.reviewgate.review_missing`).
 REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
 #: The review HOLD's context: posted ``pending`` on a head whose review could not run, released by a ``success`` a
-#: session posts once it reviewed the head. Never a part; the merge reads it together with :data:`REVIEW_CONTEXT`
-#: (:func:`dev_lab.dev.reviewgate.review_missing`), so an unreviewable head is never skipped into an auto-merge.
+#: session posts once it reviewed the head. Never a part; the merge decision reports it with :data:`REVIEW_CONTEXT`
+#: (:func:`dev_lab.dev.reviewgate.review_missing`) and never waits on it.
 HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
 
 #: The SECURITY check's context (:mod:`dev_lab.dev.forgesecurity`): one status per head posted by a serve step,
@@ -37,14 +37,14 @@ HOLD_CONTEXT: Final = f'{CONTEXT_PREFIX}review-hold'
 #: :func:`dev_lab.dev.forgesecurity.security_wait`.
 SECURITY_CONTEXT: Final = f'{CONTEXT_PREFIX}security'
 
-#: The MERGE DECISION's context (:func:`dev_lab.dev.forgemerge.ready`): ONE status per head, ``success`` when the PR
-#: may merge, else ``failure`` naming what is missing. A workflow job posts it on GitHub, where native auto-merge waits
-#: on it as a required check; never a part.
+#: The MERGE DECISION's context (:func:`dev_lab.dev.forgemergeready.ready`): ONE status per head, ``success`` when
+#: the PR may merge, else ``failure`` naming what is missing. A workflow job posts it on GitHub, where native
+#: auto-merge waits on it as a required check; never a part.
 MERGE_READY_CONTEXT: Final = f'{CONTEXT_PREFIX}merge-ready'
 
 #: The CHECK RUN a GitHub App judge posts its verdict as (:mod:`dev_lab.dev.forgereview_bundle`): ``success``
-#: approves, ``failure`` requests changes. Read only FROM THE DECLARED APP (:func:`dev_lab.dev.reviewgate.app_missing`);
-#: a ruleset requires it with that App's ``integration_id``. Outside ``tests/``: it is no status and never a part.
+#: approves, ``failure`` requests changes. ADVISORY (:data:`dev_lab.dev._forgebackends.ADVISORY`): no merge or
+#: ruleset requires it. Outside ``tests/``: it is no status and never a part.
 JUDGE_CHECK: Final = 'review/judge'
 
 #: The contexts under the prefix that are never a part.

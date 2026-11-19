@@ -9,8 +9,8 @@ accessed: 2026-10-06
 
 # A scalar over a plane has three shapes
 
-The user directive for this slice was *"允许彻底重构！"* under 第一性原理 / 抛弃历史包袱 / 奥卡姆剃刀 /
-唯一真相源 / 分层解耦 / 不要向后兼容, and the slice is step 3 of the plan: TWO MISSING DATA SHAPES AND
+The user directive for this slice was *"A thorough refactor is allowed!"* (user, translated) under first principles / discard historical baggage / Occam's razor /
+single source of truth / layered decoupling / no backward compatibility, and the slice is step 3 of the plan: TWO MISSING DATA SHAPES AND
 THE GRID HELPER, measured against the consumer that must merge in (its `wdg_viz/` renderers).
 
 ## `Field` splits, and the split is decided by a CONSUMER's own vocabulary
@@ -80,3 +80,5 @@ verb refusing and its twin drawing a circle for the same description.
   `_viz_figure.py` are the growth), headroom unchanged at 90.
 * `Field`'s bokeh refusal means the peer claim now has TWO subjects one adapter cannot draw (polar,
   continuum), both named in `test_viz_adapters_are_peers`' docstring rather than left to be noticed.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

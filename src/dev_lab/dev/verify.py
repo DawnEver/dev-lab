@@ -49,23 +49,23 @@ from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev.content import content_address
+from dev_lab.dev import depneeds, verifiedby
 from dev_lab.dev.forgeclaim import this_machine
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgerequest import offer_line
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
+from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
 from dev_lab.dev.localpart import part_selection, post_cited, post_part
 from dev_lab.dev.lockpins import lock_freshness
 from dev_lab.dev.lockwait import lock_wait_arg
 from dev_lab.dev.logref import UnverifiableLog
 from dev_lab.dev.platformparts import part_context
-from dev_lab.dev.producer import ProducerExit, full_suite_refusal, unreachable
-from dev_lab.dev.reports import (
-    MalformedAllowance,
-)
+from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
 from dev_lab.dev.runcache import cache_path, cached, remember
-from dev_lab.dev.selection import is_targeted
+from dev_lab.dev.selection import is_targeted, missing_paths
+from dev_lab.dev.skipallowance import MalformedAllowance
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verdictstore import ContentKey, Found
@@ -73,7 +73,7 @@ from dev_lab.dev.verifybox import (
     MEASURE_WAIT_S,
     WAIT_S,
 )
-from dev_lab.dev.verifysteps import MEASURED_TARGETS, run_verify
+from dev_lab.dev.verifysteps import run_verify, tree_address
 from dev_lab.dev.workstationverdict import after_run, before_run, head_tree, workstation_fields, workstation_refusal
 
 __all__ = [
@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     a CLI tool whose stdout IS the product. No module in ``lab_commons`` calls ``print``, and this
     one does not become the first.
 
-    A :class:`~dev_lab.dev.reports.MalformedAllowance` is turned into a one-line refusal here
+    A :class:`~dev_lab.dev.skipallowance.MalformedAllowance` is turned into a one-line refusal here
     rather than allowed to reach the terminal as a traceback: the reader of that message is the
     person who typed the declaration, and a stack trace tells them about this module instead. It
     exits INCONCLUSIVE, because nothing was measured.
@@ -184,14 +184,18 @@ def main(argv: list[str] | None = None) -> int:
     arguments = tuple(parsed.pytest_args)
     targeted = is_targeted(root, arguments)
     outside, workstation = _outside(root, parsed.part, arguments, targeted=targeted)
-    refused = None if targeted else outside
+    missing = missing_paths(root, arguments)
+    refused = (
+        f'verify: refused -- selected path(s) not in the checkout {root}: {", ".join(missing)}' if missing else None
+    )
+    refused = refused or (None if targeted else outside)
     try:
         posted, arguments = arguments, (*part_selection(root, parsed.part), *arguments)
     except ValueError as why:
         refused = refused or f'verify: refused -- {why}'
-    if refused is not None:
-        emit(refused, err=True)
-        return ProducerExit.USAGE
+    refused = refused or _needs_refusal(root, parsed.part)
+    if (early := _early(root, refused, producer=outside is None)) is not None:
+        return early
     wait_s = parsed.lock_wait if parsed.lock_wait is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
     stale = lock_freshness(root)
     if stale:
@@ -283,6 +287,32 @@ def _post_cited(root: Path, log: str, posted: tuple[str, ...], *, part: str, pro
         emit(post_cited(root, log, posted, head=head_sha(root), dirt=status_paths(root), part=part))
 
 
+def _needs_refusal(root: Path, part: str) -> str | None:
+    """A part whose need maps to an extra this environment lacks, refused with its sync door (D78)."""
+    if not part:
+        return None
+    try:
+        return depneeds.missing_for_part(root, part)
+    except ValueError as why:
+        return f'verify: refused -- {why}'
+
+
+def _early(root: Path, refused: str | None, *, producer: bool) -> int | None:
+    """The exit code of a run that ends before any step: a refused argv, or a DATA repo's consumer run.
+
+    A repo declaring ``[tool.dev_lab.verify] by`` is judged by its consumers' tests (:mod:`dev_lab.dev.verifiedby`);
+    a malformed declaration is routed there too, which names it and answers INCONCLUSIVE.
+    """
+    if refused is not None:
+        emit(refused, err=True)
+        return ProducerExit.USAGE
+    try:
+        consumers = verifiedby.declared(root)
+    except verifiedby.VerifyByRefused:
+        consumers = None
+    return None if consumers == () else verifiedby.main(root, producer=producer)
+
+
 def _retired(argv: list[str]) -> str | None:
     """The refusal of the first retired word in *argv* (:mod:`lab_commons.hpc.retired`), else ``None``."""
     return next(filter(None, (refusal('verify', word) for word in argv)), None)
@@ -291,7 +321,7 @@ def _retired(argv: list[str]) -> str | None:
 def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
     """What makes two verify requests ONE run: the tree address, the env key and the selection."""
     return RunKey(
-        tree=content_address(root, MEASURED_TARGETS),
+        tree=tree_address(root),
         env=verdict_env(root),
         selector=' '.join(('verify', *pytest_args)),
     )
@@ -301,6 +331,23 @@ def _inconclusive(line: str) -> tuple[int, list[str]]:
     """A run that measured nothing: *line* to stderr, the INCONCLUSIVE exit code, and the line it printed."""
     emit(line, err=True)
     return EXIT_CODES[Conclusion.INCONCLUSIVE], [line]
+
+
+#: The door out of each failed STEP (a test node's own output is in the log). 2026-11-13: ``failed: hooks-installed``
+#: said nothing of why or what to do.
+STEP_REMEDIES: Final = {
+    HOOKS_STEP: f'no live hook shim in this checkout -- run: {INSTALL_COMMAND}',
+    'ruff check .': 'lint findings -- run: ruff check --fix . (then fix what it cannot)',
+    'ruff format --check .': 'unformatted files -- run: ruff format .',
+}
+
+
+def failure_lines(failures: tuple[str, ...], log: Path) -> list[str]:
+    """One summary line per failure: a step's remedy, else where its output is (the run's log)."""
+    return [
+        f'  failed: {failure} -- {STEP_REMEDIES.get(failure) or f"its output: {Path(log).as_posix()}"}'
+        for failure in failures
+    ]
 
 
 def _judge(
@@ -322,14 +369,14 @@ def _judge(
             f'--lock-wait "<duration>" raises or drops the {wait_s:.0f} s ceiling on the wait. '
             f'{offer_line(root, head, arguments)}'
         )
-        return (unreachable(f'the box is held: {exc}') if post is not None else code), lines
+        return (unreachable(f'the box is held: {exc}', Owner.SCHEDULING) if post is not None else code), lines
     except UnverifiableLog as exc:
         return _inconclusive(
             f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'
         )
     verdict.stamp()
     lines = [verdict.line(), f'verify: {verdict.result.render()}']
-    lines += [f'  failed: {failure}' for failure in verdict.result.failures]
+    lines += failure_lines(verdict.result.failures, verdict.log.path)
     emit('')
     for line in lines:
         emit(line)

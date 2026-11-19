@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev._forgebackends import GITHUB
@@ -55,6 +56,7 @@ from dev_lab.dev.artefacts import (
     ArtefactRefused,
 )
 from dev_lab.dev.forgeapp import app_client, app_of
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pr_list
@@ -72,7 +74,6 @@ from dev_lab.dev.forgereview_findings import Findings, FindingsInvalid, parse_fi
 from dev_lab.dev.forgereview_pointer import prepare, trusted_bundle
 from dev_lab.dev.forgereview_scope import gather, is_code
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import (
@@ -81,7 +82,6 @@ from dev_lab.dev.reviewgate import (
     standing_verdicts,
 )
 from dev_lab.dev.reviewruntime import review_runtimes
-from dev_lab.dev.writeroots import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
@@ -189,7 +189,10 @@ def _verdict_of(out: Findings, bundle: reviewbundle.Bundle, said: str) -> Verdic
     """The verdict on *out* only when every reviewer ran (``ok``/``skipped``, at least one ``ok``); else a line."""
     statuses = [one.status for one in out.reviewers]
     if not statuses or not set(statuses) <= _RAN or 'ok' not in statuses:
-        kinds = ', '.join(f'{one.name} {one.status}' for one in out.reviewers) or 'none planned'
+        kinds = (
+            '; '.join(f'{one.name} {one.status}' + (f': {one.error}' if one.error else '') for one in out.reviewers)
+            or 'none planned'
+        )
         return f'{said}: not every reviewer returned findings ({kinds}); nothing posted'
     return _rendered(out, bundle)
 

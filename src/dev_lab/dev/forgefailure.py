@@ -26,10 +26,13 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev import forge as _forge
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
+
+if TYPE_CHECKING:
+    from dev_lab.dev.forge import Connection, Transport
 
 __all__ = [
     'HTTP_ERROR_FLOOR',
@@ -44,6 +47,7 @@ __all__ = [
     'permission_refused',
     'rate_limited',
     'retried',
+    'within',
 ]
 
 #: Statuses below this are answers; at or above it the call failed.
@@ -133,6 +137,25 @@ class Answer:
 
 class BudgetSpent(TimeoutError):
     """The caller's time budget ran out before a forge call could start: never retried, as waiting cannot clear it."""
+
+
+def within(
+    transport: Transport, deadline: float, what: str, budget_s: float, *, now: Callable[[], float] = time.monotonic
+) -> Transport:
+    """*transport*, each connection's wait cut to what is left before *deadline*; none opened past it.
+
+    Past *deadline* (on *now*'s clock) the connection is never opened: :class:`BudgetSpent` names *what* spent its
+    *budget_s*, and :func:`retried` re-raises it rather than retrying.
+    """
+
+    def opened(host: str, timeout: float) -> Connection:
+        left = deadline - now()
+        if left <= 0:
+            msg = f'{what} spent its {budget_s:g} s read budget before asking {host}'
+            raise BudgetSpent(msg)
+        return transport(host, min(timeout, left))
+
+    return opened
 
 
 class ForgeCallFailed(OSError):

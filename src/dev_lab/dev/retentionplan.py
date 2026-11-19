@@ -84,6 +84,7 @@ from lab_commons.hpc.records import stream_sources
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 
+from dev_lab.dev import retentionrust as _rust
 from dev_lab.dev.forgecarry import read_by
 
 __all__ = [
@@ -92,6 +93,7 @@ __all__ = [
     'Policy',
     'carry_sources',
     'cluster_plan',
+    'idle_for',
     'in_flight',
     'load_policy',
     'occupied_shas',
@@ -137,6 +139,7 @@ class Doomed:
     rule: str
     rotate: bool = False
     keep: tuple[tuple[Path, Path], ...] = ()  # (round stream, kept file): kept before the path goes
+    idle_hours: float | None = None  # re-checked at removal: touched within it, the path is kept (became active)
 
 
 @dataclass(frozen=True)
@@ -180,7 +183,7 @@ def runs(ci: Path) -> list[tuple[Path, dict[str, Any], datetime]]:
     return out
 
 
-def _active(tree: Path, now: datetime) -> timedelta:
+def idle_for(tree: Path, now: datetime) -> timedelta:
     """How long since *tree* was last touched: itself, its ``.lab-ci``, or any stream directory in it."""
     lab = tree / '.lab-ci'
     return min(_age(path, now) for path in [tree, *([lab, *_entries(lab)] if lab.is_dir() else [])])
@@ -191,7 +194,7 @@ def in_flight(ci: Path, policy: Policy, *, now: datetime, live: Iterable[str], o
     young = timedelta(hours=policy.min_age_hours)
     shas = set(live) | set(occupied) | {path.name for path, _, when in runs(ci) if now - when < young}
     shas |= {art.name.split('.')[0] for art in _entries(ci / 'artifacts') if _age(art, now) < young}
-    return shas | {tree.name for tree in _entries(ci / 'trees') if _active(tree, now) < young}
+    return shas | {tree.name for tree in _entries(ci / 'trees') if idle_for(tree, now) < young}
 
 
 def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[str]:
@@ -240,10 +243,12 @@ def cluster_plan(
     repo: str,
     sources: Iterable[str],
     occupied: Iterable[str] | None = (),
+    checkouts: Iterable[Path] = (),
 ) -> Plan:
     """The plan for one cluster account: ``~/ci`` by the rules above, then its slurm outputs and forge logs.
 
     *occupied* is :func:`slurm_occupied`: those trees are in flight; ``None`` (unreadable) keeps every tree.
+    *checkouts* are the served checkouts, whose rust toolchain pins are kept (:mod:`.retentionrust`).
     """
     ci, sources = home / 'ci', set(sources)
     flying = in_flight(ci, policy, now=now, live=live, occupied=occupied or ())
@@ -266,7 +271,12 @@ def cluster_plan(
     if occupied is not None:
         unrecorded = {path.name: state for path, state, _ in states if 'record' not in state}
         doomed += [
-            Doomed(tree, 'tree-not-in-flight', keep=_kept_streams(ci, tree.name, unrecorded.get(tree.name)))
+            Doomed(
+                tree,
+                'tree-not-in-flight',
+                keep=_kept_streams(ci, tree.name, unrecorded.get(tree.name)),
+                idle_hours=policy.min_age_hours,
+            )
             for tree in _entries(ci / 'trees')
             if tree.name not in flying
         ]
@@ -278,6 +288,7 @@ def cluster_plan(
     doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in flying]
     doomed.append(Doomed(ci / 'cache.git', 'shared-cache-retired'))
     doomed += _home_rules(home, policy, now)
+    doomed += _rust_rules(home, policy, now, flying=flying if occupied is not None else None, checkouts=checkouts)
     hard = tuple(Doomed(ci / 'runs' / sha, 'quota-pressure') for _, sha in sorted(harder))
     commands = [(_GIT, '--git-dir', str(c), 'worktree', 'prune') for c in _entries(ci / 'cache') if c.is_dir()]
     commands += _uv(policy, ci / 'uv-cache')
@@ -393,7 +404,22 @@ def _home_rules(home: Path, policy: Policy, now: datetime) -> list[Doomed]:
         for p in sorted((home / '.cache').glob('lab-forge-*.log'))
         if p.stat().st_size > policy.log_max_mb * _MB
     ]
+    # uv's default cache is retired: every uv on the account shares ``ci/uv-cache`` (spec.uv_cache), so a
+    # default cache is a second copy of the same wheels, ~450 k files (census 2026-11-14). Migrated once.
+    out.append(Doomed(home / '.cache' / 'uv', 'uv-default-cache-retired'))
     return out
+
+
+def _rust_rules(
+    home: Path, policy: Policy, now: datetime, *, flying: set[str] | None, checkouts: Iterable[Path]
+) -> list[Doomed]:
+    """Unpinned toolchains and stale extracted crate sources (:mod:`.retentionrust`); an unreadable queue pins all."""
+    ci = home / 'ci'
+    trees = [ci / 'trees' / sha for sha in sorted(flying or ()) if (ci / 'trees' / sha).is_dir()]
+    channels = None if flying is None else _rust.pinned_channels(home / '.rustup', [*trees, *checkouts])
+    doomed = [Doomed(p, _rust.RULE_TOOLCHAIN) for p in _rust.unpinned_toolchains(home / '.rustup', channels)]
+    young = timedelta(hours=policy.min_age_hours)
+    return doomed + [Doomed(p, _rust.RULE_REGISTRY) for p in _rust.registry_sources(home / '.cargo', now, young)]
 
 
 def _uv(policy: Policy, *caches: Path) -> list[tuple[str, ...]]:
