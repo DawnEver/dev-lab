@@ -829,80 +829,24 @@ function fires(rule, texts, cmd) {
   return texts.some(({ text, kind }) => (kind === 'segment' ? atSegment.test(text) : atLine.test(withoutStrings(text))));
 }
 
-/* ================================ ANTIGRAVITY (`--host agy`) WIRE SHAPE ================================
- *
- * Antigravity CLI sends camelCase `PreToolUse` payloads (`toolCall: {name: 'run_command', args: {CommandLine, ...}}`,
- * `workspacePaths`, `conversationId`) and requires a non-empty `decision` on stdout (`{}` is treated as a denial).
- * When `--host agy` is passed, the payload is projected into the canonical `{tool_name, tool_input, cwd, session_id}`
- * shape the engine and its `asks` modules read, and stdout emits `{decision: 'deny', reason}` or `{decision: 'ask'}`.
- * Without `--host agy`, Claude Code and Codex keep their exact input/output behaviour.
- */
-const argv = process.argv.slice(2);
-const hostAt = argv.indexOf('--host');
-const agyHost = (hostAt >= 0 && argv[hostAt + 1] === 'agy') || argv.includes('--host=agy');
-const rulesArg = argv.find((arg, i) => arg !== '--host' && !arg.startsWith('--host=') && (hostAt < 0 || i !== hostAt + 1));
-
-function decodeAgyArg(value) {
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-function normalizeAgyInput(raw) {
-  if (!agyHost || !raw || typeof raw !== 'object') return raw;
-  const out = { ...raw };
-  if (!out.session_id && typeof raw.conversationId === 'string') out.session_id = raw.conversationId;
-  const wsRoot = Array.isArray(raw.workspacePaths) && typeof raw.workspacePaths[0] === 'string' ? raw.workspacePaths[0] : '';
-  if (!out.cwd && wsRoot) out.cwd = wsRoot;
-  if (raw.toolCall && typeof raw.toolCall === 'object') {
-    const name = raw.toolCall.name;
-    const args = raw.toolCall.args && typeof raw.toolCall.args === 'object' ? raw.toolCall.args : {};
-    out.tool_name = name === 'run_command' ? 'Bash' : name;
-    const cmdLine = decodeAgyArg(args.CommandLine);
-    const waitMs = Number(decodeAgyArg(args.WaitMsBeforeAsync));
-    const isDaemon = decodeAgyArg(args.IsDaemon) === true;
-    out.tool_input = {
-      ...args,
-      command: typeof cmdLine === 'string' ? cmdLine : '',
-      ...(isDaemon || (Number.isFinite(waitMs) && waitMs <= 500 && waitMs > 0) ? { run_in_background: true } : {}),
-    };
-    if (typeof args.Cwd === 'string' && args.Cwd) out.cwd = decodeAgyArg(args.Cwd);
-  }
-  return out;
-}
-
-function finishAllow(hints) {
-  if (agyHost) {
-    process.stdout.write(JSON.stringify({ decision: 'ask' }));
-  } else if (hints && hints.length) {
-    process.stdout.write(
-      JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: hints.join('\n') } })
-    );
-  }
-  process.exit(0);
-}
-
 let input;
 let rules;
 try {
-  input = normalizeAgyInput(JSON.parse(fs.readFileSync(0, 'utf8')));
-  rules = JSON.parse(fs.readFileSync(rulesArg, 'utf8'));
+  input = JSON.parse(fs.readFileSync(0, 'utf8'));
+  rules = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 } catch {
-  finishAllow();
+  process.exit(0);
 }
 // EVERY TOOL THAT RUNS A COMMAND LINE. Until 2026-10-08 this read `!== 'Bash'`, and the PowerShell
 // tool -- the same `tool_input.command`, the same shell verbs -- ran every denied shape unjudged.
-if (!input || typeof input !== 'object' || !SHELL_TOOLS.has(input.tool_name) || !Array.isArray(rules)) finishAllow();
+if (!SHELL_TOOLS.has(input.tool_name) || !Array.isArray(rules)) process.exit(0);
 // `agent_id` is present only when the hook fires inside a subagent (fork included); a row scoped
 // 'subagent' is judged only there. Keyed on agent_id, never agent_type: a main session launched
 // with --agent carries agent_type too.
 const subagent = typeof input.agent_id === 'string' && input.agent_id !== '';
 const cmd = (input.tool_input && input.tool_input.command) || '';
 const root = (input.cwd || '').replace(/\\/g, '/');
-const sessionRoot = repoRoot(path.resolve(path.dirname(rulesArg), '..', '..'));
+const sessionRoot = repoRoot(path.resolve(path.dirname(process.argv[2]), '..', '..'));
 const texts = executedTexts(cmd);
 const hints = [];
 
@@ -953,13 +897,16 @@ for (const rule of rules) {
       reasonFor(rule, expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)), cmd, input.cwd || '', sessionRoot);
     if (where) logRefusal(rule.name, where, reason);
     process.stdout.write(
-      JSON.stringify(
-        agyHost
-          ? { decision: 'deny', reason }
-          : { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }
-      )
+      JSON.stringify({
+        hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
+      })
     );
     process.exit(0);
   }
 }
-finishAllow(hints);
+if (hints.length) {
+  process.stdout.write(
+    JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: hints.join('\n') } })
+  );
+}
+process.exit(0);
