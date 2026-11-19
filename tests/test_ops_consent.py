@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _ops_fixtures import NOW, RFC_KEY, code
+from _ops_fixtures import NOW, RFC_KEY, code, speaks
 from lab_commons.home import HOME_ENV
 
 from dev_lab.dev.consentguard import refuse_write, state_dir
@@ -234,6 +234,7 @@ def test_a_code_that_is_not_six_digits_is_refused_before_it_is_sent(host: Host, 
     request.write_text(json.dumps(WAVE), encoding='utf-8')
     sent: list[object] = []
 
+    @speaks
     def send(_table: object, line: dict[str, Any]) -> tuple[int, str]:
         sent.append(line)
         return 1, 'unreached'

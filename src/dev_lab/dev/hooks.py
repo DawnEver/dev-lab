@@ -35,6 +35,7 @@ the half the rows' own ``refuses``/``permits`` proof exercises, and the half a p
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -43,9 +44,11 @@ from typing import Any, Final
 
 from dev_lab.dev._deny_rows import DENY_ROWS
 from dev_lab.dev.disclosure import details_for
+from dev_lab.dev.venvpath import slotted
 
 __all__ = [
     'ADMITS',
+    'ASKED',
     'DENY_RULES',
     'MATCH_KINDS',
     'PLACEHOLDER',
@@ -72,7 +75,9 @@ _ID: Final = re.compile(r'[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*')
 #: What a pattern NAMES, in the engine's own vocabulary. A closed set, so a typo cannot become a
 #: fourth matching mode that the engine silently reads as its default. ``'line'`` searches the WHOLE command
 #: line, for a shape that spans segments (a write anywhere on the line: CONSENT-CODE-FROM-THE-USER).
-MATCH_KINDS: Final = frozenset({'command', 'argument', 'line'})
+#: ``'shell'`` is ``'command'`` read in SHELL text only (segments, and the bodies and ``-c`` scripts a shell runs),
+#: never in python/node code: a row naming a shell verb (``git push``) has no shape in another language's source.
+MATCH_KINDS: Final = frozenset({'command', 'argument', 'line', 'shell'})
 
 #: WHO a row binds, in the engine's own vocabulary. ``'subagent'`` judges the row only when the hook
 #: payload carries a non-empty ``agent_id`` -- present only inside a subagent call, fork included.
@@ -85,15 +90,21 @@ SCOPES: Final = frozenset({'subagent'})
 #: fire and false-positive rate, such a refusal is routed around, and the exit it names is still worth saying.
 SEVERITIES: Final = frozenset({'deny', 'hint'})
 #: WHEN a row binds, beyond its pattern. ``'live-run'``: only while the checkout the command targets has a
-#: live run (:mod:`dev_lab.dev.liverun`), which the engine asks after the pattern matched. ``'declared-repo'``:
-#: only while the cloned url is a family repo this machine already checks out (:mod:`dev_lab.dev.familyrepos`).
-#: A closed set, because the engine reads an unknown condition as none, which widens the rule.
-WHENS: Final = frozenset({'live-run', 'declared-repo'})
+#: live run (:mod:`dev_lab.dev.liverun`), which the engine asks after the pattern matched. ``'background'``: only
+#: on a Bash call the agent runs in the background (``run_in_background``). ``'declared-repo'``: only while the
+#: cloned url is a family repo this machine already checks out (:mod:`dev_lab.dev.familyrepos`). A closed set,
+#: because the engine reads an unknown condition as none, which widens the rule.
+WHENS: Final = frozenset({'live-run', 'background', 'declared-repo'})
 #: WHAT A FIRING ROW STILL ADMITS, which only the filesystem can judge. ``'family-sibling-clone'``: a line
 #: that is one clone (after any ``cd``) of a repo into a NEW directory named for it, beside the family's
 #: checkouts, from a forge a sibling checkout already comes from. A closed set, because the engine reads an
-#: unknown admission as none, which narrows the rule rather than widening it.
-ADMITS: Final = frozenset({'family-sibling-clone'})
+#: unknown admission as none, which narrows the rule rather than widening it. ``'file-operands'``: a grep
+#: whose every operand is an existing file reads only those files, whatever its recursion flag says.
+ADMITS: Final = frozenset({'family-sibling-clone', 'file-operands'})
+#: The shape of an ``asks`` value: a ``dev_lab`` module, the one whose ``--admit`` judges a row its pattern only
+#: prefilters. The engine runs it through the session checkout's interpreter after the pattern matched, so the
+#: common call spawns none; exit 1 with text refuses with that text, anything else admits.
+ASKED: Final = re.compile(r'dev_lab(?:\.\w+)+')
 
 
 class UnremediedRule(RuntimeError):
@@ -176,6 +187,7 @@ class DenyRule:
     severity: str = 'deny'
     when: str | None = None
     admits: str | None = None
+    asks: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
@@ -199,6 +211,9 @@ class DenyRule:
             raise ValueError(msg)
         if self.admits is not None and self.admits not in ADMITS:
             msg = f'{self.id}: admits={self.admits!r} is not one of {sorted(ADMITS)}; the engine would admit nothing.'
+            raise ValueError(msg)
+        if self.asks is not None and not _judge_exists(self.asks):
+            msg = f'{self.id}: asks={self.asks!r} names no dev_lab module; the engine would ask nobody and admit all.'
             raise ValueError(msg)
         _compiled(self.pattern, f'{self.id} pattern')
         _compiled(self.allow, f'{self.id} allow')
@@ -248,7 +263,7 @@ class DenyRule:
                 f'answers a different question reads as an exit and is not one.'
             )
             raise UnremediedRule(msg)
-        return self._lines(self.remedy.replace(PLACEHOLDER, remedy.command))
+        return self._lines(self.remedy.replace(PLACEHOLDER, slotted(remedy.command)))
 
     def _lines(self, exit_text: str) -> str:
         """The clause, the exit and the pointer, one per line; a row with no pointer renders two."""
@@ -273,7 +288,19 @@ class DenyRule:
             row['when'] = self.when
         if self.admits is not None:
             row['admits'] = self.admits
+        if self.asks is not None:
+            row['asks'] = self.asks
+        if self.needs is not None:
+            row['needs'] = self.needs  # the engine derives a door for a target repo that declares none
         return row
+
+
+def _judge_exists(module: str) -> bool:
+    """Whether *module* is an :data:`ASKED`-shaped module this install carries; a missing parent is no module."""
+    try:
+        return ASKED.fullmatch(module) is not None and importlib.util.find_spec(module) is not None
+    except ModuleNotFoundError:
+        return False
 
 
 def _compiled(pattern: str | None, what: str) -> re.Pattern[str] | None:
@@ -352,14 +379,17 @@ def denies(
     *,
     scope: str | None = None,
     live: bool = False,
+    background: bool = False,
     declared: bool = False,
 ) -> str | None:
     """The ID of the first rule that REFUSES *segment*, or ``None`` -- openings applied; a hint row refuses nothing.
 
     *live* says whether the checkout the command targets has a live run, as the engine asks
-    :mod:`dev_lab.dev.liverun`; a ``when='live-run'`` row binds only then. *declared* says whether the cloned url
-    is a family repo this machine checks out (:mod:`dev_lab.dev.familyrepos`); a ``when='declared-repo'`` row
-    binds only then.
+    :mod:`dev_lab.dev.liverun`; a ``when='live-run'`` row binds only then. *background* says the call runs in
+    the background; a ``when='background'`` row binds only then. *declared* says whether the cloned url is a
+    family repo this machine checks out (:mod:`dev_lab.dev.familyrepos`); a ``when='declared-repo'`` row binds
+    only then. An ``asks`` row is judged by its pattern alone, the prefilter: its judge needs a repo, so a
+    near-miss its pattern names reads as refused here.
 
     An opening is tested against the whole text, as the engine tests it against the whole command:
     an ``allow`` is a statement about the invocation, not about the token the pattern landed on.
@@ -370,7 +400,11 @@ def denies(
     for rule in rules:
         if rule.severity != 'deny' or (rule.scope is not None and rule.scope != scope):
             continue
-        if (rule.when == 'live-run' and not live) or (rule.when == 'declared-repo' and not declared):
+        if (
+            (rule.when == 'live-run' and not live)
+            or (rule.when == 'background' and not background)
+            or (rule.when == 'declared-repo' and not declared)
+        ):
             continue
         if not fires(rule, segment):
             continue

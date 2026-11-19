@@ -209,6 +209,18 @@ def test_a_heredoc_consumed_by_a_sink_is_data_and_is_not_denied(rules: Path) -> 
     assert agenthooks.decide(command, rules) is None, 'writing prose ABOUT a denied command was refused'
 
 
+def test_a_line_row_reads_the_executed_text_never_a_sink_body(tmp_path: Path) -> None:
+    """A `matches: 'line'` row read the RAW command, heredoc sinks included (2026-11-16): prose naming a path refused.
+
+    PLANTED CONTROL: the same shape on the line itself, or in a body an interpreter executes, is still refused.
+    """
+    path = tmp_path / 'rules.json'
+    path.write_text(json.dumps([{'name': 'PLANTED', 'pattern': r'>\s*\S*secret', 'matches': 'line', 'reason': 'r'}]))
+    assert agenthooks.decide('cat > notes.md <<EOF\nnever echo x > the/secret file\nEOF', path) is None
+    assert agenthooks.decide('echo x > the/secret', path) is not None
+    assert agenthooks.decide("python - <<'PY'\nos.system('echo x > the/secret')\nPY", path) is not None
+
+
 def test_a_command_that_merely_contains_a_denied_word_is_not_denied(rules: Path) -> None:
     """THE MEASURED FALSE POSITIVE. These run grep, git-log and git-commit -- not the named verb."""
     for command in (
@@ -218,6 +230,33 @@ def test_a_command_that_merely_contains_a_denied_word_is_not_denied(rules: Path)
         'echo "git push origin main"',
     ):
         assert agenthooks.decide(command, rules) is None, f'a string containing a denied word was refused: {command!r}'
+
+
+def _conditional_misses(rule_id: str, when: str, command: str, rules: Path) -> list[str]:
+    """A ``when`` or ``asks`` row's refusal judged where its condition does and does not hold."""
+    misses = []
+    if when == 'asks':
+        # These rules carry no checkout, so nobody can be asked: the row must ADMIT (its asked half is the judge's
+        # own suite, test_dev_journaldoor), never refuse on its prefilter alone.
+        decided = agenthooks.decide(command, rules)
+        if decided is not None and decided.startswith(f'{rule_id}:'):
+            misses.append(f'{rule_id}: refused on its prefilter with nobody asked on {command!r}')
+        return misses
+    if when in {'live-run', 'declared-repo'}:
+        # A scan tree has no live run and no machine file declaring a forge.example repo: the row stays SILENT
+        # (its live halves are test_dev_liverun's and test_dev_familyrepos').
+        decided = agenthooks.decide(command, rules)
+        if decided is not None and decided.startswith(f'{rule_id}:'):
+            misses.append(f'{rule_id}: fired with its condition ({when}) unmet on {command!r}')
+        return misses
+    # 'background': it fires on a background call, and the same line run in the foreground is free.
+    decided = agenthooks.decide(command, rules, background=True)
+    if decided is None or not decided.startswith(f'{rule_id}:'):
+        misses.append(f'{rule_id}: the engine did not refuse a background {command!r}')
+    foreground = agenthooks.decide(command, rules)
+    if foreground is not None and foreground.startswith(f'{rule_id}:'):
+        misses.append(f'{rule_id}: fired on a FOREGROUND {command!r}')
+    return misses
 
 
 def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None:
@@ -233,12 +272,8 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
         agent = 'scan-agent' if rule.scope == 'subagent' else None
         for command in rule.refuses:
             checked += 1
-            if rule.when is not None:
-                # A conditional row is SILENT where its condition fails: no run is live in a scan tree, and no machine
-                # file declares a forge.example repo (live halves: test_dev_liverun, test_dev_familyrepos).
-                decided = agenthooks.decide(command, rules)
-                if decided is not None and decided.startswith(f'{rule.id}:'):
-                    wrong.append(f'{rule.id}: fired with its condition ({rule.when}) unmet on {command!r}')
+            if rule.when is not None or rule.asks is not None:
+                wrong += _conditional_misses(rule.id, rule.when or 'asks', command, rules)
                 continue
             # A hint row is SAID, unless a sibling refusal fires on the same command and wins (`git clone`).
             hint = rule.severity == 'hint'
@@ -253,7 +288,7 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
                 wrong.append(f'{rule.id}: the scoped row fired OUTSIDE a subagent on {command!r}')
         for command in rule.permits:
             checked += 1
-            if agenthooks.decide(command, rules, agent_id=agent) is not None:
+            if agenthooks.decide(command, rules, agent_id=agent, background=rule.when == 'background') is not None:
                 wrong.append(f'{rule.id}: the engine DENIED a near-miss the row permits: {command!r}')
     assert checked >= CONTROL_FLOOR, (
         f'only {checked} controls reached the engine, below the {CONTROL_FLOOR} floor. Finding nothing wrong '
@@ -379,6 +414,38 @@ def test_a_target_declaring_no_door_is_told_the_named_exit_is_not_its_own(
     assert bare.as_posix().lower() in reason.lower(), reason
 
 
+def test_a_target_declaring_no_door_is_never_sent_to_the_session_repos_path(
+    two_repos: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """THE PLANTED CONTROL: no dev_lab venv, no declaration -> the declaration to add, never SESSION_DOOR."""
+    _session, _target, rules = two_repos
+    bare = tmp_path / 'bare'
+    (bare / '.git').mkdir(parents=True)
+    reason = agenthooks.decide('pytest tests/', rules, cwd=bare)
+    assert reason is not None
+    assert SESSION_DOOR not in reason, reason
+    assert '[tool.dev_lab.doors] BARE-TEST-INVOCATION = ' in reason, reason
+
+
+def test_a_target_whose_venv_carries_dev_lab_is_sent_to_its_own_verify(
+    two_repos: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """The derived door: the target's OWN interpreter, which exists, running the family verify."""
+    _session, _target, rules = two_repos
+    kit = tmp_path / 'withkit'
+    (kit / '.git').mkdir(parents=True)
+    tail = ('Scripts', 'python.exe') if os.name == 'nt' else ('bin', 'python')
+    python = kit.joinpath('.venv', *tail)
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b'')
+    site = kit.joinpath('.venv', *(('Lib',) if os.name == 'nt' else ('lib', 'python3.12')), 'site-packages')
+    (site / 'dev_lab-1.0.dist-info').mkdir(parents=True)
+    reason = agenthooks.decide('pytest tests/', rules, cwd=kit)
+    assert reason is not None
+    assert SESSION_DOOR not in reason, reason
+    assert f'{python.as_posix()} -m dev_lab.dev.verify -- <paths>'.lower() in reason.lower(), reason
+
+
 # --------------------------------------------------------------------------------------------
 # Every shell tool, and the subagent scope
 
@@ -420,6 +487,20 @@ def test_a_subagent_push_is_refused_and_the_main_session_keeps_its_own_door(rule
     outside = agenthooks.decide('git push origin HEAD', rules, hint=True)
     assert outside is not None
     assert outside.startswith('NETWORK-VERB:'), 'the main session lost its own (retry) door'
+
+
+def test_a_subagent_push_is_read_in_shell_text_never_in_python_source(rules: Path) -> None:
+    """O25: SUBAGENT-NO-PUSH (matches 'shell') reads what a SHELL runs, never interpreter source.
+
+    A python heredoc EDITING text that names a push runs no push. PLANTED CONTROLS: the same words handed to a
+    shell -- a heredoc body or a ``-c`` script -- are still a push and still refused.
+    """
+    edit = "python - <<'EOF'\ntext = '''\ngit push origin HEAD\n'''\nEOF"
+    assert agenthooks.decide(edit, rules, agent_id='a1') is None
+    for shell in ('bash <<EOF\ngit push origin HEAD\nEOF', 'bash -c "git push origin HEAD"'):
+        reason = agenthooks.decide(shell, rules, agent_id='a1')
+        assert reason is not None, shell
+        assert reason.startswith('SUBAGENT-NO-PUSH:'), reason
 
 
 def test_a_subagent_is_refused_through_the_powershell_tool_too(rules: Path) -> None:
@@ -581,3 +662,92 @@ def test_the_consent_row_names_no_home_and_still_refuses_a_write_under_the_real_
         assert verdict.startswith('CONSENT-CODE-FROM-THE-USER:'), spelled
     assert agenthooks.decide(f'cat "{credential.as_posix()}"', rules) is None  # reading stays the read guard's
     assert agenthooks.decide('echo x > state/consentfoo/x.json', rules) is None  # planted near-miss
+
+
+_PY = '.venv/Scripts/python.exe'
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        f'{_PY} -m dev_lab.dev.verify --with-heavy -- tests/test_x.py',
+        f'{_PY} -m dev_lab.dev.forge request tests --sha 0123abc',
+        f'{_PY} scripts/gate/runner.py gate',
+        'python -m lab_commons.hpc run submit --sha 0123abc',
+    ],
+)
+def test_a_subagent_is_refused_heavy_and_producer_requests(rules: Path, command: str) -> None:
+    """HEAVY-IS-THE-MAIN-SESSIONS through the shipped engine: the refusal names the main session as the door."""
+    reason = agenthooks.decide(command, rules, agent_id='a1')
+    assert reason is not None
+    assert reason.startswith('HEAVY-IS-THE-MAIN-SESSIONS:'), reason
+    assert 'Hand the request to the main session' in reason
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        f'{_PY} -m dev_lab.dev.verify -- tests/x.py',
+        f'{_PY} -m dev_lab.dev.verify --lock-wait "40 min" -- tests/test_heavy.py',
+        f'{_PY} -m dev_lab.dev.forge requests',
+        f'{_PY} -m dev_lab.dev.forge queue',
+        'git commit -m "forge request later"',
+    ],
+)
+def test_a_subagent_keeps_its_light_measure_and_near_misses(rules: Path, command: str) -> None:
+    """PLANTED CONTROL: the light measure and look-alikes are admitted to a subagent."""
+    assert agenthooks.decide(command, rules, agent_id='a1') is None
+
+
+def test_the_main_session_keeps_its_producer_request(rules: Path) -> None:
+    """The same request a subagent is refused stays the main session's."""
+    command = f'{_PY} -m dev_lab.dev.forge request tests --sha 0123abc'
+    assert agenthooks.decide(command, rules, agent_id='a1') is not None
+    assert agenthooks.decide(command, rules) is None
+
+
+#: Collection runs no test, so it claims no verdict: the row's hazard cannot arise and the line
+#: is admitted as written -- in every repo, with or without a measure script of its own.
+_COLLECT_ONLY = (
+    'pytest --collect-only -q tests/',
+    'python -m pytest --co tests',
+    '.venv/Scripts/python.exe -m pytest -q --collect-only tests/unit/x.py',
+)
+
+
+@pytest.mark.parametrize('command', _COLLECT_ONLY)
+def test_a_collect_only_line_is_admitted(rules: Path, command: str) -> None:
+    assert agenthooks.decide(command, rules) is None, command
+
+
+def test_a_collect_only_segment_admits_no_running_sibling(rules: Path) -> None:
+    """THE PLANTED CONTROL: the admission is per segment, so a run chained after a collection is refused."""
+    assert agenthooks.decide('pytest --collect-only tests && pytest tests', rules) is not None
+    assert agenthooks.decide('pytest tests --cov', rules) is not None
+    # A flag in a LATER segment does not admit an earlier run.
+    assert agenthooks.decide('pytest tests && echo --co', rules) is not None
+    assert agenthooks.decide('pytest tests; echo --collect-only', rules) is not None
+    assert agenthooks.decide('pytest tests | grep --co', rules) is not None
+
+
+def test_interpreter_code_is_read_without_its_string_literals(rules: Path) -> None:
+    """O48: a python heredoc whose STRING holds ``rmtree(`` (source it writes) was refused RECURSIVE-DELETE.
+
+    Code is read with its string literals blanked, so text a program only carries is never a command it runs.
+    PLANTED CONTROLS: the same heredoc CALLING ``shutil.rmtree`` is still refused, and so is a bash ``rm -rf``.
+    """
+    writes = (
+        'python - <<\'EOF\'\nsrc = """\nimport shutil\nshutil.rmtree(target)\n"""\nopen("f.py", "w").write(src)\nEOF'
+    )
+    assert agenthooks.decide(writes, rules) is None, 'a string the program only writes was read as its command'
+    single = "python - <<'EOF'\nnote = 'shutil.rmtree(x)'\nprint(note)\nEOF"
+    assert agenthooks.decide(single, rules) is None
+    calls = "python - <<'EOF'\nimport shutil\nshutil.rmtree('C:/work/repo')\nEOF"
+    reason = agenthooks.decide(calls, rules)
+    assert reason is not None, 'a real rmtree call in a heredoc went unrefused'
+    assert reason.startswith('RECURSIVE-DELETE:'), reason
+    after = 'python - <<\'EOF\'\nx = """doc"""\nshutil.rmtree(p)\nEOF'
+    assert (agenthooks.decide(after, rules) or '').startswith('RECURSIVE-DELETE:'), 'a call after a string was hidden'
+    bash = agenthooks.decide('rm -rf .claude/worktrees/lane', rules)
+    assert bash is not None
+    assert bash.startswith('RECURSIVE-DELETE:'), bash

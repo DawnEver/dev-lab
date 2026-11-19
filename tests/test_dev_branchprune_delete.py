@@ -10,11 +10,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev.branchdelete import delete, delete_tags
+from dev_lab.dev.branchdelete import delete
+from dev_lab.dev.branchprune import main
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
 
@@ -96,7 +98,9 @@ def test_a_raw_remote_delete_is_still_refused_and_its_remedy_names_the_door() ->
     assert denies(DENY_RULES, 'sh scripts/hooks/with-retry.sh push origin :lane/x') == 'PUSH-REMOTE-DELETE'
     remedy = str(rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy)
     assert 'dev_lab.dev.branchprune delete <branch>' in remedy
-    assert 'dev_lab.dev.branchprune delete-tag <tag> --approved' in remedy, 'a tag has its own exit'
+    assert 'delete-tag' not in remedy, 'D22 retired the tag delete'
+    assert '--approved' not in remedy, 'D22 retired the approved delete'
+    assert 'git merge -s ours' in remedy, 'a refused branch is merged or landed, never tagged'
     assert denies(DENY_RULES, '.venv/Scripts/python.exe -m dev_lab.dev.branchprune delete lane/x') is None
 
 
@@ -212,103 +216,39 @@ def test_a_line_deletion_is_refused(tmp_path: Path) -> None:
     _refused_naming(work, 'pr/x', 'two.txt')
 
 
-def _tag(work: Path, tag: str, sha: str) -> None:
-    run_git(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'tag', '-a', '-m', tag, tag, sha)
-    run_git(work, 'push', '-q', '--no-verify', 'origin', f'refs/tags/{tag}')
+def test_a_lossy_refusal_names_the_merge_door_never_a_tag(tmp_path: Path) -> None:
+    """D22 (2026-11-17): "either merge or delete" -- the refusal names MERGE and the declared `-s ours` landing.
 
-
-def _tag_on_origin(work: Path, tag: str) -> bool:
-    return bool(git_out(work, 'ls-remote', '--tags', 'origin', f'refs/tags/{tag}'))
-
-
-def _delete_tags(work: Path, *tags: str, approved: str = 'yes, drop those tags') -> tuple[int, list[str]]:
-    said: list[str] = []
-    code = delete_tags(
-        work,
-        tags,
-        approved=approved,
-        client=StateForge(),
-        session=SESSION,
-        fetch=fetch_origin,
-        say=said.append,
-        alarm=lambda _: None,
-    )
-    return code, said
-
-
-def test_an_approved_tag_held_by_integration_is_deleted_and_one_on_a_lane_alone_is_kept(tmp_path: Path) -> None:
-    """PLANTED control: the tag whose commit lives on a lane alone survives beside the held one that goes."""
-    _, work = clone_pair(tmp_path)
-    held = advance(work, 'integrate/main', 'i.txt', 'i\n')
-    alone = advance(work, 'lane/mine', 'm.txt', 'm\n')
-    _tag(work, 'v0.1.0', held)
-    _tag(work, 'v0.2.0', alone)
-    code, said = _delete_tags(work, 'v0.1.0', 'v0.2.0')
-    assert code == 1
-    assert not _tag_on_origin(work, 'v0.1.0')
-    assert _tag_on_origin(work, 'v0.2.0')
-    assert any('held by integrate/main' in line and 'yes, drop those tags' in line for line in said)
-    assert any(f'tag v0.2.0: refused -- its commit {alone[:12]}' in line for line in said), said
-
-
-def test_a_tag_delete_without_the_users_words_is_refused_touching_nothing(tmp_path: Path) -> None:
-    _, work = clone_pair(tmp_path)
-    _tag(work, 'v0.1.0', advance(work, 'integrate/main', 'i.txt', 'i\n'))
-    code, said = _delete_tags(work, 'v0.1.0', approved=' ')
-    assert code == 1
-    assert _tag_on_origin(work, 'v0.1.0')
-    assert any('--approved' in line for line in said)
-
-
-def _approved_delete(work: Path, forge: StateForge, *branches: str, approved: str) -> tuple[int, list[str]]:
-    said: list[str] = []
-    code = delete(
-        work,
-        branches,
-        approved=approved,
-        client=forge,
-        session=SESSION,
-        fetch=fetch_origin,
-        say=said.append,
-        alarm=lambda _: None,
-    )
-    return code, said
-
-
-def test_an_approved_branch_whose_tip_a_tag_holds_is_deleted_and_an_untagged_one_is_kept(tmp_path: Path) -> None:
-    """With the user's words and a tag on origin holding its tip, a lane the content judge refuses goes.
-
-    A lane rebased onto integration leaves its old commits on the lane alone; the tag keeps them, so nothing is
-    lost. PLANTED control: an untagged lane beside it, approved too, is kept.
+    PLANTED control: a contained branch beside it still deletes, so the refusal is the content, not the door.
     """
     _, work = clone_pair(tmp_path)
-    tagged = advance(work, 'lane/old', 'o.txt', 'o\n')
-    _tag(work, 'archive/old', tagged)
-    advance(work, 'lane/bare', 'b.txt', 'b\n')
-    code, said = _approved_delete(work, StateForge(), 'lane/old', 'lane/bare', approved='delete the old branches')
+    _branch_at(work, 'feat/done', advance(work, 'integrate/main', 'i.txt', 'i\n'))
+    advance(work, 'lane/mine', 'm.txt', 'm\n')
+    code, said, _ = _delete(work, StateForge(), 'lane/mine', 'feat/done')
     assert code == 1
-    assert not _on_origin(work, 'lane/old')
-    assert _on_origin(work, 'lane/bare')
-    assert any('held by tag archive/old' in line and 'delete the old branches' in line for line in said), said
-    assert any('lane/bare: refused' in line and 'no tag on origin holds it' in line for line in said), said
+    assert _on_origin(work, 'lane/mine')
+    assert not _on_origin(work, 'feat/done')
+    refusal = next(line for line in said if line.startswith('lane/mine: refused'))
+    assert 'MERGE what is still wanted' in refusal
+    assert 'merge origin/lane/mine into a pr/ branch with `git merge -s ours`' in refusal
+    assert '`<path>: <class> -- <why>`' in refusal
+    assert 'Merge-Audit:' in refusal
+    assert 're-run `branchprune delete lane/mine`' in refusal
+    assert 'tag' not in refusal.replace('no tags', ''), 'no tag door survives D22'
 
 
-def test_an_unlanded_branch_without_the_users_words_stays_refused_though_a_tag_holds_it(tmp_path: Path) -> None:
-    _, work = clone_pair(tmp_path)
-    _tag(work, 'archive/old', advance(work, 'lane/old', 'o.txt', 'o\n'))
-    code, _, _ = _delete(work, StateForge(), 'lane/old')
-    assert code == 1
-    assert _on_origin(work, 'lane/old')
-
-
-def test_the_users_words_never_delete_the_integration_branch_or_an_open_pr_head(tmp_path: Path) -> None:
-    _, work = clone_pair(tmp_path)
-    head = advance(work, 'pr/x', 'x.txt', 'x\n')
-    _tag(work, 'archive/x', head)
-    forge = StateForge()
-    forge.add_pull('pr/x', 'integrate/main')
-    code, said = _approved_delete(work, forge, 'pr/x', 'integrate/main', approved='delete everything')
-    assert code == 1
-    assert _on_origin(work, 'pr/x')
-    assert _on_origin(work, 'integrate/main')
-    assert sum('never deleted' in line for line in said) == 2
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['delete', 'lane/x', '--approved', 'drop it'],
+        ['delete', 'lane/x', '--approved=drop it'],
+        ['delete-tag', 'v1.0', '--approved', 'drop it'],
+    ],
+)
+def test_the_retired_tag_held_spellings_are_refused_by_name(argv: list[str], tmp_path: Path, capsys) -> None:
+    """RETIRED-NAMES-REGISTERED: refused before any fetch or forge call, naming the spelling and its door."""
+    assert main(argv, cwd=tmp_path) == 2
+    err = capsys.readouterr().err
+    spelling = argv[0] if argv[0] == 'delete-tag' else '--approved'
+    assert f'`{spelling}` is retired' in err
+    assert 'dev_lab.dev.branchprune delete <branch>' in err

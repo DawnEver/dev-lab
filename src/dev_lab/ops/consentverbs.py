@@ -11,12 +11,14 @@ from __future__ import annotations
 import getpass
 import os
 import stat
+import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+import lab_commons.launch as _door
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.log import emit
 
@@ -127,6 +129,17 @@ def _published(config: OpsConfig) -> Ed25519PublicKey | None:
         return None
 
 
+#: How long a ``subject`` read may take on this host.
+_DERIVE_S = 120.0
+
+
+def _derive(config: OpsConfig, argv: Sequence[str]) -> tuple[int, str]:
+    """Run this host's ``dev_lab.ops`` *argv* (a ``subject`` read, :func:`.serve.handle` admitted) as this account."""
+    words = [sys.executable, '-m', 'dev_lab.ops', '--config', str(config.path), *argv]
+    done = _door.run(words, capture_output=True, check=False, timeout=_DERIVE_S, stdin=subprocess.DEVNULL)
+    return done.returncode, (done.stdout + done.stderr).decode('utf-8', 'replace')
+
+
 def run(config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callable[[str], None]) -> int:
     """Route one verb of :data:`VERBS`; *show* displays an enrolment's otpauth URI (as a QR or the bare URI)."""
     if verb == 'ready':
@@ -141,7 +154,8 @@ def run(config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callab
         elif verb == 'keygen':  # the PUBLIC key goes to every verifier: [consent] public_key, or the package
             emit(public_text(keygen(Path(role.key), force=force).public_key()))
         else:
-            emit(serve.handle(issuer(role, alert=alert), sys.stdin.readline()))
+            line = sys.stdin.readline()
+            emit(serve.handle(issuer(role, alert=alert), line, derive=lambda argv: _derive(config, argv)))
     except (ConsentRefused, totp.TotpRefused) as refused:
         emit(f'refused: {refused}', err=True)
         return 2

@@ -19,6 +19,7 @@ import pytest
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev import venvpointer
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount import deploy, tick
 from dev_lab.dev.hpcaccount import spec as deploy_spec
@@ -74,7 +75,8 @@ if 'ls-remote' in args:
 if args[0] == 'clone':
     target = pathlib.Path(args[-1])
     (target / '.git').mkdir(parents=True)
-    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n')
+    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n'
+                                           '[tool.dev_lab.protection]\nproducer = "hpc"\n')
 """
 
 FAKE_ANSWER: Final = r"""
@@ -276,6 +278,28 @@ def test_the_venv_is_built_once_per_declaration(box: Box) -> None:
     assert box.logged().count('uv sync --extra dev') == 3  # one per repo, not per run
 
 
+def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(box: Box) -> None:
+    """W2: a build goes into a FRESH ``.venvs/<name>`` and only then becomes current; the live one is never touched.
+
+    PLANTED: alpha's install recipe (part of the env key) moves after the first deploy -- the second deploy must name
+    a different environment and leave the first one in place (a tick running from it keeps its files).
+    """
+    assert box.run(*DECLARE) == 0
+    alpha = box.home / deploy_spec.DEFAULT_ROOT / 'alpha'
+    first = venvpointer.named(alpha)
+    assert first is not None, 'the build is published through the pointer'
+    assert (first / '.lab-deploy-env').is_file()
+    pyproject = alpha / 'pyproject.toml'
+    pyproject.write_text(
+        pyproject.read_text(encoding='utf-8').replace('--extra dev', '--extra moved'), encoding='utf-8'
+    )
+    assert box.run() == 0
+    second = venvpointer.named(alpha)
+    assert second is not None
+    assert second != first, 'a moved key never syncs into the live environment'
+    assert (first / '.lab-deploy-env').is_file(), 'the passed-over environment is left for reclaim, not rewritten'
+
+
 def _overlays(box: Box) -> list[str]:
     return [line for line in box.logged().splitlines() if '--reinstall-package lab-commons' in line]
 
@@ -358,7 +382,7 @@ def test_a_tool_is_probed_by_its_version_in_the_tick_environment(box: Box, monke
     monkeypatch.setattr(deploy, '_runs', lambda _sh, env, tool: probed.append((env, tool)) or True)
     monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
     assert box.run(*DECLARE) == 0
-    assert {tool for _env, tool in probed} == {'uv', 'cargo'}
+    assert {tool for _env, tool in probed} == {'uv', 'rclone', 'cargo'}
     assert all(env == deploy_spec.tick_environment(box.home, [str(Path('/x'))]) for env, _tool in probed)
 
 
@@ -714,45 +738,56 @@ def test_a_tick_period_cron_cannot_keep_is_refused(tmp_path: Path, minutes: str)
         _cron_spec(f'\n[schedule]\ntick_minutes = {minutes}\n', tmp_path)
 
 
-def test_an_unserved_kit_is_kept_fresh_but_its_queue_is_not_served(box: Box, tmp_path: Path) -> None:
-    """The kit is checked out and installed everywhere; serving dev-lab's QUEUE is declared per account.
+def _produced_by(box: Box, name: str, producer: str) -> None:
+    """Rewrite checkout *name*'s declaration so its producer is *producer*."""
+    pyproject = box.home / deploy_spec.DEFAULT_ROOT / name / 'pyproject.toml'
+    text = pyproject.read_text(encoding='utf-8').replace('producer = "hpc"', f'producer = "{producer}"')
+    pyproject.write_text(text, encoding='utf-8')
 
-    ``serve = false`` on the kit: its line stays (its own tick is the one writer of the kit checkout) but the
-    tick only refreshes; on any other repo it means no line at all. PLANTED CONTROL: alpha still serves.
+
+def test_an_actions_repo_is_kept_fresh_but_its_queue_is_never_served(box: Box, tmp_path: Path) -> None:
+    """Serving is the repo's OWN declaration (user ruling 2026-11-16), never a flag in the account's file.
+
+    An ``actions`` checkout is ticked -- refreshed, the kit's own tick the one writer of the kit -- and never served.
+    PLANTED CONTROL: alpha, declaring ``hpc``, is served.
     """
     assert box.run(*DECLARE) == 0
-    text = box.machine.read_text(encoding='utf-8')
-    text = text.replace('dev-lab.git", ref = "trunk" }', 'dev-lab.git", ref = "trunk", serve = false }')
-    text = text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = false }')
-    box.machine.write_text(text, encoding='utf-8')
+    _produced_by(box, 'dev-lab', 'actions')
+    _produced_by(box, 'beta', 'actions')
     spec = deploy_spec.load(box.machine)
     assert spec is not None
-    assert {r.name: r.serve for r in spec.repos} == {'dev-lab': False, 'alpha': True, 'beta': False}
+    assert deploy_spec.served(spec, box.home) == {'alpha'}
     assert deploy_spec.load(_write(tmp_path / 'again.toml', deploy_spec.render(spec))) == spec
-    assert box.run() == 0
-    marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
-    assert {line.rsplit(deploy_spec.MARK, 1)[1] for line in marked} == {'dev-lab', 'alpha'}
     served: list[tuple[list[str], Path, str]] = []
     assert _tick(box, 'dev-lab', served) == 0
-    assert served == [], 'the unserved kit is refreshed, never served'
+    assert _tick(box, 'beta', served) == 0
+    assert served == [], 'an actions repo is refreshed, never served'
     assert _tick(box, 'alpha', served) == 0
     assert len(served) == 1
 
 
-def test_the_deploy_ticks_now_only_the_repos_its_cron_ticks(box: Box) -> None:
-    """The one tick the deploy runs at its end reads the same set as the crontab: an unserved repo is not ticked.
-
-    PLANTED CONTROL: alpha, still served, is ticked.
-    """
+def test_a_repo_row_declaring_the_retired_serve_flag_is_refused_by_name(box: Box) -> None:
     assert box.run(*DECLARE) == 0
     text = box.machine.read_text(encoding='utf-8')
-    box.machine.write_text(
-        text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = false }'), encoding='utf-8'
-    )
-    box.calls.unlink(missing_ok=True)
-    assert box.run() == 0
-    assert 'hpcaccount tick alpha' in box.logged()
-    assert 'hpcaccount tick beta' not in box.logged()
+    box.machine.write_text(text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = true }'))
+    with pytest.raises(ValueError, match=r'beta declare serve, which is retired.*producer'):
+        deploy_spec.load(box.machine)
+
+
+def test_a_checkout_declaring_a_malformed_producer_is_released_by_name(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every wall teaches: a malformed producer is named on the tick; an ABSENT one is actions, never served."""
+    assert box.run(*DECLARE) == 0
+    pyproject = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
+    served: list[tuple[list[str], Path, str]] = []
+    _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n')
+    assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: absent reads as actions -- refreshed, not served'
+    _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n[tool.dev_lab.protection]\nproducer = "box"\n')
+    capsys.readouterr()
+    assert _tick(box, 'beta', served) == 2
+    assert served == []
+    assert "declares producer = 'box'" in capsys.readouterr().err
 
 
 def _as_role(box: Box, role: str | None) -> None:
@@ -786,6 +821,37 @@ def test_a_research_account_carries_no_serve_line_and_its_deploy_removes_the_mar
     calls = box.logged()
     assert 'hpcaccount tick' not in calls, 'a research account is never ticked'
     assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'
+
+
+def test_a_research_deploy_asks_only_to_read(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
+    """A research account never serves, so a token without tick scopes is no refusal (2026-11-15).
+
+    PLANTED CONTROL: the same refusing API on a verification account still refuses, naming the scopes.
+    """
+    assert box.run(*DECLARE) == 0
+    box.refused_api['dev-lab'] = 'a tick needs a token with the scopes repository (read and write)'
+    assert box.run() == 2
+    assert 'repository (read and write)' in capsys.readouterr().err, 'the planted control: verification refuses'
+    _as_role(box, deploy_spec.RESEARCH)
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 0
+    out = capsys.readouterr().out
+    assert 'not served here: read access only' in out
+    assert 'git ls-remote' in box.logged(), 'read access is still checked'
+
+
+def test_a_research_deploy_without_read_access_is_still_refused(
+    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert box.run(*DECLARE) == 0
+    _as_role(box, deploy_spec.RESEARCH)
+    monkeypatch.setenv('FAKE_GIT_DENY', '/beta.git')
+    capsys.readouterr()
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 2
+    assert 'no read access to beta' in capsys.readouterr().err
+    assert 'clone' not in box.logged()
+    assert 'fetch' not in box.logged()
 
 
 def test_an_undeclared_role_is_refused_naming_the_key_and_nothing_changes(
@@ -908,3 +974,45 @@ def test_an_account_role_other_than_the_workstations_is_refused_naming_both(
     err = capsys.readouterr().err
     assert "'verification'" in err
     assert "'research'" in err
+
+
+def _alias_declare(role: str) -> tuple[str, ...]:
+    """A declaration whose ``--host`` is the grant's login ALIAS, one DNS name round-robining over several nodes."""
+    aliased = Grant(
+        user='alice', hosts=('login.example',), slurm_account='acct-free', partitions=('shortq', 'defq'),
+        role=role, cluster_name='int',
+    )  # fmt: skip
+    return (
+        '--host', 'login.example', *LAB, '--repo', f'alpha={URL}/alpha.git@trunk',
+        '--partition', 'shortq', '--partition', 'defq', '--role', role,
+        '--grant-table', json.dumps(grant_slice(aliased)),
+    )  # fmt: skip
+
+
+def test_a_research_deploy_through_the_login_alias_passes_on_any_node_and_records_the_alias(box: Box) -> None:
+    """A research account installs no cron line, so it needs no node pin: its host is the grant's alias."""
+    assert box.run(*_alias_declare(deploy_spec.RESEARCH), host='login04.int.cluster') == 0
+    assert deploy_spec.load(box.machine).host == 'login.example'
+    assert box.run(host='login07.int.cluster') == 0, 'the alias landed on another node: still the same account'
+
+
+def test_a_verification_deploy_through_the_login_alias_keeps_the_node_pin(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL: cron is per node, so a serving account still refuses, naming the node it is on."""
+    assert box.run(*_alias_declare('verification'), host='login04.int.cluster') == 2
+    err = capsys.readouterr().err
+    assert 'this is login04' in err
+    assert 'login.example' in err
+    assert not box.machine.exists()
+
+
+def test_a_research_deploy_naming_a_host_outside_its_grant_is_refused(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL: the waiver is for the grant's own login hosts, never an arbitrary name."""
+    argv = list(_alias_declare(deploy_spec.RESEARCH))
+    argv[1] = 'elsewhere.example'
+    assert box.run(*argv, host='login04.int.cluster') == 2
+    assert 'elsewhere.example' in capsys.readouterr().err
+    assert not box.machine.exists()

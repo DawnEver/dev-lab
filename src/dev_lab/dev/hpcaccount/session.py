@@ -14,11 +14,8 @@ TOTP code, held by one of two identities:
   ``.claude/tasks/<slug>/`` of the checkout whose ``TASK.md`` the user's own task-open wrote with the ``authority``
   minted then: a task closed and reopened under the same slug is a new id, so an old grant never carries over.
 
-A SESSION WORKS ON A TASK ONLY BY THE USER'S WORD. A prompt whose first line is ``task: <slug>`` binds the session
-receiving it to that open task: the ``UserPromptSubmit`` hook (:func:`bind`) writes the binding from the harness's
-own payload (its ``session_id``, the user's ``prompt``) into the consent state, which no agent tool may write
-(CONSENT-CODE-FROM-THE-USER, :mod:`dev_lab.dev.consentguard`). An agent can name a worktree or a branch after a task
-and can set an environment variable; it cannot author the user's prompt, so neither of those binds.
+A SESSION WORKS ON A TASK ONLY BY THE USER'S WORD: the one session -> task record is
+:mod:`dev_lab.dev.taskbinding`'s (a ``task: <slug>`` prompt), read here as the task whose grant the session inherits.
 
 :func:`held` verifies OFFLINE on every load -- signature, registry row, expiry, subject, and for a task the
 session's binding -- so an expired credential, another session's or task's, or a session never bound grants nothing.
@@ -34,27 +31,24 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
-import shutil
 import subprocess
 import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Final, TextIO
+from typing import Any, Final
 
-from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev.consentguard import state_dir
-from dev_lab.dev.native_session import session_of, valid
+from dev_lab.dev.native_session import session_of
+from dev_lab.dev.taskbinding import bound_task, task_id
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.client import public_key
 from dev_lab.ops.consent.credential import ConsentRefused, verify
 
 __all__ = [
-    'ACTION', 'BIND_PROMPT', 'INTEGRATOR', 'TASK_ACTION', 'bind', 'bound_task', 'held', 'holder', 'main', 'request',
-    'roles', 'task_id',
+    'ACTION', 'INTEGRATOR', 'TASK_ACTION', 'held', 'holder', 'main', 'request', 'roles',
 ]  # fmt: skip
 
 #: The role this module proves.
@@ -63,86 +57,20 @@ INTEGRATOR: Final = 'integrator'
 ACTION: Final = 'session.integrator'
 #: The consent action granting it to one task, inherited by the sessions the user bound to it.
 TASK_ACTION: Final = 'task.integrator'
-#: Where the session -> task bindings live, below the consent state directory no agent tool writes.
-BINDINGS: Final = 'tasks'
-_SLUG: Final = r'[a-z0-9]+(?:-[a-z0-9]+)*'
-#: The user's binding prompt: its FIRST line is exactly ``task: <slug>``.
-BIND_PROMPT: Final = re.compile(rf'\A[ \t]*task:[ \t]*({_SLUG})[ \t]*(?:\r?\n|\Z)')
-
-
-def task_id(root: Path, slug: str) -> str:
-    """The id ``<slug>@<authority>`` of the OPEN task *slug* under *root*'s ``.claude/tasks``; ValueError otherwise."""
-    if not re.fullmatch(_SLUG, slug):
-        msg = f'{slug!r} is not a task slug'
-        raise ValueError(msg)
-    path = root / '.claude' / 'tasks' / slug / 'TASK.md'
-    try:
-        head = path.read_text(encoding='utf-8').split('---')[1]
-    except (OSError, IndexError):
-        msg = f'no task {slug} at {path.as_posix()}'
-        raise ValueError(msg) from None
-    fields = dict(line.split(':', 1) for line in head.splitlines() if ':' in line)
-    authority, status = fields.get('authority', '').strip(), fields.get('status', '').strip()
-    if status != 'open' or not authority:
-        msg = f'task {slug} is not open with a user authority (status {status or "none"})'
-        raise ValueError(msg)
-    return f'{slug}@{authority}'
-
-
-def _checkout_root(cwd: Path) -> Path:
-    """The main checkout of the repository at *cwd* -- where its tasks live, from any of its worktrees."""
-    common = launch.run(
-        [shutil.which('git') or 'git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-        cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=True,
-    ).stdout.strip()  # fmt: skip
-    return Path(common).parent
-
-
-def _binding(session: str, home: Path | None) -> Path:
-    return state_dir(home) / BINDINGS / f'{session}.json'
-
-
-def bind(payload: Mapping[str, Any], *, home: Path | None = None, root: Path | None = None) -> str | None:
-    """Bind the payload's session to the task its USER prompt names; the task id bound, or ``None``.
-
-    Only a ``UserPromptSubmit`` payload reaches here: the prompt is the user's, the session id the harness's.
-    """
-    session, prompt = str(payload.get('session_id') or ''), str(payload.get('prompt') or '')
-    found = BIND_PROMPT.match(prompt)
-    if not found or not valid(session):
-        return None
-    try:
-        where = _checkout_root(Path(str(payload.get('cwd') or '.'))) if root is None else root
-        task = task_id(where, found.group(1))
-    except (ValueError, OSError, subprocess.CalledProcessError):
-        return None
-    target = _binding(session, home)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps({'session': session, 'task': task}), encoding='utf-8')
-    return task
-
-
-def bound_task(session: str, *, home: Path | None = None) -> str | None:
-    """The task the user bound *session* to, or ``None``."""
-    if not valid(session):
-        return None
-    try:
-        record = json.loads(_binding(session, home).read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    return record.get('task') if record.get('session') == session else None
 
 
 def holder(
     *,
     session: str | None = None,
     home: Path | None = None,
+    start: Path | None = None,
     now: float | None = None,
     table: Mapping[str, Any] | None = None,
 ) -> str | None:
     """Which identity gives *session* (default: this one) the role -- ``session <id>`` or ``task <id>``; fail closed.
 
     No session id, no issuer key, or no credential verifying for this session or the task the user bound it to: None.
+    The binding is read from the task ledger of the repository at *start* (default: the cwd).
     """
     session = session_of() if session is None else session
     if not session:
@@ -153,7 +81,10 @@ def holder(
         return None
     when = time.time() if now is None else now
     wanted = {(ACTION, session): f'session {session}'}
-    task = bound_task(session, home=home)
+    try:
+        task = bound_task(session, start=start)
+    except ValueError:  # an unmigrated binding grants nothing; the push check names its migration
+        task = None
     if task:
         wanted[(TASK_ACTION, task)] = f'task {task}'
     for path in sorted(state_dir(home).glob('*.json')):
@@ -170,11 +101,12 @@ def held(
     *,
     session: str | None = None,
     home: Path | None = None,
+    start: Path | None = None,
     now: float | None = None,
     table: Mapping[str, Any] | None = None,
 ) -> frozenset[str]:
     """The roles *session* holds, by its own credential or its bound task's (:func:`holder`)."""
-    found = holder(session=session, home=home, now=now, table=table)
+    found = holder(session=session, home=home, start=start, now=now, table=table)
     return frozenset({INTEGRATOR}) if found else frozenset()
 
 
@@ -193,19 +125,8 @@ def request(session: str, hours: float | None = None, *, task: str | None = None
     return {'action': action, 'subject': subject, 'ttl': ttl}
 
 
-def _hook(stdin: TextIO) -> int:
-    """The ``UserPromptSubmit`` hook: bind on a ``task: <slug>`` prompt; never fails the prompt."""
-    try:
-        task = bind(json.load(stdin))
-    except (ValueError, OSError, AttributeError):
-        return 0
-    if task:
-        emit(f'this session works on task {task}: it holds what the task holds (hpcaccount.session status)')
-    return 0
-
-
-def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """``request [--task SLUG] [--hours H]`` prints a request; ``status`` the holder; ``bind`` is the prompt hook."""
+def main(argv: list[str] | None = None) -> int:
+    """``request [--task SLUG] [--hours H]`` prints a request; ``status`` the holder."""
     parser = argparse.ArgumentParser(
         prog='python -m dev_lab.dev.hpcaccount.session', description=__doc__.splitlines()[0]
     )
@@ -214,10 +135,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     asking.add_argument('--hours', type=float, default=None)
     asking.add_argument('--task', default=None, help='grant the open task SLUG of this checkout, not this session')
     verbs.add_parser('status')
-    verbs.add_parser('bind')
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
-    if args.verb == 'bind':
-        return _hook(stdin or sys.stdin)
     session = session_of()
     if args.verb == 'status':
         task = bound_task(session) if session else None
@@ -226,7 +144,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         emit(f'session {session or "(none)"} (task {task or "none bound"}) holds {role}')
         return 0
     try:
-        task = task_id(_checkout_root(Path.cwd()), args.task) if args.task else None
+        task = task_id(Path.cwd(), args.task) if args.task else None
         emit(json.dumps(request(session, args.hours, task=task)))
     except (ValueError, subprocess.CalledProcessError) as refused:
         emit(f'hpcsession refused: {refused}', err=True)

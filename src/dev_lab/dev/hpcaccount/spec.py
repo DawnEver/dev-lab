@@ -28,6 +28,8 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
+from dev_lab.dev.producers import HPC, UndeclaredProducer, producer_from
+from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
     'DEFAULT_PYTHON',
@@ -44,15 +46,20 @@ __all__ = [
     'has_grant',
     'host_serve_argv',
     'load',
+    'login_hosts',
     'merge_crontab',
+    'parse',
     'parse_repo',
     'render',
     'render_grant',
     'role_refusal',
+    'served',
+    'serves_here',
     'tick_command',
     'tick_dirs',
     'tick_environment',
     'ticked',
+    'unserved',
     'uv_cache',
 ]
 
@@ -76,24 +83,21 @@ VERIFICATION: Final = 'verification'
 RESEARCH: Final = 'research'
 _ROLE_NAME: Final = re.compile(r'[a-z][a-z0-9-]*')
 
-#: The interpreter a cron line runs: the line is a Linux login node's, so the POSIX venv layout is the only one.
-_VENV_PYTHON: Final = str(PurePosixPath('.venv', 'bin', 'python'))
-
 
 @dataclass(frozen=True)
 class Repo:
-    """One declared repository: checkout name, HTTPS remote, followed branch, and whether its queue is served.
+    """One declared repository: checkout name, HTTPS remote, followed branch.
 
-    ``serve = false`` checks it out and installs it without serving its queue: on the kit (dev-lab) its own
-    tick still refreshes the kit (the one writer of that checkout) and serves nothing; any other such repo
-    gets no crontab line. ``verify`` names the status contexts of this repo the account is the DEFAULT producer
-    of (HPC account affinity, :mod:`dev_lab.dev.forgeaffinity`): ``verify = ["tests/*"]`` on a verify account's row.
+    Whether its queue is served here is NOT declared here: it is the repo's own ``[tool.dev_lab.protection]
+    producer`` (:func:`serves_here`, user ruling 2026-11-16) -- an ``actions`` repo is checked out, installed and
+    never served; the kit's own tick still refreshes the kit (the one writer of that checkout). ``verify`` names
+    the status contexts of this repo the account is the DEFAULT producer of (HPC account affinity,
+    :mod:`dev_lab.dev.forgeaffinity`): ``verify = ["tests/*"]`` on a verify account's row.
     """
 
     name: str
     url: str
     ref: str
-    serve: bool = True
     verify: tuple[str, ...] = ()
 
 
@@ -117,7 +121,11 @@ class Deployment:
 
 def load(path: Path) -> Deployment | None:
     """The ``[deploy]`` table of the machine file at *path*; ``None`` when undeclared, a missing key refused."""
-    table = tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    return parse(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}, path)
+
+
+def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
+    """The ``[deploy]`` of an already-read machine-file *table* (named *path* in a refusal); see :func:`load`."""
     raw = table.get('deploy')
     if not raw:
         return None
@@ -132,8 +140,7 @@ def load(path: Path) -> Deployment | None:
             root=raw.get('root', DEFAULT_ROOT),
             python=raw.get('python', DEFAULT_PYTHON),
             repos=tuple(
-                Repo(r['name'], r['url'], r['ref'], r.get('serve', True), tuple(r.get('verify', ())))
-                for r in raw['repos']
+                Repo(r['name'], r['url'], r['ref'], tuple(r.get('verify', ()))) for r in _repo_rows(path, raw['repos'])
             ),
             slurm_account=raw.get('slurm_account', ''),
             partitions=tuple(raw.get('partitions', ())),
@@ -172,8 +179,20 @@ def _tick_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
     return minutes
 
 
+def _repo_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> Sequence[Mapping[str, Any]]:
+    """*rows*, refused naming *path* when one still declares the retired ``serve`` flag."""
+    if named := [str(row.get('name', '?')) for row in rows if 'serve' in row]:
+        msg = (
+            f'{path}: [deploy] repos {", ".join(named)} declare serve, which is retired: a repo is served where its '
+            f'own [tool.dev_lab.protection] producer = "{HPC}" (dev_lab.dev.producers, user ruling 2026-11-16) -- '
+            'delete the key'
+        )
+        raise ValueError(msg)
+    return rows
+
+
 def _unserved(repo: Repo) -> str:
-    return ('' if repo.serve else ', serve = false') + (f', verify = {_list(repo.verify)}' if repo.verify else '')
+    return f', verify = {_list(repo.verify)}' if repo.verify else ''
 
 
 def _toml(value: str) -> str:
@@ -205,6 +224,12 @@ def render_grant(table: Mapping[str, Any]) -> str:
 
 def _hpc_of(path: Path) -> dict[str, Any]:
     return (tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
+
+
+def login_hosts(path: Path, table: Mapping[str, Any] | None) -> frozenset[str]:
+    """Every login host a cluster declares -- in the passed ``[hpc]`` slice *table*, else the machine file at *path*."""
+    hpc = table if table is not None else _hpc_of(path)
+    return frozenset(host for cluster in hpc.get('clusters', {}).values() for host in cluster.get('hosts', ()))
 
 
 def has_grant(path: Path, user: str) -> bool:
@@ -279,14 +304,56 @@ def cron_lines(
 
 
 def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
-    """The repos this account TICKS: every served one, and the kit (whose own tick refreshes its checkout).
+    """The repos this account TICKS: every declared one, each refreshed and served where it declares the HPC.
+
+    A tick serves a repo only where its own declaration names the HPC its producer (:func:`serves_here`).
 
     Only an account whose role SERVES ticks -- *serves* as the workstation's role table says, else the shipped
     default for its role (:data:`dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`); undeclared ticks nothing.
     """
     if not (DEFAULT_ROLES.get(spec.role, {}).get('serves', False) if serves is None else serves):
         return ()
-    return tuple(repo for repo in spec.repos if repo.serve or repo.name == KIT)
+    return spec.repos
+
+
+def served(spec: Deployment, home: Path) -> frozenset[str]:
+    """The repos this account serves (:func:`serves_here`); a malformed producer is not (its tick names why)."""
+    found = set()
+    for repo in spec.repos:
+        try:
+            if serves_here(spec, home, repo):
+                found.add(repo.name)
+        except UndeclaredProducer:
+            continue
+    return frozenset(found)
+
+
+def unserved(spec: Deployment, home: Path) -> frozenset[str]:
+    """The repos whose checkout declares a producer other than the HPC: never served here, never given the token."""
+    found = set()
+    for repo in spec.repos:
+        pyproject = checkout_of(spec, home, repo) / 'pyproject.toml'
+        try:
+            if pyproject.is_file() and not serves_here(spec, home, repo):
+                found.add(repo.name)
+        except UndeclaredProducer:
+            continue
+    return frozenset(found)
+
+
+def serves_here(spec: Deployment, home: Path, repo: Repo) -> bool:
+    """Whether this account serves *repo*'s queue: its checkout declares ``producer = "hpc"``; not yet cloned, no.
+
+    The repo's own declaration decides (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16), never this file.
+
+    Raises:
+        UndeclaredProducer: the checkout declares a malformed producer; the message names the key.
+
+    """
+    pyproject = checkout_of(spec, home, repo) / 'pyproject.toml'
+    if not pyproject.is_file():
+        return False
+    return producer_from(pyproject.read_text(encoding='utf-8'), str(pyproject)) == HPC
 
 
 def merge_crontab(current: str, lines: Sequence[str]) -> str:
@@ -310,9 +377,10 @@ def tick_command(
     cache = home / '.cache'
     lab = next(one for one in spec.repos if one.name == KIT)
     command = (
-        f'{tick_environment(home, slurm, setup)}; cd {shlex.quote(str(checkout_of(spec, home, lab)))} && '
+        f'{tick_environment(home, slurm, setup)}; '
+        f'cd {shlex.quote(str(checkout_of(spec, home, lab)))} && '
         f'flock -n {shlex.quote(str(cache / f"lab-forge-{repo.name}.lock"))} '
-        f'{_VENV_PYTHON} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
+        f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
     )
     command = f'bash -lc {shlex.quote(command)}' if setup else command
     return command + (f' >> {shlex.quote(str(cache / f"lab-forge-{repo.name}.log"))} 2>&1' if log else '')

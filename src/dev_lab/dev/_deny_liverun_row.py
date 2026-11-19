@@ -15,7 +15,11 @@ from dev_lab.dev.venvpath import PYTHON_SLOT, venv_interpreter
 _NT, _POSIX = venv_interpreter(os_name='nt'), venv_interpreter(os_name='posix')
 
 #: git verbs that rewrite the working tree or the index a run's checkout executes from.
-_GIT_MUTATORS = 'merge|pull|checkout|switch|reset|apply|am|cherry-pick|rebase|restore|rm|mv|clean|stash'
+_GIT_MUTATORS = (
+    'merge|pull|checkout|switch|reset|apply|am|cherry-pick|rebase|mv|clean'
+    # The read-only spellings are not mutations: `stash list|show`, `restore --staged`, `rm --cached`.
+    r'|stash(?!\s+(?:list|show)\b)|restore(?![^\n]*\s--staged\b)|rm(?![^\n]*\s--cached\b)'
+)
 #: git's global options before the verb: ``-C X``, ``-c k=v``, ``--no-pager``, ``--git-dir=X``.
 _GIT_GLOBAL = r'(?:\s+(?:-[Cc]\s+\S+|--[\w-]+(?:=\S+)?))*'
 #: uv verbs that change the venv or the lock: ``uv run`` syncs first unless told ``--no-sync``, and
@@ -67,5 +71,10 @@ LIVE_RUN: dict[str, object] = {
         'uv lock --check',
         'pip list',
         'git -c core.pager=cat log -3',
+        # Read-only spellings of mutating verbs (2026-11-16): the index or the stash list, never the tree.
+        'git stash list',
+        'git stash show -p stash@{0}',
+        'git restore --staged src/a.py',
+        'git rm --cached src/a.py',
     ),
 }

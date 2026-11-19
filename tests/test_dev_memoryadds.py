@@ -1,6 +1,7 @@
-"""MEMORY-SHAPE, the merge half: memory is ADDED to, never edited or deleted, and a merged entry cites.
+"""MEMORY-SHAPE, the change half: memory is ADDED to, never edited or deleted, and a merged entry cites.
 
-Driven over real temporary git repos (the planted controls) and over the pure classifier.
+Driven over real temporary git repos (the planted controls) and over the pure classifier. The one row is pre-push:
+what a push would publish is judged net, since its merge-base with ``origin/<integration>``.
 """
 
 from __future__ import annotations
@@ -68,6 +69,23 @@ def _lane(repo: Path) -> str:
     return _git(repo, 'rev-parse', 'integrate/main')
 
 
+def _publish(repo: Path) -> None:
+    """HEAD is on ``origin/<integration>``: what it holds is published from here on."""
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+
+
+def _push(repo: Path, head: str) -> tuple[str, ...]:
+    return memoryadds.pushed(repo, f'refs/heads/lane {head} refs/heads/lane {"0" * 40}\n')
+
+
+def _judged(repo: Path) -> tuple[str, ...]:
+    """The pre-push row's verdict on HEAD, after committing what is staged (a merge in flight included)."""
+    in_merge = (repo / '.git' / 'MERGE_HEAD').is_file()
+    if in_merge or _git(repo, 'diff', '--cached', '--name-only'):
+        _git(repo, 'commit', '-q', '--no-edit', '-m', 'staged')
+    return _push(repo, _git(repo, 'rev-parse', 'HEAD'))
+
+
 def test_a_lane_that_only_adds_memory_passes(repo: Path) -> None:
     base = _lane(repo)
     _write(repo, '.claude/memory/2026/10/31/new.md', '---\nname: new\ndescription: d\n---\n\nNew.\n')
@@ -76,7 +94,7 @@ def test_a_lane_that_only_adds_memory_passes(repo: Path) -> None:
 
 
 @pytest.mark.parametrize('operation', ['append', 'append_closed', 'close', 'reopen'])
-def test_rem_manual_task_operations_pass_both_index_and_push(repo: Path, operation: str) -> None:
+def test_rem_manual_task_operations_pass(repo: Path, operation: str) -> None:
     before = MANUAL_HEAD + MANUAL_FIRST
     if operation == 'reopen':
         before = before.replace('- [ ]', '- [x]')
@@ -93,8 +111,6 @@ def test_rem_manual_task_operations_pass_both_index_and_push(repo: Path, operati
     if operation == 'append_closed':
         after = before + '\n' + MANUAL_NEXT.replace('- [ ]', '- [x]')
     _write(repo, MANUAL, after)
-    _git(repo, 'add', '--', MANUAL)
-    assert memoryadds.pending(repo) == ()
     _commit(repo, 'task state', MANUAL)
     assert memoryadds.problems_between(repo, base, 'HEAD') == ()
 
@@ -119,8 +135,6 @@ def test_manual_filename_never_allows_task_content_rewrites_or_memory_injection(
     _commit(repo, 'original manual tasks', MANUAL)
     base = _lane(repo)
     _write(repo, MANUAL, after)
-    _git(repo, 'add', '--', MANUAL)
-    assert memoryadds.pending(repo)
     _commit(repo, 'planted bypass', MANUAL)
     assert memoryadds.problems_between(repo, base, 'HEAD')
 
@@ -129,17 +143,19 @@ def test_manual_filename_never_allows_task_content_rewrites_or_memory_injection(
 def test_ordinary_memory_cannot_turn_into_a_mutable_manual_list(repo: Path, path: str) -> None:
     _write(repo, path, '---\nname: manual-2026-11-05\n---\n\nImmutable prose.\n')
     _commit(repo, 'ordinary entry', path)
+    _publish(repo)
     _write(repo, path, MANUAL_HEAD + MANUAL_FIRST)
     _git(repo, 'add', '--', path)
-    assert memoryadds.pending(repo)
+    assert _judged(repo)
 
 
 def test_manual_refusal_names_the_versioned_task_format_and_remedy(repo: Path) -> None:
     _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST)
     _commit(repo, 'original task', MANUAL)
+    _publish(repo)
     _write(repo, MANUAL, MANUAL_HEAD + MANUAL_FIRST.replace('evidence bar', 'rewritten history'))
     _git(repo, 'add', '--', MANUAL)
-    refusal = '\n'.join(memoryadds.pending(repo))
+    refusal = '\n'.join(_judged(repo))
     assert 'rem 2.2.0' in refusal
     assert 'append tasks or toggle checkboxes' in refusal
     assert 'immutable' in refusal
@@ -241,7 +257,7 @@ def test_planted_a_merge_that_edits_an_existing_entry_is_refused(repo: Path) -> 
     _git(repo, 'merge', '-q', '--no-ff', '--no-commit', 'lane')
     _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nEdited in the merge.\n')
     _git(repo, 'add', '--', ENTRY)
-    found = memoryadds.pending(repo)
+    found = _judged(repo)
     assert len(found) == 1, found
     assert ENTRY in found[0]
 
@@ -252,11 +268,11 @@ def test_a_clean_merge_of_an_adding_lane_passes(repo: Path) -> None:
     _commit(repo, 'lane adds', '.claude/memory/2026/10/31/lane.md')
     _git(repo, 'switch', '-q', 'integrate/main')
     _git(repo, 'merge', '-q', '--no-ff', '--no-commit', 'lane')
-    assert memoryadds.pending(repo) == ()
+    assert _judged(repo) == ()
 
 
-def test_nothing_staged_judges_nothing(repo: Path) -> None:
-    assert memoryadds.pending(repo) == ()
+def test_a_push_publishing_nothing_new_judges_nothing(repo: Path) -> None:
+    assert _judged(repo) == ()
 
 
 CITED = (
@@ -292,32 +308,34 @@ def test_a_lane_adding_an_uncited_merged_entry_is_refused(repo: Path) -> None:
     assert 'Uncited' in found[0]
 
 
-def test_the_commit_msg_hook_refuses_the_planted_merge(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The planted merge again, through the hook git runs: ``mergeaudit.main`` refuses it."""
+def test_the_pre_push_hook_refuses_the_planted_merge(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The planted merge again, through the hook git runs: ``memoryadds.main`` refuses its push."""
     _lane(repo)
     _write(repo, '.claude/memory/2026/10/31/lane.md', '---\nname: lane\ndescription: d\n---\n\nLane.\n')
     _commit(repo, 'lane adds', '.claude/memory/2026/10/31/lane.md')
     _git(repo, 'switch', '-q', 'integrate/main')
     _git(repo, 'merge', '-q', '--no-ff', '--no-commit', 'lane')
     _write(repo, ENTRY, 'rewritten\n')
-    _git(repo, 'add', '--', ENTRY)
+    _commit(repo, 'merge', ENTRY)
     monkeypatch.chdir(repo)
-    assert memoryadds.main(['commit', 'MSG']) == 1
+    head = _git(repo, 'rev-parse', 'HEAD')
+    monkeypatch.setattr(
+        'sys.stdin', io.StringIO(f'refs/heads/integrate/main {head} refs/heads/integrate/main {"1" * 40}\n')
+    )
+    assert memoryadds.main([]) == 1
 
 
-def test_planted_a_plain_commit_editing_an_entry_is_refused(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """PLANTED CONTROL: no merge at all -- the commit-msg row still reds an edited entry."""
+def test_planted_a_plain_commit_editing_an_entry_is_refused(repo: Path) -> None:
+    """PLANTED CONTROL: no merge at all -- the pushed range still reds an edited entry."""
     _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nQuietly rewritten.\n')
     _git(repo, 'add', '--', ENTRY)
-    found = memoryadds.pending(repo)
+    found = _judged(repo)
     assert len(found) == 1, found
     assert ENTRY in found[0]
-    monkeypatch.chdir(repo)
-    assert memoryadds.main(['commit', 'MSG']) == 1
 
 
 def test_planted_a_pushed_range_holding_an_edit_is_refused(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """PLANTED CONTROL: the edit was committed past the hook; the pre-push row reds the pushed range."""
+    """PLANTED CONTROL: a clean commit on top of the edit does not hide it; the pushed range is judged whole."""
     _lane(repo)
     _write(repo, ENTRY, 'rewritten\n')
     _commit(repo, 'edit past the hook', ENTRY)
@@ -329,7 +347,7 @@ def test_planted_a_pushed_range_holding_an_edit_is_refused(repo: Path, monkeypat
     assert ENTRY in found[0]
     monkeypatch.chdir(repo)
     monkeypatch.setattr('sys.stdin', io.StringIO(lines))
-    assert memoryadds.main(['push']) == 1
+    assert memoryadds.main([]) == 1
 
 
 def test_a_crlf_entry_stripped_to_lf_is_still_only_the_strip(repo: Path) -> None:
@@ -368,19 +386,20 @@ def _downstream_merge_of_an_upstream_edit(repo: Path) -> None:
     _git(repo, 'switch', '-q', 'integrate/main')
     _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nBody, redacted upstream.\n')
     _commit(repo, 'upstream edits its entry', ENTRY)
+    _publish(repo)
     _git(repo, 'switch', '-q', 'lane')
     _git(repo, 'merge', '-q', '--no-ff', '--no-commit', 'integrate/main')
 
 
 def test_a_sync_taking_upstreams_own_memory_edit_verbatim_passes(repo: Path) -> None:
-    """A downstream merge staging an entry EXACTLY as MERGE_HEAD holds it is not an edit by this merge.
+    """A downstream merge taking an entry EXACTLY as the integration line holds it is not an edit by this push.
 
-    It is the integration line's own change, judged where it was made. MEASURED 2026-11-01: a consumer lane
-    syncing 2454 commits was refused on 255 such entries, and the hook's remedy (restore them) would have reverted
-    upstream inside the merge.
+    It is the integration line's own change, judged where it was made: the sync moves the merge-base past it.
+    MEASURED 2026-11-01: a consumer lane syncing 2454 commits was refused on 255 such entries by a commit-time
+    reading, and its remedy (restore them) would have reverted upstream inside the merge.
     """
     _downstream_merge_of_an_upstream_edit(repo)
-    assert memoryadds.pending(repo) == ()
+    assert _judged(repo) == ()
 
 
 def test_planted_a_sync_whose_resolution_rewrites_an_upstream_edit_is_refused(repo: Path) -> None:
@@ -388,23 +407,23 @@ def test_planted_a_sync_whose_resolution_rewrites_an_upstream_edit_is_refused(re
     _downstream_merge_of_an_upstream_edit(repo)
     _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nNeither side wrote this.\n')
     _git(repo, 'add', '--', ENTRY)
-    found = memoryadds.pending(repo)
+    found = _judged(repo)
     assert len(found) == 1, found
     assert ENTRY in found[0]
 
 
 def test_restoring_an_entry_the_lane_edited_to_the_integration_lines_text_passes(repo: Path) -> None:
-    """The remedy the refusal prints -- restore the entry -- must itself be committable.
+    """The remedy the refusal prints -- commit the entry back to the integration line's text -- must pass.
 
     MEASURED 2026-11-01: a lane holding three old in-place edits restored them to origin/integrate/main's text and
-    the commit was refused, because the restore is a change against HEAD. An entry staged exactly as the integration
-    line holds it is not an edit by this commit.
+    a commit-time reading refused the restore, a change against HEAD. Judged net over the pushed range, the entry is
+    unchanged.
     """
     _lane(repo)
     _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\naccessed: 2026-10-02\n---\n\nEdited in place.\n')
     _commit(repo, 'lane edits in place (before the rule)', ENTRY)
     _git(repo, 'checkout', 'origin/integrate/main', '--', ENTRY)
-    assert memoryadds.pending(repo) == ()
+    assert _judged(repo) == ()
 
 
 def test_planted_a_lane_rewriting_an_entry_to_neither_text_is_still_refused(repo: Path) -> None:
@@ -414,7 +433,7 @@ def test_planted_a_lane_rewriting_an_entry_to_neither_text_is_still_refused(repo
     _commit(repo, 'lane edits in place (before the rule)', ENTRY)
     _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\naccessed: 2026-10-02\n---\n\nEdited again.\n')
     _git(repo, 'add', '--', ENTRY)
-    found = memoryadds.pending(repo)
+    found = _judged(repo)
     assert len(found) == 1, found
     assert ENTRY in found[0]
 
@@ -443,13 +462,13 @@ def test_merged_sources_added_in_the_same_pushed_range_are_accepted(repo: Path) 
 
 
 def test_merged_sources_added_in_the_same_commit_are_accepted(repo: Path) -> None:
-    """The commit-msg row: entry and sources staged together are one addition."""
+    """Entry and sources in ONE commit are one addition."""
     rels = ['.claude/memory/2026/11/04/x.md', '.claude/memory/2026/11/04/y.md']
     for rel in rels:
         _write(repo, rel, '---\nname: s\ndescription: d\n---\n\nS.\n')
     _write(repo, '.claude/memory/2026/11/04/m.md', SAME_PUSH)
     _git(repo, 'add', '--', *rels, '.claude/memory/2026/11/04/m.md')
-    assert memoryadds.pending(repo) == ()
+    assert _judged(repo) == ()
 
 
 def test_planted_a_merged_source_absent_from_base_and_range_is_still_refused(repo: Path) -> None:
@@ -465,17 +484,16 @@ def test_planted_a_merged_source_absent_from_base_and_range_is_still_refused(rep
 
 
 def test_an_unpublished_entry_may_still_be_edited_or_deleted(repo: Path) -> None:
-    """Immutability starts at publication: an entry absent from origin/<integration> is a draft."""
+    """Immutability starts at publication: an entry the pushed range adds, then edits or drops, is a draft."""
     _lane(repo)
     rel = '.claude/memory/2026/11/04/draft.md'
     _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nUncited claim.\n')
     _commit(repo, 'draft', rel)
     _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nCited claim (2026/10/01/a.md).\n')
     _git(repo, 'add', '--', rel)
-    assert memoryadds.pending(repo) == ()
-    _commit(repo, 'cite', rel)
+    assert _judged(repo) == ()
     _git(repo, 'rm', '-q', '--', rel)
-    assert memoryadds.pending(repo) == ()
+    assert _judged(repo) == ()
 
 
 def test_planted_an_edit_to_a_published_entry_is_still_refused(repo: Path) -> None:
@@ -483,20 +501,9 @@ def test_planted_an_edit_to_a_published_entry_is_still_refused(repo: Path) -> No
     _lane(repo)
     _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nRewritten.\n')
     _git(repo, 'add', '--', ENTRY)
-    found = memoryadds.pending(repo)
+    found = _judged(repo)
     assert len(found) == 1, found
     assert ENTRY in found[0]
-
-
-def test_planted_a_draft_entry_turning_into_a_task_list_is_still_refused(repo: Path) -> None:
-    """PLANTED CONTROL: the draft exemption is the immutability rule only, never the task-format rule."""
-    _lane(repo)
-    rel = '.claude/memory/2026/11/04/draft.md'
-    _write(repo, rel, '---\nname: draft\ndescription: d\n---\n\nImmutable prose.\n')
-    _commit(repo, 'draft', rel)
-    _write(repo, rel, MANUAL_HEAD + MANUAL_FIRST)
-    _git(repo, 'add', '--', rel)
-    assert memoryadds.pending(repo)
 
 
 def _fresh_origin(repo: Path, *, uncited: bool) -> str:
@@ -571,7 +578,30 @@ def test_planted_an_amendment_needs_its_note_its_approval_and_one_for_one_lines(
     assert len(found) == 1, found
 
 
-# --- a first adoption: HEAD carries no manifest yet ------------------------------------------------------------
+_HEAD = '---\nname: an-entry\ndescription: d\n---\n\n'
+_NOTED = _HEAD + '> Amended 2026-11-13: a typo -- approved: "\u540c\u610f\u8865\u5168"\n\nBody.\n'
+_TRANSLATED = '> Amended 2026-11-13: a typo -- approved: "agreed, complete it" (user, translated)'
+_D26 = '> Amended 2026-11-17: translated to English (D26) -- approved: "translate memory to English"'
+
+
+@pytest.mark.parametrize(
+    ('after', 'accepted'),
+    [
+        (f'{_TRANSLATED}\n{_D26}\n\nBody.\n', True),  # the quote translated in place, beside the D26 note
+        (f'{_TRANSLATED}\n\nBody.\n', False),  # the same note edit without a new approved note
+        (f'{_D26}\n\nBody.\n', False),  # the existing note deleted
+        (f'{_TRANSLATED.replace("11-13", "11-14")}\n{_D26}\n\nBody.\n', False),  # its date changed
+        (f'> Revised 2026-11-13: a typo\n{_D26}\n\nBody.\n', False),  # its Amended prefix dropped
+    ],
+)
+def test_planted_a_quote_inside_an_existing_note_is_translated_only_beside_a_new_note(
+    *, after: str, accepted: bool
+) -> None:
+    """D26 (2026-11-17): an existing note keeps its date and prefix; only a NEW approved note admits its rewrite."""
+    assert memoryentry.only_amended(_NOTED, _HEAD + after) is accepted
+
+
+# --- a first adoption: origin holds no integration ref yet ---------------------------------------------------
 
 
 def _bare(tmp_path: Path) -> Path:
@@ -583,38 +613,22 @@ def _bare(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_a_first_adoption_commit_is_judged_by_its_own_staged_manifest(tmp_path: Path) -> None:
-    """HEAD has no pyproject.toml: the commit's OWN staged manifest names the integration branch."""
+def test_a_first_adoption_is_judged_by_its_own_manifest(tmp_path: Path) -> None:
+    """The adopting commit's own manifest names the integration branch; nothing is published yet, so all adds."""
     repo = _bare(tmp_path)
     _write(repo, 'pyproject.toml', "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n")
     _write(repo, '.claude/memory/2026/11/13/adopted.md', '---\nname: adopted\ndescription: d\n---\n\nA.\n')
     _git(repo, 'add', '--', 'pyproject.toml', '.claude/memory/2026/11/13/adopted.md')
-    assert memoryadds.pending(repo) == ()
+    assert _judged(repo) == ()
 
 
-def test_a_commit_with_no_manifest_anywhere_is_judged_without_one(tmp_path: Path) -> None:
-    """Neither HEAD nor the index has a manifest: nothing names an integration branch, and memory is still judged."""
-    repo = _bare(tmp_path)
-    _write(repo, ENTRY, '---\nname: an-entry\ndescription: d\n---\n\nBody.\n')
-    _commit(repo, 'an entry', ENTRY)
-    _write(repo, '.claude/memory/2026/11/13/new.md', '---\nname: new\ndescription: d\n---\n\nN.\n')
-    _git(repo, 'add', '--', '.claude/memory/2026/11/13/new.md')
-    assert memoryadds.pending(repo) == ()
-    _git(repo, 'rm', '-q', '--', ENTRY)
-    assert any('never deleted' in line for line in memoryadds.pending(repo)), 'PLANTED CONTROL: a deletion still reds'
-
-
-@pytest.mark.parametrize('where', ['staged', 'head'])
-def test_a_manifest_naming_no_integration_branch_is_still_refused(tmp_path: Path, where: str) -> None:
-    """PLANTED control: a manifest that exists -- at HEAD, or staged by the first adoption -- must name the branch."""
+def test_a_manifest_naming_no_integration_branch_is_still_refused(tmp_path: Path) -> None:
+    """PLANTED control: the pushed tip's manifest must name the branch whose origin ref bounds the range."""
     repo = _bare(tmp_path)
     _write(repo, 'pyproject.toml', "[project]\nname = 'x'\n")
-    if where == 'head':
-        _commit(repo, 'a manifest without the table', 'pyproject.toml')
-    else:
-        _git(repo, 'add', '--', 'pyproject.toml')
+    head = _commit(repo, 'a manifest without the table', 'pyproject.toml')
     with pytest.raises(ValueError, match='names no integration branch'):
-        memoryadds.pending(repo)
+        _push(repo, head)
 
 
 # --- the shape of an added entry, and the amendment that completes a published one -----------------------------
@@ -628,7 +642,7 @@ def test_a_manifest_naming_no_integration_branch_is_still_refused(tmp_path: Path
         ('# no frontmatter at all\n', 'name, description'),
     ],
 )
-def test_planted_an_added_entry_without_name_or_description_is_refused_at_commit(
+def test_planted_an_added_entry_without_name_or_description_is_refused_at_push(
     repo: Path, monkeypatch: pytest.MonkeyPatch, text: str, missing: str
 ) -> None:
     """PLANTED CONTROL: the shape the dated-memory test reads, refused when the entry is ADDED, not later.
@@ -639,11 +653,13 @@ def test_planted_an_added_entry_without_name_or_description_is_refused_at_commit
     _write(repo, rel, text)
     _git(repo, 'add', '--', rel)
     monkeypatch.chdir(repo)
-    found = memoryadds.pending(repo)
+    found = _judged(repo)
     assert len(found) == 1, found
     assert rel in found[0], found
     assert f'declares no {missing}' in found[0], found
-    assert memoryadds.main(['commit']) == 1
+    head = _git(repo, 'rev-parse', 'HEAD')
+    monkeypatch.setattr('sys.stdin', io.StringIO(f'refs/heads/lane {head} refs/heads/lane {"0" * 40}\n'))
+    assert memoryadds.main([]) == 1
 
 
 _HEADLESS = '---\ncreated: 2026-11-13\n---\n# Title\n\nBody line.\n'
@@ -683,3 +699,77 @@ def test_planted_a_frontmatter_completion_admits_nothing_else(repo: Path, note: 
     _write(repo, ENTRY, f'---\n{head}created: 2026-11-13\n---\n# Title\n\n{body}{tail}')
     _commit(repo, 'complete badly', ENTRY)
     assert len(memoryadds.problems_between(repo, base, 'HEAD')) == 1
+
+
+_JOURNAL = '.claude/memory/2026/11/14/task-landed/JOURNAL.md'
+_TASK_MD = '.claude/memory/2026/11/14/task-landed/TASK.md'
+_TASK_TEXT = '---\nname: task-landed\ndescription: d\nkind: task\n---\n\nT.\n'
+
+
+def _published_elsewhere(repo: Path, *files: tuple[str, str]) -> str:
+    """Upstream takes *files* by a merge commit; the lane carries the same blobs without that tip (#6602)."""
+    base = _git(repo, 'rev-parse', 'HEAD')
+    _git(repo, 'switch', '-q', '-c', 'pr', base)
+    for rel, text in files:
+        _write(repo, rel, text)
+    _commit(repo, 'pr adds', *(rel for rel, _ in files))
+    _git(repo, 'switch', '-q', 'integrate/main')
+    _git(repo, 'merge', '-q', '--no-ff', '-m', 'take pr', 'pr')
+    _git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', 'HEAD')
+    _git(repo, 'switch', '-q', '-c', 'lane', base)
+    for rel, text in files:
+        _write(repo, rel, text)
+    return _commit(repo, 'lane carries the same blobs', *(rel for rel, _ in files))
+
+
+def test_a_byte_identical_published_entry_in_the_pushed_range_is_not_judged_again(repo: Path) -> None:
+    """#6602: the merge-base fell back past a merge commit; a blob origin already holds is published, not added."""
+    head = _published_elsewhere(repo, ('.claude/memory/2026/11/14/headless.md', _HEADLESS))
+    assert _push(repo, head) == ()
+
+
+def test_planted_a_new_misshapen_entry_beside_a_published_one_is_still_refused(repo: Path) -> None:
+    """PLANTED CONTROL: the published blob passes; a genuinely new headless entry in the same range does not."""
+    _published_elsewhere(repo, ('.claude/memory/2026/11/14/headless.md', _HEADLESS))
+    rel = '.claude/memory/2026/11/14/new.md'
+    _write(repo, rel, _HEADLESS)
+    found = _push(repo, _commit(repo, 'new headless', rel))
+    assert len(found) == 1, found
+    assert rel in found[0], found
+
+
+def test_planted_a_published_path_whose_blob_differs_is_still_judged(repo: Path) -> None:
+    """PLANTED CONTROL: same path, other bytes -- not what origin holds, so it is this range's add."""
+    rel = '.claude/memory/2026/11/14/headless.md'
+    _published_elsewhere(repo, (rel, '---\nname: h\ndescription: d\n---\n\nH.\n'))
+    _write(repo, rel, _HEADLESS)
+    found = _push(repo, _commit(repo, 'rewrite', rel))
+    assert len(found) == 1, found
+    assert rel in found[0], found
+
+
+def test_an_archived_task_journal_needs_no_frontmatter_of_its_own(repo: Path) -> None:
+    """rem: an archived task is ONE entry; TASK.md carries name, description, kind: task."""
+    _lane(repo)
+    _write(repo, _TASK_MD, _TASK_TEXT)
+    _write(repo, _JOURNAL, '# Journal\n\n- step\n')
+    assert _push(repo, _commit(repo, 'archive a task', _TASK_MD, _JOURNAL)) == ()
+
+
+def test_the_issue_6602_journal_published_by_a_merge_commit_passes(repo: Path) -> None:
+    head = _published_elsewhere(repo, (_TASK_MD, _TASK_TEXT), (_JOURNAL, '# J\n'))
+    assert _push(repo, head) == ()
+
+
+@pytest.mark.parametrize('task', ['---\nname: t\ndescription: d\n---\n\nT.\n', None])
+def test_planted_a_journal_beside_no_task_md_of_kind_task_is_still_refused(repo: Path, task: str | None) -> None:
+    """PLANTED CONTROL: without a TASK.md declaring ``kind: task`` the directory is no task; each file is an entry."""
+    _lane(repo)
+    paths = [_JOURNAL]
+    _write(repo, _JOURNAL, '# Journal\n')
+    if task is not None:
+        _write(repo, _TASK_MD, task)
+        paths.append(_TASK_MD)
+    found = _push(repo, _commit(repo, 'no task', *paths))
+    assert len(found) == 1, found
+    assert _JOURNAL in found[0], found

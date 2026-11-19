@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
-from lab_commons.config import config_path
+from lab_commons.config import CONFIG_ENV, config_path
 from lab_commons.home import HOME_ENV
 
 from dev_lab.dev import codeplace, devhost, machineguard
@@ -18,6 +18,7 @@ ROW = rules_by_id(DENY_RULES)[machineguard.RULE_ID]
 
 @pytest.fixture
 def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.delenv(CONFIG_ENV, raising=False)  # the suite's isolation override; this fixture places the file
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
     path = config_path()
     path.parent.mkdir(parents=True)

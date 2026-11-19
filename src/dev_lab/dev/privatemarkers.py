@@ -33,8 +33,8 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import NoCredential, Transport, forge_from_remote, forge_of_url, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgehosts import is_private
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.githooks.runner import PUSH_URL_ENV
 
 __all__ = [
@@ -237,13 +237,18 @@ def text_refusal(text: str, what: str, markers: tuple[re.Pattern[str], ...] | No
     """The PRIVATE-MARKERS refusal for *what* (a PR body...) when *text* holds a marker, else ``None``.
 
     The markers are the machine-local denylist (:data:`MARKERS_FILE`, read at call time) unless given; a hit is
-    named by line and kind only.
+    named by line and kind only. The rule leads line one and the door has a line of its own, so
+    :func:`dev_lab.dev.walls.refused_text` records the rule and that a door was named.
     """
     hits = scan_text(text, load_markers(MARKERS_FILE) if markers is None else markers)
     if not hits:
         return None
     named = ', '.join(f'line {n}: {kind}' for n, kind, _ in hits)
-    return f'PRIVATE-MARKERS: the {what} names a private value ({named}); neutralise it before it is published.'
+    return (
+        f'PRIVATE-MARKERS: the {what} names a private value ({named}) and the target repo is not known private\n'
+        'Door: drop or neutralise each named marker (a placeholder for each name), then re-run the same command\n'
+        'details: docs-src/dev/refusals.md#private-markers (dev-lab)'
+    )
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:

@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Final
 
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.failprint import subject_lines
 from dev_lab.dev.floors import assert_floor
 
 __all__ = [
@@ -341,7 +342,7 @@ def assert_no_foreign_data(
             f'family`s LEAF -- a consumer`s rows and a consumer`s tree paths are that consumer`s to '
             f'hold, and a body here takes them as an argument with no default. Examples: {examples}. '
             f'Publish the parametrized body and pass the data in; do not add a handle to '
-            f'`_foreign_rows.EVICTED` for a row that arrived TODAY.'
+            f'`_foreign_rows.EVICTED` for a row that arrived TODAY.\n' + subject_lines(unwaived)
         )
         raise ForeignData(msg)
     stale = sorted(set(waived) - seen)
@@ -350,7 +351,7 @@ def assert_no_foreign_data(
             f'evicted-by-design handles the scan no longer finds: {stale}. A waiver that outlives '
             f'its row is a waiver nothing uses, which is the same defect as the data it waived. If '
             f'the rows are gone, delete the handles in the SAME edit -- that is what makes the '
-            f'eviction mechanical.'
+            f'eviction mechanical.\n' + subject_lines(stale)
         )
         raise StaleWaiver(msg)
 

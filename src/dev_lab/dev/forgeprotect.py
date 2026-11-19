@@ -23,6 +23,7 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   identities that may push the trunk (promote)::
 
     [tool.dev_lab.protection]
+    producer = "hpc"                               # who posts the parts; absent: "actions" (dev_lab.dev.producers)
     [tool.dev_lab.protection.forges."github.com"]
     breakglass = ["app:<id>", "role:admin"]        # GitHub: a list of role:<admin|maintain|write>|app:<id>|team:<id>
     [tool.dev_lab.protection.forges."gitea.example"]
@@ -57,12 +58,13 @@ from dev_lab.dev._protect_steps import Step
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgereview_declared import review_from
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.producers import producer_from
 
 __all__ = [
     'INTEGRATION',
@@ -148,8 +150,11 @@ def declaration_from(text: str, origin: str) -> Declaration:
     if not isinstance(table, dict) or not table.get('forges'):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} declares no forges: whose identity bypasses is undecided'
         raise ValueError(msg)
-    if unknown := sorted(set(table) - {'approvals', 'forges'}):
-        msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are approvals, forges'
+    if unknown := sorted(set(table) - {'approvals', 'forges', 'producer'}):
+        msg = (
+            f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; '
+            'the keys are approvals, forges, producer'
+        )
         raise ValueError(msg)
     forges = {}
     for host, entry in table['forges'].items():
@@ -172,6 +177,7 @@ def declaration_from(text: str, origin: str) -> Declaration:
     if approvals < 0:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} is below zero'
         raise ValueError(msg)
+    producer_from(text, origin)  # the one producer (dev_lab.dev.producers), refused by name when malformed
     return Declaration(approvals, forges)
 
 

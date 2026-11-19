@@ -32,6 +32,7 @@ __all__ = [
     'SignaturesNotDeclared',
     'declared_orphans',
     'declared_signatures',
+    'declared_spares',
     'identify',
     'orphan_role',
     'orphaned_worker',
@@ -91,6 +92,16 @@ def declared_orphans(root: Path) -> tuple[str, ...]:
 
     """
     return _declared(root, 'orphans')
+
+
+def declared_spares(root: Path) -> tuple[str, ...]:
+    """The runs *root* declares the shell reaper never stops, at any age (``spare``); ``()`` when none.
+
+    Raises:
+        SignaturesNotDeclared: the manifest is unreadable, or the value is not a list of regex strings.
+
+    """
+    return _declared(root, 'spare')
 
 
 def _declared(root: Path, key: str) -> tuple[str, ...]:

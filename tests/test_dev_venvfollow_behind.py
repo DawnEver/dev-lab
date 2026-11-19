@@ -54,7 +54,8 @@ def test_integration_moved_since_the_last_fetch_names_both_lags_and_the_door(tmp
     assert '1 commit(s) behind origin/main' in notice
     assert f'dev-lab {OLD[:10]}' in notice
     assert NEW[:10] in notice
-    assert 'dev_lab.dev.dep --bootstrap' in notice
+    assert 'git pull' not in notice
+    assert 'The follow leaves it' in notice, 'an undeclared checkout names why the follow leaves it'
 
 
 def test_the_session_start_prints_the_notice_and_never_blocks(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -65,3 +66,17 @@ def test_the_session_start_prints_the_notice_and_never_blocks(tmp_path: Path, mo
     payload = io.StringIO(json.dumps({'hook_event_name': 'SessionStart', 'cwd': str(clone)}))
     assert venvfollow.main(['--session-start'], stdin=payload) == 0
     assert 'behind origin/main' in capsys.readouterr().out
+
+
+def test_a_behind_checkout_the_follow_cannot_move_names_why_and_hands_out_no_command(tmp_path: Path) -> None:
+    """EVERY-WALL-TEACHES: the notice says what the follow does, or what stops it -- never `git pull` for a person."""
+    upstream, clone = _pair(tmp_path)
+    (upstream / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nintegration = "main"\n', encoding='utf-8')
+    _git(upstream, 'add', 'pyproject.toml')
+    _git(upstream, 'commit', '-q', '-m', 'declare')
+    _git(clone, 'fetch', '-q')
+    (clone / 'uv.lock').write_text('edited\n', encoding='utf-8')
+    notice = venvfollow.behind_notice(clone, installed=(Installed('dev-lab', OLD),))
+    assert notice is not None
+    assert 'git pull' not in notice
+    assert 'uncommitted' in notice

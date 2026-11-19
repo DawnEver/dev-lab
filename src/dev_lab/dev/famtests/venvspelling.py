@@ -54,6 +54,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from dev_lab.dev.allow_adoption import glob_for
+from dev_lab.dev.failprint import subject_lines
 from dev_lab.dev.floors import assert_floor
 from dev_lab.dev.venvpath import VENV_INTERPRETER_GLOB, VENV_LAYOUTS, venv_interpreter
 
@@ -228,7 +229,7 @@ def assert_only_the_resolver_spells_a_venv_interpreter(
         f'fleet -- silently, because a permission row that matches no command reads like one nobody needed. '
         f'Call dev_lab.dev.venvpath.venv_interpreter(os_name=...) for a command a human runs, or let '
         f'allow_adoption.glob_for render {VENV_INTERPRETER_GLOB!r} for a row that is tracked in git. A '
-        f'recipe block shows the reader that call rather than its result.'
+        f'recipe block shows the reader that call rather than its result.\n' + subject_lines(found)
     )
     raise AssertionError(msg)
 

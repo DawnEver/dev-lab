@@ -44,9 +44,10 @@ from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'DIGEST_CHARS',
+    'HARNESS_PERMISSION',
     'LOG_KIND',
     'RULE',
-    'UNKNOWN',
+    'UNNAMED',
     'close',
     'digest',
     'has_remedy',
@@ -56,18 +57,33 @@ __all__ = [
     'record',
     'refused',
     'refused_text',
+    'rule_of',
 ]
 
 RULE: Final = 'WALLS-ARE-RECORDED'
 LOG_KIND: Final = 'walls'
-#: The rule a denial names when it names none: the classifier's, or a tool's own.
-UNKNOWN: Final = 'unknown'
+#: The rule of a denial from the harness's permission layer (a classifier, a declined prompt), which names none.
+HARNESS_PERMISSION: Final = 'HARNESS-PERMISSION'
+#: The prefix of a denial that names no rule: ``UNNAMED-<DOOR>`` when a door printed it, else ``UNNAMED-REFUSAL``.
+#: Measured 2026-11-14/15: such walls were recorded as rule 'unknown', which no reader could act on.
+UNNAMED: Final = 'UNNAMED'
+_HARNESS: Final = re.compile(
+    r"(?i)permission to use \S+ (?:has been|was) denied|doesn't want to proceed|tool use was rejected"
+)
+#: A door's own refusal line, ``box: refused -- ...``: the door is the word before the colon.
+_DOOR: Final = re.compile(r'(?im)^\s*([a-z][\w.-]*):\s+(?:refused|denied|blocked)\b')
 #: Hex characters of a command's sha256 kept on a line: enough to tell two commands apart, never the command.
 DIGEST_CHARS: Final = 16
 #: A tool's error text that is a REFUSAL rather than an ordinary failure.
 _DENIAL: Final = re.compile(r'(?i)\b(?:hook error|denied|refused|blocked|not permitted|not allowed)\b')
-#: A rule id as the family spells one (``WORKTREES-STAY-INSIDE``).
-_RULE_ID: Final = re.compile(r'\b[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+\b')
+#: A refusal line as the deny engine and the refusal printers emit one: ``<RULE-ID>: ...`` at the start of a line,
+#: after the harness's ``<Event>:<Tool> hook error:`` prefix if any. An id anywhere else is tool OUTPUT (a grep hit,
+#: quoted source) and names no wall -- measured: a docstring in grep output was recorded as a wall.
+_RULE_LINE: Final = re.compile(r'(?m)^(?:\w+:\w+ hook error:\s*)?([A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+):')
+#: The harness's first line of a failed shell call, before the program's own text.
+_EXIT_LINE: Final = re.compile(r'^Exit code -?\d+[^\n]*\n?')
+#: The harness's own wrapper of a hook's refusal: a refusal whatever its body names.
+_HOOK_ERROR: Final = re.compile(r'(?m)^\w+:\w+ hook error:')
 #: A refusal that names a door has at least its cause line and its door line.
 _CAUSE_AND_DOOR: Final = 2
 #: The engine's header when a command targets another checkout: context, not the cause or the door.
@@ -120,7 +136,7 @@ def record(
         {
             'ts': _now(),
             'session': _session(session),
-            'rule': rule or UNKNOWN,
+            'rule': rule or f'{UNNAMED}-REFUSAL',
             'command_sha256': command_sha256 or (digest(command) if command else ''),
             'remedy_present': remedy,
         },
@@ -143,12 +159,22 @@ def refused(
     return record(root, rule=rule, remedy=remedy, command=command, command_sha256=command_sha256, session=session)
 
 
+def rule_of(text: str) -> str:
+    """The rule a denial *text* names; else its source: :data:`HARNESS_PERMISSION`, or ``UNNAMED-<DOOR|REFUSAL>``."""
+    if found := _RULE_LINE.search(text):
+        return found.group(1)
+    if _HARNESS.search(text):
+        return HARNESS_PERMISSION
+    door = _DOOR.search(text)
+    return f'{UNNAMED}-{door.group(1).upper().replace(".", "-").replace("_", "-") if door else "REFUSAL"}'
+
+
 def refused_text(root: Path, text: str, *, reason: str, rule: str = '', session: str | None = None) -> Path:
     """A family refusal's *text* through :func:`refused`: its *rule* (else the first rule id it names) and remedy.
 
     The remedy is :func:`has_remedy` of the text the agent was shown, the same test every refusal path takes.
     """
-    named = rule or ((found := _RULE_ID.search(text)) and found.group(0)) or UNKNOWN
+    named = rule or rule_of(text)
     return refused(
         root, repo=metrics.repo_of(root), rule=named, reason=reason, remedy=has_remedy(text), session=session or None
     )
@@ -162,11 +188,30 @@ def close(root: Path, *, rule: str, by: str, session: str | None = None) -> Path
     return _append(root, {'ts': _now(), 'session': _session(session), 'rule': rule, 'closed_by': by.strip()})
 
 
-def _read(root: Path) -> list[dict[str, object]]:
-    base = metrics.checkout(root)
+def _dirs(path: Path) -> list[Path]:
+    try:
+        return sorted(Path(entry.path) for entry in os.scandir(path) if entry.is_dir())
+    except OSError:
+        return []
+
+
+def _ledgers(base: Path) -> list[Path]:
+    """Every day's ledger under checkout *base*, oldest first: the date levels listed, one stat per day.
+
+    Never a glob: it lists every kind's directory of every day, and measured 2026-11-17 it took 0.3-0.5 s of the Stop
+    hook over five ledgers on a workstation.
+    """
+    days = (day for year in _dirs(base / metrics.BASE) for month in _dirs(year) for day in _dirs(month))
+    return [path for day in days if (path := day / LOG_KIND / f'{LOG_KIND}.jsonl').is_file()]
+
+
+def _read(root: Path, session: str) -> list[dict[str, object]]:
+    """Every ledger line of *session*, every day; a line not naming it is never parsed (the ledger only grows)."""
     found: list[dict[str, object]] = []
-    for path in sorted(base.glob(ledger(base, ('*', '*', '*')).relative_to(base).as_posix())):
-        for raw in path.read_text(encoding='utf-8').splitlines():
+    for path in _ledgers(metrics.checkout(root)):
+        for raw in path.read_text(encoding='utf-8', errors='replace').splitlines():
+            if session not in raw:
+                continue
             try:
                 found.append(json.loads(raw))
             except ValueError:
@@ -177,10 +222,10 @@ def _read(root: Path) -> list[dict[str, object]]:
 def open_walls(root: Path, session: str) -> tuple[str, ...]:
     """The rules of *session*'s walls with no remedy that no later closure answers, first seen first."""
     still: dict[str, None] = {}
-    for line in _read(root):
+    for line in _read(root, session):
         if line.get('session') != session:
             continue
-        rule = str(line.get('rule') or UNKNOWN)
+        rule = str(line.get('rule', ''))
         if 'closed_by' in line:
             still.pop(rule, None)
         elif line.get('remedy_present') is False:
@@ -198,15 +243,30 @@ def _error_text(payload: dict) -> str:
     return response if isinstance(response, str) else ''
 
 
+def _leads_with_rule(text: str) -> bool:
+    """Whether *text*'s first line, past the harness's ``Exit code N``, is a rule line: a refusal leads its text.
+
+    MEASURED 2026-11-17: test and lint output QUOTING a rule (an assertion message, a refusal under test) was recorded
+    three times as an unremedied wall of a rule that did refuse nothing; a rule line deeper in the text is output.
+    """
+    return bool(_RULE_LINE.match(_EXIT_LINE.sub('', text.lstrip(), count=1).lstrip()))
+
+
+def _is_refusal(text: str) -> bool:
+    """Whether *text* carries a refusal LINE (a hook, harness or door line, or a leading rule line), not output."""
+    if not _DENIAL.search(text):
+        return False
+    return _leads_with_rule(text) or any(pattern.search(text) for pattern in (_HOOK_ERROR, _HARNESS, _DOOR))
+
+
 def _post_tool(payload: dict) -> None:
     text = _error_text(payload)
-    if not _DENIAL.search(text) or any(line.startswith(DETAILS_PREFIX) for line in text.splitlines()):
+    if not _is_refusal(text) or any(line.startswith(DETAILS_PREFIX) for line in text.splitlines()):
         return
-    named = _RULE_ID.search(text)
     command = (payload.get('tool_input') or {}).get('command') or ''
     record(
         Path(payload.get('cwd') or Path.cwd()),
-        rule=named.group(0) if named else UNKNOWN,
+        rule=rule_of(text),
         remedy=False,
         command=str(command),
         session=str(payload.get('session_id') or ''),

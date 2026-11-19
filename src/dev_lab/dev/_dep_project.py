@@ -25,7 +25,8 @@ from dev_lab.dev.lockcheck import (
     uv_version,
 )
 from dev_lab.dev.uvfollow import follow
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.venvpath import VENV_LAYOUTS
+from dev_lab.dev.venvpointer import current
 
 
 def _checkout(cwd: Path, git_binary: str) -> tuple[Path, Path] | None:
@@ -96,6 +97,30 @@ def lock_writer(uv: str, required: str) -> str:
     return uv
 
 
+class ForeignEnvRefused(ValueError):
+    """A sync or relock would run under an interpreter outside the target checkout's own environment."""
+
+
+def own_interpreter(root: Path, python: str) -> str:
+    """*python* when it is a file inside *root*'s own ``.venvs/``/``.venv``; else refuse naming both and the door.
+
+    SYNC-OWNS-ITS-ENV (2026-11-17): ``forge sync`` in a checkout with no venv fell back to the interpreter that
+    invoked it -- another checkout's venv -- and ran ``uv sync --python <that>``. A sync may strip or replace an
+    unrelated environment without a word, so the only interpreter a sync or relock runs under is the target's own.
+    """
+    candidate = Path(python) if Path(python).is_file() else Path(sys.executable)
+    resolved = candidate.absolute()
+    owned = tuple(base / name for base in {root.absolute(), root.resolve()} for name in ('.venvs', '.venv'))
+    if Path(python).is_file() and any(resolved.is_relative_to(home) for home in owned):
+        return python
+    msg = (
+        f'SYNC-OWNS-ITS-ENV: the interpreter {candidate} is not inside the own .venvs/ or .venv of the checkout '
+        f'{root}, and a sync never runs under a foreign environment.\n'
+        f'{sys.executable} -m dev_lab.dev.dep --bootstrap {root}'
+    )
+    raise ForeignEnvRefused(msg)
+
+
 def follow_pin(uv: str, required: str) -> str:
     """Move the host's *uv* to *required* through its own installer; ``''`` once it is, else why it is not."""
     return follow(uv, required, version_of=installed_uv_version)
@@ -116,7 +141,8 @@ def uv_command(
     A *frozen* sync builds exactly the committed ``uv.lock`` (``--frozen``) and re-resolves nothing: how a
     commit's own environment is materialised, so two hosts on two days build the same revisions.
     *reinstall_packages* are rebuilt from source whatever their version says (a component whose tree moved,
-    :mod:`dev_lab.dev._dep_components`).
+    :mod:`dev_lab.dev._dep_components`). Only a frozen sync with no environment yet -- a bootstrap -- builds
+    one under the invoking interpreter; every other command runs under the checkout's own (:func:`own_interpreter`).
     """
     uv = shutil.which('uv')
     if uv is None:
@@ -128,9 +154,10 @@ def uv_command(
         '--project',
         str(root),
         '--python',
-        python if Path(python).is_file() else sys.executable,
+        sys.executable if syncing and frozen and not Path(python).is_file() else own_interpreter(root, python),
     ]
     if syncing:
+        command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
         for extra in selected:
             command.extend(('--extra', extra))
         for package in reinstall_packages:
@@ -155,7 +182,7 @@ def lock_upgrade_command(root: Path, python: str, required: str, packages: Seque
     if uv is None:
         msg = 'a lock upgrade requires uv on PATH'
         raise FileNotFoundError(msg)
-    interpreter = python if Path(python).is_file() else sys.executable
+    interpreter = own_interpreter(root, python)
     uv = lock_writer(uv, required)
     moves = [part for package in packages for part in ('--upgrade-package', package)] or ['--upgrade']
     return [uv, 'lock', *moves, '--project', str(root), '--python', interpreter]
@@ -181,7 +208,7 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
     declaration = declared_table(manifest, 'dep', {})
     available = manifest.get('project', {}).get('optional-dependencies', {})
-    selected = requested if requested is not None else declaration.get('extras', tuple(available))
+    selected = requested if requested is not None else declaration.get('extras', ())
     if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
         msg = 'tool.dev_lab.dep.extras must be an array of declared extra names'
         raise ValueError(msg)
@@ -189,11 +216,11 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
     if unknown:
         msg = f'unknown dependency extras: {sorted(unknown)}'
         raise ValueError(msg)
-    prefix = root / '.venv'
-    if prefix.resolve() != prefix:
+    prefix = current(root)
+    if not prefix.resolve().is_relative_to(root.resolve()):
         msg = f'{root} must use its own environment, not the alias {prefix} -> {prefix.resolve()}'
         raise ValueError(msg)
-    python = str(root / venv_interpreter(os_name=os.name))
+    python = str(prefix.joinpath(*VENV_LAYOUTS[os.name][1:]))
     return python, tuple(selected), anchor_paths(root, declaration.get('anchors', ()))
 
 
@@ -226,7 +253,7 @@ def lock_upgrade(
     try:
         required = newest() if (root / UV_PIN).is_file() and not packages else uv_version(root)
         command = lock_upgrade_command(root, python, required, packages)
-    except (OtherUvRefused, OSError) as exc:
+    except (OtherUvRefused, ForeignEnvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')
         return 1
     if dry_run:

@@ -67,7 +67,7 @@ def test_a_part_a_failed_job_posted_error_reads_red_and_a_pending_one_does_not()
 
 
 def test_a_head_is_not_green_while_its_base_part_is_absent() -> None:
-    """A head is green only by the session watch's one green (:func:`forgewatch._green`).
+    """A head is green only by the session watch's one green (:func:`sessionpoll.green`).
 
     A consumer PR, 2026-11-14: ``watch <sha> --stream`` said ``green`` on ``tests/security`` alone, while
     ``forge merge ready`` read ``tests/base`` UNCLAIMED.
@@ -82,3 +82,19 @@ def test_a_head_is_not_green_while_its_base_part_is_absent() -> None:
     said.clear()
     assert watch(forge, (SHA,), deadline_s=0, every_s=1, say=said.append, stream=True) == 0
     assert said[-1] == f'{SHA[:12]} green'
+
+
+def test_a_requeued_class_is_no_red_and_the_watch_waits_on() -> None:
+    """W5 (dev-lab#644): ``reds`` counts the author's -- an ``error`` naming a non-code class is requeued, not red.
+
+    PLANTED CONTROL: the same row ``class=code`` settles the watch red.
+    """
+    forge = StateForge()
+    description = 'released: no grant had room class=scheduling'
+    released = {'context': 'tests/base', 'state': 'error', 'description': description}
+    forge.call('POST', f'{forge.repo}/statuses/{SHA}', released)
+    assert watch(forge, (SHA,), deadline_s=0, every_s=1, say=lambda _l: None, sleep=lambda _s: None) == 3
+    other = StateForge()
+    coded = {'context': 'tests/base', 'state': 'error', 'description': 'released: a defect class=code'}
+    other.call('POST', f'{other.repo}/statuses/{SHA}', coded)
+    assert watch(other, (SHA,), deadline_s=0, every_s=1, say=lambda _l: None) == 1

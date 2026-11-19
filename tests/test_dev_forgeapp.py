@@ -64,6 +64,8 @@ def test_a_key_that_is_not_rsa_is_refused() -> None:
 
 
 class _Response:
+    will_close = True
+
     def __init__(self, status: int, payload: object) -> None:
         self.status, self._payload = status, json.dumps(payload).encode()
 

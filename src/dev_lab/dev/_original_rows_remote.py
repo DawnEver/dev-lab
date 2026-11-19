@@ -34,13 +34,28 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # the lab-commons owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
     'account',
     'allocate',
+    # ORIGINAL: 2026-11-16, the fleet launcher of drift, ci-pause and ci-resume (the retired backup verb's half).
+    'accountset',
+    # ORIGINAL: 2026-11-16, a verification account's CI cron paused and resumed around cluster maintenance.
+    'cimark',
+    'cipause',
+    # ORIGINAL: 2026-11-17, the hpcaccount.ci-cron consent a CI cron verb redeems before any crontab change.
+    'cicron',
     'checks',
+    # ORIGINAL: 2026-11-16, what a deploy declares (flags, stored [deploy], first write), split at the size band.
+    'declaration',
     'deploy',
+    # ORIGINAL: 2026-11-15, deploy's host check split from it at the module-size band.
+    'deployhost',
+    # ORIGINAL: 2026-11-16, what an account holds that its config source cannot render (an account is a render).
+    'drift',
     'division',  # ORIGINAL: the workstation's HPC division as data (user rulings 2026-11-09)
     'fleet',
     'spec',
     'steps',
     'tick',
+    # ORIGINAL: 2026-11-15, every remote hpcaccount step rides the dest's held session when live, else key-only ssh.
+    'transport',
     # ORIGINAL: the integrator as a session role, verified offline from its consent credential (2026-11-12).
     'session',
 )

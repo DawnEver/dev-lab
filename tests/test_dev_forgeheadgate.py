@@ -15,7 +15,7 @@ from dev_lab.dev.forgeintegration import tick
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.lockcheck import NOT_RENDERED, UNRESOLVED
-from dev_lab.dev.locklag import LAG_LIMIT
+from dev_lab.dev.locklag import LAG_WINDOW
 
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
@@ -166,9 +166,9 @@ def test_session_branch_is_the_push_rows_own_judge(
 def test_session_branch_reads_the_push_line_of_a_created_head(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The forge's caller hands :func:`sessionbranch.refusals` the pre-push line creating ``refs/heads/<branch>``."""
     lines: list[str] = []
-    monkeypatch.setattr(sessionbranch, 'refusals', lambda _root, text: lines.append(text) or [])
+    monkeypatch.setattr(sessionbranch, 'refusals', lambda _root, text, env: lines.extend([text, env]) or [])
     assert sessionbranch.head_refusals(tmp_path, _SHA, 'pr/x') == []
-    assert lines == [f'refs/heads/pr/x {_SHA} refs/heads/pr/x {"0" * 40}']
+    assert lines == [f'refs/heads/pr/x {_SHA} refs/heads/pr/x {"0" * 40}', {}], 'the forge pushes for no session (P7)'
 
 
 def test_pr_current_is_volatile_and_posts_only_a_change(
@@ -209,22 +209,24 @@ def test_pr_current_judges_only_what_the_row_judges(tmp_path: Path) -> None:
 def test_the_gates_wait_until_each_stands_success() -> None:
     """The merge reads :func:`forgeheadgate.gates_wait`: absent, ``error`` and ``failure`` wait.
 
-    PLANTED CONTROL: every gate ``success`` is ``None``, and ``lock/lag`` failing alone does not wait (an alarm).
+    W5 (dev-lab#644): ``pr-current`` and ``lock/lag`` are ALARMS -- mergeability is the trial merge at merge time.
+    PLANTED CONTROL: ``session-branch`` absent or red still waits; both alarms red alone never wait, and are said.
     """
 
     def status(context: str, state: str) -> CommitStatus:
         return CommitStatus(context=context, state=state, description='why', url='')
 
-    assert forgeheadgate.gates_wait(()) == 'session-branch is not yet judged; pr-current is not yet judged'
+    assert forgeheadgate.gates_wait(()) == 'session-branch is not yet judged'
     for state in ('failure', 'error', 'pending'):
-        waits = forgeheadgate.gates_wait((status('session-branch', 'success'), status('pr-current', state)))
-        assert waits == f'pr-current is {state}: why'
-    green = (status('session-branch', 'success'), status('pr-current', 'success'), status('lock/lag', 'failure'))
-    assert forgeheadgate.gates_wait(green) is None
+        assert forgeheadgate.gates_wait((status('session-branch', state),)) == f'session-branch is {state}: why'
+    alarmed = (status('session-branch', 'success'), status('pr-current', 'failure'), status('lock/lag', 'failure'))
+    assert forgeheadgate.gates_wait(alarmed) is None
+    assert forgeheadgate.alarms_said(alarmed) == 'pr-current is failure: why; lock/lag is failure: why'
+    assert forgeheadgate.alarms_said(alarmed[:1]) is None, 'CONTROL: an unjudged alarm says nothing'
 
 
 def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
-    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`locklag.LAG_LIMIT`.
+    """``lock/lag`` is :func:`locklag.floating_lag` on the head's lock at :data:`locklag.LAG_WINDOW`.
 
     PLANTED CONTROLS: no lock is ``success``; an uncounted sibling is ``error``, never a pass.
     """
@@ -235,16 +237,16 @@ def test_lock_lag_reads_the_heads_own_lock(tmp_path: Path) -> None:
     run_git(work, 'add', 'uv.lock')
     run_git(work, 'commit', '-q', '--no-verify', '-m', 'build: lock')
     head = git_out(work, 'rev-parse', 'HEAD')
-    seen: list[int] = []
+    seen: list[object] = []
 
     def lag(answer: tuple[str, ...]) -> Callable[..., tuple[str, ...]]:
         return lambda _text, limit: seen.append(limit) or answer
 
-    behind = 'uv.lock pins dev-lab 21 commits behind its integrate/main (limit 20)'
+    behind = 'uv.lock pins dev-lab 21 landings (9.0 h) behind its integrate/main (window 8.0 h)'
     assert forgeheadgate.lag_verdict(work, head, lag=lag((behind,))) == ('failure', behind)
     assert forgeheadgate.lag_verdict(work, head, lag=lag(()))[0] == 'success'
     assert forgeheadgate.lag_verdict(work, head, lag=lag((f'{UNRESOLVED}: dev-lab: offline',)))[0] == 'error'
-    assert set(seen) == {LAG_LIMIT}
+    assert set(seen) == {LAG_WINDOW}
 
 
 def _head(work: Path, branch: str) -> str:

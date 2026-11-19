@@ -1,8 +1,14 @@
 """The family's per-file commit checks -- standard library only, and they REPORT, never rewrite.
 
-``python -m dev_lab.dev.filechecks <check> [--max-kb N] <path>...`` -- one check per invocation,
-wired as rows of the hook base (``dev_lab/dev/githooks/base.toml``). Each prints one line per
-finding (``<path>:<line>: <what>``) and exits 1 when it found any.
+``python -m dev_lab.dev.filechecks <check|all> [--skip CHECK]... [--exclude CHECK=REGEX]... [--max-kb N]
+<path>...`` -- ONE row of the hook base (``dev_lab/dev/githooks/base.toml``) runs ``all``: the paths are handed
+over once and each file is read once, whatever the number of checks. Each finding prints as
+``[<check>] <path>[:<line>]: <what>``; the exit is 1 when any check found one.
+
+EACH CHECK STAYS ITS OWN, BY NAME. A check knows which paths it judges (:data:`CHECKS`: ``ast`` reads Python,
+``json`` JSON); a repo skips one (``--skip``) or narrows one (``--exclude CHECK=REGEX``, re.search over the
+repo-relative POSIX path) by restating the base row's ``run`` in its own ``[[tool.dev_lab.hooks.pre-commit]]``
+row of the same id; a single name still runs that one check alone.
 
 WHY THEY NEVER REWRITE. A fixer that edits a staged file changes the thing under review to fit the
 tool, and has twice destroyed content whose bytes were the point (a TSV whose trailing tab is a
@@ -16,17 +22,18 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import shutil
 import sys
 import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Final
+from typing import Final, NamedTuple
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-__all__ = ['CHECKS', 'main']
+__all__ = ['ALL', 'CHECKS', 'Check', 'main']
 
 #: pre-commit-hooks' own default for the large-file check, kept so a repo's measured threshold holds.
 DEFAULT_MAX_KB: Final = 500
@@ -36,45 +43,57 @@ _SNIFF: Final = 8192
 _DEBUG_MODULES: Final = frozenset({'pdb', 'ipdb', 'pudb', 'pdbpp', 'wdb', 'rpdb', 'pydevd', 'q'})
 
 Finding = str
-Check = Callable[[Path, argparse.Namespace], list[Finding]]
+#: One file's findings: its path, its bytes (read once for every check), the parsed options.
+Judge = Callable[[Path, bytes, argparse.Namespace], list[Finding]]
+
+#: The selector that runs every check.
+ALL: Final = 'all'
 
 
-def _text(path: Path) -> bytes | None:
-    data = path.read_bytes()
+class Check(NamedTuple):
+    """One check: the paths it judges, and how."""
+
+    #: re.search over the POSIX path; ``None`` judges every path.
+    files: str | None
+    #: ``None`` for a property of the path SET rather than of one file (``case-conflict``).
+    judge: Judge | None
+
+
+def _text(data: bytes) -> bytes | None:
     return None if b'\0' in data[:_SNIFF] else data
 
 
-def _large(path: Path, args: argparse.Namespace) -> list[Finding]:
-    size_kb = path.stat().st_size / 1024
+def _large(path: Path, data: bytes, args: argparse.Namespace) -> list[Finding]:
+    size_kb = len(data) / 1024
     return [f'{path}: {size_kb:.0f} KB exceeds {args.max_kb} KB'] if size_kb > args.max_kb else []
 
 
-def _ast(path: Path, _args: argparse.Namespace) -> list[Finding]:
+def _ast(path: Path, data: bytes, _args: argparse.Namespace) -> list[Finding]:
     try:
-        ast.parse(path.read_bytes(), filename=str(path))
+        ast.parse(data, filename=str(path))
     except SyntaxError as exc:
         return [f'{path}:{exc.lineno}: does not parse as Python ({exc.msg})']
     return []
 
 
-def _json(path: Path, _args: argparse.Namespace) -> list[Finding]:
+def _json(path: Path, data: bytes, _args: argparse.Namespace) -> list[Finding]:
     try:
-        json.loads(path.read_text(encoding='utf-8'))
+        json.loads(data.decode('utf-8'))
     except (ValueError, UnicodeDecodeError) as exc:
         return [f'{path}: not valid JSON ({exc})']
     return []
 
 
-def _toml(path: Path, _args: argparse.Namespace) -> list[Finding]:
+def _toml(path: Path, data: bytes, _args: argparse.Namespace) -> list[Finding]:
     try:
-        tomllib.loads(path.read_text(encoding='utf-8'))
+        tomllib.loads(data.decode('utf-8'))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
         return [f'{path}: not valid TOML ({exc})']
     return []
 
 
-def _merge_conflict(path: Path, _args: argparse.Namespace) -> list[Finding]:
-    data = _text(path)
+def _merge_conflict(path: Path, raw: bytes, _args: argparse.Namespace) -> list[Finding]:
+    data = _text(raw)
     if data is None:
         return []
     return [
@@ -84,11 +103,11 @@ def _merge_conflict(path: Path, _args: argparse.Namespace) -> list[Finding]:
     ]
 
 
-def _debug(path: Path, _args: argparse.Namespace) -> list[Finding]:
+def _debug(path: Path, data: bytes, _args: argparse.Namespace) -> list[Finding]:
     try:
-        tree = ast.parse(path.read_bytes(), filename=str(path))
+        tree = ast.parse(data, filename=str(path))
     except SyntaxError:
-        return []  # check-ast's finding, not this one's
+        return []  # the ast check's finding, not this one's
     out = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -102,8 +121,8 @@ def _debug(path: Path, _args: argparse.Namespace) -> list[Finding]:
     return out
 
 
-def _end_of_file(path: Path, _args: argparse.Namespace) -> list[Finding]:
-    data = _text(path)
+def _end_of_file(path: Path, raw: bytes, _args: argparse.Namespace) -> list[Finding]:
+    data = _text(raw)
     if not data:
         return []
     if not data.endswith(b'\n'):
@@ -113,8 +132,8 @@ def _end_of_file(path: Path, _args: argparse.Namespace) -> list[Finding]:
     return []
 
 
-def _mixed(path: Path, _args: argparse.Namespace) -> list[Finding]:
-    data = _text(path)
+def _mixed(path: Path, raw: bytes, _args: argparse.Namespace) -> list[Finding]:
+    data = _text(raw)
     if data is None:
         return []
     crlf = data.count(b'\r\n')
@@ -122,8 +141,8 @@ def _mixed(path: Path, _args: argparse.Namespace) -> list[Finding]:
     return [f'{path}: mixes CRLF ({crlf}) and LF ({lf}) line endings'] if crlf and lf else []
 
 
-def _trailing(path: Path, _args: argparse.Namespace) -> list[Finding]:
-    data = _text(path)
+def _trailing(path: Path, raw: bytes, _args: argparse.Namespace) -> list[Finding]:
+    data = _text(raw)
     if data is None:
         return []
     return [
@@ -151,32 +170,88 @@ def _case_conflicts(paths: Sequence[Path]) -> list[Finding]:
     ]
 
 
-CHECKS: Final[dict[str, Check | None]] = {
-    'large-files': _large,
-    'ast': _ast,
-    'case-conflict': None,  # a property of the path SET, not of one file
-    'json': _json,
-    'merge-conflict': _merge_conflict,
-    'toml': _toml,
-    'debug-statements': _debug,
-    'end-of-file': _end_of_file,
-    'mixed-line-ending': _mixed,
-    'trailing-whitespace': _trailing,
+_PY: Final = r'\.pyi?$'
+
+#: Every check by name, in the order its findings print.
+CHECKS: Final[dict[str, Check]] = {
+    'large-files': Check(None, _large),
+    'ast': Check(_PY, _ast),
+    'case-conflict': Check(None, None),
+    'json': Check(r'\.json$', _json),
+    'merge-conflict': Check(None, _merge_conflict),
+    'toml': Check(r'\.toml$', _toml),
+    'debug-statements': Check(_PY, _debug),
+    'end-of-file': Check(None, _end_of_file),
+    'mixed-line-ending': Check(None, _mixed),
+    'trailing-whitespace': Check(None, _trailing),
 }
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """``0`` no finding, ``1`` at least one -- each printed as ``<path>[:<line>]: <what>``."""
+def _name(text: str) -> str:
+    if text not in CHECKS:
+        msg = f'unknown check {text!r}; the checks are {sorted(CHECKS)}'
+        raise argparse.ArgumentTypeError(msg)
+    return text
+
+
+def _exclusion(text: str) -> tuple[str, re.Pattern[str]]:
+    name, sep, pattern = text.partition('=')
+    if not sep:
+        msg = f'{text!r} is not CHECK=REGEX'
+        raise argparse.ArgumentTypeError(msg)
+    try:
+        return _name(name), re.compile(pattern)
+    except re.error as exc:
+        msg = f'{text!r}: an invalid regex ({exc})'
+        raise argparse.ArgumentTypeError(msg) from exc
+
+
+def _parse(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.filechecks', description=__doc__.splitlines()[0])
-    parser.add_argument('check', choices=sorted(CHECKS))
+    parser.add_argument('check', choices=[ALL, *sorted(CHECKS)], help=f'one check, or {ALL!r} for every one')
     parser.add_argument('paths', nargs='*', type=Path)
+    parser.add_argument('--skip', action='append', default=[], type=_name, metavar='CHECK', help='not this check')
+    parser.add_argument(
+        '--exclude', action='append', default=[], type=_exclusion, metavar='CHECK=REGEX', help='not these paths'
+    )
     parser.add_argument('--max-kb', type=int, default=DEFAULT_MAX_KB, help='large-files: the threshold')
-    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    return parser.parse_args(argv)
+
+
+def _findings(args: argparse.Namespace) -> list[str]:
+    """Every chosen check over the paths it selects, each file read once, as ``[<check>] <finding>`` lines."""
+    chosen = [name for name in CHECKS if args.check in (ALL, name) and name not in args.skip]
+    excluded: dict[str, list[re.Pattern[str]]] = {}
+    for name, pattern in args.exclude:
+        excluded.setdefault(name, []).append(pattern)
     present = [path for path in args.paths if path.is_file()]
-    check = CHECKS[args.check]
-    findings = _case_conflicts(present) if check is None else [f for path in present for f in check(path, args)]
+
+    def selected(name: str) -> list[Path]:
+        files = CHECKS[name].files
+        return [
+            path
+            for path in present
+            if (files is None or re.search(files, path.as_posix()))
+            and not any(pattern.search(path.as_posix()) for pattern in excluded.get(name, ()))
+        ]
+
+    read: dict[Path, bytes] = {}
+    out: list[str] = []
+    for name in chosen:
+        judge, paths = CHECKS[name].judge, selected(name)
+        if judge is None:
+            found = _case_conflicts(paths) if paths else []
+        else:
+            found = [f for path in paths for f in judge(path, read.setdefault(path, path.read_bytes()), args)]
+        out += [f'[{name}] {finding}' for finding in found]
+    return out
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``0`` no finding, ``1`` at least one -- each printed as ``[<check>] <path>[:<line>]: <what>``."""
+    findings = _findings(_parse(sys.argv[1:] if argv is None else argv))
     for finding in findings:
-        emit(f'[{args.check}] {finding}')
+        emit(finding)
     return 1 if findings else 0
 
 

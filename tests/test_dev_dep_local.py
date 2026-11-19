@@ -151,14 +151,27 @@ def test_the_key_the_door_compares_moves_with_the_overlay(tmp_path, monkeypatch)
         return report
 
     monkeypatch.setattr(dep, '_change', spy)
+    built = _runner(calls)
+
+    def sync(argv: list[str], **options: object) -> SimpleNamespace:
+        """The fake uv builds the environment it syncs (dev-lab #632: a new one each time), interpreter included."""
+        if 'sync' in argv:
+            env = options.get('env')
+            assert isinstance(env, dict)
+            target = Path(env['UV_PROJECT_ENVIRONMENT'])
+            for python in ('Scripts/python.exe', 'bin/python'):
+                (target / python).parent.mkdir(parents=True, exist_ok=True)
+                (target / python).write_bytes(b'')
+        return built(argv, **options)
+
     (root / '.venv').mkdir()
     (root / '.venv' / 'Scripts').mkdir()
     for python in ('Scripts/python.exe', 'bin/python'):
         (root / '.venv' / python).parent.mkdir(parents=True, exist_ok=True)
         (root / '.venv' / python).write_bytes(b'')
-    monkeypatch.setattr(dep, '_snapshot', lambda _python: (str(root / '.venv'), 'same-versions'))
-    assert dep.main(['--sync', '--local', 'lab-commons'], cwd=root, run=_runner(calls)) == 0
-    assert dep.main(['--sync'], cwd=root, run=_runner(calls)) == 0
+    monkeypatch.setattr(dep, '_snapshot', lambda python: (str(Path(python).parent.parent), 'same-versions'))
+    assert dep.main(['--sync', '--local', 'lab-commons'], cwd=root, run=sync) == 0
+    assert dep.main(['--sync'], cwd=root, run=sync) == 0
     (on_before, on_after), (off_before, off_after) = keys
     assert on_before != on_after, 'adding an overlay must move the key'
     assert off_before != off_after, 'removing it must move the key back'

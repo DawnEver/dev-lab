@@ -5,25 +5,30 @@ its own ``uv.lock``, because only a served checkout's host tick compared the two
 home, :func:`stale`: the key of :data:`ENV_INPUTS` against the stamp the last successful bootstrap wrote, so an
 unchanged checkout costs one hash. Its callers:
 
-* :func:`dev_lab.dev.hostrefresh.sync_venv` -- a served checkout, every host tick;
+* :func:`dev_lab.dev.hostrefresh.sync_venv` -- a checkout a workstation deploy or main sync keeps;
 * ``--session-start``, the ``SessionStart`` hook (:data:`dev_lab.dev.agent_wiring.WIRING`) -- a stale venv detaches
   a background :func:`follow` and the hook returns at once;
-* the ``post-merge`` and ``post-checkout`` git hooks (``githooks/base.toml``, advisory) -- ``--background``.
+* the ``post-checkout`` git hook (``githooks/base.toml``, advisory) -- ``--background``; it is the one event a
+  new worktree fires, so its missing venv is created.
 
 THE TOOLCHAIN FOLLOWS AS ONE (user ruling 2026-11-12: no human approval keeps a checkout current). The venv is one
 of three things a checkout can be left behind on, and the follow takes them in dependency order: the CHECKOUT first
 (:func:`dev_lab.dev.checkoutfollow.advance` -- a clean primary checkout fast-forwards onto integration, which may
 move the lock), then the VENV, then the HOOKS (:func:`dev_lab.dev.hook_install.rewire` -- a stale or predecessor
 shim never reaches the current table, so only something outside a git hook can replace it). ``--background``
-detaches when any of the three is due.
+detaches when any of the three is due -- or when a legacy ``.venv`` directory the pointer passed over is still
+in place: the follow retries its drain (:func:`dev_lab.dev.venvcurrent.retire_passed_over`), which waits for no holder.
+The bootstrap it runs starts from the checkout's current environment, never the one the follow was launched from.
 
 THE BEHIND NOTICE (``--session-start`` too, :func:`behind_notice`): one line when the trunk checkout's HEAD is
 behind its LAST-FETCHED ``origin/<trunk>``, or the venv's git-installed dev-lab is not the commit that ref's
-``uv.lock`` pins -- naming the update door. No network, no install, no prune: a few local git reads. Beside it,
-:func:`dev_lab.dev.devhost.notice`: one line when the machine file disagrees with its declared host file.
+``uv.lock`` pins. A behind HEAD names what the follow does about it, or what stops it
+(:func:`dev_lab.dev.checkoutfollow.obstacle`) -- never a ``git pull`` for a person; a venv-only lag names its sync
+door. No network, no install, no prune: a few local git reads. The machine
+file's notice is devhost's own once-per-session row (``devhost session-start``), never repeated here.
 
 :func:`follow` skips while a run lives in the checkout or executes from its venv (TREE-HAS-A-LIVE-RUN,
-:mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start, merge or checkout.
+:mod:`dev_lab.dev.liverun`): a stamp-less venv is retried by the next session start or checkout.
 
 ``python -m dev_lab.dev.venvfollow [--root R] [--background | --session-start]``; always exits 0.
 """
@@ -43,11 +48,13 @@ import lab_commons.launch as _door
 from lab_commons.census import processes
 from lab_commons.log import emit
 
-from dev_lab.dev import checkoutfollow, devhost, familyrepos, hook_install, liverun
+from dev_lab.dev import checkoutfollow, hook_install, liverun, venvcurrent
+from dev_lab.dev.backgroundrun import detach_argv, held
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
-from dev_lab.dev.reclaimrun import detach_argv
-from dev_lab.dev.venvpath import venv_interpreter
+from dev_lab.dev.venvpath import VENV_LAYOUTS
+from dev_lab.dev.venvpointer import HOME as VENV_HOME
+from dev_lab.dev.venvpointer import current, current_interpreter
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -87,11 +94,19 @@ FAILED: Final = 'bootstrap failed'
 SKIPPED: Final = 'skipped: a live run'
 #: The distribution whose installed commit the behind notice compares with the integration lock's pin.
 FAMILY_KIT: Final = 'dev-lab'
+#: One follow per checkout at a time (measured 2026-11-17: four session starts in a row detached four follows of one
+#: worktree, whose bootstraps published over and reclaimed each other until its venv pointer named a deleted env).
+FOLLOW_LOCK: Final = 'follow.lock'
+
+
+def follow_lock(checkout: Path) -> Path:
+    """*checkout*'s follow lock, beside its environments: one per checkout, not one per repository."""
+    return checkout / VENV_HOME / FOLLOW_LOCK
 
 
 def venv_python(checkout: Path) -> Path:
-    """*checkout*'s own venv interpreter."""
-    return checkout / venv_interpreter(os_name=os.name)
+    """*checkout*'s own CURRENT venv interpreter (:mod:`dev_lab.dev.venvpointer`)."""
+    return current(checkout).joinpath(*VENV_LAYOUTS[os.name][1:])
 
 
 def env_key(checkout: Path) -> str:
@@ -105,7 +120,7 @@ def env_key(checkout: Path) -> str:
 
 def stale(checkout: Path) -> str | None:
     """The key to stamp when *checkout*'s venv is missing or stamped at other inputs; ``None`` when current."""
-    key, path = env_key(checkout), checkout / '.venv' / ENV_STAMP
+    key, path = env_key(checkout), current(checkout) / ENV_STAMP
     if venv_python(checkout).is_file() and path.is_file() and path.read_text(encoding='utf-8') == key:
         return None
     return key
@@ -113,23 +128,24 @@ def stale(checkout: Path) -> str | None:
 
 def stamp(checkout: Path, key: str) -> None:
     """Record that *checkout*'s venv was bootstrapped at *key*."""
-    path = checkout / '.venv' / ENV_STAMP
+    path = current(checkout) / ENV_STAMP
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(key, encoding='utf-8')
 
 
 def busy(checkout: Path, *, census: Callable[[], Iterable[Process]] = processes) -> str:
-    """The live runs reading *checkout* or executing from its venv, described; ``''`` when there are none."""
-    table = tuple(census())
-    reading = liverun.live_runs(checkout, census=lambda: table)
-    executing = liverun.executing_from(checkout / '.venv', census=lambda: table)
-    runs = {one.pid: one for one in (*reading, *executing)}
-    return liverun.describe(runs.values()) if runs else ''
+    """The live runs reading *checkout*, described; ``''`` when there are none.
+
+    A process executing from the venv is no obstacle (dev-lab #632): the bootstrap builds a new environment beside
+    it and publishes that, so the one it runs from never moves.
+    """
+    runs = liverun.live_runs(checkout, census=census)
+    return liverun.describe(runs) if runs else ''
 
 
 def _bootstrap(checkout: Path) -> int:
-    """``dep --bootstrap`` IN *checkout*: the door's own rule moves a primary checkout only from itself."""
-    argv = [sys.executable, '-m', 'dev_lab.dev.dep', '--bootstrap', str(checkout)]
+    """``dep --bootstrap`` IN *checkout* (it moves a primary checkout only from itself), from the current env."""
+    argv = [current_interpreter(), '-m', 'dev_lab.dev.dep', '--bootstrap', str(checkout)]
     return _door.run(argv, cwd=checkout, check=False).returncode
 
 
@@ -185,8 +201,15 @@ def behind_notice(root: Path, *, installed: Iterable[Installed] | None = None) -
         lags.append(f'venv {FAMILY_KIT} {kit[:10]} is not {pinned[:10]}, the pin in {authority}')
     if not lags:
         return None
+    if branch == trunk and behind:
+        why = checkoutfollow.obstacle(root)
+        return f'BEHIND: {"; ".join(lags)}. ' + (
+            f'The follow leaves it: {why}.'
+            if why
+            else 'The follow fast-forwards it and syncs its venv in the background.'
+        )
     door = sync_door(root).replace('<venv python>', str(venv_python(root)))
-    return f'BEHIND: {"; ".join(lags)}. Update: git pull --ff-only, then {door} {root}'
+    return f'BEHIND: {"; ".join(lags)}. Sync it: {door} {root}'
 
 
 def toplevel(cwd: Path) -> Path | None:
@@ -196,8 +219,13 @@ def toplevel(cwd: Path) -> Path | None:
 
 
 def due(checkout: Path) -> bool:
-    """*checkout*'s venv is :func:`stale`, the checkout is behind integration, or a declared hook is not live."""
-    return stale(checkout) is not None or checkoutfollow.behind(checkout) or hook_install.unwired(checkout)
+    """*checkout*'s venv is :func:`stale` or a legacy directory, it is behind integration, or a hook is not live."""
+    return (
+        stale(checkout) is not None
+        or venvcurrent.passed_over(checkout)
+        or checkoutfollow.behind(checkout)
+        or hook_install.unwired(checkout)
+    )
 
 
 def _session_root(stdin: TextIO) -> Path | None:
@@ -224,18 +252,21 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         if args.background or args.session_start:
             if due(root):
                 detach_argv(root, ['-m', 'dev_lab.dev.venvfollow', '--root', str(root)])
-            if args.session_start and (where := familyrepos.notice()):
-                emit(where)  # every session starts knowing where the family's checkouts live
-            if args.session_start and (declared := devhost.notice()):
-                emit(declared)  # first: an unfilled install home is this machine's first work
             if args.session_start and (notice := behind_notice(root)):
                 emit(notice)
             return 0
-        if moved := checkoutfollow.advance(root):
-            emit(moved)
-        emit(f'venv {root}: {follow(root)}')
-        if rewired := hook_install.rewire(root):
-            emit(rewired)
+        follow_lock(root).parent.mkdir(parents=True, exist_ok=True)
+        with held(root, at=follow_lock(root)) as mine:
+            if not mine:
+                emit(f'venv {root}: another follow of this checkout is running; it covers this one')
+                return 0
+            if moved := checkoutfollow.advance(root):
+                emit(moved)
+            emit(f'venv {root}: {follow(root)}')
+            if retired := venvcurrent.retire_passed_over(root, census=processes):
+                emit(retired)
+            if rewired := hook_install.rewire(root):
+                emit(rewired)
     except OSError as exc:  # a hook never blocks the session or the git verb it serves
         emit(f'venv follow did not run: {exc}')
     return 0

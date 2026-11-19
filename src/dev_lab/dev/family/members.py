@@ -9,8 +9,8 @@ ONE LIST, the one that already existed: ``[repos]`` of the machine file (:func:`
 absolute checkout path, the place a checkout's location is declared. A member's forge is its checkout's
 ``origin``. Membership by MANIFEST (:func:`dev_lab.dev.family.is_member`) is still the member's own fact; this
 list is which members THIS machine works with, and :func:`check` refuses a listed checkout that is no member. What
-else lists repos DERIVES from it (``forge secrets sync``'s targets) or is CHECKED against it (``[serve] repos``:
-a served name that is no member, a member this serving machine does not serve).
+else lists repos DERIVES from it (``forge secrets sync``'s targets); which members a host SERVES is no list at all,
+but each member's own ``producer`` (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16).
 
 :func:`check` names, per member, every fact that is not so (:class:`Finding`): cloned, beside its siblings,
 onboarded (:func:`~dev_lab.dev.famtests.onboarding.onboarding_gaps`, read from ``origin/<integration>`` -- never a
@@ -139,13 +139,12 @@ def check(
     family: Mapping[str, Path],
     *,
     forge: Callable[[str, Path], ForgeFacts],
-    served: Iterable[str] | None,
     now: datetime,
     bundle_name: str,
     read: Callable[[Path], Snapshot],
     compare: Callable[[Mapping[str, tuple[Snapshot, Facts]]], list[Finding]] | None = None,
 ) -> list[Finding]:
-    """Every :class:`Finding` of *family*; *served* is ``[serve] repos`` (``None``: this machine serves nothing).
+    """Every :class:`Finding` of *family*.
 
     Every member's CONTENT is *read* from its origin integration branch (:func:`dev_lab.dev.family.origin.snapshot`),
     never its working tree; a member that cannot be read is named ``unread`` and compared with nobody.
@@ -161,11 +160,6 @@ def check(
         if both is not None:
             seen[name] = both
     found += compare(seen) if compare is not None else []
-    if served is not None:
-        named = set(served)
-        found += [Finding(name, 'served but no [repos] member') for name in sorted(named - set(family))]
-        found += [Finding(name, 'not served: add it to [serve] repos (workstation deploy)')
-                  for name in sorted(set(family) - named)]  # fmt: skip
     return found
 
 

@@ -138,7 +138,7 @@ class TestTheShapeSetIsARatchet:
         assert_floor(len(live), floor=SHAPE_FLOOR, what='pytest parse shape')
         assert_floor_still_binds(len(live), floor=SHAPE_FLOOR, headroom=SHAPE_HEADROOM, what='pytest parse shape')
         assert live == set(PARSE_SHAPES), (
-            f'consulted by reports.py and with no representative line here: {sorted(live - set(PARSE_SHAPES))} '
+            f'consulted by pytest readers with no representative here: {sorted(live - set(PARSE_SHAPES))} '
             f'-- add one and prove it survives the distillation, or the filter is narrower than the '
             f'parser and a line it drops is a verdict nobody can read. Represented here and no longer '
             f'consulted: {sorted(set(PARSE_SHAPES) - live)} -- delete it in the same edit that removed '
@@ -180,6 +180,7 @@ class TestAnOrdinaryLogParsesByteIdentically:
         suite = tmp_path / 'suite'
         suite.mkdir()
         (suite / 'test_planted.py').write_text(body, encoding='utf-8')
+        (tmp_path / 'pytest.ini').write_text('[pytest]\n', encoding='utf-8')  # its own root
         log = tmp_path / 'verify.log'
         with log.open('w', encoding='utf-8') as handle, contextlib.redirect_stdout(io.StringIO()):
             handle.write(BANNER)
