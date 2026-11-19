@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final, Protocol
 
 import lab_commons.launch as _door
-from lab_commons.compute.store import ArrivalMismatch, Ref
+from lab_commons.compute.store import Ref
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.forgerecords import Attachment, attach, listing, records_issue
@@ -43,11 +43,11 @@ __all__ = [
     'MissingOutput',
     'OutputBudgetRefused',
     'OutputIntegrityRefused',
-    'RcloneObjects',
     'RcloneStore',
     'Ref',
     'check_key',
     'check_rclone_config',
+    'file_sha256',
     'landed_already',
     'manifest_of',
     'object_key',
@@ -194,7 +194,8 @@ class ArtefactStore(Protocol):
         """Delete *ref*'s archive and manifest; emptied folders go too."""
 
 
-def _digest(path: Path) -> str:
+def file_sha256(path: Path) -> str:
+    """The sha256 of the file *path*, read in MB blocks."""
     sha = hashlib.sha256()
     with path.open('rb') as handle:
         for block in iter(lambda: handle.read(MB), b''):
@@ -204,12 +205,12 @@ def _digest(path: Path) -> str:
 
 def ref_of(backend: str, key: str, path: Path) -> Ref:
     """The :class:`Ref` of archive *path* stored under *key* on *backend*."""
-    return Ref(backend, key, path.stat().st_size, _digest(path))
+    return Ref(backend, key, path.stat().st_size, file_sha256(path))
 
 
 def verified_copy(ref: Ref, fetched: Path, dest: Path) -> Path:
     """Move *fetched* into *dest* only when its sha256 is the ref's; a mismatch is deleted and refused."""
-    actual = _digest(fetched)
+    actual = file_sha256(fetched)
     if actual != ref.sha256:
         fetched.unlink()
         msg = f"{ref.ref}: sha256 {actual} is not the manifest's {ref.sha256}; download discarded"
@@ -286,8 +287,8 @@ class RcloneStore:
     backend: str = RCLONE
 
     def at(self, key: str) -> str:
-        """The remote path of *key*."""
-        return f'{self.remote.rstrip("/")}/{key}'
+        """The remote path of *key*; a bare ``name:`` takes *key* relative, never as an absolute ``name:/key``."""
+        return f'{self.remote}{key}' if self.remote.endswith(':') else f'{self.remote.rstrip("/")}/{key}'
 
     def run(self, *args: str, ok: Sequence[int] = (0,)) -> subprocess.CompletedProcess[str]:
         """One rclone call by argv; an exit outside *ok* is an :class:`OSError` with its stderr tail."""
@@ -353,63 +354,6 @@ class RcloneStore:
         self.run('deletefile', self.at(f'{folder}/{run_id_of(ref)}{MANIFEST}'))
         self.run('deletefile', self.at(ref.ref))
         self.run('rmdirs', '--leave-root', self.at(self.repo))
-
-
-# --- large objects ---------------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class RcloneObjects:
-    """A lab-commons :class:`~lab_commons.compute.store.LargeObjects` on an rclone remote, content-addressed.
-
-    A file is stored once under ``<remote>/<prefix>/<sha[:2]>/<sha>`` (``--immutable``); the same bytes again is the
-    object already there. :meth:`get` re-hashes what arrived and raises the store's own
-    :class:`~lab_commons.compute.store.ArrivalMismatch` on a mismatch, so a tampered or truncated object is a miss,
-    never a value. *prefix* is durable: a first segment ``scratch`` is refused (a bucket may age that prefix out).
-    """
-
-    remote: str
-    prefix: str
-    rclone: Sequence[str] = ()  # empty: the installed rclone (toolrelease.resolve)
-    backend: str = RCLONE
-
-    def __post_init__(self) -> None:
-        """Refuse a prefix a remote cannot hold or a bucket ages out."""
-        check_key(self.prefix)
-        if self.prefix.split('/', 1)[0] == 'scratch':
-            msg = (
-                f'large-object prefix {self.prefix!r} refused: scratch/ is aged out, a durable object never lives there'
-            )
-            raise ArtefactRefused(msg)
-
-    def _store(self) -> RcloneStore:
-        return RcloneStore(self.remote, self.prefix, self.rclone, self.backend)
-
-    def _key(self, sha256: str) -> str:
-        return f'{self.prefix}/{sha256[:2]}/{sha256}'
-
-    def put(self, path: Path) -> Ref:
-        """Upload *path* unless an object of its sha256 and size is there; its Ref."""
-        store = self._store()
-        ref = Ref(self.backend, self._key(_digest(path)), path.stat().st_size, _digest(path))
-        folder, _, name = ref.ref.rpartition('/')
-        there = [item for item in store.files(folder) if item['Path'] == name]
-        if there and int(there[0]['Size']) == ref.bytes:
-            return ref
-        store.run('copyto', '--immutable', str(path), store.at(ref.ref))
-        return ref
-
-    def get(self, ref: Ref, dest: Path) -> Path:
-        """Download *ref*'s bytes to the file *dest*, re-hashed: a mismatch deletes them and is a miss."""
-        store = self._store()
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        store.run('copyto', store.at(ref.ref), str(dest))
-        got = _digest(dest)
-        if got != ref.sha256:
-            dest.unlink()
-            msg = f'{ref.backend}:{ref.ref}: arrived hashing {got[:16]}, the Ref says {ref.sha256[:16]}; discarded'
-            raise ArrivalMismatch(msg)
-        return dest
 
 
 # --- forge ----------------------------------------------------------------------------------------

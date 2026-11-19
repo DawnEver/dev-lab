@@ -21,7 +21,8 @@ from lab_commons.compute.store import (
 )
 
 from dev_lab.dev import forgeunit
-from dev_lab.dev.artefactstores import ArtefactRefused, RcloneObjects
+from dev_lab.dev.artefactstores import ArtefactRefused, RcloneStore
+from dev_lab.dev.largeobjects import RcloneObjects
 
 UNIT = 'ab' + 'e' * 62
 BIG = b'\x02' * 6000
@@ -178,3 +179,8 @@ def test_the_unit_runner_builds_a_large_object_store_only_when_a_remote_is_named
     assert forgeunit.large_objects(None) is None
     with pytest.raises(ArtefactRefused, match='scratch'):
         forgeunit.large_objects('vendor-results:vendor-results', 'scratch')
+
+
+def test_a_bare_remote_takes_the_key_relative_never_from_the_root() -> None:
+    assert RcloneStore('bucket:', 'r').at('results/d6/x') == 'bucket:results/d6/x', 'bucket:/results is the drive root'
+    assert RcloneStore('drive:base/', 'r').at('k') == 'drive:base/k'

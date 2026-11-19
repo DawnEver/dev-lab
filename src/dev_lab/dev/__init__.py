@@ -408,6 +408,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   chosen by size, one shared library whose every writer cleans only its own runs.
 * :mod:`dev_lab.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
   rclone backends.
+* :mod:`dev_lab.dev.largeobjects` -- a content-addressed object store on an rclone remote, re-hashed on arrival.
 * :mod:`dev_lab.dev.artefactfolder` -- the folder backend: archive before manifest, idempotent, no aliases.
 * :mod:`dev_lab.dev.artefactpack` -- declared outputs collected under a footprint budget and packed indexed.
 * :mod:`dev_lab.dev.artefactindex` -- an archive's member facts in the record, its catalogue and selection.
