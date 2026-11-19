@@ -9,6 +9,7 @@ and read by :func:`declared_branchset`::
     trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
     ephemeral = ['pr/*']           # the DEFAULT, so omit it; PR-head globs, deleted once the PR goes; [] opts out
+    task_heads = 'pr/<task>/<feature>'  # the DEFAULT: the head an agent session bound to a task pushes; '' opts out
     prune_merged = true            # any host's serve tick DELETES merged idle origin branches (idempotent)
     grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
 
@@ -55,6 +56,7 @@ __all__ = [
     'ARCHIVE_PREFIX',
     'EPHEMERAL_OFF',
     'FAMILY_EPHEMERAL',
+    'FAMILY_TASK_HEADS',
     'ORIGIN_DOOR',
     'BranchSet',
     'BranchSetKeyRetired',
@@ -74,11 +76,15 @@ __all__ = [
 ]
 
 _TABLE = '[tool.dev_lab.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours'})
+_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours', 'task_heads'})
 
 #: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
 #: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
 FAMILY_EPHEMERAL: Final[tuple[str, ...]] = ('pr/*',)
+#: The shape of a pushed PR head (user ruling D25, 2026-11-17): branch names follow the task, one feature per PR.
+#: Only the namespace before ``<task>`` is a choice; ``<task>/<feature>`` is the shape itself.
+FAMILY_TASK_HEADS: Final = 'pr/<task>/<feature>'
+_TASK_TAIL: Final = '<task>/<feature>'
 #: What a manifest that turned the namespace off is told, by every assertion that reads it.
 EPHEMERAL_OFF: Final = '[tool.dev_lab.branchset] ephemeral = [] turns off the family pr/* namespace -- delete the line'
 
@@ -118,6 +124,22 @@ class BranchSet:
     #: Glob namespaces (``pr/*``) of SHORT-LIVED branches: pushable undeclared, each the head of one pull
     #: request, deleted by the forge once no open PR has it as head (:mod:`dev_lab.dev.branchprune`).
     ephemeral: tuple[str, ...] = ()
+    #: The head shape an agent session bound to a task pushes (:data:`FAMILY_TASK_HEADS`); ``''``: not judged.
+    task_heads: str = FAMILY_TASK_HEADS
+
+    @property
+    def task_namespace(self) -> str:
+        """The namespace every task's heads live under (``pr/``), or ``''`` when task heads are not judged."""
+        return self.task_heads.removesuffix(_TASK_TAIL)
+
+    def task_head(self, slug: str, feature: str) -> str:
+        """The head task *slug* publishes *feature* on."""
+        return self.task_heads.replace('<task>', slug).replace('<feature>', feature)
+
+    def carries_task(self, name: str, slug: str) -> bool:
+        """Whether *name* is one of task *slug*'s heads -- never the bare ``pr/<slug>``."""
+        prefix = self.task_head(slug, '')
+        return name.startswith(prefix) and len(name) > len(prefix)
 
     @property
     def declared(self) -> frozenset[str]:
@@ -210,6 +232,13 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     if not isinstance(ephemeral, list) or not all(isinstance(glob, str) and glob for glob in ephemeral):
         msg = f'{_TABLE} ephemeral in {manifest} is {ephemeral!r}; it must be a list of branch globs (pr/*)'
         raise BranchSetNotDeclared(msg)
+    heads = table.get('task_heads', FAMILY_TASK_HEADS)
+    if not isinstance(heads, str) or (heads and (not heads.endswith(_TASK_TAIL) or heads == _TASK_TAIL)):
+        msg = (
+            f'{_TABLE} task_heads in {manifest} is {heads!r}; it must be <namespace>{_TASK_TAIL} '
+            f"(the default {FAMILY_TASK_HEADS!r}), or '' to judge no task head"
+        )
+        raise BranchSetNotDeclared(msg)
     prune = table.get('prune_merged', False)
     grace = table.get('grace_hours', 24.0)
     if not isinstance(prune, bool):
@@ -219,7 +248,12 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
         msg = f'{_TABLE} grace_hours in {manifest} is {grace!r}; it must be a non-negative number of hours'
         raise BranchSetNotDeclared(msg)
     return BranchSet(
-        trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace), ephemeral=tuple(ephemeral)
+        trunk,
+        frozenset(sessions),
+        prune_merged=prune,
+        grace_hours=float(grace),
+        ephemeral=tuple(ephemeral),
+        task_heads=heads,
     )
 
 
@@ -319,8 +353,8 @@ def apply_local(
     frees its branch for the delete below; every kept tree is listed with its reason. *limit* bounds the trees
     removed per run and *quiet_s* how long a tree's index must be still; a tree's run outputs move home, verified,
     before it goes (:func:`dev_lab.dev.reclaim.reclaim`). LAST, TWO-FATES (:func:`dev_lab.dev.branchfate.settle`,
-    ruling 2026-11-15): every local branch and tree still standing is kept for a named live owner, or archived
-    losslessly and cleaned up -- none lingers.
+    ruling 2026-11-15): every local branch and tree still standing is kept for a named live owner, cleaned when
+    merged and holding nothing unlanded, or listed with its doors (D31: never parked).
     """
     held_by = holders(root, branchset)
     trees = reclaim(root, held_by, occupied=occupied, limit=limit, quiet_s=quiet_s)
@@ -373,12 +407,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--apply',
         action='store_true',
-        help='reclaim and delete landed LOCAL work, archive then clean ownerless work; origin gets its door',
+        help='reclaim and delete landed LOCAL work, list unlanded work with its doors; origin gets its door',
     )
     parser.add_argument('--discard', metavar='BRANCH', help='remove ONE unlanded lane: its worktree and local branch')
     parser.add_argument('--approved', default='', help="with --discard: the user's words approving it (required)")
     args = parser.parse_args(argv)
-    root = args.root
+    top = git_out(args.root, 'rev-parse', '--show-toplevel')
+    if top is None:
+        emit(f'{args.root} is not inside a git checkout; run from the checkout or pass --root <checkout>')
+        return 2
+    root = Path(top.strip())
     if args.discard:
         code, line = discard(root, declared_branchset(root), args.discard, args.approved)
         emit(line)

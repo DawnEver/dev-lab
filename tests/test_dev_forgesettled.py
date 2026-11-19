@@ -47,6 +47,8 @@ def test_a_settled_commit_is_read_once_across_ticks(tmp_path: Path) -> None:
     again = SettledHistories(forge)(SHA)  # the next tick: a new reader, the same cache
     assert settled(first)
     assert again == first
+    assert [one.created for one in again] == [one.created for one in first]
+    assert first[0].created is not None  # the forge's post time survives the cache, a datetime as read
     assert _reads(forge) == 1
 
 

@@ -15,8 +15,11 @@ from typing import Any
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
-#: Integration on ``integrate/main``, trunk ``main``.
-INTEGRATOR = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+#: An explicit Actions producer line (dev_lab.dev.producers; absent reads the same).
+PRODUCER = 'producer = "actions"\n'
+
+#: Integration on ``integrate/main``, trunk ``main``; an Actions-produced repo.
+INTEGRATOR = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\n' + PRODUCER
 
 #: A GitHub repository whose CI workflows post the merge decision and fan parts out per OS.
 GITHUB_TEXT = (

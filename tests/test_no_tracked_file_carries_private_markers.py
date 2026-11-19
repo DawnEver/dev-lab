@@ -314,3 +314,67 @@ def test_a_pr_body_with_a_marker_is_refused_only_for_a_public_repo(
     err = capsys.readouterr().err
     assert ('PRIVATE-MARKERS' in err) is refused
     assert ('unreadable' in err) is (private is None)
+
+
+#: Every forge write whose text a person typed, and the argv carrying ``{text}`` in that text field.
+_TEXT_WRITES = pytest.mark.parametrize(
+    'argv',
+    [
+        ['pr', 'create', '--title', '{text}', '--body', 'b', '--head', 'x', '--base', 'y'],
+        ['pr', 'create', '--title', 't', '--body', '{text}', '--head', 'x', '--base', 'y'],
+        ['pr', 'close', '9', '--reason', '{text}'],
+        ['issue', 'create', '--title', '{text}', '--body', 'b', '--kind', 'need'],
+        ['issue', 'create', '--title', 't', '--body', '{text}', '--kind', 'need'],
+        ['issue', 'comment', '7', '--body', '{text}'],
+    ],
+    ids=['pr-title', 'pr-body', 'pr-close-reason', 'issue-title', 'issue-body', 'comment'],
+)
+
+
+@_TEXT_WRITES
+@pytest.mark.parametrize(
+    ('private', 'text', 'refused'),
+    [
+        (False, 'ran on secrethost', True),  # the planted marker, public target: refused
+        (None, 'ran on secrethost', True),  # visibility unreadable: fail closed
+        (True, 'ran on secrethost', False),  # a private target may name its private host
+        (False, 'ran on the build host', False),  # a neutral text, public target: passes
+    ],
+    ids=['public-marker', 'unreadable-marker', 'private-marker', 'public-neutral'],
+)
+def test_every_forge_text_write_refuses_a_marker_for_a_public_target_before_any_network_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    *,
+    private: bool | None,
+    text: str,
+    refused: bool,
+) -> None:
+    """A PR, issue or comment text is published with the write: the door scans it before its first forge call."""
+    _door.run(['git', 'init', '-q'], cwd=tmp_path, check=True)
+    _door.run(['git', 'remote', 'add', 'origin', 'https://example.com/o/r.git'], cwd=tmp_path, check=True)
+    denylist = tmp_path / 'private-markers'
+    denylist.write_text('SecretHost\n', encoding='utf-8')
+    monkeypatch.setattr(privatemarkers, 'MARKERS_FILE', denylist)
+    _visible_as(monkeypatch, private=private)
+    writes: list[object] = []
+
+    def no_network(*_a: object, **_k: object) -> object:
+        writes.append(True)
+        msg = 'opened'
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(forgecli, 'client_for', no_network)
+    filled = [word.replace('{text}', text) for word in argv]
+    if refused:
+        assert issue_and_pr(filled, cwd=tmp_path, env={}) == 1
+        assert writes == []
+    else:
+        with pytest.raises(RuntimeError, match='opened'):
+            issue_and_pr(filled, cwd=tmp_path, env={})
+    err = capsys.readouterr().err
+    assert ('PRIVATE-MARKERS' in err) is refused
+    assert ('refusals.md#private-markers' in err) is refused
+    assert 'secrethost' not in err.lower()

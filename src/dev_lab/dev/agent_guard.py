@@ -27,12 +27,18 @@ shared checkout is a mutation another party learns about by accident, and it wou
 ``unguarded`` unobservable. The install NEVER clobbers: unrelated settings keys, unrelated matchers
 and unrelated hooks in the Bash matcher are preserved, and an engine file that is somebody ELSE's
 (no stamp) refuses rather than being overwritten.
+
+A TRACKED RENDER IS THE CHECKOUT'S OWN KIT'S, AND NEVER A MAIN CHECKOUT'S (toolchain O14): the install plans
+every write first and :func:`dev_lab.dev.trackedrender.check_render` decides whether the tracked ones may
+move; a refused install writes NOTHING.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -43,15 +49,17 @@ from dev_lab.dev.agent_wiring import (
     ENGINE_REL,
     HOOK_COMMAND,
     LAUNCHER_REL,
-    RETIRED_WIRING,
     RULES_REL,
     SETTINGS_REL,
     SHELL_TOOLS,
-    WIRING,
-    Wire,
+    WireRefused,
+    declared,
+    rows,
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
+from dev_lab.dev.launcherplan import launcher_plan
 from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
+from dev_lab.dev.trackedrender import Kit, RenderRefused, check_render
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -89,6 +97,8 @@ UNGUARDED: Final = 'unguarded'
 NOTHING_DECLARED: Final = 'nothing-declared'
 
 _LAUNCHER_SHIPPED: Final = Path(__file__).resolve().with_name('agent_launcher.js')
+#: The one environment resolver the launcher and the engine require, installed beside each (dev-lab #641).
+_RESOLVER: Final = 'venv_resolver.js'
 
 
 def launcher_source() -> str:
@@ -244,7 +254,7 @@ def _no_engine_hook(settings: dict[str, Any]) -> tuple[str, str]:
     return ABSENT, f'no PreToolUse {_MATCHER} hook runs {Path(ENGINE_REL).name}'
 
 
-def _inspect_wiring(path: Path) -> tuple[str, str]:
+def _inspect_wiring(path: Path, repo: Path) -> tuple[str, str]:
     if not path.exists():
         return ABSENT, f'no {SETTINGS_REL} -- nothing runs the engine, whatever is installed beside it'
     try:
@@ -257,7 +267,7 @@ def _inspect_wiring(path: Path) -> tuple[str, str]:
         return _no_engine_hook(settings)
     if HOOK_COMMAND not in ours:
         return STALE, f'runs the engine with other arguments: {ours[0]!r}, not {HOOK_COMMAND!r}'
-    stale = [f'the stray census is not wired on {", ".join(u)}' for u in [_unwired(settings)] if u]
+    stale = _drift_lines(settings, repo)
     stale += [f'enabledPlugins does not turn off {", ".join(p)}' for p in [live_disabled_plugins(settings)] if p]
     if stale:
         return STALE, '; '.join(stale) + ' -- re-install to upgrade'
@@ -269,82 +279,140 @@ def guard_installation(repo: Path) -> GuardReport:
     parts = (
         PartReport('engine', *_inspect_engine(repo / ENGINE_REL), path=repo / ENGINE_REL),
         PartReport('rules', *_inspect_rules(repo / RULES_REL), path=repo / RULES_REL),
-        PartReport('wiring', *_inspect_wiring(repo / SETTINGS_REL), path=repo / SETTINGS_REL),
+        PartReport('wiring', *_inspect_wiring(repo / SETTINGS_REL, repo), path=repo / SETTINGS_REL),
     )
     return GuardReport(repo=repo, parts=parts)
 
 
-def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
-    """*settings* with the guard's hooks wired and the family's disabled plugins off, and NOTHING ELSE MOVED.
+def wire_settings(settings: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
+    """*settings* with the rendered rows wired, the family's disabled plugins off, and NOTHING ELSE MOVED.
 
-    A repo's own ``enabledPlugins`` entries are kept; :mod:`dev_lab.dev.plugin_settings` owns ours.
+    The rows are :func:`dev_lab.dev.agent_wiring.rows` of *root*: the family's and what the repo declares.
 
-    Pure over its argument -- the input is not mutated -- so the suite drives THIS function over a
-    planted foreign settings file rather than re-deriving what "did not clobber" means.
-
-    Our hook lives on a matcher naming EVERY shell tool. A copy of it on a matcher missing one (the
-    pre-2026-10-08 ``Bash`` wiring) is MOVED rather than widened in place: widening that matcher
-    would also hand every OTHER hook on it a tool its author never meant it to see. Other hooks on a
-    full shell matcher are kept, and our own hook there is replaced in place.
+    THE RENDERER OWNS EVERY ROW THAT IS OURS -- the engine, and any launcher row running a ``dev_lab.dev`` module --
+    so every such row is removed wherever it stands (a retired handler, a hand-wired copy, a partial shell matcher)
+    and the rendered rows are appended, one entry each. A repo's own hooks and ``enabledPlugins`` entries are kept;
+    :mod:`dev_lab.dev.plugin_settings` owns ours. Pure over its argument: the input is not mutated.
     """
     out = json.loads(json.dumps(settings))  # a deep copy through the same encoder that writes it
-    for event, marker in RETIRED_WIRING:
-        entries = out.get('hooks', {}).get(event) or []
+    hooks = out.setdefault('hooks', {})
+    for event in list(hooks):
+        entries = [e for e in hooks[event] or [] if isinstance(e, dict)] if isinstance(hooks[event], list) else []
         for entry in entries:
-            if isinstance(entry, dict):
-                entry['hooks'] = [h for h in entry.get('hooks') or [] if marker not in str(h.get('command', ''))]
-        out.get('hooks', {})[event] = [e for e in entries if not isinstance(e, dict) or e.get('hooks')]
-    for wire in WIRING:
-        _wire(out.setdefault('hooks', {}).setdefault(wire.event, []), wire)
+            entry['hooks'] = [h for h in entry.get('hooks') or [] if not _ours(h)]
+        kept = [e for e in hooks[event] or [] if not isinstance(e, dict) or e.get('hooks')]
+        if kept:
+            hooks[event] = kept
+        else:
+            del hooks[event]
+    for row in rows(root):
+        hook = {'type': 'command', 'command': row.command, 'timeout': row.timeout}
+        entry = {'matcher': row.matcher, 'hooks': [hook]} if row.matcher else {'hooks': [hook]}
+        hooks.setdefault(row.event, []).append(entry)
     return disable_plugins(out)
 
 
-def _mine(hook: object, wire: Wire) -> bool:
-    return isinstance(hook, dict) and wire.marker in str(hook.get('command', ''))
+def _ours(hook: object) -> bool:
+    """Whether *hook* is a row the renderer owns: the engine, or the launcher running a ``dev_lab.dev`` module."""
+    command = str(hook.get('command', '')) if isinstance(hook, dict) else ''
+    launched = Path(LAUNCHER_REL).name in command and '-m dev_lab.dev.' in command
+    return launched or Path(ENGINE_REL).name in command
 
 
-def _home(entry: object, wire: Wire) -> bool:
-    """Whether *entry* is where *wire* lives: the full shell matcher, or any entry for a matcher-less wire."""
-    return isinstance(entry, dict) and (_tools(entry) == frozenset(SHELL_TOOLS) if wire.on_shells else True)
-
-
-def _wire(entries: list[Any], wire: Wire) -> None:
-    """*wire* present exactly once in *entries*: moved off a partial shell matcher, else replaced in place."""
-    hook = {'type': 'command', 'command': wire.command}
-    if wire.on_shells:
-        stripped = [
-            e for e in entries if _tools(e) and not _home(e, wire) and any(_mine(h, wire) for h in e.get('hooks') or [])
-        ]
-        for entry in stripped:
-            entry['hooks'] = [h for h in entry['hooks'] if not _mine(h, wire)]
-        entries[:] = [e for e in entries if not any(e is s for s in stripped) or e['hooks']]
-    homes = [e for e in entries if _home(e, wire)]
-    for entry in homes:
-        found = [i for i, h in enumerate(entry.get('hooks', []) or []) if _mine(h, wire)]
-        if found:
-            entry['hooks'][found[0]] = hook
-            return
-    if wire.on_shells and homes:
-        homes[0].setdefault('hooks', []).append(hook)
-    else:
-        entries.append({'matcher': _MATCHER, 'hooks': [hook]} if wire.on_shells else {'hooks': [hook]})
-
-
-def _unwired(settings: dict[str, Any]) -> list[str]:
-    """The events of :data:`WIRING` past the engine whose exact command is not at its home."""
+def _owned(settings: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """Every row of *settings* the renderer owns, as ``(event, matcher, hook)`` in file order."""
     return [
-        wire.event
-        for wire in WIRING[1:]
-        if not any(
-            isinstance(h, dict) and h.get('command') == wire.command
-            for e in settings.get('hooks', {}).get(wire.event, []) or []
-            if _home(e, wire)
-            for h in e.get('hooks', []) or []
-        )
+        (event, str(entry.get('matcher', '')), json.dumps(hook, sort_keys=True))
+        for event, entries in (settings.get('hooks') or {}).items()
+        for entry in (entries if isinstance(entries, list) else [])
+        if isinstance(entry, dict)
+        for hook in entry.get('hooks') or []
+        if _ours(hook)
     ]
 
 
-def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
+def _drifted(settings: dict[str, Any], repo: Path) -> list[str]:
+    """The events whose owned rows differ from what :func:`wire_settings` renders for *settings* in *repo*."""
+    have, want = Counter(_owned(settings)), Counter(_owned(wire_settings(settings, repo)))
+    return sorted({event for event, _matcher, _hook in (have - want) + (want - have)})
+
+
+def _drift_lines(settings: dict[str, Any], repo: Path) -> list[str]:
+    """Where *settings* departs from the wiring rendered for *repo*, or why that wiring cannot be rendered."""
+    try:
+        drifted = _drifted(settings, repo)
+    except WireRefused as refused:
+        return [f'the repo-declared wiring is refused, fix its row: {refused}']
+    return [f'the hook rows differ from the rendered wiring on {", ".join(drifted)}'] if drifted else []
+
+
+def _text(text: str) -> bytes:
+    """The bytes :meth:`Path.write_text` writes for *text*: UTF-8, every newline the platform's."""
+    return text.replace('\n', os.linesep).encode('utf-8')
+
+
+def _resolvers(dirs: set[Path]) -> tuple[dict[Path, bytes], list[str]]:
+    """The ONE environment resolver into each of *dirs*: the launcher and the engine both require it."""
+    shipped = _LAUNCHER_SHIPPED.with_name(_RESOLVER).read_bytes()
+    writes: dict[Path, bytes] = {}
+    actions = []
+    for beside in sorted(dirs):
+        resolver = beside / _RESOLVER
+        if resolver.exists() and resolver.read_bytes() == shipped:
+            actions.append(f'environment resolver already present: {resolver}')
+        else:
+            writes[resolver] = shipped
+            actions.append(f'environment resolver installed: {resolver}')
+    return writes, actions
+
+
+def _planned(repo: Path, *, force: bool) -> tuple[dict[Path, bytes], list[str]]:
+    """Every file the install would write into *repo*, with its bytes, and the action line each one reports."""
+    engine = repo / ENGINE_REL
+    status, detail = _inspect_engine(engine)
+    writes: dict[Path, bytes] = {}
+    actions: list[str] = []
+    if status == FOREIGN and not force:
+        msg = f'{engine}: {detail}. Re-run with force=True if replacing it is what you mean.'
+        raise FileExistsError(msg)
+    if status == INSTALLED:
+        actions.append(f'engine already current: {engine}')
+    else:
+        writes[engine] = _text(engine_source())
+        actions.append(f'engine {"replaced" if status != ABSENT else "installed"}: {engine}')
+
+    launcher = repo / LAUNCHER_REL
+    write, action = launcher_plan(launcher, launcher_source())
+    if write is not None:
+        writes[launcher] = _text(write)
+    actions.append(action)
+
+    catalog = launcher.with_name('native_session.json')
+    catalog_bytes = _LAUNCHER_SHIPPED.with_name('native_session.json').read_bytes()
+    if catalog.exists() and catalog.read_bytes() == catalog_bytes:
+        actions.append(f'native session catalog already present: {catalog}')
+    else:
+        writes[catalog] = catalog_bytes
+        actions.append(f'native session catalog installed: {catalog}')
+
+    resolvers, resolved = _resolvers({launcher.parent, engine.parent})
+    writes |= resolvers
+    actions += resolved
+
+    settings_path = repo / SETTINGS_REL
+    before: dict[str, Any] = {}
+    if settings_path.exists():
+        before = json.loads(settings_path.read_text(encoding='utf-8'))
+    after = wire_settings(before, repo)
+    if after == before:
+        actions.append(f'wiring already present: {settings_path}')
+    else:
+        writes[settings_path] = _text(json.dumps(after, indent=2) + '\n')
+        actions.append(f'wiring {"updated" if before else "written"}: {settings_path}')
+    return writes, actions
+
+
+def install_guard(repo: Path, *, force: bool = False, kit: Kit | None = None) -> tuple[str, ...]:
     """Install the engine into *repo* and wire it, returning what was DONE, one line per action.
 
     THE RULES FILE IS NOT WRITTEN HERE, and that is the design rather than an omission: which rules a
@@ -353,51 +421,23 @@ def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:
     rules whose exits do not exist in the tree reading them -- the sealed-road failure the registry
     was built to prevent.
 
+    *kit* is the dev-lab rendering (default: the running one); :func:`~dev_lab.dev.trackedrender.check_render`
+    decides with it whether a TRACKED file may move.
+
     Raises:
         FileExistsError: when an engine file is present that lab-commons did not ship. Overwriting
             somebody's hand-written hook is not an install, it is a deletion; pass *force* to mean it.
+        WireRefused: the repo's ``[[tool.dev_lab.agent_hooks]]`` declaration is refused; nothing is written.
+        RenderRefused: a tracked file would move in a main checkout or under a kit not the checkout's own;
+            nothing is written.
 
     """
-    engine = repo / ENGINE_REL
-    status, detail = _inspect_engine(engine)
-    actions: list[str] = []
-    if status == FOREIGN and not force:
-        msg = f'{engine}: {detail}. Re-run with force=True if replacing it is what you mean.'
-        raise FileExistsError(msg)
-    if status == INSTALLED:
-        actions.append(f'engine already current: {engine}')
-    else:
-        engine.parent.mkdir(parents=True, exist_ok=True)
-        engine.write_text(engine_source(), encoding='utf-8')
-        actions.append(f'engine {"replaced" if status != ABSENT else "installed"}: {engine}')
-
-    launcher = repo / LAUNCHER_REL
-    if launcher.exists():
-        actions.append(f'launcher already present, kept: {launcher}')
-    else:
-        launcher.parent.mkdir(parents=True, exist_ok=True)
-        launcher.write_text(launcher_source(), encoding='utf-8')
-        actions.append(f'launcher installed: {launcher}')
-
-    catalog = launcher.with_name('native_session.json')
-    catalog_bytes = _LAUNCHER_SHIPPED.with_name('native_session.json').read_bytes()
-    if catalog.exists() and catalog.read_bytes() == catalog_bytes:
-        actions.append(f'native session catalog already present: {catalog}')
-    else:
-        catalog.write_bytes(catalog_bytes)
-        actions.append(f'native session catalog installed: {catalog}')
-
-    settings_path = repo / SETTINGS_REL
-    before: dict[str, Any] = {}
-    if settings_path.exists():
-        before = json.loads(settings_path.read_text(encoding='utf-8'))
-    after = wire_settings(before)
-    if after == before:
-        actions.append(f'wiring already present: {settings_path}')
-    else:
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(json.dumps(after, indent=2) + '\n', encoding='utf-8')
-        actions.append(f'wiring {"updated" if before else "written"}: {settings_path}')
+    declared(repo)  # a refused declaration refuses the install before any file is written
+    writes, actions = _planned(repo, force=force)
+    check_render(repo, writes, kit=kit)
+    for path, data in writes.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
     return tuple(actions)
 
 
@@ -415,7 +455,12 @@ def report_guard(argv: list[str] | None = None) -> int:
     root = args.repo.resolve()
 
     if args.install:
-        for action in install_guard(root, force=args.force):
+        try:
+            actions = install_guard(root, force=args.force)
+        except (WireRefused, RenderRefused) as refused:
+            emit(f'[agent-guard] REFUSED -- {refused}')
+            return 1
+        for action in actions:
             emit(f'[agent-guard] {action}')
 
     report = guard_installation(root)

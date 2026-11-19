@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['session_of', 'valid']
+__all__ = ['harness_keys', 'primary_of', 'session_of', 'valid']
 
 
 def _catalog() -> dict:
@@ -30,10 +30,10 @@ def _catalog() -> dict:
             )
         )
     except (OSError, ValueError, KeyError, TypeError) as failed:
-        msg = 'native session catalog is missing or invalid. Door: restore the declared dev-lab installation.'
+        msg = 'native session catalog is missing or invalid.\nDoor: restore the declared dev-lab installation.'
         raise ValueError(msg) from failed
     if not readable:
-        msg = 'native session catalog is invalid. Door: restore the declared dev-lab installation.'
+        msg = 'native session catalog is invalid.\nDoor: restore the declared dev-lab installation.'
         raise ValueError(msg)
     return catalog
 
@@ -48,20 +48,36 @@ def valid(session: object) -> bool:
     )
 
 
-def session_of(env: Mapping[str, object] | None = None) -> str:
-    """Read one canonical native identity; configured invalid/ambiguous harnesses refuse, never bypass."""
+def harness_keys() -> frozenset[str]:
+    """Every environment key a native harness names its session in -- what a machine's own commit must not carry."""
+    return frozenset(key for row in _catalog()['harnesses'] for key in (row['primary'], *row['auxiliary']))
+
+
+def primary_of(env: Mapping[str, object] | None = None) -> str:
+    """The primary key of the ONE native harness *env* declares (``''`` for none) -- which harness this session runs.
+
+    Raises:
+        ValueError: *env* declares more than one harness.
+
+    """
     env = os.environ if env is None else env
     declared = [
         row for row in _catalog()['harnesses'] if any(field in env for field in [row['primary'], *row['auxiliary']])
     ]
-    if not declared:
-        return ''
-    if len(declared) != 1:
-        msg = 'ambiguous native session harnesses. Door: run from exactly one native agent harness.'
+    if len(declared) > 1:
+        msg = 'ambiguous native session harnesses.\nDoor: run from exactly one native agent harness.'
         raise ValueError(msg)
-    primary = declared[0]['primary']
+    return declared[0]['primary'] if declared else ''
+
+
+def session_of(env: Mapping[str, object] | None = None) -> str:
+    """Read one canonical native identity; configured invalid/ambiguous harnesses refuse, never bypass."""
+    env = os.environ if env is None else env
+    primary = primary_of(env)
+    if not primary:
+        return ''
     session = env.get(primary)
     if not valid(session):
-        msg = f'native session {primary} is not a session id or is missing. Door: restore the native harness identity.'
+        msg = f'native session {primary} is not a session id or is missing.\nDoor: restore the native harness identity.'
         raise ValueError(msg)
     return session

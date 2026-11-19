@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import hook_install
+from dev_lab.dev import hook_install, venvpointer
 from dev_lab.dev.famtests.hookinstall import (
     assert_declared_hooks_are_installed,
     assert_hooks_dir_is_the_one_git_consults,
@@ -37,6 +37,7 @@ from dev_lab.dev.hook_install import (
     shim,
 )
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
+from dev_lab.dev.venvpointer import shell_function
 
 _GIT = shutil.which('git') or 'git'
 _LAYER = '[[tool.dev_lab.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n'
@@ -92,8 +93,9 @@ def test_a_shim_runs_the_stage_through_the_checkout_venv() -> None:
     text = shim('pre-push')
     assert text.startswith('#!/bin/sh\n')
     assert SHIM_MARKER in text
-    assert '.venv/Scripts/python.exe' in text
-    assert '.venv/bin/python' in text
+    assert '"$(_current_env "$top")/Scripts/python.exe"' in text
+    assert '"$(_current_env "$main")/bin/python"' in text
+    assert shell_function() in text, 'the one resolver, rendered from venv_resolver.js'
     assert '-m dev_lab.dev.githooks run pre-push "$@"' in text
 
 
@@ -266,13 +268,28 @@ def _install_with(repo: Path, fallback: str) -> None:
 _REPO_ROW = '[[tool.dev_lab.hooks.commit-msg]]\nid = "repo-only"\nrun = ["python", "-m", "no_such_repo_module"]\n'
 
 
-def test_no_venv_commits_through_the_recorded_interpreter_and_skips_repo_rows(repo: Path) -> None:
-    """A row needing the repo's own env would fail here; under the recorded interpreter it is skipped."""
+def test_a_venv_less_commit_is_refused_naming_the_bootstrap_door(repo: Path) -> None:
+    """dev-lab #639: under the recorded interpreter every row was skipped -- a commit no hook judged. Now refused."""
     (repo / 'pyproject.toml').write_text(_REPO_ROW, encoding='utf-8')
     _install_with(repo, sys.executable)
     done = _commit(repo)
-    assert done.returncode == 0, done.stderr
+    assert done.returncode != 0, done.stderr
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr
     assert 'no_such_repo_module' not in done.stderr
+
+
+def test_a_half_built_venv_is_passed_over_and_the_commit_refused_naming_the_door(repo: Path) -> None:
+    """A venv whose interpreter exists but cannot import dev_lab is not exec'd into a bare ``No module named``."""
+    venv = repo / '.venv' / 'bin'
+    venv.mkdir(parents=True)
+    fake = venv / 'python'
+    fake.write_text('#!/bin/sh\necho "No module named dev_lab" >&2\nexit 1\n', encoding='utf-8', newline='\n')
+    fake.chmod(0o755)
+    _install_with(repo, sys.executable)
+    done = _commit(repo)
+    assert done.returncode != 0
+    assert 'dev_lab.dev.dep --bootstrap' in done.stderr
+    assert 'No module named' not in done.stderr
 
 
 def test_no_interpreter_anywhere_refuses_the_commit_in_one_line(repo: Path, tmp_path: Path) -> None:
@@ -281,7 +298,7 @@ def test_no_interpreter_anywhere_refuses_the_commit_in_one_line(repo: Path, tmp_
     assert done.returncode != 0
     lines = [line for line in done.stderr.splitlines() if '[githooks]' in line]
     assert len(lines) == 1  # pre-commit refuses; commit-msg never runs
-    assert 'no lab_commons interpreter; refused' in lines[0]
+    assert 'no interpreter that imports dev_lab; refused' in lines[0]
 
 
 def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path) -> None:
@@ -289,12 +306,42 @@ def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path)
     venv = repo / '.venv' / 'bin'
     venv.mkdir(parents=True)
     fake = venv / 'python'
-    fake.write_text('#!/bin/sh\necho venv-ran >&2\nexit 1\n', encoding='utf-8', newline='\n')
+    fake.write_text(
+        '#!/bin/sh\n[ "$1" = -c ] && exit 0\necho venv-ran >&2\nexit 1\n', encoding='utf-8', newline='\n'
+    )  # the import probe passes
     fake.chmod(0o755)
     _install_with(repo, sys.executable)
     done = _commit(repo)
     assert done.returncode != 0
     assert 'venv-ran' in done.stderr
+
+
+def _fallback(stage_shim: str) -> str:
+    """What the shim's ``fallback`` line evaluates to in a POSIX sh."""
+    line = next(line for line in stage_shim.splitlines() if line.startswith('fallback='))
+    sh = shutil.which('sh')
+    assert sh, 'the shim runs in a POSIX sh: every host the kit serves has one'
+    done = subprocess.run(
+        [sh, '-c', f'{shell_function()}\n{line}\nprintf %s "$fallback"'],
+        capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr
+    return done.stdout
+
+
+def test_a_recorded_checkout_interpreter_follows_that_checkouts_current_environment(tmp_path: Path) -> None:
+    """A fallback recorded from a legacy ``.venv`` (or an older ``.venvs/<id>``) re-resolves at every run."""
+    root = tmp_path / 'main'
+    tail = CANDIDATE_RELATIVE_PATHS[0][1:]
+    (root / venvpointer.HOME / 'x').mkdir(parents=True)
+    (root / venvpointer.ALIAS).mkdir()
+    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
+    recorded = root.joinpath(venvpointer.ALIAS, *tail).as_posix()
+    assert _fallback(shim('pre-commit', recorded)) == root.joinpath(venvpointer.HOME, 'x', *tail).as_posix()
+    (root / venvpointer.POINTER).unlink()
+    assert _fallback(shim('pre-commit', recorded)) == recorded, 'PLANTED CONTROL: no pointer: .venv is current'
+    elsewhere = (tmp_path / 'python-install' / 'python').as_posix()
+    assert _fallback(shim('pre-commit', elsewhere)) == elsewhere, 'not a checkout env: recorded verbatim'
 
 
 def test_a_shim_recording_another_interpreter_is_still_installed(repo: Path) -> None:

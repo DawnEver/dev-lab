@@ -57,7 +57,8 @@ _ASKS: Final = re.compile(
     r'|\u5728\u7ec8\u7aef(?:\u4e2d)?\u8fd0\u884c|\u8bf7(?:\u5728\u7ec8\u7aef)?(?:\u6267\u884c|\u8fd0\u884c))',
     re.IGNORECASE | re.MULTILINE,
 )
-_BANG: Final = re.compile(r'^\s*(?:[-*>]\s*)?`?!\s*([^`\n]+?)`?\s*$|`!\s*([^`\n]+)`', re.MULTILINE)
+#: ``! <cmd>``; ``![alt](src)`` is a markdown image, never a command (2026-11-16: a hand-back's figure blocked).
+_BANG: Final = re.compile(r'^\s*(?:[-*>]\s*)?`?!(?!\[)\s*([^`\n]+?)`?\s*$|`!(?!\[)\s*([^`\n]+)`', re.MULTILINE)
 _FENCE: Final = re.compile(r'```[^\n]*\n(.*?)```', re.DOTALL)
 _INLINE: Final = re.compile(r'`([^`\n]+)`')
 #: How far past an imperative its command may sit (the "Please run:\n\n```" shape).

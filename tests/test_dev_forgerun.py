@@ -51,6 +51,7 @@ from dev_lab.dev import (
 )
 from dev_lab.dev.artefactfolder import FolderStore
 from dev_lab.dev.artefactindex import MemberFact
+from dev_lab.dev.artefactstores import manifest_of, run_id_of
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, DONE, OPEN, Claim, Work, assess
 from dev_lab.dev.forgecoalesce import DRAINING
@@ -374,8 +375,8 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
-        release_reason(ProducerExit.INCONCLUSIVE, outage=None),
-    )
+        release_reason(ProducerExit.PART_REFUSED, outage=None, detail=': INCONCLUSIVE: 3 lost'),
+    ), 'W5 (dev-lab#644): a part refusal is its own class, requeued by it'
     assert routed == [{'sha': SHA}], 'its reported reds are real reds: an inconclusive record is still routed'
 
 
@@ -551,11 +552,11 @@ def test_declared_outputs_are_stored_and_named_in_the_record_before_it_is_posted
     assert _tick(store, slurm, root=root) is None
     (entry,) = records.read_record(posted[0])['artefacts']
     (ref,) = FolderStore(big, 'r').list(None)
-    assert entry == ref.manifest()
+    assert entry == manifest_of(ref)
     assert ref.backend == 'folder'
     index = records.read_record(posted[0])['artefact_indexes']
     assert index == {ref.sha256: {'schema': 'lab-commons-members-v1', 'members': [_b_member(slurm)]}}
-    assert artefacts.parsed_run_id(ref.run_id)['account'] == 'alice', "the claim owner's cluster account writes it"
+    assert artefacts.parsed_run_id(run_id_of(ref))['account'] == 'alice', "the claim owner's cluster account writes it"
     fetched = FolderStore(big, 'r').get(ref, home / 'fetched')
     with tarfile.open(fileobj=io.BytesIO(fetched.read_bytes())) as tar:
         assert tar.getnames() == ['fields/b.h5'], 'only the declared output; undeclared.log stays on the cluster'
@@ -612,7 +613,7 @@ def test_shipping_exact_expanded_budget_keeps_reference_contract(home: Path, mon
     assert _tick(store, slurm, root=root) is None
     (entry,) = records.read_record(posted[0])['artefacts']
     (ref,) = FolderStore(big, 'r').list(None)
-    assert entry == ref.manifest()
+    assert entry == manifest_of(ref)
     assert set(entry) == {'backend', 'ref', 'bytes', 'sha256'}
 
 
@@ -633,7 +634,7 @@ def test_store_filesystem_failure_remains_live_and_unpublished(home: Path, monke
     assert forgerunstate.live('https://f/o/r.git') == ()
     (entry,) = records.read_record(posted[0])['artefacts']
     (ref,) = FolderStore(big, 'r').list(None)
-    assert entry == ref.manifest()
+    assert entry == manifest_of(ref)
     assert list(Path(run.output).glob(f'*{artefacts.ARCHIVE}')) == [], 'the packed archive is never left behind'
     assert alarms == []
 
@@ -681,8 +682,8 @@ def test_real_shipment_record_catalogue_and_selection_need_no_archive(
     record = records.read_record(
         posted[0], max_compressed_bytes=65536, max_decompressed_bytes=262144, expected_sha256=digest
     )
-    ref = artefacts.Ref.of(record['artefacts'][0])
-    (big / ref.key).unlink()  # a catalogue is an index declaration, never an archive verification
+    ref = artefacts.ref_of_entry(record['artefacts'][0])
+    (big / ref.ref).unlink()  # a catalogue is an index declaration, never an archive verification
     _policy(
         root,
         'record_max_compressed_bytes = 65536\nrecord_max_decompressed_bytes = 262144\n'
@@ -736,7 +737,7 @@ def test_real_shipment_record_query_fetch_and_selective_materialization(
         expected_sha256=record_sha,
     )
     (declaration,) = record['artefacts']
-    ref = artefacts.Ref.of(declaration)
+    ref = artefacts.ref_of_entry(declaration)
     limits = {
         'max_members': cast('int', config.member_index_max_members),
         'max_index_bytes': cast('int', config.member_index_max_bytes),
@@ -750,7 +751,7 @@ def test_real_shipment_record_query_fetch_and_selective_materialization(
     assert selected == tuple(member for member in complete if member.path == 'fields/b.h5')
     destination = home / 'materialization'
     destination.mkdir()
-    stored = big / ref.key
+    stored = big / ref.ref
     store = FolderStore(big, 'r')
     if corrupt == 'stored':
         with stored.open('r+b') as stream:
@@ -786,7 +787,7 @@ def test_real_shipment_record_query_fetch_and_selective_materialization(
             receipt = json.loads((recovered / 'materialization-complete.json').read_bytes())
             assert receipt == {
                 'schema': 'lab-commons-materialized-v1',
-                'archive': ref.manifest(),
+                'archive': manifest_of(ref),
                 'selected_paths': ['fields/b.h5'],
             }
             assert hashlib.sha256(stored.read_bytes()).hexdigest() == ref.sha256

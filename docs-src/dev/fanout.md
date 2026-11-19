@@ -18,13 +18,20 @@ forge's job, not yours.
   ```
 
   The target is always `<worktree>/.venv`, never an inherited `VIRTUAL_ENV`. Failures exit non-zero.
-- A consumer declares its complete selection in `pyproject.toml`; with no `--extra`, sync realises all of it,
-  and explicit `--extra` flags narrow it. `--dry-run` checks without mutating.
+- Extras are installed ON DEMAND (D78). With no `--extra` and nothing declared, a sync installs the base
+  dependencies and NO extra -- never every available one. A consumer declares the extras every worktree needs, and
+  maps each test need (a resource marker, the need-set a part is named for) to the extra that serves it; explicit
+  `--extra` flags replace the declared list. `--dry-run` checks without mutating.
 
   ```toml
   [tool.dev_lab.dep]
-  extras = ["all", "dev"]
+  extras = ["dev"]
+  needs = { simba = "simba" }   # need -> declared extra
   ```
+
+  `verify --part <part>` refuses a part whose need maps to an extra this environment lacks, naming the exact sync
+  that adds it (the declared extras plus the missing one, `python -m dev_lab.dev.dep --sync <tree> --extra ...`).
+  Add an extra when a task needs it; never bootstrap a lane with every extra.
 
 - An environment is the lock. To run against a family sibling's LOCAL checkout instead of its locked version,
   declare it: per machine in the machine file, or for one run with `--local <name>` (repeatable). The sync
@@ -51,7 +58,7 @@ forge's job, not yours.
 - **Split by file-disjointness.** Shared hotspots (an entry-point module, the central chain, the registries
   every feature touches) go to ONE lane, or are serialised.
 - There is no lane ledger: `python -m dev_lab.dev.worktrees` lists the trees, `--prune` reclaims clean,
-  landed, unoccupied ones, and `--archive <name>` moves a tree's outputs home before a deliberate removal
+  landed, unoccupied ones holding nothing unlanded, and `--remove <name>` removes one named clean tree
   ([worktrees](worktrees.md), [auto mode runs the doors](auto-doors.md)).
 
 ## Subagents: give them a sha, not your HEAD
@@ -64,6 +71,7 @@ forge's job, not yours.
 - Then have it check where it landed before anything else: `git rev-parse HEAD` against the sha, plus a count of
   a symbol the task needs that must be non-zero. A zero count is a STOP.
 - A subagent measures what it touched, commits and hands back its SHA; it never pushes (`SUBAGENT-NO-PUSH`).
+- Heavy testing is the main session's: a subagent runs only `verify -- <touched paths>`, never a heavy, gate or full selection, and hands any `forge request` or HPC submit to the main session (`HEAVY-IS-THE-MAIN-SESSIONS`).
 - Its hand-back carries a **Walls hit** section: each refusal it met, whether it named a door, and what closed
   or recorded the gap ([feedback.md](feedback.md#a-subagents-hand-back)).
 - Tell it not to kill processes or delete lock files it does not own.

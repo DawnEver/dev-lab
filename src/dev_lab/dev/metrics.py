@@ -31,7 +31,7 @@ THREE MODULES, ONE CONCEPT EACH: this one RECORDS (the kinds, the one writer, th
 :mod:`dev_lab.dev.metrics_report` REPORTS them, and is the CLI (``record`` included).
 
 THE READ (``python -m dev_lab.dev.metrics_report``) covers every repository of the family -- the machine file's
-``[serve] repos`` under its ``root``, the list the serving host itself walks (:func:`family`) -- over one
+``[repos]`` (:func:`dev_lab.dev.metrics_report.family`) -- over one
 window with both bounds. What LANDED is read from git, not the log: a PR whose head branch a first-parent
 ``Merged-Branch:`` merge of the integration branch names is merged at that commit's time
 (:func:`landings`), however it was closed, and a ``Break-Glass:`` landing is a hand action on the PR it
@@ -61,6 +61,7 @@ from typing import Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.datedlog import date_parts
+from dev_lab.dev.gitdirs import common_dir
 
 __all__ = [
     'BREAK_GLASS_ACTION',
@@ -106,16 +107,13 @@ LOG_KIND: Final = 'metrics'
 
 
 def checkout(root: Path) -> Path:
-    """The main worktree of the repository holding *root*; *root* itself when git names none."""
-    try:
-        done = _door.run(
-            [_GIT, '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-            capture_output=True, text=True, encoding='utf-8', check=False, timeout=30,
-        )  # fmt: skip
-    except OSError:
-        return root
-    common = done.stdout.strip()
-    return Path(common).parent if done.returncode == 0 and common else root
+    """The main worktree of the repository holding *root*; *root* itself outside a checkout.
+
+    Read off ``.git`` and ``commondir`` (:mod:`dev_lab.dev.gitdirs`), never a git start: the walls ledger asks this on
+    every stop, and measured 2026-11-17 the ``rev-parse`` it replaced cost 60-260 ms of the hook's budget.
+    """
+    common = common_dir(root)
+    return common.parent if common is not None else root
 
 
 def log_file(root: Path, kind: str, day: tuple[str, str, str] | None = None) -> Path:

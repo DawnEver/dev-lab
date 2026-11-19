@@ -67,7 +67,7 @@ _ENFORCED = {
     'REPORTS-LIVE-IN-MEMORY': (guard('tests/test_dev_reportplace.py'),),
     'CODE-IN-CODE-ROOTS': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_codeplace.py')),
     'SCRATCH-IS-NEVER-COMMITTED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_scratch.py')),
-    'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_codeplace.py')),
+    'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_strays.py')),
     'WRITES-STAY-IN-THE-TREE': (guard('tests/test_dev_writeroots.py'), guard('tests/test_dev_tmpsweep.py')),
     'DECLARATION-LIES': (
         guard('tests/test_arch_public_surface.py'),
@@ -107,6 +107,7 @@ _ENFORCED = {
     'INTEGRATION-IS-MERGES-ONLY': (guard('tests/test_dev_sessionbranch.py'), guard('tests/test_dev_integrate.py')),
     'PUBLISH-IS-THE-LOCAL-REF': (guard('tests/test_dev_sessionbranch.py'),),
     'ORIGIN-HOLDS-ONLY-DECLARED-BRANCHES': (guard('tests/test_dev_sessionbranch.py'),),
+    'PUSHED-HEAD-CARRIES-ITS-TASK': (guard('tests/test_dev_sessionbranch.py'),),
     'NO-PUSH-ONTO-A-CLOSED-PR': (guard('tests/test_dev_closedpush.py'),),
     'BASE-HOLDS-THE-MILESTONE': (guard('tests/test_dev_milestonebase.py'),),
     'VERSION-TAG-NEEDS-APPROVAL': (guard('tests/test_dev_milestonebase.py'),),
@@ -138,6 +139,7 @@ _ENFORCED = {
         guard('tests/_arch_corpus.py'),
         guard('tests/test_dev_memoryadds.py'),
     ),
+    'MODULE-SIZE-ALARM': (guard('tests/test_arch_module_size_alarm.py'),),
     'RETIRED-NAMES-REGISTERED': (guard('tests/test_arch_retired_spellings.py'), guard('tests/_arch_corpus.py')),
     'NAMED-SETS-NOT-COUNTS': (
         guard('tests/test_arch_module_size_alarm.py'),
@@ -187,9 +189,11 @@ _ENFORCED = {
     # User ruling 2026-10-29 (D83): a pushed head nobody watches goes red unseen -- advised, never blocked.
     'PUSHED-HEAD-IS-WATCHED': (guard('tests/test_dev_pushwatch.py'),),
     # User ruling 2026-11-11: lab-commons #158 went red and nothing told the session.
-    'SESSION-HEARS-ITS-PRS': (guard('tests/test_dev_sessionwatch.py'),),
+    'TASK-HEARS-ITS-FORGE-EVENTS': (guard('tests/test_dev_sessionwatch.py'),),
     # User ruling 2026-11-13: every wall teaches -- a refusal that named no door is a gap closed before the task.
     'WALLS-ARE-RECORDED': (guard('tests/test_dev_walls.py'), guard('tests/test_dev_hooks.py')),
+    # User ruling 2026-11-17 (D24): a slow hook let a 30-second TOTP code expire.
+    'HOOK-UNDER-FIVE-SECONDS': (guard('tests/test_dev_hook_budget.py'),),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'REFUSAL-NAMES-THE-REMEDY': (
         # The rule's OTHER two halves, added 2026-09-16 with `dev.bounded`: a wall that terminates
@@ -199,6 +203,7 @@ _ENFORCED = {
     ),
     'PUBLIC-SURFACE-DECLARED': (guard('tests/test_arch_public_surface.py'),),
     'SUBAGENT-NO-PUSH': (guard('tests/test_dev_hooks.py'), guard('tests/test_dev_agenthooks.py')),
+    'HEAVY-IS-THE-MAIN-SESSIONS': (guard('tests/test_dev_hooks.py'),),
     'TOLERANCE-CARRIES-A-UNIT': (guard('tests/test_arch_every_approx_states_its_floor.py'),),
     'TRACKED-CITES-NO-EPHEMERAL': (guard('tests/test_famtests_ephemeralrefs.py'),),
     'MONTHLY-PLANS-CARRIED': (guard('tests/test_famtests_monthsummary.py'),),

@@ -404,7 +404,7 @@ def compose(parts: Mapping[str, Part], *, head: str, waived: frozenset[str] = fr
     ordered = tuple(parts[name] for name in sorted(parts) if name not in waived)
     result = Conclusion.FAIL if any(part.result is not Conclusion.PASS for part in ordered) else Conclusion.PASS
     problems: list[str] = []
-    if BASE not in parts:
+    if BASE not in parts and BASE not in waived:
         problems.append(f'no {part_context(BASE)} part is posted for {head}; {_PRODUCE}')
     for name in sorted({name for part in ordered for name in part.hands}):
         handing = {part.platform: part.hands[name] for part in ordered if part.hands.get(name)}

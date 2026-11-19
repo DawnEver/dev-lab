@@ -143,6 +143,7 @@ from dev_lab.dev.forgealarm import (
     sound,
 )
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import card_host, card_owners, read_cards, recording
@@ -165,7 +166,7 @@ from dev_lab.dev.forgeservesteps import (
 )
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
@@ -286,9 +287,7 @@ def serve(
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     pressed(root, repo, who=name, say=say, alarm=alarm)
     if ticked.pending and not claimed and not left:
-        refused = '; '.join(ticked.refused) or 'nothing was claimed'
-        named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
-        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
+        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', ticked.idle()))
     card(claimed)
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
         repo_wide(root, repo, remembering(client), name, cards, clock=clock, say=say, alarm=alarm)

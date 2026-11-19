@@ -19,6 +19,7 @@ import os
 import threading
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.forgestatus import CommitStatus, status_history
@@ -74,8 +75,8 @@ class SettledHistories:
             return self._memo[sha]
         if sha in self._kept:
             try:
-                found = tuple(CommitStatus(**raw) for raw in self._kept[sha])
-            except TypeError:
+                found = tuple(_from_json(raw) for raw in self._kept[sha])
+            except (TypeError, ValueError):
                 found = None
             if found is not None:
                 self._memo[sha] = found
@@ -110,10 +111,23 @@ class SettledHistories:
     def _keep(self, sha: str, history: tuple[CommitStatus, ...]) -> None:
         if self._path is None:
             return
-        self._kept[sha] = [dataclasses.asdict(one) for one in history]
+        self._kept[sha] = [_as_json(one) for one in history]
         while len(self._kept) > KEPT:
             self._kept.pop(next(iter(self._kept)))
         self._path.parent.mkdir(parents=True, exist_ok=True)
         spare = self._path.with_name(f'{self._path.name}.{os.getpid()}.tmp')
         spare.write_text(json.dumps(self._kept), encoding='utf-8')
         spare.replace(self._path)
+
+
+def _as_json(status: CommitStatus) -> dict[str, Any]:
+    """One status as the cache's JSON: the forge's post time as ISO text."""
+    raw = dataclasses.asdict(status)
+    raw['created'] = status.created.isoformat() if status.created else None
+    return raw
+
+
+def _from_json(raw: dict[str, Any]) -> CommitStatus:
+    """The status :func:`_as_json` kept, its post time a datetime again."""
+    created = raw.get('created')
+    return CommitStatus(**{**raw, 'created': datetime.fromisoformat(created) if created else None})

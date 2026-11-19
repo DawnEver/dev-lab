@@ -22,14 +22,17 @@ A MERGED ENTRY CITES. An added entry with ``merged_from:`` names sources that ar
 OWN scope existing at the base the change is judged against or added by that same change, and every
 body paragraph names a source file, so each claim keeps its evidence after the sources stop being read.
 
-WHERE IT RUNS -- two family hook rows, so no route past it is left:
+WHERE IT RUNS -- ONE family hook row, at the act that PUBLISHES: ``pre-push`` judges every pushed ref's range
+since its merge-base with ``origin/<integration>`` (:func:`problems_between`). Immutability starts at publication,
+and the range is what this push would publish, judged net: an entry the range adds and then edits or drops is a
+draft (an add, or nothing), a restore to the integration line's text is no change, and a sync's merge-base moves
+past what upstream changed -- so no exemption is needed for any of them. Every route a commit can take -- a plain
+commit, a merge, a rebase, a cherry-pick, a commit made with the hook off -- reaches the push, which a commit-time
+row never saw. A memory blob an ``origin`` ref already holds is published there, not added by the range, and is not
+judged again.
 
-* ``commit`` (commit-msg, EVERY commit, a merge included): the INDEX against HEAD, so a plain commit and
-  a merge's resolution are read alike (:func:`pending`); an entry not yet on ``origin/<integration>`` is a
-  draft its author may still edit or delete. The branch is named by HEAD's manifest, else -- a first adoption --
-  by the commit's own staged one; with neither, nothing is published yet;
-* ``push`` (pre-push): every pushed ref's range since its merge-base with ``origin/<integration>``
-  (:func:`problems_between`), so a commit made with the hook bypassed still reds before it leaves.
+An archived task directory (a ``TASK.md`` declaring ``kind: task``) is ONE entry: the files beside its TASK.md
+need no frontmatter of their own.
 """
 
 from __future__ import annotations
@@ -41,14 +44,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
-from lab_commons.hpc.declared import pyproject_at
 from lab_commons.log import emit
 
-from dev_lab.dev.lanepolicy import policy_at, policy_from
+from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.memoryentry import (
     AMENDMENT_NOTE,
     MANUAL_PATH,
-    MANUAL_ROW,
     is_memory,
     merged_entry_problems,
     only_amended,
@@ -64,8 +65,8 @@ if TYPE_CHECKING:
 __all__ = [
     'MemoryAddsError',
     'main',
-    'pending',
     'problems_between',
+    'pushed',
 ]
 
 _GIT = shutil.which('git') or 'git'
@@ -74,6 +75,7 @@ _ZERO = '0' * 40
 _EMPTY_TREE: Final = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: the base before a first push
 _REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
 _TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
+_KIND_TASK = re.compile(r'\A---\r?\n(?:.*\r?\n)*?kind:[ \t]*task[ \t]*\r?\n(?:.*\r?\n)*?---')
 
 
 class MemoryAddsError(RuntimeError):
@@ -116,7 +118,8 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
     for status, old, new in rows:
         if status in 'AC' and is_memory(new):
             text = _git(root, 'show', f'{new_rev}:{new}')
-            out.extend((*shape_problems(new, text), *merged_entry_problems(new, text, exists)))
+            shape = () if _in_archived_task(root, new_rev, new) else shape_problems(new, text)
+            out.extend((*shape, *merged_entry_problems(new, text, exists)))
         elif status == 'R' and is_memory(new) and not is_memory(old):
             if not _TASK.search(old):
                 out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
@@ -146,82 +149,53 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
 
 
 def problems_between(root: Path, base: str, head: str) -> tuple[str, ...]:
-    """What the commits of *head* since its merge-base with *base* do to memory beyond adding to it."""
+    """What the commits of *head* since its merge-base with *base* do to memory beyond adding to it.
+
+    A memory path *head* holds byte-identical to an ``origin`` ref is published, not this range's: never re-judged.
+    """
     since = _git(root, 'merge-base', base, head).strip()
-    return _judge(root, since, head, _changes(root, f'{since}...{head}'))
+    rows = _changes(root, f'{since}...{head}')
+    published = _published(root, head, rows)
+    return _judge(root, since, head, [row for row in rows if row[0] not in 'ACM' or row[2] not in published])
 
 
-def pending(root: Path) -> tuple[str, ...]:
-    """The commit being made in *root* -- plain or merge: the INDEX against HEAD (nothing before a first commit)."""
-    if _run(root, 'rev-parse', '--verify', '-q', 'HEAD')[0] != 0:
-        return ()
-    tree = _git(root, 'write-tree').strip()
-    into = _integration(root, tree)
-    rows = _published_only(root, tree, into, _not_as_upstream_holds(root, tree, into, _changes(root, 'HEAD', tree)))
-    return _judge(root, 'HEAD', tree, rows)
+def _in_archived_task(root: Path, rev: str, path: str) -> bool:
+    """*path* sits beside a ``TASK.md`` declaring ``kind: task``: one archived task is ONE entry (rem's model).
 
-
-def _integration(root: Path, tree: str) -> str | None:
-    """The integration branch HEAD's manifest names, else the staged *tree*'s -- a first adoption's own.
-
-    ``None`` when neither carries a ``pyproject.toml``: nothing names a branch, so nothing is published yet. A
-    manifest that exists and names no branch is refused (:func:`~dev_lab.dev.lanepolicy.policy_from`).
+    That TASK.md carries the name and description; the journal and other files beside it need none of their own.
     """
-    for rev in ('HEAD', tree):
-        if text := pyproject_at(root, rev):
-            return policy_from(text, f'{rev}:pyproject.toml').integration
-    return None
+    folder, _, name = path.rpartition('/')
+    if name == 'TASK.md' or not folder:
+        return False
+    code, text, _ = _run(root, 'show', f'{rev}:{folder}/TASK.md')
+    return code == 0 and _KIND_TASK.search(text) is not None
 
 
-def _published_only(
-    root: Path, tree: str, into: str | None, rows: list[tuple[str, str, str]]
-) -> list[tuple[str, str, str]]:
-    """*rows* without edits, deletions and moves of a memory entry not yet on ``origin/<integration>``.
+def _published(root: Path, head: str, rows: list[tuple[str, str, str]]) -> set[str]:
+    """Memory paths whose blob in *head* is byte-identical to the one some ``origin`` ref holds.
 
-    Immutability starts when an entry is PUBLISHED: one added in an unpushed range is still a draft, and its
-    author may cite, fix or drop it. The exemption covers ONLY that immutability rule for an ordinary entry:
-    a rem task list (``manual.md``) and an entry whose new text is task-shaped stay judged, because the
-    task-format and injection rules hold for drafts too. An entry the integration ref holds stays judged;
-    without that ref nothing is a draft.
+    Such a path was judged where it was published; a range that carries it (a merge-base fallen back past an
+    integration merge commit, #6602) neither adds nor edits it.
     """
-    ref = f'origin/{into}'
-    if into is None or _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
-        return rows
-
-    def draft(status: str, old: str, new: str) -> bool:
-        if status not in 'MDRT' or not is_memory(old) or MANUAL_PATH.search(old) or MANUAL_PATH.search(new):
-            return False
-        if status in 'MRT' and MANUAL_ROW.search(_git(root, 'show', f'{tree}:{new}')):
-            return False
-        return _run(root, 'cat-file', '-e', f'{ref}:{old}')[0] != 0
-
-    return [(status, old, new) for status, old, new in rows if not draft(status, old, new)]
-
-
-def _not_as_upstream_holds(
-    root: Path, tree: str, into: str | None, rows: list[tuple[str, str, str]]
-) -> list[tuple[str, str, str]]:
-    """*rows* without the paths staged EXACTLY as ``MERGE_HEAD`` or ``origin/<integration>`` holds them.
-
-    Such a path is a change judged where it was made, not an edit by this commit -- two shapes, both measured
-    2026-11-01 on a consumer lane:
-
-    * a SYNC carries the integration line's history: an entry staged byte-for-byte as the merged side has it (or
-      absent where that side deleted it). Reverting it to the lane's text would undo upstream inside the merge.
-    * a RESTORE is the refusal's own remedy: an entry the lane once edited in place, put back to the integration
-      line's text. Refusing it left the remedy uncommittable.
-
-    A path staged as neither is still this commit's, and is judged.
-    """
-    differs: set[str] | None = None
-    for ref in ('MERGE_HEAD', *(() if into is None else (f'origin/{into}',))):
-        if _run(root, 'rev-parse', '--verify', '-q', ref)[0] != 0:
-            continue
-        against = set(_git(root, 'diff', '--no-renames', '--name-only', '-z', ref, tree).split('\0')) - {''}
-        differs = against if differs is None else differs & against
-    if differs is None:
-        return rows
-    return [(status, old, new) for status, old, new in rows if old in differs or new in differs]
+    paths = sorted({new for status, _, new in rows if status in 'ACM' and is_memory(new)})
+    refs = _git(root, 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin').split()
+    if not paths or not refs:
+        return set()
+    queries = [f'{rev}:{path}' for rev in (head, *refs) for path in paths]
+    done = _door.run(
+        [_GIT, '-C', str(root), 'cat-file', '--batch-check=%(objectname)'],
+        input='\n'.join(queries).encode('utf-8'),
+        capture_output=True,
+        check=False,
+        timeout=_GIT_TIMEOUT_S,
+    )
+    if done.returncode != 0:
+        msg = f'git cat-file --batch-check failed: {done.stderr.decode("utf-8", "replace").strip()}'
+        raise MemoryAddsError(msg)
+    blobs = [line.split()[0] for line in done.stdout.decode('utf-8', 'replace').splitlines()]
+    ours = dict(zip(paths, blobs[: len(paths)], strict=True))
+    held = {(paths[i % len(paths)], blob) for i, blob in enumerate(blobs[len(paths) :])}
+    return {path for path, blob in ours.items() if (path, blob) in held}
 
 
 def pushed(root: Path, ref_lines: str) -> tuple[str, ...]:
@@ -245,30 +219,22 @@ def pushed(root: Path, ref_lines: str) -> tuple[str, ...]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m dev_lab.dev.memoryadds commit [<msg-file>]`` or ``... push``; ``1`` refuses."""
-    args = list(sys.argv[1:] if argv is None else argv)
+    """``python -m dev_lab.dev.memoryadds``: git's pre-push ref lines on stdin; ``1`` refuses the push."""
+    del argv  # git's remote name and url; the judgement reads origin/<integration>
     root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').strip())
     try:
-        if args[:1] == ['commit']:
-            problems = pending(root)
-        elif args[:1] == ['push']:
-            problems = pushed(root, sys.stdin.read())
-        else:
-            emit('memory-adds: usage: memoryadds commit [<msg-file>] | push', err=True)
-            return 1
+        problems = pushed(root, '' if sys.stdin.isatty() else sys.stdin.read())
     except (MemoryAddsError, ValueError) as error:
         problems = (str(error),)
     if not problems:
         return 0
     lines = [
-        (
-            f'memory-adds: {args[0]} REFUSED -- it edits, deletes or moves memory, or adds a misshapen entry '
-            '(MEMORY-SHAPE).'
-        ),
+        'memory-adds: push REFUSED -- it edits, deletes or moves memory, or adds a misshapen entry (MEMORY-SHAPE).',
         *(f'memory-adds:   {line}' for line in problems),
         (
-            'memory-adds: Remedy: restore each entry as it was; a correction is a NEW entry with `corrects:`; '
-            'an added entry declares its name and description.'
+            'memory-adds: Remedy: commit each entry back to the text origin/<integration> holds (the range is '
+            'judged net, so no history is rewritten); a correction is a NEW entry with `corrects:`; an added entry '
+            'declares its name and description.'
         ),
     ]
     emit('\n'.join(lines), err=True)
@@ -276,4 +242,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

@@ -26,6 +26,7 @@ NOW = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
 _PYPROJECT = (
     '[tool.lab_commons.tests]\nresources = ["jmag", "windows"]\nscarce = ["jmag"]\n'
     '[tool.dev_lab.parts]\nrefs = { jmag.full = ["integrate/main"] }\n'
+    '[tool.dev_lab.protection]\nproducer = "hpc"\n'  # served here: only an HPC repo is offered parts
 )
 _RECORD = {'handed': {'tests/test_j.py::test_j': 'jmag'}}
 

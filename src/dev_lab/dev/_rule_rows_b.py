@@ -35,7 +35,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'SCRATCH-IS-NEVER-COMMITTED',
         (
             'Scratch is the one place an agent may leave a one-off, visible to git status but never committed '
-            'beyond its README, and each one-off leaves by promotion into src with tests or by deletion, its '
+            'beyond its README (or at all, where the repo declares scratch_anchor = false), and each one-off '
+            'leaves by promotion into src with tests or by deletion, its '
             'finding recorded in memory as numbers, never by a move into scripts.'
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_scratch.py'),
@@ -46,10 +47,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'An untracked, non-ignored file outside the declared stray roots (scratch, plus what the repo '
             'declares) is a defect found the moment it appears, not at review: a file somebody meant is staged, '
             'an artefact a program wrote goes to the dated output tree and the program is fixed to write there, '
-            'a one-off goes to scratch, and the census runs after every shell command, at the end of a turn '
+            'a one-off goes to scratch, a file a known retirement declares gone is deleted through its door and '
+            'never staged, and the census runs after every shell command, at the end of a turn '
             'and after every commit, naming each one with its remedy.'
         ),
-        ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
+        ('tests/test_arch_code_placement.py', 'tests/test_dev_strays.py'),
     ),
     (
         'WRITES-STAY-IN-THE-TREE',
@@ -199,6 +201,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_hooks.py', 'tests/test_dev_agenthooks.py'),
     ),
     (
+        'HEAVY-IS-THE-MAIN-SESSIONS',
+        (
+            'The main session alone coordinates heavy testing: requesting a full or heavy run on the producer '
+            '(`forge request`, an HPC submit) and reading its verdict is its; a subagent runs only light local '
+            'measures of the paths it touched (`dev_lab.dev.verify -- <paths>`), never a heavy, gate or full '
+            'selection, and hands the request to the main session; no local machine runs heavy tests '
+            '(VERDICTS-FROM-THE-FORGE).'
+        ),
+        ('tests/test_dev_hooks.py',),
+    ),
+    (
         'PR-REVIEW-IS-ONE-SHOT-ADVICE',
         (
             'The PR review is ONE independent acceptance check per PR with advice: the repo-declared command '
@@ -228,4 +241,5 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
 
 #: Shared required checks; the execution owner also runs them for command/data family producers.
 #: Read by :mod:`dev_lab.dev.rules` into :attr:`Rule.always_on`; nothing else names them.
-ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE', 'MODULE-SIZE-ALARM'})
+#: MODULE-SIZE-ALARM is opt-in: a repo enables it once it declares [tool.dev_lab.layout] and its directories fit.
+ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE'})

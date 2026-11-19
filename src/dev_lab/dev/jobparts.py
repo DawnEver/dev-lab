@@ -23,6 +23,12 @@ ONE LIFECYCLE ON BOTH FORGES (user ruling 2026-10-29); only who PRODUCES and who
   ``error`` naming that job (:func:`run_jobs`), so a watch reads it red and a merge reads it failed, never waiting.
   It is never a settled part (:func:`dev_lab.dev.platformparts.parts_of`), so merge-ready and promote still
   refuse until every row stands PASS; a re-run job settles it.
+* NO MATRIX IS A NAMED RED, NEVER A SILENT SKIP (2026-11-17, cc-market #29: collection failed, the matrix came out
+  empty, every part job skipped and merge-ready waited on ``tests/base`` forever). A ``matrix`` that cannot be
+  derived posts ``tests/base`` ``error`` saying :data:`NO_MATRIX` and why, and exits non-zero.
+
+A COMMAND-PART REPO (:mod:`dev_lab.dev.commandpart`, a JS suite) has ONE part, ``base``: there is no pytest
+collection to cut into need-sets, so its matrix never collects (:func:`command_part`).
 
 ACTIONS ALONE (user ruling 2026-11-11): a GitHub repo's parts are produced by these jobs on GitHub-hosted runners and
 nothing else -- no self-hosted runner, workstation or cluster. A part no hosted runner produces (a heavy test) is
@@ -42,7 +48,8 @@ part naming no task names no secret and runs on EVERY event, a pull request incl
 part's row is withheld from one.
 
 A part naming tasks gets ONE row, on a full run only (as macos, D84), carrying its bundles' secret NAMES
-(:func:`hosted_parts`, each :func:`~dev_lab.dev.taskkeys.secret_name`). The generic matrix job never runs it:
+(:func:`~dev_lab.dev.hostedparts.hosted_parts`, each :func:`~dev_lab.dev.taskkeys.secret_name`). The generic
+matrix job never runs it:
 :func:`hosted_jobs` renders it its own job, in which ONE setup step alone has the bundles in its environment and
 pipes each to ai-lab's loader on stdin -- never argv, never echoed -- before the part is produced. The render names
 a secret; it never holds a value, and it names no provider (ai-lab's routes say which a task uses).
@@ -71,13 +78,14 @@ from lab_commons.hpc.shell import parse_collection_errors, parse_ids
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev.family import declared_in
+from dev_lab.dev.commandtests import declared_command
 from dev_lab.dev.famtests.alwayson import assert_required_collected, resource_nodes
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.hostedparts import Hosted, hosted_parts
 from dev_lab.dev.partrows import ROW_SEPARATOR, needs_of_row, row_part
-from dev_lab.dev.platformparts import UndeclaredPart, part_context, producer_argv
+from dev_lab.dev.platformparts import part_context, producer_argv
 from dev_lab.dev.producer import OUTCOME_VAR, Owner, outage_said, owned, producing, release_reason
 from dev_lab.dev.taskkeys import loader, secret_name
 from dev_lab.dev.unproduced import unproduced, unproduced_parts
@@ -91,11 +99,11 @@ __all__ = [
     'ABSENT',
     'FAILED_JOB',
     'HOSTED_RUNNERS',
-    'Hosted',
+    'NO_MATRIX',
     'Job',
     'absent',
+    'command_part',
     'hosted_jobs',
-    'hosted_parts',
     'main',
     'matrix',
     'off_gate',
@@ -116,6 +124,10 @@ PULL_REQUEST_SYSTEMS: Final = ('linux', 'windows')
 #: What an expected part no job settled says (``pending``): never a part's own description, so never a part.
 ABSENT: Final = 'absent: no job settled this part'
 
+#: What ``tests/base`` says when the parts matrix could not be derived: no part job can run, so none will post.
+NO_MATRIX: Final = 'no parts matrix (jobparts matrix failed; its job log says why)'
+
+
 _STAMP: Final = '%Y-%m-%dT%H:%M:%SZ'
 
 #: Pytest's documented exit status for a completed collection selecting no tests.
@@ -127,6 +139,9 @@ _ANY_RUN: Final = "${{ needs.parts.outputs.matrix != '' }}"
 #: The ``if`` of a hosted part's job naming secrets: a FULL run's (the parts job's event is not the PR's set, as
 #: macos, D84; a merge's smoke takes the PR's set, D48-1A), never one main already holds (an empty matrix).
 _FULL_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
+
+#: The ``if`` of a ``manual`` hosted part's job: a manual dispatch only, never the nightly (user ruling D66).
+_DISPATCH_ONLY: Final = "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event == 'workflow_dispatch' }}"
 
 
 #: The hosted job's key store: ai-lab reads keys from the git credential store ONLY, so the job keeps an in-memory
@@ -142,61 +157,6 @@ _FORGET_KEYS: Final = {
     'if': 'always()',
     'run': f'git credential-cache {_KEY_SOCKET} exit || true',
 }
-
-
-@dataclass(frozen=True)
-class Hosted:
-    """A part run in its own hosted job: the ai-lab tasks whose key bundles it loads, and its ``setup`` command."""
-
-    tasks: tuple[str, ...] = ()
-    setup: str = ''
-
-    @property
-    def secrets(self) -> tuple[str, ...]:
-        """The secret holding each task's bundle, in task order."""
-        return tuple(secret_name(task) for task in self.tasks)
-
-
-_ENTRY_KEYS: Final = frozenset({'tasks', 'setup'})
-
-
-def _malformed(name: str, entry: object, produced: set[str]) -> str:
-    """Why hosted *entry* of part *name* is refused; ``''``: a produced resource naming a setup, tasks or both."""
-    if name not in produced:
-        return 'not a produced resource'
-    if not isinstance(entry, dict) or not entry or not set(entry) <= _ENTRY_KEYS:
-        return f'not a table of {sorted(_ENTRY_KEYS)} naming at least one'
-    setup = entry.get('setup', 'x')
-    if not isinstance(setup, str) or not setup.strip():
-        return 'setup is not a non-empty string'
-    tasks = entry.get('tasks', ['x'])
-    if not isinstance(tasks, list) or not tasks or not all(isinstance(one, str) for one in tasks):
-        return 'tasks is not a non-empty list of strings'
-    try:
-        [secret_name(task) for task in entry.get('tasks', [])]
-    except ValueError as error:
-        return str(error)
-    return ''
-
-
-def hosted_parts(text: str) -> dict[str, Hosted]:
-    """``[tool.dev_lab.parts] hosted`` of pyproject *text*, by part; a malformed or unproduced one is refused."""
-    parts = declared_in(text, 'parts')
-    value = parts.get('hosted', {})
-    resources = set(read_vocabulary(text).resources)
-    produced = resources - set(parts.get('unproduced', []))
-    shape = (
-        f'each key a produced resource of {sorted(produced)} = '
-        '{ setup = "<shell command>", tasks = ["<ai-lab task>", ...] }, at least one of the two'
-    )
-    if not isinstance(value, dict):
-        msg = f'[tool.dev_lab.parts] hosted = {value!r} is not a table: write {shape}'
-        raise UndeclaredPart(msg)
-    for name, entry in value.items():
-        if why := _malformed(name, entry, produced):
-            msg = f'[tool.dev_lab.parts] hosted part {name!r} = {entry!r}: {why}; write {shape}'
-            raise UndeclaredPart(msg)
-    return {name: Hosted(tuple(entry.get('tasks', ())), entry.get('setup', '')) for name, entry in value.items()}
 
 
 def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dict[str, Any]:
@@ -233,7 +193,7 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
         steps = [*one['steps'][:-1], *before, one['steps'][-1], *after]
         added[f'part-{name}'] = {
             **one,
-            'if': _FULL_ONLY if part.tasks else _ANY_RUN,
+            'if': _DISPATCH_ONLY if part.manual else _FULL_ONLY if part.tasks else _ANY_RUN,
             'runs-on': hosted_runner(name),
             'steps': steps,
         }
@@ -260,6 +220,17 @@ class Job:
     url: str
 
 
+#: How many of pytest's own lines a collection refusal quotes: enough for every distinct cause, bounded for a log.
+_CAUSE_LINES: Final = 20
+
+
+def collection_cause(stdout: str, stderr: str) -> list[str]:
+    """Pytest's own reason a collection failed: its ``E`` exception and ``ERROR`` summary lines, else stderr's tail."""
+    lines = [line.rstrip() for line in (*stdout.splitlines(), *stderr.splitlines())]
+    cause = list(dict.fromkeys(line for line in lines if line.startswith(('E   ', 'ERROR '))))
+    return (cause or [line for line in stderr.splitlines() if line.strip()])[-_CAUSE_LINES:]
+
+
 def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str], list[str]]:
     """A collector over *root*'s checkout: given a marker expression (``''`` for none), the ids pytest collects."""
 
@@ -271,10 +242,12 @@ def pytest_collector(root: Path, arguments: Sequence[str] = ()) -> Callable[[str
         errors = parse_collection_errors(done.stdout + '\n' + done.stderr)
         empty = done.returncode == _NO_TESTS_COLLECTED and not ids and not errors
         if errors or (done.returncode != 0 and not empty):
+            cause = ''.join(f'\n  {line}' for line in collection_cause(done.stdout, done.stderr))
             msg = (
                 f'pytest collection failed with exit {done.returncode} for marker {expression!r}; '
                 f'{len(ids)} partial node(s) cannot define a complete part manifest. '
-                f'Rerun {shlex.join(command)} in the checkout and repair collection before producing parts.'
+                f'Rerun {shlex.join(command)} in the checkout and repair collection before producing parts. '
+                f'pytest said:{cause}'
             )
             raise ValueError(msg)
         assert_required_collected(root, ids)
@@ -303,8 +276,10 @@ def hosted_runner(part: str) -> str:
 
 
 def off_gate(parts: Iterable[str], declared: Mapping[str, Hosted]) -> frozenset[str]:
-    """The *parts* no Actions job produces: neither *declared* hosted nor with a hosted runner."""
-    return frozenset(part for part in parts if part not in declared and runner_for(row_part(part)) is None)
+    """The *parts* no gating Actions job produces: a ``manual`` hosted one, or neither hosted nor hosted-runnable."""
+    return frozenset(
+        part for part in parts if (declared[part].manual if part in declared else runner_for(row_part(part)) is None)
+    )
 
 
 def systems_for(event: str) -> tuple[str, ...]:
@@ -316,8 +291,10 @@ def rows(part: str, event: str, declared: Mapping[str, Hosted]) -> list[dict[str
     """*part*'s matrix rows: one per OS of *event* when it runs hosted and names no OS, else its one runner.
 
     A *declared* hosted part has one :func:`hosted_runner` row carrying its secrets' names (its own job's mark),
-    and none on a pull request when it names any.
+    and none on a pull request when it names any; a ``manual`` one has a row on a manual dispatch alone.
     """
+    if part in declared and declared[part].manual and event != 'workflow_dispatch':
+        return []
     if part in declared:
         row = {'part': part, 'runs-on': hosted_runner(part), 'secrets': list(declared[part].secrets)}
         return [] if event == 'pull_request' and row['secrets'] else [row]
@@ -346,15 +323,35 @@ def matrix(
     """
     pyproject = root / 'pyproject.toml'
     text = pyproject.read_text(encoding='utf-8') if pyproject.is_file() else ''
-    vocabulary = read_vocabulary(text)
-    ids = list(collect(''))
-    carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
-    derived = {BASE, *need_sets(ids, carrying).values()}
+    if command_part(text):
+        derived = {BASE}
+    else:
+        vocabulary = read_vocabulary(text)
+        ids = list(collect(''))
+        carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
+        derived = {BASE, *need_sets(ids, carrying).values()}
     names = sorted(derived - unproduced_parts(derived, unproduced(text)))
     declared = hosted_parts(text)
     every = [row for name in names for row in rows(name, event, declared)]
     generic = [row for row in every if 'secrets' not in row]
     return {'include': generic if hosted else every}
+
+
+def command_part(text: str) -> bool:
+    """Whether pyproject *text* declares :mod:`dev_lab.dev.commandpart` its producer: one part, never collected."""
+    return declared_command(text) is not None
+
+
+def no_matrix(client: Client, sha: str, cause: Exception, env: Mapping[str, str]) -> str:
+    """Post ``tests/base`` ``error`` at *sha* saying :data:`NO_MATRIX` and *cause*; the line said.
+
+    The commit's own declaration or collection failed (:attr:`Owner.CODE`), so merge-ready reads a named red.
+    """
+    description = owned(Owner.CODE, f'{NO_MATRIX}: {cause}')
+    status_post(
+        client, sha, context=part_context(BASE), state='error', description=description, target_url=_run_url(env)
+    )
+    return f'{part_context(BASE)}: error {NO_MATRIX}: {cause}'
 
 
 def run_jobs(client: Client, run: str) -> dict[str, Job]:
@@ -422,10 +419,7 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     else its exit code's (:func:`release_reason`) -- naming this run, and exits non-zero.
     """
     given = os.environ if env is None else env
-    head = _door.run(
-        ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
-    )
-    sha = head.stdout.strip()
+    sha = _head(root)
     argv = producer_argv(root, part, sha=sha)
     context = part_context(part)
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
@@ -440,6 +434,14 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
     status_post(client, sha, context=context, state='error', description=description, target_url=_run_url(given))
     emit(f'[jobparts] {context}: error {description}', err=True)
     return code or 1
+
+
+def _head(root: Path) -> str:
+    """*root*'s HEAD sha."""
+    head = _door.run(
+        ['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, encoding='utf-8', check=True
+    )
+    return head.stdout.strip()
 
 
 def _run_url(env: Mapping[str, str]) -> str:
@@ -468,7 +470,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     collect = pytest_collector(args.root)
     if args.verb == 'matrix':
-        emit(json.dumps(matrix(args.root, collect=collect, event=args.event, hosted=args.runners == 'hosted')))
+        try:
+            found = matrix(args.root, collect=collect, event=args.event, hosted=args.runners == 'hosted')
+        except ValueError as cause:  # UndeclaredPart among them
+            emit(f'[jobparts] {no_matrix(client_for(args.root), _head(args.root), cause, os.environ)}', err=True)
+            return 1
+        emit(json.dumps(found))
         return 0
     client = client_for(args.root)
     if args.verb == 'produce':

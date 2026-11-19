@@ -90,7 +90,7 @@ from dev_lab.dev.stopsignatures import (
     why_stoppable,
 )
 
-__all__ = ['SERVE_GRACE_S', 'main', 'repo_root', 'stop']
+__all__ = ['SERVE_GRACE_S', 'main', 'repo_root', 'stop', 'stop_subtree']
 
 #: How long a serve whose producers were stopped may take to release its claim and exit, in seconds.
 SERVE_GRACE_S: Final = 60.0
@@ -216,24 +216,26 @@ def stop(
         lines = [f'an orphan: its parent is gone and it holds no box claim: {table[pid][1][:120]!r}']
     else:
         lines = [f'matched signature {matched!r}']
-    return _stop_identified_subtree(
-        pid, table, matched, lines, dry_run=dry_run, kill=kill, gone=gone, notes=notes, born=born
-    )
+    return stop_subtree(pid, table, matched, lines, dry_run=dry_run, kill=kill, gone=gone, notes=notes, born=born)
 
 
-def _stop_identified_subtree(
+def stop_subtree(
     pid: int,
     table: Mapping[int, Proc],
     matched: str | None,
     lines: list[str],
     *,
     dry_run: bool,
-    kill: Callable[[int], None],
-    gone: Callable[[int, float], bool],
-    notes: Path | None,
-    born: CreationClock,
+    kill: Callable[[int], None] = _kill,
+    gone: Callable[[int, float], bool] = _gone,
+    notes: Path | None = None,
+    born: CreationClock = creation_stamp,
 ) -> tuple[int, list[str]]:
-    """The existing signature/orphan behavior: children first, with the serve release grace."""
+    """Stop *pid*'s subtree children first, a member whose pid was recycled skipped; a serve gets its grace.
+
+    The ONE tree-kill path: the identified-run and orphan modes reach it after :func:`stop` judged *pid*, and
+    :mod:`dev_lab.dev.shellreaper` after its own judgement (an agent shell past its bound, no seat, no spare).
+    """
     serve = matched == SERVE.pattern
     # Each member's creation stamp as the snapshot saw it: a pid recycled during the serve grace is not ours.
     stamps = {member: born(member) for member in subtree(table, pid)} if not dry_run else {}

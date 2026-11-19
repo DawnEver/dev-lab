@@ -78,7 +78,30 @@ def test_no_item_outside_a_git_checkout(pytester: pytest.Pytester, monkeypatch: 
     _run(pytester, monkeypatch).assert_outcomes(passed=1)
 
 
-def test_a_family_without_layout_policy_gets_a_failed_guard_not_a_collection_error(
+def test_a_declared_tree_that_is_not_a_checkout_gets_no_family_items(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A nested run in a temp project declaring [tool.dev_lab.*] but holding no .git is not judged."""
+    pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
+    pytester.makepyfile(test_x='def test_x():\n    pass\n')
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=1)
+    assert '::family::' not in result.stdout.str()
+
+
+def test_a_declared_checkout_with_a_broken_git_still_fails_loudly(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The planted negative: a .git that exists but cannot be read keeps every family item, failed."""
+    pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
+    (pytester.path / '.git').write_text('gitdir: missing/nowhere\n', encoding='utf-8')
+    pytester.makepyfile(test_x='def test_x():\n    pass\n')
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=1, failed=len(alwayson.rows()))
+    result.stdout.fnmatch_lines(['*git identity*'])
+
+
+def test_a_family_without_layout_policy_has_not_opted_into_the_layout_guard(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _git_repo(
@@ -89,8 +112,8 @@ def test_a_family_without_layout_policy_gets_a_failed_guard_not_a_collection_err
         },
     )
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=2, failed=1)
-    result.stdout.fnmatch_lines(['*layout*policy*'])
+    result.assert_outcomes(passed=2)
+    assert 'MODULE-SIZE-ALARM' not in result.stdout.str()
 
 
 @pytest.mark.parametrize(
@@ -131,7 +154,8 @@ def test_the_required_layout_guard_does_not_exempt_tests_or_scripts_from_directo
     files.update({f'{directory}/subject_{number}.py': 'value = 1\n' for number in range(26)})
     _git_repo(pytester.path, files)
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=2, failed=1)
+    # every other required row passes: a tests/ tree also brings the tree checks (D42)
+    result.assert_outcomes(passed=len(alwayson.required_ids(pytester.path)), failed=1)
     result.stdout.fnmatch_lines(['*26*25*'])
 
 
@@ -184,7 +208,43 @@ def test_the_git_grep_path_finds_a_planted_file_and_skips_exempt_and_binary(tmp_
     )
     (tmp_path / 'blob.bin').write_bytes(b'\x00' + _CHAR.encode())
     subprocess.run([_GIT, 'add', 'blob.bin'], cwd=tmp_path, check=True, timeout=60)
-    assert alwayson.candidates(tmp_path) == ('dirty.py', 'x/archived/b.md')
+    assert alwayson.candidates(tmp_path) == ('deep/.claude/memory/m.md', 'dirty.py', 'x/archived/b.md')
+
+
+def test_a_memory_file_with_cjk_is_refused_naming_both_doors_d26(tmp_path: Path) -> None:
+    """D26: memory and tasks are English only; the refusal names translate-or-declare."""
+    _git_repo(tmp_path, {'.claude/memory/m.md': f'{_CHAR}\n', 'attic/a.md': f'{_CHAR}\n'})
+    with pytest.raises(AssertionError) as caught:
+        alwayson.check_no_cjk(tmp_path)
+    text = str(caught.value)
+    assert '.claude/memory/m.md' in text
+    assert 'attic/a.md' not in text, 'attic stays exempt'
+    assert '(user, translated)' in text
+    assert '[tool.dev_lab.cjk]' in text
+
+
+def test_a_declared_file_passes_and_a_cleaned_declaration_is_refused(tmp_path: Path) -> None:
+    """The named set is read from ``[tool.dev_lab.cjk] declared``, and it may only shrink."""
+    manifest = '[tool.dev_lab.cjk]\ndeclared = [".claude/memory/m.md"]\n'
+    _git_repo(tmp_path, {'.claude/memory/m.md': f'{_CHAR}\n', 'pyproject.toml': manifest})
+    alwayson.check_no_cjk(tmp_path)
+    (tmp_path / '.claude/memory/m.md').write_text('translated to English\n', encoding='utf-8')
+    with pytest.raises(AssertionError, match='ORPHANED CJK declaration'):
+        alwayson.check_no_cjk(tmp_path)
+
+
+def test_a_malformed_declaration_is_refused_by_name(tmp_path: Path) -> None:
+    _git_repo(tmp_path, {'pyproject.toml': '[tool.dev_lab.cjk]\ndeclared = "one.md"\n', 'a.md': 'x\n'})
+    with pytest.raises(AssertionError, match=r'\[tool.dev_lab.cjk\] declared'):
+        alwayson.check_no_cjk(tmp_path)
+
+
+def test_a_zh_json_beside_its_json_passes_and_an_orphan_names_its_source(tmp_path: Path) -> None:
+    _git_repo(tmp_path, {'ui.json': '{}\n', 'ui.zh.json': f'"{_CHAR}"\n'})
+    alwayson.check_no_cjk(tmp_path)
+    _git_repo(tmp_path, {'lone.zh.toml': f'a = "{_CHAR}"\n'})
+    with pytest.raises(AssertionError, match=r"ORPHANED TRANSLATION 'lone.zh.toml'.*'lone.toml'"):
+        alwayson.check_no_cjk(tmp_path)
 
 
 def test_the_pattern_is_derived_from_the_shared_ranges() -> None:
@@ -229,7 +289,7 @@ def test_the_required_identity_catalog_matches_actual_collected_items(
     actual = json.loads((pytester.path / 'collected.json').read_text(encoding='utf-8'))
     required = set(alwayson.required_ids(pytester.path))
     assert required == set(actual) - {'test_x.py::test_x'}
-    assert len(required) == len(alwayson.rows())
+    assert len(required) == len(alwayson.rows()) + 1, 'the declared layout table opts MODULE-SIZE-ALARM in'
     alwayson.assert_required_collected(pytester.path, actual)
 
 
@@ -320,5 +380,5 @@ def test_known_family_git_read_failure_remains_visible_as_failed_runtime_items(
         },
     )
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=1, failed=len(alwayson.rows()))
+    result.assert_outcomes(passed=1, failed=len(alwayson.rows()) + 1)
     result.stdout.fnmatch_lines(['*git*recollect*'])

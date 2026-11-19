@@ -85,7 +85,7 @@ Write issues and comments only through `python -m dev_lab.dev.forge issue ...`. 
 | you used to | now |
 |---|---|
 | read a local log to know if a sha is green | `forge status list <sha>` or `forge queue` |
-| push `main` after a local heavy run | `integrate promote <sha>` then `git push origin main` (the integrator), when every part is a full PASS |
+| push `main` after a local heavy run | `integrate promote <sha>`, which fast-forwards origin's `main` itself (the integrator), when every part is a full PASS |
 | hold a branch "for later" | merge it or delete it ([one branch per session](branch-set.md)) |
 | push a lane branch to origin | keep lanes local; an undeclared origin branch reds on the forge (the forge judges the branch set: [branch set](branch-set.md#judged-on-the-forge-never-at-push)) |
 | delete merged origin branches by hand | declare `prune_merged = true`; every serving host prunes them ([pruning origin](branch-set.md#pruning-origin)) |
@@ -105,8 +105,8 @@ is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
 - **A cluster account's machine file**: delete the `serve` key from `[deploy]` (on Ada it named the
   integration mode), then re-run `python -m dev_lab.dev.hpcaccount deploy` so the crontab lines become plain
   `forge serve`. A `[deploy]` still carrying the key is refused.
-- **A workstation**: re-run `python -m dev_lab.dev.workstation deploy ...` without the mode flag; it
-  rewrites the `lab-forge-serve` Task, whose old action is refused until then.
+- **A workstation**: re-run `python -m dev_lab.dev.workstation deploy ...` without the mode flag; it deletes the
+  retired `lab-forge-serve` Task (a workstation never serves, user ruling 2026-11-16).
 - **A host that should take no foreign work**: do not run `forge serve` on it; to have it take its own
   work first, name it in the machine file's `[priority]` (ordering only -- nothing is reserved).
 - **A consumer's `pyproject.toml`**: replace the opted-in branch list under `[tool.lab_commons.schedule]` and
@@ -152,6 +152,14 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
    `[capabilities.femm]`; one that should run Windows-only parts declares nothing (its OS is measured).
 6. **Promotion**: `integrate promote` now needs `tests/base` and every part a part hands to. A server-side
    required status context should be `tests/base` only.
+7. **On gitea, a new repo is served only once a cluster account lists it.** A GitHub repo needs nothing here:
+   its rendered `ci.yml` is its producer. On gitea, declaring `produce` makes a sha claimable; nothing claims it
+   until some cluster account's machine file names the repo, so its PR shows no `tests/base` and cannot merge. A
+   workstation never serves, so it cannot be that host. Add a `[deploy] repos` row (`{ name, url, ref =
+   "integrate/main" }`, plus `verify = ["tests/*"]` on an affined account,
+   [affinity](forge.md#hpc-account-affinity)) on at least one account that has every resource the repo declares.
+
+   The edit is made ON that host by its operator: hosts meet only through the forge, never by a remote write.
 
 ### consumer-a (a solver repo with JMAG, FEMM, MATLAB and SIMBA tests)
 

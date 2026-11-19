@@ -6,21 +6,21 @@ listed sha that settles (a session watching several pushed PRs wakes on each res
 exit 0 settled and every part ``success``, 1 settled with a red or an error, 3 when the deadline passed first.
 It never posts, claims or cancels anything.
 
-``--stream`` is the shape a Claude Code ``Monitor`` reads (PUSHED-HEAD-IS-WATCHED, :mod:`dev_lab.dev.pushwatch`):
-ONE flushed line per status CHANGE of any context -- ``<sha12> <context> <state>`` -- and a last line
-``<sha12> green|red|deadline``; a re-read status that did not change prints nothing.
+``--stream`` is the shape a Claude Code ``Monitor`` reads: ONE flushed line per status CHANGE of any context --
+``<sha12> <context> <state>`` -- and a last line ``<sha12> green|red|deadline``; a re-read status that did not
+change prints nothing.
 
-``--session <id> --stream`` (SESSION-HEARS-ITS-PRS, user ruling 2026-11-11: lab-commons #158 went red and the
+``--session <id> --stream`` (TASK-HEARS-ITS-FORGE-EVENTS, user ruling 2026-11-11: lab-commons #158 went red and the
 session heard nothing) watches every PR the session opened or pushed, in any repository, on either forge
 (:mod:`dev_lab.dev.sessionprs`, its record): ONE line per change -- ``<key> <sha12> <context> failure|error
 <description>``, ``<key> <sha12> green`` once every ``tests/*`` check is final and green, ``<key> merged`` /
-``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. :func:`unacknowledged_reds` is what
-the ``Stop`` hook (:mod:`dev_lab.dev.pushstop`) refuses on, until a newer head is pushed or
-``--ack <key> --reason <why>`` records why the red stands.
+``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. ``--ack <key> --reason <why>``
+records why a red stands; :func:`unacknowledged_reds` lists the reds no reason answers, until a newer head.
+The machine forge hearer (:mod:`dev_lab.dev.forgefeed`) is the one hearer a session relies on (dev-lab #640).
 
-A WATCH YIELDS ITS VENV (2026-11-14): a watch runs from a venv for hours, so a queued
-``dep --bootstrap --when-free`` (:mod:`dev_lab.dev._dep_pending`) of that venv makes it exit at its next poll
--- one line ``venv update pending ...: re-arm this watch`` and exit 4 -- instead of holding the update off.
+A WATCH YIELDS ITS VENV (dev-lab #641): a watch runs from a venv for hours, so once a newer environment is
+published beside it (:func:`dev_lab.dev.venvpointer.superseded`) it exits at its next poll -- one line
+``a newer environment is published ...: re-arm this watch`` and exit 4 -- so the old one can be reclaimed.
 """
 
 from __future__ import annotations
@@ -35,11 +35,11 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_pending, native_session, sessionprs, taskgate
+from dev_lab.dev import native_session, sessionprs, taskgate, venvpointer
+from dev_lab.dev.forgeclient import client_for, stored_client
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, client_for, stored_client
-from dev_lab.dev.pushwatch import record_deadline
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.sessionpoll import TESTS, green, poll_session, pull_of, reds
 
 if TYPE_CHECKING:
@@ -50,25 +50,25 @@ __all__ = [
     'FLOOR_S',
     'YIELDED',
     'clients_at',
+    'env_superseded',
     'main',
     'session_main',
     'settled',
     'unacknowledged_reds',
-    'update_waits',
     'watch',
     'watch_session',
 ]
 
 _DEADLINE: Final = 3
-#: The exit code of a watch that yielded its venv to a queued update; its session re-arms it.
+#: The exit code of a watch that yielded its venv to a newer published one; its session re-arms it.
 YIELDED: Final = 4
 
 
-def update_waits() -> str:
-    """The line a watch ends on when an update of the venv it runs from is queued, else ``''``."""
-    if _dep_pending.pending(sys.prefix) is None:
+def env_superseded() -> str:
+    """The line a watch ends on when a newer environment than the one it runs from is published, else ``''``."""
+    if not venvpointer.superseded(sys.prefix):
         return ''
-    return f'venv update pending for {sys.prefix}: this watch exits so it can run; re-arm this watch'
+    return f'a newer environment is published beside {sys.prefix}: this watch exits so it can go; re-arm this watch'
 
 
 #: The default poll period, and the fastest ``--every-seconds`` honours. A verdict is claimed on a serve tick
@@ -94,7 +94,7 @@ def watch(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     stream: bool = False,
-    yielding: Callable[[], str] = update_waits,
+    yielding: Callable[[], str] = env_superseded,
 ) -> int:
     """Poll each of *shas*, printing each change, until one settles or *deadline_s* has passed (``--stream``: above)."""
     end, seen = clock() + deadline_s, set()
@@ -153,12 +153,12 @@ def watch_session(
     deadline_s: float = 4 * 3600.0,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
-    yielding: Callable[[], str] = update_waits,
+    yielding: Callable[[], str] = env_superseded,
 ) -> int:
     """Report each change on *session*'s open PRs until none is open (0) or *deadline_s* passed (3).
 
-    While it runs it holds the session's liveness marker (:func:`~dev_lab.dev.sessionprs.watch`): the Stop gate
-    reads it as "a watch is armed".
+    While it runs it holds the session's liveness marker (:func:`~dev_lab.dev.sessionprs.watch`): the orphan
+    sweep reads it as a live owner (:mod:`dev_lab.dev.forgeorphan`).
     """
     sessionprs.watch(session)
     try:
@@ -308,7 +308,4 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ForgeCallFailed, ValueError) as failed:
         emit(f'watch: {failed}', err=True)
         return 2
-    if done == _DEADLINE:  # the Stop gate releases a head whose watch ran out (pushstop)
-        for sha in args.sha:
-            record_deadline(Path.cwd(), sha)
     return done

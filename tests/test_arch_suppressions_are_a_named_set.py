@@ -40,7 +40,9 @@ import tomllib
 from pathlib import Path
 from typing import Final
 
-from _arch_corpus import ROOT, SOURCE_FLOOR, TEST_FLOOR, assert_floor, rel, source_modules, suite_modules
+from _arch_corpus import ROOT, SOURCE_FLOOR, TEST_FLOOR, assert_floor, corpus_key, source_modules, suite_modules
+
+from dev_lab.dev.failprint import subject_lines, subjects_of
 
 #: A suppression site: ``(repo-relative path, rule code, anchor)``. The anchor is the suppressed
 #: source text with the comment stripped, or -- for a whole-line comment and for a ``pyproject.toml``
@@ -79,6 +81,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'ANN401',
         'def _get(self, path: str) -> Any:',
     ): "the fake's GET router returns each endpoint's parsed JSON, whose shape is the route",
+    (
+        'tests/test_dev_failprint.py',
+        'arg-type',
+        'return lambda ref: fingerprints_at(_Forge(subjects), ref)',
+    ): 'a _Forge stands in for the Client fingerprints_at takes: a test double, not a subclass the type checker sees',
     (
         'tests/test_dev_forgereview_bundle.py',
         'arg-type',
@@ -152,6 +159,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'with urllib.request.urlopen(request, timeout=30) as answer:',
     ): 'opens only the request built above to [ops.forge] api',
     (
+        'src/dev_lab/dev/toolrelease.py',
+        'S310',
+        "with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S) as answer, to.open('wb') as out:",
+    ): 'a pinned https release URL built from the declared tool table, its bytes refused unless the sha256 matches',
+    (
         'src/dev_lab/dev/forgememo.py',
         'ANN401',
         'def read(self, key: tuple[str, str], attempt: Callable[[], Any]) -> Any:',
@@ -209,7 +221,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/hpcaccount/__init__.py',
         'PLC0415',
-        'from dev_lab.dev.hpcaccount import allocate, credential, deploy, fleet, forget, storage, tick',
+        'from dev_lab.dev.hpcaccount import (',
     ): 'the package imports no verb: each verb imports the package, so a top-level import would be a cycle',
     (
         'src/dev_lab/dev/servelock.py',
@@ -440,6 +452,12 @@ ALLOWED: Final[dict[Site, str]] = {
         "['git', '-C', str(root), *arguments],",
     ): 'git through PATH building the scratch checkouts the local-name reader is then asked to read',
     (
+        'src/dev_lab/dev/githooks/inprocess.py',
+        'BLE001',
+        'except Exception:',
+    ): 'a hook row run in the runner`s interpreter must end as the subprocess would: an uncaught exception of any '
+    'type is the interpreter`s exit 1 with its traceback, and the next row still runs',
+    (
         'src/dev_lab/dev/branchnotices.py',
         'PLC0415',
         'from dev_lab.dev.forgepulls import pr_list',
@@ -448,7 +466,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/branchnotices.py',
         'PLC0415',
-        'from dev_lab.dev.forgework import client_for',
+        'from dev_lab.dev.forgeclient import client_for',
     ): 'the same hook-latency reason: the client is built only on a cache miss, inside the bounded reader thread',
     (
         'src/dev_lab/dev/branchnotices.py',
@@ -486,7 +504,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
-        'from dev_lab.dev.forgework import client_for',
+        'from dev_lab.dev.forgeclient import client_for',
     ): 'the same leaf-at-import reason: the client is built only by the CLI entry point',
     (
         'src/dev_lab/dev/forgenotice.py',
@@ -498,6 +516,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev.lanepolicy import load_policy',
     ): 'the same leaf-at-import reason: the lane policy is read only by the CLI entry point',
+    (
+        'src/dev_lab/dev/hookdispatch.py',
+        'BLE001',
+        'except Exception:',
+    ): "a crashed hook handler is one stderr line, never the dispatcher's crash: every other row still answers",
+    (
+        'src/dev_lab/dev/hookdispatch.py',
+        'override',
+        'def encoding(self) -> str:',
+    ): "a routed stream's encoding is its calling thread's target's, so it is a property where typeshed has a field",
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')
@@ -537,7 +565,7 @@ def python_sites(paths: tuple[Path, ...]) -> tuple[Site, ...]:
             if not codes:
                 continue
             anchor = lines[token.start[0] - 1][: token.start[1]].strip() or token.string.strip()
-            out.extend((_name(path), code, anchor) for code in codes)
+            out.extend((corpus_key(path), code, anchor) for code in codes)
     return tuple(out)
 
 
@@ -545,7 +573,7 @@ def pyproject_sites(pyproject: Path) -> tuple[Site, ...]:
     """Every per-file ``ruff`` ignore -- a suppression that appears in no Python file at all."""
     lint = tomllib.loads(pyproject.read_text(encoding='utf-8')).get('tool', {}).get('ruff', {}).get('lint', {})
     tables = (lint.get('per-file-ignores') or {}, lint.get('extend-per-file-ignores') or {})
-    return tuple((_name(pyproject), code, glob) for t in tables for glob, codes in t.items() for code in codes)
+    return tuple((corpus_key(pyproject), code, glob) for t in tables for glob, codes in t.items() for code in codes)
 
 
 def undeclared_and_orphaned(sites: tuple[Site, ...], declared: dict[Site, str]) -> tuple[str, ...]:
@@ -566,11 +594,9 @@ def undeclared_and_orphaned(sites: tuple[Site, ...], declared: dict[Site, str]) 
     return tuple(problems)
 
 
-def _name(path: Path) -> str:
-    try:
-        return rel(path)
-    except ValueError:
-        return path.name
+def subjects(sites: tuple[Site, ...], declared: dict[Site, str]) -> set[Site]:
+    """The suppression tuples the ratchet's red names: undeclared, orphaned and reasonless."""
+    return set(sites) ^ set(declared) | {site for site, why in declared.items() if not why.strip()}
 
 
 def test_every_suppression_is_declared_and_every_declaration_is_used() -> None:
@@ -580,7 +606,9 @@ def test_every_suppression_is_declared_and_every_declaration_is_used() -> None:
     assert_floor(len(suite), TEST_FLOOR, 'suppression (tests)')
     sites = python_sites(source + suite) + pyproject_sites(ROOT / 'pyproject.toml')
     problems = undeclared_and_orphaned(sites, ALLOWED)
-    assert problems == (), 'the suppression ratchet moved:\n  ' + '\n  '.join(problems)
+    assert problems == (), (
+        'the suppression ratchet moved:\n  ' + '\n  '.join(problems) + '\n' + subject_lines(subjects(sites, ALLOWED))
+    )
 
 
 def test_a_planted_suppression_and_a_planted_orphan_are_refused(tmp_path: Path) -> None:
@@ -620,3 +648,14 @@ def test_a_planted_per_file_ignore_and_a_planted_bare_marker_are_seen(tmp_path: 
     )
     codes = {code for _, code, _ in python_sites((bare,))}
     assert codes == {'type-ignore:ALL', 'no-cover'}, codes
+
+
+def test_the_suppression_red_names_each_moved_tuple_as_a_subject() -> None:
+    """THE PLANTED CONTROL for the fingerprint: undeclared, orphaned and reasonless tuples are each a subject."""
+    new, gone, bare, kept = ('a.py', 'F401', 'x'), ('b.py', 'E501', 'y'), ('c.py', 'S101', 'z'), ('d.py', 'D1', 'w')
+    assert subjects_of(subject_lines(subjects((new, bare, kept), {gone: 'r', bare: ' ', kept: 'r'}))) == {
+        str(new),
+        str(gone),
+        str(bare),
+    }
+    assert subjects((kept,), {kept: 'r'}) == set()

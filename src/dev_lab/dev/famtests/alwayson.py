@@ -4,8 +4,9 @@ THE ONE EXCEPTION TO THIS PACKAGE'S SHAPE, and it is a user ruling (2026-11-07),
 NO-CJK-IN-TRACKED-SOURCE is enforced in every family repo from ONE place, with no per-repo copy and
 no opt-out. Every other body in :mod:`dev_lab.dev.famtests` is parametrized by a consumer file that
 names its repo's facts; this rule has none left to name -- the corpus is the repo's tracked files,
-the exemptions are :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`, and the declared set is empty in every
-repo -- so a consumer file could only be a copy, or a place to forget it.
+the exemptions are :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`, and the declared set is DATA in the repo's
+own manifest (``[tool.dev_lab.cjk] declared``, :func:`declared_cjk`; added for D26, 2026-11-17, when
+memory and tasks lost their exemption) -- so a consumer file could only be a copy, or a place to forget it.
 
 HOW IT REACHES A REPO. dev-lab registers :mod:`dev_lab.pytest_family` under pytest's ``pytest11``
 entry point, so any pytest session in an environment where dev-lab is installed loads it, and that
@@ -13,6 +14,9 @@ shim calls :func:`append_rows` at collection. When the session's rootdir
 is a git toplevel it appends one item per row in :func:`rows`; a session rooted anywhere else (a
 pytester tree, an unpacked sdist) has no tracked corpus and gets none. :data:`dev_lab.dev.rules.ALWAYS_ON`
 is the registry's half: an adoption may neither list these rules nor declare them absent.
+
+A DECLARED CHECKOUT ALSO GETS THE TREE CHECKS (:mod:`dev_lab.dev.famtests.treechecks`, user ruling D42,
+2026-11-17): the famtests bodies whose every argument the checkout answers, each where its population exists.
 
 ONE ``git grep`` FINDS THE CANDIDATES (coordinator ruling 2026-11-07): a per-file Python read took
 331 s over acme-consumer's 22k files. The PCRE class is built from :data:`dev_lab.dev.cjk.CJK_RANGES` and
@@ -25,6 +29,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tomllib
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -35,8 +40,8 @@ from lab_commons.launch import run
 from lab_commons.outcomes import Cell, Reason, Status
 
 from dev_lab.dev import cjk
-from dev_lab.dev.family import is_member
-from dev_lab.dev.famtests import modulealarm
+from dev_lab.dev.family import declared_table, is_member
+from dev_lab.dev.famtests import modulealarm, treechecks
 from dev_lab.dev.rules import ALWAYS_ON, tracked_files
 
 if TYPE_CHECKING:
@@ -48,6 +53,7 @@ __all__ = [
     'candidates',
     'check_no_cjk',
     'cjk_pattern',
+    'declared_cjk',
     'exclude_pathspecs',
     'required_ids',
     'resource_nodes',
@@ -94,6 +100,24 @@ def candidates(root: Path) -> tuple[str, ...]:
     return tuple(sorted(name for name in out.stdout.decode('utf-8').split('\0') if name))
 
 
+def declared_cjk(root: Path) -> tuple[str, ...]:
+    """The repo's migration ledger: ``[tool.dev_lab.cjk] declared`` in *root*'s ``pyproject.toml``.
+
+    Repo-relative POSIX paths still carrying CJK; the set may only shrink (:func:`dev_lab.dev.cjk.ratchet`
+    refuses a declared file with none left). No manifest or no table is the empty set. A value that is
+    not a list of strings is refused by name rather than read as empty, which would hide every entry.
+    """
+    try:
+        text = (root / 'pyproject.toml').read_text(encoding='utf-8')
+    except OSError:
+        return ()
+    entries = declared_table(tomllib.loads(text), 'cjk', {}).get('declared', [])
+    if not isinstance(entries, list) or not all(isinstance(entry, str) for entry in entries):
+        msg = f'[tool.dev_lab.cjk] declared must be a list of repo-relative paths, not {entries!r}'
+        raise AssertionError(msg)
+    return tuple(entries)
+
+
 def check_no_cjk(root: Path) -> None:
     """Raise unless no tracked, non-exempt file under *root* carries CJK and no translation is orphaned."""
     tracked = tracked_files(root)  # raises rather than answering empty
@@ -102,7 +126,7 @@ def check_no_cjk(root: Path) -> None:
         problems.append('git ls-files listed no file, so a clean result would mean nothing')
     hits = [name for name in candidates(root) if not cjk.translation_exempted(name, tracked)]
     scan = cjk.scan_files([root / name for name in hits], exempt_prefixes=cjk.EXEMPT_PREFIXES, root=root)
-    problems.extend(cjk.ratchet(scan.occurrences, ()))
+    problems.extend(cjk.ratchet(scan.occurrences, declared_cjk(root)))
     if problems:
         raise AssertionError('\n  '.join(('NO-CJK-IN-TRACKED-SOURCE:', *problems)))
 
@@ -124,10 +148,32 @@ def rows() -> dict[str, Callable[[Path], None]]:
     return {rule: _CHECKS[rule] for rule in sorted(ALWAYS_ON)}
 
 
+def _declared_checkout(root: Path) -> bool:
+    """A family CHECKOUT: a manifest declaring membership AND a ``.git`` at the root.
+
+    A declared tree with no ``.git`` (a test's temp project, an unpacked sdist) has no tracked corpus and is
+    not judged; a declared checkout whose ``.git`` exists but cannot be read is refused loudly.
+    """
+    return is_member(root) and (root / '.git').exists()
+
+
+def _declares_layout(root: Path) -> bool:
+    """Opt-in: a ``[tool.dev_lab.layout]`` table, or a manifest too broken to say, enables the layout check."""
+    try:
+        data = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    except OSError:
+        return False
+    except ValueError:
+        return True
+    return declared_table(data, 'layout') is not None
+
+
 def _applicable(root: Path) -> dict[str, Callable[[Path], None]]:
     checks = rows()
-    if not is_member(root):
-        checks.pop(_LAYOUT_RULE)
+    if _declared_checkout(root):
+        if _declares_layout(root):
+            checks[_LAYOUT_RULE] = _CHECKS[_LAYOUT_RULE]
+        checks.update(treechecks.applicable(root))
     return checks
 
 
@@ -136,12 +182,12 @@ def _identity(rule: str) -> str:
 
 
 def _catalog_ids(root: Path) -> tuple[str, ...]:
-    return tuple(_identity(rule) for rule in _applicable(root)) if is_member(root) else ()
+    return tuple(_identity(rule) for rule in _applicable(root)) if _declared_checkout(root) else ()
 
 
 def required_ids(root: Path) -> tuple[str, ...]:
     """Exact required identities after fresh family Git-root proof; no claim for other inputs."""
-    if not is_member(root):
+    if not _declared_checkout(root):
         return ()
     if _toplevel(root) != root.resolve():
         refused = _git_refusal('the declared family root is not the readable git toplevel')
@@ -168,7 +214,7 @@ def resource_nodes(root: Path, ids: Sequence[str]) -> list[str]:
 
 def run_checks(root: Path) -> dict[str, TestCell]:
     """Execute the same checks for non-pytest family producers, retaining their individual evidence."""
-    if not is_member(root):
+    if not _declared_checkout(root):
         return {}
     cells = {}
     for rule, check in _applicable(root).items():
@@ -207,12 +253,12 @@ def _toplevel(root: Path) -> Path | None:
     try:
         out = _git(root, 'rev-parse', '--show-toplevel')
     except (OSError, subprocess.TimeoutExpired) as exc:
-        if is_member(root):
+        if _declared_checkout(root):
             refused = _git_refusal(f'{type(exc).__name__}: {exc}')
             raise refused from exc
         return None
     if out.returncode != 0:
-        if is_member(root):
+        if _declared_checkout(root):
             refused = _git_refusal(f'exit {out.returncode}: {out.stderr.decode("utf-8", "replace").strip()}')
             raise refused
         return None
@@ -220,11 +266,11 @@ def _toplevel(root: Path) -> Path | None:
         text = out.stdout.decode('utf-8').strip()
         top = Path(text).resolve() if text else None
     except (UnicodeError, OSError, ValueError) as exc:
-        if is_member(root):
+        if _declared_checkout(root):
             refused = _git_refusal(str(exc))
             raise refused from exc
         return None
-    if top is None and is_member(root):
+    if top is None and _declared_checkout(root):
         refused = _git_refusal('git returned an empty toplevel')
         raise refused
     return top
@@ -241,7 +287,7 @@ def append_rows(session: pytest.Session, config: pytest.Config, items: list[pyte
     A declared family with unreadable Git retains failed runtime items, never an empty guard set.
     """
     root = Path(config.rootpath).resolve()
-    if is_member(root):
+    if _declared_checkout(root):
         try:
             required_ids(root)
         except ValueError as exc:

@@ -156,11 +156,13 @@ def test_the_judged_run_posts_as_the_data_heads_base_part(
     assert len(posted) == 1
 
 
-def test_consumer_success_does_not_certify_a_data_repos_missing_layout_policy(
+def test_consumer_success_does_not_certify_a_data_repos_malformed_layout_policy(
     world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
     (world.data / 'pyproject.toml').write_text(
-        f'[tool.dev_lab.verify]\nby = [{{repo = "{APP}", part = "connection"}}]\n', encoding='utf-8'
+        f'[tool.dev_lab.verify]\nby = [{{repo = "{APP}", part = "connection"}}]\n'
+        '[tool.dev_lab.layout]\nmodule_unit = "guessed"\nmodule_limit = 300\n',
+        encoding='utf-8',
     )
     consumers: list[object] = []
 
