@@ -227,7 +227,7 @@ def test_a_base_with_no_manifest_continues_nothing(tmp_path: Path, base: str, ca
         assert 'continues #' not in said
 
 
-def _raced(forge: StateForge, *, open_one: bool) -> None:
+def _raced(forge: StateForge, monkeypatch: pytest.MonkeyPatch, *, open_one: bool) -> None:
     """``pr_create`` refused 422, as when another pass opened the head's PR first (dev-lab #718, O27)."""
 
     def refused(*_args: object, **_kwargs: object) -> NoReturn:
@@ -236,23 +236,23 @@ def _raced(forge: StateForge, *, open_one: bool) -> None:
         exists = Attempt(1, 422, 'a pull request already exists', Diagnosis.FORGE_REFUSED)
         raise ForgeCallFailed(Report(('POST', 'pulls'), (exists,), 1))
 
-    forge.pr_create = refused  # type: ignore[method-assign]
+    monkeypatch.setattr(forge, 'pr_create', refused)
 
 
-def test_a_422_with_an_open_pr_for_the_head_is_that_pr() -> None:
+def test_a_422_with_an_open_pr_for_the_head_is_that_pr(monkeypatch: pytest.MonkeyPatch) -> None:
     """Another pass opened the continuation between our read and our create: that open PR IS the result."""
     forge = StateForge()
     landed = _merged(forge)
-    _raced(forge, open_one=True)
+    _raced(forge, monkeypatch, open_one=True)
     [number] = _opened(forge, {'pr/x': _TIP})
     assert number != landed
     assert forge.pr_view(number).state == 'open'
 
 
-def test_a_refused_create_with_no_open_pr_still_fails() -> None:
+def test_a_refused_create_with_no_open_pr_still_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL: a refusal no open PR explains is a failure, never a silent success."""
     forge = StateForge()
     _merged(forge)
-    _raced(forge, open_one=False)
+    _raced(forge, monkeypatch, open_one=False)
     with pytest.raises(ForgeCallFailed):
         _opened(forge, {'pr/x': _TIP})
