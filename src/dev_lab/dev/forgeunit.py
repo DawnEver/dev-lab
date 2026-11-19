@@ -49,7 +49,6 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.box.demand import CPU, MEM_GB, cores, seats
-from lab_commons.compute.durable import durable_write
 from lab_commons.compute.execute import CACHED, RAN, LocalExecutor, Offer, presence_check
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.model import Demand
@@ -61,11 +60,11 @@ from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev._forge_journal import outbox_dir
+from dev_lab.dev._forgeunit_pending import flush_held, hold, unread
 from dev_lab.dev.artefactpack import pack, unpack
 from dev_lab.dev.artefacts import load_config, resolve, store_for
 from dev_lab.dev.artefactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, Ref, run_id
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
-from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepublish import publish
 from dev_lab.dev.forgerecordkeep import UNIT_RESULT
 from dev_lab.dev.forgerecords import attach, listing
@@ -111,11 +110,6 @@ def pending_dir(root: Path) -> Path:
     return outbox_dir(root) / 'results'
 
 
-def _transient(failed: OSError) -> bool:
-    """A forge call that may land later: a dropped connection or a transient answer, never a FINAL refusal."""
-    return not (isinstance(failed, ForgeCallFailed) and failed.final is not None)
-
-
 @dataclass(frozen=True)
 class ForgeResults:
     """The shared tier on *client*'s forge (the module docstring)."""
@@ -143,7 +137,7 @@ class ForgeResults:
         try:
             posted = self._posted(unit_hash, generation)
         except OSError as failed:
-            self._unread(failed, f'result {unit_hash[:12]} g{generation}')
+            unread(self.pending, failed, f'result {unit_hash[:12]} g{generation}')
             return None
         if not posted:
             return None
@@ -194,31 +188,12 @@ class ForgeResults:
         attach(self.client, archive)
 
     def _hold(self, path: Path, failed: OSError) -> None:
-        """Keep *path* in :attr:`pending` for :meth:`flush` when *failed* is transient and there is one; else raise."""
-        if self.pending is None or not _transient(failed):
-            raise failed
-        durable_write(self.pending / path.name, path.read_bytes())
-        emit(f'[results] held {path.name}: the forge did not take it ({failed}); a forge tick lands it', err=True)
+        """Keep *path* in :attr:`pending` for :meth:`flush` (:func:`~dev_lab.dev._forgeunit_pending.hold`)."""
+        hold(self.pending, path, failed)
 
     def flush(self) -> list[str]:
-        """Land every held result, then every held grave; stop at the first the forge still cannot take."""
-        if self.pending is None or not self.pending.is_dir():
-            return []
-        lines: list[str] = []
-        for held in sorted(self.pending.iterdir(), key=lambda one: (GRAVE.match(one.name) is not None, one.name)):
-            try:
-                self._flush_one(held)
-            except Nondeterministic as differs:
-                lines.append(f'results: dropped {held.name} -- {differs}')
-            except OSError as failed:
-                if _transient(failed):
-                    lines.append(f'results: kept {held.name} -- the forge is unreachable ({failed})')
-                    break
-                lines.append(f'results: dropped {held.name} -- the forge refused it, final ({failed})')
-            else:
-                lines.append(f'results: landed {held.name}')
-            held.unlink()
-        return lines
+        """Land every held result, then every held grave (:func:`~dev_lab.dev._forgeunit_pending.flush_held`)."""
+        return flush_held(self.pending, self._flush_one)
 
     def _flush_one(self, held: Path) -> None:
         """Land one held result or grave by the rule its first post would have followed."""
@@ -260,15 +235,9 @@ class ForgeResults:
         try:
             posted = sorted(self._graves(unit_hash).items())
         except OSError as failed:
-            self._unread(failed, f'graves of {unit_hash[:12]}')
+            unread(self.pending, failed, f'graves of {unit_hash[:12]}')
             return ()
         return tuple(Tombstone(**json.loads(self.client.download(url))) for _, url in posted)
-
-    def _unread(self, failed: OSError, what: str) -> None:
-        """An offline read: unknown, said, when :attr:`pending` is set and *failed* is transient; else raise."""
-        if self.pending is None or not _transient(failed):
-            raise failed
-        emit(f'[results] {what} unread: the forge did not answer ({failed}); read as nothing posted', err=True)
 
 
 @dataclass(frozen=True)
