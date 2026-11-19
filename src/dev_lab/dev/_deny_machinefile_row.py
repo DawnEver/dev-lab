@@ -18,7 +18,17 @@ from dev_lab.dev.machineguard import HAZARD, REMEDY, RULE_ID
 
 __all__ = ['MACHINE_FILE_IS_RENDERED']
 
-_PARTS = config_path().relative_to(home()).parts
+
+def _parts() -> tuple[str, ...]:
+    """The machine file's path below home; an override outside home (a test's, a moved file) keeps its last two."""
+    path = config_path()
+    try:
+        return path.relative_to(home()).parts
+    except ValueError:
+        return path.parts[-2:]
+
+
+_PARTS = _parts()
 #: The tail as the examples spell it: ``config/<file>``, derived, so no consumer's name is written here.
 _SHOWN = '/'.join(_PARTS)
 _SHOWN_WIN = '\\'.join(_PARTS)
