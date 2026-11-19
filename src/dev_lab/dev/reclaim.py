@@ -34,15 +34,16 @@ from lab_commons.census import processes
 from dev_lab.dev.checkout import (
     _GIT,
     _GIT_TIMEOUT_S,
-    DEFAULT_WORKTREE_HOME,
     git_bytes,
     git_out,
+    locked_trees,
     orphan_directories,
     split_drifted,
     unmerged_changes,
     worktrees,
 )
 from dev_lab.dev.diskusage import remove_tree
+from dev_lab.dev.disposable import disposable_base, unheld_head
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.liverun import Census, removal_holders
@@ -55,7 +56,6 @@ __all__ = [
     'blockers',
     'declared_generated',
     'index_age_s',
-    'locked_trees',
     'orphan_reason',
     'reclaim',
     'reclaimable',
@@ -154,21 +154,6 @@ class Lease:
         return not self.reason
 
 
-def locked_trees(root: Path) -> frozenset[Path] | None:
-    """The resolved paths of every ``git worktree lock``-ed tree of *root*; ``None`` when git could not answer."""
-    out = git_out(root, 'worktree', 'list', '--porcelain')
-    if out is None:
-        return None
-    found: set[Path] = set()
-    path: Path | None = None
-    for line in out.splitlines():
-        if line.startswith('worktree '):
-            path = Path(line.removeprefix('worktree ').strip()).resolve()
-        elif (line == 'locked' or line.startswith('locked ')) and path is not None:
-            found.add(path)
-    return frozenset(found)
-
-
 def _patch_ids(root: Path, patch: bytes) -> frozenset[str]:
     try:
         done = _door.run(
@@ -249,17 +234,26 @@ def unlanded_work(tree: Path, generated: tuple[str, ...] = ()) -> str:
     return f'untracked work -- {UNLANDED_DOORS}: {_shown(loose)}' if loose else ''
 
 
+def _scrap_unsaved(tree: Path, base: str, generated: tuple[str, ...]) -> str:
+    """Why disposable *tree* holds work: a tracked change or a HEAD no ref holds; untracked files are scratch."""
+    blocking = blockers(tree, generated) if tree.is_dir() else None
+    if blocking:
+        return f'tracked changes -- commit or revert first: {_shown(blocking)}'
+    return 'unreadable' if blocking is None else unheld_head(tree, base)
+
+
 def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str:
     holders = judge.holders
     if locked:
         return 'locked (git worktree unlock first)'
-    unsaved = unlanded_work(tree, judge.generated)
-    if unsaved and not unsaved.startswith('untracked'):
+    base = disposable_base(tree)
+    unsaved = _scrap_unsaved(tree, base, judge.generated) if base else unlanded_work(tree, judge.generated)
+    if unsaved and (base or not unsaved.startswith('untracked')):
         return unsaved
     age = index_age_s(tree)
     if age is not None and age < judge.quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
-    if not _landed(tree, branch, holders):
+    if not base and not _landed(tree, branch, holders):
         return f'not landed -- its content is on none of {", ".join(holders)}'
     return unsaved
 
@@ -311,7 +305,7 @@ def reclaimable(
     root: Path,
     holders: tuple[str, ...],
     *,
-    home: Path = DEFAULT_WORKTREE_HOME,
+    home: Path | None = None,
     occupied: Callable[[Path], bool] | None = None,
     quiet_s: float = QUIET_S,
     runtimes: Mapping[str, Mapping[str, Any]] | None = None,
@@ -435,7 +429,7 @@ def reclaim(
     root: Path,
     holders: tuple[str, ...],
     *,
-    home: Path = DEFAULT_WORKTREE_HOME,
+    home: Path | None = None,
     occupied: Callable[[Path], bool] | None = None,
     apply: bool = True,
     limit: int | None = None,

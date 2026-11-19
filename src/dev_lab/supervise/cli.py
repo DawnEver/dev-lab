@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons import storage
 from lab_commons.log import emit
 
 from dev_lab.supervise import card
@@ -34,8 +35,10 @@ from dev_lab.supervise.state import StateStore
 
 __all__ = ['build_registry', 'main']
 
-#: The journal a day's cycle records are appended to, relative to the target.
-JOURNAL: Final = 'output/supervise/cycles.jsonl'
+#: The journal a day's cycle records are appended to, relative to the target's ``output`` storage kind.
+JOURNAL: Final = 'supervise/cycles.jsonl'
+#: The default state file, relative to the same kind.
+STATE: Final = 'supervise/state.json'
 
 #: How large the journal may grow before it is rewritten down to its newest records, and how many
 #: of those to keep. Four megabytes is roughly two months of five-minute cycles; five thousand
@@ -92,8 +95,14 @@ def _context(args: argparse.Namespace) -> tuple[dict[str, Any], Registry, StateS
     project = Path(args.project).resolve()
     config = load_config(Path(args.config) if args.config else project / 'config' / 'supervise.toml')
     registry = build_registry(config)
-    state_path = Path(str(config.get('state', {}).get('file', '') or project / 'output' / 'supervise' / 'state.json'))
+    state_path = Path(str(config.get('state', {}).get('file', '') or _output(project) / STATE))
     return config, registry, StateStore(state_path), project
+
+
+def _output(project: Path) -> Path:
+    """The target's ``output`` storage kind: the machine's bound root, else ``<project>/output``."""
+    found = storage.root('output', project.name, project)
+    return found if found is not None else project / 'output'
 
 
 def _journal(project: Path) -> Path:
@@ -106,7 +115,7 @@ def _journal(project: Path) -> Path:
         The journal path.
 
     """
-    return project / JOURNAL
+    return _output(project) / JOURNAL
 
 
 def _append_bounded(path: Path, line: str) -> None:

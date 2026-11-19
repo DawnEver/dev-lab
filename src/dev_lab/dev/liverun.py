@@ -60,6 +60,7 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Final, TextIO
 
+from lab_commons import storage
 from lab_commons.census import Process, processes
 from lab_commons.log import emit
 
@@ -67,6 +68,7 @@ from dev_lab.dev import gitdirs
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 from dev_lab.dev.venvpath import PYTHON_SLOT, current_os_name, expand_interpreter, running_interpreter
+from dev_lab.dev.venvpointer import ALIAS, POINTER
 
 __all__ = [
     'NOT_THE_TREE',
@@ -88,8 +90,21 @@ __all__ = [
 #: The deny row both halves of the guard render their refusal from (:mod:`dev_lab.dev._deny_liverun_row`).
 RULE_ID: Final = str(LIVE_RUN['id'])
 
-#: Top-level directories of a checkout that no run reads: a write there never changes what a run executes.
-NOT_THE_TREE: Final = ('output', '.claude', '.venv', '.venvs', '.venv-current')
+#: The storage kinds no run READS from the tree (:data:`lab_commons.storage.KINDS`): ``build`` is not one -- a run
+#: may load a native artefact built there.
+_UNREAD_KINDS: Final = ('output', 'venvs', 'worktrees', 'vendor_cache', 'temp')
+
+#: Top-level directories of a checkout that no run reads: a write there never changes what a run executes. Derived
+#: from the in-tree defaults of :data:`_UNREAD_KINDS` (one spelling of each), plus the venv alias and pointer.
+NOT_THE_TREE: Final = tuple(
+    dict.fromkeys(
+        [
+            *(Path(default).parts[0] for kind in _UNREAD_KINDS if (default := storage.KINDS[kind])),
+            ALIAS,
+            POINTER,
+        ]
+    )
+)
 
 #: The interpreter whose cwd is READ: ``python -m`` puts the cwd first on ``sys.path``. Not node: Claude Code and
 #: its MCP servers are node processes sitting in the checkout for the whole session (measured 2026-10-19).

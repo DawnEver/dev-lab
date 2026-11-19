@@ -61,7 +61,7 @@ from typing import Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.datedlog import date_parts
-from dev_lab.dev.gitdirs import common_dir
+from dev_lab.dev.storage import main_of, output_path
 
 __all__ = [
     'BREAK_GLASS_ACTION',
@@ -101,27 +101,29 @@ _SESSION_ENV: Final = 'LAB_SESSION'
 BREAK_GLASS_ACTION: Final = 'break-glass'
 
 
-#: Where under :func:`checkout` the dated tree starts, and the kind directory beneath the date.
-BASE: Final = Path('output', 'logs')
+#: Where under the checkout's ``output`` storage kind the dated tree starts, and the kind directory beneath the date.
+BASE: Final = Path('logs')
 LOG_KIND: Final = 'metrics'
 
 
 def checkout(root: Path) -> Path:
     """The main worktree of the repository holding *root*; *root* itself outside a checkout.
 
-    Read off ``.git`` and ``commondir`` (:mod:`dev_lab.dev.gitdirs`), never a git start: the walls ledger asks this on
-    every stop, and measured 2026-11-17 the ``rev-parse`` it replaced cost 60-260 ms of the hook's budget.
+    Read off ``.git`` and ``commondir`` (:func:`dev_lab.dev.storage.main_of`), never a git start: the walls ledger
+    asks this on every stop, and measured 2026-11-17 the ``rev-parse`` it replaced cost 60-260 ms of the hook's budget.
     """
-    common = common_dir(root)
-    return common.parent if common is not None else root
+    return main_of(root)
 
 
 def log_file(root: Path, kind: str, day: tuple[str, str, str] | None = None) -> Path:
-    """``<checkout>/output/logs/<yy>/<mm>/<dd>/metrics/<kind>.jsonl`` for *day* (today); ``'*'`` parts glob."""
+    """``<output kind>/logs/<yy>/<mm>/<dd>/metrics/<kind>.jsonl`` for *day* (today); ``'*'`` parts glob.
+
+    The output kind is the main checkout's in-tree output unless the machine binds it (:mod:`dev_lab.dev.storage`).
+    """
     if kind not in KINDS:
         msg = f'unknown metrics kind {kind!r}; the kinds are {list(KINDS)}'
         raise ValueError(msg)
-    return checkout(root).joinpath(BASE, *(day or date_parts()), LOG_KIND, f'{kind}.jsonl')
+    return output_path(checkout(root), *BASE.parts, *(day or date_parts()), LOG_KIND, f'{kind}.jsonl')
 
 
 def repo_of(root: Path) -> str:

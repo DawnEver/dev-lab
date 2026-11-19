@@ -161,6 +161,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "issue", "label"],
+    decision = "allow",
+    justification = "Adding or removing labels on an existing forge issue through the family door; a missing label is created.",
+)
+
+prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "create"],
     decision = "allow",
     justification = "Opening a draft pull request onto the integration branch through the forge door; the agent does this itself and never hands it to the user.",
@@ -176,6 +182,18 @@ prefix_rule(
     pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "draft"],
     decision = "allow",
     justification = "Returning a pull request to draft, so nothing reviews or merges it.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "hold"],
+    decision = "allow",
+    justification = "Holding a pull request from the merge tick with the hold label, where its draft is refused.",
+)
+
+prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.forge", "pr", "release"],
+    decision = "allow",
+    justification = "Releasing a held pull request back to the merge tick.",
 )
 
 prefix_rule(

@@ -14,7 +14,7 @@ it is not taken from under it); a DEAD one is released as claimable -- ``error``
 and its tree is closed (record and log kept, :func:`~dev_lab.dev.shatree.close_tree`). A run that
 already posted its result is only forgotten.
 
-WHERE IT LIVES. ``output/forge/runs/`` in the MAIN checkout (beside the outbox), one file per job.
+WHERE IT LIVES. ``forge/runs/`` in the MAIN checkout's output kind (storage.md) (beside the outbox), one file per job.
 """
 
 from __future__ import annotations
@@ -38,12 +38,13 @@ from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.producer import RETRYABLE, Owner, owned
 from dev_lab.dev.shatree import close_tree
-from dev_lab.dev.worktreeplace import main_checkout
+from dev_lab.dev.storage import checkout_output_path
 
-__all__ = ['RUNS_REL', 'Intent', 'forget', 'journal', 'journaled', 'reattach']
+__all__ = ['RUNS_IN_OUTPUT', 'Intent', 'forget', 'journal', 'journaled', 'reattach']
 
 #: The run journal, relative to the MAIN checkout's root.
-RUNS_REL: Final = 'output/forge/runs'
+#: The intent journal, inside the checkout's ``output`` storage kind.
+RUNS_IN_OUTPUT: Final = ('forge', 'runs')
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ class Intent:
 @functools.cache
 def _runs(root: Path) -> Path:
     """The journal directory of *root*'s repository, asked of git once per process (a producer's hot path)."""
-    return main_checkout(root) / RUNS_REL
+    return checkout_output_path(root, *RUNS_IN_OUTPUT)
 
 
 def _path(root: Path, sha: str, context: str) -> Path:
