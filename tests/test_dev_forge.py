@@ -28,6 +28,7 @@ import http.client
 import inspect
 import json
 import shutil
+import ssl
 import subprocess
 import threading
 from collections.abc import Iterator
@@ -453,8 +454,6 @@ def test_every_https_transport_shares_one_verified_tls_context() -> None:
     A context per connection cost ``forge queue`` ~4 s of a 91 s read (2026-11-18). PLANTED CONTROL: the shared
     context still verifies the certificate and the host name.
     """
-    import ssl  # noqa: PLC0415
-
     first = module.forge_transport('forge.example.org', 0.1)
     second = module.forge_transport('other.example.org', 0.1)
     assert first._context is second._context

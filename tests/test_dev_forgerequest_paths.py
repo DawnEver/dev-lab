@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import lab_commons.launch as door
 import pytest
 from _forge_fake import git_out, run_git
 from lab_commons.hpc.retired import MOVED_TABLES
@@ -20,6 +21,7 @@ from dev_lab.dev.forgerequest import (
     declared_request,
     parse_body,
     parse_paths,
+    prefetch_requests,
     request_body,
 )
 
@@ -143,12 +145,10 @@ def test_a_selection_is_declared_from_one_git_child(repo: tuple[Path, str], monk
     pyproject, then the blobs) cost ~0.1-0.25 s apiece on Windows, ~30 s of a 91 s read (2026-11-18).
     PLANTED CONTROL: a path absent at the sha is still refused by name from that one read.
     """
-    import lab_commons.launch as door  # noqa: PLC0415
-
     spawned: list[list[str]] = []
     real = door.run
 
-    def counted(argv, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+    def counted(argv: list[str], *args: object, **kwargs: object) -> object:
         spawned.append([str(one) for one in argv])
         return real(argv, *args, **kwargs)
 
@@ -172,12 +172,10 @@ def test_the_same_selection_at_the_same_commit_is_read_once(
     A commit's blobs never change, so the answer is held per full commit id. PLANTED CONTROL: another selection
     at the same commit, and a ref name (which can move), are read again.
     """
-    import lab_commons.launch as door  # noqa: PLC0415
-
     spawned: list[list[str]] = []
     real = door.run
 
-    def counted(argv, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+    def counted(argv: list[str], *args: object, **kwargs: object) -> object:
         spawned.append([str(one) for one in argv])
         return real(argv, *args, **kwargs)
 
@@ -202,10 +200,6 @@ def test_every_request_of_a_queue_read_is_declared_from_one_git_child(
     :func:`prefetch_requests` reads every test request's selection in one child; each declaration then finds its
     answer held. PLANTED CONTROL: a request the prefetch did not name is still read (one more child) and judged.
     """
-    import lab_commons.launch as door  # noqa: PLC0415
-
-    from dev_lab.dev.forgerequest import prefetch_requests  # noqa: PLC0415
-
     root, sha = repo
     (root / 'tests' / 'test_c.py').write_text('def test_c():\n    pass\n', encoding='utf-8')
     run_git(root, 'add', '-A')
@@ -214,7 +208,7 @@ def test_every_request_of_a_queue_read_is_declared_from_one_git_child(
     spawned: list[list[str]] = []
     real = door.run
 
-    def counted(argv, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+    def counted(argv: list[str], *args: object, **kwargs: object) -> object:
         spawned.append([str(one) for one in argv])
         return real(argv, *args, **kwargs)
 

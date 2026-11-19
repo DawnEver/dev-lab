@@ -792,9 +792,6 @@ def test_reads_reuse_one_connection_and_writes_open_their_own() -> None:
     PLANTED CONTROLS: a server that says ``Connection: close`` gets a fresh connection per read, and a write
     never rides a kept connection (a lost answer there could not be told from a write never sent).
     """
-    from dev_lab.dev.forge import Forge  # noqa: PLC0415
-    from dev_lab.dev.forgework import Client  # noqa: PLC0415
-
     opened, transport = _counting()
     one = Client(Forge('forge.example.org', 'o', 'r'), 'tok', transport=transport)
     for _ in range(3):
@@ -815,9 +812,6 @@ def test_reads_reuse_one_connection_and_writes_open_their_own() -> None:
 
 def test_a_kept_connection_the_forge_dropped_is_replaced_without_a_retry_wait() -> None:
     """An idle kept connection the server closed is not a forge failure: the read goes out once more, fresh."""
-    from dev_lab.dev.forge import Forge  # noqa: PLC0415
-    from dev_lab.dev.forgework import Client  # noqa: PLC0415
-
     opened, transport = _counting()
     slept: list[float] = []
     one = Client(Forge('forge.example.org', 'o', 'r'), 'tok', transport=transport, sleep=slept.append)

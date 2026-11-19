@@ -56,7 +56,6 @@ from __future__ import annotations
 
 import dataclasses
 import fnmatch
-import re
 import subprocess
 import tomllib
 import urllib.parse
@@ -80,6 +79,7 @@ from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 
+from dev_lab.dev._forgeschedule_requests import issue_labels, request_candidates
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import STARVED, Alarm
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND
@@ -88,12 +88,7 @@ from dev_lab.dev.forgeorigin import head_login, origin_host_of
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgerequest import (
     Declared,
-    UndeclaredRequest,
     declared_request,
-    parse_body,
-    parse_deadline,
-    parse_paths,
-    prefetch_requests,
 )
 from dev_lab.dev.forgescope import scope_of
 from dev_lab.dev.forgestatus import CARRIED_FROM
@@ -251,10 +246,6 @@ def _tips(root: Path) -> dict[str, str]:
     return {ref.removeprefix(_TRACKING): sha for ref, sha in (line.split(' ') for line in listed.splitlines() if line)}
 
 
-def _labels(raw: Mapping[str, Any]) -> tuple[str, ...]:
-    return tuple(str(label['name']) for label in raw.get('labels') or ())
-
-
 def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
     """Open issues carrying *label*, raw (pull requests excluded) -- every page, one call shape on both forges.
 
@@ -265,7 +256,7 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
     page = 1
     while True:
         listed = client.call('GET', f'{client.repo}/issues?{query}&page={page}') or []
-        found += [raw for raw in listed if not is_pull(raw) and label in _labels(raw)]
+        found += [raw for raw in listed if not is_pull(raw) and label in issue_labels(raw)]
         if len(listed) < ISSUE_PAGE:
             return tuple(found)
         page += 1
@@ -273,10 +264,6 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
 
 #: Issues read per page of :func:`labelled_issues`.
 ISSUE_PAGE: Final = 50
-
-
-_REQUEST_SHA: Final = re.compile(r'^\s*sha\s*=\s*["\'](?P<sha>[^"\'\n]*)["\']', re.MULTILINE)
-_REQUEST_HOST: Final = re.compile(r'^\s*host\s*=\s*["\'](?P<host>[\w./-]+)["\']', re.MULTILINE)
 
 
 def optional[T](what: str, listing: Callable[[], Sequence[T]], say: Callable[[str], None]) -> Sequence[T]:
@@ -332,49 +319,8 @@ def _requests(
     A request whose producer is undeclared is still listed (part ``''``): the claim pass refuses it by name.
     One naming no full sha is work at no commit: it is SKIPPED and said, one line naming the issue.
     """
-    found = []
     issues = labelled_issues(client, schedule.request_label)
-    bodies = [raw.get('body') or '' for raw in issues]
-    asks = [(parse_body(body), parse_paths(body)) for body in bodies]
-    prefetch_requests(root, [(sha, producer, paths) for (producer, sha), paths in asks if sha])  # ONE git child
-    for raw in issues:
-        producer, sha = parse_body(raw.get('body') or '')
-        if not sha:
-            named = _REQUEST_SHA.search(raw.get('body') or '')
-            got = f' (got "{named["sha"]}")' if named else ''
-            say(f'[serve] skipped request issue #{raw["number"]}: its body names no 40-hex `sha`{got}')
-            continue
-        paths = parse_paths(raw.get('body') or '')
-        created = raw.get('created_at') or ''
-        since = datetime.fromisoformat(created).astimezone(UTC) if created else now
-        try:
-            platform = declare(root, sha, producer, paths).part
-        except UndeclaredRequest:
-            platform = ''
-        number = int(raw['number'])
-        origin = str((raw.get('user') or {}).get('login', ''))
-        host = _REQUEST_HOST.search(raw.get('body') or '')
-        deadline = parse_deadline(raw.get('body') or '')
-        late = f'{NO_ROOM}: unclaimed at its deadline {deadline.isoformat()}' if deadline and now > deadline else ''
-        found.append(
-            Candidate(
-                repo,
-                f'issue/{number}',
-                sha,
-                platform,
-                REQUEST,
-                since,
-                FULL,
-                labels=_labels(raw),
-                number=number,
-                origin=origin,
-                origin_host=host['host'] if host else '',
-                producer=producer,
-                paths=paths,
-                refused=late,
-            )
-        )
-    return found
+    return request_candidates(root, issues, repo, now, late=NO_ROOM, say=say, declare=declare)
 
 
 def candidates(

@@ -28,7 +28,7 @@ def test_a_resolved_ref_is_asked_once_and_a_missing_one_every_time(
     spawned: list[str] = []
     real = door.run
 
-    def counted(argv, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+    def counted(argv: list[str], *args: object, **kwargs: object) -> object:
         spawned.extend(str(one) for one in argv if one == 'rev-parse')
         return real(argv, *args, **kwargs)
 

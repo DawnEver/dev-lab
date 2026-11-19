@@ -31,11 +31,11 @@ set, every created issue body, PR body and comment opens with ``[<machine> · <a
 from __future__ import annotations
 
 import dataclasses
+import functools
 import hashlib
 import http.client
 import json
 import os
-import threading
 import time
 import urllib.parse
 from collections.abc import Callable, Mapping
@@ -68,6 +68,7 @@ from dev_lab.dev._forgebackends import (
     actions_token,
     backend_for,
 )
+from dev_lab.dev._forgework_kept import KeptReads
 from dev_lab.dev.forge import (
     Forge,
     Transport,
@@ -150,7 +151,7 @@ class Client:
     #: The ``Location`` of the latest answer, ``''`` when it named none: where a redirect points.
     _location: str = dataclasses.field(default='', init=False, repr=False)
     #: Each thread's kept READ connection per host: a connect and a TLS handshake are paid once, not per GET.
-    _kept_reads: threading.local = dataclasses.field(default_factory=threading.local, init=False, repr=False)
+    _kept_reads: KeptReads = dataclasses.field(default_factory=KeptReads, init=False, repr=False)
 
     @property
     def backend(self) -> Backend:
@@ -174,28 +175,8 @@ class Client:
                 return self._exchange(conn, method, path, data, sent)[0]
             finally:
                 conn.close()
-        kept: dict[str, Any] = self._kept_reads.__dict__
-        if (conn := kept.pop(target, None)) is not None:
-            try:
-                return self._read_on(kept, target, conn, path, sent)
-            except (ConnectionError, http.client.HTTPException):  # the forge closed it while idle: not a failure
-                conn.close()
-        return self._read_on(kept, target, self.transport(target, self.timeout), path, sent)
-
-    def _read_on(
-        self, kept: dict[str, Any], target: str, conn: http.client.HTTPConnection, path: str, sent: dict[str, str]
-    ) -> Answer:
-        """One GET on *conn*, kept for the next read unless it failed or the forge said it closes."""
-        try:
-            answer, closing = self._exchange(conn, 'GET', path, None, sent)
-        except BaseException:
-            conn.close()
-            raise
-        if closing:
-            conn.close()
-        else:
-            kept[target] = conn
-        return answer
+        fresh = functools.partial(self.transport, target, self.timeout)
+        return self._kept_reads.read(target, fresh, lambda conn: self._exchange(conn, 'GET', path, None, sent))
 
     def _exchange(
         self,
@@ -212,7 +193,7 @@ class Client:
         self._location = response.getheader('Location') or ''
         said = {name: value for name in RATE_HEADERS if (value := response.getheader(name))}
         payload = response.read()  # read whole: a kept connection's next answer starts after it
-        return Answer(response.status, payload, said), bool(getattr(response, 'will_close', True))
+        return Answer(response.status, payload, said), bool(response.will_close)
 
     def _diagnosis(self, answer: Answer, text: str, path: str) -> Diagnosis:
         """:func:`~dev_lab.dev.forgefailure.diagnose`, but a 401/403 that is no rate limit is MEASURED first.

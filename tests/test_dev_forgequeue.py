@@ -20,10 +20,11 @@ from lab_commons.compute.model import Candidate
 from lab_commons.hpc.shell import FULL
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import forgequeue
+from dev_lab.dev import forgequeue, forgeschedule
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import Claim
 from dev_lab.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
+from dev_lab.dev.forgerequest import UndeclaredRequest
 from dev_lab.dev.platformparts import Part
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
@@ -422,9 +423,6 @@ def test_a_request_is_declared_once_per_queue_read(server, tmp_path: Path, monke
     ``forge queue`` ~21 s of a 91 s read (2026-11-18). PLANTED CONTROL: the refusal the one read raised still
     blocks the request's row.
     """
-    from dev_lab.dev import forgeschedule  # noqa: PLC0415 -- patched where the listing reads it
-    from dev_lab.dev.forgerequest import UndeclaredRequest  # noqa: PLC0415
-
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
     repo, tips = _origin(tmp_path)
     _forge_of(tips, [])
