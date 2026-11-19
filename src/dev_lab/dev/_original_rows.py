@@ -28,6 +28,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'verifybox',
     'verifysteps',
     'agent_guard',
+    'launcherplan',  # ORIGINAL: split from agent_guard: keep, keep-own or rewrite the agent launcher (2026-11-19)
     'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
     'backgroundrun',  # the background hooks' detach and per-repo lock, split from reclaimrun (dev-lab #640)
     'hookdispatch',  # one interpreter per hook event, reading WIRING from its own install (dev-lab #640)
