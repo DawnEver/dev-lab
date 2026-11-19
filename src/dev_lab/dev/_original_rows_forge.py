@@ -23,6 +23,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgecred',
     'forgefailure',
     'forgework',
+    'forgeclient',  # the one place a forge Client is built, split from forgework (module-size band)
     'forgestatus',
     'forgeoutbox',
     'forgelabels',
