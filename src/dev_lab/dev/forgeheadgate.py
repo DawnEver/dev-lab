@@ -10,15 +10,15 @@ by :func:`dev_lab.dev.forgemerge.decide`); the hook stays as early feedback only
 * :data:`SESSION_BRANCH_CONTEXT` -- :func:`dev_lab.dev.sessionbranch.head_refusals`: the head is published as
   itself and admitted by the branch set its own commit declares (P2, P6). A GATE.
 * :data:`PR_CURRENT_CONTEXT` -- :func:`dev_lab.dev.prcurrent.head_refusals`: a ``pr/`` head holds
-  ``origin/<integration>``'s tip and a lock within the floated siblings' lag window. A GATE.
-* :data:`LOCK_CONTEXT` -- the head's ``uv.lock`` moves a resolution its BASE does not
-  (:func:`dev_lab.dev.lockcheck.stale` on the head, then on its merge-base with ``origin/<integration>``, each in a
-  detached worktree); the remedy is the one dependency door, :data:`LOCK_REMEDY`. A resolution that cannot run is
-  ``error`` with its diagnosis, never a pass. A PR NEVER CHASES THE LOCK (user ruling 2026-10-28): a move the base
-  lags too is integration's, carried by the forge's relock pull request (:mod:`dev_lab.dev.relock`).
-* :data:`LAG_CONTEXT` -- the head's ``uv.lock`` pins a floated sibling more than
-  :data:`~dev_lab.dev.locklag.LAG_LIMIT` commits behind that sibling's line (:func:`dev_lab.dev.locklag.floating_lag`):
-  an ALARM that the relock is not carrying, never a gate -- ``pr-current`` reads the same window on a ``pr/`` head.
+  ``origin/<integration>``'s tip and a lock within the floated siblings' lag window. An ALARM (W5, dev-lab#644):
+  mergeability is the trial merge at merge time (:func:`dev_lab.dev.trialmerge.trial`), never a stale head's red.
+* :data:`LAG_CONTEXT` -- THE ONE LOCK STATUS: the head's ``uv.lock`` does not render from its own
+  ``pyproject.toml`` (:func:`dev_lab.dev.lockcheck.unrendered`, in a detached worktree, once per sha), or pins a
+  floated sibling past :data:`~dev_lab.dev.locklag.LAG_WINDOW` behind that sibling's line
+  (:func:`dev_lab.dev.locklag.floating_lag`). An ALARM, never a gate -- ``pr-current`` reads the same window on a
+  ``pr/`` head. A lock behind its siblings' heads but within the window is not a defect: A PR NEVER CHASES THE LOCK
+  (user ruling 2026-10-28); the forge's relock pull request carries it (:mod:`dev_lab.dev.relock`). A check that
+  cannot run is ``error`` with its diagnosis, never a pass.
 
 The other two push rows are not head statuses, by what they judge: ``merge-resolution``
 (:func:`dev_lab.dev.mergeresolution.unresolved`) is already a condition of the merge decision itself, on the same
@@ -47,53 +47,52 @@ from lab_commons.log import emit
 
 from dev_lab.dev import prcurrent, sessionbranch
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import DESCRIPTION_LIMIT, status_list, status_post
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
-from dev_lab.dev.lockcheck import DOOR, LOCK, RESOLVE_TIMEOUT_S, UNRESOLVED, stale
-from dev_lab.dev.locklag import LAG_LIMIT, floating_lag
+from dev_lab.dev.lockcheck import LOCK, NOT_RENDERED, RESOLVE_TIMEOUT_S, UNRESOLVED, unrendered
+from dev_lab.dev.locklag import LAG_WINDOW, floating_lag, hours
 from dev_lab.dev.relock import detached_worktree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from datetime import timedelta
 
     from dev_lab.dev.forgeintegration import Child
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
 
 __all__ = [
+    'ALARMS',
     'GATES',
     'LAG_CONTEXT',
-    'LOCK_CONTEXT',
-    'LOCK_REMEDY',
     'PR_CURRENT_CONTEXT',
     'SESSION_BRANCH_CONTEXT',
     'TERMINAL',
     'TICK_BUDGET_S',
     'VOLATILE',
+    'alarms_said',
     'gates_wait',
     'judge',
     'judge_heads',
     'lag_verdict',
-    'lock_verdict',
     'main',
-    'merge_base',
     'refused_verdict',
+    'render_verdict',
     'run_pull',
 ]
 
-LOCK_CONTEXT: Final = 'lock/fresh'
 LAG_CONTEXT: Final = 'lock/lag'
 #: The push rows' own ids: the status a row's judge posts is named as the row is.
 SESSION_BRANCH_CONTEXT: Final = sessionbranch.HOOK_ID
 PR_CURRENT_CONTEXT: Final = prcurrent.HOOK_ID
 #: The statuses the merge requires ``success`` (:func:`gates_wait`).
-GATES: Final = (SESSION_BRANCH_CONTEXT, PR_CURRENT_CONTEXT)
+GATES: Final = (SESSION_BRANCH_CONTEXT,)
+#: The statuses said beside the merge, never waited on (:func:`alarms_said`): freshness is no merge condition.
+ALARMS: Final = (PR_CURRENT_CONTEXT, LAG_CONTEXT)
 #: The contexts judged on every pass, posted only on a change: their verdict reads a tip the head does not hold.
 VOLATILE: Final = frozenset({PR_CURRENT_CONTEXT, LAG_CONTEXT})
-#: The fix a stale lock names, first, so the 140-character status keeps it whole.
-LOCK_REMEDY: Final = f'run `{DOOR}`, then commit {LOCK}'
 #: The states that are a verdict; any other (``error``, ``pending``) is judged again.
 TERMINAL: Final = frozenset({'success', 'failure'})
 #: Seconds of a serve tick the gate may START heads within: one cold resolution's own ceiling.
@@ -102,42 +101,22 @@ TICK_BUDGET_S: Final = RESOLVE_TIMEOUT_S
 Verdict = tuple[str, str]
 
 
-def lock_verdict(tree: Path, base: Path, *, read: Callable[[Path], tuple[str, ...]] = stale) -> Verdict:
-    """``(state, description)`` for the lock in *tree* against its *base* tree: failure on a move *base* lacks.
-
-    *base* is resolved only when *tree* is not at the newest: the moves both share are integration's to carry.
-    """
-    why = read(tree)
-    if not why:
-        return 'success', f'{LOCK} is the newest resolution'
-    if why[0].startswith(UNRESOLVED):
-        return 'error', why[0]
-    inherited = read(base)
-    if inherited and inherited[0].startswith(UNRESOLVED):
-        return 'error', f'the base: {inherited[0]}'
-    own = [one for one in why if one not in inherited]
-    if not own:
-        return 'success', f'{LOCK} lags only what its base lags; the forge relock carries it'
-    moved = '; '.join(one.split(': ', 1)[-1] for one in own)
-    return 'failure', f'stale {LOCK}: {LOCK_REMEDY} ({moved})'
-
-
 def refused_verdict(found: Sequence[str], holds: str) -> Verdict:
     """``(state, description)`` of a push row's refusals: none is ``success`` *holds*, else ``failure`` naming them."""
     return ('failure', '; '.join(found)) if found else ('success', holds)
 
 
 def lag_verdict(
-    root: Path, head: str, *, limit: int = LAG_LIMIT, lag: Callable[..., tuple[str, ...]] = floating_lag
+    root: Path, head: str, *, limit: timedelta = LAG_WINDOW, lag: Callable[..., tuple[str, ...]] = floating_lag
 ) -> Verdict:
-    """``(state, description)`` for *head*'s lock: ``failure`` past *limit* commits behind a floated sibling's line."""
+    """``(state, description)`` for *head*'s lock: ``failure`` past *limit* behind a floated sibling's line."""
     shown = _git(root, 'show', f'{head}:{LOCK}')
     if shown.returncode != 0:
         return 'success', f'no {LOCK}: nothing floats'
     found = lag(shown.stdout, limit)
     if any(one.startswith(UNRESOLVED) for one in found):
         return 'error', '; '.join(found)
-    return refused_verdict(found, f'{LOCK} pins every floated sibling within {limit} commits of its line')
+    return refused_verdict(found, f'{LOCK} pins every floated sibling within {hours(limit)} of its line')
 
 
 def _git(root: Path, *argv: str) -> subprocess.CompletedProcess[str]:
@@ -147,22 +126,27 @@ def _git(root: Path, *argv: str) -> subprocess.CompletedProcess[str]:
     )  # fmt: skip
 
 
-def merge_base(root: Path, head: str, integration: str) -> str:
-    """The merge-base of *head* with ``origin/<integration>`` in *root*; RAISES :class:`OSError` on none."""
-    done = _git(root, 'merge-base', head, f'refs/remotes/origin/{integration}')
-    if done.returncode != 0:
-        msg = f'no merge-base of {head[:12]} with origin/{integration}: {done.stderr.strip()}'
-        raise OSError(msg)
-    return done.stdout.strip()
-
-
-def _lock_fresh(root: Path, head: str, integration: str, read: Callable[[Path], tuple[str, ...]]) -> Verdict:
+def render_verdict(root: Path, head: str, *, check: Callable[[Path], str | None] = unrendered) -> Verdict | None:
+    """``failure`` (or ``error``) when *head*'s lock does not render from its manifest; ``None`` when it does."""
     try:
-        base = merge_base(root, head, integration)
-        with detached_worktree(root, head) as tree, detached_worktree(root, base) as based:
-            return lock_verdict(tree, based, read=read)
-    except OSError as why:
-        return 'error', f'the head could not be checked out to resolve: {why}'
+        with detached_worktree(root, head) as tree:
+            why = check(tree)
+    except OSError as failed:
+        return 'error', f'the head could not be checked out to check {LOCK}: {failed}'
+    if why is None:
+        return None
+    return ('error' if why.startswith(UNRESOLVED) else 'failure'), why
+
+
+def _lock_lag(root: Path, head: str, held: CommitStatus | None, render: Callable[..., Verdict | None]) -> Verdict:
+    """:data:`LAG_CONTEXT`'s verdict: rendering is a fact of the sha, judged until it holds; the lag every pass."""
+    if held is not None and held.state == 'failure' and held.description.startswith(NOT_RENDERED):
+        return held.state, held.description
+    if held is None or held.state not in TERMINAL:
+        found = render(root, head)
+        if found is not None:
+            return found
+    return lag_verdict(root, head)
 
 
 def judge(
@@ -172,7 +156,7 @@ def judge(
     branch: str,
     *,
     integration: str,
-    read: Callable[[Path], tuple[str, ...]] = stale,
+    render: Callable[..., Verdict | None] = render_verdict,
 ) -> list[str]:
     """Post each context *head* needs judged (:data:`VOLATILE`: whenever its verdict changed); one line per post."""
     latest = {status.context: status for status in status_list(client, head)}
@@ -190,8 +174,7 @@ def judge(
                 else f'{branch} is not a judged pr/ head',
             ),
         ),
-        (LOCK_CONTEXT, lambda: _lock_fresh(root, head, integration, read)),
-        (LAG_CONTEXT, lambda: lag_verdict(root, head)),
+        (LAG_CONTEXT, lambda: _lock_lag(root, head, latest.get(LAG_CONTEXT), render)),
     )
     lines = []
     for context, verdict in rows:
@@ -221,6 +204,13 @@ def gates_wait(statuses: Sequence[CommitStatus]) -> str | None:
         elif held.state != 'success':
             waits.append(f'{context} is {held.state}: {held.description}')
     return '; '.join(waits) or None
+
+
+def alarms_said(statuses: Sequence[CommitStatus]) -> str | None:
+    """Each judged :data:`ALARMS` context not standing ``success``, named; ``None`` when none is. Never a wait."""
+    latest = {status.context: status for status in statuses}
+    red = [latest[c] for c in ALARMS if c in latest and latest[c].state != 'success']
+    return '; '.join(f'{one.context} is {one.state}: {one.description}' for one in red) or None
 
 
 def judge_heads(

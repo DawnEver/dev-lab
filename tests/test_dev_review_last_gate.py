@@ -17,7 +17,8 @@ from test_dev_forgereview import _DECLARED, FakeCommand, _can, _work
 from dev_lab.dev.ciworkflows import workflows
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeheadgate import GATES
-from dev_lab.dev.forgemerge import Decision, ready
+from dev_lab.dev.forgemerge import Decision
+from dev_lab.dev.forgemergeready import ready
 from dev_lab.dev.forgereview_claim import DUE, WAITS
 from dev_lab.dev.forgereview_command import Runner
 from dev_lab.dev.forgereview_job import review_run

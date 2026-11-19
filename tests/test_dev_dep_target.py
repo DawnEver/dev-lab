@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 from lab_commons.box import Refused
 
-from dev_lab.dev import _dep_project, dep
+from dev_lab.dev import _dep_project, dep, venvpointer
 from dev_lab.dev.envseat import EnvironmentSeat
 
 
@@ -112,7 +112,8 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
     assert [sync[i + 1] for i, value in enumerate(sync) if value == '--extra'] == ['dev', 'img-to-cad', 'tooldrivers']
     assert sync[sync.index('--project') + 1] == str(root)
     options = next(options for argv, options in calls if 'sync' in argv)
-    assert options['env']['UV_PROJECT_ENVIRONMENT'] == str(root / '.venv')
+    assert options['env']['UV_PROJECT_ENVIRONMENT'] == str(venvpointer.current(root)), 'built beside, then published'
+    assert venvpointer.current(root).parent == root / venvpointer.HOME
     assert 'VIRTUAL_ENV' not in options['env']
     assert not any('venv' in argv for argv, _ in calls), 'uv sync owns creation; do not overwrite a venv'
 
@@ -131,7 +132,8 @@ def test_mutation_holds_the_same_environment_seat_until_the_child_finishes(tmp_p
         pass
 
 
-def test_real_bootstrap_B_runs_while_A_has_a_verdict_then_B_refuses_its_own_sync(tmp_path, monkeypatch, capsys) -> None:
+def test_real_bootstrap_B_runs_while_A_has_a_verdict_and_B_syncs_beside_its_own(tmp_path, monkeypatch, capsys) -> None:
+    """dev-lab #632: a verdict running in B's environment no longer refuses B's sync -- it builds beside it."""
     root = tmp_path / 'B'
     root.mkdir()
     (root / 'pyproject.toml').write_text(
@@ -146,14 +148,17 @@ def test_real_bootstrap_B_runs_while_A_has_a_verdict_then_B_refuses_its_own_sync
     monkeypatch.setenv('UV_OFFLINE', 'true')
     with _live_verdict(tmp_path, monkeypatch):
         assert dep.main(['--bootstrap', str(root)], cwd=tmp_path) == 0
-    python = root / ('.venv/Scripts/python.exe' if os.name == 'nt' else '.venv/bin/python')
+    first = venvpointer.current(root)
+    python = first / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     assert python.is_file()
     capsys.readouterr()
     with _live_verdict(tmp_path, monkeypatch, python=str(python)):
-        assert dep.main(['--root', str(root), '--sync'], cwd=tmp_path) == 1
-    refusal = capsys.readouterr().out
-    assert 'REFUSED:' in refusal
-    assert 'installed' not in refusal
+        assert dep.main(['--root', str(root), '--sync'], cwd=tmp_path) == 0
+        assert first.is_dir(), 'PLANTED CONTROL: the environment the verdict runs from is kept'
+    said = capsys.readouterr().out
+    assert 'REFUSED:' not in said
+    assert venvpointer.current(root) != first
+    python = venvpointer.current(root) / python.relative_to(first)
     failed = subprocess.run(
         [str(python), '-I', '-m', 'dev_lab.dev.dep', '--sync'],
         check=False,
@@ -171,7 +176,8 @@ def test_sync_refuses_anchors_outside_its_project_before_mutating(tmp_path, anch
         dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path)
 
 
-def test_sync_failure_is_nonzero_and_retires_only_changed_target_anchors(tmp_path, monkeypatch) -> None:
+def test_sync_failure_is_nonzero_publishes_nothing_and_keeps_the_anchors(tmp_path, monkeypatch) -> None:
+    """A failed build beside the live environment is dropped: the live one never moved, so no verdict is void."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nanchors=["verdict"]\n',
         encoding='utf-8',
@@ -187,7 +193,9 @@ def test_sync_failure_is_nonzero_and_retires_only_changed_target_anchors(tmp_pat
         return SimpleNamespace(returncode=17, stdout='', stderr='')
 
     assert dep.main(['--bootstrap', str(tmp_path)], run=run, cwd=tmp_path) == 17
-    assert not anchor.exists()
+    assert anchor.exists()
+    assert venvpointer.current(tmp_path) == tmp_path / '.venv'
+    assert not any((tmp_path / venvpointer.HOME).iterdir())
 
 
 def test_a_lane_cannot_target_main_but_main_can_bootstrap_the_lane(tmp_path) -> None:
@@ -247,7 +255,8 @@ def test_bootstrap_refuses_an_own_venv_alias_to_another_environment(tmp_path) ->
         dep.main(['--bootstrap', str(lane)], cwd=tmp_path, run=run)
 
 
-def test_sync_defaults_to_cwd_full_extras_and_upgrades_each_git_requirement(tmp_path) -> None:
+def test_sync_defaults_to_no_extras_and_upgrades_each_git_requirement(tmp_path) -> None:
+    """D78: with nothing declared and no --extra, no extra is installed -- never every available one."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n'
         '[project.optional-dependencies]\ndev=[]\ngeometry=[]\n',
@@ -261,7 +270,7 @@ def test_sync_defaults_to_cwd_full_extras_and_upgrades_each_git_requirement(tmp_
 
     assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
     command = calls[0]
-    assert [command[i + 1] for i, flag in enumerate(command) if flag == '--extra'] == ['dev', 'geometry']
+    assert '--extra' not in command
     assert command[command.index('--upgrade-package') + 1] == 'peer'
 
 
@@ -379,7 +388,7 @@ def test_lock_upgrade_rewrites_the_lock_at_the_newest_then_builds_exactly_it(tmp
     assert sync[1] == 'sync'
     assert '--frozen' in sync
     assert '--upgrade-package' not in sync
-    assert sync[sync.index('--extra') + 1] == 'dev'
+    assert '--extra' not in sync, 'D78: nothing declared installs no extra'
 
 
 def test_lock_upgrade_refuses_an_unreasoned_hold_before_resolving_anything(tmp_path, capsys) -> None:
@@ -502,3 +511,41 @@ def test_a_lock_upgrade_naming_packages_holds_the_toolchain_where_it_is(tmp_path
     assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.0"\n'
     assert upgrade(stable=lambda: '1.99.1') == 0
     assert pin.read_text(encoding='utf-8') == '[toolchain]\nchannel = "1.99.1"\n'
+
+
+def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(tmp_path) -> None:
+    """D24 (2026-11-17): a hook's cold first run after a relock was 1.3-2.8 s, mostly compiling the import chain.
+
+    A bootstrap and a sync write the bytecode at install time (`--compile-bytecode`), so no hook pays it.
+    PLANTED CONTROL: a bare `uv lock` installs nothing and carries no such flag.
+    """
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
+    calls, run = _recording()
+    assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
+    syncs = [call for call in calls if call[1] == 'sync']
+    assert syncs
+    assert all('--compile-bytecode' in call for call in syncs)
+    assert dep.main(['--root', str(tmp_path), '--sync'], cwd=tmp_path, run=run) == 0
+    syncs = [call for call in calls if call[1] == 'sync']
+    assert len(syncs) >= 2
+    assert all('--compile-bytecode' in call for call in syncs)
+    lock = _dep_project.uv_command(tmp_path, 'py', (), syncing=False, upgrade_packages=())
+    assert lock[1] == 'lock'
+    assert '--compile-bytecode' not in lock
+
+
+def test_an_explicit_extra_still_selects_it(tmp_path) -> None:
+    """PLANTED CONTROL for the no-extras default: an explicit --extra (e.g. all) is honoured."""
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\n[project.optional-dependencies]\ndev=[]\nall=[]\n',
+        encoding='utf-8',
+    )
+    calls = []
+
+    def run(argv, **_kwargs: object) -> SimpleNamespace:
+        calls.append(tuple(argv))
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+    assert dep.main(['--sync', '--extra', 'all'], cwd=tmp_path, run=run) == 0
+    command = calls[0]
+    assert [command[i + 1] for i, flag in enumerate(command) if flag == '--extra'] == ['all']

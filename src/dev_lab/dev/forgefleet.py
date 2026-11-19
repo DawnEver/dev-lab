@@ -1,10 +1,10 @@
 """A DARK FLEET IS AN ALARM, ONCE PER EPISODE -- a platform or a resource with no live host, or a tick serving nothing.
 
-Ada 2026-10-25..27: every host's tick ran with ``serve = false`` in each account's machine file, so nothing was
+Ada 2026-10-25..27: every host's tick ran with every repo unserved in each account's machine file, so nothing was
 claimed and no card published; ``forge queue`` printed STALE per host, and no alarm reached anyone for two days
 (HPC use fell from 67% to 1%). A per-host STALE line is read only by whoever runs the queue; a platform with NO
 live host is a fact any serving host can see on the forge and must sound (:func:`watch`), and a tick that serves
-nothing because every repo of its ``[deploy]`` is ``serve = false`` says so itself (:func:`serve_off`).
+nothing because no repo of its ``[deploy]`` declares ``producer = "hpc"`` says so itself (:func:`serve_off`).
 
 A RESOURCE GOES DARK THE SAME WAY (:func:`dark_resources`, user ruling 2026-10-28): two workstations stale for days
 still read ``jmag = 1`` in the queue while the platform itself stayed lit by another host. A stale card supplies
@@ -102,18 +102,21 @@ def watch(cards: Iterable[HostCard], now: datetime, *, alarm: Callable[[Alarm], 
 
 
 def serve_off(serves: Mapping[str, bool], account: str, *, alarm: Callable[[Alarm], object], repo: str) -> bool:
-    """Whether a tick of *account* serves nothing (every repo in *serves* is ``serve = false``); says so loudly.
+    """Whether a tick of *account* serves nothing (no repo in *serves* declares ``producer = "hpc"``); says so loudly.
 
     The line is written every tick; the alarm once per episode, closed by a tick that serves a repo.
     """
     off = bool(serves) and not any(serves.values())
     if off:
         emit(
-            f'[tick] ALARM {account} serves nothing: every repo is serve = false ({", ".join(sorted(serves))})',
+            f'[tick] ALARM {account} serves nothing: no repo declares producer = "hpc" ({", ".join(sorted(serves))})',
             err=True,
         )
-    subject = f'{account} serves nothing: every repo of its [deploy] is serve = false'
-    body = 'set serve = true for the repos this account should serve in its ~/.config/lab-commons/config.toml'
+    subject = f'{account} serves nothing: no repo of its [deploy] declares producer = "hpc"'
+    body = (
+        'add the HPC-produced repos to its [deploy] repos; a repo is served by its own '
+        '[tool.dev_lab.protection] producer'
+    )
     return _episode(f'serve-off:{account}', on=off, raise_=lambda: alarm(
         Alarm(FLEET, repo, subject, body, about=f'serve-off:{account}')
     ))  # fmt: skip

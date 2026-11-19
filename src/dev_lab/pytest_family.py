@@ -1,5 +1,7 @@
 """The ``pytest11`` entry point that runs dev-lab's always-on family rows in every repo installing it.
 
+It also puts every test temp dir in the repo's dated tree (:mod:`dev_lab.dev.testtemp`).
+
 A SHIM OUTSIDE ``dev_lab.dev`` ON PURPOSE, and it imports nothing from dev_lab at load. pytest
 loads a ``pytest11`` plugin BEFORE pytest-cov starts measuring, so a module imported at plugin load
 has its module-level lines executed unmeasured. The rows live in
@@ -11,14 +13,28 @@ dev-lab's own runs. So this module defers the import to the collection hook, aft
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import pytest
+import pytest
 
-__all__ = ['pytest_collection_modifyitems']
+__all__ = ['pytest_collection_modifyitems', 'pytest_configure', 'pytest_fixture_setup']
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Put pytest's base temp in the dated tree (:func:`dev_lab.dev.testtemp.configure`), before tmpdir reads it."""
+    importlib.import_module('dev_lab.dev.testtemp').configure(config)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_fixture_setup(fixturedef: pytest.FixtureDef[object]) -> object:
+    """Make every ``pytester`` sandbox its own pytest root (:func:`dev_lab.dev.testtemp.bound_sandbox`)."""
+    value = yield
+    if fixturedef.argname == 'pytester':
+        importlib.import_module('dev_lab.dev.testtemp').bound_sandbox(value)
+    return value
+
+
+@pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
     """Append the always-on rows (:func:`dev_lab.dev.famtests.alwayson.append_rows`)."""
     importlib.import_module('dev_lab.dev.famtests.alwayson').append_rows(session, config, items)

@@ -8,14 +8,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from _forge_fake import make_repo
+from _forge_fake import make_repo, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev import forgemerge, jobparts, localpart, partrows, platformparts
+from dev_lab.dev import forgemergewaits, hostedparts, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
-from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN, client_for
-from dev_lab.dev.producer import full_suite_refusal
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
+from dev_lab.dev.forgework import GITEA_ACTIONS_LOGIN
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.producer import OUTCOME_VAR, Owner, full_suite_refusal, owner_of, unreachable
 
 SHA = 'b' * 40
 T0 = datetime(2026, 11, 1, tzinfo=UTC)
@@ -26,6 +29,180 @@ resources = ["femm", "windows"]
 """
 
 
+@pytest.mark.parametrize('code', [1, 2, 3, 4, -9])
+def test_a_failed_collection_cannot_publish_a_partial_matrix(tmp_path: Path, monkeypatch, capsys, code: int) -> None:
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    partial = 'tests/test_ok.py::test_ok\nERROR tests/test_broken.py - ImportError\n'
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=code, stdout=partial, stderr=''),
+    )
+    forge = StateForge()
+    monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
+    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    assert jobparts.main(['matrix', '--root', str(tmp_path)]) == 1
+    assert capsys.readouterr().out == '', 'a failed collection must not become a complete workflow manifest'
+    (posted,) = status_list(forge, SHA)
+    assert (posted.context, posted.state) == ('tests/base', 'error')
+    assert posted.description.startswith(f'{jobparts.NO_MATRIX}: pytest collection failed')
+
+
+def test_no_matrix_is_a_named_merge_ready_refusal_never_an_endless_wait(tmp_path: Path, monkeypatch) -> None:
+    """cc-market #29: the matrix came out empty, no part job ran, and merge-ready waited on tests/base forever."""
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    forge = StateForge()
+    assert 'not yet posted' in forgemergewaits.actions_wait(SHA, status_list(forge, SHA)), 'PLANTED CONTROL'
+
+    def broken(_expression: str) -> list[str]:
+        msg = 'pytest collection failed with exit 2'
+        raise ValueError(msg)
+
+    monkeypatch.setattr(jobparts, 'pytest_collector', lambda _root: broken)
+    monkeypatch.setattr(jobparts, 'client_for', lambda _root: forge)
+    monkeypatch.setattr(jobparts, '_head', lambda _root: SHA)
+    assert jobparts.main(['matrix', '--root', str(tmp_path), '--event', 'pull_request']) == 1
+    waited = forgemergewaits.actions_wait(SHA, status_list(forge, SHA))
+    assert waited is not None
+    assert 'not yet posted' not in waited
+    assert jobparts.NO_MATRIX in waited
+
+
+CC_MARKET = """
+[tool.dev_lab.parts]
+output = "output/logs"
+
+[tool.lab_commons.tests]
+produce = ["-m", "dev_lab.dev.commandpart", "{part}", "--", "node", "--test", "tests/*.test.mjs"]
+"""
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push'])
+def test_a_command_part_repo_derives_base_without_collecting(tmp_path: Path, event: str) -> None:
+    """cc-market's shape: a JS suite as the one command part; stray Python under it never decides its parts."""
+    (tmp_path / 'pyproject.toml').write_text(CC_MARKET, encoding='utf-8')
+
+    def broken(_expression: str) -> list[str]:
+        msg = 'pytest collection failed with exit 2'
+        raise ValueError(msg)
+
+    found = jobparts.matrix(tmp_path, collect=broken, event=event, hosted=True)
+    assert {row['part'] for row in found['include']} >= {'base'}
+    (tmp_path / 'pyproject.toml').write_text(PYPROJECT, encoding='utf-8')
+    with pytest.raises(ValueError, match='collection'):  # PLANTED CONTROL: a pytest repo still collects
+        jobparts.matrix(tmp_path, collect=broken, event=event, hosted=True)
+
+
+@pytest.mark.parametrize(
+    ('code', 'output', 'expected'),
+    [(0, 'tests/test_ok.py::test_ok\n', ['tests/test_ok.py::test_ok']), (0, '', []), (5, 'no tests collected\n', [])],
+)
+def test_a_complete_or_empty_collection_retains_its_original_ids(
+    tmp_path: Path, monkeypatch, code, output, expected
+) -> None:
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=code, stdout=output, stderr=''),
+    )
+    assert jobparts.pytest_collector(tmp_path)('windows') == expected
+
+
+def test_a_no_tests_exit_with_partial_ids_is_not_an_empty_collection(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=5,
+            stdout='tests/test_ok.py::test_ok\n',
+            stderr='',
+        ),
+    )
+    with pytest.raises(ValueError, match='collection'):
+        jobparts.pytest_collector(tmp_path)('')
+
+
+def test_a_failed_collection_names_pytests_own_error(tmp_path: Path, monkeypatch) -> None:
+    """The refusal carries the cause -- pytest's error lines -- not only a hint to rerun collection."""
+    output = (
+        'tests/test_ok.py::test_ok\n'
+        '==================================== ERRORS ====================================\n'
+        '_____________ ERROR collecting tests/test_moved.py _____________\n'
+        "E   ImportError: cannot import name 'gone' from 'pkg.mod'\n"
+        '=========================== short test summary info ============================\n'
+        'ERROR tests/test_moved.py\n'
+        '!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n'
+    )
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=2, stdout=output, stderr=''),
+    )
+    with pytest.raises(ValueError, match='collection') as refused:
+        jobparts.pytest_collector(tmp_path)('')
+    assert "ImportError: cannot import name 'gone' from 'pkg.mod'" in str(refused.value)
+    assert 'ERROR tests/test_moved.py' in str(refused.value)
+
+
+def test_a_failed_collection_without_error_lines_names_its_stderr_tail(tmp_path: Path, monkeypatch) -> None:
+    """A usage error (exit 4) prints no ERROR summary; its stderr is the cause."""
+    monkeypatch.setattr(
+        jobparts._door,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=4, stdout='', stderr='ERROR: usage: pytest\npytest: error: unrecognized arguments: --bogus\n'
+        ),
+    )
+    with pytest.raises(ValueError, match='unrecognized arguments: --bogus'):
+        jobparts.pytest_collector(tmp_path)('')
+
+
+@pytest.mark.parametrize('disabled', ['autoload', 'explicit'])
+def test_a_family_manifest_requires_actual_guard_nodes_even_when_plugin_loading_is_disabled(
+    tmp_path: Path, monkeypatch, disabled: str
+) -> None:
+    root = make_repo(tmp_path, 'https://forge.example.org/team/app.git')
+    (root / 'pyproject.toml').write_text(
+        '[tool.lab_commons.tests]\nresources = []\n[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n',
+        encoding='utf-8',
+    )
+    (root / 'test_subject.py').write_text('def test_subject():\n    pass\n', encoding='utf-8')
+    run_git(root, 'add', 'pyproject.toml', 'test_subject.py')
+    if disabled == 'autoload':
+        monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
+        arguments = ()
+    else:
+        monkeypatch.delenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', raising=False)
+        arguments = ('-p', 'no:dev_lab_family')
+    with pytest.raises(ValueError, match=r'required.*family|family.*required'):
+        jobparts.pytest_collector(root, arguments)('')
+
+
+def test_required_family_checks_do_not_acquire_the_union_of_resource_probe_markers(tmp_path: Path, monkeypatch) -> None:
+    root = make_repo(tmp_path, 'https://forge.example.org/team/app.git')
+    (root / 'pyproject.toml').write_text(
+        '[tool.lab_commons.tests]\nresources = ["windows", "linux"]\n'
+        '[tool.dev_lab.layout]\nmodule_unit = "code"\nmodule_limit = 300\n'
+        '[tool.pytest.ini_options]\n',  # the sandbox is its own pytest root, not the enclosing checkout
+        encoding='utf-8',
+    )
+    (root / 'test_subject.py').write_text(
+        'import pytest\n\ndef test_plain():\n    pass\n\n@pytest.mark.windows\ndef test_windows():\n    pass\n',
+        encoding='utf-8',
+    )
+    run_git(root, 'add', '.')
+    run_git(root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.org', 'commit', '-qm', 'fixture')
+    monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
+    collect = jobparts.pytest_collector(root, ('-p', 'dev_lab.pytest_family'))
+    plain, windows = 'test_subject.py::test_plain', 'test_subject.py::test_windows'
+    required = set(collect('')) - {plain, windows}
+    assert required, 'the actual collection must retain its required family checks'
+    owned = localpart.owners(root, 'HEAD', (), collect)
+    assert owned[plain] == 'base'
+    assert owned[windows] == 'windows'
+    assert {owned[node] for node in required} == {'base'}, 'required checks are not a business resource union'
+
+
 @pytest.mark.parametrize(
     ('part', 'runs_on'),
     [
@@ -33,12 +210,20 @@ resources = ["femm", "windows"]
         ('windows', 'windows-latest'),
         ('linux', 'ubuntu-latest'),
         ('macos', 'macos-latest'),
-        ('femm+windows', ['self-hosted', 'femm', 'windows']),
-        ('femm', ['self-hosted', 'femm']),
+        ('femm+windows', None),
+        ('femm', None),
     ],
 )
 def test_a_part_runs_on_a_hosted_runner_only_when_it_needs_no_more_than_an_os(part: str, runs_on: object) -> None:
+    """User ruling 2026-11-11: GitHub wires Actions alone -- no self-hosted runner a workstation registers."""
     assert jobparts.runner_for(part) == runs_on
+
+
+def test_a_heavy_part_is_kept_and_off_the_github_gate_and_a_secret_hosted_or_os_part_is_on_it() -> None:
+    declared = {'live': hostedparts.Hosted(('live',))}
+    parts = ['base', 'base@windows', 'windows', 'live', 'femm', 'femm+windows']
+    assert jobparts.off_gate(parts, declared) == {'femm', 'femm+windows'}
+    assert jobparts.rows('femm', 'push', {}) == [], 'no row: nothing posts it absent, no job waits on a workstation'
 
 
 def test_the_matrix_is_every_need_set_the_collection_derives_and_base_always(tmp_path: Path) -> None:
@@ -49,7 +234,6 @@ def test_the_matrix_is_every_need_set_the_collection_derives_and_base_always(tmp
         'include': [
             {'part': 'base', 'runs-on': 'ubuntu-latest'},
             {'part': 'base@windows', 'runs-on': 'windows-latest'},
-            {'part': 'femm+windows', 'runs-on': ['self-hosted', 'femm', 'windows']},
             {'part': 'windows', 'runs-on': 'windows-latest'},
         ]
     }
@@ -203,7 +387,9 @@ def test_produce_hands_the_row_the_producing_marker_of_its_own_context_at_sha(
 
     monkeypatch.setattr(jobparts._door, 'run', run)
     monkeypatch.setattr(jobparts, 'producer_argv', lambda _root, part, *, sha: ['-m', 'x', part, sha])
-    assert jobparts.produce(tmp_path, row) == 0
+    forge = StateForge()
+    status_post(forge, sha, context=platformparts.part_context(row), state='success', description='scope=full')
+    assert jobparts.produce(tmp_path, row, forge) == 0
     env = seen['env']
     assert full_suite_refusal('verify', env, platformparts.part_context(row)) is None
     assert full_suite_refusal('verify', env, platformparts.part_context(other)) is not None, 'planted control'
@@ -214,8 +400,6 @@ def test_an_unproduced_resource_has_no_row_and_a_declared_one_keeps_its_row(tmp_
     declared = '[tool.lab_commons.tests]\nresources = ["workstation"]\n'
     carrying = {'': ['t::a', 't::w'], 'workstation': ['t::w']}
     (tmp_path / 'pyproject.toml').write_text(declared, encoding='utf-8')
-    kept = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event='push')
-    assert 'workstation' in [row['part'] for row in kept['include']], 'PLANTED CONTROL: a declared part keeps its row'
     unproduced = declared + '\n[tool.dev_lab.parts]\nunproduced = ["workstation"]\n'
     (tmp_path / 'pyproject.toml').write_text(unproduced, encoding='utf-8')
     found = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event='push')
@@ -243,9 +427,7 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
     assert live == [{'part': 'live', 'runs-on': 'ubuntu-latest', 'secrets': ['AI_LAB_KEYS_LIVE']}][:live_rows]
     others = [row for row in rows if not row['part'].startswith('live')]
     assert all('secrets' not in row for row in others), 'no other row carries a secret'
-    assert {'part': 'workstation', 'runs-on': ['self-hosted', 'workstation']} in others, (
-        'PLANTED CONTROL: an undeclared resource part still gets no hosted row'
-    )
+    assert all(row['part'] != 'workstation' for row in others), 'an undeclared resource part is off the gate'
     generic = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event, hosted=True)['include']
     assert all(not row['part'].startswith('live') for row in generic), 'its own job produces it, not the matrix'
 
@@ -260,16 +442,52 @@ def test_a_hosted_part_gets_one_push_only_linux_row_carrying_only_its_secrets(
         'hosted = { live = { tasks = ["live"], secrets = ["K"] } }',
         'hosted = { live = { secrets = ["K"], setup = "x" } }',
         'hosted = { live = { tasks = ["live"] } }\nunproduced = ["live"]',
+        'hosted = { live = {} }',
+        'hosted = { live = { setup = "" } }',
+        'hosted = { live = { setup = ["apt-get install x"] } }',
+        'hosted = { live = { setup = "x", runner = "ubuntu-latest" } }',
     ],
 )
 def test_a_hosted_declaration_naming_no_resource_a_bad_secret_or_an_unproduced_part_is_refused(
     declaration: str,
 ) -> None:
     text = f'[tool.lab_commons.tests]\nresources = ["live"]\n[tool.dev_lab.parts]\n{declaration}\n'
-    with pytest.raises(platformparts.UndeclaredPart):
-        jobparts.hosted_parts(text)
-    assert jobparts.hosted_parts(HOSTED) == {'live': jobparts.Hosted(('live',))}
-    assert jobparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
+    with pytest.raises(platformparts.UndeclaredPart, match=r"part '(live|femm)'") as refused:
+        hostedparts.hosted_parts(text)
+    assert 'setup = "<shell command>"' in str(refused.value), 'the refusal names the fix: the accepted shape'
+    assert hostedparts.hosted_parts(HOSTED) == {'live': hostedparts.Hosted(('live',))}
+    assert hostedparts.Hosted(('live', 'pr-review')).secrets == ('AI_LAB_KEYS_LIVE', 'AI_LAB_KEYS_PR_REVIEW')
+
+
+SETUP_ONLY = """
+[tool.lab_commons.tests]
+resources = ["linux", "live"]
+
+[tool.dev_lab.parts]
+hosted = { linux = { setup = "sudo apt-get install -y xvfb" }, live = { tasks = ["live"] } }
+"""
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push'])
+def test_a_secretless_hosted_part_runs_on_every_event_and_one_with_secrets_stays_off_pull_requests(
+    tmp_path: Path, event: str
+) -> None:
+    """Secrets are the ONLY reason a hosted part skips a pull request; a setup alone withholds nothing.
+
+    PLANTED CONTROL: ``live`` names a task (a secret) and still has no pull request row.
+    """
+    assert hostedparts.hosted_parts(SETUP_ONLY) == {
+        'linux': hostedparts.Hosted(setup='sudo apt-get install -y xvfb'),
+        'live': hostedparts.Hosted(('live',)),
+    }
+    (tmp_path / 'pyproject.toml').write_text(SETUP_ONLY, encoding='utf-8')
+    carrying = {'': ['t::a', 't::x', 't::l'], 'linux': ['t::x'], 'live': ['t::l']}
+    rows = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event)['include']
+    hosted = {row['part']: row for row in rows if row['part'] in {'linux', 'live'}}
+    assert hosted['linux'] == {'part': 'linux', 'runs-on': 'ubuntu-latest', 'secrets': []}
+    assert ('live' in hosted) is (event != 'pull_request'), 'PLANTED CONTROL: a secret keeps it off a PR'
+    generic = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event, hosted=True)['include']
+    assert 'linux' not in [row['part'] for row in generic], 'its own job, with its setup, produces it'
 
 
 def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
@@ -278,6 +496,160 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
     PLANTED CONTROL: the same head with ``tests/base`` red still waits.
     """
     handed = [CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemerge.parts_wait('hosted', handed) is None
+    assert forgemergewaits.parts_wait('hosted', handed) is None
     red = [CommitStatus('tests/base', 'failure', 'scope=full ran=3 hands=live:2', '')]
-    assert forgemerge.parts_wait('hosted', red) is not None, 'PLANTED CONTROL'
+    assert forgemergewaits.parts_wait('hosted', red) is not None, 'PLANTED CONTROL'
+
+
+_RUN_ENV = {'GITHUB_SERVER_URL': 'https://github.com', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_RUN_ID': '7'}
+
+
+def _producing(monkeypatch, child: object) -> StateForge:
+    """A ``produce`` of ``base@windows`` whose producer is *child* (given the env and the forge); the forge."""
+    forge = StateForge()
+
+    def run(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        if argv[:2] == ['git', 'rev-parse']:
+            return SimpleNamespace(stdout=f'{SHA}\n', returncode=0)
+        return SimpleNamespace(returncode=child(kwargs['env'], forge))
+
+    monkeypatch.setattr(jobparts._door, 'run', run)
+    monkeypatch.setattr(jobparts, 'producer_argv', lambda _root, part, *, sha: ['-m', 'x', part, sha])
+    return forge
+
+
+def test_a_producer_that_exits_unreachable_posts_its_row_error_naming_why_never_leaves_it_absent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """claude-code-config #6 (2026-11-13): the windows job exited unreachable and its row read pending for hours."""
+
+    def npm_missing(env: dict[str, str], _forge: object) -> int:
+        monkeypatch.setenv(OUTCOME_VAR, env[OUTCOME_VAR])
+        return unreachable("cannot run 'npm': [WinError 2]", Owner.ENVIRONMENT)
+
+    forge = _producing(monkeypatch, npm_missing)
+    assert jobparts.produce(tmp_path, 'base@windows', forge, env=_RUN_ENV) == 4
+    (status,) = status_list(forge, SHA)
+    assert (status.context, status.state) == ('tests/base@windows', 'error')
+    assert status.description.startswith("unreachable: cannot run 'npm': [WinError 2]"), status.description
+    assert owner_of(status.state, status.description) is Owner.ENVIRONMENT, "not the author's red"
+    assert status.url == 'https://github.com/o/r/actions/runs/7'
+
+
+@pytest.mark.parametrize(
+    ('code', 'said'), [(1, 'exited 1 (FAIL) but posted no part'), (3, 'inconclusive'), (9, 'crashed (exit 9)')]
+)
+def test_a_producer_that_ends_without_a_part_posts_its_row_error_naming_its_exit(
+    tmp_path: Path, monkeypatch, code: int, said: str
+) -> None:
+    forge = _producing(monkeypatch, lambda _env, _forge: code)
+    assert jobparts.produce(tmp_path, 'base@windows', forge, env={}) == code
+    (status,) = status_list(forge, SHA)
+    assert status.state == 'error'
+    assert said in status.description
+
+
+@pytest.mark.parametrize('verdict', ['success', 'failure'])
+def test_a_producer_that_posted_its_part_is_left_as_it_posted(tmp_path: Path, monkeypatch, verdict: str) -> None:
+    """PLANTED CONTROL: a settled part is never overwritten by the job's error."""
+
+    def posts(_env: dict[str, str], forge: StateForge) -> int:
+        status_post(forge, SHA, context='tests/base@windows', state=verdict, description='scope=full ran=1')
+        return 0 if verdict == 'success' else 1
+
+    forge = _producing(monkeypatch, posts)
+    jobparts.produce(tmp_path, 'base@windows', forge, env={})
+    assert [s.state for s in status_list(forge, SHA)] == [verdict]
+
+
+@pytest.mark.parametrize('conclusion', sorted(jobparts.FAILED_JOB))
+def test_a_row_whose_job_concluded_failed_with_no_record_is_error_naming_the_job_not_absent(conclusion: str) -> None:
+    """A job that crashed before posting anything FAILED; reading it absent (pending) is what hid #6's red."""
+    forge = StateForge()
+    url = 'https://github.com/o/r/actions/runs/7/job/9'
+    jobs = {'tests/base@windows': jobparts.Job(conclusion, url)}
+    expected = {'include': [{'part': 'base@windows', 'runs-on': 'x'}, {'part': 'base', 'runs-on': 'x'}]}
+    said = jobparts.absent(forge, SHA, expected, jobs=jobs, now=T0)
+    latest = {s.context: s for s in status_list(forge, SHA)}
+    failed = latest['tests/base@windows']
+    assert failed.state == 'error'
+    assert f'concluded {conclusion}' in failed.description
+    assert failed.url == url
+    assert any(url in line for line in said)
+    assert latest['tests/base'].state == 'pending', 'PLANTED CONTROL: a row with no concluded job stays absent'
+
+
+def test_a_row_whose_job_succeeded_or_is_unknown_stays_absent_and_a_posted_error_is_kept() -> None:
+    """PLANTED CONTROL both ways: only a failed conclusion is a failure; an error a job posted is never re-absented."""
+    forge = StateForge()
+    jobs = {'tests/base': jobparts.Job('success', 'u')}
+    status_post(forge, SHA, context='tests/base@windows', state='error', description='unreachable: x class=network')
+    expected = {'include': [{'part': 'base', 'runs-on': 'x'}, {'part': 'base@windows', 'runs-on': 'x'}]}
+    jobparts.absent(forge, SHA, expected, jobs=jobs, now=T0)
+    latest = {s.context: s.state for s in status_list(forge, SHA)}
+    assert latest == {'tests/base': 'pending', 'tests/base@windows': 'error'}
+
+
+def test_run_jobs_reads_the_concluded_jobs_by_name_and_an_unreadable_run_is_none() -> None:
+    asked: list[str] = []
+
+    def call(method: str, path: str, *_a: object, **_k: object) -> object:
+        asked.append(f'{method} {path}')
+        return {
+            'jobs': [
+                {'name': 'tests/base@windows', 'conclusion': 'failure', 'html_url': 'u1'},
+                {'name': 'tests/base', 'conclusion': None, 'html_url': 'u2'},
+            ]
+        }
+
+    client = SimpleNamespace(repo='repos/o/r', call=call)
+    assert jobparts.run_jobs(client, '7') == {'tests/base@windows': jobparts.Job('failure', 'u1')}
+    assert asked == ['GET repos/o/r/actions/runs/7/jobs?per_page=100']
+    assert jobparts.run_jobs(client, '') == {}
+
+    def refused(*_a: object, **_k: object) -> object:
+        raise ForgeCallFailed(Report(('GET', 'jobs'), (Attempt(1, 403, 'forbidden', Diagnosis.FORGE_REFUSED),), 1))
+
+    assert jobparts.run_jobs(SimpleNamespace(repo='r', call=refused), '7') == {}
+
+
+MANUAL = """
+[tool.lab_commons.tests]
+resources = ["live"]
+
+[tool.dev_lab.parts]
+hosted = { live = { tasks = ["live"], manual = true } }
+"""
+
+
+@pytest.mark.parametrize(
+    ('event', 'live_rows'), [('workflow_dispatch', 1), ('schedule', 0), ('push', 0), ('pull_request', 0)]
+)
+def test_a_manual_hosted_part_runs_only_on_a_manual_dispatch(tmp_path: Path, event: str, live_rows: int) -> None:
+    """User ruling D66 (2026-11-18): ai-lab's live part (real provider calls) leaves the nightly; a dispatch runs it.
+
+    PLANTED CONTROL: the same declaration without ``manual`` has its row on the nightly ``schedule``.
+    """
+    (tmp_path / 'pyproject.toml').write_text(MANUAL, encoding='utf-8')
+    carrying = {'': ['t::a', 't::l'], 'live': ['t::l']}
+    rows = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event=event)['include']
+    assert len([row for row in rows if row['part'] == 'live']) == live_rows
+    (tmp_path / 'pyproject.toml').write_text(MANUAL.replace(', manual = true', ''), encoding='utf-8')
+    nightly = jobparts.matrix(tmp_path, collect=carrying.__getitem__, event='schedule')['include']
+    assert [row['part'] for row in nightly if row['part'] == 'live'] == ['live'], 'PLANTED CONTROL'
+
+
+def test_a_manual_hosted_part_is_off_the_gate_and_its_job_runs_only_on_a_dispatch() -> None:
+    declared = hostedparts.hosted_parts(MANUAL)
+    assert declared == {'live': hostedparts.Hosted(('live',), manual=True)}
+    assert jobparts.off_gate(['base', 'live'], declared) == {'live'}
+    assert jobparts.off_gate(['base', 'live'], {'live': hostedparts.Hosted(('live',))}) == set(), 'PLANTED CONTROL'
+    workflow = {'jobs': {'part': {'steps': [{'run': 'x'}, {'run': 'produce ${{ matrix.part }}'}]}}}
+    job = jobparts.hosted_jobs(workflow, declared)['jobs']['part-live']
+    assert "needs.parts.outputs.event == 'workflow_dispatch'" in job['if']
+
+
+def test_a_manual_flag_that_is_not_a_boolean_is_refused() -> None:
+    text = MANUAL.replace('manual = true', 'manual = "yes"')
+    with pytest.raises(platformparts.UndeclaredPart, match='manual'):
+        hostedparts.hosted_parts(text)

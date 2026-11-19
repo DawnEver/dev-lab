@@ -25,7 +25,7 @@ from typing import Any, Final
 
 import lab_commons.launch as _door
 
-from dev_lab.dev import sshhold
+from dev_lab.dev import sshhold, sshholdrun, sshholdstate, sshholdwire
 
 _ANSWER_ENV: Final = 'SSHHOLD_ANSWER'
 _PROBE_S: Final = 120.0
@@ -34,7 +34,7 @@ _TICK_S: Final = 1.0
 
 def askpass_helper() -> Path:
     """The ``SSH_ASKPASS`` program: prints ``$SSHHOLD_ANSWER``. It holds no secret, so it may sit on disk."""
-    folder = sshhold.state_dir()
+    folder = sshholdstate.state_dir()
     folder.mkdir(parents=True, exist_ok=True)
     if sys.platform == 'win32':
         helper = folder / 'askpass.cmd'
@@ -76,7 +76,7 @@ class Holder:
         """Run *command*: ``{'output', 'status'}``, or ``{'error', 'fatal': True}`` once the stream is lost."""
         nonce = secrets.token_hex(8)
         try:
-            self.child.stdin.write(sshhold.frame(command, nonce).encode('utf-8'))
+            self.child.stdin.write(sshholdwire.frame(command, nonce).encode('utf-8'))
             self.child.stdin.flush()
         except OSError:
             return self._ended()
@@ -89,7 +89,7 @@ class Holder:
             if chunk is None:
                 return self._ended()
             got += chunk
-            if (done := sshhold.split_marker(got.decode('utf-8', 'replace'), nonce)) is not None:
+            if (done := sshholdwire.split_marker(got.decode('utf-8', 'replace'), nonce)) is not None:
                 return {'output': done[0], 'status': done[1]}
         why = f'no reply within {timeout_s:g} s; the session is closed (a half-read stream cannot be trusted)'
         return {'error': why, 'fatal': True}
@@ -130,7 +130,9 @@ def _answer(conn: socket.socket, token: str, holder: Holder) -> tuple[dict[str, 
     if verb == 'close':
         return {'ok': True}, True
     if verb == 'run':
-        reply = holder.exchange(str(asked.get('command', '')), float(asked.get('timeout_s', sshhold.DEFAULT_TIMEOUT_S)))
+        reply = holder.exchange(
+            str(asked.get('command', '')), float(asked.get('timeout_s', sshholdrun.DEFAULT_TIMEOUT_S))
+        )
         return reply, bool(reply.get('fatal', False))
     return {'error': f'unknown verb {verb!r}'}, False
 
@@ -139,8 +141,8 @@ def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> N
     """Record the session, then answer one client at a time until a verb, the ceiling or a set idle limit ends it."""
     opened = time.time()
     token = secrets.token_urlsafe(32)
-    session = sshhold.Session(dest, os.getpid(), listener.getsockname()[1], token, opened, opened + hours * 3600)
-    sshhold.write_session(session)
+    session = sshholdstate.Session(dest, os.getpid(), listener.getsockname()[1], token, opened, opened + hours * 3600)
+    sshholdstate.write_session(session)
     idle, last = sshhold.idle_s(), time.monotonic()
     _say({'ok': True, 'pid': session.pid})
     listener.settimeout(_TICK_S)
@@ -160,10 +162,10 @@ def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> N
             last = time.monotonic()
             if ending:
                 return
-        sshhold.audit('expire', dest, status=0)
+        sshholdstate.audit('expire', dest, status=0)
     finally:
         holder.stop()
-        sshhold.forget(dest)
+        sshholdstate.forget(dest)
 
 
 def main(argv: list[str] | None = None) -> int:

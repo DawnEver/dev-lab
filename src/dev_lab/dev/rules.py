@@ -63,6 +63,8 @@ from dev_lab.dev._rule_rows_b import ALWAYS_ON as _ALWAYS_ON_IDS
 from dev_lab.dev._rule_rows_b import ROWS as _ROWS_B
 from dev_lab.dev._rule_rows_branches import ROWS as _ROWS_BRANCHES
 from dev_lab.dev._rule_rows_citations import ROWS as _ROWS_CITATIONS
+from dev_lab.dev._rule_rows_feedback import ROWS as _ROWS_FEEDBACK
+from dev_lab.dev._rule_rows_hooks import ROWS as _ROWS_HOOKS
 from dev_lab.dev._rule_rows_memory import ROWS as _ROWS_MEMORY
 from dev_lab.dev._rule_rows_pr_flow import ROWS as _ROWS_PR_FLOW
 from dev_lab.dev.profile import RepoProfile
@@ -77,6 +79,7 @@ __all__ = [
     'UnenforceableRule',
     'assert_adopted',
     'assert_enforceable',
+    'enforced_ids',
     'guard',
     'lint',
     'tracked_files',
@@ -257,7 +260,7 @@ class Adoption:
         if pinned:
             msg = (
                 f'{self.app_name} lists {pinned}, which are always on: dev-lab enforces them in every repo '
-                f'through its pytest plugin (dev_lab.dev.famtests.alwayson), so a repo row is either a copy '
+                f'through its shared execution checks (dev_lab.dev.famtests.alwayson), so a repo row is either a copy '
                 f'or an opt-out, and neither exists. Delete the row.'
             )
             raise ValueError(msg)
@@ -314,7 +317,7 @@ def _build(rows: Iterable[tuple[str, str, tuple[str | tuple[str, str], ...]]]) -
 #: Rows are the number -- nothing here states a count, because a count is blind to which row moved
 #: and the honest repair when it disagrees is to edit the digit.
 RULES: Final[tuple[Rule, ...]] = _build(
-    ROWS + _ROWS_MEMORY + _ROWS_B + _ROWS_CITATIONS + _ROWS_PR_FLOW + _ROWS_BRANCHES
+    ROWS + _ROWS_MEMORY + _ROWS_B + _ROWS_CITATIONS + _ROWS_PR_FLOW + _ROWS_FEEDBACK + _ROWS_BRANCHES + _ROWS_HOOKS
 )
 
 #: The rules dev-lab enforces in EVERY repo through the ``pytest11`` plugin
@@ -449,6 +452,25 @@ def waived(rules: Sequence[Rule], adoption: Adoption) -> tuple[str, ...]:
     made and on record, the other is a rule nobody has looked at yet.
     """
     return tuple(sorted(set(rules_by_id(rules)) & set(adoption.declared_absent)))
+
+
+def enforced_ids(declared_absent: Iterable[str], rules: Sequence[Rule] = RULES) -> frozenset[str]:
+    """Every rule ID an adopter enforces once it declares *declared_absent*: the registry less those and always-on.
+
+    The list an adopting repo would otherwise type out by hand, read from the registry instead. A new rule is
+    still a decision the adopter must make: it arrives here, and :func:`assert_adopted` reds until its
+    mechanism is live in that tree or the rule joins *declared_absent*.
+
+    Raises:
+        ValueError: a declared-absent ID names no rule (a typo waives nothing).
+
+    """
+    known = set(rules_by_id(rules))
+    absent = frozenset(declared_absent)
+    if unknown := sorted(absent - known):
+        msg = f'declared-absent IDs name no rule: {unknown}'
+        raise ValueError(msg)
+    return frozenset(known - absent - ALWAYS_ON)
 
 
 def rules_by_id(rules: Sequence[Rule]) -> dict[str, Rule]:

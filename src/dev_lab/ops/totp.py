@@ -174,5 +174,5 @@ def write_private(path: Path, text: str) -> None:
         os.fchmod(descriptor, 0o600)
     else:
         path.chmod(0o600)
-    with os.fdopen(descriptor, 'w', encoding='utf-8') as out:
+    with os.fdopen(descriptor, 'w', encoding='utf-8', newline='') as out:  # byte-exact: no CRLF on Windows
         out.write(text)

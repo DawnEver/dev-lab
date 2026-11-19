@@ -1,12 +1,13 @@
 """WORKSTATION MACHINE FILE: the tables ``workstation deploy`` writes, and the roles that declare them.
 
-A ``--role`` is a declared profile (:data:`ROLES`: its capabilities and ``[serve]`` rule); ``template --role
-<role> --repos ...`` prints the tables it writes. The ``light`` role withholds every :data:`HEAVY` tool and refuses
-one in ``--capabilities``. The merge (:func:`machine_file`) keeps every other table, key and comment, removes a
-RETIRED ``[capabilities.<name>]`` -- one naming a runtime (:data:`~dev_lab.dev.forgereview_declared.FAMILY_RUNTIMES`,
-or a
-registry row whose remedy is ``[runtimes.<name>]``) is RENAMED in place, keys and comment kept, after a one-time
-``<file>.lab-deploy.bak`` -- and under ``--dry-run`` prints the diff (each move named) without writing.
+A ``--role`` is a declared profile (:data:`ROLES`: its capabilities); ``template --role <role>`` prints the tables
+it writes. The ``light`` role refuses every :data:`HEAVY` tool in ``--capabilities``. A deploy writes NO ``[serve]``
+and removes one it finds: a workstation never serves a merge's parts (user ruling 2026-11-16,
+:func:`dev_lab.dev.producercheck.host_refusals`). The merge (:func:`machine_file`) keeps every other table, key
+and comment, removes a RETIRED ``[capabilities.<name>]`` -- one naming a runtime
+(:data:`~dev_lab.dev.forgereview_declared.FAMILY_RUNTIMES`, or a registry row whose remedy is
+``[runtimes.<name>]``) is RENAMED in place, keys and comment kept, after a one-time ``<file>.lab-deploy.bak`` --
+and under ``--dry-run`` prints the diff (each move named) without writing.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.box.machine import provided
 from lab_commons.compute.durable import durable_text
-from lab_commons.compute.serves import EVERY, SERVE_TABLE
+from lab_commons.compute.serves import SERVE_TABLE
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.config import config_path
 from lab_commons.hpc.retired import RETIRED
@@ -30,7 +31,7 @@ from dev_lab.dev.forgereview_declared import FAMILY_RUNTIMES
 from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, RUNTIMES_TABLE
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
     from dev_lab.dev.hpcaccount.steps import Step
 
@@ -41,9 +42,10 @@ __all__ = [
     'WORKSTATION',
     'Role',
     'capabilities',
+    'capability_tables',
+    'deploy_tables',
     'machine_file',
     'role_refusal',
-    'role_tables',
     'template',
 ]
 
@@ -69,14 +71,12 @@ class Role:
     """A declared workstation profile: what a deploy with ``--role`` writes into the machine file."""
 
     capabilities: tuple[str, ...]  # declared unless --capabilities names a subset
-    parts: str  # [serve] parts
-    withhold: tuple[str, ...]  # [serve] withhold: never this host's forge work, part or request
+    refuses: tuple[str, ...]  # capabilities a deploy of this role refuses in --capabilities
 
 
-#: THE ONE PLACE a workstation role is declared. ``light`` (user ruling 2026-10-28, HOST1 and HOST2): it serves forge
-#: parts and requests but never heavy compute -- every heavy probed tool is withheld, because a probe finds an installed
-#: JMAG whether or not it is declared, and a heavy capability is refused at deploy.
-ROLES: Final = {'light': Role(capabilities=(WORKSTATION,), parts=EVERY, withhold=HEAVY)}
+#: THE ONE PLACE a workstation role is declared. ``light`` (user ruling 2026-10-28): never heavy compute -- a heavy
+#: capability is refused at deploy.
+ROLES: Final = {'light': Role(capabilities=(WORKSTATION,), refuses=HEAVY)}
 
 
 def capabilities(text: str) -> dict[str, dict[str, Any]]:
@@ -99,23 +99,26 @@ def capabilities(text: str) -> dict[str, dict[str, Any]]:
         raise argparse.ArgumentTypeError(str(bad)) from None
 
 
-def role_tables(role: Role, capabilities: Mapping[str, Mapping[str, Any]], repos: Sequence[str]) -> dict[str, Any]:
-    """The machine-file tables a *role* deploy owns: its capabilities and its ``[serve]`` rule over *repos*."""
-    tables: dict[str, Any] = {f'capabilities.{name}': dict(facts) for name, facts in capabilities.items()}
-    tables[SERVE_TABLE] = {'repos': list(repos), 'parts': role.parts, 'withhold': list(role.withhold)}
-    return tables
+def capability_tables(capabilities: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """The ``[capabilities.<name>]`` tables a deploy declaring *capabilities* writes."""
+    return {f'capabilities.{name}': dict(facts) for name, facts in capabilities.items()}
+
+
+def deploy_tables(capabilities: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """What a deploy merges: *capabilities*' tables, and ``[serve]`` deleted -- a workstation never serves one."""
+    return {**capability_tables(capabilities), SERVE_TABLE: None}
 
 
 def role_refusal(role: str, capabilities: Mapping[str, Any]) -> str | None:
-    """Why *capabilities* break *role*'s profile: a heavy capability declared on a host that withholds it."""
-    if heavy := sorted(set(capabilities) & set(ROLES[role].withhold)):
+    """Why *capabilities* break *role*'s profile: a heavy capability the role refuses."""
+    if heavy := sorted(set(capabilities) & set(ROLES[role].refuses)):
         return f'the {role} role runs no heavy compute: drop {", ".join(heavy)} from --capabilities'
     return None
 
 
-def template(role: str, repos: Sequence[str]) -> str:
-    """The machine-file tables ``deploy --role <role> --repos <repos>`` writes, as TOML: the docs' template."""
-    return merged('', role_tables(ROLES[role], capabilities(','.join(ROLES[role].capabilities)), repos))
+def template(role: str) -> str:
+    """The machine-file tables ``deploy --role <role>`` writes, as TOML: the docs' template."""
+    return merged('', capability_tables(capabilities(','.join(ROLES[role].capabilities))))
 
 
 def _derived(data: Mapping[str, Any]) -> list[str]:

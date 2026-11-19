@@ -56,11 +56,10 @@ from __future__ import annotations
 
 import dataclasses
 import fnmatch
-import re
 import subprocess
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -80,19 +79,24 @@ from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 
+from dev_lab.dev._forgeschedule_requests import issue_labels, request_candidates
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import STARVED, Alarm
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeorigin import head_login, origin_host_of
 from dev_lab.dev.forgepulls import pr_list
-from dev_lab.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_deadline, parse_paths
+from dev_lab.dev.forgerequest import (
+    Declared,
+    declared_request,
+)
 from dev_lab.dev.forgescope import scope_of
 from dev_lab.dev.forgestatus import CARRIED_FROM
 from dev_lab.dev.forgework import Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.partrefs import part_refs
 from dev_lab.dev.partrows import row_part
+from dev_lab.dev.producers import HPC, producer_at
 
 __all__ = [
     'NOT_ADMITTED',
@@ -227,14 +231,8 @@ def ref_usage(root: Path, ref: str, used: Mapping[str, float]) -> float:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = _door.run(
-        [_GIT, '-C', str(root), *args],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        timeout=_GIT_TIMEOUT_S,
-        check=False,
-    )
+    done = _door.run([_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8',
+                     timeout=_GIT_TIMEOUT_S, check=False)  # fmt: skip
     return done.stdout.strip() if done.returncode == 0 else ''
 
 
@@ -248,10 +246,6 @@ def _tips(root: Path) -> dict[str, str]:
     return {ref.removeprefix(_TRACKING): sha for ref, sha in (line.split(' ') for line in listed.splitlines() if line)}
 
 
-def _labels(raw: Mapping[str, Any]) -> tuple[str, ...]:
-    return tuple(str(label['name']) for label in raw.get('labels') or ())
-
-
 def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
     """Open issues carrying *label*, raw (pull requests excluded) -- every page, one call shape on both forges.
 
@@ -262,7 +256,7 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
     page = 1
     while True:
         listed = client.call('GET', f'{client.repo}/issues?{query}&page={page}') or []
-        found += [raw for raw in listed if not is_pull(raw) and label in _labels(raw)]
+        found += [raw for raw in listed if not is_pull(raw) and label in issue_labels(raw)]
         if len(listed) < ISSUE_PAGE:
             return tuple(found)
         page += 1
@@ -270,10 +264,6 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
 
 #: Issues read per page of :func:`labelled_issues`.
 ISSUE_PAGE: Final = 50
-
-
-_REQUEST_SHA: Final = re.compile(r'^\s*sha\s*=\s*["\'](?P<sha>[^"\'\n]*)["\']', re.MULTILINE)
-_REQUEST_HOST: Final = re.compile(r'^\s*host\s*=\s*["\'](?P<host>[\w./-]+)["\']', re.MULTILINE)
 
 
 def optional[T](what: str, listing: Callable[[], Sequence[T]], say: Callable[[str], None]) -> Sequence[T]:
@@ -315,52 +305,22 @@ def _part_refs(
 
 
 def _requests(
-    root: Path, client: Client, repo: str, schedule: Schedule, now: datetime, *, say: Callable[[str], None]
+    root: Path,
+    client: Client,
+    repo: str,
+    schedule: Schedule,
+    now: datetime,
+    *,
+    say: Callable[[str], None],
+    declare: Callable[..., Declared] = declared_request,
 ) -> list[Candidate]:
     """Every request issue as a job: its producer and sha from the body, its need-set as that sha declares it.
 
     A request whose producer is undeclared is still listed (part ``''``): the claim pass refuses it by name.
     One naming no full sha is work at no commit: it is SKIPPED and said, one line naming the issue.
     """
-    found = []
-    for raw in labelled_issues(client, schedule.request_label):
-        producer, sha = parse_body(raw.get('body') or '')
-        if not sha:
-            named = _REQUEST_SHA.search(raw.get('body') or '')
-            got = f' (got "{named["sha"]}")' if named else ''
-            say(f'[serve] skipped request issue #{raw["number"]}: its body names no 40-hex `sha`{got}')
-            continue
-        paths = parse_paths(raw.get('body') or '')
-        created = raw.get('created_at') or ''
-        since = datetime.fromisoformat(created).astimezone(UTC) if created else now
-        try:
-            platform = declared_request(root, sha, producer, paths).part
-        except UndeclaredRequest:
-            platform = ''
-        number = int(raw['number'])
-        origin = str((raw.get('user') or {}).get('login', ''))
-        host = _REQUEST_HOST.search(raw.get('body') or '')
-        deadline = parse_deadline(raw.get('body') or '')
-        late = f'{NO_ROOM}: unclaimed at its deadline {deadline.isoformat()}' if deadline and now > deadline else ''
-        found.append(
-            Candidate(
-                repo,
-                f'issue/{number}',
-                sha,
-                platform,
-                REQUEST,
-                since,
-                FULL,
-                labels=_labels(raw),
-                number=number,
-                origin=origin,
-                origin_host=host['host'] if host else '',
-                producer=producer,
-                paths=paths,
-                refused=late,
-            )
-        )
-    return found
+    issues = labelled_issues(client, schedule.request_label)
+    return request_candidates(root, issues, repo, now, late=NO_ROOM, say=say, declare=declare)
 
 
 def candidates(
@@ -374,6 +334,8 @@ def candidates(
     now: datetime,
     say: Callable[[str], None] = lambda _: None,
     waived: Callable[[str], frozenset[str]] = lambda _: frozenset(),
+    prefetch: Callable[[Iterable[str]], None] = lambda _: None,
+    declare: Callable[..., Declared] = declared_request,
 ) -> tuple[Candidate, ...]:
     """Every candidate, ONE per ref and part: the ref's newest sha (coalesced). Fetches nothing.
 
@@ -385,11 +347,23 @@ def candidates(
     The integration branch, every open PR into it (labels from the PR), every branch ``classes_by_ref``
     classes, and every request issue -- each kept only where its part's ref filter admits its ref
     (:func:`dev_lab.dev.partrefs.part_refs`, the exclusion said through *say*) -- PRs and requests
-    :func:`optional`, a failure said through *say*. A PR's origin is its author; any other head's is the
+    :func:`optional`, a failure said through *say*. *prefetch* is handed every served sha before *parts* asks of
+    any one: the reads it may make concurrently (:meth:`~dev_lab.dev.forgesettled.SettledHistories.prefetch`).
+    *declare* reads a request's declaration (:func:`~dev_lab.dev.forgerequest.declared_request`); a reader that
+    asks it again of the same request passes one that answers once (:func:`dev_lab.dev.forgequeue.forge_queue`).
+    A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
+
+    A repo whose serving checkout declares an ``actions`` producer (:mod:`dev_lab.dev.producers`) has NO
+    candidate: forge Actions post its parts, and no HPC host is ever offered one (user ruling 2026-11-16).
     """
+    if (producer := producer_at(root)) != HPC:
+        say(f'[serve] {repo} declares producer = "{producer}": its parts are never offered here')
+        return ()
     found, reached = [], set()
-    for ref, sha, kind, labels, number, pr_author in _part_refs(root, client, schedule, policy, say=say):
+    served = _part_refs(root, client, schedule, policy, say=say)
+    prefetch(sha for _, sha, *_ in served)
+    for ref, sha, kind, labels, number, pr_author in served:
         needed = parts(sha)
         if kind == PR:
             skipped = waived(sha)
@@ -414,7 +388,9 @@ def candidates(
             )
             for platform in needed
         ]
-    found += optional('request issues', lambda: _requests(root, client, repo, schedule, now, say=say), say)
+    found += optional(
+        'request issues', lambda: _requests(root, client, repo, schedule, now, say=say, declare=declare), say
+    )
     return tuple(one for one in found if (one.ref, one.sha, one.platform) in reached or _ref_served(root, one, say))
 
 

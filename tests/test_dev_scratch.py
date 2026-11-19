@@ -10,19 +10,19 @@ import time
 import pytest
 from lab_commons import launch
 
-from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement, stray_refusal
+from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement
 from dev_lab.dev.scratch import (
     SCRATCH_README,
     ScratchCommitted,
     assert_scratch_never_committed,
     discard_scratch,
     main,
-    overdue_declared,
     overdue_scratch,
     pending_scratch,
     scratch_reminder,
     staged_scratch,
 )
+from dev_lab.dev.strays import stray_refusal
 
 _DAY = 86400.0
 
@@ -136,7 +136,6 @@ def test_the_reminder_names_each_overdue_file_and_both_exits_and_is_silent_other
     assert main(['remind'], stdin=io.StringIO(payload)) == 0
     assert capsys.readouterr().out == ''
     _plant(tmp_path, 'scratch/old.py', age_days=4.0)
-    assert overdue_declared(tmp_path) == ['scratch/old.py']
     assert main(['remind'], stdin=io.StringIO(payload)) == 0
     out = capsys.readouterr().out
     assert 'scratch/old.py' in out
@@ -145,14 +144,16 @@ def test_the_reminder_names_each_overdue_file_and_both_exits_and_is_silent_other
     assert 'discard' in out
 
 
-def test_pending_lists_oldest_first_and_discard_deletes_only_scratch_one_offs(tmp_path, monkeypatch, capsys) -> None:
+def test_list_names_entries_oldest_first_and_discard_deletes_only_scratch_one_offs(
+    tmp_path, monkeypatch, capsys
+) -> None:
     _repo(tmp_path)
     monkeypatch.chdir(tmp_path)
     _plant(tmp_path, f'scratch/{SCRATCH_README}', age_days=9.0)
     _plant(tmp_path, 'scratch/a.py', age_days=1.0)
     _plant(tmp_path, 'scratch/b.py', age_days=5.0)
     _plant(tmp_path, 'src/keep.py')
-    assert main(['pending']) == 0
+    assert main(['list']) == 0
     rows = capsys.readouterr().out.splitlines()
     assert [row.split()[-1] for row in rows] == ['scratch/b.py', 'scratch/a.py']
     with pytest.raises(ValueError, match=r'src/keep.py'):
@@ -171,6 +172,56 @@ def test_an_undeclared_checkout_is_not_judged_by_the_row_and_a_verb_says_why(tmp
     (tmp_path / '.git').mkdir()
     monkeypatch.chdir(tmp_path)
     assert main(['check', 'scratch/probe.py']) == 0
-    assert main(['pending']) == 2
+    assert main(['list']) == 2
     assert 'pyproject.toml' in capsys.readouterr().out
     assert main(['bogus']) == 2
+
+
+def _unanchored(root) -> None:
+    (root / 'pyproject.toml').write_text('[tool.dev_lab.placement]\nscratch_anchor = false\n', encoding='utf-8')
+
+
+def test_an_unanchored_scratch_passes_only_when_nothing_under_it_is_tracked(tmp_path) -> None:
+    _repo(tmp_path)
+    _unanchored(tmp_path)
+    assert_scratch_never_committed(tmp_path)  # (a) declared false and empty: green
+
+
+def test_an_unanchored_scratch_REFUSES_a_tracked_readme_naming_the_declaration(tmp_path) -> None:
+    _repo(tmp_path)
+    _unanchored(tmp_path)
+    _plant(tmp_path, f'scratch/{SCRATCH_README}')
+    _commit_all(tmp_path)
+    with pytest.raises(ScratchCommitted, match=r'scratch/README.md.*scratch_anchor = false'):
+        assert_scratch_never_committed(tmp_path)  # (b)
+
+
+def test_an_unanchored_scratch_REFUSES_a_tracked_one_off(tmp_path) -> None:
+    _repo(tmp_path)
+    _unanchored(tmp_path)
+    _plant(tmp_path, 'scratch/probe.py')
+    _commit_all(tmp_path)
+    with pytest.raises(ScratchCommitted, match=r'scratch/probe.py'):
+        assert_scratch_never_committed(tmp_path)  # (c)
+
+
+def test_the_default_anchor_keeps_the_readme_and_refuses_its_absence_naming_the_declaration(tmp_path) -> None:
+    _repo(tmp_path)
+    assert declared_placement(tmp_path).scratch_anchor is True
+    with pytest.raises(ScratchCommitted, match=r'scratch_anchor = false'):
+        assert_scratch_never_committed(tmp_path)  # (e) the door: declare it unanchored, or commit the README
+    _plant(tmp_path, f'scratch/{SCRATCH_README}')
+    _commit_all(tmp_path)
+    assert_scratch_never_committed(tmp_path)  # (d)
+
+
+@pytest.mark.parametrize('value', ["'false'", '0', '[]'])
+def test_a_non_bool_scratch_anchor_is_REFUSED_by_name(tmp_path, value) -> None:
+    _declare(tmp_path, f'scratch_anchor = {value}\n')
+    with pytest.raises(PlacementNotDeclared, match=r'scratch_anchor'):
+        declared_placement(tmp_path)
+
+
+def test_an_unanchored_scratch_refuses_a_staged_readme_too() -> None:
+    staged = ('scratch/README.md', 'scratch/probe.py')
+    assert staged_scratch(staged, scratch='scratch/', anchor=False) == ['scratch/README.md', 'scratch/probe.py']

@@ -30,14 +30,15 @@ THE ONE PRODUCER THAT TAKES ARGUMENTS IS THE REPOSITORY'S OWN TEST PRODUCER (D5,
 sha under the repository's declared test roots (``[tool.pytest.ini_options] testpaths``) -- no glob, no
 option, nothing argv-looking -- and it runs as the declared ``[tool.lab_commons.tests] produce`` door over
 exactly those files, sized as a selection (:func:`dev_lab.dev.verifybox.selection_mem_gb`), and PLACED by the
-resource markers its files carry (:func:`placement`, user ruling 2026-10-21): on Linux for anything Linux can
+resource markers its files carry
+(:func:`~dev_lab.dev.forgerequestpaths.placement`, user ruling 2026-10-21): on Linux for anything Linux can
 run, on Windows only for a selection holding a ``jmag`` test; any other resource is refused by name. Every
 other rule above (trusted sha and author, lock, reachability) applies unchanged. The one other
 built-in is :data:`UNIT`: one compute unit, its bundle and size carried in ``paths``
 (:func:`dev_lab.dev.forgeunit.unit_request`).
 
 A request is pinned to its sha, so nothing supersedes it. Its producer knows nothing of the forge, so
-serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and labels the
+serve SETTLES it from the exit code (:mod:`dev_lab.dev.forgerequesthost`): 0 posts ``success`` and labels the
 issue ``request:done``, 1 posts ``failure``, every other code is released as a part's would be
 (:func:`dev_lab.dev.producer.release_reason`). The issue gets a comment naming the outcome, the host,
 where the record is kept there, each file's sha256 and the log's tail -- a failure is on record, never
@@ -50,18 +51,13 @@ claimed: past it, an unclaimed request is refused on its own context as ``no roo
 
 from __future__ import annotations
 
-import ast
 import re
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
-import lab_commons.launch as _door
 from lab_commons.box.machine import RESOURCE_NAME
-from lab_commons.compute.model import REQUEST
-from lab_commons.config import section
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name, read_vocabulary
 
@@ -72,32 +68,21 @@ from dev_lab.dev._forgesource import (
     unreproducible,
     unserved,
 )
-from dev_lab.dev._testfacts_readers import mark_names
-from dev_lab.dev.family import declared_in
-from dev_lab.dev.forge import _GIT
-from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgelabels import add_label
+from dev_lab.dev.family import declared_in, declared_table
+from dev_lab.dev.forgerequestpaths import NOT_A_PATH, blobs, path_refusal, placement, prefetch, test_roots
 from dev_lab.dev.platformparts import origin_url
-from dev_lab.dev.producer import ProducerExit, release_reason
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.venvpath import running_interpreter
-from dev_lab.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_files, selection_mem_gb
+from dev_lab.dev.verifybox import SELECTION_CPU, selection_files, selection_mem_gb, wall_of
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Sequence
     from pathlib import Path
-
-    from lab_commons.compute.model import Ranked
-
-    from dev_lab.dev.forgework import Client
 
 __all__ = [
     'CONTEXT_PREFIX',
-    'DONE_LABEL',
     'LOCK_FILE',
-    'REQUESTS_TABLE',
     'TESTS',
-    'UNADMITTED',
     'UNIT',
     'Declared',
     'UndeclaredRequest',
@@ -107,41 +92,26 @@ __all__ = [
     'parse_body',
     'parse_deadline',
     'parse_paths',
-    'placement',
-    'remind',
-    'request_authors',
+    'prefetch_requests',
     'request_body',
     'request_context',
-    'result',
-    'settle',
     'unreachable_source',
     'unreproducible',
     'unserved',
-    'untrusted',
 ]
 
 #: The status context prefix of a request job; a part's is ``tests/``.
 CONTEXT_PREFIX: Final = 'request/'
-#: How many log lines the result comment quotes.
-TAIL_LINES: Final = 40
 
 _LINE: Final = re.compile(r'^\s*(?P<key>producer|sha)\s*=\s*["\'](?P<value>[^"\']*)["\']\s*$', re.MULTILINE)
 _SHA: Final = re.compile(r'^[0-9a-f]{40}$')
 _PATHS: Final = re.compile(r'^\s*paths\s*=\s*(?P<value>\[.*\])\s*$', re.MULTILINE)
 _DEADLINE: Final = re.compile(r'^\s*deadline\s*=\s*["\'](?P<value>[^"\'\n]*)["\']\s*$', re.MULTILINE)
 
-#: The OS every test Linux can run is placed on, and the one tool a Windows host serves a selection for.
-LINUX: Final = 'linux'
-WINDOWS: Final = 'windows'
-JMAG: Final = 'jmag'
-
 #: The reserved producer name of the repository's own test producer over named test files (D5).
 TESTS: Final = 'tests'
 #: The producer that runs ONE compute unit a box offered because it could not run it (:mod:`dev_lab.dev.forgeunit`).
 UNIT: Final = 'unit'
-
-#: Characters a test path never carries: a glob, or a quote/space that would make it more than one path.
-_NOT_A_PATH: Final = frozenset('*?[]{}"\' \t')
 
 
 class UndeclaredRequest(ValueError):
@@ -189,39 +159,6 @@ def parse_deadline(body: str) -> datetime | None:
     return when if when.tzinfo is not None else None
 
 
-def placement(root: Path, sha: str, paths: Sequence[str], resources: Sequence[str]) -> frozenset[str]:
-    """The need-set a selection of *paths* at *sha* runs under: ``{linux}``, or its markers plus ``windows``.
-
-    Each file's ``pytest.mark.<name>`` spellings among the declared *resources* are read from its source at
-    *sha* (a mark a conftest applies by directory is not seen). A selection holding a ``jmag`` test runs on
-    Windows with every resource its files name; one naming no resource but ``linux`` runs on Linux; any other
-    resource is refused (Linux cannot run it, and Windows serves a selection only for ``jmag``).
-
-    Raises:
-        UndeclaredRequest: a file is unreadable at *sha*, or the selection names a resource no placement serves.
-
-    """
-    marks: set[str] = set()
-    for path in paths:
-        shown = _door.run(
-            [_GIT, '-C', str(root), 'show', f'{sha}:{path}'], capture_output=True, check=False, timeout=60
-        )
-        try:
-            marks |= set(mark_names(ast.parse(shown.stdout))) & set(resources)
-        except (SyntaxError, ValueError) as why:
-            msg = f'{path!r} at {sha[:12]} is unreadable as Python: {why}'
-            raise UndeclaredRequest(msg) from why
-    if JMAG in marks:
-        return frozenset(marks | {WINDOWS})
-    if beyond := sorted(marks - {LINUX}):
-        msg = (
-            f'the selection needs {beyond}: Linux cannot run it and a Windows host serves a selection only for '
-            f'{JMAG!r} tests -- run it where that resource is'
-        )
-        raise UndeclaredRequest(msg)
-    return frozenset({LINUX})
-
-
 def parse_body(body: str) -> tuple[str, str]:
     """``(producer, sha)`` a request body names; ``''`` for one it does not name well."""
     found = {match['key']: match['value'] for match in _LINE.finditer(body or '')}
@@ -241,28 +178,22 @@ def parse_paths(body: str) -> tuple[str, ...]:
     return tuple(str(one) for one in value) if isinstance(value, list) else ()
 
 
-def _test_roots(text: str) -> tuple[str, ...]:
-    roots = tomllib.loads(text).get('tool', {}).get('pytest', {}).get('ini_options', {}).get('testpaths')
-    return tuple(str(one).strip('/') for one in roots) if isinstance(roots, list) and roots else ()
+#: The declaration a sha's test producer is read from, in the same ``git cat-file --batch`` as its selection.
+_PYPROJECT: Final = 'pyproject.toml'
 
 
-def _path_refusal(root: Path, sha: str, path: str, roots: Sequence[str]) -> str:
-    """Why *path* is not a test file at *sha* under *roots*; ``''`` when it is."""
-    pure = PurePosixPath(path)
-    if not path or path.startswith('-'):
-        return f'{path!r} looks like an option, not a test file'
-    if _NOT_A_PATH & set(path):
-        return f'{path!r} is a glob or more than one path: name each test file'
-    if pure.is_absolute() or '..' in pure.parts or '\\' in path:
-        return f'{path!r} leaves the repository'
-    if not any(pure.parts[: len(PurePosixPath(r).parts)] == PurePosixPath(r).parts for r in roots):
-        return f'{path!r} is outside the declared test roots {list(roots)}'
-    if pure.suffix != '.py':
-        return f'{path!r} is not a test file (.py)'
-    found = _door.run(
-        [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{path}'], capture_output=True, check=False, timeout=60
-    )
-    return '' if found.returncode == 0 else f'{path!r} does not exist at {sha[:12]}'
+def _selection(paths: Sequence[str]) -> list[str]:
+    """What a test request at a sha reads: its declaration and each selected file a path can name."""
+    return [_PYPROJECT, *(path for path in paths if not NOT_A_PATH & set(path))]
+
+
+def prefetch_requests(root: Path, requests: Sequence[tuple[str, str, Sequence[str]]]) -> None:
+    """Read every test request's declaration and selection, of all (*sha*, *producer*, *paths*), in ONE git child.
+
+    ``forge queue`` declared each request issue with its own ``git cat-file --batch``: 59 of a read's 218 git
+    children (measured on a consumer repository 2026-11-18). :func:`declared_request` then finds each answer held.
+    """
+    prefetch(root, [(sha, _selection(paths)) for sha, producer, paths in requests if producer == TESTS and paths])
 
 
 def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
@@ -270,19 +201,23 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     if not paths:
         msg = f'producer {TESTS!r} runs named test files: the body names `paths = ["tests/test_x.py", ...]`'
         raise UndeclaredRequest(msg)
+    asked = _selection(paths)
+    selected = asked[1:]
+    read = blobs(root, sha, asked)  # ONE git child for the declaration and the selection
     try:
-        text = pyproject_at(root, sha)
+        text = read.get(_PYPROJECT, b'').decode('utf-8')
         produce = kit_tables(text).get('tests', {}).get('produce')
     except OutdatedKit:  # the READER is older than the sha: this host's defect, never the commit's
         raise
     except (ValueError, OSError) as why:  # unreadable, or a retired table at a sha older than its move
         msg = f'pyproject.toml unreadable at {sha[:12]}: {why}'
         raise UndeclaredRequest(msg) from why
-    roots = _test_roots(text)
+    roots = test_roots(text)
     if not isinstance(produce, list) or '--part' not in produce or not roots:
         msg = f'{sha[:12]} declares no [tool.lab_commons.tests] produce door with --part, or no pytest testpaths'
         raise UndeclaredRequest(msg)
-    if refused := [why for path in paths if (why := _path_refusal(root, sha, path, roots))]:
+    files = {path: read[path] for path in selected if path in read}
+    if refused := [why for path in paths if (why := path_refusal(path, roots, files, sha))]:
         msg = f'producer {TESTS!r} refused: ' + '; '.join(refused)
         raise UndeclaredRequest(msg)
     door = [str(one) for one in produce[: produce.index('--part')]]
@@ -295,9 +230,16 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     except ValueError as why:
         msg = f'[tool.lab_commons.tests] resources refused at {sha[:12]}: {why}'
         raise UndeclaredRequest(msg) from why
-    needs = placement(root, sha, paths, resources)
+    try:
+        needs = placement(files, sha, resources)
+    except ValueError as why:
+        raise UndeclaredRequest(str(why)) from why
     mem_gb = selection_mem_gb(repo, paths, SELECTION_CPU)
-    return Declared(TESTS, (*door, '--', *paths), needs, float(SELECTION_CPU), mem_gb, SELECTION_WALL_S / 3600)
+    try:
+        wall_s = wall_of(declared_table(tomllib.loads(text), 'verify', {}), f'pyproject.toml at {sha[:12]}')
+    except ValueError as why:
+        raise UndeclaredRequest(str(why)) from why
+    return Declared(TESTS, (*door, '--', *paths), needs, float(SELECTION_CPU), mem_gb, wall_s / 3600)
 
 
 def _unit_request(_root: Path, _sha: str, paths: Sequence[str]) -> Declared:
@@ -355,110 +297,6 @@ def declared_request(root: Path, sha: str, name: str, paths: Sequence[str] = ())
 
 def _positive(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
-
-
-#: The machine-file table naming whose requests this host runs off the trunks: ``authors = ["<login>", ...]``.
-REQUESTS_TABLE: Final = 'requests'
-
-
-def request_authors() -> frozenset[str]:
-    """The logins this host runs a request for at ANY served sha (its machine file's ``[requests] authors``)."""
-    table = section(REQUESTS_TABLE)
-    authors = table.get('authors', [])
-    if set(table) - {'authors'} or not isinstance(authors, list) or not all(isinstance(a, str) for a in authors):
-        msg = f'[{REQUESTS_TABLE}] takes only authors = ["<forge login>", ...]'
-        raise ValueError(msg)
-    return frozenset(authors)
-
-
-def untrusted(root: Path, sha: str, author: str, *, trunks: Sequence[str], authors: Collection[str]) -> str:
-    """Why this host does not run *author*'s request at *sha*, ``''`` when it does.
-
-    A request runs its sha's code on another person's box: only code reviewed onto one of *trunks* (origin's
-    integration branch or trunk) runs for anyone; code anywhere else runs only for an author this host's
-    machine file allows (:func:`request_authors`).
-    """
-    if author and author in authors:
-        return ''
-    for ref in trunks:
-        done = _door.run(
-            [_GIT, '-C', str(root), 'merge-base', '--is-ancestor', sha, f'refs/remotes/origin/{ref}'],
-            capture_output=True,
-            check=False,
-        )
-        if done.returncode == 0:
-            return ''
-    who = author or 'its unresolved author'
-    on = ' nor '.join(trunks)
-    return f"{sha[:12]} is on neither {on}, and {who} is not in this host's [{REQUESTS_TABLE}] authors"
-
-
-#: The mark of the one comment a request waiting past ``request_unadmitted_hours`` gets.
-UNADMITTED: Final = '**unadmitted**'
-
-
-def remind(client: Client, queue: Sequence[Ranked], *, hours: float, host: str) -> list[str]:
-    """Comment ONCE on each request of *queue* blocked past *hours*, naming why *host* did not admit it.
-
-    The requester otherwise learns nothing but by polling ``forge queue``. The issue's comments are read
-    first: one carrying :data:`UNADMITTED` means it was told. A forge call that fails is said, never raised.
-    """
-    said = []
-    for item in queue:
-        one = item.candidate
-        if one.kind != REQUEST or not item.blocked or item.wait_h < hours:
-            continue
-        path = f'{client.repo}/issues/{one.number}/comments'
-        try:
-            if any(UNADMITTED in str(raw.get('body') or '') for raw in client.call('GET', path) or ()):
-                continue
-            client.issue_comment(
-                one.number,
-                f'{UNADMITTED} for {item.wait_h:.0f} h: no host has claimed this request. {host}: {item.blocked}',
-            )
-        except ForgeCallFailed as failed:
-            said.append(f'could not tell issue/{one.number} it waits: {failed}')
-        else:
-            said.append(f'told issue/{one.number} it waited {item.wait_h:.0f} h unadmitted')
-    return said
-
-
-def result(code: int, host: str, *, outage: bool) -> tuple[str, str]:
-    """The ``(state, description)`` a request's producer exiting *code* on *host* settles it with."""
-    if code == ProducerExit.PASS:
-        return 'success', f'request done: exit 0 on {host}'
-    if code == ProducerExit.FAIL:
-        return 'failure', f'request failed: exit 1 on {host}'
-    return 'error', release_reason(code, outage=outage)
-
-
-#: The label a request whose producer exited 0 gets: done, awaiting its requester's sign-off.
-DONE_LABEL: Final = 'request:done'
-
-
-def settle(
-    client: Client,
-    number: int,
-    state: str,
-    description: str,
-    *,
-    log: str,
-    host: str,
-    record: tuple[str, Sequence[tuple[str, str]]],
-) -> None:
-    """Comment the outcome, where its record is kept, each file's sha256 and the log's tail on issue *number*.
-
-    A success is labelled :data:`DONE_LABEL` and LEFT OPEN: exit 0 says the producer finished, not that the
-    requester accepts what it made -- the requester signs off by closing it.
-    """
-    tail = '\n'.join(log.rstrip().splitlines()[-TAIL_LINES:])
-    kept, files = record
-    sums = ''.join(f'- `{digest}`  {name}\n' for name, digest in files) or '- (no file)\n'
-    where = f'record: `{kept}` on {host}' if kept else f'record: none declared on {host}'
-    body = f'**{state}** -- {description}\n\n{where}\n\nsha256:\n\n{sums}\nlog tail:\n\n```\n{tail}\n```'
-    client.issue_comment(number, body)
-    if state == 'success':
-        add_label(client, number, DONE_LABEL)
 
 
 def offer_line(root: Path, head: str, arguments: tuple[str, ...]) -> str:

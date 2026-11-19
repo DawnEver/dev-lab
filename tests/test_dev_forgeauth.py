@@ -213,3 +213,27 @@ def test_a_server_error_stays_transient_and_is_retried(server) -> None:
         client.whoami()
     assert failed.value.report.disposition is Disposition.EXHAUSTED
     assert len(_Recorder.received) == DEFAULT_ATTEMPTS
+
+
+def test_status_refuses_a_gitea_oauth_access_token_because_it_expires_within_the_hour(server, tmp_path, capsys) -> None:
+    """GCM's generic OAuth stores Gitea an access token (username ``OAUTH_USER``) that Gitea expires after an hour.
+
+    Measured 2026-11-12: git presents the expired token, Gitea answers 401, git rejects it and GCM mints a new one from
+    its stored refresh token -- the "first call after idle fails, the retry works" every box reported. It authenticates
+    NOW, so status must still say no: the cure is a non-expiring personal access token through ``auth login``.
+    """
+    env, _ = _isolated_store(tmp_path)
+    _store_password(tmp_path, env, 'f.example', 'OAUTH_USER', 'an-access-token')
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    assert main(['status', '--host', 'f.example'], cwd=tmp_path, env=env, transport=_Loopback(server)) == 1
+    err = capsys.readouterr().err
+    assert 'OAUTH_USER' in err
+    assert 'auth login' in err
+    assert 'an-access-token' not in err
+
+
+def test_planted_control_a_github_oauth_token_does_not_expire_so_status_passes(server, tmp_path) -> None:
+    env, _ = _isolated_store(tmp_path)
+    _store_password(tmp_path, env, 'github.com', 'OAUTH_USER', 'gho-token')
+    _answer('GET', '/user', (200, {'login': 'alice'}))
+    assert main(['status', '--host', 'github.com'], cwd=tmp_path, env=env, transport=_Loopback(server)) == 0

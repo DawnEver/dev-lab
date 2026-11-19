@@ -19,13 +19,11 @@ from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.hpc.declared import OutdatedKit
 from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
-from dev_lab.dev import forgeproduce, forgerequest
+from dev_lab.dev import forgeclaim, forgeproduce, forgerequesthost
 from dev_lab.dev._forgebackends import GITEA
 from dev_lab.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from dev_lab.dev.forgepublish import RequestRefused, publish
 from dev_lab.dev.forgerequest import (
-    DONE_LABEL,
-    UNADMITTED,
     UndeclaredRequest,
     declared_request,
     git_sources,
@@ -35,8 +33,10 @@ from dev_lab.dev.forgerequest import (
     unreachable_source,
     unserved,
 )
+from dev_lab.dev.forgerequesthost import DONE_LABEL, UNADMITTED
 from dev_lab.dev.forgeschedule import NOT_ADMITTED, labelled_issues
 from dev_lab.dev.platformparts import origin_url
+from dev_lab.dev.producer import Owner, owned
 
 server = test_dev_forgetick.server  # the loopback forge fixture, shared
 
@@ -199,7 +199,7 @@ class _Forge:
         self.posts.append((context, state, description))
 
     def history(self, _client, _sha) -> tuple[SimpleNamespace, ...]:
-        return tuple(SimpleNamespace(context=c, state=s, description=d) for c, s, d in self.posts)
+        return tuple(SimpleNamespace(context=c, state=s, description=d, created=None) for c, s, d in self.posts)
 
 
 class _Proc:
@@ -220,12 +220,13 @@ def _produce(monkeypatch, tmp_path: Path, code: int, kept: tuple = ()) -> tuple[
     )  # fmt: skip
     sha = 'a' * 40
     forge.post(None, sha, context='request/9', state='pending', description=ME.description())
-    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
-    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    for module in (forgeproduce, forgeclaim):  # the producer's own seams, and the claim gate a result passes
+        monkeypatch.setattr(module, 'status_post', forge.post)
+        monkeypatch.setattr(module, 'status_history', forge.history)
     monkeypatch.setattr(forgeproduce, 'open_tree', lambda _r, _s, _c: SimpleNamespace(path=tmp_path, python='py'))
     monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, _c, **_kw: 'removed')
     monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s, _c: kept or (KEPT, (('goldens.csv', DIGEST),)))
-    monkeypatch.setattr(forgerequest, 'add_label', lambda _c, n, name: comments.append(('label', n, name)))
+    monkeypatch.setattr(forgerequesthost, 'add_label', lambda _c, n, name: comments.append(('label', n, name)))
     item = Work('issue/9', sha, 'femm+windows', MINE, ME, argv=ARGV, request='request/9')
     forgeproduce.produce(
         tmp_path, item, client=lambda _r: client, spawn=lambda argv, **_k: record(argv, ended(code)) or _Proc(code),
@@ -258,7 +259,7 @@ def test_a_failed_request_is_a_failure_on_record_never_silent(monkeypatch, tmp_p
     assert forge.posts[-1][:2] == ('request/9', 'failure')
     assert [c[0] for c in comments] == ['comment'], 'a failed request stays open, its failure stated'
     crashed, _ = _produce(monkeypatch, tmp_path, -9)
-    assert crashed.posts[-1] == ('request/9', 'error', 'released: producer crashed (exit -9)')
+    assert crashed.posts[-1] == ('request/9', 'error', 'released: producer crashed (exit -9) class=environment')
 
 
 def test_a_run_that_wrote_no_record_names_the_missing_record(monkeypatch, tmp_path: Path) -> None:
@@ -294,10 +295,18 @@ def test_a_request_run_is_learned_under_its_producer_name(tmp_path: Path) -> Non
     """S1: what a request's run measured sizes ITS next run, never the test part of its need-set."""
     item = Work('issue/9', 'a' * 40, 'femm+windows', MINE, ME, argv=ARGV, request='request/9', producer='femm_goldens')
     repo, _tips = _origin(tmp_path)
-    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=4.0, cpu_s=7200.0, wall_s=3600.0), killed=False)
+    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=4.0, cpu_s=7200.0, wall_s=3600.0), ended='exit')
     url = origin_url(repo)
     assert run_of(url, 'femm_goldens', {'femm', 'windows'}) == Run(4.0, 7200.0, 3600.0)
     assert run_of(url, LOCAL, {'femm', 'windows'}) is None
+
+
+def test_planted_a_request_run_the_wall_cut_is_never_learned(tmp_path: Path) -> None:
+    """O53: only a run that ended by itself (or a memory kill) is a price; a wall-cut run teaches nothing."""
+    item = Work('issue/9', 'a' * 40, 'femm+windows', MINE, ME, argv=ARGV, request='request/9', producer='femm_goldens')
+    repo, _tips = _origin(tmp_path)
+    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=40.0, cpu_s=7200.0, wall_s=3600.0), ended='wall')
+    assert run_of(origin_url(repo), 'femm_goldens', {'femm', 'windows'}) is None
 
 
 def test_a_request_at_a_sha_without_a_lock_is_refused_by_name(server, tmp_path: Path) -> None:
@@ -335,7 +344,7 @@ def test_a_request_at_a_sha_origin_does_not_serve_is_refused_by_name(server, tmp
     report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core)
     assert report.claimed == ()
     (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
-    assert posted['body']['description'] == f'{REFUSED_AT_COMMIT} {unserved(repo, sha)}'
+    assert posted['body']['description'] == owned(Owner.CODE, f'{REFUSED_AT_COMMIT} {unserved(repo, sha)}')
     assert unserved(repo, tips['topic/a']) == ''
 
 
@@ -507,7 +516,8 @@ def test_a_host_pin_its_author_does_not_publish_is_refused_by_name(server, tmp_p
     report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core, owners={'H2': {'carol'}})
     assert report.claimed == ()
     (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
-    assert posted['body']['description'] == (
+    assert posted['body']['description'] == owned(
+        Owner.CODE,
         f'{REFUSED_AT_COMMIT} host = "H2" pins a host card bob does not publish (published by carol): '
-        'drop the pin, or ask its publisher'
+        'drop the pin, or ask its publisher',
     )

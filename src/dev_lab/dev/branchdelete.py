@@ -4,9 +4,13 @@ The command line is :mod:`dev_lab.dev.branchprune` (``delete``, ``sweep``); the 
 
 AN AGENT'S DELETION IS LOSSLESS-DELETE (user ruling 2026-10-21): never a raw push (``PUSH-REMOTE-DELETE``), only
 :data:`DOOR`, which after a fresh fetch deletes a branch only when every commit on it is on integration or on
-another live origin branch or open PR head (:func:`judge` names that container) or, by CONTENT, when no file its
-own commits wrote is identical on integration, generated files aside -- a branch of forge sync merges holds no
-work -- and otherwise refuses naming the commits and the files carrying unlanded content.
+another live origin branch or open PR head (:func:`dev_lab.dev.deletejudge.judge` names that container) or, by
+CONTENT, when no file its own commits wrote differs on integration, generated files aside -- a branch of forge sync
+merges holds no work -- and otherwise refuses naming the commits and the files carrying unlanded content. The SAME
+judgement runs at pre-push on every delete a push carries, however it was spelled (:mod:`dev_lab.dev.pushdelete`),
+and this door's own push passes it there. A refused branch is told the two doors MERGE-OR-DELETE leaves (user
+ruling D22, 2026-11-17: "no tags -- either merge or delete"): MERGE what is still wanted, or LAND the branch with a
+declared content-neutral merge (``git merge -s ours``) and re-run the delete, now lossless. No tag holds a branch.
 The delete is a lease on the judged sha through the network door, recorded as one
 :data:`DELETED_EVENT` line and a ``pruned`` alarm naming the ``Lab-Session`` and the container.
 
@@ -17,22 +21,21 @@ judge LOSSLESS-DELETE uses: a squash-landed or forge-synced branch carries other
 closed (:func:`dev_lab.dev.prlanded.close_pr`), then its branch is lease-deleted; anything else is kept and said
 with its reason. ``--local`` then reclaims the clean landed worktrees and deletes the landed local branches
 (:func:`dev_lab.dev.branchset.apply_local`, then the content judge for those checked out nowhere). It runs
-wherever integration moves: the forge's repo-wide serve pass (:func:`serve_sweep`), the GitHub job a push to
-integration runs (``ci_base.toml``), and on a workstation the ``PostToolUse`` hook
-(:func:`dev_lab.dev.branchprune.post_push`), which detaches ``sweep --local`` when the shell call pushed integration.
+wherever integration moves: the forge's repo-wide serve pass (:func:`serve_sweep`) and the GitHub job a push to
+integration runs (``ci_base.toml``); on a workstation, :mod:`dev_lab.dev.reclaimrun` reclaims the local half.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from dev_lab.dev.backgroundrun import held
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, checked_out, declared_branchset
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.famfiles import GENERATED
+from dev_lab.dev.deletejudge import ORIGIN, Verdict, judge, unlanded
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.forgealarm import PRUNED, Alarm, sound
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -40,7 +43,6 @@ from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.prlanded import close_pr
-from dev_lab.dev.reclaimrun import held
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -48,114 +50,31 @@ if TYPE_CHECKING:
 __all__ = [
     'DELETED_EVENT',
     'DOOR',
-    'ORIGIN',
-    'Verdict',
+    'MERGE_OR_LAND',
     'delete',
-    'judge',
     'landed',
     'serve_sweep',
     'sweep',
 ]
 
-#: Where the fetched origin branches live.
-ORIGIN: Final = 'refs/remotes/origin/'
-
 #: The ``event`` of the one structured line each LOSSLESS-DELETE writes.
 DELETED_EVENT: Final = 'lab_commons.forge.branch-delete'
 #: The door an agent deletes a remote branch through (PUSH-REMOTE-DELETE's remedy names it).
 DOOR: Final = 'python -m dev_lab.dev.branchprune delete <branch>...'
-#: Its refusals, each said once, here.
-LOSSY: Final = '{branch}: refused -- {count} commit(s) exist on it alone ({commits}), with unlanded content in: {files}'
-PROTECTED: Final = '{branch}: refused -- it is {why}, never deleted'
-_FIRST: Final = 5
-
-
-@dataclass(frozen=True)
-class Verdict:
-    """What LOSSLESS-DELETE judged of one branch: its tip, the container holding it, or why it is kept."""
-
-    branch: str
-    sha: str = ''
-    container: str = ''
-    lost: tuple[str, ...] = ()
-    refused: str = ''
-
-
-def judge(root: Path, policy: Policy, branch: str, *, open_heads: dict[str, int]) -> Verdict:
-    """Whether deleting origin's *branch* loses nothing; read from the fetched remote-tracking refs alone.
-
-    Lossless when every commit on it is on integration, or on another live origin branch or open PR head; else,
-    by content, when no file its own commits wrote differs from integration (:func:`_unlanded`) -- a branch
-    of sync merges whose tip tree is integration's, or differs only in a generated file, holds nothing to lose.
-    """
-    if branch in {policy.integration, policy.trunk}:
-        return Verdict(branch, refused=PROTECTED.format(branch=branch, why='the integration branch or the trunk'))
-    if branch in open_heads:
-        why = f'the head of open PR #{open_heads[branch]}'
-        return Verdict(branch, refused=PROTECTED.format(branch=branch, why=why))
-    sha = (git_out(root, 'rev-parse', '--verify', '--quiet', f'{ORIGIN}{branch}^{{commit}}') or '').strip()
-    if not sha:
-        return Verdict(branch, refused=f'{branch}: not on origin (gone already)')
-    listed = (git_out(root, 'for-each-ref', '--format=%(refname)', ORIGIN) or '').split()
-    others = [name for name in (ref.removeprefix(ORIGIN) for ref in listed) if name not in {branch, 'HEAD'}]
-    others.sort(key=lambda name: (name != policy.integration, name not in open_heads, name))
-    for name in others:
-        if git_out(root, 'merge-base', '--is-ancestor', sha, f'{ORIGIN}{name}') is not None:
-            label = f'open PR #{open_heads[name]} ({name})' if name in open_heads else name
-            return Verdict(branch, sha, container=label)
-    lost = (git_out(root, 'rev-list', sha, '--not', *(f'{ORIGIN}{name}' for name in others)) or '').split()
-    unlanded = _unlanded(root, sha, others, policy.integration, exempt=GENERATED) if lost else ()
-    if not unlanded:
-        by_content = f'{policy.integration} (by content: no content {policy.integration} lacks)'
-        return Verdict(branch, sha, container=by_content if lost else 'the union of the other origin branches')
-    shown = ', '.join(one[:12] for one in lost[:_FIRST]) + (' ...' if len(lost) > _FIRST else '')
-    files = ', '.join(unlanded)
-    refused = LOSSY.format(branch=branch, count=len(lost), commits=shown, files=files)
-    return Verdict(branch, sha, lost=tuple(lost), refused=refused)
-
-
-def _unlanded(
-    root: Path, sha: str, others: Sequence[str], integration: str, *, exempt: frozenset[str]
-) -> tuple[str, ...]:
-    """The files its own commits wrote whose tree entry at *sha* is not *integration*'s; FAILS CLOSED.
-
-    The commits on *sha* alone name the files they wrote: a plain commit every file it changes, a merge only the
-    files it resolved (``--cc``: differing from every parent), so a sync merge of integration names none. Of those,
-    the *exempt* ones are set aside: LOSSLESS-DELETE passes the family's generated files
-    (:data:`~dev_lab.dev.famfiles.GENERATED`), regenerated rather than lost; the landed sweep passes none. Any other
-    whose ``(mode, blob)`` at the tip differs from integration's -- added (even empty), changed, re-moded or deleted
-    -- is unlanded. A file integration changed after the branch landed it is refused too: a branch-side edit and
-    integration moving ahead are not told apart, because a false refusal is safe and a false delete is not. Paths
-    travel NUL-separated (``-z``), never quoted, and git failing to answer refuses every candidate.
-    """
-    tip_only = [sha, '--not', *(f'{ORIGIN}{name}' for name in others)]
-    written = git_out(root, 'log', '-z', '--format=', '--name-only', '--cc', *tip_only)
-    if written is None:
-        return ("(git could not list the branch's files)",)
-    candidates = sorted({path.strip('\n') for path in written.split('\0')} - {''} - exempt)
-    if not candidates:
-        return ()
-    entries = [_entries(root, rev, candidates) for rev in (f'{ORIGIN}{integration}', sha)]
-    if entries[0] is None or entries[1] is None:
-        return tuple(candidates)
-    return tuple(path for path in candidates if entries[0].get(path) != entries[1].get(path))
-
-
-def _entries(root: Path, rev: str, paths: Sequence[str]) -> dict[str, str] | None:
-    """``{path: 'mode blob'}`` for *paths* in *rev*'s tree (absent ones omitted); ``None`` when git could not answer."""
-    listed = git_out(root, 'ls-tree', '-z', '--full-tree', rev, '--', *paths)
-    if listed is None:
-        return None
-    found: dict[str, str] = {}
-    for record in filter(None, listed.split('\0')):
-        meta, path = record.split('\t', 1)
-        mode, _, blob = meta.split()
-        found[path] = f'{mode} {blob}'
-    return found
+#: What a LOSSY refusal adds: the two doors MERGE-OR-DELETE leaves (D22), never a tag.
+MERGE_OR_LAND: Final = (
+    'MERGE-OR-DELETE (D22, no tags): MERGE what is still wanted through a PR; or, when that content is already on '
+    'integration in another form or retired by a ruling, LAND the branch: merge origin/{branch} into a pr/ branch '
+    'with `git merge -s ours`, declare each conflicted file `<path>: <class> -- <why>` and each dropped test '
+    '`Merge-Audit: ...`, land the PR, then re-run `branchprune delete {branch}`'
+)
 
 
 def _push_delete(root: Path, branch: str, sha: str) -> str:
-    """Delete origin's *branch* if still at *sha* (a lease), through the network door; ``''``, or why not."""
+    """Delete origin's *branch* if still at *sha* (a lease), through the network door; ``''``, or why not.
+
+    The push runs the pre-push ``lossless-delete`` row, which judges the delete again (:mod:`dev_lab.dev.pushdelete`).
+    """
     report = run_network_verb(
         [_GIT, 'push', f'--force-with-lease=refs/heads/{branch}:{sha}', 'origin', '--delete', f'refs/heads/{branch}'],
         cwd=root,
@@ -175,16 +94,21 @@ def delete(
     push: Callable[[Path, str, str], str] = _push_delete,
     alarm: Callable[[Alarm], object] = sound,
 ) -> int:
-    """LOSSLESS-DELETE each of *branches* after a fresh fetch; 0 when every one was deleted, else 1."""
+    """LOSSLESS-DELETE each of *branches* after a fresh fetch; 0 when every one was deleted, else 1.
+
+    A branch refused for commits on it alone is told its two doors (:data:`MERGE_OR_LAND`); nothing deletes it.
+    """
     fetch(root)
     policy = load_policy(root)
     heads = {pr.head: pr.number for pr in pr_list(client)}
     failed = 0
     for branch in branches:
-        found = judge(root, policy, branch, open_heads=heads)
+        tip = (git_out(root, 'rev-parse', '--verify', '--quiet', f'{ORIGIN}{branch}^{{commit}}') or '').strip()
+        found = judge(root, policy, branch, tip, open_heads=heads)
         why = found.refused or push(root, branch, found.sha)
         if why:
-            say(why if found.refused else f'{branch}: the delete failed: {why}')
+            doors = f'. {MERGE_OR_LAND.format(branch=branch)}' if found.lost else ''
+            say(why + doors if found.refused else f'{branch}: the delete failed: {why}')
             failed += 1
             continue
         record = {'event': DELETED_EVENT, 'ref': branch, 'sha': found.sha, 'container': found.container}
@@ -202,10 +126,10 @@ NOT_LANDED: Final = '{branch}: kept -- {count} commit(s) not on {integration}, w
 def landed(root: Path, policy: Policy, ref: str) -> Verdict:
     """Whether *ref* (a full ref name) is contained in origin's integration or trunk: by ancestry, else by content.
 
-    The content judge is :func:`_unlanded` against integration -- every file *ref*'s own commits wrote must be
-    identical there, generated files aside -- so a squash-landed or forge-synced branch is landed under other
+    The content judge is :func:`~dev_lab.dev.deletejudge.unlanded` against integration -- every file *ref*'s own
+    commits wrote must be identical there -- so a squash-landed or forge-synced branch is landed under other
     shas, and one unlanded line keeps it. No other branch is a holder: that is LOSSLESS-DELETE's wider
-    question (:func:`judge`); the sweep asks only whether integration now includes the branch.
+    question (:func:`~dev_lab.dev.deletejudge.judge`); the sweep asks only whether integration now includes the branch.
 
     NO FILE IS EXEMPT HERE, generated ones included: "landed" closes an open PR, and a commit that only relocks
     ``uv.lock`` is work integration lacks (acme-consumer PR #439 was closed and its branch deleted so, 2026-11-02).
@@ -219,12 +143,11 @@ def landed(root: Path, policy: Policy, ref: str) -> Verdict:
     for name in holders:
         if git_out(root, 'merge-base', '--is-ancestor', sha, f'{ORIGIN}{name}') is not None:
             return Verdict(branch, sha, container=name)
-    unlanded = _unlanded(root, sha, holders, policy.integration, exempt=frozenset())
-    if not unlanded:
+    files = unlanded(root, sha, holders, policy.integration, exempt=frozenset())
+    if not files:
         return Verdict(branch, sha, container=f'{policy.integration} (by content: no content it lacks)')
     lost = (git_out(root, 'rev-list', sha, '--not', *(f'{ORIGIN}{name}' for name in holders)) or '').split()
-    files = ', '.join(unlanded)
-    refused = NOT_LANDED.format(branch=branch, count=len(lost), integration=policy.integration, files=files)
+    refused = NOT_LANDED.format(branch=branch, count=len(lost), integration=policy.integration, files=', '.join(files))
     return Verdict(branch, sha, lost=tuple(lost), refused=refused)
 
 

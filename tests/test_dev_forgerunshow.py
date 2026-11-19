@@ -19,7 +19,8 @@ import pytest
 
 from dev_lab.dev import forgerun, forgerunpost, forgerunshow, forgerunstate
 from dev_lab.dev.forgecli import NOUNS
-from dev_lab.dev.forgerecords import Attachment, sha_of
+from dev_lab.dev.forgerecordkeep import sha_of
+from dev_lab.dev.forgerecords import Attachment
 
 SHA = 'e' * 40
 OOM = {'id': 'a.py::hog', 'kind': 'out_of_memory', 'peak_mb': 4102.2, 'wall_s': 28.0, 'why': 'killed out of memory'}

@@ -6,16 +6,18 @@ Every refusal has its planted control: the same call with the one fault removed 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pytest
-from _ops_fixtures import NOW, RFC_KEY, code
+from _ops_fixtures import NOW, RFC_KEY, code, speaks
 from lab_commons.home import HOME_ENV
 
 from dev_lab.dev.consentguard import refuse_write, state_dir
+from dev_lab.ops import consentverbs, redeemverbs
+from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.client import grant, public_key, redeem, remote_register
@@ -69,8 +71,8 @@ def test_a_valid_credential_verifies_and_registers(host: Host) -> None:
 def test_tampering_with_any_field_fails_verification(host: Host, name: str) -> None:
     credential = host.issue(WAVE)
     changed = {'id': 'other', 'action': 'review.raise-cap', 'subject': 'x', 'params': {'hours': 24, 'max_merges': 3},
-               'params_hash': '0' * 64, 'scope': 'campaign', 'cap': 9, 'issued': NOW - 1, 'expires': NOW + 9e4,
-               'issuer': 'mallory'}  # fmt: skip
+               'params_hash': '0' * 64, 'scope': 'campaign', 'cap': 9, 'plan': 'f' * 64, 'issued': NOW - 1,
+               'expires': NOW + 9e4, 'issuer': 'mallory'}  # fmt: skip
     with pytest.raises(ConsentRefused):
         verify(credential | {name: changed[name]}, host.issuer.public(), now=host.clock[0])
     verify(credential, host.issuer.public(), now=host.clock[0])  # the control
@@ -232,6 +234,7 @@ def test_a_code_that_is_not_six_digits_is_refused_before_it_is_sent(host: Host, 
     request.write_text(json.dumps(WAVE), encoding='utf-8')
     sent: list[object] = []
 
+    @speaks
     def send(_table: object, line: dict[str, Any]) -> tuple[int, str]:
         sent.append(line)
         return 1, 'unreached'
@@ -261,3 +264,49 @@ def test_the_consent_state_lives_under_the_declared_machine_home(
 ) -> None:
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'acme-home'))
     assert state_dir() == tmp_path / 'acme-home' / 'state' / 'consent'
+
+
+def _judge_host(tmp: Path, client: str) -> OpsConfig:
+    """A host that is NOT the issuer (no ``[ops.consent]``): only *client* says where consent is verified."""
+    path = tmp / 'judge.toml'
+    path.write_text(f'[ops]\nhome = "{(tmp / "home").as_posix()}"\npython = "/opt/ops/bin/python"\n{client}',
+                    encoding='utf-8')  # fmt: skip
+    return load(path, environ={}, as_root=False)
+
+
+def _client(host: Host) -> str:
+    key = public_text(host.issuer.public()).strip()
+    return (
+        f'[ops.consent_client]\nendpoint = "consent@issuer"\npublic_key = "{key}"\n'
+        'known_hosts = "/srv/ops/ssh/consent_known_hosts"\n'
+    )
+
+
+def test_a_host_that_is_not_the_issuer_redeems_at_the_issuer_over_its_endpoint(
+    host: Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[Any] = []
+
+    def send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
+        sent.append((table['endpoint'], table['known_hosts']))
+        try:
+            return 0, serve.handle(host.issuer, json.dumps(request))
+        except ConsentRefused as refused:
+            return 2, str(refused)
+
+    monkeypatch.setattr(consentverbs, 'remote_register', lambda table: remote_register(table, send=send))
+    monkeypatch.setattr(redeemverbs.time, 'time', lambda: host.clock[0])
+    judge = _judge_host(host.tmp, _client(host))
+    assert judge.consent is None
+    credential = host.issue(WAVE)
+    redeem_wave = redeemverbs.redeemer(judge)('breakglass.wave')
+    assert redeem_wave(credential, None).action == 'breakglass.wave'
+    assert sent == [('consent@issuer', '/srv/ops/ssh/consent_known_hosts')]
+    with pytest.raises(ConsentRefused, match='already used'):  # registered AT the issuer: its ledger refuses a reuse
+        redeem_wave(credential, None)
+
+
+def test_a_host_with_neither_issuer_nor_client_table_names_the_key_to_set(host: Host) -> None:
+    with pytest.raises(ConsentRefused, match=r'\[ops\.consent_client\] endpoint'):
+        redeemverbs.redeemer(_judge_host(host.tmp, ''))
+    redeemverbs.redeemer(_judge_host(host.tmp, _client(host)))  # the control

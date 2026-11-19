@@ -68,14 +68,25 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PUSHED-HEAD-IS-WATCHED',
         (
-            'A pushed head is watched to its verdict and the session acts on it, the same on both forges: '
-            '`forge watch <sha>... --stream` prints one line per status change and exits on the first listed sha '
-            'to settle, 0 green, 1 red, 3 at its deadline, to run as a Monitor; `forge pr create` and a successful '
-            'push through the family door print that exact command; a `PostToolUse` hook journals the push and '
-            'adds one reminder line when its head has no live `forge watch`; and a `Stop` hook (ruling '
-            '2026-11-04) refuses to end a turn while a journalled head is pending with no live watcher, naming '
-            'the watch to arm, or red, naming where to read it (once).'
+            'A pushed head is heard to its verdict, the same on both forges, by ONE hearer: the machine forge hearer '
+            '(TASK-HEARS-ITS-FORGE-EVENTS). `forge pr create` and a successful push through the family door print one '
+            'line naming the pushed head, that hearer and the idempotent `forgefeed start` door; no Monitor is '
+            'armed and no hook journals the push (dev-lab #640). `forge watch <sha>... --stream` still reads a head '
+            'on request: one line per status change, exiting on the first listed sha to settle, 0 green, 1 red, 3 '
+            'at its deadline.'
         ),
         ('tests/test_dev_pushwatch.py',),
+    ),
+    (
+        'TASK-HEARS-ITS-FORGE-EVENTS',
+        (
+            'A task hears what it subscribes to without the user relaying it (D79, D81): an issue or PR labelled '
+            '`task:<slug>`, and every PR a session of the task opened or pushed. ONE machine hearer (`forgefeed`) '
+            'reads each declared repository`s issues and PRs updated since a saved cursor ONCE per tick -- never a '
+            'request per thread -- and routes each change to the sessions bound to its task (none bound: kept for '
+            'the next binding); open PRs` commit statuses are still read per PR. Each is said at the next prompt. '
+            'Detail: docs-src/dev/forgefeed.md.'
+        ),
+        ('tests/test_dev_sessionwatch.py',),
     ),
 )

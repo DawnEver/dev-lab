@@ -15,8 +15,11 @@ from typing import Any
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
-#: Integration on ``integrate/main``, trunk ``main``.
-INTEGRATOR = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+#: An explicit Actions producer line (dev_lab.dev.producers; absent reads the same).
+PRODUCER = 'producer = "actions"\n'
+
+#: Integration on ``integrate/main``, trunk ``main``; an Actions-produced repo.
+INTEGRATOR = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\n' + PRODUCER
 
 #: A GitHub repository whose CI workflows post the merge decision and fan parts out per OS.
 GITHUB_TEXT = (
@@ -139,9 +142,21 @@ class FakeGitea(_Fake):
 
     repo: str = '/api/v1/repos/owner/alpha'
     protections: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Whether the credential is a repository admin: Gitea answers its protections list to an admin alone (403), and
+    #: shows a read credential only a branch's protected flag, approvals count and status contexts.
+    admin: bool = True
 
     def answer(self, method: str, path: str, body: dict[str, Any] | None) -> object:
         url = urllib.parse.urlsplit(path).path
+        if not self.admin and (method != 'GET' or url == f'{self.repo}/branch_protections'):
+            raise ForgeCallFailed(Report((method, url), (Attempt(1, 403, 'admin', Diagnosis.PERMISSION_REFUSED),), 1))
+        if method == 'GET' and url.startswith(f'{self.repo}/branches/'):
+            name = urllib.parse.unquote(url.split('/branches/', 1)[1])
+            one = self.protections.get(name, {})
+            return {'name': name, 'protected': name in self.protections,
+                    'required_approvals': one.get('required_approvals', 0),
+                    'enable_status_check': one.get('enable_status_check', False),
+                    'status_check_contexts': one.get('status_check_contexts') or None}  # fmt: skip
         if url == f'{self.repo}/branch_protections':
             if method == 'GET':
                 return [self._shown(name, one) for name, one in self.protections.items()]

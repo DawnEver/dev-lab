@@ -54,14 +54,8 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from dev_lab.dev.agent_guard import (
-    ENGINE_REL,
-    INSTALLED,
-    RULES_REL,
-    SETTINGS_REL,
-    engine_beside,
-    guard_installation,
-)
+from dev_lab.dev.agent_guard import INSTALLED, engine_beside, guard_installation
+from dev_lab.dev.agent_wiring import ENGINE_REL, RULES_REL, SETTINGS_REL
 from dev_lab.dev.agenthooks import run_engine
 from dev_lab.dev.venvpath import running_interpreter
 

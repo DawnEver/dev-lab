@@ -51,6 +51,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import reviewbundle
 from dev_lab.dev.actionsartifact import ArtifactRefused, run_member, upload
@@ -68,7 +69,7 @@ from dev_lab.dev.artefacts import (
     run_id,
     store_for,
 )
-from dev_lab.dev.artefactstores import MB, parsed_run_id
+from dev_lab.dev.artefactstores import MB, manifest_of, parsed_run_id, ref_of_entry
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgereview_declared import JUDGE, Review, base_manifest, review_from
 from dev_lab.dev.forgestatus import status_history, status_post
@@ -122,7 +123,7 @@ _SCHEME: Final = 'artefact'
 
 def pointer(ref: Ref) -> str:
     """*ref* as a preparer's status target URL: ``artefact:?backend=..&ref=..``."""
-    return f'{_SCHEME}:?{urllib.parse.urlencode(ref.manifest())}'
+    return f'{_SCHEME}:?{urllib.parse.urlencode(manifest_of(ref))}'
 
 
 def _fields(url: str) -> dict[str, str]:
@@ -135,7 +136,7 @@ def _fields(url: str) -> dict[str, str]:
 def ref_of_pointer(url: str) -> Ref:
     """The :class:`Ref` a :func:`pointer` names; anything else is :class:`BundleRefused`."""
     try:
-        return Ref.of(_fields(url))
+        return ref_of_entry(_fields(url))
     except (KeyError, ValueError):
         msg = f'the {BUNDLE_CONTEXT} status names no artefact Ref: {url[:200]!r}'
         raise BundleRefused(msg) from None
@@ -148,7 +149,7 @@ def bound_ref(ref: Ref, *, repo: str, head: str, digest: str) -> None:
     (flat on the forge, ``<repo>/<yyyy>/<mm>/<dd>/`` elsewhere). Nothing else -- no other path, no other head --
     is ever fetched.
     """
-    ident = PurePosixPath(ref.key).name.removesuffix(ARCHIVE)
+    ident = PurePosixPath(ref.ref).name.removesuffix(ARCHIVE)
     try:
         parsed = parsed_run_id(ident)
         expected = ident + ARCHIVE if ref.backend == FORGE else object_key(repo, ident) + ARCHIVE
@@ -157,8 +158,8 @@ def bound_ref(ref: Ref, *, repo: str, head: str, digest: str) -> None:
         raise BundleRefused(str(bad)) from None
     named = (parsed['sha'], parsed['platform'], parsed['account'])
     wanted = (head[:12], _PLATFORM, digest.removeprefix('sha256:')[:_DIGEST_ID])
-    if named != wanted or ref.key != expected:
-        msg = f'the {BUNDLE_CONTEXT} Ref {ref.backend}:{ref.key[:200]!r} is not the bundle of {head[:12]} {digest[:19]}'
+    if named != wanted or ref.ref != expected:
+        msg = f'the {BUNDLE_CONTEXT} Ref {ref.backend}:{ref.ref[:200]!r} is not the bundle of {head[:12]} {digest[:19]}'
         raise BundleRefused(msg)
     if not 0 < ref.bytes <= MAX_ARCHIVE_BYTES:
         msg = f'the {BUNDLE_CONTEXT} archive claims {ref.bytes} bytes; the judge reads 1..{MAX_ARCHIVE_BYTES}'
@@ -201,7 +202,7 @@ def prepare(
         written.parent.mkdir(parents=True, exist_ok=True)
         written.write_bytes(data)
         return f'{said} written to {written} for the upload step to attach as artifact {ARTIFACT}'
-    with tempfile.TemporaryDirectory(prefix='review-bundle-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}review-bundle-') as scratch:
         tree = Path(scratch) / 'tree'
         tree.mkdir()
         (tree / BUNDLE_FILE).write_bytes(data)
@@ -211,7 +212,7 @@ def prepare(
         ref = store.put(ident, archive)
     target = pointer(ref)
     status_post(client, pull.head_sha, context=BUNDLE_CONTEXT, state='success', description=digest, target_url=target)
-    return f'{said} stored as {ref.backend}:{ref.key}'
+    return f'{said} stored as {ref.backend}:{ref.ref}'
 
 
 def _when(stamp: object) -> datetime:
@@ -321,5 +322,5 @@ def bundle_at(client: Client, pull: PullRequest, found: CommitStatus, scratch: P
     """The bundle the trusted pointer *found* names, read and loaded; :class:`BundleRefused` if it is bad."""
     ref = ref_of_pointer(found.url)
     bound_ref(ref, repo=client.forge.repo, head=pull.head_sha, digest=found.description)
-    archive = resolve(ref.manifest(), scratch / 'fetched', client=client, repo=client.forge.repo)
+    archive = resolve(manifest_of(ref), scratch / 'fetched', client=client, repo=client.forge.repo)
     return reviewbundle.load(_member(archive), found.description)

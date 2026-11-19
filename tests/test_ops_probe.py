@@ -82,9 +82,9 @@ def test_a_clean_forge_pair_alerts_nothing_and_writes_nothing(host: Host) -> Non
 
 
 def test_drift_alerts_once_while_it_stands_again_when_it_changes_and_clears(host: Host) -> None:
-    host.tea.protections['main']['block_admin_merge_override'] = False
+    host.tea.protections['main']['block_admin_merge_override'] = True
     assert host.tick() == ['alerted gitea.example/owner/alpha|protection']
-    assert 'block_admin_merge_override: live=False declared=True' in host.alerts[0][1]
+    assert 'block_admin_merge_override: live=True declared=False' in host.alerts[0][1]
     assert host.tick() == []  # still standing: no second alert
     host.tea.protections['main']['enable_force_push'] = True
     assert host.tick() == ['alerted gitea.example/owner/alpha|protection']  # a different drift is new

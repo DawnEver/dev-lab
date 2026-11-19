@@ -102,7 +102,7 @@ from lab_commons.hpc.tree import NotSubmitted
 
 from dev_lab.dev import forgerunpost, forgerunshow, forgeship
 from dev_lab.dev.artefacts import MissingOutput, OutputBudgetRefused, run_id
-from dev_lab.dev.artefactstores import OutputIntegrityRefused
+from dev_lab.dev.artefactstores import OutputIntegrityRefused, manifest_of
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgecarry import publish
 from dev_lab.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
@@ -136,6 +136,7 @@ from dev_lab.dev.forgesupersede import (
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
+from dev_lab.dev.requeue import newest_head
 from dev_lab.supervise.notice import Context
 
 __all__ = ['advance', 'start']
@@ -174,7 +175,7 @@ def advance(
 ) -> Run | None:
     """Take *run* as far as it goes without waiting; the run as left, or ``None`` once released or stood down."""
     tag = run_tag(run.platform, run.sha)
-    held, run = _hold(run, client=client, me=me, lease=lease, say=say, alarm=alarm, tag=tag)
+    held, run = _hold(run, root=root, client=client, me=me, lease=lease, say=say, alarm=alarm, tag=tag)
     if held != _ADVANCE:
         return _not_advanced(held, run, cluster=cluster, say=say, tag=tag)
     try:  # a build that submitted nothing, like an inconclusive record, ran no test: released, never red
@@ -296,8 +297,8 @@ def _settle(
     again), else settled as superseded -- the newer tip is the candidate now.
     """
     if ran:
-        reason = f'{release_reason(ProducerExit.INCONCLUSIVE, outage=False)}: ended without a record'
-    elif (tip := tip_of(root, run.ref)) == run.sha:
+        reason = release_reason(ProducerExit.INCONCLUSIVE, outage=None, detail=': ended without a record')
+    elif newest_head(run.sha, tip := tip_of(root, run.ref)):
         reason = f'{RETRYABLE} -- never submitted; claimable again'
     else:
         reason = superseded_reason(tip or REF_GONE, f'never submitted, and {run.ref} moved on')
@@ -359,15 +360,16 @@ def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callab
         root, client, cluster.tree(run), run.outputs, ident=run.artefact, workdir=Path(run.output)
     )
     ref = stored.ref
-    shipped = {**record, 'artefacts': [ref.manifest()], 'artefact_indexes': stored.index()}
+    shipped = {**record, 'artefacts': [manifest_of(ref)], 'artefact_indexes': stored.index()}
     run = forgerunpost.step(run, record=str(write_record(shipped, Path(run.record).parent)))
-    say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.key} ({ref.bytes} bytes)')
+    say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.ref} ({ref.bytes} bytes)')
     return run
 
 
 def _hold(
     run: Run,
     *,
+    root: Path,
     client: Client,
     me: Claim,
     lease: timedelta,
@@ -378,12 +380,14 @@ def _hold(
     """Whether this host advances *run* (renewed), waits (leaves it), or it is gone (released or stood down).
 
     A live claim of its own is renewed only once a third of the lease has passed, so a five-minute cron
-    does not post a status every five minutes.
+    does not post a status every five minutes. A release on it is requeued only while its sha is still its ref's
+    newest head (:func:`~dev_lab.dev.requeue.newest_head`); a superseded run stays settled.
     """
     now = forge_now(client)
     owner = run.claim
     history = status_history(client, run.sha)
-    state, holder = assess(history, part_context(run.platform), me=owner, now=now)
+    newest = newest_head(run.sha, tip_of(root, run.ref))
+    state, holder = assess(history, part_context(run.platform), me=owner, now=now, newest=newest)
     if state == DONE:
         return _done(run, history, say=say, tag=tag), run
     foreign_host = not owner.same_owner(me) and owner.hpc == me.hpc

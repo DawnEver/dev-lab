@@ -5,9 +5,10 @@ from __future__ import annotations
 import dataclasses
 import http.client
 import json
+import re
 import socket
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from http.server import ThreadingHTTPServer
@@ -19,10 +20,11 @@ from lab_commons.compute.model import Candidate
 from lab_commons.hpc.shell import FULL
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import forgequeue
+from dev_lab.dev import forgequeue, forgeschedule
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import Claim
 from dev_lab.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
+from dev_lab.dev.forgerequest import UndeclaredRequest
 from dev_lab.dev.platformparts import Part
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
@@ -125,7 +127,8 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
     (repo / 'pyproject.toml').write_text(
         '[tool.lab_commons.tests]\nproduce = ["x", "{part}"]\n'
-        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n",  # every repo declares it (D83)
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
+        "[tool.dev_lab.protection]\nproducer = 'hpc'\n",
         'utf-8',
     )
     tips = {}
@@ -365,3 +368,77 @@ def test_a_slow_fetch_spends_the_one_budget_the_reads_share(server, tmp_path: Pa
     assert code == 1
     assert took < 5, f'the queue took {took:.1f} s against a 0.5 s budget'
     assert 'spent its 0.5 s read budget' in capsys.readouterr().err
+
+
+def test_a_spent_budget_names_the_phase_that_spent_it(server, tmp_path: Path, monkeypatch, capsys) -> None:
+    """A "the forge is slow" answers itself: the budget message names the dominant phase, and a line totals them.
+
+    PLANTED CONTROL: the same slow step as compute (not a fetch) is named compute -- the label follows the time.
+    """
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, _tips = _origin(tmp_path)
+    code = forgequeue.main(
+        [], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server), budget_s=0.5,
+        fetch=lambda _root: time.sleep(0.6),
+    )  # fmt: skip
+    said = capsys.readouterr().err
+    assert code == 1
+    assert 'most of it went to git fetch' in said, said
+    assert '[queue] time ' in said, said
+    monkeypatch.setattr(forgequeue, 'load_schedule', _slow(forgequeue.load_schedule))
+    code = forgequeue.main(
+        [], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server), budget_s=0.5,
+        fetch=lambda _root: None,
+    )  # fmt: skip
+    assert code == 1
+    assert 'most of it went to compute' in capsys.readouterr().err
+
+
+def _slow[R](call: Callable[..., R]) -> Callable[..., R]:
+    def slow(*args: object, **kwargs: object) -> R:
+        time.sleep(0.6)
+        return call(*args, **kwargs)
+
+    return slow
+
+
+def test_the_queue_says_where_its_time_went(server, tmp_path: Path, monkeypatch, capsys) -> None:
+    """A read that succeeds still ends with one line of its phases (PLANTED: the JSON on stdout stays JSON)."""
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, tips = _origin(tmp_path)
+    _forge_of(tips, [])
+    code = forgequeue.main(
+        ['--json'], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server), fetch=lambda _r: None
+    )
+    out = capsys.readouterr()
+    assert code == 0
+    json.loads(out.out)
+    assert re.search(r'\[queue\] time [\d.]+ s -- .*forge HTTP [\d.]+ s', out.err), out.err
+
+
+def test_a_request_is_declared_once_per_queue_read(server, tmp_path: Path, monkeypatch) -> None:
+    """A request issue's declaration is read ONCE per queue read, though the listing and the refusal both need it.
+
+    Each declaration reads git (the sha's pyproject and selected blobs) and the learned table; read twice it cost
+    ``forge queue`` ~21 s of a 91 s read (2026-11-18). PLANTED CONTROL: the refusal the one read raised still
+    blocks the request's row.
+    """
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, tips = _origin(tmp_path)
+    _forge_of(tips, [])
+    body = f'producer = "tests"\nsha = "{tips["feat/a"]}"\npaths = ["tests/test_x.py"]\n'
+    issue = {**_issue(9, 'request'), 'body': body, 'created_at': NOW.isoformat(), 'labels': []}
+    monkeypatch.setattr(forgeschedule, 'labelled_issues', lambda _client, _label: (issue,))
+    asked: list[tuple[str, str, tuple[str, ...]]] = []
+
+    def declared(_root: Path, sha: str, producer: str, paths=()) -> object:
+        asked.append((sha, producer, tuple(paths)))
+        refusal = 'planted: no such producer'
+        raise UndeclaredRequest(refusal)
+
+    monkeypatch.setattr(forgeschedule, 'declared_request', declared)
+    monkeypatch.setattr(forgequeue, 'declared_request', declared)
+    seen = forgequeue.view(repo, client(FORGE, Loopback(server)), fetch=lambda _root: None)
+    assert asked == [(tips['feat/a'], 'tests', ('tests/test_x.py',))]
+    blocked = next(row['blocked'] for row in seen['queue'] if row['candidate'].startswith('issue/9'))
+    assert blocked == 'planted: no such producer'

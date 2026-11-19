@@ -87,17 +87,10 @@ What every host still reads, kept small:
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
   `--lock` is `<forge home>/serve.lock`. The FORGE HOME (`dev_lab.dev.servelock.forge_home`, the one place it is
   named) is `%LOCALAPPDATA%/lab-forge` on Windows, `${XDG_DATA_HOME:-~/.local/share}/lab-forge` elsewhere.
-- **A Windows workstation serves from ONE Scheduled Task**, `lab-forge-serve` (every 5 min, IgnoreNew, as
-  you, only while logged on, hidden), written by [the workstation deploy](#deploy-a-windows-workstation). Its
-  action is derived from the forge home alone -- `<forge home>/repos/dev-lab/.venv/Scripts/pythonw.exe -m
-  dev_lab.dev.workstation serve` -- and `serve` refuses (exit 2) to run from any other interpreter, so a dev
-  checkout's venv is never the kit (user ruling 2026-10-26). NO console window opens:
-  each child starts with `CREATE_NO_WINDOW` and every descendant inherits that windowless console. Output
-  goes to `%LOCALAPPDATA%/lab-forge/serve.log` (rotated to `serve.log.1` at 4 MiB). Under the one serve
-  lock it runs `forge serve` in each `[serve] repos` checkout in turn. **To stop it**, disable the Task --
-  `schtasks /Change /TN lab-forge-serve /DISABLE` -- then stop a running serve with
-  `python -m dev_lab.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
-  `error: stopped`.
+- **A workstation never serves** (user ruling 2026-11-16): only GitHub Actions (an `actions` repo) and the HPC
+  accounts (an `hpc` repo, `dev_lab.dev.producers`) produce. `python -m dev_lab.dev.workstation serve` is
+  refused by name with that ruling, and [the workstation deploy](#deploy-a-windows-workstation) deletes the
+  retired `lab-forge-serve` Task where an older deploy registered it.
 - **The producer argv is declared ONCE**, never typed: `[tool.lab_commons.tests] produce`, the argv after the
   tree's interpreter, carrying `{part}` (`["-m", "dev_lab.dev.verify", "--part", "{part}"]`), read AT THE
   CLAIMED SHA by `platformparts.producer_argv` with the claimed part filled in. It runs exactly that part's
@@ -153,11 +146,11 @@ What every host still reads, kept small:
   packages, the Rust toolchain, the uv pin) wait for `[tool.dev_lab.relock] third_party_every` (default `1 day`),
   and an in-house relock before then moves only the sibling names. It merges like any other, and its parts run only
   the tests whose footprint imports a moved distribution (`dev_lab.dev.lockreach`); a lane takes it with `forge sync`. Every open PR head into integration
-  carries a `lock/fresh` status (`dev_lab.dev.forgeheadgate`, once per head sha). A PR never chases the lock
-  (user ruling 2026-10-28): a move its merge-base with integration lags too -- a sibling or dist published after it
-  branched -- is the relock pull request's to carry, so only the head's OWN moves (a lock older than its base's, a
-  `pyproject.toml` change not relocked) are refused. `failure` reads
-  ``stale uv.lock: run `<venv python> -m dev_lab.dev.dep --lock-upgrade [ROOT]`, then commit uv.lock (<moves>)``. By hand, one
+  carries ONE lock status, `lock/lag` (`dev_lab.dev.forgeheadgate`; issue #575): `failure` when its `uv.lock` does
+  not render from its own `pyproject.toml` (`dev_lab.dev.lockcheck.unrendered`, `uv lock --check`, once per head
+  sha), or pins a floated sibling past the lag window (`dev_lab.dev.locklag`). It is an alarm, never a gate. A PR
+  never chases the lock (user ruling 2026-10-28): a lock behind its siblings' heads but within the window is the
+  relock pull request's to carry. By hand, one
   upgrades through the door `<venv python> -m dev_lab.dev.dep --lock-upgrade
   [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
   fixes, tests and commits. A
@@ -171,12 +164,10 @@ What every host still reads, kept small:
   verb -- and only when that cannot land is the lock refused naming why, never written by the old uv.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
-  workstation's `workstation serve` fast-forwards dev-lab and then each `[serve]` repo to its upstream and
-  syncs its venv when `pyproject.toml` or `uv.lock` changed (`dev_lab.dev.workstation.refresh`); a cluster
-  account's cron line runs `python -m dev_lab.dev.hpcaccount tick <repo>` from the dev-lab checkout, which checks
-  out both at their deployed refs and rebuilds the venv where its inputs or the kit's HEAD moved
+  cluster account's cron line runs `python -m dev_lab.dev.hpcaccount tick <repo>` from the dev-lab checkout, which
+  checks out both at their deployed refs and rebuilds the venv where its inputs or the kit's HEAD moved
   (`dev_lab.dev.hpcaccount.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
-  -- is released for that tick with its reason in the serve log, and the other repos are still served. The
+  -- is released for that tick with its reason, and the other repos are still served. The
   ref is the integration branch, not the trunk: a kit following the trunk would refuse the integration commit
   that adds a table, and that commit could then never reach the trunk.
 - **The producer exit contract** (`dev_lab.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
@@ -190,14 +181,14 @@ What every host still reads, kept small:
 ### Deploy a Windows workstation
 
 The counterpart of the cluster's `python -m dev_lab.dev.hpcaccount deploy`, and the complete runbook for a JMAG
-workstation: run once per box, in PowerShell, as the user who serves. A workstation that serves parts but never
-heavy compute deploys the `light` role instead: [adding a forge workstation](adding-a-workstation.md). A JMAG workstation does a
-person's heavy JMAG work FIRST: the person declares it (step 8), and the forge takes only what lies outside it.
+workstation: run once per box, in PowerShell, as the user who works there. It declares the box and keeps its
+checkouts current; it never serves a merge's parts (user ruling 2026-11-16). A workstation that never runs
+heavy compute deploys the `light` role instead: [adding a forge workstation](adding-a-workstation.md). A person's
+heavy JMAG work is declared on the box's ledger (step 8), and a local run takes only what lies outside it.
 
 **1. Prerequisites.**
 
-- Logged on as the serving user: the `lab-forge-serve` Task runs as that user while they are logged on, and
-  JMAG's COM classes and licence are theirs.
+- Logged on as the user who works there: JMAG's COM classes and licence are theirs.
 - `git` (`winget install --id Git.Git -e`) and `uv`
   (`powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`) on `PATH`; with
   `workstation` declared also `node` and `codex`; with `jmag`, JMAG-Designer installed (its installer registers
@@ -235,16 +226,16 @@ Read every action and the machine-file diff, then run it again without `--dry-ru
 nothing. In order, it:
 
 1. probes the prerequisites above;
-2. clones each repo, and always the dev-lab kit the Task runs from (served only when `--repos` names it), into `<forge home>/repos/<repo>` at `--ref` (default `integrate/main`, the branch a serving kit follows), or
+2. clones each repo, and always the dev-lab kit, into `<forge home>/repos/<repo>` at `--ref` (default
+   `integrate/main`), or
    fast-forwards an existing clean checkout. A dirty checkout is refused;
 3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
 4. merges into `~/.config/lab-commons/config.toml`: `[capabilities.<name>]` (`jmag:4` is `seats = 4`; a `jmag`
-   row also gets `in_use = { process = [...] }`, step 7) and `[serve] repos` (a retired `[serve] root`, which
-   `serve` refuses by name, is removed). It writes no `[reserve]`:
+   row also gets `in_use = { process = [...] }`, step 7); a present `[serve]` is removed, never written (a
+   workstation never serves a merge's parts, user ruling 2026-11-16). It writes no `[reserve]`:
    nothing is reserved for the person at the box (step 8). Every other table, key and comment is kept;
-5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
-   different -- so a re-run replaces an older `cmd /c` Task.
+5. deletes the retired `lab-forge-serve` Task where an older deploy registered it; nothing on the box ticks.
 
 A workstation declares no `[deploy]`: nothing moves its checkouts between deploys except the user.
 
@@ -265,17 +256,14 @@ registry = "<synced folder>/hosts.json"
 [capabilities.jmag]
 seats = 4
 in_use = { process = ["jam.exe", "jam_c.exe", "jam_intel_mpi_b.exe", "jam_intel_mpi_c.exe"] }
-
-[serve]
-repos = ["dev-lab", "<repo>"]
 ```
 
 **7. A seat is measured like a core** ([box resources](box-resources.md), rule 2). `in_use` names the JMAG
 solver images (`workstationfile.JMAG_SOLVER_IMAGES`, the `jam` kernel family; not `execsolver.exe`, which launches
 `jam.exe`, nor `scheduler.exe` or `designer.exe`), so a solve a person starts from Designer or the Scheduler is
 a seat taken though no ledger claim holds it. Free JMAG seats are
-`seats - max(held by ledger claims, jam processes running)`: with the file above the forge runs up to four JMAG
-parts, one while the person runs three solves, none while they run four or more. An unreadable process table, or
+`seats - max(held by ledger claims, jam processes running)`: with the file above a local run takes up to four
+JMAG seats, one while the person runs three solves, none while they run four or more. An unreadable process table, or
 a `supply` probe that cannot say, lends no seat and the refusal names why. `[reserve] cpu_margin` (default 1
 core) and `mem_margin` (default 0.10 of memory) are OS HEADROOM, kept free above what the OS shows in use so the
 machine stays responsive; they are not a reservation for people and deploy leaves them at their defaults.
@@ -291,36 +279,22 @@ python -m lab_commons.box release <id>    # done early: give it back now
 ```
 
 No process runs under the claim. It is owned by the person (`<user>: <why>`), lives until its `--wall`
-(`<n>[s|m|h|d]`, at most 7 days) or `release`, and is reaped at its deadline like any dead holder. The forge
-then uses only what lies OUTSIDE all declared claims: a forge part that would not fit beside the claim waits
+(`<n>[s|m|h|d]`, at most 7 days) or `release`, and is reaped at its deadline like any dead holder. Every other
+run then uses only what lies OUTSIDE all declared claims: one that would not fit beside the claim waits
 `not admitted`, and the refusal names the person's claim and its deadline. Use nobody declared still counts as
 a safety net -- running solver processes are seats taken, measured cores and memory are busy -- via
 `max(held, observed)`, so forgetting to declare never hurts the person; declaring is the primary path because it
 also covers the work the person is ABOUT to start.
 
-**9. Verify.** `python -m dev_lab.dev.forge queue` from any machine: the host's card shows its OS, its `supply`
-(the `jmag` count is the measured free seats above), its last tick, what it holds and each ledger claim running
-on it. A card older than three of its ticks is flagged stale: the Task is not running (logged off, disabled, or
-failing -- read the log).
+**9. Verify.** Re-run the deploy: a second run changes nothing, and its `[task]` step reads `none installed`.
+Where a sha stands is read from the forge, from any machine: `python -m dev_lab.dev.forge queue`.
 
-**10. Stop, disable, logs.** `schtasks /Change /TN lab-forge-serve /DISABLE` (`/ENABLE` resumes), then stop a
-serve still running with `python -m dev_lab.dev.stoprun --pid <pid>`, which releases its claim as `stopped`.
-The serve and every child it starts write `%LOCALAPPDATA%\lab-forge\serve.log`, rotated to `serve.log.1` at 4 MiB.
-
-**Which workstation serves is declared in ONE place**: the synced workstation registry `hosts.json`
+**Which workstation may deploy is declared in ONE place**: the synced workstation registry `hosts.json`
 (`{"hosts": [{"name", "computer", "roles": [...], ...}]}`), named per machine by
-`[workstation] registry = "<path>"` in `~/.config/lab-commons/config.toml`. A host serves only when its entry
-carries role `"forge"`. Its entry is the one whose `computer` equals `COMPUTERNAME` (case-insensitive), else the
-one whose `name` does. Each `workstation serve` tick checks the role first:
-
-- no `[workstation] registry` declared: refused by name, exit 2 -- a workstation never serves by omission;
-- an entry without `"forge"`, or no entry: it claims nothing and refreshes nothing, logs
-  `[serve] not a forge host (...)` naming the roles, releases any run a dead serve left journaled (the forge
-  serve's own re-attach path, `forgeintent.reattach`), and exits 0;
-- `"forge"` present: it serves as above.
-
-`workstation deploy` refuses on a host without the role, naming the registry and the role to add. The cluster
-serve (`lab_commons.hpc`) does not read the registry.
+`[workstation] registry = "<path>"` in `~/.config/lab-commons/config.toml`. Its entry is the one whose `computer`
+equals `COMPUTERNAME` (case-insensitive), else the one whose `name` does. `workstation deploy` refuses with no
+registry declared, and on a host whose entry lacks role `"forge"`, naming the registry and the role to add.
+The cluster serve (`lab_commons.hpc`) does not read the registry.
 
 ## Claims
 
@@ -514,8 +488,8 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 
 `python -m dev_lab.dev.forge watch <sha>... [--deadline-minutes M] [--stream]` only reads: it prints each
 `tests/<part>` change until the first listed sha has every part final (exit 0 green, 1 red) or the deadline
-passes (exit 3). A session that pushed arms it as a Monitor: the `Stop` hook (`dev_lab.dev.pushstop`) refuses
-to end a turn while a head the session pushed is pending with no live watch, or red.
+passes (exit 3). It is a read on request: a session hears its pushed PRs through the machine PR watcher
+(`dev_lab.dev.forgefeed`, [how a task hears the forge](forgefeed.md)), which the push doors name, and no `Stop` hook waits on a pushed head.
 
 `python -m dev_lab.dev.forge cancel-stuck <sha> [--factor N] [--bound-minutes M]`, run in the repo's checkout,
 scancels only the full sha's `run-<sha12>-<part>` tasks that are busy (90 % CPU or more) with no new test line in
@@ -624,7 +598,7 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   <bundle source> | python -m dev_lab.dev.forge secrets store --task pr-review
   ```
 
-- Set a task's bundle on every `[serve] repos` checkout (`<forge home>/repos/<repo>`; one missing is skipped, named) from stdin, never argv or a file:
+- Set a task's bundle on every serve checkout (`<forge home>/repos/<repo>`; one missing is skipped, named) from stdin, never argv or a file:
 
   ```
   python -m dev_lab.dev.forge secrets sync --task pr-review --dry-run      # the targets only
@@ -644,6 +618,11 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
 THE ONE EXPLANATION; every refusal remedy, alarm and rule that mentions a forge 401 points here.
 
 - The 2026-10-21 observation was a refused first attempt followed by success and an `OAUTH_USER` username.
+- Its cause, measured 2026-11-12: Git Credential Manager's generic provider stores a Gitea OAuth ACCESS token
+  (username `OAUTH_USER`, plus a `refresh_token.<host>` entry). Gitea expires it after `[oauth2]
+  ACCESS_TOKEN_EXPIRATION_TIME` (default 1 h); git presents it, gets 401, rejects it, and GCM mints a new one
+  from the refresh token for the retry. The cure is one non-expiring personal access token per Gitea host
+  (`auth login`); `auth status` exits 1 while a Gitea host holds an `OAUTH_USER` credential.
   Its former explanation as proven expiry/refresh was an inference, not evidence of the credential store's
   capabilities. A 401 or that username cannot authorize erasing a secret.
 - The API client never issues `git credential reject`. Generic, unknown, opaque or ambiguous helper/provider
@@ -685,13 +664,21 @@ replaced atomically, self-checked, and restored on a failed check. Grant the lin
 
 ## Making the forge's machine accounts
 
-A machine account (a read-only reader for every server that pulls code) and each of its per-host tokens are made only
-through `python -m dev_lab.ops --config <file> forge account ensure --login <L> --read <owner/repo>...` and
-`... forge token mint --login <L> --name <N> --scope read:repository [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`),
-which the `ops` account runs through its fixed sudo line. Each use redeems a single-use `ops.forge.account` /
-`ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it). `ensure` makes a
-restricted login if absent and grants exactly Read, reporting drift; `mint` prints the token once to stdout, refuses
-a non-`read:*` scope for a login in `[ops.forge] read_only` and an existing name without `--rotate`. Every use is
+A machine account is declared once, `[ops.forge.accounts] <login> = {role = "read"|"write"|"review"|"breakglass", repos = [...]}`,
+one role per login (a reader for every server that pulls code, a writer for the hosts that post verdicts, a reviewer
+for the judge, a break-glass merger for the consent host). It and each of its per-host tokens are made only through
+`python -m dev_lab.ops --config <file> forge account ensure --login <L>` and
+`... forge token mint --login <L> --name <N> --scope <S> [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`), which the
+`ops` account runs through its fixed sudo line. `ensure` reads the role and repositories from the declaration, so an
+undeclared login is refused before a consent is spent. Each use redeems a single-use `ops.forge.account` /
+`ops.forge.token` consent credential whose subject is the request's digest (`--subject` prints it;
+:mod:`dev_lab.ops.forgerequests`); an account's digest names (login, role, repos), so a role widened after consent
+is refused. `ensure` makes a restricted login if absent and grants exactly the role's permission
+(`ROLE_GRANTS`: read -> read; write and review -> write, because Gitea posts a commit status only for a code writer,
+so a reviewer's limit is its token's scopes; breakglass -> admin, a REPOSITORY admin on exactly its declared
+repos, because only an admin merges past branch protection), reporting drift; `mint` prints the token once to stdout, refuses a
+non-`read:*` scope for a `read` login, any scope outside `read:repository,write:repository,read:user` for a
+`breakglass` login, and an existing name without `--rotate`. Every use is
 audited to `[ops.forge] log` without the token. A routine round of one login's per-host tokens costs one code, not
 one per host: `... forge token mint-batch --login <L> --item <NAME>:<SCOPE>... [--rotate <NAME>]...` redeems ONE
 single-use `ops.forge.tokens` credential whose subject is the digest of the login and every item in order (so a
