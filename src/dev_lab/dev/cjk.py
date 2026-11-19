@@ -2,11 +2,10 @@
 
 THE USER DIRECTIVE, 2026-09-16, translated rather than quoted: across every repo in this family,
 no content that git tracks may contain CJK (Chinese/Japanese/Korean) characters -- only English
-letters, digits and symbols. Exempt: the repo-root ``attic/`` alone by path, and the DESIGNATED
-Chinese documents, each a ``<stem>.zh.md`` translation beside its English ``<stem>.md``
-(:data:`TRANSLATION_SUFFIXES`). Memory, task journals and ``archived/`` are NOT exempt (user rulings
-2026-11-12, translated: the whole repository, except certain designated Chinese
-documents, must be English only). It is not kept
+letters, digits and symbols. Exempt: ``attic/`` and ``archived/`` (the last at the repo root only,
+since 2026-09-23), and a ``<stem>.zh.md`` / ``.zh.toml`` / ``.zh.json`` translation beside its English
+``<stem>.md`` / ``.toml`` / ``.json`` (:data:`TRANSLATION_SUFFIXES`). ``.claude/memory/`` and
+``.claude/tasks/`` are NOT exempt (D26, user, 2026-11-17): they are English only. It is not kept
 here in the source language on purpose: this module is itself tracked, and a literal quotation would
 be the one violation its own guard could never let through.
 
@@ -31,8 +30,8 @@ THE RANGES, and each is a real CJK block rather than a guess:
 * ``U+D7B0-D7FF`` -- Hangul Jamo Extended-B.
 * ``U+F900-FAFF`` -- CJK Compatibility Ideographs.
 * ``U+FF00-FFEF`` -- Halfwidth and Fullwidth Forms, which is where a full-width Latin letter or a
-  full-width punctuation mark used inside CJK prose lives, and which plain "is this Han" tests miss. Half-width katakana
-  (``U+FF66-FF9F``) and half-width hangul (``U+FFA0-FFDC``) already live inside it.
+  full-width punctuation mark used inside CJK prose lives, and which plain "is this Han" tests miss. Half-width
+  katakana (``U+FF66-FF9F``) and half-width hangul (``U+FFA0-FFDC``) already live inside it.
 
 THIS CANNOT BE A FLAT ASSERTION ON DAY ONE, and the ratchet shape is not a stylistic choice: measured
 population at authoring time was 287 files / 22162 characters in consumer-a alone, and a single
@@ -57,8 +56,8 @@ FLOORS BEFORE ANY VERDICT. :func:`assert_floor` refuses a scan that read fewer f
 declares as a floor, for the reason every scan-style guard in this family gives: a clean tree and an
 unread one produce the same empty result, and only a floor tells them apart.
 
-THERE IS NO CONTENT-BASED EXEMPTION, ONLY THE ROOT ``attic/`` AND THE TRANSLATION NAME ABOVE, and this was a real
-design question rather than an oversight: ``consumer-b`` has a test that PASSES a CJK literal on purpose, to
+THERE IS NO CONTENT-BASED EXEMPTION, ONLY THE PATH PREFIXES AND THE TRANSLATION NAME ABOVE, and this was a real design
+question rather than an oversight: ``consumer-b`` has a test that PASSES a CJK literal on purpose, to
 assert a naming guard rejects non-ASCII input (``naming.assert_ascii(...)``, called with the CJK
 character itself). Translating that literal would test a different string and stop testing the
 rejection; waiving the file would open a permanent CJK island. Asked directly, the user's answer was
@@ -90,7 +89,6 @@ from typing import Final, NamedTuple
 __all__ = [
     'CJK_RANGES',
     'EXEMPT_PREFIXES',
-    'SOURCE_SUFFIX',
     'TRANSLATION_SUFFIXES',
     'NonAsciiScan',
     'Occurrence',
@@ -111,7 +109,7 @@ __all__ = [
     'translation_source',
 ]
 
-#: The CJK blocks the directive refuses -- Han, kana and hangul (kana and hangul ruled in 2026-11-13).
+#: The CJK blocks the directive refuses -- Han, kana and hangul (kana and hangul ruled 2026-11-13).
 #: See the module docstring for what each one is and why
 #: the set stops here rather than widening to "any non-ASCII" -- that is a measured, not a guessed,
 #: boundary.
@@ -137,32 +135,29 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 #: SEGMENT ANYWHERE in the path; a prefix spelled with a leading ``/`` is ANCHORED AT THE REPO ROOT
 #: and matches nowhere else. See :func:`exempted` for the match itself.
 #:
-#: THE ONE PATH EXEMPTION IS THE REPO-ROOT ``attic/`` (user rulings 2026-11-12, translated: "the whole
-#: repository, except certain designated Chinese documents, must be English only"; ``attic/`` stays exempt,
-#: only at the repo root). ``attic/`` is code archived from migrated repos and kept read-only: rewriting it
-#: falsifies the copy it exists to preserve. It is ANCHORED: a nested ``x/attic/`` is ordinary source,
-#: and a segment match would let any directory of that name open a CJK island nobody designated.
+#: ``attic/`` MATCHES AT ANY DEPTH, and this is measured rather than a stylistic choice: consumer-a's
+#: ``attic/`` holds one subtree per migrated repo, and its trees are SCOPED per module, where a
+#: root-prefix-only match once reported 47,521 phantom CJK characters under ``src/consumer_a/**``.
 #:
-#: WHAT IS NO LONGER EXEMPT, AND WHY. ``.claude/memory/`` (since 2026-09-16) and ``.claude/tasks/``
-#: (briefly, 2026-11-12) were exempt on the theory that a verbatim user ruling cannot be translated; the
-#: user ruled that theory an upstream mistake. A ruling is recorded as a faithful English translation marked as
-#: translated, and an existing memory entry is translated in place through the one sanctioned shape
-#: :func:`dev_lab.dev.memoryentry.only_translated` admits. The repo-root ``archived/`` (2026-09-23) was
-#: dropped the same day: a family repo keeps archived material under ``attic/``, so a second archive
-#: prefix was a second door for the same thing. The only route for Chinese prose is a designated
-#: translation document (:data:`TRANSLATION_SUFFIXES`).
-EXEMPT_PREFIXES: Final[tuple[str, ...]] = ('/attic/',)
+#: ``.claude/memory/`` AND ``.claude/tasks/`` ARE NOT HERE (D26, user, 2026-11-17). They were exempt
+#: until then; now they are English only, and a user's words quoted in them are translated and marked
+#: ``(user, translated)``. A repo migrates its remaining files through its declared named set
+#: (``[tool.dev_lab.cjk] declared``, read by :mod:`dev_lab.dev.famtests.alwayson`), which may only shrink.
+#:
+#: ``archived/`` IS ROOT-ONLY (user directive, 2026-09-23). It names ONE repo-root directory in every
+#: family repo that has it, and a segment match made ``x/archived/f.py`` exempt too -- a directory of
+#: that name created anywhere in a source tree would have opened a CJK island nobody declared.
+EXEMPT_PREFIXES: Final[tuple[str, ...]] = ('attic/', '/archived/')
 
-#: THE TRANSLATION MECHANISM (``TRANSLATION-HAS-ITS-SOURCE``, user directive 2026-09-23). A tracked
-#: document named ``<stem>.zh.md`` is a TRANSLATION, and it is exempt from this guard ONLY while its
-#: English SOURCE ``<stem>.md`` sits beside it in the same corpus: the English page is the source of
-#: truth and the translation is a rendering of it. An ORPHANED translation is not exempt -- it is
-#: read like any other file, and :func:`orphaned_translations` refuses it by name, because a
-#: translation with no source is simply non-English documentation under a different suffix.
-TRANSLATION_SUFFIXES: Final[tuple[str, ...]] = ('.zh.md',)
+#: THE TRANSLATION MECHANISM (``TRANSLATION-HAS-ITS-SOURCE``, user directive 2026-09-23; locale data
+#: added by D26, 2026-11-17). A tracked file named ``<stem>.zh.<ext>`` for an ``<ext>`` here is a
+#: TRANSLATION, exempt from this guard ONLY while its English SOURCE ``<stem>.<ext>`` -- the suffix
+#: minus ``.zh`` -- sits beside it in the same corpus: the English file is the source of truth and the
+#: translation renders it. An ORPHANED translation is not exempt -- it is read like any other file,
+#: and :func:`orphaned_translations` refuses it by name.
+TRANSLATION_SUFFIXES: Final[tuple[str, ...]] = ('.zh.md', '.zh.toml', '.zh.json')
 
-#: What the source of a translation is named with: ``<stem>`` + this suffix.
-SOURCE_SUFFIX: Final = '.md'
+_LOCALE_MARK: Final = '.zh'
 
 
 class VacuousScan(RuntimeError):
@@ -250,12 +245,12 @@ def find_cjk(text: str, ranges: Collection[tuple[int, int]] = CJK_RANGES) -> tup
 def exempted(name: str, prefixes: Collection[str] = EXEMPT_PREFIXES) -> bool:
     """Whether *name* (a repo-relative POSIX path) sits under one of *prefixes*.
 
-    A prefix with a leading ``/`` is ANCHORED: it matches only at the repo root, so ``/attic/``
-    exempts ``attic/f.py`` and not ``x/attic/f.py``. Any other prefix is checked both at the
+    A prefix with a leading ``/`` is ANCHORED: it matches only at the repo root, so ``/archived/``
+    exempts ``archived/f.py`` and not ``x/archived/f.py``. Any other prefix is checked both at the
     ROOT (``name.startswith(prefix)``) and as a SEGMENT nested deeper (``f'/{prefix}'`` appearing in
-    *name*); the leading ``/`` in the nested check is what keeps ``notx/f`` from matching ``x/``: the
-    prefix must start a path SEGMENT, not merely appear as a substring. The family's own data uses
-    only the anchored shape; the segment shape stays for a caller passing its own *prefixes*.
+    *name*) -- see :data:`EXEMPT_PREFIXES` for the measured tree that made a root-only match wrong for
+    those. The leading ``/`` in the nested check is what keeps ``notattic/x`` from matching
+    ``attic/``: the prefix must start a path SEGMENT, not merely appear as a substring.
     """
     for prefix in prefixes:
         if prefix.startswith('/'):
@@ -276,7 +271,7 @@ def translation_source(name: str) -> str | None:
     for suffix in TRANSLATION_SUFFIXES:
         stem = name[: -len(suffix)]
         if name.endswith(suffix) and stem and not stem.endswith('/'):
-            return stem + SOURCE_SUFFIX
+            return stem + suffix.removeprefix(_LOCALE_MARK)
     return None
 
 
@@ -301,7 +296,7 @@ def orphaned_translations(corpus: Iterable[str]) -> tuple[str, ...]:
         if source is not None and source not in names:
             problems.append(
                 f'ORPHANED TRANSLATION {name!r} -- its English source {source!r} is not tracked. The '
-                f'English page is the source of truth and a translation is exempt only beside it: add '
+                f'English file is the source of truth and a translation is exempt only beside it: add '
                 f'(or restore) {source!r} with the English text, or delete the translation.'
             )
     return tuple(problems)
@@ -329,7 +324,7 @@ def scan_files(
     *paths* is the caller's own list and is never walked: this function reads exactly the files it
     is handed, which is what lets a control drive it against a planted tree instead of a real
     checkout. The paths handed over ARE the corpus the translation mechanism consults: a
-    ``<stem>.zh.md`` is exempted only when ``<stem>.md`` is among them.
+    ``<stem>.zh.<ext>`` is exempted only when ``<stem>.<ext>`` is among them.
     Pair it with :func:`dev_lab.dev.rules.tracked_files` to scan a repo's real corpus.
 
     Raises:
@@ -384,15 +379,16 @@ def remedy(occurrence: Occurrence) -> str:
     """One refusal line for *occurrence* -- the exact file:line and the remedy, no CJK in the text."""
     point = ord(occurrence.char)
     return (
-        f'{occurrence.path}:{occurrence.line}: a CJK (Han, kana or hangul) character (U+{point:04X}) at '
-        f'column {occurrence.col} is not '
+        f'{occurrence.path}:{occurrence.line}: a CJK character (U+{point:04X}) at column {occurrence.col} is not '
         f'permitted in tracked source. Translate it to English letters, digits and symbols, faithfully rather '
         f'than by deleting the information. If the character must survive verbatim -- for example a test '
         f'asserting that a guard REJECTS non-ASCII input -- write it as a \\uXXXX escape sequence instead: the '
         f'source becomes plain ASCII while the runtime value stays byte-identical, so the test still tests '
-        f'what it tested. A user ruling quoted in memory or a task journal is recorded as a faithful English '
-        f'translation marked as translated. The only home for Chinese prose is a designated translation '
-        f'document, named <stem>.zh.md beside its English <stem>.md.'
+        f"what it tested. Memory and task files are English only (D26): a user's words quoted there are "
+        f'translated and marked (user, translated). A translation is named <stem>.zh.md / .zh.toml / .zh.json '
+        f'beside its English <stem>.md / .toml / .json. While a file is still being migrated, declare it in '
+        f'the repo\'s pyproject.toml under [tool.dev_lab.cjk] declared = ["<path>", ...] -- a named set that '
+        f'may only shrink.'
     )
 
 

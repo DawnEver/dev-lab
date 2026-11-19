@@ -17,16 +17,16 @@ from lab_commons.liveness import creation_stamp
 from lab_commons.proc import pid_alive
 
 from dev_lab.dev import stoprun as door
+from dev_lab.dev.proctable import process_table, subtree
 from dev_lab.dev.servelock import was_stopped
-from dev_lab.dev.stoprun import (
+from dev_lab.dev.stopapproved import ApprovedRun
+from dev_lab.dev.stoprun import stop
+from dev_lab.dev.stopsignatures import (
     SignaturesNotDeclared,
     declared_orphans,
     declared_signatures,
     identify,
     orphaned_worker,
-    process_table,
-    stop,
-    subtree,
 )
 
 _TABLE = {
@@ -431,13 +431,13 @@ class _ApprovedScene:
         self.table.pop(pid, None)
         self.after_kill(pid)
 
-    def approval(self, **changes: object) -> door.ApprovedRun:
+    def approval(self, **changes: object) -> ApprovedRun:
         fields = {
             'created': 100,
             'command_sha256': hashlib.sha256(self.table[30][1].encode('utf-8')).hexdigest(),
             'user_words': 'Stop only my verified queued qualification controller and its verified run.',
         }
-        return door.ApprovedRun(**(fields | changes))
+        return ApprovedRun(**(fields | changes))
 
     def stop(self, *, approved=None, dry_run=False, **changes: object) -> tuple[int, list[str]]:
         return door.stop(
@@ -555,6 +555,43 @@ def test_a_fresh_subtree_change_stops_further_kills_and_reports_partial(mutation
     assert scene.killed == [30]
     assert 'partial' in '\n'.join(lines).lower()
     assert {31, 32, 40} <= scene.table.keys()
+
+
+def test_a_member_that_exits_with_its_stopped_controller_is_recorded_and_never_killed() -> None:
+    """A Windows job object closes with its launcher: the controller's children go with it."""
+    scene = _ApprovedScene()
+
+    def cascade(pid) -> None:
+        if pid == 30:
+            scene.table.pop(31, None)
+            scene.table.pop(32, None)
+
+    scene.after_kill = cascade
+    code, lines = scene.stop()
+    assert code == 0, lines
+    assert scene.killed == [30]
+    assert sum('exited with its stopped parent' in line for line in lines) == 2
+    assert 40 in scene.table
+
+
+def test_planted_a_member_gone_before_any_stop_still_refuses() -> None:
+    """PLANTED CONTROL: with no proved-stopped ancestor a vanished member proves nothing, so nothing is killed."""
+    scene = _ApprovedScene()
+    snapshot = dict(scene.table)
+    scene.table.pop(32)
+    code, lines = door.stop(
+        30,
+        snapshot,
+        dry_run=False,
+        approved=scene.approval(),
+        born=scene.created.get,
+        fresh=scene.fresh,
+        kill=scene.kill,
+        gone=lambda pid, _seconds: pid not in scene.table,
+    )
+    assert code == 3
+    assert scene.killed == []
+    assert 'disappeared before its identity could be proved' in ' '.join(lines)
 
 
 def test_the_approved_root_is_rechecked_against_a_fresh_table_before_it_is_stopped() -> None:
@@ -693,7 +730,7 @@ def test_the_real_approved_python_controller_and_child_stop_without_stopping_a_b
         created = creation_stamp(controller)
         assert created is not None
         assert child_created is not None
-        approved = door.ApprovedRun(
+        approved = ApprovedRun(
             created=created,
             command_sha256=hashlib.sha256(table[controller][1].encode('utf-8')).hexdigest(),
             user_words='Stop only the controller and child this test just created.',

@@ -68,6 +68,8 @@ class PullRequest:
     merged: bool = False
     #: Whether its head lives in another repository than its base (a fork; a deleted fork's head repo is ``null``).
     fork: bool = False
+    #: The commit its merge made on the base (``merge_commit_sha``); empty while it is not merged.
+    merge_sha: str = ''
 
 
 #: Gitea's default title prefixes marking a PR work in progress (its ``WORK_IN_PROGRESS_PREFIXES``).
@@ -108,6 +110,7 @@ def pull_of(raw: Mapping[str, Any]) -> PullRequest:
         bool(raw.get('draft')) or issue.title.upper().startswith(WIP_PREFIXES),
         bool(raw.get('merged') or raw.get('merged_at')),
         fork=_forked(raw),
+        merge_sha=(raw.get('merge_commit_sha') or '') if raw.get('merged') or raw.get('merged_at') else '',
     )
 
 

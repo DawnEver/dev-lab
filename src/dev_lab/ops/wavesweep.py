@@ -12,13 +12,14 @@ The sweep only decides WHICH PRs to ask for:
 
 - a draft is left alone (a draft runs nothing, so it is never judged);
 - a PR whose ``tests/merge-ready`` already stands ``success`` lands by the normal path, which wins;
-- a PR whose head is not current (``pr-current`` does not stand ``success``: it lacks the integration branch or its
-  lock is stale) is left alone -- a wave lands only what is current, never a stale green head;
+- a PR whose head is not current (``pr-current`` red) still lands: freshness is an ALARM (W5, dev-lab#644) and the
+  forge's own merge refuses a head that does not merge cleanly;
 - a PR whose security check or test parts do not stand green (red, pending, unrun) is left alone;
 - a PR whose admission or merge is refused (off the integration branch, the forge's own refusal) is
   skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick;
 - a PR the admission holds back for its own consent (``needs-consent``, :meth:`Server._admit`) is skipped and
-  logged once per wave by the server; *land* answers ``None`` for it. A skip spends none of the cap.
+  logged once per wave by the server; *land* answers ``None`` for it. A HELD PR (the ``hold`` label, user ruling
+  D48) is skipped the same way, its log naming the release door. A skip spends none of the cap.
 
 Every merge counts against the wave's cap; the merge that reaches it closes the wave, whose ONE summary is the alert.
 """
@@ -34,11 +35,10 @@ from lab_commons.log import emit
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgeheadgate import PR_CURRENT_CONTEXT
-from dev_lab.dev.forgemergewaits import parts_wait
-from dev_lab.dev.forgesecurity import security_wait
+from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.producers import producer_from
 from dev_lab.ops import request as requests
 
 __all__ = ['Listing', 'Pull', 'integration_at', 'reason_of', 'sweep']
@@ -84,11 +84,11 @@ def reason_of(wave: str) -> str:
     return f'wave {wave} lands what is green: the review is waived, its security and test parts stand green'
 
 
-def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str) -> bool:
-    """Whether *head* is current and green -- security check and test parts PASS -- yet not already merge-ready."""
-    if _stands(posted, MERGE_READY_CONTEXT) or not _stands(posted, PR_CURRENT_CONTEXT):
+def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, producer: str) -> bool:
+    """Whether *head* is green as its *producer* posts it (:func:`green_waits`) yet not already merge-ready."""
+    if _stands(posted, MERGE_READY_CONTEXT):
         return False
-    return security_wait(posted) is None and parts_wait(head, posted) is None
+    return not green_waits(head, posted, producer=producer)
 
 
 def _stands(posted: Sequence[CommitStatus], context: str) -> bool:
@@ -121,7 +121,8 @@ def sweep(
         for pull in forge.open_pulls():
             if pull.draft or not _integrates(forge, pull.base, url):
                 continue
-            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head):
+            producer = producer_from(forge.declaration(pull.base), f'{url}@{pull.base}:pyproject.toml')
+            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head, producer=producer):
                 continue
             try:
                 landed = land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held)))

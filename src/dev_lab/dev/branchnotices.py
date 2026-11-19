@@ -3,8 +3,8 @@
 User ruling 2026-10-21. A notice matters at the moments a session ACTS on its PR, and those moments are git and
 forge verbs every agent vendor shares, so this one reader serves each of them:
 
-* ``post-commit`` (``pr-notices`` row, the current branch) -- an agent commits often, even long before it pushes;
-* ``pre-push`` (``pr-notices`` row, the pushed ``pr/*`` refs);
+* ``pre-push`` (``pr-notices`` row, ``advisory``, the pushed ``pr/*`` refs) -- the push is where a session acts on
+  its PR: a commit is local, and the PR has not seen it;
 * ``forge pr create`` (:mod:`dev_lab.dev.forgecli`, the head branch).
 
 Nowhere else: no session-start or resume check and no per-turn poll in any vendor's harness (user ruling
@@ -31,10 +31,8 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgenotice import integration_comment, read
 from dev_lab.dev.labsession import ENV
 from dev_lab.dev.refspec import pushed_refs
@@ -92,7 +90,7 @@ def lines_for(
 
     def read_forge() -> None:
         try:
-            from dev_lab.dev.forgework import client_for  # noqa: PLC0415
+            from dev_lab.dev.forgeclient import client_for  # noqa: PLC0415
 
             found.append(_from_forge(client if client is not None else client_for(root), branch, session))
         except Exception:  # noqa: BLE001, S110 -- a notice must never fail a git verb
@@ -135,31 +133,18 @@ def report(
     return '\n'.join(f'{_TAG} {line}' for line in found)
 
 
-def _current(root: Path) -> str:
-    done = _door.run(
-        [_GIT, 'symbolic-ref', '--quiet', '--short', 'HEAD'],
-        cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False,
-    )  # fmt: skip
-    return done.stdout.strip() if done.returncode == 0 else ''
-
-
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m dev_lab.dev.branchnotices [--push] [ROOT]``: print, never fail -- always exits 0.
+    """``python -m dev_lab.dev.branchnotices [ROOT]``: print the pushed pr/* refs' notices; always exits 0.
 
-    ``--push`` reads git's pre-push refspec lines on stdin; without it, the current branch (post-commit).
+    The refs are git's pre-push lines on stdin.
     """
     try:
         parser = argparse.ArgumentParser(prog='dev_lab.dev.branchnotices', description=__doc__.splitlines()[0])
-        parser.add_argument('--push', action='store_true', help="the pushed pr/* refs, git's pre-push stdin")
         parser.add_argument('root', nargs='?', default='')
         args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
         root = Path(args.root) if args.root else Path.cwd()
-        if args.push:
-            stdin = '' if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
-            branches = pushed(stdin.splitlines())
-        else:
-            branches = [_current(root)]
-        if text := report(root, branches, os.environ.get(ENV, '')):
+        stdin = '' if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+        if text := report(root, pushed(stdin.splitlines()), os.environ.get(ENV, '')):
             emit(text, err=True)
     except (Exception, SystemExit):  # noqa: BLE001, S110 -- a notice must never fail a git verb
         pass

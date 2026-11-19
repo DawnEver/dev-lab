@@ -20,7 +20,7 @@ from dev_lab.dev.famtests.remedypaths import (
     relative_interpreters,
 )
 from dev_lab.dev.floors import FloorUnmet
-from dev_lab.dev.hooks import DENY_RULES
+from dev_lab.dev.hooks import DENY_RULES, Remedy
 from dev_lab.dev.venvpath import (
     PYTHON_SLOT,
     current_os_name,
@@ -121,3 +121,20 @@ def test_the_engine_prints_the_target_checkouts_interpreter_absolute(tmp_path: P
     said = agenthooks.decide('boom', rules, cwd=lane)
     assert said == f'X: h\nstop it: {python.as_posix()} -m s; door {python.as_posix()} -m d'
     assert remedy_interpreter(lane, os_name=_OS) == python.as_posix()
+
+
+@pytest.mark.parametrize('spelling', ['./.venv/Scripts/python.exe', '.venv/Scripts/python.exe', '.venv/bin/python'])
+def test_a_relative_remedy_command_renders_as_the_slot(spelling: str) -> None:
+    """A consumer's concrete remedy prints as ``{python}``; the planted control: the raw command IS convicted."""
+    command = f'{spelling} -m dev_lab.dev.verify'
+    assert relative_interpreters(command)
+    rule = next(rule for rule in DENY_RULES if rule.id == 'BARE-TEST-INVOCATION')
+    reason = rule.reason(Remedy(rule.needs or '', command))
+    assert not relative_interpreters(reason)
+    assert f'{PYTHON_SLOT} -m dev_lab.dev.verify' in reason
+
+
+def test_an_absolute_remedy_command_renders_unchanged() -> None:
+    command = 'C:/r/.venv/Scripts/python.exe -m dev_lab.dev.verify'
+    rule = next(rule for rule in DENY_RULES if rule.id == 'BARE-TEST-INVOCATION')
+    assert command in rule.reason(Remedy(rule.needs or '', command))

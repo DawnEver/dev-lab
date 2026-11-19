@@ -7,9 +7,7 @@ created: 2026-11-05
 accessed: 2026-11-05
 ---
 
-> Translated 2026-11-12: CJK rendered as faithful English (NO-CJK-IN-TRACKED-SOURCE).
-
-# Verify writes only to the output tree; .verify/ is gone (user ruling 2026-11-05: "move it to output, delete .verify/", translated)
+# Verify writes only to the output tree; .verify/ is gone (user ruling 2026-11-05: "move it to output, delete .verify/" (user, translated))
 
 - What `.verify/` held (inventory at retirement): `verify-<ts>.log` (the run log a VERDICT cites by content hash),
   `verify-<ts>.outcome.json` (the box's ended record), `verify-<ts>.outcomes/` (per-worker cell records),
@@ -27,3 +25,5 @@ accessed: 2026-11-05
   `.gitignore` drops it on their next render), the Makefile `clean` entry, and the prose.
 - Stale `.verify/` dirs on disk at the time (to delete after merge, not by the agent): dev-lab worktrees
   dep-local, one-test-kit, uv-freshened; lab-commons worktree one-toml-writer.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

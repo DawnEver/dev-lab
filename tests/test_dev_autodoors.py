@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -17,6 +18,7 @@ from dev_lab.dev.autodoors import (
     ActDeclaredAsDoor,
     claude_rows,
     cli_doors,
+    cli_modules,
     codex_rules,
     doors,
     main,
@@ -194,14 +196,17 @@ _CLI_TABLE = """
 [tool.dev_lab.cli_doors]
 acts = ["press"]
 doors = [
-    {argv = ["consumer", "vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."},
-    {argv = ["consumer", "vendor", "stalled"], why = "Read-only: whether the vendor tool waits on a dialog."},
+    {verb = ["vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."},
+    {verb = ["vendor", "stalled"], why = "Read-only: whether the vendor tool waits on a dialog."},
 ]
 """
 
 
+_PROJECT = '[project]\nname = "consumer-dist"\n[project.scripts]\nconsumer = "consumer.__main__:main"\n'
+
+
 def _declare(tmp_path: Path, table: str) -> Path:
-    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "consumer"\n' + table, encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text(_PROJECT + table, encoding='utf-8')
     return tmp_path
 
 
@@ -232,19 +237,46 @@ def test_a_consumer_declares_its_read_only_cli_verbs_and_both_clients_render_the
 @pytest.mark.parametrize(('acts', 'verb'), [('["rerun"]', 'rerun'), ('[]', 'press'), ('[]', 'kill'), ('[]', 'push')])
 def test_a_declared_cli_door_that_names_an_act_is_refused_by_name(tmp_path: Path, acts: str, verb: str) -> None:
     """An act is never a door: the repo's own `acts` list, and the fixed refusal list whatever the repo declares."""
-    row = f'{{argv = ["consumer", "vendor", "{verb}"], why = "x"}}'
+    row = f'{{verb = ["vendor", "{verb}"], why = "x"}}'
     table = f'[tool.dev_lab.cli_doors]\nacts = {acts}\ndoors = [{row}]\n'
     assert (verb in REFUSED_ACTS) == (acts == '[]'), 'the repo-declared act is outside the fixed list'
     with pytest.raises(ActDeclaredAsDoor, match=verb):
         cli_doors(_declare(tmp_path, table))
 
 
-@pytest.mark.parametrize('argv', ['["consumer"]', '["consumer", "vendor *"]', '["consumer", "a b"]'])
-def test_a_cli_door_that_would_admit_more_than_its_verb_is_refused(tmp_path: Path, argv: str) -> None:
-    """A bare module admits every verb; a glob or a space widens the row."""
-    table = f'[tool.dev_lab.cli_doors]\ndoors = [{{argv = {argv}, why = "x"}}]\n'
+@pytest.mark.parametrize('verb', ['[]', '["vendor *"]', '["a b"]', '["-c"]'])
+def test_a_cli_door_that_would_admit_more_than_its_verb_is_refused(tmp_path: Path, verb: str) -> None:
+    """No verb is the bare module, which admits every verb; a glob, a space or a flag widens the row."""
+    table = f'[tool.dev_lab.cli_doors]\ndoors = [{{verb = {verb}, why = "x"}}]\n'
     with pytest.raises(ValueError, match='cli_doors'):
         cli_doors(_declare(tmp_path, table))
+
+
+def test_the_module_comes_from_the_repo_s_own_project_scripts_never_the_row(tmp_path: Path) -> None:
+    """User direction 2026-11-15: the module is the repo's OWN declaration, one source; a row names verbs only.
+
+    PLANTED CONTROLS: the retired ``argv`` key, a script target that is no package ``__main__``, a repo with no
+    script, and two modules with no ``script =`` choice are each refused by name.
+    """
+    row = '{verb = ["case", "list"], why = "Read-only: the cases, listed."}'
+    table = f'[tool.dev_lab.cli_doors]\ndoors = [{row}]\n'
+    assert cli_modules({'project': {'scripts': {'consumer': 'consumer.__main__:main'}}}) == {'consumer': 'consumer'}
+    assert cli_doors(_declare(tmp_path, table))[0].argv == ('python', '-m', 'consumer', 'case', 'list')
+
+    def refused(manifest: str, body: str, match: str) -> None:
+        (tmp_path / 'pyproject.toml').write_text(manifest + body, encoding='utf-8')
+        with pytest.raises(ValueError, match=match):
+            cli_doors(tmp_path)
+
+    retired = '[tool.dev_lab.cli_doors]\ndoors = [{argv = ["consumer", "case", "list"], why = "x"}]\n'
+    refused(_PROJECT, retired, 'argv` is retired')
+    refused('[project]\nname = "c"\n[project.scripts]\nc = "c.cli:main"\n', table, 'not a package __main__')
+    refused('[project]\nname = "c"\n', table, 'declare the CLI there')
+    two = '[project]\nname = "c"\n[project.scripts]\na = "a.__main__:main"\nb = "b.__main__:main"\n'
+    refused(two, table, 'script = ')
+    chosen = '[tool.dev_lab.cli_doors]\ndoors = [{verb = ["x"], why = "Read-only.", script = "b"}]\n'
+    (tmp_path / 'pyproject.toml').write_text(two + chosen, encoding='utf-8')
+    assert cli_doors(tmp_path)[0].argv == ('python', '-m', 'b', 'x')
 
 
 def test_the_renderer_reads_the_declaration_from_the_repo(tmp_path: Path) -> None:
@@ -252,3 +284,60 @@ def test_the_renderer_reads_the_declaration_from_the_repo(tmp_path: Path) -> Non
     _declare(work, _CLI_TABLE)
     assert main(['--repo', str(work), '--write']) == 0
     assert '"consumer", "vendor", "windows"' in (work / CODEX_RULES_REL).read_text(encoding='utf-8')
+
+
+_ACT_TABLE = """
+[tool.dev_lab.cli_doors]
+doors = [
+    {verb = ["vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."},
+    {verb = ["case", "run"], why = "Runs one case; writes only its output tree.", act = true},
+]
+"""
+
+
+def test_an_act_row_renders_for_both_clients_and_is_labelled_as_acting(tmp_path: Path) -> None:
+    """A repo declares a WRITING verb of its own CLI as a door, explicitly: ``act = true`` on the row.
+
+    PLANTED CONTROLS: both literal interpreters render and never the ``.venv/*/python*`` glob; the read-only row's
+    rendering is byte-identical to a table without the act row; every rendering of the act row says it writes.
+    """
+    cli = cli_doors(_declare(tmp_path, _ACT_TABLE))
+    act = cli[1]
+    assert act.argv == ('python', '-m', 'consumer', 'case', 'run')
+    assert act.intent == 'Acts (writes): Runs one case; writes only its output tree.'
+    rows = claude_rows(cli=cli)
+    text = codex_rules(cli=cli)
+    for head in INTERPRETERS:
+        assert rows[f'Bash({head} -m consumer case run *)'] == act.intent
+    assert f'pattern = [{json.dumps(list(INTERPRETERS))}, "-m", "consumer", "case", "run"]' in text
+    assert f'justification = {json.dumps(act.intent)}' in text
+    assert VENV_INTERPRETER_GLOB not in text
+    assert not any(VENV_INTERPRETER_GLOB in row for row in rows)
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
+    assert not any(fnmatchcase(f'{INTERPRETERS[0]} -m consumer case delete x', g) for g in globs)
+    read_only = cli_doors(_declare(tmp_path, _CLI_TABLE))[0]
+    assert cli[0] == read_only, 'a read-only row is unchanged by an act row beside it'
+    assert rows[f'Bash({INTERPRETERS[0]} -m consumer vendor windows *)'] == read_only.intent
+
+
+@pytest.mark.parametrize(
+    ('row', 'match'),
+    [
+        ('{verb = [], why = "Writes.", act = true}', 'at least one verb'),
+        ('{verb = ["case", "delete"], why = "Writes.", act = true}', 'delete'),
+        ('{verb = ["case", "rerun"], why = "Writes.", act = true}', 'rerun'),
+        ('{verb = ["case", "run"], why = "Read-only: lists.", act = true}', 'read-only'),
+        ('{verb = ["case", "run"], why = "Writes.", act = "yes"}', 'act'),
+        ('{verb = ["case", "run"], why = "Writes.", actor = "main"}', 'SUBAGENT-NO-PUSH'),
+        ('{verb = ["case", "run"], why = "Writes.", acts = true}', 'acts'),
+    ],
+)
+def test_an_act_row_that_would_lie_or_widen_is_refused_by_name(tmp_path: Path, row: str, match: str) -> None:
+    """Every lie or widening of an act row is refused naming its cause.
+
+    A bare module, a refused or repo-declared act, a read-only claim on an act, a non-boolean marker, an
+    unenforceable actor and an unknown key.
+    """
+    table = f'[tool.dev_lab.cli_doors]\nacts = ["rerun"]\ndoors = [{row}]\n'
+    with pytest.raises((ValueError, TypeError), match=match):
+        cli_doors(_declare(tmp_path, table))

@@ -146,7 +146,9 @@ def test_a_promotion_is_a_hand_action_and_its_refusal_a_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     answers = iter(('promote', 'refused'))
-    monkeypatch.setattr(integrate, 'promote', lambda _r, _c, sha: integrate.Promotion(next(answers), sha, ('red',)))
+    monkeypatch.setattr(
+        integrate, 'promote', lambda _r, _c, sha, **_: integrate.Promotion(next(answers), sha, ('red',))
+    )
     monkeypatch.setattr(integrate, '_policy', lambda _r, _s: SimpleNamespace(trunk='main'))
     run = {'cwd': tmp_path, 'client': object(), 'fetch': lambda _root: None}
     assert integrate.main(['promote', 'abcdef1'], **run) == 0
@@ -267,11 +269,11 @@ def test_break_glass_writes_one_hand_action_naming_branch_sha_and_reason(tmp_pat
     )
 
 
-def test_the_family_is_the_machine_files_served_repos(tmp_path: Path) -> None:
-    """ONE declared source: ``[serve] repos`` under ``root``, the list the serving host itself walks."""
-    table = {'repos': ['lab-commons', 'dev-lab'], 'root': str(tmp_path)}
-    assert family(table) == [tmp_path / 'lab-commons', tmp_path / 'dev-lab']
-    with pytest.raises(ValueError, match=r'\[serve\] repos'):
+def test_the_family_is_the_machine_files_repos(tmp_path: Path) -> None:
+    """ONE declared source: the machine file's ``[repos]``, never a ``[serve]`` list (retired 2026-11-16)."""
+    checkouts = {'lab-commons': tmp_path / 'lab-commons', 'dev-lab': tmp_path / 'dev-lab'}
+    assert family(checkouts) == [tmp_path / 'lab-commons', tmp_path / 'dev-lab']
+    with pytest.raises(ValueError, match=r'no \[repos\]'):
         family({})
 
 

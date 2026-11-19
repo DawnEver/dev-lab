@@ -206,10 +206,11 @@ def assert_the_declaration_is_the_shape_the_ratchet_keys_on(declared: Collection
 def assert_the_exemptions_match_a_path_segment(exempt_prefixes: Collection[str]) -> None:
     """Nested exempt dirs match, a ROOT-ANCHORED one matches only at the root, a lookalike never.
 
-    A bare prefix must match nested as well as at the root; the opposite error is as fatal and is
-    planted beside it -- a substring match would exempt ``notattic/`` and open an island nobody
-    declared. An ANCHORED prefix (leading ``/``, e.g. ``/attic/``) is planted both ways: ``attic/f.py``
-    exempt and ``x/attic/f.py`` NOT.
+    The measured reason is in :data:`dev_lab.dev.cjk.EXEMPT_PREFIXES`: one repo's memory tree is
+    scoped per module and a root-only prefix reported 47,521 CJK characters where the true answer is
+    zero. The opposite error is as fatal and is planted beside it -- a substring match would exempt
+    ``notattic/`` and open an island nobody declared. An ANCHORED prefix (leading ``/``, e.g.
+    ``/archived/``) is planted both ways: ``archived/f.py`` exempt and ``x/archived/f.py`` NOT.
 
     Raises:
         AssertionError: a prefix fails to match where it must, or matches where it must not.

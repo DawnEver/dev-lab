@@ -34,6 +34,7 @@ from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeintegration import alarms as sync_alarms
 from dev_lab.dev.forgeintegration import tick as integration_tick
 from dev_lab.dev.forgemerge import CI_MERGER, ci_merges
+from dev_lab.dev.forgeorphan import alarms as orphans
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
@@ -144,6 +145,7 @@ def prompt(
             *glass,
             *red,
             *idle_drafts(root, built, policy.integration, repo, now=forge_now(built)),  # D53: waits on its author
+            *orphans(root, built, policy.integration, repo, now=forge_now(built)),  # MERGE-OR-DELETE
             *late_reviews(  # a ready head nothing reviewed: the 11-02/03 backlog
                 built, policy.integration, repo, now=forge_now(built), wait=declared_wait(root)
             ),

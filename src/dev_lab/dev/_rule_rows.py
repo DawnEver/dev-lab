@@ -222,10 +222,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MODULE-SIZE-ALARM',
         (
-            'A module past the size band MUST be refactored -- a new one, one that GROWS, or a pin for one that '
-            'was already fixed -- and while the band is repo data, that there IS one is not.'
+            'A tracked module past its declared inclusive size band, or a directory above 25 direct files, '
+            'MUST be refactored. The band and code/raw unit are explicit repo data; depth remains a watch reading.'
         ),
-        ('tests/architecture/ratchets/test_module_alarm.py',),
+        ('src/dev_lab/dev/famtests/modulealarm.py', 'src/dev_lab/dev/famtests/alwayson.py'),
     ),
     (
         'LATEST-DEPENDENCIES',
@@ -389,13 +389,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'NO-CJK-IN-TRACKED-SOURCE',
         (
-            'No tracked content -- memory and task journals included -- may contain a CJK character '
-            '(Han, Japanese kana or Korean hangul), except '
-            'under the repo-root `attic/` and in a DESIGNATED Chinese document, a `<stem>.zh.md` beside its '
-            'English `<stem>.md` (an orphaned translation is refused by name); a quoted user ruling is recorded '
-            'as a faithful English translation marked as translated, and a population too large for one commit '
-            'is a RATCHET, not a loosened rule: a '
-            'repo declares its files still carrying CJK as a NAMED SET that may only shrink, where a declared file '
+            'No tracked CJK except under `attic/`, root `archived/`, and `<stem>.zh.md|toml|json` beside its English '
+            '`<stem>.md|toml|json` (an orphan is refused by name); memory and tasks are English only, quotes marked '
+            '`(user, translated)` (D26). A population too large for one commit is a RATCHET: a repo declares files '
+            'still carrying CJK in `[tool.dev_lab.cjk] declared`, a NAMED SET that may only shrink; a declared file '
             'with no CJK left is an ORPHANED waiver, refused like an undeclared one.'
         ),
         ('tests/test_dev_cjk.py', 'tests/test_famtests_alwayson.py'),

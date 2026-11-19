@@ -60,168 +60,40 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import hashlib
 import os
-import re
 import shutil
 import signal
 import sqlite3
 import sys
 import time
-import tomllib
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.box.ledger import holdings
-from lab_commons.census import processes
 from lab_commons.liveness import CreationClock, creation_stamp
 from lab_commons.log import emit
-from lab_commons.proc import descendants, pid_alive
+from lab_commons.proc import pid_alive
 
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.family import declared_table
-from dev_lab.dev.liverun import SPAWN_WORKER, WATCH
+from dev_lab.dev.proctable import INIT, Proc, process_table, subtree, unstoppable, whose
 from dev_lab.dev.servelock import note_stopped
+from dev_lab.dev.stopapproved import ApprovedRun, stop_approved
+from dev_lab.dev.stopsignatures import (
+    BUILTIN_ORPHANS,
+    SERVE,
+    TABLE,
+    declared_orphans,
+    declared_signatures,
+    orphan_role,
+    why_stoppable,
+)
 
-__all__ = [
-    'BUILTIN_ORPHANS',
-    'RUN_SIGNATURES',
-    'SCRATCH',
-    'SERVE',
-    'SERVE_GRACE_S',
-    'ApprovedRun',
-    'Proc',
-    'SignaturesNotDeclared',
-    'declared_orphans',
-    'declared_signatures',
-    'identify',
-    'main',
-    'orphaned_worker',
-    'process_table',
-    'repo_root',
-    'stop',
-    'subtree',
-]
-
-_TABLE = '[tool.dev_lab.stoprun]'
-
-#: A ``forge serve``: stopped producers first, then given a grace to release its claim.
-SERVE: Final = re.compile(r'-m\s+dev_lab.dev\.forge\s+serve\b')
+__all__ = ['SERVE_GRACE_S', 'main', 'repo_root', 'stop', 'stop_subtree']
 
 #: How long a serve whose producers were stopped may take to release its claim and exit, in seconds.
 SERVE_GRACE_S: Final = 60.0
-
-#: A command line that is one of these is a run this door may stop. Anything else is refused.
-RUN_SIGNATURES: Final = (
-    re.compile(r'-m\s+dev_lab.dev\.verify\b'),
-    re.compile(r'scripts[/\\]gate[/\\]runner\.py\b'),
-    re.compile(r'-m\s+pytest\b'),
-    re.compile(r'(?:^|[/\\\s])pytest(?:\.exe)?(?:\s|$)'),
-    # A PUSH MUST NEVER BLOCK: a pre-push hook that hangs is a run this door must be able to stop.
-    re.compile(r'dev_lab.dev\.githooks run pre-push\b'),
-    re.compile(r'scripts[/\\]gate[/\\]prepush_gate\.py\b'),
-    # ...and the retry wrapper around it is what the agent holds: one network verb, never anything else (2026-11-13).
-    re.compile(r'(?:^|[/\\\s])with-retry\.sh\s+(?:push|fetch|pull|clone|ls-remote)\b'),
-    SERVE,
-    WATCH,  # its owner's reader, stopped to free its venv and re-armed (liverun.env_in_use)
-)
-
-#: A one-off under a ``scratch/`` directory (the family's home for probes): an orphan of one is stoppable.
-SCRATCH: Final = re.compile(r'(?:^|[\s"\'=/\\])scratch[/\\]')
-
-#: The orphan signatures every repo has: a ``scratch/`` one-off, and a multiprocessing spawn/forkserver
-#: worker -- liverun's own rule (:data:`dev_lab.dev.liverun.SPAWN_WORKER`), so the two doors never disagree.
-BUILTIN_ORPHANS: Final = (SCRATCH, SPAWN_WORKER)
-
-#: The pid POSIX reparents an orphan to; a ppid at or below it names no live creator.
-_INIT: Final = 1
-
-Proc = tuple[int, str]  # (parent pid, command line)
-
-#: A multiprocessing worker's own statement of the process it serves.
-_WORKER_PARENT: Final = re.compile(r'\bspawn_main\(parent_pid=(\d+)')
-
-
-def process_table() -> dict[int, Proc]:
-    """``{pid: (ppid, cmdline)}`` for every process, from the one census (:mod:`lab_commons.census`)."""
-    return {one.pid: (one.ppid, one.command_line) for one in processes()}
-
-
-class SignaturesNotDeclared(ValueError):
-    """``[tool.dev_lab.stoprun] signatures`` is not a list of valid regex strings."""
-
-
-@dataclass(frozen=True)
-class ApprovedRun:
-    """The caller's explicit user authorization and exact root identity, not proof of ownership.
-
-    Select the actual Python controller, not a venv launcher that merely waits for it. All facts
-    are mandatory and single-use observations: execution rechecks them, even after a dry run.
-    """
-
-    created: int
-    command_sha256: str
-    user_words: str
-
-    def __post_init__(self) -> None:
-        """Reject an incomplete authorization before any process is observed or stopped."""
-        if type(self.created) is not int or self.created <= 0:
-            msg = 'approved created must be a positive exact integer creation stamp'
-            raise ValueError(msg)
-        if not isinstance(self.command_sha256, str) or re.fullmatch(r'[0-9a-f]{64}', self.command_sha256) is None:
-            msg = 'approved command_sha256 must name the exact complete command line as lowercase SHA256'
-            raise ValueError(msg)
-        if not isinstance(self.user_words, str) or not self.user_words.strip():
-            msg = 'approved user_words must contain the actual explicit user authorization'
-            raise ValueError(msg)
-
-
-def declared_signatures(root: Path) -> tuple[str, ...]:
-    """The extra signatures *root*'s ``pyproject.toml`` declares; ``()`` when it declares none.
-
-    Raises:
-        SignaturesNotDeclared: the manifest is unreadable, or the value is not a list of regex strings.
-
-    """
-    return _declared(root, 'signatures')
-
-
-def declared_orphans(root: Path) -> tuple[str, ...]:
-    """The vendor tools *root* declares stoppable once ORPHANED (``orphans``); ``()`` when none.
-
-    Raises:
-        SignaturesNotDeclared: the manifest is unreadable, or the value is not a list of regex strings.
-
-    """
-    return _declared(root, 'orphans')
-
-
-def _declared(root: Path, key: str) -> tuple[str, ...]:
-    manifest = root / 'pyproject.toml'
-    if not manifest.is_file():
-        return ()
-    try:
-        data = tomllib.loads(manifest.read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        msg = f'{manifest} is not a readable TOML manifest: {exc}'
-        raise SignaturesNotDeclared(msg) from exc
-    table = declared_table(data, 'stoprun')
-    if table is None:
-        return ()
-    value = table.get(key, []) if isinstance(table, dict) else table
-    if not isinstance(value, list) or not all(isinstance(s, str) and s for s in value):
-        msg = f'{_TABLE} {key} in {manifest} is {value!r}; it must be a list of regex strings'
-        raise SignaturesNotDeclared(msg)
-    for sig in value:
-        try:
-            re.compile(sig)
-        except re.error as exc:
-            msg = f'{_TABLE} signature {sig!r} in {manifest} is not a regex: {exc}'
-            raise SignaturesNotDeclared(msg) from exc
-    return tuple(value)
 
 
 def repo_root(start: Path) -> Path:
@@ -230,72 +102,9 @@ def repo_root(start: Path) -> Path:
     return Path(top.strip()) if top and top.strip() else start
 
 
-def identify(cmdline: str, signatures: tuple[str, ...] = ()) -> str | None:
-    """The signature *cmdline* matches (built-in first, then declared), or ``None``."""
-    for sig in (*RUN_SIGNATURES, *(re.compile(s) for s in signatures)):
-        if sig.search(cmdline):
-            return sig.pattern
-    return None
-
-
-def orphaned_worker(table: Mapping[int, Proc], pid: int, born: CreationClock = creation_stamp) -> int | None:
-    """The parent pid *pid* names and has lost, or ``None`` when it is no orphaned worker.
-
-    Lost means absent from *table*, or present but provably created AFTER *pid* (a reused pid); an
-    unreadable creation stamp proves nothing, so the worker stays refused.
-    """
-    named = _WORKER_PARENT.search(table[pid][1]) if pid in table else None
-    if named is None:
-        return None
-    parent = int(named.group(1))
-    if parent not in table:
-        return parent
-    theirs, mine = born(parent), born(pid)
-    return parent if theirs is not None and mine is not None and theirs > mine else None
-
-
-def _why_stoppable(table: Mapping[int, Proc], pid: int, signatures: tuple[str, ...], born: CreationClock) -> str | None:
-    """What makes *pid* stoppable: the signature it matches, or the parent it names and has lost."""
-    matched = identify(table[pid][1], signatures)
-    if matched is None and (lost := orphaned_worker(table, pid, born)) is not None:
-        return f'orphaned worker of {lost}'
-    return matched
-
-
-def subtree(table: Mapping[int, Proc], pid: int) -> list[int]:
-    """*pid* and every descendant, deepest first (children are stopped before their parent)."""
-    order: list[int] = []
-    frontier = [pid]
-    while frontier:
-        current = frontier.pop()
-        order.append(current)
-        frontier += [p for p, (ppid, *_) in table.items() if ppid == current and p != current and p not in order]
-    return order[::-1]
-
-
-def _ancestors(table: Mapping[int, Proc], pid: int) -> set[int]:
-    seen: set[int] = set()
-    while pid in table and pid not in seen:
-        seen.add(pid)
-        pid = table[pid][0]
-    return seen
-
-
 def _claimed() -> set[int]:
     """The pids holding a claim in this machine's box ledger now."""
     return {held.pid for held in holdings()}
-
-
-def _orphan_role(command: str, orphans: tuple[str, ...]) -> bool:
-    """The existing declared orphan roles, shared by ordinary and approved policy checks."""
-    return any(sig.search(command) for sig in (*BUILTIN_ORPHANS, *(re.compile(s) for s in orphans)))
-
-
-def _ordinary_lifecycle_door(pid: int) -> str:
-    return (
-        f'{pid} has an existing lifecycle; use the ordinary '
-        f'python -m dev_lab.dev.stoprun --pid {pid} without approved arguments'
-    )
 
 
 def _orphan_refusal(
@@ -307,11 +116,11 @@ def _orphan_refusal(
 ) -> str | None:
     """Why *pid* is NOT a stoppable orphan, or ``None`` when it is (the module docstring's three conditions)."""
     cmdline = table[pid][1]
-    if not _orphan_role(cmdline, orphans):
+    if not orphan_role(cmdline, orphans):
         builtin = ', '.join(repr(sig.pattern) for sig in BUILTIN_ORPHANS)
-        return f'no orphan signature either (built-in {builtin} or {_TABLE} orphans)'
+        return f'no orphan signature either (built-in {builtin} or {TABLE} orphans)'
     ppid = table[pid][0]
-    if ppid > _INIT and ppid in table:  # POSIX reparents an orphan to init: its parent is gone
+    if ppid > INIT and ppid in table:  # POSIX reparents an orphan to init: its parent is gone
         parent, child = born(ppid), born(pid)
         if parent is None or child is None or parent <= child:
             return f'its parent {ppid} is alive ({table[ppid][1][:120]!r}) -- stop that run instead'
@@ -331,34 +140,16 @@ EXIT: Final = (
 )
 
 
-def whose(table: Mapping[int, Proc], pid: int, me: int) -> str:
-    """Whether *pid* descends from this session: the nearest ancestor it shares with *me* below the tree's root."""
-    mine = [*_chain(table, me)][:-1]  # the topmost process is everyone's root, never a session
-    for ancestor in _chain(table, pid):
-        if ancestor in mine:
-            return f'started from this session (shares ancestor {ancestor}: {table[ancestor][1][:80]!r})'
-    return 'not started from this session (no ancestor in common with it)'
-
-
-def _chain(table: Mapping[int, Proc], pid: int) -> list[int]:
-    """*pid*, its parent, and so on up the table (cycles and absent parents end it)."""
-    seen: list[int] = []
-    while pid in table and pid not in seen and pid > _INIT:
-        seen.append(pid)
-        pid = table[pid][0]
-    return seen
-
-
 def _refusal(table: Mapping[int, Proc], pid: int, why: str, me: int, manifest: str) -> list[str]:
     """The refusal of *pid*: what it is, who started it, whose it is, and the exit."""
     ppid = table[pid][0]
     parent = f'{ppid} {table[ppid][1][:120]!r}' if ppid in table else f'{ppid} (gone)'
     return [
-        f'refused: {pid} matches no run signature (built-in or {_TABLE}) and {why}',
+        f'refused: {pid} matches no run signature (built-in or {TABLE}) and {why}',
         f'what: {table[pid][1][:200]!r}',
         f'parent: {parent}',
         f'whose: {whose(table, pid, me)}',
-        EXIT.format(table=_TABLE, manifest=manifest),
+        EXIT.format(table=TABLE, manifest=manifest),
     ]
 
 
@@ -385,158 +176,6 @@ def _gone(pid: int, seconds: float) -> bool:
     return True
 
 
-def _never(pid: int, table: Mapping[int, Proc]) -> str | None:
-    """Why *pid* may never be stopped from here whatever it runs -- this process, gone, or an ancestor."""
-    if pid in (os.getpid(), os.getppid()):
-        return f'{pid} is this process or its parent'
-    if pid not in table:
-        return f'no process {pid}'
-    if pid in _ancestors(table, os.getpid()):
-        return f'{pid} is an ancestor of this process'
-    return None
-
-
-def _command_hash(command: str) -> str:
-    return hashlib.sha256(command.encode('utf-8')).hexdigest()
-
-
-@dataclass
-class _ApprovedTree:
-    """One bounded original process snapshot and the parents this invocation proved stopped."""
-
-    root: int
-    table: Mapping[int, Proc]
-    members: frozenset[int]
-    stamps: dict[int, int | None]
-    stopped: set[int]
-
-    @classmethod
-    def capture(
-        cls,
-        pid: int,
-        table: Mapping[int, Proc],
-        approved: ApprovedRun,
-        born: CreationClock,
-        *,
-        signatures: tuple[str, ...],
-        orphans: tuple[str, ...],
-    ) -> _ApprovedTree:
-        """Reuse the process owner's refuted-edge closure, then require positive identity proof."""
-        stamps: dict[int, int | None] = {}
-
-        def observed(member: int) -> int | None:
-            if member not in stamps:
-                stamps[member] = born(member)
-            return stamps[member]
-
-        if observed(pid) != approved.created or _command_hash(table[pid][1]) != approved.command_sha256:
-            msg = 'approved root creation stamp or complete command identity disagrees'
-            raise ValueError(msg)
-        if _why_stoppable(table, pid, signatures, born) is not None:
-            raise ValueError(_ordinary_lifecycle_door(pid))
-        rows = {member: (row[1], row[0]) for member, row in table.items()}
-        members = descendants(pid, rows, observed)
-        if any(type(observed(member)) is not int or observed(member) <= 0 for member in members):
-            msg = 'an approved subtree member has no readable creation stamp'
-            raise ValueError(msg)
-        if any(not table[member][1].strip() for member in members):
-            msg = 'an approved subtree member has no readable complete command'
-            raise ValueError(msg)
-        for member in members:
-            command = table[member][1]
-            if (
-                SERVE.search(command)
-                or _orphan_role(command, orphans)
-                or orphaned_worker(table, member, born) is not None
-            ):
-                raise ValueError(_ordinary_lifecycle_door(member))
-        return cls(pid, dict(table), members, stamps, set())
-
-    def changed(self, fresh: Callable[[], Mapping[int, Proc]], born: CreationClock) -> str | None:
-        """Refuse an unreadable fresh census rather than killing against an old observation."""
-        try:
-            return self._changed(fresh(), born)
-        except OSError as exc:
-            return f'the fresh process identity is unreadable: {exc}'
-
-    def _changed(self, current: Mapping[int, Proc], born: CreationClock) -> str | None:
-        """The exact original members remain; only a proved stopped parent licenses reparenting."""
-        for member in self.members - self.stopped:
-            if member not in current:
-                return f'original member {member} disappeared before its identity could be proved'
-            if never := _never(member, current):
-                return never
-            if born(member) != self.stamps[member] or _command_hash(current[member][1]) != _command_hash(
-                self.table[member][1]
-            ):
-                return f'original member {member} changed creation stamp or complete command'
-            parent = self.table[member][0]
-            if current[member][0] != parent and parent not in self.stopped:
-                return f'original member {member} changed parent while its proved parent was not stopped'
-        current_rows = {member: (row[1], row[0]) for member, row in current.items()}
-        # Keep only the ORIGINAL proved edges through stopped/reparented members. Never walk a
-        # new parent. These virtual rows diagnose growth; they never authorize an extra kill.
-        current_rows.update({member: (row[1], row[0]) for member, row in self.table.items() if member in self.members})
-        growth = (
-            descendants(
-                self.root,
-                current_rows,
-                lambda member: self.stamps[member] if member in self.stopped else born(member),
-            )
-            - self.members
-        )
-        if growth:
-            return (
-                f'additional processes below the recorded parent identities: {sorted(growth)}; '
-                'no new member is authorized. Inspect them and use their recognized run door or a new exact approval'
-            )
-        return None
-
-
-def _stop_approved(
-    pid: int,
-    table: Mapping[int, Proc],
-    approved: ApprovedRun,
-    *,
-    dry_run: bool,
-    born: CreationClock,
-    fresh: Callable[[], Mapping[int, Proc]],
-    kill: Callable[[int], None],
-    gone: Callable[[int, float], bool],
-    signatures: tuple[str, ...],
-    orphans: tuple[str, ...],
-) -> tuple[int, list[str]]:
-    """Cut the actual controller first; every later uncertainty reports partial, never atomic success."""
-    try:
-        tree = _ApprovedTree.capture(pid, table, approved, born, signatures=signatures, orphans=orphans)
-    except (ValueError, OSError) as exc:
-        return 3, [f'refused: {exc}']
-    if why := tree.changed(fresh, born):
-        return 3, [f'refused: {why}']
-    lines = ['user-authorized exact controller identity; this assertion is not session ownership proof']
-    order = [pid, *(member for member in subtree(table, pid) if member != pid and member in tree.members)]
-    for member in order:
-        if why := tree.changed(fresh, born):
-            prefix = 'partial: stopped no further process' if tree.stopped else 'refused'
-            return 3, [*lines, f'{prefix}: {why}']
-        if dry_run:
-            lines.append(
-                f'would stop {member} created={tree.stamps[member]} command_sha256={_command_hash(table[member][1])}'
-            )
-            continue
-        try:
-            kill(member)
-            exited = gone(member, 2.0)
-        except OSError as exc:
-            return 3, [*lines, f'partial: stopping {member} was not confirmed: {exc}; no further kill']
-        if not exited:
-            return 3, [*lines, f'partial: stop requested for {member}, but exit was not confirmed; no further kill']
-        tree.stopped.add(member)
-        lines.append(f'stopped {member} created={tree.stamps[member]} command_sha256={_command_hash(table[member][1])}')
-    why = tree.changed(fresh, born)
-    return (3, [*lines, f'partial: the original stop sequence ended, but {why}']) if why else (0, lines)
-
-
 def stop(
     pid: int,
     table: Mapping[int, Proc],
@@ -555,10 +194,10 @@ def stop(
     fresh: Callable[[], Mapping[int, Proc]] = process_table,
 ) -> tuple[int, list[str]]:
     """Stop *pid*'s subtree if it is an identifiable run or a stoppable orphan. ``(exit code, lines)``; 3 refused."""
-    if never := _never(pid, table):
+    if never := unstoppable(pid, table):
         return 3, [f'refused: {never}']
     if approved is not None:
-        return _stop_approved(
+        return stop_approved(
             pid,
             table,
             approved,
@@ -570,31 +209,33 @@ def stop(
             signatures=signatures,
             orphans=orphans,
         )
-    matched = _why_stoppable(table, pid, signatures, born)
+    matched = why_stoppable(table, pid, signatures, born)
     if matched is None:
         if why := _orphan_refusal(pid, table, orphans, claimed, born):
             return 3, _refusal(table, pid, why, os.getpid() if me is None else me, manifest)
         lines = [f'an orphan: its parent is gone and it holds no box claim: {table[pid][1][:120]!r}']
     else:
         lines = [f'matched signature {matched!r}']
-    return _stop_identified_subtree(
-        pid, table, matched, lines, dry_run=dry_run, kill=kill, gone=gone, notes=notes, born=born
-    )
+    return stop_subtree(pid, table, matched, lines, dry_run=dry_run, kill=kill, gone=gone, notes=notes, born=born)
 
 
-def _stop_identified_subtree(
+def stop_subtree(
     pid: int,
     table: Mapping[int, Proc],
     matched: str | None,
     lines: list[str],
     *,
     dry_run: bool,
-    kill: Callable[[int], None],
-    gone: Callable[[int, float], bool],
-    notes: Path | None,
-    born: CreationClock,
+    kill: Callable[[int], None] = _kill,
+    gone: Callable[[int, float], bool] = _gone,
+    notes: Path | None = None,
+    born: CreationClock = creation_stamp,
 ) -> tuple[int, list[str]]:
-    """The existing signature/orphan behavior: children first, with the serve release grace."""
+    """Stop *pid*'s subtree children first, a member whose pid was recycled skipped; a serve gets its grace.
+
+    The ONE tree-kill path: the identified-run and orphan modes reach it after :func:`stop` judged *pid*, and
+    :mod:`dev_lab.dev.shellreaper` after its own judgement (an agent shell past its bound, no seat, no spare).
+    """
     serve = matched == SERVE.pattern
     # Each member's creation stamp as the snapshot saw it: a pid recycled during the serve grace is not ours.
     stamps = {member: born(member) for member in subtree(table, pid)} if not dry_run else {}

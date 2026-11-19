@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import accounthost
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configcheck import check_family, check_host, needs_consent
 
@@ -125,3 +126,39 @@ def test_an_ssh_key_or_value_off_the_schema_is_refused(tmp_path: Path, extra: st
     found = check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + extra))
     assert len(found) == 1, found
     assert named in found[0]
+
+
+def test_a_dev_host_file_carrying_serve_is_refused(tmp_path: Path) -> None:
+    """A workstation never serves a merge's parts (user ruling 2026-11-16); PLANTED CONTROL: the same card without."""
+    assert check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + SSH_ROUTES)) == []
+    found = check_host(_write(tmp_path, 'W.toml', DEV_HOST + '\n' + SSH_ROUTES + '\n[serve]\nparts = "every"\n'))
+    assert [line for line in found if line.startswith('W.toml: [serve] on a host that is no HPC account')]
+
+
+APP_FAMILY = '[dev]\nref = "integrate/main"\napps = ["demo"]\n'
+APP_TABLE = '[demo.core]\ncache_cap_gb = 10\n'
+
+
+def test_a_family_declared_app_table_is_open_in_a_dev_host_file(tmp_path: Path) -> None:
+    """[dev] apps (family-only) opens [<app>] for every host; PLANTED CONTROL: without it the table is refused."""
+    host = DEV_HOST.replace('ref = "integrate/main"\n', '') + '\n' + APP_TABLE
+    family = _write(tmp_path, 'family.toml', APP_FAMILY)
+    assert check_host(_write(tmp_path, 'G.toml', host), family) == []
+    bare = _write(tmp_path, 'bare.toml', '[dev]\nref = "integrate/main"\n')
+    assert [line for line in check_host(_write(tmp_path, 'H.toml', host), bare) if 'demo is not a declared key' in line]
+
+
+def test_apps_is_a_family_fact_never_a_host_one(tmp_path: Path) -> None:
+    family = _write(tmp_path, 'family.toml', APP_FAMILY)
+    found = check_host(_write(tmp_path, 'G.toml', '[dev]\nhpc = []\napps = ["demo"]\n'), family)
+    assert [line for line in found if 'apps' in line and 'family' in line], found
+
+
+def test_a_family_declared_app_table_is_open_in_an_account_file() -> None:
+    """The same opening reaches an HPC account file; PLANTED CONTROL: an undeclared app stays refused."""
+    host = {'deploy': {'host': 'login01'}, 'demo': {'core': {'cache_cap_gb': 10}}}
+    opened = {'dev': {'apps': ['demo']}}
+    assert not [
+        line for line in accounthost.check(Path('c-u.toml'), host, opened) if 'demo is not an account table' in line
+    ]
+    assert [line for line in accounthost.check(Path('c-u.toml'), host, {}) if 'demo is not an account table' in line]

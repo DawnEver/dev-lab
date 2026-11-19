@@ -23,7 +23,14 @@ from lab_commons.log import emit
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forgeauth import UNREACHABLE_EXIT
 from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
-from dev_lab.dev.hpcaccount.spec import Deployment, grant_refusal, has_grant, render_grant, without_hpc
+from dev_lab.dev.hpcaccount.spec import (
+    Deployment,
+    grant_refusal,
+    has_grant,
+    render_grant,
+    unserved,
+    without_hpc,
+)
 from dev_lab.dev.hpcaccount.steps import Step
 
 __all__ = ['UNREACHED', 'ApiCheck', 'RoleCheck', 'auth_check', 'credentials', 'grant', 'reader', 'role_of']
@@ -56,22 +63,27 @@ def _store_mode(store: Path) -> int | None:
     return stat.S_IMODE(store.stat().st_mode) if os.name == 'posix' else 0o600  # modes are POSIX's
 
 
-def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
+def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck, *, serves: bool) -> int:
     """Refuse (2) unless git can read every repo and the forge API answers what a tick needs on each served one.
 
-    Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81); an unserved
-    one is only cloned and fetched, so an anonymous ``git ls-remote`` -- no credential helper -- must succeed.
+    Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81) -- one whose
+    checkout does not declare another producer (:func:`~dev_lab.dev.hpcaccount.spec.unserved`; one not yet cloned
+    is checked as served, so a first deploy still proves its token); any other is only cloned and fetched, so an
+    anonymous ``git ls-remote`` -- no credential helper -- must succeed.
+    An account whose role never *serves* (research) ticks nothing, so no repo there needs the tick's scopes:
+    ``git ls-remote`` is its whole check (a server holds only a read token).
     """
     emit('[credentials] git credential helper and the forge API per served repo; git ls-remote per repo')
-    served = [repo for repo in spec.repos if repo.serve]
+    off = unserved(spec, home)
+    served_repos = [repo for repo in spec.repos if serves and repo.name not in off]
     helper = step.read([*step.tools.git, 'config', '--global', '--get', 'credential.helper']).stdout.strip()
     store = home / '.git-credentials'
-    if served and (problem := store_problem(helper, store, mode=_store_mode(store))):
+    if served_repos and (problem := store_problem(helper, store, mode=_store_mode(store))):
         emit(f'deploy refused: {problem}', err=True)
         return 2
     denied = []
     for repo in spec.repos:
-        anonymous = () if repo.serve else ('-c', 'credential.helper=', '-c', 'credential.interactive=never')
+        anonymous = () if repo.name not in off else ('-c', 'credential.helper=', '-c', 'credential.interactive=never')
         rc = step.read([*step.tools.git, *anonymous, 'ls-remote', repo.url, f'refs/heads/{repo.ref}']).returncode
         emit(f'  {repo.name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
         if rc:
@@ -79,7 +91,10 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck) -> int:
     if denied:
         emit(f'deploy refused: no read access to {", ".join(denied)}; {_CREDENTIAL_REMEDY}', err=True)
         return 2
-    checked = {repo.name: why for repo in served if (why := api(repo.url, home))}
+    if not serves:
+        emit(f'  {spec.role} account: not served here: read access only, no forge API scopes asked')
+        return 0
+    checked = {repo.name: why for repo in served_repos if (why := api(repo.url, home))}
     unreachable = {name: why for name, why in checked.items() if why.startswith(UNREACHED)}
     refused = {name: why for name, why in checked.items() if name not in unreachable}
     for name, why in unreachable.items():

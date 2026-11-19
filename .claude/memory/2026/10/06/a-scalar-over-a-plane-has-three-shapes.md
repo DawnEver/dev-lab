@@ -7,8 +7,6 @@ created: 2026-10-06
 accessed: 2026-10-06
 ---
 
-> Translated 2026-11-12: CJK rendered as faithful English (NO-CJK-IN-TRACKED-SOURCE).
-
 # A scalar over a plane has three shapes
 
 The user directive for this slice was *"A thorough refactor is allowed!"* (user, translated) under first principles / discard historical baggage / Occam's razor /
@@ -82,3 +80,5 @@ verb refusing and its twin drawing a circle for the same description.
   `_viz_figure.py` are the growth), headroom unchanged at 90.
 * `Field`'s bokeh refusal means the peer claim now has TWO subjects one adapter cannot draw (polar,
   continuum), both named in `test_viz_adapters_are_peers`' docstring rather than left to be noticed.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

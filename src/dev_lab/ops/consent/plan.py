@@ -39,22 +39,18 @@ from dev_lab.ops.consent.credential import ConsentRefused, canonical
 __all__ = [
     'DIGEST_SHOWN',
     'RETIRED_SHAPE',
-    'STALE_CLIENT',
     'Plan',
     'digest',
     'load',
+    'not_registered',
     'parsed',
     'request',
     'show',
-    'stale_client',
+    'unregistered',
 ]
 
 #: Hex characters of the digest the user is shown and every grant command names.
 DIGEST_SHOWN: Final = 12
-
-
-#: What a plan naming an action this client's registry lacks means, and the one thing to do about it.
-STALE_CLIENT: Final = 'local dev-lab is older than the plan; update it'
 
 
 #: The refusal of a plan in the retired single-host shape, and its one-time migration.
@@ -120,13 +116,22 @@ def request(grant: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in grant.items() if key != 'host'}
 
 
-def stale_client(plan: Plan) -> list[str]:
-    """The actions of *plan* THIS client's registry lacks, sorted; empty when it knows them all.
+def unregistered(plan: Plan) -> list[str]:
+    """The actions of *plan* the registry lacks, sorted; empty when it knows them all.
 
-    Checked before a code is asked for or sent: a plan written against a newer registry is refused locally by
-    the grant anyway, but only after the user has given the code (2026-11-12).
+    Checked before a code is asked for or sent: the grant refuses such an action anyway, but only after the user
+    has given the code (2026-11-12).
     """
     return sorted({grant['action'] for grant in plan.grants} - set(ACTIONS))
+
+
+def not_registered(unknown: list[str]) -> str:
+    """The refusal of *unknown* actions: what they are not, and the registered ones to choose from.
+
+    A plan carries no dev-lab version, so nothing here can tell a typo from an action a newer dev-lab added;
+    the registry is the one fact this client holds, and it is the one this names (O17, 2026-11-17).
+    """
+    return f'{unknown} not a consent action; the registered ones are {sorted(ACTIONS)}'
 
 
 def load(path: Path, shown: str) -> Plan:

@@ -1,18 +1,20 @@
 # Translations
 
-No tracked file may contain a CJK character -- Han, Japanese kana or Korean hangul, the blocks
-`dev_lab.dev.cjk.CJK_RANGES` names (`NO-CJK-IN-TRACKED-SOURCE`) -- with one named exception: a
-translation `<stem>.zh.md` beside its English `<stem>.md`. Write or change the English page first, then put the
-translation beside it in the same commit. The English page is the source of truth.
+No tracked file may contain a CJK character (`NO-CJK-IN-TRACKED-SOURCE`), with one named exception: a
+translation `<stem>.zh.md`, `<stem>.zh.toml` or `<stem>.zh.json` beside its English `<stem>.md`, `<stem>.toml`
+or `<stem>.json`. Write or change the English file first, then put the translation beside it in the same commit.
+The English file is the source of truth.
 
 ## The rule
 
-- Exempt by path: the repo-root `attic/` only (a nested `x/attic/` is scanned). Memory, task journals and
-  `archived/` are scanned like everything else (user rulings 2026-11-12): a quoted ruling is a faithful
-  English translation marked as translated, and an existing memory entry is translated in place through
-  `dev_lab.dev.memoryentry.only_translated`.
-- A `<stem>.zh.md` is exempt **only while `<stem>.md` is tracked beside it**. An orphaned translation is scanned
-  like any other file, and the `TRANSLATION-HAS-ITS-SOURCE` refusal names the English page to add.
+- Exempt everywhere: `attic/` at any depth, and `archived/` at the repo root only.
+- `.claude/memory/` and `.claude/tasks/` are English only (D26, user, 2026-11-17). A user's words quoted there are
+  translated and marked `(user, translated)`.
+- A `<stem>.zh.<ext>` is exempt **only while `<stem>.<ext>` is tracked beside it**. An orphaned translation is
+  scanned like any other file, and the `TRANSLATION-HAS-ITS-SOURCE` refusal names the English file to add.
+- Migration: a repo lists the files that still carry CJK in its `pyproject.toml` as
+  `[tool.dev_lab.cjk] declared = ["<repo-relative path>", ...]`. The set may only shrink: a declared file with no
+  CJK left is refused until its entry is removed in the same commit.
 
 ## Where it is implemented
 
@@ -20,6 +22,7 @@ translation beside it in the same commit. The English page is the source of trut
   `orphaned_translations`. `scan_files` treats the paths it is handed as the corpus.
 - `dev_lab.dev.famtests.trackedcjk.assert_every_translation_has_its_source`: each repo calls it from its own
   architecture suite over its tracked corpus.
+- `dev_lab.dev.famtests.alwayson.check_no_cjk`: the always-on row; `declared_cjk` reads the migration set.
 
 ## Adding or updating a translation
 

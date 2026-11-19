@@ -182,6 +182,7 @@ def test_a_real_pytest_subprocess_is_read_by_every_reader(tmp_path: Path, flag: 
         'def test_green() -> None:\n    assert True\n\n\ndef test_red() -> None:\n    assert False\n',
         encoding='utf-8',
     )
+    (tmp_path / 'pytest.ini').write_text('[pytest]\n', encoding='utf-8')  # its own root, not the checkout's
     run = subprocess.run(
         [sys.executable, '-m', 'pytest', '-p', 'no:cacheprovider', '-p', 'no:xdist', flag, str(tmp_path)],
         capture_output=True,

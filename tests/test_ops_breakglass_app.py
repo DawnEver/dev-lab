@@ -7,13 +7,12 @@ only as a refusal naming the remedy, ``[ops.breakglass.apps]``; Gitea, which has
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from dev_lab.ops import breakglass, configupgrade
+from dev_lab.ops import breakglassforge, configretired
 from dev_lab.ops.config import Breakglass
 from dev_lab.ops.secretplace import declared
 from dev_lab.ops.served import app_of_forge, credential_files
@@ -31,12 +30,12 @@ def test_a_github_app_serves_breakglass_and_gitea_keeps_its_token() -> None:
     assert set(credential_files(role.tokens, role.apps)) == {'t', APP['key_file']}
 
 
-def test_a_github_token_in_the_judge_is_dropped_on_read_naming_the_app(capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_github_token_in_the_judge_is_refused_naming_the_app() -> None:
     ops = {'judge': {'user': 'judge', 'repos': ['https://github.com/owner/beta'], 'tokens': {'github.com': 'pat'}}}
-    judge = configupgrade.upgraded(ops)['judge']
-    assert judge['tokens'] == {}, 'a standing GitHub token is never presented'
-    assert judge['repos'] == [], 'with no App the judge does not act on GitHub'
-    assert re.search(r'github\.com.*\[ops\.judge\.apps\]', capsys.readouterr().err)
+    with pytest.raises(ValueError, match=r'github\.com.*\[ops\.judge\.apps\]'):
+        configretired.refuse(ops)
+    gitea = {'judge': {**ops['judge'], 'tokens': {'gitea.example': 't'}}}
+    configretired.refuse(gitea)  # control: Gitea keeps its token
 
 
 def test_the_forge_of_an_app_repo_presents_a_minted_installation_token() -> None:
@@ -48,9 +47,10 @@ def test_the_forge_of_an_app_repo_presents_a_minted_installation_token() -> None
         return f'installation-for-{url.split("/")[2]}'
 
     secrets = {'t': 'gitea-token'}
-    assert breakglass.credential(role, GLASS[1], secret=secrets.__getitem__, mint=mint) == 'installation-for-github.com'
+    minted_for = breakglassforge.credential(role, GLASS[1], secret=secrets.__getitem__, mint=mint)
+    assert minted_for == 'installation-for-github.com'
     assert minted == [(4242, Path(APP['key_file']))]
-    assert breakglass.credential(role, GLASS[0], secret=secrets.__getitem__, mint=mint) == 'gitea-token'
+    assert breakglassforge.credential(role, GLASS[0], secret=secrets.__getitem__, mint=mint) == 'gitea-token'
     assert len(minted) == 1  # control: a Gitea repo mints nothing
 
 

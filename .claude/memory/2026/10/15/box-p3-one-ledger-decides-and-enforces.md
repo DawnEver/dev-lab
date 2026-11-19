@@ -3,11 +3,9 @@ name: box-p3-one-ledger-decides-and-enforces
 description: P3 of the box refactor -- leases/lending/preemption deleted, a box host's forge supply is its box ledger, and a local producer runs in the box at exactly the demand it was admitted at
 created: 2026-10-15
 ---
-
-> Translated 2026-11-12: CJK rendered as faithful English (NO-CJK-IN-TRACKED-SOURCE).
 # Box P3: one ledger decides and enforces (2026-10-15)
 
-User ruling 2026-10-14 "A: delete" (translated): reservations, leases, lending and preemption are deleted; priority is
+User ruling 2026-10-14 "A: delete" (user, translated): reservations, leases, lending and preemption are deleted; priority is
 ordering only. P3 lands that and moves the box host's forge path onto `lab_commons.box`.
 
 ## Decisions where the brief left a choice
@@ -46,3 +44,5 @@ unbounded). Check on the host before deploying; the fix would be a system-scope 
 
 - P4: the cluster `held_run` double count (a cluster run in flight is still `running` at `cluster_demand`).
 - P5: downstream callers (its gate runner and anything importing the deleted `dev` modules).
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

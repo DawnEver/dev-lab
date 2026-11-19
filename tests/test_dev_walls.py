@@ -120,7 +120,26 @@ def test_a_foreign_denial_seen_after_a_tool_call_is_an_unremedied_wall(tmp_path:
     }
     assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
     (line,) = _lines(tmp_path)
-    assert (line['rule'], line['remedy_present'], line['session']) == (walls.UNKNOWN, False, SESSION)
+    assert (line['rule'], line['remedy_present'], line['session']) == (walls.HARNESS_PERMISSION, False, SESSION)
+
+
+@pytest.mark.parametrize(
+    ('text', 'rule'),
+    [
+        ('Permission to use Bash has been denied by the auto-mode classifier.', 'HARNESS-PERMISSION'),
+        ("The user doesn't want to proceed with this tool use. The tool use was rejected.", 'HARNESS-PERMISSION'),
+        ('box: refused -- verify:x: not admitted -- no room within the queue limit', 'UNNAMED-BOX'),
+        ('Exit code 1\nsomething was refused upstream', 'UNNAMED-REFUSAL'),
+        ('PreToolUse:Bash hook error: OTHER-RULE: blocked', 'OTHER-RULE'),
+    ],
+)
+def test_every_wall_names_a_rule_never_unknown(text: str, rule: str) -> None:
+    """MEASURED 2026-11-14/15: walls recorded rule 'unknown', which no reader can act on.
+
+    A denial naming no ID is named by its SOURCE: the harness's permission layer, or the door that printed it
+    (``UNNAMED-<DOOR>`` -- that door is the gap), else ``UNNAMED-REFUSAL``.
+    """
+    assert walls.rule_of(text) == rule
 
 
 @pytest.mark.parametrize(
@@ -144,3 +163,39 @@ def test_a_named_rule_in_a_foreign_denial_is_kept(tmp_path: Path) -> None:
     }
     assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
     assert [line['rule'] for line in _lines(tmp_path)] == ['OTHER-RULE']
+
+
+#: MEASURED: grep output quoting a docstring was recorded as a NEEDS-NEWEST-HEAD-ONLY wall.
+_QUOTED_SOURCE = (
+    'Exit code 1\n'
+    'src/dev_lab/dev/forgesupersede.py:147:    NEEDS-NEWEST-HEAD-ONLY: a started task is never refused or blocked\n'
+    '    NEEDS-NEWEST-HEAD-ONLY: the tip is blocked behind it'
+)
+
+
+#: MEASURED 2026-11-17: test output quoting a rule's refusal under test was recorded as three unremedied walls.
+_QUOTED_REFUSAL = (
+    'Exit code 1\n'
+    'FAILED tests/test_x.py::test_budget - AssertionError\n'
+    'HOOK-UNDER-FIVE-SECONDS: planted_slow ran past the hook budget; the call was refused\n'
+)
+
+
+@pytest.mark.parametrize(
+    ('text', 'rules'),
+    [
+        (_QUOTED_SOURCE, []),  # an id inside ordinary tool output is not a refusal
+        (_QUOTED_REFUSAL, []),  # a rule line under other output is quoted, not a refusal
+        (
+            _QUOTED_REFUSAL.replace('FAILED tests/test_x.py::test_budget - AssertionError\n', ''),
+            ['HOOK-UNDER-FIVE-SECONDS'],
+        ),
+        ('PreToolUse:Bash hook error: OTHER-RULE: blocked -- quoted NEEDS-NEWEST-HEAD-ONLY', ['OTHER-RULE']),
+        ("OTHER-RULE: refused -- a printer's own refusal line", ['OTHER-RULE']),
+    ],
+)
+def test_only_a_refusal_line_records_a_wall_never_an_id_in_output(tmp_path: Path, text: str, rules: list[str]) -> None:
+    payload = {'session_id': SESSION, 'cwd': str(tmp_path), 'tool_response': {'stderr': text, 'stdout': ''}}
+    assert walls.main(['post-tool'], stdin=io.StringIO(json.dumps(payload))) == 0
+    recorded = [line['rule'] for line in _lines(tmp_path)] if walls.ledger(tmp_path).exists() else []
+    assert recorded == rules

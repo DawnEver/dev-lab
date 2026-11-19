@@ -20,14 +20,15 @@ A gap found late is closed at the earliest layer that could have caught it.
 ## The wall ledger
 
 - `dev_lab.dev.walls.refused` is the refusal choke point: one `metrics` refusal line and one ledger line.
-  The deny engine reaches it as `python -m dev_lab.dev.walls refused`; the git hook runner calls it.
-  A family hook or CLI refusing with a text (the journal door, the hand-back, pushed-head and scratch stops,
-  the plan preflight) goes through `walls.refused_text`, which names the rule and computes the remedy.
+  The deny engine reaches it as `python -m dev_lab.dev.walls refused` (for a row it asks a judge, the journal
+  door's, too); the git hook runner calls it. A family hook or CLI refusing with a text (the hand-back,
+  pushed-head and scratch stops, the plan preflight) goes through `walls.refused_text`, which names the rule and computes the remedy.
 - `walls post-tool` (`PostToolUse`, `PostToolUseFailure`) records a denial in a tool's error text that
   carries no family `details:` pointer -- a classifier's or a tool's own -- as a wall with no remedy.
 - Where: `output/logs/<yy>/<mm>/<dd>/walls/walls.jsonl` under the main checkout. One line per wall:
-  `ts`, `session`, `rule` (or `unknown`), `command_sha256` (a 16-hex prefix; never the command, which may hold
-  a token), `remedy_present`. A closure line carries `closed_by` instead.
+  `ts`, `session`, `rule` (the one a denial names, else its source: `HARNESS-PERMISSION` or `UNNAMED-<DOOR>`,
+  `walls.rule_of`), `command_sha256` (a 16-hex prefix; never the command, which may hold a token),
+  `remedy_present`. A closure line carries `closed_by` instead.
 - `remedy_present` is `walls.has_remedy`: a line beyond the cause that is not only the `details:` pointer.
 
 ## Closing a gap

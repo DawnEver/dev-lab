@@ -13,7 +13,9 @@ its digest -- topology.md 5.1)::
 The STEPS FILE says what each grant of the plan runs, in the plan's order (one step per grant). A HOST step runs an
 ops verb on its grant's ``host`` (``config``/``python`` default the file's); a LOCAL step redeems its grant
 here, through the client verb of :data:`LOCAL_VERBS` (a ``breakglass.wave`` opens a wave:
-``python -m dev_lab.dev.forge breakglass open --credential <id>``)::
+``python -m dev_lab.dev.forge breakglass open --credential <id>``; a ``hpcaccount.ci-cron`` step names its verb,
+``{"local": true, "argv": ["ci-pause-fleet", "--cluster", "<c>"]}``, run as ``python -m dev_lab.dev.hpcaccount
+<argv...> --credential <id>``)::
 
     {"config": "/etc/dev-lab/supervise.toml", "python": "/usr/bin/python3",
      "steps": [{"argv": ["config", "apply", "--from", "/srv/plan/candidate.toml"]},
@@ -31,7 +33,10 @@ file is written anywhere, and the bytes are never printed. ``stdout_local`` (a r
 mirror for a step whose OUTPUT is the secret (a ``forge token mint``): the output is written owner-only under THIS
 machine's private state (:func:`stdout_path`, beside the credentials of :func:`.consentguard.state_dir`, never a
 checkout), and the run shows only ``wrote <path> (sha256 <12 hex>, <n> bytes)``; on a failure it shows the exit
-status and that the output was withheld, and writes nothing.
+status and that the output was withheld, and writes nothing. A ``forge token mint``/``mint-batch`` step needs no
+``stdout_local`` (and refuses one): EVERY token it prints lands in its own owner-only
+``outputs/<login>-<name>.token`` and the run names each path and the token's sha256 prefix -- never the value; an
+output that carries a secret but does not parse stops the run naming the raw file it kept, never truncating it.
 
 :func:`preflight` spends no code. Per host it asks ``consent ready`` WITHOUT sudo
 (it reads only the config and the public key, so no sudoers row: the verifier key resolves, a use can register);
@@ -80,7 +85,7 @@ from lab_commons.log import emit
 from dev_lab.dev import sshholdwire, walls
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.planremote import remote_for
-from dev_lab.dev.planrunpreflight import RULE, UNREAD, Readers, config_subject, preflight
+from dev_lab.dev.planrunpreflight import RULE, UNREAD, Readers, config_subject, offered, preflight
 from dev_lab.dev.planrunsteps import (
     CONFIG_ACTION,
     REMOTE_DIR,
@@ -221,13 +226,16 @@ def run_plan(
         if used:
             held.unlink()
         kept = 'spent, deleted' if used else f'NOT spent, kept: {held}'
+        shown, handled = shown_output(step, said, status, home)
         if status:
-            shown = shown_output(step, said, status, home)
             lines.append(f'{name}: STOPPED -- refused (exit {status}): {shown}; credential {kept}')
+            return False, lines
+        if not handled:
+            lines.append(f'{name}: STOPPED -- ran, but {shown}; credential {kept}')
             return False, lines
         done.add(index)
         write_private(record, json.dumps({'done': sorted(done)}) + '\n')
-        lines.append(f'{name}: ran ({shown_output(step, said, status, home)}); credential {kept}')
+        lines.append(f'{name}: ran ({shown}); credential {kept}')
     return True, [*lines, 'plan: every step ran']
 
 
@@ -279,7 +287,7 @@ def main(argv: Sequence[str] | None = None, *, readers: Readers | None = None) -
         if args.verb == 'run':
             green, lines = run_plan(plan, steps, remote_for, spent=spent_ids)
         else:
-            green, lines = preflight(plan, steps, remote_for)
+            green, lines = offered(plan, preflight(plan, steps, remote_for))
             if not green:
                 walls.refused_text(Path.cwd(), '\n'.join(lines), reason='preflight', rule=RULE)
     except (ConsentRefused, sshholdwire.HoldRefused, OSError, ValueError) as refused:
