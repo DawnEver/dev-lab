@@ -13,7 +13,7 @@ import pytest
 
 from dev_lab.dev import artefactindex
 from dev_lab.dev.artefactindex import MemberFact, StoredOutputs
-from dev_lab.dev.artefactstores import ArtefactRefused, Ref
+from dev_lab.dev.artefactstores import ArtefactRefused, Ref, manifest_of
 
 PACK_LIMITS = {'max_members': 100, 'max_index_bytes': 65536, 'max_path_bytes': 4096}
 
@@ -21,7 +21,7 @@ PACK_LIMITS = {'max_members': 100, 'max_index_bytes': 65536, 'max_path_bytes': 4
 def _catalogue_record() -> tuple[dict[str, Any], Ref]:
     ref = Ref('folder', 'lab/archive.tar.gz', 42, 'a' * 64)
     member = MemberFact('dir/é.bin', 0, hashlib.sha256(b'').hexdigest())
-    return {'artefacts': [ref.manifest()], 'artefact_indexes': StoredOutputs(ref, (member,)).index()}, ref
+    return {'artefacts': [manifest_of(ref)], 'artefact_indexes': StoredOutputs(ref, (member,)).index()}, ref
 
 
 @pytest.mark.parametrize(
@@ -49,7 +49,7 @@ def test_catalogue_refuses_mutated_record_index(fault: str) -> None:
     if fault == 'unindexed':
         record.pop('artefact_indexes')
     if fault == 'duplicate_ref':
-        record['artefacts'].append(ref.manifest())
+        record['artefacts'].append(manifest_of(ref))
     if fault == 'foreign_sha':
         record['artefact_indexes'] = {'b' * 64: index}
     if fault == 'duplicate':

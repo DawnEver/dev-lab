@@ -200,7 +200,7 @@ def test_the_reader_finds_rems_binding_from_the_working_directory(
     assert taskbinding.bound_task('session-b') is None
 
 
-@pytest.mark.parametrize('field', ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'])
+@pytest.mark.parametrize('field', ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'ANTIGRAVITY_CONVERSATION_ID'])
 def test_a_native_session_needs_its_own_valid_signed_role(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str
 ) -> None:
