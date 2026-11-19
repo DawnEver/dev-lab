@@ -253,6 +253,15 @@ HINT: the hazard is minutes, not harm.
 
 - **Why it is refused.** a push deletes a branch and the judgement could not be made: the repo's `[tool.dev_lab.integrator]` declares no `integration` (or a `derived` row naming no branch or no producer), the fetch of origin failed, or the forge's open PR heads could not be read. An unread answer is never a pass: the hook fails closed.
 - **The exit.** Fix what the cause line names -- declare the integration branch, or wait for origin and the forge to answer -- and push again (`{python} -m dev_lab.dev.netverb -- git push ...` retries a transient failure).
+## MACHINE-FILE-IS-RENDERED
+
+- **Why it is refused.** The machine file (`lab_commons.config.config_path()`) is a RENDER of three layers -- the config source's family file, its host file, and the machine's own local tables (`dev_lab.dev.devhost`). A hand edit of a family or host key is lost at the next render; a hand edit of a local key changes a fact nobody recorded (user ruling 2026-11-15). The shell row refuses a redirection, `tee`, `sed -i`, or a `cp`/`mv`/`Set-Content` onto the file; the Write/Edit half is `dev_lab.dev.machineguard.refuse_write`. Reading it stays free. An edit the hooks cannot see (an editor) is named key by key, with its owning layer, by the next SessionStart drift notice (`devhost drift`).
+- **The exit.** A family or host key: change `family.toml` or `hosts/<machine>.toml` in the config source through its pull request, then `python -m dev_lab.dev.devhost render --write`. A local key (`[repos]`, `[user]`): `python -m dev_lab.dev.devhost local set <table>.<key> <value>` (or `local unset <table>.<key>`); it backs the file up, re-renders and prints what changed.
+
+## FAMILY-REPO-IS-CHECKED-OUT
+
+- **Why it is refused.** The family's repos are declared once, in the config source's `[family_repos]` (remote and integration branch), and where each is checked out on this machine is `[repos]` (the local layer). A clone of a repo `[repos]` already maps is a second checkout that splits work between two trees (2026-11-15: an agent cloned a second copy of a family repo it did not find). The row matches `git clone` and asks `python -m dev_lab.dev.familyrepos clone-check` (`when: 'declared-repo'`); a url no family repo declares passes. Every session starts with one `repo <name> -> <path>` line per `[repos]` row (`MISSING` when absent), and `devhost drift` names a family repo with no path and a path for no family repo.
+- **The exit.** Work in the registered checkout: `git -C <path> worktree add -b pr/<slug> .claude/worktrees/<slug> origin/<branch>`. If the registered path is wrong, `python -m dev_lab.dev.devhost local set repos.<name> <absolute path>`.
 
 ## Cross-repo refusals
 

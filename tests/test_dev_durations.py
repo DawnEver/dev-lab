@@ -480,3 +480,22 @@ def test_an_unselected_run_records_the_selector_as_all(tmp_path: Path) -> None:
     recorder.pytest_runtest_logreport(_Report(nodeid='a::t', duration=1.0))
     recorder.pytest_sessionfinish(types.SimpleNamespace(config=config))
     assert read(tmp_path).selector == 'all'
+
+
+def test_two_readings_in_one_clock_tick_still_order_newest_last(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED: a clock that does not advance (Windows' coarse ``time_ns``): the later write still wins.
+
+    CONTROL: the reverse order of the same two writes reads the other value, so the order, not the value, decides.
+    """
+    monkeypatch.setattr(durations.time, 'time_ns', lambda: 1_700_000_000_000_000_000)
+    for name in ('one', 'two'):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
+    write(tmp_path / 'one', [Row('a::t', 90.0)], selector='all', worker='gw0')
+    write(tmp_path / 'one', [Row('a::t', 0.1)], selector='a')
+    write(tmp_path / 'two', [Row('a::t', 0.1)], selector='a')
+    write(tmp_path / 'two', [Row('a::t', 90.0)], selector='all', worker='gw0')
+    assert read(tmp_path / 'one').seconds == {'a::t': 0.1}
+    assert read(tmp_path / 'two').seconds == {'a::t': 90.0}

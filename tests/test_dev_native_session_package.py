@@ -39,6 +39,7 @@ def test_the_built_wheel_installs_the_same_identity_catalog_beside_its_launcher(
         'installed, checkout = map(pathlib.Path, sys.argv[1:])\n'
         'assert pathlib.Path(native_session.__file__).is_relative_to(installed)\n'
         "assert native_session.session_of({'CODEX_THREAD_ID': 'wheel-native'}) == 'wheel-native'\n"
+        "assert native_session.session_of({'ANTIGRAVITY_CONVERSATION_ID': 'wheel-agy'}) == 'wheel-agy'\n"
         'agent_guard.install_guard(checkout)\n'
         "catalog = (checkout / agent_wiring.LAUNCHER_REL).with_name('native_session.json')\n"
         "assert catalog.read_bytes() == pathlib.Path(native_session.__file__).with_suffix('.json').read_bytes()\n"

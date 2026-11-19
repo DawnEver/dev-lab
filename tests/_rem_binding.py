@@ -72,3 +72,33 @@ def plant_codex_rem(home: Path, *versions: str, enabled: bool = True) -> None:
     (root / 'config.toml').write_text(f'[plugins."{_REM}"]\nenabled = {str(enabled).lower()}\n', encoding='utf-8')
     for version in versions:
         (root / 'plugins' / 'cache' / 'cc-market' / 'rem' / version).mkdir(parents=True, exist_ok=True)
+
+
+def plant_agy_rem(
+    home: Path,
+    version: str | None,
+    *,
+    enabled: bool | None = None,
+    manifest_disabled: bool = False,
+    include_only: list[str] | None = None,
+    claude_fallback: bool = False,
+    tilde_path: bool = False,
+) -> None:
+    """Antigravity's registry under *home*: ``plugins.json``, the market dir, and optional ``config.json``."""
+    gemini = home / '.gemini' / 'config'
+    gemini.mkdir(parents=True, exist_ok=True)
+    market = home / 'cc-market'
+    entry: dict[str, object] = {'path': '~/cc-market' if tilde_path else market.as_posix()}
+    if include_only is not None:
+        entry['include_only'] = include_only
+    (gemini / 'plugins.json').write_text(json.dumps({'entries': [entry]}), encoding='utf-8')
+    if version is not None:
+        sub = '.claude-plugin' if claude_fallback else '.antigravity-plugin'
+        manifest_dir = market / 'rem' / sub
+        manifest_dir.mkdir(parents=True, exist_ok=True)
+        manifest: dict[str, object] = {'name': 'rem', 'version': version}
+        if manifest_disabled:
+            manifest['disabled'] = True
+        (manifest_dir / 'plugin.json').write_text(json.dumps(manifest), encoding='utf-8')
+    if enabled is not None:
+        (gemini / 'config.json').write_text(json.dumps({'plugins': {'rem': {'enabled': enabled}}}), encoding='utf-8')
