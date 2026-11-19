@@ -112,6 +112,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'pushgate',
     'prlanded',
+    # ORIGINAL: no door removed a whole redundant clone; RECURSIVE-DELETE refused it with no exit (2026-11-19).
+    'cloneremove',
     'issueref',
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator',

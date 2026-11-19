@@ -157,3 +157,12 @@ def test_an_archived_tree_branch_or_detached_names_the_remove_door() -> None:
     for text in (rule.remedy, section):
         assert 'dev_lab.dev.worktrees --remove <name>' in text
         assert 'detached' in text
+
+
+def test_a_whole_redundant_clone_names_the_clone_door() -> None:
+    """Wall 2026-11-19: a whole redundant clone outside the checkout had no exit; ``cloneremove`` is it."""
+    rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']
+    section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
+    section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
+    for text in (rule.remedy, section):
+        assert 'dev_lab.dev.cloneremove <path> --approved' in text

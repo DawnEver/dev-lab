@@ -551,6 +551,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   loses nothing (held by integration, another live branch or an open PR head, by content, or declared derived).
 * :mod:`dev_lab.dev.pushdelete` -- LOSSLESS-DELETE at pre-push: every branch a push deletes, however spelled, is
   judged on git's ref lines; refused naming ``branchprune delete``; an unreadable forge or origin refuses.
+* :mod:`dev_lab.dev.cloneremove` -- CLONE-REMOVE: ``cloneremove <path> --approved "<words>"`` removes a whole
+  redundant clone, refused while a commit is on no remote, work is uncommitted or stashed, a process or a
+  ``[repos]`` row holds it.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
