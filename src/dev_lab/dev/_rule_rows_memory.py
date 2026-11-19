@@ -9,16 +9,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MEMORY-SHAPE',
         (
-            'Knowledge has four layers: rules (hard constraints), docs (mechanism), memory (dated entries) '
-            'and tasks (`.claude/tasks/<slug>/TASK.md` + `JOURNAL.md`, user-opened). A memory entry sits '
-            'under a YYYY/MM/DD path with frontmatter (`name`, `description`) and is never edited, deleted or '
-            'moved once written -- a correction is a new entry naming it in `corrects:`, a consolidation one '
-            'naming its same-scope sources in `merged_from:`, citing a source file per paragraph -- so a '
-            'change under `**/.claude/memory/**` may only ADD a file, the moves being a task archived into '
-            'memory and an approved redacting rename (an account-like token in a published name replaced by '
-            '`user` or dropped, same directory, the entry gaining a `renamed` amendment note); no `accessed` '
-            'field is kept, and the index `<scope>/.claude/memory-index.md` is derived, '
-            'gitignored and never under `rules/`.'
+            'Knowledge has four layers: rules, docs, memory (dated entries) and tasks '
+            '(`.claude/tasks/<slug>/`, user-opened). A memory entry sits under a YYYY/MM/DD path with '
+            'frontmatter (`name`, `description`) and is never edited, deleted or moved once written -- a '
+            'correction is a new entry naming it in `corrects:`, a consolidation one naming its sources in '
+            '`merged_from:` -- so a change under `**/.claude/memory/**` may only ADD a file; the two moves are '
+            'a task archived into memory and an approved redacting rename (`dev_lab.dev.memoryentry`). No '
+            '`accessed` field; the index `memory-index.md` is derived, gitignored, never under `rules/`.'
         ),
         (
             'tests/architecture/repo/test_memory_lives_in_dated_directories.py',
