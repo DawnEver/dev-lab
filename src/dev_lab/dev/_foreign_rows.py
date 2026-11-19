@@ -139,6 +139,10 @@ EVICTED: Final[dict[str, str]] = {
 #: anywhere, and a waiver list nobody believes is a waiver list nobody reads. Two-sided all the
 #: same: if the example goes, the handle goes with it.
 SYNTHETIC: Final[dict[str, str]] = {
+    'src/dev_lab/dev/vscodesettings.py::path': (
+        '`.vscode/settings.json`, the file this module RENDERS into each family checkout; it resolves only '
+        'where it was rendered and names no file of a particular sibling.'
+    ),
     'src/dev_lab/dev/automode.py::path': (
         '`.claude/automode.json`, the machine-local file this module WRITES into a consumer checkout; '
         'it is gitignored, so it resolves only where it was rendered and names no tracked file.'
