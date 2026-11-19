@@ -23,6 +23,8 @@ from _arch_corpus import ROOT, assert_floor, parse, rel, source_modules
 
 #: Who opens an HTTP connection itself, and why that is not a forge call bypassing the loop.
 OPENS_A_CONNECTION: Final[dict[str, str]] = {
+    'src/dev_lab/dev/toolrelease.py': 'not a forge: a pinned tool release download (the release host the tool '
+    'table declares), its bytes refused unless their sha256 matches the pin',
     'src/dev_lab/dev/forge.py': 'forge_transport: the connection every forgework.Client exchange opens inside '
     'forgefailure.retried',
     'src/dev_lab/dev/actionsartifact.py': '_urllib_once: the exchange actionsartifact.retrying runs through '

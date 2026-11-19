@@ -79,6 +79,8 @@ from dev_lab.dev.artefactstores import (
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages, pulls_off
 from dev_lab.dev.forgework import Client, is_pull, pull_of
+from dev_lab.dev.toolrelease import ToolAbsent
+from dev_lab.dev.toolrelease import resolve as installed
 
 __all__ = [
     'ARCHIVE',
@@ -257,7 +259,7 @@ def large_store(config: Config, repo: str) -> ArtefactStore | None:
     return None
 
 
-def remote_problem(root: Path, *, rclone: Sequence[str] = ('rclone',)) -> str:
+def remote_problem(root: Path, *, rclone: Sequence[str] = ()) -> str:
     """Why this host cannot write the repo's rclone store, ``''`` when it can or none is configured.
 
     A cheap READ-ONLY probe of the remote's root (:func:`lab_commons.hpc.rclone.probe`).
@@ -266,7 +268,14 @@ def remote_problem(root: Path, *, rclone: Sequence[str] = ('rclone',)) -> str:
         config = load_config(root)
     except ArtefactRefused as bad:
         return str(bad)
-    return probe(config.remote, rclone=rclone) if config.backend == RCLONE else ''
+    if config.backend != RCLONE:
+        return ''
+    if not rclone:
+        try:
+            rclone = (str(installed('rclone')),)
+        except ToolAbsent as absent:
+            return str(absent)
+    return probe(config.remote, rclone=rclone)
 
 
 def store_for(config: Config, client: Client, repo: str, *, size: int) -> ArtefactStore:
