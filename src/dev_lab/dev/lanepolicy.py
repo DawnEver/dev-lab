@@ -105,9 +105,10 @@ class Policy:
 
 
 def load_policy(root: Path) -> Policy:
-    """*root*'s working-tree ``[tool.dev_lab.integrator]``; a missing manifest is refused like a missing table."""
-    manifest = root / 'pyproject.toml'
-    return policy_from(manifest.read_text(encoding='utf-8') if manifest.is_file() else '', str(manifest))
+    """*root*'s working-tree ``[tool.dev_lab.integrator]``, a data repo's from its family row; neither is refused."""
+    from dev_lab.dev.familyrepos import manifest_text  # noqa: PLC0415 -- the family reader loads the machine file
+
+    return policy_from(*manifest_text(root))
 
 
 def policy_at(root: Path, rev: str) -> Policy:
