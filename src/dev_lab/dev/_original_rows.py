@@ -389,4 +389,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'verifiedby',
     # ORIGINAL: D80 (2026-11-18), an untracked-and-ignored path is kept across a tree move; no consumer held it.
     'keepignored',
+    # ORIGINAL: D76 (2026-11-18), a pinned, sha256-checked tool installed user-space; no consumer held one.
+    'toolrelease',
 )
