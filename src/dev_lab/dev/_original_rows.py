@@ -123,6 +123,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no rule kept a rust toolchain by its pins; 135 k files per account sat in unpinned ones.
     'retentionrust',
     'diskusage',
+    # ORIGINAL: no door removed a whole redundant clone; RECURSIVE-DELETE refused it with no exit (2026-11-19).
+    'cloneremove',
     'issueref',
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator',
