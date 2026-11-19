@@ -64,16 +64,28 @@ class ListingIncomplete(RuntimeError):
     """A listing still full at its page bound: what it did not read may hold the object being looked for."""
 
 
-def pages(client: Client, path: str, query: Mapping[str, str]) -> list[Any]:
-    """Every page of the listing at *path*; one still full at the bound is :class:`ListingIncomplete`."""
+def pages(client: Client, path: str, query: Mapping[str, str], *, bound: int | None = _PAGES) -> list[Any]:
+    """Every page of the listing at *path*; one still full at *bound* pages is :class:`ListingIncomplete`.
+
+    ``bound=None`` reads on to the first short page: a listing that grows without a forge cap (a gitea records home,
+    O20) has no honest bound. A forge that ignores ``page`` would then answer the same full page forever, so a page
+    repeating the one before it is refused rather than read again.
+    """
     found: list[Any] = []
-    for page in range(1, _PAGES + 1):
+    previous: list[Any] | None = None
+    page = 0
+    while bound is None or page < bound:
+        page += 1
         params = dict(query) | {client.backend.page_param: str(_PAGE), 'page': str(page)}
         listed = client.call('GET', f'{path}?{urllib.parse.urlencode(params)}')
+        if bound is None and listed and listed == previous:
+            msg = f'{path} answered page {page} with page {page - 1}: the forge ignores paging; refusing a partial read'
+            raise ListingIncomplete(msg)
         found += listed
         if len(listed) < _PAGE:
             return found
-    msg = f'{path} still lists past {_PAGES} pages of {_PAGE}; refusing a partial read'
+        previous = listed
+    msg = f'{path} still lists past {bound} pages of {_PAGE}; refusing a partial read'
     raise ListingIncomplete(msg)
 
 

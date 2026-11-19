@@ -32,13 +32,18 @@ behind, and a sweeper cannot age out a file with no age.
 from __future__ import annotations
 
 import datetime as dt
+import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.family import declared_in
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
 __all__ = [
     'OUTPUT_KEY',
+    'SCRIPT_TEST_TEMP_KIND',
     'TEST_TEMP_KIND',
     'UndeclaredOutput',
     'date_parts',
@@ -46,10 +51,14 @@ __all__ = [
     'declared_output',
     'kind_dirs',
     'output_dir',
+    'script_temp_env',
 ]
 
 #: The kind under which the test runner's base temp lives (:mod:`dev_lab.dev.testtemp`, user ruling D27).
 TEST_TEMP_KIND = 'pytest'
+
+#: The kind under which a script suite's (``node --test``, ``npm test``) temp dir lives: D27's JS counterpart.
+SCRIPT_TEST_TEMP_KIND = 'scripttest'
 
 #: The one key a repo answers "where does dated output live" with.
 OUTPUT_KEY: Final = '[tool.dev_lab.parts] output'
@@ -168,3 +177,20 @@ def kind_dirs(root: Path, kind: str) -> tuple[str, ...]:
     except UndeclaredOutput:
         return ()
     return tuple(sorted(path.relative_to(root).as_posix() for path in base.glob(f'*/*/*/{kind}') if path.is_dir()))
+
+
+def script_temp_env(root: Path, environ: Mapping[str, str]) -> dict[str, str]:
+    """*environ* with TMPDIR, TEMP and TMP all naming a fresh ``<output>/<yy>/<mm>/<dd>/scripttest/<HH-MM-SS>-<pid>/``.
+
+    D27 for a script suite: ``os.tmpdir()`` reads TMPDIR on POSIX and TEMP/TMP on Windows, so every ``mkdtemp``
+    a JS test makes lands in the managed dated tree, never system temp. The pid keeps two runs started in the same
+    second apart.
+
+    Raises:
+        UndeclaredOutput: *root* declares no output root -- no fallback to system temp.
+
+    """
+    stamp = dt.datetime.now().astimezone().strftime('%H-%M-%S')
+    fresh = output_dir(root, SCRIPT_TEST_TEMP_KIND) / f'{stamp}-{os.getpid()}'
+    fresh.mkdir(parents=True, exist_ok=True)
+    return dict(environ) | dict.fromkeys(('TMPDIR', 'TEMP', 'TMP'), str(fresh))
