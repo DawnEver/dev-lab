@@ -540,14 +540,12 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
             'head': {'ref': 'pr/x', 'sha': HEAD}, 'base': {'ref': 'integrate/main'},
             'labels': [{'name': 'needs-consent'}]}  # fmt: skip
-    manifest = base64.b64encode(
-        b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\nproducer = "hpc"\n'
-    ).decode()
+    manifest = base64.b64encode(_MANIFEST).decode()
     answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': manifest}))
-    answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('GET', f'{prefix}/pulls/7', (200, pull))
     answer('POST', f'{prefix}/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': '', 'user': {'login': 'u'}}))
     answer(merge, f'{prefix}/pulls/7/merge', (200, {'merged': True}))
+    answer('DELETE', f'{prefix}/git/refs/heads/pr/x', (204, None))
     forge = ClientForge(url, 'secret', transport=loopback)
     assert 'integrate/main' in forge.declaration('integrate/main')
     assert forge.pull(7) == ('open', 'integrate/main', HEAD)
@@ -558,11 +556,67 @@ def test_the_client_forge_reads_and_merges_on_either_backend(
     sent = Recorder.received
     assert {r['headers']['Authorization'] for r in sent} == {f'{auth} secret'}
     assert sent[0]['path'] == f'{prefix}/contents/pyproject.toml?ref=integrate/main'
-    merged = sent[-1]
-    assert (merged['method'], merged['path']) == (merge, f'{prefix}/pulls/7/merge')
+    (merged,) = [r for r in sent if r['path'] == f'{prefix}/pulls/7/merge']
+    assert merged['method'] == merge
     body = json.dumps(merged['body'])
     assert HEAD in body
     assert 'Break-Glass: review-bot is down' in body
+
+
+#: A repo declaring its branch set: the trunk, one long-lived session branch, and the family's ephemeral ``pr/*``.
+_MANIFEST = (
+    b'[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+    b'[tool.dev_lab.branchset]\ntrunk = "main"\nsessions = ["integrate/main"]\nephemeral = ["pr/*"]\n'
+)
+
+_BACKENDS = [
+    ('https://github.com/owner/gamma.git', '/repos/owner/gamma', 'PUT'),
+    ('https://gitea.example/owner/alpha.git', '/api/v1/repos/owner/alpha', 'POST'),
+]
+
+
+def _merge_head(loopback: Loopback, url: str, prefix: str, verb: str, *, head_ref: str, status: int = 200) -> list[Any]:
+    """Break-glass-merge PR 7 whose head branch is *head_ref*; return what the fake forge received."""
+    pull = {'number': 7, 'title': 't', 'body': '', 'state': 'open', 'html_url': '', 'user': {'login': 'u'},
+            'head': {'ref': head_ref, 'sha': HEAD}, 'base': {'ref': 'integrate/main'}, 'labels': []}  # fmt: skip
+    answer('GET', f'{prefix}/contents/pyproject.toml', (200, {'content': base64.b64encode(_MANIFEST).decode()}))
+    answer('GET', f'{prefix}/pulls/7', (200, pull))
+    answer(verb, f'{prefix}/pulls/7/merge', (status, {'merged': status == 200, 'message': 'head moved'}))
+    answer('DELETE', f'{prefix}/git/refs/heads/{head_ref}', (204, None))
+    forge = ClientForge(url, 'secret', transport=loopback)
+    with contextlib.suppress(ForgeCallFailed):
+        forge.merge(7, head=HEAD, message=merge_message(7, 'integrate/main', 'review-bot is down', 'w'))
+    return list(Recorder.received)
+
+
+def _deleted(sent: list[Any], prefix: str, head_ref: str) -> bool:
+    """Whether the head was deleted: GitHub by a ref DELETE, Gitea by the merge's own delete flag."""
+    if any(r['method'] == 'DELETE' and r['path'] == f'{prefix}/git/refs/heads/{head_ref}' for r in sent):
+        return True
+    merges = [r for r in sent if r['path'] == f'{prefix}/pulls/7/merge']
+    return any((r['body'] or {}).get('delete_branch_after_merge') is True for r in merges)
+
+
+@pytest.mark.parametrize(('url', 'prefix', 'verb'), _BACKENDS)
+def test_a_break_glass_merge_deletes_its_ephemeral_head(loopback: Loopback, url: str, prefix: str, verb: str) -> None:
+    """D18: every merge path deletes its pr/ head -- break-glass as the integration path does."""
+    assert _deleted(_merge_head(loopback, url, prefix, verb, head_ref='pr/task/feature'), prefix, 'pr/task/feature')
+
+
+@pytest.mark.parametrize('head_ref', ['main', 'integrate/main', 'lane/not-ephemeral'])
+@pytest.mark.parametrize(('url', 'prefix', 'verb'), _BACKENDS)
+def test_a_break_glass_merge_never_deletes_a_long_lived_or_undeclared_head(
+    loopback: Loopback, url: str, prefix: str, verb: str, head_ref: str
+) -> None:
+    """PLANTED CONTROL: the trunk, a declared session and a head outside every ephemeral glob are kept."""
+    assert not _deleted(_merge_head(loopback, url, prefix, verb, head_ref=head_ref), prefix, head_ref)
+
+
+def test_a_moved_head_is_neither_merged_nor_deleted(loopback: Loopback) -> None:
+    """PLANTED CONTROL: GitHub refuses a moved head (409); no delete follows the refused merge."""
+    url, prefix, verb = _BACKENDS[0]
+    sent = _merge_head(loopback, url, prefix, verb, head_ref='pr/task/feature', status=409)
+    assert not any(r['method'] == 'DELETE' for r in sent)
 
 
 # User ruling 2026-11-04: "break glass still sends three messages -- one final acceptance is enough". A wave sends

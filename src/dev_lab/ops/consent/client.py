@@ -48,6 +48,7 @@ __all__ = [
     'redeem',
     'remote_register',
     'spent_ids',
+    'verify_held',
 ]
 
 #: The machine-file table.
@@ -106,6 +107,34 @@ def redeem(
         msg = f'the consent issuer could not register the use ({type(unreachable).__name__}): refused, never admitted'
         raise ConsentRefused(msg) from unreachable
     return found
+
+
+def verify_held(
+    credential_id: str, *, action: str, subject: str, key: Ed25519PublicKey | None = None,
+    register: Register | None = None, now: float | None = None,
+) -> Credential:  # fmt: skip
+    """Spend the HELD credential *credential_id* (``state_dir()/<id>.json``) on one use of *action* on *subject*.
+
+    The one door a consumer outside this package verifies a granted consent through (an entry point names it): the
+    file is read from the consent state the user's ``grant`` wrote, then :func:`redeem`ed -- verified offline against
+    the machine's issuer key, compared on action and subject BEFORE the use is registered, and registered once.
+
+    Raises:
+        ConsentRefused: no such held credential (naming the grant door), or anything :func:`redeem` refuses.
+
+    """
+    path = state_dir() / f'{credential_id}.json'
+    try:
+        credential = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as missing:
+        msg = (f'no held {action} credential {credential_id!r} at {path} ({type(missing).__name__}): ask the user for '
+               f'a code and run `python -m dev_lab.ops.consent grant <request.json> --code <code>` for action '
+               f'{action} and subject {subject[:12]}..., then pass the granted id')  # fmt: skip
+        raise ConsentRefused(msg) from missing
+    return redeem(
+        credential, action=action, subject=subject, key=public_key() if key is None else key,
+        register=remote_register() if register is None else register, now=time.time() if now is None else now,
+    )  # fmt: skip
 
 
 def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> Register:
