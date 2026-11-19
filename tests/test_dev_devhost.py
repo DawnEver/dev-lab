@@ -12,7 +12,7 @@ import pytest
 from _arch_corpus import module_names
 from _ops_fixtures import git
 
-from dev_lab.dev import devhost, devschema, venvfollow
+from dev_lab.dev import devhost, devschema, vendordetect, venvfollow
 from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -318,7 +318,7 @@ def test_detect_finds_the_newest_matching_home_and_nothing_else(tmp_path: Path) 
         (tmp_path / name).mkdir()
     (tmp_path / 'SolverX-99.notadir').write_text('', encoding='utf-8')
     patterns = {'solverx': [f'{tmp_path.as_posix()}/SolverX-*'], 'absent': [f'{tmp_path.as_posix()}/Nope*']}
-    assert devhost.detect(patterns) == {'solverx': (tmp_path / 'SolverX-25.2').as_posix()}
+    assert vendordetect.detect(patterns) == {'solverx': (tmp_path / 'SolverX-25.2').as_posix()}
 
 
 def test_a_detect_entry_that_is_not_a_pattern_list_is_refused(tmp_path: Path) -> None:
