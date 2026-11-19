@@ -8,12 +8,14 @@ Measured 2026-10-12 deploying three accounts on one cluster: every one of these 
   :func:`dev_lab.dev.forgeauth.tick_refusal`); the deploy runs it as a subprocess, as a person runs it.
 * THE CREDENTIAL STORE (:func:`store_problem`). A tick reads its token through git's credential helper;
   no helper means no token, and a ``store`` file another user can read is a leaked token.
-* THE TOOLS (:func:`tool_plan`). ``uv`` always, plus every ``needs`` a served repo declares. Present is
+* THE TOOLS (:func:`tool_plan`). ``uv`` and ``rclone`` always (:data:`ALWAYS`), plus every ``needs`` a served repo
+  declares. Present is
   CAPABILITY, not lookup (:func:`runs`): ``<tool> --version`` exits 0 in the TICK'S environment (cron's
   PATH, then the grant setup) -- a rustup shim with no toolchain is on the PATH and is not a cargo.
   ``uv`` and the Rust toolchain come from their OFFICIAL installers into ``~/.local/bin`` and
   ``~/.cargo/bin`` -- user-space and removable; the installers edit no shell file, and ``cmake`` comes
-  through ``uv tool``. Anything else is the cluster's to provide, so it is refused by name.
+  through ``uv tool``. ``rclone`` comes from its PINNED, sha256-checked release
+  (:mod:`dev_lab.dev.toolrelease`, D76). Anything else is the cluster's to provide, so it is refused by name.
 * ONE LOGIN ENVIRONMENT (:func:`login_files`, :func:`login_line`). The tick's PATH names those two
   directories; the account's login shell must too, or a tool runs for cron and not for its person (Ada
   2026-10-25: three accounts had cargo only for cron). The deploy writes one marked line into the files
@@ -33,6 +35,7 @@ from __future__ import annotations
 import re
 import shlex
 import shutil
+import sys
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Final
@@ -44,6 +47,7 @@ from dev_lab.dev.hpcaccount.spec import tick_dirs
 from dev_lab.dev.lockcheck import uv_version
 
 __all__ = [
+    'ALWAYS',
     'INSTALLERS',
     'LOGIN_MARK',
     'MERGE_TREE_GIT',
@@ -69,7 +73,11 @@ INSTALLERS: Final = {
     'cargo': "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
     'rustc': "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
     'cmake': 'uv tool install cmake',
+    'rclone': f'{shlex.quote(sys.executable)} -m dev_lab.dev.toolrelease install rclone',
 }
+
+#: The tools every account needs whatever its repos declare: ``uv`` runs every tick, ``rclone`` every store (D76).
+ALWAYS: Final = ('uv', 'rclone')
 
 _PRIVATE: Final = 0o077
 
@@ -157,10 +165,10 @@ def merge_tree_refusal(git: Sequence[str], scratch: Path) -> str:
 
 
 def tool_plan(needs: Iterable[str], *, found: Callable[[str], bool]) -> tuple[list[tuple[str, str]], list[str]]:
-    """``(installs, refused)``: ``uv`` and each of *needs* not *found*, as ``(tool, installer)`` or refused by name."""
+    """``(installs, refused)``: :data:`ALWAYS` and each of *needs* not *found*, as ``(tool, installer)`` or refused."""
     installs: list[tuple[str, str]] = []
     refused: list[str] = []
-    for tool in dict.fromkeys(['uv', *needs]):
+    for tool in dict.fromkeys([*ALWAYS, *needs]):
         if found(tool):
             continue
         script = INSTALLERS.get(tool)
