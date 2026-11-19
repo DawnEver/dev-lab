@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import venv
 from collections.abc import Callable
 from dataclasses import replace
@@ -171,6 +172,26 @@ def _holder(root: Path) -> tuple[subprocess.Popen[str], int]:
     return child, int(child.stdout.readline())
 
 
+def _release(child: subprocess.Popen[str], pid: int, root: Path) -> None:
+    """Kill the holder and wait until the kernel lets go of its lock.
+
+    On Windows ``child`` is the venv launcher and ``pid`` its python child: ``child.wait()`` returns when the launcher
+    exits, before the terminated child's handles close, so the lock can still read held for a moment.
+    """
+    os.kill(pid, signal.SIGTERM)  # the holder itself dies; its launcher follows
+    child.kill()
+    child.wait()
+    deadline = time.monotonic() + 10.0
+    while True:
+        try:
+            with venvcurrent.exclusive_build(root):
+                return
+        except venvcurrent.BuildBusy:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.05)
+
+
 def test_a_second_bootstrap_on_one_worktree_is_refused_naming_the_first(tmp_path, capsys) -> None:
     root = tmp_path / 'wt'
     old = _project(root)
@@ -184,9 +205,7 @@ def test_a_second_bootstrap_on_one_worktree_is_refused_naming_the_first(tmp_path
         assert venvpointer.named(root) == old, 'the refused run published nothing'
         assert [p.name for p in (root / venvpointer.HOME).iterdir() if p.is_dir()] == ['old'], 'and built nothing'
     finally:
-        os.kill(pid, signal.SIGTERM)  # the holder itself dies; its launcher follows
-        child.kill()
-        child.wait()
+        _release(child, pid, root)
     assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=list) == 0, 'a dead holder is taken over'
     assert venvpointer.named(root) != old
 
@@ -224,8 +243,6 @@ def test_a_reclaim_while_a_build_holds_the_worktree_removes_nothing(tmp_path) ->
         assert fresh.is_dir(), lines
         assert any(f'pid {pid}' in line for line in lines), lines
     finally:
-        os.kill(pid, signal.SIGTERM)
-        child.kill()
-        child.wait()
+        _release(child, pid, root)
     assert any(line.startswith('reclaimed') for line in venvcurrent.reclaim(root, census=list)), 'PLANTED CONTROL'
     assert not fresh.exists(), 'PLANTED CONTROL: unheld, the same environment is reclaimed'
