@@ -36,13 +36,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from dev_lab.dev.checkout import git_out, worktrees
+from dev_lab.dev.checkout import git_out, locked_trees, worktrees
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.reclaim import (
     QUIET_S,
     UNLANDED_DOORS,
     index_age_s,
-    locked_trees,
     occupancy,
     removed_approved,
     runtime_of,

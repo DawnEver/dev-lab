@@ -335,6 +335,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.strays` -- no untracked, unclaimed file in a checkout.
 * :mod:`dev_lab.dev.retiredfiles` -- files a retirement declared gone: each checkout's own rows, never the leaf's.
 * :mod:`dev_lab.dev.scratch` -- scratch is visible to git, never committed; `clear` empties it, a Stop hook asks for it.
+* :mod:`dev_lab.dev.scratchtree` -- `worktrees --scratch` makes a throwaway tree, `--discard` removes it now.
 * :mod:`dev_lab.dev.reportplace` -- no agent-written Markdown under ``output/``; a written report is a memory entry.
 * :mod:`dev_lab.dev.datedlog` -- one dated log layout; the base has NO DEFAULT (four repos, four answers).
 * :mod:`dev_lab.dev.shards` -- a partition, the AND over a shard set, and a required population FLOOR.
@@ -563,6 +564,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
+* :mod:`dev_lab.dev.disposable` -- the DISPOSABLE declaration of a throwaway worktree, in its git admin directory.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
 * :mod:`dev_lab.dev.boxmigrate` -- LEDGER-MIGRATES-ON-INSTALL: each lab-commons install door migrates the box ledger.
 * :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.

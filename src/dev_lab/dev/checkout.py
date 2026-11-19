@@ -60,6 +60,7 @@ __all__ = [
     'debris',
     'git_bytes',
     'git_out',
+    'locked_trees',
     'origin_branches',
     'orphan_directories',
     'stale_branches',
@@ -344,3 +345,18 @@ def debris(root: Path, *, home: Path = DEFAULT_WORKTREE_HOME, protected: frozens
         orphan_directories=orphan_directories(root, home=home),
         stale_branches=stale_branches(root, protected=protected),
     )
+
+
+def locked_trees(root: Path) -> frozenset[Path] | None:
+    """The resolved paths of every ``git worktree lock``-ed tree of *root*; ``None`` when git could not answer."""
+    out = git_out(root, 'worktree', 'list', '--porcelain')
+    if out is None:
+        return None
+    found: set[Path] = set()
+    path: Path | None = None
+    for line in out.splitlines():
+        if line.startswith('worktree '):
+            path = Path(line.removeprefix('worktree ').strip()).resolve()
+        elif (line == 'locked' or line.startswith('locked ')) and path is not None:
+            found.add(path)
+    return frozenset(found)
