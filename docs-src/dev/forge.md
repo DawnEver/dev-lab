@@ -530,7 +530,8 @@ integration branch, and posts one PR review per head as its own login. The mecha
 
 ## Records and the outbox
 
-- **Statuses wait in an outbox** (`<main-checkout>/output/forge/outbox/`) until the commit is on origin.
+- **Statuses wait in an outbox** (`forge/outbox/` under the main checkout's `output` storage kind -- `output/` unless
+  the machine binds it, [storage](storage.md)) until the commit is on origin.
   `python -m dev_lab.dev.forge publish` posts what is reachable; `verify` and every tick flush it too.
 - **Run records are attachments** of one closed issue titled `run records`, never refs.
   `python -m dev_lab.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin

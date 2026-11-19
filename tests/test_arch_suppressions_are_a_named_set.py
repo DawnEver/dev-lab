@@ -221,6 +221,12 @@ ALLOWED: Final[dict[Site, str]] = {
     'through the forge layer, so a module-scope import here is a cycle; render() is a rare door',
     (
         'src/dev_lab/dev/storage.py',
+        'PLC0415',
+        'from dev_lab.dev.toolrelease import ToolAbsent, resolve',
+    ): 'every writer imports storage (the walls ledger on each Stop, inside the hook budget); only the rclone '
+    'render needs the pinned-tool table, so it is read where render runs',
+    (
+        'src/dev_lab/dev/storage.py',
         'no-cover',
         'if found is None:',
     ): 'output always has an in-tree default (lab_commons.storage.root), so the refusal is a guard no '

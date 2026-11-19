@@ -8,7 +8,7 @@ judges whatever its serving checkout holds judges the wrong commit whenever the 
 THE CLUSTER'S RULE, LOCALLY. A cluster run is judged in ``~/ci/trees/<sha>``, a detached worktree of
 that one commit with its submodules at their pinned commits (:mod:`lab_commons.hpc.run`). A local
 part is judged the same way: :func:`open_tree` adds ``<main checkout>/.claude/worktrees/forge-<sha12>-<context>``
-(:data:`~dev_lab.dev.worktreeplace.WORKTREES_REL` -- a tree stays inside its repository), detached
+(:func:`~dev_lab.dev.worktreeplace.home` -- the repository's worktree home), detached
 at the claimed sha, and bootstraps its OWN environment through the dependency door
 (``python -m dev_lab.dev.dep --bootstrap <tree>``: the commit's own lock and declared extras).
 The producer's argv runs there with that tree's interpreter; :func:`close_tree` removes the tree after
@@ -40,7 +40,7 @@ from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.platformparts import UndeclaredPart, record_directory
 from dev_lab.dev.venvpath import checkout_interpreter, current_os_name
-from dev_lab.dev.worktreeplace import WORKTREES_REL, main_checkout
+from dev_lab.dev.worktreeplace import home, main_checkout
 
 __all__ = [
     'TREE_PREFIX',
@@ -75,7 +75,7 @@ class Tree:
 def tree_path(root: Path, sha: str, context: str) -> Path:
     """Where the tree of job *context* at *sha* lives: ``<main checkout>/.claude/worktrees/forge-<sha12>-<context>``."""
     slug = context.replace('/', '-')
-    return main_checkout(root) / WORKTREES_REL / f'{TREE_PREFIX}{sha[:_SHA_SHOWN]}-{slug}'
+    return home(main_checkout(root)) / f'{TREE_PREFIX}{sha[:_SHA_SHOWN]}-{slug}'
 
 
 def _step(run: Callable[..., Any], argv: list[str], what: str) -> None:
