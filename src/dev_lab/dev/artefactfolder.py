@@ -63,7 +63,15 @@ class FolderStore:
     backend: str = FOLDER
 
     def _guard(self, path: Path) -> None:
-        if path.resolve() != self.root.resolve() / path.relative_to(self.root):
+        # The parent chain is resolved and the leaf is lstat'ed, never resolved: on Windows a leaf another publisher
+        # is linking or unlinking that instant resolves to another spelling, and read as an alias it refused a put.
+        parent = path.parent
+        aliased_parent = parent.resolve() != self.root.resolve() / parent.relative_to(self.root)
+        try:
+            aliased_leaf = stat.S_ISLNK(path.lstat().st_mode) or path.is_junction()
+        except FileNotFoundError:
+            aliased_leaf = False
+        if aliased_parent or aliased_leaf:
             msg = f'{path}: archive/manifest alias refused'
             raise ArtefactRefused(msg)
 
