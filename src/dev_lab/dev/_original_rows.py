@@ -387,6 +387,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'dataconsumers',
     # ORIGINAL: user ruling 2026-11-11, a data repo's tests/base is its consumers' tests; no consumer held it.
     'verifiedby',
+    # ORIGINAL: D78 (2026-11-18), a part's needs refused by name when their extra is missing; no consumer held it.
+    'depneeds',
     # ORIGINAL: D76 (2026-11-18), a pinned, sha256-checked tool installed user-space; no consumer held one.
     'toolrelease',
 )
