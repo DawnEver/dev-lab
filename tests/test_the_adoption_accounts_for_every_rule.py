@@ -189,7 +189,7 @@ _ENFORCED = {
     # User ruling 2026-10-29 (D83): a pushed head nobody watches goes red unseen -- advised, never blocked.
     'PUSHED-HEAD-IS-WATCHED': (guard('tests/test_dev_pushwatch.py'),),
     # User ruling 2026-11-11: lab-commons #158 went red and nothing told the session.
-    'SESSION-HEARS-ITS-PRS': (guard('tests/test_dev_sessionwatch.py'),),
+    'TASK-HEARS-ITS-FORGE-EVENTS': (guard('tests/test_dev_sessionwatch.py'),),
     # User ruling 2026-11-13: every wall teaches -- a refusal that named no door is a gap closed before the task.
     'WALLS-ARE-RECORDED': (guard('tests/test_dev_walls.py'), guard('tests/test_dev_hooks.py')),
     # User ruling 2026-11-17 (D24): a slow hook let a 30-second TOTP code expire.

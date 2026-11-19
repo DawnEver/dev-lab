@@ -1,4 +1,4 @@
-"""SESSION-HEARS-ITS-PRS, the record: every pull request a session opened or pushed, across every repository.
+"""TASK-HEARS-ITS-FORGE-EVENTS, the PR record: every pull request a session opened or pushed, across every repository.
 
 User ruling 2026-11-11: lab-commons #158 went red and the session heard nothing, because the push journal of
 the day lived in ONE checkout's git dir while a session works in many. So this record
@@ -15,7 +15,7 @@ output was piped away, and a push after ``cd`` into another repository -- all si
   the repository git is pushing (:func:`record_pushed`); a push to the declared integration or trunk branch is
   no PR and records nothing;
 * the session is the validated native harness identity; invalid identity is reported loudly;
-* the machine PR watcher (:mod:`dev_lab.dev.prwatcher`) reads it for every session on the machine -- the one hearer
+* the machine forge hearer (:mod:`dev_lab.dev.forgefeed`) reads it for every session on the machine -- the one hearer
   (dev-lab #640); no shell-line hook reads or writes it;
 * ``forge watch --session <id> --stream`` (:mod:`dev_lab.dev.forgewatch`) reads it, and marks a PR
   ``merged``/``closed`` once it has said so (:func:`close`), so a merge is reported once; a branch row it
@@ -75,7 +75,7 @@ __all__ = [
 ]
 
 #: The rule this record serves (``dev_lab.dev.rules``).
-RULE: Final = 'SESSION-HEARS-ITS-PRS'
+RULE: Final = 'TASK-HEARS-ITS-FORGE-EVENTS'
 
 #: The directory, under the machine home, holding one record per session.
 SESSIONS: Final = 'sessions'

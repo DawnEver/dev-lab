@@ -57,6 +57,7 @@ from dev_lab.dev.agent_wiring import (
     rows,
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
+from dev_lab.dev.launcherplan import launcher_plan
 from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
 from dev_lab.dev.trackedrender import Kit, RenderRefused, check_render
 from dev_lab.dev.venvpath import running_interpreter
@@ -381,11 +382,10 @@ def _planned(repo: Path, *, force: bool) -> tuple[dict[Path, bytes], list[str]]:
         actions.append(f'engine {"replaced" if status != ABSENT else "installed"}: {engine}')
 
     launcher = repo / LAUNCHER_REL
-    if launcher.exists():
-        actions.append(f'launcher already present, kept: {launcher}')
-    else:
-        writes[launcher] = _text(launcher_source())
-        actions.append(f'launcher installed: {launcher}')
+    write, action = launcher_plan(launcher, launcher_source())
+    if write is not None:
+        writes[launcher] = _text(write)
+    actions.append(action)
 
     catalog = launcher.with_name('native_session.json')
     catalog_bytes = _LAUNCHER_SHIPPED.with_name('native_session.json').read_bytes()
