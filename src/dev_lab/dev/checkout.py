@@ -46,12 +46,14 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 import lab_commons.launch as _door
 
 __all__ = [
     'DEFAULT_PROTECTED',
     'DEFAULT_WORKTREE_HOME',
+    'SUBMODULE_DOOR',
     'Debris',
     'OriginBranch',
     'WorktreeBranch',
@@ -60,8 +62,10 @@ __all__ = [
     'debris',
     'git_bytes',
     'git_out',
+    'gitlinks',
     'origin_branches',
     'orphan_directories',
+    'split_drifted',
     'stale_branches',
     'survey',
     'unmerged_changes',
@@ -344,3 +348,26 @@ def debris(root: Path, *, home: Path = DEFAULT_WORKTREE_HOME, protected: frozens
         orphan_directories=orphan_directories(root, home=home),
         stale_branches=stale_branches(root, protected=protected),
     )
+
+
+#: The door of a submodule checked out at another commit than its tree records (dev-lab#791 wall 2): check out the
+#: recorded one; a commit of its own lands in the submodule's repository first.
+SUBMODULE_DOOR: Final = (
+    'land any commit of its own in the submodule repository, then check out the recorded one: '
+    'git -C {tree} submodule update --checkout -- <path>'
+)
+
+
+def gitlinks(tree: Path, paths: tuple[str, ...]) -> tuple[str, ...]:
+    """The *paths* that are submodules (gitlinks, mode 160000) in *tree*'s index."""
+    if not paths:
+        return ()
+    out = git_out(tree, 'ls-files', '--stage', '-z', '--', *paths) or ''
+    return tuple(row.split('\t', 1)[1] for row in out.split('\0') if row.startswith('160000 '))
+
+
+def split_drifted(tree: Path, paths: tuple[str, ...]) -> tuple[tuple[str, ...], str]:
+    """(*paths* that are real edits, the door for the rest -- submodules at another commit; ``''`` when none)."""
+    drifted = gitlinks(tree, paths)
+    door = f'submodules at another commit than recorded -- {SUBMODULE_DOOR.format(tree=tree)}' if drifted else ''
+    return tuple(p for p in paths if p not in drifted), door
