@@ -13,7 +13,7 @@ which saved a tree's work aside: a worktree's work is MERGED or the tree CLEANED
 A THROWAWAY CHECKOUT (2026-11-10, a consumer, three times in one day: a detached base tree made to diff tests
 against was kept by reclaim as ``not landed`` and refused to ``git worktree remove``, so each needed the user):
 ``--scratch NAME SHA`` makes it DETACHED under the worktree home and declares it DISPOSABLE; ``--discard NAME``
-removes it now (:func:`dev_lab.dev.reclaim.discard`), and ``--prune`` once it is quiet. Disposable means its
+removes it now (:func:`dev_lab.dev.scratchtree.discard`), and ``--prune`` once it is quiet. Disposable means its
 untracked content is scratch and it waits for no landing -- never that a tracked change, a commit no ref holds,
 a lock or a live process may go with it.
 
@@ -59,7 +59,8 @@ from dev_lab.dev.backgroundrun import repo_main
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
 from dev_lab.dev.checkout import authority_for, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
-from dev_lab.dev.reclaim import QUIET_S, blockers, discard, reclaim, removed_approved, scratch, unlanded_work
+from dev_lab.dev.reclaim import QUIET_S, blockers, reclaim, removed_approved, unlanded_work
+from dev_lab.dev.scratchtree import discard, scratch
 from dev_lab.dev.worktree_outputs import linked, unheld_head, worktrees_door
 
 __all__ = ['HOOK_READ_S', 'RETIRED_ARCHIVE', 'blockers', 'hook_payload', 'main', 'prune', 'remove']

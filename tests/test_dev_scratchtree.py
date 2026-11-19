@@ -15,8 +15,10 @@ import subprocess
 import time
 from pathlib import Path
 
+from dev_lab.dev.disposable import disposable_base
 from dev_lab.dev.famtests.visibility import commit, plant_checkout
-from dev_lab.dev.reclaim import discard, disposable_base, reclaim, scratch
+from dev_lab.dev.reclaim import reclaim
+from dev_lab.dev.scratchtree import discard, scratch
 from dev_lab.dev.worktrees import main
 
 _GIT = shutil.which('git') or 'git'
