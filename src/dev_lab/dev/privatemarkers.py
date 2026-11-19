@@ -42,6 +42,7 @@ __all__ = [
     'GENERIC',
     'MARKERS_FILE',
     'PUBLIC_MASK',
+    'REWORD_DOOR',
     'load_markers',
     'pushed_messages',
     'repo_is_private',
@@ -251,6 +252,33 @@ def text_refusal(text: str, what: str, markers: tuple[re.Pattern[str], ...] | No
     )
 
 
+#: The door for a marker in an ALREADY-MADE message: amend is refused (GIT-COMMIT-AMEND), so the unpushed commits of
+#: this lane are re-committed on a fresh branch (:mod:`dev_lab.dev.reword`).
+REWORD_DOOR: Final = (
+    'python -m dev_lab.dev.reword <sha> --message-file <file> (unpushed commits of this lane only; '
+    'it prints the fresh branch to push)'
+)
+
+
+def _judge_message(root: Path, message_file: Path, markers: tuple[re.Pattern[str], ...]) -> int:
+    """The commit-msg row: the same scan as the pre-push message check, while the reword is still free."""
+    lines = message_file.read_text(encoding='utf-8').splitlines(keepends=True)
+    message = ''.join(line for line in lines if not line.startswith('#'))
+    hits = scan_text(message, markers)
+    if not hits:
+        return 0
+    private, why = repo_is_private(root)
+    if private:
+        return 0
+    if why:
+        emit(f'[private-markers] scanning this message: {why}', err=True)
+    emit('PRIVATE-MARKERS: the commit message names a private value; nothing is committed yet:', err=True)
+    for n, kind, _ in hits:
+        emit(f'message line {n}: {kind}', err=True)
+    emit('Door: neutralise each named marker and commit again (free before the commit exists)', err=True)
+    return 1
+
+
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """The local pre-commit row: refuse a marker on a line the index ADDS. Only this machine holds the denylist.
 
@@ -262,9 +290,14 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     parser.add_argument('--markers', type=Path, default=MARKERS_FILE)
     parser.add_argument('--push', action='store_true', help="pre-push: judge the pushed commits' messages (stdin)")
     parser.add_argument('--url', default='', help=f'--push: the pushed-to URL (default ${PUSH_URL_ENV}, else origin)')
+    parser.add_argument(
+        '--commit-msg-file', type=Path, help='commit-msg: judge the message BEFORE the commit exists (git appends it)'
+    )
     parser.add_argument('paths', nargs='*')
     args = parser.parse_args(argv)
     markers = load_markers(args.markers)
+    if args.commit_msg_file is not None:
+        return _judge_message(args.root, args.commit_msg_file, markers)
     if args.push:
         private, why = repo_is_private(args.root, url=args.url or os.environ.get(PUSH_URL_ENV, ''))
         if private:

@@ -89,6 +89,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'lab-session',
         'merge-audit',
         'merge-resolution',
+        'private-markers-message',
     }
     assert {hook.id for hook in table['pre-commit']} == {
         'filechecks',
