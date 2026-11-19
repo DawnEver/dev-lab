@@ -6,6 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from dev_lab.dev import boxmigrate, dep
 from dev_lab.dev.hpcaccount import steps
 
@@ -97,6 +99,13 @@ def _dep_run(help_text: str, *, migrate_rc: int = 0) -> tuple[list[tuple[str, ..
     return calls, run
 
 
+@pytest.fixture
+def _installed_envs_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fake sync writes an empty interpreter; its environment key is read without starting it."""
+    monkeypatch.setattr(dep, '_snapshot', lambda python: (str(Path(python).parent.parent), 'fake-env-key'))
+
+
+@pytest.mark.usefixtures('_installed_envs_answer')
 def test_dep_bootstrap_migrates_the_installed_env(tmp_path) -> None:
     root = _project(tmp_path)
     calls, run = _dep_run(HELP_WITH)
@@ -104,6 +113,7 @@ def test_dep_bootstrap_migrates_the_installed_env(tmp_path) -> None:
     assert len(_migrations(calls)) == 1
 
 
+@pytest.mark.usefixtures('_installed_envs_answer')
 def test_dep_bootstrap_reports_a_failed_migration(tmp_path, capsys) -> None:
     root = _project(tmp_path)
     _, run = _dep_run(HELP_WITH, migrate_rc=5)
@@ -111,6 +121,7 @@ def test_dep_bootstrap_reports_a_failed_migration(tmp_path, capsys) -> None:
     assert 'box ledger migration failed' in capsys.readouterr().err
 
 
+@pytest.mark.usefixtures('_installed_envs_answer')
 def test_dep_bootstrap_without_the_verb_migrates_nothing(tmp_path) -> None:
     """PLANTED CONTROL for the door: no verb, no migration, the door still succeeds."""
     root = _project(tmp_path)

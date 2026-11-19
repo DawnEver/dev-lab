@@ -76,10 +76,10 @@ from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
 from dev_lab.dev import _dep_cli, _dep_local, _dep_project, venvcurrent
+from dev_lab.dev._dep_aftersync import after_sync
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
-from dev_lab.dev.boxmigrate import migrate as migrate_box
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
 
@@ -473,11 +473,8 @@ def main(
         return 1
     emit(result.render())
     stale = _publish(root, prefix, live, ok=not result.returncode, census=census, base=base)
-    migrated = 0
-    if syncing and not args.dry_run and not result.returncode:
-        migrated = migrate_box(python, run=run)  # LEDGER-MIGRATES-ON-INSTALL, before anything here opens it
-        _refresh_automode(root, run=run)
-    return result.returncode or migrated or stale
+    synced = syncing and not args.dry_run and not result.returncode
+    return result.returncode or (after_sync(root, python, run=run) if synced else 0) or stale
 
 
 def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, base: str) -> int:
@@ -498,20 +495,6 @@ def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, 
         emit(f'REFUSED: {why}')
         return 1
     return 0
-
-
-def _refresh_automode(root: Path, *, run: Callable[..., Any]) -> None:
-    """Render the checkout's machine-local auto-mode prose (:mod:`dev_lab.dev.automode`), in its own process.
-
-    Its own process so this door imports nothing of the forge it does not need; it always exits 0 and prints
-    why it wrote nothing when a fleet source is unreadable here, so it never fails the sync.
-    """
-    run(
-        [sys.executable, '-m', 'dev_lab.dev.automode', 'write', '--repo', str(root)],
-        check=False,
-        timeout=CHILD_WALL_S,
-        cwd=root,
-    )
 
 
 if __name__ == '__main__':
