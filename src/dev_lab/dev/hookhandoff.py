@@ -26,6 +26,7 @@ the queue lives under the user's temp dir, the one place such a payload can be w
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
 import os
 import re
@@ -72,6 +73,9 @@ ADOPT_WAIT_S: Final = 10.0
 _JOB: Final = '*.json'
 _POLL_S: Final = 0.2
 _UNSAFE: Final = re.compile(r'[^\w.-]')
+#: A per-process sequence in every queue name: Windows' ``time_ns`` can repeat across two writes, and a shared name let
+#: a late record's adoption overwrite a queued job that the runner then removed unrun.
+_SEQ: Final = itertools.count()
 
 
 def state_dir(cwd: Path) -> Path:
@@ -122,7 +126,7 @@ def _write(cwd: Path, event: str, text: str, wires: Sequence[Wire], *, root: Pat
     """One whole queue file of *wires*, through a rename; a write-ahead record also names its writer."""
     queue = state_dir(cwd) / HANDOFF_DIR
     queue.mkdir(parents=True, exist_ok=True)
-    path = queue / f'{time.time_ns()}-{os.getpid()}-{_UNSAFE.sub("_", event)}{suffix}'
+    path = queue / f'{time.time_ns()}-{next(_SEQ):06d}-{os.getpid()}-{_UNSAFE.sub("_", event)}{suffix}'
     body: dict[str, Any] = {'event': event, 'payload': text, 'rows': [w.name for w in wires], 'root': str(root or cwd)}
     if suffix == PENDING:
         body['writer'] = {'pid': os.getpid(), 'created': creation_stamp(os.getpid())}
