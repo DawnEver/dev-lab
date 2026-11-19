@@ -164,7 +164,9 @@ with venvcurrent.exclusive_build(Path(sys.argv[1])):
 
 def _holder(root: Path) -> tuple[subprocess.Popen[str], int]:
     """A second process holding *root*'s build lock, and its pid (a Windows venv python is a launcher's child)."""
-    child = subprocess.Popen([sys.executable, '-c', _HOLD, str(root)], stdout=subprocess.PIPE, text=True)
+    child = subprocess.Popen(
+        [sys.executable, '-c', _HOLD, str(root)], stdout=subprocess.PIPE, text=True, encoding='utf-8'
+    )
     assert child.stdout is not None
     return child, int(child.stdout.readline())
 

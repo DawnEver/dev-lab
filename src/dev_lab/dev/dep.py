@@ -77,9 +77,10 @@ from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
 from dev_lab.dev import _dep_cli, _dep_local, _dep_project, venvcurrent
-from dev_lab.dev._dep_components import changed, record
+from dev_lab.dev._dep_components import changed
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
+from dev_lab.dev._dep_publish import publish_built, refresh_automode
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
 
@@ -471,7 +472,7 @@ def _run(
         )
     except (_dep_project.OtherUvRefused, _dep_project.ForeignEnvRefused, _dep_local.OverlayRefused) as exc:
         emit(f'REFUSED: {exc}')
-        _publish(root, prefix, live, ok=False, census=census, base=base)
+        publish_built(root, prefix, live, ok=False, census=census, base=base)
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
@@ -492,44 +493,10 @@ def _run(
         emit(f'REFUSED: {exc}')
         return 1
     emit(result.render())
-    stale = _publish(root, prefix, live, ok=not result.returncode, census=census, base=base)
+    stale = publish_built(root, prefix, live, ok=not result.returncode, census=census, base=base)
     if syncing and not args.dry_run and not result.returncode:
-        _refresh_automode(root, run=run)
+        refresh_automode(root, run=run)
     return result.returncode or stale
-
-
-def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, base: str) -> int:
-    """Publish the environment just built (or drop a failed build), then reclaim every one nothing runs from.
-
-    Nonzero when the build is published but the :data:`~dev_lab.dev.venvpointer.ALIAS` still runs another
-    environment (a held legacy ``.venv`` directory): a caller of ``.venv`` would still meet the stale one.
-    """
-    if prefix == live or not ok:
-        if prefix != live:
-            venvcurrent.abandon(prefix)
-        return 0
-    record(root, prefix)  # the trees this environment now holds its components at
-    emit(f'published {prefix}: {venvcurrent.publish(root, prefix)}')
-    for line in venvcurrent.reclaim(root, census=census, building_here=True):
-        emit(line)
-    if why := venvcurrent.stale_alias(root, prefix, prefix.joinpath(*Path(base).relative_to(live).parts)):
-        emit(f'REFUSED: {why}')
-        return 1
-    return 0
-
-
-def _refresh_automode(root: Path, *, run: Callable[..., Any]) -> None:
-    """Render the checkout's machine-local auto-mode prose (:mod:`dev_lab.dev.automode`), in its own process.
-
-    Its own process so this door imports nothing of the forge it does not need; it always exits 0 and prints
-    why it wrote nothing when a fleet source is unreadable here, so it never fails the sync.
-    """
-    run(
-        [sys.executable, '-m', 'dev_lab.dev.automode', 'write', '--repo', str(root)],
-        check=False,
-        timeout=CHILD_WALL_S,
-        cwd=root,
-    )
 
 
 if __name__ == '__main__':
