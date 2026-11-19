@@ -46,8 +46,9 @@ from lab_commons.outcomes import Conclusion, Status
 from dev_lab.dev._forge_journal import Durable, Probe
 from dev_lab.dev.failprint import Fingerprints, subjects_of
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgework import GITHUB, Client, client_for
+from dev_lab.dev.forgework import GITHUB, Client
 
 __all__ = [
     'CARRIED_FROM',

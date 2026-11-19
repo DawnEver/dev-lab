@@ -1,4 +1,4 @@
-"""SESSION-HEARS-ITS-PRS: a session hears every red, green, merge and close on its own PRs, in any repository.
+"""TASK-HEARS-ITS-FORGE-EVENTS: a session hears every red, green, merge and close on its own PRs, in any repository.
 
 User ruling 2026-11-11: lab-commons #158 went red and nothing told the session, because the push journal lived
 in another checkout. Each test plants its control: the same red on a PR that is NOT the session's.

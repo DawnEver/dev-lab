@@ -280,3 +280,82 @@ def test_offering_for_is_the_one_call_a_consumer_needs(monkeypatch, tmp_path) ->
     assert built == [tmp_path]
     assert seen == [(tmp_path, sentinel, 'a' * 40)]
     assert 'offering_for' in forgeunit.__all__
+
+
+def _down(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The forge unreachable: every listing and upload drops its connection (an OSError, status 0)."""
+
+    def dropped(*_args: object, **_kwargs: object) -> object:
+        msg = 'connection dropped'
+        raise ConnectionError(msg)
+
+    monkeypatch.setattr(forgeunit, 'listing', dropped)
+    monkeypatch.setattr(forgeunit, 'attach', dropped)
+
+
+def _up(forge: Forge, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(forgeunit, 'listing', forge.listing)
+    monkeypatch.setattr(forgeunit, 'attach', forge.attach)
+
+
+def test_an_offline_post_is_held_and_lands_after_reconnection(
+    tmp_path: Path, forge: Forge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tier = ForgeResults(forge.client(), pending=tmp_path / 'pending')
+    one = ResultStore(tmp_path / 'one', tier)
+    _down(monkeypatch)
+    put = one.put(*stored(one, '42', 'h1'))  # the put succeeds: the result is here, its post is held
+    assert forge.held == []
+    assert [p.name for p in (tmp_path / 'pending').iterdir()] == [result_name(UNIT_HASH, 0, put.record.result_hash)]
+    grave = one.invalidate(UNIT_HASH, 'wrong deck', host='h1')
+    assert len(list((tmp_path / 'pending').iterdir())) == 2  # the tombstone waits too
+    _up(forge, monkeypatch)
+    landed = tier.flush()
+    assert [a.name for a in forge.held] == [
+        result_name(UNIT_HASH, 0, put.record.result_hash),
+        grave_name(UNIT_HASH, 0),
+    ]
+    assert len(landed) == 2
+    assert not any((tmp_path / 'pending').iterdir())
+    assert tier.graves(UNIT_HASH) == (grave,)
+    assert tier.flush() == []  # nothing left: a second flush sends nothing
+
+
+def test_a_flush_stops_at_the_first_unreachable_post_and_keeps_it(
+    tmp_path: Path, forge: Forge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tier = ForgeResults(forge.client(), pending=tmp_path / 'pending')
+    one = ResultStore(tmp_path / 'one', tier)
+    _down(monkeypatch)
+    one.put(*stored(one, '42', 'h1'))
+    lines = tier.flush()  # still down
+    assert len(list((tmp_path / 'pending').iterdir())) == 1
+    assert any('kept' in line and 'unreachable' in line for line in lines)
+
+
+def test_without_a_pending_directory_an_offline_post_still_raises(
+    tmp_path: Path, forge: Forge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED: the hold is opt-in by the caller's pending directory; without it nothing is silently kept."""
+    one = ResultStore(tmp_path / 'one', ForgeResults(forge.client()))
+    _down(monkeypatch)
+    with pytest.raises(ConnectionError):
+        one.put(*stored(one, '42', 'h1'))
+
+
+def test_a_held_result_that_meets_a_differing_first_result_is_dropped_and_alarms(
+    tmp_path: Path, forge: Forge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rang: list[Alarm] = []
+    tier = ForgeResults(forge.client(), alarm=rang.append, pending=tmp_path / 'pending')
+    one = ResultStore(tmp_path / 'one', tier)
+    _down(monkeypatch)
+    one.put(*stored(one, '43', 'h1'))
+    _up(forge, monkeypatch)
+    two = ResultStore(tmp_path / 'two', ForgeResults(forge.client()))
+    first = two.put(*stored(two, '42', 'h2'))  # another host posted first while this one was offline
+    lines = tier.flush()
+    assert [a.name for a in forge.held] == [result_name(UNIT_HASH, 0, first.record.result_hash)]  # the first stands
+    assert [(a.kind, a.about) for a in rang] == [(NONDETERMINISM, UNIT_HASH)]
+    assert any('dropped' in line for line in lines)
+    assert not any((tmp_path / 'pending').iterdir())

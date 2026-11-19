@@ -8,7 +8,8 @@ branch the schedule's rule classes, and requests (:mod:`dev_lab.dev.forgeschedul
 it and the admission fits it.
 A part is claimed as a pending status with a lease (:mod:`dev_lab.dev.forgeclaim`).
 
-WHAT A TICK DOES, in order: flush the status outbox (:mod:`dev_lab.dev.forgeoutbox`), fetch
+WHAT A TICK DOES, in order: flush the status outbox (:mod:`dev_lab.dev.forgeoutbox`) and the results held offline
+(:meth:`dev_lab.dev.forgeunit.ForgeResults.flush`), fetch
 ``origin``, rank every candidate this box could serve (:mod:`dev_lab.dev.forgeschedule`:
 value per cost, each waiting one naming why), CLAIM IN RANK ORDER WHILE JOBS ADMIT
 (:func:`lab_commons.compute.admission.admit`: the part's need-set present here, its demand within the supply),
@@ -103,6 +104,7 @@ from dev_lab.dev.forgeclaim import (
     this_machine,
     this_seat,
 )
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
@@ -116,14 +118,23 @@ from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
 from dev_lab.dev.forgesettled import SettledHistories
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass
+from dev_lab.dev.forgeunit import ForgeResults, pending_dir
 from dev_lab.dev.forgewait import Box, nowhere, tell
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import derived, origin_url, parts_of
 from dev_lab.dev.unproduced import unproduced_waived
 
 __all__ = ['TickReport', 'main', 'tick']
+
+
+def _status_flushed(root: Path, client: Callable[[Path], Client]) -> list[str]:
+    """The status outbox flushed: one line per entry, a failed post's lines included, never raised out of a tick."""
+    try:
+        return flush(root, client=client)
+    except PostFailed as failed:
+        return str(failed).splitlines()
 
 
 @dataclass(frozen=True)
@@ -224,13 +235,10 @@ def tick(
     (:mod:`dev_lab.dev.forgeaffinity`). *borrow* is the user's unexpired ``verify->research`` opt-in (default: the
     allocation record on the forge, read only when a live affined card could defer something).
     """
-    lines: list[str] = []
-    try:
-        lines += flush(root, client=client)
-    except PostFailed as failed:
-        lines += str(failed).splitlines()
+    lines = _status_flushed(root, client)
     fetch(root)
     built = client(root)
+    lines += ForgeResults(built, pending=pending_dir(root)).flush()  # results and graves held while offline
     history = SettledHistories(built)  # one read per sha a tick, none once settled (dev_lab.dev.forgesettled)
 
     login = built.whoami()

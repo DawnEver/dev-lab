@@ -56,6 +56,7 @@ from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
 from dev_lab.dev.forgemerge import EXTERNAL, judged
@@ -73,7 +74,7 @@ from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgesync import upstreams
-from dev_lab.dev.forgework import GITEA, Client, PullRequest, client_for
+from dev_lab.dev.forgework import GITEA, Client, PullRequest
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing

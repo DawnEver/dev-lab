@@ -18,8 +18,10 @@ that exists, ignores ``.github/workflows``. Both forges' workflows draw on the s
 share -- the review itself -- has one source. A workflow either forge may run keeps what differs in its
 ``by-forge`` table (:data:`BY_FORGE`, never rendered): the part named by the merged ``forge`` is merged over the rest.
 
-THE NIGHTLY TIME IS DECLARED ONCE (:data:`NIGHTLY_CRON`). A table's ``nightly = true`` (:data:`NIGHTLY_KEY`, never
-rendered) schedules that workflow at it. Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
+THE NIGHTLY TIME DEFAULTS ONCE (:data:`~dev_lab.dev.nightlycron.NIGHTLY_CRON`). A table's ``nightly = true`` (never
+rendered) schedules that workflow at it; ``nightly = "<5-field cron>"`` in a repo's layer schedules it at that time
+instead (user ruling D63, 2026-11-18: the time is a per-repo setting); a malformed cron is refused by name.
+Gitea renders no promoter: the host's ``dev_lab.ops`` promote role owns it.
 
 THE BRANCHES ARE THE REPO'S DECLARATION: :data:`INTEGRATION_PLACEHOLDER` in any string renders as the repo's
 ``[tool.dev_lab.integrator] integration`` (user ruling 2026-11-12: a one-branch repo merges into ``main``).
@@ -84,6 +86,7 @@ from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
+from dev_lab.dev.nightlycron import scheduled
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 from dev_lab.dev.roles import CI, HOST, REVIEW, ROLES, ROLES_ENV, Roles, roles_at
 
@@ -94,8 +97,6 @@ __all__ = [
     'FORGE_KEY',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
-    'NIGHTLY_CRON',
-    'NIGHTLY_KEY',
     'PREPARE',
     'PR_EVENTS',
     'RENDERED_BY',
@@ -147,10 +148,6 @@ WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('
 FORGE_KEY: Final = 'forge'
 #: The table key holding each forge's part of a workflow either may run; only the chosen forge's is merged in.
 BY_FORGE: Final = 'by-forge'
-#: The table key asking for the nightly schedule; a trigger, never part of the rendered workflow.
-NIGHTLY_KEY: Final = 'nightly'
-#: When every nightly workflow runs (D48-1A, user ruling 2026-11-01): 02:00 UTC.
-NIGHTLY_CRON: Final = '0 2 * * *'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 #: A job or step key, never rendered: the role (:data:`~dev_lab.dev.roles.ROLES`) its work belongs to.
 ROLE_KEY: Final = 'role'
@@ -414,8 +411,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         if 'jobs' in workflow and not workflow['jobs']:
             continue  # no job's role is on its executor here: the forge's CI runs nothing of this workflow
         workflow['env'] = {**workflow.get('env', {}), ROLES_ENV: roles.env()}
-        if workflow.pop(NIGHTLY_KEY, False):
-            workflow['on'] = {**workflow['on'], 'schedule': [{'cron': NIGHTLY_CRON}]}
+        workflow = scheduled(workflow, f'[tool.dev_lab.ci."{name}"]')
         if forge not in WORKFLOW_DIRS:
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)

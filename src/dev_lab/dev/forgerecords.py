@@ -44,10 +44,11 @@ from lab_commons.log import emit
 from dev_lab.dev._forge_journal import Durable, Probe
 from dev_lab.dev.forge import Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgealarm import STORAGE, Alarm
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import pages
 from dev_lab.dev.forgerecordkeep import DEFAULT_KEEP_TRUNK, RECORDS_PER_ROW, doomed_of, kept_shas, sha_of
-from dev_lab.dev.forgework import GITHUB, Client, client_for
+from dev_lab.dev.forgework import GITHUB, Client
 from dev_lab.dev.lanepolicy import load_policy
 
 __all__ = [
