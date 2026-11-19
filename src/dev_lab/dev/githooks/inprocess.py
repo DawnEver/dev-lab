@@ -129,10 +129,18 @@ def _exit_code(module: str) -> int:
 
 def run(module: str, args: list[str], cwd: Path, stdin: str | None, env: Mapping[str, str]) -> tuple[int, str]:
     """Run ``python -m <module> <args>`` in this interpreter: ``(exit code, stdout and stderr together)``."""
-    raw = io.BytesIO()
+    raw = _Kept()
     sink = io.TextIOWrapper(raw, encoding='utf-8', errors='replace', write_through=True)
     with _as_python_m(cwd, module, args, stdin, env):
         sys.stdout = sys.stderr = sink
         code = _exit_code(module)
-    sink.flush()
+    if not sink.closed:  # a row that closed its stdout already flushed it (write_through), as a subprocess would
+        sink.flush()
     return code, raw.getvalue().decode('utf-8', errors='replace')
+
+
+class _Kept(io.BytesIO):
+    """The capture buffer: a row closing ``sys.stdout`` closes the wrapper, never what it already wrote (#677)."""
+
+    def close(self) -> None:
+        """Keep the bytes: the runner reads them after the row returns."""
