@@ -20,8 +20,8 @@ from dev_lab.dev import forgeprotect
 from dev_lab.dev.family.members import FamilyRefused, join
 from dev_lab.dev.family.watch import findings
 from dev_lab.dev.forge import forge_from_remote
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgesecrets import Target, set_secret, stored_bundle, withheld
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 

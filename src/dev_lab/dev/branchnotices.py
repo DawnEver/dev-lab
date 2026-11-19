@@ -90,7 +90,7 @@ def lines_for(
 
     def read_forge() -> None:
         try:
-            from dev_lab.dev.forgework import client_for  # noqa: PLC0415
+            from dev_lab.dev.forgeclient import client_for  # noqa: PLC0415
 
             found.append(_from_forge(client if client is not None else client_for(root), branch, session))
         except Exception:  # noqa: BLE001, S110 -- a notice must never fail a git verb

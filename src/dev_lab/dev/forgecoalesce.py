@@ -87,7 +87,19 @@ def earlier_tips(root: Path, tip: str, *, since: str = '') -> list[str]:
     return [sha for sha in listed.splitlines() if sha]
 
 
+_RESOLVED: set[tuple[str, str]] = set()
+
+
 def _resolves(root: Path, ref: str) -> bool:
+    """Whether *ref* resolves in *root*; a ref that resolved is held for the process (16 asks per queue read).
+
+    Only a YES is held: a ref that appears later is still found. The ref asked is the integration branch, which a
+    fetched clone never loses; were it deleted, ``rev-list`` with its exclusion lists nothing, never a wrong tip.
+    """
+    if (str(root), ref) in _RESOLVED:
+        return True
     done = _door.run([_GIT, '-C', str(root), 'rev-parse', '--verify', '-q', ref], capture_output=True, text=True,
                      encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False)  # fmt: skip
+    if done.returncode == 0:
+        _RESOLVED.add((str(root), ref))
     return done.returncode == 0

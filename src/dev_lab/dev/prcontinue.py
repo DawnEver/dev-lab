@@ -40,10 +40,10 @@ from lab_commons.log import emit
 from dev_lab.dev.branchreview import carried_after, chained, context
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.forgealarm import PRUNED, Alarm
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_by_head, pr_list
 from dev_lab.dev.forgereview_declared import review_at
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import load_policy
 
 if TYPE_CHECKING:
