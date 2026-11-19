@@ -223,6 +223,46 @@ function inlineScripts(line) {
 }
 
 /**
+ * Interpreter source with the CONTENT of its string literals blanked (quotes and newlines kept), so text a
+ * program only carries -- source it writes to a file, a message it prints -- is never read as a call it makes
+ * (O48, 2026-11-18: a heredoc writing a file whose text held `rmtree(` was refused RECURSIVE-DELETE).
+ * Triple quotes first, then ' " and `; a backslash escapes the next character. A call outside every literal
+ * still reads exactly as written.
+ */
+function withoutStrings(code) {
+  let out = '';
+  let i = 0;
+  while (i < code.length) {
+    const triple = code.startsWith('"""', i) ? '"""' : code.startsWith("'''", i) ? "'''" : null;
+    const quote = triple || (`'"\``.includes(code[i]) ? code[i] : null);
+    if (!quote) {
+      out += code[i];
+      i += 1;
+      continue;
+    }
+    out += quote;
+    i += quote.length;
+    while (i < code.length && !code.startsWith(quote, i)) {
+      if (code[i] === '\\' && i + 1 < code.length) {
+        out += code[i + 1] === '\n' ? '\n' : ' ';
+        out += ' ';
+        i += 2;
+        continue;
+      }
+      // A one-line literal ends at its line: an unbalanced quote never swallows the code after it.
+      if (code[i] === '\n' && !triple && quote !== '`') break;
+      out += code[i] === '\n' ? '\n' : ' ';
+      i += 1;
+    }
+    if (code.startsWith(quote, i)) {
+      out += quote;
+      i += quote.length;
+    }
+  }
+  return out;
+}
+
+/**
  * Everything the shell will execute, as {text, kind}. `kind` is 'segment' for a shell command and
  * 'code' for interpreter source, which anchor differently.
  */
@@ -883,7 +923,7 @@ function fires(rule, texts, cmd) {
   const atLine = new RegExp(argument ? rule.pattern : `^[ \\t]*(?:${rule.pattern})`, 'm');
   // A 'shell' rule names a shell verb: interpreter code (python/node source) never spells it as a command.
   if (rule.matches === 'shell') return texts.some(({ text, kind }) => kind === 'segment' && atSegment.test(text));
-  return texts.some(({ text, kind }) => (kind === 'segment' ? atSegment : atLine).test(text));
+  return texts.some(({ text, kind }) => (kind === 'segment' ? atSegment.test(text) : atLine.test(withoutStrings(text))));
 }
 
 let input;

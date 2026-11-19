@@ -31,6 +31,7 @@ __all__ = [
     'UNFILLED',
     'VENDOR',
     'HomeUnfilled',
+    'app_tables',
     'channel_defects',
     'check',
     'check_family',
@@ -55,7 +56,7 @@ VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': st
 #: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
 SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
-    'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict,
+    'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict, 'apps': list,
 }  # fmt: skip
 #: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
 #: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
@@ -68,7 +69,7 @@ CADENCE_HOURS: Final = (1, 168)
 HOOK_MODES: Final = ('enforce', 'warn')
 #: ``[dev]`` keys only the family declares: ``default`` -- the profile an undeclared machine renders
 #: (:mod:`dev_lab.dev.devprofile`).
-FAMILY_ONLY: Final = ('default',)
+FAMILY_ONLY: Final = ('default', 'apps')
 #: ``[dev]`` keys that are one machine's facts and never the family's: ``channels`` -- session channel source ->
 #: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority).
 HOST_ONLY: Final = ('channels',)
@@ -242,6 +243,16 @@ def check_family(family: Mapping[str, Any]) -> list[str]:
         found += [f'[dev].default.{key} may not be declared in the default profile' for key in nested]
         found += _shape({k: v for k, v in default.items() if k not in nested}, '[dev].default')
     return found
+
+
+def app_tables(family: Mapping[str, Any]) -> tuple[str, ...]:
+    """The consumer tables the family opens in every host and account file (``[dev] apps``, family-only).
+
+    A consumer application reads its own machine facts from a table named after it (e.g. ``[<app>.core]``); the
+    family names those applications ONCE, so a host file may carry ``[<app>]`` without this kit knowing the app.
+    """
+    apps = family.get('dev', {}).get('apps', [])
+    return tuple(name for name in apps if isinstance(name, str))
 
 
 def hpc_reach(dev: Mapping[str, Any]) -> list[str]:
