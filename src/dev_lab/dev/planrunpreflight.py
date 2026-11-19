@@ -202,6 +202,35 @@ def _derived_here(granted: str, step: Step, readers: Readers) -> tuple[str, bool
     return 'green (subject derived here)', False
 
 
+def _unsettled(plan: Plan, steps: Steps, index: int, readers: Readers) -> str | None:
+    """A blocker when an unreached host's config step assumes its live ``[ops.config]`` already declares the family.
+
+    That holds when no earlier step on that host grants the subject a host without the family derives.
+
+    Such a host fetches the host file alone (:func:`configdoor.unsettled_subject`), so the plan would stop at run,
+    after its code is spent. The door is the two-step plan: a ``config apply`` with no ``config_host`` granting that
+    subject first (it installs the family declaration), then this step.
+    """
+    step = steps.steps[index]
+    try:
+        first = configdoor.unsettled_subject(readers.config_source(), devhost.host_file(step.config_host), readers.text)
+    except (*UNREAD, configdoor.ConfigRefused) as unread:
+        return f'BLOCKED -- the subject a host without the family derives cannot be read here ({unread})'
+    if first is None or first == plan.grants[index]['subject']:
+        return None
+    earlier = [
+        plan.grants[i]['subject'] for i in range(index)
+        if steps.steps[i].dest == step.dest and plan.grants[i]['action'] == CONFIG_ACTION
+    ]  # fmt: skip
+    if first in earlier:
+        return None
+    return (
+        f'BLOCKED -- the candidate declares an [ops.config] family; a host whose live table does not yet declares it '
+        f'derives {first[:12]}, not {plan.grants[index]["subject"][:12]}: plan two config applies on {step.dest} -- '
+        f'first one with no config_host granting {first[:12]}, then this one -- or hold a session so the host is read'
+    )
+
+
 def _read_unreached(granted: str, step: Step, action: str, readers: Readers) -> tuple[str, bool]:
     """``(verdict, blocked)`` of a step on an unreached host whose subject only that host derives: read, no code."""
     if step.stdin_local is not None or step.stdin_task is not None:
@@ -286,6 +315,8 @@ def preflight(
                 _derived_here(grant['subject'], step, readers) if _derivable(step) else
                 _read_unreached(grant['subject'], step, grant['action'], readers)
             )  # fmt: skip
+            if not fault and step.config_host and (unsettled := _unsettled(plan, steps, index, readers)):
+                verdict, fault = unsettled, True
             verdict = f'{verdict} on {step.dest} (unreachable: its door is checked at run)'
         else:
             verdict, fault = _host_check(plan, steps, index, remotes(step.dest), readers)
