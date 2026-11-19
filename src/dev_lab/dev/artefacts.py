@@ -73,7 +73,9 @@ from dev_lab.dev.artefactstores import (
     check_rclone_config,
     object_key,
     parsed_run_id,
+    ref_of_entry,
     run_id,
+    run_id_of,
     run_time,
 )
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -303,7 +305,7 @@ def reader(repo: str) -> FolderStore:
 
 def resolve(entry: dict[str, Any], dest: Path, *, client: Client, repo: str) -> Path:
     """Fetch the archive a record's manifest *entry* names, through the store -- never a hard-coded path."""
-    ref = Ref.of(entry)
+    ref = ref_of_entry(entry)
     store: ArtefactStore = ForgeStore(client) if ref.backend == FORGE else reader(repo)
     return store.get(ref, dest)
 
@@ -348,10 +350,10 @@ def clean(
     Of *account*'s runs only: those older than *retain_days* go, then oldest first until its share is
     under *cap_bytes* (0: no cap); pins stay, and every other writer's run is never touched.
     """
-    refs = [ref for ref in store.list(None) if parsed_run_id(ref.run_id)['account'] == account]
+    refs = [ref for ref in store.list(None) if parsed_run_id(run_id_of(ref))['account'] == account]
     cutoff = now.astimezone(UTC).date().toordinal() - retain_days
-    held = [ref for ref in refs if parsed_run_id(ref.run_id)['sha'] in pinned]
-    doomed = [ref for ref in refs if ref not in held and run_time(ref.run_id).date().toordinal() < cutoff]
+    held = [ref for ref in refs if parsed_run_id(run_id_of(ref))['sha'] in pinned]
+    doomed = [ref for ref in refs if ref not in held and run_time(run_id_of(ref)).date().toordinal() < cutoff]
     left = [ref for ref in refs if ref not in doomed]
     total = sum(ref.bytes for ref in left)
     for ref in left:  # oldest first

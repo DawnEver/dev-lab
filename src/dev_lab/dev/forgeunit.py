@@ -63,7 +63,7 @@ from lab_commons.temp import TEMP_PREFIX
 from dev_lab.dev._forge_journal import outbox_dir
 from dev_lab.dev.artefactpack import pack, unpack
 from dev_lab.dev.artefacts import load_config, resolve, store_for
-from dev_lab.dev.artefactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, Ref, run_id
+from dev_lab.dev.artefactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, RcloneObjects, Ref, manifest_of, run_id
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepublish import publish
@@ -90,6 +90,9 @@ __all__ = [
 _HASH: Final = r'[0-9a-f]{64}'
 #: The bundle's manifest, beside ``files/``.
 MANIFEST: Final = 'unit.json'
+#: The durable key prefix a result's large files take under the large-object remote (never ``scratch/``).
+OBJECTS_PREFIX: Final = 'results'
+
 #: The largest result archive the shared tier uploads: the forge's attachment limit, declared once there.
 MAX_UPLOAD_BYTES: Final = ATTACHMENT_LIMIT_MB * MB
 #: A tombstone attachment (:func:`grave_name`).
@@ -286,7 +289,7 @@ class UnitJob:
         ref, d = self.bundle, self.demand
         return (
             f'unit={self.unit_hash}',
-            f'bundle={ref.backend}|{ref.key}|{ref.bytes}|{ref.sha256}',
+            f'bundle={ref.backend}|{ref.ref}|{ref.bytes}|{ref.sha256}',
             f'size={cores(d)}|{d[MEM_GB]}|{self.wall_s}',
             f'needs={"+".join(self.needs)}',
         )
@@ -407,6 +410,11 @@ def offering_for(repo: Path, sha: str) -> Offer:
     return offering(repo, client_for(repo), sha)
 
 
+def large_objects(remote: str | None, prefix: str = OBJECTS_PREFIX) -> RcloneObjects | None:
+    """The large-object store on *remote* under *prefix*; ``None`` without a remote (an oversize result stays local)."""
+    return RcloneObjects(remote, prefix) if remote else None
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -417,7 +425,13 @@ def main(
     """Run one offered unit here; exit 0 it has a result, 1 it failed, 2 the Job is refused (nothing ran)."""
     parser = argparse.ArgumentParser(prog=f'python -m {__name__}', description=__doc__.splitlines()[0])
     parser.add_argument('paths', nargs='+', help='the Job request paths: unit=, bundle=, size=, needs=')
+    parser.add_argument(
+        '--objects-remote',
+        help='an rclone remote (name:bucket) holding files too large for the forge; none: such a result stays local',
+    )
+    parser.add_argument('--objects-prefix', default=OBJECTS_PREFIX, help='the durable key prefix under that remote')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    objects = large_objects(args.objects_remote, args.objects_prefix)
     root = Path.cwd() if cwd is None else cwd
     built = client_for(root) if client is None else client
     units = config_path().parent / 'units' if store is None else store
@@ -427,14 +441,14 @@ def main(
         emit(f'[unit] refused: {refused}', err=True)
         return 2
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
-        archive = resolve(job.bundle.manifest(), Path(scratch), client=built, repo=built.forge.repo)
+        archive = resolve(manifest_of(job.bundle), Path(scratch), client=built, repo=built.forge.repo)
         unit, files = _unit_of(unpack(archive, Path(scratch) / 'bundle'))
         if unit.unit_hash(files) != job.unit_hash:
             emit(f'[unit] refused: the bundle is not unit {job.unit_hash[:12]}', err=True)
             return 2
         here = environment_here(root) if unit.engine.environment else None
         executor = LocalExecutor(
-            ResultStore(units, ForgeResults(built, pending=pending_dir(root))),
+            ResultStore(units, ForgeResults(built, pending=pending_dir(root)), objects=objects),
             units / 'journal',
             present=presence_check(here, cached()),
         )

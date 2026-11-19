@@ -208,9 +208,9 @@ def test_newpack_archive_authenticates_before_decompressing(
     archive.write_bytes(data)
     ref = _ref_of(archive)
     if fault == 'hash':
-        ref = Ref(ref.backend, ref.key, ref.bytes, '0' * 64)
+        ref = Ref(ref.backend, ref.ref, ref.bytes, '0' * 64)
     if fault == 'length':
-        ref = Ref(ref.backend, ref.key, ref.bytes + 1, ref.sha256)
+        ref = Ref(ref.backend, ref.ref, ref.bytes + 1, ref.sha256)
     opened: list[object] = []
     real: Callable[..., gzip.GzipFile] = gzip.GzipFile
 
