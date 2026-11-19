@@ -19,6 +19,7 @@ import pytest
 from _branch_repos import advance
 from _forge_fake import run_git
 from _forge_state import StateForge, called_due
+from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
 from test_dev_forgereview import _MANIFEST, FakeCommand, _can, _forge, _output, _work
 
 from dev_lab.dev.ciworkflows import workflows
@@ -52,6 +53,13 @@ from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgetakeover import main as review_main
 from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
+
+
+@pytest.fixture(autouse=True)
+def _review_on_the_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bind review on hpc: these tests drive the serve's review tick, which reviews nothing else (D73)."""
+    carry(monkeypatch, HPC_REVIEWED)
+
 
 _BATCHED = Review(command=('reviewer', '--range', RANGE_FIELD, BATCH_FIELD))
 
@@ -291,11 +299,14 @@ def test_the_due_run_resumes_the_batch_pending_heads_and_nothing_held(tmp_path: 
     assert _review_status(forge, other).description.startswith(UNREVIEWED_STATUS)
 
 
-def test_the_merge_tick_reviews_the_due_heads_and_resumes_batches_after_its_decision(tmp_path: Path) -> None:
+def test_the_merge_tick_reviews_the_due_heads_and_resumes_batches_after_its_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """One cadence: after the tick's decision, its review job reviews the due heads and resumes batches.
 
     A ``status`` event reviews only when its decision called a head due (the review is the last gate).
     """
+    carry(monkeypatch, EVERY_CI)  # the forge's CI reviews here, so the tick renders its review job
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.ci."merge-tick.yml"]\n', encoding='utf-8')
     tick = workflows(tmp_path)['merge-tick.yml']
     job = tick['jobs']['review']
