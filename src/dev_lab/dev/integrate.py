@@ -8,7 +8,7 @@ unless it fast-forwards, and the pre-push guard judges. No local branch of the t
 one checked out somewhere (a live config checkout, say) is left alone and named stale -- pulling it is its owner's.
 
 WHO MAY PUBLISH THE TRUNK is the forge's protection: on GitHub the ruleset admits the nightly promote job's token
-alone (``ci.yml`` ``jobs.promote``, :data:`~dev_lab.dev.ciworkflows.NIGHTLY_CRON`; :mod:`dev_lab.dev._protect_github`),
+alone (``ci.yml`` ``jobs.promote``, :data:`~dev_lab.dev.nightlycron.NIGHTLY_CRON`; :mod:`dev_lab.dev._protect_github`),
 so anywhere else the verb DECIDES and moves nothing -- a local trunk no push can publish is a divergence, not a
 promotion -- and says ``promotable`` with when the job runs. On Gitea the host's promoter runs this verb and pushes.
 
@@ -51,7 +51,6 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import metrics
 from dev_lab.dev._forgebackends import FORGE_SERVE, GITHUB, actions_token, backend_for
-from dev_lab.dev.ciworkflows import NIGHTLY_CRON
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -61,6 +60,7 @@ from dev_lab.dev.hostedparts import hosted_parts
 from dev_lab.dev.jobparts import off_gate
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.dev.nightlycron import NIGHTLY_CRON
 from dev_lab.dev.platformparts import UndeclaredPart, derived, required_at, standing
 from dev_lab.dev.producers import optional_needs_from, optional_parts
 from dev_lab.dev.trialmerge import contains, rev

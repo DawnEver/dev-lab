@@ -324,6 +324,20 @@ def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Pa
     assert (other / agent_wiring.LAUNCHER_REL).read_text(encoding='utf-8') == '// the repo own launcher\n'
 
 
+def test_the_install_replaces_a_stale_launcher_dev_lab_shipped(tmp_path: Path) -> None:
+    """A launcher carrying dev-lab's provenance line but older bytes is ours and stale: it is replaced.
+
+    The incident (2026-11-18): a kept old launcher ran the legacy .venv, whose dev-lab had no
+    hookdispatch, so every project dispatch row failed silently. The foreign launcher above is the control.
+    """
+    launcher = tmp_path / agent_wiring.LAUNCHER_REL
+    launcher.parent.mkdir(parents=True)
+    provenance = agent_guard.launcher_source().splitlines()[1]
+    launcher.write_text(f'// an older shipped launcher\n{provenance}\n', encoding='utf-8')
+    agent_guard.install_guard(tmp_path)
+    assert launcher.read_text(encoding='utf-8') == agent_guard.launcher_source()
+
+
 def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
     """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
     agent_guard.install_guard(tmp_path)

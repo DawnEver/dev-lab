@@ -28,6 +28,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'verifybox',
     'verifysteps',
     'agent_guard',
+    'launcherplan',  # ORIGINAL: split from agent_guard: keep, keep-own or rewrite the agent launcher (2026-11-19)
     'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
     'backgroundrun',  # the background hooks' detach and per-repo lock, split from reclaimrun (dev-lab #640)
     'hookdispatch',  # one interpreter per hook event, reading WIRING from its own install (dev-lab #640)
@@ -310,8 +311,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'table',
     'runner',
     'inprocess',  # ORIGINAL: split from runner: a `python -m` row run in the stage's one interpreter (2026-11-16)
+    'gitfailure',  # ORIGINAL: split from runner: the runner's own failed git query, named (O21, 2026-11-19)
     'filechecks',
     'ciworkflows',
+    'nightlycron',  # ORIGINAL: split from ciworkflows: a workflow's nightly declaration as a cron (D63, 2026-11-19)
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
@@ -371,6 +374,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the blobless-clone prefetch and the review-code classification are
     # forge mechanisms new to the family; no consumer held one.
     'blobfetch',
+    'boxmigrate',  # the one box-ledger migration step every installing door runs (lab-commons #208)
     'reviewcode',
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
