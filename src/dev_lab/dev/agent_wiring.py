@@ -215,7 +215,7 @@ _STOPS: Final = ('Stop', 'SubagentStop')
 #: match, ``_deny_journal_row``); before every write: the codeplace write hook (a report under output/, a write-prone
 #: root, a consent file refused; a misplaced code file hinted). After every shell call, succeeded or failed: the wall
 #: ledger's foreign-denial reader (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54) and the PR inbox
-#: -- the ONE machine PR watcher (SESSION-HEARS-ITS-PRS); the task binding is rem's own prompt hook, never a row here.
+#: -- the ONE machine forge hearer (TASK-HEARS-ITS-FORGE-EVENTS); the task binding is rem's prompt hook, not a row.
 #: Every stop, the main session's and each subagent's: the hand-back check and the wall ledger's stop; the main
 #: session's adds the stray census, the scratch census, the unfilled install home and the shell reaper -- Stop is the
 #: one event that recurs inside a session, so it is the reaper's clock, and a session's first stop sweeps what an ended
@@ -231,7 +231,7 @@ WIRING: Final = (
     Wire(('PreToolUse',), 'dev_lab.dev.codeplace', tools=WRITE_TOOLS, may_block=True),
     Wire(('PostToolUse', 'PostToolUseFailure'), 'dev_lab.dev.walls', ('post-tool',), tools=SHELL_TOOLS),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.hostalarm', ('hook',), detached=True),
-    Wire(('UserPromptSubmit',), 'dev_lab.dev.prwatcher', ('inbox',), detached=True),
+    Wire(('UserPromptSubmit',), 'dev_lab.dev.forgefeed', ('inbox',), detached=True),
     Wire(('Stop',), 'dev_lab.dev.strays', ('hook',), may_block=True),
     Wire(_STOPS, 'dev_lab.dev.handback', may_block=True),
     Wire(('Stop',), 'dev_lab.dev.scratch', ('stop',), may_block=True),
@@ -243,7 +243,7 @@ WIRING: Final = (
     Wire(('SessionStart',), 'dev_lab.dev.forgeauthnotice', ('--session-start',), once=True, detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.scratch', ('snapshot',), once=True),
     Wire(('SessionStart',), 'dev_lab.dev.automode', ('session-start',), detached=True),
-    Wire(('SessionStart',), 'dev_lab.dev.prwatcher', ('session-start',), detached=True),
+    Wire(('SessionStart',), 'dev_lab.dev.forgefeed', ('session-start',), detached=True),
 )
 
 

@@ -10,13 +10,13 @@ It never posts, claims or cancels anything.
 ``<sha12> <context> <state>`` -- and a last line ``<sha12> green|red|deadline``; a re-read status that did not
 change prints nothing.
 
-``--session <id> --stream`` (SESSION-HEARS-ITS-PRS, user ruling 2026-11-11: lab-commons #158 went red and the
+``--session <id> --stream`` (TASK-HEARS-ITS-FORGE-EVENTS, user ruling 2026-11-11: lab-commons #158 went red and the
 session heard nothing) watches every PR the session opened or pushed, in any repository, on either forge
 (:mod:`dev_lab.dev.sessionprs`, its record): ONE line per change -- ``<key> <sha12> <context> failure|error
 <description>``, ``<key> <sha12> green`` once every ``tests/*`` check is final and green, ``<key> merged`` /
 ``<key> closed`` once -- and exits 0 when none remains open, 3 at its deadline. ``--ack <key> --reason <why>``
 records why a red stands; :func:`unacknowledged_reds` lists the reds no reason answers, until a newer head.
-The machine PR watcher (:mod:`dev_lab.dev.prwatcher`) is the one hearer a session relies on (dev-lab #640).
+The machine forge hearer (:mod:`dev_lab.dev.forgefeed`) is the one hearer a session relies on (dev-lab #640).
 
 A WATCH YIELDS ITS VENV (dev-lab #641): a watch runs from a venv for hours, so once a newer environment is
 published beside it (:func:`dev_lab.dev.venvpointer.superseded`) it exits at its next poll -- one line
@@ -36,9 +36,10 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import native_session, sessionprs, taskgate, venvpointer
+from dev_lab.dev.forgeclient import client_for, stored_client
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_list
-from dev_lab.dev.forgework import Client, client_for, stored_client
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.sessionpoll import TESTS, green, poll_session, pull_of, reds
 
 if TYPE_CHECKING:

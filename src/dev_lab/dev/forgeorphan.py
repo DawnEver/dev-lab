@@ -32,10 +32,10 @@ from lab_commons.log import emit
 
 from dev_lab.dev import forgedraft, sessionprs
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm, pull_context
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelabels import add_label, ensure_labels, remove_label
 from dev_lab.dev.forgepulls import comment_list, pr_list
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import load_policy
 

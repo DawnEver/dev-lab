@@ -19,10 +19,11 @@ from _forge_fake import Loopback, Recorder, answer, credential_env, make_repo, s
 
 from dev_lab.dev._forge_journal import Journal, Probe, Write, journal_for, outbox_dir
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeoutbox import replay
 from dev_lab.dev.forgestatus import status_post
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'
