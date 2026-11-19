@@ -52,7 +52,7 @@ re-render; never hand-edit a rendered file.
   `[tool.dev_lab.ci."<file>.yml"]` (deep-merged over the base) or declares its own.
   `python -m dev_lab.dev.ciworkflows render` writes `.github/workflows/*.yml` as stamped JSON (JSON is YAML);
   `check` refuses a hand edit or an undeclared workflow, naming the render command.
-  A table's `nightly = true` schedules it at the default 02:00 UTC (`ciworkflows.NIGHTLY_CRON`); a repo sets its
+  A table's `nightly = true` schedules it at the default 02:00 UTC (`nightlycron.NIGHTLY_CRON`); a repo sets its
   own time with `nightly = "<5-field cron>"` in that table (D63), and a malformed cron is refused by name. GitHub
   starts a scheduled run ~6-8 h late (measured 2026-11-18, `.claude/memory/2026/11/18/`).
 - **A relock re-renders.** Every generated row of `famfiles.PROJECT_FILES` names its renderer, and

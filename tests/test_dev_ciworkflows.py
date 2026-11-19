@@ -27,7 +27,6 @@ from dev_lab.dev import ciworkflows
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
     BY_FORGE,
-    NIGHTLY_CRON,
     PR_EVENTS,
     PREPARE,
     RENDER_COMMAND,
@@ -51,6 +50,7 @@ from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
+from dev_lab.dev.nightlycron import NIGHTLY_CRON
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 

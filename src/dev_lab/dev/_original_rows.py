@@ -311,6 +311,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'inprocess',  # ORIGINAL: split from runner: a `python -m` row run in the stage's one interpreter (2026-11-16)
     'filechecks',
     'ciworkflows',
+    'nightlycron',  # ORIGINAL: split from ciworkflows: a workflow's nightly declaration as a cron (D63, 2026-11-19)
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
