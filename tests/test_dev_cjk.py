@@ -379,3 +379,17 @@ def test_the_cjk_scan_skips_a_submodule_directory_too(tmp_path: Path) -> None:
     scan = scan_files((submodule, clean), root=tmp_path)
     assert scan.files_read == 1
     assert 'sub' not in scan.exempted
+
+
+def test_a_kana_line_and_a_hangul_line_are_refused_and_ordinary_non_ascii_passes(tmp_path: Path) -> None:
+    kana = tmp_path / 'kana.md'
+    kana.write_text('ok\nsee \u3072\u30ab\u31f0\uff76\n', encoding='utf-8')
+    hangul = tmp_path / 'hangul.md'
+    hangul.write_text('\ud55c\u1100\u3131\ua960\ud7b0\n', encoding='utf-8')
+    clean = tmp_path / 'clean.md'
+    clean.write_text('20 \u00b0C, \u03b1 \u03c9 \u2014 \u00d7 \u00e9\n', encoding='utf-8')
+    scan = scan_files([kana, hangul, clean], root=tmp_path)
+    assert {(o.path, o.line) for o in scan} == {('kana.md', 2), ('hangul.md', 1)}
+    assert len(scan.occurrences) == 9
+    refused = [problem.split(':')[0] for problem in ratchet(scan.occurrences, ())]
+    assert refused == ['UNDECLARED CJK -- hangul.md', 'UNDECLARED CJK -- kana.md']

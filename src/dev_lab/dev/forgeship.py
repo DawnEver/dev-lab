@@ -94,6 +94,6 @@ def tidy(root: Path, client: Client, *, account: str, say: Callable[[str], None]
     for store in stores:
         cap = config.cap_bytes if store is large else 0
         for ref in clean(store, account=account, now=now, retain_days=config.retain_days, cap_bytes=cap, pinned=keep):
-            gone.append(f'{ref.backend}:{ref.key}')
-            say(f'[artefacts] deleted {ref.backend}:{ref.key}')
+            gone.append(f'{ref.backend}:{ref.ref}')
+            say(f'[artefacts] deleted {ref.backend}:{ref.ref}')
     return tuple(gone)

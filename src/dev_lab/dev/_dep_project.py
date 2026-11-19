@@ -218,7 +218,10 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
         raise ValueError(msg)
     prefix = current(root)
     if not prefix.resolve().is_relative_to(root.resolve()):
-        msg = f'{root} must use its own environment, not the alias {prefix} -> {prefix.resolve()}'
+        msg = (
+            f'{root} must use its own environment, not the alias {prefix} -> {prefix.resolve()}; '
+            f'door: python -m dev_lab.dev.dep --bootstrap {root}, then run the door from the interpreter of that tree'
+        )
         raise ValueError(msg)
     python = str(prefix.joinpath(*VENV_LAYOUTS[os.name][1:]))
     return python, tuple(selected), anchor_paths(root, declaration.get('anchors', ()))

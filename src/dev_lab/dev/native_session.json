@@ -1,1 +1,1 @@
-{"harnesses":[{"primary":"CLAUDE_CODE_SESSION_ID","auxiliary":[]},{"primary":"CODEX_THREAD_ID","auxiliary":["CODEX_SESSION_ID"]}],"max_length":128,"punctuation":"_.-"}
+{"harnesses":[{"primary":"CLAUDE_CODE_SESSION_ID","auxiliary":[]},{"primary":"CODEX_THREAD_ID","auxiliary":["CODEX_SESSION_ID"]},{"primary":"ANTIGRAVITY_CONVERSATION_ID","auxiliary":["ANTIGRAVITY_TRAJECTORY_ID"]}],"max_length":128,"punctuation":"_.-"}
