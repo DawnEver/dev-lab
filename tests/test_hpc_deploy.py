@@ -382,7 +382,7 @@ def test_a_tool_is_probed_by_its_version_in_the_tick_environment(box: Box, monke
     monkeypatch.setattr(deploy, '_runs', lambda _sh, env, tool: probed.append((env, tool)) or True)
     monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
     assert box.run(*DECLARE) == 0
-    assert {tool for _env, tool in probed} == {'uv', 'cargo'}
+    assert {tool for _env, tool in probed} == {'uv', 'rclone', 'cargo'}
     assert all(env == deploy_spec.tick_environment(box.home, [str(Path('/x'))]) for env, _tool in probed)
 
 
