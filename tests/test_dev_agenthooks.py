@@ -750,3 +750,71 @@ def test_interpreter_code_is_read_without_its_string_literals(rules: Path) -> No
     bash = agenthooks.decide('rm -rf .claude/worktrees/lane', rules)
     assert bash is not None
     assert bash.startswith('RECURSIVE-DELETE:'), bash
+
+
+def _agy_tool(payload: dict[str, object], rules: Path, *, flag_order: str = 'after') -> dict[str, object]:
+    argv = [str(rules), '--host', 'agy'] if flag_order == 'after' else ['--host', 'agy', str(rules)]
+    done = subprocess.run(
+        [str(node_path()), str(agenthooks.engine_path('deny-commands')), *argv],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=True,
+        timeout=60,
+    )
+    return json.loads(done.stdout)
+
+
+def test_antigravity_host_flag_judges_camelcase_run_command_and_emits_nonempty_decisions(
+    rules: Path, tmp_path: Path
+) -> None:
+    """Antigravity PreToolUse sends camelCase ``toolCall`` and treats ``{}`` as deny: ``--host agy`` emits ``ask``."""
+    denied = _agy_tool(
+        {
+            'conversationId': 'agy-conv-1',
+            'workspacePaths': [str(tmp_path)],
+            'toolCall': {'name': 'run_command', 'args': {'CommandLine': 'pytest tests/'}},
+        },
+        rules,
+    )
+    assert denied['decision'] == 'deny'
+    assert 'dev_lab.dev.verify' in str(denied['reason'])
+
+    double_encoded = _agy_tool(
+        {
+            'conversationId': 'agy-conv-1',
+            'workspacePaths': [str(tmp_path)],
+            'toolCall': {'name': 'run_command', 'args': {'CommandLine': json.dumps('pytest tests/')}},
+        },
+        rules,
+        flag_order='before',
+    )
+    assert double_encoded['decision'] == 'deny'
+
+    allowed = _agy_tool(
+        {
+            'conversationId': 'agy-conv-1',
+            'workspacePaths': [str(tmp_path)],
+            'toolCall': {'name': 'run_command', 'args': {'CommandLine': 'git status --short'}},
+        },
+        rules,
+    )
+    assert allowed == {'decision': 'ask'}
+
+    non_shell = _agy_tool(
+        {
+            'conversationId': 'agy-conv-1',
+            'workspacePaths': [str(tmp_path)],
+            'toolCall': {'name': 'read_file', 'args': {'Path': 'README.md'}},
+        },
+        rules,
+    )
+    assert non_shell == {'decision': 'ask'}
+
+    # Fail-open on broken rules still emits {"decision": "ask"} under --host agy, never empty stdout.
+    broken = tmp_path / 'broken-rules.json'
+    broken.write_text('[ {', encoding='utf-8')
+    assert _agy_tool({'toolCall': {'name': 'run_command', 'args': {'CommandLine': 'pytest'}}}, broken) == {
+        'decision': 'ask'
+    }
