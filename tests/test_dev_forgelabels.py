@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from dev_lab.dev._forgebackends import GITEA, GITHUB, Backend
-from dev_lab.dev.forgelabels import LabelMissing, add_label, ensure_labels
+from dev_lab.dev.forgelabels import LabelMissing, add_label, ensure_labels, relabel
 
 
 class _Client:
@@ -38,3 +38,23 @@ def test_a_missing_label_is_refused_by_name_unless_ensured() -> None:
         add_label(client, 9, 'forge:request')
     assert ensure_labels(client, ['forge:request']) == {'forge:request': 1}
     assert ensure_labels(client, ['forge:request']) == {'forge:request': 1}, 'created once'
+
+
+@pytest.mark.parametrize('backend', [GITEA, GITHUB])
+def test_relabel_creates_a_missing_label_and_takes_one_off(backend: Backend) -> None:
+    """``forge issue label N --add A --remove B``: an existing issue relabelled, on both forges, through the door."""
+    client = _Client(backend, {'task:toolchain': 3})
+    relabel(client, 9, add=('task:toolchain', 'kind:need'), remove=('task:toolchain',))
+    writes = [(m, p) for m, p, _b in client.calls if m != 'GET']
+    assert ('POST', '/r/labels') in writes, 'the missing label, created first'
+    assert [p for m, p in writes if m == 'POST' and p == '/r/issues/9/labels'] == ['/r/issues/9/labels'] * 2
+    gone = 'task:toolchain' if backend is GITHUB else '3'
+    assert ('DELETE', f'/r/issues/9/labels/{gone}') in writes
+
+
+def test_relabel_with_nothing_to_do_is_refused_before_any_call() -> None:
+    """PLANTED CONTROL: no --add and no --remove writes nothing and says why."""
+    client = _Client(GITEA, {})
+    with pytest.raises(ValueError, match='--add or --remove'):
+        relabel(client, 9, add=(), remove=())
+    assert client.calls == []

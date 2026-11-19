@@ -19,9 +19,8 @@ merge oldest tip commit first, ties by branch name.
 THE FORGE PROMPTS THE INTEGRATOR. A wake is the observer's half, and the observer is ``forge serve``: EVERY
 serving host derives this same queue (:func:`observe`) on each tick -- no host owns integration -- and the
 rows that ask the integrator to act (:func:`prompts`: a READY lane, a PROMOTE-able tip, a BLOCKED red to
-route) are kept as ONE forge issue per row (:func:`dev_lab.dev.forgeroute.reconcile`, titled
-``integration: <subject>``), so N hosts write one issue and only the host that creates or changes it pages.
-Nothing else is stored.
+route) are ALARMS on the host card (:mod:`dev_lab.dev.forgehosts`, printed by ``forge queue``), re-derived each
+tick, never issues (user rulings 2026-11-14 and 2026-11-19). Nothing else is stored.
 
 FETCH-FREE, the caller's half, exactly as in ``forgeissue``: run the fetch through the retry wrapper
 first. The tips printed make a stale answer visible.
