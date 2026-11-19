@@ -6,7 +6,7 @@ metadata:
 ---
 
 The integrator relayed a new explicit machine-declared user answer on2026-11-15:
-"始终允许 外发 anthropic" (always permit Anthropic outbound). It authorizes
+"Always permit Anthropic outbound" (user, translated). It authorizes
 necessary Anthropic outbound and the normal independent PR judge for the task.
 Root reported the concrete permission blocker on DawnEver/dev-lab584 resolved
 with comment6893218897 and closure. This is permission evidence, not evidence
@@ -17,3 +17,5 @@ manual Fabric/sharp-review dispatch, permit a different provider, bypass a
 gate, or revoke this worker's no-push/no-PR/no-ready ownership boundary. Root
 owns normal publication, review/ready transitions and formal producer routing.
 No secret, consent code or external model call is stored or performed here.
+
+> Amended 2026-11-17: translated to English (D26) -- approved: "(user, translated) .claude/memory/ and .claude/tasks/ should also be English only"

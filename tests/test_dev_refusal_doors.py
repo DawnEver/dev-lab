@@ -10,11 +10,14 @@ stays in ``docs-src/dev/refusals.md``; the remedy is the command, the page is th
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import agenthooks
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
-from dev_lab.dev.hooks import DENY_RULES
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import DENY_RULES, Remedy
 
 #: The door shapes a remedy may name, else the explicit no-door opener.
 _DOOR = re.compile(r'-m [a-z_]+(?:\.[a-z_]+)+|\{remedy\}|\bgit [a-z][a-z-]+|^No door: ')
@@ -67,3 +70,52 @@ def test_the_key_only_hpc_doors_are_admitted() -> None:
     ):
         assert door in HPC_THROUGH_THE_DOOR['permits']
         assert not pattern.search(door)
+
+
+# ------------------------------------------------------------------- the door a refusal teaches is admitted
+
+#: A door the reason spells: a ``{python} -m`` module, a ``git`` verb, or a ``timeout`` bound, up to its clause end.
+_TAUGHT = re.compile(
+    r'(?:\{python\} -m [a-z_]+(?:\.[a-z_]+)+|\.venv/Scripts/python\.exe -m [a-z_]+(?:\.[a-z_]+)+|\bgit [a-z][a-z-]+'
+    r'|\btimeout \d+m)[^;,()`\n]*?(?=[;,()`]|\. |\.$|$)'
+)
+_VERIFY = '.venv/Scripts/python.exe -m dev_lab.dev.verify -- tests/test_a.py'
+_REMEDIES = {rule.id: Remedy(rule.needs, _VERIFY) for rule in DENY_RULES if rule.needs}
+
+
+def taught_doors(reason: str) -> list[str]:
+    """The runnable commands *reason* teaches, placeholders filled: ``<x>`` -> ``x``, ``a|b`` -> ``a``.
+
+    Read off the exit lines only: the first line quotes the refused shape itself, and ``details:`` is a page.
+    """
+    exits = '\n'.join(line for line in reason.splitlines()[1:] if not line.startswith('details: '))
+    found = []
+    for match in _TAUGHT.finditer(exits):
+        text = match.group(0).replace('{python}', '.venv/Scripts/python.exe')
+        text = re.sub(r'<[^>]*>', 'x', text)
+        text = re.sub(r'([\w-]+)(?:\|[\w-]+)+', r'\1', text)
+        found.append(re.sub(r'\s*\[[^\]]*\]', '', text).strip())
+    return found
+
+
+@pytest.fixture(scope='module')
+def rendered(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    path = tmp_path_factory.mktemp('rules') / 'deny-rules.json'
+    path.write_text(render(HookAdoption(app_name='suite', remedies=_REMEDIES)), encoding='utf-8')
+    return path
+
+
+@pytest.mark.parametrize('rule', DENY_RULES, ids=lambda rule: rule.id)
+def test_every_door_a_refusal_teaches_is_admitted_by_the_guard(rule, rendered: Path) -> None:
+    """A refusal whose door the guard itself refuses is a sealed road: the agent is taught a wall.
+
+    Driven through the real engine over the shipped rules, so a SIBLING row refusing the door counts too.
+    """
+    for door in taught_doors(rule.reason(_REMEDIES.get(rule.id))):
+        assert agenthooks.decide(door, rendered) is None, f'{rule.id} teaches {door!r}, which the guard refuses'
+
+
+def test_a_taught_door_the_guard_refuses_is_caught(rendered: Path) -> None:
+    """PLANTED CONTROL: a reason teaching `git reset --hard` names a door GIT-RESET refuses."""
+    (door,) = taught_doors('X: `git reset` is shared\nStart over: git reset --hard x.')
+    assert agenthooks.decide(door, rendered) is not None

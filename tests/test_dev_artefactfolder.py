@@ -43,7 +43,7 @@ def test_folder_refuses_inconsistent_archive_or_manifest(tmp_path: Path, fault: 
     store = FolderStore(tmp_path / 'store', 'lab')
     ref = store.put(RUN, source)
     assert store.put(RUN, source) == ref, 'PLANTED CONTROL: the same bytes again is the object already landed'
-    target = store.root / ref.key
+    target = store.root / ref.ref
     manifest = target.with_name(RUN + MANIFEST)
     if fault == 'orphan':
         manifest.unlink()
@@ -114,7 +114,7 @@ def test_folder_refuses_leaf_and_parent_aliases(tmp_path: Path, role: str) -> No
         alias = store.root / 'lab'
     else:
         ref = store.put(RUN, source)
-        alias = store.root / ref.key
+        alias = store.root / ref.ref
         if role == 'manifest':
             alias = alias.with_name(RUN + MANIFEST)
         external.write_bytes(alias.read_bytes())

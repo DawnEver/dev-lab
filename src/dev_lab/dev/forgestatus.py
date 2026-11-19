@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import lab_commons.launch as _door
 from lab_commons.hpc.testcells import TestCell
@@ -44,9 +44,11 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion, Status
 
 from dev_lab.dev._forge_journal import Durable, Probe
+from dev_lab.dev.failprint import Fingerprints, subjects_of
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgework import GITHUB, Client, client_for
+from dev_lab.dev.forgework import GITHUB, Client
 
 __all__ = [
     'CARRIED_FROM',
@@ -56,7 +58,9 @@ __all__ = [
     'SAME_TREE',
     'STATES',
     'CommitStatus',
+    'fingerprints_at',
     'head_sha',
+    'known_fingerprints',
     'known_reds',
     'main',
     'resolve_commit',
@@ -274,18 +278,35 @@ def _red_lines(status: CommitStatus, client: Client, known: Mapping[str, frozens
     return (f'  not ok: {len(nodes)} of {total} test(s)', *tally, *shown, *more, f'  record: {status.url}')
 
 
+def known_fingerprints(client: Client, sha: str) -> Fingerprints:
+    """Every part's not-ok node ids of *sha*, each with the subjects its failure names (:mod:`dev_lab.dev.failprint`).
+
+    A part whose record cannot be read contributes nothing (every red against it then reads ``NEW`` -- never a
+    false ``inherited``).
+    """
+    prints: dict[str, dict[str, frozenset[str]]] = {}
+    for status in status_list(client, sha):
+        read = _not_ok(status, client) if status.state != 'success' else ({}, 0)
+        cells = read[0] if not isinstance(read, str) else {}
+        prints[status.context] = {node: subjects_of(cell.why) for node, cell in cells.items()}
+    return prints
+
+
+def fingerprints_at(client: Client, ref: str) -> Fingerprints:
+    """:func:`known_fingerprints` of *ref*: a full sha as given, else the forge's tip of branch *ref*."""
+    if _FULL_SHA.fullmatch(ref):
+        return known_fingerprints(client, ref)
+    commit = client.call('GET', f'{client.repo}/branches/{quote(ref, safe="/")}')['commit']
+    return known_fingerprints(client, str(commit.get('id') or commit.get('sha') or ''))
+
+
 def known_reds(client: Client, sha: str) -> dict[str, frozenset[str]]:
     """THE KNOWN REDS of *sha* (e.g. the integration tip): every part's not-ok node ids, read from its records.
 
-    The one record an agent compares its own run against, so an inherited red is told from a new one; a part whose
-    record cannot be read contributes nothing (every red against it then reads ``NEW`` -- never a false
-    ``inherited``).
+    The one record an agent compares its own run against, so an inherited red is told from a new one; derived
+    from :func:`known_fingerprints`.
     """
-    reds: dict[str, frozenset[str]] = {}
-    for status in status_list(client, sha):
-        read = _not_ok(status, client) if status.state != 'success' else ({}, 0)
-        reds[status.context] = frozenset(read[0]) if not isinstance(read, str) else frozenset()
-    return reds
+    return {part: frozenset(nodes) for part, nodes in known_fingerprints(client, sha).items()}
 
 
 def status_show(client: Client, sha: str, *, part: str = '', against: str = '') -> tuple[str, ...]:

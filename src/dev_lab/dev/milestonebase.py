@@ -14,7 +14,7 @@ version tag is added only on promotion to the trunk or at the user's request. Tw
   is a stray no ``forge sync`` can bring in, so it is ignored, never a wall without an exit. The hook reads the
   local tracking refs and fetches nothing: ``forge sync`` fetches them, so a stale local view judges against an
   older milestone, never a wrong one. No milestone -> nothing to hold. Remedy: ``python -m dev_lab.dev.forge sync``.
-* ``VERSION-TAG-NEEDS-APPROVAL`` -- in an agent session (:data:`dev_lab.dev.sessionprs.SESSION_ENV` set), a push
+* ``VERSION-TAG-NEEDS-APPROVAL`` -- in a native agent session, a push
   CREATING a ``v*`` tag on origin is refused unless :data:`APPROVED_ENV` holds the user's own words -- the
   ``--approved "<words>"`` pattern of ``branchset --discard``, through the environment because git passes a hook
   no flags. The hook cannot tell a tag ``push.followTags`` carried from one the push named, so the refusal names
@@ -38,8 +38,8 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.lanepolicy import Policy, policy_at
+from dev_lab.dev.native_session import session_of
 from dev_lab.dev.refspec import pushed_refs
-from dev_lab.dev.sessionprs import SESSION_ENV
 
 __all__ = [
     'APPROVED_ENV',
@@ -137,7 +137,7 @@ def refusals(root: Path, lines: str, *, env: Mapping[str, str] | None = None) ->
             code, _ = _git(root, 'merge-base', '--is-ancestor', f'{milestone}^{{commit}}', ref.local_sha)
             if code != 0:
                 found.append(_behind(milestone, ref.branch, ref.local_sha))
-        elif ref.created and ref.remote_ref.startswith(_VERSIONS) and env.get(SESSION_ENV):
+        elif ref.created and ref.remote_ref.startswith(_VERSIONS) and session_of(env):
             tag = ref.remote_ref.removeprefix('refs/tags/')
             if (match := _GRAMMAR.fullmatch(tag)) is not None and match.group(4) not in {None, '0'}:
                 found.append(_not_dev0(tag))

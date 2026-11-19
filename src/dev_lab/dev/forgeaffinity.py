@@ -39,8 +39,8 @@ from lab_commons.compute.model import REQUEST, Candidate
 from lab_commons.hpc.allocation import VERIFY_BORROWS_RESEARCH
 from lab_commons.hpc.grants import Affinity
 
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgehosts import HostCard, read_cards
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.platformparts import part_context
 

@@ -1,10 +1,12 @@
-"""THE TRUNK IS PROMOTED BY THE HOST, unattended: per configured repo, ``integrate promote`` then a push.
+"""THE TRUNK IS PROMOTED BY THE HOST, unattended: per configured repo, ``integrate promote``, which pushes.
 
-The decision is :func:`dev_lab.dev.integrate.promote` -- every derived part PASS at scope full on the
-integration tip -- never re-derived here. This role only gives it a clone (made on first run), the tip to judge
-(``origin/<integration>``, the branch the repo's own declaration names) and, when it moves the local trunk, the
-push of that trunk with the configured credential. A refusal is the normal nightly answer and is quiet; a fetch,
-promote or push FAILURE is an alert through the configuration's ``[alerts]``.
+The decision is :func:`dev_lab.dev.integrate.promote` with ``--newest`` -- every derived part PASS at scope full on
+the NEWEST first parent of the integration tip (W5, dev-lab#644) -- never re-derived here. This role only gives it a
+clone (made on first run), the tip to judge
+(``origin/<integration>``, the branch the repo's own declaration names) and the configured credential its
+fast-forward push of origin's trunk uses. NO REFUSAL IS QUIET (W5): a refusal, and each commit the walk
+passed over, is an alert naming its reason, as a fetch, promote or push FAILURE is, through ``[alerts]``
+(:func:`dev_lab.ops.hostverbs.promote_verb`). A frozen trunk was a consumer's ``main`` 639 commits behind.
 """
 
 from __future__ import annotations
@@ -29,11 +31,15 @@ REFUSED: Final = 2
 
 @dataclass(frozen=True)
 class Outcome:
-    """One repo's night: ``promoted``, ``current``, ``refused`` or ``failed``, with what was said."""
+    """One repo's night: ``promoted``, ``current``, ``refused`` or ``failed``, with what was said.
+
+    *alarmed*: a promotion that passed over newer commits, each named in *detail* -- alerted like a refusal.
+    """
 
     repo: str
     state: str
     detail: str = ''
+    alarmed: bool = False
 
 
 def _prepare(config: OpsConfig, url: str, credentials: str) -> tuple[Path, Policy, str] | Outcome:
@@ -50,29 +56,32 @@ def _prepare(config: OpsConfig, url: str, credentials: str) -> tuple[Path, Polic
     return root, policy, tip
 
 
-def _one(config: OpsConfig, url: str, credentials: str, promote: Callable[[list[str], Path], int]) -> Outcome:
+#: A promotion pass: the exit of ``integrate`` on *argv* in a clone, and every ALARM line it said.
+Promote = Callable[[list[str], Path], tuple[int, tuple[str, ...]]]
+
+
+def _one(config: OpsConfig, url: str, credentials: str, promote: Promote) -> Outcome:
     name, prepared = repo_name(url), _prepare(config, url, credentials)
     if isinstance(prepared, Outcome):
         return prepared
     root, policy, tip = prepared
     if not integrate.pending(root, policy, tip):
         return Outcome(name, 'current', tip[:12])
-    code = promote(['promote', tip], root)
+    code, alarms = promote(['promote', '--newest', tip], root)
     if code == REFUSED:
-        return Outcome(name, 'refused', tip[:12])
+        return Outcome(name, 'refused', '; '.join([f'{tip[:12]} and every first parent to the trunk', *alarms]))
     if code != 0:
         return Outcome(name, 'failed', f'integrate promote exit {code}')
-    pushed = git(root, 'push', 'origin', f'refs/heads/{policy.trunk}:refs/heads/{policy.trunk}')
-    if pushed.returncode != 0:
-        return Outcome(name, 'failed', f'push {policy.trunk}: {pushed.stderr.strip()}')
-    return Outcome(name, 'promoted', f'{policy.trunk} -> {tip[:12]}')
+    moved = git(root, 'rev-parse', f'origin/{policy.trunk}').stdout.strip()
+    return Outcome(name, 'promoted', '; '.join([f'{policy.trunk} -> {moved[:12]}', *alarms]), alarmed=bool(alarms))
 
 
-def _integrate(argv: list[str], root: Path) -> int:
-    return integrate.main(argv, cwd=root)
+def _integrate(argv: list[str], root: Path) -> tuple[int, tuple[str, ...]]:
+    said: list[str] = []
+    return integrate.main(argv, cwd=root, said=said.append), tuple(said)
 
 
-def run(config: OpsConfig, *, promote: Callable[[list[str], Path], int] = _integrate) -> list[Outcome]:
+def run(config: OpsConfig, *, promote: Promote = _integrate) -> list[Outcome]:
     """Promote every configured repo, one line each; a failure in one never stops the next."""
     if config.promote is None:
         msg = f'{config.path} enables no [ops.promote]'

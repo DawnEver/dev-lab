@@ -44,6 +44,7 @@ EXEMPT: Final[dict[str, str]] = {
     'refusal the deploy reports per repo',
     'src/dev_lab/dev/hpcaccount/account.py': 'runs on the cluster host; its ls-remote is a read-access probe whose '
     'exit code IS the answer',
+    'src/dev_lab/dev/codexdeny.py': 'its argv tuples are Codex prefixes it FORBIDS, rendered as data, never run',
 }
 
 #: The kit's network argv literals; MEASURED 2026-10-19 above it (a floor refuses an unread corpus).

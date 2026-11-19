@@ -41,6 +41,7 @@ from lab_commons.outcomes import Conclusion
 from dev_lab.dev import datadeps
 from dev_lab.dev.dataconsumers import same_repo
 from dev_lab.dev.datedlog import output_dir
+from dev_lab.dev.famtests.alwayson import run_checks
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.lanepolicy import load_policy
@@ -237,8 +238,16 @@ def post(root: Path, commit: str | None, judged: Judged) -> str:
 def main(root: Path, *, producer: bool) -> int:
     """*root*'s verify when it declares consumers: judge them, print, post when *producer*; the exit code."""
     head, start = head_sha(root), status_paths(root)
+    guards = run_checks(root)
+    failures = tuple(f'{node}: {cell.why}' for node, cell in guards.items() if cell.met is not True)
     try:
-        judged = judge(root, head or '', declared(root), url=origin_url(root), members=repos())
+        judged = (
+            Judged(Conclusion.FAIL, guards, frozenset(), failures)
+            if failures
+            else judge(root, head or '', declared(root), url=origin_url(root), members=repos())
+        )
+        if not failures:
+            judged = Judged(judged.result, {**guards, **judged.cells}, judged.flaky, judged.lines)
     except (VerifyByRefused, ValueError, OSError) as why:
         judged = Judged(Conclusion.INCONCLUSIVE, {}, frozenset(), (str(why),))
     for line in judged.lines:

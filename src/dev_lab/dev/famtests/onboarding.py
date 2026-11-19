@@ -22,6 +22,7 @@ from dev_lab.dev.branchset import EPHEMERAL_OFF, BranchSetNotDeclared, branchset
 from dev_lab.dev.famfiles import undeclared_inputs
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.producers import UndeclaredProducer, producer_from
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -103,6 +104,10 @@ def onboarding_gaps(text: str, has: Callable[[str], bool], where: str) -> list[s
             else ['[tool.dev_lab.hooks] -- an empty table, so the base rows run']
         ),
     ]
+    try:
+        producer_from(text, origin)
+    except UndeclaredProducer as undeclared:
+        missing.append(str(undeclared))
     missing += [
         f'[tool.dev_lab.render] {key} = "<the path {renderer} reads>" -- declare it as a sibling does, or a relock '
         'leaves the family files it renders stale'

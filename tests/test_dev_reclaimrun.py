@@ -20,11 +20,13 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import reclaimrun
-from dev_lab.dev.agent_wiring import RECLAIM_COMMAND, WIRING
+from dev_lab.dev.agent_wiring import WIRING
+from dev_lab.dev.backgroundrun import RECLAIM_LOCK as LOCK_NAME
+from dev_lab.dev.backgroundrun import held, main_checkout
 from dev_lab.dev.famtests.visibility import plant_checkout
 from dev_lab.dev.githooks.table import ADVISORY, base_rows, merge
 from dev_lab.dev.reclaim import blockers, orphan_reason, repository_at
-from dev_lab.dev.reclaimrun import LOCK_NAME, held, main, main_checkout, run
+from dev_lab.dev.reclaimrun import main, run
 
 _GIT = shutil.which('git') or 'git'
 _BRANCHSET = "\n[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\n"
@@ -142,8 +144,8 @@ def test_session_start_detaches_from_a_main_checkout_only(planted: Path, monkeyp
 
 
 def test_the_kit_wires_the_reclaim_at_session_start() -> None:
-    assert any(w.event == 'SessionStart' and w.command == RECLAIM_COMMAND for w in WIRING)
-    assert '--session-start' in RECLAIM_COMMAND
+    wired = [(w.events, w.argv, w.once) for w in WIRING if w.module == 'dev_lab.dev.reclaimrun']
+    assert wired == [(('SessionStart',), ('--session-start',), True)]
 
 
 def test_background_from_any_tree_detaches_one_run_of_its_main_checkout(
@@ -161,16 +163,18 @@ def test_background_from_any_tree_detaches_one_run_of_its_main_checkout(
     assert len(started) == 2, 'CONTROL: outside git nothing is detached'
 
 
-def test_a_merge_a_checkout_and_a_push_detach_the_reclaim_and_never_judge() -> None:
-    """Post-merge and post-checkout are advisory; pre-push runs it too, and ``reclaimrun`` exits 0 always."""
+def test_a_merge_detaches_the_reclaim_at_one_advisory_stage() -> None:
+    """ONE git trigger beside SessionStart: a tree is reclaimable once its branch LANDS, which a merge takes in.
+
+    PLANTED CONTROL: no other stage carries the row -- a push lands nothing and a checkout frees no tree.
+    """
     table = merge(base_rows(), {})
-    for stage in ('post-merge', 'post-checkout', 'pre-push'):
-        rows = [hook for hook in table[stage] if hook.id == 'reclaim']
-        assert len(rows) == 1, stage
-        assert rows[0].run == ('python', '-m', 'dev_lab.dev.reclaimrun', '--background'), rows
-        assert rows[0].always_run, stage
-        assert rows[0].refs is None, 'every push, whatever it publishes'
-    assert 'pre-push' not in ADVISORY, 'CONTROL: pre-push could refuse, so the row must be the never-failing door'
+    rows = [(stage, hook) for stage, hooks in table.items() for hook in hooks if hook.id == 'reclaim']
+    assert [stage for stage, _ in rows] == ['post-merge']
+    [(stage, hook)] = rows
+    assert stage in ADVISORY, 'the merge is done; the row never judges it'
+    assert hook.run == ('python', '-m', 'dev_lab.dev.reclaimrun', '--background')
+    assert hook.always_run
 
 
 def test_a_detach_that_cannot_start_never_fails_the_hook(planted: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -4,16 +4,13 @@ THE INCIDENT, 2026-11-08: every forge host carried a hand-written ``/opt/dev-lab
 at 01c8fb8 -- a second source of truth beside dev-lab's lock. The upgraded dev-lab imported ``lab_commons.home``,
 which that old lab-commons lacks, so AMD-1's judge died on an ImportError; the same hosts also ran an ai-lab other
 than the one the lock pins. The lock is the one source: the upgrade derives the overrides from it, and the
-``overrides`` knob is retired (upgraded away on read).
+``overrides`` knob is retired (refused by name at load: tests/test_ops_config_refuses_retired_shapes.py).
 """
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Callable, Sequence
 from pathlib import Path
-
-import pytest
 
 from dev_lab.ops import upgrade
 from dev_lab.ops.config import OpsConfig, load
@@ -110,13 +107,6 @@ def test_a_rollback_reinstalls_the_old_commit_with_the_old_commits_lock(tmp_path
     assert 'restored' in said
     assert fetched == ['integrate/main', OLD]
     assert installs[1][-1].endswith(f'@{OLD}')
-
-
-def test_a_hand_written_overrides_file_is_retired_on_read(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    host = _config(tmp_path, 'overrides = "/opt/dev-lab/overrides.txt"\n')
-    assert host.upgrade is not None
-    assert 'overrides' not in {field.name for field in dataclasses.fields(host.upgrade)}
-    assert 'overrides' in capsys.readouterr().err
 
 
 def test_a_judge_host_installs_its_reviewer_at_the_locked_revision(tmp_path: Path) -> None:

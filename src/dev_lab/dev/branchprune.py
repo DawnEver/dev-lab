@@ -13,15 +13,16 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``grac
   request has it as head. Deleted (:data:`DELETE`) when the repo declares ``prune_merged = true``, else
   listed as :data:`DELETABLE` -- what ``forge integration`` and ``forge queue`` print.
 * EPHEMERAL (:data:`EPHEMERAL`): it lies in a declared ephemeral namespace (``[tool.dev_lab.branchset]
-  ephemeral``, e.g. ``pr/*``) and no open pull request has it as head: its PR merged or closed. Always
-  DELETED -- declaring the namespace IS the opt-in, and a PR head outlives its PR by nothing but the grace.
-* UNMERGED (:data:`UNMERGED`): anything else. ALARMED with its age (:data:`STALE`), NEVER deleted: its
-  commits exist nowhere else.
+  ephemeral``, e.g. ``pr/*``), it is MERGED, and no open pull request has it as head. Always DELETED --
+  declaring the namespace IS the opt-in, and a landed PR head outlives its PR by nothing but the grace.
+* UNMERGED (:data:`UNMERGED`): anything else, ephemeral or not. LISTED and ALARMED with its age (:data:`STALE`)
+  and its two doors -- MERGE it through a PR, or LAND it with a declared ``git merge -s ours`` PR, then
+  ``branchprune delete`` -- NEVER deleted: its commits exist nowhere else, and the survey deletes nothing
+  LOSSLESS-DELETE would refuse (D30, user 2026-11-17, retiring the delete of an unmerged no-PR ephemeral head).
 
 THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.dev_lab.branchset]``.
 AN AGENT'S DELETION and THE LANDED SWEEP live in :mod:`dev_lab.dev.branchdelete` (LOSSLESS-DELETE,
-LANDED-BRANCHES-SWEPT); this module keeps their command line (``delete``, ``sweep``) and the workstation's
-``PostToolUse`` hook (:func:`post_push`), which detaches ``sweep --local`` when a shell call pushed integration.
+LANDED-BRANCHES-SWEPT); this module keeps their command line (``delete``, ``sweep``).
 
 
 EACH DELETION IS PINNED to the sha the survey judged: the live tip is read from the forge first, and a
@@ -37,28 +38,26 @@ import argparse
 import json
 import os
 import sys
-import time
 import urllib.parse
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TextIO
+from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, ORIGIN, delete, delete_tags, sweep
+from dev_lab.dev.branchdelete import DOOR, delete, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.deletejudge import ORIGIN
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.labsession import ENV
 from dev_lab.dev.lanepolicy import Policy, load_policy
-from dev_lab.dev.pushwatch import pushed_head
-from dev_lab.dev.reclaimrun import detach_argv
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -74,7 +73,6 @@ __all__ = [
     'Row',
     'listing',
     'main',
-    'post_push',
     'prune',
     'serve_prune',
     'survey',
@@ -141,13 +139,13 @@ def survey(
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
         if name in keep or idle_h < branchset.grace_hours:
             continue
-        if branchset.is_ephemeral(name):
-            if name not in heads:
-                rows.append(Row(name, sha, EPHEMERAL, DELETE, idle_h))
-            continue
+        if branchset.is_ephemeral(name) and name in heads:
+            continue  # its open PR owns it
         merged = any(git_out(root, 'merge-base', '--is-ancestor', sha, holder) is not None for holder in holders)
         if not merged:
             rows.append(Row(name, sha, UNMERGED, STALE, idle_h))
+        elif branchset.is_ephemeral(name):
+            rows.append(Row(name, sha, EPHEMERAL, DELETE, idle_h))
         elif name not in heads:
             rows.append(Row(name, sha, MERGED, DELETE if branchset.prune_merged else DELETABLE, idle_h))
     return tuple(sorted(rows, key=lambda row: row.ref))
@@ -198,7 +196,8 @@ def _stale_entry(root: Path, row: Row, integration: str) -> str:
         f'{row.ref} {row.sha[:12]} idle {row.idle_h:.0f} h, not merged: {ahead} ahead, {behind} behind {integration}\n'
         f'  land it:   python -m dev_lab.dev.forge pr create --head {row.ref} --base {integration} '
         f'--title "<what it does>"\n'
-        f'  abandon it (a human; its {ahead} commit(s) exist nowhere else): git push origin --delete {row.ref}'
+        f'  abandon it (the user decides; its {ahead} commit(s) exist nowhere else): LAND it with a declared '
+        f'`git merge -s ours` PR into a pr/ branch, then python -m dev_lab.dev.branchprune delete {row.ref}'
     )
 
 
@@ -245,10 +244,8 @@ def serve_prune(
         return ()
 
 
-#: Where a detached sweep writes its lines (``output/logs/<yy>/<mm>/<dd>/<kind>/``).
+#: Where ``sweep --log`` writes its lines (``output/logs/<yy>/<mm>/<dd>/<kind>/``).
 _LOG_KIND: Final = 'prune'
-#: A push older than this is not the one the shell call just made.
-POST_PUSH_WINDOW_S: Final = 600.0
 
 
 def _write_log(root: Path, lines: Sequence[str]) -> None:
@@ -258,79 +255,38 @@ def _write_log(root: Path, lines: Sequence[str]) -> None:
     log.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
-def _main_of(cwd: Path) -> Path | None:
-    """The main checkout of the repository *cwd* lies in, from a linked worktree too; ``None`` outside git."""
-    common = git_out(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    if not common:
-        return None
-    path = Path(common.strip()).resolve()
-    return path.parent if path.name == '.git' else None
+#: RETIRED-NAMES-REGISTERED: the spellings of the tag-held delete D22 retired (2026-11-17: "no tags -- either merge
+#: or delete"), each refused by name with the door that replaced it, never parsed as unknown.
+RETIRED: Final = {
+    'delete-tag': 'tags are no place to keep work (D22); a branch is merged or deleted: ' + DOOR,
+    '--approved': 'no tag-held delete (D22); a refused branch names its doors: MERGE it, or LAND it with a declared '
+    '`git merge -s ours` PR, then ' + DOOR,
+}
 
 
-def _pushed_integration(cwd: Path, now: float) -> bool:
-    """Whether origin's integration tracking ref was last moved by a push, within :data:`POST_PUSH_WINDOW_S`."""
-    try:
-        integration = load_policy(cwd).integration
-    except (OSError, ValueError):
-        return False
-    entry = git_out(cwd, 'reflog', 'show', '-1', '--date=unix', '--format=%gs%x09%gd', f'{ORIGIN}{integration}')
-    subject, _, selector = (entry or '').strip().partition('\t')
-    stamp = selector.rpartition('@{')[2].rstrip('}')
-    return subject == 'update by push' and stamp.isdigit() and now - int(stamp) <= POST_PUSH_WINDOW_S
-
-
-def _detach_sweep(root: Path) -> None:
-    detach_argv(root, ['-m', 'dev_lab.dev.branchprune', 'sweep', '--local', '--log'])
-
-
-def post_push(
-    argv: Sequence[str],
-    *,
-    stdin: TextIO | None = None,
-    detach: Callable[[Path], None] = _detach_sweep,
-    clock: Callable[[], float] = time.time,
-) -> int:
-    """The ``PostToolUse`` hook on the shell tools: a call that pushed integration detaches ``sweep --local``.
-
-    Read off the remote-tracking ref's reflog -- git records ``update by push`` there -- so every spelling of the
-    push counts (a refspec, an upstream, the retry wrapper) and a fetch never does. Never blocks; always 0.
-    """
-    del argv
-    try:
-        payload = json.load(stdin or sys.stdin)
-    except ValueError:
-        return 0
-    tool_input = payload.get('tool_input') if isinstance(payload, dict) else None
-    command = tool_input.get('command') if isinstance(tool_input, dict) else None
-    if not isinstance(command, str):
-        return 0
-    try:
-        cwd = Path(payload.get('cwd') or Path.cwd())
-        root = _main_of(cwd)
-        if root is not None and pushed_head(cwd, command) is not None and _pushed_integration(cwd, clock()):
-            detach(root)
-    except OSError:
-        return 0
-    return 0
+def retired(argv: Sequence[str]) -> str:
+    """The refusal naming the first retired spelling in *argv* and its door; ``''`` when none."""
+    for word in argv:
+        door = RETIRED.get(word.partition('=')[0])
+        if door:
+            return f'[branchprune] `{word.partition("=")[0]}` is retired: {door}'
+    return ''
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
-    """``python -m dev_lab.dev.branchprune {delete B... [--approved W] | delete-tag T... --approved W | sweep}``."""
+    """``python -m dev_lab.dev.branchprune {delete B... | sweep}``."""
+    words = list(sys.argv[1:] if argv is None else argv)
+    if why := retired(words):
+        emit(why, err=True)
+        return 2
     parser = argparse.ArgumentParser(prog='dev_lab.dev.branchprune', description=main.__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
-    deleted = verbs.add_parser('delete', help='a branch whose content is held elsewhere (--approved: or by a tag)')
+    deleted = verbs.add_parser('delete', help='a branch whose content is held elsewhere')
     deleted.add_argument('branches', nargs='+')
-    deleted.add_argument('--approved', default='', help="the user's own words approving a tag-held delete")
-    tagged = verbs.add_parser('delete-tag', help='a tag the integration branch or trunk holds, user-approved')
-    tagged.add_argument('tags', nargs='+')
-    tagged.add_argument('--approved', default='', help="the user's own words approving the delete")
     swept = verbs.add_parser('sweep')
     swept.add_argument('--local', action='store_true', help='also local branches and clean landed worktrees')
     swept.add_argument('--log', action='store_true', help=f'write to output/logs/.../{_LOG_KIND}/, not the console')
-    verbs.add_parser('post-push')
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    if args.verb == 'post-push':
-        return post_push([])
+    args = parser.parse_args(words)
     root = Path.cwd() if cwd is None else cwd
     lines: list[str] = []
     say: Callable[[str], None] = lines.append if args.verb == 'sweep' and args.log else emit
@@ -338,13 +294,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
         client = client_for(root)
         session = os.environ.get(ENV, '')
         if args.verb == 'delete':
-            return delete(
-                root, args.branches, approved=args.approved, client=client, session=session, fetch=fetch_origin, say=say
-            )
-        if args.verb == 'delete-tag':
-            return delete_tags(
-                root, args.tags, approved=args.approved, client=client, session=session, fetch=fetch_origin, say=say
-            )
+            return delete(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
         return sweep(root, client=client, session=session, fetch=fetch_origin, say=say, local=args.local)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         if say is emit:

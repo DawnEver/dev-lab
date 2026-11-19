@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dev_lab.dev.codeplace import declared_misplaced, declared_strays
+from dev_lab.dev.codeplace import declared_misplaced
 from dev_lab.dev.scratch import assert_scratch_never_committed
+from dev_lab.dev.strays import declared_strays
 
 _ROOT = Path(__file__).resolve().parents[1]
 

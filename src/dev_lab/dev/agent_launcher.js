@@ -2,65 +2,124 @@
 // Launcher shipped by dev-lab: dev_lab.dev.agent_guard (a repo's own launcher at this path is kept).
 //
 // A bare `python` in a hook resolves through PATH, and on Windows that is the Microsoft Store
-// alias. The interpreter is the project's own `.venv`, or the main checkout's when a linked
+// alias. The interpreter is the project's own current environment (venv_resolver.js), or the main checkout's when a linked
 // worktree has none. No interpreter: one line on stderr and exit 0 -- a hook that cannot run
 // must not block the session it was meant to inform.
 //
 // A STALE VENV NAMES ITS FIX (every-wall-teaches, 2026-11-13): a hook module the venv's dev-lab predates fails
 // `No module named dev_lab...`. When the installed dev-lab commit is not the one this checkout's uv.lock pins,
 // that is ONE line naming both shas and the bootstrap door, one walls-ledger line (the shape of
-// dev_lab.dev.walls.record -- the venv may not hold that module either), and exit 0. A missing module from a
-// venv that matches its lock is a real bug: its stderr and exit code pass through untouched.
+// dev_lab.dev.walls.record -- the venv may not hold that module either), and exit 0.
 //
-// A QUEUED VENV UPDATE RUNS HERE (2026-11-14): `dep --bootstrap ROOT --when-free` that found the venv held left
-// its argv in <venv>/dev-lab-pending-bootstrap.json (dev_lab.dev._dep_pending). This launcher runs from OUTSIDE
-// the venv on every tool call, so it is the first door to see the venv free: it replays the request before its
-// own hook, at most once a minute while the venv stays held. One launcher claims it (an exclusive lock file); its concurrent siblings wait for the claim to go
-// before starting their interpreter, so none runs from a venv mid-update. Still held: dep re-queues and exits 0.
+// A HOOK THAT CANNOT START NEVER BLOCKS (dev-lab #639): a child's argparse usage exit (2 with `usage:` or
+// `error: argument` / `invalid choice` / `unrecognized arguments`) or a missing module is a wiring fault, not a
+// decision -- passed through, exit 2 blocked every prompt and looped every Stop. It becomes one line naming the fix
+// and exit 0, whether or not the venv is behind its lock. A deliberate refusal (exit 2 naming its rule) still blocks.
+//
+// ONE RESOLVER (dev-lab #641): the environment is venv_resolver.js's, installed beside this launcher. An upgrade
+// publishes a new environment beside the live one, so a launch never waits for one and nothing is replayed here.
 'use strict';
 const { spawnSync, execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { interpreter } = require('./venv_resolver.js');
 
-const roots = [process.env.CLAUDE_PROJECT_DIR || process.cwd()];
+// Facts are shared with Python and installed unchanged beside this launcher.
+function nativeSession(env) {
+  let catalog;
+  try {
+    catalog = JSON.parse(fs.readFileSync(path.join(__dirname, 'native_session.json'), 'utf8'));
+    if (!Number.isInteger(catalog.max_length) || catalog.max_length <= 0 ||
+        typeof catalog.punctuation !== 'string' || !Array.isArray(catalog.harnesses) ||
+        !catalog.harnesses.length || !catalog.harnesses.every((row) =>
+          typeof row.primary === 'string' && Array.isArray(row.auxiliary) &&
+          row.auxiliary.every((field) => typeof field === 'string'))) throw new Error('schema');
+  } catch {
+    throw new Error('native session catalog is missing or invalid. Door: restore the declared dev-lab installation.');
+  }
+  const declared = catalog.harnesses.filter((row) =>
+    [row.primary, ...row.auxiliary].some((field) => Object.hasOwn(env, field)));
+  if (!declared.length) return '';
+  if (declared.length !== 1) {
+    throw new Error('ambiguous native session harnesses. Door: run from exactly one native agent harness.');
+  }
+  const primary = declared[0].primary;
+  const value = env[primary];
+  const chars = typeof value === 'string' ? Array.from(value) : [];
+  if (!chars.length || chars.length > catalog.max_length || !chars.every((char) =>
+      /^[\p{L}\p{N}]$/u.test(char) || catalog.punctuation.includes(char))) {
+    throw new Error(`native session ${primary} is not a session id or is missing. Door: restore the native harness identity.`);
+  }
+  return value;
+}
+
+let session;
 try {
-  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
-    cwd: roots[0],
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim();
-  roots.push(path.dirname(common));
-} catch {}
+  session = nativeSession(process.env);
+} catch (failed) {
+  process.stderr.write(`[hook] ${failed.message}\n`);
+  process.exit(1);
+}
 
-const tail = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
-const python = roots.map((r) => path.join(r, '.venv', ...tail)).find((p) => fs.existsSync(p));
+// The main checkout is asked of git only when it is needed -- this checkout has no interpreter, or a fault names the
+// bootstrap door (HOOK-UNDER-FIVE-SECONDS, D24): a git start on every hook cost ~80 ms of the event's five seconds.
+const roots = [process.env.CLAUDE_PROJECT_DIR || process.cwd()];
+function withMain() {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd: roots[0],
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    roots.push(path.dirname(common));
+  } catch {}
+  return roots;
+}
+
+const python = interpreter(roots[0]) || withMain().slice(1).map(interpreter).find(Boolean);
 if (!python) {
   process.stderr.write(`[hook] skipped ${process.argv.slice(2).join(' ')}: no .venv interpreter\n`);
   process.exit(0);
 }
 
-performPendingUpdate(python);
-
 const args = process.argv.slice(2);
 const run = spawnSync(python, args, { stdio: ['inherit', 'inherit', 'pipe'] });
 const stderr = run.stderr ? run.stderr.toString('utf8') : '';
-const missing = run.status !== 0 && /No module named '?(dev_lab[\w.]*)/.exec(stderr);
-const behind = missing && staleness(python);
-if (!behind) {
+const fault = wiringFault(run.status, stderr);
+if (!fault) {
   process.stderr.write(stderr);
   process.exit(run.status === null ? 1 : run.status);
 }
-const main = roots[roots.length - 1];
+const main = (roots.length > 1 ? roots : withMain())[roots.length - 1];
+const behind = staleness(python);
+const door = `${python} -m dev_lab.dev.dep --bootstrap ${main}`;
 process.stderr.write(
-  `[hook] ${missing[1]} missing: installed dev-lab ${behind.installed.slice(0, 10)} is behind the lock's ` +
-    `${behind.locked.slice(0, 10)} -- run: ${python} -m dev_lab.dev.dep --bootstrap ${main}\n`,
+  behind
+    ? `[hook] ${fault} missing: installed dev-lab ${behind.installed.slice(0, 10)} is behind the lock's ` +
+        `${behind.locked.slice(0, 10)} -- run: ${door} ` +
+        `(it publishes a new environment beside this one; the next launch takes it)\n`
+    :`[hook] ${args.join(' ')} could not start (${fault}); not a refusal, so it passed -- run: ${door} ` +
+        `(if the installed dev-lab is current, the hook row names what dev-lab does not ship: re-render the wiring ` +
+        `with ${python} -m dev_lab.dev.agent_guard --install)\n`,
 );
-recordWall(main, args);
+if (behind) recordWall(main, args);
 process.exit(0);
 
+// What kept the child from starting -- a missing module, or argparse refusing its argv (exit 2 with its usage or an
+// `error: argument` line) -- else null: a decision, passed through.
+function wiringFault(status, text) {
+  if (status === 0 || status === null) return null;
+  const module = /No module named '?([\w.]+)/.exec(text);
+  if (module) return module[1];
+  const usage = status === 2 && /^usage: |error: (?:argument |unrecognized arguments|the following arguments)/m;
+  if (!usage || !usage.test(text)) return null;
+  const verb = /(?:invalid choice|unrecognized arguments): '?([\w-]+)/.exec(text);
+  return verb ? verb[1] : 'its arguments';
+}
+
 // {installed, locked}: the venv's dev-lab commit and the one uv.lock pins, when both are known and differ; else null.
-function staleness(interpreter) {
+function staleness(python) {
   let locked = '';
   for (const root of roots) {
     try {
@@ -73,7 +132,7 @@ function staleness(interpreter) {
     } catch {}
   }
   if (!locked) return null;
-  const probe = spawnSync(interpreter, [
+  const probe = spawnSync(python, [
     '-c',
     [
       'import json, importlib.metadata as m',
@@ -98,60 +157,9 @@ function recordWall(root, argv) {
       command_sha256: crypto.createHash('sha256').update(argv.join(' ')).digest('hex').slice(0, 16),
       remedy_present: true,
       rule: 'VENV-FOLLOWS-THE-LOCK',
-      session: process.env.CLAUDE_CODE_SESSION_ID || '',
+      session,
       ts: now.toISOString(),
     };
     fs.appendFileSync(path.join(dir, 'walls.jsonl'), `${JSON.stringify(line)}\n`);
   } catch {}
-}
-
-// Whether *file* was written within REPLAY_EVERY_MS: a held venv is asked again at most once a minute, not per hook.
-function recent(file) {
-  try {
-    return Date.now() - fs.statSync(file).mtimeMs < Number(process.env.DEV_LAB_REPLAY_EVERY_MS || 60 * 1000);
-  } catch {
-    return false;
-  }
-}
-
-// Replay a queued `dep --when-free` request of the venv *interpreter* runs from; wait while a sibling replays it.
-function performPendingUpdate(interpreter) {
-  const venv = path.dirname(path.dirname(interpreter));
-  const request = path.join(venv, 'dev-lab-pending-bootstrap.json');
-  const claim = `${request}.claim`;
-  const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-  const deadline = Date.now() + 15 * 60 * 1000; // a bootstrap's wall; a claim older than this is a dead claimer's
-  while (fs.existsSync(request) || fs.existsSync(claim)) {
-    if (!fs.existsSync(claim) && recent(request)) return; // asked or re-queued under a minute ago: still held
-    let fd;
-    try {
-      fd = fs.openSync(claim, 'wx');
-    } catch {
-      try {
-        if (Date.now() - fs.statSync(claim).mtimeMs > 15 * 60 * 1000) fs.unlinkSync(claim);
-      } catch {}
-      if (Date.now() > deadline) return;
-      pause(500);
-      continue;
-    }
-    try {
-      fs.closeSync(fd);
-      let argv;
-      try {
-        argv = JSON.parse(fs.readFileSync(request, 'utf8')).argv;
-      } catch {
-        return; // answered by the claimer before us, or unreadable: nothing to replay
-      }
-      if (!Array.isArray(argv)) return;
-      process.stderr.write(`[hook] a queued venv update of ${venv} runs first: dep ${argv.join(' ')}
-`);
-      const done = spawnSync(interpreter, ['-m', 'dev_lab.dev.dep', ...argv.map(String), '--when-free'], {
-        stdio: ['ignore', 2, 2], // a hook's stdout is its answer to Claude Code
-      });
-      if (done.status !== 0) fs.rmSync(request, { force: true }); // ran and failed: said once, not on every call
-      return;
-    } finally {
-      fs.rmSync(claim, { force: true });
-    }
-  }
 }

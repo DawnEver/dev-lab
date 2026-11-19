@@ -27,47 +27,22 @@ and a bare imported ``approx`` as the same call.
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
-from _arch_corpus import assert_floor, parse, rel, suite_modules
+from _arch_corpus import ROOT, assert_floor, suite_modules
+
+from dev_lab.dev.famtests.approxfloors import take_scan
 
 #: Below this the suite scan did not reach the tree, so an empty finding proves nothing. MEASURED
 #: 2026-09-15 (23 test modules); set under the measurement so a new file does not red the floor.
 SUITE_FLOOR = 18
 
 
-def _is_approx(func: ast.expr) -> bool:
-    """``approx(...)`` or ``<anything>.approx(...)`` -- the import style is not the subject."""
-    return (isinstance(func, ast.Name) and func.id == 'approx') or (
-        isinstance(func, ast.Attribute) and func.attr == 'approx'
-    )
-
-
-def floorless_approx_calls(paths: tuple[Path, ...]) -> tuple[str, ...]:
-    """Every ``approx`` call in *paths* with no explicit ``abs=`` -- pure over its argument."""
-    out: list[str] = []
-    for path in paths:
-        for node in ast.walk(parse(path)):
-            if not isinstance(node, ast.Call) or not _is_approx(node.func):
-                continue
-            if 'abs' not in {kw.arg for kw in node.keywords if kw.arg is not None}:
-                out.append(f'{_name(path)}:{node.lineno}')
-    return tuple(out)
-
-
-def _name(path: Path) -> str:
-    try:
-        return rel(path)
-    except ValueError:
-        return path.name
-
-
 def test_every_approx_states_an_absolute_floor() -> None:
     """THE CHECK, over the whole suite."""
     modules = suite_modules()
     assert_floor(len(modules), SUITE_FLOOR, 'suite')
-    floorless = floorless_approx_calls(modules)
+    floorless = take_scan(modules, root=ROOT, bar='unconditional').offenders
     assert floorless == (), (
         'these approx calls take the default abs=1e-12, a floor in whatever unit the left-hand side '
         'happens to be in rather than one the site chose:\n  ' + '\n  '.join(floorless) + '\n'
@@ -79,13 +54,15 @@ def test_every_approx_states_an_absolute_floor() -> None:
 def test_a_planted_floorless_approx_is_refused(tmp_path: Path) -> None:
     """THE PLANTED CONTROL: three call shapes through the REAL predicate, not a re-implementation."""
     bare = tmp_path / 'test_bare.py'
-    bare.write_text('def test_x():\n    assert 1 == pytest.approx(1.0)\n', encoding='utf-8')
+    bare.write_text('import pytest\ndef test_x():\n    assert 1 == pytest.approx(1.0)\n', encoding='utf-8')
     rel_only = tmp_path / 'test_rel_only.py'
-    rel_only.write_text('def test_x():\n    assert 1 == approx(1.0, rel=1e-9)\n', encoding='utf-8')
+    rel_only.write_text(
+        'from pytest import approx\ndef test_x():\n    assert 1 == approx(1.0, rel=1e-9)\n', encoding='utf-8'
+    )
     floored = tmp_path / 'test_floored.py'
-    floored.write_text('def test_x():\n    assert 1 == pytest.approx(1.0, abs=0.0)\n', encoding='utf-8')
+    floored.write_text('import pytest\ndef test_x():\n    assert 1 == pytest.approx(1.0, abs=0.0)\n', encoding='utf-8')
 
-    found = floorless_approx_calls((bare, rel_only, floored))
+    found = take_scan((bare, rel_only, floored), root=tmp_path, bar='unconditional').offenders
     assert any(p.startswith('test_bare.py:') for p in found), 'a bare approx must be refused'
     assert any(p.startswith('test_rel_only.py:') for p in found), 'a rel= with no abs= must be refused'
     assert not any(p.startswith('test_floored.py:') for p in found), 'abs=0.0 is a stated floor'

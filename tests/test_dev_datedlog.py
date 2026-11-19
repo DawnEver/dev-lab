@@ -18,7 +18,14 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev.datedlog import UndeclaredOutput, date_parts, dated_log, output_dir
+from dev_lab.dev.datedlog import (
+    SCRIPT_TEST_TEMP_KIND,
+    UndeclaredOutput,
+    date_parts,
+    dated_log,
+    output_dir,
+    script_temp_env,
+)
 
 
 def test_the_three_parts_are_todays_local_date_two_digits_each() -> None:
@@ -131,3 +138,20 @@ def test_planted_an_undeclared_output_is_REFUSED_naming_the_key(tmp_path: Path, 
     with pytest.raises(UndeclaredOutput, match=r'\[tool\.dev_lab\.parts\] output'):
         output_dir(tmp_path, 'coverage')
     assert not (tmp_path / 'output').exists()
+
+
+def test_a_script_suite_s_temp_env_points_every_temp_variable_into_the_dated_tree(tmp_path: Path) -> None:
+    """D27 for JS: ``os.tmpdir()`` reads TMPDIR (POSIX) or TEMP/TMP (Windows), so all three name one fresh dated dir."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
+    env = script_temp_env(tmp_path, {'PATH': 'p', 'TEMP': 'C:/system/temp'})
+    temp = Path(env['TMPDIR'])
+    assert env['TEMP'] == env['TMP'] == env['TMPDIR']
+    assert temp.is_dir()
+    assert temp.parent == output_dir(tmp_path, SCRIPT_TEST_TEMP_KIND)
+    assert env['PATH'] == 'p', 'the rest of the environment is kept'
+
+
+def test_planted_a_script_suite_in_an_undeclared_root_is_refused_never_system_temp(tmp_path: Path) -> None:
+    """PLANTED CONTROL: no declared output is no fallback to system temp (D27)."""
+    with pytest.raises(UndeclaredOutput):
+        script_temp_env(tmp_path, {'TEMP': 'C:/system/temp'})

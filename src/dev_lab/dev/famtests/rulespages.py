@@ -39,9 +39,9 @@ relative to, the pins, the ceiling, the floor. consumer-c is the only repo with 
 and consumer-b has none, so a default would hand three repos one repo's answer and then report it as
 measured. WHICH FILES ARE PAGES is the consumer's corpus -- a walk or ``git ls-files`` -- but WHAT
 IS MEASURED IS ONLY WHAT GIT TRACKS, and that is decided here, once (2026-10-01). A ratchet is a
-claim every checkout of the repo must agree on; a gitignored, device-local page -- the rem plugin
-writes ``.claude/rules/MEMORY.md`` as a generated index of up to 60 hot entries -- differs per box
-and per day, so pinning it made the suite's verdict a property of the machine that ran it.
+claim every checkout of the repo must agree on; an untracked, device-local page (once, the rem
+plugin's generated ``.claude/rules/MEMORY.md``, retired since and deleted by rem's migration) differs
+per box and per day, so pinning it made the suite's verdict a property of the machine that ran it.
 :func:`page_lines` drops every page under *root* that git does not track; a page outside *root*
 keeps its own spelling, as before.
 """
