@@ -28,7 +28,7 @@ from lab_commons.compute.unit import Engine, Unit, environment_here
 from dev_lab.dev import forgeunit
 from dev_lab.dev.artefactfolder import FolderStore
 from dev_lab.dev.artefacts import Config
-from dev_lab.dev.artefactstores import ATTACHMENT_LIMIT_MB, MB, Ref
+from dev_lab.dev.artefactstores import ATTACHMENT_LIMIT_MB, MB, Ref, ref_of_entry
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm
 from dev_lab.dev.forgerecords import Attachment
 from dev_lab.dev.forgerequest import UNIT, UndeclaredRequest, declared_request
@@ -195,7 +195,7 @@ def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_bac
     published: list[tuple[str, str, tuple[str, ...]]] = []
     monkeypatch.setattr(forgeunit, 'load_config', lambda _root: Config())
     monkeypatch.setattr(forgeunit, 'store_for', lambda *_a, **_k: folder)
-    monkeypatch.setattr(forgeunit, 'resolve', lambda entry, dest, **_k: folder.get(Ref.of(entry), dest))
+    monkeypatch.setattr(forgeunit, 'resolve', lambda entry, dest, **_k: folder.get(ref_of_entry(entry), dest))
     monkeypatch.setattr(forgeunit, 'load_schedule', lambda _root: SimpleNamespace(request_label='request'))
 
     def publish(_root: Path, _client: object, producer: str, sha: str, **kw: tuple[str, ...]) -> SimpleNamespace:
@@ -252,7 +252,7 @@ def test_a_bundle_that_is_not_its_jobs_unit_is_refused(
     published: list[tuple[str, ...]] = []
     monkeypatch.setattr(forgeunit, 'load_config', lambda _root: Config())
     monkeypatch.setattr(forgeunit, 'store_for', lambda *_a, **_k: folder)
-    monkeypatch.setattr(forgeunit, 'resolve', lambda entry, dest, **_k: folder.get(Ref.of(entry), dest))
+    monkeypatch.setattr(forgeunit, 'resolve', lambda entry, dest, **_k: folder.get(ref_of_entry(entry), dest))
     monkeypatch.setattr(forgeunit, 'load_schedule', lambda _root: SimpleNamespace(request_label='request'))
     monkeypatch.setattr(
         forgeunit, 'publish', lambda *_a, **kw: published.append(kw['paths']) or SimpleNamespace(number=1)

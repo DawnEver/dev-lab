@@ -22,6 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final, Protocol
 
 import lab_commons.launch as _door
+from lab_commons.compute.store import Ref
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.forgerecords import Attachment, attach, listing, records_issue
@@ -46,11 +47,15 @@ __all__ = [
     'Ref',
     'check_key',
     'check_rclone_config',
+    'file_sha256',
     'landed_already',
+    'manifest_of',
     'object_key',
     'parsed_run_id',
     'ref_of',
+    'ref_of_entry',
     'run_id',
+    'run_id_of',
     'run_time',
     'scratch_dir',
     'sorted_refs',
@@ -156,28 +161,19 @@ def check_key(key: str) -> None:
 # --- the reference and the interface ------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class Ref:
-    """One stored archive -- and, as :meth:`manifest`, the entry the record carries."""
+def run_id_of(ref: Ref) -> str:
+    """The run a stored archive belongs to: its key's file name less :data:`ARCHIVE`."""
+    return PurePosixPath(ref.ref).name.removesuffix(ARCHIVE)
 
-    backend: str
-    key: str
-    bytes: int
-    sha256: str
 
-    @property
-    def run_id(self) -> str:
-        """The run this archive belongs to."""
-        return PurePosixPath(self.key).name.removesuffix(ARCHIVE)
+def manifest_of(ref: Ref) -> dict[str, Any]:
+    """``{backend, ref, bytes, sha256}``: the entry a record carries for *ref*."""
+    return {'backend': ref.backend, 'ref': ref.ref, 'bytes': ref.bytes, 'sha256': ref.sha256}
 
-    def manifest(self) -> dict[str, Any]:
-        """``{backend, ref, bytes, sha256}``."""
-        return {'backend': self.backend, 'ref': self.key, 'bytes': self.bytes, 'sha256': self.sha256}
 
-    @classmethod
-    def of(cls, entry: dict[str, Any]) -> Ref:
-        """The ref a manifest entry names."""
-        return cls(entry['backend'], entry['ref'], int(entry['bytes']), entry['sha256'])
+def ref_of_entry(entry: dict[str, Any]) -> Ref:
+    """The ref a manifest entry names (the lab-commons :class:`~lab_commons.compute.store.Ref`, the one Ref)."""
+    return Ref(entry['backend'], entry['ref'], int(entry['bytes']), entry['sha256'])
 
 
 class ArtefactStore(Protocol):
@@ -198,7 +194,8 @@ class ArtefactStore(Protocol):
         """Delete *ref*'s archive and manifest; emptied folders go too."""
 
 
-def _digest(path: Path) -> str:
+def file_sha256(path: Path) -> str:
+    """The sha256 of the file *path*, read in MB blocks."""
     sha = hashlib.sha256()
     with path.open('rb') as handle:
         for block in iter(lambda: handle.read(MB), b''):
@@ -208,18 +205,18 @@ def _digest(path: Path) -> str:
 
 def ref_of(backend: str, key: str, path: Path) -> Ref:
     """The :class:`Ref` of archive *path* stored under *key* on *backend*."""
-    return Ref(backend, key, path.stat().st_size, _digest(path))
+    return Ref(backend, key, path.stat().st_size, file_sha256(path))
 
 
 def verified_copy(ref: Ref, fetched: Path, dest: Path) -> Path:
     """Move *fetched* into *dest* only when its sha256 is the ref's; a mismatch is deleted and refused."""
-    actual = _digest(fetched)
+    actual = file_sha256(fetched)
     if actual != ref.sha256:
         fetched.unlink()
-        msg = f"{ref.key}: sha256 {actual} is not the manifest's {ref.sha256}; download discarded"
+        msg = f"{ref.ref}: sha256 {actual} is not the manifest's {ref.sha256}; download discarded"
         raise ArtefactRefused(msg)
     dest.mkdir(parents=True, exist_ok=True)
-    target = dest / PurePosixPath(ref.key).name
+    target = dest / PurePosixPath(ref.ref).name
     shutil.move(fetched, target)
     return target
 
@@ -229,7 +226,7 @@ def landed_already(existing: Ref | None, new: Ref) -> Ref | None:
     if existing is None:
         return None
     if existing.sha256 != new.sha256:
-        msg = f'{new.key} already exists with other content: write-once, a correction is a new run id'
+        msg = f'{new.ref} already exists with other content: write-once, a correction is a new run id'
         raise ArtefactRefused(msg)
     return existing
 
@@ -237,13 +234,13 @@ def landed_already(existing: Ref | None, new: Ref) -> Ref | None:
 def _older(ref: Ref, older_than: datetime | None) -> bool:
     if older_than is None:
         return True
-    return run_time(ref.run_id).date() < older_than.astimezone(UTC).date()
+    return run_time(run_id_of(ref)).date() < older_than.astimezone(UTC).date()
 
 
 def sorted_refs(refs: Sequence[Ref], older_than: datetime | None) -> tuple[Ref, ...]:
     """*refs* older than *older_than* (all when ``None``), oldest run first."""
     return tuple(
-        sorted((ref for ref in refs if _older(ref, older_than)), key=lambda ref: (run_time(ref.run_id), ref.key))
+        sorted((ref for ref in refs if _older(ref, older_than)), key=lambda ref: (run_time(run_id_of(ref)), ref.ref))
     )
 
 
@@ -289,10 +286,12 @@ class RcloneStore:
     rclone: Sequence[str] = ()  # empty: the installed rclone (toolrelease.resolve)
     backend: str = RCLONE
 
-    def _at(self, key: str) -> str:
-        return f'{self.remote.rstrip("/")}/{key}'
+    def at(self, key: str) -> str:
+        """The remote path of *key*; a bare ``name:`` takes *key* relative, never as an absolute ``name:/key``."""
+        return f'{self.remote}{key}' if self.remote.endswith(':') else f'{self.remote.rstrip("/")}/{key}'
 
-    def _run(self, *args: str, ok: Sequence[int] = (0,)) -> subprocess.CompletedProcess[str]:
+    def run(self, *args: str, ok: Sequence[int] = (0,)) -> subprocess.CompletedProcess[str]:
+        """One rclone call by argv; an exit outside *ok* is an :class:`OSError` with its stderr tail."""
         rclone = self.rclone or _installed_rclone()
         done = _door.run(
             [*rclone, *args], capture_output=True, text=True, encoding='utf-8', check=False,
@@ -303,31 +302,32 @@ class RcloneStore:
             raise OSError(msg)
         return done
 
-    def _files(self, key: str) -> list[dict[str, Any]]:
-        done = self._run('lsjson', '-R', '--files-only', self._at(key), ok=(0, 3))  # 3: directory not found
+    def files(self, key: str) -> list[dict[str, Any]]:
+        """``rclone lsjson`` of every file under *key*; none when the folder is absent."""
+        done = self.run('lsjson', '-R', '--files-only', self.at(key), ok=(0, 3))  # 3: directory not found
         return json.loads(done.stdout) if done.returncode == 0 and done.stdout.strip() else []
 
     def _stored(self, key: str) -> Ref | None:
         folder, _, name = key.rpartition('/')
         manifest = name.removesuffix(ARCHIVE) + MANIFEST
-        if not any(item['Path'] == manifest for item in self._files(folder)):
+        if not any(item['Path'] == manifest for item in self.files(folder)):
             return None
-        return Ref.of(json.loads(self._run('cat', self._at(f'{folder}/{manifest}')).stdout))
+        return ref_of_entry(json.loads(self.run('cat', self.at(f'{folder}/{manifest}')).stdout))
 
     def put(self, ident: str, path: Path) -> Ref:
         """Archive first, manifest last -- both ``--immutable``, so rclone too refuses an overwrite."""
         base = object_key(self.repo, ident)
         new = ref_of(self.backend, base + ARCHIVE, path)
         check_key(f'{self.remote.partition(":")[2]}/{base}{MANIFEST}')
-        landed = landed_already(self._stored(new.key), new)
+        landed = landed_already(self._stored(new.ref), new)
         if landed is not None:
             return landed
         scratch = scratch_dir()
         try:
             manifest = scratch / (ident + MANIFEST)
-            manifest.write_text(json.dumps(new.manifest()), encoding='utf-8')
-            self._run('copyto', '--immutable', str(path), self._at(new.key))
-            self._run('copyto', '--immutable', str(manifest), self._at(base + MANIFEST))
+            manifest.write_text(json.dumps(manifest_of(new)), encoding='utf-8')
+            self.run('copyto', '--immutable', str(path), self.at(new.ref))
+            self.run('copyto', '--immutable', str(manifest), self.at(base + MANIFEST))
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
         return new
@@ -337,23 +337,23 @@ class RcloneStore:
         scratch = scratch_dir()
         try:
             fetched = scratch / 'fetched'
-            self._run('copyto', self._at(ref.key), str(fetched))
+            self.run('copyto', self.at(ref.ref), str(fetched))
             return verified_copy(ref, fetched, dest)
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 
     def list(self, older_than: datetime | None) -> tuple[Ref, ...]:
         """Every manifest under ``<remote>/<repo>``, read back."""
-        names = [item['Path'] for item in self._files(self.repo) if item['Path'].endswith(MANIFEST)]
-        refs = [Ref.of(json.loads(self._run('cat', self._at(f'{self.repo}/{name}')).stdout)) for name in names]
+        names = [item['Path'] for item in self.files(self.repo) if item['Path'].endswith(MANIFEST)]
+        refs = [ref_of_entry(json.loads(self.run('cat', self.at(f'{self.repo}/{name}')).stdout)) for name in names]
         return sorted_refs(refs, older_than)
 
     def delete(self, ref: Ref) -> None:
         """Delete both objects, then every emptied folder under the repo."""
-        folder = ref.key.rpartition('/')[0]
-        self._run('deletefile', self._at(f'{folder}/{ref.run_id}{MANIFEST}'))
-        self._run('deletefile', self._at(ref.key))
-        self._run('rmdirs', '--leave-root', self._at(self.repo))
+        folder = ref.ref.rpartition('/')[0]
+        self.run('deletefile', self.at(f'{folder}/{run_id_of(ref)}{MANIFEST}'))
+        self.run('deletefile', self.at(ref.ref))
+        self.run('rmdirs', '--leave-root', self.at(self.repo))
 
 
 # --- forge ----------------------------------------------------------------------------------------
@@ -370,14 +370,14 @@ class ForgeStore:
         return {item.name: item for item in listing(self.client)}
 
     def _manifest(self, item: Attachment) -> Ref:
-        return Ref.of(json.loads(self.client.download(item.url)))
+        return ref_of_entry(json.loads(self.client.download(item.url)))
 
     def put(self, ident: str, path: Path) -> Ref:
         """Write-once on the forge too: an attachment of that name with other content is refused."""
         parsed_run_id(ident)
         new = ref_of(self.backend, ident + ARCHIVE, path)
         if path.stat().st_size > ATTACHMENT_LIMIT_MB * MB:
-            msg = f'{new.key} is {new.bytes} bytes, over the forge attachment limit of {ATTACHMENT_LIMIT_MB} MB'
+            msg = f'{new.ref} is {new.bytes} bytes, over the forge attachment limit of {ATTACHMENT_LIMIT_MB} MB'
             raise ArtefactRefused(msg)
         assets = self._assets()
         found = assets.get(ident + MANIFEST)
@@ -387,9 +387,9 @@ class ForgeStore:
         scratch = scratch_dir()
         try:
             manifest = scratch / (ident + MANIFEST)
-            manifest.write_text(json.dumps(new.manifest()), encoding='utf-8')
-            if new.key not in assets:  # an attachment is named by its file: the archive goes up as <run-id>.tar.gz
-                attach(self.client, Path(shutil.copyfile(path, scratch / new.key)))
+            manifest.write_text(json.dumps(manifest_of(new)), encoding='utf-8')
+            if new.ref not in assets:  # an attachment is named by its file: the archive goes up as <run-id>.tar.gz
+                attach(self.client, Path(shutil.copyfile(path, scratch / new.ref)))
             attach(self.client, manifest)
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
@@ -397,9 +397,9 @@ class ForgeStore:
 
     def get(self, ref: Ref, dest: Path) -> Path:
         """Download the attachment and verify."""
-        item = self._assets().get(ref.key)
+        item = self._assets().get(ref.ref)
         if item is None:
-            msg = f'{ref.key} is not attached on the forge (pruned, or never stored)'
+            msg = f'{ref.ref} is not attached on the forge (pruned, or never stored)'
             raise ArtefactRefused(msg)
         scratch = scratch_dir()
         try:
@@ -420,6 +420,6 @@ class ForgeStore:
             base = f'{self.client.repo}/releases/assets/'
         else:
             base = f'{self.client.repo}/issues/{records_issue(self.client, create=False)}/assets/'
-        for name in (ref.run_id + MANIFEST, ref.key):
+        for name in (run_id_of(ref) + MANIFEST, ref.ref):
             if name in assets:
                 self.client.call('DELETE', f'{base}{assets[name].id}')
