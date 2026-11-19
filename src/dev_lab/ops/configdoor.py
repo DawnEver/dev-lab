@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'ACTION', 'FAMILY_KEY', 'ROUTINE', 'Applied', 'ConfigRefused', 'Family', 'Fetched', 'apply', 'boundary', 'changes',
-    'digest', 'fetch', 'git_with_env', 'loadable', 'local_subject', 'tick',
+    'digest', 'fetch', 'git_with_env', 'loadable', 'local_subject', 'tick', 'unsettled_subject',
 ]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
@@ -227,6 +227,20 @@ def local_subject(source: str, path: str, read: SourceReader, ref: str = 'main')
         path, ref = declared
     msg = f'{source}: [ops.config] does not settle on one path and ref (last {path}@{ref})'
     raise ConfigRefused(msg)
+
+
+def unsettled_subject(source: str, path: str, read: SourceReader, ref: str = 'main') -> str | None:
+    """The subject a host derives for *path* while its LIVE ``[ops.config]`` declares no family yet, else None.
+
+    :func:`local_subject` assumes the live table equals the candidate's. When the candidate declares a ``family`` the
+    live table may still lack it (the apply that installs it is the first), and such a host fetches the host file
+    alone: :func:`digest` with no family. Exactly then the two derivations differ, so a plan granting only
+    :func:`local_subject` stops at run after its code is spent. None when the candidate declares no family.
+    """
+    table = tomllib.loads(read(source, path, ref)).get('ops', {}).get('config') or {}
+    if not isinstance(table, Mapping) or not table.get('family'):
+        return None
+    return digest(read(source, str(table.get('path', path)), str(table.get('ref', ref))))
 
 
 def _read(target: Path, source: ConfigSource, name: str | None) -> str:
