@@ -30,7 +30,8 @@ from lab_commons.log import emit
 from dev_lab.dev import sessionprs
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.ops.consent.client import grant
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import Send, ssh_send
@@ -169,5 +170,5 @@ def merge_main(
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
     code = _answer(send, config, request)
     if code == 0:
-        sessionprs.ended(forge_from_remote(root), pull.number)  # SESSION-HEARS-ITS-PRS: the merging door records
+        sessionprs.ended(forge_from_remote(root), pull.number)  # TASK-HEARS-ITS-FORGE-EVENTS: the merging door records
     return code

@@ -159,6 +159,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'with urllib.request.urlopen(request, timeout=30) as answer:',
     ): 'opens only the request built above to [ops.forge] api',
     (
+        'src/dev_lab/dev/toolrelease.py',
+        'S310',
+        "with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S) as answer, to.open('wb') as out:",
+    ): 'a pinned https release URL built from the declared tool table, its bytes refused unless the sha256 matches',
+    (
         'src/dev_lab/dev/forgememo.py',
         'ANN401',
         'def read(self, key: tuple[str, str], attempt: Callable[[], Any]) -> Any:',
@@ -461,7 +466,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/branchnotices.py',
         'PLC0415',
-        'from dev_lab.dev.forgework import client_for',
+        'from dev_lab.dev.forgeclient import client_for',
     ): 'the same hook-latency reason: the client is built only on a cache miss, inside the bounded reader thread',
     (
         'src/dev_lab/dev/branchnotices.py',
@@ -499,7 +504,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
-        'from dev_lab.dev.forgework import client_for',
+        'from dev_lab.dev.forgeclient import client_for',
     ): 'the same leaf-at-import reason: the client is built only by the CLI entry point',
     (
         'src/dev_lab/dev/forgenotice.py',

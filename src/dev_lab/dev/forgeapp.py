@@ -29,7 +29,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from dev_lab.dev.forge import forge_of_url, forge_transport
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgework import Client
 
 if TYPE_CHECKING:
     from collections.abc import Callable
