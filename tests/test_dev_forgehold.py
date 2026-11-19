@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 from _forge_state import StateForge
-from test_dev_forgemerge_ready import _CI_MERGER, _INTEGRATOR, _MANIFEST, _hub_pr, _merge_ready, _pr
+from _roles_fixtures import EVERY_CI, carry
+from test_dev_forgemerge_ready import _hub_pr, _merge_ready, _pr
 
 from dev_lab.dev import forgedraft, forgehold
 from dev_lab.dev.forgehold import HOLD_LABEL, hold, release
@@ -31,9 +32,9 @@ def test_a_held_green_pr_is_not_merged_and_the_reason_names_the_release_door(tmp
     assert [merged for merged, _ in forge.merges] == [number]
 
 
-def test_on_gitea_the_merge_job_honours_the_hold_too(tmp_path: Path) -> None:
+def test_on_gitea_the_merge_job_honours_the_hold_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     work, forge, number, _head = _pr(tmp_path)
-    (work / 'pyproject.toml').write_text(_MANIFEST + _INTEGRATOR + _CI_MERGER, encoding='utf-8')
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     hold(forge, number)
     hold(forge, number)  # idempotent: one label, created once
     assert [one['name'] for one in forge.labels] == [HOLD_LABEL]
