@@ -20,7 +20,7 @@ How a task hears the forge (docs-src/dev/forgefeed.md):
 * THE TICK IS A SETTING: ``[forgefeed] tick_s`` in the machine file (:func:`tick_s`), default :data:`DEFAULT_TICK_S`;
   anything but a positive integer is refused by name.
 * THE PRUNE DUTY RIDES ON ITS OWN INTERVAL: where the family binds ``prune`` to THIS machine (``{ host = "<name>" }``),
-  every ``[forgefeed] prune_duty_s`` (default :data:`DEFAULT_PRUNE_DUTY_S`) the hearer runs
+  every ``[forgefeed] prune_duty_s`` (:func:`dev_lab.dev.branchpolicy.prune_duty_s`) the hearer runs
   :func:`dev_lab.dev.branchpolicy.run_here` over its declared checkouts -- one fetch and one branch survey per repo
   per interval: close landed PRs, sweep, prune merged heads, observe the branch policy (D46).
 
@@ -35,7 +35,6 @@ import os
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TextIO
 
@@ -47,7 +46,6 @@ from lab_commons.log import emit
 from dev_lab.dev import branchpolicy, native_session, sessionprs, taskbinding
 from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forge import Forge, forge_from_remote
-from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgethreads import (
     Thread,
     feed_dir,
@@ -56,6 +54,7 @@ from dev_lab.dev.forgethreads import (
     read_feed,
     read_json,
     route,
+    seconds,
 )
 from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, env_superseded
 from dev_lab.dev.sessionpoll import poll_session
@@ -66,7 +65,6 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
-    'DEFAULT_PRUNE_DUTY_S',
     'DEFAULT_TICK_S',
     'FRESH_S',
     'POLL_S',
@@ -74,14 +72,12 @@ __all__ = [
     'YIELDED',
     'bound_sessions',
     'deliver',
-    'duty_once',
     'ensure',
     'hear_feed',
     'heard',
     'held',
     'main',
     'poll_once',
-    'prune_duty_s',
     'run',
     'running',
     'sessions',
@@ -93,8 +89,6 @@ __all__ = [
 
 #: The tick when the machine file declares none (user ruling D81, 2026-11-19: 2 min until measured live).
 DEFAULT_TICK_S: Final = 120
-#: The prune duty's interval when the machine file declares none (D46, 2026-11-19: branches change slowly).
-DEFAULT_PRUNE_DUTY_S: Final = 1800
 #: The session watch's poll period.
 POLL_S: Final = SESSION_EVERY_S
 #: A beat older than this is a watcher that stopped polling: two default ticks missed.
@@ -105,16 +99,6 @@ WATCHER: Final = 'forgefeed'
 RULE: Final = 'TASK-HEARS-ITS-FORGE-EVENTS'
 
 
-def _seconds(key: str, default: int, table: object) -> int:
-    if table is None:
-        table = section('forgefeed')
-    value = table.get(key, default) if isinstance(table, dict) else default
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        msg = f'[forgefeed] {key} must be a positive integer of seconds, not {value!r}'
-        raise ValueError(msg)
-    return value
-
-
 def tick_s(table: object = None) -> int:
     """The hearer's tick in seconds: the machine file's ``[forgefeed] tick_s``, else :data:`DEFAULT_TICK_S`.
 
@@ -122,39 +106,7 @@ def tick_s(table: object = None) -> int:
         ValueError: the declared value is not a positive integer (named, with its key).
 
     """
-    return _seconds('tick_s', DEFAULT_TICK_S, table)
-
-
-def prune_duty_s(table: object = None) -> int:
-    """The prune duty's interval: ``[forgefeed] prune_duty_s``, else :data:`DEFAULT_PRUNE_DUTY_S`.
-
-    Raises:
-        ValueError: the declared value is not a positive integer (named, with its key).
-
-    """
-    return _seconds('prune_duty_s', DEFAULT_PRUNE_DUTY_S, table)
-
-
-def _duty_stamp() -> Path:
-    return _dir() / 'prune-duty.json'
-
-
-def duty_once(
-    *, clients: Callable[[Forge], Client], now: float, every_s: float, checkouts: Iterable[Path] | None = None
-) -> tuple[str, ...] | None:
-    """Run the prune duty here when *every_s* has passed since its last run; ``None`` when not yet due."""
-    last = read_json(_duty_stamp()).get('at')
-    if isinstance(last, int | float) and now - last < every_s:
-        return None
-    _duty_stamp().parent.mkdir(parents=True, exist_ok=True)
-    _duty_stamp().write_text(json.dumps({'at': now}), encoding='utf-8')
-    return branchpolicy.run_here(
-        _checkouts() if checkouts is None else checkouts,
-        clients=clients,
-        machine=this_machine(),
-        now=datetime.fromtimestamp(now, tz=UTC),
-        say=emit,
-    )
+    return seconds('forgefeed', 'tick_s', DEFAULT_TICK_S, table)
 
 
 def _dir() -> Path:
@@ -393,13 +345,13 @@ def run(
 ) -> int:
     """Hold the machine lock and poll until the venv is wanted (:data:`YIELDED`); 1 when another watcher runs."""
     period = tick_s() if every_s is None else every_s
-    duty_every = prune_duty_s()
+    duty_every = branchpolicy.prune_duty_s()
     with held() as mine:
         if not mine:
             return 1
         while not yielding():
             poll_once(clients=clients)
-            duty_once(clients=clients, now=time.time(), every_s=duty_every)
+            branchpolicy.duty_once(clients=clients, now=time.time(), every_s=duty_every, checkouts=_checkouts())
             sleep(period)
         return YIELDED
 

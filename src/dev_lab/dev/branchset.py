@@ -258,16 +258,15 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
 
 def _bounds(table: dict, manifest: str) -> tuple[bool, float, int | None]:
     """``prune_merged``, ``max_idle_hours`` and ``max_ahead`` of *table*, each refused by name when malformed."""
-    prune = table.get('prune_merged', False)
-    idle = table.get('max_idle_hours', 24.0)
-    ahead = table.get('max_ahead')
-    if not isinstance(prune, bool):
+    if not isinstance(prune := table.get('prune_merged', False), bool):
         msg = f'{_TABLE} prune_merged in {manifest} is {prune!r}; it must be true or false'
         raise BranchSetNotDeclared(msg)
-    if isinstance(idle, bool) or not isinstance(idle, int | float) or idle < 0:
+    if isinstance(idle := table.get('max_idle_hours', 24.0), bool) or not isinstance(idle, int | float) or idle < 0:
         msg = f'{_TABLE} max_idle_hours in {manifest} is {idle!r}; it must be a non-negative number of hours'
         raise BranchSetNotDeclared(msg)
-    if ahead is not None and (isinstance(ahead, bool) or not isinstance(ahead, int) or ahead < 0):
+    if (ahead := table.get('max_ahead')) is not None and (
+        isinstance(ahead, bool) or not isinstance(ahead, int) or ahead < 0
+    ):
         msg = f'{_TABLE} max_ahead in {manifest} is {ahead!r}; it must be a non-negative whole number of commits'
         raise BranchSetNotDeclared(msg)
     return prune, float(idle), ahead

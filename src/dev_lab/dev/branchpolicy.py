@@ -25,12 +25,15 @@ executor kind calls, so a policy is observed and a merged head deleted in exactl
 
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
+
+from lab_commons.log import emit
 
 from dev_lab.dev.branchdelete import DOOR, serve_sweep
 from dev_lab.dev.branchprune import serve_prune
@@ -39,10 +42,12 @@ from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN
 from dev_lab.dev.forge import Forge, fetch_origin, forge_from_remote
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
+from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
 from dev_lab.dev.forgeroute import Routed, reconcile
+from dev_lab.dev.forgethreads import feed_dir, read_json, seconds
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.roles import PRUNE, Roles, Unbound, performs, roles_at
@@ -50,7 +55,20 @@ from dev_lab.dev.roles import PRUNE, Roles, Unbound, performs, roles_at
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
-__all__ = ['OVER_AHEAD', 'PREFIX', 'STALE', 'PolicyRow', 'derive', 'observe', 'prune_duty', 'run_here', 'wanted']
+__all__ = [
+    'DEFAULT_PRUNE_DUTY_S',
+    'OVER_AHEAD',
+    'PREFIX',
+    'STALE',
+    'PolicyRow',
+    'derive',
+    'duty_once',
+    'observe',
+    'prune_duty',
+    'prune_duty_s',
+    'run_here',
+    'wanted',
+]
 
 OVER_AHEAD: Final = 'over-ahead'
 STALE: Final = 'stale'
@@ -199,3 +217,32 @@ def run_here(
         )
         done.append(forge.identity)
     return tuple(done)
+
+
+#: The prune duty's interval when the machine file declares none (D46, 2026-11-19: branches change slowly).
+DEFAULT_PRUNE_DUTY_S: Final = 1800
+
+
+def prune_duty_s(table: object = None) -> int:
+    """The forge feed's prune-duty interval: ``[forgefeed] prune_duty_s``, else :data:`DEFAULT_PRUNE_DUTY_S`.
+
+    Raises:
+        ValueError: the declared value is not a positive integer (named, with its key).
+
+    """
+    return seconds('forgefeed', 'prune_duty_s', DEFAULT_PRUNE_DUTY_S, table)
+
+
+def duty_once(
+    *, clients: Callable[[Forge], Client], now: float, every_s: float, checkouts: Iterable[Path]
+) -> tuple[str, ...] | None:
+    """:func:`run_here` when *every_s* has passed since its last run on this machine; ``None`` when not yet due."""
+    stamp = feed_dir() / 'prune-duty.json'
+    last = read_json(stamp).get('at')
+    if isinstance(last, int | float) and now - last < every_s:
+        return None
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(json.dumps({'at': now}), encoding='utf-8')
+    return run_here(
+        checkouts, clients=clients, machine=this_machine(), now=datetime.fromtimestamp(now, tz=UTC), say=emit
+    )

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import branchpolicy, forgefeed
+from dev_lab.dev import branchpolicy
 from dev_lab.dev.branchpolicy import OVER_AHEAD, PREFIX, STALE, derive, observe, run_here, wanted
 from dev_lab.dev.branchprune import prune
 from dev_lab.dev.branchset import BranchSetKeyRetired, BranchSetNotDeclared, declared_branchset
@@ -195,17 +195,17 @@ def test_run_here_runs_the_duty_only_on_the_bound_machine(tmp_path: Path, monkey
 
 
 def test_the_prune_duty_interval_defaults_and_refuses_by_name() -> None:
-    assert forgefeed.prune_duty_s({}) == forgefeed.DEFAULT_PRUNE_DUTY_S
-    assert forgefeed.prune_duty_s({'prune_duty_s': 600}) == 600
+    assert branchpolicy.prune_duty_s({}) == branchpolicy.DEFAULT_PRUNE_DUTY_S
+    assert branchpolicy.prune_duty_s({'prune_duty_s': 600}) == 600
     with pytest.raises(ValueError, match='prune_duty_s'):
-        forgefeed.prune_duty_s({'prune_duty_s': 0})
+        branchpolicy.prune_duty_s({'prune_duty_s': 0})
 
 
 def test_the_duty_runs_once_per_interval(monkeypatch: pytest.MonkeyPatch) -> None:
     runs: list[datetime] = []
     monkeypatch.setattr(branchpolicy, 'run_here', lambda _c, **kw: runs.append(kw['now']) or ())
     start = datetime(2026, 11, 19, 12, 0, tzinfo=UTC).timestamp()
-    assert forgefeed.duty_once(clients=lambda _f: StateForge(), now=start, every_s=1800, checkouts=[]) == ()
-    assert forgefeed.duty_once(clients=lambda _f: StateForge(), now=start + 600, every_s=1800, checkouts=[]) is None
-    assert forgefeed.duty_once(clients=lambda _f: StateForge(), now=start + 1800, every_s=1800, checkouts=[]) == ()
+    assert branchpolicy.duty_once(clients=lambda _f: StateForge(), now=start, every_s=1800, checkouts=[]) == ()
+    assert branchpolicy.duty_once(clients=lambda _f: StateForge(), now=start + 600, every_s=1800, checkouts=[]) is None
+    assert branchpolicy.duty_once(clients=lambda _f: StateForge(), now=start + 1800, every_s=1800, checkouts=[]) == ()
     assert len(runs) == 2
