@@ -143,7 +143,7 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_decides_before_the_r
     (computed,) = [step for step in jobs['parts']['steps'] if step.get('id') == 'matrix']
     event = '--event "$PARTS_EVENT"'
     assert f'dev_lab.dev.jobparts matrix --runners hosted {event}' in computed['run'], 'the rows follow the event'
-    assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
+    assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in _produce_step(jobs['part'])['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
     assert jobs['absent-parts']['if'].startswith(_ci_prefix() + 'always()')
     assert set(jobs['merge-ready']['needs']) == {'security', 'head-gates', 'part', 'absent-parts'}, (
@@ -537,7 +537,7 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
         'printf \'%s\' "$AI_LAB_KEYS_LIVE" | '
         'uv run --no-sync python -I -m ai_lab.auth login --task live --bundle -'
     ), 'the bundle travels on stdin to the loader, never argv'
-    produce, forget = job['steps'][-2:]
+    produce, forget = _produce_step(job), job['steps'][-1]
     assert produce['run'].endswith('jobparts produce live')
     assert _forgets_keys(job), 'the part ends its key cache on success AND failure (F-dc28c7ef66b4)'
     assert forget['run'].startswith('git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit')
@@ -574,7 +574,8 @@ def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pu
     assert live['if'] == _ci_guarded(
         "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
     ), 'PLANTED CONTROL: a secret keeps it full-run only'
-    setup, produce = linux['steps'][-2:]
+    produce = _produce_step(linux)
+    setup = linux['steps'][linux['steps'].index(produce) - 1]
     assert setup == {'name': 'Set up tests/linux', 'run': 'sudo apt-get install -y xvfb'}
     assert produce['run'].endswith('jobparts produce linux')
     assert not any('env' in step or 'credential' in step.get('run', '') for step in linux['steps']), 'no key store'
@@ -1609,3 +1610,24 @@ def test_a_repo_that_locks_no_python_runs_the_family_line_s_door(tmp_path: Path)
     subprocess.run([*git, 'commit', '-q', '-m', 'lock'], check=True, env=env)
     locked = _door_ref(run, workspace, tmp_path)
     assert locked.stdout.strip() == pin, locked.stderr
+
+
+def test_a_part_job_keeps_its_verify_log_whatever_ends_it(tmp_path: Path) -> None:
+    """A part that failed or hung uploaded no verify log, so its red was unreadable (document-lab tests/windows, 11-18).
+
+    The last step of the part job attaches the run's verify log under ``always()``: a failure, a cancellation and the
+    job's own timeout all still keep it. Planted control: the produce step itself uploads nothing.
+    """
+    steps = _base_ci(tmp_path)['jobs']['part']['steps']
+    keep = steps[-1]
+    assert keep.get('uses', '').startswith('actions/upload-artifact@'), steps
+    assert keep['if'].startswith('${{ always()'), keep
+    assert 'verify/verify-*.log' in keep['with']['path'], keep
+    assert '${{ matrix.part }}' in keep['with']['name'], 'one artifact per part, never overwritten by a sibling'
+    produce = next(step for step in steps if step.get('name') == 'Produce and post the part')
+    assert 'uses' not in produce, 'PLANTED CONTROL: the produce step is not the keeper'
+
+
+def _produce_step(job: dict) -> dict:
+    """The part job's produce step, by name: the log keeper follows it (it is no longer the last step)."""
+    return next(step for step in job['steps'] if step.get('name') == 'Produce and post the part')

@@ -16,7 +16,7 @@ from dev_lab.dev._forgebackends import GITHUB
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
-__all__ = ['LABEL_COLOR', 'LabelMissing', 'add_label', 'ensure_labels', 'label_ids', 'remove_label']
+__all__ = ['LABEL_COLOR', 'LabelMissing', 'add_label', 'ensure_labels', 'label_ids', 'relabel', 'remove_label']
 
 #: The colour a label this module creates gets (neutral grey).
 LABEL_COLOR: Final = 'cccccc'
@@ -79,3 +79,20 @@ def remove_label(client: Client, number: int, name: str) -> None:
     """Take label *name* off issue *number*; a label the repository lacks raises :class:`LabelMissing`."""
     (ident,) = label_ids(client, [name]).values()
     client.call('DELETE', f'{client.repo}/issues/{number}/labels/{name if client.backend is GITHUB else ident}')
+
+
+def relabel(client: Client, number: int, *, add: Iterable[str], remove: Iterable[str]) -> None:
+    """``forge issue label N --add A... --remove B...``: each *add* put on, then each *remove* taken off.
+
+    A missing *add* label is created first; nothing to do is refused before any call.
+    """
+    adding, removing = list(dict.fromkeys(add)), list(dict.fromkeys(remove))
+    if not adding and not removing:
+        msg = f'issue label {number}: name a label with --add or --remove'
+        raise ValueError(msg)
+    if adding:
+        ensure_labels(client, adding)
+        for name in adding:
+            add_label(client, number, name)
+    for name in removing:
+        remove_label(client, number, name)

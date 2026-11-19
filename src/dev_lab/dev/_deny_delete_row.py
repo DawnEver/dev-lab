@@ -73,8 +73,8 @@ RECURSIVE_DELETE: dict[str, object] = {
     'remedy': (
         f'{PYTHON_SLOT} -m dev_lab.dev.scratch clear --yes; dev_lab.dev.branchset --apply; '
         'dev_lab.dev.branchset --discard <branch> --approved <why>; '
-        'detached: dev_lab.dev.worktrees --remove <name>; .venvs: dev_lab.dev.venvprune --apply. '
-        'Else (never a worktree) ask the user.'
+        'dev_lab.dev.worktrees --remove <name> (throwaway: --discard); dev_lab.dev.venvprune --apply. '
+        'Else ask the user.'
     ),
     'needs': None,
     'refuses': (

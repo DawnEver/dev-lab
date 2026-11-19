@@ -139,6 +139,18 @@ EVICTED: Final[dict[str, str]] = {
 #: anywhere, and a waiver list nobody believes is a waiver list nobody reads. Two-sided all the
 #: same: if the example goes, the handle goes with it.
 SYNTHETIC: Final[dict[str, str]] = {
+    'src/dev_lab/supervise/cli.py::path': (
+        '`supervise/state.json` and `supervise/cycles.jsonl`, the files this module WRITES under the target`s '
+        '`output` storage kind (D75); they exist only where a supervisor ran, and name no tracked file.'
+    ),
+    'src/dev_lab/dev/_deny_machinefile_row.py::path': (
+        'the machine file (`lab_commons.config.config_path()`), a per-machine file the deny row names by its '
+        'home-relative tail; it lives outside every checkout and names no tracked file.'
+    ),
+    'src/dev_lab/dev/remplugin.py::path': (
+        'each agent host`s plugin registry and settings under the user`s home (Claude Code, Antigravity, Codex), '
+        'read to find the installed rem plugin; machine-local, outside every checkout, naming no tracked file.'
+    ),
     'src/dev_lab/dev/automode.py::path': (
         '`.claude/automode.json`, the machine-local file this module WRITES into a consumer checkout; '
         'it is gitignored, so it resolves only where it was rendered and names no tracked file.'

@@ -240,15 +240,16 @@ KEPT = 'output/26/10/16/parts/' + 'a' * 40
 DIGEST = 'ab' * 32
 
 
-def test_a_finished_request_says_where_its_record_is_and_waits_for_sign_off(monkeypatch, tmp_path: Path) -> None:
-    """O1-O3: the requester learns the host, the record path and each file's sha256; exit 0 is not acceptance.
+def test_a_finished_request_says_where_its_record_is_and_closes(monkeypatch, tmp_path: Path) -> None:
+    """O1-O3: the requester learns the host, the record path and each file's sha256.
 
-    A success is labelled done and LEFT OPEN -- the requester closes it to sign off.
+    A success is labelled done and CLOSED (user ruling 2026-11-19: issues never pile up as event records); the
+    result stays on the closed issue and on the sha's status.
     """
     forge, comments = _produce(monkeypatch, tmp_path, 0)
     assert forge.posts[-1][:2] == ('request/9', 'success')
-    (kind, number, body), labelled = comments
-    assert (kind, number, labelled) == ('comment', 9, ('label', 9, DONE_LABEL))
+    (kind, number, body), labelled, closed = comments
+    assert (kind, number, labelled, closed) == ('comment', 9, ('label', 9, DONE_LABEL), ('close', 9))
     assert 'regenerated 45 goldens' in body, 'the log travels with the result'
     assert f'record: `{KEPT}` on {ME.machine}' in body
     assert f'`{DIGEST}`  goldens.csv' in body

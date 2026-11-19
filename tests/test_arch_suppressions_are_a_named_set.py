@@ -134,11 +134,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'with urllib.request.urlopen(request, timeout=30) as answer:',
     ): 'opens only the request built above to [ops.forge] api',
     (
-        'src/dev_lab/dev/toolrelease.py',
-        'S310',
-        "with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S) as answer, to.open('wb') as out:",
-    ): 'a pinned https release URL built from the declared tool table, its bytes refused unless the sha256 matches',
-    (
         'src/dev_lab/dev/forgememo.py',
         'ANN401',
         'def read(self, key: tuple[str, str], attempt: Callable[[], Any]) -> Any:',
@@ -188,6 +183,24 @@ ALLOWED: Final[dict[Site, str]] = {
         'arg-type',
         'run(pdoc_argv(modules, out_dir, **options), cwd=root)',
     ): 'pdoc_argv takes `**options: object` so any caller option reaches it; run() is typed on str',
+    (
+        'src/dev_lab/dev/storage.py',
+        'PLC0415',
+        'from dev_lab.dev.artefactstores import ArtefactRefused, check_rclone_config',
+    ): 'the forge journal and intent writers import storage.output_path, and artefactstores reaches them '
+    'through the forge layer, so a module-scope import here is a cycle; render() is a rare door',
+    (
+        'src/dev_lab/dev/storage.py',
+        'PLC0415',
+        'from dev_lab.dev.toolrelease import ToolAbsent, resolve',
+    ): 'every writer imports storage (the walls ledger on each Stop, inside the hook budget); only the rclone '
+    'render needs the pinned-tool table, so it is read where render runs',
+    (
+        'src/dev_lab/dev/storage.py',
+        'no-cover',
+        'if found is None:',
+    ): 'output always has an in-tree default (lab_commons.storage.root), so the refusal is a guard no '
+    'declaration can reach; it keeps the return type a Path instead of Path | None',
     (
         'src/dev_lab/dev/forgerecords.py',
         'PLC0415',
@@ -501,6 +514,41 @@ ALLOWED: Final[dict[Site, str]] = {
         'override',
         'def encoding(self) -> str:',
     ): "a routed stream's encoding is its calling thread's target's, so it is a property where typeshed has a field",
+    (
+        'src/dev_lab/dev/machineguard.py',
+        'PLC0415',
+        'from dev_lab.dev.venvpath import running_interpreter',
+    ): 'deferred: the machine-file guard imports nothing heavy on the hook path; only the rendered door text needs it',
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'S310',
+        "return urllib.request.Request(url, headers={'User-Agent': USER_AGENT})",
+    ): "the URL is a pinned release's https download URL from the module's own table, never input",
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'arg-type',
+        'shutil.copyfileobj(body, out)',
+    ): "urlopen's answer is a binary file object; typeshed types it as the union it opens",
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'attr-defined',
+        "with answer as body, to.open('wb') as out:",
+    ): "urlopen's answer is a context manager at runtime; typeshed's union lacks it",
+    (
+        'tests/test_dev_forgewaves.py',
+        'E731',
+        'send = lambda _t, r: calls.append(r) or (0, _STATUS)',
+    ): 'a one-line recording fake handed to the code under test',
+    (
+        'tests/test_dev_toolrelease.py',
+        'arg-type',
+        'raise urllib.error.HTTPError(url, 403, reason, None, None)',
+    ): 'the fake refusal needs no headers or body; the code under test reads only the status',
+    (
+        'tests/test_dev_toolrelease.py',
+        'attr-defined',
+        "seen.append(req.get_header('User-agent'))",
+    ): 'the fake opener receives the Request the code built; typeshed types it as str | Request',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')
