@@ -170,5 +170,5 @@ def merge_main(
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
     code = _answer(send, config, request)
     if code == 0:
-        sessionprs.ended(forge_from_remote(root), pull.number)  # SESSION-HEARS-ITS-PRS: the merging door records
+        sessionprs.ended(forge_from_remote(root), pull.number)  # TASK-HEARS-ITS-FORGE-EVENTS: the merging door records
     return code

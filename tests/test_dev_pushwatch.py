@@ -1,6 +1,6 @@
 """PUSHED-HEAD-IS-WATCHED: a push door names who hears the pushed head -- the machine PR watcher, never a Monitor.
 
-dev-lab #640 left the machine watcher (``prwatcher``) the one hearer of a session's PRs; the push journal, its
+dev-lab #640 left the machine forge hearer (``forgefeed``) the one hearer of a session's PRs; the push journal, its
 ``PostToolUse`` reminder and the ``Stop`` gate that read it are deleted, and each deletion is pinned absent here.
 """
 
@@ -77,8 +77,8 @@ def test_the_heard_line_names_the_machine_watcher_and_no_monitor() -> None:
     said = heard_line(sha)
     assert said.startswith(f'{RULE}: {sha[:12]} ')
     assert len(said.splitlines()) == 1
-    assert said.endswith('-m dev_lab.dev.prwatcher start'), 'the one door that starts the hearer'
-    assert 'forge watch' not in said, 'PLANTED CONTROL: no Monitor is armed -- prwatcher alone hears PRs'
+    assert said.endswith('-m dev_lab.dev.forgefeed start'), 'the one door that starts the hearer'
+    assert 'forge watch' not in said, 'PLANTED CONTROL: no Monitor is armed -- forgefeed alone hears PRs'
 
 
 def test_the_push_journal_hook_is_gone() -> None:

@@ -1,4 +1,4 @@
-"""SESSION-HEARS-ITS-PRS, the doors: the door that acts records, and the machine watcher hears what they record.
+"""TASK-HEARS-ITS-FORGE-EVENTS, the doors: the door that acts records, and the machine watcher hears what they record.
 
 2026-11-12: a PostToolUse hook scraping the shell line missed a second ``forge pr create`` in one command, a
 create whose output was piped through ``| tail -1``, and a push after ``cd`` into another repository -- each

@@ -587,9 +587,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   journal append citing an ignored path is refused before it is written.
 * :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the commit a shell push line publishes, and the line a
   push door prints naming its hearer, the machine PR watcher.
-* :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
-* :mod:`dev_lab.dev.sessionpoll` -- SESSION-HEARS-ITS-PRS: one read of a session's PRs, its reds and its one green.
-* :mod:`dev_lab.dev.prwatcher` -- SESSION-HEARS-ITS-PRS: the one hearer -- a machine watcher, per-session inboxes.
+* :mod:`dev_lab.dev.sessionprs` -- TASK-HEARS-ITS-FORGE-EVENTS: every PR a session opened or pushed, in any repository.
+* :mod:`dev_lab.dev.sessionpoll` -- TASK-HEARS-ITS-FORGE-EVENTS: one status read of a session's open PRs.
+* :mod:`dev_lab.dev.forgefeed` -- TASK-HEARS-ITS-FORGE-EVENTS: the one hearer, one issues read per repository per tick.
+* :mod:`dev_lab.dev.forgethreads` -- the threads a task hears: the issues-since read, its cursor, own comments.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
 * :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrolment door, ``[bridge]``.

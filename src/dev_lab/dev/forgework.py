@@ -40,6 +40,7 @@ import urllib.parse
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -84,6 +85,7 @@ from dev_lab.dev.forgefailure import (
 )
 from dev_lab.dev.forgememo import ReadMemo
 from dev_lab.dev.forgepages import issues
+from dev_lab.dev.forgethreads import record_own
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 __all__ = [
@@ -151,7 +153,7 @@ class Client:
 
     def _once(
         self, method: str, path: str, data: bytes | None, content_type: str, host: str | None, *,
-        accept: str = '', authed: bool = True,
+        accept: str = '', authed: bool = True, extra: Mapping[str, str] | None = None,
     ) -> Answer:  # fmt: skip
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
@@ -160,6 +162,7 @@ class Client:
         sent = {'Authorization': auth} if authed and self.token else {}
         sent |= {'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)} | dict(backend.headers)
         sent |= {'Accept': accept} if accept else {}
+        sent |= dict(extra or {})
         if method != 'GET':  # a write never rides a kept connection: a lost answer there reads as never sent
             conn = self.transport(target, self.timeout)
             try:
@@ -182,7 +185,7 @@ class Client:
         response = conn.getresponse()
         self.answered = response.getheader('Date') or self.answered
         self._location = response.getheader('Location') or ''
-        said = {name: value for name in RATE_HEADERS if (value := response.getheader(name))}
+        said = {name: value for name in (*RATE_HEADERS, 'ETag') if (value := response.getheader(name))}
         payload = response.read()  # read whole: a kept connection's next answer starts after it
         return Answer(response.status, payload, said), bool(response.will_close)
 
@@ -236,6 +239,25 @@ class Client:
         """
         data = json.dumps(dict(body)).encode() if body is not None else None
         return self._request(method, path, data, 'application/json', durable)
+
+    def call_conditional(self, method: str, path: str, etag: str = '') -> tuple[int, str, Any]:
+        """One read sent with ``If-None-Match: <etag>``: ``(status, new ETag, JSON)``; a 304 is ``(304, etag, None)``.
+
+        A 304 is the forge saying nothing changed (GitHub does not count it against the rate limit). Any other
+        answer that is not a success is read again through :meth:`call`, the one door that retries and reports.
+        """
+        try:
+            answer = self._once(
+                method, path, None, 'application/json', None, extra={'If-None-Match': etag} if etag else None
+            )
+        except OSError:
+            answer = None
+        if answer is not None and answer.status == HTTPStatus.NOT_MODIFIED:
+            return 304, etag, None
+        if answer is not None and answer.status < HTTP_ERROR_FLOOR:
+            text = answer.payload.decode('utf-8', 'replace')
+            return answer.status, answer.headers.get('ETag', ''), json.loads(text) if text.strip() else None
+        return 200, '', self.call(method, path)
 
     def upload(self, path: str, *, field: str, filename: str, content: bytes, durable: Durable | None = None) -> Any:  # noqa: ANN401 -- JSON
         """A ``multipart/form-data`` POST of one file under *field*; its boundary is its content's hash (one key)."""
@@ -384,7 +406,9 @@ class Client:
         """A comment on an issue (or a PR, which both forges number as an issue)."""
         path, payload = f'{self.repo}/issues/{number}/comments', {'body': self._stamped(body)}
         probe = Probe(f'{path}?since={since(self.clock())}', payload)
-        return comment_of(self.call('POST', path, payload, Durable(probe=probe)))
+        posted = comment_of(self.call('POST', path, payload, Durable(probe=probe)))
+        record_own(f'{self.forge.identity}#{number}')  # TASK-HEARS-ITS-FORGE-EVENTS: own words are never news
+        return posted
 
     def issue_edit(self, number: int, body: str) -> Issue:
         """Replace an issue's body; the body is state, so no provenance line is added."""
@@ -399,7 +423,7 @@ class Client:
 
         GitHub takes ``draft: true``; Gitea has no draft field, and reads its ``WIP:`` title prefix as one. Every
         door that opens a PR comes through here, so here it is recorded as the running agent session's
-        (SESSION-HEARS-ITS-PRS, :func:`~dev_lab.dev.sessionprs.record_opened`), whatever a shell line printed.
+        (TASK-HEARS-ITS-FORGE-EVENTS, :func:`~dev_lab.dev.sessionprs.record_opened`), whatever a shell line printed.
         """
         if draft and self.backend is not GITHUB:
             title = draft_title(title)

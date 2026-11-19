@@ -32,6 +32,13 @@ MOVED_TABLES: Final = (
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
     **dict.fromkeys(
+        ('prwatcher', 'SESSION-HEARS-ITS-PRS'),
+        (
+            'forgefeed and TASK-HEARS-ITS-FORGE-EVENTS: one notification-feed read per forge, routed to tasks',
+            'D79 (user, 2026-11-18): the hearer is named for what it reads, and a task, not a session, subscribes',
+        ),
+    ),
+    **dict.fromkeys(
         (
             'RETIRED_WIRING',
             'PUSHWATCH_COMMAND',
@@ -92,7 +99,7 @@ RETIRED_SPELLINGS: Final = {
             'post-push',
         ),
         (
-            'prwatcher, the one hearer of a session PR; push doors print pushwatch.heard_line',
+            'forgefeed, the one hearer of a task (D79); push doors print pushwatch.heard_line',
             'dev-lab #640 unwired the push journal, its Stop gate, the shell-line hooks and post-push; deleted after',
         ),
     ),
