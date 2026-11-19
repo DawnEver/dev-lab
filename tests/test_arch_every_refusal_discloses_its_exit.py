@@ -16,7 +16,7 @@ from dev_lab.dev.hooks import DENY_RULES
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = (ROOT / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
 #: A remedy names a runnable door, a placeholder the engine fills with one, or says there is none and why.
-_DOOR = re.compile(r'\{python\}|\{remedy\}|<venv python>|python -m |\bgit [a-z]|^No door: ')
+_DOOR = re.compile(r'\{python\}|\{door\}|\{remedy\}|<venv python>|python -m |\bgit [a-z]|^No door: ')
 _ASKS = re.compile(r'\bask the user\b', re.IGNORECASE)
 _AFTER = re.compile(r'\bapprov', re.IGNORECASE)
 
