@@ -337,6 +337,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
     'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
+    'forgewaves',  # ORIGINAL: an unacknowledged break-glass wave reaches each session once (ruling 2026-11-19)
     'venvfollow',
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)

@@ -594,6 +594,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.sessionprs` -- TASK-HEARS-ITS-FORGE-EVENTS: every PR a session opened or pushed, in any repository.
 * :mod:`dev_lab.dev.sessionpoll` -- TASK-HEARS-ITS-FORGE-EVENTS: one status read of a session's open PRs.
 * :mod:`dev_lab.dev.forgefeed` -- TASK-HEARS-ITS-FORGE-EVENTS: the one hearer, one issues read per repository per tick.
+* :mod:`dev_lab.dev.forgewaves` -- a break-glass wave awaiting review, told once per session through the feed.
 * :mod:`dev_lab.dev.forgethreads` -- the threads a task hears: the issues-since read, its cursor, own comments.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;
