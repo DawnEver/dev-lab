@@ -62,6 +62,7 @@ from dev_lab.dev import (
     forgestuck,
     forgesync,
     forgetakeover,
+    forgetask,
     forgetick,
     forgetidy,
     forgetry,
@@ -76,8 +77,6 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
-    taskbinding,
-    taskgate,
     walls,
 )
 from dev_lab.dev._forge_records import pull_of
@@ -307,28 +306,6 @@ _PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace],
 }
 
 
-def _task_head_advice(head: str, env: Mapping[str, str] | None) -> tuple[str, ...]:
-    """A session bound to a task is told its PR heads are ``pr/<task>/<feature>`` (:mod:`dev_lab.dev.taskbinding`)."""
-    try:
-        task = taskbinding.session_task(os.environ if env is None else env)
-    except ValueError:
-        return ()
-    said = None if task is None else taskbinding.head_advice(head, taskbinding.slug_of(task))
-    return () if said is None else (said,)
-
-
-def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
-    """An opened PR or issue is appended to the bound rem task's journal (:func:`taskgate.record`)."""
-    if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
-        return
-    if (
-        isinstance(result, (PullRequest, Issue))
-        and (url := result.url)
-        and (said := taskgate.record(root, args.noun, url, env=env, read=taskgate.reader_for(env, Path.home())))
-    ):
-        emit(f'[forge] {said}', err=True)  # the task names its own PRs and issues
-
-
 def issue_and_pr(
     argv: Sequence[str] | None = None,
     *,
@@ -347,7 +324,7 @@ def issue_and_pr(
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            said := _task_head_advice(args.head, env)
+            said := forgetask.head_advice(args.head, env)
             + pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
@@ -362,7 +339,7 @@ def issue_and_pr(
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
-    _record_in_task(args, result, root, os.environ if env is None else env)
+    forgetask.record(args, result, root, os.environ if env is None else env)
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
         data = [dataclasses.asdict(item) for item in items]
