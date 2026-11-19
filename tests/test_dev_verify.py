@@ -2110,3 +2110,18 @@ def test_an_unstaged_edit_to_any_tracked_file_moves_the_run_key(tmp_path: Path) 
     assert verify.run_key(tmp_path, ('a',)) == clean
     (tmp_path / 'conftest.py').unlink()
     assert verify.run_key(tmp_path, ('a',)).tree != clean.tree, 'a deleted tracked file kept the judged key'
+
+
+def test_a_repo_declares_its_selection_wall_and_the_box_holds_the_selection_to_it(tmp_path: Path) -> None:
+    """learn-lab's full selection outgrew the one hard-coded 3600 s wall and was killed every night (2026-11-18).
+
+    ``[tool.dev_lab.verify] wall_s`` is the repo's declared wall; undeclared is :data:`SELECTION_WALL_S`. A wall that
+    is not a positive number of seconds is refused naming the key. PLANTED CONTROL: undeclared stays the default.
+    """
+    assert verifybox.declared_wall_s(tmp_path) == verifybox.SELECTION_WALL_S, 'PLANTED CONTROL: undeclared'
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall_s = 7200\n', encoding='utf-8')
+    assert verifybox.declared_wall_s(tmp_path) == 7200
+    for bad in ('"2h"', '0', '-5', 'true', '1.5'):
+        (tmp_path / 'pyproject.toml').write_text(f'[tool.dev_lab.verify]\nwall_s = {bad}\n', encoding='utf-8')
+        with pytest.raises(ValueError, match='wall_s'):
+            verifybox.declared_wall_s(tmp_path)
