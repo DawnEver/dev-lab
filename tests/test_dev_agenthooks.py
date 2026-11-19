@@ -727,3 +727,26 @@ def test_a_collect_only_segment_admits_no_running_sibling(rules: Path) -> None:
     assert agenthooks.decide('pytest tests && echo --co', rules) is not None
     assert agenthooks.decide('pytest tests; echo --collect-only', rules) is not None
     assert agenthooks.decide('pytest tests | grep --co', rules) is not None
+
+
+def test_interpreter_code_is_read_without_its_string_literals(rules: Path) -> None:
+    """O48: a python heredoc whose STRING holds ``rmtree(`` (source it writes) was refused RECURSIVE-DELETE.
+
+    Code is read with its string literals blanked, so text a program only carries is never a command it runs.
+    PLANTED CONTROLS: the same heredoc CALLING ``shutil.rmtree`` is still refused, and so is a bash ``rm -rf``.
+    """
+    writes = (
+        'python - <<\'EOF\'\nsrc = """\nimport shutil\nshutil.rmtree(target)\n"""\nopen("f.py", "w").write(src)\nEOF'
+    )
+    assert agenthooks.decide(writes, rules) is None, 'a string the program only writes was read as its command'
+    single = "python - <<'EOF'\nnote = 'shutil.rmtree(x)'\nprint(note)\nEOF"
+    assert agenthooks.decide(single, rules) is None
+    calls = "python - <<'EOF'\nimport shutil\nshutil.rmtree('C:/work/repo')\nEOF"
+    reason = agenthooks.decide(calls, rules)
+    assert reason is not None, 'a real rmtree call in a heredoc went unrefused'
+    assert reason.startswith('RECURSIVE-DELETE:'), reason
+    after = 'python - <<\'EOF\'\nx = """doc"""\nshutil.rmtree(p)\nEOF'
+    assert (agenthooks.decide(after, rules) or '').startswith('RECURSIVE-DELETE:'), 'a call after a string was hidden'
+    bash = agenthooks.decide('rm -rf .claude/worktrees/lane', rules)
+    assert bash is not None
+    assert bash.startswith('RECURSIVE-DELETE:'), bash
