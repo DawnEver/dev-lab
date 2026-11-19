@@ -163,7 +163,7 @@ def listing(client: Client) -> tuple[Attachment, ...]:
     store = _store(client, create=False)
     if store is None:
         return ()
-    raw = pages(client, store.assets, {})  # every page: one page saw 30 of 1000 and the release filled up
+    raw = pages(client, store.assets, {}, bound=None)  # every page: a gitea home has no cap (O20)
     return tuple(sorted((_attachment(item) for item in raw), key=lambda item: item.id))
 
 
@@ -184,7 +184,7 @@ def attach(client: Client, path: Path, *, root: Path | None = None) -> Attachmen
     checkout whose ``origin`` refs say which shas are live; without one only what needs no liveness goes.
     """
     store = cast('_Store', _store(client, create=True))  # create=True always yields a home
-    found = pages(client, store.assets, {})
+    found = pages(client, store.assets, {}, bound=None)
     held = next((raw for raw in found if raw.get('name') == path.name), None)
     if held is not None:
         return _attachment(held)
