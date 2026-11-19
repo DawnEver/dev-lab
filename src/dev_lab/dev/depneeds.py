@@ -21,7 +21,9 @@ collection and is not checked.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 import tomllib
 from collections.abc import Callable, Mapping
 from importlib import metadata
@@ -30,7 +32,9 @@ from typing import Final
 
 from lab_commons.hpc.needsets import BASE
 
-__all__ = ['declared_needs', 'extras_for', 'missing_for_part', 'task_needs']
+from dev_lab.dev import taskbinding
+
+__all__ = ['bound_task_extras', 'declared_needs', 'extras_for', 'missing_for_part', 'task_needs']
 
 #: A requirement's distribution name: the leading identifier, before extras, versions, URLs or markers.
 _NAME: Final = re.compile(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
@@ -128,3 +132,19 @@ def extras_for(root: Path, needs: tuple[str, ...]) -> tuple[str, ...]:
 def _names(requirements: list[str]) -> list[str]:
     """Distribution names of *requirements*, skipping any with an environment marker (not evaluated here)."""
     return [m.group(1) for req in requirements if ';' not in req and (m := _NAME.match(req))]
+
+
+def bound_task_extras(root: Path, env: Mapping[str, str] | None = None) -> tuple[str, ...] | None:
+    """The extras the session's bound task asks for through its declared needs (D79), else ``None`` (the default).
+
+    An explicit ``--extra`` still overrides. No bound session, or a task declaring no needs, keeps the repo's
+    declared extras (``None`` lets :func:`~dev_lab.dev._dep_project.read_project` read them).
+    """
+    try:
+        bound = taskbinding.session_binding(os.environ if env is None else env, start=root)
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        return None
+    if bound is None:
+        return None
+    needs = task_needs(bound.ledger, bound.task)
+    return extras_for(root, needs) if needs else None

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import dep, depneeds, taskbinding
+from dev_lab.dev import depneeds, taskbinding
 
 _MANIFEST = (
     '[project]\nname="example"\nversion="0"\n'
@@ -110,9 +110,10 @@ def test_dep_selects_the_bound_tasks_extras_and_none_without_a_binding(
     ledger = _ledger(tmp_path, '[simba]')
     bound = taskbinding.Binding('work@abc', ledger, ledger / '.bindings' / 's.json')
     monkeypatch.setattr(taskbinding, 'session_binding', lambda _env, **_kw: bound)
-    assert dep._task_extras(root, {}) == ('dev', 'simba')
+    assert depneeds.bound_task_extras(root, {}) == ('dev', 'simba')
     monkeypatch.setattr(taskbinding, 'session_binding', lambda _env, **_kw: None)
-    assert dep._task_extras(root, {}) is None
+    assert depneeds.bound_task_extras(root, {}) is None
+
 
 def test_a_root_with_no_manifest_needs_nothing(tmp_path: Path) -> None:
     """A tree with no pyproject declares no needs, so no part is refused for a missing extra."""

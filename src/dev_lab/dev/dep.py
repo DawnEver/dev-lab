@@ -61,9 +61,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -76,7 +75,7 @@ from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, taskbinding, venvcurrent
+from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
@@ -417,7 +416,7 @@ def main(
     if why := _dep_cli.argv_error(args, locking=locking):
         parser.error(why)
     root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
-    base, selected, paths = _dep_project.read_project(root, args.extra or _task_extras(root))
+    base, selected, paths = _dep_project.read_project(root, args.extra or depneeds.bound_task_extras(root))
     live = Path(base).parent.parent
     if Path(base).is_file() and Path(_snapshot(base)[0]).resolve() != live.resolve():
         msg = f'{base} does not execute in its own environment {live}'
@@ -476,22 +475,6 @@ def main(
     if syncing and not args.dry_run and not result.returncode:
         _refresh_automode(root, run=run)
     return result.returncode or stale
-
-
-def _task_extras(root: Path, env: Mapping[str, str] | None = None) -> tuple[str, ...] | None:
-    """The extras the session's bound task asks for through its declared needs (D79), else ``None`` (the default).
-
-    An explicit ``--extra`` still overrides. No bound session, or a task declaring no needs, keeps the repo's
-    declared extras (``None`` lets :func:`~dev_lab.dev._dep_project.read_project` read them).
-    """
-    try:
-        bound = taskbinding.session_binding(os.environ if env is None else env, start=root)
-    except (OSError, ValueError, subprocess.CalledProcessError):
-        return None
-    if bound is None:
-        return None
-    needs = depneeds.task_needs(bound.ledger, bound.task)
-    return depneeds.extras_for(root, needs) if needs else None
 
 
 def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, base: str) -> int:
