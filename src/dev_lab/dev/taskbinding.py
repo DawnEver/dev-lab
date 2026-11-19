@@ -15,8 +15,8 @@ binding file") and never through rem's code:
   ``<machine home>/state/sessions/<session>.json`` (:func:`binding_path`; the home is lab_commons'), =
   ``{"session": ..., "task": "<slug>@<authority>", "ledger": {"repo_key": ..., "path": <ledger dir>}}``,
   keyed by the session a process inside it names (:func:`~dev_lab.dev.native_session.session_of`:
-  ``CLAUDE_CODE_SESSION_ID``, or a Codex session's ``CODEX_THREAD_ID``). Every repo's push check reads that one
-  file, so a session bound from repo A pushes from repo B under its task, judged open in the ledger the record
+  ``CLAUDE_CODE_SESSION_ID``, ``CODEX_THREAD_ID``, or ``ANTIGRAVITY_CONVERSATION_ID``). Every repo's push check reads
+  that one file, so a session bound from repo A pushes from repo B under its task, judged open in the ledger the record
   names. The retired per-repo store ``<ledger>/.bindings/<session>.json`` is never read: a record still found there
   is refused by name with its one-shot migration (:data:`MIGRATE_DOOR`; FORMATS-MIGRATE-ONCE).
 
