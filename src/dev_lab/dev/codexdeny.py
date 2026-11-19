@@ -68,6 +68,8 @@ _HOST = 'judged on the host an ssh/scp/rsync argument names'
 #: Rule ID -> why no argv prefix can carry it. Codex runs these shapes unjudged; the gap is declared, not silent.
 GAPS: Final[dict[str, str]] = {
     'TREE-HAS-A-LIVE-RUN': 'binds only while a run is live; the process table decides, not a prefix',
+    'FAMILY-REPO-IS-CHECKED-OUT': "judged on the clone url against the machine file's [repos]; a prefix reads neither",
+    'MACHINE-FILE-IS-RENDERED': 'judged on where a write lands (anywhere on the line); a prefix sees only argv[0]',
     'BACKGROUND-SHELL-IS-BOUNDED': 'a property of a background call, which Codex execpolicy does not see',
     'TRACKED-CITES-NO-EPHEMERAL': 'judged on what the journal line cites against the repo; a prefix reads neither',
     'SUBAGENT-NO-PUSH': 'scoped to subagents; Codex execpolicy has no agent scope',
