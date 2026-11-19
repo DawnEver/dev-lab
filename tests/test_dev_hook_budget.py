@@ -22,6 +22,7 @@ import pytest
 from lab_commons.liveness import creation_stamp
 
 from dev_lab.dev import agent_guard, agent_wiring, hookdispatch, hookhandoff
+from dev_lab.dev._hookanswer import Outcome
 from dev_lab.dev.agent_wiring import HOOK_TIMEOUT_S, Wire, WireRefused
 
 
@@ -164,6 +165,30 @@ def test_the_budget_hands_the_rest_to_the_background_and_says_so(
     assert 'planted_slow' in said
     assert 'planted_next' in said
     assert _dispatch(monkeypatch, wires, ['Stop'], payload)[2] == []
+
+
+def test_every_row_after_a_late_row_is_late_even_when_the_wait_returns_early(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A row past the budget and EVERY row after it go to the background (Windows' timed wait may return early).
+
+    PLANTED CONTROL: a first row that finishes leaves the next row inline.
+    """
+    first, second = Wire(('Stop',), 'planted_first'), Wire(('Stop',), 'planted_second')
+    ran: list[str] = []
+
+    def row(*, late: bool) -> Callable[..., Outcome]:
+        def run(wire: Wire, _text: str, *, timeout: float) -> Outcome:
+            ran.append(wire.name)
+            return Outcome(wire, None if late and wire is first else 0, '', '', timeout)
+
+        return run
+
+    monkeypatch.setattr(hookdispatch, 'run_row', row(late=True))
+    outcomes, late = hookdispatch._inline((first, second), '{}', time.monotonic())
+    assert (outcomes, [w.name for w in late], ran) == ([], ['planted_first', 'planted_second'], ['planted_first'])
+    ran.clear()
+    monkeypatch.setattr(hookdispatch, 'run_row', row(late=False))
+    outcomes, late = hookdispatch._inline((first, second), '{}', time.monotonic())
+    assert (late, ran) == ([], ['planted_first', 'planted_second'])
 
 
 def test_a_background_run_defers_its_answer_to_the_next_prompt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
