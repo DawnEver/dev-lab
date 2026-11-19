@@ -41,15 +41,19 @@ MOVED: Final = (
 )
 
 
-def create(client: Client, title: str, body: str, kind: str) -> Issue:
-    """Open issue *title* labelled ``kind:<kind>``; a *kind* outside :data:`KINDS` is refused before any write."""
+def create(client: Client, title: str, body: str, kind: str, labels: Sequence[str] = ()) -> Issue:
+    """Open issue *title* labelled ``kind:<kind>`` and each of *labels*, a missing one created first.
+
+    A *kind* outside :data:`KINDS` is refused before any write.
+    """
     if kind not in KINDS:
         msg = f'an issue is one of {KINDS} (forge issue create --kind <kind>); got {kind!r}'
         raise ValueError(msg)
-    label = f'kind:{kind}'
-    ensure_labels(client, [label])
+    wanted = list(dict.fromkeys([f'kind:{kind}', *labels]))
+    ensure_labels(client, wanted)
     issue = client.issue_create(title, body)
-    add_label(client, issue.number, label)
+    for label in wanted:
+        add_label(client, issue.number, label)
     return issue
 
 
