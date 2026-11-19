@@ -148,7 +148,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     layered = _merge(layered, accounthost.derived(host, family) if accounthost.is_account(parsed) else {})
     if not accounthost.is_account(parsed):
         dev = declared(host_file, family_file)
-        layered = _merge(layered, devprofile.bridge_tables(dev))
+        layered = _merge(layered, devprofile.bridge_tables(dev, live))
         layered = _merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
     if channels := parsed.get('dev', {}).get('channels'):
         layered = _merge(layered, {CHANNELS_TABLE: {'channels': channels}})
