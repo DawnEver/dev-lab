@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import depneeds
+from dev_lab.dev import depneeds, taskbinding
 
 _MANIFEST = (
     '[project]\nname="example"\nversion="0"\n'
@@ -61,6 +61,58 @@ def test_a_need_mapped_to_an_undeclared_extra_is_refused_by_name(tmp_path: Path)
     root = _root(tmp_path, _MANIFEST.replace('simba="simba"', 'simba="nosuch"'))
     with pytest.raises(ValueError, match=r"tool.dev_lab.dep.needs: simba -> 'nosuch' is no declared extra"):
         depneeds.missing_for_part(root, 'simba', installed=lambda _name: True)
+
+
+# --- D79: a task declares the needs its work exercises; dep maps them to extras through the repo's table ---
+
+
+def _ledger(tmp_path: Path, frontmatter_needs: str | None) -> Path:
+    task = tmp_path / 'ledger' / 'work'
+    task.mkdir(parents=True)
+    needs = '' if frontmatter_needs is None else f'needs: {frontmatter_needs}\n'
+    (task / 'TASK.md').write_text(
+        f'---\nname: work\nkind: task\nstatus: open\n{needs}---\n\n# work\n', encoding='utf-8'
+    )
+    return tmp_path / 'ledger'
+
+
+def test_a_task_needing_simba_selects_its_extra_without_an_explicit_flag(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    ledger = _ledger(tmp_path, '[simba, windows]')
+    needs = depneeds.task_needs(ledger, 'work@abc')
+    assert needs == ('simba', 'windows')
+    assert depneeds.extras_for(root, needs) == ('dev', 'simba')
+
+
+def test_a_task_declaring_no_needs_keeps_the_declared_extras(tmp_path: Path) -> None:
+    """PLANTED CONTROL: no needs line -- only what the repo declares, nothing more."""
+    root = _root(tmp_path)
+    assert depneeds.task_needs(_ledger(tmp_path, None), 'work@abc') == ()
+    assert depneeds.extras_for(root, ()) == ('dev',)
+
+
+def test_a_need_the_repo_maps_to_no_extra_adds_none(tmp_path: Path) -> None:
+    """A need with no extra (a platform, an external tool) is a test marker only: it installs nothing."""
+    root = _root(tmp_path)
+    assert depneeds.extras_for(root, ('windows', 'femm')) == ('dev',)
+
+
+def test_a_malformed_needs_line_is_refused_by_name(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match='needs'):
+        depneeds.task_needs(_ledger(tmp_path, 'simba windows'), 'work@abc')
+
+
+def test_dep_selects_the_bound_tasks_extras_and_none_without_a_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dep door reads the session's bound task; with no binding it keeps the default (planted control)."""
+    root = _root(tmp_path)
+    ledger = _ledger(tmp_path, '[simba]')
+    bound = taskbinding.Binding('work@abc', ledger, ledger / '.bindings' / 's.json')
+    monkeypatch.setattr(taskbinding, 'session_binding', lambda _env, **_kw: bound)
+    assert depneeds.bound_task_extras(root, {}) == ('dev', 'simba')
+    monkeypatch.setattr(taskbinding, 'session_binding', lambda _env, **_kw: None)
+    assert depneeds.bound_task_extras(root, {}) is None
 
 
 def test_a_root_with_no_manifest_needs_nothing(tmp_path: Path) -> None:
