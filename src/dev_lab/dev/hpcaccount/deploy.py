@@ -178,7 +178,7 @@ def _tools(
     step: Step, spec: Deployment, home: Path, refused: Refused, *, slurm: Sequence[str], setup: Sequence[str]
 ) -> int:
     """``uv`` and each repo's ``needs``; a repo whose declaration, or a need of which, is refused is refused alone."""
-    emit("[tools] uv and every declared `needs`, by `<tool> --version` in the tick's environment")
+    emit("[tools] uv, rclone and every declared `needs`, by `<tool> --version` in the tick's environment")
     needs: dict[str, tuple[str, ...]] = {}
     for repo in _healthy(spec, refused):
         try:
