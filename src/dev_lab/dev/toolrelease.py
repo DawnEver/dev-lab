@@ -29,6 +29,7 @@ import os
 import platform
 import shutil
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable, Mapping, Sequence
@@ -42,7 +43,9 @@ from lab_commons.temp import TEMP_PREFIX
 __all__ = [
     'RCLONE',
     'RELEASES',
+    'USER_AGENT',
     'ChecksumMismatch',
+    'DownloadRefused',
     'Release',
     'ToolAbsent',
     'UnsupportedPlatform',
@@ -50,11 +53,15 @@ __all__ = [
     'install',
     'main',
     'platform_key',
+    'request',
     'resolve',
     'tool_dir',
 ]
 
 _DOWNLOAD_TIMEOUT_S: Final = 600
+#: The client name every download sends. downloads.rclone.org answers urllib's default ``Python-urllib/<v>`` with
+#: 403 (measured 2026-11-19); a generic tool name is answered 200. It carries no user, host or machine detail.
+USER_AGENT: Final = 'dev-lab-toolrelease'
 
 
 @dataclass(frozen=True)
@@ -121,6 +128,10 @@ class UnsupportedPlatform(LookupError):
     """The pinned release publishes no archive for this platform."""
 
 
+class DownloadRefused(OSError):
+    """The release host answered the download with an HTTP error; the message names the status and the url."""
+
+
 class ChecksumMismatch(ValueError):
     """A download's sha256 is not the pinned one; the download was discarded and nothing ran."""
 
@@ -164,9 +175,30 @@ def resolve(
     raise ToolAbsent(msg)
 
 
-def _download(url: str, to: Path) -> None:
-    with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S) as answer, to.open('wb') as out:  # noqa: S310 -- https, pinned
-        shutil.copyfileobj(answer, out)
+def request(url: str) -> urllib.request.Request:
+    """The GET a download sends: *url* with :data:`USER_AGENT`, never urllib's default client name."""
+    return urllib.request.Request(url, headers={'User-Agent': USER_AGENT})  # noqa: S310 -- https, pinned
+
+
+def _download(url: str, to: Path, *, opener: Callable[..., object] = urllib.request.urlopen) -> None:
+    try:
+        answer = opener(request(url), timeout=_DOWNLOAD_TIMEOUT_S)
+    except urllib.error.HTTPError as why:
+        msg = (
+            f'{url} answered HTTP {why.code} {why.reason} to client {USER_AGENT!r}; nothing was installed. '
+            f'Check the host is reachable from here, then re-run `{door_for_url(url)}`'
+        )
+        raise DownloadRefused(msg) from why
+    with answer as body, to.open('wb') as out:  # type: ignore[attr-defined]
+        shutil.copyfileobj(body, out)  # type: ignore[arg-type]
+
+
+def door_for_url(url: str) -> str:
+    """The install door of the release whose archive *url* is (the generic door when none matches)."""
+    for name, release in RELEASES.items():
+        if url.startswith(release.url.split('{', 1)[0]):
+            return door(name)
+    return 'python -m dev_lab.dev.toolrelease install <tool>'
 
 
 def install(

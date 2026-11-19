@@ -146,6 +146,12 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(_forge('issue', 'comment'), SUBAGENT, 'Commenting on a forge issue through the family door.', _FORGE_WRITE),
     Door(_forge('issue', 'close'), SUBAGENT, 'Closing a forge issue through the family door.', _FORGE_WRITE),
     Door(
+        _forge('issue', 'label'),
+        SUBAGENT,
+        'Adding or removing labels on an existing forge issue through the family door; a missing label is created.',
+        _FORGE_WRITE,
+    ),
+    Door(
         _forge('pr', 'create'),
         MAIN,
         'Opening a draft pull request onto the integration branch through the forge door; the agent does this '

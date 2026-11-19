@@ -122,6 +122,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   ``[tool.dev_lab.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
 * :mod:`dev_lab.dev.nightlycron` -- a workflow's ``nightly`` declaration read as the cron it schedules.
 * :mod:`dev_lab.dev.githooks` -- the TOML hook table, its one runner (``python -m
+* :mod:`dev_lab.dev.keepignored` -- a path a merge or checkout stopped tracking and the repo ignores is kept.
   dev_lab.dev.githooks run <stage>``), and the hook SCRIPTS shipped as a package payload and
   reached by NAME (``... githooks script bump-version``). They are not all hooks: ``with-venv`` is a
   WRAPPER that takes the
@@ -207,6 +208,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   cell, the command, judged by its exit code.
 * :mod:`dev_lab.dev.commandtests` -- the declared producer command, read once and cut to a selection of
   script test paths, so verify measures a JS test through the same command its part runs.
+* :mod:`dev_lab.dev.storage` -- the storage kinds through one resolver: `where`, `render` and `migrate` doors.
 * :mod:`dev_lab.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and
   selector: a judged key is cited, not re-run. It decides no push.
 * :mod:`dev_lab.dev.test_outcomes` -- the pytest plugin writing a Record of per-test cells
@@ -274,6 +276,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   generic patterns (home paths, non-reserved e-mails, chat ids, cloud folder names) plus an optional
   machine-local denylist reported by kind only. Each consumer calls ``scan_tree`` over its own
   checkout from one test. Not re-exported below.
+* :mod:`dev_lab.dev.reword` -- a new message for an UNPUSHED commit, re-committed onto a fresh ``-reworded`` branch.
 * :mod:`dev_lab.dev.security` -- the three scans a head passes before a merge: ruff ``S`` under the
   family's declared ignores, a tracked-credential scan reported by digest only, and the ``uv.lock`` pins
   against OSV. Not re-exported below.
@@ -335,6 +338,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.strays` -- no untracked, unclaimed file in a checkout.
 * :mod:`dev_lab.dev.retiredfiles` -- files a retirement declared gone: each checkout's own rows, never the leaf's.
 * :mod:`dev_lab.dev.scratch` -- scratch is visible to git, never committed; `clear` empties it, a Stop hook asks for it.
+* :mod:`dev_lab.dev.scratchtree` -- `worktrees --scratch` makes a throwaway tree, `--discard` removes it now.
 * :mod:`dev_lab.dev.reportplace` -- no agent-written Markdown under ``output/``; a written report is a memory entry.
 * :mod:`dev_lab.dev.datedlog` -- one dated log layout; the base has NO DEFAULT (four repos, four answers).
 * :mod:`dev_lab.dev.shards` -- a partition, the AND over a shard set, and a required population FLOOR.
@@ -469,7 +473,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reviewturn` -- the review is the last gate: the merge decision says a head waits or is due.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
 * :mod:`dev_lab.dev.forgerunshow` -- ``forge run show`` (what a cluster run published), ``forge run supersede``.
-* :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
+* :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited, deleted or moved
+  but by the shapes it names (an approved redacting rename among them).
 * :mod:`dev_lab.dev.memoryentry` -- one memory entry's text: its shape, a merge's citations, non-narrative edits.
 * :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
 * :mod:`dev_lab.dev.rendergoldens` -- every family render of the declaration fixtures, pinned byte for byte as goldens.
@@ -565,6 +570,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
+* :mod:`dev_lab.dev.disposable` -- the DISPOSABLE declaration of a throwaway worktree, in its git admin directory.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
 * :mod:`dev_lab.dev.boxmigrate` -- LEDGER-MIGRATES-ON-INSTALL: each lab-commons install door migrates the box ledger.
 * :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
@@ -597,6 +603,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.sessionprs` -- TASK-HEARS-ITS-FORGE-EVENTS: every PR a session opened or pushed, in any repository.
 * :mod:`dev_lab.dev.sessionpoll` -- TASK-HEARS-ITS-FORGE-EVENTS: one status read of a session's open PRs.
 * :mod:`dev_lab.dev.forgefeed` -- TASK-HEARS-ITS-FORGE-EVENTS: the one hearer, one issues read per repository per tick.
+* :mod:`dev_lab.dev.forgewaves` -- a break-glass wave awaiting review, told once per session through the feed.
 * :mod:`dev_lab.dev.forgethreads` -- the threads a task hears: the issues-since read, its cursor, own comments.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;

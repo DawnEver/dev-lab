@@ -211,6 +211,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
     'privatemarkers',
+    'reword',  # ORIGINAL: the door between PRIVATE-MARKERS and GIT-COMMIT-AMEND (2026-11-19)
     'profile',
     'quantity_values',
     'reports',
@@ -339,6 +340,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
     'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
     'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
+    'forgewaves',  # ORIGINAL: an unacknowledged break-glass wave reaches each session once (ruling 2026-11-19)
     'venvfollow',
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
@@ -397,6 +399,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'dataconsumers',
     # ORIGINAL: user ruling 2026-11-11, a data repo's tests/base is its consumers' tests; no consumer held it.
     'verifiedby',
+    # ORIGINAL: D80 (2026-11-18), an untracked-and-ignored path is kept across a tree move; no consumer held it.
+    'keepignored',
     # ORIGINAL: D78 (2026-11-18), a part's needs refused by name when their extra is missing; no consumer held it.
     'depneeds',
     # ORIGINAL: D76 (2026-11-18), a pinned, sha256-checked tool installed user-space; no consumer held one.
