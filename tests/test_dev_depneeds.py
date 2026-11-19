@@ -113,3 +113,8 @@ def test_dep_selects_the_bound_tasks_extras_and_none_without_a_binding(
     assert dep._task_extras(root, {}) == ('dev', 'simba')
     monkeypatch.setattr(taskbinding, 'session_binding', lambda _env, **_kw: None)
     assert dep._task_extras(root, {}) is None
+
+def test_a_root_with_no_manifest_needs_nothing(tmp_path: Path) -> None:
+    """A tree with no pyproject declares no needs, so no part is refused for a missing extra."""
+    assert depneeds.declared_needs(tmp_path) == {}
+    assert depneeds.missing_for_part(tmp_path, 'base') is None
