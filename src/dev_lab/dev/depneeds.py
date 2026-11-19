@@ -30,6 +30,8 @@ from typing import Final
 
 from lab_commons.hpc.needsets import BASE
 
+__all__ = ['declared_needs', 'missing_for_part']
+
 #: A requirement's distribution name: the leading identifier, before extras, versions, URLs or markers.
 _NAME: Final = re.compile(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
 
@@ -43,7 +45,11 @@ def _installed(name: str) -> bool:
 
 
 def _table(root: Path) -> tuple[Mapping[str, object], Mapping[str, list[str]]]:
-    manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    """The repo's ``[tool.dev_lab.dep]`` and its extras; a root with no manifest declares neither."""
+    path = root / 'pyproject.toml'
+    if not path.is_file():
+        return {}, {}
+    manifest = tomllib.loads(path.read_text(encoding='utf-8'))
     dep = manifest.get('tool', {}).get('dev_lab', {}).get('dep', {})
     return dep, manifest.get('project', {}).get('optional-dependencies', {})
 

@@ -61,3 +61,9 @@ def test_a_need_mapped_to_an_undeclared_extra_is_refused_by_name(tmp_path: Path)
     root = _root(tmp_path, _MANIFEST.replace('simba="simba"', 'simba="nosuch"'))
     with pytest.raises(ValueError, match=r"tool.dev_lab.dep.needs: simba -> 'nosuch' is no declared extra"):
         depneeds.missing_for_part(root, 'simba', installed=lambda _name: True)
+
+
+def test_a_root_with_no_manifest_needs_nothing(tmp_path: Path) -> None:
+    """A tree with no pyproject declares no needs, so no part is refused for a missing extra."""
+    assert depneeds.declared_needs(tmp_path) == {}
+    assert depneeds.missing_for_part(tmp_path, 'base') is None
