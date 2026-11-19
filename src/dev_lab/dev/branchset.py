@@ -180,13 +180,17 @@ def declared_branchset(root: Path) -> BranchSet:
         BranchSetNotDeclared: no readable manifest, no table, no trunk, or sessions not a list of names.
 
     """
-    manifest = root / 'pyproject.toml'
+    from dev_lab.dev.familyrepos import manifest_text  # noqa: PLC0415 -- the family reader loads the machine file
+
     try:
-        text = manifest.read_text(encoding='utf-8')
+        text, origin = manifest_text(root)
     except OSError as exc:
-        msg = f'{manifest} is not a readable TOML manifest: {exc}'
+        msg = f'{root / "pyproject.toml"} is not a readable TOML manifest: {exc}'
         raise BranchSetNotDeclared(msg) from exc
-    return branchset_from(text, str(manifest))
+    if not text:
+        msg = f'{origin} is not a readable TOML manifest: it is missing'
+        raise BranchSetNotDeclared(msg)
+    return branchset_from(text, origin)
 
 
 def branchset_at(root: Path, rev: str) -> BranchSet:

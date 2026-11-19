@@ -44,8 +44,10 @@ __all__ = [
     'RULE_ID',
     'census',
     'clone_refusal',
+    'declaration',
     'listing',
     'main',
+    'manifest_text',
     'notice',
 ]
 
@@ -130,6 +132,43 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     except (OSError, ValueError):
         return None
     return '\n'.join(lines) or None
+
+
+def declaration(remote: str, live: Mapping[str, Any]) -> str:
+    """The ``[tool.dev_lab.*]`` text the family row for *remote* implies (``''`` when no row names it).
+
+    A repo with no manifest of its own (a data repo) is declared once, by its family row: its ``branch`` is both
+    its trunk and its integration branch; the branch set's other keys keep their family defaults.
+    """
+    wanted = _key(remote)
+    for row in _family(live).values():
+        branch = str(row.get('branch', '')).strip()
+        if branch and _key(str(row.get('remote', ''))) == wanted:
+            return (
+                f'[tool.dev_lab.branchset]\ntrunk = "{branch}"\nsessions = []\n\n'
+                f'[tool.dev_lab.integrator]\nintegration = "{branch}"\n'
+            )
+    return ''
+
+
+def manifest_text(root: Path) -> tuple[str, str]:
+    """*root*'s ``pyproject.toml`` text and name; with none, its family row's :func:`declaration` and its source.
+
+    No manifest and no row: ``''`` and a name pointing at both doors, so each reader refuses naming them.
+    """
+    manifest = root / 'pyproject.toml'
+    if manifest.is_file():
+        return manifest.read_text(encoding='utf-8'), str(manifest)
+    from dev_lab.dev.checkout import git_out  # noqa: PLC0415 -- only a repo with no manifest asks git
+
+    remote = (git_out(root, 'remote', 'get-url', 'origin') or '').strip()
+    try:
+        text = declaration(remote, _live(None)) if remote else ''
+    except (OSError, ValueError):
+        text = ''
+    if text:
+        return text, f'[{FAMILY_TABLE}] row for {remote} in {machineconfig.config_path()}'
+    return '', f'{manifest} (or a [{FAMILY_TABLE}] row for this repo in the config source)'
 
 
 def _live(machine: Path | None) -> dict[str, Any]:
