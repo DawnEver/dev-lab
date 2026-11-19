@@ -8,7 +8,9 @@ leaves it by itself. Two copies of that fact -- the card and an issue -- was the
 ``forge issue create --kind <kind>`` (:func:`create`) labels the issue ``kind:<kind>``; any other kind is
 refused by the parser, naming the three. ``python -m dev_lab.dev.issuekind retire-notices [--apply]``
 (:func:`main`) is the ONE migration of the issues written before the ruling: each open issue titled as a
-retired alarm kind (:data:`RETIRED_PREFIXES`) is closed with one comment naming where the event lives now.
+retired alarm kind (:data:`RETIRED_PREFIXES`) is closed with one comment naming where the event lives now, and
+each open request a host already settled (labelled :data:`~dev_lab.dev.forgerequesthost.DONE_LABEL`, user ruling
+2026-11-19: a settled request closes) with :data:`SETTLED`. An unsettled request is a live need and stays open.
 Without ``--apply`` it prints the plan and writes nothing.
 """
 
@@ -24,11 +26,13 @@ from lab_commons.log import emit
 
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgelabels import add_label, ensure_labels
+from dev_lab.dev.forgerequesthost import DONE_LABEL
+from dev_lab.dev.forgeschedule import labelled_issues
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, Issue
 
-__all__ = ['KINDS', 'RETIRED_PREFIXES', 'create', 'main', 'retire_notices']
+__all__ = ['KINDS', 'MOVED', 'RETIRED_PREFIXES', 'SETTLED', 'create', 'main', 'retire_notices']
 
 #: The three kinds an issue may be; the label is ``kind:<kind>``.
 KINDS: Final = ('need', 'defect', 'decision')
@@ -38,6 +42,13 @@ RETIRED_PREFIXES: Final = ('integration: ', 'starved: ')
 MOVED: Final = (
     'Closed by the one-time migration (user ruling 2026-11-14): routine notices are no longer issues. '
     'This event is an alarm on the host card -- `python -m dev_lab.dev.forge queue` -- re-derived each tick.'
+)
+
+
+#: The comment a settled request still open is closed with.
+SETTLED: Final = (
+    'Closed by the one-time migration (user ruling 2026-11-19): a request a host settled closes; its result is above '
+    "and on the sha's status. What is still pending is in `python -m dev_lab.dev.forge queue`."
 )
 
 
@@ -59,19 +70,22 @@ def create(client: Client, title: str, body: str, kind: str, labels: Sequence[st
 
 def retire_notices(client: Client, *, apply: bool) -> list[Issue]:
     """The open issues titled as a retired alarm kind; with *apply*, each is commented and closed."""
-    found = [one for one in client.issue_list(state='open', limit=1000) if one.title.startswith(RETIRED_PREFIXES)]
+    listed = client.issue_list(state='open', limit=1000)
+    notices = [one for one in listed if one.title.startswith(RETIRED_PREFIXES)]
+    settled_numbers = {int(raw['number']) for raw in labelled_issues(client, DONE_LABEL)}
+    settled = [one for one in listed if one.number in settled_numbers and one not in notices]
     if apply:
-        for one in found:
-            client.issue_comment(one.number, MOVED)
+        for one, comment in [*((n, MOVED) for n in notices), *((n, SETTLED) for n in settled)]:
+            client.issue_comment(one.number, comment)
             client.issue_close(one.number)
-    return found
+    return [*notices, *settled]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``retire-notices [--apply] [--root R]``: the one migration; prints each issue and what was done."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.issuekind')
     verbs = parser.add_subparsers(dest='verb', required=True)
-    retire = verbs.add_parser('retire-notices', help='close the open issues the retired alarm kinds wrote')
+    retire = verbs.add_parser('retire-notices', help='close retired-alarm issues and settled requests')
     retire.add_argument('--apply', action='store_true', help='comment and close; without it nothing is written')
     retire.add_argument('--root', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
@@ -79,7 +93,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     found = retire_notices(client, apply=args.apply)
     tail = '' if args.apply else ' -- dry run: pass --apply to close them'
     lines = [f'{"closed" if args.apply else "would close"} #{one.number} {one.title}' for one in found]
-    emit('\n'.join([*lines, f'{len(found)} retired notice issue(s){tail}']))
+    emit('\n'.join([*lines, f'{len(found)} retired notice or settled request issue(s){tail}']))
     return 0
 
 

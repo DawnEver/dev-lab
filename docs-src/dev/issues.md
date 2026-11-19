@@ -78,8 +78,9 @@ work_max_idle_days = 14      # close a WORK issue not updated for longer than th
 - A comment carrying a hidden `<!-- lab-commons:<kind>... -->` marker whose kind is no `forgepulls.Marker`
   member is DELETED, always: its writer is retired and nothing else will touch it. The writers take their
   kind from that enum, so the set of live kinds is the writers' own.
-- An `integration: <branch> is BLOCKED on a red part` issue is kept by `forge serve`'s prompt pass
-  (`forgeroute.reconcile`), not by tidy: a row the queue no longer derives closes its issue on the next tick.
+- An integration row (a READY lane, a PROMOTE-able tip, a BLOCKED red) is an alarm on the host card, never an
+  issue; `python -m dev_lab.dev.issuekind retire-notices [--apply]` closes the issues older kits wrote, and the
+  open requests a host already settled.
 - Everything is said in ONE summary comment on the hosts issue; a closed issue reopens to undo.
 - lab-commons declares no table: it runs on the defaults. A downstream repo declares the table only to tune
   a value; the keys are refused by name when unknown.
@@ -91,7 +92,7 @@ work_max_idle_days = 14      # close a WORK issue not updated for longer than th
 | `priority:user` | the scheduler | adds the declared boost to a PR or issue |
 | `priority:<n>` | the scheduler | adds `n` |
 | `forge:request` | the scheduler | makes the issue a queued request (`producer = "<declared name>"` and `sha = "<40-hex>"` in its body) |
-| `request:done` | serve | a request whose producer exited 0; its requester closes it to sign off |
+| `request:done` | serve | a request whose producer exited 0; the host closes it as it labels it |
 | `keep` | the artefact store | pins its sha's artefacts past retention ([artefacts](artefacts.md)) |
 
 No other label carries state.
