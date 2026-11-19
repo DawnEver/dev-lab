@@ -13,8 +13,8 @@ import pytest
 from dev_lab.dev import ciworkflows
 from dev_lab.dev.ciworkflows import RENDERED_BY, STAMP, drift, main, write
 
-#: An explicit Actions producer (dev_lab.dev.producers; absent reads the same); these render an Actions repo.
-ACTIONS_REPO = '[tool.dev_lab.protection]\nproducer = "actions"\n'
+#: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
+ACTIONS_REPO = ''
 
 
 @pytest.fixture

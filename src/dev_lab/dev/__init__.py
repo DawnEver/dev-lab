@@ -376,10 +376,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgedemand` -- SHARED DEMAND: the forge's run records folded into the learned cache.
 * :mod:`dev_lab.dev.forgeclaim` -- a claim is a pending status with a lease; the earliest wins the race.
 * :mod:`dev_lab.dev.forgecoalesce` -- one run per coalesced ref and part in flight; the tip waits behind it.
-* :mod:`dev_lab.dev.producers` -- each repo's ONE producer (``[tool.dev_lab.protection] producer``: ``actions`` or
-  ``hpc``) and its ``optional_needs`` parts, never a merge condition; every consumer derives from it.
-* :mod:`dev_lab.dev.producercheck` -- refuses what contradicts a producer: an HPC repo's GitHub workflow, an Actions
-  repo without its ``ci.yml``, a host ``[serve]`` off an HPC account, a required part nothing produces.
+* :mod:`dev_lab.dev.roles` -- who performs each forge role (tests, review, merge, promote, prune) of a repo: an
+  executor KIND (``ci``, ``hpc``, ``host``) the family layer binds in ``[roles.<forge>]``, never the repo; and its
+  ``optional_needs`` parts, never a merge condition; every consumer derives from it.
+* :mod:`dev_lab.dev.rolecheck` -- refuses what contradicts the binding: a retired placement, a workflow nothing
+  renders, a CI-tested repo without its ``ci.yml``, a host ``[serve]`` off an HPC account, a required part nothing
+  produces.
 * :mod:`dev_lab.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`dev_lab.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
 * :mod:`dev_lab.dev.forgephases` -- where a forge read's time went: forge HTTP, git fetch, local git, compute.
@@ -470,7 +472,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_gate` -- the one review gate merge, merge-ready and Break-Glass read.
 * :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review prepare`` / ``judge``: the judge host's review of a bundle.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
-* :mod:`dev_lab.dev.reviewturn` -- the review is the last gate: the merge decision says a head waits or is due.
+* :mod:`dev_lab.dev.reviewturn` -- the review runs last and is advisory: the merge decision says a head waits or is due.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
 * :mod:`dev_lab.dev.forgerunshow` -- ``forge run show`` (what a cluster run published), ``forge run supersede``.
 * :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited, deleted or moved

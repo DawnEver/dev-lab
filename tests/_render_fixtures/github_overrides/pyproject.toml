@@ -4,6 +4,3 @@ name = "overrides"
 
 [tool.dev_lab.ci."ci.yml".jobs.review.permissions]
 issues = "read"
-
-[tool.dev_lab.protection]
-producer = "actions"

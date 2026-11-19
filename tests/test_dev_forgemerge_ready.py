@@ -8,9 +8,10 @@ from typing import Any
 
 import pytest
 from _forge_state import StateForge
+from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
 from test_dev_forgemerge import _MANIFEST, _work
 
-from dev_lab.dev import forgecli, forgemerge, forgemergecall, forgemergeready
+from dev_lab.dev import forgecli, forgemergecall, forgemergeready
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT, NOT_PARTS
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -144,15 +145,15 @@ def test_on_github_a_created_pr_asks_for_native_auto_merge_as_a_merge_commit_and
     assert tea.sent == []
 
 
-_CI_MERGER = f'[tool.dev_lab.ci."{forgemerge.CI_MERGER}"]\n'
-
-
-def test_on_gitea_the_merge_job_merges_a_ready_pr_only_where_the_repo_declares_it(tmp_path: Path) -> None:
-    """P3: Gitea's merge job runs the same decision and merges; PLANTED CONTROL: undeclared, the job only posts."""
+def test_on_gitea_the_merge_job_merges_a_ready_pr_only_where_merge_is_bound_to_ci(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3: Gitea's merge job runs the same decision and merges; PLANTED CONTROL: merge on hpc, the job only posts."""
     work, forge, number, head = _pr(tmp_path)
+    carry(monkeypatch, HPC_REVIEWED)
     ready(work, forge, number)
-    assert forge.merges == [], 'undeclared: the serve tick merges it'
-    (work / 'pyproject.toml').write_text(_MANIFEST + _INTEGRATOR + _CI_MERGER, encoding='utf-8')
+    assert forge.merges == [], 'merge bound to hpc: the serve tick merges it'
+    carry(monkeypatch, EVERY_CI)
     said = ready(work, forge, number)
     [(merged, body)] = forge.merges
     assert merged == number
@@ -184,8 +185,11 @@ def _hub_pr(tmp_path: Path, *, green: bool = True) -> tuple[Path, StateForge, in
     return work, forge, number, head
 
 
-def test_on_github_a_ready_pr_is_merged_by_the_job_posting_ready_pinned_to_the_judged_head(tmp_path: Path) -> None:
+def test_on_github_a_ready_pr_is_merged_by_the_job_posting_ready_pinned_to_the_judged_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Issue #15: GitHub refuses auto-merge on an already-mergeable PR, so the job that posts ready merges it."""
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, head = _hub_pr(tmp_path)
     hub = _Asked(_HUB, {'GET /repos/o/r/pulls/7': {'node_id': 'PR_n7'},
                         'POST /graphql': {'errors': [{'message': 'Pull request is in unstable status'}]}})  # fmt: skip
@@ -211,6 +215,7 @@ def test_on_github_a_red_decision_is_never_merged(tmp_path: Path) -> None:
 def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_said(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, head = _hub_pr(tmp_path)
     original = forge.pr_view
 
@@ -248,6 +253,7 @@ def test_a_merged_pr_whose_head_branch_is_already_gone_is_merged(
 
     The door's delete got 422 and said NOT merged, exiting non-zero -- a declaration that lies.
     """
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, _head = _hub_pr(tmp_path)
     _refusing_deletes(forge, monkeypatch, code, said)
     line = ready(work, forge, number)
@@ -263,6 +269,7 @@ def test_a_head_branch_delete_refused_for_another_reason_still_surfaces(
 
     The door says it as merged, because the forge holds the PR merged.
     """
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, _head = _hub_pr(tmp_path)
     _refusing_deletes(forge, monkeypatch, 422, 'Reference update failed')
     with pytest.raises(ForgeCallFailed, match='Reference update failed'):
@@ -281,6 +288,7 @@ def test_a_failed_merge_call_on_a_pr_the_forge_holds_merged_is_said_merged(
 
     PLANTED CONTROL: the moved-head test above, whose PR stays unmerged, is still NOT merged.
     """
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, _head = _hub_pr(tmp_path)
 
     def lost_answer(_client: Client, n: int, **_kwargs: object) -> None:
@@ -300,6 +308,7 @@ def test_a_ready_pr_the_forge_refuses_to_merge_fails_the_tick_and_the_prs_after_
 
     PLANTED CONTROL: the second PR, which the forge merges, is merged in the same tick.
     """
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, first, head = _hub_pr(tmp_path)
     second = forge.add_pull('pr/y', 'integrate/main', sha=head)
     real, calls = forgemergeready.merge, []
@@ -350,8 +359,9 @@ def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monk
 # --- INTERNAL-ONLY (user ruling 2026-11-05): only an internal PR is merged by the forge ----------------------------
 
 
-def test_an_internal_pr_over_its_dollar_budget_merges_warned(tmp_path: Path) -> None:
+def test_an_internal_pr_over_its_dollar_budget_merges_warned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The reviewing host's trusted record waives the review; the merge says it merged unreviewed."""
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, head = _hub_pr(tmp_path)
     status_post(forge, head, context='tests/review', state='pending', description=f'{UNREVIEWED_STATUS} budget')
     forge.issue_comment(number, unreviewed_line('review budget reached: 11.00/10.00 USD'))
@@ -391,11 +401,14 @@ def test_on_gitea_a_review_that_did_not_run_is_ready_warned_never_waiting_on_pen
         assert 'WARNED -- its advisory review: tests/review is pending: not reviewed' in description
 
 
-def test_no_review_finding_holds_the_merge_and_a_security_one_is_reported(tmp_path: Path) -> None:
+def test_no_review_finding_holds_the_merge_and_a_security_one_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """User rulings 2026-11-06 and 2026-11-11/12: the review is advice; even its security finding merges WARNED.
 
     The scanner's ``tests/security`` (forgesecurity) is the deterministic gate, not the AI review.
     """
+    carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
     work, forge, number, head = _hub_pr(tmp_path)
     ready(work, forge, number)
     assert _merge_ready(forge, head)[0] == 'success', 'a success carrying HIGH advice is ready'
@@ -481,3 +494,9 @@ def test_a_ready_status_without_a_message_row_says_messages_are_not_declared(tmp
     state, description = _merge_ready(forge, head)
     assert state == 'success'
     assert description == f'{READY} ({MESSAGES_NOT_DECLARED})'
+
+
+@pytest.fixture(autouse=True)
+def _bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Gitea repo merged by its HPC executor (planted); the CI merge tests carry EVERY_CI."""
+    carry(monkeypatch, HPC_REVIEWED)

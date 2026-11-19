@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 from _forge_fake import git_out, run_git
+from _roles_fixtures import CI_REPO, carry
 
 from dev_lab.dev import forgereview_bundle as fb
 from dev_lab.dev import forgereview_pointer as fp
@@ -37,12 +38,12 @@ from dev_lab.dev.forgeapp import App
 from dev_lab.dev.forgecontexts import JUDGE_CHECK
 from dev_lab.dev.forgereview import review_tick
 from dev_lab.dev.forgereview_claim import DUE
-from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, JUDGE, Review, command_for, review_from
+from dev_lab.dev.forgereview_declared import FAMILY_BUNDLE, Review, command_for, review_from
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewbundle import BundleRefused
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 
-_JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
+_JUDGED = '[tool.dev_lab.review]\njudge_login = "review-bot"\n'
 _JUDGE_TOML = '[tool.dev_lab.integrator]\nintegration = "main"\n' + _JUDGED
 _PREPARER = _JUDGE_TOML + 'preparers = ["prep-bot"]\n'
 _RUNTIMES = {'ai_lab': {'python': 'py'}}
@@ -683,25 +684,19 @@ def test_a_read_failure_posts_nothing_and_the_next_pr_is_still_judged(prepared: 
     assert forge.verdicts(6) == []
 
 
-def test_a_serve_repo_is_never_judged(prepared: Prepared) -> None:
-    forge = prepared.forge
-    forge.manifest = _JUDGE_TOML.replace('where = "judge"', 'where = "serve"')
-    said, seen = _judged(forge, _findings(None))
-    assert (seen, forge.verdicts()) == ([], [])
-    assert 'reviews no PR' in said[0]
-
-
-def test_a_judge_repo_is_never_served(tmp_path: Path) -> None:
-    review = Review(where=JUDGE, judge_login='review-bot')
+def test_a_judge_repo_is_never_served(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review bound to a host (a judge): the hpc tick reviews nothing; PLANTED CONTROL in test_dev_roles."""
+    carry(monkeypatch, CI_REPO)
+    review = Review(judge_login='review-bot')
     assert review_tick(tmp_path, object(), review, base='main', host='h') == ()  # type: ignore[arg-type]
 
 
-def test_the_declaration_names_one_mode_and_a_bundle_command_that_reads_the_bundle() -> None:
-    assert review_from(_JUDGED, 'x').where == JUDGE
-    with pytest.raises(ValueError, match='judge_login'):
+def test_the_declaration_names_the_judge_and_a_bundle_command_that_reads_the_bundle() -> None:
+    assert review_from(_JUDGED, 'x').judge_login == 'review-bot'
+    with pytest.raises(ValueError, match='judge_app'):
+        review_from('[tool.dev_lab.review]\njudge_login = "a"\njudge_app = 1\n', 'x')
+    with pytest.raises(ValueError, match='where is retired: a repo declares no placement'):
         review_from('[tool.dev_lab.review]\nwhere = "judge"\n', 'x')
-    with pytest.raises(ValueError, match='where'):
-        review_from('[tool.dev_lab.review]\nwhere = "both"\n', 'x')
     with pytest.raises(ValueError, match='bundle'):
         review_from('[tool.dev_lab.review]\nbundle = ["reviewer"]\n', 'x')
     with pytest.raises(ValueError, match='redeclares'):
@@ -857,3 +852,9 @@ def test_a_login_declaration_is_never_judged_by_an_app(on_github: Prepared) -> N
 @pytest.mark.parametrize('half', [['--app-id', '5619495'], ['--app-key-file', 'k.pem']])
 def test_the_judge_cli_never_takes_half_an_app(tmp_path: Path, half: list[str]) -> None:
     assert fb.main(['judge', '--url', 'https://github.com/o/r', *half], cwd=tmp_path) == 2
+
+
+@pytest.fixture(autouse=True)
+def _judge_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos' review is bound to a host (the judge): the family binds it there (planted)."""
+    carry(monkeypatch, CI_REPO)

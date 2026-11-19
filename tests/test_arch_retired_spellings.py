@@ -73,8 +73,30 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     'serve = false': (
-        "the repo's own [tool.dev_lab.protection] producer (dev_lab.dev.producers); a host serves only hpc repos",
-        'user ruling 2026-11-16: a repo is produced by forge Actions or by the HPC, declared once in the repo',
+        "the family layer's [roles.<forge>] binding (dev_lab.dev.roles); a host serves the repos bound to its grant",
+        'user ruling 2026-11-16, re-placed by D73 2026-11-18: who performs each role is a fact of the family instance',
+    ),
+    **dict.fromkeys(
+        ('dev_lab.dev.producers', 'producercheck', 'producer_from', 'producer_at', 'UndeclaredProducer'),
+        (
+            'dev_lab.dev.roles (roles_for, roles_at, Unbound) and dev_lab.dev.rolecheck',
+            'toolchain D73 2026-11-18: the family layer binds each role to an executor kind; a repo declares none',
+        ),
+    ),
+    **dict.fromkeys(
+        ('ci_merges', 'CI_MERGER'),
+        (
+            "roles_at(root).kind('merge') == 'ci' (dev_lab.dev.roles)",
+            'toolchain D73 2026-11-18: the merge.yml opt-in is the family binding merge = "ci"',
+        ),
+    ),
+    'SERVED_KEY': (
+        'ciworkflows.ROLE_KEY / BY_KEY: a job renders where the family binds its role to its kind (role_jobs)',
+        'toolchain D73 2026-11-18: one render rule by role replaces the judge-only served mark',
+    ),
+    '[tool.dev_lab.protection] producer': (
+        "the family layer's [roles.<forge>] (dev_lab.dev.roles.retired_placement refuses the key by name)",
+        'toolchain D73 2026-11-18: a repo declares no placement, migrated once',
     ),
     **dict.fromkeys(
         ('check-case-conflict', 'check-json', 'check-merge-conflict', 'check-toml'),

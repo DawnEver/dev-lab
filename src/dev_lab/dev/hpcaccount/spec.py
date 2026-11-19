@@ -28,7 +28,7 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
-from dev_lab.dev.producers import HPC, UndeclaredProducer, producer_from
+from dev_lab.dev.roles import HPC, ROLES, Unbound, roles_at
 from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
@@ -88,9 +88,9 @@ _ROLE_NAME: Final = re.compile(r'[a-z][a-z0-9-]*')
 class Repo:
     """One declared repository: checkout name, HTTPS remote, followed branch.
 
-    Whether its queue is served here is NOT declared here: it is the repo's own ``[tool.dev_lab.protection]
-    producer`` (:func:`serves_here`, user ruling 2026-11-16) -- an ``actions`` repo is checked out, installed and
-    never served; the kit's own tick still refreshes the kit (the one writer of that checkout). ``verify`` names
+    Whether its queue is served here is NOT declared here: it is the family's roles binding
+    (:func:`serves_here`, D73) -- a repo with no role bound to this grant role is checked out, installed and never
+    served; the kit's own tick still refreshes the kit (the one writer of that checkout). ``verify`` names
     the status contexts of this repo the account is the DEFAULT producer of (HPC account affinity,
     :mod:`dev_lab.dev.forgeaffinity`): ``verify = ["tests/*"]`` on a verify account's row.
     """
@@ -183,9 +183,8 @@ def _repo_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> Sequence[Mappin
     """*rows*, refused naming *path* when one still declares the retired ``serve`` flag."""
     if named := [str(row.get('name', '?')) for row in rows if 'serve' in row]:
         msg = (
-            f'{path}: [deploy] repos {", ".join(named)} declare serve, which is retired: a repo is served where its '
-            f'own [tool.dev_lab.protection] producer = "{HPC}" (dev_lab.dev.producers, user ruling 2026-11-16) -- '
-            'delete the key'
+            f'{path}: [deploy] repos {", ".join(named)} declare serve, which is retired: a repo is served where the '
+            'family binds one of its roles to the grant role of this account (dev_lab.dev.roles, D73) -- delete the key'
         )
         raise ValueError(msg)
     return rows
@@ -304,9 +303,9 @@ def cron_lines(
 
 
 def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
-    """The repos this account TICKS: every declared one, each refreshed and served where it declares the HPC.
+    """The repos this account TICKS: every declared one, each refreshed and served where a role is bound here.
 
-    A tick serves a repo only where its own declaration names the HPC its producer (:func:`serves_here`).
+    A tick serves a repo only where the family binds one of its roles to this account (:func:`serves_here`).
 
     Only an account whose role SERVES ticks -- *serves* as the workstation's role table says, else the shipped
     default for its role (:data:`dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`); undeclared ticks nothing.
@@ -317,43 +316,46 @@ def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
 
 
 def served(spec: Deployment, home: Path) -> frozenset[str]:
-    """The repos this account serves (:func:`serves_here`); a malformed producer is not (its tick names why)."""
+    """The repos this account serves (:func:`serves_here`); malformed roles are not (its tick names why)."""
     found = set()
     for repo in spec.repos:
         try:
             if serves_here(spec, home, repo):
                 found.add(repo.name)
-        except UndeclaredProducer:
+        except Unbound:
             continue
     return frozenset(found)
 
 
 def unserved(spec: Deployment, home: Path) -> frozenset[str]:
-    """The repos whose checkout declares a producer other than the HPC: never served here, never given the token."""
+    """The repos with no role bound to this account: never served here, never given the token."""
     found = set()
     for repo in spec.repos:
         pyproject = checkout_of(spec, home, repo) / 'pyproject.toml'
         try:
             if pyproject.is_file() and not serves_here(spec, home, repo):
                 found.add(repo.name)
-        except UndeclaredProducer:
+        except Unbound:
             continue
     return frozenset(found)
 
 
 def serves_here(spec: Deployment, home: Path, repo: Repo) -> bool:
-    """Whether this account serves *repo*'s queue: its checkout declares ``producer = "hpc"``; not yet cloned, no.
+    """Whether this account serves *repo*'s queue: the family binds one of its roles to this account's grant role.
 
-    The repo's own declaration decides (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16), never this file.
+    The family's binding decides (:mod:`dev_lab.dev.roles`, D73), never this file; not yet cloned, no.
 
     Raises:
-        UndeclaredProducer: the checkout declares a malformed producer; the message names the key.
+        Unbound: the family binds the repo's roles nowhere, or malformed; the message names the table.
 
     """
-    pyproject = checkout_of(spec, home, repo) / 'pyproject.toml'
-    if not pyproject.is_file():
+    checkout = checkout_of(spec, home, repo)
+    if not (checkout / 'pyproject.toml').is_file():
         return False
-    return producer_from(pyproject.read_text(encoding='utf-8'), str(pyproject)) == HPC
+    roles = roles_at(checkout)
+    return any(  # a carried binding names kinds only (''): any hpc executor
+        roles.kind(role) == HPC and roles.of(role).grant_role in {spec.role, ''} for role in ROLES
+    )
 
 
 def merge_crontab(current: str, lines: Sequence[str]) -> str:

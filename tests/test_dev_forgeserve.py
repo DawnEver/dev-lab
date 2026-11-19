@@ -19,6 +19,7 @@ import pytest
 from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
+from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
 from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused, hold
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
@@ -1126,10 +1127,13 @@ def test_every_repo_wide_step_reads_through_one_pass_memo_and_the_review_through
     assert given[0].memo is not None
 
 
-def test_a_repo_whose_ci_merges_is_never_closed_or_swept_by_serve(monkeypatch, tmp_path: Path) -> None:
-    """P3: the merge job closes landed PRs and sweeps; the PLANTED CONTROL above runs both on the poller."""
+def test_a_repo_whose_prune_is_bound_to_ci_is_never_closed_swept_or_pruned_by_serve(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """D73: prune bound to ci -- its CI closes, sweeps and prunes; the PLANTED CONTROL above runs them here."""
     ran: list[str] = []
-    (tmp_path / 'pyproject.toml').write_text(_DECLARED + '[tool.dev_lab.ci."merge.yml"]\n', encoding='utf-8')
+    carry(monkeypatch, EVERY_CI)
+    (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
     _serve(
         monkeypatch,
         tmp_path,
@@ -1142,7 +1146,7 @@ def test_a_repo_whose_ci_merges_is_never_closed_or_swept_by_serve(monkeypatch, t
         observe=lambda *_a, **_k: ran.append('observe') or [],
         drafts=lambda *_a, **_k: ran.append('drafts') or [],
     )
-    assert ran == ['prune', 'records', 'tidy', 'observe', 'drafts']
+    assert ran == ['tidy', 'observe', 'drafts']
 
 
 def test_a_routine_notice_is_an_alarm_on_the_card_and_never_an_issue(tmp_path: Path, monkeypatch) -> None:
@@ -1748,3 +1752,9 @@ def test_an_os_row_reaching_the_producer_is_read_as_its_part(monkeypatch, tmp_pa
         [Produced('r', 'a' * 40, 'femm@windows', (), ProducerExit.UNREACHABLE, outage=True)]
     )
     assert demoted == [sorted({'femm'} & forgeservesteps.CHECKS.keys())]
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REVIEWED)

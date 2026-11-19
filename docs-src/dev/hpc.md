@@ -53,8 +53,8 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
 - **The crontab line**, per served repo and the kit, every `[schedule] tick_minutes` (a divisor of 60,
   default 5; the host card is judged stale against the same number) at a minute offset derived from the
   account's home, so accounts never tick in lockstep. Each tick refreshes its repo and serves its queue only
-  where the repo itself declares `[tool.dev_lab.protection] producer = "hpc"` (`dev_lab.dev.producers`, user
-  ruling 2026-11-16); an `actions` repo is checked out, installed and never served. The line:
+  where the family binds a role of the repo to the account's grant (`[roles.<forge>]`, `dev_lab.dev.roles`, D73;
+  ruling 2026-11-16); a repo with no role bound there is checked out, installed and never served. The line:
   `<offset>-59/<minutes> * * * * PATH=...; cd ~/src/dev-lab && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo> >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.

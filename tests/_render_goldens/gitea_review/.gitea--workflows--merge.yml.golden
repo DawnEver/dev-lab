@@ -26,7 +26,8 @@
     "UV_PYTHON": "python3",
     "UV_PYTHON_DOWNLOADS": "never",
     "UV_CONCURRENT_INSTALLS": "1",
-    "UV_CONCURRENT_BUILDS": "1"
+    "UV_CONCURRENT_BUILDS": "1",
+    "DEV_LAB_ROLES": "{\"merge\": \"ci\", \"promote\": \"ci\", \"prune\": \"ci\", \"review\": \"ci\", \"tests\": \"ci\"}"
   },
   "jobs": {
     "merge": {
