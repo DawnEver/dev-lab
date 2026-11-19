@@ -649,6 +649,22 @@ def test_an_unbound_agent_session_is_refused_naming_how_a_task_is_bound(repo: Pa
     assert door == f'Door: {DOOR}; then push it as pr/<task>/x.'
 
 
+def test_an_unbound_refusal_says_a_short_fix_binds_to_an_open_task_and_flat_heads_stay_refused(repo: Path) -> None:
+    _tasks(repo)
+    [said] = _p7(repo, 'pr/x', _AGENT)
+    cause, _door = said.split('\n')
+    assert 'a short fix binds to an open task' in cause
+    assert 'any repo' in cause
+    assert 'no flat pr/<feature>' in cause
+
+
+def test_a_bound_refusal_carries_no_unbound_advice(repo: Path) -> None:
+    _tasks(repo)
+    bind_as_rem(repo, _SESSION, 'toolchain')
+    [said] = _p7(repo, 'pr/x', _AGENT)
+    assert 'short fix' not in said
+
+
 def test_a_human_push_and_the_forge_are_not_judged(repo: Path) -> None:
     _tasks(repo)
     assert _p7(repo, 'pr/x', {}) == []
