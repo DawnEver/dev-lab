@@ -169,3 +169,18 @@ def test_the_door_removes_through_the_cli(work: Path, capsys: pytest.CaptureFixt
     assert main(['--root', str(work), '--remove', 'loose']) == 0
     assert 'removed' in capsys.readouterr().out
     assert not _tree(work, 'loose').exists()
+
+
+def test_a_tree_whose_directory_is_already_gone_is_pruned_not_crashed_on(work: Path) -> None:
+    """A tree whose directory is already gone is pruned (dev-lab#791 wall 1).
+
+    A timed-out removal left the record but not the directory; the next ``--remove`` crashed
+    with ``git could not say which refs contain  in <tree>``. A gone directory holds nothing: its record is pruned.
+    PLANTED CONTROL: the sibling tree, whose directory stands, is untouched.
+    """
+    shutil.rmtree(_tree(work, 'loose'))
+    removed, line = remove(work, 'loose', census=_idle)
+    assert removed, line
+    assert 'already gone' in line
+    assert not any(row.endswith('loose') for row in _registered(work).splitlines())
+    assert _tree(work, 'lane').is_dir()
