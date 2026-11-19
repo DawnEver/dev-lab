@@ -7,7 +7,7 @@ A new repo is configured ONCE, and the configuration is one statement rather tha
 ```python
 from pathlib import Path
 from dev_lab.dev.famtests.onboarding import assert_repo_is_onboarded, assert_the_forge_takes_pull_requests
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgeclient import client_for
 
 assert_repo_is_onboarded(root=Path(__file__).resolve().parents[2])
 assert_the_forge_takes_pull_requests(client_for(Path.cwd()))
@@ -24,6 +24,7 @@ The first reads the tree and names every missing declaration at once; the second
 | the PR namespace | nothing: `pr/*` is ephemeral by default (`branchset.FAMILY_EPHEMERAL`); declare `ephemeral` only to differ | a PR head pushes with no declared session row |
 | the flow's start | `[tool.dev_lab.integrator] pr_merges_since = "<sha>"` | INTEGRATION-TAKES-ONLY-FORGE-MERGES from that commit |
 | the one producer | `[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]` | a part nobody can produce is a sha nobody can merge |
+| who posts the parts | nothing for forge Actions (an absent `[tool.dev_lab.protection] producer` means `"actions"`); `producer = "hpc"` for an HPC repo | forge Actions or the HPC, never both, never a local machine (`dev_lab.dev.producers`, user ruling 2026-11-16) |
 | what the renderers read | `[tool.dev_lab.render] deltas = "<its famconfig deltas module>"` (+ `adoption = "scripts/deny_rules.py"` where it holds `.claude/hooks/deny-rules.json`, + `docs_base = "<path to lab-commons/docs-src/dev>"` for the dev-index pointer table) | `python -m dev_lab.dev.famfiles` renders them all; a renderer is due where a file it writes is present, the pointer table where `docs_base` is declared (`famfiles.undeclared_inputs`); undeclared, a relock leaves those files stale |
 | the hook rows | `[tool.dev_lab.hooks]` (an empty table is the whole declaration) | the family base rows run |
 | the entry point for an agent | `AGENTS.md` (+ `CLAUDE.md` = `@AGENTS.md`) | it names [the integration branch](integration.md) by link and restates nothing |
@@ -53,7 +54,7 @@ rules and secrets, the checkout's place, the machine lists. Both verbs implement
 (`dev_lab.dev.family.members`, whose docstring is the authority):
 
 1. **One member list** -- the machine file's `[repos]` (name -> checkout path). What else lists repos derives
-   from it (`forge secrets sync`'s targets) or is checked against it (`[serve] repos`).
+   from it (`forge secrets sync`'s targets); which members a host serves is each member's own `producer`.
 2. **Cloned beside its siblings** -- the parent most members share.
 3. **Onboarded** -- the call above, over the member's own tree.
 4. **On its forge** -- Pull Requests on; the trunk and integration branches exist; protection as declared

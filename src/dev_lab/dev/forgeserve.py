@@ -41,7 +41,7 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read
   The tick TAKES a local part's box claim before it claims the part, and the producer adopts it: the one
   admission is the tick's, so a started part is never box-refused and a refused one posts nothing.
 * RUNNING -- each cluster run in flight here, at its learned demand
-  (:func:`~lab_commons.compute.learned.cluster_demand`).
+  (:func:`dev_lab.dev.forgedemand.part_demand`).
 
 SEVERAL LOCAL PARTS AT ONCE, ONE THREAD EACH, and why that shape: ``produce`` already owns one child --
 its stream, its beats, its renewals, its release -- and is blocking, so N admitted parts are N calls of
@@ -121,7 +121,6 @@ import lab_commons.launch as _door
 from lab_commons.box import Holding, holdings
 from lab_commons.box.machine import provided
 from lab_commons.box.providers import inventory
-from lab_commons.compute.learned import cluster_demand
 from lab_commons.compute.model import Supply
 from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
@@ -144,6 +143,8 @@ from dev_lab.dev.forgealarm import (
     sound,
 )
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import card_host, card_owners, read_cards, recording
 from dev_lab.dev.forgeintent import reattach
@@ -165,7 +166,7 @@ from dev_lab.dev.forgeservesteps import (
 )
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
@@ -253,7 +254,7 @@ def serve(
         say(line)
     ceiling = standing.ceiling_gb if standing is not None else None  # a demand above it is never admitted
     host_rounds = Rounds(
-        root, repo, alarm, runs, slurm=slurm, say=say, sized=cluster_demand(repo, ceiling_gb=ceiling),
+        root, repo, alarm, runs, slurm=slurm, say=say, sized=part_demand(repo, ceiling_gb=ceiling),
         supplied=functools.partial(supplied, name=name, standing=standing),
         holding=(lambda: ()) if seat is not None else holding,
         ticking={
@@ -286,9 +287,7 @@ def serve(
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     pressed(root, repo, who=name, say=say, alarm=alarm)
     if ticked.pending and not claimed and not left:
-        refused = '; '.join(ticked.refused) or 'nothing was claimed'
-        named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
-        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
+        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', ticked.idle()))
     card(claimed)
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
         repo_wide(root, repo, remembering(client), name, cards, clock=clock, say=say, alarm=alarm)

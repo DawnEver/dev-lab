@@ -34,6 +34,8 @@ ref = "main"
 family = {{ file = "family.toml", to = "/etc/dev-lab/family.toml" }}
 """
 REPO = {HOST_FILE: HOST_TEXT, 'family.toml': FAMILY_TEXT}
+#: The same host file with no family: a live table the family-adding apply has not reached yet.
+SETTLED_TEXT = ''.join(line for line in HOST_TEXT.splitlines(keepends=True) if not line.startswith('family'))
 DEST = 'ops@judge.example.org'
 OTHER = 'ops@worker.example.org'
 CONF, PY = '/etc/dev-lab/supervise.toml', '/usr/bin/python3'
@@ -68,7 +70,12 @@ def _host_rendered(tmp_path: Path, repo: Mapping[str, str]) -> str:
 
 
 def _readers(repo: Mapping[str, str] = REPO) -> planrunpreflight.Readers:
-    return planrunpreflight.Readers(text=_reader(repo), config_source=lambda: SOURCE)
+    return planrunpreflight.Readers(text=_reader(repo), config_source=lambda: SOURCE, issued=_no_issuer)
+
+
+def _no_issuer(dest: str, action: str, argv: list[str]) -> str:
+    msg = f'no issuer reads {dest} here ({action} {argv})'
+    raise ConsentRefused(msg)
 
 
 def test_the_subject_derived_here_is_the_one_the_host_renders(tmp_path: Path) -> None:
@@ -135,14 +142,16 @@ def _step(dest: str, *, derivable: bool = True) -> planrunsteps.Step:
 
 def test_an_unreachable_host_has_its_config_subject_derived_here(tmp_path: Path) -> None:
     """PLANTED: a plan granting another subject is blocked, naming both; a step with no declaration is blocked."""
-    want = _host_rendered(tmp_path, REPO)
+    repo = {HOST_FILE: SETTLED_TEXT}
+    want = planrunpreflight.config_subject(HOST_NAME, _reader(repo), SOURCE)
     down = _Host(want, down=True)
     green, lines = planrunpreflight.preflight(
-        _plan(want, DEST), planrunsteps.Steps((_step(DEST),)), lambda _d: down, readers=_readers()
+        _plan(want, DEST), planrunsteps.Steps((_step(DEST),)), lambda _d: down, readers=_readers(repo)
     )
     assert green, lines
     assert any('UNREACHABLE' in line for line in lines)
     assert any('subject derived here' in line and 'door is checked at run' in line for line in lines), lines
+    want = _host_rendered(tmp_path, REPO)
     green, lines = planrunpreflight.preflight(
         _plan('f' * 64, DEST), planrunsteps.Steps((_step(DEST),)), lambda _d: down, readers=_readers()
     )
@@ -173,7 +182,8 @@ def test_a_reachable_host_is_still_asked_for_its_subject(tmp_path: Path) -> None
 
 def test_a_two_host_plan_is_built_with_neither_host_reachable() -> None:
     worker = 'hosts/worker.toml'
-    repo = {**REPO, worker: HOST_TEXT.replace(HOST_FILE, worker)}
+    settled = SETTLED_TEXT
+    repo = {HOST_FILE: settled, worker: settled.replace(HOST_FILE, worker)}
     subjects = [planrunpreflight.config_subject(name, _reader(repo), SOURCE) for name in (HOST_NAME, 'worker')]
     grants = [
         {'host': dest, 'action': 'ops.config', 'subject': subject}
@@ -212,3 +222,45 @@ def test_planrun_subject_config_prints_the_subject_with_no_host(
     assert planrun.main(['subject', '--config', HOST_NAME], readers=_readers()) == 0
     assert capsys.readouterr().out.strip() == _host_rendered(tmp_path, REPO)
     assert planrun.main(['subject', '--config', 'absent'], readers=_readers({**REPO, 'hosts/absent.toml': 'x ='})) == 2
+
+
+def _unsettled_plan(first: str, second: str) -> tuple[Plan, planrunsteps.Steps]:
+    grants = [{'host': DEST, 'action': 'ops.config', 'subject': s} for s in (first, second)]
+    steps = planrunsteps.Steps((_step(DEST, derivable=False), _step(DEST)))
+    return parsed({'hosts': [DEST], 'grants': grants}), steps
+
+
+def test_a_candidate_adding_a_family_is_caught_at_preflight_not_at_run(tmp_path: Path) -> None:
+    """PLANTED (the 2026-11-18 case): a candidate adding a family is caught at preflight.
+
+    The live table may lack the family; a one-step plan granting only the candidate's subject is BLOCKED here, naming
+    the subject a host without the family derives.
+    """
+    want = _host_rendered(tmp_path, REPO)
+    first = configdoor.digest(HOST_TEXT)
+    down = _Host(want, down=True)
+    green, lines = planrunpreflight.preflight(
+        _plan(want, DEST), planrunsteps.Steps((_step(DEST),)), lambda _d: down, readers=_readers()
+    )
+    assert not green, lines
+    assert any(f'derives {first[:12]}' in line and 'two config applies' in line for line in lines), lines
+
+
+def test_the_two_step_plan_for_a_new_family_passes_preflight(tmp_path: Path) -> None:
+    """Granting the no-family subject first, then the candidate's, is the door; the reversed order stays blocked."""
+    want = _host_rendered(tmp_path, REPO)
+    first = configdoor.digest(HOST_TEXT)
+    down = _Host(want, down=True)
+    issued = planrunpreflight.Readers(text=_reader(REPO), config_source=lambda: SOURCE, issued=lambda *_a: first)
+    plan, steps = _unsettled_plan(first, want)
+    green, lines = planrunpreflight.preflight(plan, steps, lambda _d: down, readers=issued)
+    assert green, lines
+    plan, steps = _unsettled_plan(want, first)
+    green, _ = planrunpreflight.preflight(plan, steps, lambda _d: down, readers=issued)
+    assert not green
+
+
+def test_unsettled_subject_is_none_without_a_family() -> None:
+    settled = SETTLED_TEXT
+    assert configdoor.unsettled_subject(SOURCE, HOST_FILE, _reader({HOST_FILE: settled})) is None
+    assert configdoor.unsettled_subject(SOURCE, HOST_FILE, _reader(REPO)) == configdoor.digest(HOST_TEXT)

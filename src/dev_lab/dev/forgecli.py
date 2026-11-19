@@ -39,6 +39,7 @@ from dev_lab.dev import (
     forgebreakglass,
     forgedraft,
     forgeheadgate,
+    forgehold,
     forgehosts,
     forgeintegration,
     forgeissue,
@@ -75,12 +76,15 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
+    taskbinding,
     taskgate,
+    walls,
 )
 from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest, client_for
+from dev_lab.dev.forgework import Client, Comment, Issue, PullRequest
 from dev_lab.dev.issuekind import KINDS
 from dev_lab.dev.labsession import ENV
 
@@ -128,6 +132,8 @@ PR_VERBS: dict[str, Callable[[list[str]], int]] = {
     'continue': prcontinue.main,
     'ready': lambda argv: forgedraft.main(['ready', *argv], judge=prcurrent.ready_refusals),
     'draft': lambda argv: forgedraft.main(['draft', *argv], judge=prcurrent.ready_refusals),
+    'hold': lambda argv: forgehold.main(['hold', *argv]),
+    'release': lambda argv: forgehold.main(['release', *argv]),
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
@@ -259,22 +265,43 @@ def _refused(
     env: Mapping[str, str] | None,
     transport: Transport,
 ) -> str | None:
-    """Why the verb is refused before any write: a reasonless close, a PUBLIC repo's PR text naming a private value.
+    """Why the verb is refused before any write: a reasonless close, a PUBLIC repo's text naming a private value.
 
-    A private repository is where private names belong; an unreadable visibility is scanned (fail closed).
+    Every verb in :data:`_PUBLISHED_TEXT` publishes what a person typed; a private repository is where private
+    names belong, and an unreadable visibility is scanned (fail closed).
     """
     if (args.noun, args.verb) == ('pr', 'close') and not args.reason.strip():
         parser.error('pr close: --reason must say why')
     if (args.noun, args.verb) == ('pr', 'create') and args.ready and args.ready_when_current:
         parser.error('pr create: --ready opens it ready; --ready-when-current opens a draft -- choose one')
-    if (args.noun, args.verb) == ('pr', 'create'):
-        private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
-        if private:
-            return None
-        if why:
-            emit(f'[forge] scanning the PR text for private markers: {why}', err=True)
-        return privatemarkers.text_refusal(f'{args.title}\n{args.body}', 'PR title or body')
-    return None
+    if (published := _PUBLISHED_TEXT.get((args.noun, args.verb))) is None:
+        return None
+    what, texts = published
+    private, why = privatemarkers.repo_is_private(root, env=env, transport=transport)
+    if private:
+        return None
+    if why:
+        emit(f'[forge] scanning the {what} for private markers: {why}', err=True)
+    return privatemarkers.text_refusal('\n'.join(texts(args)), what)
+
+
+#: Each write verb that publishes typed text: what a refusal calls it, and the argument fields that hold it.
+_PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace], tuple[str, ...]]]] = {
+    ('pr', 'create'): ('PR title or body', lambda a: (a.title, a.body)),
+    ('pr', 'close'): ('close reason', lambda a: (a.reason,)),
+    ('issue', 'create'): ('issue title or body', lambda a: (a.title, a.body)),
+    ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
+}
+
+
+def _task_head_advice(head: str, env: Mapping[str, str] | None) -> tuple[str, ...]:
+    """A session bound to a task is told its PR heads are ``pr/<task>/<feature>`` (:mod:`dev_lab.dev.taskbinding`)."""
+    try:
+        task = taskbinding.session_task(os.environ if env is None else env)
+    except ValueError:
+        return ()
+    said = None if task is None else taskbinding.head_advice(head, taskbinding.slug_of(task))
+    return () if said is None else (said,)
 
 
 def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
@@ -301,12 +328,14 @@ def issue_and_pr(
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     if (refused := _refused(parser, args, root, env, transport)) is not None:
-        emit(f'[forge] {refused}', err=True)
+        emit(refused, err=True)
+        walls.refused_text(root, refused, reason=f'forge {args.noun} {args.verb}')
         return 1
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            said := pradmit.create_advice(root, client, head=args.head, base=args.base)
+            said := _task_head_advice(args.head, env)
+            + pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
             emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
@@ -315,7 +344,7 @@ def issue_and_pr(
         if (args.noun, args.verb) == ('pr', 'create') and isinstance(result, PullRequest):
             emit(f'[forge] {forgemergecall.auto_merge(client, result.number)}', err=True)
             if head := result.head_sha or pushwatch.pushed_sha(root, f'refs/remotes/origin/{result.head}'):
-                emit(f'[forge] {pushwatch.arm_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
+                emit(f'[forge] {pushwatch.heard_line(head)}', err=True)  # PUSHED-HEAD-IS-WATCHED
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)

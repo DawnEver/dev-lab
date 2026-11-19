@@ -57,8 +57,9 @@ mechanisms; each is owned where it is linked:
 
 ## Feedback
 
-A session hears every PR it touched: the session PR record (`dev_lab.dev.sessionprs`), `forge watch --session
-<id> --stream` (`dev_lab.dev.forgewatch`), and the `Stop` gate on the session's own PRs (`dev_lab.dev.pushwatch`).
+A session hears every PR it touched through ONE hearer: the doors record each PR in the session PR record
+(`dev_lab.dev.sessionprs`), and the machine forge hearer (`dev_lab.dev.forgefeed`, [how a task hears the forge](forgefeed.md)) reads it and says each change at
+the session's next prompt. No Monitor is armed and no `Stop` gate waits on a PR.
 
 ## The six contracts
 

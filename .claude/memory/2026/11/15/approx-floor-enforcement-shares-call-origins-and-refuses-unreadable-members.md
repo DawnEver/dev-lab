@@ -1,0 +1,20 @@
+---
+name: approx-floor-enforcement-shares-call-origins-and-refuses-unreadable-members
+description: "After canonical hosted RED19/34 for #599, route tolerance and reflection scans through one lexical-origin owner and make incomplete tolerance corpora explicitly refuse; candidate awaits complete replay."
+metadata:
+  type: project
+---
+
+# Bind the real callable and refuse an incomplete corpus
+
+The complete `tests/test_famtests_approxfloors.py` on tests-only `f75357a89d954089ca4d0a2eb0970ccc8f5d10ff` ran in official focused Actions **43727593065** and produced canonical **FAIL: 19 failed, 34 passed**, 4.34 seconds, environment `d6d69fd6d2855cdf`. Eight failures were actual imported pytest aliases missed by the scanner, four were unrelated/shadowed callable false positives, one was a legitimate enclosing alias missed, and four were syntax/missing-file members silently skipped. The two invalid UTF-8 cases already raised a raw exception; their defect was missing the scanner's named refusal and remedy, not fail-open success. This classification does not relabel either the old run or an unexecuted candidate.
+
+The candidate extracts the existing reflection scanner's lexical import/local/assignment binding mechanism into public `dev_lab.dev.callorigins.call_origins`. Both reflection and tolerance policy owners now use that single reader. Each supplies its own builtin vocabulary; no arbitrary runtime module import resolution is attempted. Reflection retains its namespace-access and hook-declaration decisions, banned set and allow/floor contract. The new public module has its actual inventory and original-provenance rows, not a second hidden owner.
+
+The tolerance scanner resolves imported callable origins before invoking the existing `is_approx` expression predicate. That predicate still has a real pure-shape use and is on the actual module-reader path, including the shipped monkeypatch controls. It recognises bare `approx` or `pytest.approx` shapes, not arbitrary other-owner `.approx` names. A genuinely imported `pytest.approx` alias is canonicalised from the shared origin reading; an unbound `close` expression is not invented into an import. Both original named bars, keyword/positional distinctions, absolute floors, file/call floors and headrooms remain unchanged.
+
+`take_scan` now raises `UnreadableApproxSource`, an AssertionError subtype, for OSError, SyntaxError and UnicodeDecodeError. The exception chains the original error and names the path, actual error class and `Door:` to repair the member/read access and repeat the same complete corpus. No member is silently dropped or replaced by a surviving floor. The old test that explicitly accepted skipping corrupt syntax was **deliberately migrated** to this stronger refusal policy: its original `files_read == 1`, `calls_seen == 1` and `good.exists()` assertions still run on the valid member, followed by a named refusal assertion for the full corrupt corpus. This is not a concealed deletion of an inconvenient control.
+
+Old shape/floor fixtures now carry real pytest imports while preserving their original offender line numbers, call counts and numerical assertions. The unbound-expression test was renamed to match what it actually proves. The repository's own duplicate shape-only approx lint was removed; its complete-suite check and three opposite planted assertions call the canonical `take_scan` owner with the same unconditional policy and unchanged suite floor. There is no alias shim or old/new scanner fallback.
+
+Ruff check/format and Git whitespace checks pass. **No post-fix test has run locally and this candidate is not GREEN.** The complete approx owner, the complete local tolerance/reflection owners, module inventory/provenance controls and related architecture guards must be replayed by the existing official hosted producer before claiming combined qualification. No resource price, timeout, worker limit, numerical bar, original meaningful control, skip allowance or expected-failure policy was relaxed. No consumer-private code or context was sent to a reviewer, and no push was performed by this worker.

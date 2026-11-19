@@ -106,7 +106,7 @@ def test_the_judge_verb_refuses_a_host_with_no_judge(tmp_path: Path) -> None:
 
 UPGRADE = (
     '[ops.upgrade]\nsource = "https://forge.example/owner/dev-lab.git"\nref = "main"\nextras = ["ops"]\n'
-    'overrides = "/etc/dev-lab/overrides.txt"\nuv = "/usr/local/bin/uv"\n'
+    'uv ="/usr/local/bin/uv"\n'
     'packages = ["ai-lab @ git+https://forge.example/owner/ai-lab.git"]\n'
 )
 

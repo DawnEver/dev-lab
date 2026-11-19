@@ -2,14 +2,16 @@
 
 Three checks, each generic (the repository's own facts arrive as the files it holds):
 
-- a HOST file is a server's (``[ops]``) or a development machine's (``[dev]``, :mod:`dev_lab.dev.devhost`,
+- a HOST file is a server's (``[ops]``), a development machine's (``[dev]``, :mod:`dev_lab.dev.devhost`,
   checked with the family file: a restated family key is refused; the machine tables it renders are open, but
-  ``[ssh]`` is checked against :data:`~dev_lab.dev.devschema.SSH`); a
+  ``[ssh]`` is checked against :data:`~dev_lab.dev.devschema.SSH`) or an HPC account's (``[deploy]``, neither of
+  the others: :mod:`dev_lab.dev.accounthost`, checked with the family file that holds its grant); a
   server's file loads by structure
   (:func:`dev_lab.ops.config.load` with ``structure_only``): the shape the live door will load, without the host's
   environment or secret files, which exist only on the host; and it holds no key the schema
   does not declare -- ``[ops]`` as the loader declares it, every other table as the supervisor's
-  :data:`~dev_lab.supervise.config.DEFAULTS` does (a table whose default is empty, ``components``, is open);
+  :data:`~dev_lab.supervise.config.DEFAULTS` does (a table whose default is empty, ``components``, is open); and
+  a host that is no HPC account carries no ``[serve]`` (:func:`dev_lab.dev.producercheck.host_refusals`);
 - the FAMILY file shares no machine-local table (:data:`LOCAL_ONLY`) and no secret VALUE -- a secret is named by
   path (``*_file``, ``*_path``), never held; a refusal names the key, never repeats the value;
 - a change NEEDS CONSENT when it touches a boundary key (:func:`dev_lab.ops.configdoor.boundary`): merging it
@@ -29,7 +31,7 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import devschema
+from dev_lab.dev import accounthost, devschema, producercheck
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
 from dev_lab.supervise.config import DEFAULTS
@@ -63,9 +65,11 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         parsed = tomllib.loads(path.read_text(encoding='utf-8'))
     except tomllib.TOMLDecodeError as bad:
         return [f'{path.name}: {bad}']
-    found = []
+    shared = tomllib.loads(family.read_text(encoding='utf-8')) if family is not None else {}
+    if accounthost.is_account(parsed):
+        return [f'{path.name}: {line}' for line in accounthost.check(path, parsed, shared)]
+    found = producercheck.host_refusals(path.name, parsed)
     if 'dev' in parsed:
-        shared = tomllib.loads(family.read_text(encoding='utf-8')) if family is not None else {}
         found += [f'{path.name}: {line}' for line in devschema.check(parsed, shared)]
         if 'ssh' in parsed:
             found += [f'{path.name}: {line}' for line in devschema.ssh_defects(parsed['ssh'])]
@@ -80,6 +84,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         'dev': {},
         **({key: {} for key in devschema.MACHINE_TABLES} if 'dev' in parsed else {}),
         **({'ssh': {}} if 'dev' in parsed else {}),
+        **({app: {} for app in devschema.app_tables(shared)} if 'dev' in parsed else {}),
     }
     return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
 

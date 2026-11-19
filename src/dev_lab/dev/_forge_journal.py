@@ -190,5 +190,5 @@ def journal_at(outbox: Path) -> Journal:
 
 
 def journal_for(root: Path) -> Journal:
-    """The write journal of *root*'s repository: what :func:`dev_lab.dev.forgework.client_for` records into."""
+    """The write journal of *root*'s repository: what :func:`dev_lab.dev.forgeclient.client_for` records into."""
     return journal_at(outbox_dir(root))

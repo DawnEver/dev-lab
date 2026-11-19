@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev.artefactstores import FOLDER, FORGE, RCLONE, ArtefactRefused, OutputBudgetRefused, Ref
+from dev_lab.dev.artefactstores import FOLDER, FORGE, RCLONE, ArtefactRefused, OutputBudgetRefused, Ref, manifest_of
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -161,8 +161,8 @@ def validate_ref(ref: Ref) -> None:
         or type(ref.bytes) is not int
         or ref.bytes < 0
         or ref.backend not in _BACKENDS
-        or type(ref.key) is not str
-        or not ref.key
+        or type(ref.ref) is not str
+        or not ref.ref
         or type(ref.sha256) is not str
         or _SHA256.fullmatch(ref.sha256) is None
     ):
@@ -178,9 +178,9 @@ def _declared_index(record: dict[str, object], ref: Ref, max_members: int) -> li
     matches = [
         entry
         for entry in declarations
-        if isinstance(entry, dict) and entry.get('backend') == ref.backend and entry.get('ref') == ref.key
+        if isinstance(entry, dict) and entry.get('backend') == ref.backend and entry.get('ref') == ref.ref
     ]
-    if len(matches) != 1 or matches[0] != ref.manifest() or type(matches[0]['bytes']) is not int:
+    if len(matches) != 1 or matches[0] != manifest_of(ref) or type(matches[0]['bytes']) is not int:
         msg = 'catalogue requested exact Ref must occur once'
         raise ArtefactRefused(msg)
     indexes = record.get('artefact_indexes', {})

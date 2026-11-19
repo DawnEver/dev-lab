@@ -11,20 +11,19 @@ a subagent never pushes.
 | door | does |
 |---|---|
 | `python -m dev_lab.dev.branchset --apply` | Reclaims every reclaimable worktree FIRST (`dev_lab.dev.reclaim.reclaim`, next row), then deletes every merged LOCAL branch: never a declared branch, never one with commits origin lacks, never one still checked out in a worktree. Re-runs `merge-base --is-ancestor` right before each delete and pins it to that sha. Landed origin candidates are listed with their agent door, `python -m dev_lab.dev.branchprune delete <b>` (LOSSLESS-DELETE); unlanded ones with `(merge first)`. |
-| `python -m dev_lab.dev.worktrees [--prune]` | Lists every linked worktree and orphan directory with its verdict. `--prune` reclaims a linked tree only when ALL hold: not `git worktree lock`-ed; no change to a TRACKED file, staged or not (`git status --porcelain --untracked-files=no` empty; untracked and ignored files never block); its content landed on the trunk or a declared session (`git cherry` empty, or its origin ref gone after a squash merge); no process works in, executes from or reads it (LIVE-RUN `occupants`). Its outputs (`archive-outputs`) are moved home and verified first (`worktree_archive.home_outputs`, user ruling 2026-11-12), chained: an unverified move keeps the tree, with the reason; else it is deleted, then its branch via `branchset --apply` where a branch set is declared. A summary line counts every kept tree by reason. An orphan directory is judged the same way. Every kept tree is listed with its reason. The session debris hook runs it. |
+| `python -m dev_lab.dev.worktrees [--prune]` | Lists every linked worktree and orphan directory with its verdict. `--prune` reclaims a linked tree only when ALL hold: not `git worktree lock`-ed; nothing unlanded (`dev_lab.dev.reclaim.unlanded_work`: no change to a TRACKED file, staged or not, and no untracked NOT-IGNORED file -- D31: such a tree is listed with its doors, never parked; ignored files never block); its content landed on the trunk or a declared session (`git cherry` empty, or its origin ref gone after a squash merge); no process works in, executes from or reads it (LIVE-RUN `occupants`). Its outputs (`archive-outputs`) are moved home and verified first (`worktree_outputs.home_outputs`, user ruling 2026-11-12), chained: an unverified move keeps the tree, with the reason; else it is deleted, then its branch via `branchset --apply` where a branch set is declared. A summary line counts every kept tree by reason. An orphan directory is judged the same way. Every kept tree is listed with its reason. The session debris hook runs it. |
 | `python -m dev_lab.dev.stoprun --pid PID [--repo PATH] [--dry-run]` | Stops one identified run and its subtree, children first, never an ancestor or a sibling. A run is identified by its command line: the built-in signatures (verify, a gate runner, pytest) plus regexes in `[tool.dev_lab.stoprun] signatures`. Any other pid is refused (exit 3), naming what it is (its command line), its parent, whether it descends from this session, and the exit: ask the user, or declare a signature. |
 
 | `python -m dev_lab.dev.forge pr create --head H --base B --title T [--ready]` | Opens a draft PR (DRAFT-UNTIL-READY); advises, on stderr and in the body, a stacked head or a second PR of one session. |
 | `python -m dev_lab.dev.forge pr ready N` / `pr draft N` | Marks PR `N` ready for review, or back to draft; one stdout line names the outcome, exit 1 on refusal. |
 | `python -m dev_lab.dev.forge pr close-landed [N...]` | Closes an open PR whose head is already on its base, with an evidence comment. Never deletes its branch: the forge's prune of merged branches (`prune_merged`) is the one deleter. |
 | `python -m dev_lab.dev.forge pr close-superseded N... --by <M\|sha\|ref> [--why <line>]` | Closes each open PR salvaged into open, unmerged PR `M` or into a commit, and comments `superseded by #M: <line>` (or `superseded by <sha12>: <line>`). Never deletes its branch. Refuses a closed target, a closed or merged `M`, a commit that does not resolve, or `M` itself. |
-| `python -m dev_lab.dev.branchprune delete <branch>...` | LOSSLESS-DELETE: a remote branch only when every commit on it is on integration or another live branch or open PR head, or, by content, when every file its own commits wrote, generated ones aside, is identical (mode and blob) on integration; it fails closed. Refusals name the files carrying unlanded content. |
-| `python -m dev_lab.dev.branchprune delete-tag <tag>... --approved "<the user's words>"` | LOSSLESS-DELETE of a remote tag: only with the user's own words (echoed into the record), and only when the tag's commit is on the integration branch or the trunk; a tag on anything else is refused naming its commit. Leased on the tag object it judged. |
+| `python -m dev_lab.dev.branchprune delete <branch>...` | LOSSLESS-DELETE: a remote branch only when every commit on it is on integration or another live branch or open PR head, or, by content, when every file its own commits wrote, generated ones aside, is identical (mode and blob) on integration; it fails closed. Refusals name the files carrying unlanded content and the two doors MERGE-OR-DELETE leaves (D22, no tags): merge it, or land it by a declared `git merge -s ours` PR and re-run. |
 | `python -m dev_lab.dev.forge cancel-stuck <sha> [--factor N] [--bound-minutes M]` | Scancels only `run-<sha12>-<part>` tasks of the full 40-hex `<sha>` that run at 90 % CPU or more with no new test line in their stream for longer than N (default 3) x the longest MEASURED duration of the shard's tests (the forge's learned `durations`); a shard with an unmeasured test is floored at M (default 60), and the line says so. Every other task of the sha is listed as healthy; other jobs are never touched. |
 | `python -m dev_lab.dev.forge watch <sha>... [--deadline-minutes M]` | Read-only: prints each `tests/<part>` status change until the first listed sha is final (exit 0 green, 1 red) or the deadline (exit 3). |
 | `python -m dev_lab.dev.hpcaccount deploy-fleet [--account U]... [--dry-run]` | For each `[[hpc.grant]]` account, reads that account's own `[deploy]` host and root through any of its login hosts, then starts, detached over `ssh -o BatchMode=yes`, its own `hpcaccount deploy` on THAT host, one log per account under `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/`. An account outside the grants refuses the whole run; one with no `[deploy]` host, or a host outside its grant, is refused by name while the rest deploy. |
 | `python -m dev_lab.dev.hpcaccount forget --repo URL --row KEY (--fleet \| --account U...) [--dry-run]` | Runs lab-commons' `learned forget` of one row on each named `[[hpc.grant]]` account (or all), through the grant's own login hosts, in its declared checkout; prints forgotten (with the backup) / absent / refused per account, and the rest still run. `--dry-run` only reads each row. An account outside the grants refuses the whole run. |
-| `python -m dev_lab.dev.hpcaccount retention (--fleet \| --account U...) [--apply]` | Prints each named `[[hpc.grant]]` account's quota (files and blocks), how many serve tick lines its crontab carries (0: serve never ticks), and that account's OWN `dev_lab.dev.retention --cluster` report from its declared checkout, through the grant's own login hosts; `--apply` runs the deletion, which only that in-flight-aware code decides. An unreachable cluster is one line naming the door (its site network or VPN). |
+| `python -m dev_lab.dev.hpcaccount retention (--fleet \| --account U...) [--apply]` | Prints each named `[[hpc.grant]]` account's quota (files and blocks), how many serve tick lines its crontab carries (judged by the role: 0 is a fault for a serving account and the design for a research one), and that account's OWN `dev_lab.dev.retention --cluster` report from its declared checkout, through the grant's own login hosts; `--apply` runs the deletion, which only that in-flight-aware code decides. An unreachable cluster is one line naming the door (its site network or VPN). |
 | `python -m dev_lab.dev.hpcaccount credential U@HOST --login L --host-config FILE [--url REPO] < token`; `... credential U@HOST --drop-host H` | Places one minted forge token of a declared login (`[hpc.roles.*] reader`, or `[ops.forge.accounts]` of FILE, the forge host's reviewed config read by the loader `config apply` uses; the account's role reader when it names one) on a `[[hpc.grant]]` account, through the grant's own key-only connection; the token on stdin, never argv. The forge is FILE's (`[ops.caddy] sites`): `--url` must be on it, default the login's first declared repo; any other host is refused before connecting. The line is staged alone, the forge's `auth role` must answer as `L` with git reading only the staged file, and only then is `~/.git-credentials` rewritten -- backup `~/.git-credentials.bak-<ts>` (0600) first, only that forge's line replaced, umask 077, atomic `mv`; a refusal discards the stage and leaves the store untouched. `--drop-host H` removes exactly H's line, same backup. Output names the token only by a sha256 prefix. |
 
 The raw verbs (`git branch -D`, `git worktree remove --force`, `rm -rf`, `taskkill`, a raw `scancel`) stay unallowed.
@@ -38,7 +37,7 @@ row's provenance and the classifier's intent, and the deny row it is the exit fr
 - `subagent`: any agent (the verdict, stoprun, netverb, the censuses, the forge's read side, issue writes).
 - `main`: the main session alone -- a PR's lifecycle, `forge sync`, `integrate promote`, `forge pr breakglass`
   (inside a wave the user opened), `forge review takeover|again`, `forge security release`, `cancel-stuck`,
-  `git merge --ff-only`, `branchprune delete`, `branchprune delete-tag`. `SUBAGENT-NO-PUSH`'s pattern is derived from these rows.
+  `git merge --ff-only`, `branchprune delete`. `SUBAGENT-NO-PUSH`'s pattern is derived from these rows.
 - `user`: no agent -- opening a Break-Glass wave. It renders no allow row and no intent.
 
 A deny row's remedy that lists doors is derived from the rows linked to it (`exits_of`):
@@ -49,17 +48,32 @@ that repo's `[tool.dev_lab.policy]`, never in a hand-written module.
 
 `dev_lab.dev.autodoors` renders `POLICY`; `script_doors(root)` adds the repo's tracked `scripts/**.py`
 with a `__main__` guard and the shell doors it names (`shell_doors=`, `--shell-door`), and `cli_doors(root)` adds
-the repo's own read-only CLI verbs, declared as data (decision 2026-11-15; never hand rows in its settings):
+the repo's own CLI verbs, declared as data (decisions 2026-11-15; never hand rows in its settings):
 
 ```toml
+[project.scripts]
+consumer = "consumer.__main__:main"  # THE module: the one source, never retyped below
+
 [tool.dev_lab.cli_doors]
-acts = ["press"]  # this CLI's act verbs, refused as doors
-doors = [{argv = ["consumer", "vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."}]
+acts = ["press"]  # this CLI's verbs that stay prompted, refused as doors
+doors = [
+    {verb = ["vendor", "windows"], why = "Read-only: the vendor tool's windows, listed."},
+    {verb = ["case", "run"], why = "Runs one case; writes only its output tree.", act = true},
+]
 ```
 
-Each `argv` renders as the door `python -m <argv...>`. A bare module, or an element with a space, glob or leading
-dash, is refused; so is a prefix ending in an act (`ActDeclaredAsDoor`): the repo's `acts`, or always one of
-`REFUSED_ACTS` (press, set-value, close, kill, delete, push). `[tool.dev_lab.doors]` is a different table: it maps a
+Each row renders the door `python -m <module> <verb...>`. The module is the repo's `[project.scripts]` target
+`<package>.__main__:main` (`cli_modules`): any other target is refused (a `python -m` door runs a package's
+`__main__`), and with several modules a row names its `script = "<name>"`. A row holds verbs only; the retired
+`argv` key is refused with its migration. Refused by name: no verb (a bare module admits every verb), an element
+with a space, glob or leading dash, an unknown key, and a prefix ending in an act (`ActDeclaredAsDoor`): the repo's
+`acts`, or always one of `REFUSED_ACTS` (press, set-value, close, kill, delete, push).
+
+A row is READ-ONLY unless it says `act = true`. An act row is a writing verb the repo admits explicitly
+(DECLARATION-LIES): its one intent is `Acts (writes): <why>` in the allow row, the Codex rule and the classifier
+intent alike, and a `why` claiming read-only is refused. Every declared row is a `subagent` door; a main-only row
+cannot be declared here, since `SUBAGENT-NO-PUSH` derives only from `POLICY`. Verbs are declared, not enumerated
+from the CLI's parser: the render never imports a consumer's code. `[tool.dev_lab.doors]` is a different table: it maps a
 deny rule's ID to the command that repo offers as its exit. Both clients are rendered from these:
 
 - **Claude Code**: one NARROW `Bash(...)` row per door and interpreter layout, e.g.
@@ -82,7 +96,8 @@ them in git history (user ruling 2026-10-23). `dev_lab.dev.automode` renders
 `{"autoMode": {"environment": ["$defaults", ...], "allow": ["$defaults", ...]}}` from:
 
 1. **The repo's declaration** (committed, host-free): `INTENTS`, every agent door's one string of
-   `POLICY`, the repo's own standing intents as prose in `[tool.dev_lab.policy] intents` (the retired
+   `POLICY`, the repo's own standing intents as prose in `[tool.dev_lab.policy] intents` and its CLI doors' intents
+   (`[tool.dev_lab.cli_doors]`, the same row as their allow rows) (the retired
    `[tool.dev_lab.automode] declares` is refused by name), and the repo's `origin` and branch set.
 2. **The machine's fleet sources**: the synced workstation registry `hosts.json` (its path in the machine file's
    `[workstation] registry`), each workstation with its computer, address and roles; and the machine file's
@@ -122,7 +137,8 @@ signature/orphan mode retains its existing children-first behavior and serve-rel
 
 ## Adopting
 
-1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)), cli=cli_doors(root))`, re-render
+1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)), cli=cli_doors(root))` -- the same
+   call in every repo; what differs is only that repo's pyproject, re-render
    `.claude/settings.json` with `permissions_block`, and drop any declared row that now duplicates a door row.
 2. Run `python -m dev_lab.dev.autodoors --repo . [--shell-door <path>] --write` and commit
    `.codex/rules/family-doors.rules`; without `--write` it exits 1 when the file is stale.

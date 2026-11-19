@@ -13,25 +13,21 @@ import re
 import shutil
 import subprocess
 import sys
-import threading
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
 import pytest
-from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import hostrefresh, servetask, venvfollow, workstation, workstationfile, workstationregistry
+from dev_lab.dev import hostrefresh, venvfollow, workstation, workstationfile, workstationregistry
 from dev_lab.dev.forgealarm import Alarm
-from dev_lab.dev.hpcaccount.spec import host_serve_argv
-from dev_lab.dev.servelock import held
+from dev_lab.dev.producercheck import host_refusals
 from dev_lab.dev.venvpath import venv_interpreter
 
 #: Every probed tool its probe marks heavy; a plain probed tool (ngspice, node) is never withheld.
-_HEAVY = sorted(name for name, check in CHECKS.items() if check.heavy)
 
 
 FORGE: Final = 'https://forge.example/team'
@@ -48,6 +44,8 @@ if args[:2] == ['-c', 'credential.interactive=never']:
     sys.exit(128 if any(f'/{d}.git' in args[-2] for d in denied) else 0)
 if args[0] == 'clone':
     git = pathlib.Path(args[-1], '.git'); git.mkdir(parents=True)
+    producer = 'hpc'
+    (git.parent / 'pyproject.toml').write_text(f'[tool.dev_lab.protection]\nproducer = "{producer}"\n')
     for name, text in (('URL', args[-2]), ('HEAD_SHA', 'a' * 40), ('UP_SHA', 'a' * 40)): (git / name).write_text(text)
     sys.exit(0)
 git, rest = pathlib.Path(args[1], '.git'), args[2:]
@@ -78,17 +76,17 @@ with (state.parent / 'calls.log').open('a') as f: f.write('schtasks ' + ' '.join
 if args[0] == '/Query':
     if not state.exists(): sys.exit(1)
     sys.stdout.write(state.read_text())
-elif args[0] == '/Create':
-    state.write_text(pathlib.Path(args[args.index('/XML') + 1]).read_text(encoding='utf-16'))
+elif args[0] == '/Delete':
+    state.unlink()
 """
 
 #: Every argv fragment that CHANGES something; a second run and a dry run log none of them.
-CHANGES: Final = ('clone', 'merge', 'fetch', 'bootstrap', '--install', '/Create')
+CHANGES: Final = ('clone', 'merge', 'fetch', 'bootstrap', '--install', '/Delete')
 
 
 @dataclass(frozen=True)
 class Box:
-    """One fake workstation: its serve checkouts (``<forge home>/repos``), machine file, Task state, call log."""
+    """One fake workstation: its checkouts (``<forge home>/repos``), machine file, retired Task state, call log."""
 
     root: Path
     machine: Path
@@ -101,6 +99,10 @@ class Box:
 
     def deploy(self, *extra: str) -> int:
         return workstation.deploy([*DEPLOY, *extra], programs=self.programs)
+
+
+#: A fake ``-m dev_lab.dev.toolrelease``: it logs ``toolrelease <verb> <tool>`` and installs nothing.
+_FAKE_TOOLRELEASE = 'import sys; open(sys.argv[1], "a").write("toolrelease " + " ".join(sys.argv[2:]) + chr(10))'
 
 
 @pytest.fixture
@@ -124,9 +126,9 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
         com=lambda _progid: Path('designer.exe'),
         windows=True,
         home=tmp_path / 'home',
-        executable=tmp_path / 'home' / 'repos' / 'dev-lab' / VENV,
         computer='BOX',
-        release=lambda checkout: [f'released {checkout.name}'],
+        toolrelease=(py, '-c', _FAKE_TOOLRELEASE, str(log)),
+        tool_dir=tmp_path / 'tools',
     )
     return Box(tmp_path / 'home' / 'repos', machine, task, log, programs)
 
@@ -151,7 +153,7 @@ def _changes(calls: list[str]) -> list[str]:
     return [call for call in calls if any(word in call.split() for word in CHANGES)]
 
 
-def test_a_fresh_box_is_cloned_bootstrapped_hooked_declared_and_scheduled(box: Box) -> None:
+def test_a_fresh_box_is_cloned_bootstrapped_hooked_and_declared_and_nothing_is_scheduled(box: Box) -> None:
     assert box.deploy() == 0
     calls = box.calls()
     for name in ('dev-lab', 'alpha', 'beta'):
@@ -161,9 +163,10 @@ def test_a_fresh_box_is_cloned_bootstrapped_hooked_declared_and_scheduled(box: B
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     jmag = {'seats': 4, 'in_use': {'process': list(workstationfile.JMAG_SOLVER_IMAGES)}}
     assert declared['capabilities'] == {'workstation': {}, 'jmag': jmag}, 'a jmag seat is observed by its solvers'
-    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta']}, 'the checkouts are derived, not declared'
+    assert 'serve' not in declared, "a workstation never serves a merge's parts (user ruling 2026-11-16)"
     assert 'reserve' not in declared, 'deploy reserves nothing: the OS headroom keeps its defaults'
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.programs.home)
+    assert not box.task.exists(), 'a workstation never serves: no Task is registered'
+    assert not [call for call in calls if '/Delete' in call.split()], 'PLANTED CONTROL: no retired Task, no delete'
 
 
 def test_a_second_run_changes_nothing(box: Box) -> None:
@@ -184,10 +187,11 @@ def test_a_dry_run_reads_but_touches_nothing_and_prints_the_diff(box: Box, capsy
     assert not box.task.exists()
     out = capsys.readouterr().out
     assert '[dry-run] dev-lab: git clone' in out
-    assert '+[serve]' in out
+    assert '+[serve]' not in out
     assert '+[capabilities.jmag]' in out
-    assert '[dry-run] schtasks /Create /TN lab-forge-serve' in out
-    assert not box.programs.home.exists(), 'the task definition is not written either'
+    assert 'lab-forge-serve' in out
+    assert 'none installed' in out
+    assert not box.programs.home.exists()
 
 
 def test_unrelated_tables_and_comments_are_kept(box: Box) -> None:
@@ -256,7 +260,7 @@ def test_a_dirty_checkout_is_refused_and_a_behind_one_is_fast_forwarded(box: Box
 def test_a_refused_repo_is_skipped_alone_and_the_others_are_still_served(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One repo's refusal never stops the others: it leaves [serve] repos, its owner is alarmed, the exit is 2."""
+    """One repo's refusal never stops the others: its owner is alarmed, the exit is 2."""
     raised: list[Alarm] = []
     programs = replace(box.programs, alarm=raised.append)
     argv = [*DEPLOY]
@@ -267,8 +271,7 @@ def test_a_refused_repo_is_skipped_alone_and_the_others_are_still_served(
     assert workstation.deploy(argv, programs=programs) == 2
     assert f'git -C {box.root / "alpha"} merge --ff-only -q @{{u}}' in box.calls(), 'the planted control moves on'
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
-    assert declared['serve']['repos'] == ['dev-lab', 'alpha'], 'a refused repo is not served'
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.programs.home)
+    assert 'serve' not in declared, "no [serve]: a host serves by each repo's producer, never a list"
     assert 'beta' in capsys.readouterr().err
     assert [(one.repo, 'local changes' in one.body) for one in raised] == [(f'{FORGE}/beta.git', True)]
 
@@ -292,8 +295,8 @@ def test_deploy_reserves_nothing_for_people(flag: str) -> None:
         workstation.deploy(['--repos', REPOS, '--capabilities', 'jmag:4', flag])
 
 
-def test_serve_repos_hold_exactly_the_declared_repos_and_the_kit_is_still_deployed(box: Box) -> None:
-    """Ruling 2026-10-29 (D73): the kit runs the serve on every host but is served only when declared."""
+def test_the_kit_is_deployed_on_every_host_even_when_not_named(box: Box) -> None:
+    """Ruling 2026-10-29 (D73): the kit checkout is kept current on every host, named in ``--repos`` or not."""
     assert (
         workstation.deploy(
             ['--repos', 'alpha,beta', '--capabilities', 'workstation', '--forge', FORGE], programs=box.programs
@@ -301,27 +304,8 @@ def test_serve_repos_hold_exactly_the_declared_repos_and_the_kit_is_still_deploy
         == 0
     )
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
-    assert declared['serve'] == {'repos': ['alpha', 'beta']}, 'deploy never forces the kit into [serve] repos'
-    assert f'bootstrap {box.root / "dev-lab"}' in box.calls(), 'the Task still runs from a deployed kit checkout'
-    assert box.deploy() == 0
-    declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
-    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta']}, 'PLANTED CONTROL: asked, the kit is served'
-
-
-def test_the_kit_is_refreshed_every_tick_even_when_it_is_not_served(box: Box, tmp_path: Path) -> None:
-    assert (
-        workstation.deploy(
-            ['--repos', 'alpha', '--capabilities', 'workstation', '--forge', FORGE], programs=box.programs
-        )
-        == 0
-    )
-    kit = box.root / 'dev-lab'
-    (kit / '.git' / 'UP_SHA').write_text('b' * 40)
-    worst, ran = _serve(box, tmp_path)
-    assert worst == 0
-    assert (kit / '.git' / 'HEAD_SHA').read_text() == 'b' * 40, 'the unserved kit is fast-forwarded by the tick'
-    assert ran == [], 'the moved kit defers this tick to the next Task run'
-    assert [cwd.name for _, cwd in _serve(box, tmp_path)[1]] == ['alpha'], 'only the declared repo is served'
+    assert 'serve' not in declared
+    assert f'bootstrap {box.root / "dev-lab"}' in box.calls(), 'the kit is deployed though not named'
 
 
 def test_a_bad_capability_is_refused_by_name() -> None:
@@ -329,182 +313,34 @@ def test_a_bad_capability_is_refused_by_name() -> None:
         workstation.deploy(['--repos', REPOS, '--capabilities', 'jmag:x'])
 
 
-def test_an_older_task_action_is_replaced(box: Box) -> None:
-    box.task.write_text('<Command>cmd</Command><Arguments>/c cd /d x &amp;&amp; py -m serve</Arguments>')
+def test_a_retired_serve_task_is_deleted_and_a_second_run_finds_none(box: Box) -> None:
+    """User ruling 2026-11-16: a workstation never serves, so the Task an older deploy registered is deleted."""
+    box.task.write_text('<Arguments>-m dev_lab.dev.workstation serve</Arguments>')
+    assert box.deploy('--dry-run') == 0
+    assert box.task.exists(), 'a dry run deletes nothing'
     assert box.deploy() == 0
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.programs.home)
+    assert f'schtasks /Delete /TN {workstation.RETIRED_TASK} /F' in box.calls()
+    assert not box.task.exists()
+    seen = len(box.calls())
+    assert box.deploy() == 0
+    assert not [c for c in box.calls()[seen:] if '/Delete' in c.split()], 'PLANTED CONTROL: none left to delete'
+
+
+def test_the_retired_serve_verb_is_refused_by_name_with_the_ruling_and_its_door(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PLANTED: ``workstation serve`` is refused by name, never parsed into an argparse error; ``template`` runs."""
+    assert workstation.main(['serve']) == 2
+    err = capsys.readouterr().err
+    assert '`workstation serve` is retired' in err
+    assert 'user ruling 2026-11-16' in err
+    assert 'forge queue' in err, 'the door to read a sha is named'
+    assert 'workstation deploy' in err, 'the door that deletes the retired Task is named'
+    assert workstation.main(['template', '--role', 'light']) == 0, 'PLANTED CONTROL: a live verb runs'
 
 
 def test_off_windows_the_deploy_is_refused(box: Box) -> None:
     assert workstation.deploy([*DEPLOY], programs=replace(box.programs, windows=False)) == 2
-
-
-def _serving(box: Box) -> None:
-    """A deployed box: every checkout cloned, its venv synced, and ``[serve]`` declared."""
-    assert box.deploy() == 0
-
-
-class _Done:
-    def __init__(self, returncode: int) -> None:
-        self.returncode = returncode
-
-
-def _serve(box: Box, tmp_path: Path, rc: dict[str, int] | None = None) -> tuple[int, list[tuple[list[str], Path]]]:
-    ran: list[tuple[list[str], Path]] = []
-
-    def run(argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
-        ran.append((argv, cwd))
-        return _Done((rc or {}).get(cwd.name, 0))
-
-    return workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs), ran
-
-
-def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst(box: Box, tmp_path: Path) -> None:
-    _serving(box)
-    worst, ran = _serve(box, tmp_path, {'beta': 1})
-    assert worst == 1
-    assert sorted(cwd.name for _, cwd in ran) == ['alpha', 'beta', 'dev-lab'], 'each repo is served once'
-    assert {tuple(argv) for argv, _ in ran} == {tuple(host_serve_argv())}, 'the HOST kit serves every repo'
-
-
-def test_one_busy_repo_never_starves_the_others(box: Box, tmp_path: Path) -> None:
-    """Incident 2026-10-25: one repo's long part held the host lock and every other repo's card went STALE.
-
-    Each repo serves in a lane of its own: while alpha's serve still runs, beta and dev-lab serve again one
-    period after their last serve ended. PLANTED CONTROL: once alpha ends nobody serves again -- the Task's
-    next tick does.
-    """
-    _serving(box)
-    release, ran, lock = threading.Event(), [], threading.Lock()
-
-    def run(_argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
-        with lock:
-            ran.append(cwd.name)
-            if ran.count('beta') >= 2 and ran.count('dev-lab') >= 2:
-                release.set()
-        if cwd.name == 'alpha':
-            assert release.wait(30), 'the other repos were never served again while alpha ran'
-        return _Done(0)
-
-    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs, period_s=0.01) == 0
-    assert ran.count('alpha') == 1
-    assert ran.count('beta') >= 2
-    assert ran.count('dev-lab') >= 2
-
-
-def test_serve_refreshes_a_stale_venv_before_its_forge_runs(box: Box, tmp_path: Path) -> None:
-    """THE PLANTED CONTROL (incident 2026-10-13): a venv whose old kit would exit 2 is synced FIRST, by the host."""
-    _serving(box)
-    alpha = box.root / 'alpha'
-    (alpha / '.git' / 'UP_SHA').write_text('b' * 40)
-    (alpha / 'pyproject.toml').write_text('[project]\nname = "alpha"  # pins a newer kit\n')
-    seen = len(box.calls())
-    served: dict[str, int] = {}  # repo -> how many calls had been logged when its forge started
-
-    def run(_argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
-        served[cwd.name] = len(box.calls())
-        stale = cwd == alpha and f'bootstrap {alpha}' not in box.calls()[seen:]
-        return _Done(2 if stale else 0)  # the old kit's `forge serve` exits 2
-
-    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
-    calls = box.calls()
-    moved = calls.index(f'git -C {alpha} merge --ff-only -q @{{u}}', seen)
-    synced = calls.index(f'bootstrap {alpha}', seen)
-    assert moved < synced < served['alpha'], 'moved, then synced, then served'
-    assert f'bootstrap {box.root / "beta"}' not in calls[seen:], 'an unchanged venv is not synced'
-    kit = calls.index(f'git -C {box.root / "dev-lab"} fetch -q', seen)
-    assert kit < calls.index(f'git -C {alpha} fetch -q', seen), 'dev-lab is refreshed first'
-    again = len(box.calls())
-    assert _serve(box, tmp_path)[0] == 0
-    assert not [c for c in box.calls()[again:] if c.startswith('bootstrap')], 'the stamp makes a second tick quiet'
-
-
-def test_serve_reinstalls_the_serving_checkouts_own_hooks_after_it_updates_itself(box: Box, tmp_path: Path) -> None:
-    """PLAN R1: a host's shims are kept current by the machine, never by hand (2026-10-22, #273).
-
-    The serving dev-lab checkout moved to a kit whose shim differs from the installed one: the tick
-    re-installs ITS hooks before serving. A repo checkout's hooks are not the serving kit's and are left alone.
-    PLANTED CONTROL: hooks already live are only read, never re-written.
-    """
-    _serving(box)
-    kit, alpha = box.root / 'dev-lab', box.root / 'alpha'
-    (kit / '.git' / 'HOOKED').unlink()
-    (alpha / '.git' / 'HOOKED').unlink()
-    seen = len(box.calls())
-    assert _serve(box, tmp_path)[0] == 0
-    installs = [call for call in box.calls()[seen:] if '--install' in call.split()]
-    assert installs == [f'python -m dev_lab.dev.hook_install --repo {kit} --install']
-    again = len(box.calls())
-    assert _serve(box, tmp_path)[0] == 0
-    assert not [call for call in box.calls()[again:] if '--install' in call.split()], 'live hooks are only read'
-
-
-def test_a_failed_sync_is_retried_by_the_next_tick(box: Box, tmp_path: Path) -> None:
-    _serving(box)
-    (box.root / 'alpha' / '.venv' / '.lab-host-env').unlink()
-    failing = replace(box.programs, bootstrap=(sys.executable, '-c', 'raise SystemExit(3)'))
-    assert workstation.serve(run=lambda *_a, **_k: _Done(0), lock=tmp_path / 'l', programs=failing) == 2
-    seen = len(box.calls())
-    assert _serve(box, tmp_path)[0] == 0
-    assert f'bootstrap {box.root / "alpha"}' in box.calls()[seen:]
-
-
-def test_a_repo_whose_refresh_fails_is_released_by_name_and_the_others_are_served(
-    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _serving(box)
-    (box.root / 'alpha' / '.git' / 'DIRTY').touch()
-    shutil.rmtree(box.root / 'beta')
-    capsys.readouterr()
-    worst, ran = _serve(box, tmp_path)
-    assert worst == 2
-    assert [cwd.name for _, cwd in ran] == ['dev-lab']
-    err = capsys.readouterr().err
-    assert 'alpha released, not served this tick' in err
-    assert 'local changes' in err
-    assert 'beta released, not served this tick: no checkout' in err
-
-
-def test_serve_does_nothing_while_another_serve_holds_the_lock(box: Box, tmp_path: Path) -> None:
-    _serving(box)
-    lock, ran, seen = tmp_path / 'serve.lock', [], len(box.calls())
-    with held(lock) as mine:
-        assert mine
-        assert workstation.serve(run=lambda *a, **_k: ran.append(a), lock=lock, programs=box.programs) == 0
-    assert box.calls()[seen:] == [], 'nothing is refreshed either'
-    assert ran == []
-
-
-def test_serve_without_a_declaration_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'absent.toml'))
-    assert workstation.serve(lock=tmp_path / 'serve.lock') == 2
-
-
-@pytest.mark.parametrize(
-    ('roles', 'named'),
-    [(['client', 'node'], "['client', 'node']"), (None, "no entry for computer 'BOX'")],
-    ids=['forge-role-absent', 'no-entry'],
-)
-def test_a_host_the_registry_gives_no_forge_role_claims_nothing_and_releases_its_journaled_runs(
-    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str], roles: list[str] | None, named: str
-) -> None:
-    _serving(box)
-    serve = tomllib.loads(box.machine.read_text(encoding='utf-8'))['serve']
-    _registry(tmp_path, box.machine, roles)
-    box.machine.write_text(
-        box.machine.read_text(encoding='utf-8') + f'\n[serve]\nrepos = {json.dumps(serve["repos"])}\n',
-        encoding='utf-8',
-    )
-    seen = len(box.calls())
-    worst, ran = _serve(box, tmp_path)
-    assert (worst, ran) == (0, []), 'no forge serve runs, so nothing is claimed'
-    assert box.calls()[seen:] == [], 'nothing is refreshed either'
-    out = capsys.readouterr().out
-    assert '[serve] not a forge host (' in out
-    assert named in out
-    assert [line for line in out.splitlines() if 'released ' in line] == [
-        f'[serve] {name} released {name}' for name in ('dev-lab', 'alpha', 'beta')
-    ]
 
 
 def test_the_registry_entry_is_matched_by_computer_before_name(box: Box, tmp_path: Path) -> None:
@@ -512,17 +348,6 @@ def test_the_registry_entry_is_matched_by_computer_before_name(box: Box, tmp_pat
     assert workstationregistry.forge_refusal('BOX') is None, 'COMPUTERNAME matches case-insensitively'
     assert workstationregistry.forge_refusal('G') is None, 'the label matches when no computer does'
     assert 'roles of WS9' in (workstationregistry.forge_refusal('OTHER') or '')
-
-
-def test_serve_with_no_registry_declared_is_refused_by_name(
-    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _serving(box)
-    text = box.machine.read_text(encoding='utf-8')
-    box.machine.write_text(text.replace('[workstation]', '[workstation_retired]'), encoding='utf-8')
-    worst, ran = _serve(box, tmp_path)
-    assert (worst, ran) == (2, [])
-    assert 'no [workstation] registry' in capsys.readouterr().err
 
 
 def test_deploy_is_refused_on_a_host_without_the_forge_role(
@@ -534,25 +359,6 @@ def test_deploy_is_refused_on_a_host_without_the_forge_role(
     assert str(registry) in err
     assert 'add "forge"' in err
     assert box.calls() == []
-
-
-def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(sys, 'stdout', None)  # pythonw: no console, no streams
-    monkeypatch.setattr(sys, 'stderr', None)
-    monkeypatch.setattr(servetask, 'forge_home', lambda: tmp_path)
-    seen: dict[str, object] = {}
-
-    def serve(*, out: object = None) -> int:
-        seen.update(out=out)
-        workstation.emit('[serve] reached the log')
-        return 0
-
-    monkeypatch.setattr(workstation, 'serve', serve)
-    assert workstation.main(['serve']) == 0
-    assert seen['out'] is not None, 'the children write to the same log'
-    assert '[serve] reached the log' in (tmp_path / 'serve.log').read_text(encoding='utf-8')
 
 
 REAL_DOOR: Final = r"""
@@ -575,21 +381,6 @@ def test_the_bootstrap_passes_the_real_door_from_an_unrelated_cwd(
     programs = workstation.Programs(bootstrap=(sys.executable, str(door)))
     step = workstation.Step(workstation.Tools(git=('git',)), dry=False)
     assert hostrefresh.sync_venv(step, programs.bootstrap, checkout) == 0
-
-
-def test_a_repo_venv_whose_kit_would_exit_2_no_longer_matters_to_serving(box: Box, tmp_path: Path) -> None:
-    """PLANTED CONTROL: every repo venv's kit exits 2, and serving is untouched -- the HOST kit is the scheduler.
-
-    Two repos on one host served by their own venvs ran two different schedulers, and a fix to the host's kit
-    never reached the parts it ran (a repo venv held an older non-editable kit).
-    """
-    _serving(box)
-
-    def run(argv: list[str], **_kw: object) -> _Done:
-        stale = Path(argv[0]).is_relative_to(box.root)  # any repo's own venv interpreter
-        return _Done(2 if stale else 0)
-
-    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
 
 
 def test_a_new_committed_lock_rebootstraps_a_served_venv_and_no_remote_is_asked(tmp_path: Path) -> None:
@@ -634,75 +425,35 @@ def test_the_retired_root_flag_is_refused_by_name(capsys: pytest.CaptureFixture[
     assert 'repos' in err
 
 
-def test_a_machine_file_still_declaring_serve_root_is_refused_by_name_and_deploy_drops_it(
-    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _serving(box)
-    box.machine.write_text(
-        box.machine.read_text(encoding='utf-8').replace('[serve]\n', '[serve]\nroot = "D:/srv/src"\n'),
-        encoding='utf-8',
-    )
-    capsys.readouterr()
-    worst, ran = _serve(box, tmp_path)
-    assert (worst, ran) == (2, [])
-    err = capsys.readouterr().err
-    assert '[serve] root is retired' in err
-    assert 'workstation deploy' in err, 'the remedy is named'
+def test_deploy_removes_a_hand_written_serve_table(box: Box) -> None:
     assert box.deploy() == 0
-    assert 'root' not in tomllib.loads(box.machine.read_text(encoding='utf-8'))['serve'], 'deploy removes the key'
-    assert _serve(box, tmp_path)[0] == 0
-
-
-def test_serve_refuses_to_run_from_any_interpreter_but_the_serve_kits(
-    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Serve never again runs from a dev checkout (incident 2026-10-26: a lab-commons dev venv was the kit)."""
-    _serving(box)
-    dev = replace(box.programs, executable=tmp_path / 'src' / 'lab-commons' / VENV)
-    seen = len(box.calls())
-    capsys.readouterr()
-    assert workstation.serve(run=lambda *_a, **_k: _Done(0), lock=tmp_path / 'serve.lock', programs=dev) == 2
-    err = capsys.readouterr().err
-    assert str(box.root / 'dev-lab') in err
-    assert 'workstation deploy' in err
-    assert box.calls()[seen:] == [], 'nothing is refreshed either'
-    assert _serve(box, tmp_path)[0] == 0, 'PLANTED CONTROL: the kit interpreter serves'
-
-
-def test_the_kits_own_venv_is_resynced_when_its_lock_moves_before_any_other_repo_serves(
-    box: Box, tmp_path: Path
-) -> None:
-    """GAP A4: the Task runs from the dev-lab serve checkout, so a moved lock resyncs THE KIT'S venv first."""
-    _serving(box)
-    kit = box.root / 'dev-lab'
-    (kit / '.git' / 'UP_SHA').write_text('b' * 40)
-    (kit / 'uv.lock').write_text('moved')
-    seen = len(box.calls())
-    served: dict[str, int] = {}
-
-    def run(_argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
-        served.setdefault(cwd.name, len(box.calls()))
-        return _Done(0)
-
-    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
-    assert f'bootstrap {kit}' in box.calls()[seen:], 'the kit venv is synced'
-    assert served == {}, 'and no lane serves on the old code: the next Task run does'
-    again = len(box.calls())
-    assert _serve(box, tmp_path)[0] == 0
-    assert f'bootstrap {kit}' not in box.calls()[again:], 'PLANTED CONTROL: an unmoved lock syncs nothing'
+    box.machine.write_text(
+        box.machine.read_text(encoding='utf-8') + '\n[serve]\nroot = "D:/srv/src"\nparts = "every"\n', encoding='utf-8'
+    )
+    assert box.deploy() == 0
+    assert 'serve' not in tomllib.loads(box.machine.read_text(encoding='utf-8')), 'deploy removes the whole table'
 
 
 LIGHT: Final = ('--repos', REPOS, '--role', 'light', '--forge', FORGE)
 
 
-def test_the_light_role_declares_its_profile_and_withholds_every_heavy_tool(box: Box) -> None:
-    """HOST1/HOST2 serve forge parts, never heavy compute (user ruling 2026-10-28): every probed tool is withheld."""
+def test_the_light_role_declares_its_capabilities_and_no_serve(box: Box) -> None:
+    """The light role never runs heavy compute (user ruling 2026-10-28) and never serves (user ruling 2026-11-16)."""
     assert workstation.deploy(list(LIGHT), programs=box.programs) == 0
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     assert declared['capabilities'] == {'workstation': {}}
-    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta'], 'parts': 'every', 'withhold': _HEAVY}
-    assert 'node' not in declared['serve']['withhold'], 'PLANTED CONTROL: a plain probed tool is not heavy'
-    assert {'femm', 'jmag', 'matlab'} <= set(workstationfile.HEAVY), 'a JMAG the probe finds is still never forge work'
+    assert 'serve' not in declared
+    assert 'node' not in workstationfile.HEAVY, 'PLANTED CONTROL: a plain probed tool is not heavy'
+    assert {'femm', 'jmag', 'matlab'} <= set(workstationfile.HEAVY), 'a heavy tool the probe finds is refused'
+
+
+def test_a_role_deploys_card_passes_the_host_refusals(box: Box) -> None:
+    """PLANTED: a card carrying the old ``[serve]`` is refused; the role deploy removes it, and the card passes."""
+    held = box.machine.read_text(encoding='utf-8')
+    box.machine.write_text(held + '\n[serve]\nparts = "every"\nwithhold = ["jmag"]\n', encoding='utf-8')
+    assert host_refusals('ws.toml', tomllib.loads(box.machine.read_text(encoding='utf-8'))), 'PLANTED CONTROL'
+    assert workstation.deploy(list(LIGHT), programs=box.programs) == 0
+    assert host_refusals('ws.toml', tomllib.loads(box.machine.read_text(encoding='utf-8'))) == []
 
 
 @pytest.mark.parametrize('heavy', ['jmag:4', 'femm', 'matlab'])
@@ -710,7 +461,7 @@ def test_the_light_role_refuses_a_heavy_capability(box: Box, heavy: str, capsys:
     with pytest.raises(SystemExit):
         workstation.deploy([*LIGHT, '--capabilities', f'workstation,{heavy}'], programs=box.programs)
     assert heavy.split(':', maxsplit=1)[0] in capsys.readouterr().err
-    assert not box.machine.exists() or 'withhold' not in box.machine.read_text(encoding='utf-8')
+    assert not box.machine.exists() or 'capabilities.jmag' not in box.machine.read_text(encoding='utf-8')
     assert workstation.deploy([*LIGHT, '--capabilities', 'workstation'], programs=box.programs) == 0, 'PLANTED CONTROL'
 
 
@@ -775,66 +526,52 @@ def test_deploy_drops_a_hand_set_ai_lab_runtime_backs_up_once_and_is_idempotent(
 
 
 def test_the_template_is_the_role_as_deploy_writes_it(capsys: pytest.CaptureFixture[str]) -> None:
-    assert workstation.main(['template', '--role', 'light', '--repos', 'dev-lab,alpha']) == 0
-    printed = tomllib.loads(capsys.readouterr().out)
-    assert printed == {
-        'capabilities': {'workstation': {}},
-        'serve': {'repos': ['dev-lab', 'alpha'], 'parts': 'every', 'withhold': _HEAVY},
-    }
+    assert workstation.main(['template', '--role', 'light']) == 0
+    assert tomllib.loads(capsys.readouterr().out) == {'capabilities': {'workstation': {}}}
 
 
 DOC: Final = Path(__file__).resolve().parents[1] / 'docs-src' / 'dev' / 'adding-a-workstation.md'
-TEMPLATE_BLOCK: Final = re.compile(
-    r'<!-- template: (?P<role>\w+) (?P<repos>\S+) -->\n```toml\n(?P<body>.*?)```', re.DOTALL
-)
+TEMPLATE_BLOCK: Final = re.compile(r'<!-- template: (?P<role>\w+) -->\n```toml\n(?P<body>.*?)```', re.DOTALL)
 
 
 def test_the_docs_template_is_the_profile_rendered_never_a_hand_copy() -> None:
-    """SINGLE SOURCE: the page's block is what ``template`` prints for the role and repos its marker names."""
+    """SINGLE SOURCE: the page's block is what ``template`` prints for the role its marker names."""
     blocks = list(TEMPLATE_BLOCK.finditer(DOC.read_text(encoding='utf-8')))
     assert [b['role'] for b in blocks] == ['light'], 'the page carries the one light template'
     for block in blocks:
-        assert block['body'] == workstationfile.template(block['role'], block['repos'].split(','))
+        assert block['body'] == workstationfile.template(block['role'])
 
 
-def test_a_behind_kit_is_fast_forwarded_and_the_tick_defers_to_the_next_run(box: Box, tmp_path: Path) -> None:
-    """Incident 2026-10-30: the forge host's serve never moved its own kit, so it merged by a gate dev-lab had retired.
-
-    The tick fast-forwards the kit and then serves NOTHING: the running process is the old code, and the next
-    Task run starts on the new. PLANTED CONTROL: that next tick, its kit current, serves every repo.
-    """
-    _serving(box)
-    kit = box.root / 'dev-lab'
-    (kit / '.git' / 'UP_SHA').write_text('b' * 40)
-    worst, ran = _serve(box, tmp_path)
-    assert (kit / '.git' / 'HEAD_SHA').read_text() == 'b' * 40, 'the behind kit is fast-forwarded'
-    assert (worst, ran) == (0, []), 'the tick defers: nothing is served on the old code'
-    worst, ran = _serve(box, tmp_path)
-    assert worst == 0
-    assert sorted(cwd.name for _, cwd in ran) == ['alpha', 'beta', 'dev-lab'], 'a current kit serves normally'
-
-
-def test_a_dirty_kit_is_never_touched_and_an_alarm_names_it(box: Box, tmp_path: Path) -> None:
-    """A dirty kit checkout is refused, never fetched or moved, and an alarm names it; the other repos serve."""
-    _serving(box)
-    kit = box.root / 'dev-lab'
-    (kit / '.git' / 'DIRTY').touch()
-    (kit / '.git' / 'UP_SHA').write_text('b' * 40)
-    alarms: list[Alarm] = []
-    seen = len(box.calls())
-    programs = replace(box.programs, alarm=alarms.append)
+def test_a_host_follow_never_moves_a_checkout_a_live_run_executes_from(tmp_path: Path) -> None:
+    """TREE-HAS-A-LIVE-RUN: the follow skips before its fetch and names the holder; PLANTED CONTROL: idle moves on."""
+    checkout = tmp_path / 'repo'
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(checkout)], check=True)
     ran: list[str] = []
-    worst = workstation.serve(
-        run=lambda _a, *, cwd, **_k: ran.append(cwd.name) or _Done(0), lock=tmp_path / 'l', programs=programs
-    )
-    assert worst == 2
-    assert [c for c in _changes(box.calls()[seen:]) if str(kit) in c] == [], 'the dirty kit is never touched'
-    assert (kit / '.git' / 'HEAD_SHA').read_text() == 'a' * 40
-    assert len(alarms) == 1
-    assert str(kit) in alarms[0].subject
-    assert 'local changes' in alarms[0].body
-    assert sorted(ran) == ['alpha', 'beta'], 'the other repos still serve; the dirty kit is not served'
-    (kit / '.git' / 'DIRTY').unlink()
-    alarms.clear()
-    assert workstation.serve(run=lambda *_a, **_k: _Done(0), lock=tmp_path / 'l', programs=programs) == 0
-    assert alarms == [], 'PLANTED CONTROL: a clean kit raises no alarm'
+
+    class _Step:
+        dry = True
+
+        def change(self, what: str, _argv: object, **_kw: object) -> int:
+            ran.append(what)
+            return 0
+
+    git = (shutil.which('git') or 'git',)
+    held = hostrefresh.follow(_Step(), git, checkout, busy=lambda _root: 'live run: pid 4242 (app)')
+    assert held.rc == 2
+    assert 'pid 4242 (app)' in held.why
+    assert not ran
+    assert hostrefresh.follow(_Step(), git, checkout, busy=lambda _root: '').rc == 0
+    assert ran
+
+
+def test_a_box_without_rclone_installs_the_pinned_release(box: Box) -> None:
+    """D76: the setup installs every pinned-release tool that resolves nowhere, through its one door."""
+    lacking = replace(box, programs=replace(box.programs, which=lambda t: None if t == 'rclone' else f'/bin/{t}'))
+    assert lacking.deploy() == 0
+    assert 'toolrelease install rclone' in lacking.calls()
+
+
+def test_a_box_with_rclone_installs_nothing(box: Box) -> None:
+    """PLANTED CONTROL for the install test: a resolvable rclone is left alone."""
+    assert box.deploy() == 0
+    assert not [call for call in box.calls() if call.startswith('toolrelease')]

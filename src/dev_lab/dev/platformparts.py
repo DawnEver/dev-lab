@@ -107,6 +107,7 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.family import declared_in
+from dev_lab.dev.famtests.alwayson import resource_nodes
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
 from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
@@ -385,7 +386,7 @@ def select(
     vocabulary = vocabulary_at(root, sha)
     selecting(vocabulary, part)  # a part that is no need-set over the vocabulary is refused by name
     ids = list(collect(''))
-    carrying = {name: set(collect(name)) for name in vocabulary.resources}
+    carrying = {name: set(resource_nodes(root, collect(name))) for name in vocabulary.resources}
     return split(need_sets(ids, carrying), part)
 
 
@@ -403,7 +404,7 @@ def compose(parts: Mapping[str, Part], *, head: str, waived: frozenset[str] = fr
     ordered = tuple(parts[name] for name in sorted(parts) if name not in waived)
     result = Conclusion.FAIL if any(part.result is not Conclusion.PASS for part in ordered) else Conclusion.PASS
     problems: list[str] = []
-    if BASE not in parts:
+    if BASE not in parts and BASE not in waived:
         problems.append(f'no {part_context(BASE)} part is posted for {head}; {_PRODUCE}')
     for name in sorted({name for part in ordered for name in part.hands}):
         handing = {part.platform: part.hands[name] for part in ordered if part.hands.get(name)}

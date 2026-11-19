@@ -16,13 +16,8 @@ module is the client and the CLI::
 * The keyboard-interactive answer is the user's single-use code from THIS conversation
   (CONSENT-CODE-FROM-THE-USER). It reaches the holder on a pipe and the ssh child through ``SSH_ASKPASS``;
   never argv, disk or a log. An empty code is allowed (a host's trusted window accepts an empty answer).
-* ONE CODE, ONE PLAN (user ruling 2026-11-10; topology.md 5.1): with ``--plan`` the same code first buys one
-  single-use consent credential per grant of the plan the user was shown
-  (:func:`dev_lab.ops.consent.client.grant_plan`; the digest is ``python -m dev_lab.ops.consent plan <plan.json>``'s),
-  then opens EVERY host the plan names, concurrently, inside :data:`OPEN_WINDOW_S` of the code -- the cluster's one
-  TOTP secret is verified by the issuer and each host's pam_oath, each once (:mod:`dev_lab.ops.consent.plan`). A host
-  that fails or misses the window is REPORTED, never retried with the code: granting spends no credential, so no
-  grant on any host is spent, and that host alone is re-opened with a new code (``open <dest> --hours H``).
+* ONE CODE, ONE PLAN (``--plan``): :mod:`dev_lab.dev.sshholdplan` -- the code buys the plan's credentials, then
+  opens every plan host not already held.
 * ``--jump <bastion>``: a host reachable only through a bastion. ssh asks each hop's keyboard-interactive
   prompt through the same ``SSH_ASKPASS``, so ONE code answers both -- valid only where the hops share one TOTP
   secret (each pam_oath records the step it accepted, so the code is spent once per host, never twice on one).
@@ -49,7 +44,6 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
@@ -57,23 +51,19 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
+from dev_lab.dev import sshholdplan
 from dev_lab.dev.sshholdrun import DEFAULT_TIMEOUT_S, run_command, store_credential
 from dev_lab.dev.sshholdstate import audit, forget, read_session, state_dir, state_path
 from dev_lab.dev.sshholdwire import HoldRefused, live, ping, request
-from dev_lab.ops.consent.client import given_code, grant_plan
-from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.plan import STALE_CLIENT, parsed, stale_client
-from dev_lab.ops.totp import STEP
+from dev_lab.ops.consent.client import given_code
 
 __all__ = [
     'DEFAULT_MAX_HOURS',
-    'OPEN_WINDOW_S',
     'ceiling',
     'check_hours',
     'close_session',
     'idle_s',
     'main',
-    'open_planned',
     'open_session',
     'route',
     'session_over',
@@ -83,9 +73,6 @@ __all__ = [
 #: The ceiling on ``--hours`` when the machine file names none (user ruling 2026-11-09: 4 h).
 DEFAULT_MAX_HOURS: Final = 4.0
 _OPEN_WAIT_S: Final = 120.0
-#: How long after the code a plan's host session may still be STARTED: one TOTP step. A host not started inside it
-#: is reported, never sent the code (topology.md 5.1).
-OPEN_WINDOW_S: Final = float(STEP)
 
 
 def _table(table: dict[str, Any] | None) -> dict[str, Any]:
@@ -157,55 +144,6 @@ def open_session(dest: str, hours: float, code: str, *, ssh: tuple[str, ...] = (
     return f'{dest}: session open for {hours:g} h (holder pid {word["pid"]})'
 
 
-def open_planned(
-    hours: float, code: str, plan: Path, shown: str, *, routes: Callable[[str], tuple[str, ...]] = route,
-    grant: Callable[[Path, str, str, str], list[Path]] = grant_plan,
-    opener: Callable[..., str] = open_session,
-    clock: Callable[[], float] = time.monotonic,
-) -> tuple[bool, list[str]]:  # fmt: skip
-    """Spend ONE *code* on *plan* (the one *shown*), then on every plan host's session: ``(all open, lines)``.
-
-    The issuer grant comes first; then each host opens concurrently, started only inside :data:`OPEN_WINDOW_S` of
-    the code, each on its own *routes* (:func:`route`). A host that fails is a line naming it and how to re-open it --
-    the code is never sent twice.
-    """
-    check_hours(hours, ceiling())  # before the code is spent on the grants
-    found = parsed(json.loads(plan.read_text(encoding='utf-8')))
-    if stale := stale_client(found):
-        msg = f'the plan was not granted, no code sent: {stale} unknown to this client: {STALE_CLIENT}'
-        raise HoldRefused(msg)
-    given = clock()
-    try:
-        written = grant(plan, shown, code, found.hosts[0])
-    except ConsentRefused as refused:
-        msg = f'the plan was not granted: {refused}'
-        raise HoldRefused(msg) from refused
-    audit('plan', ','.join(found.hosts), command=shown, status=0, grants=len(written))
-    lines = [f'consent granted: {path}' for path in written]
-    said: dict[str, str] = {}
-
-    def one(dest: str) -> None:
-        try:
-            said[dest] = opener(dest, hours, code, ssh=routes(dest))
-        except (HoldRefused, OSError) as refused:
-            said[dest] = f'{dest}: NOT opened ({refused})'
-
-    late = clock() - given > OPEN_WINDOW_S
-    threads = [threading.Thread(target=one, args=(dest,), daemon=True) for dest in found.hosts if not late]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    for dest in found.hosts:
-        if late:
-            said[dest] = f'{dest}: NOT opened (the grant took past the {OPEN_WINDOW_S:g} s window; code not sent)'
-        if 'NOT opened' in said[dest]:
-            said[dest] += (f'; no credential is spent -- re-open it alone with a new code: '
-                           f'python -m dev_lab.dev.sshhold open {dest} --hours {hours:g}')  # fmt: skip
-        lines.append(said[dest])
-    return all('NOT opened' not in said[dest] for dest in found.hosts), lines
-
-
 def close_session(dest: str) -> str:
     """End *dest*'s session; its state file goes either way."""
     session = live(dest)
@@ -271,10 +209,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.verb == 'open':
+            if args.plan is not None:
+                sshholdplan.offered(args.plan)  # before the code is asked
             code, jump = given_code(args.code), args.jump
             if args.plan is not None:
-                opened, lines = open_planned(
-                    args.hours, code, args.plan, args.digest, routes=lambda dest: route(dest, jump)
+                check_hours(args.hours, ceiling())  # before the code is spent on the grants
+                opened, lines = sshholdplan.open_planned(
+                    args.hours, code, args.plan, args.digest, routes=lambda dest: route(dest, jump), opener=open_session
                 )
                 emit('\n'.join(lines))
                 return 0 if opened else 2

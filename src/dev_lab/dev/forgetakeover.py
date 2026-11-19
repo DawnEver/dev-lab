@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.forgeclaim import this_machine
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import fetch_pull
 from dev_lab.dev.forgepulls import Marker, comment_upsert, pages, pr_list
@@ -49,7 +50,7 @@ from dev_lab.dev.forgereview_job import job_exit, review_due, review_run
 from dev_lab.dev.forgereview_scope import Scope, gather, git, landed_base, plan
 from dev_lab.dev.forgereview_stands import ask_again, carry
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.forgework import PullRequest, client_for
+from dev_lab.dev.forgework import PullRequest
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.reviewbudget import Raised, raise_line
 from dev_lab.dev.reviewgate import RERUN, forge_posted, posted_verdicts, review_missing

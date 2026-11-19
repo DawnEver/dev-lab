@@ -33,8 +33,11 @@ from dev_lab.dev.artefactstores import (
     ArtefactRefused,
     Ref,
     check_key,
+    manifest_of,
     object_key,
     ref_of,
+    ref_of_entry,
+    run_id_of,
     scratch_dir,
     sorted_refs,
     verified_copy,
@@ -68,7 +71,7 @@ class FolderStore:
         self._guard(path)
         try:
             before = path.lstat()
-            if not stat.S_ISREG(before.st_mode) or ref_of(expected.backend, expected.key, path) != expected:
+            if not stat.S_ISREG(before.st_mode) or ref_of(expected.backend, expected.ref, path) != expected:
                 msg = f'{path}: archive has other content or identity'
                 raise ArtefactRefused(msg)
             after = path.lstat()
@@ -119,18 +122,18 @@ class FolderStore:
         ):
             msg = f'{path}: invalid manifest identity'
             raise ArtefactRefused(msg)
-        return Ref.of(value)
+        return ref_of_entry(value)
 
     def put(self, ident: str, path: Path) -> Ref:
         """Write-once and idempotent: the archive, then its manifest (module docstring)."""
         base = object_key(self.repo, ident)
         new = ref_of(self.backend, base + ARCHIVE, path)
         check_key(base + MANIFEST)
-        target = self.root / new.key
-        landed = self._stored(new.key)
+        target = self.root / new.ref
+        landed = self._stored(new.ref)
         if landed is not None:
             if landed != new:
-                msg = f'{new.key} already exists with other content or manifest identity: write-once'
+                msg = f'{new.ref} already exists with other content or manifest identity: write-once'
                 raise ArtefactRefused(msg)
             self._verify_archive(target, new)
             return new
@@ -139,17 +142,17 @@ class FolderStore:
 
         def copy_archive(destination: Path) -> None:
             shutil.copyfile(path, destination)
-            if ref_of(new.backend, new.key, destination) != new:
-                msg = f'{new.key}: copied archive has other content'
+            if ref_of(new.backend, new.ref, destination) != new:
+                msg = f'{new.ref}: copied archive has other content'
                 raise ArtefactRefused(msg)
 
         if not os.path.lexists(target):
             self._publish(target, copy_archive)
         self._verify_archive(target, new)
         manifest = target.with_name(ident + MANIFEST)
-        self._publish(manifest, lambda dst: dst.write_text(json.dumps(new.manifest()), encoding='utf-8'))
-        if self._stored(new.key) != new:
-            msg = f'{new.key}: conflicting committed manifest identity'
+        self._publish(manifest, lambda dst: dst.write_text(json.dumps(manifest_of(new)), encoding='utf-8'))
+        if self._stored(new.ref) != new:
+            msg = f'{new.ref}: conflicting committed manifest identity'
             raise ArtefactRefused(msg)
         self._verify_archive(target, new)
         return new
@@ -159,7 +162,7 @@ class FolderStore:
         scratch = scratch_dir()
         try:
             fetched = scratch / 'fetched'
-            shutil.copyfile(self.root / ref.key, fetched)
+            shutil.copyfile(self.root / ref.ref, fetched)
             return verified_copy(ref, fetched, dest)
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
@@ -167,13 +170,13 @@ class FolderStore:
     def list(self, older_than: datetime | None) -> tuple[Ref, ...]:
         """Every manifest under ``<root>/<repo>``."""
         base = self.root / self.repo
-        found = [Ref.of(json.loads(p.read_text(encoding='utf-8'))) for p in base.rglob(f'*{MANIFEST}')]
+        found = [ref_of_entry(json.loads(p.read_text(encoding='utf-8'))) for p in base.rglob(f'*{MANIFEST}')]
         return sorted_refs(found if base.is_dir() else [], older_than)
 
     def delete(self, ref: Ref) -> None:
         """Delete both objects, then each emptied parent up to the repo folder."""
-        archive = self.root / ref.key
-        archive.with_name(ref.run_id + MANIFEST).unlink(missing_ok=True)
+        archive = self.root / ref.ref
+        archive.with_name(run_id_of(ref) + MANIFEST).unlink(missing_ok=True)
         archive.unlink(missing_ok=True)
         top = self.root / self.repo
         parent = archive.parent

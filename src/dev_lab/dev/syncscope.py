@@ -74,7 +74,6 @@ __all__ = [
     'Selection',
     'UnknownExtraError',
     'canon',
-    'declares_groups',
     'extras',
     'groups',
     'scope',
@@ -201,11 +200,6 @@ def _spec_extras(spec: str) -> tuple[str, ...]:
 
 def _manifest(text: str) -> dict:
     return tomllib.loads(text).get('project', {})
-
-
-def declares_groups(text: str) -> bool:
-    """Answer whether the manifest declares the dependency-group axis."""
-    return bool(tomllib.loads(text).get('dependency-groups'))
 
 
 def extras(text: str) -> dict[str, frozenset[str]]:

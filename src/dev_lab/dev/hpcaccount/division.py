@@ -27,9 +27,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-from lab_commons.hpc.grants import Machine, load_grants
+from lab_commons import config
+from lab_commons.hpc.grants import AccessRefused, Machine, load_grants
 
-__all__ = ['DEFAULT_ROLES', 'ROLE_KEYS', 'Division', 'account_role', 'division_of', 'load_division', 'reached_machine']
+from dev_lab.dev import devprofile
+
+__all__ = ['DEFAULT_ROLES', 'ROLE_KEYS', 'Division', 'account_role', 'division_of', 'reached_machine']
 
 #: The role table when the workstation declares none: verification serves and is reported; research is refused
 #: a writer.
@@ -70,14 +73,6 @@ def _roles(raw: Mapping[str, Mapping[str, Any]] | None) -> Mapping[str, Mapping[
     return {name: dict(table) for name, table in raw.items()}
 
 
-def load_division(hpc: Mapping[str, Any]) -> Division:
-    """The division the raw ``[hpc]`` table declares; an unknown role key refused naming it."""
-    return Division(
-        grant_roles={grant['user']: grant.get('role', '') for grant in hpc.get('grant', [])},
-        roles=_roles(hpc.get('roles')),
-    )
-
-
 def account_role(role: str, fleet_role: str, passed: Mapping[str, Any] | None) -> Mapping[str, Any] | str:
     """What an account of *role* does, as its deploy decides it; else why the deploy refuses.
 
@@ -109,11 +104,14 @@ def reached_machine(accounts: Sequence[str] = ()) -> Machine:
     """The machine's reached grants, each of *accounts* checked among them.
 
     Raises:
-        lab_commons.hpc.grants.AccessRefused: an account another role reaches, or a machine reaching none.
+        lab_commons.hpc.grants.AccessRefused: an account another role reaches, a machine reaching none, or an
+            unmanaged machine (naming its enrolment door).
         LookupError: an account no grant declares.
         ValueError: the ``[hpc]`` declaration is refused.
 
     """
+    if why := devprofile.refusal(config.machine(), 'an HPC action'):
+        raise AccessRefused(why)
     machine = load_grants()
     for user in accounts:
         machine.grant(user)

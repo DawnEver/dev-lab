@@ -287,3 +287,26 @@ def test_an_unknown_severity_raises() -> None:
     rule = rules_by_id(DENY_RULES)['PUSH-FORCE']
     with pytest.raises(ValueError, match='severity'):
         replace(rule, severity='warn')
+
+
+#: The rows whose pattern only prefilters and a module judges, as a NAMED SET.
+ASKING_ROWS = {'TRACKED-CITES-NO-EPHEMERAL': 'dev_lab.dev.journaldoor'}
+
+
+def test_the_asking_rows_are_a_named_set_and_render_their_judge() -> None:
+    assert {rule.id: rule.asks for rule in DENY_RULES if rule.asks is not None} == ASKING_ROWS
+    by_id = rules_by_id(DENY_RULES)
+    assert by_id['TRACKED-CITES-NO-EPHEMERAL'].rendered()['asks'] == 'dev_lab.dev.journaldoor'
+    assert 'asks' not in by_id['PUSH-FORCE'].rendered(), 'a row judged by its pattern names no judge'
+
+
+@pytest.mark.parametrize(
+    'asks', ['dev_lab.dev.no_such_judge', 'dev_lab.no_such_pkg.judge', 'os.path', 'dev_lab.dev.journaldoor; rm x']
+)
+def test_an_asks_naming_no_dev_lab_module_raises(asks: str) -> None:
+    """The engine fails OPEN when the module it asks is absent, so a typo would admit every call: refused HERE.
+
+    PLANTED CONTROL: the registry's own judge constructs (the named-set test above).
+    """
+    with pytest.raises(ValueError, match='names no dev_lab module'):
+        replace(rules_by_id(DENY_RULES)['PUSH-FORCE'], asks=asks)

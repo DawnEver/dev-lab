@@ -29,7 +29,9 @@ from dev_lab.dev.producer import (
 
 def test_every_meaning_has_its_own_code() -> None:
     assert len({int(code) for code in ProducerExit}) == len(ProducerExit)
-    assert {code.name for code in ProducerExit} == {'PASS', 'FAIL', 'USAGE', 'INCONCLUSIVE', 'UNREACHABLE'}
+    assert {code.name for code in ProducerExit} == {
+        'PASS', 'FAIL', 'USAGE', 'INCONCLUSIVE', 'UNREACHABLE', 'PART_REFUSED'
+    }  # fmt: skip
 
 
 def test_usage_is_the_code_argparse_exits_with() -> None:
@@ -107,6 +109,7 @@ def test_every_owner_class_of_contract_6_is_one_enum() -> None:
         'vendor-licence',
         'network',
         'status-publishing',
+        'part-refusal',
     }
 
 
@@ -150,3 +153,11 @@ def test_the_class_field_is_read_tolerantly_and_survives_the_cut() -> None:
     long = owned(Owner.ENVIRONMENT, 'x' * 500)
     assert len(long) == 140
     assert owner_of('error', long) is Owner.ENVIRONMENT
+
+
+def test_a_part_refusal_is_its_own_class_and_exit() -> None:
+    """W5 (dev-lab#644): a part the forge refused is ``class=part-refusal`` (exit 5), never the environment's."""
+    said = release_reason(ProducerExit.PART_REFUSED, outage=None, detail=': INCONCLUSIVE 1 of 2')
+    assert owner_of('error', said) is Owner.PART_REFUSAL, said
+    assert said.startswith('released: part refused (exit 5)'), said
+    assert owner_of('error', release_reason(ProducerExit.INCONCLUSIVE, outage=None)) is Owner.ENVIRONMENT, 'CONTROL'

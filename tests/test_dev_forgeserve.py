@@ -244,6 +244,9 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeservesteps, 'idle_drafts', drafts or (lambda *_a, **_k: []))  # reads open PRs (D53)
     monkeypatch.setattr(forgeservesteps, 'late_reviews', lambda *_a, **_k: [])  # reads open PRs too (backlog)
+    monkeypatch.setattr(
+        forgeservesteps, 'orphans', lambda *_a, **_k: []
+    )  # reads open PRs: tests/test_dev_forgeorphan.py
     monkeypatch.setattr(forgeservesteps, 'ready_when_current', lambda *_a, **_k: [])  # its own tests
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(
@@ -733,6 +736,25 @@ def test_an_idle_alarm_names_the_account_not_the_login_node(monkeypatch, tmp_pat
     assert raised.subject == f'{SEAT} is idle with work pending'
 
 
+def test_an_idle_alarm_names_what_blocks_each_pending_part(monkeypatch, tmp_path: Path) -> None:
+    """An idle account says WHY per part: its queue row's block, never a bare 'nothing was claimed'.
+
+    PLANTED CONTROL: a pending part with no queue row still reads 'nothing was claimed'.
+    """
+    pending = Work('integrate/main', SHA, 'base', OPEN)
+    block = 'not admitted: lacking mem_gb (161.286 asked, 25.4863 free)'
+    row = Ranked(Candidate('o/r', 'integrate/main', SHA, 'base', 'part', NOW, FULL), 60.0, 4.0, 15.0, 1.0, block)
+    idle = TickReport((pending,), (), ('tick',), (), queue=(row,), pending=(pending,))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, idle)
+    (raised,) = [a for a in alarms if a.kind == IDLE]
+    assert f'integrate/main {SHA[:12]} base -- {block}' in raised.body
+    assert 'nothing was claimed' not in raised.body
+    bare = TickReport((pending,), (), ('tick',), (), pending=(pending,))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, bare)
+    (raised,) = [a for a in alarms if a.kind == IDLE]
+    assert raised.body.endswith('nothing was claimed')
+
+
 def test_work_this_host_cannot_serve_never_makes_it_idle(monkeypatch, tmp_path: Path) -> None:
     """Another platform's open part is in every host's work; only the tick's servable *pending* alarms idle."""
     elsewhere = Work('integrate/main', SHA, 'linux', OPEN)
@@ -1186,7 +1208,7 @@ def test_a_finished_box_run_learns_its_peak_wall_and_measured_cpu(monkeypatch, t
         learn=lambda *a, **k: learnt.append((a, k)),
     )  # fmt: skip
     ((root, done, run), how) = learnt[0]
-    assert (root, done.platform, run.peak_mem_gb, run.cpu_s, how) == (tmp_path, 'windows', 3.5, 45.0, {'killed': False})
+    assert (root, done.platform, run.peak_mem_gb, run.cpu_s, how) == (tmp_path, 'windows', 3.5, 45.0, {'ended': 'exit'})
     assert run.wall_s > 0
 
 
@@ -1224,7 +1246,7 @@ def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatc
     _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learnt.append((a, k)))
     declared = forgeproduce.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
     ((_root, _item, run), how) = learnt[0]
-    assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'killed': True})
+    assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'ended': 'memory'})
 
 
 def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Path) -> None:

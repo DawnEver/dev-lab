@@ -73,3 +73,24 @@ def test_the_refusal_is_progressive() -> None:
     root = Path(__file__).resolve().parents[1]
     assert 'recursive-grep' in disclosure.anchors((root / disclosure.REFUSALS_DOC).read_text(encoding='utf-8'))
     assert rule.needs is None
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        'grep -rn "x" src/a.py',
+        'grep -r -e x src/a.py notes.txt',
+        'cd src && grep -rn x a.py',
+    ],
+)
+def test_a_recursive_grep_whose_operands_are_files_walks_nothing(rules: Path, tmp_path: Path, command: str) -> None:
+    """MEASURED 2026-11-16: `-r` on one named file was hinted, though grep reads only that file.
+
+    PLANTED CONTROL: the same flag on a directory operand, or with no operand at all, is still hinted.
+    """
+    (tmp_path / 'src').mkdir()
+    (tmp_path / 'src' / 'a.py').write_text('x\n', encoding='utf-8')
+    (tmp_path / 'notes.txt').write_text('x\n', encoding='utf-8')
+    assert agenthooks.decide(command, rules, cwd=tmp_path, hint=True) is None, command
+    for walking in ('grep -rn x src', 'grep -rn x src/a.py src', 'grep -r x'):
+        assert agenthooks.decide(walking, rules, cwd=tmp_path, hint=True) is not None, walking

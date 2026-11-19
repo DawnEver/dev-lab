@@ -63,6 +63,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev import floors
+from dev_lab.dev.callorigins import call_origins
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -72,6 +73,7 @@ __all__ = [
     'BARS',
     'ApproxScan',
     'FloorlessTolerance',
+    'UnreadableApproxSource',
     'approx_calls',
     'assert_every_tolerance_states_its_floor',
     'assert_the_scanner_still_convicts',
@@ -105,6 +107,10 @@ class FloorlessTolerance(AssertionError):
     """At least one comparison states a tolerance whose absolute floor was chosen by the framework."""
 
 
+class UnreadableApproxSource(AssertionError):
+    """A declared corpus member could not be read and parsed; no complete scan exists."""
+
+
 @dataclass(frozen=True)
 class ApproxScan:
     """One walk: the offenders, and BOTH populations the two floors judge.
@@ -121,17 +127,17 @@ class ApproxScan:
 
 
 def is_approx(func: ast.expr) -> bool:
-    """Whether *func* names ``approx`` -- dotted or bare, because the IMPORT STYLE is not the subject.
+    """Whether this expression spells bare ``approx`` or ``pytest.approx``, without resolving imports.
 
-    ``pytest.approx(...)`` and a module-level ``from pytest import approx`` are the same call, and all
-    three consumers already treat them so. AN ALIAS IS INVISIBLE HERE, stated rather than implied:
-    ``from pytest import approx as close`` is matched by nothing in this module, because the name is
-    all an AST lint has and following the binding would be an import resolver this guard does not own.
-    Nothing in this family spells it that way today; a repo that starts to has lost the guard in
-    silence, which is why the sentence is here and not only in a commit message.
+    The module reader resolves ``from pytest import approx as close`` to the latter before using this
+    predicate. An unbound ``close`` expression alone is not evidence of an import. Another owner's
+    ``geometry.approx`` is not pytest merely because its last attribute has the same name.
     """
     return (isinstance(func, ast.Name) and func.id == 'approx') or (
-        isinstance(func, ast.Attribute) and func.attr == 'approx'
+        isinstance(func, ast.Attribute)
+        and func.attr == 'approx'
+        and isinstance(func.value, ast.Name)
+        and func.value.id == 'pytest'
     )
 
 
@@ -149,8 +155,12 @@ def _stated(call: ast.Call) -> tuple[bool, bool]:
 
 
 def approx_calls(tree: ast.AST) -> tuple[ast.Call, ...]:
-    """Every ``approx`` call in *tree*, in walk order. Pure, so a control drives THIS reader."""
-    return tuple(node for node in ast.walk(tree) if isinstance(node, ast.Call) and is_approx(node.func))
+    """Every imported pytest approximation in *tree*, using the one lexical-origin reader."""
+    return tuple(
+        call
+        for call, origin in call_origins(tree, builtins=())
+        if is_approx(ast.parse(origin, mode='eval').body if origin is not None else ast.Constant(value=None))
+    )
 
 
 def unfloored(tree: ast.AST, *, bar: str) -> tuple[int, ...]:
@@ -195,9 +205,11 @@ def take_scan(paths: Iterable[Path], *, root: Path, bar: str) -> ApproxScan:
         bar: a member of :data:`BARS` -- see :func:`unfloored`.
 
     Returns:
-        An :class:`ApproxScan`. A file that cannot be read or parsed is SKIPPED and does not count
-        toward ``files_read``: "unparseable" and "parsed and clean" are different facts, and only the
-        second is evidence of anything.
+        An :class:`ApproxScan` only when every declared member was read and parsed.
+
+    Raises:
+        UnreadableApproxSource: a corpus member failed I/O, UTF-8 decoding or syntax parsing. Surviving
+            files cannot qualify an incomplete corpus merely because they still satisfy its floors.
 
     """
     offenders: list[str] = []
@@ -206,8 +218,12 @@ def take_scan(paths: Iterable[Path], *, root: Path, bar: str) -> ApproxScan:
     for path in sorted(paths):
         try:
             tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
-        except (OSError, SyntaxError):
-            continue
+        except (OSError, SyntaxError, UnicodeDecodeError) as error:
+            msg = (
+                f'{path}: {type(error).__name__}: {error}. Door: repair this corpus member or its read access, '
+                f'then repeat take_scan on the same complete corpus; do not lower the floors or omit the file.'
+            )
+            raise UnreadableApproxSource(msg) from error
         files += 1
         calls += len(approx_calls(tree))
         named = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
