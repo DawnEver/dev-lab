@@ -172,6 +172,8 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
     if not declared or 'part' not in jobs:
         return workflow
     template = json.dumps({key: value for key, value in jobs['part'].items() if key != 'strategy'})
+    # The produce step by what it runs, never by place: the verify-log step follows it in the template.
+    at = next(i for i, step in enumerate(jobs['part']['steps']) if 'produce ${{ matrix.part }}' in step.get('run', ''))
     added = {}
     for name, part in sorted(declared.items()):
         one = json.loads(template.replace('${{ matrix.part }}', name))
@@ -190,7 +192,7 @@ def hosted_jobs(workflow: dict[str, Any], declared: Mapping[str, Hosted]) -> dic
                 }
             )
             after.append(_FORGET_KEYS)
-        steps = [*one['steps'][:-1], *before, one['steps'][-1], *after]
+        steps = [*one['steps'][:at], *before, *one['steps'][at:], *after]
         added[f'part-{name}'] = {
             **one,
             'if': _DISPATCH_ONLY if part.manual else _FULL_ONLY if part.tasks else _ANY_RUN,
