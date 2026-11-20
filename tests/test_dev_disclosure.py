@@ -82,6 +82,10 @@ def test_the_cross_repo_refusal_fits_its_budget(tmp_path: Path) -> None:
     rules.write_text(render(HookAdoption(app_name='session', remedies=REMEDIES)), encoding='utf-8')
     reason = agenthooks.decide('git stash', rules, cwd=bare)
     assert reason is not None
+    # The header names the two checkouts by absolute path: their length is the host's, not the row's. Measure the
+    # text with each path at a fixed length, so a deep pytest tmp (now inside the checkout) cannot fail it.
+    for spelled in {str(tmp_path), tmp_path.as_posix()}:
+        reason = reason.replace(spelled, '/w')
     assert disclosure.problems(reason, 'cross-repo-refusal') == [], reason
 
 
