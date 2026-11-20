@@ -6,11 +6,12 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from lab_commons import config as machineconfig
 from lab_commons import storage
 from lab_commons.hpc.grants import AccessRefused
 from lab_commons.storage import StorageError
 
-from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devschema
+from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devschema, tomlleaves
 from dev_lab.dev.hpcaccount import division
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -178,3 +179,37 @@ def test_the_render_never_copies_a_family_only_storage_fact(tmp_path: Path) -> N
         storage.declared(
             {**rendered, 'storage': {**rendered['storage'], 'remotes': family['storage']['remotes']}}, family
         )
+
+
+def test_the_render_restates_no_family_leaf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With [family] source declared, the machine file holds no leaf the family file holds (one rule, every table).
+
+    Measured 2026-11-20: after [storage] remotes, the render still copied [breakglass] endpoint and the reader
+    refused it ("restates a key the family layer holds"). An older render's copy in the live file is dropped too.
+
+    PLANTED CONTROL: the reader's own restatement check refuses the old copy the render no longer writes.
+    """
+    family_text = FAMILY + '\n[breakglass]\nendpoint = "bg@forge.example"\n'
+    clone = _clone(tmp_path, family_text)
+    stale = {**LIVE, 'breakglass': {'endpoint': 'bg@forge.example'}}
+    rendered = tomllib.loads(devhost.render(clone, 'ws', stale))
+    family = {k: v for k, v in tomllib.loads(family_text).items() if k != 'dev'}
+    restated = sorted(set(tomlleaves.leaves(rendered)) & set(tomlleaves.leaves(family)))
+    assert restated == [], f'the render restates family leaves {restated}'
+    assert rendered['family'] == {'source': clone.resolve().as_posix()}
+    monkeypatch.setattr(machineconfig, 'family', lambda: family)
+    monkeypatch.setattr(machineconfig, 'machine', lambda: rendered)
+    assert machineconfig.section('breakglass') == family['breakglass'], 'the reader takes it from the family file'
+    monkeypatch.setattr(machineconfig, 'machine', lambda: stale)
+    with pytest.raises(ValueError, match='restates a key the family layer holds'):
+        machineconfig.section('breakglass')
+
+
+def test_a_host_value_for_a_family_leaf_is_refused_by_name(tmp_path: Path) -> None:
+    """A host giving a family leaf another value is refused at render, naming the family file -- never silently lost."""
+    clone = _clone(tmp_path, FAMILY + '\n[breakglass]\nendpoint = "bg@forge.example"\n')
+    (clone / 'hosts' / 'ws.toml').write_text(
+        HOST + '\n[breakglass]\nendpoint = "other@forge.example"\n', encoding='utf-8'
+    )
+    with pytest.raises(ValueError, match=r'\[breakglass\]\.endpoint.*family file'):
+        devhost.render(clone, 'ws', LIVE)

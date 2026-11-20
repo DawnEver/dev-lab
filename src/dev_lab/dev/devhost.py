@@ -56,14 +56,13 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons import config as machineconfig
-from lab_commons import storage
 from lab_commons.log import emit
 
 from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, forgeenrol, tomlleaves, vendordetect
 from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, merge
+from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, layered, merge
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -117,24 +116,35 @@ def config_source(live: Mapping[str, Any] | None = None) -> str:
     return url.strip()
 
 
-#: Keys a reader takes from the FAMILY file only and refuses in a machine file (lab_commons.storage: "a family fact").
-_FAMILY_ONLY: Final = {storage.TABLE: frozenset({'remotes'})}
+def _family_facts_stay_home(layered: Mapping[str, Any], family: Mapping[str, Any], clone: Path) -> dict[str, Any]:
+    """*layered* without every leaf the family file holds, and with ``[family] source`` naming that file's clone.
 
+    The machine file is the host and local layers only: a reader layers the family file under it
+    (``lab_commons.config.section``) and refuses any leaf both hold. Measured 2026-11-20: the render copied the
+    family's ``[storage] remotes`` and then ``[breakglass] endpoint`` into the machine file and both readers refused.
 
-def _family_facts_stay_home(layered: Mapping[str, Any], clone: Path) -> dict[str, Any]:
-    """*layered* without the family-only keys, and with ``[family] source`` naming the clone they are read from.
+    Raises:
+        ValueError: the host layer gives a family leaf another value -- the reader refuses a restated leaf, so the
+            value is changed in the family file (or the host declares a key the family does not hold).
 
-    Measured 2026-11-20: the render copied the family's ``[storage] remotes`` into the machine file, which the storage
-    reader refuses, and named no ``[family]`` source, so the reader could not reach the remotes either.
     """
-    kept = {name: dict(rows) if isinstance(rows, Mapping) else rows for name, rows in layered.items()}
-    for table, keys in _FAMILY_ONLY.items():
-        rows = kept.get(table)
-        if isinstance(rows, dict):
-            for key in keys:
-                rows.pop(key, None)
-            if not rows:
-                kept.pop(table)
+
+    def strip(rows: Mapping[str, Any], shared: Mapping[str, Any], where: str) -> dict[str, Any]:
+        kept: dict[str, Any] = {}
+        for key, value in rows.items():
+            if key not in shared or key == machineconfig.FAMILY_TABLE:
+                kept[key] = value
+            elif isinstance(value, Mapping) and isinstance(shared[key], Mapping):
+                if inner := strip(value, shared[key], f'{where}.{key}' if where else key):
+                    kept[key] = inner
+            elif value != shared[key]:
+                leaf = f'[{where}].{key}' if where else key
+                msg = (f'{leaf} = {value!r} gives the family key ({shared[key]!r}) another value: change it in the '
+                       f'family file through its pull request, then {RENDER_DOOR}')  # fmt: skip
+                raise ValueError(msg)
+        return kept
+
+    kept = strip(layered, family, '')
     kept.setdefault(machineconfig.FAMILY_TABLE, {'source': clone.resolve().as_posix()})
     return kept
 
@@ -156,8 +166,10 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
         layered = merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
     if channels := parsed.get('dev', {}).get('channels'):
         layered = merge(layered, {CHANNELS_TABLE: {'channels': channels}})
-    layered = _family_facts_stay_home(layered, clone)
-    local = {k: v for k, v in live.items() if k not in layered and k != OWN_TABLE}
+    shared = {k: v for k, v in family.items() if k != 'dev'}
+    layered = _family_facts_stay_home(layered, shared, clone)
+    # a local table never holds a family table: an older render's copy of one is dropped, not kept as local
+    local = {k: v for k, v in live.items() if k not in layered and k not in shared and k != OWN_TABLE}
     own = {'host': host, 'source': clone.resolve().as_posix()}  # absolute: never the reader's CWD (#556)
     own |= {devprofile.UNMANAGED: host} if unmanaged else {}
     own = {OWN_TABLE: {**layered.pop(OWN_TABLE, {}), **own}}
@@ -213,7 +225,7 @@ def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
     dev = declared(own_file, family_file)
     if names := unfilled(dev):
         found.insert(0, fill_remedy(names))
-    found += familyrepos.census(live)
+    found += familyrepos.census(layered(live))
     found += forgecredential.drift(dev)
     checkout = live.get('repos', {}).get('dev-lab')
     if (want := dev.get('ref')) and checkout and (on := _branch(checkout)) not in {want, None}:
@@ -243,7 +255,8 @@ def _layered(clone: Path, host: str) -> set[str]:
     question never refuses for the very local key ``local set`` is about to supply (2026-11-20).
     """
     stand_in = {devprofile.TOOLS_TABLE: {'python': 'python'}}
-    return set(tomllib.loads(render(clone, host, stand_in))) - {OWN_TABLE, devprofile.TOOLS_TABLE}
+    family = {k for k in _read(_sources(clone, host)[0]) if k != 'dev'}
+    return (set(tomllib.loads(render(clone, host, stand_in))) | family) - {OWN_TABLE, devprofile.TOOLS_TABLE}
 
 
 def notice(live: Mapping[str, Any] | None = None) -> str | None:
