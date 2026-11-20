@@ -141,6 +141,12 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(_forge('issue', 'comment'), SUBAGENT, 'Commenting on a forge issue through the family door.', _FORGE_WRITE),
     Door(_forge('issue', 'close'), SUBAGENT, 'Closing a forge issue through the family door.', _FORGE_WRITE),
     Door(
+        _forge('issue', 'label'),
+        SUBAGENT,
+        'Adding or removing labels on an existing forge issue through the family door; a missing label is created.',
+        _FORGE_WRITE,
+    ),
+    Door(
         _forge('pr', 'create'),
         MAIN,
         'Opening a draft pull request onto the integration branch through the forge door; the agent does this '
@@ -157,6 +163,18 @@ POLICY: Final[tuple[Door, ...]] = (
         _forge('pr', 'draft'),
         MAIN,
         'Returning a pull request to draft, so nothing reviews or merges it.',
+        _FORGE_WRITE,
+    ),
+    Door(
+        _forge('pr', 'hold'),
+        MAIN,
+        'Holding a pull request from the merge tick with the hold label, where its draft is refused.',
+        _FORGE_WRITE,
+    ),
+    Door(
+        _forge('pr', 'release'),
+        MAIN,
+        'Releasing a held pull request back to the merge tick.',
         _FORGE_WRITE,
     ),
     Door(
@@ -266,12 +284,6 @@ POLICY: Final[tuple[Door, ...]] = (
         MAIN,
         "Deleting a closed task's pull request branches, each only when every commit on it is already on the "
         'integration branch or on another live branch or open pull request; every branch kept is named with why.',
-    ),
-    Door(
-        module_argv('branchprune', 'delete-tag'),
-        MAIN,
-        'Deleting a remote tag the user approved in their own words, only when its commit is on the integration '
-        'branch or the trunk; never a lossy delete.',
     ),
     Door(
         ('gh', 'workflow', 'enable'),

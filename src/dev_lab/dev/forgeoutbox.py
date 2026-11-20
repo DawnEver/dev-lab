@@ -27,7 +27,7 @@ dropped and named once, since a definitive 4xx replayed every tick never lands.
 A post that could not be attempted -- no credential
 or no ``origin`` on this box -- is reported and kept, never raised: the box simply does not publish.
 
-WHERE IT LIVES. ``output/forge/outbox/`` in the MAIN checkout (resolved through git's common
+WHERE IT LIVES. ``forge/outbox/`` in the MAIN checkout's output kind (storage.md) (resolved through git's common
 directory, as the verdict ledger is), so every lane of one repository shares one queue. One JSON file
 per entry, so two runs never race on one document.
 
@@ -56,7 +56,7 @@ from typing import Final
 from lab_commons.compute.durable import durable_write
 from lab_commons.log import emit
 
-from dev_lab.dev._forge_journal import OUTBOX_REL, Journal, journal_for, outbox_dir
+from dev_lab.dev._forge_journal import OUTBOX_IN_OUTPUT, Journal, journal_for, outbox_dir
 from dev_lab.dev.forge import (
     NoCredential,
     Transport,
@@ -65,19 +65,21 @@ from dev_lab.dev.forge import (
     on_origin,
 )
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerecords import attach
 from dev_lab.dev.forgestatus import STATES, CommitStatus, status_history, status_post
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.supervise.notice import Context
 
 __all__ = [
-    'OUTBOX_REL',
+    'OUTBOX_IN_OUTPUT',
     'RESULTS',
     'Post',
     'PostFailed',
     'content_name',
+    'deliver_unit',
     'enqueue',
     'flush',
     'main',
@@ -292,6 +294,23 @@ def _elsewhere(root: Path, post: Post, alarm: Callable[[Alarm], object], failure
     except (ForgeCallFailed, OSError, ValueError, KeyError) as exc:
         failures.append(f'{post.context} on {post.sha[:12]} for {post.repo}: {exc}')
         return f'status: kept {post.context} on {post.sha[:12]} for {post.repo}'
+
+
+def deliver_unit(
+    root: Path, built: Client, sha: str, context: str, *, alarm: Callable[[Alarm], object] = sound
+) -> list[str]:
+    """Deliver the held entries of ONE unit (*sha*, *context*) now, whether or not an ``origin`` ref names *sha*.
+
+    For a job the forge started FOR *sha* (:func:`dev_lab.dev.jobparts.produce`): its checkout often names the commit
+    in no remote-tracking ref, so the producer's result stayed held, the job read no settled part and posted
+    ``error`` -- and the held pass, flushed later, met "the first result wins" and was dropped. The forge holds a
+    commit it started a job for, so that check is moot here; every other unit keeps waiting for :func:`flush`.
+    """
+    return [
+        _deliver(root, built, post, alarm)
+        for post in queued(root)
+        if not post.repo and post.sha == sha and post.context == context
+    ]
 
 
 def flush(

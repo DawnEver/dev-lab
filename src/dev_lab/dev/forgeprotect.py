@@ -23,7 +23,6 @@ ONE SOURCE PER FACT. Nothing here restates a fact another declaration owns:
   identities that may push the trunk (promote)::
 
     [tool.dev_lab.protection]
-    producer = "hpc"                               # who posts the parts; absent: "actions" (dev_lab.dev.producers)
     [tool.dev_lab.protection.forges."github.com"]
     breakglass = ["app:<id>", "role:admin"]        # GitHub: a list of role:<admin|maintain|write>|app:<id>|team:<id>
     [tool.dev_lab.protection.forges."gitea.example"]
@@ -58,13 +57,13 @@ from dev_lab.dev._protect_steps import Step
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgereview_declared import review_from
-from dev_lab.dev.forgework import client_for
 from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.producers import producer_from
+from dev_lab.dev.roles import retired_placement, roles_of
 
 __all__ = [
     'INTEGRATION',
@@ -150,11 +149,8 @@ def declaration_from(text: str, origin: str) -> Declaration:
     if not isinstance(table, dict) or not table.get('forges'):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} declares no forges: whose identity bypasses is undecided'
         raise ValueError(msg)
-    if unknown := sorted(set(table) - {'approvals', 'forges', 'producer'}):
-        msg = (
-            f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; '
-            'the keys are approvals, forges, producer'
-        )
+    if unknown := sorted(set(table) - {'approvals', 'forges'}):
+        msg = f'[tool.dev_lab.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are approvals, forges'
         raise ValueError(msg)
     forges = {}
     for host, entry in table['forges'].items():
@@ -177,14 +173,22 @@ def declaration_from(text: str, origin: str) -> Declaration:
     if approvals < 0:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} is below zero'
         raise ValueError(msg)
-    producer_from(text, origin)  # the one producer (dev_lab.dev.producers), refused by name when malformed
+    if retired := retired_placement(text, origin):  # a repo declares no placement (dev_lab.dev.roles, D73)
+        raise ValueError('; '.join(retired))
     return Declaration(approvals, forges)
 
 
-def required_contexts(text: str, origin: str, forge: Forge) -> dict[str, tuple[str, ...]]:
-    """Each role's required status contexts on *forge*, derived from the workflows *text* renders for it."""
-    directory = WORKFLOW_DIRS[backend_for(forge).name]
-    flows = [flow for where, flow in placed(text, origin, backend_for(forge).name).values() if where == directory]
+def required_contexts(
+    text: str, origin: str, forge: Forge, *, layer: Mapping[str, Any] | None = None
+) -> dict[str, tuple[str, ...]]:
+    """Each role's required status contexts on *forge*, derived from the workflows *text* renders for it.
+
+    The workflows render under the roles the family *layer* (default: this machine's) binds for the repo.
+    """
+    kind = backend_for(forge).name
+    roles = roles_of(forge, layer=layer)
+    directory = WORKFLOW_DIRS[kind]
+    flows = [flow for where, flow in placed(text, origin, kind, roles).values() if where == directory]
     jobs = [job for flow in flows for job in flow.get('jobs', {}).values()]
     steps = {step.get('name') for job in jobs for step in job.get('steps', ())}
     integration = (MERGE_READY_CONTEXT,) if MERGE_READY_CONTEXT in steps else ()

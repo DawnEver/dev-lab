@@ -135,7 +135,10 @@ def test_real_nonstrict_xpass_is_a_recorded_failure_even_when_pytest_exits_zero(
         'def test_expected_to_reject():\n    assert True\n',
         encoding='utf-8',
     )
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
+    # [tool.pytest.ini_options] makes the sandbox its own pytest root, not the checkout tmp_path sits in.
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.dev_lab.parts]\noutput = "out/logs"\n[tool.pytest.ini_options]\n', encoding='utf-8'
+    )
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
     monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
     verdict = verifysteps.run_verify(tmp_path, ('test_planted.py',), hooks=False)

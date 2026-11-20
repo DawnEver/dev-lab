@@ -16,14 +16,16 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
+from _roles_fixtures import HPC_REPO, carry
 from lab_commons.compute.model import Candidate
 from lab_commons.hpc.shell import FULL
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import forgequeue
+from dev_lab.dev import forgequeue, forgeschedule
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import Claim
 from dev_lab.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
+from dev_lab.dev.forgerequest import UndeclaredRequest
 from dev_lab.dev.platformparts import Part
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
@@ -126,8 +128,7 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
     (repo / 'pyproject.toml').write_text(
         '[tool.lab_commons.tests]\nproduce = ["x", "{part}"]\n'
-        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"  # every repo declares it (D83)
-        "[tool.dev_lab.protection]\nproducer = 'hpc'\n",
+        "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n",  # every repo declares it (D83)
         'utf-8',
     )
     tips = {}
@@ -413,3 +414,37 @@ def test_the_queue_says_where_its_time_went(server, tmp_path: Path, monkeypatch,
     assert code == 0
     json.loads(out.out)
     assert re.search(r'\[queue\] time [\d.]+ s -- .*forge HTTP [\d.]+ s', out.err), out.err
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)
+
+
+def test_a_request_is_declared_once_per_queue_read(server, tmp_path: Path, monkeypatch) -> None:
+    """A request issue's declaration is read ONCE per queue read, though the listing and the refusal both need it.
+
+    Each declaration reads git (the sha's pyproject and selected blobs) and the learned table; read twice it cost
+    ``forge queue`` ~21 s of a 91 s read (2026-11-18). PLANTED CONTROL: the refusal the one read raised still
+    blocks the request's row.
+    """
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, tips = _origin(tmp_path)
+    _forge_of(tips, [])
+    body = f'producer = "tests"\nsha = "{tips["feat/a"]}"\npaths = ["tests/test_x.py"]\n'
+    issue = {**_issue(9, 'request'), 'body': body, 'created_at': NOW.isoformat(), 'labels': []}
+    monkeypatch.setattr(forgeschedule, 'labelled_issues', lambda _client, _label: (issue,))
+    asked: list[tuple[str, str, tuple[str, ...]]] = []
+
+    def declared(_root: Path, sha: str, producer: str, paths=()) -> object:
+        asked.append((sha, producer, tuple(paths)))
+        refusal = 'planted: no such producer'
+        raise UndeclaredRequest(refusal)
+
+    monkeypatch.setattr(forgeschedule, 'declared_request', declared)
+    monkeypatch.setattr(forgequeue, 'declared_request', declared)
+    seen = forgequeue.view(repo, client(FORGE, Loopback(server)), fetch=lambda _root: None)
+    assert asked == [(tips['feat/a'], 'tests', ('tests/test_x.py',))]
+    blocked = next(row['blocked'] for row in seen['queue'] if row['candidate'].startswith('issue/9'))
+    assert blocked == 'planted: no such producer'

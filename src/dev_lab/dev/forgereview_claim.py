@@ -67,7 +67,7 @@ RETRYING: Final = 'review attempt failed, retried once:'
 #: from the cause recorded on the PR (:mod:`dev_lab.dev.reviewcap`).
 UNREVIEWED_STATUS: Final = 'not reviewed, merges unreviewed:'
 
-#: REVIEW IS THE LAST GATE (user ruling 2026-11-05; integrator ruling M8 2026-11-06): the merge decision
+#: REVIEW RUNS LAST, ADVISORY (user ruling 2026-11-05; integrator ruling M8 2026-11-06): the merge decision
 #: (:func:`dev_lab.dev.reviewturn.review_turn`) posts these two ``pending`` statuses, and nothing else calls a head's
 #: review. WAITS: another merge condition is missing, named after it -- no review runs, nothing is spent. DUE: every
 #: other condition stands; the one-shot review runs next, or a head whose PR already holds its review gets that

@@ -157,7 +157,7 @@ ready PR into `integrate/main` is reviewed by the command the repo declares; its
 JSON (`schema_version` 3, read by `dev_lab.dev.forgereview_findings`; any other version is refused by name). The
 forge posts ONE PR comment (`dev_lab.dev.forgereview_advice`) and a `tests/review` commit status.
 
-**Review is the last gate** (user ruling 2026-11-05; integrator ruling M8 2026-11-06: "first ready head" is the
+**Review runs last, and is advisory** (user ruling 2026-11-05; integrator ruling M8 2026-11-06: "first ready head" is the
 first MERGE-READY head). The review is the one merge condition that costs a model call, so it is asked for only
 once every OTHER condition stands for the head -- its test parts, `tests/security`, a clean merge with integration,
 the merge audit, the messages, not a draft. The merge decision (`reviewturn.review_turn`, run by
@@ -172,7 +172,7 @@ the merge audit, the messages, not a draft. The merge decision (`reviewturn.revi
   judge repo's prepare). Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision
   only says the review is due and the serve's tick (its own login) asks;
 - `forgereview.review_pull` reviews nothing whose latest `tests/review` is absent or `waits`, whoever started it (a
-  push, a hand-added label, a serve tick); the judge (`where = "judge"`) judges only a head called due.
+  push, a hand-added label, a serve tick); the judge (review bound to a host) judges only a head called due.
 
 A push asks for nothing: a new head has no status, so it waits for the decision again, and a superseded head is
 never reviewed. A head whose PR already holds its one review is never reviewed again by this trigger: once called
@@ -319,6 +319,16 @@ push updating a branch whose newest PR into the integration branch was closed UN
 from the branch, or a new branch name); a forge that cannot be read refuses. A merged PR's branch passes: the forge
 continues it (LANDED-BRANCH-CONTINUES, above).
 
+The base row `lossless-delete` (`dev_lab.dev.pushdelete`) judges EVERY branch a push deletes, however the push was
+spelled, with the judgement `branchprune delete` makes (`dev_lab.dev.deletejudge`), after a fresh fetch and against
+the open PR heads; an unreadable forge or origin refuses (`docs-src/dev/refusals.md#lossless-delete`). A tag holds
+nothing (D22). A machine branch its producer regenerates whole is declared DERIVED (D23) and goes whatever it carries:
+
+```toml
+[tool.dev_lab.integrator]
+derived = [{ branch = "pr/components-bump", producer = "dev_lab.dev.componentbump" }]
+```
+
 The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) WARNS on a `pr/*` push whose tip
 lacks `origin/<integration>` (fetched afresh; a failed fetch is named) or whose lock lags a floated sibling's
 head, naming `forge sync`, and never refuses it (`advisory = true`, dev-lab #661): on the forge `pr-current` is an
@@ -376,6 +386,11 @@ A draft RUNS NOTHING (user ruling 2026-11-05): every job of a PR-started workflo
 render by `forgedraft.READY_ONLY`, and the serve claims no part, syncs and gates no head of a draft; marking it
 ready (`ready_for_review`, or on Gitea the serve's next tick after the title edit) starts everything. A consumer takes it by re-rendering
 (`python -m dev_lab.dev.ciworkflows render`).
+
+HOLD: where `pr draft` is refused (GitHub, a caller without convert rights), `forge pr hold <N>` puts the `hold`
+label on the PR and `forge pr release <N>` takes it off; merge-ready posts `pending` naming the release door and
+the merge decision never lands a held head. Break-glass honours it too (user ruling D48, 2026-11-17): a manual
+`forge pr breakglass` and a wave's sweep refuse a held PR, naming the release door. The mechanism is `dev_lab.dev.forgehold`'s docstring.
 
 ## The integration tick
 
@@ -452,11 +467,10 @@ carries no state: it only means "derive again now". Polling is the floor that ma
 
 **The observer is `forge serve`, on EVERY host.** No host owns integration. Each serve tick derives the
 queue (`integrator.observe`), and every row that asks a session to act -- a PR READY to merge, the
-integration tip PROMOTE-able, a child or tip BLOCKED on a red to route -- is kept as ONE forge issue titled
-`integration: <subject>` (`forgeroute.reconcile`, the found-by-title rule failure routing keeps an `area:*`
-issue by). N hosts deriving the same row write one issue; only the host that creates or changes it raises the
-alarm (the stderr JSONL line, the host card, `[alerts]`), and a row no longer derived closes its issue. The
-`starved` alarm is kept the same way, one `starved: <subject>` issue per part.
+integration tip PROMOTE-able, a child or tip BLOCKED on a red to route -- is an ALARM (the stderr JSONL line,
+the host card `forge queue` prints, `[alerts]`), re-derived each tick, so a row no longer derived simply
+leaves. It is never an issue (user rulings 2026-11-14 and 2026-11-19), nor is a `starved` part or a
+break-glass commit: a break-glass wave's audit is the wave ledger's (`forge breakglass status` / `ack`).
 
 ## Failure modes
 

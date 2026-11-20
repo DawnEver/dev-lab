@@ -1,7 +1,7 @@
 """A WINDOWS WORKSTATION'S DEPLOY, in one run: ``python -m dev_lab.dev.workstation deploy``.
 
-A WORKSTATION NEVER SERVES A MERGE'S PARTS (user ruling 2026-11-16): only GitHub Actions (an ``actions`` repo)
-and the HPC accounts (an ``hpc`` repo, :mod:`dev_lab.dev.producers`) produce. The deploy makes the box a
+A WORKSTATION NEVER SERVES A MERGE'S PARTS (user ruling 2026-11-16): only the executors the family binds -- the
+forge's CI and the HPC accounts (:mod:`dev_lab.dev.roles`) -- produce. The deploy makes the box a
 declared, current client -- capabilities, checkouts, venvs, hooks -- and nothing on it ticks.
 
 It reuses the cluster deploy's run-or-print :class:`~dev_lab.dev.hpcaccount.steps.Step`.
@@ -27,11 +27,13 @@ claim (``python -m lab_commons.box claim``).
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``; a ``jmag``
    row also ``in_use = { process = JMAG_SOLVER_IMAGES }``, so a solve a person starts is a seat taken),
    merged in place. ``[serve]`` is never written and a present one is removed
-   (:func:`dev_lab.dev.producercheck.host_refusals`). Every RETIRED ``[capabilities.<name>]`` table is
+   (:func:`dev_lab.dev.rolecheck.host_refusals`). Every RETIRED ``[capabilities.<name>]`` table is
    removed -- one retired into ``[runtimes.<name>]`` has its keys carried there; every other table, key and
    comment is kept, and ``--dry-run`` prints the diff.
 7. RETIRED TASK: the ``lab-forge-serve`` Scheduled Task an older deploy registered (:data:`RETIRED_TASK`) is
    deleted where it is still installed, so nothing ticks on the box.
+8. TOOLS: every pinned-release tool (:data:`dev_lab.dev.toolrelease.RELEASES`, rclone among them, D76) that does
+   not resolve is installed through ``-m dev_lab.dev.toolrelease install <tool>``, sha256-checked, user-space.
 
 ``--dry-run`` reads but changes nothing. A second run changes nothing.
 
@@ -63,6 +65,7 @@ from dev_lab.dev.hostrefresh import Moved, follow, network, read, sync_venv
 from dev_lab.dev.hpcaccount.spec import KIT
 from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.servelock import forge_home
+from dev_lab.dev.toolrelease import RELEASES, ToolAbsent, resolve, tool_dir
 from dev_lab.dev.venvfollow import venv_python
 from dev_lab.dev.workstationfile import ROLES, capabilities, deploy_tables, machine_file, role_refusal, template
 from dev_lab.dev.workstationprobe import CREDENTIAL_REMEDY, com_server, missing, refused_credentials
@@ -74,8 +77,8 @@ __all__ = ['RETIRED_FLAGS', 'RETIRED_TASK', 'RETIRED_VERBS', 'Programs', 'checko
 RETIRED_TASK: Final = 'lab-forge-serve'
 
 _PRODUCERS: Final = (
-    "a workstation never serves a merge's parts (user ruling 2026-11-16): GitHub Actions produces an actions "
-    "repo and the HPC accounts an hpc repo, by the repo's own [tool.dev_lab.protection] producer"
+    "a workstation never serves a merge's parts (user ruling 2026-11-16): the executors the family layer binds "
+    'each role to produce them (dev_lab.dev.roles)'
 )
 #: A retired ``workstation`` verb -> its ruling and door; refused by name, never parsed.
 RETIRED_VERBS: Final = {
@@ -125,6 +128,8 @@ class Programs:
     home: Path = field(default_factory=forge_home)  # the forge's machine home; checkouts in <home>/repos
     alarm: Callable[[Alarm], object] = sound
     computer: str = field(default_factory=this_computer)
+    toolrelease: tuple[str, ...] = (sys.executable, '-m', 'dev_lab.dev.toolrelease')
+    tool_dir: Path = field(default_factory=tool_dir)  # where the pinned-release tools are installed
 
 
 def _repos(text: str) -> tuple[str, ...]:
@@ -187,6 +192,19 @@ def _retire_task(step: Step, programs: Programs) -> int:
     return step.change(subprocess.list2cmdline(['schtasks', *delete]), [*programs.schtasks, *delete])
 
 
+def _tools(step: Step, programs: Programs) -> int:
+    """Install every pinned-release tool that resolves nowhere; the exit of the first install that fails."""
+    emit('[tools] every pinned-release tool, installed where it does not resolve')
+    for name, release in RELEASES.items():
+        try:
+            found = resolve(name, directory=programs.tool_dir, which=programs.which, windows=programs.windows)
+            emit(f'  {name}: {found}')
+        except ToolAbsent:
+            if rc := step.change(f'install {name} {release.version}', [*programs.toolrelease, 'install', name]):
+                return rc
+    return 0
+
+
 def _preflight(args: argparse.Namespace, tools: Programs, checkouts: Mapping[str, Path]) -> dict[str, str] | str:
     """Every read-only refusal before anything changes; the clone url of each repo when none applies."""
     if not tools.windows:
@@ -247,7 +265,7 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
         return 2
     step = Step(Tools(git=tools.git), dry=args.dry_run)
     refused = _checkouts(step, tools, checkouts, urls, args.ref)
-    rc = machine_file(step, deploy_tables(args.capabilities)) or _retire_task(step, tools)
+    rc = machine_file(step, deploy_tables(args.capabilities)) or _retire_task(step, tools) or _tools(step, tools)
     for name, why in refused.items():
         tools.alarm(
             Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not keep it current', why)

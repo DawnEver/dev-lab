@@ -15,6 +15,7 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
+    'vscodesettings',  # ORIGINAL: the editor excludes a checkout carries, derived from the storage kinds (2026-11-19)
     'callorigins',  # extracted in-kit lexical binding owner for reflection and tolerance scanners
     'ab_bench',
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
@@ -22,15 +23,18 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'producer',
     'failprint',  # a failure fingerprint: test id plus the subjects its failure names (finding D13, 2026-11-16)
     'producers',  # each repo's one producer, actions or hpc, and its optional parts (ruling 2026-11-16)
-    'producercheck',  # the guard refusing what contradicts a producer declaration (ruling 2026-11-16)
+    'rolecheck',  # the guard refusing what contradicts the family's roles binding (D73)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
     'verifybox',
     'verifysteps',
     'agent_guard',
+    'launcherplan',  # ORIGINAL: split from agent_guard: keep, keep-own or rewrite the agent launcher (2026-11-19)
     'agent_wiring',  # the hook wiring table split from agent_guard (module-size band)
     'backgroundrun',  # the background hooks' detach and per-repo lock, split from reclaimrun (dev-lab #640)
     'hookdispatch',  # one interpreter per hook event, reading WIRING from its own install (dev-lab #640)
+    'gitdirs',  # a checkout's git and common dir read off .git without starting git (ruling D24)
+    'hookhandoff',  # the background runner a hook hands slow work to (HOOK-UNDER-FIVE-SECONDS, ruling D24)
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
     # derives or admits. The row consumer-a added by hand on 2026-09-18 is the first thing it subsumes.
@@ -48,6 +52,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'lockwait',
     'test_outcomes',
     'serialpass',
+    'testtemp',
     'lanepolicy',
     'platformparts',
     # ORIGINAL: a part status read as a (part, env, policy) fact; split from platformparts (2026-11-12).
@@ -85,10 +90,13 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'shatree',
     'branchprune',
     'branchdelete',
+    'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
+    'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
     'artefacts',
     'artefactstores',
+    'largeobjects',
     # ORIGINAL: the artefact member index, split out of `artefacts` inside the kit; no consumer held them.
     'artefactpack',  # writes the member-indexed archive
     'artefactindex',  # the member-index facts and their manifest record
@@ -147,7 +155,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'logref',
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset',
-    'branchfate',  # TWO-FATES: each local branch/tree is merged-and-cleaned or archived-and-cleaned (2026-11-15)
+    'branchfate',  # TWO-FATES: each local branch/tree is merged-and-cleaned or listed with its doors (D31)
     'family',
     # ORIGINAL: the family member list's check, its forge reading and its serve watch are new (2026-11-09).
     'members',
@@ -190,6 +198,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'taskbinding',
     # ORIGINAL: which rem the session's harness runs, read from its plugin registry, so an unbound push names it.
     'remplugin',
+    'remhome',  # the machine home handed to rem as LAB_COMMONS_HOME (D34)
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
@@ -197,9 +206,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no consumer ever removed a finished worktree; the lease decision is new here.
     'reclaim',
     'reclaimrun',
+    'venvprune',  # ORIGINAL: no door swept superseded .venvs/ environments across checkouts
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
     'privatemarkers',
+    'reword',  # ORIGINAL: the door between PRIVATE-MARKERS and GIT-COMMIT-AMEND (2026-11-19)
     'profile',
     'quantity_values',
     'reports',
@@ -296,16 +307,21 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sizesplits',
     # ORIGINAL: no consumer held a NO-CJK file before this plugin; it is the one always-on body (2026-11-07).
     'alwayson',
+    # ORIGINAL: no repo ran these four bodies over its own tree until D42 wired them here (2026-11-17).
+    'treechecks',
     # -- `dev_lab.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
     'table',
     'runner',
     'inprocess',  # ORIGINAL: split from runner: a `python -m` row run in the stage's one interpreter (2026-11-16)
+    'gitfailure',  # ORIGINAL: split from runner: the runner's own failed git query, named (O21, 2026-11-19)
     'filechecks',
     'ciworkflows',
+    'nightlycron',  # ORIGINAL: split from ciworkflows: a workflow's nightly declaration as a cron (D63, 2026-11-19)
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
     'jobparts',
+    'hostedparts',  # ORIGINAL: split from jobparts: the hosted-part declaration reader (2026-11-17)
     # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
     'jobmeasure',
     'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
@@ -321,7 +337,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
     'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
     'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
-    'prwatcher',  # ORIGINAL: one machine watcher hears every session's PRs into per-session inboxes (2026-11-15)
+    'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
+    'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
+    'forgewaves',  # ORIGINAL: an unacknowledged break-glass wave reaches each session once (ruling 2026-11-19)
     'venvfollow',
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
@@ -331,16 +349,19 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'liverun',
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
     'trackedrender',  # ORIGINAL: split from agent_guard: a tracked render needs the checkout's kit (2026-11-17)
+    'retiredfiles',  # ORIGINAL: split from codeplace: a checkout's own declared retired-file rows (2026-11-17)
+    'strays',  # ORIGINAL: split from codeplace: the STRAY-FILE-REFUSED census and its hooks (2026-11-17)
     'metrics',
     'monthsummary',
     'prsuperseded',
-    'worktree_archive',
+    'worktree_outputs',
     'metrics_compute',
     'metrics_report',
     'reviewcommand',
     'reviewbudget',  # the review's dollar cap, new here
     'reviewcap',  # a review that did not run warns and merges, new here
     'commandpart',  # a non-pytest repo's one command part, new here
+    'commandtests',  # the declared producer command cut to a verify selection, new here
     'reviewgate',  # the one reviewed-head predicate, new here
     'reviewgitauth',  # the review door's file-held tokens, new here
     'reviewpolicy',  # the review policy exported for every trigger, new here
@@ -348,6 +369,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'drift',  # a lock pin left behind its dependency, or a host off its lock, alarms; new here
     'escapes',  # the tick's census of writes that escaped every allowed root, new here
     'consentguard',  # CONSENT-CODE-FROM-THE-USER: the consent state dir and the planted-credential refusal, new here
+    'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
+    'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'uvfollow',  # uv follows the version its pin needs, through the route it was installed by, new here
@@ -356,6 +379,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the blobless-clone prefetch and the review-code classification are
     # forge mechanisms new to the family; no consumer held one.
     'blobfetch',
+    'boxmigrate',  # the one box-ledger migration step every installing door runs (lab-commons #208)
     'reviewcode',
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
@@ -374,4 +398,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'dataconsumers',
     # ORIGINAL: user ruling 2026-11-11, a data repo's tests/base is its consumers' tests; no consumer held it.
     'verifiedby',
+    # ORIGINAL: D80 (2026-11-18), an untracked-and-ignored path is kept across a tree move; no consumer held it.
+    'keepignored',
+    # ORIGINAL: D78 (2026-11-18), a part's needs refused by name when their extra is missing; no consumer held it.
+    'depneeds',
+    # ORIGINAL: D76 (2026-11-18), a pinned, sha256-checked tool installed user-space; no consumer held one.
+    'toolrelease',
 )

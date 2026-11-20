@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, run_git
+from _roles_fixtures import HPC_REPO, carry
 from lab_commons.compute.model import BRANCH, PR, Schedule
 from lab_commons.hpc.needsets import read_vocabulary, scarce_parts
 from lab_commons.outcomes import Conclusion
@@ -26,7 +27,6 @@ NOW = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
 _PYPROJECT = (
     '[tool.lab_commons.tests]\nresources = ["jmag", "windows"]\nscarce = ["jmag"]\n'
     '[tool.dev_lab.parts]\nrefs = { jmag.full = ["integrate/main"] }\n'
-    '[tool.dev_lab.protection]\nproducer = "hpc"\n'  # served here: only an HPC repo is offered parts
 )
 _RECORD = {'handed': {'tests/test_j.py::test_j': 'jmag'}}
 
@@ -184,3 +184,9 @@ def test_a_red_scarce_part_on_integration_names_the_merges_since_its_last_green_
     assert f'{tip[:12]} merge s1 -- sessions: session_s1' in alarm.body
     posted[tip] = [_status('base', 'success'), _status('jmag', 'success')]
     assert red_alarms(repo, 'integrate/main', 'o/r', lambda sha: tuple(posted.get(sha, ()))) == []
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

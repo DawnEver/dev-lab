@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from _forge_state import FORGE
-from _rem_binding import bind_as_rem, plant_codex_rem
+from _rem_binding import bind_as_rem, plant_agy_rem, plant_codex_rem
 
 from dev_lab.dev import sessionprs, taskgate, walls
 
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 _CODEX = 'CODEX_THREAD_ID'
 _CLAUDE = 'CLAUDE_CODE_SESSION_ID'
+_AGY = 'ANTIGRAVITY_CONVERSATION_ID'
 _ID = 'native-session-7'
 
 
@@ -28,7 +29,7 @@ def _native() -> ModuleType:
     return import_module('dev_lab.dev.native_session')
 
 
-@pytest.mark.parametrize('field', [_CLAUDE, _CODEX])
+@pytest.mark.parametrize('field', [_CLAUDE, _CODEX, _AGY])
 def test_each_native_harness_keeps_its_actual_session_without_an_environment_alias(field: str) -> None:
     env = {field: _ID}
     assert _native().session_of(env) == _ID
@@ -82,7 +83,13 @@ def test_identity_grammar_does_not_normalize_or_accept_hidden_suffixes(value: st
 def test_auxiliary_metadata_cannot_hide_a_second_harness() -> None:
     with pytest.raises(ValueError, match='ambiguous native session'):
         _native().session_of({_CLAUDE: _ID, 'CODEX_SESSION_ID': 'auxiliary'})
+    with pytest.raises(ValueError, match='ambiguous native session'):
+        _native().session_of({_CLAUDE: _ID, 'ANTIGRAVITY_TRAJECTORY_ID': 'auxiliary'})
+    with pytest.raises(ValueError, match='native session') as refused:
+        _native().session_of({'ANTIGRAVITY_TRAJECTORY_ID': 'auxiliary-not-the-conversation'})
+    assert _AGY in str(refused.value)
     assert _native().session_of({_CODEX: _ID, 'CODEX_SESSION_ID': 'auxiliary'}) == _ID
+    assert _native().session_of({_AGY: _ID, 'ANTIGRAVITY_TRAJECTORY_ID': 'auxiliary'}) == _ID
 
 
 @pytest.mark.parametrize('contents', [None, '{', '{}', '[]'])
@@ -114,8 +121,8 @@ def test_the_same_pr_door_does_not_invent_an_agent_for_an_ordinary_process() -> 
 def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
-    plant_codex_rem(tmp_path / 'home', '2.6.0')  # a current binder: the door is the user's prompt
-    refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a', home=tmp_path / 'home')
+    plant_codex_rem(tmp_path / 'home', '2.7.0')  # a current binder: the door is the user's prompt
+    refusal = taskgate.refusal(tmp_path, env={_CODEX: _ID}, home=tmp_path / 'home')
     assert refusal is not None
     assert taskgate.RULE in refusal
     assert '/rem:task open' in refusal
@@ -128,7 +135,7 @@ def test_a_real_bound_task_still_admits_the_native_codex_session(tmp_path: Path)
     (task / 'TASK.md').write_text('---\nauthority: a1\nstatus: open\n---\n', encoding='utf-8')
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
     assert bind_as_rem(tmp_path, _ID, 'native-task') == 'native-task@a1'  # rem keys a Codex binding by its thread
-    assert taskgate.refusal(tmp_path, env={_CODEX: _ID}, branch='pr/native-task/a') is None
+    assert taskgate.refusal(tmp_path, env={_CODEX: _ID}) is None
 
 
 def test_wall_records_carry_the_codex_thread_not_an_empty_claude_identity(
@@ -141,3 +148,18 @@ def test_wall_records_carry_the_codex_thread_not_an_empty_claude_identity(
     assert recorded['session'] == _ID
     assert 'a planted command' not in line
     assert recorded['remedy_present'] is True
+
+
+def test_the_required_task_gate_and_binding_apply_to_antigravity_too(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.task]\nrequired = true\n', encoding='utf-8')
+    task = tmp_path / '.claude' / 'tasks' / 'native-task'
+    task.mkdir(parents=True)
+    (task / 'TASK.md').write_text('---\nauthority: a1\nstatus: open\n---\n', encoding='utf-8')
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, capture_output=True)
+    plant_agy_rem(tmp_path / 'home', '2.7.0')
+    refusal = taskgate.refusal(tmp_path, env={_AGY: _ID, 'ANTIGRAVITY_TRAJECTORY_ID': 't-1'}, home=tmp_path / 'home')
+    assert refusal is not None
+    assert taskgate.RULE in refusal
+    assert '/rem:task open' in refusal
+    assert bind_as_rem(tmp_path, _ID, 'native-task') == 'native-task@a1'
+    assert taskgate.refusal(tmp_path, env={_AGY: _ID, 'ANTIGRAVITY_TRAJECTORY_ID': 't-1'}) is None

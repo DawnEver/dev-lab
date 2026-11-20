@@ -35,7 +35,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'SCRATCH-IS-NEVER-COMMITTED',
         (
             'Scratch is the one place an agent may leave a one-off, visible to git status but never committed '
-            'beyond its README, and each one-off leaves by promotion into src with tests or by deletion, its '
+            'beyond its README (or at all, where the repo declares scratch_anchor = false), and each one-off '
+            'leaves by promotion into src with tests or by deletion, its '
             'finding recorded in memory as numbers, never by a move into scripts.'
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_scratch.py'),
@@ -50,7 +51,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'never staged, and the census runs after every shell command, at the end of a turn '
             'and after every commit, naming each one with its remedy.'
         ),
-        ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
+        ('tests/test_arch_code_placement.py', 'tests/test_dev_strays.py'),
     ),
     (
         'WRITES-STAY-IN-THE-TREE',
@@ -238,6 +239,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
 )
 
 
-#: The rows dev-lab enforces in EVERY repo through its ``pytest11`` plugin (user ruling 2026-11-07).
+#: Shared required checks; the execution owner also runs them for command/data family producers.
 #: Read by :mod:`dev_lab.dev.rules` into :attr:`Rule.always_on`; nothing else names them.
+#: MODULE-SIZE-ALARM is opt-in: a repo enables it once it declares [tool.dev_lab.layout] and its directories fit.
 ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE'})

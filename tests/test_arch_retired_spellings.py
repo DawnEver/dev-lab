@@ -31,6 +31,17 @@ MOVED_TABLES: Final = (
 
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
+    'forgeroute.reconcile': (
+        'alarms on the host card (forge queue); the audit of a break-glass wave in the wave ledger',
+        'user ruling 2026-11-19: issues never record events (break-glass, starved, integration rows)',
+    ),
+    **dict.fromkeys(
+        ('prwatcher', 'SESSION-HEARS-ITS-PRS'),
+        (
+            'forgefeed and TASK-HEARS-ITS-FORGE-EVENTS: one notification-feed read per forge, routed to tasks',
+            'D79 (user, 2026-11-18): the hearer is named for what it reads, and a task, not a session, subscribes',
+        ),
+    ),
     **dict.fromkeys(
         (
             'RETIRED_WIRING',
@@ -62,8 +73,30 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     'serve = false': (
-        "the repo's own [tool.dev_lab.protection] producer (dev_lab.dev.producers); a host serves only hpc repos",
-        'user ruling 2026-11-16: a repo is produced by forge Actions or by the HPC, declared once in the repo',
+        "the family layer's [roles.<forge>] binding (dev_lab.dev.roles); a host serves the repos bound to its grant",
+        'user ruling 2026-11-16, re-placed by D73 2026-11-18: who performs each role is a fact of the family instance',
+    ),
+    **dict.fromkeys(
+        ('dev_lab.dev.producers', 'producercheck', 'producer_from', 'producer_at', 'UndeclaredProducer'),
+        (
+            'dev_lab.dev.roles (roles_for, roles_at, Unbound) and dev_lab.dev.rolecheck',
+            'toolchain D73 2026-11-18: the family layer binds each role to an executor kind; a repo declares none',
+        ),
+    ),
+    **dict.fromkeys(
+        ('ci_merges', 'CI_MERGER'),
+        (
+            "roles_at(root).kind('merge') == 'ci' (dev_lab.dev.roles)",
+            'toolchain D73 2026-11-18: the merge.yml opt-in is the family binding merge = "ci"',
+        ),
+    ),
+    'SERVED_KEY': (
+        'ciworkflows.ROLE_KEY / BY_KEY: a job renders where the family binds its role to its kind (role_jobs)',
+        'toolchain D73 2026-11-18: one render rule by role replaces the judge-only served mark',
+    ),
+    '[tool.dev_lab.protection] producer': (
+        "the family layer's [roles.<forge>] (dev_lab.dev.roles.retired_placement refuses the key by name)",
+        'toolchain D73 2026-11-18: a repo declares no placement, migrated once',
     ),
     **dict.fromkeys(
         ('check-case-conflict', 'check-json', 'check-merge-conflict', 'check-toml'),
@@ -92,7 +125,7 @@ RETIRED_SPELLINGS: Final = {
             'post-push',
         ),
         (
-            'prwatcher, the one hearer of a session PR; push doors print pushwatch.heard_line',
+            'forgefeed, the one hearer of a task (D79); push doors print pushwatch.heard_line',
             'dev-lab #640 unwired the push journal, its Stop gate, the shell-line hooks and post-push; deleted after',
         ),
     ),
@@ -101,6 +134,24 @@ RETIRED_SPELLINGS: Final = {
         (
             'devhost session-start, a once-per-session SessionStart notice (agent_wiring.WIRING)',
             'one trigger per check (2026-11-16): machine-file drift cannot change within a turn; no Stop re-reads it',
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            'worktree_archive',
+            'worktree-archive',
+            'save_work',
+            'current_archive',
+            'archive_home',
+            'archive_door',
+            'ARCHIVE_TO',
+        ),
+        (
+            (
+                'dev_lab.dev.worktree_outputs (outputs home only); unlanded work is listed with its doors '
+                '(reclaim.unlanded_work, UNLANDED_DOORS); worktrees --remove removes a clean tree'
+            ),
+            'D31 (user 2026-11-17, restating 2026-11-05): a worktree is merged or cleaned, never parked in output/',
         ),
     ),
     'steward': ('integrator', 'user decision 2026-10-20 (lab-commons PR #175): the role keeps its name'),
@@ -229,6 +280,42 @@ RETIRED_SPELLINGS: Final = {
             ),
             "user ruling 2026-11-16: a workstation never serves a merge's parts; only Actions and the HPC produce",
         ),
+    ),
+    **dict.fromkeys(
+        ('delete_tags', 'judge_tag', 'TAG_DOOR', '_held_by_tag'),
+        (
+            (
+                'branchprune delete: a LOSSY branch is MERGED, or LANDED by a declared `git merge -s ours` PR and '
+                'deleted; `delete-tag` and `delete --approved` are refused by name (branchprune.RETIRED)'
+            ),
+            'user ruling D22 2026-11-17: no tags -- either merge or delete (dev-lab O23)',
+        ),
+    ),
+    **dict.fromkeys(
+        ('codeplace stray', 'stray-check'),
+        (
+            'python -m dev_lab.dev.strays hook|check (the STRAY-FILE-REFUSED census is its own module)',
+            'D40 2026-11-17: codeplace reached the 300-code-line band holding two rules; the stray rule split out',
+        ),
+    ),
+    'load_division': (
+        'dev_lab.dev.hpcaccount.division.division_of (the reached Machine is the one reader of the division)',
+        'D40 2026-11-17: a second reader of a raw [hpc] table no production path builds',
+    ),
+    **dict.fromkeys(
+        ('UncensusedSiteError', 'hook_table_from', 'declares_groups', 'overdue_declared', 'page_path'),
+        (
+            'nothing: no caller in dev-lab or any family repo',
+            'D40 2026-11-17: dead public names removed (a never-raised error and four uncalled readers)',
+        ),
+    ),
+    'Ref.of(': (
+        'artefactstores.ref_of_entry (the Ref is lab_commons.compute.store.Ref; .key is .ref)',
+        'L3 Ref half 2026-11-19: one Ref for artefacts and large objects; run_id_of / manifest_of are functions',
+    ),
+    'RETIRED_FILES': (
+        "each checkout's own `retired` rows in [tool.dev_lab.placement], passed to strays.retired_copies",
+        "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",
     ),
     '_adopt_plain_venv': (
         'dev_lab.dev.venvcurrent.retire_passed_over, retried by every publish, reclaim and follow',

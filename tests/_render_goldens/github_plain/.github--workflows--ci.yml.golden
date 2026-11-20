@@ -56,7 +56,8 @@
     "HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}",
     "FAMILY_SOURCE": "${{ github.server_url }}/${{ github.repository_owner }}/",
     "PARTS_EVENT": "${{ (github.event_name == 'push' || inputs.smoke || inputs.pr != '') && 'pull_request' || github.event_name }}",
-    "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}"
+    "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}",
+    "DEV_LAB_ROLES": "{\"merge\": \"ci\", \"promote\": \"ci\", \"prune\": \"ci\", \"review\": \"ci\", \"tests\": \"ci\"}"
   },
   "jobs": {
     "measurement": {
@@ -147,7 +148,7 @@
           "id": "matrix",
           "name": "The parts and their runners",
           "if": "${{ steps.pending.outputs.pending != 'false' }}",
-          "run": "echo \"matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event \"$PARTS_EVENT\")\" >> \"$GITHUB_OUTPUT\""
+          "run": "matrix=\"$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event \"$PARTS_EVENT\")\"; echo \"matrix=$matrix\" >> \"$GITHUB_OUTPUT\""
         }
       ],
       "outputs": {
@@ -187,6 +188,16 @@
         {
           "name": "Produce and post the part",
           "run": "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}"
+        },
+        {
+          "name": "Keep the part's verify log",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "verify-log-${{ matrix.part }}-${{ github.run_attempt }}",
+            "path": "**/verify/verify-*.log",
+            "if-no-files-found": "warn"
+          }
         }
       ],
       "permissions": {
@@ -515,7 +526,7 @@
         },
         {
           "name": "Promote main",
-          "run": "uv run --no-sync python -m dev_lab.dev.integrate promote --newest \"$HEAD_SHA\" && git push origin main"
+          "run": "uv run --no-sync python -m dev_lab.dev.integrate promote --newest \"$HEAD_SHA\""
         },
         {
           "name": "Delete the branches integration now contains",

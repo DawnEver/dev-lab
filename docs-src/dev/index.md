@@ -27,6 +27,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [The shared checkout](./shared-checkout.md) | What breaks when several parties write one checkout, and the habits that prevent it |
 | [Killed runs and orphans](./orphans.md) | What survives a stopped run, why a lock judges liveness, and how to reap |
 | [Box resources](./box-resources.md) | What one workstation rations, and the broker every run declares its cost to |
+| [How a task hears the forge](./forgefeed.md) | One feed read per forge, `task:<slug>` labels, the inbox |
 | [The forge](./forge.md) | Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict |
 | [Adding a forge workstation](./adding-a-workstation.md) | The light role's template, the deploy step by step, verifying and retiring a host |
 | [The integration branch](./integration.md) | The path of one change, the roles, the integration tick, `forge sync`, `integrate promote`, the merge audit |
@@ -35,6 +36,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [HPC clusters](./hpc.md) | A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records |
 | [Submitting research from a workstation](./hpc-from-a-workstation.md) | A session's own cluster jobs: reach, grants, build, submit, gather, and which account takes them |
 | [Artefacts](./artefacts.md) | A run's declared outputs: the store, its layout and its retention |
+| [Storage kinds](./storage.md) | Where a checkout's output, venvs and caches live on a machine, bound in its machine file |
 | [Retirement](./retirement.md) | The archive keeps old code, the registry keeps a dead spelling dead |
 | [The docs pipeline](./docs-pipeline.md) | The three properties a docs builder holds, and why a skipped sub-site is announced |
 | [Translations](./translations.md) | How a `<stem>.zh.md` beside its `<stem>.md` passes the CJK guard, and the non-ASCII goal |

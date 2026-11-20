@@ -11,7 +11,7 @@ a tracked file, since the forge, its repos and the login host are private to the
     partitions = ["<partition>", ...]
     role = "verification"          # or "research": only a verification account serves (user ruling 2026-11-06)
     repos = [{ name = "dev-lab", url = "<https url>", ref = "<branch>" }, { name = "<repo>", ... }, ...]
-    # served only where the repo itself declares [tool.dev_lab.protection] producer = "hpc" (dev_lab.dev.producers)
+    # served only where the family binds a role of the repo to this account (dev_lab.dev.roles)
 
     [schedule]
     tick_minutes = 15              # the cron period (divides 60; default 5) -- also what the host card is judged by
@@ -133,7 +133,9 @@ def _refuse(refused: Refused, repo: Repo, why: str) -> None:
     refused[repo.name] = why
 
 
-def _serve_git(step: Step, home: Path, path: Path, slurm: Sequence[str], setup: list[str]) -> int:
+def _serve_git(
+    step: Step, home: Path, path: Path, slurm: Sequence[str], setup: list[str], *, env: Sequence[tuple[str, str]] = ()
+) -> int:
     """Prove the tick's git runs merge-tree IN the tick's environment; the grant's setup goes into *setup*.
 
     The proof runs ``git`` under :func:`tick_environment` -- cron's PATH, then this account's grant setup -- the
@@ -143,7 +145,7 @@ def _serve_git(step: Step, home: Path, path: Path, slurm: Sequence[str], setup: 
     emit(f"[git] {MERGE_TREE_GIT}, in the tick's environment")
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     loaded = grant_setup(path, user)
-    environment = tick_environment(home, slurm, loaded)
+    environment = tick_environment(home, slurm, loaded, env)
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         why = _proves([*step.tools.sh, f'{environment}; exec git "$@"', 'git'], Path(scratch))
     if not why:
@@ -178,14 +180,14 @@ def _tools(
     step: Step, spec: Deployment, home: Path, refused: Refused, *, slurm: Sequence[str], setup: Sequence[str]
 ) -> int:
     """``uv`` and each repo's ``needs``; a repo whose declaration, or a need of which, is refused is refused alone."""
-    emit("[tools] uv and every declared `needs`, by `<tool> --version` in the tick's environment")
+    emit("[tools] uv, rclone and every declared `needs`, by `<tool> --version` in the tick's environment")
     needs: dict[str, tuple[str, ...]] = {}
     for repo in _healthy(spec, refused):
         try:
             needs[repo.name] = () if step.dry else declared(checkout_of(spec, home, repo)).needs
         except REFUSALS as why:
             _refuse(refused, repo, str(why))
-    environment = tick_environment(home, slurm, setup)
+    environment = tick_environment(home, slurm, setup, spec.env)
     wanted = [need for each in needs.values() for need in each]
     if not step.dry and (lagging := follow_uv()):
         emit(f'[tools] {lagging}', err=True)
@@ -320,7 +322,7 @@ def deploy(
         lambda: reader(spec, home, role or role_of, semantics=semantics),
         lambda: grant(step, path, args.grant_table),
         lambda: store(step, spec, path),
-        lambda: _serve_git(step, home, path, slurm, setup),
+        lambda: _serve_git(step, home, path, slurm, setup, env=spec.env),
         lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
         lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
         lambda: login(step, home),

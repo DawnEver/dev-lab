@@ -1,9 +1,11 @@
 """``forge breakglass open|close|ack|status`` and ``forge pr breakglass <N> --reason "..."``: the client of the waves.
 
 The client half of :mod:`dev_lab.ops.breakglass`. A WAVE opens on a ``breakglass.wave`` consent credential the USER
-granted (``python -m dev_lab.ops.consent grant <request.json>``, params ``hours`` and ``max_merges``):
-``open --credential <id>`` reads it from the consent state directory. Inside the wave ``pr breakglass`` merges with
-no code -- the server sends ONE summary of what actually merged when the wave ends. ``close`` ends the wave early;
+granted. ``open --code <code> --hours H --max-merges N`` grants it AND opens in ONE call (the code lives one 30-second
+TOTP step, so a second command would spend its window); ``open --credential <id>`` opens on one already granted
+(``python -m dev_lab.ops.consent grant <request.json>``) from the consent state directory. Inside the wave
+``pr breakglass`` merges with no code -- the server sends ONE summary of what actually merged when the wave ends.
+``close`` ends the wave early;
 ``ack [ID]`` records who acknowledged an audit report (no code; it never blocks a wave).
 
 The endpoint is the machine file's ``[breakglass]`` table (``endpoint = "<account>@<host>"``, optional
@@ -18,7 +20,7 @@ import argparse
 import getpass
 import json
 import socket
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -28,8 +30,12 @@ from lab_commons.log import emit
 from dev_lab.dev import sessionprs
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgework import Client
+from dev_lab.ops.consent.client import grant
+from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import Send, ssh_send
+from dev_lab.ops.totp import STEP
 
 __all__ = ['TABLE', 'merge_main', 'wave_main']
 
@@ -45,6 +51,49 @@ def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
     return found
 
 
+#: The consent action a wave opens on.
+WAVE: Final = 'breakglass.wave'
+
+#: Grants a request file into a credential file (:func:`dev_lab.ops.consent.client.grant`).
+Grant = Callable[..., Path]
+
+
+def _wave_request(hours: float | str, max_merges: int | str) -> dict[str, Any]:
+    """The grant request of one wave; its subject is a free label (the wave redeems with ``subject=None``)."""
+    subject = f'break-glass wave by {getpass.getuser()}@{socket.gethostname()}'
+    return {'action': WAVE, 'subject': subject, 'params': {'max_merges': max_merges, 'hours': hours}}
+
+
+def _refuse_open(held: Path) -> int:
+    ready = json.dumps(_wave_request('<H>', '<N>'))
+    emit(
+        f"[breakglass] open needs the user's code or a granted {WAVE} credential ({held} is not one). The code lives "
+        f'about {STEP} s, so spend it in ONE call: python -m dev_lab.dev.forge breakglass open --code <code> '
+        f'--hours <H> --max-merges <N> (preferred). Or grant first -- write {ready} to <request.json>, run python -m '
+        'dev_lab.ops.consent grant <request.json> --code <code>, then open --credential <id>',
+        err=True,
+    )
+    return 2
+
+
+def _granted(args: argparse.Namespace, home: Path | None, grant_: Grant) -> dict[str, Any] | None:
+    """Grant the wave on the user's code; the credential, or ``None`` (refused, said) before anything opens."""
+    if args.hours is None or args.max_merges is None:
+        emit(
+            '[breakglass] open --code needs --hours <H> and --max-merges <N>: the wave has no default bounds', err=True
+        )
+        return None
+    request = state_dir(home) / 'breakglass-wave-request.json'
+    request.parent.mkdir(parents=True, exist_ok=True)
+    request.write_text(json.dumps(_wave_request(args.hours, args.max_merges)), encoding='utf-8')
+    try:
+        written = grant_(request, code=args.code, home=home)
+    except (ConsentRefused, OSError, ValueError) as refused:
+        emit(f'[breakglass] the {WAVE} grant was refused, nothing opened: {refused}', err=True)
+        return None
+    return json.loads(Path(written).read_text(encoding='utf-8'))
+
+
 def _answer(send: Send, table: Mapping[str, Any], request: dict[str, Any]) -> int:
     status, said = send(table, request)
     emit(said, err=status != 0)
@@ -57,22 +106,30 @@ def wave_main(
     table: Mapping[str, Any] | None = None,
     send: Send = ssh_send,
     home: Path | None = None,
+    grant_: Grant = grant,
 ) -> int:
     """``breakglass open|close|ack|status``: exit 0 done, 2 refused, 1 the endpoint could not be reached."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.forge breakglass', description=__doc__.splitlines()[0])
     parser.add_argument('action', choices=('open', 'close', 'ack', 'status'))
     parser.add_argument('id', nargs='?', default='', help='ack: the wave (default: the oldest unacknowledged)')
     parser.add_argument('--credential', default='', help='open: the id of the breakglass.wave credential granted')
+    parser.add_argument('--code', default='', help="open: the USER's code; grants the wave and opens it in one call")
+    parser.add_argument('--hours', type=float, default=None, help='open --code: the wave window in hours')
+    parser.add_argument('--max-merges', type=int, default=None, help='open --code: the merge cap of the wave')
     args = parser.parse_args(argv)
     if (config := _endpoint(table)) is None:
         return 2
     request: dict[str, Any] = {'action': args.action}
     if args.action == 'open':
-        held = state_dir(home) / f'{args.credential}.json'
-        if not args.credential or not held.is_file():
-            emit(f'[breakglass] open needs --credential <id> of a granted breakglass.wave ({held})', err=True)
-            return 2
-        request['credential'] = json.loads(held.read_text(encoding='utf-8'))
+        if args.code:
+            if (credential := _granted(args, home, grant_)) is None:
+                return 2
+            request['credential'] = credential
+        else:
+            held = state_dir(home) / f'{args.credential}.json'
+            if not args.credential or not held.is_file():
+                return _refuse_open(held)
+            request['credential'] = json.loads(held.read_text(encoding='utf-8'))
     if args.action == 'ack':
         request |= {'id': args.id, 'by': f'{getpass.getuser()}@{socket.gethostname()}'}
     return _answer(send, config, request)
@@ -113,5 +170,5 @@ def merge_main(
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
     code = _answer(send, config, request)
     if code == 0:
-        sessionprs.ended(forge_from_remote(root), pull.number)  # SESSION-HEARS-ITS-PRS: the merging door records
+        sessionprs.ended(forge_from_remote(root), pull.number)  # TASK-HEARS-ITS-FORGE-EVENTS: the merging door records
     return code

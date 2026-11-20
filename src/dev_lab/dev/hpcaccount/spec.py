@@ -28,7 +28,7 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
-from dev_lab.dev.producers import HPC, UndeclaredProducer, producer_from
+from dev_lab.dev.roles import HPC, ROLES, Unbound, roles_at
 from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
@@ -88,9 +88,9 @@ _ROLE_NAME: Final = re.compile(r'[a-z][a-z0-9-]*')
 class Repo:
     """One declared repository: checkout name, HTTPS remote, followed branch.
 
-    Whether its queue is served here is NOT declared here: it is the repo's own ``[tool.dev_lab.protection]
-    producer`` (:func:`serves_here`, user ruling 2026-11-16) -- an ``actions`` repo is checked out, installed and
-    never served; the kit's own tick still refreshes the kit (the one writer of that checkout). ``verify`` names
+    Whether its queue is served here is NOT declared here: it is the family's roles binding
+    (:func:`serves_here`, D73) -- a repo with no role bound to this grant role is checked out, installed and never
+    served; the kit's own tick still refreshes the kit (the one writer of that checkout). ``verify`` names
     the status contexts of this repo the account is the DEFAULT producer of (HPC account affinity,
     :mod:`dev_lab.dev.forgeaffinity`): ``verify = ["tests/*"]`` on a verify account's row.
     """
@@ -117,6 +117,7 @@ class Deployment:
     partitions: tuple[str, ...] = ()
     role: str = ''
     tick_minutes: int = DEFAULT_TICK_MINUTES  # from [schedule], never [deploy]: one period per host
+    env: tuple[tuple[str, str], ...] = ()  # from [env]: this account's own tool paths, exported in every tick
 
 
 def load(path: Path) -> Deployment | None:
@@ -146,6 +147,7 @@ def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
             partitions=tuple(raw.get('partitions', ())),
             role=_role(path, raw.get('role', '')),
             tick_minutes=_tick_minutes(path, table.get('schedule', {})),
+            env=_env(path, table.get('env', {})),
         )
     except KeyError as missing:
         msg = f'[deploy] in {path} lacks {missing}'
@@ -170,6 +172,27 @@ def role_refusal(spec: Deployment, path: Path) -> str:
     )
 
 
+#: An ``[env]`` name: a shell variable, upper case by convention so it never shadows a shell's own.
+_ENV_NAME: Final = re.compile(r'[A-Z_][A-Z0-9_]*')
+
+
+def _env(path: Path, table: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    """``[env]``: this account's own tool paths (``FEMM_DIR = "~/opt/femm"``), each a string; else refused by name.
+
+    The ONE home of a per-account variable (#621): a grant's ``setup`` is a family fact shared by every account of
+    the cluster, so a per-account export there would be a second copy. A leading ``~/`` is the account's home.
+    """
+    bad = [
+        f'{key} = {value!r}' for key, value in table.items() if not _ENV_NAME.fullmatch(key) or type(value) is not str
+    ]
+    if bad:
+        msg = (
+            f'[env] in {path}: {"; ".join(bad)} -- each name is a shell variable (A-Z, 0-9, _) and each value a string'
+        )
+        raise ValueError(msg)
+    return tuple(sorted(table.items()))
+
+
 def _tick_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
     """``[schedule] tick_minutes`` as a cron step: a whole number of minutes dividing the hour, else refused."""
     minutes = schedule.get('tick_minutes', DEFAULT_TICK_MINUTES)
@@ -183,9 +206,8 @@ def _repo_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> Sequence[Mappin
     """*rows*, refused naming *path* when one still declares the retired ``serve`` flag."""
     if named := [str(row.get('name', '?')) for row in rows if 'serve' in row]:
         msg = (
-            f'{path}: [deploy] repos {", ".join(named)} declare serve, which is retired: a repo is served where its '
-            f'own [tool.dev_lab.protection] producer = "{HPC}" (dev_lab.dev.producers, user ruling 2026-11-16) -- '
-            'delete the key'
+            f'{path}: [deploy] repos {", ".join(named)} declare serve, which is retired: a repo is served where the '
+            'family binds one of its roles to the grant role of this account (dev_lab.dev.roles, D73) -- delete the key'
         )
         raise ValueError(msg)
     return rows
@@ -304,9 +326,9 @@ def cron_lines(
 
 
 def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
-    """The repos this account TICKS: every declared one, each refreshed and served where it declares the HPC.
+    """The repos this account TICKS: every declared one, each refreshed and served where a role is bound here.
 
-    A tick serves a repo only where its own declaration names the HPC its producer (:func:`serves_here`).
+    A tick serves a repo only where the family binds one of its roles to this account (:func:`serves_here`).
 
     Only an account whose role SERVES ticks -- *serves* as the workstation's role table says, else the shipped
     default for its role (:data:`dev_lab.dev.hpcaccount.division.DEFAULT_ROLES`); undeclared ticks nothing.
@@ -317,43 +339,46 @@ def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
 
 
 def served(spec: Deployment, home: Path) -> frozenset[str]:
-    """The repos this account serves (:func:`serves_here`); a malformed producer is not (its tick names why)."""
+    """The repos this account serves (:func:`serves_here`); malformed roles are not (its tick names why)."""
     found = set()
     for repo in spec.repos:
         try:
             if serves_here(spec, home, repo):
                 found.add(repo.name)
-        except UndeclaredProducer:
+        except Unbound:
             continue
     return frozenset(found)
 
 
 def unserved(spec: Deployment, home: Path) -> frozenset[str]:
-    """The repos whose checkout declares a producer other than the HPC: never served here, never given the token."""
+    """The repos with no role bound to this account: never served here, never given the token."""
     found = set()
     for repo in spec.repos:
         pyproject = checkout_of(spec, home, repo) / 'pyproject.toml'
         try:
             if pyproject.is_file() and not serves_here(spec, home, repo):
                 found.add(repo.name)
-        except UndeclaredProducer:
+        except Unbound:
             continue
     return frozenset(found)
 
 
 def serves_here(spec: Deployment, home: Path, repo: Repo) -> bool:
-    """Whether this account serves *repo*'s queue: its checkout declares ``producer = "hpc"``; not yet cloned, no.
+    """Whether this account serves *repo*'s queue: the family binds one of its roles to this account's grant role.
 
-    The repo's own declaration decides (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16), never this file.
+    The family's binding decides (:mod:`dev_lab.dev.roles`, D73), never this file; not yet cloned, no.
 
     Raises:
-        UndeclaredProducer: the checkout declares a malformed producer; the message names the key.
+        Unbound: the family binds the repo's roles nowhere, or malformed; the message names the table.
 
     """
-    pyproject = checkout_of(spec, home, repo) / 'pyproject.toml'
-    if not pyproject.is_file():
+    checkout = checkout_of(spec, home, repo)
+    if not (checkout / 'pyproject.toml').is_file():
         return False
-    return producer_from(pyproject.read_text(encoding='utf-8'), str(pyproject)) == HPC
+    roles = roles_at(checkout)
+    return any(  # a carried binding names kinds only (''): any hpc executor
+        roles.kind(role) == HPC and roles.of(role).grant_role in {spec.role, ''} for role in ROLES
+    )
 
 
 def merge_crontab(current: str, lines: Sequence[str]) -> str:
@@ -377,7 +402,7 @@ def tick_command(
     cache = home / '.cache'
     lab = next(one for one in spec.repos if one.name == KIT)
     command = (
-        f'{tick_environment(home, slurm, setup)}; '
+        f'{tick_environment(home, slurm, setup, spec.env)}; '
         f'cd {shlex.quote(str(checkout_of(spec, home, lab)))} && '
         f'flock -n {shlex.quote(str(cache / f"lab-forge-{repo.name}.lock"))} '
         f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
@@ -386,14 +411,22 @@ def tick_command(
     return command + (f' >> {shlex.quote(str(cache / f"lab-forge-{repo.name}.log"))} 2>&1' if log else '')
 
 
-def tick_environment(home: Path, slurm: Sequence[str] = (), setup: Sequence[str] = ()) -> str:
-    """The shell prefix that makes a tick's environment: cron's PATH (:func:`tick_dirs`), then the grant *setup*.
+def tick_environment(
+    home: Path, slurm: Sequence[str] = (), setup: Sequence[str] = (), env: Sequence[tuple[str, str]] = ()
+) -> str:
+    """The shell prefix of a tick's environment: cron's PATH, the account's *env*, then the grant *setup*.
 
+    PATH is :func:`tick_dirs`; *env* is the account's ``[env]``, exported so every job the tick submits inherits it.
     The ONE definition of that environment: the cron line runs it, and the deploy proves the tick's git in it.
     """
-    cache = shlex.quote(str(uv_cache(home)))
-    exported = f'export UV_CACHE_DIR={cache} UV_LINK_MODE=hardlink'
+    pairs = [('UV_CACHE_DIR', str(uv_cache(home))), *((key, _homed(home, value)) for key, value in env)]
+    exported = 'export ' + ' '.join(f'{key}={shlex.quote(value)}' for key, value in pairs) + ' UV_LINK_MODE=hardlink'
     return '; '.join([f'PATH={":".join(tick_dirs(home, slurm))}', exported, *setup])
+
+
+def _homed(home: Path, value: str) -> str:
+    """*value* with a leading ``~/`` made the account's *home* (a quoted ``~`` never expands in a shell)."""
+    return str(home / value[2:]) if value.startswith('~/') else value
 
 
 def uv_cache(home: Path) -> Path:

@@ -33,9 +33,6 @@ pr_merges_since = 'abc'
 
 [tool.dev_lab.hooks]
 
-[tool.dev_lab.protection]
-producer = 'actions'
-
 [tool.lab_commons.tests]
 produce = ['-m', 'dev_lab.dev.verify', '--part', '{part}']
 """

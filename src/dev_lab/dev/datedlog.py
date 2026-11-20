@@ -32,12 +32,37 @@ behind, and a sweeper cannot age out a file with no age.
 from __future__ import annotations
 
 import datetime as dt
+import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+from lab_commons import storage as _storage
 
 from dev_lab.dev.family import declared_in
+from dev_lab.dev.storage import output_path
 
-__all__ = ['OUTPUT_KEY', 'UndeclaredOutput', 'date_parts', 'dated_log', 'declared_output', 'output_dir']
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+__all__ = [
+    'OUTPUT_KEY',
+    'SCRIPT_TEST_TEMP_KIND',
+    'TEST_TEMP_KIND',
+    'UndeclaredOutput',
+    'date_parts',
+    'dated_base',
+    'dated_log',
+    'declared_output',
+    'kind_dirs',
+    'output_dir',
+    'script_temp_env',
+]
+
+#: The kind under which the test runner's base temp lives (:mod:`dev_lab.dev.testtemp`, user ruling D27).
+TEST_TEMP_KIND = 'pytest'
+
+#: The kind under which a script suite's (``node --test``, ``npm test``) temp dir lives: D27's JS counterpart.
+SCRIPT_TEST_TEMP_KIND = 'scripttest'
 
 #: The one key a repo answers "where does dated output live" with.
 OUTPUT_KEY: Final = '[tool.dev_lab.parts] output'
@@ -118,9 +143,24 @@ def dated_log(root: Path, name: str, *, base: str, kind: str) -> Path:
             f'age out a file with no age. Pass just the filename.'
         )
         raise ValueError(msg)
-    dated = root.joinpath(*Path(base).parts, *date_parts(), kind)
+    dated = dated_base(root, base).joinpath(*date_parts(), kind)
     dated.mkdir(parents=True, exist_ok=True)
     return dated / given.name
+
+
+def dated_base(root: Path, base: str, *, declared: _storage.Storage | None = None) -> Path:
+    """Where *base* (relative to the checkout *root*) lives: under the BOUND ``output`` kind when it is output.
+
+    A *base* inside the in-tree ``output`` default (``output/logs``) moves with the ``output`` storage kind when this
+    machine binds it (``[storage.roots] output``, :mod:`dev_lab.dev.storage`): the bound root of the repository's
+    MAIN checkout, shared by its worktrees. Unbound, it is ``root/base`` -- the tree's own, as before. Any other
+    *base* is ``root/base``.
+    """
+    parts = Path(base).parts
+    declared = _storage.declared() if declared is None else declared
+    if parts and parts[0] == _storage.KINDS['output'] and 'output' in declared.roots:
+        return output_path(root, *parts[1:], declared=declared)
+    return root.joinpath(*parts)
 
 
 def declared_output(root: Path) -> str:
@@ -147,3 +187,32 @@ def output_dir(root: Path, kind: str) -> Path:
 
     """
     return dated_log(root, kind, base=declared_output(root), kind=kind).parent
+
+
+def kind_dirs(root: Path, kind: str) -> tuple[str, ...]:
+    """Every existing IN-TREE ``<output>/<yy>/<mm>/<dd>/<kind>`` under *root*, repo-relative POSIX; none if undeclared.
+
+    In-tree only: a bound output root lies outside the checkout, where no scan of the tree walks.
+    """
+    try:
+        base = root / declared_output(root)
+    except UndeclaredOutput:
+        return ()
+    return tuple(sorted(path.relative_to(root).as_posix() for path in base.glob(f'*/*/*/{kind}') if path.is_dir()))
+
+
+def script_temp_env(root: Path, environ: Mapping[str, str]) -> dict[str, str]:
+    """*environ* with TMPDIR, TEMP and TMP all naming a fresh ``<output>/<yy>/<mm>/<dd>/scripttest/<HH-MM-SS>-<pid>/``.
+
+    D27 for a script suite: ``os.tmpdir()`` reads TMPDIR on POSIX and TEMP/TMP on Windows, so every ``mkdtemp``
+    a JS test makes lands in the managed dated tree, never system temp. The pid keeps two runs started in the same
+    second apart.
+
+    Raises:
+        UndeclaredOutput: *root* declares no output root -- no fallback to system temp.
+
+    """
+    stamp = dt.datetime.now().astimezone().strftime('%H-%M-%S')
+    fresh = output_dir(root, SCRIPT_TEST_TEMP_KIND) / f'{stamp}-{os.getpid()}'
+    fresh.mkdir(parents=True, exist_ok=True)
+    return dict(environ) | dict.fromkeys(('TMPDIR', 'TEMP', 'TMP'), str(fresh))

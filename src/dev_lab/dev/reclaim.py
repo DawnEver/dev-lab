@@ -3,9 +3,10 @@
 Worktrees created for a task (by an agent, a human, codex) were never reclaimed: :mod:`dev_lab.dev.checkout`
 DETECTED them and ``branchset --apply`` deleted merged local branches but skipped every branch checked out in a
 worktree, so a finished tree pinned its branch forever. First principles: a lease ends when its branch's CONTENT
-is landed (or its PR closed and its origin ref deleted after a squash merge) AND no TRACKED file is changed:
-what git does not track is not the work and goes with the tree, untracked files included (user rulings
-2026-10-25 and 2026-11-12, the latter ending 10-27's untracked keep). Run outputs move home first: user ruling
+is landed (or its PR closed and its origin ref deleted after a squash merge) AND it holds nothing unlanded: no
+TRACKED change and no UNTRACKED, NOT-IGNORED file (D31, user 2026-11-17: a worktree's work is MERGED or the tree
+is CLEANED, never parked -- what ``.gitignore`` names is regenerable and goes with the tree; anything else
+untracked keeps it, listed with its doors). Run outputs move home first: user ruling
 2026-11-12 (replacing 11-09's keep-as-writer-defect) makes reclaiming useless trees a REQUIRED part of the
 workflow, so every reclaimable tree's outputs are moved into the main checkout, VERIFIED, and only then is it
 deleted; a move that fails keeps the tree and names the failure.
@@ -33,26 +34,28 @@ from lab_commons.census import processes
 from dev_lab.dev.checkout import (
     _GIT,
     _GIT_TIMEOUT_S,
-    DEFAULT_WORKTREE_HOME,
     git_bytes,
     git_out,
+    locked_trees,
     orphan_directories,
+    split_drifted,
     unmerged_changes,
     worktrees,
 )
 from dev_lab.dev.diskusage import remove_tree
+from dev_lab.dev.disposable import disposable_base, unheld_head
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.liverun import Census, removal_holders
-from dev_lab.dev.worktree_archive import home_outputs
+from dev_lab.dev.worktree_outputs import home_outputs
 
 __all__ = [
     'QUIET_S',
+    'UNLANDED_DOORS',
     'Lease',
     'blockers',
     'declared_generated',
     'index_age_s',
-    'locked_trees',
     'orphan_reason',
     'reclaim',
     'reclaimable',
@@ -60,6 +63,8 @@ __all__ = [
     'removed_approved',
     'repository_at',
     'runtime_of',
+    'unlanded_work',
+    'untracked_work',
 ]
 
 #: How many paths a kept line names before it counts the rest.
@@ -86,10 +91,10 @@ def declared_generated(main: Path) -> tuple[str, ...]:
 
 
 def blockers(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | None:
-    """Every TRACKED path really changed in *tree* against HEAD, staged or not; untracked and ignored are not work.
+    """Every TRACKED path really changed in *tree* against HEAD, staged or not (untracked work: :func:`untracked_work`).
 
-    User rulings 2026-10-25 and 2026-11-12: the work is committed; what git does not track (scratch, untracked,
-    ignored: ``.venv``, caches, builds) goes with the tree, its run outputs moved home first (:func:`reclaim`).
+    What git IGNORES (``.venv``, caches, builds) goes with the tree, its run outputs moved home first
+    (:func:`reclaim`); untracked, not-ignored files are work and keep it (D31, 2026-11-17).
     Ruling 2026-10-27: a change that is only CR/LF at line ends (``--ignore-cr-at-eol``: line-ending churn of a
     checkout) or only to a path matching a *generated* glob is not work either.
     """
@@ -149,21 +154,6 @@ class Lease:
         return not self.reason
 
 
-def locked_trees(root: Path) -> frozenset[Path] | None:
-    """The resolved paths of every ``git worktree lock``-ed tree of *root*; ``None`` when git could not answer."""
-    out = git_out(root, 'worktree', 'list', '--porcelain')
-    if out is None:
-        return None
-    found: set[Path] = set()
-    path: Path | None = None
-    for line in out.splitlines():
-        if line.startswith('worktree '):
-            path = Path(line.removeprefix('worktree ').strip()).resolve()
-        elif (line == 'locked' or line.startswith('locked ')) and path is not None:
-            found.add(path)
-    return frozenset(found)
-
-
 def _patch_ids(root: Path, patch: bytes) -> frozenset[str]:
     try:
         done = _door.run(
@@ -214,26 +204,58 @@ class _Judge:
     quiet_s: float
 
 
-def _unsaved(tree: Path, generated: tuple[str, ...]) -> str:
-    """Why *tree* holds work that exists nowhere else -- a tracked change; ``''`` when none."""
+#: The doors of a tree holding unlanded work (D31): it is merged, or the user discards it -- never parked.
+UNLANDED_DOORS: Final = (
+    'commit it on its branch and land it through a PR; or the user discards it: '
+    'python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>"'
+)
+
+
+def untracked_work(tree: Path, generated: tuple[str, ...] = ()) -> tuple[str, ...] | None:
+    """Every UNTRACKED, NOT-IGNORED file of *tree* outside the *generated* globs; ``None`` when git cannot say.
+
+    What ``.gitignore`` names (a ``.venv``, caches, run outputs) is regenerable; anything else untracked is work.
+    """
+    out = git_out(tree, 'ls-files', '--others', '--exclude-standard', '-z')
+    if out is None:
+        return None
+    return tuple(p for p in out.split('\0') if p and not any(fnmatch.fnmatchcase(p, g) for g in generated))
+
+
+def unlanded_work(tree: Path, generated: tuple[str, ...] = ()) -> str:
+    """Why *tree* holds work that exists nowhere else -- a tracked change or untracked work; ``''`` when none."""
     blocking = blockers(tree, generated) if tree.is_dir() else None
-    if blocking is None:
+    loose = untracked_work(tree, generated) if blocking is not None else None
+    if blocking is None or loose is None:
         return 'unreadable'
-    return f'tracked changes -- commit or revert first: {_shown(blocking)}' if blocking else ''
+    edits, door = split_drifted(tree, blocking)
+    if blocking:
+        return f'tracked changes -- {UNLANDED_DOORS}: {_shown(edits)}' if edits else f'{door}: {_shown(blocking)}'
+    return f'untracked work -- {UNLANDED_DOORS}: {_shown(loose)}' if loose else ''
+
+
+def _scrap_unsaved(tree: Path, base: str, generated: tuple[str, ...]) -> str:
+    """Why disposable *tree* holds work: a tracked change or a HEAD no ref holds; untracked files are scratch."""
+    blocking = blockers(tree, generated) if tree.is_dir() else None
+    if blocking:
+        return f'tracked changes -- commit or revert first: {_shown(blocking)}'
+    return 'unreadable' if blocking is None else unheld_head(tree, base)
 
 
 def _tree_reason(tree: Path, branch: str, judge: _Judge, *, locked: bool) -> str:
     holders = judge.holders
     if locked:
         return 'locked (git worktree unlock first)'
-    if unsaved := _unsaved(tree, judge.generated):
+    base = disposable_base(tree)
+    unsaved = _scrap_unsaved(tree, base, judge.generated) if base else unlanded_work(tree, judge.generated)
+    if unsaved and (base or not unsaved.startswith('untracked')):
         return unsaved
     age = index_age_s(tree)
     if age is not None and age < judge.quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
-    if not _landed(tree, branch, holders):
+    if not base and not _landed(tree, branch, holders):
         return f'not landed -- its content is on none of {", ".join(holders)}'
-    return ''
+    return unsaved
 
 
 #: Why an orphan that was a worktree is kept: its repository is gone, so its files may be the only copy.
@@ -283,7 +305,7 @@ def reclaimable(
     root: Path,
     holders: tuple[str, ...],
     *,
-    home: Path = DEFAULT_WORKTREE_HOME,
+    home: Path | None = None,
     occupied: Callable[[Path], bool] | None = None,
     quiet_s: float = QUIET_S,
     runtimes: Mapping[str, Mapping[str, Any]] | None = None,
@@ -293,8 +315,8 @@ def reclaimable(
     A linked worktree (never the main one) is reclaimable iff ALL hold, checked in this order:
 
     * not ``git worktree lock``-ed;
-    * no TRACKED change, staged or not (:func:`blockers`) -- untracked and ignored files, CR/LF-only changes
-      and declared generated paths never block;
+    * no TRACKED change, staged or not (:func:`blockers`), and no untracked NOT-IGNORED file
+      (:func:`untracked_work`) -- ignored files, CR/LF-only changes and declared generated paths never block;
     * QUIET: its index unchanged for *quiet_s* seconds (a session that stages, commits or checks out is live);
     * LANDED: its HEAD's content is on one of *holders* (``git cherry`` empty -- content, not ancestry), or
       its branch's origin ref is gone and its whole change is one commit's change on a holder (squash merge);
@@ -407,7 +429,7 @@ def reclaim(
     root: Path,
     holders: tuple[str, ...],
     *,
-    home: Path = DEFAULT_WORKTREE_HOME,
+    home: Path | None = None,
     occupied: Callable[[Path], bool] | None = None,
     apply: bool = True,
     limit: int | None = None,
@@ -416,9 +438,9 @@ def reclaim(
 ) -> tuple[str, ...] | None:
     """Remove every reclaimable lease; one line per lease, then a summary line. ``None``: unreadable.
 
-    A reclaimable lease's run outputs are moved HOME first (:func:`dev_lab.dev.worktree_archive.home_outputs`)
+    A reclaimable lease's run outputs are moved HOME first (:func:`dev_lab.dev.worktree_outputs.home_outputs`)
     and verified, CHAINED: only a verified move (or none to make) lets :func:`remove_tree` delete it -- its
-    untracked and ignored content is disposable -- and git's registration is pruned; a failed move keeps the
+    ignored content is regenerable -- and git's registration is pruned; a failed move keeps the
     tree, with the failure. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``, which
     deletes it pinned to its sha. *runtimes* is :func:`reclaimable`'s. Without *apply* nothing is touched;
     past *limit* removals the rest are ``deferred`` to a later run. The last line counts the verdicts and every

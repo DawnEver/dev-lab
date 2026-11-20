@@ -19,12 +19,19 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from dev_lab.dev.devschema import app_tables
 from dev_lab.dev.hpcaccount.spec import load
 
 __all__ = ['TABLES', 'check', 'derived', 'grant_of', 'is_account']
 
 #: What an account file may declare; an empty table is open (its own module checks its keys).
-TABLES: Final[Mapping[str, Any]] = {'deploy': {}, 'schedule': {}, 'capabilities': {}, 'hpc': {'paging': {}}}
+TABLES: Final[Mapping[str, Any]] = {
+    'deploy': {},
+    'schedule': {},
+    'env': {},
+    'capabilities': {},
+    'hpc': {'paging': {}},
+}
 #: ``[deploy]`` keys the family grant owns: stated in an account file they would be a second copy.
 _DERIVED: Final = ('role', 'slurm_account', 'partitions')
 
@@ -81,7 +88,8 @@ def check(path: Path, host: Mapping[str, Any], family: Mapping[str, Any]) -> lis
         f'{key} restates the family file; it lives there once'
         for key in sorted(set(_leaves(host)) & set(_leaves(family)))
     ]
-    found += [f'{key} is not an account table' for key in _undeclared(host, TABLES)]
+    opened = {**TABLES, **{app: {} for app in app_tables(family)}}
+    found += [f'{key} is not an account table' for key in _undeclared(host, opened)]
     try:
         load(path)
     except ValueError as bad:

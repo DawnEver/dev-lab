@@ -7,9 +7,11 @@ push is admitted (:mod:`dev_lab.dev.sessionbranch`) only when EVERY new first-pa
 flag -- so every use is in the history it bypassed:
 
 * the commit-msg hook (:mod:`dev_lab.dev.mergeaudit`) refuses the trailer with an empty reason;
-* every ``forge serve`` tick keeps one ``integration`` issue per break-glass commit past the declared start
-  (:func:`notices`), naming the commit and its reason. It closes when ``pr_merges_since`` is moved past it
-  -- by a pull request, which is the follow-up the use owes.
+* every ``forge serve`` tick raises one ``integration`` ALARM per break-glass commit past the declared start
+  (:func:`notices`), naming the commit and its reason, on the host card ``forge queue`` prints -- never an issue
+  (user rulings 2026-11-14 and 2026-11-19). It leaves when ``pr_merges_since`` is moved past it -- by a pull
+  request, which is the follow-up the use owes. The audit of a wave is the wave ledger's
+  (``forge breakglass status`` / ``ack``), once per wave.
 
 THE REVIEW IS ADVISORY (user rulings 2026-11-11/12, both forges), so a Break-Glass push is never held on it: the
 review of a head it lands runs and posts as for any PR, and is reported, never asked here.

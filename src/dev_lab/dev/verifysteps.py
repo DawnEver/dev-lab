@@ -32,14 +32,16 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
+from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
 from dev_lab.dev.content import ABSENT, content_address, file_digest
-from dev_lab.dev.datedlog import output_dir
+from dev_lab.dev.datedlog import UndeclaredOutput, output_dir, script_temp_env
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.hook_install import read_hooks
+from dev_lab.dev.jsrun import NoEngine, node_path
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
 from dev_lab.dev.reports import StepReport, read_ruff, read_stages
-from dev_lab.dev.selection import census_scope
+from dev_lab.dev.selection import census_scope, is_targeted
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
 from dev_lab.dev.skipallowance import declared_skips, stale_declarations, vanished_shortfall
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, OutcomeReadError, RetiredOutcomes, outcomes_dir, read_cells
@@ -289,6 +291,46 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str], extra_env: dict[str,
     return process.returncode
 
 
+#: The banner before the declared command's run of the selected script tests.
+SCRIPTS_BANNER: Final = '--- script tests ---\n'
+
+
+def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepReport:
+    """The selected script tests (``.mjs``/``.cjs``/``.js``), run by the repo's DECLARED command, judged by its exit.
+
+    The command is the command-part producer's (:mod:`dev_lab.dev.commandtests`), cut to *paths*: exit 0 passes,
+    any other exit FAILS each selected path. No declaration, a command that cannot be cut, or one that cannot start
+    measures nothing -- truncated, by name and door, so the run is INCONCLUSIVE rather than a guessed verdict.
+    """
+    name = f'script tests {" ".join(paths)}'
+    handle.write(SCRIPTS_BANNER)
+    try:
+        declared = declared_command((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    except OSError:
+        declared = None
+    if declared is None:
+        return StepReport(
+            name=name,
+            truncated=(
+                (
+                    f'{name}: no test command is declared -- declare it as the producer in pyproject.toml: '
+                    f'[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.commandpart", "{{part}}", "--", <cmd...>]'
+                ),
+            ),
+        )
+    command = selected_command(root, declared, paths)
+    if isinstance(command, str):
+        return StepReport(name=name, truncated=(f'{name}: {command}',))
+    try:
+        # `node` is the LOCKED engine (:mod:`dev_lab.dev.jsrun`), never the host's; any other program is resolved
+        # on PATH (Windows: `npm` is `npm.cmd`, which a bare name cannot start).
+        program = str(node_path()) if command[0] == 'node' else shutil.which(command[0]) or command[0]
+        code = _tee([program, *command[1:]], cwd=root, handle=handle, extra_env=script_temp_env(root, {}))
+    except (OSError, NoEngine, UndeclaredOutput) as cannot:
+        return StepReport(name=name, truncated=(f'{name}: cannot start {command[0]!r} here: {cannot}',))
+    return StepReport(name=name, reported=(name, *paths), failures=() if code == 0 else paths)
+
+
 def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
     """Fold the step reports into ONE verdict over the whole verify run.
 
@@ -393,6 +435,9 @@ def run_verify(
             a FAIL nobody measured.
 
     """
+    selection = pytest_args
+    pytest_args, scripts = script_paths(root, pytest_args)
+    only_scripts = bool(scripts) and not is_targeted(root, pytest_args)
     allowed = declared_skips(root)
     vanished = vanished_shortfall(stale_declarations(root, allowed))
     path = output_dir(root, LOG_KIND) / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
@@ -408,53 +453,64 @@ def run_verify(
                 reports.append(read_hooks(root, handle=handle))
             for name, arguments in RUFF_STEPS:
                 reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-            handle.write(_PYTEST_BANNER)
-            stamp = {
-                durations.LEDGER_TREE_VAR: tree_address(root),
-                durations.LEDGER_ENV_VAR: verdict_env(root),
-                **coverage_env(root, path),
-            }
-            head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
-            pytest = [*head, *pytest_args]
-            covered = [*head, *coverage_args(root, path), *pytest_args]
-            seen = path.with_suffix('.serial-seen')
-            argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
-            (live / 'parallel').mkdir()
-            codes = [
-                _tee(
-                    argv,
-                    cwd=root,
-                    handle=handle,
-                    extra_env={
-                        **stamp,
-                        OUTCOMES_DIR_VAR: str(live / 'parallel'),
-                        STAGE_ENV: 'parallel',
-                        SEEN_ENV: str(seen),
-                    },
-                )
-            ]
-            learn_ended(root, pytest, record)
-            cut = ended_in_the_box(record)
-            if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
-                handle.write(SERIAL_BANNER)
-                appended = [*covered, '--cov-append', *serial_width()]
-                argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
-                (live / 'serial').mkdir()
-                codes.append(
+            if scripts:
+                reports.append(script_step(root, scripts, handle=handle))
+            if not only_scripts:
+                handle.write(_PYTEST_BANNER)
+                stamp = {
+                    durations.LEDGER_TREE_VAR: tree_address(root),
+                    durations.LEDGER_ENV_VAR: verdict_env(root),
+                    **coverage_env(root, path),
+                }
+                head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
+                pytest = [*head, *pytest_args]
+                covered = [*head, *coverage_args(root, path), *pytest_args]
+                seen = path.with_suffix('.serial-seen')
+                argv, record = boxed(root, covered, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
+                (live / 'parallel').mkdir()
+                codes = [
                     _tee(
                         argv,
                         cwd=root,
                         handle=handle,
                         extra_env={
                             **stamp,
-                            OUTCOMES_DIR_VAR: str(live / 'serial'),
-                            STAGE_ENV: 'serial',
+                            OUTCOMES_DIR_VAR: str(live / 'parallel'),
+                            STAGE_ENV: 'parallel',
+                            SEEN_ENV: str(seen),
                         },
                     )
-                )
-                cut += ended_in_the_box(record)
+                ]
+                learn_ended(root, pytest, record)
+                cut = ended_in_the_box(record)
+                if seen.exists():  # the parallel stage deselected a `serial` test: it runs now, alone
+                    handle.write(SERIAL_BANNER)
+                    appended = [*covered, '--cov-append', *serial_width()]
+                    argv, record = boxed(root, appended, queue_s=wait_s, outcome=seen.with_suffix('.json'))
+                    (live / 'serial').mkdir()
+                    codes.append(
+                        _tee(
+                            argv,
+                            cwd=root,
+                            handle=handle,
+                            extra_env={
+                                **stamp,
+                                OUTCOMES_DIR_VAR: str(live / 'serial'),
+                                STAGE_ENV: 'serial',
+                            },
+                        )
+                    )
+                    cut += ended_in_the_box(record)
     finally:
         shutil.move(live, outcomes_dir(path))
+    if only_scripts:
+        return build_verdict(
+            tuple(reports),
+            tree=tree_address(root),
+            env=verdict_env(root),
+            spec=' '.join(('verify', *selection)),
+            log=LogRef.of(path),
+        )
     report = coverage_report(root, path)
     emit(f'coverage: {coverage_total(report) or "not measured"} -- {report.relative_to(root).as_posix()} (a report)')
     stages = [distil_log(path, banner=_PYTEST_BANNER, until=SERIAL_BANNER)]
@@ -472,6 +528,6 @@ def run_verify(
         tuple(reports),
         tree=tree_address(root),
         env=verdict_env(root),
-        spec=' '.join(('verify', *pytest_args)),
+        spec=' '.join(('verify', *selection)),
         log=LogRef.of(path),
     )

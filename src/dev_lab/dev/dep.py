@@ -58,6 +58,7 @@ failure exactly as it does on a success. The claim is then MEASURED instead of a
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -75,10 +76,12 @@ from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_cli, _dep_local, _dep_project, venvcurrent
-from dev_lab.dev._dep_components import changed, record
+from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
+from dev_lab.dev._dep_aftersync import after_sync
+from dev_lab.dev._dep_components import changed
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev._dep_pip import has_pip
+from dev_lab.dev._dep_publish import publish_built
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
 
@@ -416,12 +419,32 @@ def main(
     if why := _dep_cli.argv_error(args, locking=locking):
         parser.error(why)
     root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
-    base, selected, paths = _dep_project.read_project(root, args.extra)
+    syncing = args.bootstrap is not None or args.sync or locking
+    if not syncing or args.dry_run:
+        return _run(args, root, syncing=syncing, locking=locking, run=run, census=census)
+    try:
+        with venvcurrent.exclusive_build(root):
+            return _run(args, root, syncing=True, locking=locking, run=run, census=census)
+    except venvcurrent.BuildBusy as exc:
+        emit(f'REFUSED: {exc}')
+        return 1
+
+
+def _run(
+    args: argparse.Namespace,
+    root: Path,
+    *,
+    syncing: bool,
+    locking: bool,
+    run: Callable[..., Any],
+    census: Census,
+) -> int:
+    """One ``dep`` run on *root*; a building one runs under :func:`venvcurrent.exclusive_build`."""
+    base, selected, paths = _dep_project.read_project(root, args.extra or depneeds.bound_task_extras(root))
     live = Path(base).parent.parent
     if Path(base).is_file() and Path(_snapshot(base)[0]).resolve() != live.resolve():
         msg = f'{base} does not execute in its own environment {live}'
         raise ValueError(msg)
-    syncing = args.bootstrap is not None or args.sync or locking
     environment = dict(os.environ)
     environment.pop('VIRTUAL_ENV', None)
     if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
@@ -448,9 +471,9 @@ def main(
         overlay = _dep_local.step(
             root, args.local, syncing=syncing, uv=command[0], python=python, prefix=prefix, run=run, env=environment
         )
-    except (_dep_project.OtherUvRefused, _dep_local.OverlayRefused) as exc:
+    except (_dep_project.OtherUvRefused, _dep_project.ForeignEnvRefused, _dep_local.OverlayRefused) as exc:
         emit(f'REFUSED: {exc}')
-        _publish(root, prefix, live, ok=False, census=census, base=base)
+        publish_built(root, prefix, live, ok=False, census=census, base=base)
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
@@ -471,44 +494,9 @@ def main(
         emit(f'REFUSED: {exc}')
         return 1
     emit(result.render())
-    stale = _publish(root, prefix, live, ok=not result.returncode, census=census, base=base)
-    if syncing and not args.dry_run and not result.returncode:
-        _refresh_automode(root, run=run)
-    return result.returncode or stale
-
-
-def _publish(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, base: str) -> int:
-    """Publish the environment just built (or drop a failed build), then reclaim every one nothing runs from.
-
-    Nonzero when the build is published but the :data:`~dev_lab.dev.venvpointer.ALIAS` still runs another
-    environment (a held legacy ``.venv`` directory): a caller of ``.venv`` would still meet the stale one.
-    """
-    if prefix == live or not ok:
-        if prefix != live:
-            venvcurrent.abandon(prefix)
-        return 0
-    record(root, prefix)  # the trees this environment now holds its components at
-    emit(f'published {prefix}: {venvcurrent.publish(root, prefix)}')
-    for line in venvcurrent.reclaim(root, census=census):
-        emit(line)
-    if why := venvcurrent.stale_alias(root, prefix, prefix.joinpath(*Path(base).relative_to(live).parts)):
-        emit(f'REFUSED: {why}')
-        return 1
-    return 0
-
-
-def _refresh_automode(root: Path, *, run: Callable[..., Any]) -> None:
-    """Render the checkout's machine-local auto-mode prose (:mod:`dev_lab.dev.automode`), in its own process.
-
-    Its own process so this door imports nothing of the forge it does not need; it always exits 0 and prints
-    why it wrote nothing when a fleet source is unreadable here, so it never fails the sync.
-    """
-    run(
-        [sys.executable, '-m', 'dev_lab.dev.automode', 'write', '--repo', str(root)],
-        check=False,
-        timeout=CHILD_WALL_S,
-        cwd=root,
-    )
+    stale = publish_built(root, prefix, live, ok=not result.returncode, census=census, base=base)
+    synced = syncing and not args.dry_run and not result.returncode
+    return result.returncode or (after_sync(root, python, run=run) if synced else 0) or stale
 
 
 if __name__ == '__main__':

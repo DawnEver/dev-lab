@@ -218,7 +218,7 @@ class StateForge(Client):
         since = datetime.fromisoformat(query['since']) if 'since' in query else None
         newest = sorted(self.issues_by_number.items(), reverse=True)
         listed = [
-            i | {'comments': len(self.comments[n])}
+            i | {'comments': len(self.comments[n]), 'labels': self._issue_labels(str(n))}
             for n, i in newest
             if state in ('all', i['state']) and (since is None or datetime.fromisoformat(i['updated_at']) >= since)
         ]
@@ -334,7 +334,8 @@ class StateForge(Client):
     def _add_labels(self, key: str, body: dict[str, Any]) -> list[dict[str, Any]]:
         number = int(key.partition('/')[0])
         held = self.issue_labels.setdefault(number, [])
-        for label in body['labels']:
+        for given in body['labels']:  # gitea sends ids, GitHub names
+            label = next((one['id'] for one in self.labels if one['name'] == given), given)
             if label not in held:
                 held.append(label)
                 self.labeled.append((number, next(one['name'] for one in self.labels if one['id'] == label)))
@@ -342,7 +343,9 @@ class StateForge(Client):
 
     def _remove_label(self, key: str) -> None:
         number, _, label = key.partition('/')
-        self.issue_labels[int(number)].remove(int(label.strip('/')))
+        given = urllib.parse.unquote(label.strip('/'))
+        ident = next((one['id'] for one in self.labels if one['name'] == given), None)
+        self.issue_labels[int(number)].remove(ident if ident is not None else int(given))
 
     def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
         """Answer from the in-memory state, as gitea would; a create needs no read-back here."""
@@ -379,7 +382,7 @@ class StateForge(Client):
             ('DELETE', 'comment'): lambda: self._delete_comment(number),
             ('GET', 'pulls'): lambda: self._pulls_listed(query),
             ('POST', 'pulls'): lambda: self._create_pull(sent),
-            ('GET', 'pull'): lambda: self.pulls[number],
+            ('GET', 'pull'): lambda: self.pulls[number] | {'labels': self._issue_labels(str(number))},
             ('GET', 'reviews'): lambda: self._page(self.reviews.get(number, []), query),
             ('GET', 'commit_pull'): lambda: self._pull_of(key),
             ('GET', 'commit_pulls'): lambda: self._pulls_of(key),

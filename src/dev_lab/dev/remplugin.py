@@ -13,6 +13,9 @@ Anything it cannot read for certain -- no harness, a missing or malformed regist
   ``.claude/settings.local.json`` (the later layer wins; no entry anywhere is not enabled).
 * Codex: ``[plugins."rem@<marketplace>"]`` in ``<codex home>/config.toml`` (``$CODEX_HOME`` or ``~/.codex``),
   ``enabled`` defaulting to true, and the versions cached under ``plugins/cache/<marketplace>/rem/<version>/``.
+* Antigravity: ``entries[*].path`` in ``~/.gemini/config/plugins.json`` whose ``include_only`` is absent or lists
+  ``rem``, version from ``rem/.antigravity-plugin/plugin.json`` (fallback ``.claude-plugin/plugin.json``), enabled by
+  default unless ``disabled`` is true there, overridden by ``plugins.rem.enabled`` in ``~/.gemini/config/config.json``.
 """
 
 from __future__ import annotations
@@ -29,8 +32,8 @@ from dev_lab.dev.native_session import primary_of
 
 __all__ = ['BINDS_SINCE', 'Binder', 'binder_door', 'find']
 
-#: The first rem release whose UserPromptSubmit hook writes the binding (cc-market #26, rem 2.6.0).
-BINDS_SINCE: Final = (2, 6, 0)
+#: The first rem release whose UserPromptSubmit hook writes the binding where every repo reads it (D34, rem 2.7.0).
+BINDS_SINCE: Final = (2, 7, 0)
 _PLUGIN: Final = 'rem@cc-market'
 _VERSION: Final = re.compile(r'(\d+)\.(\d+)\.(\d+)')
 
@@ -95,10 +98,52 @@ def _codex(env: Mapping[str, str], home: Path, root: Path) -> Binder:
     return Binder('Codex', plugin, max(versions, default=None), table.get('enabled', True) is True)
 
 
+def _home_path(raw: str, home: Path) -> Path:
+    return home if raw == '~' else (home / raw[2:] if raw.startswith(('~/', '~\\')) else Path(raw))
+
+
+def _agy_manifest(entries: list[object], home: Path) -> dict | None:
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get('path'), str):
+            continue
+        include = entry.get('include_only')
+        if include is not None and (not isinstance(include, list) or 'rem' not in include):
+            continue
+        rem_dir = _home_path(entry['path'], home) / 'rem'
+        for rel in ('.antigravity-plugin/plugin.json', '.claude-plugin/plugin.json'):
+            try:
+                return _json(rem_dir / rel)
+            except FileNotFoundError:
+                continue
+    return None
+
+
+def _agy(env: Mapping[str, str], home: Path, root: Path) -> Binder:
+    del env, root
+    gemini = home / '.gemini' / 'config'
+    entries = _json(gemini / 'plugins.json').get('entries')
+    if not isinstance(entries, list):
+        msg = 'plugins.json entries is not a list'
+        raise TypeError(msg)
+    manifest = _agy_manifest(entries, home)
+    if manifest is None:
+        return Binder('Antigravity', _PLUGIN, None, enabled=False)
+    version = _version(manifest['version'])
+    enabled = manifest.get('disabled') is not True
+    try:
+        rem_cfg = (_json(gemini / 'config.json').get('plugins') or {}).get('rem')
+    except FileNotFoundError:
+        rem_cfg = None
+    if isinstance(rem_cfg, dict) and isinstance(rem_cfg.get('enabled'), bool):
+        enabled = rem_cfg['enabled']
+    return Binder('Antigravity', _PLUGIN, version, enabled)
+
+
 #: The registry reader of each harness, by the primary session key it declares (``native_session.json``).
 _READERS: Final[dict[str, Callable[[Mapping[str, str], Path, Path], Binder]]] = {
     'CLAUDE_CODE_SESSION_ID': _claude,
     'CODEX_THREAD_ID': _codex,
+    'ANTIGRAVITY_CONVERSATION_ID': _agy,
 }
 
 
@@ -125,16 +170,19 @@ def binder_door(env: Mapping[str, str], home: Path, root: Path) -> str | None:
     if binder.version is None:
         cause, door, verb = f'no rem plugin is installed for {harness}', f'install {plugin}', 'install'
         codex = f'`codex plugin add {plugin}`'
+        agy = 'register `cc-market` in `~/.gemini/config/plugins.json`'
     elif not binder.enabled:
         cause, door, verb = f'{plugin} is installed but not enabled for {harness}', f'enable {plugin}', 'enable'
         codex = f'`enabled = true` under `[plugins."{plugin}"]` in config.toml'
+        agy = '`agy plugin enable rem`'
     elif binder.version < BINDS_SINCE:
         found = '.'.join(map(str, binder.version))
         cause = f'{harness} runs {plugin} {found}, which predates the binding (rem binds since {since})'
         door, verb = f'update rem to >= {since}', 'update'
         codex = f'`codex plugin marketplace upgrade {plugin.split("@", 1)[1]}`, then `codex plugin add {plugin}`'
+        agy = '`git -C <cc-market> pull`'
     else:
         return None
-    how = f'Claude Code: `claude plugin {verb} {plugin}`; Codex: {codex}'
+    how = f'Claude Code: `claude plugin {verb} {plugin}`; Codex: {codex}; Antigravity: {agy}'
     door_line = f'Door: {door} ({how}), then the user binds with `task: <slug>`'
     return f'{cause}, so no prompt can bind this session.\n{door_line}'

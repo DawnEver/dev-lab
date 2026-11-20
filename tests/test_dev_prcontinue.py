@@ -11,17 +11,20 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import run_git
 from _forge_state import StateForge
+from _roles_fixtures import CI_REPO, HPC_REPO, carry
 
 from dev_lab.dev import forgeservesteps, prcontinue
 from dev_lab.dev.branchreview import read_record
 from dev_lab.dev.ciworkflows import workflows
 from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgefailure import ForgeCallFailed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.prcontinue import candidates, continuation, continue_landed, continues_title
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -118,7 +121,7 @@ def test_the_serve_pass_opens_continuations_before_anything_prunes(monkeypatch: 
                  'prompt', 'relock', 'drift_step'):  # fmt: skip
         monkeypatch.setattr(forgeservesteps, name, lambda *_a, _n=name, **_k: order.append(_n))
     monkeypatch.setattr(forgeservesteps, 'serve_continue_landed', lambda *_a, **_k: order.append('continue'))
-    monkeypatch.setattr(forgeservesteps, 'ci_merges', lambda _root: False)
+    carry(monkeypatch, HPC_REPO)  # the hpc tick merges and prunes
     forgeservesteps.repo_wide(
         Path(), 'r', lambda _root: StateForge(), 'box', (), clock=lambda: None, say=lambda _s: None,
         alarm=lambda _a: None,
@@ -223,3 +226,40 @@ def test_a_base_with_no_manifest_continues_nothing(tmp_path: Path, base: str, ca
     else:
         assert 'declares nothing' in said
         assert 'continues #' not in said
+
+
+@pytest.fixture(autouse=True)
+def _bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    """dev-lab's own render: review on a judge host, every other role on CI (planted)."""
+    carry(monkeypatch, CI_REPO)
+
+
+def _raced(forge: StateForge, monkeypatch: pytest.MonkeyPatch, *, open_one: bool) -> None:
+    """``pr_create`` refused 422, as when another pass opened the head's PR first (dev-lab #718, O27)."""
+
+    def refused(*_args: object, **_kwargs: object) -> NoReturn:
+        if open_one:
+            forge.add_pull('pr/x', _BASE, title='feat: x (continues #1)', sha=_TIP)
+        exists = Attempt(1, 422, 'a pull request already exists', Diagnosis.FORGE_REFUSED)
+        raise ForgeCallFailed(Report(('POST', 'pulls'), (exists,), 1))
+
+    monkeypatch.setattr(forge, 'pr_create', refused)
+
+
+def test_a_422_with_an_open_pr_for_the_head_is_that_pr(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Another pass opened the continuation between our read and our create: that open PR IS the result."""
+    forge = StateForge()
+    landed = _merged(forge)
+    _raced(forge, monkeypatch, open_one=True)
+    [number] = _opened(forge, {'pr/x': _TIP})
+    assert number != landed
+    assert forge.pr_view(number).state == 'open'
+
+
+def test_a_refused_create_with_no_open_pr_still_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL: a refusal no open PR explains is a failure, never a silent success."""
+    forge = StateForge()
+    _merged(forge)
+    _raced(forge, monkeypatch, open_one=False)
+    with pytest.raises(ForgeCallFailed):
+        _opened(forge, {'pr/x': _TIP})

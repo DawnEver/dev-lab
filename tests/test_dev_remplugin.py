@@ -13,12 +13,13 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from _rem_binding import plant_claude_rem, plant_codex_rem
+from _rem_binding import plant_agy_rem, plant_claude_rem, plant_codex_rem
 
 from dev_lab.dev import remplugin, taskbinding, taskgate
 
 _CLAUDE = {'CLAUDE_CODE_SESSION_ID': 'claude-session-1'}
 _CODEX = {'CODEX_THREAD_ID': 'codex-thread-1'}
+_AGY = {'ANTIGRAVITY_CONVERSATION_ID': 'agy-conversation-1'}
 _GIT = shutil.which('git') or 'git'
 #: Plants one harness registry under a home.
 Plant = Callable[[Path], object]
@@ -41,20 +42,31 @@ def _repo(tmp_path: Path) -> Path:
 
 @pytest.mark.parametrize(
     ('env', 'plant'),
-    [(_CLAUDE, lambda home: plant_claude_rem(home, '2.5.0')), (_CODEX, lambda home: plant_codex_rem(home, '2.4.0'))],
+    [
+        (_CLAUDE, lambda home: plant_claude_rem(home, '2.6.0')),
+        (_CODEX, lambda home: plant_codex_rem(home, '2.4.0')),
+        (_AGY, lambda home: plant_agy_rem(home, '2.4.0', tilde_path=True)),
+        (_AGY, lambda home: plant_agy_rem(home, '2.4.0', claude_fallback=True, include_only=['rem', 'fabric'])),
+    ],
 )
 def test_an_old_rem_names_the_update(tmp_path: Path, env: dict[str, str], plant: Plant) -> None:
     plant(tmp_path)
     said = remplugin.binder_door(env, tmp_path, tmp_path)
     assert said is not None
-    assert 'update rem to >= 2.6.0' in said
+    assert 'update rem to >= 2.7.0' in said
     assert 'claude plugin update rem@cc-market' in said
     assert 'codex plugin add rem@cc-market' in said
+    assert 'Antigravity:' in said
 
 
 @pytest.mark.parametrize(
     ('env', 'plant'),
-    [(_CLAUDE, lambda home: plant_claude_rem(home, None)), (_CODEX, _codex_without_rem)],
+    [
+        (_CLAUDE, lambda home: plant_claude_rem(home, None)),
+        (_CODEX, _codex_without_rem),
+        (_AGY, lambda home: plant_agy_rem(home, None)),
+        (_AGY, lambda home: plant_agy_rem(home, '2.7.0', include_only=['fabric'])),
+    ],
 )
 def test_an_absent_rem_names_the_install(tmp_path: Path, env: dict[str, str], plant: Plant) -> None:
     plant(tmp_path)
@@ -62,14 +74,17 @@ def test_an_absent_rem_names_the_install(tmp_path: Path, env: dict[str, str], pl
     assert said is not None
     assert 'install rem@cc-market' in said
     assert 'claude plugin install rem@cc-market' in said
+    assert 'plugins.json' in said
 
 
 @pytest.mark.parametrize(
     ('env', 'plant'),
     [
-        (_CLAUDE, lambda home: plant_claude_rem(home, '2.6.0', enabled=False)),
-        (_CLAUDE, lambda home: plant_claude_rem(home, '2.6.0', enabled=None)),
-        (_CODEX, lambda home: plant_codex_rem(home, '2.6.0', enabled=False)),
+        (_CLAUDE, lambda home: plant_claude_rem(home, '2.7.0', enabled=False)),
+        (_CLAUDE, lambda home: plant_claude_rem(home, '2.7.0', enabled=None)),
+        (_CODEX, lambda home: plant_codex_rem(home, '2.7.0', enabled=False)),
+        (_AGY, lambda home: plant_agy_rem(home, '2.7.0', enabled=False)),
+        (_AGY, lambda home: plant_agy_rem(home, '2.7.0', manifest_disabled=True)),
     ],
 )
 def test_a_disabled_rem_names_the_enable(tmp_path: Path, env: dict[str, str], plant: Plant) -> None:
@@ -77,10 +92,11 @@ def test_a_disabled_rem_names_the_enable(tmp_path: Path, env: dict[str, str], pl
     said = remplugin.binder_door(env, tmp_path, tmp_path)
     assert said is not None
     assert 'enable rem@cc-market' in said
+    assert 'agy plugin enable rem' in said
 
 
 def test_the_project_settings_layer_overrides_the_users(tmp_path: Path) -> None:
-    plant_claude_rem(tmp_path, '2.6.0', enabled=False)
+    plant_claude_rem(tmp_path, '2.7.0', enabled=False)
     root = tmp_path / 'repo'
     (root / '.claude').mkdir(parents=True)
     (root / '.claude' / 'settings.local.json').write_text('{"enabledPlugins": {"rem@cc-market": true}}', 'utf-8')
@@ -90,8 +106,10 @@ def test_the_project_settings_layer_overrides_the_users(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ('env', 'plant'),
     [
-        (_CLAUDE, lambda home: plant_claude_rem(home, '2.6.0')),
+        (_CLAUDE, lambda home: plant_claude_rem(home, '2.7.0')),
         (_CODEX, lambda home: plant_codex_rem(home, '2.4.0', '2.10.1')),  # the newest cached release counts
+        (_AGY, lambda home: plant_agy_rem(home, '2.7.0', tilde_path=True)),
+        (_AGY, lambda home: plant_agy_rem(home, '2.7.0', manifest_disabled=True, enabled=True)),
     ],
 )
 def test_a_current_rem_leaves_the_task_prompt_door(tmp_path: Path, env: dict[str, str], plant: Plant) -> None:
@@ -106,7 +124,9 @@ def test_a_current_rem_leaves_the_task_prompt_door(tmp_path: Path, env: dict[str
         (_CLAUDE, lambda home: (home / '.claude' / 'plugins').mkdir(parents=True)),  # no registry file
         (_CLAUDE, lambda home: plant_claude_rem(home, 'not-a-version')),
         (_CODEX, lambda home: (home / '.codex').mkdir() or (home / '.codex' / 'config.toml').write_text('[[', 'utf-8')),
-        ({}, lambda home: plant_claude_rem(home, '2.5.0')),  # no harness: an old rem it does not run is no cause
+        (_AGY, lambda home: (home / '.gemini' / 'config').mkdir(parents=True)),
+        (_AGY, lambda home: plant_agy_rem(home, 'not-a-version')),
+        ({}, lambda home: plant_claude_rem(home, '2.6.0')),  # no harness: an old rem it does not run is no cause
     ],
 )
 def test_an_unreadable_registry_keeps_the_plain_door(tmp_path: Path, env: dict[str, str], plant: Plant) -> None:
@@ -116,25 +136,27 @@ def test_an_unreadable_registry_keeps_the_plain_door(tmp_path: Path, env: dict[s
 
 def test_the_gate_names_the_skew_and_otherwise_the_task_prompt(tmp_path: Path) -> None:
     root, home = _repo(tmp_path), tmp_path / 'home'
-    plant_claude_rem(home, '2.5.0')
-    said = taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home) or ''
+    plant_claude_rem(home, '2.6.0')
+    said = taskgate.refusal(root, env=_CLAUDE, home=home) or ''
     assert taskgate.RULE in said
     assert 'none is bound' in said
-    assert 'update rem to >= 2.6.0' in said
+    assert 'update rem to >= 2.7.0' in said
     plant_claude_rem(home, None)
-    assert 'install rem@cc-market' in (taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home) or '')
-    plant_claude_rem(home, '2.6.0')
-    said = taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home) or ''
+    assert 'install rem@cc-market' in (taskgate.refusal(root, env=_CLAUDE, home=home) or '')
+    plant_claude_rem(home, '2.7.0')
+    said = taskgate.refusal(root, env=_CLAUDE, home=home) or ''
     assert taskbinding.DOOR in said, 'a current binder: the door is the `task:` prompt, as before'
     (home / '.claude' / 'plugins' / 'installed_plugins.json').write_text('{', encoding='utf-8')
-    assert taskbinding.DOOR in (taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home) or '')
+    assert taskbinding.DOOR in (taskgate.refusal(root, env=_CLAUDE, home=home) or '')
 
 
 def test_the_gate_reads_and_never_writes_the_registries(tmp_path: Path) -> None:
     root, home = _repo(tmp_path), tmp_path / 'home'
-    plant_claude_rem(home, '2.5.0')
+    plant_claude_rem(home, '2.6.0')
     plant_codex_rem(home, '2.4.0')
+    plant_agy_rem(home, '2.4.0')
     before = {path: path.read_bytes() for path in home.rglob('*') if path.is_file()}
-    taskgate.refusal(root, env=_CLAUDE, branch='pr/toolchain/a', home=home)
-    taskgate.refusal(root, env=_CODEX, branch='pr/toolchain/a', home=home)
+    taskgate.refusal(root, env=_CLAUDE, home=home)
+    taskgate.refusal(root, env=_CODEX, home=home)
+    taskgate.refusal(root, env=_AGY, home=home)
     assert {path: path.read_bytes() for path in home.rglob('*') if path.is_file()} == before

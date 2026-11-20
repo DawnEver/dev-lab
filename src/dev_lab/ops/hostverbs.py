@@ -21,6 +21,7 @@ from dev_lab.ops import (
     access,
     backup,
     breakglass,
+    breakglassforge,
     consentverbs,
     enableunits,
     install,
@@ -181,6 +182,7 @@ def breakglass_verb(config: OpsConfig, verb: str) -> int:
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
         return 2
+    os.environ.update(install.family_env(role))  # its roles binding comes from the family layer install rendered
     try:
         verifier, register = consentverbs.ends(config, alert=lambda title, detail: alert(config, title, detail))
     except ConsentRefused as refused:
@@ -188,7 +190,7 @@ def breakglass_verb(config: OpsConfig, verb: str) -> int:
         return 2
     server = breakglass.Server(
         config,
-        forge_for=lambda url: breakglass.ClientForge(url, breakglass.credential(role, url, secret=_secret)),
+        forge_for=lambda url: breakglassforge.ClientForge(url, breakglassforge.credential(role, url, secret=_secret)),
         alert=lambda title, detail: alert(config, title, detail),
         now=time.time,
         consent_key=verifier,

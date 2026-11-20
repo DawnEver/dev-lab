@@ -56,9 +56,10 @@ from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeclaim import forge_now
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgelanes import TRACKING, fetch_pull, open_lanes, read_git, tracked
-from dev_lab.dev.forgemerge import CI_MERGER, EXTERNAL, ci_merges, judged
+from dev_lab.dev.forgemerge import EXTERNAL, judged
 from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
@@ -73,11 +74,12 @@ from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgesync import upstreams
-from dev_lab.dev.forgework import GITEA, Client, PullRequest, client_for
+from dev_lab.dev.forgework import GITEA, Client, PullRequest
 from dev_lab.dev.labsession import sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, standing
 from dev_lab.dev.reviewturn import review_turn
+from dev_lab.dev.roles import CI, MERGE, roles_at
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
 from dev_lab.dev.unproduced import unproduced_waived
 
@@ -244,17 +246,16 @@ def _publish(child: Child, said: Feedback) -> str:
 def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback:
     """Merge PR *child* through the forge when nothing is missing; *said* with the outcome added as a line.
 
-    Only where ``pr_merges_since`` is declared and the forge is gitea (GitHub merges natively on the same decision,
-    :func:`dev_lab.dev.forgemergeready.ready`); an already-merged child is left alone. A repo that declares the CI
-    merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) is merged by its Gitea job on the same decision: here it is
-    only said.
+    Only where ``pr_merges_since`` is declared and the forge is gitea; an already-merged child is left alone. A repo
+    whose ``merge`` the family binds to ``ci`` (:mod:`dev_lab.dev.roles`) is merged by its forge's job on the same
+    decision (:func:`dev_lab.dev.forgemergeready.ready`): here it is only said.
     """
     if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
         return said
     found = judged(root, child.client, policy, branch=child.branch, number=child.pr, head=child.head)
-    turn = review_turn(child.client, child.pr, child.head, found)  # the review is asked for here too: its last gate
-    if found.ready and ci_merges(root):
-        line, summary = f'ready: the {CI_MERGER} job merges it', f'{said.summary}; ready for the {CI_MERGER} job'
+    turn = review_turn(child.client, child.pr, child.head, found)  # the advisory review is asked for here too
+    if found.ready and roles_at(root).kind(MERGE) == CI:
+        line, summary = 'ready: its CI merge job merges it', f'{said.summary}; ready for its CI merge job'
         if found.unreviewed:
             line = f'{line}, WARNED -- {found.unreviewed}'
     elif found.ready:

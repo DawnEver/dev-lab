@@ -11,6 +11,16 @@ forge attachment limit, :data:`~dev_lab.dev.artefactstores.ATTACHMENT_LIMIT_MB`)
 :class:`~lab_commons.compute.store.TooLarge`, never attached. A TOMBSTONE closing a generation is a small
 ``grave-<unit hash>-<generation>.json`` attachment through the same outbox; every host reads it (``graves``).
 
+OFFLINE, A POST IS HELD, NEVER LOST (vendor cache L3). A caller that hands in ``pending`` (a directory; the
+checkout's is :func:`pending_dir`, beside the status outbox) has every result or grave whose forge call did not
+land -- a dropped connection, a transient answer, never a FINAL refusal -- written there durably under its
+attachment name, and the put that made it succeeds: the result is in the local tier. A READ the forge cannot
+answer (its graves, a fetch) is then unknown, said once and read as nothing posted -- a miss, never a value.
+:meth:`ForgeResults.flush` (every forge tick runs it) lands each held one, results before the graves that close
+them, by the same first-wins rule -- an identical first result already posted drops it, a differing one alarms
+and drops it (the first stands) -- and stops at the first that still cannot land, keeping it. Without
+``pending`` an unreachable forge raises, as before.
+
 A UNIT OFFERED (:func:`offering`, the ``offer`` a :class:`~lab_commons.compute.execute.LocalExecutor` calls when
 ``--where`` lets a unit this box cannot run go elsewhere). Its BUNDLE -- ``unit.json`` (engine, version,
 environment, entry, parameters, outputs, demand) plus every input file under ``files/`` -- goes up through the
@@ -43,22 +53,26 @@ from lab_commons.compute.execute import CACHED, RAN, LocalExecutor, Offer, prese
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.model import Demand
 from lab_commons.compute.presence import cached
-from lab_commons.compute.store import Nondeterministic, Result, ResultStore, Tombstone, TooLarge
+from lab_commons.compute.store import Nondeterministic, Record, Result, ResultStore, Tombstone, TooLarge
 from lab_commons.compute.unit import Engine, Environment, Unit, environment_here
 from lab_commons.config import config_path
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev._forge_journal import outbox_dir
+from dev_lab.dev._forgeunit_pending import flush_held, hold, unread
 from dev_lab.dev.artefactpack import pack, unpack
 from dev_lab.dev.artefacts import load_config, resolve, store_for
-from dev_lab.dev.artefactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, Ref, run_id
+from dev_lab.dev.artefactstores import ARCHIVE, ATTACHMENT_LIMIT_MB, MB, Ref, manifest_of, run_id
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgepublish import publish
 from dev_lab.dev.forgerecordkeep import UNIT_RESULT
 from dev_lab.dev.forgerecords import attach, listing
 from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from dev_lab.dev.forgeschedule import load_schedule
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
+from dev_lab.dev.largeobjects import RcloneObjects
 
 __all__ = [
     'GRAVE',
@@ -69,6 +83,7 @@ __all__ = [
     'main',
     'offering',
     'offering_for',
+    'pending_dir',
     'result_name',
     'unit_request',
 ]
@@ -76,6 +91,9 @@ __all__ = [
 _HASH: Final = r'[0-9a-f]{64}'
 #: The bundle's manifest, beside ``files/``.
 MANIFEST: Final = 'unit.json'
+#: The durable key prefix a result's large files take under the large-object remote (never ``scratch/``).
+OBJECTS_PREFIX: Final = 'results'
+
 #: The largest result archive the shared tier uploads: the forge's attachment limit, declared once there.
 MAX_UPLOAD_BYTES: Final = ATTACHMENT_LIMIT_MB * MB
 #: A tombstone attachment (:func:`grave_name`).
@@ -92,6 +110,11 @@ def grave_name(unit_hash: str, generation: int) -> str:
     return f'grave-{unit_hash}-{generation}.json'
 
 
+def pending_dir(root: Path) -> Path:
+    """Where *root*'s results and graves wait while the forge is unreachable: beside the status outbox."""
+    return outbox_dir(root) / 'results'
+
+
 @dataclass(frozen=True)
 class ForgeResults:
     """The shared tier on *client*'s forge (the module docstring)."""
@@ -99,6 +122,8 @@ class ForgeResults:
     client: Client
     alarm: Callable[[Alarm], object] = sound
     max_bytes: int | None = MAX_UPLOAD_BYTES
+    #: Where a post or grave the forge did not take waits for :meth:`flush` (``None``: an unreachable forge raises).
+    pending: Path | None = None
 
     def _posted(self, unit_hash: str, generation: int) -> list[tuple[str, str]]:
         """``(download url, result hash)`` of each result posted for *unit_hash*'s *generation*, first first."""
@@ -110,8 +135,15 @@ class ForgeResults:
         ]
 
     def fetch(self, unit_hash: str, generation: int, dest: Path) -> Path | None:
-        """*generation*'s first posted result, unpacked into *dest*; ``None`` when none is posted."""
-        posted = self._posted(unit_hash, generation)
+        """*generation*'s first posted result, unpacked into *dest*; ``None`` when none is posted.
+
+        Offline with :attr:`pending` set, the forge's answer is unknown and this is a miss, said once.
+        """
+        try:
+            posted = self._posted(unit_hash, generation)
+        except OSError as failed:
+            unread(self.pending, failed, f'result {unit_hash[:12]} g{generation}')
+            return None
         if not posted:
             return None
         with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
@@ -122,12 +154,28 @@ class ForgeResults:
     def post(self, result: Result, generation: int) -> None:
         """Attach *result* as *generation*'s unless one is there; a differing one alarms and raises.
 
+        Offline (a transient failure) with :attr:`pending` set, the archive is held there and nothing raises.
+
         Raises:
             Nondeterministic: *generation* already holds a different result.
-            TooLarge: the archive is over :attr:`max_bytes`; nothing is attached.
+            TooLarge: the archive is over :attr:`max_bytes`; nothing is attached or held.
 
         """
         record = result.record
+        with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
+            files = sorted(p for p in result.path.rglob('*') if p.is_file())
+            name = result_name(record.unit_hash, generation, record.result_hash)
+            archive = pack(result.path, files, Path(scratch) / name).path
+            size = archive.stat().st_size
+            if self.max_bytes is not None and size > self.max_bytes:
+                raise TooLarge(result, size, self.max_bytes)
+            try:
+                self._land(archive, record, generation)
+            except OSError as failed:
+                self._hold(archive, failed)
+
+    def _land(self, archive: Path, record: Record, generation: int) -> None:
+        """Attach *archive* (*record*'s result) unless *generation* holds one: the same is a no-op, another alarms."""
         posted = self._posted(record.unit_hash, generation)
         if posted:
             if posted[0][1] == record.result_hash:
@@ -142,14 +190,30 @@ class ForgeResults:
             )
             self.alarm(alarm)
             raise Nondeterministic(alarm.body)
-        with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
-            files = sorted(p for p in result.path.rglob('*') if p.is_file())
-            name = result_name(record.unit_hash, generation, record.result_hash)
-            archive = pack(result.path, files, Path(scratch) / name).path
-            size = archive.stat().st_size
-            if self.max_bytes is not None and size > self.max_bytes:
-                raise TooLarge(result, size, self.max_bytes)
-            attach(self.client, archive)
+        attach(self.client, archive)
+
+    def _hold(self, path: Path, failed: OSError) -> None:
+        """Keep *path* in :attr:`pending` for :meth:`flush` (:func:`~dev_lab.dev._forgeunit_pending.hold`)."""
+        hold(self.pending, path, failed)
+
+    def flush(self) -> list[str]:
+        """Land every held result, then every held grave (:func:`~dev_lab.dev._forgeunit_pending.flush_held`)."""
+        return flush_held(self.pending, self._flush_one)
+
+    def _flush_one(self, held: Path) -> None:
+        """Land one held result or grave by the rule its first post would have followed."""
+        result = UNIT_RESULT.match(held.name)
+        if result is not None:
+            with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
+                record = Record.read(unpack(held, Path(scratch) / 'result') / 'record.json')
+            self._land(held, record, int(result['generation']))
+            return
+        grave = GRAVE.match(held.name)
+        if grave is None:
+            msg = f'{held.name} in {self.pending} is neither a held result nor a held grave'
+            raise ValueError(msg)
+        if int(grave['generation']) not in self._graves(grave['unit']):
+            attach(self.client, held)
 
     def _graves(self, unit_hash: str) -> dict[int, str]:
         """The download url of each tombstone posted for *unit_hash*, by generation (the first posted wins)."""
@@ -161,19 +225,24 @@ class ForgeResults:
         return found
 
     def bury(self, tombstone: Tombstone) -> None:
-        """Attach *tombstone*; one already posted for its generation is a no-op."""
-        if tombstone.generation in self._graves(tombstone.unit_hash):
-            return
+        """Attach *tombstone*; one already posted for its generation is a no-op; offline it is held like a post."""
         with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
             grave = Path(scratch) / grave_name(tombstone.unit_hash, tombstone.generation)
             grave.write_bytes(tombstone.to_bytes())
-            attach(self.client, grave)
+            try:
+                if tombstone.generation not in self._graves(tombstone.unit_hash):
+                    attach(self.client, grave)
+            except OSError as failed:
+                self._hold(grave, failed)
 
     def graves(self, unit_hash: str) -> tuple[Tombstone, ...]:
-        """Every tombstone posted for *unit_hash*, by generation."""
-        return tuple(
-            Tombstone(**json.loads(self.client.download(url))) for _, url in sorted(self._graves(unit_hash).items())
-        )
+        """Every tombstone posted for *unit_hash*, by generation; offline with :attr:`pending` set, none known."""
+        try:
+            posted = sorted(self._graves(unit_hash).items())
+        except OSError as failed:
+            unread(self.pending, failed, f'graves of {unit_hash[:12]}')
+            return ()
+        return tuple(Tombstone(**json.loads(self.client.download(url))) for _, url in posted)
 
 
 @dataclass(frozen=True)
@@ -191,7 +260,7 @@ class UnitJob:
         ref, d = self.bundle, self.demand
         return (
             f'unit={self.unit_hash}',
-            f'bundle={ref.backend}|{ref.key}|{ref.bytes}|{ref.sha256}',
+            f'bundle={ref.backend}|{ref.ref}|{ref.bytes}|{ref.sha256}',
             f'size={cores(d)}|{d[MEM_GB]}|{self.wall_s}',
             f'needs={"+".join(self.needs)}',
         )
@@ -312,6 +381,11 @@ def offering_for(repo: Path, sha: str) -> Offer:
     return offering(repo, client_for(repo), sha)
 
 
+def large_objects(remote: str | None, prefix: str = OBJECTS_PREFIX) -> RcloneObjects | None:
+    """The large-object store on *remote* under *prefix*; ``None`` without a remote (an oversize result stays local)."""
+    return RcloneObjects(remote, prefix) if remote else None
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -322,7 +396,13 @@ def main(
     """Run one offered unit here; exit 0 it has a result, 1 it failed, 2 the Job is refused (nothing ran)."""
     parser = argparse.ArgumentParser(prog=f'python -m {__name__}', description=__doc__.splitlines()[0])
     parser.add_argument('paths', nargs='+', help='the Job request paths: unit=, bundle=, size=, needs=')
+    parser.add_argument(
+        '--objects-remote',
+        help='an rclone remote (name:bucket) holding files too large for the forge; none: such a result stays local',
+    )
+    parser.add_argument('--objects-prefix', default=OBJECTS_PREFIX, help='the durable key prefix under that remote')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    objects = large_objects(args.objects_remote, args.objects_prefix)
     root = Path.cwd() if cwd is None else cwd
     built = client_for(root) if client is None else client
     units = config_path().parent / 'units' if store is None else store
@@ -332,14 +412,14 @@ def main(
         emit(f'[unit] refused: {refused}', err=True)
         return 2
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
-        archive = resolve(job.bundle.manifest(), Path(scratch), client=built, repo=built.forge.repo)
+        archive = resolve(manifest_of(job.bundle), Path(scratch), client=built, repo=built.forge.repo)
         unit, files = _unit_of(unpack(archive, Path(scratch) / 'bundle'))
         if unit.unit_hash(files) != job.unit_hash:
             emit(f'[unit] refused: the bundle is not unit {job.unit_hash[:12]}', err=True)
             return 2
         here = environment_here(root) if unit.engine.environment else None
         executor = LocalExecutor(
-            ResultStore(units, ForgeResults(built)),
+            ResultStore(units, ForgeResults(built, pending=pending_dir(root)), objects=objects),
             units / 'journal',
             present=presence_check(here, cached()),
         )

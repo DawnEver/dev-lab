@@ -73,6 +73,7 @@ from dev_lab.dev.venvpointer import current
 
 __all__ = [
     'CANDIDATE_RELATIVE_PATHS',
+    'DOOR_SLOT',
     'INTERPRETER_RULE',
     'PYTHON_SLOT',
     'VENV_INTERPRETER_GLOB',
@@ -86,6 +87,7 @@ __all__ = [
     'portable',
     'remedy_interpreter',
     'running_interpreter',
+    'slotted',
     'unportable_row',
     'venv_interpreter',
 ]
@@ -250,6 +252,14 @@ PYTHON_SLOT: Final = '{python}'
 #: The metavariable a repo's declared door spells the same thing with; expanded identically.
 VENV_PYTHON_SLOT: Final = '<venv python>'
 
+#: THE TOKEN A FAMILY DOOR NAMES ITS INTERPRETER BY: the kit that rendered the refusal, which is the one
+#: that carries the door. :data:`PYTHON_SLOT` names the TARGET checkout's interpreter -- right for its own
+#: environment (bootstrap, verify), wrong for a family door an older target kit lacks (2026-11-19: a
+#: refusal in a sibling repo printed ``worktrees --remove`` under that repo's venv, which had no ``--remove``).
+#: The JS engine fills it with the SESSION checkout's interpreter (whose rules named the door);
+#: :func:`expand_interpreter` with the running one.
+DOOR_SLOT: Final = '{door}'
+
 _GITDIR: Final = re.compile(r'^gitdir:\s*(.+?)\s*$', re.MULTILINE)
 
 
@@ -283,8 +293,23 @@ def remedy_interpreter(root: Path, *, os_name: str) -> str:
     return own.as_posix()
 
 
+#: A RELATIVE venv interpreter: one no path segment precedes, so ``<checkout>/.venv/...`` is left alone.
+_RELATIVE_SPELLING: Final = re.compile(r'(?<![\w/\\:~-])' + _SPELLING.pattern)
+
+
+def slotted(command: str) -> str:
+    """*command* with every RELATIVE venv interpreter replaced by :data:`PYTHON_SLOT`, for the printer to expand.
+
+    A consumer authors a remedy concretely (its allow row derives from that spelling), but the text a refused agent
+    READS runs from wherever its cwd is, so the printed form carries the token and the engine names the target
+    checkout's interpreter by absolute path. An absolute spelling is returned unchanged.
+    """
+    return _RELATIVE_SPELLING.sub(PYTHON_SLOT, command)
+
+
 def expand_interpreter(text: str, root: Path, *, os_name: str) -> str:
-    """*text* with :data:`PYTHON_SLOT` and :data:`VENV_PYTHON_SLOT` replaced by :func:`remedy_interpreter`."""
+    """*text* with the slots filled: :data:`DOOR_SLOT` by the running interpreter, the others by the target's."""
+    text = text.replace(DOOR_SLOT, running_interpreter())
     if PYTHON_SLOT not in text and VENV_PYTHON_SLOT not in text:
         return text
     interpreter = remedy_interpreter(root, os_name=os_name)

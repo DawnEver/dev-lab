@@ -52,6 +52,9 @@ re-render; never hand-edit a rendered file.
   `[tool.dev_lab.ci."<file>.yml"]` (deep-merged over the base) or declares its own.
   `python -m dev_lab.dev.ciworkflows render` writes `.github/workflows/*.yml` as stamped JSON (JSON is YAML);
   `check` refuses a hand edit or an undeclared workflow, naming the render command.
+  A table's `nightly = true` schedules it at the default 02:00 UTC (`nightlycron.NIGHTLY_CRON`); a repo sets its
+  own time with `nightly = "<5-field cron>"` in that table (D63), and a malformed cron is refused by name. GitHub
+  starts a scheduled run ~6-8 h late (measured 2026-11-18, `.claude/memory/2026/11/18/`).
 - **A relock re-renders.** Every generated row of `famfiles.PROJECT_FILES` names its renderer, and
   `famfiles.RENDERERS` is read off those rows. After a relock moves the lock, `forge sync` and the forge relock
   run each renderer whose file the tree holds, with the tree's re-synced `.venv`, and commit the output with the
@@ -70,7 +73,7 @@ re-render; never hand-edit a rendered file.
 | `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.dev_lab.ci]` over `ci_base.toml` |
 | `ruff.toml` / `[tool.ruff*]` | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
 | `pyproject.toml` | section bases for `[project]` and `[tool.pytest.ini_options]`; the rest declined in `PYPROJECT_DECLINED` |
-| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption`: one `hookdispatch` row per event, from `agent_wiring.WIRING` plus the repo's `[[tool.dev_lab.agent_hooks]]` rows (`events`, `module`, `args`, `tools`, `may_block`, `once`, `timeout`), run in the same dispatcher |
+| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption`: one `hookdispatch` row per event, from `agent_wiring.WIRING` plus the repo's `[[tool.dev_lab.agent_hooks]]` rows (`events`, `module`, `args`, `tools`, `may_block`, `once`, `timeout`, `detached`), run in the same dispatcher; every row's `timeout` is 5 (`HOOK-UNDER-FIVE-SECONDS`) |
 | `.claude/hooks/deny-commands.js`, `deny-rules.json` | `agent_guard` install and `hook_adoption.render` |
 | `docs-src/dev/index.md` pointer table | `devdocs.pointer_table`, asserted by `famtests.devdocs` |
 | always-loaded rule pages | rule IDs from `dev_lab.dev.rules`, `famtests.rulespages` |

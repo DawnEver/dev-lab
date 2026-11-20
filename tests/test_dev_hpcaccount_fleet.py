@@ -6,13 +6,14 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
-from lab_commons.hpc.grants import Grant
+from lab_commons.hpc.grants import Grant, Machine
 
 from dev_lab.dev.hpcaccount import declaration
-from dev_lab.dev.hpcaccount.division import load_division
+from dev_lab.dev.hpcaccount.division import Division, division_of
 from dev_lab.dev.hpcaccount.fleet import (
     _READ_DEPLOY,
     ConfigSource,
@@ -45,6 +46,15 @@ _DEPLOY = {
 _URL = 'https://forge.example/team/config-source.git'
 #: The command builders never read the clone; :func:`_source` writes one for the runs.
 _SRC = ConfigSource(Path('unread'), _URL)
+
+
+def _division(hpc: dict[str, Any]) -> Division:
+    """The division of a machine reaching *hpc*'s grants, through the one reader (:func:`division_of`)."""
+    grants = tuple(
+        Grant(user=g['user'], hosts=('login01.example',), slurm_account='acct', qos='', role=g.get('role', ''))
+        for g in hpc.get('grant', [])
+    )
+    return division_of(Machine(session=None, grants=grants, roles=hpc.get('roles') or {}))
 
 
 def _source(
@@ -113,7 +123,7 @@ def test_an_undeclared_account_is_refused_and_nothing_starts(tmp_path: Path) -> 
 
 def test_the_workstations_role_and_table_are_passed_to_each_deploy() -> None:
     """User rulings 2026-11-09: the workstation is the source of the division."""
-    division = load_division({'grant': [{'user': 'alice', 'role': 'research'}, {'user': 'bob'}]})
+    division = _division({'grant': [{'user': 'alice', 'role': 'research'}, {'user': 'bob'}]})
     argv = [deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC, division)]
     assert '--fleet-role research --role-table ' in argv[-1]
     assert '{"read_only": true, "serves": false}' in argv[-1]
@@ -122,7 +132,7 @@ def test_the_workstations_role_and_table_are_passed_to_each_deploy() -> None:
 
 def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path: Path) -> None:
     """PLANTED CONTROL: the account whose role the table names still deploys."""
-    division = load_division(
+    division = _division(
         {'grant': [{'user': 'alice', 'role': 'research'}, {'user': 'bob', 'role': 'gone'}], 'roles': {'research': {}}}
     )
     started: list[list[str]] = []

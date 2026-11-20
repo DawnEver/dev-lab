@@ -87,8 +87,8 @@ What every host still reads, kept small:
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
   `--lock` is `<forge home>/serve.lock`. The FORGE HOME (`dev_lab.dev.servelock.forge_home`, the one place it is
   named) is `%LOCALAPPDATA%/lab-forge` on Windows, `${XDG_DATA_HOME:-~/.local/share}/lab-forge` elsewhere.
-- **A workstation never serves** (user ruling 2026-11-16): only GitHub Actions (an `actions` repo) and the HPC
-  accounts (an `hpc` repo, `dev_lab.dev.producers`) produce. `python -m dev_lab.dev.workstation serve` is
+- **A workstation never serves** (user ruling 2026-11-16): only the executors the family binds -- the forge's CI and the HPC
+  accounts (the roles the family binds to them, `dev_lab.dev.roles`) produce. `python -m dev_lab.dev.workstation serve` is
   refused by name with that ruling, and [the workstation deploy](#deploy-a-windows-workstation) deletes the
   retired `lab-forge-serve` Task where an older deploy registered it.
 - **The producer argv is declared ONCE**, never typed: `[tool.lab_commons.tests] produce`, the argv after the
@@ -356,8 +356,8 @@ newest commit lacks, or a request issue.
   a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
   branch and trunk only for a login its machine file lists in `[requests] authors`; it waits, named, while a
   git source of its lock or submodules is unreachable here, and is told once on its issue after
-  `request_unadmitted_hours`. A success is labelled `request:done` with its record path and sha256s, and the
-  requester closes it. A ref's tip is one candidate per
+  `request_unadmitted_hours`. A success is labelled `request:done` with its record path and sha256s, and
+  closed (user ruling 2026-11-19); a failure stays open. A ref's tip is one candidate per
   part it needs (`base`, and every part its posted parts hand to). The same rule names those
   children ([the integration branch](integration.md)).
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
@@ -489,7 +489,7 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 `python -m dev_lab.dev.forge watch <sha>... [--deadline-minutes M] [--stream]` only reads: it prints each
 `tests/<part>` change until the first listed sha has every part final (exit 0 green, 1 red) or the deadline
 passes (exit 3). It is a read on request: a session hears its pushed PRs through the machine PR watcher
-(`dev_lab.dev.prwatcher`), which the push doors name, and no `Stop` hook waits on a pushed head.
+(`dev_lab.dev.forgefeed`, [how a task hears the forge](forgefeed.md)), which the push doors name, and no `Stop` hook waits on a pushed head.
 
 `python -m dev_lab.dev.forge cancel-stuck <sha> [--factor N] [--bound-minutes M]`, run in the repo's checkout,
 scancels only the full sha's `run-<sha12>-<part>` tasks that are busy (90 % CPU or more) with no new test line in
@@ -518,7 +518,7 @@ email's plain part carry that Markdown; Telegram and the email's HTML part rende
 
 ## A review judged on its own host: `forge review prepare` / `judge`
 
-A repo whose integration branch declares `[tool.dev_lab.review] where = "judge"` is reviewed by an isolated judge
+A repo whose review the family binds to a host (`dev_lab.dev.roles`) is reviewed by an isolated judge
 host and never by `forge serve` (one mode per repo). The runner runs
 `python -m dev_lab.dev.forge review prepare --pr <n>` (no reviewer token): it attaches the
 review bundle to its own run as the `review-bundle` artifact, which the judge finds by listing the base's prepare
@@ -530,7 +530,8 @@ integration branch, and posts one PR review per head as its own login. The mecha
 
 ## Records and the outbox
 
-- **Statuses wait in an outbox** (`<main-checkout>/output/forge/outbox/`) until the commit is on origin.
+- **Statuses wait in an outbox** (`forge/outbox/` under the main checkout's `output` storage kind -- `output/` unless
+  the machine binds it, [storage](storage.md)) until the commit is on origin.
   `python -m dev_lab.dev.forge publish` posts what is reachable; `verify` and every tick flush it too.
 - **Run records are attachments** of one closed issue titled `run records`, never refs.
   `python -m dev_lab.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin
@@ -547,7 +548,7 @@ integration branch, and posts one PR review per head as its own login. The mecha
 Agents read and write the forge only through `python -m dev_lab.dev.forge` (`FORGE-THROUGH-THE-DOOR`);
 no `gh` or `tea` binary is needed.
 
-- Verbs: `issue list|view|create|comment|close|claim|status|comments`, `issue comments-since ISO8601`,
+- Verbs: `issue list|view|create|comment|close|label|claim|status|comments`, `issue comments-since ISO8601`,
   `pr create|view|close N --reason R` (the reason is commented first; no branch is deleted), `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
 - The backend is read off `origin`: `github.com` is GitHub REST, any other host is Gitea (`<host>/api/v1`).
 - When `HARNESS_MACHINE` and `HARNESS_AGENT` are set, every created body opens with
@@ -661,6 +662,13 @@ probe commands) and needs an `ops.config` consent credential whose subject is th
 code, about once a year. The candidate is loaded by the current code first, the live file is backed up beside itself,
 replaced atomically, self-checked, and restored on a failed check. Grant the line in `[ops.access] commands`:
 `<python> -m dev_lab.ops --config /etc/dev-lab/supervise.toml config apply *`.
+
+A host that is NOT the consent issuer verifies through `[ops.consent_client]`, itself a boundary key: on first
+contact it could verify nothing, so the table could never land. A bare `config apply` (no `--from`, no
+`--credential`) on a host whose live file has neither `[ops.consent]` nor `[ops.consent_client]` first takes exactly
+that one table from the reviewed `[ops.config]` file -- the merged hosts-config `main`, never a local candidate --
+backs the live file up and prints the endpoint and the key's fingerprint (`configdoor.anchor`); every other boundary
+change in that file still needs consent. Once the table exists, changing it is a boundary change.
 
 ## Making the forge's machine accounts
 

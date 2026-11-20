@@ -10,11 +10,10 @@ This gate is the GIT side only -- a pure reader of rem's files (:mod:`dev_lab.de
 contract), run at pre-push and never at a commit: a local commit is in-session work, already rem's.
 
 THE BINDING IS THE USER'S WORD (decision D5, 2026-11-15): the task a session works on is the one its user bound it
-to, never a guess from a worktree directory or a branch name. A bound session pushes its task's heads
-``pr/<slug>/<feature>`` -- one per PR, so a landed PR never forces a new task -- or a branch outside ``pr/`` (local
-fan-out, a detached tip); a ``pr/`` branch not under its own task (another task's, the bare ``pr/<slug>``, a flat
-``pr/<feature>``) is refused naming the bound task. An unbound session is refused naming rem's door: the user's
-``task: <slug>`` prompt, which rem's hook binds.
+to, never a guess from a worktree directory or a branch name. An unbound session is refused naming rem's door: the
+user's ``task: <slug>`` prompt, which rem's hook binds. WHICH heads a bound session pushes is judged in every repo,
+not only a required one: ``PUSHED-HEAD-CARRIES-ITS-TASK`` in the ``session-branch`` row (D25, 2026-11-17;
+:mod:`dev_lab.dev.sessionbranch`), so this gate never judges a branch name.
 
 rem's journal (JOURNAL.md) is appended to and read only through rem's own CLI, found at :data:`REM_ENV` (a path to
 ``task.js``), else in Claude Code's installed-plugins record.
@@ -43,7 +42,7 @@ from lab_commons.log import emit
 from dev_lab.dev import remplugin, taskbinding
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.native_session import session_of
-from dev_lab.dev.taskbinding import head_for, slug_of
+from dev_lab.dev.taskbinding import slug_of
 
 __all__ = [
     'HOOK_ID',
@@ -70,7 +69,6 @@ _REM_PLUGIN: Final = 'rem@'
 _OPENED: Final = re.compile(r'(?:pr|issue) opened: (\S+)')
 _PULL: Final = re.compile(r'/pulls?/(\d+)\b')
 _NODE: Final = shutil.which('node') or 'node'
-_GIT: Final = shutil.which('git') or 'git'
 
 #: ``read(root, args) -> (exit status, stdout)``: one call of rem's task CLI in *root*.
 Reader = Callable[[Path, Sequence[str]], tuple[int, str]]
@@ -126,15 +124,6 @@ def reader_for(env: Mapping[str, str], home: Path) -> Reader:
     return read
 
 
-def _branch(root: Path) -> str:
-    """The branch checked out in *root*, or ``''`` on a detached HEAD."""
-    done = _door.run(
-        [_GIT, 'symbolic-ref', '--quiet', '--short', 'HEAD'],
-        cwd=root, capture_output=True, text=True, encoding='utf-8', check=False,
-    )  # fmt: skip
-    return done.stdout.strip() if done.returncode == 0 else ''
-
-
 def _unbound(root: Path, env: Mapping[str, str], home: Path) -> tuple[str | None, str | None]:
     """``(open bound task id, None)``, or ``(None, why)`` -- no session, an unreadable one, none bound, or closed.
 
@@ -142,36 +131,40 @@ def _unbound(root: Path, env: Mapping[str, str], home: Path) -> tuple[str | None
     disabled or older than the binding release, :func:`dev_lab.dev.remplugin.binder_door`), else the user's prompt.
     """
     try:
-        task = taskbinding.session_task(env, start=root)
+        bound = taskbinding.session_binding(env, start=root)
     except ValueError as unread:
         return (
             None,
             f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}',
         )
-    if task is None:
+    if bound is None:
         # The binder's own text is a cause line and a door line; the user's prompt is a door line alone.
+        session = session_of(env)
         binder = remplugin.binder_door(env, home, root)
         door = f' {binder}' if binder else f'\nDoor: {taskbinding.DOOR}'
         return None, (
             f'{RULE}: this repo requires every agent session to work under the task its user bound it to, '
-            f'and none is bound.{door}.'
+            f'and none is bound: session {session} has no binding at {taskbinding.binding_path(session).as_posix()}.'
+            f'{door}.'
         )
+    task = bound.task
     try:
-        still = taskbinding.task_id(root, slug_of(task))
+        still = taskbinding.task_in(bound.ledger, slug_of(task))
     except ValueError:
         still = None
     if still != task:
-        closed = f'{RULE}: this session is bound to task {task}, which is no longer open.'
+        closed = (
+            f'{RULE}: this session is bound to task {task} ({bound.path.as_posix()}), which is no longer open '
+            f'in its ledger {bound.ledger.as_posix()}.'
+        )
         return None, f'{closed}\nDoor: {taskbinding.DOOR}.'
     return task, None
 
 
-def refusal(root: Path, *, env: Mapping[str, str], branch: str | None = None, home: Path | None = None) -> str | None:
+def refusal(root: Path, *, env: Mapping[str, str], home: Path | None = None) -> str | None:
     """Why an agent's push (or ``forge sync`` commit) in *root* is refused, or ``None``.
 
-    Judged only in a required repo, for a native agent session: no open task bound to the session in rem's ledger,
-    or a ``pr/`` branch outside the bound task's ``pr/<slug>/`` namespace. *branch* defaults to the one checked out
-    in *root*.
+    Judged only in a required repo, for a native agent session: no open task bound to the session in rem's ledger.
     """
     try:
         judged = required(root) and bool(session_of(env))
@@ -179,19 +172,7 @@ def refusal(root: Path, *, env: Mapping[str, str], branch: str | None = None, ho
         return f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}'
     if not judged:
         return None
-    task, why = _unbound(root, env, Path.home() if home is None else home)
-    if task is None:
-        return why
-    slug = slug_of(task)
-    branch = _branch(root) if branch is None else branch
-    if not branch.startswith(taskbinding.PREFIX) or taskbinding.under(branch, slug):
-        return None
-    return (
-        f'{RULE}: this session is bound to task {task}, and {branch} is not one of its heads '
-        f'({head_for(slug, "<feature>")}).\n'
-        f'Door: `git branch -m {branch} {head_for(slug, branch.rsplit("/", 1)[-1])}`; '
-        'another task is the user`s to bind (`task: <slug>`).'
-    )
+    return _unbound(root, env, Path.home() if home is None else home)[1]
 
 
 def _bound_slug(root: Path, env: Mapping[str, str]) -> str | None:

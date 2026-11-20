@@ -52,6 +52,15 @@ def tree(tmp_path: Path) -> Path:
     return root
 
 
+def _own_words(text: str, root: Path) -> str:
+    """*text* with *root* spelled as a short stand-in: the budget judges the message, not where the test's tree sits.
+
+    The tree is a caller's data, and pytest's temp dir under the checkout's output tree (D27) is far deeper than a
+    worktree a refusal names in practice.
+    """
+    return text.replace(root.as_posix(), 'C:/repo').replace(str(root), 'C:/repo')
+
+
 def _venv_python(root: Path) -> Path:
     return root / '.venv' / _SCRIPTS / _PYTHON
 
@@ -521,7 +530,7 @@ def test_the_refusal_fits_the_budget_names_the_pid_and_a_short_label_not_the_com
 
     long_cmd = 'python.exe -m app deck run cases/x ' + '--flag value ' * 40
     text = liverun.refusal(tree, [_proc(4242, _venv_python(tree), cmd=long_cmd)])
-    assert problems(text, 'refusal') == []
+    assert problems(_own_words(text, tree), 'refusal') == []
     assert 'pid 4242 (app)' in text
     assert '--flag value' not in text
     assert 'dev_lab.dev.stoprun --pid 4242' in text
@@ -531,7 +540,7 @@ def test_a_claude_session_holder_is_a_session_and_is_never_offered_to_stop(tree:
 
     session = _proc(46928, 'C:/py/python.exe', cmd='python.exe -m ai_lab.session claude --settings x.json', cwd=tree)
     text = liverun.refusal(tree, [session])
-    assert problems(text, 'refusal') == []
+    assert problems(_own_words(text, tree), 'refusal') == []
     assert 'pid 46928 (a Claude session)' in text
     assert 'stoprun' not in text
     assert 'another worktree' in text
@@ -544,7 +553,7 @@ def test_an_ssh_holder_names_the_session_close_verb_not_stoprun(tree: Path) -> N
     """
     holder = _proc(5151, _venv_python(tree), cmd='python.exe -m dev_lab.dev._sshholder box --hours 2 --ssh ["ssh"]')
     text = liverun.refusal(tree, [holder])
-    assert problems(text, 'refusal') == []
+    assert problems(_own_words(text, tree), 'refusal') == []
     assert 'dev_lab.dev.sshhold close box' in text
     assert 'stoprun' not in text
 
@@ -620,3 +629,22 @@ def test_the_real_engine_judges_the_tree_a_wrapped_command_acts_in_not_the_cwd(
     assert refused is not None
     assert refused.startswith('TREE-HAS-A-LIVE-RUN:'), refused
     assert f'pid {pid}' in refused
+
+
+def test_a_removal_never_counts_its_own_launcher_but_still_counts_its_kin(tmp_path: Path) -> None:
+    """A removal never counts its own venv launcher (dev-lab#791 wall 1).
+
+    On Windows a venv ``python.exe`` re-spawns the base interpreter with the same arguments, so the asker's PARENT
+    runs the very same ``-m dev_lab.dev.worktrees`` line. PLANTED CONTROLS: a parent running anything else, and an
+    unrelated process running the same line, still hold the tree.
+    """
+    tree = _checkout(tmp_path / 'tree')
+    exe = tmp_path / 'main' / '.venv' / _SCRIPTS / _PYTHON
+    line = f'{exe} -m dev_lab.dev.worktrees --remove x --root {tree}'
+    launcher = Process(10, 1, str(exe), line, 5.0, str(tree))
+    me = Process(11, 10, str(exe), line, 5.0, str(tree))
+    assert liverun.removal_holders(tree, census=lambda: [launcher, me], me=11) == ()
+    session = Process(10, 1, str(exe), f'{exe} -m ai_lab.session runtime', 5.0, str(tree))
+    assert liverun.removal_holders(tree, census=lambda: [session, me], me=11) == (session,)
+    stranger = Process(20, 1, str(exe), line, 5.0, str(tree))
+    assert liverun.removal_holders(tree, census=lambda: [launcher, me, stranger], me=11) == (stranger,)

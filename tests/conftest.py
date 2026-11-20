@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
 import pytest
+from _roles_fixtures import EVERY_CI, carry
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
@@ -25,6 +27,7 @@ from dev_lab.dev.lockcheck import uv_version
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.producer import OUTCOME_VAR
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
+from dev_lab.dev.storage import ROOTS_ENV
 
 
 @pytest.fixture(autouse=True)
@@ -32,11 +35,15 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(BOX_ENV, str(tmp_path / 'lab-commons-box' / 'box.sqlite'))
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'lab-commons-machine' / 'config.toml'))
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'lab-commons-home'))
+    # The roots this machine PUBLISHED for the guard engine (storage publish): a test plants its own, never reads ours.
+    monkeypatch.setenv(ROOTS_ENV, str(tmp_path / 'lab-commons-storage' / 'storage-roots.json'))
     monkeypatch.delenv(INSIDE_ENV, raising=False)  # the verify running these tests is boxed; a test is not
     monkeypatch.delenv(CPU_ENV, raising=False)
     monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)  # a test plants the session it means
     monkeypatch.delenv('CODEX_THREAD_ID', raising=False)
     monkeypatch.delenv('CODEX_SESSION_ID', raising=False)
+    monkeypatch.delenv('ANTIGRAVITY_CONVERSATION_ID', raising=False)
+    monkeypatch.delenv('ANTIGRAVITY_TRAJECTORY_ID', raising=False)
     # the serve running this suite named ITS outcome record here: a test's planted outage must never declare it
     monkeypatch.delenv(OUTCOME_VAR, raising=False)
 
@@ -46,6 +53,12 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 #: review door refuses them in its environment) and the workflow's ``GIT_CONFIG_COUNT``/``KEY_n``/``VALUE_n``
 #: auth header. A test that means one plants it with ``monkeypatch.setenv``.
 _CI_JOB_ENV: Final = re.compile(r'GITHUB_RUN_ID|GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)|' + '|'.join(FORGE_TOKEN_ENVS))
+
+
+@pytest.fixture(autouse=True)
+def _roles_carried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No family layer here (the machine file is empty): every test carries every role on CI unless it plants others."""
+    carry(monkeypatch, EVERY_CI)
 
 
 @pytest.fixture(autouse=True)
@@ -143,6 +156,19 @@ def _the_declared_uv(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: uv_version())
     monkeypatch.setattr(uvfollow, 'run_network_verb', _no_installer)
+
+
+def _invoking_stands_in(_root: Path, python: str) -> str:
+    return python if Path(python).is_file() else sys.executable
+
+
+@pytest.fixture(autouse=True)
+def _an_env_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test's tmp project has no venv, so the invoking interpreter stands in as its own; every uv run is faked.
+
+    Planted control, restoring the real refusal: test_dev_sync_owns_its_env.
+    """
+    monkeypatch.setattr(_dep_project, 'own_interpreter', _invoking_stands_in)
 
 
 def _no_installer(argv: Sequence[str], **_kwargs: object) -> Report:

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
+import sys
 import threading
+import time
 import venv
 from collections.abc import Callable
 from dataclasses import replace
@@ -15,6 +18,7 @@ from lab_commons.census import Process, processes
 
 from dev_lab.dev import dep, venvcurrent, venvpointer
 from dev_lab.dev.jsrun import node_path
+from dev_lab.dev.servelock import held
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 LAUNCHER = Path(dep.__file__).with_name('agent_launcher.js')
@@ -147,3 +151,98 @@ def test_a_bootstrap_whose_venv_alias_stays_stale_fails_and_names_why(tmp_path, 
     assert str(venvpointer.current(root).joinpath(*TAIL)) in out, 'the door: the published interpreter'
     assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=list) == 0, 'PLANTED CONTROL: unheld'
     assert legacy.resolve() == venvpointer.current(root).resolve()
+
+
+_HOLD = """
+import os, sys, time
+from pathlib import Path
+from dev_lab.dev import venvcurrent
+with venvcurrent.exclusive_build(Path(sys.argv[1])):
+    print(os.getpid(), flush=True)
+    time.sleep(60)
+"""
+
+
+def _holder(root: Path) -> tuple[subprocess.Popen[str], int]:
+    """A second process holding *root*'s build lock, and its pid (a Windows venv python is a launcher's child)."""
+    child = subprocess.Popen(
+        [sys.executable, '-c', _HOLD, str(root)], stdout=subprocess.PIPE, text=True, encoding='utf-8'
+    )
+    assert child.stdout is not None
+    return child, int(child.stdout.readline())
+
+
+def _release(child: subprocess.Popen[str], pid: int, root: Path) -> None:
+    """Kill the holder and wait until the kernel lets go of its lock.
+
+    On Windows ``child`` is the venv launcher and ``pid`` its python child: ``child.wait()`` returns when the launcher
+    exits, before the terminated child's handles close, so the lock can still read held for a moment.
+    """
+    os.kill(pid, signal.SIGTERM)  # the holder itself dies; its launcher follows
+    child.kill()
+    child.wait()
+    deadline = time.monotonic() + 10.0
+    while True:
+        try:
+            with venvcurrent.exclusive_build(root):
+                return
+        except venvcurrent.BuildBusy:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.05)
+
+
+def test_a_second_bootstrap_on_one_worktree_is_refused_naming_the_first(tmp_path, capsys) -> None:
+    root = tmp_path / 'wt'
+    old = _project(root)
+    child, pid = _holder(root)
+    try:
+        assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=list) == 1
+        out = capsys.readouterr().out
+        assert f'pid {pid}' in out, out
+        assert 'started' in out, out
+        assert f'dev_lab.dev.stoprun --pid {pid}' in out, out
+        assert venvpointer.named(root) == old, 'the refused run published nothing'
+        assert [p.name for p in (root / venvpointer.HOME).iterdir() if p.is_dir()] == ['old'], 'and built nothing'
+    finally:
+        _release(child, pid, root)
+    assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=list) == 0, 'a dead holder is taken over'
+    assert venvpointer.named(root) != old
+
+
+def test_a_single_bootstrap_holds_the_lock_only_while_it_runs(tmp_path) -> None:
+    root = tmp_path / 'wt'
+    _project(root)
+    seen: list[bool] = []
+
+    def uv(argv: list[str], **options: object) -> SimpleNamespace:
+        with held(root / venvpointer.HOME / venvcurrent.BUILD_LOCK) as free:
+            seen.append(free)
+        return _uv(argv, **options)
+
+    assert dep.main(['--bootstrap', str(root)], run=uv, cwd=tmp_path, census=list) == 0
+    assert seen, 'the fake uv ran'
+    assert not any(seen), 'PLANTED CONTROL: the lock is held during the build'
+    with venvcurrent.exclusive_build(root):
+        pass  # released after the run
+
+
+def test_a_reclaim_while_a_build_holds_the_worktree_removes_nothing(tmp_path) -> None:
+    """A reclaim racing a build deleted the environment the build was about to publish (two runs, one worktree).
+
+    Reclaim reads the live pointer, then walks ``.venvs``; a build that publishes between the two had its new
+    environment reclaimed as 'not current'. So a reclaim outside the build takes the same build lock and skips.
+    """
+    root = tmp_path / 'wt'
+    _project(root)
+    fresh = root / venvpointer.HOME / 'fresh'  # unmarked and unpublished: exactly what the race sees
+    venv.EnvBuilder(with_pip=False).create(fresh)
+    child, pid = _holder(root)
+    try:
+        lines = venvcurrent.reclaim(root, census=list)
+        assert fresh.is_dir(), lines
+        assert any(f'pid {pid}' in line for line in lines), lines
+    finally:
+        _release(child, pid, root)
+    assert any(line.startswith('reclaimed') for line in venvcurrent.reclaim(root, census=list)), 'PLANTED CONTROL'
+    assert not fresh.exists(), 'PLANTED CONTROL: unheld, the same environment is reclaimed'

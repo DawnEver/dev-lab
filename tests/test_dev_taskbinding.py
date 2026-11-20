@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 from _arch_corpus import module_names
-from _rem_binding import bind_as_rem
+from _rem_binding import bind_as_rem, repo_key
+from lab_commons.home import HOME_ENV
 
-from dev_lab.dev import agent_wiring, forgecli, taskbinding
+from dev_lab.dev import agent_wiring, forgetask, taskbinding
 from dev_lab.dev.branchset import FAMILY_EPHEMERAL, BranchSet
 from dev_lab.dev.sessionbranch import rename_remedy
 
@@ -64,14 +66,14 @@ def test_pr_create_suggests_the_bound_tasks_head(tmp_path: Path, monkeypatch: py
     env = {'CLAUDE_CODE_SESSION_ID': _SESSION}
     _task(tmp_path)
     monkeypatch.chdir(tmp_path)
-    assert forgecli._task_head_advice('pr/x', env) == (), 'planted control: unbound, nothing suggested'
+    assert forgetask.head_advice('pr/x', env) == (), 'planted control: unbound, nothing suggested'
     assert bind_as_rem(tmp_path, _SESSION, 'toolchain') == 'toolchain@a1'
-    [said] = forgecli._task_head_advice('pr/x', env)
+    [said] = forgetask.head_advice('pr/x', env)
     assert 'pr/toolchain/<feature>' in said
     assert 'git branch -m pr/x pr/toolchain/x' in said
-    assert forgecli._task_head_advice('pr/toolchain/x', env) == ()
+    assert forgetask.head_advice('pr/toolchain/x', env) == ()
     monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', _SESSION)
-    assert forgecli._task_head_advice('pr/x', None) == (said,), 'the process environment is the default'
+    assert forgetask.head_advice('pr/x', None) == (said,), 'the process environment is the default'
 
 
 def test_dev_lab_binds_nothing_so_its_venv_cannot_block_a_prompt() -> None:
@@ -86,3 +88,29 @@ def test_dev_lab_binds_nothing_so_its_venv_cannot_block_a_prompt() -> None:
     assert 'head_for' in names, 'planted control: the reader the module keeps is found'
     assert not {'bind', 'main'} & names
     assert "rem's UserPromptSubmit hook" in taskbinding.DOOR
+
+
+_FIXTURE = Path(__file__).parent / '_rem_fixtures' / 'session-binding.json'
+
+
+def test_the_cross_language_fixture_is_the_path_and_record_rem_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D34: rem (node) and dev-lab (python) assert one fixture, byte-identical in both repos.
+
+    The path is the machine home's (lab_commons.home) ``state/sessions/<session>.json``; the record
+    names its task and the ledger that task lives in; the repo key is lab_commons.repostate's rule.
+    """
+    fixture = json.loads(_FIXTURE.read_text(encoding='utf-8'))
+    session = fixture['session']
+    monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
+    assert taskbinding.binding_path(session) == tmp_path / 'home' / fixture['relative_path']
+    assert repo_key(fixture['common_dir'], caseless=fixture['caseless']) == fixture['repo_key']
+    assert fixture['record']['ledger']['repo_key'] == fixture['repo_key']
+    assert taskbinding.binding(session) is None, 'planted control: nothing written yet'
+    path = taskbinding.binding_path(session)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(fixture['record']), encoding='utf-8')
+    found = taskbinding.binding(session)
+    assert found == taskbinding.Binding('toolchain@a1', Path(fixture['record']['ledger']['path']), path)
+    assert taskbinding.binding('another-session') is None, 'a binding is keyed by its own session'

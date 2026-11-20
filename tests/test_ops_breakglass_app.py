@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from dev_lab.ops import breakglass, configretired
+from dev_lab.ops import breakglassforge, configretired
 from dev_lab.ops.config import Breakglass
 from dev_lab.ops.secretplace import declared
 from dev_lab.ops.served import app_of_forge, credential_files
@@ -47,9 +47,10 @@ def test_the_forge_of_an_app_repo_presents_a_minted_installation_token() -> None
         return f'installation-for-{url.split("/")[2]}'
 
     secrets = {'t': 'gitea-token'}
-    assert breakglass.credential(role, GLASS[1], secret=secrets.__getitem__, mint=mint) == 'installation-for-github.com'
+    minted_for = breakglassforge.credential(role, GLASS[1], secret=secrets.__getitem__, mint=mint)
+    assert minted_for == 'installation-for-github.com'
     assert minted == [(4242, Path(APP['key_file']))]
-    assert breakglass.credential(role, GLASS[0], secret=secrets.__getitem__, mint=mint) == 'gitea-token'
+    assert breakglassforge.credential(role, GLASS[0], secret=secrets.__getitem__, mint=mint) == 'gitea-token'
     assert len(minted) == 1  # control: a Gitea repo mints nothing
 
 

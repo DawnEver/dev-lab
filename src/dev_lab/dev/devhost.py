@@ -34,7 +34,11 @@ dev-lab`` checkout's branch with ``ref``; the ``SessionStart`` notice (:func:`no
 ``session-start`` is that notice's ONE trigger, wired once per session (:data:`dev_lab.dev.agent_wiring.WIRING`):
 machine-file drift and an unfilled install home cannot change within a turn, so no ``Stop`` re-reads them.
 
-``python -m dev_lab.dev.devhost drift [--from CLONE]`` -- read only, exit 1 on drift;
+``python -m dev_lab.dev.devhost drift [--from CLONE]`` -- read only, exit 1 on drift: each drifted KEY with the layer
+owning it and that layer's door, then the family-repo census (:func:`dev_lab.dev.familyrepos.census`);
+``python -m dev_lab.dev.devhost local set|unset <table>.<key> [value]`` -- the ONE door into the local layer
+(``[repos]``, ``[user]``): it refuses a rendered table, backs the file up, re-renders and prints what changed. Every
+other write is refused by MACHINE-FILE-IS-RENDERED (:mod:`dev_lab.dev.machineguard`);
 ``python -m dev_lab.dev.devhost render --host NAME --from CLONE [--write]`` -- prints the render; ``--write``
 refuses a render that does not parse, else backs the live file up under the output tree and replaces it.
 """
@@ -55,19 +59,21 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devprofile
-from dev_lab.dev._machinefile import dumps, render_value
+from dev_lab.dev import accounthost, devprofile, familyrepos, tomlleaves, vendordetect
+from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'detect', 'drift', 'host_file',
-    'main', 'notice', 'render', 'replace_backed_up',
+    'LOCAL_DOOR', 'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'drift',
+    'host_file', 'local_set', 'main', 'notice', 'render', 'replace_backed_up',
 ]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
 OWN_TABLE: Final = 'devhost'
+#: A key one side lacks (``None`` is not a TOML value, but a sentinel says so outright).
+_ABSENT: Final = object()
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -191,20 +197,42 @@ def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
     clone, host = clone or Path(own['source']), own['host']
     if not (clone / 'family.toml').is_file():
         return [f'the config source {clone.as_posix()} is not a clone here: name one with drift --from <clone>']
-    rendered = tomllib.loads(render(clone, host, live))
+    rendered, have = tomlleaves.leaves(tomllib.loads(render(clone, host, live))), tomlleaves.leaves(live)
     found = [
-        f'[{key}] is {"absent" if key not in live else "not the render"}'
-        for key in sorted(set(rendered) | set(live))
-        if rendered.get(key) != live.get(key)
+        f'{tomlleaves.dotted(path)} is {"absent" if path not in have else "not the render"} -- '
+        f'{_owner(path, clone, host)}'
+        for path in sorted(set(rendered) | set(have))
+        if rendered.get(path, _ABSENT) != have.get(path, _ABSENT)
     ]
-    family_file, host_file = _sources(clone, host)
-    dev = declared(host_file, family_file)
+    family_file, own_file = _sources(clone, host)
+    dev = declared(own_file, family_file)
     if names := unfilled(dev):
         found.insert(0, fill_remedy(names))
+    found += familyrepos.census(live)
     checkout = live.get('repos', {}).get('dev-lab')
-    if (want := dev.get('ref')) and checkout and (have := _branch(checkout)) not in {want, None}:
-        found.append(f'the dev-lab checkout is on {have!r}, declared ref {want!r}')
+    if (want := dev.get('ref')) and checkout and (on := _branch(checkout)) not in {want, None}:
+        found.append(f'the dev-lab checkout is on {on!r}, declared ref {want!r}')
     return found
+
+
+def _owner(path: tuple[str, ...], clone: Path, host: str) -> str:
+    """The layer owning the key at *path*, and that layer's door."""
+    if path[0] == OWN_TABLE:
+        return f'the render itself: {RENDER_DOOR}'
+    edit = f'change it there through its pull request, then {RENDER_DOOR}'
+    family_file, own_file = _sources(clone, host)
+    for layer, source in (('host', own_file), ('family', family_file)):
+        tables = {k: v for k, v in (_read(source) if source.is_file() else {}).items() if k != 'dev'}
+        if any(path[: len(key)] == key or key[: len(path)] == path for key in tomlleaves.leaves(tables)):
+            return f'{layer} layer ({source.relative_to(clone).as_posix()}): {edit}'
+    if path[0] in _layered(clone, host):
+        return f'host layer ({host_file(host)} [dev], rendered): {edit}'
+    return f'local layer: {LOCAL_DOOR}'
+
+
+def _layered(clone: Path, host: str) -> set[str]:
+    """The tables the family and host layers render; every other table is local."""
+    return set(tomllib.loads(render(clone, host, {}))) - {OWN_TABLE}
 
 
 def notice(live: Mapping[str, Any] | None = None) -> str | None:
@@ -224,23 +252,10 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     return '\n'.join(lines) or None
 
 
-def _matches(pattern: str) -> list[Path]:
-    anchored = Path(pattern)
-    return list(Path(anchored.anchor).glob(str(anchored.relative_to(anchored.anchor))))
-
-
-def detect(patterns: Mapping[str, list[str]]) -> dict[str, str]:
-    """Each vendor's install home on THIS machine: the last (newest-named) directory its patterns match."""
-    found = {}
-    for name, globs in patterns.items():
-        hits = sorted({hit for pattern in globs for hit in _matches(pattern) if hit.is_dir()})
-        if hits:
-            found[name] = hits[-1].as_posix()
-    return found
-
-
 #: The door that re-renders this machine's file from its recorded host and clone.
 RENDER_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost render --write'
+#: The door that sets one key of the machine's own (local) layer.
+LOCAL_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost local set <table>.<key> <value>'
 
 
 def replace_backed_up(path: Path, text: str, backups: Path) -> Path:
@@ -270,9 +285,13 @@ def _drift(path: Path, live: Mapping[str, Any], clone: Path | None) -> int:
 
 def _detect(source: Path | None) -> int:
     if source is None:
-        emit('refused: detect needs --from (no [devhost] in the machine file)', err=True)
+        emit(
+            "refused: detect needs --from <the config source's checkout> (no [devhost] in the machine file): "
+            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
+            err=True,
+        )
         return 2
-    homes = detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
+    homes = vendordetect.detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
     for name, home in homes.items():
         emit(f'[dev.vendors.{name}]\nhome = {render_value(home)}\n')
     if not homes:
@@ -294,7 +313,11 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
     own = live.get(OWN_TABLE, {})
     host, clone = args.host or own.get('host') or platform.node(), _source(args.clone, own)
     if not host or clone is None:
-        emit('refused: render needs --from, the config-source clone (no [devhost] in the machine file)', err=True)
+        emit(
+            "refused: render needs --from <the config source's checkout> (no [devhost] in the machine file): "
+            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
+            err=True,
+        )
         return 2
     try:
         text = render(clone, host, live)
@@ -318,6 +341,56 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
     return 0
 
 
+def local_set(live: Mapping[str, Any], dotted: str, value: str | None) -> dict[str, Any]:
+    """*live* with the LOCAL key ``<table>.<key>`` set to *value*; ``None`` removes it.
+
+    Raises:
+        ValueError: *dotted* is not ``<table>.<key>``; its table is rendered from the config source (a family or
+            host table: change it there); or a ``[repos]`` value is not an absolute path.
+
+    """
+    table, _, key = dotted.partition('.')
+    if not table or not key or '.' in key:
+        msg = f'{dotted!r} is not <table>.<key>'
+        raise ValueError(msg)
+    own = live.get(OWN_TABLE, {})
+    rendered = own.get('host') and own.get('source') and table in _layered(Path(own['source']), own['host'])
+    if table == OWN_TABLE or rendered:
+        msg = (f'[{table}] is rendered from the config source, not a local table: change it there (family.toml or '
+               f'hosts/<machine>.toml) through its pull request, then {RENDER_DOOR}')  # fmt: skip
+        raise ValueError(msg)
+    if table == familyrepos.LOCAL_TABLE and value is not None and not Path(value).is_absolute():
+        msg = f'[{table}] {key} = {value!r} must be an absolute path'
+        raise ValueError(msg)
+    changed = {name: dict(rows) if isinstance(rows, Mapping) else rows for name, rows in live.items()}
+    rows = changed.setdefault(table, {})
+    if value is None:
+        rows.pop(key, None)
+    else:
+        rows[key] = value
+    return changed
+
+
+def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -> int:
+    value = None if args.local_verb == 'unset' else args.value
+    try:
+        changed = local_set(live, args.key, value)
+    except ValueError as refused:
+        emit(f'refused: {refused}; {path} is unchanged', err=True)
+        return 2
+    table, _, key = args.key.partition('.')
+    before = live.get(table, {}).get(key) if isinstance(live.get(table), Mapping) else None
+    own = live.get(OWN_TABLE, {})
+    if own.get('host') and own.get('source'):
+        text = render(Path(own['source']), own['host'], changed)
+    else:  # not a render: set the one key in the text, every other line kept
+        text = merged(path.read_text(encoding='utf-8') if path.is_file() else '', {table: {key: value}})
+    backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
+    backup = replace_backed_up(path, text, backups)
+    emit(f'local: [{table}].{key}: {before!r} -> {value!r} in {path}; the previous file is {backup}')
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """``drift`` (exit 1 on drift), ``render`` (``--write`` backs up), ``detect``, ``session-start``, ``channels``."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
@@ -335,10 +408,21 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     making.add_argument('--write', action='store_true', help='back the live file up, then replace it')
     making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
+    setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
+    local_verbs = setting.add_subparsers(dest='local_verb', required=True)
+    one = local_verbs.add_parser('set', help='set <table>.<key> to <value>')
+    one.add_argument('key', help='<table>.<key>, e.g. repos.dev-lab')
+    one.add_argument('value', help='the value; a [repos] path must be absolute')
+    gone = local_verbs.add_parser('unset', help='remove <table>.<key>')
+    gone.add_argument('key', help='<table>.<key>')
+    for sub in (one, gone):
+        sub.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
     args = parser.parse_args(argv)
     path = args.machine or machineconfig.config_path()
     live = _read(path) if path.is_file() else {}
     if args.verb == 'session-start':
+        if where := familyrepos.notice():
+            emit(where)  # every session starts knowing where the family's checkouts live
         if said := notice(live):
             emit(said)
         return 0
@@ -346,6 +430,8 @@ def main(argv: list[str] | None = None) -> int:
         return _channels(live)
     if args.verb == 'drift':
         return _drift(path, live, args.clone)
+    if args.verb == 'local':
+        return _local_verb(args, path, live)
     if args.verb == 'detect':
         return _detect(_source(args.clone, live.get(OWN_TABLE, {})))
     return _render_verb(args, path, live)

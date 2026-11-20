@@ -77,6 +77,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'session-branch',
         'milestone-base',
         'closed-pr',
+        'lossless-delete',
         'pr-current',
         'pr-notices',
         'session-prs',
@@ -88,6 +89,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'lab-session',
         'merge-audit',
         'merge-resolution',
+        'private-markers-message',
     }
     assert {hook.id for hook in table['pre-commit']} == {
         'filechecks',
@@ -159,6 +161,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         'session-branch',
         'milestone-base',
         'closed-pr',
+        'lossless-delete',
         'pr-current',
         'pr-notices',
         'session-prs',
@@ -682,13 +685,19 @@ def test_an_advisory_row_speaks_and_never_fails_the_stage(repo: Path, capsys, mo
 
 #: Owned by the task-gating lane, which judges a commit and a push apart; not this table test's to fold.
 _TWO_STAGES_OWNED_ELSEWHERE = frozenset({'dev_lab.dev.taskgate'})
+#: A tree moves by a merge OR a checkout (a rebase checks out); the check keeping untracked-now-ignored files
+#: must hear both, and git offers no one stage for the two.
+_TWO_STAGES_BY_NATURE = frozenset({'dev_lab.dev.keepignored'})
 
 
 def _modules_at_two_stages(table: dict[str, tuple[Hook, ...]]) -> dict[str, list[str]]:
     stages: dict[str, list[str]] = {}
     for stage, hooks in table.items():
         for hook in hooks:
-            if hook.run[:2] == ('python', '-m') and hook.run[2] not in _TWO_STAGES_OWNED_ELSEWHERE:
+            if (
+                hook.run[:2] == ('python', '-m')
+                and hook.run[2] not in _TWO_STAGES_OWNED_ELSEWHERE | _TWO_STAGES_BY_NATURE
+            ):
                 stages.setdefault(hook.run[2], []).append(stage)
     return {module: found for module, found in stages.items() if len(found) > 1}
 
@@ -702,3 +711,24 @@ def test_no_base_module_runs_at_two_stages() -> None:
     assert _modules_at_two_stages(merge(base_rows(), planted)) == {
         'dev_lab.dev.filechecks': ['pre-commit', 'post-commit']
     }
+
+
+def test_a_failing_git_query_of_the_runner_names_its_cause_and_door(repo: Path, capsys, monkeypatch) -> None:
+    """O21: the runner's own ``git diff`` exiting 128 printed a bare traceback and no rule name.
+
+    It must refuse by name: the git command, git's own stderr, and the door. PLANTED CONTROL: the same
+    stage with a working git passes (the clean-file test above).
+    """
+
+    def broken(_root: Path, *args: str) -> str:
+        raise subprocess.CalledProcessError(128, ['git', *args], stderr='fatal: bad object deadbeef\n')
+
+    (repo / 'clean.txt').write_text('clean\n', encoding='utf-8')
+    _git(repo, 'add', 'clean.txt')
+    monkeypatch.setattr(runner, '_git', broken)
+    assert run_stage('pre-commit', root=repo) == 1
+    said = capsys.readouterr().err
+    assert 'GITHOOKS-GIT-FAILED' in said
+    assert 'fatal: bad object deadbeef' in said
+    assert 'git diff' in said
+    assert 'Traceback' not in said

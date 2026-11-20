@@ -19,10 +19,10 @@ ONE DECISION ON BOTH FORGES (user ruling 2026-10-29); only who MERGES differs. :
 decides; a workflow job runs ``forge merge ready [--pr <N>]`` (:func:`dev_lab.dev.forgemergeready.ready`; no
 number: every open PR into integration), which posts the decision as ONE status,
 :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT`, and on ``success`` asks the forge to merge that head itself
-(:func:`~dev_lab.dev.forgemergecall.merge`, as the job's own token). That job merges on GitHub always, and on Gitea
-where the repo declares the CI merger (:data:`CI_MERGER`, :func:`ci_merges`;
-P3, user ruling 2026-11-02): Gitea's ``merge.yml`` runs it on the light runner, and the serve tick then only says
-the decision. A Gitea repo that does not declare it is still merged by the serve tick on the same :func:`judged`.
+(:func:`~dev_lab.dev.forgemergecall.merge`, as the job's own token). WHO merges is the family's binding of
+``merge`` (:mod:`dev_lab.dev.roles`, D73): bound to ``ci``, that job merges (GitHub's ``ci.yml`` and merge tick,
+Gitea's ``merge.yml`` on the light runner) and the serve tick only says the decision; bound to an ``hpc`` executor,
+its serve tick merges on the same :func:`judged`.
 GitHub still enforces the branch's required checks on that merge; one still pending refuses it, and the native
 auto-merge ``forge pr create`` enabled merges once they are green. GitHub refuses to enable auto-merge on a PR
 that is already mergeable (dev-lab#15), which is why the job that posts ready merges rather than waiting on it.
@@ -70,18 +70,17 @@ namespace is deleted by the forge with the merge.
 
 from __future__ import annotations
 
-import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.failprint import Fingerprints, new_subjects, refusal
-from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import WAITING
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import alarms_said
+from dev_lab.dev.forgehold import HELD, is_held
 from dev_lab.dev.forgemergewaits import hand_note, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgereview_declared import load_review
@@ -89,8 +88,8 @@ from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import fingerprints_at, status_list
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
-from dev_lab.dev.producers import UndeclaredProducer, producer_at
 from dev_lab.dev.reviewcap import unreviewed_waiver
+from dev_lab.dev.roles import REVIEW, TESTS, Unbound, roles_at
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -101,11 +100,9 @@ if TYPE_CHECKING:
     from dev_lab.dev.reviewgate import Reviewed
 
 __all__ = [
-    'CI_MERGER',
     'EXTERNAL',
     'FORGE_PULL',
     'Decision',
-    'ci_merges',
     'decide',
     'external',
     'hidden_reds',
@@ -115,17 +112,6 @@ __all__ = [
 
 #: The merge decision's ``pending`` line for a PR the forge never merges (:func:`external`).
 EXTERNAL: Final = 'external PR: a maintainer merges it'
-
-#: The Gitea workflow that merges, closes landed PRs and sweeps (``ci_base.toml``); declaring it is the opt-in.
-CI_MERGER: Final = 'merge.yml'
-
-
-def ci_merges(root: Path) -> bool:
-    """Whether *root* declares ``[tool.dev_lab.ci."merge.yml"]``: then serve neither merges, closes nor sweeps."""
-    pyproject = root / 'pyproject.toml'
-    data = tomllib.loads(pyproject.read_text(encoding='utf-8')) if pyproject.is_file() else {}
-    return CI_MERGER in declared_table(data, 'ci', {})
-
 
 #: The trailer naming the pull request a forge merge closed.
 FORGE_PULL: Final = 'Forge-Pull'
@@ -191,8 +177,8 @@ def decide(
         title, _, trailers = message.partition('\n\n')
         message = f'{title}\n\n{waiver}\n\n{trailers}'
     try:
-        waits = status_waits(policy, head, statuses, producer=producer_at(root))
-    except UndeclaredProducer as undeclared:  # a malformed producer is named, never merged
+        waits = status_waits(policy, head, statuses, tests=roles_at(root).kind(TESTS))
+    except Unbound as undeclared:  # a malformed producer is named, never merged
         waits = [f'its producer: {undeclared}']
     missing += waits
     tried = trial(root, base, head)
@@ -266,7 +252,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
     """:func:`decide` on PR *number*'s *head* as the forge holds it now: its statuses."""
     statuses = [one for one in status_list(client, head) if one.context != MERGE_READY_CONTEXT]
     try:
-        reviewed = review_gate(client, base=policy.integration)
+        reviewed = review_gate(client, base=policy.integration, by=roles_at(root).kind(REVIEW))
     except ValueError as config:  # a declaration that cannot gate is this PR's wait, never the tick's crash
 
         def reviewed(_statuses: Sequence[CommitStatus], why: str = str(config)) -> str:
@@ -285,5 +271,7 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
         others = (EXTERNAL, *others)
     if pull.draft:  # DRAFT-UNTIL-READY (D53): a draft never lands, whatever else is green
         others = (WAITING.format(n=number), *others)
+    if is_held(pull.labels):  # HOLD: a held PR never lands, on a forge that refuses its draft too
+        others = (HELD.format(n=number), *others)
     waiting = found.waiting and len(others) == len(found.others)
     return Decision(others, found.message, found.review, found.unreviewed, found.notes, waiting)

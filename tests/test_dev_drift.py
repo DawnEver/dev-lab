@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import NoReturn
 
 import pytest
+from _roles_fixtures import HPC_REPO, carry
 
 from dev_lab.dev import drift, forgeservesteps
 from dev_lab.dev.forgealarm import DRIFT, Alarm
@@ -165,7 +166,7 @@ def test_the_repo_wide_pass_runs_the_census_after_the_relock_and_a_failure_is_sa
                  'hygiene', 'starved',
                  'prompt'):  # fmt: skip
         monkeypatch.setattr(forgeservesteps, name, lambda *_a, **_k: None)
-    monkeypatch.setattr(forgeservesteps, 'ci_merges', lambda _root: False)
+    carry(monkeypatch, HPC_REPO)  # the hpc tick prunes: prune is bound to hpc
     monkeypatch.setattr(forgeservesteps, 'relock', lambda *_a, **_k: order.append('relock'))
 
     def census(*_a: object, **_k: object) -> None:

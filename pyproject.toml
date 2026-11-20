@@ -95,6 +95,10 @@ packages = ["src/dev_lab"]
 lab-commons = { git = "https://github.com/DawnEver/lab-commons.git" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
+# D78: extras install on demand; this repo's own suite needs both.
+[tool.dev_lab.dep]
+extras = ["test", "ops"]
+
 [tool.dev_lab.placement]
 code_roots = []
 # A worktree is a real second tree with its own src/, judged by the run inside it.
@@ -102,6 +106,10 @@ pruned_paths = ['.claude/worktrees']
 # SCRATCH-IS-NEVER-COMMITTED: the one-off sink, and when the SessionStart notice starts naming a one-off.
 scratch = 'scratch/'
 max_age_days = 3.0
+# STRAY-FILE-REFUSED: files a tool this repo uses retired; a stray copy is named with its door, never `git add`.
+retired = [
+  { path = '.claude/rules/MEMORY.md', what = "rem's generated memory index; nothing rebuilds it", door = "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs <checkout> -- which removes every copy outside attic/" },
+]
 
 # How the cluster builds this repo's env, read at the commit being judged (lab_commons.hpc.builds).
 # It installs the project itself: the venv must import lab_commons.envkey to report its env key.
@@ -296,12 +304,15 @@ ignore = [
 # THIS REPO'S CI: the family base (dev_lab/dev/ci_base.toml) as is -- every repo renders its forge's whole
 # base with `python -m dev_lab.dev.ciworkflows render`; this repo declares no [tool.dev_lab.ci] layer.
 
-# Who reviews this repo's PRs: the family's isolated judge host (user ruling 2026-11-10), gated on GitHub by the
-# family App's review/judge check run. Keys and defaults: dev_lab.dev.forgereview_declared.
+# The judge's identity on GitHub: the family App's review/judge check run. WHO reviews is the family layer's binding
+# (dev_lab.dev.roles, D73), never this file. Keys and defaults: dev_lab.dev.forgereview_declared.
 [tool.dev_lab.review]
-where = "judge"
 judge_app = 5619495
 
 # The bundle prepare the judge reads, on THIS forge (the base places it on Gitea unless a repo names GitHub).
 [tool.dev_lab.ci."review-prepare.yml"]
 forge = "github"
+
+# NO-CJK-IN-TRACKED-SOURCE (D26): files still carrying CJK, a set that may only shrink.
+[tool.dev_lab.cjk]
+declared = []

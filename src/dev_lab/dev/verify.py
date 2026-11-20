@@ -49,11 +49,12 @@ from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import verifiedby
+from dev_lab.dev import depneeds, verifiedby
 from dev_lab.dev.forgeclaim import this_machine
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgerequest import offer_line
 from dev_lab.dev.forgestatus import head_sha, verdict_commit
-from dev_lab.dev.forgework import Client, client_for
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
 from dev_lab.dev.localpart import part_selection, post_cited, post_part
@@ -63,7 +64,7 @@ from dev_lab.dev.logref import UnverifiableLog
 from dev_lab.dev.platformparts import part_context
 from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
 from dev_lab.dev.runcache import cache_path, cached, remember
-from dev_lab.dev.selection import is_targeted
+from dev_lab.dev.selection import is_targeted, missing_paths
 from dev_lab.dev.skipallowance import MalformedAllowance
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdictenv import verdict_env
@@ -183,11 +184,16 @@ def main(argv: list[str] | None = None) -> int:
     arguments = tuple(parsed.pytest_args)
     targeted = is_targeted(root, arguments)
     outside, workstation = _outside(root, parsed.part, arguments, targeted=targeted)
-    refused = None if targeted else outside
+    missing = missing_paths(root, arguments)
+    refused = (
+        f'verify: refused -- selected path(s) not in the checkout {root}: {", ".join(missing)}' if missing else None
+    )
+    refused = refused or (None if targeted else outside)
     try:
         posted, arguments = arguments, (*part_selection(root, parsed.part), *arguments)
     except ValueError as why:
         refused = refused or f'verify: refused -- {why}'
+    refused = refused or _needs_refusal(root, parsed.part)
     if (early := _early(root, refused, producer=outside is None)) is not None:
         return early
     wait_s = parsed.lock_wait if parsed.lock_wait is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
@@ -279,6 +285,16 @@ def _post_cited(root: Path, log: str, posted: tuple[str, ...], *, part: str, pro
     """The PRODUCER's cited run posts from its own outcomes, beside *log*; nothing re-runs, and nobody else posts."""
     if producer:
         emit(post_cited(root, log, posted, head=head_sha(root), dirt=status_paths(root), part=part))
+
+
+def _needs_refusal(root: Path, part: str) -> str | None:
+    """A part whose need maps to an extra this environment lacks, refused with its sync door (D78)."""
+    if not part:
+        return None
+    try:
+        return depneeds.missing_for_part(root, part)
+    except ValueError as why:
+        return f'verify: refused -- {why}'
 
 
 def _early(root: Path, refused: str | None, *, producer: bool) -> int | None:

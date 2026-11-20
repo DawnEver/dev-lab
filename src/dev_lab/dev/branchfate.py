@@ -1,11 +1,13 @@
-"""TWO-FATES: every local branch and linked worktree is merged and cleaned up, or cleaned up. Nothing lingers.
+"""TWO-FATES: every local branch and linked worktree is MERGED, or CLEANED when it holds nothing unlanded.
 
 User ruling 2026-11-15. The doors before it each covered one state: :func:`dev_lab.dev.reclaim.reclaim` removes a
 LANDED and CLEAN tree, :func:`dev_lab.dev.branchset.apply_local` deletes a LANDED branch no tree holds, and
 ``branchset --discard`` drops ONE unlanded lane the user names. Every other state had no fate and lingered -- an
 unlanded lane nobody works on, a never-pushed branch with no tree, a landed tree with a stray tracked edit (incident
 2026-10-31: the door refused them and offered no path, so they stayed). :func:`settle` runs after those doors and
-gives each local branch and linked tree still standing exactly ONE verdict, with its reason:
+gives each local branch and linked tree still standing exactly ONE verdict, with its reason. NOTHING IS PARKED
+(D31, user 2026-11-17, restating 2026-11-05: merged, never parked in output/): no
+bundle, patch or file copy is written anywhere; what is not landed is LISTED with its doors.
 
 * ``owned``: it has a LIVE OWNER and is kept, listed with that owner -- a process works in the tree (the removal
   lock, :func:`dev_lab.dev.reclaim.occupancy`), a ``git worktree lock``, a host runtime lives in it
@@ -13,12 +15,13 @@ gives each local branch and linked tree still standing exactly ONE verdict, with
   (reclaim's live-session hour) for MERGED work, :data:`ABANDONED_S` for UNMERGED work -- or, unlanded, origin
   carries the branch: its open PR or pushed lane is origin's to judge (:mod:`dev_lab.dev.branchprune` deletes it
   once the PR is gone, and the next run here finds it ownerless);
-* ``merged`` / ``abandoned``: no owner. It is PRESERVED LOSSLESSLY first -- a verified ``git bundle`` of the tip,
-  the tree's uncommitted tracked work and untracked files (:func:`dev_lab.dev.worktree_archive.save_work`), and a
-  ``manifest.json`` with every file's sha256, under the checkout's ``archive-to`` directory -- then the tree is
-  removed (:func:`dev_lab.dev.reclaim.removed_approved`: outputs home, all or nothing) and the branch deleted,
-  pinned to the sha that was bundled. A step that fails keeps the rest and is a ``FAILED`` line naming why; the
-  next run retries it.
+* ``merged``: no owner, its tip is on a holder and its tree (if any) holds no tracked change and no untracked,
+  not-ignored file (:func:`dev_lab.dev.reclaim.unlanded_work`). CLEANED: the tree is removed
+  (:func:`dev_lab.dev.reclaim.removed_approved`: outputs home, all or nothing) and the branch deleted, pinned to
+  the judged sha. A step that fails keeps the rest and is a ``FAILED`` line naming why; the next run retries it.
+* ``unlanded``: no owner, but commits no holder has or work in its tree. KEPT and LISTED with its doors
+  (:data:`dev_lab.dev.reclaim.UNLANDED_DOORS`): commit it on its branch and land it through a PR, or the user
+  discards it with ``branchset --discard``. Nothing of it is touched.
 
 THE ONE LANE THE USER NAMES is :func:`discard` (``branchset --discard <branch> --approved "<words>"``, ruling
 2026-11-13): it needs no abandonment, only the user's words. ``python -m dev_lab.dev.branchset --apply`` is the
@@ -27,24 +30,28 @@ door; the ``SessionStart`` reclaim (:mod:`dev_lab.dev.reclaimrun`) runs it in th
 
 from __future__ import annotations
 
-import hashlib
-import json
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from dev_lab.dev.checkout import git_out, worktrees
+from dev_lab.dev.checkout import git_out, locked_trees, worktrees
 from dev_lab.dev.forgereview_runtimes import host_runtimes
-from dev_lab.dev.reclaim import QUIET_S, index_age_s, locked_trees, occupancy, removed_approved, runtime_of
-from dev_lab.dev.worktree_archive import archive_home, save_work
+from dev_lab.dev.reclaim import (
+    QUIET_S,
+    UNLANDED_DOORS,
+    index_age_s,
+    occupancy,
+    removed_approved,
+    runtime_of,
+    unlanded_work,
+)
 
 if TYPE_CHECKING:
     from dev_lab.dev.branchset import BranchSet
 
-__all__ = ['ABANDONED_S', 'Fate', 'discard', 'judge', 'preserve', 'settle']
+__all__ = ['ABANDONED_S', 'Fate', 'discard', 'judge', 'settle']
 
 #: How long UNMERGED work must sit untouched (index and tip) before it counts as abandoned: sessions pause
 #: overnight and lanes wait on long forge runs, so the 1 h live-session window that suffices for MERGED trees is
@@ -59,7 +66,7 @@ _DETACHED: Final = 'detached'
 
 @dataclass(frozen=True)
 class Fate:
-    """One local branch or linked tree, and its fate: kept for *owner*, or (no owner) cleaned as *verdict*."""
+    """One local branch or linked tree, and its fate: kept for *owner*, else cleaned when merged, else listed."""
 
     branch: str
     sha: str
@@ -142,43 +149,15 @@ def judge(
     return tuple(fates)
 
 
-def _digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def preserve(root: Path, fate: Fate, *, today: datetime | None = None) -> tuple[Path | None, str]:
-    """Save *fate* losslessly under *root*'s archive home; ``(directory, '')``, or ``(None, why it failed)``."""
-    stamp = (today or datetime.now(UTC)).strftime('%Y%m%d')
-    saved = archive_home(root) / stamp / fate.label.replace('/', '--').replace(':', '--')
-    if saved.exists():
-        saved = saved.with_name(f'{saved.name}-{fate.sha[:10]}')
-    saved.mkdir(parents=True, exist_ok=True)
-    bundle = saved / 'branch.bundle'
-    where, ref = (fate.tree, 'HEAD') if fate.branch == _DETACHED and fate.tree else (root, f'refs/heads/{fate.branch}')
-    if git_out(where, 'bundle', 'create', str(bundle), ref) is None:
-        return None, f'git bundle create {ref} failed'
-    if git_out(root, 'bundle', 'verify', str(bundle)) is None:
-        return None, f'git bundle verify {bundle} failed'
-    if fate.tree is not None:
-        try:
-            save_work(fate.tree, saved)
-        except (OSError, RuntimeError) as error:
-            return None, f'the tree work was not saved: {error}'
-    files = {p.relative_to(saved).as_posix(): _digest(p) for p in sorted(saved.rglob('*')) if p.is_file()}
-    manifest = {
-        'branch': fate.branch,
-        'sha': fate.sha,
-        'tree': str(fate.tree) if fate.tree else None,
-        'fate': 'merged' if fate.merged else 'abandoned',
-        'restore': f'git fetch {bundle.name} {ref}:refs/heads/<name>',
-        'files': files,
-    }
-    (saved / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
-    return saved, ''
+def _unlanded(fate: Fate) -> str:
+    """What of *fate* is landed nowhere, in words; ``''`` when it is merged and its tree holds nothing else."""
+    if not fate.merged:
+        return f'commits on no holder -- {UNLANDED_DOORS}'
+    return unlanded_work(fate.tree) if fate.tree is not None else ''
 
 
 def _cleaned(root: Path, fate: Fate, quiet_s: float) -> str:
-    """Remove *fate*'s tree, then delete its branch pinned to the bundled sha; ``''`` when both are done."""
+    """Remove *fate*'s tree, then delete its branch pinned to the judged sha; ``''`` when both are done."""
     if fate.tree is not None and (refused := removed_approved(root, fate.tree, quiet_s=quiet_s)):
         return refused
     if fate.branch == _DETACHED:
@@ -211,23 +190,22 @@ def settle(
     out: list[str] = []
     done = 0
     for fate in fates:
-        verdict = 'merged   ' if fate.merged else 'abandoned'
         where = f'  [{fate.tree}]' if fate.tree else ''
         if fate.owner:
             out.append(f'{_OWNED} {fate.label}{where}  ({fate.owner})')
             continue
+        if kept := _unlanded(fate):
+            named = fate.branch if fate.branch != _DETACHED else '<a branch made at its HEAD>'
+            out.append(f'unlanded  {fate.label}{where}  ({kept.replace("<branch>", named)})')
+            continue
         if limit is not None and done >= limit:
             out.append(f'deferred  {fate.label}{where}  (batch of {limit} reached)')
             continue
-        saved, why = preserve(root, fate)
-        if saved is None:
-            out.append(f'FAILED    {fate.label}{where}  (not archived, nothing removed: {why})')
-            continue
         if why := _cleaned(root, fate, quiet_s):
-            out.append(f'FAILED    {fate.label}{where}  (archived at {saved}; {why})')
+            out.append(f'FAILED    {fate.label}{where}  ({why})')
             continue
         done += 1
-        out.append(f'{verdict} {fate.label} ({fate.sha[:10]})  archived at {saved}, cleaned up')
+        out.append(f'merged    {fate.label} ({fate.sha[:10]})  cleaned up')
     return tuple(out)
 
 
@@ -236,15 +214,18 @@ def discard(
 ) -> tuple[int, str]:
     """Drop ONE lane the user approved: its worktree, then its local branch; ``(exit code, the one line)``.
 
-    *approved* is the user's own words, echoed into the line so the record says who decided. Refused (exit 1,
-    nothing touched): no approval, a declared branch (trunk or session), no local branch of that name, the main
-    checkout's branch, a live session (:func:`dev_lab.dev.reclaim.removed_approved`).
+    *approved* is the user's own words, echoed into the line so the record says who decided. A COMMIT-FREE lane
+    (origin holds every commit, every worktree of it clean) loses nothing, so it needs none (O26: the narrow door
+    for ONE unused worktree). Refused (exit 1, nothing touched): no approval where one is needed, a declared
+    branch (trunk or session), no local branch of that name, the main checkout's branch,
+    a live session (:func:`dev_lab.dev.reclaim.removed_approved`).
     """
     ref = f'refs/heads/{branch}'
     sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
     trees = worktrees(root)
     held = [path for path, name in trees or () if name == branch]
-    if why := _discard_refusal(root, branchset, branch, approved, sha=sha, trees=trees):
+    free = bool(sha) and _commit_free(root, sha, held)
+    if why := _discard_refusal(root, branchset, branch, approved, sha=sha, trees=trees, free=free):
         return 1, f'refused  {branch}  ({why})'
     for tree in held:
         if why := removed_approved(root, tree, quiet_s=quiet_s):
@@ -252,7 +233,16 @@ def discard(
     if git_out(root, 'update-ref', '-d', ref, sha) is None:
         return 1, f'FAILED   {branch}  (its worktree is gone; the branch delete at {sha[:10]} failed)'
     where = f'worktree {held[0]} and ' if held else ''
+    if not approved.strip():
+        return 0, f'discarded {where}local {branch} ({sha[:10]}) -- commit-free: origin holds every commit'
     return 0, f'discarded {where}local {branch} ({sha[:10]}) -- approved: "{approved.strip()}"'
+
+
+def _commit_free(root: Path, sha: str, held: Sequence[Path]) -> bool:
+    """Origin holds every commit of *sha* and no worktree in *held* has a change: discarding it loses nothing."""
+    if (git_out(root, 'rev-list', '--count', sha, '--not', '--remotes=origin') or '').strip() != '0':
+        return False
+    return all(git_out(tree, 'status', '--porcelain') == '' for tree in held)
 
 
 def _discard_refusal(
@@ -263,10 +253,11 @@ def _discard_refusal(
     *,
     sha: str,
     trees: tuple[tuple[Path, str], ...] | None,
+    free: bool = False,
 ) -> str:
     """Why :func:`discard` touches nothing, read before any delete; ``''`` when it may go on."""
-    if not approved.strip():
-        return '--approved "<the user words>" is required: the user decides a discard'
+    if not approved.strip() and not free:
+        return '--approved "<the user words>" is required: the lane holds work origin lacks; the user decides'
     if branch in branchset.declared:
         return 'declared in [tool.dev_lab.branchset]: the trunk and sessions are never discarded'
     if not sha:

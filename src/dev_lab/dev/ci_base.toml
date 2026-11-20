@@ -30,7 +30,7 @@
 #                 (GitHub refuses to enable auto-merge on a PR already mergeable, dev-lab#15); a merge the
 #                 job token makes starts no workflow, so it dispatches this one on integrate/main; it
 #                 runs after the parts, which gate it: every part PASS (user ruling 2026-11-04)
-#   review        LAST (user ruling 2026-11-05; integrator ruling M8 2026-11-06: the one-shot review runs at the
+#   review        LAST, ADVISORY (user ruling 2026-11-05; integrator ruling M8 2026-11-06: the one-shot review runs at the
 #                 first MERGE-READY head): only when merge-ready's decision called the head's review due -- every
 #                 other condition stands -- does `forge review run --pr N` post tests/review (a PR's run ONLY:
 #                 pull_request, or its dispatch by continue.yml with `pr` -- never pull_request_target, which would run a fork's code with this repository's secrets; Gitea's
@@ -117,6 +117,7 @@ PR_NUMBER = "${{ github.event.pull_request.number || inputs.pr }}"
 
 # ciworkflows isolates every other job and makes only this expanded setup's checkout credential-free.
 ["ci.yml".jobs.measurement]
+role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 name = "MEASUREMENT (selected tests, not a part)"
 if = "${{ github.event_name == 'workflow_dispatch' && (inputs.measurement_paths != '' || inputs.measurement_sha != '') }}"
 runs-on = "ubuntu-latest"
@@ -130,12 +131,13 @@ steps = [
 ]
 
 ["ci.yml".jobs.parts]
+role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
     { id = "pending", name = "Whether main still lacks the tip", if = "${{ env.PARTS_EVENT != 'pull_request' && github.ref == 'refs/heads/@integration@' }}", run = 'uv run --no-sync python -m dev_lab.dev.integrate pending "$HEAD_SHA" >> "$GITHUB_OUTPUT"' },
-    { id = "matrix", name = "The parts and their runners", if = "${{ steps.pending.outputs.pending != 'false' }}", run = 'echo "matrix=$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event "$PARTS_EVENT")" >> "$GITHUB_OUTPUT"' },
+    { id = "matrix", name = "The parts and their runners", if = "${{ steps.pending.outputs.pending != 'false' }}", run = 'matrix="$(uv run --no-sync python -m dev_lab.dev.jobparts matrix --runners hosted --event "$PARTS_EVENT")"; echo "matrix=$matrix" >> "$GITHUB_OUTPUT"' },
 ]
 
 # An empty matrix (a tip main already holds) runs no part, no absent-parts and no promote.
@@ -145,6 +147,7 @@ event = "${{ env.PARTS_EVENT }}"
 pending = "${{ steps.pending.outputs.pending }}"
 
 ["ci.yml".jobs.part]
+role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = "parts"
 if = "${{ needs.parts.outputs.matrix != '' }}"
@@ -153,6 +156,9 @@ runs-on = "${{ matrix.runs-on }}"
 steps = [
     { use-steps = "setup" },
     { name = "Produce and post the part", run = "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}" },
+    # A red, hung or cancelled part kept no log, so its cause was unreadable (document-lab tests/windows, 2026-11-18):
+    # the run's verify log is attached whatever ended the job (always(): a failure, a cancel, the job timeout).
+    { name = "Keep the part's verify log", if = "${{ always() }}", uses = "actions/upload-artifact@v4", with = { name = "verify-log-${{ matrix.part }}-${{ github.run_attempt }}", path = "**/verify/verify-*.log", if-no-files-found = "warn" } },
 ]
 
 # Records are attached as assets of the records prerelease (dev_lab.dev.forgerecords), hence contents: write.
@@ -165,6 +171,7 @@ fail-fast = false
 matrix = "${{ fromJSON(needs.parts.outputs.matrix) }}"
 
 ["ci.yml".jobs.absent-parts]
+role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["parts", "part"]
 if = "${{ always() && needs.parts.result == 'success' && needs.parts.outputs.matrix != '' }}"
@@ -180,6 +187,7 @@ actions = "read"  # jobparts.run_jobs: a part whose job concluded failed with no
 statuses = "write"
 
 ["ci.yml".jobs.security]
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 if = "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
 runs-on = "ubuntu-latest"
@@ -194,6 +202,7 @@ statuses = "write"
 pull-requests = "read"
 
 ["ci.yml".jobs.head-gates]
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 if = "${{ (github.event_name == 'pull_request' || inputs.pr != '') }}"
 runs-on = "ubuntu-latest"
@@ -220,7 +229,7 @@ pull-requests = "read"
 # branch's review declaration (forgereview_declared.review_at) -> the command; a PR into any other base is not reviewed.
 # The dev_lab door is the shared `door` steps': the dev-lab DOOR_SHA's uv.lock pins.
 ["ci.yml".jobs.review]
-served = true  # a judge repo renders it not (ciworkflows.served_only)
+role = "review"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 needs = ["merge-ready"]
 if = "${{ always() && (github.event_name == 'pull_request' || inputs.pr != '') && needs.merge-ready.outputs.due == 'true' }}"
 runs-on = "ubuntu-latest"
@@ -244,6 +253,7 @@ pull-requests = "write"
 issues = "write"
 
 ["ci.yml".jobs.merge-ready]
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["security", "head-gates", "part", "absent-parts"]
 if = "${{ always() && (github.event_name == 'pull_request' || inputs.pr != '') }}"
@@ -259,13 +269,14 @@ statuses = "write"
 pull-requests = "write"
 actions = "write"
 
-# THE MERGE JUDGED AGAIN once the review posted (numerics-lab #19, 2026-11-10): the review is the last gate, so
+# THE MERGE JUDGED AGAIN once the review posted (numerics-lab #19, 2026-11-10): the review runs last, so
 # merge-ready judged the head BEFORE tests/review stood and posted failure "waits on: its review". A status the job
 # token posts starts no workflow, and a GitHub-hosted runner has no tick, so this job runs merge-ready's ONE decision
 # step again after the review job -- whatever it posted, a verdict or a named skip -- and merges a head whose every
 # condition now stands. A separate job, not a step of `review`: that job holds the review key and acts on nothing
 # the PR supplies, so it never gets `contents: write` nor runs the head's environment.
 ["ci.yml".jobs.merge-rejudge]
+role = ["merge", "review"]  # re-judges after the CI review: rendered where both are bound to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["review"]
 if = "${{ always() && needs.review.result != 'skipped' && needs.review.result != 'cancelled' }}"
@@ -285,7 +296,7 @@ actions = "write"
 # PR head's, so the merging token runs no head's code; the schedule catches a status the job token posted (it starts
 # no workflow). merge-ready's own decision and a pending claim start nothing. A merge it makes starts no workflow, so
 # it dispatches the merge's smoke run on integrate/main, as merge-ready does. When the decision calls a head's review
-# due (the review is the last gate), the `review` job below reviews it, and a later tick merges it. The tick is also
+# due (the review runs last, advisory), the `review` job below reviews it, and a later tick merges it. The tick is also
 # GitHub's RECORDS PRUNE (`forge records prune`; Gitea's is serve's tick): on the schedule, never per status event,
 # else the records release fills to its 1000-asset cap and every part's post is refused (live 2026-11-13).
 ["merge-tick.yml"]
@@ -308,6 +319,7 @@ HEAD_SHA = "${{ github.sha }}"
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
 
 ["merge-tick.yml".jobs.merge-tick]
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 if = "${{ github.event_name != 'status' || (startsWith(github.event.context, 'tests/') && github.event.context != 'tests/merge-ready' && github.event.state != 'pending') }}"
 runs-on = "ubuntu-latest"
@@ -316,7 +328,7 @@ steps = [
     { use-steps = "setup" },
     { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready)"; echo "$said"; case "$said" in *"; merged"*) echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
     { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref @integration@ -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },
-    { name = "Prune the records home", if = "${{ !cancelled() && github.event_name != 'status' }}", run = "uv run --no-sync python -m dev_lab.dev.forge records prune" },
+    { name = "Prune the records home", role = "prune", if = "${{ !cancelled() && github.event_name != 'status' }}", run = "uv run --no-sync python -m dev_lab.dev.forge records prune" },
 ]
 
 ["merge-tick.yml".jobs.merge-tick.permissions]
@@ -325,14 +337,14 @@ statuses = "write"
 pull-requests = "write"
 actions = "write"
 
-# THE REVIEW THE TICK ASKS FOR (user ruling 2026-11-05: review is the last gate), on the merge tick's ONE cadence:
+# THE REVIEW THE TICK ASKS FOR (user ruling 2026-11-05: review runs last; advisory since 2026-11-11/12), on the merge tick's ONE cadence:
 # `forge review run --due` reviews every head the decision above called due, and resumes every head whose review
 # batch is still running (user ruling 2026-11-04: review calls are batched by default) from the batch state on its
 # PR -- polled, never resubmitted -- so a pending batch never waits for a human. A `status` event reviews only when
 # its decision called a head due. It runs the default branch's file, never a PR head's, with the review method and
 # key as the review job holds them.
 ["merge-tick.yml".jobs.review]
-served = true  # a judge repo renders it not (ciworkflows.served_only)
+role = "review"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 needs = ["merge-tick"]
 if = "${{ always() && (github.event_name != 'status' || needs.merge-tick.outputs.due == 'true') }}"
 runs-on = "ubuntu-latest"
@@ -357,14 +369,15 @@ issues = "write"
 # Pushes the fast-forwarded main and deletes every branch integration now contains (LANDED-BRANCHES-SWEPT,
 # closing a landed PR first) with the job token, hence contents: write and pull-requests: write.
 ["ci.yml".jobs.promote]
+role = "promote"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = ["parts", "absent-parts"]
 if = "${{ needs.parts.outputs.pending == 'true' }}"
 runs-on = "ubuntu-latest"
 steps = [
     { use-steps = "setup" },
-    { name = "Promote main", run = 'uv run --no-sync python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA" && git push origin main' },
-    { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", run = "uv run --no-sync python -m dev_lab.dev.branchprune sweep" },
+    { name = "Promote main", run = 'uv run --no-sync python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA"' },
+    { name = "Delete the branches integration now contains", role = "prune", if = "${{ !cancelled() }}", run = "uv run --no-sync python -m dev_lab.dev.branchprune sweep" },
 ]
 
 ["ci.yml".jobs.promote.permissions]
@@ -591,7 +604,7 @@ git checkout -q --detach "${HEAD_SHA:-origin/@integration@}"
 # the [tool.dev_lab.review] declaration of the integration branch the DEFAULT branch names (the trust chain at
 # ci.yml's review job; F-46e412ee799d, F-169e99e6c68c) and the tools, pinned by SHA (the base lock's dev-lab, and the ai-lab that dev-lab's lock pins) (test_the_review_job_runs_no_code_the_pr_supplies).
 # GitHub's ci.yml review keeps pull_request -- GitHub runs it from the merge ref with no secret for a fork.
-# REVIEW IS THE LAST GATE (user ruling 2026-11-05; integrator ruling M8 2026-11-06): a push starts nothing here. The
+# REVIEW RUNS LAST, ADVISORY (user ruling 2026-11-05; integrator ruling M8 2026-11-06): a push starts nothing here. The
 # ONE type is `labeled`, and the job runs only for reviewturn.REVIEW_LABEL, which the merge decision applies once
 # every other condition stands (reviewturn.review_turn, run by a serve: Gitea starts no workflow for its Actions
 # user's event). Still a pull_request_target run at the head, so the trust chain and reviewgate's run binding are
@@ -626,7 +639,7 @@ UV_CONCURRENT_BUILDS = "1"
 # Its two reads retry as reviewcode.forge_call does (a transient or a rate limit: 3 attempts, 3 s apart; an answered
 # refusal is final; a refused job token is an error annotation naming the forge host), pinned by a test.
 ["review.yml".jobs.review]
-served = true  # a judge repo renders it not (ciworkflows.served_only)
+role = "review"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 if = "${{ github.event.label.name == 'review-due' }}"
 runs-on = "review"
 steps = [
@@ -682,7 +695,7 @@ contents = "write"
 pull-requests = "write"
 issues = "write"
 
-# THE BUNDLE PREPARE (forgereview_pointer): a repo declaring [tool.dev_lab.review] where = "judge" is reviewed by an
+# THE BUNDLE PREPARE (forgereview_pointer): a repo whose review the family binds to a host (a judge) is reviewed by an
 # isolated judge host, which reads a bundle only as the `review-bundle` ARTIFACT of the newest concluded, successful
 # run of THIS workflow for the PR (event, workflow, pull request, head sha) -- located by the judge, never by a
 # status. Never declared by a repo and never keyed by its file name here: ciworkflows renders `_prepare` under
@@ -735,6 +748,8 @@ group = "review-prepare-${{ github.event.pull_request.number }}-${{ github.event
 cancel-in-progress = true
 
 [_prepare.by-forge.gitea.jobs.prepare]
+role = "review"  # the judge reviews the bundle this job prepares: rendered where review is bound to a host (a judge)
+by = "host"
 if = "${{ github.event.label.name == 'review-due' }}"
 runs-on = "light"
 steps = [
@@ -748,6 +763,8 @@ steps = [
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
 
 [_prepare.by-forge.github.jobs.prepare]
+role = "review"  # the judge reviews the bundle this job prepares: rendered where review is bound to a host (a judge)
+by = "host"
 if = "${{ github.event.pull_request.head.repo.full_name == github.repository }}"
 runs-on = "ubuntu-latest"
 steps = [
@@ -783,6 +800,7 @@ HEAD_SHA = "${{ github.sha }}"
 FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"
 
 ["continue.yml".jobs.continue]
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 env = { GITHUB_TOKEN = "${{ github.token }}" }
 runs-on = "ubuntu-latest"
 steps = [
@@ -829,7 +847,7 @@ FAMILY_SOURCE = "${{ github.server_url }}/${{ github.repository_owner }}/"  # th
 GITHUB_TOKEN = "${{ github.token }}"
 
 ["review-again.yml".jobs.again]
-served = true  # a judge repo renders it not (ciworkflows.served_only)
+role = "review"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 if = "${{ github.event.issue.pull_request && (contains(github.event.comment.body, '<!-- lab-commons:review-again:') || contains(github.event.comment.body, '<!-- lab-commons:review-carry:')) }}"
 runs-on = "ubuntu-latest"
 steps = [
@@ -845,15 +863,16 @@ statuses = "write"
 pull-requests = "write"
 issues = "write"
 
-# GITEA PROMOTES ON THE HOST, NEVER HERE: on Gitea the trunk's one promoter is `dev_lab.ops` `[ops.promote]`, a timer
-# on the forge host (src/dev_lab/ops/promote.py). A workflow promoting too would be a second promoter racing its
-# pushes to main, and would push main on a repo whose host deliberately does not promote it. GitHub promotes in ci.yml.
+# WHO PROMOTES IS THE FAMILY'S BINDING of `promote` (dev_lab.dev.roles, D73): "ci" renders ci.yml's promote job; a
+# `{ host = ... }` is that host's `dev_lab.ops` `[ops.promote]` timer (src/dev_lab/ops/promote.py), and nothing
+# here -- one promoter per repo, never two racing their pushes to main.
 
-# GITEA MERGES IN ITS OWN CI (P3, user ruling 2026-11-02): a PR into integration whose review passed and whose head is
-# safe and clean is merged by THIS job -- `forge merge ready` with no number judges every open PR into integration by
-# the ONE decision (dev_lab.dev.forgemergeready.ready) and merges each ready head as the job token -- then the landed PRs
-# are closed (dev_lab.dev.prlanded) and the landed branches swept (branchprune sweep). Declaring this table is the
-# opt-in (forgemerge.ci_merges): the workstation's `forge serve` then merges, closes and sweeps nothing for the repo.
+# A GITEA REPO WHOSE `merge` IS BOUND TO "ci" MERGES IN ITS OWN CI (P3 2026-11-02; D73): a PR into integration whose
+# head is safe and clean is merged by THIS job -- `forge merge ready` with no number judges every open PR into
+# integration by the ONE decision (dev_lab.dev.forgemergeready.ready) and merges each ready head as the job token --
+# then, where `prune` is bound to "ci" too, the landed PRs are closed (dev_lab.dev.prlanded) and the landed branches
+# swept (branchprune sweep). An hpc executor performs only the roles bound to it, so it then merges, closes and
+# sweeps nothing.
 # TRIGGERS. Gitea 1.27 has no `status` event, so a posted status starts nothing: a check workflow completing
 # (workflow_run, read from the DEFAULT branch; its `workflows` are DERIVED by ciworkflows.follow_checks from what
 # the repo renders, never named here) and a schedule are the triggers; tests/security, posted by a serve,
@@ -892,6 +911,7 @@ UV_CONCURRENT_BUILDS = "1"
 # The decision validates the review declaration (lab_commons.units: pint, numpy, pydantic) and runs the repo's
 # message row (dev_lab.dev.commitmsg), so this door installs the whole lock -- a hand list of that closure would be a second lock.
 ["merge.yml".jobs.merge]
+role = "merge"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 runs-on = "light"
 steps = [
     { use-steps = "reach" },
@@ -901,11 +921,11 @@ steps = [
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
 "$REVIEW_PYTHON" -I -m dev_lab.dev.forge merge ready
 ''' },
-    { name = "Close the landed PRs", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+    { name = "Close the landed PRs", role = "prune", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
 "$REVIEW_PYTHON" -I -m dev_lab.dev.prlanded
 ''' },
-    { name = "Delete the branches integration now contains", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
+    { name = "Delete the branches integration now contains", role = "prune", if = "${{ !cancelled() }}", env = { GITHUB_TOKEN = "${{ github.token }}" }, run = '''
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$FORGE_URL/.extraHeader" GIT_CONFIG_VALUE_0="Authorization: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
 "$REVIEW_PYTHON" -I -m dev_lab.dev.branchprune sweep
 ''' },

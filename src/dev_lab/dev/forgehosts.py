@@ -66,6 +66,7 @@ from lab_commons.log import emit
 from dev_lab.dev import forgerunstate, hpcusage
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import (
     ListingIncomplete,
@@ -76,7 +77,7 @@ from dev_lab.dev.forgepulls import (
     marker,
     marker_kinds,
 )
-from dev_lab.dev.forgework import Client, Comment, client_for
+from dev_lab.dev.forgework import Client, Comment
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import origin_url
 
@@ -213,6 +214,19 @@ def is_private(client: Client) -> bool:
     """Whether the forge says this repository is private; an answer without the flag is read as public."""
     repo = client.call('GET', client.repo)
     return isinstance(repo, Mapping) and repo.get('private') is True
+
+
+def public_siblings(client: Client) -> tuple[str, ...]:
+    """The names of this repository's owner's repos the forge says are public (dev-lab#791 wall 3); one page of 100.
+
+    Both forges answer ``/users/<owner>/repos``; a row without the flag is read as public, like :func:`is_private`.
+    """
+    owner = client.repo.strip('/').split('/')[1]  # ``/repos/<owner>/<repo>``
+    rows = client.call('GET', f'/users/{owner}/repos?per_page=100')
+    if not isinstance(rows, list):
+        return ()
+    published = (row for row in rows if isinstance(row, Mapping) and row.get('private') is not True)
+    return tuple(str(row['name']) for row in published if row.get('name'))
 
 
 def is_hosts(raw: Mapping[str, Any]) -> bool:

@@ -33,21 +33,12 @@ from dev_lab.dev import branchnotices, forge, forgecred, pradmit
 from dev_lab.dev.forge import Forge, NoCredential
 from dev_lab.dev.forgeclaim import forge_now
 from dev_lab.dev.forgecli import issue_and_pr, pr_close
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgememo import ReadMemo
 from dev_lab.dev.forgepages import ISSUE_PAGE
 from dev_lab.dev.forgestamp import provenance
-from dev_lab.dev.forgework import (
-    ACTIONS_BOT,
-    GITEA,
-    GITHUB,
-    Client,
-    Comment,
-    Issue,
-    PullRequest,
-    backend_for,
-    client_for,
-)
+from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITHUB, Client, Comment, Issue, PullRequest, backend_for
 from dev_lab.dev.netverb import Diagnosis, Disposition
 
 
@@ -741,4 +732,85 @@ def test_pr_close_without_a_reason_is_refused_before_any_call(server, tmp_path: 
     _answer('PATCH', '/api/v1/repos/o/r/pulls/9', (200, {**_PR, 'state': 'closed'}))
     argv = ['pr', 'close', '9', '--reason', 'superseded']
     assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
-    assert [r['method'] for r in _Recorder.received] == ['POST', 'PATCH']
+    # The writes only: the visibility and public-name reads before them are cached per process, so whether they are
+    # sent here depends on which parametrized case ran first (the flake seen 2026-11-19).
+    assert [r['method'] for r in _Recorder.received if r['method'] != 'GET'] == ['POST', 'PATCH']
+
+
+class _Answer:
+    """A canned HTTP/1.1 answer: *closing* is the server saying ``Connection: close``."""
+
+    def __init__(self, payload: bytes, *, closing: bool = False) -> None:
+        self.status, self.payload, self.will_close = 200, payload, closing
+
+    def getheader(self, _name: str) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.payload
+
+
+class _Socket:
+    """One connection the counting transport opened: it answers until it is *dropped* (a server idle timeout)."""
+
+    def __init__(self, *, closing: bool) -> None:
+        self.closing, self.closed, self.dropped, self.sent = closing, False, False, []
+
+    def request(self, method: str, path: str, body=None, headers=None) -> None:
+        if self.dropped:
+            idle = 'the forge closed an idle connection'
+            raise ConnectionResetError(idle)
+        self.sent.append((method, path))
+
+    def getresponse(self) -> _Answer:
+        return _Answer(b'[]', closing=self.closing)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _counting(*, closing: bool = False) -> tuple[list[_Socket], object]:
+    opened: list[_Socket] = []
+
+    def transport(_host: str, _timeout: float) -> _Socket:
+        opened.append(_Socket(closing=closing))
+        return opened[-1]
+
+    return opened, transport
+
+
+def test_reads_reuse_one_connection_and_writes_open_their_own() -> None:
+    """A TLS connection costs a connect and a handshake (~0.3 s each on a loaded box, 2026-11-18): reads keep one.
+
+    PLANTED CONTROLS: a server that says ``Connection: close`` gets a fresh connection per read, and a write
+    never rides a kept connection (a lost answer there could not be told from a write never sent).
+    """
+    opened, transport = _counting()
+    one = Client(Forge('forge.example.org', 'o', 'r'), 'tok', transport=transport)
+    for _ in range(3):
+        one.call('GET', '/api/v1/repos/o/r/pulls')
+    assert len(opened) == 1
+    assert len(opened[0].sent) == 3
+    one.call('POST', '/api/v1/repos/o/r/issues', {'title': 't'})
+    assert len(opened) == 2
+    assert opened[1].closed, 'a write closes its own connection'
+
+    closing, transport = _counting(closing=True)
+    two = Client(Forge('forge.example.org', 'o', 'r'), 'tok', transport=transport)
+    two.call('GET', '/api/v1/repos/o/r/pulls')
+    two.call('GET', '/api/v1/repos/o/r/pulls')
+    assert len(closing) == 2
+    assert all(conn.closed for conn in closing)
+
+
+def test_a_kept_connection_the_forge_dropped_is_replaced_without_a_retry_wait() -> None:
+    """An idle kept connection the server closed is not a forge failure: the read goes out once more, fresh."""
+    opened, transport = _counting()
+    slept: list[float] = []
+    one = Client(Forge('forge.example.org', 'o', 'r'), 'tok', transport=transport, sleep=slept.append)
+    one.call('GET', '/api/v1/repos/o/r/pulls')
+    opened[0].dropped = True
+    assert one.call('GET', '/api/v1/repos/o/r/pulls') == []
+    assert len(opened) == 2
+    assert opened[0].closed
+    assert slept == []

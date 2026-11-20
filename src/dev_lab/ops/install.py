@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import json
 import shlex
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Final
 
-from lab_commons.config import FAMILY_TABLE
+from lab_commons.config import CONFIG_ENV, FAMILY_TABLE
 
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.taskkeys import REVIEW_TASK, loader
@@ -37,14 +39,14 @@ from dev_lab.ops.access import Prepared, keys_file, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.backuprole import Backup
 from dev_lab.ops.caddy import install_caddy
-from dev_lab.ops.config import Judge, OpsConfig, Probe
+from dev_lab.ops.config import Breakglass, Judge, OpsConfig, Probe
 from dev_lab.ops.installpaths import Chown, keys_dir, prepare_paths, under
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.totp import write_private
 from dev_lab.ops.upgradefollow import AUDIT
 from dev_lab.supervise.daemon import watchdog_seconds
 
-__all__ = ['Rendered', 'files', 'install']
+__all__ = ['BREAKGLASS_MACHINE', 'Rendered', 'family_env', 'files', 'install']
 
 _UNIT = 'dev-lab-ops'
 #: The supervisor's own service.
@@ -110,10 +112,27 @@ def _judge(config: OpsConfig) -> dict[str, str]:
     )
     rendered = {f'etc/systemd/system/{_UNIT}-judge.service': service, f'etc/systemd/system/{_UNIT}-judge.timer': timer}
     if role.family:  # the judge's machine file: its family layer, read under the HOME the unit sets
-        keys = [key for key in ('source', 'file', 'max_age') if key in role.family]
-        table = ''.join(f'{key} = {json.dumps(role.family[key])}\n' for key in keys)
-        rendered[_judge_machine_file(role).lstrip('/')] = f'[{FAMILY_TABLE}]\n{table}'
+        rendered[_judge_machine_file(role).lstrip('/')] = _family_machine_file(role.family)
     return rendered
+
+
+def _family_machine_file(family: Mapping[str, Any]) -> str:
+    """A lab-commons machine file holding only *family* as its ``[family]`` table -- the one way a role gets one."""
+    keys = [key for key in ('source', 'file', 'max_age') if key in family]
+    return f'[{FAMILY_TABLE}]\n' + ''.join(f'{key} = {json.dumps(family[key])}\n' for key in keys)
+
+
+#: The machine file break-glass's serve and tick read (root-relative): its ``[family]`` table only.
+BREAKGLASS_MACHINE: Final = 'etc/dev-lab/ops/breakglass-machine.toml'
+
+
+def family_env(role: Breakglass | None) -> dict[str, str]:
+    """The environment pointing lab-commons at break-glass's rendered machine file; none without a declared family.
+
+    Break-glass runs as root (its forced command sudoes, its tick has no ``User=``), so it cannot rely on a HOME
+    layout as the judge does: the verb sets :data:`~lab_commons.config.CONFIG_ENV` itself before it reads a role.
+    """
+    return {CONFIG_ENV: f'/{BREAKGLASS_MACHINE}'} if role is not None and role.family else {}
 
 
 def _judge_machine_file(role: Judge) -> str:
@@ -139,10 +158,12 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
         '[Unit]\nDescription=Break-glass wave tick (dev_lab.ops)\n'
         f'[Timer]\nOnCalendar={role.tick}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
     )
+    machine = {BREAKGLASS_MACHINE: _family_machine_file(role.family)} if role.family else {}
     return {
         f'etc/systemd/system/{_UNIT}-breakglass-tick.service': tick_service,
         f'etc/systemd/system/{_UNIT}-breakglass-tick.timer': tick_timer,
         **forcecommand.files(_UNIT, role.account, role.keys, _door(config, 'breakglass', 'serve')),
+        **machine,
     }
 
 

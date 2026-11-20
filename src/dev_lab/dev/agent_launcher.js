@@ -62,17 +62,22 @@ try {
   process.exit(1);
 }
 
+// The main checkout is asked of git only when it is needed -- this checkout has no interpreter, or a fault names the
+// bootstrap door (HOOK-UNDER-FIVE-SECONDS, D24): a git start on every hook cost ~80 ms of the event's five seconds.
 const roots = [process.env.CLAUDE_PROJECT_DIR || process.cwd()];
-try {
-  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
-    cwd: roots[0],
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim();
-  roots.push(path.dirname(common));
-} catch {}
+function withMain() {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd: roots[0],
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    roots.push(path.dirname(common));
+  } catch {}
+  return roots;
+}
 
-const python = roots.map(interpreter).find(Boolean);
+const python = interpreter(roots[0]) || withMain().slice(1).map(interpreter).find(Boolean);
 if (!python) {
   process.stderr.write(`[hook] skipped ${process.argv.slice(2).join(' ')}: no .venv interpreter\n`);
   process.exit(0);
@@ -86,7 +91,7 @@ if (!fault) {
   process.stderr.write(stderr);
   process.exit(run.status === null ? 1 : run.status);
 }
-const main = roots[roots.length - 1];
+const main = (roots.length > 1 ? roots : withMain())[roots.length - 1];
 const behind = staleness(python);
 const door = `${python} -m dev_lab.dev.dep --bootstrap ${main}`;
 process.stderr.write(

@@ -16,9 +16,11 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from _roles_fixtures import EVERY_CI, HPC_REPO, carry
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.retired import RETIRED
 
+from dev_lab.dev import venvpointer
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount import deploy, tick
 from dev_lab.dev.hpcaccount import spec as deploy_spec
@@ -26,6 +28,7 @@ from dev_lab.dev.hpcaccount import steps as deploy_steps
 from dev_lab.dev.hpcaccount.account import UNREACHED
 from dev_lab.dev.hpcaccount.fleet import grant_slice
 from dev_lab.dev.hpcaccount.steps import Tools
+from dev_lab.dev.roles import ROLES_ENV
 
 URL: Final = 'https://forge.example/team'
 LAB: Final = ('--repo', f'dev-lab={URL}/dev-lab.git@trunk')
@@ -74,8 +77,7 @@ if 'ls-remote' in args:
 if args[0] == 'clone':
     target = pathlib.Path(args[-1])
     (target / '.git').mkdir(parents=True)
-    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n'
-                                           '[tool.dev_lab.protection]\nproducer = "hpc"\n')
+    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n')
 """
 
 FAKE_ANSWER: Final = r"""
@@ -277,6 +279,28 @@ def test_the_venv_is_built_once_per_declaration(box: Box) -> None:
     assert box.logged().count('uv sync --extra dev') == 3  # one per repo, not per run
 
 
+def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(box: Box) -> None:
+    """W2: a build goes into a FRESH ``.venvs/<name>`` and only then becomes current; the live one is never touched.
+
+    PLANTED: alpha's install recipe (part of the env key) moves after the first deploy -- the second deploy must name
+    a different environment and leave the first one in place (a tick running from it keeps its files).
+    """
+    assert box.run(*DECLARE) == 0
+    alpha = box.home / deploy_spec.DEFAULT_ROOT / 'alpha'
+    first = venvpointer.named(alpha)
+    assert first is not None, 'the build is published through the pointer'
+    assert (first / '.lab-deploy-env').is_file()
+    pyproject = alpha / 'pyproject.toml'
+    pyproject.write_text(
+        pyproject.read_text(encoding='utf-8').replace('--extra dev', '--extra moved'), encoding='utf-8'
+    )
+    assert box.run() == 0
+    second = venvpointer.named(alpha)
+    assert second is not None
+    assert second != first, 'a moved key never syncs into the live environment'
+    assert (first / '.lab-deploy-env').is_file(), 'the passed-over environment is left for reclaim, not rewritten'
+
+
 def _overlays(box: Box) -> list[str]:
     return [line for line in box.logged().splitlines() if '--reinstall-package lab-commons' in line]
 
@@ -359,7 +383,7 @@ def test_a_tool_is_probed_by_its_version_in_the_tick_environment(box: Box, monke
     monkeypatch.setattr(deploy, '_runs', lambda _sh, env, tool: probed.append((env, tool)) or True)
     monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
     assert box.run(*DECLARE) == 0
-    assert {tool for _env, tool in probed} == {'uv', 'cargo'}
+    assert {tool for _env, tool in probed} == {'uv', 'rclone', 'cargo'}
     assert all(env == deploy_spec.tick_environment(box.home, [str(Path('/x'))]) for env, _tool in probed)
 
 
@@ -538,6 +562,7 @@ def test_a_setup_with_spaces_semicolons_and_quotes_reaches_bash_verbatim(tmp_pat
 
 FAKE_RCLONE: Final = r"""
 import pathlib, sys
+
 with pathlib.Path(sys.argv[1]).open('a') as f: f.write('rclone ' + ' '.join(sys.argv[3:]) + '\n')
 if sys.argv[2] != 'present':
     sys.stderr.write("didn't find section in config file\n"); sys.exit(1)
@@ -715,22 +740,17 @@ def test_a_tick_period_cron_cannot_keep_is_refused(tmp_path: Path, minutes: str)
         _cron_spec(f'\n[schedule]\ntick_minutes = {minutes}\n', tmp_path)
 
 
-def _produced_by(box: Box, name: str, producer: str) -> None:
-    """Rewrite checkout *name*'s declaration so its producer is *producer*."""
-    pyproject = box.home / deploy_spec.DEFAULT_ROOT / name / 'pyproject.toml'
-    text = pyproject.read_text(encoding='utf-8').replace('producer = "hpc"', f'producer = "{producer}"')
-    pyproject.write_text(text, encoding='utf-8')
+def test_an_actions_repo_is_kept_fresh_but_its_queue_is_never_served(
+    box: Box, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Serving is the family's binding (D73), never a flag in the account's file.
 
-
-def test_an_actions_repo_is_kept_fresh_but_its_queue_is_never_served(box: Box, tmp_path: Path) -> None:
-    """Serving is the repo's OWN declaration (user ruling 2026-11-16), never a flag in the account's file.
-
-    An ``actions`` checkout is ticked -- refreshed, the kit's own tick the one writer of the kit -- and never served.
-    PLANTED CONTROL: alpha, declaring ``hpc``, is served.
+    A checkout with no role bound to an HPC executor is ticked -- refreshed, the kit's own tick the one writer of the
+    kit -- and never served. PLANTED CONTROL: alpha, bound to the HPC, is served.
     """
     assert box.run(*DECLARE) == 0
-    _produced_by(box, 'dev-lab', 'actions')
-    _produced_by(box, 'beta', 'actions')
+    bound = {'alpha': HPC_REPO}
+    monkeypatch.setattr(deploy_spec, 'roles_at', lambda checkout: bound.get(checkout.name, EVERY_CI))
     spec = deploy_spec.load(box.machine)
     assert spec is not None
     assert deploy_spec.served(spec, box.home) == {'alpha'}
@@ -747,24 +767,25 @@ def test_a_repo_row_declaring_the_retired_serve_flag_is_refused_by_name(box: Box
     assert box.run(*DECLARE) == 0
     text = box.machine.read_text(encoding='utf-8')
     box.machine.write_text(text.replace('beta.git", ref = "trunk" }', 'beta.git", ref = "trunk", serve = true }'))
-    with pytest.raises(ValueError, match=r'beta declare serve, which is retired.*producer'):
+    with pytest.raises(ValueError, match=r'beta declare serve, which is retired.*family binds'):
         deploy_spec.load(box.machine)
 
 
-def test_a_checkout_declaring_a_malformed_producer_is_released_by_name(
-    box: Box, capsys: pytest.CaptureFixture[str]
+def test_a_checkout_whose_roles_are_unbound_is_released_by_name(
+    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every wall teaches: a malformed producer is named on the tick; an ABSENT one is actions, never served."""
+    """Every wall teaches: an unbound repo is named on the tick; one bound to CI is refreshed, never served."""
     assert box.run(*DECLARE) == 0
     pyproject = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
     served: list[tuple[list[str], Path, str]] = []
     _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n')
-    assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: absent reads as actions -- refreshed, not served'
-    _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n[tool.dev_lab.protection]\nproducer = "box"\n')
+    carry(monkeypatch, EVERY_CI)
+    assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: every role on CI -- refreshed, not served'
+    monkeypatch.delenv(ROLES_ENV)
     capsys.readouterr()
     assert _tick(box, 'beta', served) == 2
     assert served == []
-    assert "declares producer = 'box'" in capsys.readouterr().err
+    assert 'the roles binding lives in the family layer' in capsys.readouterr().err
 
 
 def _as_role(box: Box, role: str | None) -> None:
@@ -993,3 +1014,9 @@ def test_a_research_deploy_naming_a_host_outside_its_grant_is_refused(
     assert box.run(*argv, host='login04.int.cluster') == 2
     assert 'elsewhere.example' in capsys.readouterr().err
     assert not box.machine.exists()
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

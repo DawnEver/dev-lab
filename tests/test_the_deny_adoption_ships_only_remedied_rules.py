@@ -30,6 +30,7 @@ import json
 import pytest
 from _arch_corpus import ROOT
 
+from dev_lab.dev import venvpath
 from dev_lab.dev.hook_adoption import (
     HookAdoption,
     assert_shippable,
@@ -122,7 +123,7 @@ def test_every_shipped_reason_names_an_exit_that_exists_here() -> None:
         assert row['reason'].strip(), f'{row["name"]} ships an empty reason'
         remedy = _REMEDIES.get(row['name'])
         if remedy is not None:
-            assert remedy.command in row['reason'], f'{row["name"]} does not name this repo command'
+            assert venvpath.slotted(remedy.command) in row['reason'], f'{row["name"]} does not name this repo command'
     assert denies(DENY_RULES, _VERIFY.command, _REMEDIES) is None, (
         'the verify command this repo routes a refused test line to is itself refused by the registry -- '
         'that is the sealed road reached by a different street'
@@ -135,7 +136,19 @@ def test_the_rendered_file_is_the_engine_s_own_schema() -> None:
     assert rows, 'the render read empty -- an unread registry is not a shipped one'
     assert render(_ADOPTION).endswith('\n')
     for row in rows:
-        engine_keys = {'name', 'pattern', 'matches', 'allow', 'scope', 'severity', 'when', 'admits', 'asks', 'reason'}
+        engine_keys = {
+            'name',
+            'pattern',
+            'matches',
+            'allow',
+            'scope',
+            'severity',
+            'when',
+            'admits',
+            'asks',
+            'needs',
+            'reason',
+        }
         assert set(row) <= engine_keys, f'unknown key in {row["name"]}'
         assert {'name', 'pattern', 'matches', 'reason'} <= set(row)
 

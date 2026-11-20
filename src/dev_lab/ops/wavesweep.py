@@ -18,7 +18,8 @@ The sweep only decides WHICH PRs to ask for:
 - a PR whose admission or merge is refused (off the integration branch, the forge's own refusal) is
   skipped with its reason logged, never forced, and the sweep goes on: one PR never stops the tick;
 - a PR the admission holds back for its own consent (``needs-consent``, :meth:`Server._admit`) is skipped and
-  logged once per wave by the server; *land* answers ``None`` for it. A skip spends none of the cap.
+  logged once per wave by the server; *land* answers ``None`` for it. A HELD PR (the ``hold`` label, user ruling
+  D48) is skipped the same way, its log naming the release door. A skip spends none of the cap.
 
 Every merge counts against the wave's cap; the merge that reaches it closes the wave, whose ONE summary is the alert.
 """
@@ -37,7 +38,7 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import policy_from
-from dev_lab.dev.producers import producer_from
+from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
 
 __all__ = ['Listing', 'Pull', 'integration_at', 'reason_of', 'sweep']
@@ -83,11 +84,11 @@ def reason_of(wave: str) -> str:
     return f'wave {wave} lands what is green: the review is waived, its security and test parts stand green'
 
 
-def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, producer: str) -> bool:
+def _waits_for_the_wave(posted: Sequence[CommitStatus], head: str, *, tests: str) -> bool:
     """Whether *head* is green as its *producer* posts it (:func:`green_waits`) yet not already merge-ready."""
     if _stands(posted, MERGE_READY_CONTEXT):
         return False
-    return not green_waits(head, posted, producer=producer)
+    return not green_waits(head, posted, tests=tests)
 
 
 def _stands(posted: Sequence[CommitStatus], context: str) -> bool:
@@ -120,8 +121,8 @@ def sweep(
         for pull in forge.open_pulls():
             if pull.draft or not _integrates(forge, pull.base, url):
                 continue
-            producer = producer_from(forge.declaration(pull.base), f'{url}@{pull.base}:pyproject.toml')
-            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head, producer=producer):
+            tests = roles_of_url(url).kind(TESTS)
+            if not _waits_for_the_wave(forge.statuses(pull.head), pull.head, tests=tests):
                 continue
             try:
                 landed = land(requests.Merge(forge_of_url(url).identity, pull.number, pull.head, reason_of(held)))

@@ -60,12 +60,15 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Final, TextIO
 
+from lab_commons import storage
 from lab_commons.census import Process, processes
 from lab_commons.log import emit
 
+from dev_lab.dev import gitdirs
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 from dev_lab.dev.venvpath import PYTHON_SLOT, current_os_name, expand_interpreter, running_interpreter
+from dev_lab.dev.venvpointer import ALIAS, POINTER
 
 __all__ = [
     'NOT_THE_TREE',
@@ -87,8 +90,21 @@ __all__ = [
 #: The deny row both halves of the guard render their refusal from (:mod:`dev_lab.dev._deny_liverun_row`).
 RULE_ID: Final = str(LIVE_RUN['id'])
 
-#: Top-level directories of a checkout that no run reads: a write there never changes what a run executes.
-NOT_THE_TREE: Final = ('output', '.claude', '.venv', '.venvs', '.venv-current')
+#: The storage kinds no run READS from the tree (:data:`lab_commons.storage.KINDS`): ``build`` is not one -- a run
+#: may load a native artefact built there.
+_UNREAD_KINDS: Final = ('output', 'venvs', 'worktrees', 'vendor_cache', 'temp')
+
+#: Top-level directories of a checkout that no run reads: a write there never changes what a run executes. Derived
+#: from the in-tree defaults of :data:`_UNREAD_KINDS` (one spelling of each), plus the venv alias and pointer.
+NOT_THE_TREE: Final = tuple(
+    dict.fromkeys(
+        [
+            *(Path(default).parts[0] for kind in _UNREAD_KINDS if (default := storage.KINDS[kind])),
+            ALIAS,
+            POINTER,
+        ]
+    )
+)
 
 #: The interpreter whose cwd is READ: ``python -m`` puts the cwd first on ``sys.path``. Not node: Claude Code and
 #: its MCP servers are node processes sitting in the checkout for the whole session (measured 2026-10-19).
@@ -125,11 +141,7 @@ def _key(path: Path | str) -> str:
 
 def checkout_of(path: Path | str) -> Path | None:
     """The nearest directory at or above *path* holding a ``.git`` (a worktree's is a file); ``None`` outside one."""
-    at = Path(os.path.normpath(Path(path).absolute()))
-    for candidate in (at, *at.parents):
-        if (candidate / '.git').exists():
-            return candidate
-    return None
+    return gitdirs.checkout_of(Path(path))
 
 
 def in_tree(path: Path | str, root: Path | str) -> bool:
@@ -306,7 +318,26 @@ def removal_holders(root: Path | str, *, census: Census = processes, me: int | N
     ancestor, judged that tree free, and deleted every tracked file before the held interpreter refused.
     """
     mine = os.getpid() if me is None else me
-    return tuple(one for one in census() if one.pid != mine and one.executable and _occupies(one, root))
+    table = tuple(census())
+    asker = _launch_chain(table, mine)
+    return tuple(one for one in table if one.pid not in asker and one.executable and _occupies(one, root))
+
+
+def _launch_chain(table: Sequence[Process], me: int) -> set[int]:
+    """The asker and every ancestor handing on its very same arguments (dev-lab#791).
+
+    A venv launcher re-spawns the base interpreter with them, so ``worktrees --remove`` refused itself as
+    ``live run: pid N (dev_lab.dev.worktrees)``. Any other ancestor -- a session, a shell -- still holds the tree.
+    """
+    by_pid = {one.pid: one for one in table}
+    chain, at = {me}, me
+    words = _arguments(by_pid[me]) if me in by_pid else None
+    while words is not None and (parent := by_pid.get(by_pid[at].ppid)) and parent.pid not in chain:
+        if _arguments(parent) != words:
+            break
+        chain.add(parent.pid)
+        at = parent.pid
+    return chain
 
 
 #: A holder that is a whole agent SESSION, not a run: an ai-lab session wrapper or the Claude CLI itself.

@@ -40,7 +40,7 @@ import tomllib
 from pathlib import Path
 from typing import Final
 
-from _arch_corpus import ROOT, SOURCE_FLOOR, TEST_FLOOR, assert_floor, rel, source_modules, suite_modules
+from _arch_corpus import ROOT, SOURCE_FLOOR, TEST_FLOOR, assert_floor, corpus_key, source_modules, suite_modules
 
 from dev_lab.dev.failprint import subject_lines, subjects_of
 
@@ -208,6 +208,24 @@ ALLOWED: Final[dict[Site, str]] = {
         'arg-type',
         'run(pdoc_argv(modules, out_dir, **options), cwd=root)',
     ): 'pdoc_argv takes `**options: object` so any caller option reaches it; run() is typed on str',
+    (
+        'src/dev_lab/dev/storage.py',
+        'PLC0415',
+        'from dev_lab.dev.artefactstores import ArtefactRefused, check_rclone_config',
+    ): 'the forge journal and intent writers import storage.output_path, and artefactstores reaches them '
+    'through the forge layer, so a module-scope import here is a cycle; render() is a rare door',
+    (
+        'src/dev_lab/dev/storage.py',
+        'PLC0415',
+        'from dev_lab.dev.toolrelease import ToolAbsent, resolve',
+    ): 'every writer imports storage (the walls ledger on each Stop, inside the hook budget); only the rclone '
+    'render needs the pinned-tool table, so it is read where render runs',
+    (
+        'src/dev_lab/dev/storage.py',
+        'no-cover',
+        'if found is None:',
+    ): 'output always has an in-tree default (lab_commons.storage.root), so the refusal is a guard no '
+    'declaration can reach; it keeps the return type a Path instead of Path | None',
     (
         'src/dev_lab/dev/forgerecords.py',
         'PLC0415',
@@ -461,7 +479,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/branchnotices.py',
         'PLC0415',
-        'from dev_lab.dev.forgework import client_for',
+        'from dev_lab.dev.forgeclient import client_for',
     ): 'the same hook-latency reason: the client is built only on a cache miss, inside the bounded reader thread',
     (
         'src/dev_lab/dev/branchnotices.py',
@@ -499,7 +517,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
-        'from dev_lab.dev.forgework import client_for',
+        'from dev_lab.dev.forgeclient import client_for',
     ): 'the same leaf-at-import reason: the client is built only by the CLI entry point',
     (
         'src/dev_lab/dev/forgenotice.py',
@@ -521,6 +539,41 @@ ALLOWED: Final[dict[Site, str]] = {
         'override',
         'def encoding(self) -> str:',
     ): "a routed stream's encoding is its calling thread's target's, so it is a property where typeshed has a field",
+    (
+        'src/dev_lab/dev/machineguard.py',
+        'PLC0415',
+        'from dev_lab.dev.venvpath import running_interpreter',
+    ): 'deferred: the machine-file guard imports nothing heavy on the hook path; only the rendered door text needs it',
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'S310',
+        "return urllib.request.Request(url, headers={'User-Agent': USER_AGENT})",
+    ): "the URL is a pinned release's https download URL from the module's own table, never input",
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'arg-type',
+        'shutil.copyfileobj(body, out)',
+    ): "urlopen's answer is a binary file object; typeshed types it as the union it opens",
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'attr-defined',
+        "with answer as body, to.open('wb') as out:",
+    ): "urlopen's answer is a context manager at runtime; typeshed's union lacks it",
+    (
+        'tests/test_dev_forgewaves.py',
+        'E731',
+        'send = lambda _t, r: calls.append(r) or (0, _STATUS)',
+    ): 'a one-line recording fake handed to the code under test',
+    (
+        'tests/test_dev_toolrelease.py',
+        'arg-type',
+        'raise urllib.error.HTTPError(url, 403, reason, None, None)',
+    ): 'the fake refusal needs no headers or body; the code under test reads only the status',
+    (
+        'tests/test_dev_toolrelease.py',
+        'attr-defined',
+        "seen.append(req.get_header('User-agent'))",
+    ): 'the fake opener receives the Request the code built; typeshed types it as str | Request',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')
@@ -560,7 +613,7 @@ def python_sites(paths: tuple[Path, ...]) -> tuple[Site, ...]:
             if not codes:
                 continue
             anchor = lines[token.start[0] - 1][: token.start[1]].strip() or token.string.strip()
-            out.extend((_name(path), code, anchor) for code in codes)
+            out.extend((corpus_key(path), code, anchor) for code in codes)
     return tuple(out)
 
 
@@ -568,7 +621,7 @@ def pyproject_sites(pyproject: Path) -> tuple[Site, ...]:
     """Every per-file ``ruff`` ignore -- a suppression that appears in no Python file at all."""
     lint = tomllib.loads(pyproject.read_text(encoding='utf-8')).get('tool', {}).get('ruff', {}).get('lint', {})
     tables = (lint.get('per-file-ignores') or {}, lint.get('extend-per-file-ignores') or {})
-    return tuple((_name(pyproject), code, glob) for t in tables for glob, codes in t.items() for code in codes)
+    return tuple((corpus_key(pyproject), code, glob) for t in tables for glob, codes in t.items() for code in codes)
 
 
 def undeclared_and_orphaned(sites: tuple[Site, ...], declared: dict[Site, str]) -> tuple[str, ...]:
@@ -592,13 +645,6 @@ def undeclared_and_orphaned(sites: tuple[Site, ...], declared: dict[Site, str]) 
 def subjects(sites: tuple[Site, ...], declared: dict[Site, str]) -> set[Site]:
     """The suppression tuples the ratchet's red names: undeclared, orphaned and reasonless."""
     return set(sites) ^ set(declared) | {site for site, why in declared.items() if not why.strip()}
-
-
-def _name(path: Path) -> str:
-    try:
-        return rel(path)
-    except ValueError:
-        return path.name
 
 
 def test_every_suppression_is_declared_and_every_declaration_is_used() -> None:

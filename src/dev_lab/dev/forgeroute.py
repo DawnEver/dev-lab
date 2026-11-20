@@ -61,9 +61,10 @@ from lab_commons.log import emit
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, forge_transport
+from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import issues
-from dev_lab.dev.forgework import Client, Issue, client_for
+from dev_lab.dev.forgework import Client, Issue
 
 __all__ = [
     'DEFAULT_AREA',
@@ -77,7 +78,6 @@ __all__ = [
     'pyproject_at',
     'read_areas',
     'read_owners',
-    'reconcile',
     'render',
     'route',
     'still_red',
@@ -307,31 +307,6 @@ def route(client: Client, record: Mapping[str, Any], areas_text: str) -> tuple[R
             done.append(Routed(area, 'updated', number))
         else:
             done.append(Routed(area, 'unchanged', number))
-    return tuple(done)
-
-
-def reconcile(client: Client, prefix: str, wanted: Mapping[str, str]) -> tuple[Routed, ...]:
-    """ONE open issue per title in *wanted* (each starting *prefix*), its body kept current; the rest closed.
-
-    The same found-by-title rule :func:`route` keeps an area in, so N hosts deriving the same rows write
-    one issue: the first ``created``, a changed body ``updated``, an unchanged one ``unchanged``, and an
-    open ``<prefix>*`` issue no row wants any more ``closed``.
-    """
-    done = []
-    for title, body in sorted(wanted.items()):
-        found = find_open(client, title)
-        if found is None:
-            done.append(Routed(title, 'created', client.issue_create(title, body).number))
-        elif _unstamped(found.body).strip() != body.strip():
-            client.issue_edit(found.number, body)
-            done.append(Routed(title, 'updated', found.number))
-        else:
-            done.append(Routed(title, 'unchanged', found.number))
-    for raw in issues(client, state='open'):
-        title = raw.get('title', '')
-        if title.startswith(prefix) and title not in wanted and not raw.get('pull_request'):
-            client.issue_close(raw['number'])
-            done.append(Routed(title, 'closed', raw['number']))
     return tuple(done)
 
 

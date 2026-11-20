@@ -60,12 +60,14 @@ from dev_lab.dev._deny_cicron_row import CI_CRON_NEEDS_CONSENT
 from dev_lab.dev._deny_commithooks_row import COMMIT_HOOKS_RUN
 from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
+from dev_lab.dev._deny_familyrepo_row import FAMILY_REPO_IS_CHECKED_OUT
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_journal_row import JOURNAL_CITES
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
+from dev_lab.dev._deny_machinefile_row import MACHINE_FILE_IS_RENDERED
 from dev_lab.dev._deny_push_rows import PUSH_ROWS
 from dev_lab.dev._deny_remote_row import REMOTE_WRITE
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
@@ -107,6 +109,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     SUBAGENT_NO_PUSH,
     HEAVY_IS_THE_MAIN_SESSIONS,
     CONSENT_CODE_FROM_THE_USER,
+    MACHINE_FILE_IS_RENDERED,
     COMMIT_HOOKS_RUN,
     {
         'id': 'BARE-TEST-INVOCATION',
@@ -115,7 +118,10 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         # same way it already reached `timeout 900 pytest` -- and a rule carrying its own wrapper
         # list is answering a question the engine has already answered, which is how the two
         # hand-anchored rules drifted apart in the first place. `uv run pytest` stays in `refuses`.
-        'pattern': r'(?:\S*python[\w.]*\s+-m\s+pytest\b|pytest\b)',
+        # A collection (`--collect-only` / `--co`) runs no test and claims no verdict, so it is the
+        # door for LISTING tests in every repo, measure script or none: the lookahead admits it.
+        # The lookahead stops at a shell separator, so a flag in a LATER segment admits no run.
+        'pattern': r'(?:\S*python[\w.]*\s+-m\s+pytest\b|pytest\b)(?![^;&|\n]*\s--(?:collect-only|co)\b)',
         'matches': 'command',
         'hazard': 'a hand-written test line has no verdict: its exit code '
         'cannot tell a covered run from a dead or truncated one.',
@@ -329,6 +335,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'git worktree lock .claude/worktrees/probe',
         ),
     },
+    # Before WORKTREES-STAY-INSIDE: a clone of a repo this machine already has is THAT refusal, wherever it lands.
+    FAMILY_REPO_IS_CHECKED_OUT,
     WORKTREES_STAY_INSIDE,
     BARE_INTERPRETER,
     BARE_PYTHON,

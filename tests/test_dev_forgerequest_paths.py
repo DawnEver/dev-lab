@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import lab_commons.launch as door
 import pytest
 from _forge_fake import git_out, run_git
 from lab_commons.hpc.retired import MOVED_TABLES
@@ -20,8 +21,10 @@ from dev_lab.dev.forgerequest import (
     declared_request,
     parse_body,
     parse_paths,
+    prefetch_requests,
     request_body,
 )
+from dev_lab.dev.forgerequestpaths import placement
 
 _PYPROJECT = """
 [tool.lab_commons.tests]
@@ -126,12 +129,119 @@ def test_a_selection_reads_its_files_in_one_git_process_however_many_it_names(
             reads.append(list(argv))
         return real(argv, *args, **kwargs)
 
-    declared_request(root, sha, TESTS, tuple(names[:1]))  # warm: per-sha reads (pyproject) are cached once
     monkeypatch.setattr(forgerequestpaths._door, 'run', counted)
-    declared_request(root, sha, TESTS, tuple(names[:1]))
+    declared_request(root, sha, TESTS, tuple(names[:1]))  # a selection never read at this commit before
     one = len(reads)
     reads.clear()
     declared_request(root, sha, TESTS, tuple(names))
     assert len(reads) == one, reads
     with pytest.raises(UndeclaredRequest, match=r'tests/test_gone.py.*does not exist'):
         declared_request(root, sha, TESTS, (*names, 'tests/test_gone.py'))
+
+
+def test_a_selection_is_declared_from_one_git_child(repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The sha's pyproject and every selected file come from ONE ``git cat-file --batch``.
+
+    ``forge queue`` declares every request issue: three children each (``ls-tree`` and ``show`` for the
+    pyproject, then the blobs) cost ~0.1-0.25 s apiece on Windows, ~30 s of a 91 s read (2026-11-18).
+    PLANTED CONTROL: a path absent at the sha is still refused by name from that one read.
+    """
+    spawned: list[list[str]] = []
+    real = door.run
+
+    def counted(argv: list[str], *args: object, **kwargs: object) -> object:
+        spawned.append([str(one) for one in argv])
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(door, 'run', counted)
+    root, sha = repo
+    declared_request(root, sha, TESTS, ('tests/test_a.py',))
+    assert [argv for argv in spawned if 'cat-file' in argv or 'ls-tree' in argv or 'show' in argv] == [
+        [spawned[0][0], '-C', str(root), 'cat-file', '--batch']
+    ]
+    spawned.clear()
+    with pytest.raises(UndeclaredRequest, match=r'tests/test_gone\.py'):
+        declared_request(root, sha, TESTS, ('tests/test_gone.py',))
+    assert sum('cat-file' in argv for argv in spawned) == 1
+
+
+def test_the_same_selection_at_the_same_commit_is_read_once(
+    repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One ``forge queue`` read asked for the same (sha, selection) 59 times: 58 identical git children (2026-11-18).
+
+    A commit's blobs never change, so the answer is held per full commit id. PLANTED CONTROL: another selection
+    at the same commit, and a ref name (which can move), are read again.
+    """
+    spawned: list[list[str]] = []
+    real = door.run
+
+    def counted(argv: list[str], *args: object, **kwargs: object) -> object:
+        spawned.append([str(one) for one in argv])
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(door, 'run', counted)
+    root, sha = repo
+    for _ in range(3):
+        declared_request(root, sha, TESTS, ('tests/test_a.py',))
+    assert sum('cat-file' in argv for argv in spawned) == 1, 'an identical commit read was repeated'
+    with pytest.raises(UndeclaredRequest):
+        declared_request(root, sha, TESTS, ('tools/test_b.py',))
+    assert sum('cat-file' in argv for argv in spawned) == 2, 'another selection was served from the held read'
+    declared_request(root, 'HEAD', TESTS, ('tests/test_a.py',))
+    declared_request(root, 'HEAD', TESTS, ('tests/test_a.py',))
+    assert sum('cat-file' in argv for argv in spawned) == 4, 'a movable ref name was served from the held read'
+
+
+def test_every_request_of_a_queue_read_is_declared_from_one_git_child(
+    repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``forge queue`` declared each request issue in its own ``git cat-file --batch``: 59 of 218 children (2026-11-18).
+
+    :func:`prefetch_requests` reads every test request's selection in one child; each declaration then finds its
+    answer held. PLANTED CONTROL: a request the prefetch did not name is still read (one more child) and judged.
+    """
+    root, sha = repo
+    (root / 'tests' / 'test_c.py').write_text('def test_c():\n    pass\n', encoding='utf-8')
+    run_git(root, 'add', '-A')
+    run_git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'c')
+    second = git_out(root, 'rev-parse', 'HEAD')
+    spawned: list[list[str]] = []
+    real = door.run
+
+    def counted(argv: list[str], *args: object, **kwargs: object) -> object:
+        spawned.append([str(one) for one in argv])
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(door, 'run', counted)
+    asks = [(sha, TESTS, ('tests/test_a.py',)), (second, TESTS, ('tests/test_c.py',)), (second, 'docs', ())]
+    prefetch_requests(root, asks)
+    for one, _, paths in asks[:2]:
+        assert declared_request(root, one, TESTS, paths).part
+    assert sum('cat-file' in argv for argv in spawned) == 1, 'a prefetched request was read again'
+    assert declared_request(root, second, TESTS, ('tests/test_a.py',)).part
+    assert sum('cat-file' in argv for argv in spawned) == 2, 'an unprefetched request was served without a read'
+
+
+def _src(*marks: str) -> bytes:
+    lines = ['import pytest', '', *(f'@pytest.mark.{one}' for one in marks), 'def test_x():', '    pass', '']
+    return '\n'.join(lines).encode()
+
+
+_RESOURCES = ('heavy', 'jmag', 'linux', 'reference', 'windows')
+
+
+def test_a_heavy_selection_runs_on_linux_where_heavy_is_supplied() -> None:
+    """#513: a test the developer's box cannot hold is placed on the host that declares ``heavy``, not refused."""
+    assert placement({'tests/test_h.py': _src('heavy')}, 'a' * 40, _RESOURCES) == frozenset({'heavy', 'linux'})
+
+
+def test_a_plain_selection_still_runs_on_linux_alone() -> None:
+    """PLANTED CONTROL: no resource mark -> the bare Linux need-set, as before."""
+    assert placement({'tests/test_p.py': _src()}, 'a' * 40, _RESOURCES) == frozenset({'linux'})
+
+
+def test_a_jmag_selection_still_runs_on_windows() -> None:
+    """PLANTED CONTROL: jmag keeps Windows, with every mark it carries."""
+    got = placement({'tests/test_j.py': _src('jmag', 'heavy')}, 'a' * 40, _RESOURCES)
+    assert got == frozenset({'jmag', 'heavy', 'windows'})

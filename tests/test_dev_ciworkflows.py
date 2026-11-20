@@ -22,12 +22,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _roles_fixtures import CI_REPO, EVERY_CI, carry
 
 from dev_lab.dev import ciworkflows
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
     BY_FORGE,
-    NIGHTLY_CRON,
     PR_EVENTS,
     PREPARE,
     RENDER_COMMAND,
@@ -51,18 +51,20 @@ from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.forgereview_pointer import ARTIFACT, BUNDLE_FILE
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
+from dev_lab.dev.nightlycron import NIGHTLY_CRON
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW, REVIEW_EVENT
 from dev_lab.dev.taskkeys import REVIEW_TASK, secret_name
 
-#: An explicit Actions producer (dev_lab.dev.producers; absent reads the same); these render an Actions repo.
-ACTIONS_REPO = '[tool.dev_lab.protection]\nproducer = "actions"\n'
+#: A repo declares no placement: the roles are the kinds the test carries (_roles_fixtures; EVERY_CI by default).
+ACTIONS_REPO = ''
 
 
 _ROOT = Path(__file__).resolve().parents[1]
 #: A PR's run: the pull_request event, or ci.yml dispatched with the PR's number (continue.yml).
 _PR_RUN = "(github.event_name == 'pull_request' || inputs.pr != '')"
 _NO_MEASURE = "inputs.measurement_paths == '' && inputs.measurement_sha == ''"
-_JUDGE_REVIEW = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
+#: A judge repo's identity; its review is bound to a host by the kinds the test carries (CI_REPO).
+_JUDGE_REVIEW = '[tool.dev_lab.review]\njudge_login = "judge"\n'
 
 _GITHUB_BASE = {'ci.yml', 'continue.yml', 'merge-tick.yml', 'review-again.yml'}
 _GITEA_BASE = {'review.yml', 'merge.yml'}
@@ -79,9 +81,10 @@ def _hosted(root: Path, url: str = 'https://github.com/o/r.git') -> Path:
     return root
 
 
-def test_this_repo_s_workflows_are_exactly_their_render() -> None:
+def test_this_repo_s_workflows_are_exactly_their_render(monkeypatch: pytest.MonkeyPatch) -> None:
     # dev-lab is a judge repo (user ruling 2026-11-10): its bundle prepare renders beside the base set, less the
-    # review-again workflow, whose one job reviews on the runner (ciworkflows.served_only).
+    # review-again workflow, whose one job reviews on the runner (its role, review, is bound to a host).
+    carry(monkeypatch, CI_REPO)
     assert set(workflows(_ROOT)) == {*_GITHUB_BASE - {'review-again.yml'}, PREPARE_WORKFLOW}, (
         'a floor: an empty table drifts from nothing'
     )
@@ -146,7 +149,7 @@ def test_the_matrix_is_the_command_s_output_and_merge_ready_decides_before_the_r
     (computed,) = [step for step in jobs['parts']['steps'] if step.get('id') == 'matrix']
     event = '--event "$PARTS_EVENT"'
     assert f'dev_lab.dev.jobparts matrix --runners hosted {event}' in computed['run'], 'the rows follow the event'
-    assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in jobs['part']['steps'][-1]['run']
+    assert 'dev_lab.dev.jobparts produce ${{ matrix.part }}' in _produce_step(jobs['part'])['run']
     assert f'dev_lab.dev.jobparts absent "$HEAD_SHA" {event}' in jobs['absent-parts']['steps'][-1]['run']
     assert jobs['absent-parts']['if'].startswith(_ci_prefix() + 'always()')
     assert set(jobs['merge-ready']['needs']) == {'security', 'head-gates', 'part', 'absent-parts'}, (
@@ -199,7 +202,9 @@ def test_the_review_bundle_reaches_the_door_by_name_and_no_workflow_names_a_prov
     names = list(steps)
     assert names.index('Keep the review keys in memory') < names.index('tests/review')
     (tmp_path / 'hub').mkdir()
-    rendered = {**workflows(_ROOT), **workflows(tmp_path), 'review.yml': _gitea_review(tmp_path / 'hub')}
+    own = (_ROOT / 'pyproject.toml').read_text(encoding='utf-8')
+    mine = {name: flow for name, (_, flow) in ciworkflows.placed(own, 'dev-lab', 'github', CI_REPO).items()}
+    rendered = {**mine, **workflows(tmp_path), 'review.yml': _gitea_review(tmp_path / 'hub')}
     assert {key: _PROVIDERS.findall(render(body)) for key, body in rendered.items()} == {key: [] for key in rendered}
     again = rendered['review-again.yml']['jobs']['again']['steps'][-1]
     assert 'forge review run --pr ${{ github.event.issue.number }}' in again['run']
@@ -351,7 +356,7 @@ def test_the_nightly_schedule_runs_the_full_matrix_then_promotes_by_the_one_deci
     assert 'python -m dev_lab.dev.integrate promote --newest "$HEAD_SHA"' in step['run'], (
         'a busy tip is never green: the nightly promotes the newest first parent that passes'
     )
-    assert 'git push origin main' in step['run'], 'promote moved the local main to the chosen sha; this pushes it'
+    assert 'git push' not in step['run'], 'promote fast-forwards origin itself; there is no local main to push'
 
 
 def test_a_stale_render_promoting_only_the_tip_is_refused_by_check(tmp_path: Path, capsys) -> None:
@@ -427,6 +432,18 @@ def test_an_undeclared_github_ci_still_runs_the_nightly_schedule(tmp_path: Path)
     _hosted(tmp_path)
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + '', encoding='utf-8')
     assert workflows(tmp_path)['ci.yml']['on']['schedule'] == [{'cron': NIGHTLY_CRON}]
+
+
+def test_a_repo_sets_its_own_nightly_cron_and_a_malformed_one_is_refused_by_name(tmp_path: Path) -> None:
+    """D63: the nightly time is per-repo; unset renders the default (planted control above), set renders it."""
+    _hosted(tmp_path)
+    pyproject = tmp_path / 'pyproject.toml'
+    pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\nnightly = "30 4 * * 1-5"\n', encoding='utf-8')
+    assert workflows(tmp_path)['ci.yml']['on']['schedule'] == [{'cron': '30 4 * * 1-5'}]
+    for bad in ('"0 2 * *"', '"at two"', '3'):
+        pyproject.write_text(ACTIONS_REPO + f'[tool.dev_lab.ci."ci.yml"]\nnightly = {bad}\n', encoding='utf-8')
+        with pytest.raises(ValueError, match=r'\[tool\.dev_lab\.ci\."ci\.yml"\] nightly = .*not a 5-field cron'):
+            workflows(tmp_path)
 
 
 def test_a_repo_missing_a_base_workflow_is_refused_naming_it(tmp_path: Path) -> None:
@@ -526,7 +543,7 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
         'printf \'%s\' "$AI_LAB_KEYS_LIVE" | '
         'uv run --no-sync python -I -m ai_lab.auth login --task live --bundle -'
     ), 'the bundle travels on stdin to the loader, never argv'
-    produce, forget = job['steps'][-2:]
+    produce, forget = _produce_step(job), job['steps'][-1]
     assert produce['run'].endswith('jobparts produce live')
     assert _forgets_keys(job), 'the part ends its key cache on success AND failure (F-dc28c7ef66b4)'
     assert forget['run'].startswith('git credential-cache --socket=$RUNNER_TEMP/git-credential-cache/socket exit')
@@ -563,7 +580,8 @@ def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pu
     assert live['if'] == _ci_guarded(
         "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
     ), 'PLANTED CONTROL: a secret keeps it full-run only'
-    setup, produce = linux['steps'][-2:]
+    produce = _produce_step(linux)
+    setup = linux['steps'][linux['steps'].index(produce) - 1]
     assert setup == {'name': 'Set up tests/linux', 'run': 'sudo apt-get install -y xvfb'}
     assert produce['run'].endswith('jobparts produce linux')
     assert not any('env' in step or 'credential' in step.get('run', '') for step in linux['steps']), 'no key store'
@@ -1236,6 +1254,7 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
     can neither alter it nor start it as its own. It holds no review method and no key.
     PLANTED CONTROL: a serve repo -- declared or by default -- renders no such workflow.
     """
+    carry(monkeypatch, CI_REPO)  # the review is bound to a host (a judge)
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: 'gitea')
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _JUDGE_REVIEW, encoding='utf-8')
     prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
@@ -1250,9 +1269,9 @@ def test_a_judge_repo_renders_the_prepare_workflow_the_judge_trusts(
         f'.gitea/workflows/{name}' for name in {PREPARE_WORKFLOW, *_GITEA_BASE - {'review.yml'}}
     }
     assert drift(tmp_path) == []
-    for serve in ('', '[tool.dev_lab.review]\nwhere = "serve"\n'):
-        (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + serve, encoding='utf-8')
-        assert PREPARE_WORKFLOW not in workflows(tmp_path)
+    carry(monkeypatch, EVERY_CI)
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO, encoding='utf-8')
+    assert PREPARE_WORKFLOW not in workflows(tmp_path)
 
 
 @pytest.mark.parametrize('forge', ['github', 'gitea'])
@@ -1262,17 +1281,19 @@ def test_a_judge_repo_renders_no_job_that_reviews_on_the_runner(
     """``where = "judge"``: the judge host posts the verdict, so no rendered job runs ``forge review run``.
 
     Such a job could only print "not reviewed here" and exit 1 -- a red check on every judge-reviewed PR (dev-lab
-    #413, 2026-11-11). A job marked ``served`` (:data:`~ciworkflows.SERVED_KEY`) renders only for a serve repo, a job
-    that ``needs`` one goes with it, and a workflow left with no job is not rendered; the key itself never is.
+    #413, 2026-11-11). A review job renders only where review is bound to ci (:data:`~ciworkflows.ROLE_KEY`), and
+    a workflow left with no job is not rendered; the role mark itself never is.
     PLANTED CONTROL: the same tables in a serve repo render every review job.
     """
+    carry(monkeypatch, CI_REPO)  # the review is bound to a host (a judge)
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
     names = [n for n in tomllib.loads(BASE_PATH.read_text(encoding='utf-8')) if n not in {SHARED, RUNNERS, PREPARE}]
     tables = ''.join(f'[tool.dev_lab.ci."{n}"]\n' for n in names)
-    for review, reviews in ((_JUDGE_REVIEW, False), ('', True)):
+    for roles, review, reviews in ((CI_REPO, _JUDGE_REVIEW, False), (EVERY_CI, '', True)):
+        carry(monkeypatch, roles)
         (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + review + tables, encoding='utf-8')
         rendered = {name: render(flow) for name, flow in workflows(tmp_path).items()}
-        assert all(f'"{ciworkflows.SERVED_KEY}"' not in text for text in rendered.values())
+        assert all(f'"{ciworkflows.ROLE_KEY}":' not in text for text in rendered.values())
         running = sorted(name for name, text in rendered.items() if 'forge review run' in text)
         assert bool(running) is reviews, running
         for flow in workflows(tmp_path).values():
@@ -1281,7 +1302,9 @@ def test_a_judge_repo_renders_no_job_that_reviews_on_the_runner(
             assert all(ciworkflows.needs(job) <= set(jobs) for job in jobs.values())
 
 
-def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path) -> None:
+def test_a_github_judge_repo_renders_the_same_prepare_for_github(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``forge = "github"`` renders the prepare to ``.github/workflows``, under the same name, event and job.
 
     GitHub hands a ``run`` step no runtime token, so ``actions/upload-artifact`` attaches the file ``prepare`` leaves
@@ -1289,6 +1312,7 @@ def test_a_github_judge_repo_renders_the_same_prepare_for_github(tmp_path: Path)
     no credential kept by the checkout, a fork PR not prepared (no fork run names its PR), no method and no key.
     PLANTED CONTROL: none of Gitea's part -- the host runner's reach and mirror -- reaches GitHub's render.
     """
+    carry(monkeypatch, CI_REPO)  # the review is bound to a host (a judge)
     layer = f'\n[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]\nforge = "github"\n'
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _JUDGE_REVIEW + layer, encoding='utf-8')
     prepare = workflows(tmp_path)[PREPARE_WORKFLOW]
@@ -1521,6 +1545,7 @@ def test_no_pr_event_that_brings_no_work_can_cancel_a_live_run(
     PLANTED CONTROL: the Gitea review workflow with ``edited`` added back is caught, and a ``labeled`` workflow whose
     group is not keyed on the label is caught.
     """
+    carry(monkeypatch, CI_REPO)  # the review is bound to a host (a judge)
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _JUDGE_REVIEW, encoding='utf-8')
     rendered = workflows(tmp_path)
@@ -1548,6 +1573,7 @@ def test_a_draft_pr_runs_no_job_on_either_forge_and_a_ready_one_runs_every_job(
     PLANTED CONTROL: a ready PR, ``ready_for_review``, leaving a draft and an event with no PR all run; a job's own
     condition survives the AND; a workflow no PR starts carries no guard.
     """
+    carry(monkeypatch, CI_REPO)  # the review is bound to a host (a judge)
     monkeypatch.setattr(ciworkflows, 'repo_forge', lambda _root: forge)
     (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _JUDGE_REVIEW, encoding='utf-8')
     rendered = workflows(tmp_path)
@@ -1655,3 +1681,24 @@ def test_a_repo_that_locks_no_python_runs_the_family_line_s_door(tmp_path: Path)
     subprocess.run([*git, 'commit', '-q', '-m', 'lock'], check=True, env=env)
     locked = _door_ref(run, workspace, tmp_path)
     assert locked.stdout.strip() == pin, locked.stderr
+
+
+def test_a_part_job_keeps_its_verify_log_whatever_ends_it(tmp_path: Path) -> None:
+    """A part that failed or hung uploaded no verify log, so its red was unreadable (document-lab tests/windows, 11-18).
+
+    The last step of the part job attaches the run's verify log under ``always()``: a failure, a cancellation and the
+    job's own timeout all still keep it. Planted control: the produce step itself uploads nothing.
+    """
+    steps = _base_ci(tmp_path)['jobs']['part']['steps']
+    keep = steps[-1]
+    assert keep.get('uses', '').startswith('actions/upload-artifact@'), steps
+    assert keep['if'].startswith('${{ always()'), keep
+    assert 'verify/verify-*.log' in keep['with']['path'], keep
+    assert '${{ matrix.part }}' in keep['with']['name'], 'one artifact per part, never overwritten by a sibling'
+    produce = next(step for step in steps if step.get('name') == 'Produce and post the part')
+    assert 'uses' not in produce, 'PLANTED CONTROL: the produce step is not the keeper'
+
+
+def _produce_step(job: dict) -> dict:
+    """The part job's produce step, by name: the log keeper follows it (it is no longer the last step)."""
+    return next(step for step in job['steps'] if step.get('name') == 'Produce and post the part')

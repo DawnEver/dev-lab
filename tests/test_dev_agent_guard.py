@@ -324,6 +324,20 @@ def test_the_install_ships_the_launcher_and_keeps_one_already_there(tmp_path: Pa
     assert (other / agent_wiring.LAUNCHER_REL).read_text(encoding='utf-8') == '// the repo own launcher\n'
 
 
+def test_the_install_replaces_a_stale_launcher_dev_lab_shipped(tmp_path: Path) -> None:
+    """A launcher carrying dev-lab's provenance line but older bytes is ours and stale: it is replaced.
+
+    The incident (2026-11-18): a kept old launcher ran the legacy .venv, whose dev-lab had no
+    hookdispatch, so every project dispatch row failed silently. The foreign launcher above is the control.
+    """
+    launcher = tmp_path / agent_wiring.LAUNCHER_REL
+    launcher.parent.mkdir(parents=True)
+    provenance = agent_guard.launcher_source().splitlines()[1]
+    launcher.write_text(f'// an older shipped launcher\n{provenance}\n', encoding='utf-8')
+    agent_guard.install_guard(tmp_path)
+    assert launcher.read_text(encoding='utf-8') == agent_guard.launcher_source()
+
+
 def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
     """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
     agent_guard.install_guard(tmp_path)
@@ -450,7 +464,7 @@ def _venv_with_dev_lab_at(root: Path, installed: str, locked: str) -> dict[str, 
     (root / 'uv.lock').write_text(f'[[package]]\nname = "dev-lab"\nversion = "0"\n{pin}\n', encoding='utf-8')
     node = node_path().parent.as_posix()
     return {
-        **os.environ,
+        **{k: v for k, v in os.environ.items() if k not in native_session.harness_keys()},
         'CLAUDE_PROJECT_DIR': str(root),
         'CLAUDE_CODE_SESSION_ID': 'planted',
         'PATH': f'{node}{os.pathsep}{os.environ["PATH"]}',
@@ -508,7 +522,7 @@ def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path
     env.pop('CLAUDE_PROJECT_DIR', None)
     env['CODEX_THREAD_ID'] = 'native-codex'
     done = subprocess.run(
-        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-m', 'dev_lab.dev.prwatcher', 'inbox'],
+        [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL), '-m', 'dev_lab.dev.forgefeed', 'inbox'],
         input='{}', capture_output=True, text=True, encoding='utf-8', env=env, cwd=tmp_path, check=False,
     )  # fmt: skip
     assert done.returncode == 0, done.stderr
@@ -540,7 +554,13 @@ def test_the_installed_node_launcher_and_python_share_the_exact_native_identity_
 ) -> None:
     agent_guard.install_guard(tmp_path)
     env = {**os.environ, 'CODEX_THREAD_ID': value}
-    for field in ('CLAUDE_CODE_SESSION_ID', 'CLAUDE_PROJECT_DIR', 'CODEX_SESSION_ID'):
+    for field in (
+        'CLAUDE_CODE_SESSION_ID',
+        'CLAUDE_PROJECT_DIR',
+        'CODEX_SESSION_ID',
+        'ANTIGRAVITY_CONVERSATION_ID',
+        'ANTIGRAVITY_TRAJECTORY_ID',
+    ):
         env.pop(field, None)
     done = subprocess.run(
         [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL)],
@@ -577,6 +597,7 @@ def test_the_installed_launcher_refuses_a_missing_or_corrupt_identity_companion(
     done = subprocess.run(
         [str(node_path()), str(tmp_path / agent_wiring.LAUNCHER_REL)],
         cwd=tmp_path,
+        env={k: v for k, v in os.environ.items() if k not in native_session.harness_keys()},
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -620,13 +641,13 @@ def test_settings_carry_the_engine_and_one_dispatcher_row_per_event() -> None:
         assert not any(wire.module in c for c in commands), f'a rendered row names the handler {wire.name}'
 
 
-def test_a_rows_matcher_and_timeout_derive_from_its_handlers() -> None:
-    """The matcher is the union of the handlers' tools (none when one sees every call); the bound is their sum."""
+def test_a_rows_matcher_derives_from_its_handlers_and_its_timeout_is_the_ceiling() -> None:
+    """The matcher is the union of the handlers' tools (none when one sees every call); the bound is the ceiling."""
     by_event = {row.event: row for row in agent_wiring.rows() if row.command != agent_wiring.HOOK_COMMAND}
     assert by_event['PreToolUse'].matcher == 'Write|Edit|MultiEdit|NotebookEdit'
     assert by_event['UserPromptSubmit'].matcher is None
     for event, row in by_event.items():
-        assert row.timeout == sum(w.timeout for w in agent_wiring.WIRING if event in w.events), event
+        assert row.timeout == agent_wiring.HOOK_TIMEOUT_S, event
 
 
 @pytest.mark.parametrize('tool', agent_wiring.SHELL_TOOLS)
@@ -708,14 +729,14 @@ def _declare_wire(repo: Path, module: str, row: str) -> None:
     (repo / f'{module}.py').write_text('def main(argv):\n    return 0\n', encoding='utf-8')
 
 
-def test_rows_derive_matcher_and_timeout_from_the_family_and_the_repo_declaration(repo: Path) -> None:
-    _declare_wire(repo, 'planted_guard_wire_a', 'events = ["PreToolUse", "PreCompact"]\ntools = ["Read"]\ntimeout = 7')
+def test_rows_derive_matcher_from_the_family_and_the_repo_declaration(repo: Path) -> None:
+    _declare_wire(repo, 'planted_guard_wire_a', 'events = ["PreToolUse", "PreCompact"]\ntools = ["Read"]\ntimeout = 1')
     family = {row.event: row for row in agent_wiring.rows()}
     merged = {row.event: row for row in agent_wiring.rows(repo)}
     assert merged['PreToolUse'].matcher == f'{family["PreToolUse"].matcher}|Read'
-    assert merged['PreToolUse'].timeout == family['PreToolUse'].timeout + 7
+    assert merged['PreToolUse'].timeout == family['PreToolUse'].timeout == agent_wiring.HOOK_TIMEOUT_S
     assert merged['PreCompact'] == agent_wiring.Row(
-        'PreCompact', 'Read', agent_wiring.dispatch_command('PreCompact'), 7
+        'PreCompact', 'Read', agent_wiring.dispatch_command('PreCompact'), agent_wiring.HOOK_TIMEOUT_S
     )
     assert 'PreCompact' not in family, 'PLANTED CONTROL: the family alone serves no such event'
 

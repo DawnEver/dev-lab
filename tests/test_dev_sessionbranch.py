@@ -7,20 +7,24 @@ same push, made the right way, lands. Names are declared non-defaults (``int/lin
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from _rem_binding import bind_as_rem
 
 from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.breakglass import notices
 from dev_lab.dev.componentbump import LANE
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.metrics import BYPASS, HAND_ACTION, read
+from dev_lab.dev.native_session import harness_keys
 from dev_lab.dev.relock import BRANCH as RELOCK_BRANCH
-from dev_lab.dev.sessionbranch import MACHINE_BRANCHES, P2, P3, P5, P6, refusals
+from dev_lab.dev.sessionbranch import MACHINE_BRANCHES, P2, P3, P5, P6, P7, head_refusals, refusals
+from dev_lab.dev.taskbinding import DOOR
 
 _GIT = shutil.which('git') or 'git'
 _BASE = 'integrate/main'  # the integration branch whose declaration names the forge
@@ -45,10 +49,11 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _push(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """``git push origin <args>`` through the installed pre-push hook."""
+    """``git push origin <args>`` through the installed pre-push hook, as a HUMAN: no agent session (P7 unjudged)."""
     return subprocess.run(
         [_GIT, 'push', 'origin', *args],
         check=False,
+        env={k: v for k, v in os.environ.items() if k not in harness_keys()},
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -592,3 +597,79 @@ def test_a_local_fix_branch_pushed_as_pr_gets_the_same_one_rename_remedy(repo: P
     assert done.returncode != 0, done.stderr
     assert 'git branch -m fix/x pr/x' in done.stderr
     assert 'push -u origin pr/x' in done.stderr
+
+
+# --- P7 PUSHED-HEAD-CARRIES-ITS-TASK (D25, 2026-11-17) ----------------------------------------------------------
+
+_SESSION = '1d9000bd-6cd0-42ab-873f-102cd963e53d'
+_AGENT = {'CLAUDE_CODE_SESSION_ID': _SESSION}
+
+
+def _tasks(repo: Path) -> None:
+    """Open the tasks `toolchain` and `other` in *repo*'s ledger."""
+    for slug in ('toolchain', 'other'):
+        folder = repo / '.claude' / 'tasks' / slug
+        folder.mkdir(parents=True, exist_ok=True)
+        head = f'---\nname: {slug}\nkind: task\nauthority: a1\nstatus: open\n---\n'
+        (folder / 'TASK.md').write_text(head, encoding='utf-8')
+
+
+def _created(repo: Path, branch: str) -> str:
+    tip = _git(repo, 'rev-parse', 'stable')
+    return f'refs/heads/{branch} {tip} refs/heads/{branch} {"0" * 40}'
+
+
+def _p7(repo: Path, branch: str, env: dict[str, str]) -> list[str]:
+    _git(repo, 'branch', '-f', branch, 'stable')
+    return [line for line in refusals(repo, _created(repo, branch), env=env) if line.startswith(P7)]
+
+
+def test_a_head_under_the_bound_task_is_admitted(repo: Path) -> None:
+    _tasks(repo)
+    bind_as_rem(repo, _SESSION, 'toolchain')
+    assert _p7(repo, 'pr/toolchain/x', _AGENT) == []
+
+
+@pytest.mark.parametrize('branch', ['pr/other/x', 'pr/x', 'pr/toolchain'])
+def test_a_head_outside_the_bound_task_is_refused_naming_its_prefix(repo: Path, branch: str) -> None:
+    _tasks(repo)
+    bind_as_rem(repo, _SESSION, 'toolchain')
+    [said] = _p7(repo, branch, _AGENT)
+    cause, door = said.split('\n')
+    assert 'pr/toolchain/<feature>' in cause
+    assert door.startswith('Door: `git branch -m ')
+    assert ' pr/toolchain/' in door
+
+
+def test_an_unbound_agent_session_is_refused_naming_how_a_task_is_bound(repo: Path) -> None:
+    _tasks(repo)
+    [said] = _p7(repo, 'pr/x', _AGENT)
+    cause, door = said.split('\n')
+    assert 'bound to no task' in cause
+    assert door == f'Door: {DOOR}; then push it as pr/<task>/x.'
+
+
+def test_a_human_push_and_the_forge_are_not_judged(repo: Path) -> None:
+    _tasks(repo)
+    assert _p7(repo, 'pr/x', {}) == []
+    tip = _git(repo, 'rev-parse', 'stable')
+    assert not [line for line in head_refusals(repo, tip, 'pr/x') if line.startswith(P7)]
+
+
+@pytest.mark.parametrize('branch', ['lane/x', 'feat/x', 'fix/x'])
+def test_local_fan_out_is_never_a_task_head(repo: Path, branch: str) -> None:
+    _tasks(repo)
+    bind_as_rem(repo, _SESSION, 'toolchain')
+    assert _p7(repo, branch, _AGENT) == []
+    assert any(line.startswith(P6) for line in refusals(repo, _created(repo, branch), env=_AGENT)), (
+        'planted control: it stays local -- P6 refuses it on origin'
+    )
+
+
+def test_task_heads_is_policy_in_the_branch_set() -> None:
+    table = "[tool.dev_lab.branchset]\ntrunk = 'main'\n"
+    assert branchset_from(table, 't').task_head('toolchain', 'x') == 'pr/toolchain/x'
+    assert branchset_from(table + "task_heads = 'pub/<task>/<feature>'\n", 't').task_namespace == 'pub/'
+    assert branchset_from(table + "task_heads = ''\n", 't').task_namespace == ''
+    with pytest.raises(ValueError, match='task_heads'):
+        branchset_from(table + "task_heads = 'pr/<feature>'\n", 't')

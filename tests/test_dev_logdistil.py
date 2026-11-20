@@ -180,6 +180,7 @@ class TestAnOrdinaryLogParsesByteIdentically:
         suite = tmp_path / 'suite'
         suite.mkdir()
         (suite / 'test_planted.py').write_text(body, encoding='utf-8')
+        (tmp_path / 'pytest.ini').write_text('[pytest]\n', encoding='utf-8')  # its own root
         log = tmp_path / 'verify.log'
         with log.open('w', encoding='utf-8') as handle, contextlib.redirect_stdout(io.StringIO()):
             handle.write(BANNER)

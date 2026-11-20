@@ -39,12 +39,13 @@ host configuration (private): data only, consumed by the dev kit's ops door on e
 
 ```
 lane/* feat/* fix/*   (local only; fan-out in worktrees)
-   -> pr/<feature>    (one long-lived pushed branch per session)
+   -> pr/<task-slug>/<feature>   (the pushed head: one feature per PR)
         -> integrate/main   (the forge merges a green, reviewed PR; merges only)
              -> main        (integrate promote: fast-forward only, every part a full PASS)
 ```
 
-- Child branches are local; one `pr/<feature>` per session is what is pushed ([one branch per session](branch-set.md)).
+- Child branches are local; a pushed head is `pr/<task-slug>/<feature>`, one feature per PR, and `integrate/main` is
+  the only long-lived branch ([branch set](branch-set.md), `PUSHED-HEAD-CARRIES-ITS-TASK`).
 - A PR targets the integration branch (`PRS-TARGET-INTEGRATION`); the integration branch takes only forge merges
   (`INTEGRATION-IS-MERGES-ONLY`, from `[tool.dev_lab.integrator] merges_only_since` / `pr_merges_since`).
 - A child takes integration by `forge sync` (a merge, never a rebase); the forge auto-syncs a head whose lock alone
@@ -113,7 +114,7 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
 - Who produces is the forge's data (`_forgebackends.Backend.producers`, user rulings 2026-11-11): a GitHub repo is
   gated and promoted by its Actions jobs alone -- no forge serve host, cluster or workstation; a part no
   hosted runner produces (a heavy test) is kept and off its gate (`jobparts.off_gate`). Gitea wires every producer.
-- Review: `[tool.dev_lab.review] where = "judge"` (either forge) sends every PR to the judge host, whose verdict is
+- Review: the family layer's `review = { host = "<judge>" }` (`[roles.<forge>]`, `dev_lab.dev.roles`) sends every PR to the judge host, whose verdict is
   ADVISORY (`_forgebackends.ADVISORY`): posted as information, never waited on by `tests/merge-ready`
   ([review](forge.md#a-review-judged-on-its-own-host-forge-review-prepare--judge)).
 
@@ -275,7 +276,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
    Gitea host (the `review` login's token file) and `[ops.judge.apps]` for GitHub (`app_id`, `key_file`).
 2. `install`, then `secret place` the Gitea token and the App key into the declared paths; a host reachable only
    through a bastion is reached with `sshhold open --jump`.
-3. Each repo names the judge in `[tool.dev_lab.review]` (`where = "judge"`, `judge_login` or `judge_app`) and is
+3. The family layer binds each repo's review to the judge (`[roles.<forge>]`); the repo names the judge's identity in `[tool.dev_lab.review]` (`judge_login` or `judge_app`) and is
    listed in `[ops.judge] repos`; then `forge protect apply` makes the judge's verdict required.
 
 Its review model keys and the family spend cap arrive as ONE consent plan of three steps

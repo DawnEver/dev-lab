@@ -1,10 +1,10 @@
-"""THE TRUNK IS PROMOTED BY THE HOST, unattended: per configured repo, ``integrate promote`` then a push.
+"""THE TRUNK IS PROMOTED BY THE HOST, unattended: per configured repo, ``integrate promote``, which pushes.
 
 The decision is :func:`dev_lab.dev.integrate.promote` with ``--newest`` -- every derived part PASS at scope full on
 the NEWEST first parent of the integration tip (W5, dev-lab#644) -- never re-derived here. This role only gives it a
 clone (made on first run), the tip to judge
-(``origin/<integration>``, the branch the repo's own declaration names) and, when it moves the local trunk, the
-push of that trunk with the configured credential. NO REFUSAL IS QUIET (W5): a refusal, and each commit the walk
+(``origin/<integration>``, the branch the repo's own declaration names) and the configured credential its
+fast-forward push of origin's trunk uses. NO REFUSAL IS QUIET (W5): a refusal, and each commit the walk
 passed over, is an alert naming its reason, as a fetch, promote or push FAILURE is, through ``[alerts]``
 (:func:`dev_lab.ops.hostverbs.promote_verb`). A frozen trunk was a consumer's ``main`` 639 commits behind.
 """
@@ -72,10 +72,7 @@ def _one(config: OpsConfig, url: str, credentials: str, promote: Promote) -> Out
         return Outcome(name, 'refused', '; '.join([f'{tip[:12]} and every first parent to the trunk', *alarms]))
     if code != 0:
         return Outcome(name, 'failed', f'integrate promote exit {code}')
-    pushed = git(root, 'push', 'origin', f'refs/heads/{policy.trunk}:refs/heads/{policy.trunk}')
-    if pushed.returncode != 0:
-        return Outcome(name, 'failed', f'push {policy.trunk}: {pushed.stderr.strip()}')
-    moved = git(root, 'rev-parse', policy.trunk).stdout.strip()
+    moved = git(root, 'rev-parse', f'origin/{policy.trunk}').stdout.strip()
     return Outcome(name, 'promoted', '; '.join([f'{policy.trunk} -> {moved[:12]}', *alarms]), alarmed=bool(alarms))
 
 

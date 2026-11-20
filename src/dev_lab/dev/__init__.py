@@ -65,12 +65,11 @@ are too unqualified to survive being flattened into a namespace this wide.
   named slices (locals, attributes, output keys, Rust identifiers, comment units, absolute
   tolerances) and reported, never a verdict; ``python -m dev_lab.dev.units report <root>``.
 * :mod:`dev_lab.dev.cjk` — the family's ONE "no CJK in tracked source" guard (user directive,
-  2026-09-16): the scan, the five CJK ranges, the ``.claude/memory/``/``attic/``/``archived/``
-  exemptions and the floor are shared; each adopting repo supplies its own named-set declaration of
-  files still carrying CJK, exactly the shape the suppression ratchet already uses, so a population
-  too large for one commit can be migrated as a ratchet instead of a flat assertion. Re-exported
-  below under ``CJK``-prefixed names because :class:`~dev_lab.dev.units.Scan` and
-  :func:`~dev_lab.dev.units.scan_files` already own the unqualified spellings.
+  2026-09-16): the scan, the five CJK ranges, the ``attic/``/``archived/`` exemptions (memory
+  and tasks are English only since D26, 2026-11-17), ``<stem>.zh.{md,toml,json}`` translations
+  and the floor are shared; each adopting repo declares its files still carrying CJK in
+  ``[tool.dev_lab.cjk] declared``, the shape the suppression ratchet already uses, so a population
+  too large for one commit can be migrated as a ratchet instead of a flat assertion.
 * :mod:`dev_lab.dev.docwidth` — the family's ONE per-line WIDTH ceiling for every document
   injected into an agent's context (user directive, 2026-09-16): a line-COUNT ratchet is blind to
   how long each line is, so this caps columns too, at 120 -- the ceiling every repo already uses for
@@ -121,7 +120,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   never rewrite).
 * :mod:`dev_lab.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
   ``[tool.dev_lab.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
+* :mod:`dev_lab.dev.vscodesettings` -- the editor excludes a checkout carries, derived from the storage kinds.
+* :mod:`dev_lab.dev.nightlycron` -- a workflow's ``nightly`` declaration read as the cron it schedules.
 * :mod:`dev_lab.dev.githooks` -- the TOML hook table, its one runner (``python -m
+* :mod:`dev_lab.dev.keepignored` -- a path a merge or checkout stopped tracking and the repo ignores is kept.
   dev_lab.dev.githooks run <stage>``), and the hook SCRIPTS shipped as a package payload and
   reached by NAME (``... githooks script bump-version``). They are not all hooks: ``with-venv`` is a
   WRAPPER that takes the
@@ -135,6 +137,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   whose stdout is a JSON decision. It MOVES verbatim: two answers to "what will this shell line
   execute" is the fork these modules exist to remove. Unlike a git hook it is INSTALLED into the
   consumer, its command line in a committed ``.claude/settings.json``.
+* :mod:`dev_lab.dev.launcherplan` -- keep, keep the repo's own, or rewrite a repo's agent launcher.
 * :mod:`dev_lab.dev.agent_guard` -- AGENT-GUARD-IS-LIVE, the hook-install question one layer up:
   a rendered ``deny-rules.json`` is a DECLARATION, and installing the engine plus its ``PreToolUse``
   wiring is a separate act. MEASURED 2026-09-17: the registry and its wiring recipe existed while the
@@ -150,7 +153,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   table of handlers per event, a repo's own ``[[tool.dev_lab.agent_hooks]]`` rows, and the rows
   :mod:`~dev_lab.dev.agent_guard` renders. Not re-exported below.
 * :mod:`dev_lab.dev.hookdispatch` -- one interpreter per hook event: every family and repo-declared row of it, its
-  ``may_block``/``once``/``timeout`` enforced, the answers merged into one. Not re-exported below.
+  ``may_block``/``once``/``timeout`` and five-second budget enforced, the answers merged into one.
+* :mod:`dev_lab.dev.hookhandoff` -- what a hook cannot finish in its budget: one queue and one runner per repo that
+  run it to completion, and the session's deferred answers.
+* :mod:`dev_lab.dev.gitdirs` -- a checkout's git dir and common dir, read off ``.git`` without starting git.
 * :mod:`dev_lab.dev.docsite` -- the documentation-site driver: a TABLE of sub-sites, every
   subprocess checked and bounded, and a missing toolchain that SKIPS and SAYS SO on the portal page
   rather than failing the build or vanishing from it. Not re-exported below.
@@ -162,6 +168,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   box at a declared, enforced demand; a producer serve spawned is not boxed twice.
 * :mod:`dev_lab.dev.serialpass` -- the family's ``serial`` marker: a marked test runs alone in verify's
   single-worker stage after the parallel one.
+* :mod:`dev_lab.dev.testtemp` -- pytest's base temp is ``<output>/<yy>/<mm>/<dd>/pytest/<session>/`` in every
+  family repo (D27); a ``--basetemp`` under system temp is refused.
 * :mod:`dev_lab.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
 * :mod:`dev_lab.dev.lockwait` -- verify's ``--lock-wait``: a duration quantity, a bare number refused.
@@ -183,6 +191,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   record's shape.
 * :mod:`dev_lab.dev.jobparts` -- the same parts produced by workflow jobs: the matrix of parts and runners,
   one producer per part, and ``absent`` (pending, since when) for every part no job settled.
+* :mod:`dev_lab.dev.hostedparts` -- ``[tool.dev_lab.parts] hosted``: the parts run in a hosted job of their own,
+  read and refused by shape.
 * :mod:`dev_lab.dev.native_session` -- the native harness's session identity, validated against one catalog and
   independent of worktree provenance and authorization.
 * :mod:`dev_lab.dev.forgepages` -- a forge listing read page by page up to the caller's limit.
@@ -197,6 +207,9 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.workstationrevoke` -- strikes a contradicted spot check leaves against a box; enough revoke it.
 * :mod:`dev_lab.dev.commandpart` -- a repo whose tests are not pytest (``npm test``) posts its part as ONE
   cell, the command, judged by its exit code.
+* :mod:`dev_lab.dev.commandtests` -- the declared producer command, read once and cut to a selection of
+  script test paths, so verify measures a JS test through the same command its part runs.
+* :mod:`dev_lab.dev.storage` -- the storage kinds through one resolver: `where`, `render` and `migrate` doors.
 * :mod:`dev_lab.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and
   selector: a judged key is cited, not re-run. It decides no push.
 * :mod:`dev_lab.dev.test_outcomes` -- the pytest plugin writing a Record of per-test cells
@@ -222,6 +235,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.producer` -- the producer exit contract: what a part producer's exit code
   means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE, PART_REFUSED), one source.
 * :mod:`dev_lab.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
+* :mod:`dev_lab.dev.depneeds` -- on-demand extras: a part's needs map to extras; a missing one is refused with its door.
   STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a
   mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the
   stored anchors. It reads ``sys.prefix`` of the invoking interpreter, which is what makes the
@@ -263,6 +277,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   generic patterns (home paths, non-reserved e-mails, chat ids, cloud folder names) plus an optional
   machine-local denylist reported by kind only. Each consumer calls ``scan_tree`` over its own
   checkout from one test. Not re-exported below.
+* :mod:`dev_lab.dev.reword` -- a new message for an UNPUSHED commit, re-committed onto a fresh ``-reworded`` branch.
 * :mod:`dev_lab.dev.security` -- the three scans a head passes before a merge: ruff ``S`` under the
   family's declared ignores, a tracked-credential scan reported by digest only, and the ``uv.lock`` pins
   against OSV. Not re-exported below.
@@ -320,8 +335,11 @@ family half only, no consumer re-pointed, none re-exported. ONE LINE EACH AND TH
 the tranche at 387 lines against a 400-line band, so the reasoning stays in each module's own
 docstring rather than being copied here -- and the NEXT module to arrive must split this inventory.
 
-* :mod:`dev_lab.dev.codeplace` -- code under DECLARED roots; no stray file.
+* :mod:`dev_lab.dev.codeplace` -- the placement map; code under DECLARED roots.
+* :mod:`dev_lab.dev.strays` -- no untracked, unclaimed file in a checkout.
+* :mod:`dev_lab.dev.retiredfiles` -- files a retirement declared gone: each checkout's own rows, never the leaf's.
 * :mod:`dev_lab.dev.scratch` -- scratch is visible to git, never committed; `clear` empties it, a Stop hook asks for it.
+* :mod:`dev_lab.dev.scratchtree` -- `worktrees --scratch` makes a throwaway tree, `--discard` removes it now.
 * :mod:`dev_lab.dev.reportplace` -- no agent-written Markdown under ``output/``; a written report is a memory entry.
 * :mod:`dev_lab.dev.datedlog` -- one dated log layout; the base has NO DEFAULT (four repos, four answers).
 * :mod:`dev_lab.dev.shards` -- a partition, the AND over a shard set, and a required population FLOOR.
@@ -336,6 +354,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   GitHub ruleset or a Gitea branch protection per branch role, contexts derived from the rendered workflows.
 * :mod:`dev_lab.dev.forgefailure` -- how a forge answer reads: an answer, transient, a refused call or credential.
 * :mod:`dev_lab.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``.
+* :mod:`dev_lab.dev.forgeclient` -- the one place a forge ``Client`` is built (``client_for``, ``stored_client``).
 * :mod:`dev_lab.dev.forgestamp` -- the ``HARNESS_*`` provenance line a created body opens with.
 * :mod:`dev_lab.dev.forgememo` -- one poller pass's forge reads, answered once (a write empties it).
 * :mod:`dev_lab.dev.forgelabels` -- labels by NAME on both forges: resolved to ids, created, put on an issue.
@@ -347,6 +366,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
 * :mod:`dev_lab.dev.forgerecordkeep` -- what a records prune keeps: record names, live shas, the selection.
 * :mod:`dev_lab.dev.forgeunit` -- compute units on the forge: shared results (first wins), a unit offered as a Job.
+* :mod:`dev_lab.dev.toolrelease` -- a pinned tool release (rclone): sha256-checked, installed user-space.
 * :mod:`dev_lab.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``[priority] hosts`` entry matches.
 * :mod:`dev_lab.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
 * :mod:`dev_lab.dev.forgerequest` -- a request: an issue-declared job ranked, admitted and run on the part path.
@@ -357,10 +377,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgedemand` -- SHARED DEMAND: the forge's run records folded into the learned cache.
 * :mod:`dev_lab.dev.forgeclaim` -- a claim is a pending status with a lease; the earliest wins the race.
 * :mod:`dev_lab.dev.forgecoalesce` -- one run per coalesced ref and part in flight; the tip waits behind it.
-* :mod:`dev_lab.dev.producers` -- each repo's ONE producer (``[tool.dev_lab.protection] producer``: ``actions`` or
-  ``hpc``) and its ``optional_needs`` parts, never a merge condition; every consumer derives from it.
-* :mod:`dev_lab.dev.producercheck` -- refuses what contradicts a producer: an HPC repo's GitHub workflow, an Actions
-  repo without its ``ci.yml``, a host ``[serve]`` off an HPC account, a required part nothing produces.
+* :mod:`dev_lab.dev.roles` -- who performs each forge role (tests, review, merge, promote, prune) of a repo: an
+  executor KIND (``ci``, ``hpc``, ``host``) the family layer binds in ``[roles.<forge>]``, never the repo; and its
+  ``optional_needs`` parts, never a merge condition; every consumer derives from it.
+* :mod:`dev_lab.dev.rolecheck` -- refuses what contradicts the binding: a retired placement, a workflow nothing
+  renders, a CI-tested repo without its ``ci.yml``, a host ``[serve]`` off an HPC account, a required part nothing
+  produces.
 * :mod:`dev_lab.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`dev_lab.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
 * :mod:`dev_lab.dev.forgephases` -- where a forge read's time went: forge HTTP, git fetch, local git, compute.
@@ -395,6 +417,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   chosen by size, one shared library whose every writer cleans only its own runs.
 * :mod:`dev_lab.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
   rclone backends.
+* :mod:`dev_lab.dev.largeobjects` -- a content-addressed object store on an rclone remote, re-hashed on arrival.
 * :mod:`dev_lab.dev.artefactfolder` -- the folder backend: archive before manifest, idempotent, no aliases.
 * :mod:`dev_lab.dev.artefactpack` -- declared outputs collected under a footprint budget and packed indexed.
 * :mod:`dev_lab.dev.artefactindex` -- an archive's member facts in the record, its catalogue and selection.
@@ -412,9 +435,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
 * :mod:`dev_lab.dev.forgepulls` -- PR list/retarget, ONE marker-found comment per subject, the incremental issue
   read, both forges.
-* :mod:`dev_lab.dev.integrate` -- integration by refs alone: ``merge <branch>`` (merge-tree, the commit-msg
-  stage and the merge audit, compare-and-swap) and ``promote <sha>`` (the local trunk FAST-FORWARDS to a
-  full-PASS integration commit). Neither checks out nor pushes.
+* :mod:`dev_lab.dev.integrate` -- ``promote <sha>``: ORIGIN's trunk fast-forwards, by a non-forced push, to a
+  full-PASS integration commit; no checkout or local branch is touched.
 * :mod:`dev_lab.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
 * :mod:`dev_lab.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`dev_lab.dev.forgelanes` -- the origin branches tracked, a PR head fetched, the PR a pushed lane lands by.
@@ -451,10 +473,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgereview_gate` -- the one review gate merge, merge-ready and Break-Glass read.
 * :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review prepare`` / ``judge``: the judge host's review of a bundle.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
-* :mod:`dev_lab.dev.reviewturn` -- the review is the last gate: the merge decision says a head waits or is due.
+* :mod:`dev_lab.dev.reviewturn` -- the review runs last and is advisory: the merge decision says a head waits or is due.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
 * :mod:`dev_lab.dev.forgerunshow` -- ``forge run show`` (what a cluster run published), ``forge run supersede``.
-* :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited or deleted.
+* :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited, deleted or moved
+  but by the shapes it names (an approved redacting rename among them).
 * :mod:`dev_lab.dev.memoryentry` -- one memory entry's text: its shape, a merge's citations, non-narrative edits.
 * :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
 * :mod:`dev_lab.dev.rendergoldens` -- every family render of the declaration fixtures, pinned byte for byte as goldens.
@@ -475,17 +498,20 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
 * :mod:`dev_lab.dev.pradmit` -- PR advice: ONE-SESSION-ONE-PR and NO-STACKED-PRS told at ``pr create``, never a refusal.
 * :mod:`dev_lab.dev.forgedraft` -- DRAFT-UNTIL-READY: ``pr create`` opens a draft; ``pr ready|draft <N>``; idle alarm.
+* :mod:`dev_lab.dev.forgehold` -- HOLD: ``pr hold|release <N>``, a label the merge tick honours (draft refused).
 * :mod:`dev_lab.dev.forgeorphan` -- an open PR still 24 h with no live owner is labelled ``owner:integrator``.
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
 * :mod:`dev_lab.dev.taskbinding` -- the ONE reader of rem's task ledger and session binding (rem writes both).
 * :mod:`dev_lab.dev.remplugin` -- which rem the session's harness runs: an unbound push names an absent or old one.
+* :mod:`dev_lab.dev.remhome` -- the machine home handed to rem: ``LAB_COMMONS_HOME`` in the user Claude settings.
 * :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent push off its bound task's pr/<task>/ heads.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
 * :mod:`dev_lab.dev.uvfollow` -- uv follows the version its pin needs, through WinGet or `uv self update`.
 * :mod:`dev_lab.dev.commitmsg` -- the commit-msg and push-range check: `type(scope)!: subject`, owned once.
 * :mod:`dev_lab.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
+* :mod:`dev_lab.dev.forgetask` -- what a forge write tells the bound rem task: head advice, the journal record.
 * :mod:`dev_lab.dev.forgecli` -- the ``python -m dev_lab.dev.forge`` noun dispatch over the ``forge*`` doors.
 * :mod:`dev_lab.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
 * :mod:`dev_lab.dev.forgeauthnotice` -- at session start, one bounded ``GET /user`` per forge: a refused token named.
@@ -505,8 +531,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
-* :mod:`dev_lab.dev.branchfate` -- TWO-FATES: every local branch and worktree is kept for a named live owner, or
-  archived losslessly (bundle, uncommitted work, manifest) and cleaned up by ``branchset --apply``; none lingers.
+* :mod:`dev_lab.dev.branchfate` -- TWO-FATES: every local branch and worktree is kept for a named live owner,
+  cleaned when merged with nothing unlanded, or listed with its doors by ``branchset --apply``; never parked.
 * :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
 * :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (pre-push,
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
@@ -530,6 +556,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.branchdelete` -- LOSSLESS-DELETE and LANDED-BRANCHES-SWEPT: a branch is deleted only when
   its content is held elsewhere; ``sweep`` deletes every branch integration now contains (ancestry or content),
   after each integration move: the serve pass and GitHub's push job; a workstation's local half is reclaimrun.
+* :mod:`dev_lab.dev.deletejudge` -- LOSSLESS-DELETE's one judgement: whether deleting an origin branch at a sha
+  loses nothing (held by integration, another live branch or an open PR head, by content, or declared derived).
+* :mod:`dev_lab.dev.pushdelete` -- LOSSLESS-DELETE at pre-push: every branch a push deletes, however spelled, is
+  judged on git's ref lines; refused naming ``branchprune delete``; an unreadable forge or origin refuses.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented and closed,
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
@@ -541,10 +571,13 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
+* :mod:`dev_lab.dev.disposable` -- the DISPOSABLE declaration of a throwaway worktree, in its git admin directory.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
+* :mod:`dev_lab.dev.boxmigrate` -- LEDGER-MIGRATES-ON-INSTALL: each lab-commons install door migrates the box ledger.
 * :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
 * :mod:`dev_lab.dev.reclaimrun` -- reclaim as a SessionStart step: detached, locked, a bounded batch, never blocks.
-* :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
+* :mod:`dev_lab.dev.venvprune` -- superseded ``.venvs/`` across checkouts: listed with bytes, removed on ``--apply``.
+* :mod:`dev_lab.dev.worktree_outputs` -- a removed tree's run outputs move home, verified; never its work.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
 * :mod:`dev_lab.dev.sshholdstate` -- a held session's state file and the append-only audit of every verb.
 * :mod:`dev_lab.dev.sshholdwire` -- the client's half of the holder's protocol: the request and the marker frame.
@@ -568,11 +601,20 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   journal append citing an ignored path is refused before it is written.
 * :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the commit a shell push line publishes, and the line a
   push door prints naming its hearer, the machine PR watcher.
-* :mod:`dev_lab.dev.sessionprs` -- SESSION-HEARS-ITS-PRS: every PR a session opened or pushed, in any repository.
-* :mod:`dev_lab.dev.sessionpoll` -- SESSION-HEARS-ITS-PRS: one read of a session's PRs, its reds and its one green.
-* :mod:`dev_lab.dev.prwatcher` -- SESSION-HEARS-ITS-PRS: the one hearer -- a machine watcher, per-session inboxes.
+* :mod:`dev_lab.dev.sessionprs` -- TASK-HEARS-ITS-FORGE-EVENTS: every PR a session opened or pushed, in any repository.
+* :mod:`dev_lab.dev.sessionpoll` -- TASK-HEARS-ITS-FORGE-EVENTS: one status read of a session's open PRs.
+* :mod:`dev_lab.dev.forgefeed` -- TASK-HEARS-ITS-FORGE-EVENTS: the one hearer, one issues read per repository per tick.
+* :mod:`dev_lab.dev.forgewaves` -- a break-glass wave awaiting review, told once per session through the feed.
+* :mod:`dev_lab.dev.forgethreads` -- the threads a task hears: the issues-since read, its cursor, own comments.
 * :mod:`dev_lab.dev.accounthost` -- an HPC account's host file: its own tables; its role is its family grant's.
-* :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only.
+* :mod:`dev_lab.dev.vendordetect` -- each declared vendor's install home on this machine, from the family's patterns.
+* :mod:`dev_lab.dev.tomlleaves` -- a parsed TOML table's leaf keys by path, and their ``[table].key`` spelling.
+* :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;
+  drift named key by key with its owning layer; ``local set|unset``, the one door into the local layer.
+* :mod:`dev_lab.dev.machineguard` -- MACHINE-FILE-IS-RENDERED: the refusal of any write onto the machine file but
+  its doors.
+* :mod:`dev_lab.dev.familyrepos` -- FAMILY-REPO-IS-CHECKED-OUT: ``[repos]`` against the family's ``[family_repos]``:
+  listed at SessionStart, census in ``devhost drift``, a clone of a checked-out family repo refused.
 * :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrolment door, ``[bridge]``.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
 * :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.
@@ -621,16 +663,11 @@ LATEST-DEPENDENCIES, THE RESOLVED HALF (2026-09-21) -- two modules, split where 
 * :mod:`dev_lab.dev.depversions` -- what a checkout RESOLVED: the lock, the live observation, the environment.
 * :mod:`dev_lab.dev.dep_observe` -- the refresher, the ONE module here that calls out at all.
 
-THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
-short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
-flattening them into one namespace beside :data:`dev_lab.dev.content.ABSENT` would leave a
-reader guessing which of two unrelated answers they are holding. Import them by module.
-
-NOR ARE THE MODULES THAT NEED AN EXTRA: :mod:`~dev_lab.dev.profile`, :mod:`~dev_lab.dev.rules`,
-:mod:`~dev_lab.dev.reports` and :mod:`~dev_lab.dev.quantity_values` reach ``platformdirs``, ``tomlkit`` or
-``pint``. Every submodule import runs this file first, so re-exporting them here would make the stdlib-only
-hook runner (:mod:`dev_lab.dev.githooks`) fail in an environment installed without extras.
-Import them by module.
+THIS PACKAGE RE-EXPORTS NOTHING: import every name by its module, as the opening paragraph says
+(HOOK-UNDER-FIVE-SECONDS, user ruling D24, 2026-11-17). Every submodule import runs this file first, so whatever it
+imports every hook interpreter pays: the eager re-exports it carried until then cost each one about half a second
+(the deny rows pulled the box ledger in) before its own row ran, and a lazy re-export is a module ``__getattr__``,
+which NO-REFLECTION refuses. The names live on, each in its module; only the flattened spelling is gone.
 
 WHAT IS DELIBERATELY NOT HERE YET: the five architecture mechanisms (public-surface declaration,
 suppression ratchet, module-size alarm, enforced-mechanism registry, duplication ratchet). They take
@@ -638,99 +675,4 @@ a ``RepoProfile`` and are the next layer. :mod:`dev_lab.dev.rules` is NOT that l
 whether a named mechanism is still LIVE, and the five are the mechanisms an adopter would name.
 """
 
-from dev_lab.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
-from dev_lab.dev.cjk import CJK_RANGES, EXEMPT_PREFIXES
-from dev_lab.dev.cjk import Occurrence as CJKOccurrence
-from dev_lab.dev.cjk import Scan as CJKScan
-from dev_lab.dev.cjk import VacuousScan as VacuousCJKScan
-from dev_lab.dev.cjk import assert_floor as assert_cjk_floor
-from dev_lab.dev.cjk import ratchet as cjk_ratchet
-from dev_lab.dev.cjk import scan_files as scan_cjk_files
-from dev_lab.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
-from dev_lab.dev.docwidth import (
-    INJECTED_BASENAMES,
-    INJECTED_EXEMPT_PREFIXES,
-    INJECTED_PREFIXES,
-    WIDTH_CEILING,
-    Overwidth,
-    VacuousWidthScan,
-    WidthScan,
-    assert_width_floor,
-    injected_docs,
-    is_injected_doc,
-    line_widths,
-    scan_widths,
-    width_ratchet,
-    width_remedy,
-)
-from dev_lab.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
-from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
-from dev_lab.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
-from dev_lab.dev.units import (
-    SCANNED_SUFFIXES,
-    Scan,
-    Violation,
-    assert_registry_sane,
-    scan_files,
-    trailing_token,
-)
-from dev_lab.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
-
-__all__ = [
-    'ABSENT',
-    'CJK_RANGES',
-    'DEFAULT_IGNORES',
-    'DENY_RULES',
-    'EXCLUDED_TOKENS',
-    'EXEMPT_PREFIXES',
-    'INJECTED_BASENAMES',
-    'INJECTED_EXEMPT_PREFIXES',
-    'INJECTED_PREFIXES',
-    'MARKER',
-    'SCANNED_SUFFIXES',
-    'UNIT_TOKENS',
-    'WIDTH_CEILING',
-    'CJKOccurrence',
-    'CJKScan',
-    'Citation',
-    'DenyRule',
-    'HookAdoption',
-    'IncompleteRun',
-    'LogRef',
-    'Overwidth',
-    'Proof',
-    'Remedy',
-    'Result',
-    'Scan',
-    'Selector',
-    'UnremediedRule',
-    'UnverifiableLog',
-    'VacuousCJKScan',
-    'VacuousWidthScan',
-    'Verdict',
-    'Violation',
-    'WidthScan',
-    'assert_cjk_floor',
-    'assert_registry_sane',
-    'assert_shippable',
-    'assert_width_floor',
-    'cjk_ratchet',
-    'content_address',
-    'denies',
-    'deny_rules',
-    'file_digest',
-    'fires',
-    'injected_docs',
-    'is_injected_doc',
-    'line_widths',
-    'render',
-    'scan_cjk_files',
-    'scan_files',
-    'scan_widths',
-    'stamp_line',
-    'trailing_token',
-    'unremedied',
-    'verify_log',
-    'width_ratchet',
-    'width_remedy',
-]
+__all__: list[str] = []

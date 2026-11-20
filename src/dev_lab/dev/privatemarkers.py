@@ -33,8 +33,8 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.forge import NoCredential, Transport, forge_from_remote, forge_of_url, forge_transport
-from dev_lab.dev.forgehosts import is_private
-from dev_lab.dev.forgework import client_for
+from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgehosts import is_private, public_siblings
 from dev_lab.dev.githooks.runner import PUSH_URL_ENV
 
 __all__ = [
@@ -42,7 +42,9 @@ __all__ = [
     'GENERIC',
     'MARKERS_FILE',
     'PUBLIC_MASK',
+    'REWORD_DOOR',
     'load_markers',
+    'public_names',
     'pushed_messages',
     'repo_is_private',
     'scan_text',
@@ -233,21 +235,76 @@ def repo_is_private(
     return _VISIBILITY[key]
 
 
-def text_refusal(text: str, what: str, markers: tuple[re.Pattern[str], ...] | None = None) -> str | None:
+#: Each owner's public repository names, read once per process: ``(host, owner) -> names``.
+_PUBLIC: dict[tuple[str, str], tuple[str, ...]] = {}
+
+
+def public_names(
+    root: Path, *, url: str = '', env: Mapping[str, str] | None = None, transport: Transport = forge_transport
+) -> tuple[str, ...]:
+    """The repos *root*'s owner publishes, which a public text may name (dev-lab#791 wall 3); ``()`` when unread.
+
+    An unread list masks nothing, so the scan fails closed. Cached per process by owner.
+    """
+    try:
+        forge = forge_of_url(url) if url else forge_from_remote(root)
+    except OSError:
+        return ()
+    key = (forge.host, forge.owner)
+    if key not in _PUBLIC:
+        try:
+            _PUBLIC[key] = public_siblings(client_for(root, env=env, transport=transport, url=url))
+        except (OSError, NoCredential):
+            _PUBLIC[key] = ()
+    return _PUBLIC[key]
+
+
+def text_refusal(
+    text: str, what: str, markers: tuple[re.Pattern[str], ...] | None = None, *, public: tuple[str, ...] = ()
+) -> str | None:
     """The PRIVATE-MARKERS refusal for *what* (a PR body...) when *text* holds a marker, else ``None``.
 
     The markers are the machine-local denylist (:data:`MARKERS_FILE`, read at call time) unless given; a hit is
-    named by line and kind only.
+    named by line and kind only. *public* names the target owner's published repos (:func:`public_names`), masked
+    out first as :func:`scan_text` does. The rule leads line one and the door has a line of its own, so
+    :func:`dev_lab.dev.walls.refused_text` records the rule and that a door was named.
     """
-    hits = scan_text(text, load_markers(MARKERS_FILE) if markers is None else markers)
+    hits = scan_text(text, load_markers(MARKERS_FILE) if markers is None else markers, public=public)
     if not hits:
         return None
     named = ', '.join(f'line {n}: {kind}' for n, kind, _ in hits)
     return (
-        f'PRIVATE-MARKERS: the {what} names a private value ({named}) and the target repo is not known private; '
-        'rewrite the text neutrally (a placeholder for each name) and re-run.\n'
+        f'PRIVATE-MARKERS: the {what} names a private value ({named}) and the target repo is not known private\n'
+        'Door: drop or neutralise each named marker (a placeholder for each name), then re-run the same command\n'
         'details: docs-src/dev/refusals.md#private-markers (dev-lab)'
     )
+
+
+#: The door for a marker in an ALREADY-MADE message: amend is refused (GIT-COMMIT-AMEND), so the unpushed commits of
+#: this lane are re-committed on a fresh branch (:mod:`dev_lab.dev.reword`).
+REWORD_DOOR: Final = (
+    'python -m dev_lab.dev.reword <sha> --message-file <file> (unpushed commits of this lane only; '
+    'it prints the fresh branch to push)'
+)
+
+
+def _judge_message(root: Path, message_file: Path, markers: tuple[re.Pattern[str], ...]) -> int:
+    """The commit-msg row: the same scan as the pre-push message check, while the reword is still free."""
+    lines = message_file.read_text(encoding='utf-8').splitlines(keepends=True)
+    message = ''.join(line for line in lines if not line.startswith('#'))
+    hits = scan_text(message, markers)
+    if not hits:
+        return 0
+    private, why = repo_is_private(root)
+    if private:
+        return 0
+    if why:
+        emit(f'[private-markers] scanning this message: {why}', err=True)
+    emit('PRIVATE-MARKERS: the commit message names a private value; nothing is committed yet:', err=True)
+    for n, kind, _ in hits:
+        emit(f'message line {n}: {kind}', err=True)
+    emit('Door: neutralise each named marker and commit again (free before the commit exists)', err=True)
+    return 1
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
@@ -261,9 +318,14 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     parser.add_argument('--markers', type=Path, default=MARKERS_FILE)
     parser.add_argument('--push', action='store_true', help="pre-push: judge the pushed commits' messages (stdin)")
     parser.add_argument('--url', default='', help=f'--push: the pushed-to URL (default ${PUSH_URL_ENV}, else origin)')
+    parser.add_argument(
+        '--commit-msg-file', type=Path, help='commit-msg: judge the message BEFORE the commit exists (git appends it)'
+    )
     parser.add_argument('paths', nargs='*')
     args = parser.parse_args(argv)
     markers = load_markers(args.markers)
+    if args.commit_msg_file is not None:
+        return _judge_message(args.root, args.commit_msg_file, markers)
     if args.push:
         private, why = repo_is_private(args.root, url=args.url or os.environ.get(PUSH_URL_ENV, ''))
         if private:

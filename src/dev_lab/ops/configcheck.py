@@ -1,6 +1,6 @@
 """Check a config-source repository OFF its hosts: the CI of the repository ``[ops.config] source`` names.
 
-Three checks, each generic (the repository's own facts arrive as the files it holds):
+Four checks, each generic (the repository's own facts arrive as the files it holds):
 
 - a HOST file is a server's (``[ops]``), a development machine's (``[dev]``, :mod:`dev_lab.dev.devhost`,
   checked with the family file: a restated family key is refused; the machine tables it renders are open, but
@@ -11,9 +11,13 @@ Three checks, each generic (the repository's own facts arrive as the files it ho
   environment or secret files, which exist only on the host; and it holds no key the schema
   does not declare -- ``[ops]`` as the loader declares it, every other table as the supervisor's
   :data:`~dev_lab.supervise.config.DEFAULTS` does (a table whose default is empty, ``components``, is open); and
-  a host that is no HPC account carries no ``[serve]`` (:func:`dev_lab.dev.producercheck.host_refusals`);
+  a host that is no HPC account carries no ``[serve]`` (:func:`dev_lab.dev.rolecheck.host_refusals`);
 - the FAMILY file shares no machine-local table (:data:`LOCAL_ONLY`) and no secret VALUE -- a secret is named by
   path (``*_file``, ``*_path``), never held; a refusal names the key, never repeats the value;
+- the family's ROLES BINDING holds against the host files (:func:`check_roles`): every role bound to a host names a
+  host file carrying the role's ``[ops.<duty>]`` (:func:`dev_lab.dev.roles.host_refusals`), and every repo a judge's
+  ``[ops.judge] repos`` or a promoter's ``[ops] repos`` lists is bound to THAT host for that role -- the host's list
+  and the binding are one fact, the binding its source;
 - a change NEEDS CONSENT when it touches a boundary key (:func:`dev_lab.ops.configdoor.boundary`): merging it
   grants nothing, applying it still needs the user's ``ops.config`` consent, so the PR is labelled :data:`LABEL`.
 
@@ -25,18 +29,18 @@ from __future__ import annotations
 import argparse
 import re
 import tomllib
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devschema, producercheck
+from dev_lab.dev import accounthost, devschema, rolecheck, roles
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
 from dev_lab.supervise.config import DEFAULTS
 
-__all__ = ['LABEL', 'LOCAL_ONLY', 'check_family', 'check_host', 'main', 'needs_consent']
+__all__ = ['LABEL', 'LOCAL_ONLY', 'check_family', 'check_host', 'check_roles', 'main', 'needs_consent']
 
 #: Tables a machine holds for itself; the family layer never carries them.
 LOCAL_ONLY: Final = ('repos', 'writeroots', 'sync')
@@ -68,7 +72,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
     shared = tomllib.loads(family.read_text(encoding='utf-8')) if family is not None else {}
     if accounthost.is_account(parsed):
         return [f'{path.name}: {line}' for line in accounthost.check(path, parsed, shared)]
-    found = producercheck.host_refusals(path.name, parsed)
+    found = rolecheck.host_refusals(path.name, parsed)
     if 'dev' in parsed:
         found += [f'{path.name}: {line}' for line in devschema.check(parsed, shared)]
         if 'ssh' in parsed:
@@ -84,6 +88,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         'dev': {},
         **({key: {} for key in devschema.MACHINE_TABLES} if 'dev' in parsed else {}),
         **({'ssh': {}} if 'dev' in parsed else {}),
+        **({app: {} for app in devschema.app_tables(shared)} if 'dev' in parsed else {}),
     }
     return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
 
@@ -125,6 +130,36 @@ def check_family(path: Path) -> list[str]:
     return found
 
 
+def _listed(name: str, card: Mapping[str, Any]) -> Iterator[tuple[str, str, str]]:
+    """Each (role, url, where) host card *name* lists a repo for: its judge's repos, its promoter's repos."""
+    ops = card.get('ops', {})
+    for role, duty in roles.DUTIES.items():
+        if duty not in ops:
+            continue
+        listed = ops[duty].get('repos', ()) if role == roles.REVIEW else ops.get('repos', ())
+        where = f'[ops.{duty}] repos' if role == roles.REVIEW else '[ops] repos'
+        yield from ((role, url, f'{name}: {where}') for url in listed)
+
+
+def check_roles(family: Path, hosts: Sequence[Path]) -> list[str]:
+    """Where the family's roles binding and the *hosts*' files disagree; a host is named by its file's stem."""
+    layer = tomllib.loads(family.read_text(encoding='utf-8'))
+    cards = {path.stem: tomllib.loads(path.read_text(encoding='utf-8')) for path in hosts}
+    found = [f'{family.name}: {line}' for line in roles.host_refusals(layer, cards)]
+    for name, card in cards.items():
+        for role, url, where in _listed(name, card):
+            try:
+                bound = roles.roles_of_url(url, layer=layer).of(role)
+            except roles.Unbound as unbound:
+                found.append(f'{where} lists {url}, but {unbound}')
+                continue
+            if bound != roles.Executor(roles.HOST, host=name):
+                found.append(
+                    f'{where} lists {url}, whose {role} the family binds to {bound}: the binding is the source'
+                )
+    return found
+
+
 def needs_consent(old: str, new: str) -> tuple[str, ...]:
     """The boundary keys a change from *old* to *new* touches (empty: it applies on the operator's word)."""
     return boundary(changes(tomllib.loads(old) if old else {}, tomllib.loads(new)))
@@ -139,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     defects = [line for host in args.hosts for line in check_host(host, args.family)]
     if args.family is not None:
-        defects += check_family(args.family)
+        defects += check_family(args.family) + check_roles(args.family, args.hosts)
     for line in defects:
         emit(f'refused: {line}', err=True)
     if args.against is not None:

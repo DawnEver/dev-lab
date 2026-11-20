@@ -81,7 +81,10 @@ def holder(
         return None
     when = time.time() if now is None else now
     wanted = {(ACTION, session): f'session {session}'}
-    task = bound_task(session, start=start)
+    try:
+        task = bound_task(session, start=start)
+    except ValueError:  # an unmigrated binding grants nothing; the push check names its migration
+        task = None
     if task:
         wanted[(TASK_ACTION, task)] = f'task {task}'
     for path in sorted(state_dir(home).glob('*.json')):

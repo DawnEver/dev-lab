@@ -6,10 +6,14 @@ interpreter running it lacks.
 
 A REPO ADDS ITS OWN HANDLERS AS DATA (:func:`declared`): ``[[tool.dev_lab.agent_hooks]]`` rows in its
 ``pyproject.toml``, one :class:`Wire` each (``events``, ``module``, ``args``, ``tools``, ``may_block``, ``once``,
-``timeout``). They join the family's rows in the event's one dispatcher -- no settings row, no second process -- so
-the wiring has two sources and no third: :data:`WIRING` and the repo's declaration. A declared module must import
-from the repo's venv with the repo's root on the path, and a row may not repeat a family row or another declared one
-(a row's :attr:`Wire.name` is its identity); either is refused by name (:class:`WireRefused`).
+``timeout``, ``detached``). They join the family's rows in the event's one dispatcher -- no settings row, no second
+process -- so the wiring has two sources and no third: :data:`WIRING` and the repo's declaration. A declared module
+must import from the repo's venv with the repo's root on the path, and a row may not repeat a family row or another
+declared one (a row's :attr:`Wire.name` is its identity); either is refused by name (:class:`WireRefused`).
+
+EVERY ROW FITS FIVE SECONDS (``HOOK-UNDER-FIVE-SECONDS``, user ruling D24): each rendered row carries
+:data:`HOOK_TIMEOUT_S`, the dispatcher keeps :data:`DISPATCH_BUDGET_S` of it, and a row that can take longer is
+``detached`` -- run to completion in the background (:mod:`dev_lab.dev.hookhandoff`), never cut or skipped.
 """
 
 from __future__ import annotations
@@ -28,10 +32,14 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
 __all__ = [
+    'BACKGROUND_BOUND_S',
     'DECLARED_TABLE',
+    'DISPATCH_BUDGET_S',
     'DISPATCH_MODULE',
     'ENGINE_REL',
+    'GUARD_BUDGET_S',
     'HOOK_COMMAND',
+    'HOOK_TIMEOUT_S',
     'LAUNCHER_REL',
     'REINSTALL_COMMAND',
     'RULES_REL',
@@ -116,14 +124,50 @@ def dispatch_command(event: str) -> str:
     return f'node "$CLAUDE_PROJECT_DIR/{LAUNCHER_REL}" -m {DISPATCH_MODULE} {event}'
 
 
+class WireRefused(ValueError):
+    """A wire the dispatcher will not run, named with its cause and, for a repo-declared one, the table to fix."""
+
+
+#: THE CEILING (user ruling D24, 2026-11-17: every hook under five seconds, strictly; a slow hook let a 30-second TOTP
+#: code expire). Every row the renderer writes carries it as its ``timeout``, the engine row included. The harness
+#: reads a hook it kills at the ceiling as a NON-BLOCKING error, so a guard killed here lets the call through: the
+#: ceiling is a backstop, never the mechanism -- the budgets below are.
+HOOK_TIMEOUT_S: Final = 5
+#: The dispatcher's share of an event: every hook source on the event (user-level, plugins) shares the ceiling, so a
+#: row that is not a guard starts and finishes within this many seconds of the dispatcher's start, or it is handed
+#: to the background (:mod:`dev_lab.dev.hookhandoff`) to run to completion -- never cut, never skipped.
+DISPATCH_BUDGET_S: Final = 1.0
+#: A guard (``may_block``) cannot be handed off for its answer -- it is needed now -- so it keeps running to this
+#: bound; past it the call goes through and the guard's work moves to the background. Both budgets count from the
+#: dispatcher's ``main``: the launcher, the interpreter's start and the imports before it (measured 2026-11-17 up to
+#: 1.4 s cold) live in the margin left under the ceiling.
+GUARD_BUDGET_S: Final = 3.5
+#: A background run's bound when its row names none.
+BACKGROUND_BOUND_S: Final = 600
+
+
+def _budget_refusal(name: str, why: str) -> WireRefused:
+    return WireRefused(
+        f'HOOK-UNDER-FIVE-SECONDS: {name} {why}\n'
+        'make the row fast, or declare it detached = true: it then runs to completion in the background\n'
+        'details: docs-src/dev/refusals.md#hook-under-five-seconds (dev-lab)'
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Wire:
     """One handler the dispatcher runs -- ``python -m <module> <argv>``, in-process -- on each of *events*.
 
     ``tools``: the tools whose calls a tool event's handler sees (empty: every call). ``may_block``: only such a
     row's refusal (exit 2, ``decision: block``, ``permissionDecision: deny``) is answered; another row's is a wiring
-    fault, demoted to one stderr line. ``once``: at most once per session. ``timeout`` (seconds) bounds the row; the
-    event's settings row carries the sum, since the dispatcher runs its rows one after another.
+    fault, demoted to one stderr line. ``once``: at most once per session. ``detached``: never run inline -- handed
+    to the background runner, its answer deferred to the session's next context event; a guard cannot be detached.
+    ``timeout`` (seconds): the row's bound; an inline row's may not pass its budget (:data:`DISPATCH_BUDGET_S`, a
+    guard's :data:`GUARD_BUDGET_S`), a detached row's bounds its background run (default :data:`BACKGROUND_BOUND_S`).
+
+    Raises:
+        WireRefused: a detached guard, or an inline bound past the row's budget (``HOOK-UNDER-FIVE-SECONDS``).
+
     """
 
     events: tuple[str, ...]
@@ -132,12 +176,36 @@ class Wire:
     tools: tuple[str, ...] = ()
     may_block: bool = False
     once: bool = False
-    timeout: int = 30
+    timeout: float | None = None
+    detached: bool = False
+
+    def __post_init__(self) -> None:
+        """Refuse what no budget can hold."""
+        if self.detached and self.may_block:
+            raise _budget_refusal(self.name, 'is a guard and detached: a refusal from the background answers nothing')
+        if not self.detached and self.timeout is not None and self.timeout > self.budget:
+            why = f'is bounded at {self.timeout:g} s inline, past its {self.budget:g} s budget'
+            raise _budget_refusal(self.name, why)
 
     @property
     def name(self) -> str:
         """The row as one readable id: ``<module> <argv>``."""
         return ' '.join((self.module, *self.argv))
+
+    @property
+    def budget(self) -> float:
+        """Seconds after the dispatcher's start by which this row, inline, has finished or is handed off."""
+        return GUARD_BUDGET_S if self.may_block else DISPATCH_BUDGET_S
+
+    @property
+    def inline_bound(self) -> float:
+        """The most this row may run inline: its own bound, else its budget."""
+        return self.budget if self.timeout is None else self.timeout
+
+    @property
+    def background_bound(self) -> float:
+        """The most a background run of this row may take."""
+        return self.timeout if self.detached and self.timeout is not None else BACKGROUND_BOUND_S
 
 
 _STOPS: Final = ('Stop', 'SubagentStop')
@@ -147,30 +215,35 @@ _STOPS: Final = ('Stop', 'SubagentStop')
 #: match, ``_deny_journal_row``); before every write: the codeplace write hook (a report under output/, a write-prone
 #: root, a consent file refused; a misplaced code file hinted). After every shell call, succeeded or failed: the wall
 #: ledger's foreign-denial reader (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54) and the PR inbox
-#: -- the ONE machine PR watcher (SESSION-HEARS-ITS-PRS); the task binding is rem's own prompt hook, never a row here.
+#: -- the ONE machine forge hearer (TASK-HEARS-ITS-FORGE-EVENTS); the task binding is rem's prompt hook, not a row.
 #: Every stop, the main session's and each subagent's: the hand-back check and the wall ledger's stop; the main
 #: session's adds the stray census, the scratch census, the unfilled install home and the shell reaper -- Stop is the
 #: one event that recurs inside a session, so it is the reaper's clock, and a session's first stop sweeps what an ended
 #: one left (measured 2026-11-16: 37 sweeps and both over-bound stops of the day fell in an 11-hour window with no
 #: session start). Session start: the ONE reclaim, the machine-file notice (once: drift cannot change within a turn),
 #: the venv follower, the forge-token notice, the scratch baseline, the classifier render and the PR watcher.
+#: INLINE ONLY A GUARD OR A CHEAP READ (HOOK-UNDER-FIVE-SECONDS, D24; measured 2026-11-17: the prompt's two readers
+#: imported 0.5-0.8 s, the session start's rows took 10-20 s, the shell reaper 1-3 s). Every row reaching the
+#: network, git beyond one listing, a bootstrap, a process census, a render or a heavy import chain is ``detached``:
+#: it runs to completion in the background and its notice reaches the session at its next context event. The
+#: scratch baseline stays inline: it must see the tree as the session found it.
 WIRING: Final = (
     Wire(('PreToolUse',), 'dev_lab.dev.codeplace', tools=WRITE_TOOLS, may_block=True),
     Wire(('PostToolUse', 'PostToolUseFailure'), 'dev_lab.dev.walls', ('post-tool',), tools=SHELL_TOOLS),
-    Wire(('UserPromptSubmit',), 'dev_lab.dev.hostalarm', ('hook',)),
-    Wire(('UserPromptSubmit',), 'dev_lab.dev.prwatcher', ('inbox',)),
-    Wire(('Stop',), 'dev_lab.dev.codeplace', ('stray',), may_block=True, timeout=60),
-    Wire(_STOPS, 'dev_lab.dev.handback', may_block=True, timeout=60),
-    Wire(('Stop',), 'dev_lab.dev.scratch', ('stop',), may_block=True, timeout=60),
-    Wire(_STOPS, 'dev_lab.dev.walls', ('stop',), may_block=True, timeout=60),
-    Wire(('Stop',), 'dev_lab.dev.shellreaper', ('--hook',), timeout=60),
-    Wire(('SessionStart',), 'dev_lab.dev.reclaimrun', ('--session-start',), once=True, timeout=120),
-    Wire(('SessionStart',), 'dev_lab.dev.devhost', ('session-start',), once=True, timeout=60),
-    Wire(('SessionStart',), 'dev_lab.dev.venvfollow', ('--session-start',), timeout=120),
-    Wire(('SessionStart',), 'dev_lab.dev.forgeauthnotice', ('--session-start',), once=True, timeout=120),
-    Wire(('SessionStart',), 'dev_lab.dev.scratch', ('snapshot',), once=True, timeout=120),
-    Wire(('SessionStart',), 'dev_lab.dev.automode', ('session-start',), timeout=120),
-    Wire(('SessionStart',), 'dev_lab.dev.prwatcher', ('session-start',), timeout=120),
+    Wire(('UserPromptSubmit',), 'dev_lab.dev.hostalarm', ('hook',), detached=True),
+    Wire(('UserPromptSubmit',), 'dev_lab.dev.forgefeed', ('inbox',), detached=True),
+    Wire(('Stop',), 'dev_lab.dev.strays', ('hook',), may_block=True),
+    Wire(_STOPS, 'dev_lab.dev.handback', may_block=True),
+    Wire(('Stop',), 'dev_lab.dev.scratch', ('stop',), may_block=True),
+    Wire(_STOPS, 'dev_lab.dev.walls', ('stop',), may_block=True),
+    Wire(('Stop',), 'dev_lab.dev.shellreaper', ('--hook',), detached=True),
+    Wire(('SessionStart',), 'dev_lab.dev.reclaimrun', ('--session-start',), once=True, detached=True),
+    Wire(('SessionStart',), 'dev_lab.dev.devhost', ('session-start',), once=True, detached=True),
+    Wire(('SessionStart',), 'dev_lab.dev.venvfollow', ('--session-start',), detached=True),
+    Wire(('SessionStart',), 'dev_lab.dev.forgeauthnotice', ('--session-start',), once=True, detached=True),
+    Wire(('SessionStart',), 'dev_lab.dev.scratch', ('snapshot',), once=True),
+    Wire(('SessionStart',), 'dev_lab.dev.automode', ('session-start',), detached=True),
+    Wire(('SessionStart',), 'dev_lab.dev.forgefeed', ('session-start',), detached=True),
 )
 
 
@@ -186,11 +259,7 @@ class Row:
 
 #: The ``pyproject.toml`` table a repo declares its own handlers in: ``[[tool.dev_lab.agent_hooks]]``.
 DECLARED_TABLE: Final = 'agent_hooks'
-_KEYS: Final = frozenset({'events', 'module', 'args', 'tools', 'may_block', 'once', 'timeout'})
-
-
-class WireRefused(ValueError):
-    """A repo-declared wire the dispatcher will not run, named with its cause and the table to fix."""
+_KEYS: Final = frozenset({'events', 'module', 'args', 'tools', 'may_block', 'once', 'timeout', 'detached'})
 
 
 @contextlib.contextmanager
@@ -231,22 +300,28 @@ def _wire(raw: object, where: str) -> Wire:
     if unknown := sorted(set(raw) - _KEYS):
         msg = f'{where}: unknown key(s) {unknown}; the keys are {sorted(_KEYS)}'
         raise WireRefused(msg)
-    module, timeout = raw.get('module'), raw.get('timeout', 30)
+    module, timeout = raw.get('module'), raw.get('timeout')
     if not isinstance(module, str) or not module or ' ' in module:
         msg = f'{where}: module must name one importable module, not {module!r}'
         raise WireRefused(msg)
-    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
-        msg = f'{where}: timeout must be a positive whole number of seconds, not {timeout!r}'
+    if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, int | float) or timeout <= 0):
+        msg = f'{where}: timeout must be a positive number of seconds, not {timeout!r}'
         raise WireRefused(msg)
-    return Wire(
-        _strings(raw, 'events', where, required=True),
-        module,
-        _strings(raw, 'args', where),
-        tools=_strings(raw, 'tools', where),
-        may_block=_flag(raw, 'may_block', where),
-        once=_flag(raw, 'once', where),
-        timeout=timeout,
-    )
+    try:
+        return Wire(
+            _strings(raw, 'events', where, required=True),
+            module,
+            _strings(raw, 'args', where),
+            tools=_strings(raw, 'tools', where),
+            may_block=_flag(raw, 'may_block', where),
+            once=_flag(raw, 'once', where),
+            timeout=timeout,
+            detached=_flag(raw, 'detached', where),
+        )
+    except WireRefused as refused:  # the rule id leads; where the row is follows it
+        rule, _, rest = str(refused).partition(': ')
+        msg = f'{rule}: {where}: {rest}'
+        raise WireRefused(msg) from None
 
 
 def _importable(module: str, root: Path) -> bool:
@@ -308,18 +383,18 @@ def events(wires: tuple[Wire, ...] = WIRING) -> tuple[str, ...]:
 def rows(root: Path | None = None) -> tuple[Row, ...]:
     """THE RENDERED ROWS, derived: the engine, then one dispatcher row per event of :func:`wiring` (*root*).
 
-    A row's matcher is the union of its handlers' tools -- none when any handler sees every call -- and its timeout
-    the sum of its handlers' bounds.
+    A row's matcher is the union of its handlers' tools -- none when any handler sees every call -- and every row's
+    timeout is :data:`HOOK_TIMEOUT_S`: the dispatcher keeps its own budget inside it and hands the rest off.
 
     Raises:
         WireRefused: *root*'s declaration is refused (:func:`declared`).
 
     """
     every = wiring(root)
-    out = [Row('PreToolUse', '|'.join(SHELL_TOOLS), HOOK_COMMAND, 30)]
+    out = [Row('PreToolUse', '|'.join(SHELL_TOOLS), HOOK_COMMAND, HOOK_TIMEOUT_S)]
     for event in events(every):
         wires = [wire for wire in every if event in wire.events]
         tools = tuple(dict.fromkeys(tool for wire in wires for tool in wire.tools))
         matcher = None if any(not wire.tools for wire in wires) else '|'.join(tools)
-        out.append(Row(event, matcher, dispatch_command(event), sum(wire.timeout for wire in wires)))
+        out.append(Row(event, matcher, dispatch_command(event), HOOK_TIMEOUT_S))
     return tuple(out)

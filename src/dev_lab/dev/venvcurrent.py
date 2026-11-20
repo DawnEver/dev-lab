@@ -18,14 +18,23 @@ An old environment is reclaimed (:func:`reclaim`) only when no process executes 
 of :func:`dev_lab.dev.liverun.removal_holders` -- and never while it is being built (its :data:`BUILDING`
 marker). ``dep`` runs the reclaim after each publish; :mod:`dev_lab.dev.reclaimrun` runs it with its worktree
 pass.
+
+ONE PUBLISHER PER WORKTREE. Two ``dep`` runs on one worktree each build and publish, and the later publish
+re-points the pointer at an environment the other run's reclaim already removed. So a run that builds holds
+:func:`exclusive_build` -- the OS lock of :func:`dev_lab.dev.servelock.held` on ``.venvs/build.lock``, dropped by the
+OS however its holder dies, so a dead holder's lock is simply taken -- and a second run refuses at once naming the
+holder. The holder writes its pid and start time into the lock file past the locked byte; the per-environment
+:data:`BUILDING` marker stays a different fact (which environment reclaim must spare), so neither replaces the other.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 
@@ -33,6 +42,7 @@ from lab_commons.census import processes
 
 from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.liverun import Census, label, removal_holders
+from dev_lab.dev.servelock import held
 from dev_lab.dev.venvpointer import ALIAS, HOME, POINTER, named
 
 if sys.platform == 'win32':
@@ -40,13 +50,18 @@ if sys.platform == 'win32':
 
 __all__ = [
     'BUILDING',
+    'BUILD_LOCK',
     'BUILD_WALL_S',
     'RECLAIMING',
+    'BuildBusy',
     'abandon',
+    'building',
+    'exclusive_build',
     'fresh',
     'passed_over',
     'publish',
     'reclaim',
+    'reclaimed',
     'retire_passed_over',
     'stale_alias',
     'target',
@@ -57,6 +72,10 @@ __all__ = [
 BUILDING: Final = '.building'
 #: A build marker older than this is a dead builder's: its environment is reclaimable.
 BUILD_WALL_S: Final = 6 * 3600.0
+#: The per-worktree lock file in :data:`HOME` a building ``dep`` run holds (:func:`exclusive_build`).
+BUILD_LOCK: Final = 'build.lock'
+#: Byte 0 is the locked region; the holder's ``<pid> <start>`` line follows it, readable while it is held.
+_HOLDER_AT: Final = 1
 #: Suffix of an environment moved aside for removal: never resolvable; a removal that failed is retried next time.
 RECLAIMING: Final = '.reclaiming'
 
@@ -187,14 +206,15 @@ def retire_passed_over(root: Path, *, census: Census = processes) -> str:
     return f'legacy {alias} moved to {aside}; ' + _repoint(root, env)
 
 
-def _building(env: Path) -> bool:
+def building(env: Path) -> bool:
+    """Whether *env* carries a live :data:`BUILDING` marker (younger than :data:`BUILD_WALL_S`)."""
     try:
         return time.time() - _marker(env).stat().st_mtime < BUILD_WALL_S
     except OSError:
         return False
 
 
-def _reclaimed(env: Path) -> str:
+def reclaimed(env: Path) -> str:
     """Remove *env*, MOVED ASIDE first.
 
     Windows refuses to rename a directory a process runs from, so a holder the census missed keeps its environment
@@ -210,19 +230,66 @@ def _reclaimed(env: Path) -> str:
     return f'reclaimed {env}'
 
 
-def reclaim(root: Path, *, census: Census = processes) -> tuple[str, ...]:
-    """Remove every environment of *root* that is not current, not being built, and that nothing executes from."""
-    root = Path(root)
+def reclaim(root: Path, *, census: Census = processes, building_here: bool = False) -> tuple[str, ...]:
+    """Remove every environment of *root* that is not current, not being built, and that nothing executes from.
+
+    It reads the live pointer and then walks :data:`HOME`, so a build publishing between the two would lose its new
+    environment as "not current": a reclaim runs under :func:`exclusive_build` and skips while a build holds it.
+    *building_here* is the build's own reclaim, already inside that lock.
+    """
+    if building_here:
+        return _reclaim(Path(root), census=census)
+    try:
+        with exclusive_build(root):
+            return _reclaim(Path(root), census=census)
+    except BuildBusy as exc:
+        return (f'kept     every environment of {root}: {exc}',)
+
+
+def _reclaim(root: Path, *, census: Census) -> tuple[str, ...]:
     lines = [line] if (line := retire_passed_over(root, census=census)) else []
     home, live = root / HOME, named(root)
     if not home.is_dir() or live is None:
         return tuple(lines)
     table = tuple(census())
     for env in sorted(home.iterdir()):
-        if not env.is_dir() or env.name == live.name or _building(env):
+        if not env.is_dir() or env.name == live.name or building(env):
             continue
         if users := removal_holders(env, census=lambda: table):
             lines.append(f'kept     {env}  ({len(users)} holder(s): {label(users[0])})')
             continue
-        lines.append(_reclaimed(env))
+        lines.append(reclaimed(env))
     return tuple(lines)
+
+
+class BuildBusy(RuntimeError):
+    """Another live run (a ``dep`` build or a reclaim) holds this worktree's :data:`BUILD_LOCK`."""
+
+
+def _holder(lock: Path) -> str:
+    try:
+        with lock.open('rb') as handle:
+            handle.seek(_HOLDER_AT)
+            pid, _, start = handle.read().decode('utf-8').strip().partition(' ')
+    except (OSError, UnicodeDecodeError):
+        pid, start = '', ''
+    if not pid.isdigit():
+        return f'another run holds {lock} (its pid is not yet written); wait for it'
+    return (
+        f'another run (pid {pid}, started {start}) is building or reclaiming this worktree and holds {lock}; '
+        f'wait for it, or stop it with dev_lab.dev.stoprun --pid {pid}'
+    )
+
+
+@contextlib.contextmanager
+def exclusive_build(root: Path) -> Iterator[None]:
+    """Hold *root*'s :data:`BUILD_LOCK` for the block; raise :class:`BuildBusy` naming the holder when it is held."""
+    lock = Path(root) / HOME / BUILD_LOCK
+    with held(lock) as mine:
+        if not mine:
+            raise BuildBusy(_holder(lock))
+        with lock.open('r+b') as handle:
+            handle.seek(_HOLDER_AT)
+            handle.write(f'{os.getpid()} {time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}\n'.encode())
+            handle.truncate()
+        yield

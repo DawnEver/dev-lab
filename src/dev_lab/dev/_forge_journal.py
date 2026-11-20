@@ -38,16 +38,17 @@ from typing import Any, Final
 
 from lab_commons.compute.durable import durable_write
 
-from dev_lab.dev.worktreeplace import main_checkout
+from dev_lab.dev.storage import checkout_output_path
 
 __all__ = [
-    'LOOKBACK', 'OUTBOX_REL', 'RETAIN_S', 'WRITES', 'Durable', 'Journal', 'Probe', 'Write', 'journal_at',
+    'LOOKBACK', 'OUTBOX_IN_OUTPUT', 'RETAIN_S', 'WRITES', 'Durable', 'Journal', 'Probe', 'Write', 'journal_at',
     'journal_for',
     'outbox_dir', 'since', 'write_key',
 ]  # fmt: skip
 
 #: The outbox, relative to the MAIN checkout's root: every lane of one repository shares it.
-OUTBOX_REL: Final = 'output/forge/outbox'
+#: The outbox, inside the checkout's ``output`` storage kind (:func:`dev_lab.dev.storage.output_path`).
+OUTBOX_IN_OUTPUT: Final = ('forge', 'outbox')
 
 #: The journal of writes, inside the outbox.
 WRITES: Final = 'writes'
@@ -181,7 +182,7 @@ class Journal:
 
 def outbox_dir(root: Path) -> Path:
     """The outbox of the repository *root* belongs to, in its MAIN checkout (shared by every lane)."""
-    return main_checkout(root) / OUTBOX_REL
+    return checkout_output_path(root, *OUTBOX_IN_OUTPUT)
 
 
 def journal_at(outbox: Path) -> Journal:
@@ -190,5 +191,5 @@ def journal_at(outbox: Path) -> Journal:
 
 
 def journal_for(root: Path) -> Journal:
-    """The write journal of *root*'s repository: what :func:`dev_lab.dev.forgework.client_for` records into."""
+    """The write journal of *root*'s repository: what :func:`dev_lab.dev.forgeclient.client_for` records into."""
     return journal_at(outbox_dir(root))
