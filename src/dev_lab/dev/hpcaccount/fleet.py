@@ -200,24 +200,31 @@ def layer_refusal(grant: Grant, source: ConfigSource) -> str:
     return ''
 
 
-def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
+def render_command(grant: Grant, target: Target, source: ConfigSource, *, reader: str = '') -> str:
     """The shell line that renders *grant*'s machine file ON its account from the config source's clone there.
 
     The clone is ``~/<root>/<config repo>``, fetched with the account's stored credential (refused, naming the door
     that places one, when none is stored for the forge); ``devhost drift`` prints what the render changes, then
     ``devhost render --write`` replaces the file, its old copy backed up. In the grant's ``setup`` environment.
+    With *reader* (the role's ``config_reader``), the url names that login, so git's store answers with ITS line
+    even when the account holds another login's line for the same forge (one line per host and login, 2026-11-20).
     """
-    forge = urlsplit(source.url).hostname or ''
+    split = urlsplit(source.url)
+    forge = split.hostname or ''
+    url = split._replace(netloc=f'{reader}@{split.netloc}').geturl() if reader else source.url
     clone = f'"{_under_home(account_clone(target, source))}"'
     backups = f'"$HOME/{_BASE}/$(date -u +%y/%m/%d)/devhost"'
+    held = f'://{reader}:[^@/]*@{forge}' if reader else f'@{forge}'
     credential = (
-        f"grep -qs '@{forge}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
+        f"grep -qs '{held}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
         f'~/{STORE}: place one with python -m dev_lab.dev.hpcaccount credential {grant.user}@{target.host} --login '
-        f"<reader> --host-config <config source clone>'; exit 2; }}"
+        f"{reader or '<reader>'} --host-config <config source clone>'; exit 2; }}"
     )
+    quoted = shlex.quote(url)
     fetch = (
-        f'if [ -d {clone}/.git ]; then git -C {clone} pull -q --ff-only; '
-        f'else git clone -q {shlex.quote(source.url)} {clone}; fi'
+        f'if [ -d {clone}/.git ]; then git -C {clone} remote set-url origin {quoted} '
+        f'&& git -C {clone} pull -q --ff-only; '
+        f'else git clone -q {quoted} {clone}; fi'
     )
     name = account_host(grant)
     drift = in_checkout(target, ['-m', 'dev_lab.dev.devhost', 'drift'])
@@ -272,7 +279,11 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     if division is not None and (role := division.role_of(grant.user)):
         deploy += ['--fleet-role', role, '--role-table', json.dumps(dict(division.roles[role]), sort_keys=True)]
     refreshed = f'{first_install(grant, target)} && {refresh_kit(grant, target)}'
-    return f'{paused_guard()} && {refreshed} ; {render_command(grant, target, source)} && {in_checkout(target, deploy)}'
+    reader = division.config_reader(grant.user) if division is not None else ''
+    deployed = in_checkout(target, deploy)
+    if grant.setup:  # the venvs it builds compile in the cluster's declared environment, as its ticks run
+        deployed = f'( {" && ".join([*grant.setup, deployed])} )'
+    return f'{paused_guard()} && {refreshed} ; {render_command(grant, target, source, reader=reader)} && {deployed}'
 
 
 #: The official uv installer (user approval 2026-11-16: an HPC account may install uv into ``~/.local/bin``).
