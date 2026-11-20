@@ -70,20 +70,36 @@ def test_migrate_refuses_an_unbound_kind_and_a_foreign_target(tmp_path: Path) ->
 
 
 def _reaching(tmp_path: Path) -> object:
-    family = {'storage': {'remotes': {'results': {'type': 's3', 'endpoint': 'https://objects.example'}}}}
+    remote = {
+        'type': 's3', 'endpoint': 'https://objects.example', 'access_key_id': 'AKIA-declared',
+        'secret_keys': ['secret_access_key'],
+    }  # fmt: skip
     machine = {'storage': {'reach': {'results': {'credentials_file': str(tmp_path / 'secrets' / 'results')}}}}
-    return declared(machine, family)
+    return declared(machine, {'storage': {'remotes': {'results': remote}}})
 
 
 def test_render_joins_family_options_and_the_placed_secret_outside_the_repo(tmp_path: Path) -> None:
+    """The declared access key ID and the placed secret meet only in the render."""
     tree = _repo(tmp_path)
     reach = _reaching(tmp_path)
     (tmp_path / 'secrets').mkdir()
     (tmp_path / 'secrets' / 'results').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
     out = storage.render(tmp_path / 'conf' / 'rclone.conf', repo=tree, declared=reach)
     assert out.read_text(encoding='utf-8') == (
-        '[results]\ntype = s3\nendpoint = https://objects.example\nsecret_access_key = s3cr3t\n'
+        '[results]\ntype = s3\nendpoint = https://objects.example\naccess_key_id = AKIA-declared\n'
+        'secret_access_key = s3cr3t\n'
     )
+
+
+def test_render_refuses_a_placed_file_restating_a_fact_and_names_the_migration(tmp_path: Path) -> None:
+    """D51: an older file holding the access key ID is refused by name with its one-time migration."""
+    tree = _repo(tmp_path)
+    (tmp_path / 'secrets').mkdir()
+    (tmp_path / 'secrets' / 'results').write_text(
+        'access_key_id = "AKIA-declared"\nsecret_access_key = "s3cr3t"\n', encoding='utf-8'
+    )
+    with pytest.raises(StorageError, match=r'restates .access_key_id.*secretplace migrate --remote results'):
+        storage.render(tmp_path / 'rclone.conf', repo=tree, declared=_reaching(tmp_path))
 
 
 def test_render_refuses_a_missing_secret_and_a_path_inside_the_repo(tmp_path: Path) -> None:

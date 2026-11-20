@@ -10,7 +10,7 @@ asked. The code itself is given to ``python -m dev_lab.dev.sshhold open --plan <
 opens every plan host not already held.
 
 The code is the USER's: they give it, the agent runs this with it (user ruling 2026-11-08) -- as ``--code``, on stdin,
-or typed at the no-echo prompt of a terminal. Never invented, logged or reused. Writes the credential under
+or typed at a terminal prompt that shows it as typed. Never invented, logged or reused. Writes the credential under
 ``<machine home>/state/consent/``. Exit 0 granted, 2 refused.
 """
 

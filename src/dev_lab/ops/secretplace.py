@@ -10,13 +10,15 @@ the ``chown`` step. So the door writes exactly one declared path:
     python -m dev_lab.ops.secretplace place --path P --grant ID < content                # a workstation
     python -m dev_lab.ops.secretplace enter --remote R       # a person at a terminal: asked once, placed, checked
     python -m dev_lab.ops.secretplace distribute --remote R  # then to every account that declares R (one code)
+    python -m dev_lab.ops.secretplace migrate --remote R     # once: drop the declared facts an older file restated
 
-* ``enter`` is the person's door: it asks each secret key of the reached remote R (its ``credentials_file`` is
-  this machine's own declaration, :func:`path_of`)
-  (:data:`TRANSPORT_SECRETS` by the remote's ``type``) without echo, builds the file in memory, asks the issuer for
-  the consent of exactly that path and content -- the person's one code, also without echo -- places it, and lists
-  the remote (``python -m dev_lab.dev.storage check``). The secret is typed once and lives only in this process and
-  the placed file; a pipe is refused (that is ``request`` / ``place``).
+* ``enter`` is the person's door: it asks each DECLARED secret key of the reached remote R
+  (:attr:`lab_commons.storage.Remote.secret_keys`; its ``credentials_file`` is this machine's own declaration,
+  :func:`path_of`) -- never a declared fact such as an S3 access key ID -- shown as typed
+  (:func:`dev_lab.dev.ask.value`), builds the file in memory, asks the issuer for the consent of exactly that path
+  and content -- the person's one code, also shown as typed -- places it, and lists the remote
+  (``python -m dev_lab.dev.storage check``). The secret is typed once and lives only in this process and the placed
+  file; a pipe is refused (that is ``request`` / ``place``).
 
 * An ops host's declared files come from its ops config (:func:`declared`). A workstation has no ops config: its
   declared files are the ``credentials_file`` of every storage remote THIS machine reaches
@@ -41,8 +43,8 @@ import getpass
 import hashlib
 import json
 import os
-import re
 import sys
+import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -52,6 +54,8 @@ from lab_commons.log import emit
 from lab_commons.storage import Storage, StorageError
 from lab_commons.storage import declared as storage_declared
 
+from dev_lab.dev.ask import PASTE_NOTE, AskRefused
+from dev_lab.dev.ask import value as asked_value
 from dev_lab.dev.storage import check
 from dev_lab.ops import secretdistribute
 from dev_lab.ops.config import OpsConfig
@@ -61,11 +65,11 @@ from dev_lab.ops.served import credential_files
 
 __all__ = [
     'ACTION',
-    'TRANSPORT_SECRETS',
     'SecretRefused',
     'add_parser',
     'declared',
     'enter',
+    'migrate',
     'path_of',
     'place',
     'request',
@@ -74,9 +78,6 @@ __all__ = [
 ]
 
 ACTION: Final = 'ops.secret.place'
-
-#: The secret keys a remote of each transport ``type`` needs; the family declares everything else about it.
-TRANSPORT_SECRETS: Final = {'s3': ('access_key_id', 'secret_access_key')}
 
 #: Redeem a consent credential for a subject; raises ``ConsentRefused`` when it does not consent.
 type Redeem = Callable[[Mapping[str, Any], str], object]
@@ -183,40 +184,15 @@ def place(
 
 
 def _keys_of(storage: Storage, path: str) -> tuple[str, tuple[str, ...], Mapping[str, str], Mapping[str, str]]:
-    """The reached remote whose ``credentials_file`` is *path*: its transport's secret keys, ask hints and shapes."""
+    """The reached remote whose ``credentials_file`` is *path*: its declared secret keys, ask hints and shapes."""
     wanted = Path(path).expanduser()
     for remote in storage.reach:
         if remote.credentials_file is not None and Path(remote.credentials_file).expanduser() == wanted:
-            kind = remote.options.get('type', '')
-            if kind not in TRANSPORT_SECRETS:
-                msg = f'{remote.name}: transport {kind!r} declares no secret keys; known: {sorted(TRANSPORT_SECRETS)}'
-                raise SecretRefused(msg)
-            return remote.name, TRANSPORT_SECRETS[kind], remote.ask, remote.shape
+            return remote.name, remote.secret_keys, remote.ask, remote.shape
     msg = (
         f'{path} is the credentials_file of no reached remote: declare [storage.reach.<remote>] credentials_file first'
     )
     raise SecretRefused(msg)
-
-
-#: Said before the first value: on Windows the prompt does not take Ctrl+V (it inserts a control character).
-PASTE_NOTE: Final = 'paste with a right-click (Ctrl+V does not paste in this prompt on Windows); the value is shown'
-
-
-def judged(name: str, value: str, shape: str) -> tuple[str, str]:
-    """A check line for one entered value (length, characters, declared shape), and why it is refused ('' if not)."""
-    kind = 'hex' if value and all(c in '0123456789abcdefABCDEF' for c in value) else (
-        'printable' if value.isprintable() else 'CONTROL CHARACTERS')  # fmt: skip
-    matches = re.fullmatch(shape, value) is not None if shape else None
-    line = f'  {name}: {len(value)} characters, {kind}' + (
-        '' if matches is None else f', {"matches" if matches else "does NOT match"} the declared shape {shape}'
-    )
-    if not value:
-        return line, f'{name} is empty'
-    if not value.isprintable() or any(c.isspace() for c in value):
-        return line, f'{name} holds control characters or spaces: {PASTE_NOTE}'
-    if matches is False:
-        return line, f'{name} does not match the declared shape {shape}: check you copied the whole value'
-    return line, ''
 
 
 def enter(
@@ -243,14 +219,14 @@ def enter(
     say(f'[ops secret] {remote}: {PASTE_NOTE}')
     lines = []
     for name in keys:
-        hint = f' -- {hints[name]}' if name in hints else ''
-        value = ask(f'{remote} {name}{hint}\n{name}: ').strip('\r\n')
-        line, why = judged(name, value, shapes.get(name, ''))
-        say(line)
-        if why:
-            msg = f'{remote} {why}; nothing was placed'
-            raise SecretRefused(msg)
-        lines.append(f'{name} = {json.dumps(value)}')
+        try:
+            given = asked_value(
+                f'{remote} {name}', hint=hints.get(name, ''), shape=shapes.get(name, ''), ask=ask, say=say
+            )
+        except AskRefused as refused:
+            msg = f'{remote} {refused}; nothing was placed'
+            raise SecretRefused(msg) from refused
+        lines.append(f'{name} = {json.dumps(given)}')
     content = ''.join(f'{line}\n' for line in lines).encode('utf-8')
     asked = requests / f'secret-{remote}.request.json'
     asked.parent.mkdir(parents=True, exist_ok=True)
@@ -266,6 +242,43 @@ def enter(
         said.append(f'[ops secret] {remote}: PLACED at {key} but the check FAILED -- {refused}; '
                     'run `secretplace enter --remote` again with the right values (it replaces the file)')  # fmt: skip
     return said
+
+
+def migrate(remote: str, *, storage: Storage) -> str:
+    """Once (D51): rewrite *remote*'s placed file to its declared secret keys, dropping the facts it restated.
+
+    A key the family now declares as a fact is dropped only when the file holds the SAME value; a different value,
+    or a key that is neither secret nor declared, is refused by name -- nothing is guessed. Value-free output.
+
+    Raises:
+        SecretRefused: no such reached remote, no placed file, or a restated fact that disagrees with its declaration.
+
+    """
+    found = next((r for r in storage.reach if r.name == remote), None)
+    if found is None or found.credentials_file is None:
+        msg = f'this machine declares no [storage.reach.{remote}] credentials_file'
+        raise SecretRefused(msg)
+    target = Path(found.credentials_file).expanduser()
+    held = tomllib.loads(target.read_text(encoding='utf-8'))
+    extra = {k: v for k, v in held.items() if k not in found.secret_keys}
+    if not extra:
+        return f'[ops secret] {remote}: {target} already holds only its secret keys; nothing to migrate'
+    for key, value in extra.items():
+        if key not in found.options:
+            msg = f'{target} holds {key}, neither a secret key of {remote} nor a declared fact: re-enter it'
+            raise SecretRefused(msg)
+        if str(value) != found.options[key]:
+            msg = f'{target} holds a {key} that differs from the declared one: fix the family file or re-enter'
+            raise SecretRefused(msg)
+    content = ''.join(f'{k} = {json.dumps(v)}\n' for k, v in held.items() if k in found.secret_keys).encode('utf-8')
+    fresh = target.with_name(f'.{target.name}.placing')
+    with contextlib.suppress(FileNotFoundError):
+        fresh.unlink()
+    with os.fdopen(os.open(fresh, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as out:
+        out.write(content)
+    fresh.replace(target)
+    digest = hashlib.sha256(content).hexdigest()[:12]
+    return f'[ops secret] {remote}: migrated {target} to its secret keys (dropped {sorted(extra)}; sha256 {digest})'
 
 
 def add_parser(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -306,6 +319,9 @@ def _by_remote(action: str, remote: str) -> int:
     """``enter --remote`` / ``distribute --remote``: the path comes from this machine's own declaration."""
     if action == 'distribute':
         return _distribute(remote)
+    if action == 'migrate':
+        emit(migrate(remote, storage=storage_declared()))
+        return 0
     for line in enter(
         path_of(storage_declared(), remote), storage=storage_declared(), ask=input, say=emit,
         tty=sys.stdin.isatty(), grant=lambda asked: grant(asked, ask=input),
@@ -318,7 +334,7 @@ def _by_remote(action: str, remote: str) -> int:
 
 def _by_path(action: str, path: str, held: str) -> int:
     """``request`` / ``place --grant`` (the content on stdin) for one declared path."""
-    if action in {'enter', 'distribute'}:
+    if action in {'enter', 'distribute', 'migrate'}:
         msg = f'{action} takes --remote <name>: its path is the one this machine declares'
         raise SecretRefused(msg)
     content = sys.stdin.buffer.read()
@@ -338,10 +354,10 @@ def _by_path(action: str, path: str, held: str) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     """``enter``/``distribute --remote R`` (a person at a terminal); ``request``/``place --grant`` (stdin)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops.secretplace', description=__doc__.splitlines()[0])
-    parser.add_argument('action', choices=('request', 'place', 'enter', 'distribute'))
+    parser.add_argument('action', choices=('request', 'place', 'enter', 'distribute', 'migrate'))
     where = parser.add_mutually_exclusive_group(required=True)
     where.add_argument('--path', help='a declared secret file (request, place)')
-    where.add_argument('--remote', help='a storage remote this machine reaches (enter, distribute)')
+    where.add_argument('--remote', help='a storage remote this machine reaches (enter, distribute, migrate)')
     parser.add_argument('--grant', default='', help='place: the held ops.secret.place credential id the user granted')
     args = parser.parse_args(argv)
     try:
