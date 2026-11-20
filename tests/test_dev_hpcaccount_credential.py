@@ -427,7 +427,7 @@ def test_an_unreachable_account_is_refused_loudly_before_the_token_is_read(
     """
     monkeypatch.setattr(credential, 'reached_machine', lambda _a: Machine(session=None, grants=_FLEET, roles={}))
 
-    def dead(_grant: Grant, _timeout: float = 0) -> Runner:
+    def dead(_grant: Grant, _timeout: float = 0, **_k: str) -> Runner:
         msg = 'the held session of alice@login1.example is recorded but its holder does not answer'
         raise HoldRefused(msg)
 
@@ -439,7 +439,7 @@ def test_an_unreachable_account_is_refused_loudly_before_the_token_is_read(
     assert 'holder does not answer' in said.out + said.err
     assert 'the token stays with you' in said.out + said.err
     placed: list[str] = []
-    monkeypatch.setattr(credential, 'grant_runner', lambda _g, _t=0: lambda _c, _s=None: '')
+    monkeypatch.setattr(credential, 'grant_runner', lambda _g, _t=0, **_k: lambda _c, _s=None: '')
     monkeypatch.setattr(credential, 'place_credential', lambda *_a, **k: placed.append(k['token']) or 0)
     monkeypatch.setattr('sys.stdin', io.StringIO(_MINTED))
     assert credential.main(argv) == 0
@@ -504,7 +504,7 @@ def _main_from_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, placed: i
     out.write_text(_MINTED + '\n', encoding='utf-8')
     monkeypatch.setattr(credential, 'stdout_path', lambda name: out.parent / name)
     monkeypatch.setattr(credential, 'reached_machine', lambda _a: Machine(session=None, grants=_FLEET, roles={}))
-    monkeypatch.setattr(credential, 'grant_runner', lambda _g, _t=0: lambda _c, _s=None: '')
+    monkeypatch.setattr(credential, 'grant_runner', lambda _g, _t=0, **_k: lambda _c, _s=None: '')
     tokens: list[str] = []
     monkeypatch.setattr(credential, 'place_credential', lambda *_a, **k: tokens.append(k['token']) or placed)
     monkeypatch.setattr('sys.stdin', _Unread())
@@ -533,3 +533,22 @@ def test_from_output_refuses_a_name_with_a_path_part(tmp_path: Path, monkeypatch
     monkeypatch.setattr(credential, 'reached_machine', lambda _a: Machine(session=None, grants=_FLEET, roles={}))
     argv = ['alice@login1.example', '--login', 'forge-ci', '--host-config', str(_host_config(tmp_path))]
     assert credential.main([*argv, '--from-output', '../x.token']) == 2
+
+
+def test_an_account_deployed_at_an_old_root_still_takes_its_credential() -> None:
+    """Measured 2026-11-20, a deadlock: a stale [deploy] root refused the credential the redeploy itself needs.
+
+    The credential refused an account whose root predates its cluster's declared root ("redeploy with --root"),
+    while that redeploy refused for want of the very credential.
+
+    The store is home-level, so the placement acts on the checkout as deployed. PLANTED CONTROL: the deploy-side read
+    (no ``as_deployed``) still refuses the same stale root.
+    """
+    rooted = (Grant(user='alice', hosts=_HOSTS, slurm_account='acct', root='/r/declared/lab'),)
+    old = '[deploy]\nhost = "login2.example"\nroot = "/r/old/lab-forge"\n'
+    code, said, seen, _ = _run(grants=rooted, deployed=old)
+    assert code == 0, said
+    assert any('cd /r/old/lab-forge/repos/dev-lab && ' in cmd for cmd, _ in seen)
+    stale = credential.declared_target(rooted[0], lambda _c, _s=None: old)
+    assert isinstance(stale, str)
+    assert 'is not the root its cluster declares' in stale

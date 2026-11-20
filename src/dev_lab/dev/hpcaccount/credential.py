@@ -124,7 +124,7 @@ def unreachable(account: str, grants: Sequence[Grant]) -> str:
     if grant is None:
         return ''  # the placement refuses it by name, before any connection
     try:
-        grant_runner(grant)('true', None)
+        grant_runner(grant, first=account)('true', None)
     except (RuntimeError, OSError) as failed:
         return f'{account} is not reachable: {failed}'
     return ''
@@ -140,7 +140,7 @@ def place_credential(
     grants: Sequence[Grant],
     division: Division,
     say: Callable[[str], None],
-    connect: Callable[[Grant], Runner] = grant_runner,
+    connect: Callable[[Grant], Runner] | None = None,
     stamp: str = '',
 ) -> int:
     """Stage *token* as *login* on *account*, verify the forge answers as *login*, then replace; 2 on refusal."""
@@ -156,9 +156,9 @@ def place_credential(
     if why or grant is None:
         say(f'credential: refused -- {why}')
         return 2
-    shell = connect(grant)
+    shell = connect(grant) if connect else grant_runner(grant, first=account)
     try:
-        target = declared_target(grant, shell)
+        target = declared_target(grant, shell, as_deployed=True)
         if isinstance(target, str):
             say(f'credential: {target}')
             return 2

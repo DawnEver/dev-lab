@@ -104,19 +104,23 @@ class Target:
     repos: tuple[tuple[str, str, str], ...] = ()  # (name, https url, ref): what a first install clones
 
 
-def declared_target(grant: Grant, shell: Runner) -> Target | str:
+def declared_target(grant: Grant, shell: Runner, *, as_deployed: bool = False) -> Target | str:
     """*grant*'s ``[deploy]`` host and root as its REMOTE machine file declares them, read through *shell*.
 
     The read for the doors that act on an account as it stands (credential, forget, storage). deploy-fleet never
     reads it: a fleet account's ``[deploy]`` is its layer's (:func:`layer_target`), which the deploy renders over a
     stale remote file.
+
+    *as_deployed* takes the root the account was deployed at even when the cluster now declares another: the
+    credential door acts on the checkout as it stands, and its store (``~/.git-credentials``) is home-level, so a
+    stale root never blocks the credential the redeploy to the new root needs (measured 2026-11-20: a deadlock).
     """
     out = shell(_READ_DEPLOY, None).splitlines()
     looked = next((line[2:] for line in out if line.startswith('# ')), 'its machine file')
     lines = [line for line in out if not line.startswith('#')]
     table = '\n'.join(lines[:1] + [line for line in lines[1:] if not line.startswith('[')])
     deploy = tomllib.loads(table).get('deploy', {}) if table.strip() else {}
-    return _checked(grant, deploy, looked, 'deploy it once by hand')
+    return _checked(grant, deploy, looked, 'deploy it once by hand', as_deployed=as_deployed)
 
 
 def layer_target(grant: Grant, source: ConfigSource) -> Target | str:
@@ -130,7 +134,9 @@ def layer_target(grant: Grant, source: ConfigSource) -> Target | str:
     return _checked(grant, deploy, str(path), 'declare it there')
 
 
-def _checked(grant: Grant, deploy: Mapping[str, Any], looked: str, door: str) -> Target | str:
+def _checked(
+    grant: Grant, deploy: Mapping[str, Any], looked: str, door: str, *, as_deployed: bool = False
+) -> Target | str:
     """The target *deploy* (read from *looked*) declares for *grant*; else why it cannot be deployed.
 
     The host may name a grant login host in full or by its first DNS label (``login01``); a label resolves
@@ -150,7 +156,7 @@ def _checked(grant: Grant, deploy: Mapping[str, Any], looked: str, door: str) ->
             f'{grant.user}: refused -- no root declared: declare [hpc.clusters.{grant.cluster_name}] root (or the '
             f"account file's [deploy] root) in the family config, on a filesystem the compute nodes see"
         )
-    if grant.root and root != grant.root:
+    if grant.root and root != grant.root and not as_deployed:
         return (
             f'{grant.user}: refused -- its [deploy] root {root} is not the root its cluster declares {grant.root} '
             '(the family declaration is the source: redeploy with --root naming it)'
@@ -420,19 +426,38 @@ def deploy_fleet(
     refused = 0
     for user in accounts or sorted(fleet):
         grant = fleet[user]
+        path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
         target = _target(grant, source, division)
         if isinstance(target, str):
             say(target)
+            _log_line(path, target, dry_run=dry_run)
             refused += 1
             continue
         dest, command = f'{grant.user}@{target.host}', deploy_command(grant, target, source, division)
-        path = dated_log(home, f'{user}.log', base=_BASE, kind=KIND)
         role = (division.role_of(user) if division else '') or target.role or 'role undeclared'
-        say(f'{user} ({role}): {"would start" if dry_run else "started"} {describe(dest, command)}  log {path}')
+        said = f'{user} ({role}): {"would start" if dry_run else "started"} {describe(dest, command)}  log {path}'
+        say(said)
+        _log_line(path, said, dry_run=dry_run)
         if not dry_run:
             with path.open('a', encoding='utf-8') as log:
-                launch(dest, command, log)
+                try:
+                    launch(dest, command, log)
+                except (RuntimeError, OSError) as failed:  # HoldRefused is a RuntimeError
+                    log.write(f'[deploy-fleet] {user}: refused before the deploy ran -- {failed}\n')
+                    say(f'{user}: refused -- {failed}')
+                    refused += 1
     return 2 if refused else 0
+
+
+def _log_line(path: Path, line: str, *, dry_run: bool) -> None:
+    """Write *line* to the account's dated deploy log FIRST, so an early exit still leaves its log.
+
+    Measured 2026-11-20: two accounts' runs left no log at all. A dry run writes nothing.
+    """
+    if not dry_run:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('a', encoding='utf-8') as log:
+            log.write(f'[deploy-fleet] {line}\n')
 
 
 def stale_render(live: Mapping[str, Any]) -> str:
