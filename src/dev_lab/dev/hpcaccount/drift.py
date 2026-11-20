@@ -38,7 +38,7 @@ from dev_lab.dev import devhost
 from dev_lab.dev._machinefile import render_value
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.hpcaccount import deploy
-from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, parse
+from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
 
 __all__ = ['DISCARD', 'Drift', 'account_drift', 'compare', 'compare_lines', 'main', 'report', 'shown']
@@ -140,16 +140,18 @@ def account_drift(step: Step, home: Path, machine: Path, clone: Path, host: str)
         grants, _ = declared_grants(rendered.get('hpc', {}))
     except (OSError, ValueError) as failed:  # TOMLDecodeError is a ValueError
         return f'cannot render {host} from {clone.as_posix()}: {failed}'
+    if spec is None or spec.role != VERIFICATION:  # SCHEDULER-ONLY-FOR-SERVING: no crontab to compare, none read
+        return {'machine file': compare(live, rendered)}
     listed = step.read([*step.tools.crontab, '-l'])
     if listed.returncode and 'no crontab' not in listed.stderr:
         return f'crontab -l exited {listed.returncode}: {listed.stderr.strip()}'
     held = listed.stdout.splitlines() if listed.returncode == 0 else []
-    slurm = deploy.slurm_dirs() if spec is not None else []
+    slurm = deploy.slurm_dirs()
     if isinstance(slurm, str):
         return f'the deploy lines cannot be derived: {slurm}'
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     setup = next((grant.setup for grant in grants if grant.user == user), ())
-    wanted = cron_lines(spec, home, slurm=slurm, setup=setup) if spec is not None else []
+    wanted = cron_lines(spec, home, slurm=slurm, setup=setup)
     return {'machine file': compare(live, rendered), 'crontab': compare_lines(held, wanted)}
 
 
