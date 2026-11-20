@@ -61,7 +61,7 @@ MACHINE_FILE_IS_RENDERED: dict[str, object] = {
     'permits': (
         f'cat ~/{{home}}/{_SHOWN}',
         f'sed -n "/repos/,/^$/p" ~/{{home}}/{_SHOWN}',
-        f'cp ~/{{home}}/{_SHOWN} output/machine-copy.toml',
+        f'cp ~/{{home}}/{_SHOWN} scratch/machine-copy.toml',
         'python -m dev_lab.dev.devhost local set repos.x C:/src/x',
         f'echo x > output/{_SHOWN}.bak',
     ),

@@ -13,6 +13,7 @@ from lab_commons.outcomes import Conclusion
 from dev_lab.dev import datadeps, verifiedby
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.test_outcomes import CellRecorder, outcomes_dir
+from dev_lab.dev.worktreeplace import is_inside
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -86,8 +87,8 @@ def _consumer_suite(monkeypatch: pytest.MonkeyPatch, seen: list[Sequence[str]]) 
 
 def _judge(world: SimpleNamespace, head: str, execute: Execute) -> verifiedby.Judged:
     return verifiedby.judge(
-        world.data, head, (verifiedby.Consumer(APP, 'connection'),), url=world.url,
-        members={'app': world.app}, make=lambda _member, checkout, _root: checkout, execute=execute,
+        head, (verifiedby.Consumer(APP, 'connection'),), url=world.url,
+        members={'app': world.app}, make=lambda _member, checkout: checkout, execute=execute,
     )  # fmt: skip
 
 
@@ -106,7 +107,7 @@ def test_the_same_consumer_with_a_good_rev_passes(world: SimpleNamespace, monkey
 
 def test_a_data_repo_with_no_consumer_is_inconclusive(world: SimpleNamespace) -> None:
     assert verifiedby.declared(world.data) == ()
-    judged = verifiedby.judge(world.data, world.good, (), url=world.url, members={'app': world.app})
+    judged = verifiedby.judge(world.good, (), url=world.url, members={'app': world.app})
     assert judged.result is Conclusion.INCONCLUSIVE
 
 
@@ -117,14 +118,14 @@ def test_an_exit_code_over_no_recorded_test_is_inconclusive(world: SimpleNamespa
 
 def test_an_unregistered_or_lying_consumer_is_inconclusive(world: SimpleNamespace) -> None:
     unregistered = verifiedby.judge(
-        world.data, world.good, (verifiedby.Consumer('https://forge.example.org/team/other.git', 'connection'),),
+        world.good, (verifiedby.Consumer('https://forge.example.org/team/other.git', 'connection'),),
         url=world.url, members={'app': world.app},
     )  # fmt: skip
     assert unregistered.result is Conclusion.INCONCLUSIVE
     assert '[repos]' in unregistered.lines[0]
     lying = verifiedby.judge(
-        world.data, world.good, (verifiedby.Consumer(APP, 'connection'),), url='https://forge.example.org/x.git',
-        members={'app': world.app}, make=lambda _m, checkout, _r: checkout,
+        world.good, (verifiedby.Consumer(APP, 'connection'),), url='https://forge.example.org/x.git',
+        members={'app': world.app}, make=lambda _m, checkout: checkout,
     )  # fmt: skip
     assert lying.result is Conclusion.INCONCLUSIVE
     assert 'lies' in lying.lines[0]
@@ -177,3 +178,12 @@ def test_consumer_success_does_not_certify_a_data_repos_malformed_layout_policy(
     assert consumers == [], 'consumer qualification must not hide a failed own-repository guard'
     output = capsys.readouterr()
     assert 'layout' in (output.out + output.err).lower()
+
+
+def test_a_consumer_tree_lives_in_the_consumers_worktree_home_never_under_output(tmp_path: Path) -> None:
+    """OUTPUT-HOLDS-NO-CODE (user ruling 2026-11-20): a consumer checkout is code, so it is never made in output/."""
+    checkout = tmp_path / 'app'
+    checkout.mkdir()
+    tree = verifiedby.consumer_tree('app', checkout, 'a' * 40)
+    assert is_inside(tree, checkout), tree
+    assert 'output' not in tree.relative_to(checkout).parts, tree
