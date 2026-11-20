@@ -205,3 +205,14 @@ def test_forge_repos_off_the_family_are_refused(tmp_path: Path, family: str, nam
     """Planted control: the forge's set is derived from [family_repos]; a repo either side lacks is named."""
     found = check_host(_write(tmp_path, 'f.toml', FORGE_HOST), _write(tmp_path, 'family.toml', family))
     assert [line for line in found if '[ops.forge] repos' in line and named in line], found
+
+
+def test_an_account_file_may_declare_its_priority() -> None:
+    """``[priority]`` (whose jobs the account serves first) is an account fact (hosts-config #73, user 2026-11-20).
+
+    PLANTED CONTROL: an undeclared table is still refused.
+    """
+    host = {'deploy': {'host': 'login01'}, 'priority': {'logins': ['someone']}, 'nonsense': {}}
+    found = accounthost.check(Path('c-u.toml'), host, {})
+    assert not [line for line in found if 'priority is not an account table' in line], found
+    assert [line for line in found if 'nonsense is not an account table' in line], found

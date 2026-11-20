@@ -6,7 +6,8 @@ account, role) once; ``hosts/<cluster>-<user>.toml`` declares only what is true 
 
 - ``[deploy]`` -- where and what it deploys (:mod:`dev_lab.dev.hpcaccount.spec`), WITHOUT ``role``: the role is the
   grant's, and the render derives it (:func:`derived`);
-- ``[schedule]`` (its tick), ``[hpc.paging]`` (its pages), ``[capabilities.*]`` (what it runs).
+- ``[schedule]`` (its tick), ``[hpc.paging]`` (its pages), ``[capabilities.*]`` (what it runs), ``[priority]``
+  (whose jobs it serves first).
 
 The file's NAME names its grant: an account file whose ``<cluster>-<user>`` is no family grant is refused, and so is
 a key the family file already holds. :func:`dev_lab.ops.configcheck.check_host` calls :func:`check`;
@@ -30,6 +31,7 @@ TABLES: Final[Mapping[str, Any]] = {
     'schedule': {},
     'env': {},
     'capabilities': {},
+    'priority': {},
     'hpc': {'paging': {}},
 }
 #: ``[deploy]`` keys the family grant owns: stated in an account file they would be a second copy.

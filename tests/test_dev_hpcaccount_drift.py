@@ -151,3 +151,40 @@ def test_a_fleet_verb_with_no_forwarded_flag_parses(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(accountset, 'reached_machine', refuse)
     assert accountset.main_fleet(['--cluster', 'c1'], verb='drift', flags=flags) == 2
+
+
+def test_discard_drift_rerenders_the_account_dropping_only_what_the_source_cannot_render(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``drift --discard-drift`` is the door for keys only the account holds.
+
+    Measured 2026-11-20: alyyw103's ``capabilities.femm = {}`` had no door short of raw ssh. ``--dry-run`` lists and
+    writes nothing; the real run re-renders the machine file from the config source with a backup, and drift then
+    agrees. PLANTED CONTROL: plain drift still writes nothing.
+    """
+    extra = '\n[stray]\nfemm = {}\n'
+    home, clone, machine = home_of(tmp_path, extra)
+    spec = load(machine)
+    lines = cron_lines(spec, home, slurm=['/opt/slurm/bin']) if spec else []
+    (tmp_path / 'crontab.txt').write_text(''.join(f'{line}\n' for line in lines), encoding='utf-8')
+    tools = tools_of(tmp_path)
+    args = ['--from', str(clone), '--host', HOST, '--config', str(machine)]
+    before = machine.read_bytes()
+    assert drift.main(args, home=home, tools=tools) == 1
+    assert machine.read_bytes() == before, 'the planted control: plain drift writes nothing'
+    assert drift.main([*args, '--discard-drift', '--dry-run'], home=home, tools=tools) == 1
+    assert 'would discard' in capsys.readouterr().out
+    assert machine.read_bytes() == before
+    assert drift.main([*args, '--discard-drift'], home=home, tools=tools) == 0
+    out = capsys.readouterr().out
+    assert 'discarded' in out
+    assert 'stray' not in machine.read_text(encoding='utf-8')
+    assert list((home / '.cache' / 'dev-lab').rglob('*')), 'the previous file is backed up'
+    assert drift.main(args, home=home, tools=tools) == 0
+
+
+def test_drift_fleet_forwards_discard_drift_and_dry_run() -> None:
+    import inspect  # noqa: PLC0415
+
+    source = inspect.getsource(hpcaccount)
+    assert "verb='drift', flags=('--dry-run', '--discard-drift')" in source

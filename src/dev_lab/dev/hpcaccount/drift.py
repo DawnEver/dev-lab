@@ -26,6 +26,7 @@ import re
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -35,6 +36,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import devhost
 from dev_lab.dev._machinefile import render_value
+from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.hpcaccount import deploy
 from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
@@ -164,21 +166,42 @@ def report(found: Mapping[str, Drift]) -> list[str]:
     return lines
 
 
+def _discard(drift: Drift, *, home: Path, machine: Path, clone: Path, host: str, dry: bool) -> int:
+    """Re-render *machine* from *clone* with no account-only layer; 1 under *dry*, else 0 once written.
+
+    The one door for keys only the account holds (measured 2026-11-20: an empty ``capabilities.femm`` had none short
+    of raw ssh). The render keeps the machine file's own ``[devhost]`` table; the previous file is backed up.
+    """
+    items = ''.join(f'\n  {item}' for item in drift.only_on_account)
+    if dry:
+        emit(f'[dry-run] would discard {len(drift.only_on_account)} item(s) only {machine} holds:{items}')
+        return 1
+    live = tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {}
+    text = devhost.render(clone, host, {key: value for key, value in live.items() if key == devhost.OWN_TABLE})
+    backup = replace_backed_up(machine, text, home / '.cache' / 'dev-lab' / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost')
+    emit(f'discarded {len(drift.only_on_account)} item(s); re-rendered {machine}; the previous file is {backup}{items}')
+    return 0
+
+
 def main(argv: Sequence[str], *, home: Path | None = None, tools: Tools | None = None) -> int:
     """The on-account ``drift`` verb; 0 agrees, 1 drift, 2 refused."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount drift', description=__doc__.splitlines()[0])
     parser.add_argument('--from', dest='clone', type=Path, required=True, help="the account's config-source clone")
     parser.add_argument('--host', required=True, help='the account file name, <cluster>-<user>')
     parser.add_argument('--config', type=Path, help='the live machine file (default: lab_commons.config)')
+    parser.add_argument(DISCARD, action='store_true', help='re-render the machine file, dropping what only it holds')
+    parser.add_argument('--dry-run', action='store_true', help=f'with {DISCARD}: list what would go, write nothing')
     args = parser.parse_args(list(argv))
-    found = account_drift(
-        Step(tools or Tools(), dry=True), home or Path.home(), args.config or config_path(),
-        args.clone.expanduser(), args.host,
-    )  # fmt: skip
+    home, machine, clone = home or Path.home(), args.config or config_path(), args.clone.expanduser()
+    found = account_drift(Step(tools or Tools(), dry=True), home, machine, clone, args.host)
     if isinstance(found, str):
         emit(f'drift refused: {found}', err=True)
         return 2
     lines = report(found)
+    if args.discard_drift and found['machine file'].only_on_account:
+        return _discard(
+            found['machine file'], home=home, machine=machine, clone=clone, host=args.host, dry=args.dry_run
+        )
     for line in lines or [f'agrees: {args.host} holds exactly the render of {args.clone.as_posix()}']:
         emit(line)
     return 1 if lines else 0
