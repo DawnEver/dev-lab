@@ -15,7 +15,8 @@ data (:func:`dev_lab.dev.localpart.part_selection`); the consumer's ``[tool.dev_
 this repo is the other half, and a consumer that does not name it is refused (a declaration that lies).
 
 THE RUN (:func:`judge`): per consumer, its registered checkout on this machine (``[repos]``) is fetched and a
-detached worktree is made at its integration line's head with its own environment (:func:`prepare`); its
+detached worktree is made in the consumer's worktree home (never ``output/``: OUTPUT-HOLDS-NO-CODE) at its
+integration line's head with its own environment (:func:`prepare`); its
 data copy is synced to the head under :data:`~dev_lab.dev.datadeps.OVERRIDE` and its targeted verify of the
 part runs there -- never as a producer, so it posts nothing on the consumer. Its per-test cells, named
 ``<member>:<node>``, become this repo's ``tests/base`` part on the DATA repo's head. Any consumer
@@ -52,16 +53,28 @@ from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit
 from dev_lab.dev.test_outcomes import outcomes_dir, read_cells
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.venvpath import checkout_interpreter, current_os_name, running_interpreter
+from dev_lab.dev.worktreeplace import home
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from lab_commons.hpc.testcells import TestCell
 
-__all__ = ['Consumer', 'Judged', 'VerifyByRefused', 'declared', 'judge', 'main', 'post', 'prepare', 'run_consumer']
+__all__ = [
+    'Consumer',
+    'Judged',
+    'VerifyByRefused',
+    'consumer_tree',
+    'declared',
+    'judge',
+    'main',
+    'post',
+    'prepare',
+    'run_consumer',
+]
 
-#: Where a consumer's worktree is made, under the data repo's dated output.
-WORKTREE_KIND: Final = 'consumer'
+#: The leaf prefix of a consumer's worktree, made in the CONSUMER's worktree home (OUTPUT-HOLDS-NO-CODE).
+TREE_PREFIX: Final = 'verify-by-'
 _EXIT: Final = {0: Conclusion.PASS, 1: Conclusion.FAIL}
 
 
@@ -115,7 +128,12 @@ def _git(cwd: Path, *argv: str) -> str:
     return done.stdout.strip()
 
 
-def prepare(member: str, checkout: Path, data_root: Path) -> Path:
+def consumer_tree(member: str, checkout: Path, sha: str) -> Path:
+    """Where *checkout*'s detached tree at *sha* is made: its worktree home, never an ``output/`` (2026-11-20)."""
+    return home(checkout) / f'{TREE_PREFIX}{member}-{sha[:12]}'
+
+
+def prepare(member: str, checkout: Path) -> Path:
     """A detached worktree of *checkout* at its integration line's fetched head, with its own environment."""
     line = load_policy(checkout).integration
     report = run_network_verb(['git', 'fetch', '-q', 'origin', line], cwd=checkout, env=unlocated(), timeout=600)
@@ -123,7 +141,7 @@ def prepare(member: str, checkout: Path, data_root: Path) -> Path:
         msg = f'fetching {line} in {checkout} failed: {report.remedy}'
         raise VerifyByRefused(msg)
     sha = _git(checkout, 'rev-parse', f'origin/{line}')
-    tree = output_dir(data_root, WORKTREE_KIND) / f'{member}-{sha[:12]}'
+    tree = consumer_tree(member, checkout, sha)
     if not tree.exists():
         _git(checkout, 'worktree', 'add', '-q', '--detach', str(tree), sha)
     boot = launch.run([running_interpreter(), '-m', 'dev_lab.dev.dep', '--bootstrap', str(tree)], check=False)
@@ -148,22 +166,19 @@ def run_consumer(tree: Path, argv: Sequence[str], env: Mapping[str, str]) -> tup
 
 
 def judge(
-    root: Path,
     head: str,
     consumers: Sequence[Consumer],
     *,
     url: str,
     members: Mapping[str, Path],
-    make: Callable[[str, Path, Path], Path] = prepare,
+    make: Callable[[str, Path], Path] = prepare,
     execute: Callable[[Path, Sequence[str], Mapping[str, str]], tuple[int, Path | None]] = run_consumer,
 ) -> Judged:
-    """Run every *consumers* row against the data repo *root* (origin *url*) at *head*, folded into one answer."""
+    """Run every *consumers* row against the data repo (origin *url*) at *head*, folded into one answer."""
     results, cells, flaky, lines = [], {}, set(), []
     for consumer in consumers:
         try:
-            outcome, mine, unsure, line = _one(
-                root, head, consumer, url=url, members=members, make=make, execute=execute
-            )
+            outcome, mine, unsure, line = _one(head, consumer, url=url, members=members, make=make, execute=execute)
         except (VerifyByRefused, datadeps.DataRefused, ValueError, OSError) as why:
             outcome, mine, unsure, line = Conclusion.INCONCLUSIVE, {}, frozenset(), f'{consumer.repo}: {why}'
         results.append(outcome)
@@ -178,13 +193,12 @@ def judge(
 
 
 def _one(
-    root: Path,
     head: str,
     consumer: Consumer,
     *,
     url: str,
     members: Mapping[str, Path],
-    make: Callable[[str, Path, Path], Path],
+    make: Callable[[str, Path], Path],
     execute: Callable[[Path, Sequence[str], Mapping[str, str]], tuple[int, Path | None]],
 ) -> tuple[Conclusion, dict[str, TestCell], frozenset[str], str]:
     named = [(name, path) for name, path in sorted(members.items()) if _origin(path, consumer.repo)]
@@ -192,7 +206,7 @@ def _one(
         msg = f"no checkout of {consumer.repo} is registered in this machine's [repos]; register and bootstrap one"
         raise VerifyByRefused(msg)
     member, checkout = named[0]
-    tree = make(member, checkout, root)
+    tree = make(member, checkout)
     rows = [dep for dep in datadeps.declared(tree, overridden=False) if same_repo(dep.url, url)]
     if not rows:
         msg = f'{member} declares no [tool.dev_lab.data.<name>] row naming {url}: the [tool.dev_lab.verify] by row lies'
@@ -244,7 +258,7 @@ def main(root: Path, *, producer: bool) -> int:
         judged = (
             Judged(Conclusion.FAIL, guards, frozenset(), failures)
             if failures
-            else judge(root, head or '', declared(root), url=origin_url(root), members=repos())
+            else judge(head or '', declared(root), url=origin_url(root), members=repos())
         )
         if not failures:
             judged = Judged(judged.result, {**guards, **judged.cells}, judged.flaky, judged.lines)
