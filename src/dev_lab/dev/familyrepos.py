@@ -33,6 +33,7 @@ from typing import Any, Final, TextIO
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
+from dev_lab.dev.checkout import git_out
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -160,7 +161,6 @@ def manifest_text(root: Path) -> tuple[str, str]:
     manifest = root / 'pyproject.toml'
     if manifest.is_file():
         return manifest.read_text(encoding='utf-8'), str(manifest)
-    from dev_lab.dev.checkout import git_out  # noqa: PLC0415 -- only a repo with no manifest asks git
 
     remote = (git_out(root, 'remote', 'get-url', 'origin') or '').strip()
     try:

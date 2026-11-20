@@ -7,6 +7,7 @@ those, approved, is gone with its linked worktree, and the line echoes the user'
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from _forge_fake import run_git
 from lab_commons.census import Process
 
 from dev_lab.dev import cloneremove
+from dev_lab.dev.liverun import Census
 
 
 def _clone(tmp_path: Path) -> Path:
@@ -24,11 +26,13 @@ def _clone(tmp_path: Path) -> Path:
 
 
 def _remove(
-    clone: Path, *, approved: str = 'user 2026-11-19: drop the redundant clone', **kwargs: object
+    clone: Path,
+    *,
+    approved: str = 'user 2026-11-19: drop the redundant clone',
+    census: Census = tuple,
+    declared: Mapping[str, str] | None = None,
 ) -> tuple[int, str]:
-    kwargs.setdefault('census', tuple)
-    kwargs.setdefault('declared', {})
-    return cloneremove.remove(clone, approved, **kwargs)  # type: ignore[arg-type]
+    return cloneremove.remove(clone, approved, census=census, declared={} if declared is None else declared)
 
 
 def test_a_clean_pushed_clone_is_removed_with_its_worktrees_and_the_words_recorded(tmp_path: Path) -> None:
