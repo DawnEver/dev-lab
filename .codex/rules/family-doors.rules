@@ -293,6 +293,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = [[".venv/Scripts/python.exe", ".venv/bin/python"], "-m", "dev_lab.dev.branchprune", "task"],
+    decision = "allow",
+    justification = "Deleting a closed task's pull request branches, each only when every commit on it is already on the integration branch or on another live branch or open pull request; every branch kept is named with why.",
+)
+
+prefix_rule(
     pattern = ["gh", "workflow", "enable"],
     decision = "allow",
     justification = "Re-enabling a GitHub Actions workflow of a family repository that the integrator paused (user ruling 2026-11-07).",
