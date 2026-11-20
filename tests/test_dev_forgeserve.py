@@ -29,6 +29,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import (
+    branchpolicy,
     forgeclaim,
     forgehosts,
     forgepoller,
@@ -256,11 +257,15 @@ def _serve(
         lambda _root, _built, **kw: (reviewed if reviewed is not None else []).append(kw),
     )
     monkeypatch.setattr(forgeservesteps, 'serve_continue_landed', lambda *_a, **_k: None)  # its own tests
-    monkeypatch.setattr(forgeservesteps, 'serve_close_landed', close_landed)
+    for name, stub in (
+        ('serve_close_landed', close_landed),
+        ('serve_prune', prune),
+        ('serve_sweep', sweep),
+        ('serve_records_prune', records_prune),
+        ('observe', lambda *_a, **_k: ()),  # tests/test_dev_branchpolicy.py
+    ):
+        monkeypatch.setattr(branchpolicy, name, stub)  # the prune duty's steps
     monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
-    monkeypatch.setattr(forgeservesteps, 'serve_prune', prune)
-    monkeypatch.setattr(forgeservesteps, 'serve_sweep', sweep)
-    monkeypatch.setattr(forgeservesteps, 'serve_records_prune', records_prune)
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())

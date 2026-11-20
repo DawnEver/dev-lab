@@ -8,9 +8,10 @@ A repo's PR lifecycle is five ROLES (:data:`ROLES`), each performed by one EXECU
 * :data:`HPC` -- the accounts of ONE grant role on ONE cluster, ``{ hpc = "<cluster>", role = "<grant role>" }``:
   ``forge serve`` under their ``hpcaccount`` tick performs the role; it resolves through the family's declared
   ``[[hpc.grant]]`` rows (:func:`accounts`);
-* :data:`HOST` -- a named ops host, ``{ host = "<name>" }``, that carries the ``[ops.<duty>]`` the role needs
-  (:data:`DUTIES`: the judge for ``review``, the promoter for ``promote``); checked where the host files are read
-  (:func:`host_refusals`, run by :mod:`dev_lab.ops.configcheck`).
+* :data:`HOST` -- a named host, ``{ host = "<name>" }``: an ops host carrying the ``[ops.<duty>]`` the role needs
+  (:data:`DUTIES`: the judge for ``review``, the promoter for ``promote``; checked where the host files are read,
+  :func:`host_refusals`, run by :mod:`dev_lab.ops.configcheck`), or for ``prune`` the machine whose forge feed
+  runs the prune duty (:func:`performs`, D46).
 
 THE BINDING IS THE FAMILY'S, NEVER A REPO'S: dev-lab names no machine and no closed list of places. The family layer
 (``lab_commons.config.family``) holds::
@@ -81,6 +82,7 @@ __all__ = [
     'machine_layer',
     'optional_needs_from',
     'optional_parts',
+    'performs',
     'producible',
     'retired_placement',
     'roles_at',
@@ -111,7 +113,7 @@ TAKES: Final = {
     REVIEW: (CI, HPC, HOST),
     MERGE: (CI, HPC),
     PROMOTE: (CI, HOST),
-    PRUNE: (CI, HPC),
+    PRUNE: (CI, HPC, HOST),
 }
 #: The ``[ops.<duty>]`` a :data:`HOST` bound to a role must carry.
 DUTIES: Final = {REVIEW: 'judge', PROMOTE: 'promote'}
@@ -310,6 +312,12 @@ def roles_at(root: Path, *, layer: Mapping[str, Any] | None = None, env: Mapping
 def roles_of_url(url: str, *, layer: Mapping[str, Any] | None = None, env: Mapping[str, str] | None = None) -> Roles:
     """:func:`roles_of` the repo at remote *url* -- an ops host's read, which holds no checkout."""
     return roles_of(forge_of_url(url), layer=layer, env=env)
+
+
+def performs(roles: Roles, role: str, machine: str) -> bool:
+    """Whether *machine* (a host name) is the :data:`HOST` executor *roles* binds *role* to."""
+    executor = roles.of(role)
+    return executor.kind == HOST and executor.host == machine
 
 
 def _bindings(layer: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:

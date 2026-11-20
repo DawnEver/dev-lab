@@ -148,16 +148,16 @@ def test_the_declaration_defaults_to_listing_only(tmp_path: Path) -> None:
     root, _ = _planted(tmp_path)
     declared = declared_branchset(root)
     assert declared.prune_merged is False
-    assert declared.grace_hours == pytest.approx(24.0, abs=0.0)  # exact: the default as declared
+    assert declared.max_idle_hours == pytest.approx(24.0, abs=0.0)  # exact: the default as declared
 
 
 def test_the_declaration_opts_in_and_names_its_grace(tmp_path: Path) -> None:
-    root, _ = _planted(tmp_path, extra='prune_merged = true\ngrace_hours = 48\n')
+    root, _ = _planted(tmp_path, extra='prune_merged = true\nmax_idle_hours = 48\n')
     declared = declared_branchset(root)
-    assert (declared.prune_merged, declared.grace_hours) == (True, 48.0)
+    assert (declared.prune_merged, declared.max_idle_hours) == (True, 48.0)
 
 
-@pytest.mark.parametrize('extra', ['prune_merged = "yes"\n', 'grace_hours = -1\n', 'prune = true\n'])
+@pytest.mark.parametrize('extra', ['prune_merged = "yes"\n', 'max_idle_hours = -1\n', 'prune = true\n'])
 def test_a_malformed_or_unknown_key_is_refused_by_name(tmp_path: Path, extra: str) -> None:
     root, _ = _planted(tmp_path, extra=extra)
     with pytest.raises(BranchSetNotDeclared, match=extra.split(maxsplit=1)[0]):
