@@ -20,6 +20,8 @@ with git's credential helper pointed at ONLY that file, must answer as ``--login
 (:func:`rewrite_command`): a backup ``~/.git-credentials.bak-<ts>`` (0600) first, then every other line kept, the
 forge's line replaced, mode 0600, atomic ``mv``. A refusal deletes the staged file and leaves the store untouched.
 ``--drop-host H`` removes exactly H's line through the same rewrite and backup -- the repair for a damaged line.
+After a placement, git's ``store`` helper is set when NO global helper is configured (one already set is kept):
+a store line git never consults reads as anonymous (measured 2026-11-20 on three research accounts).
 
 DECLARED ONLY: the account must hold a ``[[hpc.grant]]`` and the login must be declared -- a role's ``reader``
 (:mod:`~dev_lab.dev.hpcaccount.division`) or an ``[ops.forge.accounts]`` login; when the account's role names a
@@ -60,6 +62,11 @@ __all__ = [
     'place_credential',
     'unreachable',
 ]
+
+#: Sets git's ``store`` helper on the account only when NO helper is configured; one already set is kept.
+_STORE_HELPER = (
+    '[ -n "$(git config --global --get-all credential.helper)" ] || git config --global credential.helper store'
+)
 
 
 def declared_logins(division: Division, forge: DeclaredForge) -> frozenset[str]:
@@ -147,6 +154,7 @@ def place_credential(
     if refusal:
         say(f'credential: refused -- {refusal}')
         return 2
+    shell(_STORE_HELPER, None)  # a store line git never consults reads as anonymous (measured 2026-11-20)
     host = urlsplit(repo).hostname or ''
     say(f'{user}: the forge answers as {login} on {repo}; placed {digest(token)} for {host} (0600) {backup}'.strip())
     return 0

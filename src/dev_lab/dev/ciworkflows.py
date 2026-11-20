@@ -91,6 +91,7 @@ from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.nightlycron import scheduled
 from dev_lab.dev.roles import HOST, REVIEW, ROLES_ENV, Roles, roles_at
+from dev_lab.dev.verifybox import wall_of
 
 __all__ = [
     'BASE_PATH',
@@ -98,6 +99,8 @@ __all__ = [
     'FORGE_KEY',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
+    'PART_MARGIN_MIN',
+    'PART_TIMEOUT_PLACEHOLDER',
     'RENDERED_BY',
     'RENDER_COMMAND',
     'RETIRED_WORKFLOWS',
@@ -109,6 +112,7 @@ __all__ = [
     'declared_forge',
     'drift',
     'follow_checks',
+    'part_timeout_minutes',
     'placed',
     'render',
     'repo_forge',
@@ -130,6 +134,10 @@ LIGHT: Final = 'light'
 
 #: In any base or layer string, the repo's declared integration branch (``[tool.dev_lab.integrator]``), at render.
 INTEGRATION_PLACEHOLDER: Final = '@integration@'
+#: A base value that IS this string renders as :func:`part_timeout_minutes` of the repo's selection wall (an int).
+PART_TIMEOUT_PLACEHOLDER: Final = '@part-timeout-minutes@'
+#: Minutes a part spends outside its selection wall: checkout, sync, posting and the log upload.
+PART_MARGIN_MIN: Final = 30
 #: The directory each forge's Actions runs its workflows from.
 WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('.gitea') / 'workflows'}
 
@@ -242,6 +250,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         require_producer(BACKENDS[forge], JUDGE_HOST, f'{origin}: review bound to a host (a judge)')
     hosted = hostedparts.hosted_parts(text)
     integration = _integration(text, origin)
+    timeout = part_timeout_minutes(wall_of(declared_table(tomllib.loads(text), 'verify', {}), origin))
     out = {}
     for name, layer in sorted(declared.items()):
         merged = merge(base.get(name, {}), layer)
@@ -256,7 +265,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         if forge not in WORKFLOW_DIRS:
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)
-        out[name] = (WORKFLOW_DIRS[forge], cast('dict[str, Any]', _named(workflow, integration)))
+        out[name] = (WORKFLOW_DIRS[forge], cast('dict[str, Any]', _named(workflow, integration, timeout)))
     return follow_checks(out)
 
 
@@ -291,14 +300,28 @@ def _integration(text: str, origin: str) -> str:
     return policy_from(text, origin).integration
 
 
-def _named(value: object, integration: str) -> object:
-    """*value* with :data:`INTEGRATION_PLACEHOLDER` in every string replaced by *integration*. PURE."""
+def part_timeout_minutes(wall_s: int) -> int:
+    """A hosted part's job timeout: its selection wall *wall_s*, in whole minutes up, plus :data:`PART_MARGIN_MIN`.
+
+    Without one a hung part ran to GitHub's 360-minute default and its run never reached promote (2026-11-20).
+    """
+    return -(-wall_s // 60) + PART_MARGIN_MIN
+
+
+def _named(value: object, integration: str, timeout: int) -> object:
+    """*value* with its placeholders rendered (the repo's integration branch, the part timeout). PURE.
+
+    :data:`INTEGRATION_PLACEHOLDER` in every string becomes *integration*; a string that IS
+    :data:`PART_TIMEOUT_PLACEHOLDER` becomes the int *timeout*.
+    """
+    if value == PART_TIMEOUT_PLACEHOLDER:
+        return timeout
     if isinstance(value, str):
         return value.replace(INTEGRATION_PLACEHOLDER, integration)
     if isinstance(value, dict):
-        return {key: _named(item, integration) for key, item in value.items()}
+        return {key: _named(item, integration, timeout) for key, item in value.items()}
     if isinstance(value, list):
-        return [_named(item, integration) for item in value]
+        return [_named(item, integration, timeout) for item in value]
     return value
 
 

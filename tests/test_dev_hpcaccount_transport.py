@@ -60,7 +60,7 @@ def test_a_live_held_session_carries_the_deploy(monkeypatch: pytest.MonkeyPatch)
 def test_a_held_step_that_fails_raises_its_status(monkeypatch: pytest.MonkeyPatch) -> None:
     _hold(monkeypatch, recorded={_DEST}, alive=True)
     monkeypatch.setattr(transport.sshholdrun, 'run_command', lambda *_a, **_k: ('nope', 3))
-    with pytest.raises(RuntimeError, match='exited 3: nope'):
+    with pytest.raises(RuntimeError, match='exited 3 running `false`: nope'):
         transport.host_runner(_DEST)('false')
 
 

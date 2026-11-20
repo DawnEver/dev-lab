@@ -11,13 +11,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shutil
+import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
 from dev_lab.dev import sshhold, sshholdplan, sshholdrun, sshholdstate, sshholdwire
+from dev_lab.dev.hpcaccount import transport
 from dev_lab.dev.sshholdwire import HoldRefused
 
 FAKE = (sys.executable, str(Path(__file__).with_name('_sshhold_fake.py')))
@@ -276,8 +280,6 @@ def test_a_holder_busy_with_a_long_run_still_answers_and_is_never_forgotten(monk
     state: the holder lived on, unreachable, and the next door read it as gone. PLANTED CONTROL: once closed,
     the ping is refused.
     """
-    import threading  # noqa: PLC0415
-
     monkeypatch.setenv('FAKESSH_CODE', CODE)
     dest = 'ops@fake-busy'
     sshhold.open_session(dest, 1.0, CODE, ssh=FAKE)
@@ -305,18 +307,15 @@ def test_a_command_that_reads_stdin_never_swallows_the_next_frame() -> None:
     later frame and its marker; the session hung until its timeout closed it. A frame without data runs with stdin
     from /dev/null. PLANTED CONTROL: data sent as a frame's stdin still reaches the command.
     """
-    import shutil  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
-
     bash = shutil.which('bash')
     assert bash, 'the held remote shell is bash'
     stream = sshholdwire.frame('cat', 'one') + sshholdwire.frame('echo second', 'two')
     done = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=stream, capture_output=True, text=True,
-                          timeout=30, check=False)  # fmt: skip
+                          encoding='utf-8', timeout=30, check=False)  # fmt: skip
     assert sshholdwire.split_marker(done.stdout.split('__SSHHOLD_one_0\n', 1)[1], 'two') == ('second\n', 0)
     fed = sshholdrun.stdin_script('cat', b'data-line\n', '__END_X')
     piped = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=sshholdwire.frame(fed, 'three'),
-                           capture_output=True, text=True, timeout=30, check=False)  # fmt: skip
+                           capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)  # fmt: skip
     assert sshholdwire.split_marker(piped.stdout, 'three') == ('data-line\n', 0)
 
 
@@ -327,16 +326,13 @@ def test_a_compound_command_reads_all_of_its_stdin_through_the_held_shell() -> N
     ``umask``; ``read`` read the session's own stream (swallowing frames), then, with stdin /dev/null, nothing --
     exit 1 with no output. PLANTED CONTROL: a single simple command still reads its data.
     """
-    import shutil  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
-
     bash = shutil.which('bash')
     assert bash, 'the held remote shell is bash'
 
     def held(command: str, data: bytes) -> tuple[str, int] | None:
         framed = sshholdwire.frame(sshholdrun.stdin_script(command, data, '__END_Y'), 'n')
         done = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=framed, capture_output=True, text=True,
-                              timeout=30, check=False)  # fmt: skip
+                              encoding='utf-8', timeout=30, check=False)  # fmt: skip
         return sshholdwire.split_marker(done.stdout, 'n')
 
     assert held('umask 077 && IFS= read -r line && printf "%s\n" "$line"', b'secret-line\n') == ('secret-line\n', 0)
@@ -345,8 +341,6 @@ def test_a_compound_command_reads_all_of_its_stdin_through_the_held_shell() -> N
 
 def test_a_failed_held_command_names_itself_and_says_when_it_printed_nothing() -> None:
     """``exited 1:`` and nothing else teaches nothing; the refusal names the command and its empty output."""
-    from dev_lab.dev.hpcaccount import transport  # noqa: PLC0415
-
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(transport.sshholdrun, 'run_command', lambda *_a, **_k: ('', 1))
         with pytest.raises(RuntimeError) as refused:
@@ -355,3 +349,22 @@ def test_a_failed_held_command_names_itself_and_says_when_it_printed_nothing() -
     assert 'exited 1' in said
     assert 'umask 077 && IFS= read -r line' in said
     assert '(no output)' in said
+
+
+def test_a_dest_without_its_user_is_refused_before_the_code_is_spent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dest names its account; without one nothing is opened and no code is read.
+
+    Measured 2026-11-20: ``open login.cirrus...`` logged in as the LOCAL user, the key was refused, and the user's one
+    TOTP code was spent on it. PLANTED CONTROL: the same host with its user reaches the opener.
+    """
+    opened: list[str] = []
+    monkeypatch.setattr(sshhold, 'open_session', lambda dest, *_a, **_k: opened.append(dest) or f'{dest}: open')
+    monkeypatch.setattr(sshhold, 'given_code', lambda _code: pytest.fail('the code must not be read'))
+    assert sshhold.main(['open', 'login.example', '--hours', '1']) == 2
+    assert '<user>@login.example' in capsys.readouterr().err
+    assert opened == []
+    monkeypatch.setattr(sshhold, 'given_code', lambda code: code or '1')
+    assert sshhold.main(['open', 'alice@login.example', '--hours', '1', '--code', '1']) == 0
+    assert opened == ['alice@login.example']

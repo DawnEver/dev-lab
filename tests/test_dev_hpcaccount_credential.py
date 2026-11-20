@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 from lab_commons.hpc.cluster import Runner
-from lab_commons.hpc.grants import Grant
+from lab_commons.hpc.grants import Grant, Machine
 
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev.agentpolicy import exits_of
@@ -32,6 +32,7 @@ from dev_lab.dev.hpcaccount import credential
 from dev_lab.dev.hpcaccount.account import _READER_REMEDY
 from dev_lab.dev.hpcaccount.credential import declared_logins, drop_host, place_credential, usage
 from dev_lab.dev.hpcaccount.division import Division
+from dev_lab.dev.sshholdwire import HoldRefused
 
 _HOSTS = ('login1.example', 'login2.example')
 _FLEET = (Grant(user='alice', hosts=_HOSTS, slurm_account='acct'),)
@@ -391,7 +392,7 @@ def test_a_research_account_deployed_behind_its_login_alias_takes_its_credential
 
 
 class _Unread(io.StringIO):
-    def read(self, *_a: object) -> str:  # type: ignore[override]
+    def read(self, size: int | None = -1, /) -> str:
         pytest.fail('the token was read before the account was proven reachable')
 
 
@@ -403,10 +404,6 @@ def test_an_unreachable_account_is_refused_loudly_before_the_token_is_read(
     Measured 2026-11-20: with the account's held session dead, a placement printed nothing and exited 0, and the
     caller deleted a token that never arrived. PLANTED CONTROL: a reachable account goes on to read the token.
     """
-    from lab_commons.hpc.grants import Machine  # noqa: PLC0415
-
-    from dev_lab.dev.sshholdwire import HoldRefused  # noqa: PLC0415
-
     monkeypatch.setattr(credential, 'reached_machine', lambda _a: Machine(session=None, grants=_FLEET, roles={}))
 
     def dead(_grant: Grant, _timeout: float = 0) -> Runner:
@@ -426,3 +423,20 @@ def test_an_unreachable_account_is_refused_loudly_before_the_token_is_read(
     monkeypatch.setattr('sys.stdin', io.StringIO(_MINTED))
     assert credential.main(argv) == 0
     assert placed == [_MINTED]
+
+
+def test_a_placed_store_line_is_read_because_the_store_helper_is_set_when_none_is() -> None:
+    """A store line git never consults reads as anonymous.
+
+    Measured 2026-11-20: three research accounts took a verified reader line, then the deploy's ``git ls-remote``
+    of the private forge repos still exited 128 -- no global ``credential.helper``, so git never read the store.
+    The placement sets ``store`` when NO helper is configured, after the rewrite; PLANTED CONTROL: it never
+    overrides one already set (the command keeps a configured helper).
+    """
+    code, _said, seen, _ = _run()
+    assert code == 0
+    commands = [cmd for cmd, _ in seen]
+    helper = next(cmd for cmd in commands if 'credential.helper' in cmd and 'config --global' in cmd)
+    assert commands.index(rewrite_command('forge.example', _STAMP, staged=True)) < commands.index(helper)
+    assert '[ -n "$(git config --global --get-all credential.helper)" ] ||' in helper
+    assert 'git config --global credential.helper store' in helper
