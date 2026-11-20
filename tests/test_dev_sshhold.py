@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -265,3 +266,33 @@ def test_a_plan_naming_an_action_this_client_lacks_is_refused_before_the_code_is
             1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [], routes=sshhold.route, opener=str
         )
     assert sent == []
+
+
+def test_a_holder_busy_with_a_long_run_still_answers_and_is_never_forgotten(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A holder running one long command still answers a ping, so it is never read as dead.
+
+    Measured 2026-11-20 (twice): a deploy rode the held session for minutes; meanwhile every ping -- the fleet's
+    ``held``, ``sshhold status`` -- waited behind it, timed out, and ``status`` then DELETED the live session's
+    state: the holder lived on, unreachable, and the next door read it as gone. PLANTED CONTROL: once closed,
+    the ping is refused.
+    """
+    import threading  # noqa: PLC0415
+
+    monkeypatch.setenv('FAKESSH_CODE', CODE)
+    dest = 'ops@fake-busy'
+    sshhold.open_session(dest, 1.0, CODE, ssh=FAKE)
+    slow = f'echo busy&& "{sys.executable}" -c "import time; time.sleep(9)"'
+    running = threading.Thread(target=lambda: sshholdrun.run_command(dest, slow, timeout_s=60), daemon=True)
+    try:
+        running.start()
+        time.sleep(2)  # the run is in flight
+        session = sshholdstate.read_session(dest)
+        assert session is not None
+        assert running.is_alive(), 'the long run is still in flight'
+        assert sshholdwire.ping(session), 'a busy holder answers'
+        assert any(dest in line and 'left' in line for line in sshhold.status_lines())
+        assert sshholdstate.read_session(dest) is not None, 'status never forgets a live, busy holder'
+        running.join(30)
+    finally:
+        sshhold.close_session(dest)
+    assert not sshholdwire.ping(session)

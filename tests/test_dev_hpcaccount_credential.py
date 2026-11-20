@@ -388,3 +388,41 @@ def test_a_research_account_deployed_behind_its_login_alias_takes_its_credential
     code, said, _, _ = _run('alice@login.example', grants=aliased, division=division, deployed=node)
     assert code == 2
     assert 'login04' in said[-1]
+
+
+class _Unread(io.StringIO):
+    def read(self, *_a: object) -> str:  # type: ignore[override]
+        pytest.fail('the token was read before the account was proven reachable')
+
+
+def test_an_unreachable_account_is_refused_loudly_before_the_token_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dead hold refuses, non-zero, naming its cause -- before stdin is read, so the caller keeps the token.
+
+    Measured 2026-11-20: with the account's held session dead, a placement printed nothing and exited 0, and the
+    caller deleted a token that never arrived. PLANTED CONTROL: a reachable account goes on to read the token.
+    """
+    from lab_commons.hpc.grants import Machine  # noqa: PLC0415
+
+    from dev_lab.dev.sshholdwire import HoldRefused  # noqa: PLC0415
+
+    monkeypatch.setattr(credential, 'reached_machine', lambda _a: Machine(session=None, grants=_FLEET, roles={}))
+
+    def dead(_grant: Grant, _timeout: float = 0) -> Runner:
+        msg = 'the held session of alice@login1.example is recorded but its holder does not answer'
+        raise HoldRefused(msg)
+
+    monkeypatch.setattr(credential, 'grant_runner', dead)
+    monkeypatch.setattr('sys.stdin', _Unread())
+    argv = ['alice@login1.example', '--login', 'forge-ci', '--host-config', str(_host_config(tmp_path))]
+    assert credential.main(argv) == 2
+    said = capsys.readouterr()
+    assert 'holder does not answer' in said.out + said.err
+    assert 'the token stays with you' in said.out + said.err
+    placed: list[str] = []
+    monkeypatch.setattr(credential, 'grant_runner', lambda _g, _t=0: lambda _c, _s=None: '')
+    monkeypatch.setattr(credential, 'place_credential', lambda *_a, **k: placed.append(k['token']) or 0)
+    monkeypatch.setattr('sys.stdin', io.StringIO(_MINTED))
+    assert credential.main(argv) == 0
+    assert placed == [_MINTED]

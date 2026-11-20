@@ -58,6 +58,7 @@ __all__ = [
     'drop_host',
     'main',
     'place_credential',
+    'unreachable',
 ]
 
 
@@ -87,6 +88,22 @@ def _refusal(grant: Grant | None, account: str, *, login: str, forge: DeclaredFo
     reader = str(division.roles.get(division.role_of(user), {}).get('reader', ''))
     if reader and login != reader:
         return f"{user}'s role {division.role_of(user)!r} reads as {reader!r}, not {login!r}"
+    return ''
+
+
+def unreachable(account: str, grants: Sequence[Grant]) -> str:
+    """Why *account* cannot be reached right now (a dead hold, a refused second factor); ``''`` when it can.
+
+    Asked BEFORE the token is read: measured 2026-11-20, a placement over a dead hold printed nothing, exited 0, and
+    the caller deleted a token that never arrived.
+    """
+    grant = next((g for g in grants if g.user == account.partition('@')[0]), None)
+    if grant is None:
+        return ''  # the placement refuses it by name, before any connection
+    try:
+        grant_runner(grant)('true', None)
+    except (RuntimeError, OSError) as failed:
+        return f'{account} is not reachable: {failed}'
     return ''
 
 
@@ -196,6 +213,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if forge is None:
         return drop_host(args.account, host=args.drop_host, grants=machine.grants, say=emit)
+    if why := unreachable(args.account, machine.grants):
+        emit(f'credential: refused -- {why}; nothing was read from stdin, so the token stays with you', err=True)
+        return 2
     token = sys.stdin.read().strip()
     return place_credential(
         args.account, login=args.login, token=token, url=args.url, forge=forge, grants=machine.grants,
