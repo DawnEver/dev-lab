@@ -33,10 +33,15 @@ from typing import Final, NamedTuple
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-__all__ = ['ALL', 'CHECKS', 'Check', 'main']
+__all__ = ['ALL', 'CHECKS', 'LARGE_DOOR', 'Check', 'main']
 
 #: pre-commit-hooks' own default for the large-file check, kept so a repo's measured threshold holds.
 DEFAULT_MAX_KB: Final = 500
+#: What a large-file finding names: keep the file out, or narrow the check where the repo declares it.
+LARGE_DOOR: Final = (
+    'keep it out of git, or narrow the check in the repo pyproject: a [[tool.dev_lab.hooks.pre-commit]] row '
+    'id = "filechecks" restating the base run with --exclude large-files=<path regex> or --max-kb N'
+)
 
 _GIT: Final = shutil.which('git') or 'git'
 _SNIFF: Final = 8192
@@ -65,7 +70,9 @@ def _text(data: bytes) -> bytes | None:
 
 def _large(path: Path, data: bytes, args: argparse.Namespace) -> list[Finding]:
     size_kb = len(data) / 1024
-    return [f'{path}: {size_kb:.0f} KB exceeds {args.max_kb} KB'] if size_kb > args.max_kb else []
+    if size_kb <= args.max_kb:
+        return []
+    return [f'{path}: {size_kb:.0f} KB exceeds {args.max_kb} KB -- {LARGE_DOOR}']
 
 
 def _ast(path: Path, data: bytes, _args: argparse.Namespace) -> list[Finding]:

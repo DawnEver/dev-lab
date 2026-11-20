@@ -56,7 +56,7 @@ from lab_commons.hpc.needsets import BASE
 
 from dev_lab.dev._forgebackends import backend_for
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forge import Forge, forge_from_remote, forge_of_url
+from dev_lab.dev.forge import Forge, UnreadableRemote, forge_from_remote, forge_of_url
 from dev_lab.dev.partrows import needs_of_row, row_part
 
 __all__ = [
@@ -286,7 +286,8 @@ def roles_of(forge: Forge, *, layer: Mapping[str, Any] | None = None, env: Mappi
     if not carried:
         msg = (
             f'{repo}: no family layer on this machine and no {ROLES_ENV} carried -- the roles binding lives in the '
-            "family layer's [roles.<forge>]: declare [family] in this machine file (lab_commons.config)"
+            "family layer's [roles.<forge>]: a rendered machine file carries it -- re-render it with "
+            '`python -m dev_lab.dev.devhost render --write`; an ops host declares [family] (lab_commons.config)'
         )
         raise Unbound(msg)
     kinds = json.loads(carried)
@@ -304,9 +305,13 @@ def roles_at(root: Path, *, layer: Mapping[str, Any] | None = None, env: Mapping
 
     """
     layer = machine_layer() if layer is None else layer
-    if not layer:
-        return roles_of(Forge('', root.parent.name, root.name), layer=layer, env=env)
-    return roles_of(forge_from_remote(root), layer=layer, env=env)
+    if layer:
+        return roles_of(forge_from_remote(root), layer=layer, env=env)
+    try:  # a worktree's path is <repo>/.claude/worktrees/<name>: the repo is origin's, the path only without one
+        forge = forge_from_remote(root)
+    except UnreadableRemote:
+        forge = Forge('', root.parent.name, root.name)
+    return roles_of(forge, layer=layer, env=env)
 
 
 def roles_of_url(url: str, *, layer: Mapping[str, Any] | None = None, env: Mapping[str, str] | None = None) -> Roles:

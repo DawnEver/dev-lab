@@ -22,6 +22,7 @@ from dev_lab.dev.hpcaccount.fleet import (
     deploy_command,
     deploy_fleet,
     first_install,
+    layer_target,
     render_command,
 )
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT
@@ -420,7 +421,7 @@ _REPOS = (('dev-lab', 'https://forge.example/team/dev-lab.git', 'main'),)
 
 def test_a_first_install_precedes_the_kits_tick_and_clones_the_layers_repos() -> None:
     command = deploy_command(_FLEET[0], Target('login02.example', 'src', repos=_REPOS), _SRC)
-    assert command.index('[first-install]') < command.index('tick dev-lab')
+    assert command.index('[first-install]') < command.index('+refs/heads/main:refs/remotes/origin/main')
     assert f'[ -x {shell_interpreter("~/src/dev-lab")} ] ||' in command
     assert 'git clone -q --branch main https://forge.example/team/dev-lab.git ~/src/dev-lab' in command
     assert '( cd ~/src/dev-lab && uv sync --frozen )' in command
@@ -458,3 +459,65 @@ def test_a_kit_with_no_venv_is_first_installed(tmp_path: Path) -> None:
 def test_a_kit_with_its_venv_skips_the_first_install(tmp_path: Path) -> None:
     """PLANTED CONTROL: the same line, with the kit's interpreter present, runs nothing."""
     assert _first_install(tmp_path, venv=True) == ''
+
+
+_KIT_ROWS = (
+    ('dev-lab', 'https://forge.example/team/dev-lab.git', 'integrate/main'),
+    ('product', 'https://gitea.example/team/product.git', 'integrate/main'),
+)
+
+
+def test_a_declared_kit_ref_moves_the_kit_itself_never_through_the_stale_machine_file() -> None:
+    """The kit fast-forwards to its LAYER-declared ref, under the cron tick's lock, before the render.
+
+    Measured 2026-11-20: the kit's tick reads the account's OLD machine file -- one with a retired key crashed before
+    refreshing, one with an old root refreshed ANOTHER checkout -- so the render then ran a kit too old for
+    ``--from``. PLANTED CONTROL: a layer naming no kit row keeps the tick.
+    """
+    command = deploy_command(_FLEET[0], Target('login02.example', 'src', repos=_KIT_ROWS), _SRC)
+    moved = command.index('+refs/heads/integrate/main:refs/remotes/origin/integrate/main')
+    checkout = command.index('checkout -q -B integrate/main', moved)
+    synced = command.index('uv sync --frozen', checkout)
+    assert 'flock -w 600' in command
+    assert 'lab-forge-dev-lab.lock' in command
+    assert synced < command.index('-m dev_lab.dev.devhost render')
+    assert 'hpcaccount tick dev-lab' not in command
+    unnamed = deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
+    assert 'hpcaccount tick dev-lab' in unnamed
+
+
+def test_an_absolute_root_is_never_put_under_home() -> None:
+    """Measured 2026-11-20 (Cirrus): root ``/epccfs/...`` rendered from ``$HOME//epccfs/...``, a path that is not."""
+    command = render_command(_FLEET[0], Target('login02.example', '/abs/root'), _SRC)
+    assert '--from "/abs/root/config-source"' in command
+    assert '$HOME//abs' not in command
+    relative = render_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
+    assert '--from "$HOME/src/config-source"' in relative, 'PLANTED CONTROL: a relative root stays under home'
+
+
+def test_a_first_install_clones_only_the_kit() -> None:
+    """The kit alone is first installed; the deploy's ticks clone the rest.
+
+    Measured 2026-11-20: a first install cloning a forge-hosted product repo before any reader credential failed, and
+    the kit never got its venv.
+    """
+    command = first_install(_FLEET[0], Target('login02.example', 'src', repos=_KIT_ROWS))
+    assert 'git clone -q --branch integrate/main https://forge.example/team/dev-lab.git ~/src/dev-lab' in command
+    assert 'product' not in command
+
+
+def test_a_layer_naming_no_role_takes_its_grants_role(tmp_path: Path) -> None:
+    """An account file no longer states a role (the family grant does); the grant's role is the target's.
+
+    Measured 2026-11-20: ci-pause-fleet read every verification account as 'role undeclared' and skipped it.
+    PLANTED CONTROL: a stated role is kept.
+    """
+    grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', cluster_name='c1', role='verification')
+    plain = '[deploy]' + chr(10) + 'host = "login02.example"' + chr(10)
+    bare = layer_target(grant, _source(tmp_path, users=('alice',), deploy={'alice': plain}))
+    assert isinstance(bare, Target)
+    assert bare.role == 'verification'
+    stated = plain + 'role = "x"' + chr(10)
+    kept = layer_target(grant, _source(tmp_path, users=('alice',), deploy={'alice': stated}))
+    assert isinstance(kept, Target)
+    assert kept.role == 'x'

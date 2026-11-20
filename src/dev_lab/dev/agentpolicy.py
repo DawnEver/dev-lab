@@ -122,7 +122,7 @@ POLICY: Final[tuple[Door, ...]] = (
         'where the user placed it; never a token typed into a command line, a log or a file the agent writes.',
     ),
     Door(module_argv('sshhold', 'close'), MAIN, 'Ending a held login session.'),
-    Door(module_argv('sshhold', 'status'), MAIN, 'Read-only: the held login sessions and time left.'),
+    Door(module_argv('sshhold', 'status'), SUBAGENT, 'Read-only: the held login sessions and time left.'),
     Door(_forge('status', 'list'), SUBAGENT, 'Read-only: the commit statuses the forge holds for one commit.'),
     Door(
         _forge('run', 'show'),
