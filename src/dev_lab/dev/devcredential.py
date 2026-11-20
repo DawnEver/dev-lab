@@ -6,7 +6,7 @@ verified by the forge's own ``auth role`` as *L*, backup, then replace; a refusa
 token is read from stdin, never argv; output names it only by a sha256 prefix.
 
 DECLARED ONLY, before anything is staged: the login must be one this machine declares for that forge host
-(``[dev] forges.<host>`` of its host file, :mod:`dev_lab.dev.devhost`) AND a login the forge host's config declares
+(``[dev] forges.<host>`` of its host file, :mod:`dev_lab.dev.devdeclared`) AND a login the forge host's config declares
 (``[ops.forge.accounts]``, where ``forge token mint`` mints it); the url must be on that forge. The store helper is a
 DECLARATION (``[dev] helpers.<host> = "store"``): the door applies it -- the host's inherited helpers reset by an
 empty entry, then ``store``, so ONLY ``~/.git-credentials`` answers for that host and every other host keeps the
@@ -32,7 +32,7 @@ import lab_commons.launch as _door
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import devhost, devprofile
+from dev_lab.dev import devdeclared, devprofile
 from dev_lab.dev.credstore import CredentialRefused, DeclaredForge, Shell, digest, place_verified, read_forge
 from dev_lab.dev.forgecredential import STORE_ONLY, helpers, use_store
 
@@ -140,7 +140,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'credential: refused -- {refused}')
         return 2
     token = sys.stdin.read().strip()
-    dev = devhost.this_machine(args.host_config)
+    dev = devdeclared.this_machine(args.host_config)
     return place(login=args.login, token=token, url=args.url, forge=forge, dev=dev, say=emit)
 
 

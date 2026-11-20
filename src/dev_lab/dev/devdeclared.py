@@ -2,7 +2,8 @@
 
 Split from :mod:`dev_lab.dev.devhost` at the module-size band (2026-11-20) so the credential doors
 (:mod:`dev_lab.dev.forgecredential`, :mod:`dev_lab.dev.devcredential`) read a machine's declaration without the
-render. A host with no host file falls back to the family's default profile (:mod:`dev_lab.dev.devprofile`).
+render. It owns ``OWN_TABLE``, the machine file's record of the host and clone it was rendered from. A host
+with no host file falls back to the family's default profile (:mod:`dev_lab.dev.devprofile`).
 """
 
 from __future__ import annotations
@@ -10,11 +11,16 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
+
+from lab_commons import config as machineconfig
 
 from dev_lab.dev import devprofile
 
-__all__ = ['declared', 'declared_by', 'merge']
+__all__ = ['OWN_TABLE', 'declared', 'declared_by', 'merge', 'this_machine']
+
+#: The render's own table in a machine file: which host and clone it came from.
+OWN_TABLE: Final = 'devhost'
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -46,3 +52,10 @@ def declared_by(own: Mapping[str, Any]) -> dict[str, Any]:
         return {}
     source = Path(own['source'])
     return declared(source / 'hosts' / f'{own["host"]}.toml', source / 'family.toml')
+
+
+def this_machine(host_config: Path | None = None) -> dict[str, Any]:
+    """The effective ``[dev]`` of *host_config*, else of the host and clone this machine's render records."""
+    if host_config is not None:
+        return declared(host_config, host_config.parent.parent / 'family.toml')
+    return declared_by(machineconfig.machine().get(OWN_TABLE, {}))
