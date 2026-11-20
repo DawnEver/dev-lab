@@ -45,6 +45,7 @@ _IDS = frozenset(
     {
         'SCHEDULER-ONLY-FOR-SERVING',
         'AGENT-GUARD',
+        'ALL-EXTRAS-REFUSED',
         'BAR-IS-A-CONSTANT',
         'CODE-IN-CODE-ROOTS',
         'DECLARATION-LIES',

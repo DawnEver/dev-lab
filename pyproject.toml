@@ -114,10 +114,9 @@ retired = [
   { path = '.claude/rules/MEMORY.md', what = "rem's generated memory index; nothing rebuilds it", door = "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs <checkout> -- which removes every copy outside attic/" },
 ]
 
-# How the cluster builds this repo's env, read at the commit being judged (lab_commons.hpc.builds).
-# It installs the project itself: the venv must import lab_commons.envkey to report its env key.
+# The cluster builds this repo's env from [tool.dev_lab.dep] (lab_commons.extras, one reader), installing the
+# project itself: the venv must import lab_commons.envkey to report its env key.
 [tool.lab_commons.hpc]
-install = "uv sync --frozen --all-extras"
 
 # The run record's root (dev_lab.dev.platformparts).
 [tool.dev_lab.parts]

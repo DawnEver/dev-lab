@@ -158,6 +158,9 @@ runs-on = "${{ matrix.runs-on }}"
 timeout-minutes = "@part-timeout-minutes@"
 steps = [
     { use-steps = "setup" },
+    # THE PART'S OWN EXTRAS (user, 2026-11-20: most parts need no torch): the declared extras plus those its need-set
+    # maps to, from the repo's one declaration (dev_lab.dev.depneeds flags -> lab_commons.extras); never all of them.
+    { name = "Sync the part's extras", shell = "bash", run = 'uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")' },
     { name = "Produce and post the part", run = "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}" },
     # A red, hung or cancelled part kept no log, so its cause was unreadable (document-lab tests/windows, 2026-11-18):
     # the run's verify log is attached whatever ended the job (always(): a failure, a cancel, the job timeout).
@@ -394,10 +397,12 @@ pull-requests = "write"
 setup = [
     { uses = "actions/checkout@v4", with = { ref = "${{ env.HEAD_SHA }}", fetch-depth = 0 } },
     { name = "Install uv", uses = "astral-sh/setup-uv@v5", with = { enable-cache = true } },
-    { name = "Sync the environment", run = "uv sync --frozen --all-extras" },
+    # The repo's DECLARED extras only ([tool.dev_lab.dep] extras, rendered by ciworkflows.EXTRAS_PLACEHOLDER); a part
+    # adds its need-set's own. No job syncs every extra: a rendered `--all-extras` is refused (ALL-EXTRAS-REFUSED).
+    { name = "Sync the environment", run = "uv sync --frozen@extras@" },
 ]
 # ci.yml's merge decision on its one PR and the smoke run its merge dispatches; merge-ready and merge-rejudge list
-# `setup` before it, so a repo that narrows `setup` (document-lab: no `--all-extras`) narrows both -- never a copy.
+# `setup` before it, so a repo that narrows `setup` narrows both -- never a copy.
 merge-ready = [
     { id = "ready", name = "tests/merge-ready", run = 'said="$(uv run --no-sync python -m dev_lab.dev.forge merge ready --pr "$PR_NUMBER")"; echo "$said"; case "$said" in *"; merged") echo "merged=true" >> "$GITHUB_OUTPUT" ;; esac; case "$said" in *"; review due"*) echo "due=true" >> "$GITHUB_OUTPUT" ;; esac' },
     { name = "Run CI on the merged integration", if = "${{ steps.ready.outputs.merged == 'true' }}", run = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref @integration@ -f smoke=true', env = { GH_TOKEN = "${{ github.token }}" } },

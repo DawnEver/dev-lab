@@ -195,7 +195,6 @@ def test_the_cli_queues_the_part_with_its_record_and_flushes(tmp_path: Path, mon
 
 DECLARED = """
 [tool.lab_commons.hpc]
-install = "uv sync --extra dev"
 needs = ["cargo", "cc"]
 collect = "tests"
 
@@ -219,7 +218,7 @@ def _checkout(tmp_path: Path, pyproject: str, remote: str = 'git@forge.example.o
 
 
 def test_the_cluster_part_is_filled_from_the_declarations_alone(tmp_path: Path) -> None:
-    """The build (install, needs) is NOT in it: hpc reads it from the commit itself."""
+    """The build (its derived sync, needs) is NOT in it: hpc reads it from the commit itself."""
     repo, sha = _checkout(tmp_path, DECLARED)
     part = platformparts.cluster_part(repo, sha)
     assert (part.repo_url, part.collect) == ('https://forge.example.org/o/r.git', 'tests')
@@ -229,9 +228,7 @@ def test_the_cluster_part_is_filled_from_the_declarations_alone(tmp_path: Path) 
 
 
 def test_the_cluster_part_carries_the_declared_outputs_and_a_malformed_list_is_refused(tmp_path: Path) -> None:
-    declared = DECLARED.replace(
-        'install = "uv sync --extra dev"\n', 'install = "uv sync --extra dev"\noutputs = ["f/*.h5"]\n'
-    )
+    declared = DECLARED.replace('collect = "tests"\n', 'collect = "tests"\noutputs = ["f/*.h5"]\n')
     for name in ('ok', 'bad'):
         (tmp_path / name).mkdir()
     repo, sha = _checkout(tmp_path / 'ok', declared)
@@ -266,7 +263,7 @@ def test_a_producer_never_told_its_part_is_refused(tmp_path: Path, produce: str,
 @pytest.mark.parametrize(
     ('drop', 'named'),
     [
-        ('install = "uv sync --extra dev"\n', r'\[tool\.lab_commons\.hpc\] install'),
+        ('[tool.lab_commons.hpc]\n', r'declares no \[tool\.lab_commons\.hpc\] table'),
         ('output = "output/logs"\n', r'\[tool\.dev_lab\.parts\] output'),
     ],
 )
@@ -478,3 +475,10 @@ def test_a_code_failure_is_the_authors_red() -> None:
     assert any("the author's red (class=code)" in one for one in read.problems)
     waived = platformparts.standing([_passing_base(), refused], head='h', waived=frozenset({'jmag'}))
     assert waived.result is Conclusion.PASS, 'CONTROL: a waived part is not read'
+
+
+def test_a_retired_install_key_is_refused_by_name(tmp_path: Path) -> None:
+    """FORMATS-MIGRATE-ONCE: the derived sync replaced the declared install; the old key is refused, never read."""
+    repo, sha = _checkout(tmp_path, DECLARED.replace('needs = ', 'install = "uv sync"\nneeds = '))
+    with pytest.raises(platformparts.UndeclaredPart, match='install is retired'):
+        platformparts.cluster_part(repo, sha)

@@ -44,7 +44,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen"
         },
         {
           "name": "Install the review door",

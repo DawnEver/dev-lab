@@ -39,9 +39,7 @@ def _repo(tmp_path: Path) -> tuple[Path, str]:
     repo = tmp_path / 'repo'
     repo.mkdir()
     _git(repo, 'init', '-q')
-    (repo / 'pyproject.toml').write_text(
-        '[project]\nname = "x"\n[tool.lab_commons.hpc]\ninstall = "true"\n', encoding='utf-8'
-    )
+    (repo / 'pyproject.toml').write_text('[project]\nname = "x"\n[tool.lab_commons.hpc]\n', encoding='utf-8')
     _git(repo, 'add', 'pyproject.toml')
     _git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'one')
     return repo, _git(repo, 'rev-parse', 'HEAD').decode().strip()

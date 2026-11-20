@@ -79,7 +79,10 @@ if 'ls-remote' in args:
 if args[0] == 'clone':
     target = pathlib.Path(args[-1])
     (target / '.git').mkdir(parents=True)
-    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n')
+    (target / 'pyproject.toml').write_text(
+        '[project.optional-dependencies]\ndev = ["x"]\n[tool.dev_lab.dep]\n'
+        'extras = ["dev"]\n[tool.lab_commons.hpc]\n'
+    )
 """
 
 FAKE_ANSWER: Final = r"""
@@ -182,7 +185,7 @@ def test_a_repo_declaring_a_retired_table_is_refused_alone_and_the_others_are_se
     assert box.run(*DECLARE) == 0
     beta = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
     retired = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))  # its spelling lives in the registry
-    _write(beta, f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{retired}\nx = 1\n')
+    _write(beta, f'[tool.lab_commons.hpc]\n{retired}\nx = 1\n')
     capsys.readouterr()
     assert box.run() == 2, 'a refused repo still fails the deploy -- after the others are served'
     marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
@@ -203,7 +206,7 @@ def test_a_repo_whose_hpc_declaration_is_invalid_is_refused_alone_and_the_others
     """The 2026-10-18 Ada incident: ``read_builds`` refused one repo's table inside ``[tools]``; the deploy crashed."""
     assert box.run(*DECLARE) == 0
     beta = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
-    _write(beta, '[tool.lab_commons.hpc]\ninstall = "uv sync"\ndependency_inputs = ["uv.lock"]\n')
+    _write(beta, '[tool.lab_commons.hpc]\ndependency_inputs = ["uv.lock"]\n')
     capsys.readouterr()
     assert box.run() == 2, 'a refused repo still fails the deploy -- after the others are served'
     marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
@@ -278,7 +281,7 @@ def test_dry_run_touches_nothing_and_prints_every_action(box: Box, capsys: pytes
 def test_the_venv_is_built_once_per_declaration(box: Box) -> None:
     assert box.run(*DECLARE) == 0
     assert box.run() == 0
-    assert box.logged().count('uv sync --extra dev') == 3  # one per repo, not per run
+    assert box.logged().count('uv sync --frozen --extra dev') == 3  # one per repo, not per run
 
 
 def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(box: Box) -> None:
@@ -294,7 +297,7 @@ def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(b
     assert (first / '.lab-deploy-env').is_file()
     pyproject = alpha / 'pyproject.toml'
     pyproject.write_text(
-        pyproject.read_text(encoding='utf-8').replace('--extra dev', '--extra moved'), encoding='utf-8'
+        pyproject.read_text(encoding='utf-8').replace('extras = ["dev"]', 'extras = []'), encoding='utf-8'
     )
     assert box.run() == 0
     second = venvpointer.named(alpha)
@@ -579,8 +582,7 @@ def test_a_repo_declaring_rclone_artefacts_has_its_remote_checked_and_a_missing_
     assert box.run(*DECLARE) == 0
     alpha = box.home / deploy_spec.DEFAULT_ROOT / 'alpha' / 'pyproject.toml'
     alpha.write_text(
-        '[tool.lab_commons.hpc]\ninstall = "uv sync"\n'
-        '[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "hpc-data:consumer-a"\n',
+        '[tool.lab_commons.hpc]\n[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "hpc-data:consumer-a"\n',
         encoding='utf-8',
     )
     rclone = (sys.executable, str(_write(tmp_path / 'rclone.py', FAKE_RCLONE)), str(box.calls), state)
@@ -780,7 +782,7 @@ def test_a_checkout_whose_roles_are_unbound_is_released_by_name(
     assert box.run(*DECLARE) == 0
     pyproject = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
     served: list[tuple[list[str], Path, str]] = []
-    _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n')
+    _write(pyproject, '[tool.lab_commons.hpc]\n')
     carry(monkeypatch, EVERY_CI)
     assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: every role on CI -- refreshed, not served'
     monkeypatch.delenv(ROLES_ENV)
