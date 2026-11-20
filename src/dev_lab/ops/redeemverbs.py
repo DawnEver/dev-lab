@@ -73,7 +73,8 @@ def secret_place(config: OpsConfig, args: argparse.Namespace) -> int:
         return 2
     try:
         granted = json.loads(Path(args.credential).read_text(encoding='utf-8'))
-        said = secretplace.place(config, args.path, sys.stdin.buffer.read(), redeem=redeemer(config)(
+        said = secretplace.place(secretplace.declared(config), str(config.path), args.path,
+                                 sys.stdin.buffer.read(), redeem=redeemer(config)(
             secretplace.ACTION), credential=granted, chown=shutil.chown)  # fmt: skip
     except (secretplace.SecretRefused, ConsentRefused, OSError, ValueError) as refused:
         emit(f'refused: {refused}', err=True)
