@@ -44,6 +44,7 @@ from dev_lab.dev.rules import (
 _IDS = frozenset(
     {
         'AGENT-GUARD',
+        'ALL-EXTRAS-REFUSED',
         'BAR-IS-A-CONSTANT',
         'CODE-IN-CODE-ROOTS',
         'DECLARATION-LIES',

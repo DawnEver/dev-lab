@@ -1550,12 +1550,12 @@ def test_both_merge_jobs_sync_through_the_repo_s_setup(tmp_path: Path) -> None:
 
     document-lab 2026-11-10: dev-lab #365 inlined a copy of ``setup`` into the merge steps, so document-lab's narrowed
     ``setup`` (no ``--all-extras``: its ``gpu`` extra has no wheel on a hosted runner) no longer reached the merge jobs
-    and its rendered-workflow test went red on every PR. PLANTED CONTROL: the base, un-narrowed, still syncs
-    ``--all-extras`` in both jobs.
+    and its rendered-workflow test went red on every PR. PLANTED CONTROL: the base, un-narrowed, syncs the repo's
+    declared extras (none here) in both jobs.
     """
     base = _base_ci(tmp_path)['jobs']
     for job in ('merge-ready', 'merge-rejudge'):
-        assert any(step.get('run') == 'uv sync --frozen --all-extras' for step in base[job]['steps']), job
+        assert any(step.get('run') == 'uv sync --frozen' for step in base[job]['steps']), job
     (tmp_path / 'pyproject.toml').write_text(
         ACTIONS_REPO + '[tool.dev_lab.ci."ci.yml"]\n[tool.dev_lab.ci._steps]\n'
         'setup = [{ name = "Sync the environment", run = "uv sync --frozen --extra dev" }]\n',
@@ -1643,3 +1643,45 @@ def test_a_hosted_part_carries_a_job_timeout_derived_from_the_repo_s_selection_w
     pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.verify]\nwall_s = 7230\n', encoding='utf-8')
     assert workflows(tmp_path)['ci.yml']['jobs']['part']['timeout-minutes'] == 121 + ciworkflows.PART_MARGIN_MIN
     assert isinstance(default, int), 'GitHub reads timeout-minutes as a number'
+
+
+_EXTRAS = '[project.optional-dependencies]\ndev = ["pytest"]\nlearn = ["torch"]\n[tool.dev_lab.dep]\nextras = ["dev"]\n'
+
+
+def _sync_runs(flow: dict) -> list[str]:
+    return [
+        step['run']
+        for job in flow['jobs'].values()
+        for step in job.get('steps', [])
+        if 'uv sync' in step.get('run', '')
+    ]
+
+
+def test_every_job_syncs_only_the_declared_extras_and_a_part_adds_its_own_needs(tmp_path: Path) -> None:
+    """User, 2026-11-20: most parts need no torch -- no job syncs every extra; a part syncs its need-set's."""
+    _hosted(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _EXTRAS, encoding='utf-8')
+    flow = workflows(tmp_path)['ci.yml']
+    runs = _sync_runs(flow)
+    assert 'uv sync --frozen --extra dev' in runs
+    assert not any('--all-extras' in run for run in runs)
+    part = [step['run'] for step in flow['jobs']['part']['steps'] if step.get('name') == "Sync the part's extras"]
+    assert part == [
+        'uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")'
+    ]
+
+
+def test_a_repo_with_optional_dependencies_and_no_declared_extras_is_refused_at_render(tmp_path: Path) -> None:
+    _hosted(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + _EXTRAS.replace('extras = ["dev"]\n', ''), encoding='utf-8')
+    with pytest.raises(ValueError, match=r'no \[tool.dev_lab.dep\] extras'):
+        workflows(tmp_path)
+
+
+def test_a_layer_syncing_every_extra_is_refused_by_name() -> None:
+    """ALL-EXTRAS-REFUSED, with its planted control: a narrowed sync passes the same walk."""
+    with pytest.raises(ValueError, match='ALL-EXTRAS-REFUSED'):
+        ciworkflows.refuse_everything({'steps': [{'run': 'uv sync --frozen --all-extras'}]}, 'x')
+    with pytest.raises(ValueError, match='ALL-EXTRAS-REFUSED'):
+        ciworkflows.refuse_everything(['uv sync --extra all'], 'x')
+    ciworkflows.refuse_everything({'steps': [{'run': 'uv sync --frozen --extra dev'}]}, 'x')

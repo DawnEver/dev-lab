@@ -19,7 +19,7 @@ def test_a_repo_declaring_a_dev_lab_or_a_lab_commons_table_is_a_member(tmp_path:
     assert is_member(_repo(tmp_path, "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\n"))
     kit = tmp_path / 'kit'
     kit.mkdir()
-    assert is_member(_repo(kit, "[tool.lab_commons.hpc]\ninstall = 'uv sync'\n"))
+    assert is_member(_repo(kit, '[tool.lab_commons.hpc]\n'))
 
 
 def test_a_repo_without_the_table_is_not_a_member(tmp_path: Path) -> None:

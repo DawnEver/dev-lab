@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import lab_commons.launch as _door
+from lab_commons import extras
 from lab_commons.log import emit
 
 from dev_lab.dev import uvrelease
@@ -216,7 +217,7 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
     declaration = declared_table(manifest, 'dep', {})
     available = manifest.get('project', {}).get('optional-dependencies', {})
-    selected = requested if requested is not None else declaration.get('extras', ())
+    selected = requested if requested is not None else extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
     if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
         msg = 'tool.dev_lab.dep.extras must be an array of declared extra names'
         raise ValueError(msg)

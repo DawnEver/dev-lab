@@ -1,7 +1,9 @@
 """ON-DEMAND EXTRAS (D78): a part's needs name the extras its tests import; a missing one is refused with its door.
 
 A worktree's environment holds the base dependencies and the extras the repo DECLARES
-(``[tool.dev_lab.dep] extras``); nothing else is installed by default (:func:`dev_lab.dev._dep_project.read_project`).
+(``[tool.dev_lab.dep] extras``); nothing else is installed by default. The declaration has ONE reader,
+:mod:`lab_commons.extras`: this door, CI's per-part sync (``flags``), the cluster build and a research job all
+derive their extras from it.
 A test that needs more says so by its resource marker -- the need-set its part is named for
 (:mod:`lab_commons.hpc.needsets`) -- and the repo maps a need to the extra that serves it, once, beside its extras::
 
@@ -21,20 +23,24 @@ collection and is not checked.
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import subprocess
+import sys
 import tomllib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from importlib import metadata
 from pathlib import Path
 from typing import Final
 
-from lab_commons.hpc.needsets import BASE
+from lab_commons import extras
+from lab_commons.hpc.needsets import BASE, needs_of
+from lab_commons.log import emit
 
 from dev_lab.dev import taskbinding
 
-__all__ = ['bound_task_extras', 'declared_needs', 'extras_for', 'missing_for_part', 'task_needs']
+__all__ = ['bound_task_extras', 'declared_needs', 'extras_for', 'flags', 'main', 'missing_for_part', 'task_needs']
 
 #: A requirement's distribution name: the leading identifier, before extras, versions, URLs or markers.
 _NAME: Final = re.compile(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
@@ -48,42 +54,29 @@ def _installed(name: str) -> bool:
     return True
 
 
-def _table(root: Path) -> tuple[Mapping[str, object], Mapping[str, list[str]]]:
-    """The repo's ``[tool.dev_lab.dep]`` and its extras; a root with no manifest declares neither."""
+def _manifest(root: Path) -> dict[str, object]:
+    """*root*'s parsed pyproject; a root with no manifest declares nothing."""
     path = root / 'pyproject.toml'
-    if not path.is_file():
-        return {}, {}
-    manifest = tomllib.loads(path.read_text(encoding='utf-8'))
-    dep = manifest.get('tool', {}).get('dev_lab', {}).get('dep', {})
-    return dep, manifest.get('project', {}).get('optional-dependencies', {})
+    return tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
 
 
 def declared_needs(root: Path) -> dict[str, str]:
-    """``[tool.dev_lab.dep] needs``: need -> extra, each extra a declared one, else :class:`ValueError` by name."""
-    dep, available = _table(root)
-    needs = dep.get('needs', {})
-    if not isinstance(needs, dict) or any(not isinstance(v, str) for v in needs.values()):
-        msg = 'tool.dev_lab.dep.needs must be a table of need = "<extra>"'
-        raise ValueError(msg)
-    for need, extra in needs.items():
-        if extra not in available:
-            msg = f'tool.dev_lab.dep.needs: {need} -> {extra!r} is no declared extra ({sorted(available)})'
-            raise ValueError(msg)
-    return dict(needs)
+    """``[tool.dev_lab.dep] needs``: need -> extra, read by the ONE reader :func:`lab_commons.extras.declared`."""
+    return dict(extras.declared(_manifest(root), str(root / 'pyproject.toml')).needs)
 
 
 def missing_for_part(root: Path, part: str, *, installed: Callable[[str], bool] = _installed) -> str | None:
     """The refusal naming the sync door when *part*'s needs map to an extra not installed here, else ``None``."""
-    needs = declared_needs(root)
-    dep, available = _table(root)
+    manifest = _manifest(root)
+    found = extras.declared(manifest, str(root / 'pyproject.toml'))
+    needs, available = found.needs, manifest.get('project', {}).get('optional-dependencies', {})
     wanted = [needs[need] for need in part.split('+') if need and need != BASE and need in needs]
     missing = [
         extra for extra in dict.fromkeys(wanted) if not all(installed(name) for name in _names(available[extra]))
     ]
     if not missing:
         return None
-    declared = [str(e) for e in dep.get('extras', ())]
-    flags = ' '.join(f'--extra {extra}' for extra in dict.fromkeys([*declared, *missing]))
+    flags = ' '.join(f'--extra {extra}' for extra in dict.fromkeys([*found.extras, *missing]))
     need_list = ', '.join(repr(extra) for extra in missing)
     return (
         f'verify: refused -- part {part} needs extra {need_list}, not installed in this environment '
@@ -120,13 +113,29 @@ def task_needs(ledger: Path, task: str) -> tuple[str, ...]:
 
 
 def extras_for(root: Path, needs: tuple[str, ...]) -> tuple[str, ...]:
-    """The extras a sync selects for *needs*: the repo's declared extras plus every extra a need maps to, in order.
+    """The extras a sync of *root* selects for *needs* (:func:`lab_commons.extras.extras_for`, the one rule)."""
+    return extras.extras_for(_manifest(root), needs, str(root / 'pyproject.toml'))
 
-    A need the repo maps to no extra (a platform, an external tool) installs nothing.
-    """
-    dep, _available = _table(root)
-    mapped = declared_needs(root)
-    return tuple(dict.fromkeys([*(str(e) for e in dep.get('extras', ())), *(mapped[n] for n in needs if n in mapped)]))
+
+def flags(root: Path, part: str) -> str:
+    """The ``uv sync`` extra flags an environment of *root* for *part* (a need-set name) selects."""
+    return ' '.join(f'--extra {extra}' for extra in extras_for(root, tuple(sorted(needs_of(part)))))
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m dev_lab.dev.depneeds flags --root R --part P``: print the part's extra flags (CI's sync)."""
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.depneeds', description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest='verb', required=True)
+    flag = sub.add_parser('flags', help="the part's `--extra` flags: the declared extras plus its needs' extras")
+    flag.add_argument('--root', type=Path, default=Path.cwd())
+    flag.add_argument('--part', default=BASE, help=f'a need-set name (default {BASE})')
+    args = parser.parse_args(argv)
+    try:
+        emit(flags(args.root, args.part))
+    except (ValueError, TypeError) as refused:
+        emit(f'depneeds: refused -- {refused}', err=True)
+        return 2
+    return 0
 
 
 def _names(requirements: list[str]) -> list[str]:
@@ -148,3 +157,7 @@ def bound_task_extras(root: Path, env: Mapping[str, str] | None = None) -> tuple
         return None
     needs = task_needs(bound.ledger, bound.task)
     return extras_for(root, needs) if needs else None
+
+
+if __name__ == '__main__':
+    sys.exit(main())

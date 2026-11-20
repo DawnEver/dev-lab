@@ -91,7 +91,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen --extra test --extra ops"
         },
         {
           "name": "Install the normal measurement hooks",
@@ -136,7 +136,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen --extra test --extra ops"
         },
         {
           "id": "pending",
@@ -184,7 +184,12 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen --extra test --extra ops"
+        },
+        {
+          "name": "Sync the part's extras",
+          "shell": "bash",
+          "run": "uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part \"${{ matrix.part }}\")"
         },
         {
           "name": "Produce and post the part",
@@ -237,7 +242,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen --extra test --extra ops"
         },
         {
           "name": "Post every part no job settled",
@@ -273,7 +278,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen --extra test --extra ops"
         },
         {
           "name": "tests/security",
@@ -309,7 +314,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen --extra test --extra ops"
         },
         {
           "name": "head gates",
@@ -354,7 +359,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen --extra test --extra ops"
         },
         {
           "id": "ready",
@@ -404,7 +409,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "uv sync --frozen --all-extras"
+          "run": "uv sync --frozen --extra test --extra ops"
         },
         {
           "name": "Promote main",

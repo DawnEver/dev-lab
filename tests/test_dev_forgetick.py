@@ -408,9 +408,7 @@ def test_a_lapsed_lease_by_the_forges_clock_lets_another_claim_whatever_the_host
 
 def test_a_cluster_seat_claims_a_cluster_part_and_no_argv(server, tmp_path: Path) -> None:
     repo, tips = _origin(tmp_path)
-    sha = _declare(
-        repo, tips, '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
-    )
+    sha = _declare(repo, tips, '[tool.lab_commons.hpc]\n[tool.dev_lab.parts]\noutput = "output/logs"\n')
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me)]))
@@ -886,7 +884,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
     sha = _declare(
         repo,
         tips,
-        f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{outputs}[tool.dev_lab.parts]\noutput = "output/logs"\n',
+        f'[tool.lab_commons.hpc]\n{outputs}[tool.dev_lab.parts]\noutput = "output/logs"\n',
     )
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -904,7 +902,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
 NEEDS = (
     '[tool.lab_commons.tests]\nresources = ["workstation", "jmag", "linux"]\n'
     'produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]\n'
-    '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
+    '[tool.lab_commons.hpc]\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
 )
 
 
@@ -1138,18 +1136,21 @@ def test_a_sha_that_cannot_be_produced_blocks_itself_and_the_good_head_is_claime
     assert report.queue == (), 'refused on its own commit, never left waiting'
 
 
-CLUSTER_ONLY = '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
+CLUSTER_ONLY = '[tool.lab_commons.hpc]\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
 
 
 @pytest.mark.parametrize(
     ('declared', 'kind', 'missing'),
-    [(CLUSTER_ONLY, {}, 'tool.lab_commons.tests] produce'), (PRODUCE, {'seat': SEAT, 'host': 'linux'}, 'install')],
-    ids=['box-lacks-produce', 'cluster-lacks-install'],
+    [
+        (CLUSTER_ONLY, {}, 'tool.lab_commons.tests] produce'),
+        (PRODUCE, {'seat': SEAT, 'host': 'linux'}, 'tool.lab_commons.hpc] table'),
+    ],
+    ids=['box-lacks-produce', 'cluster-lacks-hpc'],
 )
 def test_a_producer_only_the_other_host_kind_can_build_is_never_refused_on_the_commit(
     server, tmp_path: Path, declared: str, kind: dict, missing: str
 ) -> None:
-    """A box needs ``produce``, a cluster ``hpc install``: one kind lacking its own is no defect of the commit.
+    """A box needs ``produce``, a cluster the ``hpc`` table: one kind lacking its own is no defect of the commit.
 
     The part waits here, named, and is no work this host could serve. PLANTED CONTROL: a commit declaring
     neither is refused on it (``test_a_part_the_repo_cannot_produce_is_never_claimed_and_is_refused_on_its_commit``).
@@ -1443,9 +1444,7 @@ def test_a_cluster_seat_claims_a_verify_part_by_the_declared_affinity(server, tm
     """User ruling 2026-10-30: a verify account claims at once; a research account only by the user's opt-in."""
     mine, borrow, claimed = _AFFINITY_CASES[case]
     repo, tips = _origin(tmp_path)
-    sha = _declare(
-        repo, tips, '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
-    )
+    sha = _declare(repo, tips, '[tool.lab_commons.hpc]\n[tool.dev_lab.parts]\noutput = "output/logs"\n')
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me)]))
@@ -1474,9 +1473,7 @@ def test_a_cluster_seat_claims_only_what_its_deploy_row_opens(
     claims it as before).
     """
     repo, tips = _origin(tmp_path)
-    sha = _declare(
-        repo, tips, '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
-    )
+    sha = _declare(repo, tips, '[tool.lab_commons.hpc]\n[tool.dev_lab.parts]\noutput = "output/logs"\n')
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me)]))

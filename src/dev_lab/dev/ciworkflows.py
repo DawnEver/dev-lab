@@ -71,10 +71,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import tomllib
 from pathlib import Path
 from typing import Any, Final, cast
 
+from lab_commons import extras
 from lab_commons.log import emit
 
 from dev_lab.dev import hostedparts, jobparts
@@ -96,6 +98,7 @@ from dev_lab.dev.verifybox import wall_of
 __all__ = [
     'BASE_PATH',
     'BY_FORGE',
+    'EXTRAS_PLACEHOLDER',
     'FORGE_KEY',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
@@ -114,6 +117,7 @@ __all__ = [
     'follow_checks',
     'part_timeout_minutes',
     'placed',
+    'refuse_everything',
     'render',
     'repo_forge',
     'runner_labels',
@@ -134,6 +138,8 @@ LIGHT: Final = 'light'
 
 #: In any base or layer string, the repo's declared integration branch (``[tool.dev_lab.integrator]``), at render.
 INTEGRATION_PLACEHOLDER: Final = '@integration@'
+#: In any base or layer string, the repo's declared extras as ` --extra <name>` words (empty when none), at render.
+EXTRAS_PLACEHOLDER: Final = '@extras@'
 #: A base value that IS this string renders as :func:`part_timeout_minutes` of the repo's selection wall (an int).
 PART_TIMEOUT_PLACEHOLDER: Final = '@part-timeout-minutes@'
 #: Minutes a part spends outside its selection wall: checkout, sync, posting and the log upload.
@@ -251,6 +257,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
     hosted = hostedparts.hosted_parts(text)
     integration = _integration(text, origin)
     timeout = part_timeout_minutes(wall_of(declared_table(tomllib.loads(text), 'verify', {}), origin))
+    extras_words = ''.join(f' --extra {name}' for name in extras.extras_for(tomllib.loads(text), (), origin))
     out = {}
     for name, layer in sorted(declared.items()):
         merged = merge(base.get(name, {}), layer)
@@ -265,7 +272,9 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         if forge not in WORKFLOW_DIRS:
             msg = f'[tool.dev_lab.ci."{name}"] {FORGE_KEY} = {forge!r}: the forges are {sorted(WORKFLOW_DIRS)}'
             raise ValueError(msg)
-        out[name] = (WORKFLOW_DIRS[forge], cast('dict[str, Any]', _named(workflow, integration, timeout)))
+        rendered = cast('dict[str, Any]', _named(workflow, integration, timeout, extras_words))
+        refuse_everything(rendered, f'[tool.dev_lab.ci."{name}"]')
+        out[name] = (WORKFLOW_DIRS[forge], rendered)
     return follow_checks(out)
 
 
@@ -308,21 +317,42 @@ def part_timeout_minutes(wall_s: int) -> int:
     return -(-wall_s // 60) + PART_MARGIN_MIN
 
 
-def _named(value: object, integration: str, timeout: int) -> object:
-    """*value* with its placeholders rendered (the repo's integration branch, the part timeout). PURE.
+def _named(value: object, integration: str, timeout: int, extras_words: str = '') -> object:
+    """*value* with its placeholders rendered (integration branch, part timeout, declared extras). PURE.
 
-    :data:`INTEGRATION_PLACEHOLDER` in every string becomes *integration*; a string that IS
-    :data:`PART_TIMEOUT_PLACEHOLDER` becomes the int *timeout*.
+    :data:`INTEGRATION_PLACEHOLDER` in every string becomes *integration*, :data:`EXTRAS_PLACEHOLDER` the
+    *extras_words*; a string that IS :data:`PART_TIMEOUT_PLACEHOLDER` becomes the int *timeout*.
     """
     if value == PART_TIMEOUT_PLACEHOLDER:
         return timeout
     if isinstance(value, str):
-        return value.replace(INTEGRATION_PLACEHOLDER, integration)
+        return value.replace(INTEGRATION_PLACEHOLDER, integration).replace(EXTRAS_PLACEHOLDER, extras_words)
     if isinstance(value, dict):
-        return {key: _named(item, integration, timeout) for key, item in value.items()}
+        return {key: _named(item, integration, timeout, extras_words) for key, item in value.items()}
     if isinstance(value, list):
-        return [_named(item, integration, timeout) for item in value]
+        return [_named(item, integration, timeout, extras_words) for item in value]
     return value
+
+
+#: A sync line installing every extra -- the over-install the per-need declaration ends (user, 2026-11-20).
+_EVERYTHING: Final = re.compile(r'\buv sync\b[^\n]*(--all-extras|--extra[ =]all\b)')
+
+
+def refuse_everything(workflow: object, origin: str) -> None:
+    """ALL-EXTRAS-REFUSED: no rendered step syncs every extra; the repo declares extras and needs instead."""
+    if isinstance(workflow, str):
+        if _EVERYTHING.search(workflow):
+            msg = (
+                f'{origin}: ALL-EXTRAS-REFUSED -- {workflow!r} syncs every extra; declare [tool.dev_lab.dep] extras '
+                '(every environment) and needs (need -> extra), and sync the part with `depneeds flags`'
+            )
+            raise ValueError(msg)
+    elif isinstance(workflow, dict):
+        for item in workflow.values():
+            refuse_everything(item, origin)
+    elif isinstance(workflow, list):
+        for item in workflow:
+            refuse_everything(item, origin)
 
 
 def workflows(root: Path) -> dict[str, dict[str, Any]]:

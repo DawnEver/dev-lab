@@ -358,7 +358,7 @@ def test_build_artifact_answers_the_path_or_refuses_with_the_log() -> None:
 
 
 def test_the_declaration_names_what_the_artifact_carries() -> None:
-    text = '[tool.lab_commons.hpc]\ninstall = "uv sync"\nsource_roots = ["src"]\nartifact_paths = ["cases"]\n'
+    text = '[tool.lab_commons.hpc]\nsource_roots = ["src"]\nartifact_paths = ["cases"]\n'
     assert read_builds(text).artifact_paths == ('cases',)
 
 
