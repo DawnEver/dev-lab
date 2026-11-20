@@ -20,10 +20,11 @@ import tomllib
 import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.hpc.grants import declared_grants
+from lab_commons.hpc.layout import ROOT_VAR, AccountPaths, RootUndeclared, account_paths
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev._machinefile import dumps
@@ -34,7 +35,6 @@ from dev_lab.dev.venvpointer import shell_interpreter
 __all__ = [
     'CLAIMS',
     'DEFAULT_PYTHON',
-    'DEFAULT_ROOT',
     'DEFAULT_TICK_MINUTES',
     'KIT',
     'MARK',
@@ -51,6 +51,7 @@ __all__ = [
     'merge_crontab',
     'parse',
     'parse_repo',
+    'paths_of',
     'render',
     'render_grant',
     'role_refusal',
@@ -67,10 +68,6 @@ __all__ = [
 #: Every crontab line this tool owns ends with this comment plus the repo's name.
 MARK: Final = '# lab-commons-deploy:'
 
-#: Where the served checkouts live, under the account's home: the forge home's ``repos`` (the workstation's
-#: :func:`dev_lab.dev.servelock` home on Linux), never ``~/src`` -- a home ``src`` is a write-prone root nothing
-#: scans (WRITES-STAY-IN-THE-TREE), and ~/src was retired (user rulings 2026-10-26, 2026-11-06).
-DEFAULT_ROOT: Final = '.local/share/lab-forge/repos'
 DEFAULT_PYTHON: Final = '3.13'
 
 #: ``[schedule] tick_minutes`` when undeclared -- the same default the host card is judged stale against.
@@ -147,7 +144,7 @@ def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
     try:
         return Deployment(
             host=raw['host'],
-            root=raw.get('root', DEFAULT_ROOT),
+            root=_root(path, raw),
             python=raw.get('python', DEFAULT_PYTHON),
             repos=tuple(
                 Repo(r['name'], r['url'], r['ref'], tuple(r.get('verify', ())), _claims(path, r))
@@ -359,32 +356,32 @@ def ticked(spec: Deployment, *, serves: bool | None = None) -> tuple[Repo, ...]:
     return spec.repos
 
 
-def served(spec: Deployment, home: Path) -> frozenset[str]:
+def served(spec: Deployment) -> frozenset[str]:
     """The repos this account serves (:func:`serves_here`); malformed roles are not (its tick names why)."""
     found = set()
     for repo in spec.repos:
         try:
-            if serves_here(spec, home, repo):
+            if serves_here(spec, repo):
                 found.add(repo.name)
         except Unbound:
             continue
     return frozenset(found)
 
 
-def unserved(spec: Deployment, home: Path) -> frozenset[str]:
+def unserved(spec: Deployment) -> frozenset[str]:
     """The repos with no role bound to this account: never served here, never given the token."""
     found = set()
     for repo in spec.repos:
-        pyproject = checkout_of(spec, home, repo) / 'pyproject.toml'
+        pyproject = checkout_of(spec, repo) / 'pyproject.toml'
         try:
-            if pyproject.is_file() and not serves_here(spec, home, repo):
+            if pyproject.is_file() and not serves_here(spec, repo):
                 found.add(repo.name)
         except Unbound:
             continue
     return frozenset(found)
 
 
-def serves_here(spec: Deployment, home: Path, repo: Repo) -> bool:
+def serves_here(spec: Deployment, repo: Repo) -> bool:
     """Whether this account serves *repo*'s queue: the family binds one of its roles to this account's grant role.
 
     The family's binding decides (:mod:`dev_lab.dev.roles`, D73), never this file; not yet cloned, no.
@@ -393,7 +390,7 @@ def serves_here(spec: Deployment, home: Path, repo: Repo) -> bool:
         Unbound: the family binds the repo's roles nowhere, or malformed; the message names the table.
 
     """
-    checkout = checkout_of(spec, home, repo)
+    checkout = checkout_of(spec, repo)
     if not (checkout / 'pyproject.toml').is_file():
         return False
     roles = roles_at(checkout)
@@ -420,27 +417,36 @@ def tick_command(
     every tool it loads runs inside the environment that loaded it -- a module's binary does not run outside
     it (Ada 2026-10-17: git 2.42 alone wants ``libiconv.so.2``).
     """
-    cache = home / '.cache'
+    serve = Path(paths_of(spec, serves=True).root) / 'serve'
     lab = next(one for one in spec.repos if one.name == KIT)
     command = (
-        f'{tick_environment(home, slurm, setup, spec.env)}; '
-        f'cd {shlex.quote(str(checkout_of(spec, home, lab)))} && '
-        f'flock -n {shlex.quote(str(cache / f"lab-forge-{repo.name}.lock"))} '
+        f'{tick_environment(home, spec.root, slurm, setup, spec.env)}; '
+        f'cd {shlex.quote(str(checkout_of(spec, lab)))} && '
+        f'flock -n {shlex.quote(str(serve / f"{repo.name}.lock"))} '
         f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
     )
     command = f'bash -lc {shlex.quote(command)}' if setup else command
-    return command + (f' >> {shlex.quote(str(cache / f"lab-forge-{repo.name}.log"))} 2>&1' if log else '')
+    return command + (f' >> {shlex.quote(str(serve / f"{repo.name}.log"))} 2>&1' if log else '')
 
 
 def tick_environment(
-    home: Path, slurm: Sequence[str] = (), setup: Sequence[str] = (), env: Sequence[tuple[str, str]] = ()
+    home: Path,
+    root: str,
+    slurm: Sequence[str] = (),
+    setup: Sequence[str] = (),
+    env: Sequence[tuple[str, str]] = (),
 ) -> str:
-    """The shell prefix of a tick's environment: cron's PATH, the account's *env*, then the grant *setup*.
+    """The shell prefix of a tick's environment: cron's PATH, the account root, its *env*, then the grant *setup*.
 
-    PATH is :func:`tick_dirs`; *env* is the account's ``[env]``, exported so every job the tick submits inherits it.
-    The ONE definition of that environment: the cron line runs it, and the deploy proves the tick's git in it.
+    PATH is :func:`tick_dirs`; ``LAB_ROOT`` is the declared *root* every remote script of :mod:`lab_commons.hpc` names
+    (cron reads no login profile); *env* is the account's ``[env]``, exported so every job the tick submits inherits
+    it. The ONE definition of that environment: the cron line runs it, and the deploy proves the tick's git in it.
     """
-    pairs = [('UV_CACHE_DIR', str(uv_cache(home))), *((key, _homed(home, value)) for key, value in env)]
+    pairs = [
+        (ROOT_VAR, root),
+        ('UV_CACHE_DIR', str(uv_cache(root))),
+        *((key, _homed(home, value)) for key, value in env),
+    ]
     exported = 'export ' + ' '.join(f'{key}={shlex.quote(value)}' for key, value in pairs) + ' UV_LINK_MODE=hardlink'
     return '; '.join([f'PATH={":".join(tick_dirs(home, slurm))}', exported, *setup])
 
@@ -450,14 +456,14 @@ def _homed(home: Path, value: str) -> str:
     return str(home / value[2:]) if value.startswith('~/') else value
 
 
-def uv_cache(home: Path) -> Path:
-    """The account's ONE uv cache: every uv the kit runs there shares it, and every env hardlinks from it.
+def uv_cache(root: str) -> Path:
+    """The account's ONE uv cache, ``<root>/cache/uv``: every uv the kit runs there shares it, every env hardlinks it.
 
-    It lives under the forge's ``ci`` root, on the same filesystem as the envs it links into, so a hardlink
-    never falls back to a copy. uv's own default (``~/.cache/uv``) is retired: a second cache doubled an
-    account's files (census 2026-11-14), and retention removes it (:func:`dev_lab.dev.retentionplan`).
+    It lives under the declared root, on the same filesystem as the envs it links into, so a hardlink never falls
+    back to a copy. uv's own default (``~/.cache/uv``) is retired: a second cache doubled an account's files
+    (census 2026-11-14), and retention removes it (:func:`dev_lab.dev.retentionplan`).
     """
-    return home / 'ci' / 'uv-cache'
+    return Path(paths_of_root(root).root) / 'cache' / 'uv'
 
 
 def tick_dirs(home: Path, slurm: Sequence[str] = ()) -> list[str]:
@@ -471,13 +477,27 @@ def tick_dirs(home: Path, slurm: Sequence[str] = ()) -> list[str]:
     return [*base, *(d for d in dict.fromkeys(slurm) if d not in base)]
 
 
-def checkout_of(spec: Deployment, home: Path, repo: Repo) -> Path:
-    """Where *repo* is checked out: ``<root>/<name>``, a relative *root* under *home*.
+def paths_of_root(root: str, *, serves: bool = False) -> AccountPaths:
+    """The account layout under a declared *root* (:func:`lab_commons.hpc.layout.account_paths`)."""
+    return account_paths(root, serves=serves)
 
-    An absolute root is taken as is: a site whose compute nodes never see home (``/work/...``).
-    """
-    root = PurePosixPath(spec.root)
-    return (Path(root) if root.is_absolute() else home / root) / repo.name
+
+def paths_of(spec: Deployment, *, serves: bool) -> AccountPaths:
+    """*spec*'s account layout; the serving directories only when the account *serves*."""
+    return paths_of_root(spec.root, serves=serves)
+
+
+def checkout_of(spec: Deployment, repo: Repo) -> Path:
+    """Where *repo* is checked out: ``<root>/repos/<name>`` under the account's declared root."""
+    return Path(paths_of(spec, serves=False).repo(repo.name))
+
+
+def _root(path: Path, raw: Mapping[str, Any]) -> str:
+    """The declared ``[deploy] root``: absolute, the render's copy of ``[hpc.clusters.<c>] root``; else refused."""
+    try:
+        return account_paths(raw.get('root', ''), serves=False, account=str(path)).root
+    except RootUndeclared as refused:
+        raise ValueError(str(refused)) from None
 
 
 def host_serve_argv() -> list[str]:

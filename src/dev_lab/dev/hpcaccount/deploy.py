@@ -5,7 +5,7 @@ a tracked file, since the forge, its repos and the login host are private to the
 
     [deploy]
     host = "<login host>"          # serving: the ONE node whose cron serves it; research: any grant login host
-    root = ".local/share/lab-forge/repos"  # checkouts live in <root>/<name>; relative is under home
+    root = "<absolute root>"       # the cluster's declared root: <root>/repos/<name> (lab_commons.hpc.layout)
     python = "3.13"                # a uv-managed CPython: manylinux wheels run on an old glibc
     slurm_account = "<account>"    # only when sacctmgr names several
     partitions = ["<partition>", ...]
@@ -134,7 +134,14 @@ def _refuse(refused: Refused, repo: Repo, why: str) -> None:
 
 
 def _serve_git(
-    step: Step, home: Path, path: Path, slurm: Sequence[str], setup: list[str], *, env: Sequence[tuple[str, str]] = ()
+    step: Step,
+    home: Path,
+    path: Path,
+    slurm: Sequence[str],
+    setup: list[str],
+    *,
+    root: str,
+    env: Sequence[tuple[str, str]] = (),
 ) -> int:
     """Prove the tick's git runs merge-tree IN the tick's environment; the grant's setup goes into *setup*.
 
@@ -145,7 +152,7 @@ def _serve_git(
     emit(f"[git] {MERGE_TREE_GIT}, in the tick's environment")
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     loaded = grant_setup(path, user)
-    environment = tick_environment(home, slurm, loaded, env)
+    environment = tick_environment(home, root, slurm, loaded, env)
     with tempfile.TemporaryDirectory(prefix=TEMP_PREFIX) as scratch:
         why = _proves([*step.tools.sh, f'{environment}; exec git "$@"', 'git'], Path(scratch))
     if not why:
@@ -184,10 +191,10 @@ def _tools(
     needs: dict[str, tuple[str, ...]] = {}
     for repo in _healthy(spec, refused):
         try:
-            needs[repo.name] = () if step.dry else declared(checkout_of(spec, home, repo)).needs
+            needs[repo.name] = () if step.dry else declared(checkout_of(spec, repo)).needs
         except REFUSALS as why:
             _refuse(refused, repo, str(why))
-    environment = tick_environment(home, slurm, setup, spec.env)
+    environment = tick_environment(home, spec.root, slurm, setup, spec.env)
     wanted = [need for each in needs.values() for need in each]
     if not step.dry and (lagging := follow_uv()):
         emit(f'[tools] {lagging}', err=True)
@@ -251,8 +258,8 @@ def _tick(
     return 0  # a red tick is reported, never a reason to undo the deployment
 
 
-def _artefacts(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
-    remote = declared_remote(checkout_of(spec, home, repo))
+def _artefacts(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
+    remote = declared_remote(checkout_of(spec, repo))
     if not remote:
         emit(f'  {repo.name}: no rclone artefact store declared')
         return 0
@@ -292,7 +299,9 @@ def deploy(
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
     args = parser(__doc__.splitlines()[0]).parse_args(list(argv))
     path = args.config or config_path()
-    spec = paused_refusal(home) or resolve(args, path)  # CI-PAUSED: only ci-resume-fleet brings the cron back
+    spec = resolve(args, path)
+    if not isinstance(spec, str):  # CI-PAUSED: only ci-resume-fleet brings the cron back
+        spec = paused_refusal(spec.root) or spec
     semantics = (
         {} if isinstance(spec, str) or args.remove else account_role(spec.role, args.fleet_role, args.role_table)
     )
@@ -322,10 +331,10 @@ def deploy(
         lambda: reader(spec, home, role or role_of, semantics=semantics),
         lambda: grant(step, path, args.grant_table),
         lambda: store(step, spec, path),
-        lambda: _serve_git(step, home, path, slurm, setup, env=spec.env),
+        lambda: _serve_git(step, home, path, slurm, setup, root=spec.root, env=spec.env),
         lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
         lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
-        lambda: login(step, home),
+        lambda: login(step, home, spec.root),
         lambda: _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused),
         lambda: _each(step, spec, home, artefacts, _artefacts, refused=refused),
         lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),

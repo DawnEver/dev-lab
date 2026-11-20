@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Sequence
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Final
 
 from lab_commons import config as machineconfig
@@ -111,7 +111,7 @@ def start_on_selected(
         return 2
     for grant, target in ready:
         dest = f'{grant.user}@{target.host}'
-        clone = PurePosixPath('~', account_clone(target, source)).as_posix()
+        clone = account_clone(target, source).as_posix()
         named = ['--from', clone, '--host', account_host(grant)] if sourced else []
         argv = ['-m', 'dev_lab.dev.hpcaccount', verb, *named, *args]
         command = in_checkout(target, argv)

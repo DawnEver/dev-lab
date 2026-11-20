@@ -38,7 +38,7 @@ def test_pause_without_drift_removes_only_the_marked_lines(tmp_path: Path) -> No
     assert MARK in _cron(tmp_path)
     assert cipause.ci_pause(args, home=home, tools=tools_of(tmp_path)) == 0
     assert _cron(tmp_path) == ''
-    assert cimark.marker(home).is_file()
+    assert cimark.marker((home.parent / 'root').as_posix()).is_file()
     assert not list(home.glob('.cache/dev-lab/*/*/*/backup')), 'nothing is backed up'
 
 
@@ -53,14 +53,14 @@ def test_pause_refuses_while_the_account_drifts_naming_each_item_and_the_door(
     assert 'user.shell' in err
     assert 'declare it in the config source or accept its loss with --discard-drift' in err
     assert _cron(tmp_path) == before
-    assert not cimark.marker(home).exists()
+    assert not cimark.marker((home.parent / 'root').as_posix()).exists()
 
 
 def test_discard_drift_accepts_the_loss_and_keeps_the_users_own_line(tmp_path: Path) -> None:
     home, _, args = _account(tmp_path, mine=MINE)
     assert cipause.ci_pause([*args, drift.DISCARD], home=home, tools=tools_of(tmp_path)) == 0
     assert _cron(tmp_path) == MINE
-    assert '1 drift item(s) discarded' in cimark.marker(home).read_text(encoding='utf-8')
+    assert '1 drift item(s) discarded' in cimark.marker((home.parent / 'root').as_posix()).read_text(encoding='utf-8')
 
 
 def test_a_stale_clone_refuses_the_pause_and_removes_nothing(tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_resume_restores_exactly_the_declared_lines_and_clears_the_marker(tmp_pa
     assert lines[0] == MINE.strip()
     assert len(lines) == 2
     assert lines[1].endswith(f'{MARK}dev-lab')
-    assert not cimark.marker(home).exists()
+    assert not cimark.marker((home.parent / 'root').as_posix()).exists()
 
 
 def test_resume_without_the_marker_is_refused(tmp_path: Path) -> None:
@@ -112,7 +112,7 @@ def test_a_paused_account_refuses_deploy_naming_the_resume_door(
 def test_the_unpaused_control_reaches_past_the_guard(tmp_path: Path) -> None:
     home, _, _ = _account(tmp_path)
     assert cimark.paused_refusal(home) == ''
-    assert 'exit 2' in cimark.paused_guard()
+    assert 'exit 2' in cimark.paused_guard('/r')
 
 
 def test_no_job_cancellation_path_exists() -> None:

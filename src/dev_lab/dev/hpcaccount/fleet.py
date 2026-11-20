@@ -67,7 +67,7 @@ from dev_lab.dev.devdeclared import OWN_TABLE
 from dev_lab.dev.devhost import config_source, host_file
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
-from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
+from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.venvpointer import shell_interpreter
@@ -144,7 +144,12 @@ def _checked(grant: Grant, deploy: Mapping[str, Any], looked: str, door: str) ->
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
     if len(named) > 1:
         return f'{grant.user}: refused -- its [deploy] host {host} is ambiguous: it names {named}; declare one in full'
-    root = deploy.get('root', grant.root or DEFAULT_ROOT)  # an unstated root is the cluster's, never the default
+    root = deploy.get('root', grant.root)  # an unstated root is the cluster's: declared, never a default
+    if not root:
+        return (
+            f'{grant.user}: refused -- no root declared: declare [hpc.clusters.{grant.cluster_name}] root (or the '
+            f"account file's [deploy] root) in the family config, on a filesystem the compute nodes see"
+        )
     if grant.root and root != grant.root:
         return (
             f'{grant.user}: refused -- its [deploy] root {root} is not the root its cluster declares {grant.root} '
@@ -203,12 +208,12 @@ def layer_refusal(grant: Grant, source: ConfigSource) -> str:
 def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
     """The shell line that renders *grant*'s machine file ON its account from the config source's clone there.
 
-    The clone is ``~/<root>/<config repo>``, fetched with the account's stored credential (refused, naming the door
+    The clone is ``<root>/repos/<config repo>``, fetched with the account's stored credential (refused, naming the door
     that places one, when none is stored for the forge); ``devhost drift`` prints what the render changes, then
     ``devhost render --write`` replaces the file, its old copy backed up. In the grant's ``setup`` environment.
     """
     forge = urlsplit(source.url).hostname or ''
-    clone = f'"{_under_home(account_clone(target, source))}"'
+    clone = shlex.quote(account_clone(target, source).as_posix())
     backups = f'"$HOME/{_BASE}/$(date -u +%y/%m/%d)/devhost"'
     credential = (
         f"grep -qs '@{forge}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
@@ -229,19 +234,19 @@ def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
     return f'( {" && ".join([*grant.setup, *steps])} )'
 
 
-def _under_home(path: PurePosixPath) -> str:
-    """*path* as the account's shell reads it: an absolute root as it stands, a relative one under ``$HOME``."""
-    return path.as_posix() if path.is_absolute() else f'$HOME/{path.as_posix()}'
+def repo_dir(target: Target, name: str) -> PurePosixPath:
+    """*target*'s checkout of *name*: ``<root>/repos/<name>`` (:mod:`lab_commons.hpc.layout`)."""
+    return PurePosixPath(paths_of_root(target.root).repo(name))
 
 
 def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
-    """Where *target*'s account holds its config-source clone, relative to its home: ``<root>/<config repo>``."""
-    return PurePosixPath(target.root, PurePosixPath(urlsplit(source.url).path).stem)
+    """Where *target*'s account holds its config-source clone: ``<root>/repos/<config repo>``."""
+    return repo_dir(target, PurePosixPath(urlsplit(source.url).path).stem)
 
 
 def in_checkout(target: Target, argv: Sequence[str]) -> str:
     """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv."""
-    kit = PurePosixPath('~', target.root, KIT)  # every cluster login host is POSIX
+    kit = repo_dir(target, KIT)  # every cluster login host is POSIX
     return f'cd {kit} && {shell_interpreter(".")} {shlex.join(argv)}'
 
 
@@ -272,7 +277,8 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     if division is not None and (role := division.role_of(grant.user)):
         deploy += ['--fleet-role', role, '--role-table', json.dumps(dict(division.roles[role]), sort_keys=True)]
     refreshed = f'{first_install(grant, target)} && {refresh_kit(grant, target)}'
-    return f'{paused_guard()} && {refreshed} ; {render_command(grant, target, source)} && {in_checkout(target, deploy)}'
+    rendered = f'{render_command(grant, target, source)} && {in_checkout(target, deploy)}'
+    return f'{paused_guard(target.root)} && {refreshed} ; {rendered}'
 
 
 #: The official uv installer (user approval 2026-11-16: an HPC account may install uv into ``~/.local/bin``).
@@ -286,7 +292,7 @@ def first_install(grant: Grant, target: Target) -> str:
     venv python. So, only when that interpreter is missing: uv into ``~/.local/bin`` unless one is on PATH, each
     declared repo cloned at its ref where its checkout is absent, then ``uv sync --frozen`` in the kit.
     """
-    root = PurePosixPath('~', target.root)
+    root = PurePosixPath(paths_of_root(target.root).root) / 'repos'
     kit = root / KIT
     clones = [  # the kit alone: a forge-hosted product repo needs a reader credential the deploy places later
         f'{{ [ -d {root / name}/.git ] || git clone -q --branch {shlex.quote(ref)} {shlex.quote(url)} {root / name}; }}'
@@ -312,7 +318,7 @@ def refresh_kit(grant: Grant, target: Target) -> str:
     runs it (:func:`dev_lab.dev.hpcaccount.spec.tick_command`). The deploy follows whatever the tick exits: a
     research kit refreshes, then refuses to serve.
     """
-    kit = PurePosixPath('~', target.root, KIT)
+    kit = repo_dir(target, KIT)
     recorded = f'echo "[deploy-fleet] kit at $(git -C {kit} rev-parse HEAD)"'
     ref = next((ref for name, _url, ref in target.repos if name == KIT), '')
     tick = f'{in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
@@ -336,9 +342,10 @@ def _move_kit(kit: PurePosixPath, ref: str) -> str:
         f'py={python}',
         'UV_PROJECT_ENVIRONMENT="${py%/bin/python}" uv sync --frozen',
     ])  # fmt: skip
-    lock = f'~/.cache/lab-forge-{KIT}.lock'
+    serve = kit.parent.parent / 'serve'  # <root>/repos/dev-lab -> <root>/serve: the cron tick's own lock
+    lock = serve / f'{KIT}.lock'
     return (
-        f'( export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0; mkdir -p ~/.cache; cd {kit} && '
+        f'( export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0; mkdir -p {serve}; cd {kit} && '
         f'flock -w 600 {lock} bash -c {shlex.quote(body)} )'
     )
 

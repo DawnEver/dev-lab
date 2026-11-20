@@ -106,9 +106,15 @@ class Box:
     #: What the forge says the stored credential is on every repo (``auth role``): a reader by default.
     identity: dict[str, object] = field(default_factory=lambda: {'login': 'ro-login', 'push': False, 'admin': False})
 
+    @property
+    def root(self) -> Path:
+        """The account's declared root (``[hpc.clusters.<c>] root``): its layout lives under it."""
+        return self.home.parent / 'root'
+
     def run(self, *argv: str, host: str = 'login02.int.cluster') -> int:
+        declared = ['--root', self.root.as_posix()] if '--host' in argv else []
         return deploy.deploy(
-            [*argv, '--config', str(self.machine)],
+            [*argv, *declared, '--config', str(self.machine)],
             home=self.home,
             hostname=host,
             tools=self.tools,
@@ -165,7 +171,7 @@ def test_twice_gives_one_marked_line_per_repo_and_keeps_the_users_own(box: Box) 
     assert alpha.split(' ', 1)[0].endswith('-59/5'), 'the schedule default period'
     assert 'flock -n' in alpha
     assert alpha.split(' >> ')[0].endswith('dev_lab.dev.hpcaccount tick alpha'), 'the host ticks the repo'
-    assert f'cd {shlex.quote(str(box.home / deploy_spec.DEFAULT_ROOT / "dev-lab"))} &&' in alpha, (
+    assert f'cd {shlex.quote(str(box.root / "repos" / "dev-lab"))} &&' in alpha, (
         "from the host's kit, never the repo's venv"
     )
     calls = box.logged()
@@ -178,7 +184,7 @@ def test_a_repo_declaring_a_retired_table_is_refused_alone_and_the_others_are_se
 ) -> None:
     """The 2026-10-13 incident: one repo's retired table stopped the whole deploy, so the host served none."""
     assert box.run(*DECLARE) == 0
-    beta = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
+    beta = box.root / 'repos' / 'beta' / 'pyproject.toml'
     retired = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))  # its spelling lives in the registry
     _write(beta, f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{retired}\nx = 1\n')
     capsys.readouterr()
@@ -191,8 +197,8 @@ def test_a_repo_declaring_a_retired_table_is_refused_alone_and_the_others_are_se
     assert f'{retired} is retired' in err
     assert [(repo, retired in body) for repo, _subject, body in box.alarms] == [(f'{URL}/beta.git', True)]
     calls = box.logged()
-    assert calls.count('lab-forge-beta.lock') == 1, 'the refused repo is not ticked on the second run'
-    assert calls.count('lab-forge-alpha.lock') == 2
+    assert calls.count(str(Path('serve') / 'beta.lock')) == 1, 'the refused repo is not ticked on the second run'
+    assert calls.count(str(Path('serve') / 'alpha.lock')) == 2
 
 
 def test_a_repo_whose_hpc_declaration_is_invalid_is_refused_alone_and_the_others_are_served(
@@ -200,7 +206,7 @@ def test_a_repo_whose_hpc_declaration_is_invalid_is_refused_alone_and_the_others
 ) -> None:
     """The 2026-10-18 Ada incident: ``read_builds`` refused one repo's table inside ``[tools]``; the deploy crashed."""
     assert box.run(*DECLARE) == 0
-    beta = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
+    beta = box.root / 'repos' / 'beta' / 'pyproject.toml'
     _write(beta, '[tool.lab_commons.hpc]\ninstall = "uv sync"\ndependency_inputs = ["uv.lock"]\n')
     capsys.readouterr()
     assert box.run() == 2, 'a refused repo still fails the deploy -- after the others are served'
@@ -286,7 +292,7 @@ def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(b
     a different environment and leave the first one in place (a tick running from it keeps its files).
     """
     assert box.run(*DECLARE) == 0
-    alpha = box.home / deploy_spec.DEFAULT_ROOT / 'alpha'
+    alpha = box.root / 'repos' / 'alpha'
     first = venvpointer.named(alpha)
     assert first is not None, 'the build is published through the pointer'
     assert (first / '.lab-deploy-env').is_file()
@@ -312,7 +318,7 @@ def test_every_served_venv_is_exactly_its_committed_lock(box: Box) -> None:
     its commit was tested with.
     """
     assert box.run(*DECLARE) == 0
-    (box.home / deploy_spec.DEFAULT_ROOT / 'dev-lab' / '.git' / 'HEAD_SHA').write_text('b' * 40, encoding='utf-8')
+    (box.root / 'repos' / 'dev-lab' / '.git' / 'HEAD_SHA').write_text('b' * 40, encoding='utf-8')
     assert box.run() == 0
     assert _overlays(box) == []
 
@@ -384,7 +390,9 @@ def test_a_tool_is_probed_by_its_version_in_the_tick_environment(box: Box, monke
     monkeypatch.setattr(deploy, 'declared', lambda _c: deploy_steps.Builds(install='uv sync', needs=('cargo',)))
     assert box.run(*DECLARE) == 0
     assert {tool for _env, tool in probed} == {'uv', 'rclone', 'cargo'}
-    assert all(env == deploy_spec.tick_environment(box.home, [str(Path('/x'))]) for env, _tool in probed)
+    assert all(
+        env == deploy_spec.tick_environment(box.home, box.root.as_posix(), [str(Path('/x'))]) for env, _tool in probed
+    )
 
 
 def test_the_login_shell_gets_the_tick_user_installs_once_with_a_backup(box: Box) -> None:
@@ -397,7 +405,7 @@ def test_the_login_shell_gets_the_tick_user_installs_once_with_a_backup(box: Box
     assert '.lab-deploy.bak' in bashrc
     assert str(box.home / '.cargo/bin') in bashrc
     for name in ('.bash_profile', '.bashrc'):
-        (box.home / name).write_text(deploy_steps.login_line(box.home) + '\n', encoding='utf-8')
+        (box.home / name).write_text(deploy_steps.login_line(box.home, box.root.as_posix()) + '\n', encoding='utf-8')
     assert box.run() == 0
     assert len([line for line in box.logged().splitlines() if deploy_steps.LOGIN_MARK in line]) == 2, 'already marked'
 
@@ -480,7 +488,7 @@ def test_a_hand_run_deploy_with_no_grant_is_refused_naming_deploy_fleet(
 
 
 def test_the_rendered_declaration_reads_back(tmp_path: Path) -> None:
-    spec = deploy_spec.Deployment('h', 'src', '3.13', (deploy_spec.Repo('a', 'https://x/a"b', 'r'),), 'acct', ('q',))
+    spec = deploy_spec.Deployment('h', '/r/src', '3.13', (deploy_spec.Repo('a', 'https://x/a"b', 'r'),), 'acct', ('q',))
     path = _write(tmp_path / 'config.toml', deploy_spec.render(spec))
     assert deploy_spec.load(path) == spec
 
@@ -488,14 +496,14 @@ def test_the_rendered_declaration_reads_back(tmp_path: Path) -> None:
 def test_a_repo_row_declares_the_parts_this_account_produces_first_and_it_reads_back(tmp_path: Path) -> None:
     """HPC account affinity (user ruling 2026-10-30): a verify account's row names the contexts it is affined to."""
     affined = deploy_spec.Repo('a', 'https://x/a', 'r', verify=('tests/*',))
-    spec = deploy_spec.Deployment('h', 'src', '3.13', (affined, deploy_spec.Repo('b', 'https://x/b', 'r')))
+    spec = deploy_spec.Deployment('h', '/r/src', '3.13', (affined, deploy_spec.Repo('b', 'https://x/b', 'r')))
     path = _write(tmp_path / 'config.toml', deploy_spec.render(spec))
     assert deploy_spec.load(path) == spec
     assert [repo.verify for repo in deploy_spec.load(path).repos] == [('tests/*',), ()], 'PLANTED CONTROL: b has none'
 
 
 def test_the_retired_serve_key_is_refused_by_name_with_its_remedy(tmp_path: Path) -> None:
-    spec = deploy_spec.Deployment('h', 'src', '3.13', (deploy_spec.Repo('a', 'https://x/a', 'r'),))
+    spec = deploy_spec.Deployment('h', '/r/src', '3.13', (deploy_spec.Repo('a', 'https://x/a', 'r'),))
     stale = deploy_spec.render(spec).replace('[deploy]', '[deploy]' + chr(10) + 'serve = []')
     with pytest.raises(ValueError, match=r'delete the \[deploy\] serve key'):
         deploy_spec.load(_write(tmp_path / 'config.toml', stale))
@@ -548,13 +556,13 @@ def test_the_tick_runs_inside_the_grant_setup_and_its_git_is_proven_there(
 def test_a_setup_with_spaces_semicolons_and_quotes_reaches_bash_verbatim(tmp_path: Path) -> None:
     """The setup is quoted once into ``bash -lc``; PLANTED CONTROL: no setup leaves the plain command."""
     lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
-    spec = deploy_spec.Deployment('h', 'src', '3.13', (lab,))
+    spec = deploy_spec.Deployment('h', '/r/src', '3.13', (lab,))
     setup = ("module load git/2.42; export X='a b'", 'echo "$HOME" `id`')
     command = deploy_spec.tick_command(spec, tmp_path, lab, log=True, setup=setup)
     argv = shlex.split(command)
     assert argv[:2] == ['bash', '-lc']
-    assert argv[2].startswith(deploy_spec.tick_environment(tmp_path, (), setup) + '; cd ')
-    assert argv[3:5] == ['>>', str(tmp_path / '.cache' / 'lab-forge-dev-lab.log')]
+    assert argv[2].startswith(deploy_spec.tick_environment(tmp_path, '/r/src', (), setup) + '; cd ')
+    assert argv[3:5] == ['>>', str(Path('/r/src') / 'serve' / 'dev-lab.log')], 'the tick log is the serve dir'
     plain = deploy_spec.tick_command(spec, tmp_path, lab, log=False)
     assert plain.startswith(f'PATH={tmp_path / ".local/bin"}:')
     assert 'bash -lc' not in plain
@@ -575,7 +583,7 @@ def test_a_repo_declaring_rclone_artefacts_has_its_remote_checked_and_a_missing_
 ) -> None:
     """A missing remote WARNS with the recipe and the deploy still completes; PLANTED CONTROL: present is quiet."""
     assert box.run(*DECLARE) == 0
-    alpha = box.home / deploy_spec.DEFAULT_ROOT / 'alpha' / 'pyproject.toml'
+    alpha = box.root / 'repos' / 'alpha' / 'pyproject.toml'
     alpha.write_text(
         '[tool.lab_commons.hpc]\ninstall = "uv sync"\n'
         '[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "hpc-data:consumer-a"\n',
@@ -616,7 +624,7 @@ def test_a_tick_refreshes_its_repo_before_the_repos_own_forge_serve(box: Box) ->
     alpha's venv is its committed lock, so nothing is installed over it.
     """
     assert box.run(*DECLARE) == 0
-    src = box.home / deploy_spec.DEFAULT_ROOT
+    src = box.root / 'repos'
     start, served = len(box.logged()), []
     assert _tick(box, 'alpha', served) == 0
     [(argv, cwd, logged)] = served
@@ -636,7 +644,7 @@ def test_only_the_lab_commons_tick_writes_the_shared_kit_checkout(box: Box) -> N
     tick is the one that refreshes it.
     """
     assert box.run(*DECLARE) == 0
-    kit = box.home / deploy_spec.DEFAULT_ROOT / 'dev-lab'
+    kit = box.root / 'repos' / 'dev-lab'
     (kit / '.git' / 'HEAD_SHA').write_text('b' * 40, encoding='utf-8')
     lock = kit / '.git' / 'index.lock'
     lock.write_text('', encoding='utf-8')  # the kit's own tick, mid-update
@@ -655,7 +663,7 @@ def test_a_repo_whose_refresh_fails_is_released_by_name_and_its_forge_never_runs
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert box.run(*DECLARE) == 0
-    _write(box.home / deploy_spec.DEFAULT_ROOT / 'alpha' / 'pyproject.toml', '[project]\nname = "alpha"\n')
+    _write(box.root / 'repos' / 'alpha' / 'pyproject.toml', '[project]\nname = "alpha"\n')
     capsys.readouterr()
     served: list[tuple[list[str], Path, str]] = []
     assert _tick(box, 'alpha', served) == 2
@@ -706,7 +714,7 @@ def test_a_tick_whose_declared_need_no_longer_runs_serves_nothing_and_alarms_nam
 def _cron_spec(text: str, tmp_path: Path) -> deploy_spec.Deployment:
     lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
     repos = (lab, deploy_spec.Repo('a', URL, 'r'))
-    base = deploy_spec.render(deploy_spec.Deployment('h', 'src', '3.13', repos, role=deploy_spec.VERIFICATION))
+    base = deploy_spec.render(deploy_spec.Deployment('h', '/r/src', '3.13', repos, role=deploy_spec.VERIFICATION))
     spec = deploy_spec.load(_write(tmp_path / 'config.toml', base + text))
     assert spec is not None
     return spec
@@ -753,7 +761,7 @@ def test_an_actions_repo_is_kept_fresh_but_its_queue_is_never_served(
     monkeypatch.setattr(deploy_spec, 'roles_at', lambda checkout: bound.get(checkout.name, EVERY_CI))
     spec = deploy_spec.load(box.machine)
     assert spec is not None
-    assert deploy_spec.served(spec, box.home) == {'alpha'}
+    assert deploy_spec.served(spec) == {'alpha'}
     assert deploy_spec.load(_write(tmp_path / 'again.toml', deploy_spec.render(spec))) == spec
     served: list[tuple[list[str], Path, str]] = []
     assert _tick(box, 'dev-lab', served) == 0
@@ -776,7 +784,7 @@ def test_a_checkout_whose_roles_are_unbound_is_released_by_name(
 ) -> None:
     """Every wall teaches: an unbound repo is named on the tick; one bound to CI is refreshed, never served."""
     assert box.run(*DECLARE) == 0
-    pyproject = box.home / deploy_spec.DEFAULT_ROOT / 'beta' / 'pyproject.toml'
+    pyproject = box.root / 'repos' / 'beta' / 'pyproject.toml'
     served: list[tuple[list[str], Path, str]] = []
     _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n')
     carry(monkeypatch, EVERY_CI)
@@ -870,7 +878,7 @@ def test_an_undeclared_role_is_refused_naming_the_key_and_nothing_changes(
 
 def test_a_malformed_role_is_refused_naming_the_key(tmp_path: Path) -> None:
     lab = deploy_spec.Repo(deploy_spec.KIT, f'{URL}/dev-lab.git', 'trunk')
-    text = deploy_spec.render(deploy_spec.Deployment('h', 'src', '3.13', (lab,), role='Not A Name'))
+    text = deploy_spec.render(deploy_spec.Deployment('h', '/r/src', '3.13', (lab,), role='Not A Name'))
     with pytest.raises(ValueError, match=r"\[deploy\] role .* is 'Not A Name'"):
         deploy_spec.load(_write(tmp_path / 'config.toml', text))
 
@@ -901,21 +909,22 @@ def test_a_serve_tick_on_a_research_account_refuses_naming_the_role(
     assert 'role is research' in capsys.readouterr().err
 
 
-#: Each case: the declared ``[deploy] root``, and where a repo named ``alpha`` is checked out for home ``/h/u``.
-_CHECKOUTS: Final = {
-    'a-relative-root-lives-under-home': ('.local/share/lab-forge/repos', '/h/u/.local/share/lab-forge/repos/alpha'),
-    'an-absolute-root-is-taken-as-is': ('/work/project/user/repos', '/work/project/user/repos/alpha'),
-}
-
-
-@pytest.mark.parametrize('case', sorted(_CHECKOUTS))
-def test_a_checkout_lives_under_the_declared_root(case: str, tmp_path: Path) -> None:
-    """A compute node may not see home, so a root may be absolute (``/work/...``). PLANTED CONTROL: relative."""
-    root, expected = _CHECKOUTS[case]
+def test_a_checkout_lives_in_the_declared_roots_repos(tmp_path: Path) -> None:
+    """A compute node may not see home: the root is the cluster's declared one, ``<root>/repos/<name>``."""
     alpha = deploy_spec.Repo('alpha', f'{URL}/alpha.git', 'trunk')
-    spec = deploy_spec.Deployment('h', root, '3.13', (alpha,), role=deploy_spec.RESEARCH)
+    spec = deploy_spec.Deployment('h', '/work/project/user', '3.13', (alpha,), role=deploy_spec.RESEARCH)
     assert deploy_spec.load(_write(tmp_path / 'config.toml', deploy_spec.render(spec))) == spec
-    assert deploy_spec.checkout_of(spec, Path('/h/u'), alpha).as_posix() == expected
+    assert deploy_spec.checkout_of(spec, alpha).as_posix() == '/work/project/user/repos/alpha'
+
+
+@pytest.mark.parametrize('root', ['', '.local/share/lab-forge/repos', '~/lab'])
+def test_an_undeclared_or_home_relative_root_is_refused_by_name(root: str, tmp_path: Path) -> None:
+    """PLANTED CONTROL for the one above: no default root, no home-relative root -- the declaration is the source."""
+    alpha = deploy_spec.Repo('alpha', f'{URL}/alpha.git', 'trunk')
+    text = deploy_spec.render(deploy_spec.Deployment('h', '/r', '3.13', (alpha,), role=deploy_spec.RESEARCH))
+    text = text.replace('root = "/r"', f'root = "{root}"')
+    with pytest.raises(ValueError, match='root'):
+        deploy_spec.load(_write(tmp_path / 'config.toml', text))
 
 
 def _fleet(role: str, **table: object) -> tuple[str, ...]:

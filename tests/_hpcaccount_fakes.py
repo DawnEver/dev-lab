@@ -29,9 +29,10 @@ FAMILY: Final = (
     '[[hpc.grant]]\nuser = "alice"\ncluster = "c1"\nslurm_account = "a"\nrole = "verification"\n'
     '[hpc.clusters.c1]\nhosts = ["login01"]\n[hpc.clusters.c1.slurm_accounts.a]\nbilled = false\n'
 )
+#: The account layer; {root} is the declared root, under the test's own tmp dir (never a real /).
 LAYER: Final = (
-    '[deploy]\nhost = "login01"\nroot = "repos"\n'
-    'repos = [{ name = "dev-lab", url = "https://forge.example/dev-lab.git", ref = "trunk" }]\n'
+    '[deploy]\nhost = "login01"\nroot = "{root}"\n'
+    'repos = [{{ name = "dev-lab", url = "https://forge.example/dev-lab.git", ref = "trunk" }}]\n'
 )
 
 
@@ -48,7 +49,8 @@ def clone_of(tmp_path: Path, family: str = FAMILY) -> Path:
     clone = tmp_path / 'config'
     (clone / 'hosts').mkdir(parents=True)
     (clone / 'family.toml').write_text(family, encoding='utf-8')
-    (clone / devhost.host_file(HOST)).write_text(LAYER, encoding='utf-8')
+    root = (tmp_path / 'root').as_posix()
+    (clone / devhost.host_file(HOST)).write_text(LAYER.format(root=root), encoding='utf-8')
     return clone
 
 
@@ -78,7 +80,8 @@ def fleet_source(tmp_path: Path) -> ConfigSource:
     (clone / 'hosts').mkdir(parents=True)
     rows = (f'[[hpc.grant]]\nuser = "{g.user}"\ncluster = "{g.cluster_name}"\nslurm_account = "a"\n' for g in FLEET)
     (clone / 'family.toml').write_text(''.join(rows), encoding='utf-8')
+    root = (tmp_path / 'root').as_posix()
     for g in FLEET:
-        layer = f'[deploy]\nhost = "login01.example"\nroot = "repos"\nrole = "{ROLES[g.user]}"\n'
+        layer = f'[deploy]\nhost = "login01.example"\nroot = "{root}"\nrole = "{ROLES[g.user]}"\n'
         (clone / 'hosts' / f'{g.cluster_name}-{g.user}.toml').write_text(layer, encoding='utf-8')
     return ConfigSource(clone, 'https://forge.example/config.git')

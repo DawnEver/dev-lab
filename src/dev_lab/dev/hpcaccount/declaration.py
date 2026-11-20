@@ -15,7 +15,6 @@ from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.spec import (
     DEFAULT_PYTHON,
-    DEFAULT_ROOT,
     KIT,
     Deployment,
     load,
@@ -37,7 +36,7 @@ def parser(deploy_doc: str = '') -> argparse.ArgumentParser:
         '--repo', type=parse_repo, action='append', default=[], help='declare: <name>=<https url>@<branch>'
     )
     parser.add_argument(
-        '--root', default=DEFAULT_ROOT, help='declare: checkouts live in <root>/<name>, a relative root under home'
+        '--root', default='', help="declare: the account's absolute root (its cluster's [hpc.clusters.<c>] root)"
     )
     parser.add_argument('--python', default=DEFAULT_PYTHON, help='declare: the uv-managed interpreter request')
     parser.add_argument('--slurm-account', default='', help="declare: the grant's account, when Slurm names several")

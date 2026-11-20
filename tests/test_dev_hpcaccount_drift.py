@@ -101,7 +101,8 @@ def test_drift_fleet_runs_only_the_read_only_drift_from_the_fetched_clone(tmp_pa
     code, started, _ = fleet(tmp_path, (), ('c1',))
     assert code == 0
     assert [line.split()[0] for line in started] == ['alice@login01.example', 'rita@login01.example']
-    assert "dev_lab.dev.hpcaccount drift --from '~/repos/config' --host c1-alice" in started[0]
+    clone = (tmp_path / 'root' / 'repos' / 'config').as_posix()
+    assert f'dev_lab.dev.hpcaccount drift --from {clone} --host c1-alice' in started[0], 'the clone is under the root'
     for word in ('render', 'pull', 'clone ', 'crontab -', '--write'):
         assert word not in started[0]
 

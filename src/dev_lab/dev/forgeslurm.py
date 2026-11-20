@@ -51,6 +51,7 @@ from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, Unreachable, probe, scancel, submitter
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
+from lab_commons.hpc.layout import local_root
 from lab_commons.hpc.needsets import vocabulary_at
 from lab_commons.hpc.plan import grantable_gb
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
@@ -232,8 +233,8 @@ class SlurmCluster:
         return carry_from(self.root, sha, held)
 
     def tree(self, run: Run) -> Path:
-        """``~/ci/trees/<sha>`` in this account's home (:attr:`lab_commons.hpc.shell.RunSpec.tree`)."""
-        return Path(f'~/ci/trees/{run.sha}').expanduser()
+        """``<root>/runs/<sha>/tree`` under this account's declared root (:mod:`lab_commons.hpc.layout`)."""
+        return Path(local_root().root, 'runs', run.sha, 'tree')
 
     def gather(self, run: Run) -> Path | None:
         """One :func:`lab_commons.hpc.watch.settle` without waiting: the record it wrote, or ``None`` while pending.

@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
 from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant, Machine
@@ -24,8 +25,8 @@ from dev_lab.dev.hpcaccount.fleet import (
     first_install,
     layer_target,
     render_command,
+    repo_dir,
 )
-from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -38,9 +39,9 @@ _FLEET = (
 #: What each account's layer ``hosts/c1-<user>.toml`` declares -- the one source of its [deploy].
 _DEPLOY = {
     'alice': (
-        '[deploy]\nhost = "login02.example"\nroot = "src"\nrepos = [\n  { name = "dev-lab" },\n]\n[[hpc.grant]]\n'
+        '[deploy]\nhost = "login02.example"\nroot = "/r/src"\nrepos = [\n  { name = "dev-lab" },\n]\n[[hpc.grant]]\n'
     ),
-    'bob': '[deploy]\nhost = "login01.example"\nroot = "work"\n',
+    'bob': '[deploy]\nhost = "login01.example"\nroot = "/r/work"\n',
     'carol': '',
 }
 
@@ -95,7 +96,7 @@ def test_each_account_deploys_on_its_own_declared_host(tmp_path: Path) -> None:
     code, started, said = _run(tmp_path, ('alice', 'bob'))
     assert code == 0
     assert [argv[0] for argv in started] == ['alice@login02.example', 'bob@login01.example']
-    assert 'cd ~/work/dev-lab' in started[1][-1], "bob's declared root"
+    assert 'cd /r/work/repos/dev-lab' in started[1][-1], "bob's declared root"
     assert {p.name for p in tmp_path.rglob('*.log')} == {'alice.log', 'bob.log'}
     assert not any(': refused' in line for line in said)
 
@@ -109,7 +110,7 @@ def test_an_account_with_no_declared_host_is_refused_and_the_rest_deploy(tmp_pat
 
 def test_a_declared_host_outside_the_grant_is_refused(tmp_path: Path) -> None:
     """PLANTED CONTROL: a machine file naming a host the grant does not is never ssh'd to."""
-    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "elsewhere.example"\n'})
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "elsewhere.example"\nroot = "/r/src"\n'})
     assert code == 2
     assert started == []
     assert any('not a login host' in line for line in said)
@@ -125,10 +126,10 @@ def test_an_undeclared_account_is_refused_and_nothing_starts(tmp_path: Path) -> 
 def test_the_workstations_role_and_table_are_passed_to_each_deploy() -> None:
     """User rulings 2026-11-09: the workstation is the source of the division."""
     division = _division({'grant': [{'user': 'alice', 'role': 'research'}, {'user': 'bob'}]})
-    argv = [deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC, division)]
+    argv = [deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC, division)]
     assert '--fleet-role research --role-table ' in argv[-1]
     assert '{"read_only": true, "serves": false}' in argv[-1]
-    assert '--fleet-role' not in deploy_command(_FLEET[1], Target('login01.example', 'work'), _SRC, division)
+    assert '--fleet-role' not in deploy_command(_FLEET[1], Target('login01.example', '/r/work'), _SRC, division)
 
 
 def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path: Path) -> None:
@@ -154,8 +155,8 @@ def test_a_grant_role_the_table_does_not_name_is_refused_before_any_ssh(tmp_path
 
 
 def test_the_remote_runs_the_accounts_own_deploy() -> None:
-    argv = [deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)]
-    assert f'cd ~/src/dev-lab && {shell_interpreter(".")} -m dev_lab.dev.hpcaccount deploy' in argv[-1]
+    argv = [deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)]
+    assert f'cd /r/src/repos/dev-lab && {shell_interpreter(".")} -m dev_lab.dev.hpcaccount deploy' in argv[-1]
     assert '--grant-table' in argv[-1], 'the declared slice is the one source of the grant the deploy writes'
 
 
@@ -199,7 +200,7 @@ def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp
 
 def test_a_declared_short_host_resolves_to_its_grant_login_host(tmp_path: Path) -> None:
     """A machine file's ``login01`` IS the grant's ``login01.example``: the full name is what is dialled."""
-    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "login01"\n'})
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "login01"\nroot = "/r/src"\n'})
     assert code == 0
     assert [argv[0] for argv in started] == ['bob@login01.example']
     assert not any(': refused' in line for line in said)
@@ -207,7 +208,7 @@ def test_a_declared_short_host_resolves_to_its_grant_login_host(tmp_path: Path) 
 
 def test_a_short_host_matching_no_grant_label_is_refused(tmp_path: Path) -> None:
     """PLANTED CONTROL: a bare label that is no grant host's first label is still refused."""
-    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "login"\n'})
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "login"\nroot = "/r/src"\n'})
     assert code == 2
     assert started == []
     assert any('not a login host' in line for line in said)
@@ -224,7 +225,7 @@ def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
         twins,
         ('bob',),
         home=tmp_path,
-        source=_source(tmp_path, users=('bob',), deploy={'bob': '[deploy]\nhost = "login01"\n'}),
+        source=_source(tmp_path, users=('bob',), deploy={'bob': '[deploy]\nhost = "login01"\nroot = "/r/src"\n'}),
         dry_run=False,
         say=said.append,
         launch=lambda dest, command, _log: started.append([dest, command]),
@@ -234,19 +235,16 @@ def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
     assert any('ambiguous' in line for line in said)
 
 
-def test_an_undeclared_root_is_the_forge_home_never_home_src() -> None:
-    """User rulings 2026-10-26 and 2026-11-06: ~/src is retired; a served checkout lives in the forge home.
-
-    PLANTED CONTROL: a declared root is still honoured as given.
-    """
-    assert DEFAULT_ROOT == '.local/share/lab-forge/repos'
-    assert DEFAULT_ROOT.split('/')[0] != 'src'
-    assert Target('login02.example', 'elsewhere').root == 'elsewhere'
+def test_the_kit_lives_in_the_declared_roots_repos_never_a_home_default() -> None:
+    """User 2026-11-20: no CI-named home path; every account path derives from the declared root."""
+    assert repo_dir(Target('login02.example', '/epccfs/p/u'), 'dev-lab').as_posix() == '/epccfs/p/u/repos/dev-lab'
+    with pytest.raises(ValueError, match='root'):
+        repo_dir(Target('login02.example', '.local/share/lab-forge/repos'), 'dev-lab')
 
 
 def test_the_fleet_view_prints_each_accounts_declared_role(tmp_path: Path) -> None:
     """User ruling 2026-11-06: the role is read from the layer [deploy]; PLANTED CONTROL: bob declares none."""
-    deploy = {**_DEPLOY, 'alice': '[deploy]\nhost = "login02.example"\nrole = "research"\n'}
+    deploy = {**_DEPLOY, 'alice': '[deploy]\nhost = "login02.example"\nroot = "/r/src"\nrole = "research"\n'}
     code, _started, said = _run(tmp_path, ('alice', 'bob'), deploy)
     assert code == 0
     assert any(line.startswith('alice (research): started') for line in said)
@@ -273,21 +271,21 @@ def test_the_remote_refreshes_the_accounts_kit_before_it_deploys() -> None:
     records the sha it reached, and only then deploys -- whatever that tick exits (a research kit refreshes, then
     refuses to serve). PLANTED CONTROL: the account's own declared root still names both steps.
     """
-    command = deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
+    command = deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)
     refresh = command.index('-m dev_lab.dev.hpcaccount tick dev-lab')
     recorded = command.index('rev-parse HEAD')
     deployed = command.index('-m dev_lab.dev.hpcaccount deploy')
     assert refresh < recorded < deployed
-    assert command.count('cd ~/src/dev-lab') == 5  # first install, tick, drift, render, deploy
+    assert command.count('cd /r/src/repos/dev-lab') == 5  # first install, tick, drift, render, deploy
     assert 'tick dev-lab ;' in command or 'tick dev-lab;' in command, 'a refused tick never stops the deploy'
 
 
 def test_the_refresh_runs_in_the_grants_environment() -> None:
     """A grant's ``setup`` (a module load the cluster's git needs) wraps the refresh, as it wraps the cron tick."""
     grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', setup=('module load git-x',))
-    command = deploy_command(grant, Target('login02.example', 'src'), _SRC)
+    command = deploy_command(grant, Target('login02.example', '/r/src'), _SRC)
     assert command.index('module load git-x') < command.index('tick dev-lab')
-    assert 'module load git-x' not in deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
+    assert 'module load git-x' not in deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)
 
 
 def _rendered(tmp_path: Path, source: ConfigSource, *, dry_run: bool = False) -> tuple[int, list[list[str]], list[str]]:
@@ -307,18 +305,18 @@ def _rendered(tmp_path: Path, source: ConfigSource, *, dry_run: bool = False) ->
 
 def test_the_account_renders_its_own_layer_between_the_kits_tick_and_the_deploy() -> None:
     """User ruling 2026-11-15: the render runs ON the account, for ITS host file, before it deploys."""
-    command = deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
+    command = deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)
     tick = command.index('tick dev-lab')
-    render = command.index('-m dev_lab.dev.devhost render --host c1-alice --write --from "$HOME/src/config-source"')
+    render = command.index('-m dev_lab.dev.devhost render --host c1-alice --write --from /r/src/repos/config-source')
     assert tick < command.index('-m dev_lab.dev.devhost drift') < render < command.index('hpcaccount deploy')
-    assert ') && cd ~/src/dev-lab' in command, 'a failed render stops the deploy'
+    assert ') && cd /r/src/repos/dev-lab' in command, 'a failed render stops the deploy'
     assert 'git clone -q https://forge.example/team/config-source.git' in command
     assert '--backups "$HOME/.cache/dev-lab/$(date -u +%y/%m/%d)/devhost"' in command
     assert 'c1-bob' not in command, 'PLANTED CONTROL: another account is never rendered here'
 
 
 def test_an_account_with_no_stored_reader_credential_is_refused_naming_the_door() -> None:
-    command = render_command(_FLEET[1], Target('login01.example', 'work'), _SRC)
+    command = render_command(_FLEET[1], Target('login01.example', '/r/work'), _SRC)
     assert "grep -qs '@forge.example' ~/.git-credentials ||" in command
     assert 'python -m dev_lab.dev.hpcaccount credential bob@login01.example' in command
     assert 'exit 2' in command
@@ -327,7 +325,7 @@ def test_an_account_with_no_stored_reader_credential_is_refused_naming_the_door(
 
 def test_the_grants_setup_wraps_the_render() -> None:
     grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', setup=('module load git-x',), cluster_name='c1')
-    command = render_command(grant, Target('login02.example', 'src'), _SRC)
+    command = render_command(grant, Target('login02.example', '/r/src'), _SRC)
     assert command.index('module load git-x') < command.index('git clone')
 
 
@@ -368,7 +366,7 @@ def test_a_layered_account_deploys_to_its_layers_host_whatever_its_remote_file_s
     deploy-fleet opens no read of the account before it starts (it takes no ``connect``) and dials the layer's host;
     the render inside the deploy then overwrites the stale remote file.
     """
-    code, started, said = _run(tmp_path, ('alice',), {'alice': '[deploy]\nhost = "login02"\n'})
+    code, started, said = _run(tmp_path, ('alice',), {'alice': '[deploy]\nhost = "login02"\nroot = "/r/src"\n'})
     assert code == 0
     assert [argv[0] for argv in started] == ['alice@login02.example']
     assert '-m dev_lab.dev.devhost render --host c1-alice --write' in started[0][1]
@@ -381,7 +379,7 @@ def test_an_unstated_root_is_the_clusters_and_a_contrary_one_is_refused() -> Non
     target = declared_target(rooted, lambda _cmd, _stdin=None: '[deploy]\nhost = "login02"\n')
     assert not isinstance(target, str), target
     assert target.root == '/work/c1/alice'
-    contrary = declared_target(rooted, lambda _cmd, _stdin=None: '[deploy]\nhost = "login02"\nroot = "src"\n')
+    contrary = declared_target(rooted, lambda _cmd, _stdin=None: '[deploy]\nhost = "login02"\nroot = "/r/src"\n')
     assert isinstance(contrary, str), 'PLANTED CONTROL: a stated root that contradicts the cluster is still refused'
     assert 'is not the root its cluster declares' in contrary
 
@@ -405,7 +403,7 @@ def test_the_remote_deploy_refusal_names_the_deploy_fleet_door(tmp_path: Path) -
     """A rendered [deploy] differing from flags names the door that re-renders it, never 'edit it there'."""
     config = tmp_path / 'config.toml'
     config.write_text(
-        '[deploy]\nhost = "login01.example"\n'
+        '[deploy]\nhost = "login01.example"\nroot = "/r"\n'
         'repos = [{ name = "dev-lab", url = "https://x.example/d.git", ref = "m" }]\n',
         encoding='utf-8',
     )
@@ -420,11 +418,11 @@ _REPOS = (('dev-lab', 'https://forge.example/team/dev-lab.git', 'main'),)
 
 
 def test_a_first_install_precedes_the_kits_tick_and_clones_the_layers_repos() -> None:
-    command = deploy_command(_FLEET[0], Target('login02.example', 'src', repos=_REPOS), _SRC)
+    command = deploy_command(_FLEET[0], Target('login02.example', '/r/src', repos=_REPOS), _SRC)
     assert command.index('[first-install]') < command.index('+refs/heads/main:refs/remotes/origin/main')
-    assert f'[ -x {shell_interpreter("~/src/dev-lab")} ] ||' in command
-    assert 'git clone -q --branch main https://forge.example/team/dev-lab.git ~/src/dev-lab' in command
-    assert '( cd ~/src/dev-lab && uv sync --frozen )' in command
+    assert f'[ -x {shell_interpreter("/r/src/repos/dev-lab")} ] ||' in command
+    assert 'git clone -q --branch main https://forge.example/team/dev-lab.git /r/src/repos/dev-lab' in command
+    assert '( cd /r/src/repos/dev-lab && uv sync --frozen )' in command
     assert 'https://astral.sh/uv/install.sh' in command
 
 
@@ -432,17 +430,18 @@ def _first_install(tmp_path: Path, *, venv: bool) -> str:
     """Run the first-install line in bash against a fake home, ``uv``/``git``/``curl`` stubbed to record calls."""
     bash = shutil.which('bash')
     assert bash, 'the first-install line runs in bash on the account'
-    home, stubs = tmp_path / 'home', tmp_path / 'stubs'
-    (home / 'src' / 'dev-lab' / '.venv' / 'bin').mkdir(parents=True)
+    home, stubs, root = tmp_path / 'home', tmp_path / 'stubs', tmp_path / 'root'
+    (root / 'repos' / 'dev-lab' / '.venv' / 'bin').mkdir(parents=True)
+    home.mkdir()
     stubs.mkdir()
     for tool in ('uv', 'git', 'curl'):
         (stubs / tool).write_text(f'#!/bin/sh\necho {tool} "$@" >> "$HOME/calls"\n', encoding='utf-8', newline='\n')
         (stubs / tool).chmod(0o755)
     if venv:
-        python = home / 'src' / 'dev-lab' / '.venv' / 'bin' / 'python'
+        python = root / 'repos' / 'dev-lab' / '.venv' / 'bin' / 'python'
         python.write_text('#!/bin/sh\n', encoding='utf-8', newline='\n')
         python.chmod(0o755)
-    line = first_install(_FLEET[0], Target('login02.example', 'src', repos=_REPOS))
+    line = first_install(_FLEET[0], Target('login02.example', root.as_posix(), repos=_REPOS))
     unix = f'"$(cygpath -u {stubs.as_posix()!r} 2>/dev/null || echo {stubs.as_posix()!r})"'
     script = f'export PATH={unix}:"$PATH"; {line}'
     subprocess.run([bash, '-c', script], env={**os.environ, 'HOME': home.as_posix()}, check=True, cwd=tmp_path)
@@ -474,25 +473,25 @@ def test_a_declared_kit_ref_moves_the_kit_itself_never_through_the_stale_machine
     refreshing, one with an old root refreshed ANOTHER checkout -- so the render then ran a kit too old for
     ``--from``. PLANTED CONTROL: a layer naming no kit row keeps the tick.
     """
-    command = deploy_command(_FLEET[0], Target('login02.example', 'src', repos=_KIT_ROWS), _SRC)
+    command = deploy_command(_FLEET[0], Target('login02.example', '/r/src', repos=_KIT_ROWS), _SRC)
     moved = command.index('+refs/heads/integrate/main:refs/remotes/origin/integrate/main')
     checkout = command.index('checkout -q -B integrate/main', moved)
     synced = command.index('uv sync --frozen', checkout)
     assert 'flock -w 600' in command
-    assert 'lab-forge-dev-lab.lock' in command
+    assert '/serve/dev-lab.lock' in command
     assert synced < command.index('-m dev_lab.dev.devhost render')
     assert 'hpcaccount tick dev-lab' not in command
-    unnamed = deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
+    unnamed = deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)
     assert 'hpcaccount tick dev-lab' in unnamed
 
 
 def test_an_absolute_root_is_never_put_under_home() -> None:
     """Measured 2026-11-20 (Cirrus): root ``/epccfs/...`` rendered from ``$HOME//epccfs/...``, a path that is not."""
     command = render_command(_FLEET[0], Target('login02.example', '/abs/root'), _SRC)
-    assert '--from "/abs/root/config-source"' in command
-    assert '$HOME//abs' not in command
-    relative = render_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
-    assert '--from "$HOME/src/config-source"' in relative, 'PLANTED CONTROL: a relative root stays under home'
+    assert '--from /abs/root/repos/config-source' in command
+    assert '$HOME' not in command.split('--from', 1)[1].split()[0], 'the clone is under the declared root'
+    with pytest.raises(ValueError, match='root'):
+        render_command(_FLEET[0], Target('login02.example', 'src'), _SRC)  # PLANTED CONTROL: no home-relative root
 
 
 def test_a_first_install_clones_only_the_kit() -> None:
@@ -501,8 +500,8 @@ def test_a_first_install_clones_only_the_kit() -> None:
     Measured 2026-11-20: a first install cloning a forge-hosted product repo before any reader credential failed, and
     the kit never got its venv.
     """
-    command = first_install(_FLEET[0], Target('login02.example', 'src', repos=_KIT_ROWS))
-    assert 'git clone -q --branch integrate/main https://forge.example/team/dev-lab.git ~/src/dev-lab' in command
+    command = first_install(_FLEET[0], Target('login02.example', '/r/src', repos=_KIT_ROWS))
+    assert 'git clone -q --branch integrate/main https://forge.example/team/dev-lab.git /r/src/repos/dev-lab' in command
     assert 'product' not in command
 
 
@@ -513,7 +512,7 @@ def test_a_layer_naming_no_role_takes_its_grants_role(tmp_path: Path) -> None:
     PLANTED CONTROL: a stated role is kept.
     """
     grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', cluster_name='c1', role='verification')
-    plain = '[deploy]' + chr(10) + 'host = "login02.example"' + chr(10)
+    plain = '[deploy]' + chr(10) + 'host = "login02.example"' + chr(10) + 'root = "/r/src"' + chr(10)
     bare = layer_target(grant, _source(tmp_path, users=('alice',), deploy={'alice': plain}))
     assert isinstance(bare, Target)
     assert bare.role == 'verification'

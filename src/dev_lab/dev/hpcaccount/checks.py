@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.hpc.layout import ROOT_VAR
 
 from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.hpcaccount.spec import tick_dirs
@@ -112,9 +113,13 @@ def login_files(home: Path) -> list[Path]:
     return [first, home / '.bashrc']
 
 
-def login_line(home: Path) -> str:
-    """The marked line that puts the tick PATH's user-install directories first in a login shell."""
-    return f'export PATH="{":".join(tick_dirs(home)[:2])}:$PATH" {LOGIN_MARK}'
+def login_line(home: Path, root: str) -> str:
+    """The marked line of a login shell: the tick PATH's user installs first, and the account's declared root.
+
+    ``LAB_ROOT`` is what every remote script of :mod:`lab_commons.hpc` names (:mod:`lab_commons.hpc.layout`); Slurm
+    passes it on to every job submitted from that shell.
+    """
+    return f'export PATH="{":".join(tick_dirs(home)[:2])}:$PATH" {ROOT_VAR}={shlex.quote(root)} {LOGIN_MARK}'
 
 
 def store_problem(helper: str, store: Path, *, mode: int | None) -> str:

@@ -106,7 +106,7 @@ def test_a_mismatched_credential_is_refused_before_any_change(
     ident = issuer.grant('0123abcd-2', subject)
     assert cipause.ci_pause([*args, '--credential', ident, '--cluster', 'c1'], home=home, tools=tools_of(tmp_path)) == 2
     assert _cron(tmp_path) == before
-    assert not cimark.marker(home).exists()
+    assert not cimark.marker((home.parent / 'root').as_posix()).exists()
     assert issuer.ledger == [], 'refused before its use was registered'
     assert 'another request' in capsys.readouterr().err
 

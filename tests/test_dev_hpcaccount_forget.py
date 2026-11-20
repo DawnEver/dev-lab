@@ -17,13 +17,13 @@ _FLEET = (
     Grant(user='bob', hosts=_HOSTS, slurm_account='acct'),
 )
 _REPO = 'https://forge.example/org/repo.git'
-_DEPLOY = '[deploy]\nhost = "login01.example"\nroot = "src"\n'
+_DEPLOY = '[deploy]\nhost = "login01.example"\nroot = "/r/src"\n'
 _ROW = '{"peak_mem_gb": 412.0, "cpu_s": 1.0, "wall_s": 1.0, "files": 9.0, "ended": "asked"}'
 
 
 def _line(argv: str) -> str:
     """The remote line in the account's dev-lab checkout, run by its current environment (the one resolver)."""
-    return f'cd ~/src/dev-lab && {shell_interpreter(".")} {argv}'
+    return f'cd /r/src/repos/dev-lab && {shell_interpreter(".")} {argv}'
 
 
 def _account(row: str | None, *, unreachable: bool = False, seen: list[str]) -> Runner:

@@ -101,8 +101,8 @@ def ci_pause(
     if isinstance(spec, str):
         emit(f'ci-pause refused: {spec}', err=True)
         return 2
-    if marker(home).is_file():
-        emit(f'ci-pause: already CI-PAUSED ({marker(home)}); {RESUME_DOOR} resumes it')
+    if marker(spec.root).is_file():
+        emit(f'ci-pause: already CI-PAUSED ({marker(spec.root)}); {RESUME_DOOR} resumes it')
         return 0
     lost = _lost(step, home, machine, args)
     refused = lost if isinstance(lost, str) else not step.dry and _consented('ci-pause', step, args, redeem_with)
@@ -115,8 +115,8 @@ def ci_pause(
         emit(f'[dry-run] would mark CI-PAUSED and remove {marked} marked line(s); {discarded}')
         return 0
     who = os.environ.get('USER') or os.environ.get('USERNAME', '?')
-    marker(home).parent.mkdir(parents=True, exist_ok=True)
-    marker(home).write_text(f'by {who} at {dt.datetime.now(dt.UTC):%Y-%m-%dT%H:%M:%SZ}; {discarded}\n', 'utf-8')
+    marker(spec.root).parent.mkdir(parents=True, exist_ok=True)
+    marker(spec.root).write_text(f'by {who} at {dt.datetime.now(dt.UTC):%Y-%m-%dT%H:%M:%SZ}; {discarded}\n', 'utf-8')
     if rc := crontab(step, []):
         return rc
     emit(f'ci-pause: removed {marked} marked crontab line(s); {discarded}')
@@ -129,13 +129,13 @@ def ci_resume(
     """Rewrite the declared lines, verify them, delete the marker; 0 resumed, 2 refused or unverified."""
     args = _parser('ci-resume').parse_args(list(argv))
     step, machine = Step(tools or Tools(), dry=args.dry_run), args.config or config_path()
-    if not marker(home).is_file():
-        emit(f'ci-resume refused: no CI-PAUSED marker at {marker(home)}; nothing to resume', err=True)
-        return 2
     spec = _serving(machine)
     slurm = deploy.slurm_dirs()  # the deploy's own resolution, so the lines are the deploy's
     if isinstance(spec, str) or isinstance(slurm, str):
         emit(f'ci-resume refused: {spec if isinstance(spec, str) else slurm}', err=True)
+        return 2
+    if not marker(spec.root).is_file():
+        emit(f'ci-resume refused: no CI-PAUSED marker at {marker(spec.root)}; nothing to resume', err=True)
         return 2
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     lines = cron_lines(spec, home, slurm=slurm, setup=grant_setup(machine, user))
@@ -148,7 +148,7 @@ def ci_resume(
     if missing := [line for line in lines if line not in held]:
         emit(f'ci-resume: crontab -l lacks {len(missing)} declared line(s); the marker stays: {missing}', err=True)
         return 2
-    marker(home).unlink()
+    marker(spec.root).unlink()
     emit(f'ci-resume: {len(lines)} marked crontab line(s) restored and verified; CI-PAUSED cleared')
     return 0
 

@@ -57,7 +57,7 @@ def test_the_login_files_are_the_ones_bash_reads_and_the_line_names_the_tick_ins
     assert deploy_checks.login_files(tmp_path) == [tmp_path / '.bash_profile', tmp_path / '.bashrc']
     (tmp_path / '.profile').write_text('', encoding='utf-8')
     assert deploy_checks.login_files(tmp_path) == [tmp_path / '.profile', tmp_path / '.bashrc'], 'never shadow it'
-    line = deploy_checks.login_line(tmp_path)
+    line = deploy_checks.login_line(tmp_path, '/r')
     assert str(tmp_path / '.local/bin') in line
     assert str(tmp_path / '.cargo/bin') in line
     assert line.endswith(deploy_checks.LOGIN_MARK)
