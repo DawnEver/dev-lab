@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, delete, sweep
+from dev_lab.dev.branchdelete import DOOR, delete, delete_task, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN
@@ -286,7 +286,7 @@ def retired(argv: Sequence[str]) -> str:
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
-    """``python -m dev_lab.dev.branchprune {delete B... | sweep}``."""
+    """``python -m dev_lab.dev.branchprune {delete B... | task S | sweep}``."""
     words = list(sys.argv[1:] if argv is None else argv)
     if why := retired(words):
         emit(why, err=True)
@@ -295,6 +295,8 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     verbs = parser.add_subparsers(dest='verb', required=True)
     deleted = verbs.add_parser('delete', help='a branch whose content is held elsewhere')
     deleted.add_argument('branches', nargs='+')
+    tasked = verbs.add_parser('task', help="a closed task's pr/<slug>/* heads, each deleted losslessly or named")
+    tasked.add_argument('slug')
     swept = verbs.add_parser('sweep')
     swept.add_argument('--local', action='store_true', help='also local branches and clean landed worktrees')
     swept.add_argument('--log', action='store_true', help=f'write to output/logs/.../{_LOG_KIND}/, not the console')
@@ -307,6 +309,8 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
         session = os.environ.get(ENV, '')
         if args.verb == 'delete':
             return delete(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
+        if args.verb == 'task':
+            return delete_task(root, args.slug, client=client, session=session, fetch=fetch_origin, say=say)
         return sweep(root, client=client, session=session, fetch=fetch_origin, say=say, local=args.local)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         if say is emit:
