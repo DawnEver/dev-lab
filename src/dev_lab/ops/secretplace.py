@@ -41,6 +41,7 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -81,7 +82,7 @@ TRANSPORT_SECRETS: Final = {'s3': ('access_key_id', 'secret_access_key')}
 type Redeem = Callable[[Mapping[str, Any], str], object]
 #: Change a path's owner (``shutil.chown``'s shape).
 type Chown = Callable[[Path, str | None, str | None], None]
-#: Ask one line of the person without echo (``getpass.getpass``'s shape).
+#: Ask one line of the person, shown as typed (``input``'s shape).
 type Ask = Callable[[str], str]
 #: The issuer's grant of one request file; the held credential file it wrote.
 type Grant = Callable[[Path], Path]
@@ -181,8 +182,8 @@ def place(
     return f'[ops secret] placed {path} (sha256 {digest}), owner {owners[key]}, mode 0600'
 
 
-def _keys_of(storage: Storage, path: str) -> tuple[str, tuple[str, ...]]:
-    """The reached remote whose ``credentials_file`` is *path*, and the secret keys its transport needs."""
+def _keys_of(storage: Storage, path: str) -> tuple[str, tuple[str, ...], Mapping[str, str], Mapping[str, str]]:
+    """The reached remote whose ``credentials_file`` is *path*: its transport's secret keys, ask hints and shapes."""
     wanted = Path(path).expanduser()
     for remote in storage.reach:
         if remote.credentials_file is not None and Path(remote.credentials_file).expanduser() == wanted:
@@ -190,25 +191,47 @@ def _keys_of(storage: Storage, path: str) -> tuple[str, tuple[str, ...]]:
             if kind not in TRANSPORT_SECRETS:
                 msg = f'{remote.name}: transport {kind!r} declares no secret keys; known: {sorted(TRANSPORT_SECRETS)}'
                 raise SecretRefused(msg)
-            return remote.name, TRANSPORT_SECRETS[kind]
+            return remote.name, TRANSPORT_SECRETS[kind], remote.ask, remote.shape
     msg = (
         f'{path} is the credentials_file of no reached remote: declare [storage.reach.<remote>] credentials_file first'
     )
     raise SecretRefused(msg)
 
 
+#: Said before the first value: on Windows the prompt does not take Ctrl+V (it inserts a control character).
+PASTE_NOTE: Final = 'paste with a right-click (Ctrl+V does not paste in this prompt on Windows); the value is shown'
+
+
+def judged(name: str, value: str, shape: str) -> tuple[str, str]:
+    """A check line for one entered value (length, characters, declared shape), and why it is refused ('' if not)."""
+    kind = 'hex' if value and all(c in '0123456789abcdefABCDEF' for c in value) else (
+        'printable' if value.isprintable() else 'CONTROL CHARACTERS')  # fmt: skip
+    matches = re.fullmatch(shape, value) is not None if shape else None
+    line = f'  {name}: {len(value)} characters, {kind}' + (
+        '' if matches is None else f', {"matches" if matches else "does NOT match"} the declared shape {shape}'
+    )
+    if not value:
+        return line, f'{name} is empty'
+    if not value.isprintable() or any(c.isspace() for c in value):
+        return line, f'{name} holds control characters or spaces: {PASTE_NOTE}'
+    if matches is False:
+        return line, f'{name} does not match the declared shape {shape}: check you copied the whole value'
+    return line, ''
+
+
 def enter(
     path: str, *, storage: Storage, ask: Ask, tty: bool, grant: Grant, requests: Path, check: Check,
-    redeem: Redeem | None = None,
+    redeem: Redeem | None = None, say: Callable[[str], None] = lambda _line: None,
 ) -> list[str]:  # fmt: skip
-    """Ask the secret once, consent with one code, place it, list the remote; what happened, value-free.
+    """Ask each value once (shown), check it, consent with one code, place it, list the remote; value-free output.
 
     Raises:
-        SecretRefused: not a terminal, an undeclared path, an empty key, or a refused consent (nothing placed).
+        SecretRefused: not a terminal, an undeclared path, a value that is empty, holds control characters or does
+            not match its declared shape (all before the consent code: nothing placed), or a refused consent.
 
     """
     if not tty:
-        msg = ('enter asks the secret without echo, so it runs only at a terminal; a pipe goes through '
+        msg = ('enter asks at a terminal; a pipe goes through '
                '`secretplace request` then `secretplace place --grant <id>`')  # fmt: skip
         raise SecretRefused(msg)
     owners = workstation_declared(storage)
@@ -216,11 +239,16 @@ def enter(
     if key is None:
         msg = f'{path} is not a secret file this machine declares; declared: {sorted(owners) or "none"}'
         raise SecretRefused(msg)
-    remote, keys = _keys_of(storage, key)
+    remote, keys, hints, shapes = _keys_of(storage, key)
+    say(f'[ops secret] {remote}: {PASTE_NOTE}')
     lines = []
     for name in keys:
-        if not (value := ask(f'{remote} {name}: ').strip()):
-            msg = f'{remote} {name} is empty: nothing was placed'
+        hint = f' -- {hints[name]}' if name in hints else ''
+        value = ask(f'{remote} {name}{hint}\n{name}: ').strip('\r\n')
+        line, why = judged(name, value, shapes.get(name, ''))
+        say(line)
+        if why:
+            msg = f'{remote} {why}; nothing was placed'
             raise SecretRefused(msg)
         lines.append(f'{name} = {json.dumps(value)}')
     content = ''.join(f'{line}\n' for line in lines).encode('utf-8')
@@ -232,7 +260,11 @@ def enter(
     verify = redeem or (lambda _found, wanted: verify_held(held, action=ACTION, subject=wanted))
     said.append(place(owners, 'this machine file ([storage.reach.<remote>] credentials_file)', key, content,
                       redeem=verify, credential={}, chown=_own))  # fmt: skip
-    said.append(check(remote))
+    try:
+        said.append(check(remote))
+    except (StorageError, OSError) as refused:
+        said.append(f'[ops secret] {remote}: PLACED at {key} but the check FAILED -- {refused}; '
+                    'run `secretplace enter --remote` again with the right values (it replaces the file)')  # fmt: skip
     return said
 
 
@@ -275,8 +307,9 @@ def _by_remote(action: str, remote: str) -> int:
     if action == 'distribute':
         return _distribute(remote)
     for line in enter(
-        path_of(storage_declared(), remote), storage=storage_declared(), ask=getpass.getpass,
-        tty=sys.stdin.isatty(), grant=grant, check=lambda name: check(name, repo=Path.cwd()),
+        path_of(storage_declared(), remote), storage=storage_declared(), ask=input, say=emit,
+        tty=sys.stdin.isatty(), grant=lambda asked: grant(asked, ask=input),
+        check=lambda name: check(name, repo=Path.cwd()),
         requests=Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent',
     ):  # fmt: skip
         emit(line)
