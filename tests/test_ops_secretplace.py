@@ -192,3 +192,133 @@ def test_a_workstation_refuses_a_path_its_machine_does_not_declare(tmp_path: Pat
         secretplace.place(owners, 'the machine file', stray, SECRET, redeem=consent, credential={}, chown=_chown([]))
     assert not consent.spent
     assert not (tmp_path / 'secrets' / 'other').exists()
+
+
+def _entered(tmp_path: Path, *, asked: list[str], code_ok: bool = True, tty: bool = True) -> tuple[list[str], dict]:
+    """``enter`` with a scripted terminal, a scripted issuer and a scripted remote listing."""
+    answers = iter(['AKIA-planted', 'planted-secret-value'])
+    seen: dict[str, Any] = {}
+
+    def ask(prompt: str) -> str:
+        asked.append(prompt)
+        return next(answers)
+
+    def grant(request_file: Path) -> Path:
+        seen['request'] = json.loads(request_file.read_text(encoding='utf-8'))
+        if not code_ok:
+            msg = 'the issuer refused the code'
+            raise ConsentRefused(msg)
+        held = tmp_path / 'held-1.json'
+        held.write_text('{}', encoding='utf-8')
+        return held
+
+    def redeem(_found: Mapping[str, Any], wanted: str) -> None:
+        if wanted != seen['request']['subject']:
+            msg = 'not this subject'
+            raise ConsentRefused(msg)
+
+    said = secretplace.enter(
+        str(tmp_path / 'secrets' / 'results'), storage=_reaching(tmp_path), ask=ask, tty=tty, grant=grant,
+        requests=tmp_path / 'requests', check=lambda remote: f'{remote}: reached', redeem=redeem,
+    )  # fmt: skip
+    return said, seen
+
+
+def test_enter_asks_each_transport_key_once_places_it_and_lists_the_remote(tmp_path: Path) -> None:
+    asked: list[str] = []
+    said, seen = _entered(tmp_path, asked=asked)
+    placed = (tmp_path / 'secrets' / 'results').read_text(encoding='utf-8')
+    assert placed == 'access_key_id = "AKIA-planted"\nsecret_access_key = "planted-secret-value"\n'
+    assert asked == ['results access_key_id\naccess_key_id: ', 'results secret_access_key\nsecret_access_key: ']
+    assert seen['request'] == secretplace.request(str(tmp_path / 'secrets' / 'results'), placed.encode('utf-8'))
+    assert said[-1] == 'results: reached'
+    joined = '\n'.join(said) + json.dumps(seen) + (tmp_path / 'requests' / 'secret-results.request.json').read_text()
+    assert 'planted-secret-value' not in joined
+    assert 'AKIA-planted' not in joined
+
+
+def test_enter_refuses_a_pipe_before_asking_anything(tmp_path: Path) -> None:
+    """PLANTED CONTROL: no terminal -> nothing asked, nothing requested, nothing placed."""
+    asked: list[str] = []
+    with pytest.raises(SecretRefused, match=r'asks at a terminal.*secretplace request'):
+        _entered(tmp_path, asked=asked, tty=False)
+    assert asked == []
+    assert not (tmp_path / 'secrets' / 'results').exists()
+
+
+def test_enter_with_a_refused_code_places_nothing(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the issuer refuses the code -> the secret file is never written."""
+    with pytest.raises(ConsentRefused, match='refused the code'):
+        _entered(tmp_path, asked=[], code_ok=False)
+    assert not (tmp_path / 'secrets' / 'results').exists()
+
+
+def test_enter_refuses_an_undeclared_path_before_asking(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a path no reached remote declares is refused before any key is asked."""
+    asked: list[str] = []
+    with pytest.raises(SecretRefused, match='not a secret file this machine declares'):
+        secretplace.enter(
+            str(tmp_path / 'secrets' / 'other'), storage=_reaching(tmp_path), ask=asked.append, tty=True,
+            grant=lambda _f: tmp_path, requests=tmp_path, check=str,
+        )  # fmt: skip
+    assert asked == []
+
+
+def test_enter_finds_its_path_in_this_machines_declaration(tmp_path: Path) -> None:
+    storage = _reaching(tmp_path)
+    assert secretplace.path_of(storage, 'results') == str(tmp_path / 'secrets' / 'results')
+    with pytest.raises(SecretRefused, match=r'declares no \[storage\.reach\.other\]'):
+        secretplace.path_of(storage, 'other')  # the planted control: an undeclared remote names its door
+
+
+def test_enter_and_distribute_take_a_remote_never_a_path(capsys: pytest.CaptureFixture[str]) -> None:
+    for action in ('enter', 'distribute'):
+        assert secretplace.main([action, '--path', '~/x']) == 2
+        assert 'takes --remote' in capsys.readouterr().err
+
+
+def test_enter_shows_what_each_key_is_and_where_to_find_it(tmp_path: Path) -> None:
+    """Every wall teaches: the family's ask hint is in the prompt; PLANTED: a key with no hint is asked bare."""
+    family = {'storage': {'remotes': {'results': {'type': 's3', 'ask': {'access_key_id': 'the Access Key column'}}}}}
+    machine = {'storage': {'reach': {'results': {'credentials_file': str(tmp_path / 'secrets' / 'results')}}}}
+    prompts: list[str] = []
+    secretplace.enter(
+        str(tmp_path / 'secrets' / 'results'), storage=storage_declared(machine, family),
+        ask=lambda prompt: prompts.append(prompt) or 'v', tty=True, grant=lambda p: p, requests=tmp_path,
+        check=lambda remote: f'{remote}: reached', redeem=lambda _c, _s: None,
+    )  # fmt: skip
+    assert 'the Access Key column' in prompts[0]
+    assert ' -- ' not in prompts[1]
+
+
+def _shaped(tmp_path: Path) -> object:
+    remote = {'type': 's3', 'shape': {'access_key_id': '[0-9a-f]{4}', 'secret_access_key': '.{3}'}}
+    machine = {'storage': {'reach': {'results': {'credentials_file': str(tmp_path / 'secrets' / 'results')}}}}
+    return storage_declared(machine, {'storage': {'remotes': {'results': remote}}})
+
+
+def _enter_values(tmp_path: Path, values: list[str], granted: list[Path]) -> list[str]:
+    said: list[str] = []
+    secretplace.enter(
+        str(tmp_path / 'secrets' / 'results'), storage=_shaped(tmp_path), ask=lambda _p: values.pop(0), tty=True,
+        grant=lambda p: granted.append(p) or p, requests=tmp_path, check=lambda r: f'{r}: reached',
+        redeem=lambda _c, _s: None, say=said.append,
+    )  # fmt: skip
+    return said
+
+
+@pytest.mark.parametrize(('value', 'why'), [('ab\x16cd', 'control characters'), ('abc', 'does not match')])
+def test_a_wrong_value_is_refused_before_the_consent_code(tmp_path: Path, value: str, why: str) -> None:
+    """A pasted control character or a wrong length is named; PLANTED: no consent is asked, nothing placed."""
+    granted: list[Path] = []
+    with pytest.raises(SecretRefused, match=why):
+        _enter_values(tmp_path, [value, 'xyz'], granted)
+    assert granted == []
+    assert not (tmp_path / 'secrets' / 'results').exists()
+
+
+def test_each_value_is_judged_in_the_open_and_a_good_pair_is_placed(tmp_path: Path) -> None:
+    said = _enter_values(tmp_path, ['abcd', 'xyz'], [])
+    assert 'Ctrl+V' in said[0]
+    assert '4 characters, hex, matches' in said[1]
+    assert (tmp_path / 'secrets' / 'results').is_file()

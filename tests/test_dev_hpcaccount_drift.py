@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from _hpcaccount_fakes import FLEET, HOST, fleet_source, home_of, tools_of
+from _hpcaccount_fakes import FAMILY, FLEET, HOST, fleet_source, home_of, tools_of
 
 from dev_lab.dev import hpcaccount
 from dev_lab.dev.hpcaccount import accountset, deploy, drift
@@ -151,3 +151,24 @@ def test_a_fleet_verb_with_no_forwarded_flag_parses(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(accountset, 'reached_machine', refuse)
     assert accountset.main_fleet(['--cluster', 'c1'], verb='drift', flags=flags) == 2
+
+
+def test_a_research_account_reads_no_crontab_and_agrees(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SCHEDULER-ONLY-FOR-SERVING: a research account has no cron to compare, so drift never runs ``crontab``.
+
+    Measured 2026-11-20 (Cirrus): a cluster forbidding crontab refused a research account's drift. PLANTED CONTROL:
+    the verification account of the same fixture still reads crontab, and is refused when it cannot.
+    """
+    monkeypatch.setenv('FAKE_CRONTAB_FORBID', '1')
+    (tmp_path / 'served').mkdir()
+    (tmp_path / 'research').mkdir()
+    code, _before, _after = _run(tmp_path / 'served')
+    assert code == 2, 'the planted control: a serving account needs its crontab'
+    capsys.readouterr()
+    research = tmp_path / 'research'
+    home, clone, machine = home_of(research, family=FAMILY.replace('"verification"', '"research"'))
+    args = ['--from', str(clone), '--host', HOST, '--config', str(machine)]
+    assert drift.main(args, home=home, tools=tools_of(research)) == 0, capsys.readouterr()
+    assert 'agrees' in capsys.readouterr().out
