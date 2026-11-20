@@ -62,30 +62,21 @@ from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, f
 from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.devdeclared import declared, declared_by, merge
+from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, merge
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'LOCAL_DOOR', 'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared_channels', 'drift',
-    'host_file', 'local_set', 'main', 'notice', 'render', 'this_machine',
+    'LOCAL_DOOR', 'RENDER_DOOR', 'config_source', 'declared_channels', 'drift',
+    'host_file', 'local_set', 'main', 'notice', 'render',
 ]  # fmt: skip
 
-#: The render's own table: which host and clone it came from.
-OWN_TABLE: Final = 'devhost'
 #: A key one side lacks (``None`` is not a TOML value, but a sentinel says so outright).
 _ABSENT: Final = object()
 
 
 def _read(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding='utf-8'))
-
-
-def this_machine(host_config: Path | None = None) -> dict[str, Any]:
-    """The effective ``[dev]`` of *host_config*, else of the host and clone this machine's render records."""
-    if host_config is not None:
-        return declared(host_config, host_config.parent.parent / 'family.toml')
-    return declared_by(machineconfig.machine().get(OWN_TABLE, {}))
 
 
 def _digest(path: Path) -> str:
