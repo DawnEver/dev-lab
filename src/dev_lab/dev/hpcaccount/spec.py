@@ -32,6 +32,7 @@ from dev_lab.dev.roles import HPC, ROLES, Unbound, roles_at
 from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
+    'CLAIMS',
     'DEFAULT_PYTHON',
     'DEFAULT_ROOT',
     'DEFAULT_TICK_MINUTES',
@@ -84,6 +85,10 @@ RESEARCH: Final = 'research'
 _ROLE_NAME: Final = re.compile(r'[a-z][a-z0-9-]*')
 
 
+#: What a ``[deploy] repos`` row may narrow its claims to; undeclared claims everything.
+CLAIMS: Final = ('integration', 'none')
+
+
 @dataclass(frozen=True)
 class Repo:
     """One declared repository: checkout name, HTTPS remote, followed branch.
@@ -92,13 +97,17 @@ class Repo:
     (:func:`serves_here`, D73) -- a repo with no role bound to this grant role is checked out, installed and never
     served; the kit's own tick still refreshes the kit (the one writer of that checkout). ``verify`` names
     the status contexts of this repo the account is the DEFAULT producer of (HPC account affinity,
-    :mod:`dev_lab.dev.forgeaffinity`): ``verify = ["tests/*"]`` on a verify account's row.
+    :mod:`dev_lab.dev.forgeaffinity`): ``verify = ["tests/*"]`` on a verify account's row. ``claims`` narrows what
+    this account claims of the repo's queue while the integrator widens it step by step (user ruling 2026-11-20: a
+    returning verification account first verifies each repo's integration tip, one repo at a time): ``"none"``
+    claims nothing, ``"integration"`` only the integration branch's tip; undeclared claims everything.
     """
 
     name: str
     url: str
     ref: str
     verify: tuple[str, ...] = ()
+    claims: str = ''
 
 
 @dataclass(frozen=True)
@@ -141,7 +150,8 @@ def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
             root=raw.get('root', DEFAULT_ROOT),
             python=raw.get('python', DEFAULT_PYTHON),
             repos=tuple(
-                Repo(r['name'], r['url'], r['ref'], tuple(r.get('verify', ()))) for r in _repo_rows(path, raw['repos'])
+                Repo(r['name'], r['url'], r['ref'], tuple(r.get('verify', ())), _claims(path, r))
+                for r in _repo_rows(path, raw['repos'])
             ),
             slurm_account=raw.get('slurm_account', ''),
             partitions=tuple(raw.get('partitions', ())),
@@ -213,8 +223,19 @@ def _repo_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> Sequence[Mappin
     return rows
 
 
+def _claims(path: Path, row: Mapping[str, Any]) -> str:
+    """A row's ``claims``: one of :data:`CLAIMS`, ``''`` when undeclared; anything else refused naming the choices."""
+    claims = row.get('claims', '')
+    if claims != '' and claims not in CLAIMS:
+        name = row.get('name', '?')
+        msg = f'{path}: [deploy] repos {name} claims = {claims!r}: declare one of {list(CLAIMS)} or omit it'
+        raise ValueError(msg)
+    return str(claims)
+
+
 def _unserved(repo: Repo) -> str:
-    return f', verify = {_list(repo.verify)}' if repo.verify else ''
+    claims = f', claims = {_toml(repo.claims)}' if repo.claims else ''
+    return (f', verify = {_list(repo.verify)}' if repo.verify else '') + claims
 
 
 def _toml(value: str) -> str:

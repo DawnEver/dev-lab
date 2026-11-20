@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-__all__ = ['Caddy', 'Status', 'allowlisted', 'install_caddy', 'status_routed', 'status_unrouted']
+__all__ = ['Caddy', 'Status', 'allowlisted', 'install_caddy', 'metrics_rendered', 'status_routed', 'status_unrouted']
 
 
 @dataclass(frozen=True)
@@ -31,15 +31,20 @@ class Caddy:
     """The forge's Caddy allowlist (:mod:`dev_lab.ops.caddy`).
 
     Every ``remote_ip`` matcher of ``sites`` (all, when empty) in ``file`` admits exactly ``allow`` (IPs or CIDRs).
+    ``metrics`` renders the global ``servers { metrics }`` option (:func:`metrics_rendered`, 2026-11-20).
     """
 
     allow: tuple[str, ...]
     file: str = '/etc/caddy/Caddyfile'
     sites: tuple[str, ...] = ()
+    metrics: bool = False
 
 
 #: A path that lands in the Caddyfile: plain characters only, so it cannot widen the config it is written into.
 _PLAIN: Final = re.compile(r'/[A-Za-z0-9/_.-]+')
+
+#: A metric name handed to the supervisor's unit line: lower-case word characters only.
+_METRIC: Final = re.compile(r'[a-z0-9_]+')
 
 
 @dataclass(frozen=True)
@@ -47,23 +52,29 @@ class Status:
     """The host's status card (:mod:`dev_lab.supervise.card`): where the supervisor writes it, where Caddy serves it.
 
     ``file`` is the card (absolute; its directory holds nothing else -- it is what Caddy's ``root`` names); ``site``
-    the Caddyfile site that serves it at ``path``, to the ``[ops.caddy] allow`` list only.
+    the Caddyfile site that serves it at ``path``, to the ``[ops.caddy] allow`` list only. ``history`` names the
+    metrics whose hourly history the card keeps (2026-11-20).
     """
 
     file: str
     site: str
     path: str = '/dev-lab/status.json'
+    history: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """Refuse a value that is not a plain absolute path: each lands in a file root's web server parses."""
+        """Refuse a path that is not plain and absolute, or a history name that is not a plain metric name."""
         for key, value in (('file', self.file), ('path', self.path)):
             if not _PLAIN.fullmatch(value) or '..' in value:
                 msg = f'[ops.status] {key} must be an absolute plain path, got {value!r}'
                 raise ValueError(msg)
+        if bad := [name for name in self.history if not _METRIC.fullmatch(str(name))]:
+            msg = f'[ops.status] history names metrics ([a-z0-9_]), got {bad}'
+            raise ValueError(msg)
 
     def flags(self, audit: str) -> list[str]:
-        """The supervisor's ``--card`` flags: the card, and the auto-upgrade *audit* whose last line it quotes."""
-        return ['--card', self.file, '--card-audit', audit]
+        """The supervisor's ``--card`` flags: the card, the auto-upgrade *audit* it quotes, each history series."""
+        history = [flag for name in self.history for flag in ('--card-history', name)]
+        return ['--card', self.file, '--card-audit', audit, *history]
 
     def directory_step(self, owner: str) -> str:
         """The step making the card's own directory: world-readable for Caddy, *owner*'s (empty: root) to write."""
@@ -164,6 +175,65 @@ def status_unrouted(text: str) -> str:
     return text if start < 0 or end < start else text[:start] + text[end + len(_END) :]
 
 
+#: The lines that open and close the managed metrics option; between them is rendered, never edited.
+_METRICS_BEGIN: Final = '# dev-lab metrics -- rendered by dev_lab.ops ([ops.caddy] metrics); edits are overwritten'
+_METRICS_END: Final = '# end dev-lab metrics'
+
+
+def _metrics_unrendered(text: str) -> str:
+    out: list[str] = []
+    inside = False
+    for line in text.splitlines(keepends=True):
+        if line.strip() == _METRICS_BEGIN:
+            inside = True
+        elif inside and line.strip() == _METRICS_END:
+            inside = False
+        elif not inside:
+            out.append(line)
+    return ''.join(out)
+
+
+def _global_open(lines: Sequence[str]) -> int | None:
+    """The index of the global options block's ``{`` line: the first line that says anything, when it is bare."""
+    for index, line in enumerate(lines):
+        if line.strip() and not line.lstrip().startswith('#'):
+            return index if line.strip() == '{' else None
+    return None
+
+
+def metrics_rendered(text: str, *, on: bool) -> str:
+    """*text* (a Caddyfile) with the managed global ``servers { metrics }`` when *on*, without it when not.
+
+    An existing global block gains it as its first lines; a file without one gains a block holding only it (both
+    between markers, so turning it off restores the file byte for byte).
+
+    Raises:
+        ValueError: the global block already holds an unmanaged ``servers`` option, which two would contradict.
+
+    """
+    base = _metrics_unrendered(text)
+    if not on:
+        return base
+    lines = base.splitlines(keepends=True)
+    opened = _global_open(lines)
+    if opened is None:
+        return f'{_METRICS_BEGIN}\n{{\n\tservers {{\n\t\tmetrics\n\t}}\n}}\n{_METRICS_END}\n' + base
+    depth, body = 0, []
+    for line in lines[opened:]:
+        depth += line.count('{') - line.count('}')
+        body.append(line)
+        if depth == 0:
+            break
+    if any(line.strip().startswith('servers') for line in body[1:]):
+        msg = (
+            'the Caddyfile global block already has a `servers` option; move its settings out or drop '
+            '[ops.caddy] metrics -- two would contradict'
+        )
+        raise ValueError(msg)
+    block = f'\t{_METRICS_BEGIN}\n\tservers {{\n\t\tmetrics\n\t}}\n\t{_METRICS_END}\n'
+    return ''.join([*lines[: opened + 1], block, *lines[opened + 1 :]])
+
+
 def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str], status: Status | None = None) -> list[str]:
     """The install step: add the allowlisted Caddyfile to *rendered*, its old text kept beside it when it changes.
 
@@ -188,6 +258,7 @@ def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str], sta
         new = status_unrouted(new)
     else:
         new = status_routed(new, site=status.site, path=status.path, file=status.file, allow=caddy.allow)
+    new = metrics_rendered(new, on=caddy.metrics)
     rendered[live.relative_to(root).as_posix()] = new
     if new != old:
         live.with_name(f'{live.name}.bak-dev-lab').write_text(old, encoding='utf-8', newline='\n')

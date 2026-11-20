@@ -411,6 +411,12 @@ repos = [
 ]
 ```
 
+A row may also narrow what the account claims of that repo while the integrator reopens it step by step (user
+ruling 2026-11-20: a returning verification account first verifies each repo's integration tip, one repo at a time):
+`claims = "none"` claims nothing, `claims = "integration"` only the integration branch's tip; with no `claims` the
+account claims everything. A held part waits, named `held by this seat's [deploy] claims`; widening is the
+integrator's edit of the account file.
+
 Its tick reads the row and publishes `verify` on its host card (`verify first: tests/*`), so every other seat learns
 the affined accounts from the cards it already reads. No account name is written in dev-lab.
 
@@ -673,7 +679,11 @@ change in that file still needs consent. Once the table exists, changing it is a
 
 A machine account is declared once, `[ops.forge.accounts] <login> = {role = "read"|"write"|"review"|"breakglass", repos = [...]}`,
 one role per login (a reader for every server that pulls code, a writer for the hosts that post verdicts, a reviewer
-for the judge, a break-glass merger for the consent host). It and each of its per-host tokens are made only through
+for the judge, a break-glass merger for the consent host). The forge's repository set is stated once, `[ops.forge] repos`: a login
+that names no `repos` holds exactly it, a login restating it is refused, and `configcheck` refuses the set unless it
+is exactly the family's `[family_repos]` rows on the host's `[ops.caddy] sites`. A development machine's login is
+declared once in the family's `[dev] forges`; a host file overrides it only with a DIFFERENT login (another
+person's machine) -- restating the family's value is refused (`devschema.OVERRIDABLE`). It and each of its per-host tokens are made only through
 `python -m dev_lab.ops --config <file> forge account ensure --login <L>` and
 `... forge token mint --login <L> --name <N> --scope <S> [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`), which the
 `ops` account runs through its fixed sudo line. `ensure` reads the role and repositories from the declaration, so an

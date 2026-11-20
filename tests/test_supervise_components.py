@@ -1,4 +1,4 @@
-"""The seven shipped probes, and the distinctions each of them exists to make."""
+"""The shipped probes, and the distinctions each of them exists to make."""
 
 from __future__ import annotations
 
@@ -107,6 +107,7 @@ def test_the_roster_is_what_this_build_ships() -> None:
         'disk_usage',
         'process_monitor',
         'host_pressure',
+        'forge_load',
         'log_scanner',
         'progress_tracker',
         'deploy',

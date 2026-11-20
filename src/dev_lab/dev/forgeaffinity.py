@@ -33,30 +33,41 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
 
 from lab_commons.compute.model import REQUEST, Candidate
-from lab_commons.hpc.allocation import VERIFY_BORROWS_RESEARCH
+from lab_commons.hpc.allocation import RECORD as ALLOCATION
+from lab_commons.hpc.allocation import VERIFY_BORROWS_RESEARCH, borrowing
 from lab_commons.hpc.grants import Affinity
 
 from dev_lab.dev.forgeclient import client_for
+from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard, read_cards
+from dev_lab.dev.forgerecords import read_named
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.platformparts import part_context
 
 __all__ = [
     'DEFERRED',
+    'HELD',
+    'claims_of',
     'context_of',
     'covers',
     'declared',
     'deferral',
     'defers',
+    'holds',
+    'opened',
+    'opted_in',
     'research_affinity',
     'research_affinity_of',
 ]
 
 #: How a covered part a non-affined seat waits on is blocked: on its queue row and its host card.
 DEFERRED: Final = 'deferred to the verify accounts'
+#: How a part this seat's ``[deploy]`` row narrows its claims away from waits (user ruling 2026-11-20).
+HELD: Final = "held by this seat's [deploy] claims"
 
 
 def covers(patterns: Sequence[str], context: str) -> bool:
@@ -74,6 +85,28 @@ def declared(path: Path, repo_url: str) -> tuple[str, ...]:
     spec = load(path)
     want = _bare(repo_url)
     return next((repo.verify for repo in spec.repos if _bare(repo.url) == want), ()) if spec else ()
+
+
+def claims_of(path: Path, repo_url: str) -> str:
+    """The ``claims`` this account's ``[deploy]`` row for *repo_url* narrows to; ``''`` (everything) when none."""
+    spec = load(path)
+    want = _bare(repo_url)
+    return next((repo.claims for repo in spec.repos if _bare(repo.url) == want), '') if spec else ''
+
+
+def holds(claims: str, integration: str) -> Callable[[Candidate], str]:
+    """Why a seat whose row declares *claims* does not claim a candidate; ``''`` when it may.
+
+    ``"none"`` holds every part, ``"integration"`` every part but the *integration* branch's; undeclared holds none.
+    Widening is the integrator's edit of the declaration, never a flag (user ruling 2026-11-20).
+    """
+
+    def held(one: Candidate) -> str:
+        if claims == 'none' or (claims == 'integration' and one.ref != integration):
+            return f'{HELD} = "{claims}" ({one.ref}): the integrator widens it in the account file'
+        return ''
+
+    return held
 
 
 def _bare(url: str) -> str:
@@ -129,3 +162,28 @@ def research_affinity(root: Path | None = None) -> Affinity | None:
     session's research submission keeps off the accounts that produce the forge's verify parts.
     """
     return research_affinity_of(read_cards(client_for(Path.cwd() if root is None else root)))
+
+
+class _Ranks(Protocol):
+    @property
+    def candidate(self) -> Candidate: ...
+
+
+def opened[R: _Ranks](ranked: Sequence[R], held: Callable[[Candidate], str], lines: list[str]) -> tuple[R, ...]:
+    """*ranked* less what *held* (:func:`holds`) holds; each held part is named in *lines* as waiting."""
+    kept = []
+    for one in ranked:
+        if why := held(one.candidate):
+            lines.append(f'waiting {one.candidate.ref}@{one.candidate.sha[:12]}: {why}')
+        else:
+            kept.append(one)
+    return tuple(kept)
+
+
+def opted_in(client: Client, now: datetime) -> bool:
+    """Whether the allocation record allows ``verify->research`` at *now*; an unreadable record allows nothing."""
+    try:
+        raw = read_named(client, ALLOCATION)
+        return VERIFY_BORROWS_RESEARCH in borrowing(None if raw is None else raw.decode('utf-8'), now=now)
+    except (OSError, ValueError, ForgeCallFailed):
+        return False

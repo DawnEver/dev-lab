@@ -153,6 +153,9 @@ needs = "parts"
 if = "${{ needs.parts.outputs.matrix != '' }}"
 name = "tests/${{ matrix.part }}"
 runs-on = "${{ matrix.runs-on }}"
+# The repo's selection wall plus a margin (ciworkflows.part_timeout_minutes): a hung part ran to GitHub's 360-minute
+# default and its run never reached promote (dev-lab, 2026-11-20).
+timeout-minutes = "@part-timeout-minutes@"
 steps = [
     { use-steps = "setup" },
     { name = "Produce and post the part", run = "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}" },

@@ -30,6 +30,7 @@ __all__ = [
     'REPLY_KEPT',
     'Transport',
     'fetch_json',
+    'fetch_text',
     'https_only',
     'scheme_transport',
     'split_url',
@@ -171,3 +172,28 @@ def fetch_json(transport: Transport, url: str, timeout: float) -> tuple[int, obj
             connection.close()
     except (OSError, ValueError, http.client.HTTPException) as exc:
         return 0, None, f'{type(exc).__name__}: {exc}'
+
+
+def fetch_text(
+    transport: Transport, url: str, timeout: float, headers: dict[str, str] | None = None, *, cap: int = BODY_CAP
+) -> tuple[int, str, str]:
+    """GET *url* with *headers* and return the status, the body (at most *cap* bytes) and a one-line detail.
+
+    As :func:`fetch_json`, a connection that failed returns status 0 rather than raising. The detail never
+    repeats *headers*: one of them may be a credential.
+    """
+    try:
+        scheme, host, path = split_url(url)
+    except ValueError as exc:
+        return 0, '', str(exc)
+    try:
+        connection = transport(scheme, host, timeout)
+        try:
+            connection.request('GET', path, headers={'Accept': 'text/plain', **(headers or {})})
+            response = connection.getresponse()
+            raw = response.read(cap).decode('utf-8', 'replace')
+            return response.status, raw, raw[:REPLY_KEPT]
+        finally:
+            connection.close()
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        return 0, '', f'{type(exc).__name__}: {exc}'
