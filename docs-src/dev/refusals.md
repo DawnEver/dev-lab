@@ -85,6 +85,11 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 - **Why it is refused.** A turn that ends by handing the user a command to run moves the agent's work onto the user, and the command usually fails from the user's cwd. The Stop hook reads the final message (`dev_lab.dev.handback`).
 - **The exit.** Run the command through the shell tool with absolute paths and report the result. A guard's refusal names the door an agent uses; a permission-classifier refusal is a decision for the user, so ask for the decision, not for the command to be run. Only an interactive login, passphrase or GUI step may go to the user as `! <cmd>`, and only these (`handback.INTERACTIVE_ONLY`): `gh auth login`, `gh auth refresh`, `gcloud auth login`, `gcloud auth application-default login`, `az login`, `aws sso login`, `npm login`, `docker login`, `ssh-add`, `ssh-keygen`, `gpg --full-generate-key`, `claude login`, `codex login`, `/login`.
 
+## USER-PATHS-ARE-ABSOLUTE
+
+- **Why it is refused.** User ruling 2026-11-20: a path handed to the user is read from wherever the user stands, and across nested worktrees a relative one leaves them digging layer by layer for the tree it meant. The Stop hook reads the final message (`dev_lab.dev.handback.relative_paths`): outside fenced code, a `/`- or backslash-joined token with no drive, root, `~` or URL scheme before it is a relative path when it starts `./` or `../`, starts with a tree root (`handback.TREE_ROOTS`), or ends in a file extension (`:line` allowed). Branches, refs and identifiers such as `pr/x`, `origin/main` or `a/b` pass.
+- **The exit.** Write the path as an absolute path (`D:/.../output/logs/x.png`, `/srv/.../x.png`, `D:/.../src/m.py:42`). Relative paths stay in code, logs and agent-to-agent text.
+
 ## GIT-STASH
 
 - **Why it is refused.** `refs/stash` is REPO-WIDE. It is one ref per repository, not per worktree, so a stash taken in one checkout is popped by whoever pops next -- in a family whose premise is a shared, possibly concurrent checkout, that is another agent losing work it never knew existed.

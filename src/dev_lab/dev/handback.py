@@ -10,6 +10,13 @@ So the final assistant message is read at ``Stop`` and a handed command blocks t
 agent reads: run it yourself; if a guard refused it, follow the refusal's remedy; only an interactive login
 goes to the user. :data:`INTERACTIVE_ONLY` is the one place the exceptions are declared. A turn is blocked
 once: with ``stop_hook_active`` the agent already saw the reason, and a loop would hold the session.
+
+THE SAME FINAL MESSAGE IS READ FOR A RELATIVE PATH (``USER-PATHS-ARE-ABSOLUTE``, user ruling 2026-11-20): across
+nested worktrees a relative path leaves the user digging layer by layer for the tree it meant. The heuristic,
+:func:`relative_paths`: a token of ``/``- or backslash-joined segments that starts at a word boundary (so no drive,
+root, ``~`` or URL scheme precedes it) is a relative PATH when it starts ``./``/``../``, starts with a declared
+tree root (:data:`TREE_ROOTS`), or ends in a file extension (``:line`` allowed); a fenced code block is code and
+is not read. So ``pr/x``, ``origin/main``, ``a/b`` and ``and/or`` pass, and ``output/logs/x.png`` does not.
 """
 
 from __future__ import annotations
@@ -26,10 +33,20 @@ from dev_lab.dev import walls
 from dev_lab.dev.disclosure import details_for
 
 RULE: Final = 'AGENT-RUNS-ITS-OWN-COMMANDS'
+PATH_RULE: Final = 'USER-PATHS-ARE-ABSOLUTE'
 #: How many handed commands the refusal quotes before it counts the rest.
 _SHOWN: Final = 2
 
-__all__ = ['INTERACTIVE_ONLY', 'handed_commands', 'last_assistant_text', 'main', 'refusal']
+__all__ = [
+    'INTERACTIVE_ONLY',
+    'TREE_ROOTS',
+    'handed_commands',
+    'last_assistant_text',
+    'main',
+    'path_refusal',
+    'refusal',
+    'relative_paths',
+]
 
 #: THE ALLOW-SET, ONE PLACE: command prefixes that need a human at a prompt or a browser. Nothing else may
 #: be handed to the user, because everything else the agent can run itself.
@@ -109,6 +126,45 @@ def refusal(text: str) -> str | None:
     )
 
 
+#: First segments that make a token a path however it ends: the family's tree roots.
+TREE_ROOTS: Final[frozenset[str]] = frozenset(
+    {'output', 'src', 'tests', '.claude', 'cases', 'docs-src', 'docs', 'scripts', 'scratch', 'rust', 'attic'}
+)
+_SEG: Final = r'[\w.-]+'
+#: A segment-joined token starting at a boundary: a drive, root, ``~`` or ``scheme:`` before it is no boundary.
+_PATHLIKE: Final = re.compile(r"""(?<![^\s`'"(\[<,;=])((?:""" + _SEG + r'[/\\])+' + _SEG + r'(?::\d+)?)')
+_EXTENSION: Final = re.compile(r'\.[A-Za-z][A-Za-z0-9]{0,7}$')
+
+
+def relative_paths(text: str) -> tuple[str, ...]:
+    """Every relative filesystem path *text* hands the reader, outside fenced code blocks."""
+    found = []
+    for match in _PATHLIKE.finditer(_FENCE.sub('', text)):
+        token = match.group(1).rstrip('.')
+        bare = re.sub(r':\d+$', '', token)
+        segments = re.split(r'[/\\]', bare)
+        if segments[0] in {'.', '..'} or segments[0] in TREE_ROOTS or _EXTENSION.search(segments[-1]):
+            found.append(token)
+    return tuple(dict.fromkeys(found))
+
+
+def path_refusal(text: str) -> str | None:
+    """The block reason when *text* hands the user a relative path, else ``None``."""
+    found = relative_paths(text)
+    if not found:
+        return None
+    listed = '; '.join(f'`{p[:80]}`' for p in found[:_SHOWN]) + (
+        f' (+{len(found) - _SHOWN} more)' if found[_SHOWN:] else ''
+    )
+    return (
+        f'{PATH_RULE}: this turn hands the user a relative path ({listed}); across worktrees the user cannot '
+        'tell which tree it means.\n'
+        'Write every path addressed to the user as an absolute path; relative paths stay in code, logs and '
+        'agent-to-agent text.\n'
+        f'{details_for(PATH_RULE)}'
+    )
+
+
 def _text_of(content: object) -> str:
     if isinstance(content, str):
         return content
@@ -163,15 +219,17 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     if not isinstance(payload, dict) or payload.get('stop_hook_active'):
         return 0
     try:
-        reason = refusal(_final_text(payload))
+        text = _final_text(payload)
     except OSError:
         return 0
-    if reason is not None:
+    found = [(rule, reason) for rule, reason in ((RULE, refusal(text)), (PATH_RULE, path_refusal(text))) if reason]
+    for rule, reason in found:
         walls.refused_text(
-            Path(payload.get('cwd') or Path.cwd()), reason, reason='stop', rule=RULE,
+            Path(payload.get('cwd') or Path.cwd()), reason, reason='stop', rule=rule,
             session=str(payload.get('session_id') or ''),
         )  # fmt: skip
-        emit(json.dumps({'decision': 'block', 'reason': reason}))
+    if found:
+        emit(json.dumps({'decision': 'block', 'reason': '\n'.join(reason for _, reason in found)}))
     return 0
 
 

@@ -17,4 +17,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_walls.py', 'tests/test_dev_hooks.py'),
     ),
+    (
+        'USER-PATHS-ARE-ABSOLUTE',
+        (
+            'Every path delivered to the user -- in a final message, a report or a file card -- is ABSOLUTE '
+            '(user ruling 2026-11-20: across nested worktrees a relative path leaves the user digging layer by '
+            'layer for the tree it meant); a relative path stays inside code, logs and agent-to-agent text. The '
+            '`Stop` hook reading the final message refuses a relative one once, naming the path; the door is to '
+            'write it as an absolute path.'
+        ),
+        ('tests/test_dev_handback.py',),
+    ),
 )
