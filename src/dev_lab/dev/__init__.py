@@ -339,6 +339,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.codeplace` -- the placement map; code under DECLARED roots.
 * :mod:`dev_lab.dev.strays` -- no untracked, unclaimed file in a checkout.
 * :mod:`dev_lab.dev.retiredfiles` -- files a retirement declared gone: each checkout's own rows, never the leaf's.
+* :mod:`dev_lab.dev.retirementclass` -- each retired name is classified; only a user ruling drops a capability.
 * :mod:`dev_lab.dev.scratch` -- scratch is visible to git, never committed; `clear` empties it, a Stop hook asks for it.
 * :mod:`dev_lab.dev.scratchtree` -- `worktrees --scratch` makes a throwaway tree, `--discard` removes it now.
 * :mod:`dev_lab.dev.reportplace` -- no agent-written Markdown under ``output/``; a written report is a memory entry.

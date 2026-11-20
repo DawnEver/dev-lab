@@ -358,6 +358,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
     'trackedrender',  # ORIGINAL: split from agent_guard: a tracked render needs the checkout's kit (2026-11-17)
     'retiredfiles',  # ORIGINAL: split from codeplace: a checkout's own declared retired-file rows (2026-11-17)
+    'retirementclass',  # ORIGINAL: keep-valuable-options -- each retirement classified (O55, 2026-11-20)
     'strays',  # ORIGINAL: split from codeplace: the STRAY-FILE-REFUSED census and its hooks (2026-11-17)
     'metrics',
     'monthsummary',
