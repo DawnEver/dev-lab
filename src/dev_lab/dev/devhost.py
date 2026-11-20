@@ -55,13 +55,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, tomlleaves, vendordetect
+from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, forgeenrol, tomlleaves, vendordetect
 from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.credstore import CredentialRefused, read_forge
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -405,8 +407,76 @@ def use_store(live: Mapping[str, Any], host: str, apply: Callable[[str], None] =
     return 0
 
 
+def _forge_file(source: Path, given: Path | None, dev: Mapping[str, Any]) -> Path:
+    """*given*, else the one host file under *source* whose ``[ops.caddy] sites`` serve a forge *dev* declares."""
+    if given is not None:
+        return given
+    wanted = set(dev.get('forges', {}))
+    found = []
+    for path in sorted((source / 'hosts').glob('*.toml')):
+        try:
+            sites = tomllib.loads(path.read_text(encoding='utf-8')).get('ops', {}).get('caddy', {}).get('sites', [])
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        if wanted & set(sites):
+            found.append(path)
+    if len(found) != 1:
+        msg = f'{len(found)} host files under {source} serve the forges {sorted(wanted)}: give --forge-config'
+        raise forgeenrol.EnrolRefused(msg)
+    return found[0]
+
+
+def _refuse(msg: str) -> None:
+    raise forgeenrol.EnrolRefused(msg)
+
+
+def _enrol_run(args: argparse.Namespace, own: Mapping[str, Any], dev: Mapping[str, Any]) -> int:
+    """The body of :func:`_enrol`; every refusal raises."""
+    if not dev:
+        _refuse(f'the machine file is not a render (no [{OWN_TABLE}] host and source): devhost render --write')
+    source = Path(own['source'])
+    forge_file = _forge_file(source, args.forge_config, dev)
+    forge = read_forge(forge_file)
+    if args.plan is not None:
+        if not args.code:
+            _refuse('--plan needs --code: the one code the user gave for that plan')
+        steps = args.plan.with_name(args.plan.name.replace('.plan.json', '.steps.json'))
+        status = forgeenrol.complete(
+            forgeenrol.load_enrolment(args.plan, steps), code=args.code, dev=dev, forge=forge,
+            python=running_interpreter(), run=lambda argv: _door.run(list(argv), check=False).returncode, say=emit,
+        )  # fmt: skip
+        for line in forgecredential.drift(dev):
+            emit(line)
+        return status
+    family = tomllib.loads((source / 'family.toml').read_text(encoding='utf-8'))
+    dest = args.dest or str(family.get('consent', {}).get('endpoint') or '').rpartition('@')[2]
+    if not dest:
+        _refuse('the family declares no [consent] endpoint to reach the forge host by: give --dest HOST')
+    said, enrolment = forgeenrol.prepare(
+        dev=dev, machine=str(own.get('host') or ''), forge=forge, door=forgeenrol.ops_door(forge_file),
+        dest_host=dest, out=Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent', scope=args.scope,
+    )  # fmt: skip
+    for line in said:
+        emit(line)
+    if enrolment is not None:
+        python = running_interpreter()
+        emit(f'enrol: plan {enrolment.plan} (digest {enrolment.digest}) mints {[m[0] for m in enrolment.mints]}; '
+             f'show it with {python} -m dev_lab.ops.consent plan {enrolment.plan}, ask the user for the one code, '
+             f'then: {python} -m dev_lab.dev.devhost enrol --plan {enrolment.plan} --code <the code>')  # fmt: skip
+    return 0
+
+
+def _enrol(args: argparse.Namespace, live: Mapping[str, Any]) -> int:
+    """``enrol``: fix the declared helper, write the mint plan (no ``--plan``), or redeem it with the user's code."""
+    try:
+        return _enrol_run(args, live.get(OWN_TABLE, {}), _declared_by(live))
+    except (forgeenrol.EnrolRefused, CredentialRefused, OSError, ValueError, tomllib.TOMLDecodeError) as refused:
+        emit(f'enrol: refused -- {refused}')
+        return 2
+
+
 def main(argv: list[str] | None = None) -> int:
-    """``drift`` (exit 1), ``render`` (``--write`` backs up), ``detect``, ``session-start``, ``channels``, use-store."""
+    """The verbs: drift (exit 1), render (--write backs up), detect, session-start, channels, use-store, enrol."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -424,6 +494,12 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
     storing = verbs.add_parser('use-store', help='make one declared forge host read only the git credential store')
     storing.add_argument('--host', required=True, help='a forge host this machine declares the store helper for')
+    enrolling = verbs.add_parser('enrol', help='mint and place every forge login this machine declares and lacks')
+    enrolling.add_argument('--forge-config', type=Path, default=None, help='the forge host file (default: found)')
+    enrolling.add_argument('--scope', default=forgeenrol.SCOPE, help=f'the token scope (default {forgeenrol.SCOPE})')
+    enrolling.add_argument('--dest', default='', help='the forge host address (default: the [consent] endpoint host)')
+    enrolling.add_argument('--plan', type=Path, default=None, help='the plan the first call wrote, to redeem')
+    enrolling.add_argument('--code', default='', help='the one code the user gave for --plan')
     setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
     local_verbs = setting.add_subparsers(dest='local_verb', required=True)
     one = local_verbs.add_parser('set', help='set <table>.<key> to <value>')
@@ -448,6 +524,8 @@ def main(argv: list[str] | None = None) -> int:
             'drift': lambda: _drift(path, live, args.clone),
             'use-store': lambda: use_store(live, args.host),
         }[args.verb]()
+    if args.verb == 'enrol':
+        return _enrol(args, live)
     if args.verb == 'local':
         return _local_verb(args, path, live)
     if args.verb == 'detect':
