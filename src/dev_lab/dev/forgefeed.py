@@ -19,6 +19,10 @@ How a task hears the forge (docs-src/dev/forgefeed.md):
   status read (:func:`dev_lab.dev.sessionpoll.poll_session`) -- the only per-PR read left.
 * THE TICK IS A SETTING: ``[forgefeed] tick_s`` in the machine file (:func:`tick_s`), default :data:`DEFAULT_TICK_S`;
   anything but a positive integer is refused by name.
+* THE PRUNE DUTY RIDES ON ITS OWN INTERVAL: where the family binds ``prune`` to THIS machine (``{ host = "<name>" }``),
+  every ``[forgefeed] prune_duty_s`` (:func:`dev_lab.dev.branchpolicy.prune_duty_s`) the hearer runs
+  :func:`dev_lab.dev.branchpolicy.run_here` over its declared checkouts -- one fetch and one branch survey per repo
+  per interval: close landed PRs, sweep, prune merged heads, observe the branch policy (D46).
 
 ``python -m dev_lab.dev.forgefeed run | start | session-start | inbox | task-pending <slug>``; hooks always exit 0.
 """
@@ -39,7 +43,7 @@ from lab_commons.config import section
 from lab_commons.liveness import creation_stamp, still_the_same_process
 from lab_commons.log import emit
 
-from dev_lab.dev import forgewaves, native_session, sessionprs, taskbinding
+from dev_lab.dev import branchpolicy, forgewaves, native_session, sessionprs, taskbinding
 from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forge import Forge, forge_from_remote
 from dev_lab.dev.forgethreads import (
@@ -50,6 +54,7 @@ from dev_lab.dev.forgethreads import (
     read_feed,
     read_json,
     route,
+    seconds,
 )
 from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, env_superseded
 from dev_lab.dev.sessionpoll import poll_session
@@ -102,13 +107,7 @@ def tick_s(table: object = None) -> int:
         ValueError: the declared value is not a positive integer (named, with its key).
 
     """
-    if table is None:
-        table = section('forgefeed')
-    value = table.get('tick_s', DEFAULT_TICK_S) if isinstance(table, dict) else DEFAULT_TICK_S
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        msg = f'[forgefeed] tick_s must be a positive integer of seconds, not {value!r}'
-        raise ValueError(msg)
-    return value
+    return seconds('forgefeed', 'tick_s', DEFAULT_TICK_S, table)
 
 
 def _dir() -> Path:
@@ -282,12 +281,17 @@ def _deliver_thread(thread: Thread, tasks: set[str], sessions_of: dict[str, tupl
             _keep(slug, line)
 
 
+def _checkouts() -> list[Path]:
+    """Every checkout the machine file declares under ``[repos]`` -- no list of its own."""
+    return [Path(str(path)) for path in (section('repos') or {}).values()]
+
+
 def _forges() -> list[Forge]:
-    """The repositories to hear: every checkout the machine file declares under ``[repos]`` -- no list of its own."""
+    """The repositories to hear: the forge of each of :func:`_checkouts`."""
     forges = []
-    for path in (section('repos') or {}).values():
+    for path in _checkouts():
         with contextlib.suppress(OSError, ValueError, subprocess.CalledProcessError):
-            forges.append(forge_from_remote(Path(str(path))))
+            forges.append(forge_from_remote(path))
     return forges
 
 
@@ -342,11 +346,13 @@ def run(
 ) -> int:
     """Hold the machine lock and poll until the venv is wanted (:data:`YIELDED`); 1 when another watcher runs."""
     period = tick_s() if every_s is None else every_s
+    duty_every = branchpolicy.prune_duty_s()
     with held() as mine:
         if not mine:
             return 1
         while not yielding():
             poll_once(clients=clients)
+            branchpolicy.duty_once(clients=clients, now=time.time(), every_s=duty_every, checkouts=_checkouts())
             with contextlib.suppress(OSError, ValueError):  # the wave audit is news, never a reason to stop hearing
                 forgewaves.refresh(ssh_send)
             sleep(period)

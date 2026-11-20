@@ -116,3 +116,13 @@ def test_the_family_default_and_bridge_are_checked(tmp_path: Path) -> None:
     assert any('default.hooks' in line for line in found), found
     assert any('cadence_hours must be 1..168' in line for line in found), found
     assert devschema.check({'dev': {'default': {}}}, tomllib.loads(FAMILY)), 'a host may not declare the default'
+
+
+def test_the_enrolment_door_names_the_config_sources_own_checkout_loop() -> None:
+    """#745: a proposal runs IN the config source's checkout, so its own hooks and forge judge it."""
+    text = devprofile.enrolment('WSX')
+    assert 'own checkout' in text
+    assert 'worktree add' in text
+    assert 'forge pr create` FROM that worktree' in text
+    # the control: the render door is still named last
+    assert text.rstrip().endswith('render --host WSX --write')

@@ -96,7 +96,7 @@ from dev_lab.dev.forgework import Client, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.partrefs import part_refs
 from dev_lab.dev.partrows import row_part
-from dev_lab.dev.producers import HPC, producer_at
+from dev_lab.dev.roles import HPC, TESTS, roles_at
 
 __all__ = [
     'NOT_ADMITTED',
@@ -354,11 +354,11 @@ def candidates(
     A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~dev_lab.dev.forgeorigin.head_login`), ``''`` when none.
 
-    A repo whose serving checkout declares an ``actions`` producer (:mod:`dev_lab.dev.producers`) has NO
-    candidate: forge Actions post its parts, and no HPC host is ever offered one (user ruling 2026-11-16).
+    A repo whose serving checkout has ``tests`` bound to another kind than ``hpc`` (:mod:`dev_lab.dev.roles`)
+    has NO candidate: that executor posts its parts, and no HPC host is ever offered one (D70-D72).
     """
-    if (producer := producer_at(root)) != HPC:
-        say(f'[serve] {repo} declares producer = "{producer}": its parts are never offered here')
+    if (tests := roles_at(root).kind(TESTS)) != HPC:
+        say(f'[serve] the family binds {repo} tests to "{tests}": its parts are never offered here')
         return ()
     found, reached = [], set()
     served = _part_refs(root, client, schedule, policy, say=say)

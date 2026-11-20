@@ -236,16 +236,19 @@ class _Repo:
     def __init__(self, *, private: bool | None) -> None:
         self.private = private
 
-    def call(self, method: str, path: str) -> dict[str, bool]:
-        assert (method, path) == ('GET', self.repo)
+    def call(self, method: str, path: str) -> dict[str, bool] | list[object]:
         if self.private is None:
             msg = 'forge unreachable'
             raise OSError(msg)
+        if (method, path) == ('GET', '/users/o/repos?per_page=100'):
+            return []  # the owner publishes nothing, so no name is masked
+        assert (method, path) == ('GET', self.repo)
         return {'private': self.private}
 
 
 def _visible_as(monkeypatch: pytest.MonkeyPatch, *, private: bool | None) -> None:
     monkeypatch.setattr(privatemarkers, '_VISIBILITY', {})
+    monkeypatch.setattr(privatemarkers, '_PUBLIC', {})
     monkeypatch.setattr(privatemarkers, 'client_for', lambda *_a, **_k: _Repo(private=private))
 
 

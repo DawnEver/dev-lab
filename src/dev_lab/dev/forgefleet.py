@@ -4,7 +4,7 @@ Ada 2026-10-25..27: every host's tick ran with every repo unserved in each accou
 claimed and no card published; ``forge queue`` printed STALE per host, and no alarm reached anyone for two days
 (HPC use fell from 67% to 1%). A per-host STALE line is read only by whoever runs the queue; a platform with NO
 live host is a fact any serving host can see on the forge and must sound (:func:`watch`), and a tick that serves
-nothing because no repo of its ``[deploy]`` declares ``producer = "hpc"`` says so itself (:func:`serve_off`).
+nothing because the family binds no role of its ``[deploy]`` repos to it says so itself (:func:`serve_off`).
 
 A RESOURCE GOES DARK THE SAME WAY (:func:`dark_resources`, user ruling 2026-10-28): two workstations stale for days
 still read ``jmag = 1`` in the queue while the platform itself stayed lit by another host. A stale card supplies
@@ -102,20 +102,20 @@ def watch(cards: Iterable[HostCard], now: datetime, *, alarm: Callable[[Alarm], 
 
 
 def serve_off(serves: Mapping[str, bool], account: str, *, alarm: Callable[[Alarm], object], repo: str) -> bool:
-    """Whether a tick of *account* serves nothing (no repo in *serves* declares ``producer = "hpc"``); says so loudly.
+    """Whether a tick of *account* serves nothing (the family binds no role of *serves* to it); says so loudly.
 
     The line is written every tick; the alarm once per episode, closed by a tick that serves a repo.
     """
     off = bool(serves) and not any(serves.values())
     if off:
         emit(
-            f'[tick] ALARM {account} serves nothing: no repo declares producer = "hpc" ({", ".join(sorted(serves))})',
+            f'[tick] ALARM {account} serves nothing: the family binds no role of {", ".join(sorted(serves))} here',
             err=True,
         )
-    subject = f'{account} serves nothing: no repo of its [deploy] declares producer = "hpc"'
+    subject = f'{account} serves nothing: the family binds no role of its [deploy] repos to it'
     body = (
-        'add the HPC-produced repos to its [deploy] repos; a repo is served by its own '
-        '[tool.dev_lab.protection] producer'
+        "add the repos the family binds to this account's grant role to its [deploy] repos, or bind them in the "
+        "family layer's [roles.<forge>] (dev_lab.dev.roles)"
     )
     return _episode(f'serve-off:{account}', on=off, raise_=lambda: alarm(
         Alarm(FLEET, repo, subject, body, about=f'serve-off:{account}')

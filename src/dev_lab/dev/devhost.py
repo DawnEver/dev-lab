@@ -59,14 +59,14 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devprofile, familyrepos
+from dev_lab.dev import accounthost, devprofile, familyrepos, tomlleaves, vendordetect
 from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'LOCAL_DOOR', 'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'detect', 'drift',
+    'LOCAL_DOOR', 'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'drift',
     'host_file', 'local_set', 'main', 'notice', 'render', 'replace_backed_up',
 ]  # fmt: skip
 
@@ -197,9 +197,10 @@ def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
     clone, host = clone or Path(own['source']), own['host']
     if not (clone / 'family.toml').is_file():
         return [f'the config source {clone.as_posix()} is not a clone here: name one with drift --from <clone>']
-    rendered, have = _leaves(tomllib.loads(render(clone, host, live))), _leaves(live)
+    rendered, have = tomlleaves.leaves(tomllib.loads(render(clone, host, live))), tomlleaves.leaves(live)
     found = [
-        f'{_dotted(path)} is {"absent" if path not in have else "not the render"} -- {_owner(path, clone, host)}'
+        f'{tomlleaves.dotted(path)} is {"absent" if path not in have else "not the render"} -- '
+        f'{_owner(path, clone, host)}'
         for path in sorted(set(rendered) | set(have))
         if rendered.get(path, _ABSENT) != have.get(path, _ABSENT)
     ]
@@ -214,21 +215,6 @@ def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
     return found
 
 
-def _leaves(table: Mapping[str, Any], prefix: tuple[str, ...] = ()) -> dict[tuple[str, ...], Any]:
-    """Every leaf key of *table* by its path; a list, a scalar or an empty table is a leaf."""
-    out: dict[tuple[str, ...], Any] = {}
-    for key, value in table.items():
-        if isinstance(value, Mapping) and value:
-            out.update(_leaves(value, (*prefix, key)))
-        else:
-            out[(*prefix, key)] = value
-    return out
-
-
-def _dotted(path: tuple[str, ...]) -> str:
-    return f'[{path[0]}]' + ''.join(f'.{part}' for part in path[1:])
-
-
 def _owner(path: tuple[str, ...], clone: Path, host: str) -> str:
     """The layer owning the key at *path*, and that layer's door."""
     if path[0] == OWN_TABLE:
@@ -237,7 +223,7 @@ def _owner(path: tuple[str, ...], clone: Path, host: str) -> str:
     family_file, own_file = _sources(clone, host)
     for layer, source in (('host', own_file), ('family', family_file)):
         tables = {k: v for k, v in (_read(source) if source.is_file() else {}).items() if k != 'dev'}
-        if any(path[: len(key)] == key or key[: len(path)] == path for key in _leaves(tables)):
+        if any(path[: len(key)] == key or key[: len(path)] == path for key in tomlleaves.leaves(tables)):
             return f'{layer} layer ({source.relative_to(clone).as_posix()}): {edit}'
     if path[0] in _layered(clone, host):
         return f'host layer ({host_file(host)} [dev], rendered): {edit}'
@@ -264,21 +250,6 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
         drifted = '; '.join(rest)
         lines.append(f'HOST-CONFIG: the machine file drifted from its render: {drifted}. Re-render: {RENDER_DOOR}')
     return '\n'.join(lines) or None
-
-
-def _matches(pattern: str) -> list[Path]:
-    anchored = Path(pattern)
-    return list(Path(anchored.anchor).glob(str(anchored.relative_to(anchored.anchor))))
-
-
-def detect(patterns: Mapping[str, list[str]]) -> dict[str, str]:
-    """Each vendor's install home on THIS machine: the last (newest-named) directory its patterns match."""
-    found = {}
-    for name, globs in patterns.items():
-        hits = sorted({hit for pattern in globs for hit in _matches(pattern) if hit.is_dir()})
-        if hits:
-            found[name] = hits[-1].as_posix()
-    return found
 
 
 #: The door that re-renders this machine's file from its recorded host and clone.
@@ -314,9 +285,13 @@ def _drift(path: Path, live: Mapping[str, Any], clone: Path | None) -> int:
 
 def _detect(source: Path | None) -> int:
     if source is None:
-        emit('refused: detect needs --from (no [devhost] in the machine file)', err=True)
+        emit(
+            "refused: detect needs --from <the config source's checkout> (no [devhost] in the machine file): "
+            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
+            err=True,
+        )
         return 2
-    homes = detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
+    homes = vendordetect.detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
     for name, home in homes.items():
         emit(f'[dev.vendors.{name}]\nhome = {render_value(home)}\n')
     if not homes:
@@ -338,7 +313,11 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
     own = live.get(OWN_TABLE, {})
     host, clone = args.host or own.get('host') or platform.node(), _source(args.clone, own)
     if not host or clone is None:
-        emit('refused: render needs --from, the config-source clone (no [devhost] in the machine file)', err=True)
+        emit(
+            "refused: render needs --from <the config source's checkout> (no [devhost] in the machine file): "
+            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
+            err=True,
+        )
         return 2
     try:
         text = render(clone, host, live)

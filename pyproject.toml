@@ -185,7 +185,7 @@ always_run = true
 trunk = 'main'
 sessions = ['integrate/main']
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
-# merged undeclared origin branches idle >= grace_hours (dev_lab.dev.branchprune).
+# merged undeclared origin branches idle >= max_idle_hours (dev_lab.dev.branchprune).
 prune_merged = true
 
 [tool.dev_lab.doors]
@@ -304,15 +304,10 @@ ignore = [
 # THIS REPO'S CI: the family base (dev_lab/dev/ci_base.toml) as is -- every repo renders its forge's whole
 # base with `python -m dev_lab.dev.ciworkflows render`; this repo declares no [tool.dev_lab.ci] layer.
 
-# Who reviews this repo's PRs: the family's isolated judge host (user ruling 2026-11-10), gated on GitHub by the
-# family App's review/judge check run. Keys and defaults: dev_lab.dev.forgereview_declared.
+# The judge's identity on GitHub: the family App's review/judge check run. WHO reviews is the family layer's binding
+# (dev_lab.dev.roles, D73), never this file. Keys and defaults: dev_lab.dev.forgereview_declared.
 [tool.dev_lab.review]
-where = "judge"
 judge_app = 5619495
-
-# The bundle prepare the judge reads, on THIS forge (the base places it on Gitea unless a repo names GitHub).
-[tool.dev_lab.ci."review-prepare.yml"]
-forge = "github"
 
 # NO-CJK-IN-TRACKED-SOURCE (D26): files still carrying CJK, a set that may only shrink.
 [tool.dev_lab.cjk]

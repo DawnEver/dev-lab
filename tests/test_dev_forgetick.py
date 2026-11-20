@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from _box_fake import quiet
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
+from _roles_fixtures import HPC_REPO, carry
 from lab_commons.box import BOX_ENV, GB, Capacity, Holding, holdings
 from lab_commons.box.providers import box_engine
 from lab_commons.compute.model import (
@@ -203,7 +204,7 @@ RETIRED_TABLE = min(key for key in RETIRED if key.startswith('[tool.lab_commons.
 
 PRODUCE = '[tool.lab_commons.tests]\nproduce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]\n'
 _INTEGRATOR = (  # every repo declares it (D83)
-    "\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n[tool.dev_lab.protection]\nproducer = 'hpc'\n"
+    "\n[tool.dev_lab.integrator]\nintegration = 'integrate/main'\n"
 )
 PRODUCE += _INTEGRATOR
 
@@ -1455,3 +1456,9 @@ def test_a_cluster_seat_claims_a_verify_part_by_the_declared_affinity(server, tm
     if not claimed:
         assert report.queue[0].blocked.startswith(DEFERRED)
         assert not report.pending, 'a deferred part is not work this seat left idle'
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

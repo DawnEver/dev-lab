@@ -67,11 +67,21 @@ def host_declaration(clone: Path, host: str) -> tuple[dict[str, Any], bool]:
     return {'dev': dict(default)}, True
 
 
+#: How a change to the config source is proposed: IN ITS OWN CHECKOUT (a family repo), never from this repo -- a
+#: worktree there pushes under the config source's own hooks and opens its PR on its own forge (#745).
+PROPOSE: Final = (
+    "propose it in the config source's own checkout (its [repos] path in the machine file): "
+    'git -C <that path> worktree add .claude/worktrees/<feature> -b pr/<task>/<feature> origin/<its branch>, '
+    'edit there, then push and `python -m dev_lab.dev.forge pr create` FROM that worktree, '
+    'so its own hooks judge the push and its own forge takes the PR'
+)
+
+
 def enrolment(host: str) -> str:
     """The one enrolment door for unmanaged *host*."""
     return (
         f'this machine is UNMANAGED ({host!r} renders the family default): enrol it -- declare hosts/{host}.toml in '
-        f'the config source from family.toml [dev.{DEFAULT_TABLE}] through a pull request, then '
+        f'the config source from family.toml [dev.{DEFAULT_TABLE}] through a pull request ({PROPOSE}), then '
         f'{running_interpreter()} -m dev_lab.dev.devhost render --host {host} --write'
     )
 

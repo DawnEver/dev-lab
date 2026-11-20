@@ -15,8 +15,8 @@ from typing import Any
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
-#: An explicit Actions producer line (dev_lab.dev.producers; absent reads the same).
-PRODUCER = 'producer = "actions"\n'
+#: A repo declares no placement (dev_lab.dev.roles): the protection table holds its identities alone.
+PRODUCER = ''
 
 #: Integration on ``integrate/main``, trunk ``main``; an Actions-produced repo.
 INTEGRATOR = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\n' + PRODUCER
