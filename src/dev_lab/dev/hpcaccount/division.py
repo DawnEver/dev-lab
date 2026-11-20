@@ -11,6 +11,7 @@ table, which ``deploy-fleet`` reads and passes to each account's deploy::
     serves = false                       # runs the forge serve cron
     read_only = true                     # a stored forge credential with push/admin is REFUSED (else reported)
     reader = "<forge login>"             # optional: the read-only login that credential must be
+    config_reader = "<forge login>"      # optional: the login that reads the config source, its own store line
 
 A declared ``[hpc.roles]`` REPLACES the defaults whole (never merged), so the file names every role it uses. The
 reader is per role, so one shared read-only login is the same value on each role, and a role may still differ.
@@ -41,7 +42,7 @@ DEFAULT_ROLES: Final[Mapping[str, Mapping[str, Any]]] = {
     'research': {'serves': False, 'read_only': True},
 }
 #: The keys one ``[hpc.roles.<name>]`` may carry.
-ROLE_KEYS: Final = frozenset({'serves', 'read_only', 'reader'})
+ROLE_KEYS: Final = frozenset({'serves', 'read_only', 'reader', 'config_reader'})
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,11 @@ class Division:
     def role_of(self, user: str) -> str:
         """*user*'s role as its grant declares it; ``''`` when undeclared."""
         return self.grant_roles.get(user, '')
+
+    def config_reader(self, user: str) -> str:
+        """The login *user*'s role reads the config source as (``config_reader``, else ``reader``); ``''`` if none."""
+        table = self.roles.get(self.role_of(user), {})
+        return str(table.get('config_reader') or table.get('reader') or '')
 
     def refusal(self, user: str) -> str | None:
         """Why *user*'s declared role is not in the table; ``None`` when it is, or none is declared."""

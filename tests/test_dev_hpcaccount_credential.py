@@ -92,7 +92,7 @@ def test_the_token_is_staged_verified_then_placed() -> None:
     role = next(cmd for cmd in commands if 'auth role' in cmd)
     assert role.startswith(verify_prefix('forge.example', _STAMP) + 'cd ~/src/dev-lab && ')
     assert f'--url {_REPO}' in role  # the default: the login's first declared repo on the forge
-    rewrite = rewrite_command('forge.example', _STAMP, staged=True)
+    rewrite = rewrite_command('forge.example', _STAMP, login='forge-ci', staged=True)
     assert commands.index(role) < commands.index(rewrite)  # verified BEFORE the store is touched
     assert all(_MINTED not in cmd for cmd in commands)  # never in the remote argv
     assert all(_MINTED not in line for line in said)  # never printed
@@ -147,6 +147,23 @@ def test_a_role_with_a_reader_takes_only_that_login() -> None:
     """PLANTED CONTROL: forge-ci is declared, but alice's role reads as forge-ro."""
     division = Division(grant_roles={'alice': 'research'}, roles={'research': {'reader': 'forge-ro'}})
     code, said, _, connected = _run(division=division)
+    assert (code, connected) == (2, [])
+    assert 'forge-ro' in said[0]
+
+
+def test_a_role_with_a_config_reader_also_takes_that_login() -> None:
+    """A verification account holds forge-ci AND the config source's reader, one store line each (2026-11-20).
+
+    PLANTED CONTROL: a third declared login is still refused for that role.
+    """
+    roles = {
+        'verification': {'reader': 'forge-ci', 'config_reader': 'server-reader'},
+        'research': {'reader': 'forge-ro'},
+    }
+    division = Division(grant_roles={'alice': 'verification'}, roles=roles)
+    assert _run(division=division)[0] == 0
+    assert _run(division=division, login='server-reader', answers='server-reader', url=_REPO)[0] == 0
+    code, said, _, connected = _run(division=division, login='forge-ro', answers='forge-ro', url=_REPO)
     assert (code, connected) == (2, [])
     assert 'forge-ro' in said[0]
 
@@ -219,7 +236,9 @@ def test_main_refuses_an_unreadable_host_config_before_any_connection(
 
 def test_a_host_name_that_is_no_host_is_refused() -> None:
     with pytest.raises(ValueError, match='not a forge host'):
-        rewrite_command("forge.example' ; rm -rf ~ ; '", _STAMP, staged=False)
+        rewrite_command("forge.example' ; rm -rf ~ ; '", _STAMP, login='forge-ci', staged=False)
+    with pytest.raises(ValueError, match='not a forge login'):
+        rewrite_command('forge.example', _STAMP, login="ci' ; rm -rf ~ ; '", staged=False)
     with pytest.raises(ValueError, match='not a timestamp'):
         stage_command('$(reboot)')
 
@@ -246,13 +265,15 @@ def test_stage_then_rewrite_replaces_only_its_forge_line_after_a_backup(tmp_path
     store = tmp_path / '.git-credentials'
     other = _stored('u', 'github.com')
     lookalike = _stored('v', 'forge.example.evil')  # PLANTED CONTROL: a host merely starting with it is kept
-    before = f'{_stored("old", "forge.example")}\n{other}\n{lookalike}\n'
+    reader = _stored('server-reader', 'forge.example')  # PLANTED CONTROL: another login on the same host is kept
+    prefixed = _stored('forge-ci-old', 'forge.example')  # PLANTED CONTROL: a login merely starting with it is kept
+    before = f'{_stored("forge-ci", "forge.example")}\n{other}\n{lookalike}\n{reader}\n{prefixed}\n'
     store.write_text(before, encoding='utf-8')
     line = _stored('forge-ci', 'forge.example', _MINTED)
     _bash(tmp_path, stage_command(_STAMP), line + '\n')
     assert store.read_text(encoding='utf-8') == before  # staging never touches the store
-    said = _bash(tmp_path, rewrite_command('forge.example', _STAMP, staged=True))
-    assert store.read_text(encoding='utf-8').splitlines() == [other, lookalike, line]
+    said = _bash(tmp_path, rewrite_command('forge.example', _STAMP, login='forge-ci', staged=True))
+    assert store.read_text(encoding='utf-8').splitlines() == [other, lookalike, reader, prefixed, line]
     backup = tmp_path / f'.git-credentials.bak-{_STAMP}'
     assert backup.read_text(encoding='utf-8') == before
     assert backup.name in said
@@ -308,14 +329,14 @@ def test_a_native_git_under_the_verify_prefix_reads_the_staged_file(tmp_path: Pa
 
 
 def test_drop_host_removes_exactly_that_line_after_a_backup(tmp_path: Path) -> None:
-    """The repair door: only the named host's line goes; a look-alike host stays (PLANTED CONTROL)."""
+    """The repair door: only the named host+login line goes; a look-alike host or another login stays (CONTROLS)."""
     store = tmp_path / '.git-credentials'
-    keep = [_stored('v', 'github.com.evil'), _stored('w', 'forge.example')]
+    keep = [_stored('v', 'github.com.evil'), _stored('w', 'forge.example'), _stored('t', 'github.com')]
     before = '\n'.join([_stored('u', 'github.com'), *keep]) + '\n'
     store.write_text(before, encoding='utf-8')
     said: list[str] = []
     code = drop_host(
-        'alice@login1.example', host='github.com', grants=_FLEET, say=said.append, stamp=_STAMP,
+        'alice@login1.example', host='github.com', login='u', grants=_FLEET, say=said.append, stamp=_STAMP,
         connect=lambda _grant: lambda cmd, _stdin=None: _bash(tmp_path, cmd),
     )  # fmt: skip
     assert code == 0
@@ -327,7 +348,7 @@ def test_drop_host_removes_exactly_that_line_after_a_backup(tmp_path: Path) -> N
 def test_drop_host_refuses_an_undeclared_account() -> None:
     said: list[str] = []
     code = drop_host(
-        'mallory@login1.example', host='github.com', grants=_FLEET, say=said.append,
+        'mallory@login1.example', host='github.com', login='u', grants=_FLEET, say=said.append,
         connect=lambda _grant: pytest.fail('connected for an undeclared account'),
     )  # fmt: skip
     assert code == 2
@@ -402,6 +423,8 @@ def test_a_placed_store_line_is_read_because_the_store_helper_is_set_when_none_i
     assert code == 0
     commands = [cmd for cmd, _ in seen]
     helper = next(cmd for cmd in commands if 'credential.helper' in cmd and 'config --global' in cmd)
-    assert commands.index(rewrite_command('forge.example', _STAMP, staged=True)) < commands.index(helper)
+    assert commands.index(rewrite_command('forge.example', _STAMP, login='forge-ci', staged=True)) < commands.index(
+        helper
+    )
     assert '[ -n "$(git config --global --get-all credential.helper)" ] ||' in helper
     assert 'git config --global credential.helper store' in helper
