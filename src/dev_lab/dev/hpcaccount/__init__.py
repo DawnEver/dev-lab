@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
             rest, verb='ci-resume', ci_only=True, flags=('--dry-run',), sourced=False
         ),
         'drift': drift.main,
-        'drift-fleet': lambda rest: accountset.main_fleet(rest, verb='drift'),
+        'drift-fleet': lambda rest: accountset.main_fleet(rest, verb='drift', flags=('--dry-run', '--discard-drift')),
         'credential': credential.main,
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,

@@ -1,4 +1,4 @@
-"""``python -m dev_lab.dev.storage {where|render|migrate}`` -- the storage kinds of a checkout, resolved once.
+"""``python -m dev_lab.dev.storage {where|render|check|migrate|publish}`` -- the storage kinds of a checkout.
 
 Where a kind (run output, venvs, worktrees, caches) of a repo lives is :func:`lab_commons.storage.root`; this
 module is dev-lab's ONE adapter onto it (:func:`kind_root`, :func:`output_path`) plus the three doors:
@@ -8,6 +8,8 @@ module is dev-lab's ONE adapter onto it (:func:`kind_root`, :func:`output_path`)
   secret, read ONLY from the remote's own declared ``credentials_file`` (placed there by ``ops secret place``) -- to an
   owner-only file outside every repo (:func:`dev_lab.dev.artefactstores.check_rclone_config`). Nobody
   hand-edits an rclone config; the secret never reaches argv, a log or this module's output.
+* ``check <remote> [--to P]`` renders, then lists the remote's top level through the pinned rclone: the one proof a
+  placed secret reaches it (rclone absent names :func:`dev_lab.dev.toolrelease.door`).
 * ``publish [--to P]`` writes the bound roots as JSON (:func:`publish`) for the agent-guard engine, which reads no
   TOML: a worktree under a bound ``worktrees`` root is admitted by WORKTREES-STAY-INSIDE only through it.
 * ``migrate <kind>`` moves the in-tree default of a bound kind to its bound root ONCE and leaves a marker; a
@@ -23,8 +25,9 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
 
@@ -37,6 +40,7 @@ __all__ = [
     'MARKER',
     'ROOTS_ENV',
     'StaleTree',
+    'check',
     'checkout_output_path',
     'kind_root',
     'main_of',
@@ -219,14 +223,52 @@ def render(to: Path, *, repo: Path, declared: _storage.Storage | None = None) ->
     return to
 
 
-def _rclone() -> str:
-    """The rclone the rendered config serves, from the pinned install place (:mod:`dev_lab.dev.toolrelease`)."""
+def _rclone_exe() -> str:
+    """The pinned rclone (:mod:`dev_lab.dev.toolrelease`); absent raises naming its install door."""
     from dev_lab.dev.toolrelease import ToolAbsent, resolve  # noqa: PLC0415 -- only render needs the tool table
 
     try:
         return str(resolve('rclone'))
     except ToolAbsent as absent:
+        raise _storage.StorageError(str(absent)) from absent
+
+
+def _rclone() -> str:
+    """The rclone the rendered config serves, or why not (its install door)."""
+    try:
+        return _rclone_exe()
+    except _storage.StorageError as absent:
         return f'not installed -- {absent}'
+
+
+#: Run one argv, captured (``subprocess.run``'s shape).
+type Run = Callable[..., subprocess.CompletedProcess[str]]
+
+
+def check(
+    remote: str, *, repo: Path, to: Path = DEFAULT_RCLONE, declared: _storage.Storage | None = None,
+    run: Run = subprocess.run, rclone: str | None = None,
+) -> str:  # fmt: skip
+    """Render, then list *remote*'s top level through rclone; what was reached, value-free.
+
+    Raises:
+        StorageError: *remote* is not a reached remote, rclone is not installed (naming its door), or rclone refused
+            the listing (its own words, which never carry the secret).
+
+    """
+    declared = _storage.declared() if declared is None else declared
+    if remote not in {each.name for each in declared.reach}:
+        msg = f'{remote!r} is not a remote this machine reaches; reached: {[each.name for each in declared.reach]}'
+        raise _storage.StorageError(msg)
+    written = render(to, repo=repo, declared=declared)
+    exe = rclone or _rclone_exe()
+    done = run([exe, '--config', str(written), 'lsd', f'{remote}:'], capture_output=True, text=True, timeout=120,
+               check=False)  # fmt: skip
+    if done.returncode != 0:
+        said = (done.stderr or done.stdout).strip().splitlines()[-3:]
+        msg = f'rclone could not list {remote}: (exit {done.returncode}) {" | ".join(said)}'
+        raise _storage.StorageError(msg)
+    return f'{remote}: reached ({len(done.stdout.splitlines())} top-level entr(y/ies)) through {written}'
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -237,11 +279,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     where.add_argument('kinds', nargs='*')
     out = sub.add_parser('render', help='write the reached rclone remotes, owner-only, outside every repo')
     out.add_argument('--to', type=Path, default=DEFAULT_RCLONE)
+    probe = sub.add_parser('check', help='render, then list one reached remote through rclone')
+    probe.add_argument('remote')
+    probe.add_argument('--to', type=Path, default=DEFAULT_RCLONE)
     move = sub.add_parser('migrate', help='move a bound kind out of the checkout once')
     move.add_argument('kind')
     shown = sub.add_parser('publish', help='write the bound roots for the agent-guard engine')
     shown.add_argument('--to', type=Path, default=None)
-    for each in (where, out, move, shown):
+    for each in (where, out, probe, move, shown):
         each.add_argument('--tree', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     try:
@@ -253,6 +298,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.verb == 'render':
             emit(f'rendered {len(declared.reach)} remote(s) to {render(args.to, repo=args.tree, declared=declared)}')
             emit(f'rclone: {_rclone()}')
+        elif args.verb == 'check':
+            emit(check(args.remote, repo=args.tree, to=args.to, declared=declared))
         elif args.verb == 'publish':
             emit(
                 f'published {len(declared.roots)} bound root(s) to '

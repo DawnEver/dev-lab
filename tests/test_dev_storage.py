@@ -116,3 +116,32 @@ def test_a_durable_key_never_lands_under_the_aged_out_scratch_prefix() -> None:
     with pytest.raises(ArtefactRefused, match='the prefix a remote ages out'):
         check_key(f'{SCRATCH_PREFIX}/vendor/abc.tar.gz')
     check_key('vendor/scratch/abc.tar.gz')  # PLANTED CONTROL: only the FIRST segment is the aged-out prefix
+
+
+def test_check_lists_the_remote_through_the_rendered_config(tmp_path: Path) -> None:
+    tree, reach, ran = _repo(tmp_path), _reaching(tmp_path), []
+    (tmp_path / 'secrets').mkdir()
+    (tmp_path / 'secrets' / 'results').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
+
+    def run(argv: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
+        ran.append(argv)
+        return subprocess.CompletedProcess(argv, 0, 'dir-a\ndir-b\n', '')
+
+    said = storage.check('results', repo=tree, to=tmp_path / 'conf' / 'rclone.conf', declared=reach, run=run,
+                         rclone='rclone')  # fmt: skip
+    assert ran == [['rclone', '--config', str(tmp_path / 'conf' / 'rclone.conf'), 'lsd', 'results:']]
+    assert said.startswith('results: reached (2 top-level')
+    assert 's3cr3t' not in said
+
+
+def test_check_refuses_an_unreached_remote_and_a_failed_listing(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a remote this machine does not reach, and an rclone refusal, are both refused by name."""
+    tree, reach = _repo(tmp_path), _reaching(tmp_path)
+    (tmp_path / 'secrets').mkdir()
+    (tmp_path / 'secrets' / 'results').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
+    with pytest.raises(StorageError, match='not a remote this machine reaches'):
+        storage.check('other', repo=tree, to=tmp_path / 'c.conf', declared=reach, rclone='rclone')
+    refused = subprocess.CompletedProcess([], 1, '', 'AccessDenied: bad key\n')
+    with pytest.raises(StorageError, match=r'could not list results: \(exit 1\) AccessDenied'):
+        storage.check('results', repo=tree, to=tmp_path / 'c.conf', declared=reach, rclone='rclone',
+                      run=lambda *_a, **_k: refused)  # fmt: skip

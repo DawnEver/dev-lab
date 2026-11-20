@@ -6,7 +6,8 @@ account, role) once; ``hosts/<cluster>-<user>.toml`` declares only what is true 
 
 - ``[deploy]`` -- where and what it deploys (:mod:`dev_lab.dev.hpcaccount.spec`), WITHOUT ``role``: the role is the
   grant's, and the render derives it (:func:`derived`);
-- ``[schedule]`` (its tick), ``[hpc.paging]`` (its pages), ``[capabilities.*]`` (what it runs).
+- ``[schedule]`` (its tick), ``[hpc.paging]`` (its pages), ``[capabilities.*]`` (what it runs), ``[priority]``
+  (whose jobs it serves first).
 
 The file's NAME names its grant: an account file whose ``<cluster>-<user>`` is no family grant is refused, and so is
 a key the family file already holds. :func:`dev_lab.ops.configcheck.check_host` calls :func:`check`;
@@ -30,6 +31,8 @@ TABLES: Final[Mapping[str, Any]] = {
     'schedule': {},
     'env': {},
     'capabilities': {},
+    'priority': {},
+    'storage': {'reach': {}},  # which storage remotes this account reaches (lab_commons.storage)
     'hpc': {'paging': {}},
 }
 #: ``[deploy]`` keys the family grant owns: stated in an account file they would be a second copy.
@@ -81,8 +84,14 @@ def check(path: Path, host: Mapping[str, Any], family: Mapping[str, Any]) -> lis
     """Defects of the account file at *path* (parsed: *host*) against the *family* file."""
     name = path.stem
     found = []
-    if grant_of(name, family) is None:
+    grant = grant_of(name, family)
+    if grant is None:
         found.append(f'{name} names no family grant: an account file is hosts/<cluster>-<user>.toml of a [[hpc.grant]]')
+    elif 'schedule' in host and grant.get('role') != 'verification':
+        found.append(
+            f'[schedule] on a {grant.get("role") or "role-less"} account: the tick period exists only for a serving '
+            '(verification) account -- delete the table (SCHEDULER-ONLY-FOR-SERVING)'
+        )
     found += [f"deploy.{key} is the family grant's; the render derives it" for key in _DERIVED if key in host['deploy']]
     found += [
         f'{key} restates the family file; it lives there once'
