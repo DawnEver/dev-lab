@@ -171,7 +171,7 @@ without `sbatch`.
 
 1. `python -m lab_commons.hpc run submit --sha <40-hex> --scope full|incremental --repo-url <https> [--only ids.txt] [--collect "<paths>"] [--select "<marker expr>"] [--part <need-set>] [--python 3.13]`
    checks the login node's prerequisites, fetches, builds, collects, plans and submits round 0, writes
-   `~/ci/runs/<sha>/<part>/state.json` and returns in minutes. `--part` (default `base`) is the need-set it runs; every
+   `<root>/runs/<sha>/<part>/state.json` and returns in minutes. `--part` (default `base`) is the need-set it runs; every
    other collected id is handed to its own part. `incremental` needs `--only`; `full` refuses it.
 2. `python -m lab_commons.hpc run gather --sha <40-hex> -o <dir> [--wait]`: still running, it prints where the
    run is and exits 3; a finished round is folded and its unfinished ids re-submitted as the next round; once
@@ -193,10 +193,12 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   `[tool.lab_commons.hpc] dependency_inputs`, `source_roots`, `install`, `needs`, `collect`, `outputs`,
   `timeout_s = {incremental = ..., full = ...}` and `native = { inputs = [...], build = "..." }`. A fresh sha
   with unchanged inputs builds nothing. The committed `uv.lock` is an input, so its hash keys the venv.
-- Everything lives under `~/ci/` in the account's home: `cache/<owner>-<name>-<hash8>.git` (one bare cache per repository, `origin` its URL, heads fetched with `--prune`), `envs/<key>`, `native/<key>`,
-  `trees/<sha>`, `runs/<sha>`, `collect/`, `uv-cache`, `cargo-target`. A day-to-day checkout is never touched.
+- Everything lives under the account's declared root (`$LAB_ROOT`; `lab_commons.hpc.layout.account_paths`):
+  `repos/<repo>`, `envs/<key>`, `native/<key>`, `jobs/<sha>`, `cache/{git,uv,packs,collect,cargo}` (one bare
+  `cache/git/<owner>-<name>-<hash8>.git` per repository), and on a serving account `runs/<sha>/{tree,<part>}`,
+  `leases`, `artifacts`, `serve/`. A day-to-day checkout is never touched.
 - **Collection is cached per test file** (`lab_commons.hpc.collect`); only files with no entry are collected.
-- **A failed build stops the run** with the tail of `~/ci/trees/<sha>/.lab-ci/build.log`; prerequisites
+- **A failed build stops the run** with the tail of `<root>/runs/<sha>/tree/.lab-ci/build.log`; prerequisites
   missing from the login node's `PATH` are named before anything is fetched.
 
 ### How a run is planned and executed
@@ -279,8 +281,8 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
 - **The artifact is ensured per grant.** `[job] sha` + `repo_url` run the batch from that commit's artifact (no
   `workdir` beside them): before submitting, each chosen grant gets `run build`'s artifact in its own home, reused
   when it exists. A grant whose build fails is dropped and the batch re-spanned without it. A `workdir` under
-  `~/ci/trees/` is refused by name: that tree is a test run's.
-- **One results file per run.** A run directory (`~/ci/jobs/<sha>/<name>-<stamp>`, else `<workdir>/.lab-hpc/...`)
+  `<root>/runs/<sha>/tree` is refused by name: that tree is a test run's.
+- **One results file per run.** A run directory (`<root>/jobs/<sha>/<name>-<stamp>`, else `<workdir>/.lab-hpc/...`)
   holds the manifest, `job.sh` and `results.jsonl`. Each task appends one `outcome` line per item, carrying a
   `lab_commons.outcomes.Cell`: returned -> `OK` (the value rides in the line's data), raised the declared
   `lab_commons.hpc.worker.Rejected` -> `REJECTED` with its reason, any other exception -> `ERROR`; a
@@ -305,13 +307,13 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
 
 ## Artifacts: one file per sha
 
-A job ships one file, `~/ci/artifacts/<sha>.<suffix>` (`lab_commons.hpc.artifact`), never a checkout; a test run
+A job ships one file, `<root>/artifacts/<sha>.<suffix>` (`lab_commons.hpc.artifact`), never a checkout; a test run
 keeps its tree. The format is declared (`[job] artifact`, `run build --artifact`):
 
 - `tarball` -- a gzip tar of `env/` (the venv), `tree/<path>` for each `source_roots` and `artifact_paths` entry
   (`[tool.lab_commons.hpc] artifact_paths = ["cases"]`), `native/` when declared, and `activate.sh`. Built in a
   scratch directory under the login node's `$TMPDIR` (`git archive`, a fresh venv with `UV_CACHE_DIR` there,
-  removed on exit); only a native build stays keyed in `~/ci/native/<key>`. A task unpacks it into node-local
+  removed on exit); only a native build stays keyed in `<root>/native/<key>`. A task unpacks it into node-local
   `$TMPDIR`, sources `activate.sh` and runs in `$ART/tree`. Needs only `tar` on the node.
 - `image` -- an Apptainer/Singularity image, REFUSED by name. Phase 6 (container images) is CLOSED, not
   pending (user ruling 2026-10-19): `uv sync --frozen` from the committed lock already gives a reproducible
@@ -319,12 +321,12 @@ keeps its tree. The format is declared (`[job] artifact`, `run build --artifact`
 
 Not carried: git submodules (`git archive` omits them) -- declare their data in `artifact_paths` from a
 checkout that has them, or keep that job on a test layout. Retention keeps an artifact while a queued or
-running job submits from `~/ci/jobs/<sha>`, plus the newest; `artifact-not-live` otherwise. Every forge env build
+running job submits from `<root>/jobs/<sha>`, plus the newest; `artifact-not-live` otherwise. Every forge env build
 ends with `uv cache prune --ci`.
 
 ## Debugging by hand
 
-A human with VPN access may ssh to the login node and read `squeue --me`, `~/ci/runs/<sha>/<part>/state.json`, the
+A human with VPN access may ssh to the login node and read `squeue --me`, `<root>/runs/<sha>/<part>/state.json`, the
 `forge-runs/` state files and `~/.cache/lab-forge-<repo>.log`. No tool path does this.
 
 ## Cleaning output

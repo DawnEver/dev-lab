@@ -2,7 +2,7 @@
 
 A FILE IS AN HPC RESOURCE (user ruling 2026-10-15: control the NUMBER of files intermediate artefacts make).
 Measured 2026-10-15 on the cluster accounts the forge serves (GPFS file quota 2 M or 4 M each):
-``~/ci/trees`` held 0.85-2.05 M files per account (40-81 per-sha trees, ~22 k files each) and ``~/ci/envs``
+``trees`` held 0.85-2.05 M files per account (40-81 per-sha trees, ~22 k files each) and ``envs``
 0.54-1.32 M; everything else under 60 k. Trees and envs are the whole problem, so the rules for them are
 derived from what each is FOR, not from what happens to name it:
 
@@ -16,7 +16,7 @@ derived from what each is FOR, not from what happens to name it:
   (``runs/<sha>/streams/<tag>.txt``) is upgraded into that one file, ``streams-upgraded``.
   A re-run of the sha re-adds the tree from the bare cache (its env lives apart, keyed). Keeping the newest
   tree per branch would save one checkout at the price of ~22 k files; it does not.
-* An ENV (``envs/<key>``), a NATIVE build and its ``cargo-target/<key>`` are kept while an in-flight run
+* An ENV (``envs/<key>``), a NATIVE build and its ``cache/cargo/<key>`` are kept while an in-flight run
   was built with them, plus the newest recorded run's per repo -- the next commit of that repo most likely
   shares its key, and a rebuild costs minutes. ``env-unreferenced``/``native-unreferenced``/
   ``cargo-unreferenced`` otherwise. An in-flight sha whose builds cannot be read (a job-file job in a tree no
@@ -33,7 +33,7 @@ derived from what each is FOR, not from what happens to name it:
 
 IN FLIGHT IS ONE FUNCTION, :func:`in_flight`, and every rule that keeps something for being in flight
 reads it: a sha a live run file names (``forge-runs/``), a sha a queued or running Slurm job of this
-account works under (``squeue --me -o %Z`` at or under ``trees/<sha>`` or ``jobs/<sha>``,
+account works under (``squeue --me -o %Z`` at or under ``runs/<sha>/tree`` or ``jobs/<sha>``,
 :func:`occupied_shas`), or a sha ACTIVE within ``min_age_hours`` -- its run state, its tree, its artifact,
 or a stream directory under ``.lab-ci`` touched (being built, or a round ended and not yet gathered). An unreadable
 queue (``None``) keeps every tree. NOT "no record yet": measured 2026-10-15 on the served accounts, 9 run
@@ -53,9 +53,11 @@ not in flight, untouched ``abandon_days`` (a state is a few files, and the carry
 ``pack-not-in-flight``, ``slurm-out-finished``, ``log-over-size`` (rotated), and on a workstation
 ``forge-tree-stale``: a ``.claude/worktrees/forge-*``
 its producer (:mod:`dev_lab.dev.shatree`) failed to remove -- the same rule, since a producer's tree is
-in flight exactly while its producer runs. ``shared-cache-retired``: the one bare ``ci/cache.git`` every
-repository once fetched into goes whole -- each repository has its own ``ci/cache/<slug>.git``
+in flight exactly while its producer runs. Each repository has its own ``cache/git/<slug>.git``
 (:func:`lab_commons.hpc.shell.cache_dir`), whose worktrees are pruned every pass; a cache is regenerable.
+
+THE LAYOUT IS THE ACCOUNT'S DECLARED ROOT (:mod:`lab_commons.hpc.layout`): ``runs/<sha>`` with its ``tree``,
+``envs``, ``native``, ``artifacts``, ``jobs``, ``cache/{git,packs,collect,uv,cargo}`` and ``serve`` (tick logs).
 
 UNIT RESULTS ON THE FORGE (``unit-<unit hash>-<result hash>.*`` beside the run records,
 :class:`dev_lab.dev.forgeunit.ForgeResults`) are a content-addressed cache, not evidence: no sha keeps
@@ -80,6 +82,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.hpc.layout import ROOT
 from lab_commons.hpc.records import stream_sources
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
@@ -141,6 +144,7 @@ class Doomed:
     rotate: bool = False
     keep: tuple[tuple[Path, Path], ...] = ()  # (round stream, kept file): kept before the path goes
     idle_hours: float | None = None  # re-checked at removal: touched within it, the path is kept (became active)
+    if_empty: bool = False  # removed only if empty at removal: a sha's directory once its parts and tree went
 
 
 @dataclass(frozen=True)
@@ -160,14 +164,32 @@ def _entries(directory: Path) -> list[Path]:
     return sorted(directory.iterdir()) if directory.is_dir() else []
 
 
+def _tree(root: Path, sha: str) -> Path:
+    """A sha's test run tree, ``<root>/runs/<sha>/tree`` (:func:`lab_commons.hpc.layout.run_tree`)."""
+    return root / 'runs' / sha / 'tree'
+
+
+def _trees(root: Path) -> list[Path]:
+    """Every run tree under *root*; a tree's sha is its parent's name."""
+    return [run / 'tree' for run in _entries(root / 'runs') if (run / 'tree').is_dir()]
+
+
+def _parts(run: Path) -> list[Path]:
+    """A sha's run state, ``runs/<sha>/<part>``: everything but its test tree, which the tree rule judges."""
+    return [p for p in _entries(run) if p.name != 'tree']
+
+
 def runs(ci: Path) -> list[tuple[Path, dict[str, Any], datetime]]:
     """Every ``runs/<sha>`` with the state of its least finished part and its newest mtime.
 
     Each part of a sha keeps its own ``runs/<sha>/<part>/state.json``; the sha is unrecorded while ANY part
-    is. An unreadable state reads as ``{}`` (unrecorded) at the directory's mtime.
+    is. An unreadable state reads as ``{}`` (unrecorded) at the directory's mtime. The sha's test tree
+    (``runs/<sha>/tree``) is no part: a sha holding no part is no run.
     """
     out = []
     for run in _entries(ci / 'runs'):
+        if not _parts(run):
+            continue
         read: list[tuple[dict[str, Any], datetime]] = []
         for state in sorted(run.glob('*/state.json')):
             try:
@@ -195,7 +217,7 @@ def in_flight(ci: Path, policy: Policy, *, now: datetime, live: Iterable[str], o
     young = timedelta(hours=policy.min_age_hours)
     shas = set(live) | set(occupied) | {path.name for path, _, when in runs(ci) if now - when < young}
     shas |= {art.name.split('.')[0] for art in _entries(ci / 'artifacts') if _age(art, now) < young}
-    return shas | {tree.name for tree in _entries(ci / 'trees') if idle_for(tree, now) < young}
+    return shas | {tree.parent.name for tree in _trees(ci) if idle_for(tree, now) < young}
 
 
 def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[str]:
@@ -208,20 +230,16 @@ def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[s
     return {sha for tip in set(tips) for sha in read_by(root, tip, shas)}
 
 
-#: The ``~/ci`` directories whose ``<sha>`` entries a Slurm job works under: a test run's tree, a job's runs.
-_WORKED_UNDER: Final = ('trees', 'jobs')
-
-
 def occupied_shas(workdirs: Iterable[str]) -> set[str]:
-    """The ``<sha>`` of every ``ci/trees/<sha>`` or ``ci/jobs/<sha>`` a Slurm job's workdir is or lies under."""
+    """The ``<sha>`` of every ``runs/<sha>/tree`` or ``jobs/<sha>`` a Slurm job's workdir is or lies under."""
     shas = set()
     for workdir in workdirs:
         parts = workdir.split('/')  # Slurm's paths are POSIX
-        shas |= {
-            parts[i + 2]
-            for i in range(len(parts) - 2)
-            if parts[i] == 'ci' and parts[i + 1] in _WORKED_UNDER and parts[i + 2]
-        }
+        for i in range(len(parts) - 1):
+            if (parts[i] == 'jobs' and parts[i + 1]) or (
+                parts[i] == 'runs' and parts[i + 1] and parts[i + 2 : i + 3] == ['tree']
+            ):
+                shas.add(parts[i + 1])
     return shas
 
 
@@ -239,6 +257,7 @@ def cluster_plan(
     home: Path,
     policy: Policy,
     *,
+    root: Path,
     now: datetime,
     live: Iterable[str],
     repo: str,
@@ -246,12 +265,14 @@ def cluster_plan(
     occupied: Iterable[str] | None = (),
     checkouts: Iterable[Path] = (),
 ) -> Plan:
-    """The plan for one cluster account: ``~/ci`` by the rules above, then its slurm outputs and forge logs.
+    """The plan for one cluster account: its declared *root* by the rules above, then its home's slurm outputs.
+
+    *home* is the login's home (slurm outputs, toolchains, uv's retired default cache); *root* the account layout.
 
     *occupied* is :func:`slurm_occupied`: those trees are in flight; ``None`` (unreadable) keeps every tree.
     *checkouts* are the served checkouts, whose rust toolchain pins are kept (:mod:`.retentionrust`).
     """
-    ci, sources = home / 'ci', set(sources)
+    ci, sources = root, set(sources)
     flying = in_flight(ci, policy, now=now, live=live, occupied=occupied or ())
     states = runs(ci)
     doomed: list[Doomed] = []
@@ -262,37 +283,39 @@ def cluster_plan(
             continue
         if 'record' not in state:
             if now - when >= timedelta(days=policy.abandon_days):
-                doomed.append(Doomed(path, 'run-abandoned'))
+                doomed += [Doomed(part, 'run-abandoned') for part in _parts(path)]
         elif state.get('repo') != repo:
             continue  # another repo's serve judges its own runs
         elif sha in sources:
             harder.append((when, sha))
         else:
-            doomed.append(Doomed(path, 'run-not-a-carry-source'))
+            doomed += [Doomed(part, 'run-not-a-carry-source') for part in _parts(path)]
     if occupied is not None:
         unrecorded = {path.name: state for path, state, _ in states if 'record' not in state}
         doomed += [
             Doomed(
                 tree,
                 'tree-not-in-flight',
-                keep=_kept_streams(ci, tree.name, unrecorded.get(tree.name)),
+                keep=_kept_streams(ci, tree.parent.name, unrecorded.get(tree.parent.name)),
                 idle_hours=policy.min_age_hours,
             )
-            for tree in _entries(ci / 'trees')
-            if tree.name not in flying
+            for tree in _trees(ci)
+            if tree.parent.name not in flying
         ]
     doomed += _retired_kept_streams(ci, states)
     if occupied is not None:
         doomed += _dead_artifacts(ci / 'artifacts', flying)
     doomed += _unreferenced_builds(ci, _needed_builds(ci, states, flying, occupied), now, policy)
-    doomed += _collect_over_budget(ci / 'collect', policy, now)
-    doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in flying]
-    doomed.append(Doomed(ci / 'cache.git', 'shared-cache-retired'))
-    doomed += _home_rules(home, policy, now)
-    doomed += _rust_rules(home, policy, now, flying=flying if occupied is not None else None, checkouts=checkouts)
-    hard = tuple(Doomed(ci / 'runs' / sha, 'quota-pressure') for _, sha in sorted(harder))
-    commands = [(_GIT, '--git-dir', str(c), 'worktree', 'prune') for c in _entries(ci / 'cache') if c.is_dir()]
-    commands += _uv(policy, ci / 'uv-cache')
+    doomed += _collect_over_budget(ci / 'cache' / 'collect', policy, now)
+    doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'cache' / 'packs') if p.stem not in flying]
+    doomed += _home_rules(home, ci, policy, now)
+    doomed += _rust_rules(home, ci, policy, now, flying=flying if occupied is not None else None, checkouts=checkouts)
+    hard = tuple(Doomed(part, 'quota-pressure') for _, sha in sorted(harder) for part in _parts(ci / 'runs' / sha))
+    commands = [(_GIT, '--git-dir', str(c), 'worktree', 'prune') for c in _entries(ci / 'cache' / 'git') if c.is_dir()]
+    commands += _uv(policy, ci / 'cache' / 'uv')
+    going = {d.path for d in doomed}
+    doomed += [Doomed(run, 'run-emptied', if_empty=True) for run in _entries(ci / 'runs')
+               if run.is_dir() and set(_entries(run)) <= going]  # fmt: skip
     doomed = [d for d in doomed if d.path.exists() or d.path.is_symlink()]
     return Plan(tuple(doomed), hard, tuple(commands))
 
@@ -315,7 +338,7 @@ def _kept_streams(ci: Path, sha: str, state: Mapping[str, Any] | None) -> tuple[
     """An unrecorded run's round stream and the one file :func:`lab_commons.hpc.records.stream_sources` keeps."""
     if not (tag := _current_tag(state)):
         return ()
-    live, kept = (ci / source.split('/ci/', 1)[1] for source in stream_sources(sha, tag))
+    live, kept = (ci / source.split(f'{ROOT}/', 1)[1] for source in stream_sources(sha, tag))
     return ((live, kept),)
 
 
@@ -331,7 +354,7 @@ def _retired_kept_streams(ci: Path, states: list[tuple[Path, dict[str, Any], dat
         if not old.is_dir():
             continue
         tag = _current_tag(state)
-        live = not (ci / 'trees' / path.name).exists() and 'record' not in state and tag
+        live = not _tree(ci, path.name).exists() and 'record' not in state and tag
         keep = ((old / f'{tag}.txt', _kept_streams(ci, path.name, state)[0][1]),) if live else ()
         doomed.append(Doomed(old, 'streams-upgraded', keep=keep))
     return doomed
@@ -343,7 +366,7 @@ def _sourced_builds(tree: Path) -> object:
         text = (tree / '.lab-ci' / 'env.sh').read_text(encoding='utf-8')
     except OSError:
         return None
-    env, native = re.search(r'/ci/envs/([^/"\s:]+)', text), re.search(r'/ci/native/([^/"\s:]+)', text)
+    env, native = re.search(r'/envs/([^/"\s:]+)', text), re.search(r'/native/([^/"\s:]+)', text)
     return {'env': env.group(1), 'native': native.group(1) if native else None} if env else None
 
 
@@ -356,7 +379,7 @@ def _needed_builds(
     """
     by_sha = {path.name: state for path, state, _ in states}
     needed = [by_sha[sha].get('builds') for sha in sorted(flying) if sha in by_sha]
-    needed += [_sourced_builds(ci / 'trees' / sha) for sha in sorted(occupied or ()) if sha not in by_sha]
+    needed += [_sourced_builds(_tree(ci, sha)) for sha in sorted(occupied or ()) if sha not in by_sha]
     needed += [None] if occupied is None else []
     newest: dict[str, tuple[datetime, object]] = {}
     for _, state, when in states:
@@ -375,11 +398,15 @@ def _unreferenced_builds(ci: Path, builds: list[object], now: datetime, policy: 
     if not all(isinstance(b, dict) for b in builds):
         return []
     young, out = timedelta(hours=policy.min_age_hours), []
-    # ``cargo-target/<native key>`` is lab_commons.hpc.builds.cargo_target, keyed like ``native/<key>``
-    for kind, where in (('env', 'envs'), ('native', 'native'), ('native', 'cargo-target')):
+    # ``cache/cargo/<native key>`` is lab_commons.hpc.builds.cargo_target, keyed like ``native/<key>``
+    for kind, where, rule in (
+        ('env', 'envs', 'env'),
+        ('native', 'native', 'native'),
+        ('native', 'cache/cargo', 'cargo'),
+    ):
         named = {b.get(kind) for b in builds if isinstance(b, dict)}
         out += [
-            Doomed(e, f'{"cargo" if where == "cargo-target" else kind}-unreferenced')
+            Doomed(e, f'{rule}-unreferenced')
             for e in _entries(ci / where)
             if e.name.split('.')[0] not in named and _age(e, now) >= young
         ]
@@ -394,7 +421,7 @@ def _collect_over_budget(store: Path, policy: Policy, now: datetime) -> list[Doo
     return [Doomed(e, 'collect-over-budget') for e in _entries(store) if e not in kept and _age(e, now) >= young]
 
 
-def _home_rules(home: Path, policy: Policy, now: datetime) -> list[Doomed]:
+def _home_rules(home: Path, root: Path, policy: Policy, now: datetime) -> list[Doomed]:
     out = [
         Doomed(p, 'slurm-out-finished')
         for p in sorted(home.glob('slurm-*.out'))
@@ -402,21 +429,20 @@ def _home_rules(home: Path, policy: Policy, now: datetime) -> list[Doomed]:
     ]
     out += [
         Doomed(p, 'log-over-size', rotate=True)
-        for p in sorted((home / '.cache').glob('lab-forge-*.log'))
+        for p in sorted((root / 'serve').glob('*.log'))
         if p.stat().st_size > policy.log_max_mb * _MB
     ]
-    # uv's default cache is retired: every uv on the account shares ``ci/uv-cache`` (spec.uv_cache), so a
+    # uv's default cache is retired: every uv on the account shares ``<root>/cache/uv`` (spec.uv_cache), so a
     # default cache is a second copy of the same wheels, ~450 k files (census 2026-11-14). Migrated once.
     out.append(Doomed(home / '.cache' / 'uv', 'uv-default-cache-retired'))
     return out
 
 
 def _rust_rules(
-    home: Path, policy: Policy, now: datetime, *, flying: set[str] | None, checkouts: Iterable[Path]
+    home: Path, root: Path, policy: Policy, now: datetime, *, flying: set[str] | None, checkouts: Iterable[Path]
 ) -> list[Doomed]:
     """Unpinned toolchains and stale extracted crate sources (:mod:`.retentionrust`); an unreadable queue pins all."""
-    ci = home / 'ci'
-    trees = [ci / 'trees' / sha for sha in sorted(flying or ()) if (ci / 'trees' / sha).is_dir()]
+    trees = [_tree(root, sha) for sha in sorted(flying or ()) if _tree(root, sha).is_dir()]
     channels = None if flying is None else _rust.pinned_channels(home / '.rustup', [*trees, *checkouts])
     doomed = [Doomed(p, _rust.RULE_TOOLCHAIN) for p in _rust.unpinned_toolchains(home / '.rustup', channels)]
     young = timedelta(hours=policy.min_age_hours)

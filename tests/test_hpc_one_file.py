@@ -200,7 +200,7 @@ def test_gather_derives_every_returned_shard_from_the_one_file() -> None:
         _close(1),
     )
     login = Login({RESULTS: text + EARLIER})
-    got = gather(login, '~/ci/jobs/s/sweep-t0')
+    got = gather(login, '"$LAB_ROOT"/jobs/s/sweep-t0')
     assert got == {
         0: [_ok(0, 'a'), _ok(1, 'b')],
         1: [_ok(2, 'c'), _ok(3, 'd')],
@@ -239,7 +239,7 @@ RECORD = {
             'job_ids': ['1'],
             'shards': 1,
             'items': [0, 1],
-            'run_dir': '~/ci/jobs/s/sweep-t0',
+            'run_dir': '"$LAB_ROOT"/jobs/s/sweep-t0',
         }
     ]
 }
@@ -253,11 +253,11 @@ def _gathered(files: str, *, budget: int = Policy().file_budget) -> object:
 def test_a_planted_eleven_file_job_reds_and_ten_does_not(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Policy().file_budget == 10, 'the declared default (plan: <= 10 files on the shared home)'
     over = _gathered('11\n')
-    assert over.over == [f'{NEAR.name}: ~/ci/jobs/s/sweep-t0 holds 11 files, over file_budget = 10']
+    assert over.over == [f'{NEAR.name}: "$LAB_ROOT"/jobs/s/sweep-t0 holds 11 files, over file_budget = 10']
     assert _gathered('10\n').over == [], 'PLANTED CONTROL: at the budget is within it'
     assert _gathered('11\n', budget=12).over == [], 'the budget is data: [policy] file_budget moves it'
     earlier = _gathered('57\nearlier\n')
-    assert (earlier.over, earlier.earlier) == ([], [f'{NEAR.name}: ~/ci/jobs/s/sweep-t0'])
+    assert (earlier.over, earlier.earlier) == ([], [f'{NEAR.name}: "$LAB_ROOT"/jobs/s/sweep-t0'])
     out: list[str] = []
     monkeypatch.setattr(cli, '_out', out.append)
     monkeypatch.setattr(cli, 'gather_job', lambda *_a, **_k: over)
@@ -277,7 +277,7 @@ def test_a_budget_below_one_file_is_refused() -> None:
 
 def test_the_task_script_keeps_its_output_node_local_and_closes_its_shard() -> None:
     config = Config(job=JobSpec(name='sweep', entry='m:f', sha=SHA, repo_url='https://x/r.git'))
-    script = render_script(_plan(), cli.built_config(config), f'~/ci/jobs/{SHA}/sweep-t0')
+    script = render_script(_plan(), cli.built_config(config), f'"$LAB_ROOT"/jobs/{SHA}/sweep-t0')
     assert '#SBATCH --output=/dev/null' in script
     assert 'logs/' not in script, 'Slurm writes no per-task file on the shared home'
     assert 'LOG="${TMPDIR:-/tmp}/' in script
@@ -286,17 +286,17 @@ def test_the_task_script_keeps_its_output_node_local_and_closes_its_shard() -> N
     assert script.rstrip().endswith('exit "$code"')
     unpack = script.index('tar -xzf')
     assert unpack < script.index('lab_commons.hpc.worker'), 'the artifact is entered before the worker runs'
-    assert 'ci/trees' not in script, 'a job never checks out the repository'
+    assert '/runs/' not in script, 'a job never checks out the repository'
     assert 'git ' not in script
 
 
 def test_a_commits_runs_live_under_its_sha_and_hold_three_files(tmp_path: Path) -> None:
     job = JobSpec(name='sweep', entry='m:f', sha=SHA, repo_url='https://x/r.git')
-    assert run_home(job) == f'~/ci/jobs/{SHA}'
+    assert run_home(job) == f'"$LAB_ROOT"/jobs/{SHA}'
     assert run_home(JobSpec(workdir='~/p')) == '~/p/.lab-hpc', 'PLANTED CONTROL: a job at no commit'
     login = Login({'sbatch': '42\n'})
     sub = submit(login, _plan(), Config(job=job, source=tmp_path / 'j.toml'), list(range(10)), stamp='t0')
-    assert sub.run_dir == f'~/ci/jobs/{SHA}/sweep-t0'
+    assert sub.run_dir == f'"$LAB_ROOT"/jobs/{SHA}/sweep-t0'
     made = login.calls[0][0]
     assert made.startswith('mkdir -p ')
     assert 'logs' not in made
@@ -318,37 +318,35 @@ def test_the_artifact_format_is_a_declared_choice_and_the_image_is_refused_for_g
         cli.built_config(Config(job=JobSpec(sha=SHA, repo_url='https://x/r.git', artifact=IMAGE)))
 
 
-def test_the_artifact_build_leaves_one_file_and_no_resident_cache() -> None:
+def test_the_artifact_build_leaves_one_file_and_copies_from_the_one_uv_cache() -> None:
     script = artifact_script(RunSpec(sha=SHA, repo_url='https://x/r.git', builds=BUILDS))
-    assert f'A="$HOME"/ci/artifacts/{SHA}.tar.gz' in script
+    assert f'A="$LAB_ROOT"/artifacts/{SHA}.tar.gz' in script
     assert 'if [ ! -s "$A" ]' in script, 'an artifact that exists is reused'
     assert 'mktemp -d "${TMPDIR:-/tmp}/' in script
     assert 'EXIT' in script
     assert f'archive {SHA} | tar -x' in script, 'exported, never a worktree'
-    assert 'UV_CACHE_DIR="$S/uv-cache"' in script, 'phase 4: the uv cache dies with the scratch'
-    for gone in ('worktree add', 'ci/envs', 'ci/trees', 'ci/uv-cache'):
+    assert 'UV_CACHE_DIR="$LAB_ROOT"/cache/uv UV_LINK_MODE=copy' in script, 'one cache, copied'
+    for gone in ('worktree add', '/envs/', '/runs/', '$S/uv-cache'):
         assert gone not in script, gone
     assert 'for p in src cases;' in script, 'the source roots and the declared paths, nothing else'
     assert 'PYTHONPATH="$ART/tree/src${PYTHONPATH' in script
     assert 'tar -czf "$A.part" -C "$S/pack" . && mv "$A.part" "$A"' in script, 'one file, atomically'
     native = artifact_script(RunSpec(sha=SHA, repo_url='u', builds=replace(BUILDS, native_key='n9', native_build='b')))
-    assert 'ci/native/n9' in native, 'a native build stays keyed'
+    assert '/native/n9' in native, 'a native build stays keyed'
     assert '$ART/native' in native, 'and is packed'
 
 
 def test_the_task_enters_the_unpacked_artifact() -> None:
     lines = enter_lines(SHA)
     assert lines[0] == 'ART="${TMPDIR:-/tmp}/lab-artifact-${SLURM_JOB_ID}"'
-    assert f'tar -xzf "$HOME"/ci/artifacts/{SHA}.tar.gz -C "$ART"' in lines[2]
+    assert f'tar -xzf "$LAB_ROOT"/artifacts/{SHA}.tar.gz -C "$ART"' in lines[2]
     assert lines[-2:] == ('. "$ART/activate.sh"', 'cd "$ART/tree"')
 
 
 def test_build_artifact_answers_the_path_or_refuses_with_the_log() -> None:
     spec = RunSpec(sha=SHA, repo_url='https://x/r.git', builds=BUILDS)
-    ok = Login(
-        {'command -v': '', 'cat-file': 'have\n', 'mktemp': f'@@@ facts{NL}artifact=/h/ci/artifacts/{SHA}.tar.gz'}
-    )
-    assert build_artifact(spec, ok, 'login1') == f'/h/ci/artifacts/{SHA}.tar.gz'
+    ok = Login({'command -v': '', 'cat-file': 'have\n', 'mktemp': f'@@@ facts{NL}artifact=/r/artifacts/{SHA}.tar.gz'})
+    assert build_artifact(spec, ok, 'login1') == f'/r/artifacts/{SHA}.tar.gz'
     failed = Login({'command -v': '', 'cat-file': 'have\n', 'mktemp': f'{BUILD_FAILED} env{NL}no wheel'})
     with pytest.raises(NotSubmitted, match='no wheel'):
         build_artifact(spec, failed, 'login1')
@@ -425,11 +423,16 @@ def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_in
     install = f'uv sync -q --frozen --offline --no-install-package dep && {posix_layout}'
     builds = Builds(install=install, source_roots=('components',), env_key='k1')
     spec = RunSpec(sha=sha, repo_url=urls['top'], builds=builds, python=Path(sys.executable).as_posix())
-    cache = Path(cache_dir(spec.repo_url).replace('"$HOME"', home.as_posix()))
+    cache = Path(cache_dir(spec.repo_url).replace('"$LAB_ROOT"', home.as_posix()))
     _git('clone', '-q', '--bare', urls['top'], cache)
-    env = {**os.environ, 'HOME': home.as_posix(), 'GIT_CONFIG_PARAMETERS': "'protocol.file.allow=always'"}
+    env = {
+        **os.environ,
+        'HOME': home.as_posix(),
+        'GIT_CONFIG_PARAMETERS': "'protocol.file.allow=always'",
+    }
     done = subprocess.run(
-        [bash_executable(), '-c', artifact_script(spec)],
+        # LAB_ROOT in bash's own path form: a drive-letter root reads as tar's ``host:file``
+        [bash_executable(), '-c', 'export LAB_ROOT="$HOME"\n' + artifact_script(spec)],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -438,8 +441,8 @@ def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_in
     )
     assert BUILD_FAILED not in done.stdout, done.stdout
     assert done.returncode == 0, (done.stdout, done.stderr)
-    assert facts(done.stdout)['artifact'].endswith(f'/ci/artifacts/{sha}.tar.gz')
-    with tarfile.open(home / 'ci' / 'artifacts' / f'{sha}.tar.gz') as tar:
+    assert facts(done.stdout)['artifact'].endswith(f'/artifacts/{sha}.tar.gz')
+    with tarfile.open(home / 'artifacts' / f'{sha}.tar.gz') as tar:
         names = set(tar.getnames())
         pinned = tar.extractfile('./tree/components/dep/dep/__init__.py')
         assert pinned is not None

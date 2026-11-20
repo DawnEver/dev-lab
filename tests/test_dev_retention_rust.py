@@ -47,7 +47,15 @@ def _rule(plan: Plan, rule: str) -> set[str]:
 
 def _plan(home: Path, checkout: Path, *, occupied: set[str] | None = frozenset(), live: set[str] = frozenset()) -> Plan:
     return cluster_plan(
-        home, Policy(), now=NOW, live=live, repo='r', sources=(), occupied=occupied, checkouts=[checkout]
+        home,
+        Policy(),
+        root=home / 'lab',
+        now=NOW,
+        live=live,
+        repo='r',
+        sources=(),
+        occupied=occupied,
+        checkouts=[checkout],
     )
 
 
@@ -70,7 +78,7 @@ def test_the_pinned_channel_and_the_default_are_kept(tmp_path: Path) -> None:
 
 def test_an_in_flight_tree_keeps_its_own_pin(tmp_path: Path) -> None:
     home, checkout = _account(tmp_path)
-    tree = home / 'ci' / 'trees' / 'abc123'
+    tree = home / 'lab' / 'runs' / 'abc123' / 'tree'
     _file(tree / 'rust-toolchain.toml', '[toolchain]\nchannel = "1.80.0"\n')
     gone = _rule(_plan(home, checkout, live={'abc123'}), RULE_TOOLCHAIN)
     assert f'1.80.0-{TRIPLE}' not in gone

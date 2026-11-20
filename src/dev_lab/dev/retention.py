@@ -44,6 +44,7 @@ from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.config import config_path, section
+from lab_commons.hpc.layout import local_root
 from lab_commons.hpc.records import kept_text
 from lab_commons.log import emit
 
@@ -108,6 +109,13 @@ def _kept_active(doomed: Doomed, say: Callable[[str], None]) -> bool:
     return True
 
 
+def _skipped(doomed: Doomed, *, dry_run: bool, say: Callable[[str], None]) -> bool:
+    """Gone already, became active, or an ``if_empty`` directory still holding (or, dry, not yet emptied)."""
+    if not (doomed.path.exists() or doomed.path.is_symlink()) or _kept_active(doomed, say):
+        return True
+    return doomed.if_empty and (dry_run or any(doomed.path.iterdir()))
+
+
 def apply(
     plan: Plan,
     policy: Policy,
@@ -122,7 +130,7 @@ def apply(
     by_rule: dict[str, tuple[int, int, int]] = {}
 
     def one(doomed: Doomed) -> None:
-        if not (doomed.path.exists() or doomed.path.is_symlink()) or _kept_active(doomed, say):
+        if _skipped(doomed, dry_run=dry_run, say=say):
             return
         size, files = measure(doomed.path)
         if not dry_run:
@@ -137,8 +145,8 @@ def apply(
     for doomed in plan.doomed:
         one(doomed)
     if usage is not None and usage.fraction(*freed) >= policy.pressure:
-        files_bind = usage.binding(*freed) == 'files'  # then a run with its tree, most files first
-        for doomed in files_first(plan.harder, lambda d: d.path) if files_bind else plan.harder:
+        files_bind = usage.binding(*freed) == 'files'  # then the sha holding most files first
+        for doomed in files_first(plan.harder, lambda d: d.path.parent) if files_bind else plan.harder:
             if usage.fraction(*freed) <= policy.target:
                 break
             one(doomed)
@@ -182,15 +190,25 @@ def _origin_tips(root: Path) -> list[str]:
     return done.stdout.split()
 
 
-def _plan_for(root: Path, policy: Policy, *, cluster: bool, home: Path, now: datetime, live: set[str]) -> Plan:
+def _plan_for(
+    root: Path, policy: Policy, *, cluster: bool, home: Path, account: Path, now: datetime, live: set[str]
+) -> Plan:
     if cluster:
         repo = origin_url(root)
-        mine = [p.name for p, state, _ in runs(home / 'ci') if state.get('repo') == repo]
+        mine = [p.name for p, state, _ in runs(account) if state.get('repo') == repo]
         sources = carry_sources(root, mine, _origin_tips(root))
         occupied = slurm_occupied()
         checkouts = [c for c in root.parent.iterdir() if c.is_dir()]  # the served checkouts, side by side
         return cluster_plan(
-            home, policy, now=now, live=live, repo=repo, sources=sources, occupied=occupied, checkouts=checkouts
+            home,
+            policy,
+            root=account,
+            now=now,
+            live=live,
+            repo=repo,
+            sources=sources,
+            occupied=occupied,
+            checkouts=checkouts,
         )
     return workstation_plan([main_checkout(root)], policy, now=now)
 
@@ -200,6 +218,7 @@ def serve_pass(
     *,
     cluster: bool,
     home: Path | None = None,
+    account: Path | None = None,
     lock: Path | None = None,
     table: Mapping[str, Any] | None = None,
     usage: Callable[[], Usage | None] | None = None,
@@ -209,8 +228,12 @@ def serve_pass(
     now: datetime | None = None,
     planner: Callable[..., Plan] | None = None,
 ) -> Freed | None:
-    """One pass, every tick (module docstring): ``None`` only when another serve of the account holds it."""
+    """One pass, every tick (module docstring): ``None`` only when another serve of the account holds it.
+
+    *account* is the declared account root (:func:`lab_commons.hpc.layout.local_root` unless given).
+    """
     home = Path.home() if home is None else home
+    account = Path(local_root().root) if account is None and cluster else (account or root)
     lock = config_path().parent / 'forge-retention.lock' if lock is None else lock
     policy = load_policy(section('retention') if table is None else table)
     now = datetime.now(UTC) if now is None else now
@@ -218,11 +241,11 @@ def serve_pass(
     with held(lock) as mine:  # one deleter per account
         if not mine:
             return None
-        plan = (planner or _plan_for)(root, policy, cluster=cluster, home=home, now=now, live=live())
+        plan = (planner or _plan_for)(root, policy, cluster=cluster, home=home, account=account, now=now, live=live())
         done = apply(plan, policy, usage=measured, dry_run=False, say=say, run=run)
     if done.over:
         freed = (done.freed_bytes, done.freed_files)
-        done = dataclasses.replace(done, alarm=pressure_text(measured, freed, home if cluster else None))
+        done = dataclasses.replace(done, alarm=pressure_text(measured, freed, home if cluster else None, account))
     return done
 
 
@@ -234,11 +257,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     on a cluster it judges that repo's runs only.
     """
     parser = argparse.ArgumentParser(prog='dev_lab.dev.retention', description=__doc__.splitlines()[0])
-    parser.add_argument('--cluster', action='store_true', help="plan ~/ci (default: this checkout's forge trees)")
+    parser.add_argument(
+        '--cluster', action='store_true', help="plan the account's declared root (default: this checkout's forge trees)"
+    )
     parser.add_argument('--apply', action='store_true', help='delete; without it nothing is touched')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     policy, home, now = load_policy(section('retention')), Path.home(), datetime.now(UTC)
-    plan = _plan_for(Path.cwd(), policy, cluster=args.cluster, home=home, now=now, live=_live_shas())
+    plan = _plan_for(
+        Path.cwd(),
+        policy,
+        cluster=args.cluster,
+        home=home,
+        account=Path(local_root().root) if args.cluster else Path.cwd(),
+        now=now,
+        live=_live_shas(),
+    )
     usage = read_usage(home if args.cluster else Path.cwd(), cluster=args.cluster)
     done = apply(plan, policy, usage=usage, dry_run=not args.apply, say=emit)
     for line in summary(done, usage, applied=args.apply):

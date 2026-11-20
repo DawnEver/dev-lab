@@ -113,22 +113,26 @@ def test_the_alarm_names_the_binding_limit_and_a_foreign_directory_it_never_dele
     for i in range(30):
         (experiment / f'f{i}').parent.mkdir(parents=True, exist_ok=True)
         (experiment / f'f{i}').write_text('x', encoding='utf-8')
-    (tmp_path / 'ci' / 'trees' / 'abc').mkdir(parents=True)
-    heavy = consumers(tmp_path)
+    root = tmp_path / 'lab'
+    (root / 'runs' / 'abc').mkdir(parents=True)
+    (tmp_path / 'ci' / 'trees').mkdir(parents=True)  # PLANTED CONTROL: the old layout is foreign now
+    heavy = consumers(tmp_path, root)
     assert heavy[0] == (experiment, 31, False)
-    assert (tmp_path / 'ci' / 'trees', 2, True) in heavy
-    body = pressure_text(parse_mmlsquota(AT_FILE_LIMIT), (0, 0), tmp_path)
+    assert (root / 'runs', 2, True) in heavy
+    assert (tmp_path / 'ci', 2, False) in heavy, 'an old ~/ci is not forge-owned'
+    body = pressure_text(parse_mmlsquota(AT_FILE_LIMIT), (0, 0), tmp_path, root)
     assert 'on files: bytes 43.0/1000.0 GB, files 2020000/2000000' in body
     assert f'- {experiment}: 31 files (not forge-owned, not touched)' in body
-    assert f'- {tmp_path / "ci" / "trees"}: 2 files\n' in body + '\n', 'a forge-owned directory is not so marked'
-    assert ' on bytes: ' in pressure_text(parse_mmlsquota(AT_BYTE_LIMIT), (0, 0), None), 'PLANTED CONTROL'
+    assert f'- {root / "runs"}: 2 files\n' in body + '\n', 'a forge-owned directory is not so marked'
+    assert ' on bytes: ' in pressure_text(parse_mmlsquota(AT_BYTE_LIMIT), (0, 0), None, root), 'PLANTED CONTROL'
     assert len(list(experiment.iterdir())) == 30, 'counted, never touched'
 
 
 def test_serve_pass_puts_the_named_alarm_on_the_outcome(tmp_path: Path) -> None:
     (tmp_path / 'experiment').mkdir()
     done = retention.serve_pass(
-        Path(), cluster=True, home=tmp_path, lock=tmp_path / 'retention.lock', table={'uv_prune': False},
+        Path(), cluster=True, home=tmp_path, account=tmp_path / 'lab',
+        lock=tmp_path / 'retention.lock', table={'uv_prune': False},
         usage=lambda: parse_mmlsquota(AT_FILE_LIMIT), live=set, say=lambda _: None, run=lambda *_a, **_k: None,
         now=NOW, planner=lambda *_a, **_k: Plan(()),
     )  # fmt: skip
@@ -141,11 +145,12 @@ def test_serve_pass_puts_the_named_alarm_on_the_outcome(tmp_path: Path) -> None:
 def test_when_files_bind_the_harder_runs_go_most_files_first(tmp_path: Path) -> None:
     """Oldest-first frees bytes; at the FILE limit the run holding the most files goes first, with its tree."""
     for sha, files in (('old', 1), ('big', 20)):
-        for where in ('runs', 'trees'):
-            (tmp_path / where / sha).mkdir(parents=True)
+        for part in ('base', 'tree'):
+            (tmp_path / 'runs' / sha / part).mkdir(parents=True)
         for i in range(files):
-            (tmp_path / 'trees' / sha / f'f{i}').write_text('x', encoding='utf-8')
-    harder = tuple(Doomed(tmp_path / w / s, 'quota-pressure') for s in ('old', 'big') for w in ('runs', 'trees'))
+            (tmp_path / 'runs' / sha / 'tree' / f'f{i}').write_text('x', encoding='utf-8')
+    parts = [tmp_path / 'runs' / s / p for s in ('old', 'big') for p in ('base', 'tree')]
+    harder = tuple(Doomed(path, 'quota-pressure') for path in parts)
     plan = Plan((), harder)
     near_files = Usage(used=1, limit=100, files=1_000_000, files_limit=1_000_010)
     lines: list[str] = []
@@ -158,4 +163,4 @@ def test_when_files_bind_the_harder_runs_go_most_files_first(tmp_path: Path) -> 
 
 
 def _name(line: str) -> str:
-    return Path(json.loads(line)['path']).name
+    return Path(json.loads(line)['path']).parent.name

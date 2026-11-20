@@ -219,7 +219,7 @@ def test_the_resolved_interpreter_is_a_file_that_exists_on_this_box() -> None:
     filesystem about a path and nothing else, so neither answer can steer it.
 
     ASKS THE RUNNING VENV, NOT THE CHECKOUT (2026-10-12): the cluster judges a bare per-sha tree from
-    an environment kept outside it (``~/ci/envs/<key>``), so ``<checkout>/.venv`` is a developer-checkout
+    an environment kept outside it (``<root>/envs/<key>``), so ``<checkout>/.venv`` is a developer-checkout
     fact, and the contract this arm checks is the layout of whatever venv the suite is running in.
     """
     venv = Path(sys.prefix)
