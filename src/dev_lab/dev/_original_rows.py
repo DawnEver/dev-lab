@@ -15,6 +15,7 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
+    'vscodesettings',  # ORIGINAL: the editor excludes a checkout carries, derived from the storage kinds (2026-11-19)
     'callorigins',  # extracted in-kit lexical binding owner for reflection and tolerance scanners
     'ab_bench',
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
@@ -22,7 +23,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'producer',
     'failprint',  # a failure fingerprint: test id plus the subjects its failure names (finding D13, 2026-11-16)
     'producers',  # each repo's one producer, actions or hpc, and its optional parts (ruling 2026-11-16)
-    'producercheck',  # the guard refusing what contradicts a producer declaration (ruling 2026-11-16)
+    'rolecheck',  # the guard refusing what contradicts the family's roles binding (D73)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
     'verifybox',
@@ -88,6 +89,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'componentbump',
     'shatree',
     'branchprune',
+    'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)
     'branchdelete',
     'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
@@ -382,7 +384,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'reviewcode',
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
-    'actionsartifact',  # an Actions run's own artifact, new here
     # ORIGINAL: user ruling 2026-11-07, one table of agent doors; it replaces kit-internal copies, no consumer's.
     'agentpolicy',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.

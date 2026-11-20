@@ -69,7 +69,7 @@ from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR, is_held
 from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.producers import producer_from
+from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
 from dev_lab.ops.breakglassforge import Forge
@@ -116,14 +116,14 @@ def _labels_admit(forge: Forge, pr: int) -> None:
         raise Held(msg)
 
 
-def tests_at(posted: Sequence[CommitStatus], head: str, *, producer: str) -> str:
+def tests_at(posted: Sequence[CommitStatus], head: str, *, tests: str) -> str:
     """*head*'s test state at merge time: ``passed``, ``red: <contexts>; <why>`` or ``untested: <why>``.
 
     User ruling 2026-11-11: break-glass waives the tests as well as the review -- the open wave is the authorization
     -- so this never refuses; it names what was waived, for the audit and the notice. The reading is merge-ready's
     own, by the repo's *producer* (:func:`dev_lab.dev.forgemergewaits.green_waits`).
     """
-    waits = green_waits(head, posted, producer=producer)
+    waits = green_waits(head, posted, tests=tests)
     if not waits:
         return 'passed'
     latest = {one.context: one.state for one in reversed(posted)}  # newest first: the newest write wins
@@ -295,8 +295,8 @@ class Server:
         repo, pr, head, reason = asked.repo, asked.pr, asked.head, asked.reason
         forge, integration = self._admit(asked)
         hidden = hidden_reds(forge.fingerprints, head, integration, posted := forge.statuses(head))
-        producer = producer_from(forge.declaration(integration), f'{repo}@{integration}:pyproject.toml')
-        tests = tests_at(posted, head, producer=producer) + (f'; {hidden}' if hidden else '')  # D18: on record
+        by = roles_of_url(self.role.repo(repo) or repo).kind(TESTS)
+        tests = tests_at(posted, head, tests=by) + (f'; {hidden}' if hidden else '')  # D18: on record
         forge.comment(pr, f'BREAK-GLASS merge (wave {held.id}) of {head[:12]} into {integration}, '
                           f'{_merged(tests)}. Reason: {reason}. Tests: {tests}')  # fmt: skip
         forge.merge(pr, head=head, message=merge_message(pr, integration, reason, held.id))

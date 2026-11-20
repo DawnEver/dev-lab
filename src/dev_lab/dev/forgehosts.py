@@ -216,6 +216,19 @@ def is_private(client: Client) -> bool:
     return isinstance(repo, Mapping) and repo.get('private') is True
 
 
+def public_siblings(client: Client) -> tuple[str, ...]:
+    """The names of this repository's owner's repos the forge says are public (dev-lab#791 wall 3); one page of 100.
+
+    Both forges answer ``/users/<owner>/repos``; a row without the flag is read as public, like :func:`is_private`.
+    """
+    owner = client.repo.strip('/').split('/')[1]  # ``/repos/<owner>/<repo>``
+    rows = client.call('GET', f'/users/{owner}/repos?per_page=100')
+    if not isinstance(rows, list):
+        return ()
+    published = (row for row in rows if isinstance(row, Mapping) and row.get('private') is not True)
+    return tuple(str(row['name']) for row in published if row.get('name'))
+
+
 def is_hosts(raw: Mapping[str, Any]) -> bool:
     """Whether a listed issue is a hosts issue: it carries the marker, or the title from before the marker."""
     return HOSTS_MARKER in (raw.get('body') or '') or raw.get('title') == HOSTS_TITLE

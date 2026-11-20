@@ -86,11 +86,6 @@ class Backend:
     #: What the issue listing adds to exclude pulls server-side: Gitea's ``type=issues``. GitHub has no such
     #: parameter (it answers 422), so its listing filters pulls client-side (:func:`dev_lab.dev.forgepulls.is_pull`).
     issues_only: tuple[tuple[str, str], ...] = (('type', 'issues'),)
-    #: The ``path`` an Actions run of the base's workflow ``{workflow}`` for pull request ``{pull}`` is listed with:
-    #: Gitea's ``<file>@refs/pull/<n>/head`` names the pull request; GitHub's is the workflow file alone.
-    run_path: str = '{workflow}@refs/pull/{pull}/head'
-    #: Whether a run names its pull request in ``pull_requests`` instead of its ``path`` (GitHub).
-    run_pulls_listed: bool = False
     #: A pull request's unified diff: the suffix on ``pulls/{n}`` and the ``Accept`` it is asked with -- Gitea's
     #: ``pulls/{n}.diff``, GitHub's ``pulls/{n}`` as ``application/vnd.github.diff``.
     diff_at: tuple[str, str] = ('.diff', 'text/plain')
@@ -136,8 +131,6 @@ GITHUB: Final = Backend(
     writer_permissions=frozenset({'admin', 'maintain', 'write'}),
     vets_authors=True,
     issues_only=(),
-    run_path='.github/workflows/{workflow}',
-    run_pulls_listed=True,
     producers=frozenset({ACTIONS, JUDGE_HOST}),
     diff_at=('', 'application/vnd.github.diff'),
     headers=(

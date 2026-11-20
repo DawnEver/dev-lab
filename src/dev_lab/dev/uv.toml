@@ -2,4 +2,4 @@
 # uv.lock's `revision` line is the WRITER'S format, so two uv releases relocking the same pins churn it and conflict.
 # The forge keeps this at the newest uv release: a `forge serve` tick's relock (dev_lab.dev.relock) reads it against
 # the newest release tag and raises it in the same pull request that relocks with that uv.
-version = "0.13.7"
+version = "0.13.9"

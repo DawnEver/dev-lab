@@ -629,3 +629,22 @@ def test_the_real_engine_judges_the_tree_a_wrapped_command_acts_in_not_the_cwd(
     assert refused is not None
     assert refused.startswith('TREE-HAS-A-LIVE-RUN:'), refused
     assert f'pid {pid}' in refused
+
+
+def test_a_removal_never_counts_its_own_launcher_but_still_counts_its_kin(tmp_path: Path) -> None:
+    """A removal never counts its own venv launcher (dev-lab#791 wall 1).
+
+    On Windows a venv ``python.exe`` re-spawns the base interpreter with the same arguments, so the asker's PARENT
+    runs the very same ``-m dev_lab.dev.worktrees`` line. PLANTED CONTROLS: a parent running anything else, and an
+    unrelated process running the same line, still hold the tree.
+    """
+    tree = _checkout(tmp_path / 'tree')
+    exe = tmp_path / 'main' / '.venv' / _SCRIPTS / _PYTHON
+    line = f'{exe} -m dev_lab.dev.worktrees --remove x --root {tree}'
+    launcher = Process(10, 1, str(exe), line, 5.0, str(tree))
+    me = Process(11, 10, str(exe), line, 5.0, str(tree))
+    assert liverun.removal_holders(tree, census=lambda: [launcher, me], me=11) == ()
+    session = Process(10, 1, str(exe), f'{exe} -m ai_lab.session runtime', 5.0, str(tree))
+    assert liverun.removal_holders(tree, census=lambda: [session, me], me=11) == (session,)
+    stranger = Process(20, 1, str(exe), line, 5.0, str(tree))
+    assert liverun.removal_holders(tree, census=lambda: [launcher, me, stranger], me=11) == (stranger,)

@@ -5,7 +5,7 @@ module is dev-lab's ONE adapter onto it (:func:`kind_root`, :func:`output_path`)
 
 * ``where [<kind>...]`` prints each kind's root for this checkout and whether it is bound.
 * ``render [--to P]`` writes the rclone remotes this machine reaches -- the family's options plus each remote's
-  secret, read ONLY from ``<[storage] secrets>/<name>.toml`` (placed there by ``ops secret place``) -- to an
+  secret, read ONLY from the remote's own declared ``credentials_file`` (placed there by ``ops secret place``) -- to an
   owner-only file outside every repo (:func:`dev_lab.dev.artefactstores.check_rclone_config`). Nobody
   hand-edits an rclone config; the secret never reaches argv, a log or this module's output.
 * ``publish [--to P]`` writes the bound roots as JSON (:func:`publish`) for the agent-guard engine, which reads no
@@ -181,15 +181,15 @@ def publish(to: Path, *, declared: _storage.Storage | None = None) -> Path:
 
 
 def rendered(declared: _storage.Storage) -> str:
-    """The rclone config text for every reached remote: family options, then the placed secret's keys."""
+    """The rclone config text for every reached remote: family options, then its declared credentials_file's keys."""
     blocks = []
     for remote in declared.reach:
-        secrets = declared.secrets or Path()  # lab_commons.storage refuses a reach without one
-        secret_file = secrets / f'{remote.name}.toml'
+        secret_file = remote.credentials_file or Path()  # lab_commons.storage refuses a reach without one
         if not secret_file.is_file():
             msg = (
-                f'no secret for remote {remote.name!r} at {secret_file}: place it with '
-                f'`python -m dev_lab.ops secret place --path {secret_file}` (TOML of the transport keys)'
+                f'no secret for remote {remote.name!r} at its declared credentials_file {secret_file}: place it with '
+                f'`python -m dev_lab.ops.secretplace place --path {secret_file} --grant <id>` (TOML of the transport '
+                'keys; the request comes first: `python -m dev_lab.ops.secretplace request --path ...`)'
             )
             raise _storage.StorageError(msg)
         secret = tomllib.loads(secret_file.read_text(encoding='utf-8'))

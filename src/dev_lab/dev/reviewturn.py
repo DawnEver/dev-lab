@@ -1,4 +1,4 @@
-"""REVIEW IS THE LAST GATE: the merge decision asks for a head's review, and nothing else does.
+"""REVIEW RUNS LAST, ADVISORY: the merge decision asks for a head's review, and nothing else does.
 
 User ruling 2026-11-05 ("a PR is reviewed only when it is about to be merged into integrate/main"), and integrator
 ruling M8 2026-11-06: the one-shot review runs at the PR's first MERGE-READY head. The review is

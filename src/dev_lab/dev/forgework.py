@@ -37,7 +37,7 @@ import http.client
 import json
 import time
 import urllib.parse
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -388,9 +388,9 @@ class Client:
                 return ACTIONS_BOT
             raise
 
-    def issue_list(self, *, state: str = 'open', limit: int = 30) -> tuple[Issue, ...]:
-        """Issues in *state* among the first *limit* rows, read page by page (:func:`forgepages.issues`)."""
-        return issues(self.call, f'{self.repo}/issues?{self.backend.list_query}', state, limit)
+    def issue_list(self, *, state: str = 'open', limit: int = 30, labels: Sequence[str] = ()) -> tuple[Issue, ...]:
+        """Issues in *state* carrying every one of *labels*, read page by page (:func:`forgepages.issues`)."""
+        return issues(self.call, f'{self.repo}/issues?{self.backend.list_query}', state, limit, labels)
 
     def issue_view(self, number: int) -> Issue:
         """One issue."""

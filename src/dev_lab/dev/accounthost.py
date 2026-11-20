@@ -25,7 +25,13 @@ from dev_lab.dev.hpcaccount.spec import load
 __all__ = ['TABLES', 'check', 'derived', 'grant_of', 'is_account']
 
 #: What an account file may declare; an empty table is open (its own module checks its keys).
-TABLES: Final[Mapping[str, Any]] = {'deploy': {}, 'schedule': {}, 'capabilities': {}, 'hpc': {'paging': {}}}
+TABLES: Final[Mapping[str, Any]] = {
+    'deploy': {},
+    'schedule': {},
+    'env': {},
+    'capabilities': {},
+    'hpc': {'paging': {}},
+}
 #: ``[deploy]`` keys the family grant owns: stated in an account file they would be a second copy.
 _DERIVED: Final = ('role', 'slurm_account', 'partitions')
 

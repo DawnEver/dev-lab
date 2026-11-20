@@ -30,8 +30,6 @@ produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
 [tool.dev_lab.hooks]
 
-[tool.dev_lab.protection]
-producer = "actions"
 """
 
 
@@ -114,7 +112,6 @@ def test_the_built_in_ephemeral_default_needs_no_restating() -> None:
         "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
         "[tool.dev_lab.integrator]\nintegration = 'integrate/main'\npr_merges_since = 'abc'\n"
         "[tool.dev_lab.hooks]\n[tool.lab_commons.tests]\nproduce = ['-m', 'dev_lab.dev.verify', '--part', '{part}']\n"
-        "[tool.dev_lab.protection]\nproducer = 'actions'\n"
     )
     assert onboarding_gaps(text, {'AGENTS.md', 'uv.lock'}.__contains__, 'origin/x') == []
     off = text.replace("sessions = ['integrate/main']\n", "sessions = ['integrate/main']\nephemeral = ['wip/*']\n")

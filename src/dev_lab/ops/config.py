@@ -192,7 +192,10 @@ class Breakglass(Placement):
     CEILINGS (user ruling 2026-11-06): ``wave_hours_max`` the longest window, ``max_merges_max`` the largest cap
     (``0`` = no ceiling). A non-positive or NaN window ceiling and a negative cap ceiling are refused at load.
     ``tick`` is when the timer ends expired waves and resends a wave summary no alert channel delivered (a systemd
-    ``OnCalendar``).
+    ``OnCalendar``). ``family`` is the break-glass processes' lab-commons family layer, ``{source, file, max_age}``:
+    a wave reads who produces each repo's tests from the family's roles binding (:mod:`dev_lab.dev.roles`, D73), so
+    install renders it as the ``[family]`` table of the machine file its serve and tick read
+    (:data:`dev_lab.ops.install.BREAKGLASS_MACHINE`, :func:`dev_lab.ops.install.family_env`).
     """
 
     account: str
@@ -206,10 +209,14 @@ class Breakglass(Placement):
     wave_hours_max: float = 24.0
     max_merges_max: int = 0
     tick: str = 'hourly'
+    family: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
         served_by(self.repos, self.tokens, self.apps, '[ops.breakglass]')
+        if self.family and not self.family.get('source'):
+            msg = '[ops.breakglass.family] names no source (the family file on this host)'
+            raise ValueError(msg)
         if not self.wave_hours_max > 0:  # NaN fails too
             msg = f'[ops.breakglass] wave_hours_max ({self.wave_hours_max}) must be positive'
             raise ValueError(msg)
