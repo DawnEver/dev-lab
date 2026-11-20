@@ -275,7 +275,7 @@ def repo_wide(
     if (prune := roles.kind(PRUNE)) != HPC:
         say(f'[serve] prune = "{prune}": its executor closes landed PRs, sweeps and prunes, never this hpc tick')
     else:
-        prune_duty(root, client(root), now=clock(), say=say, alarm=alarm)
+        prune_duty(root, client(root), repo, now=clock(), say=say, alarm=alarm)
     hygiene(root, client(root), say=say)
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
