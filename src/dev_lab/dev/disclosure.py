@@ -67,8 +67,9 @@ BUDGETS: Final[dict[str, Budget]] = {
     'deny-hazard': Budget(max_lines=1, max_line_chars=132),
     'deny-remedy': Budget(
         max_lines=1,
-        max_line_chars=260,
-        reason='a refusal names, per need, the exact unified door command with its flags (user ruling 2026-11-10)',
+        max_line_chars=278,
+        reason='a refusal names, per need, the exact unified door command with its flags (user ruling 2026-11-10); '
+        'RECURSIVE-DELETE names five doors and measured 278 (2026-11-20) -- cut below that, a door loses its flag',
     ),
 }
 

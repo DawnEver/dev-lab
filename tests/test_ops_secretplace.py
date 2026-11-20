@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from _ops_fixtures import config
+from lab_commons.storage import declared as storage_declared
 
 from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops import redeemverbs, secretplace
@@ -166,8 +167,6 @@ def test_the_ops_cli_routes_secret_place_and_reads_stdin(tmp_path: Path, monkeyp
 
 
 def _reaching(tmp_path: Path) -> object:
-    from lab_commons.storage import declared as storage_declared  # noqa: PLC0415 -- the workstation layer only
-
     family = {'storage': {'remotes': {'results': {'type': 's3'}}}}
     machine = {'storage': {'reach': {'results': {'credentials_file': str(tmp_path / 'secrets' / 'results')}}}}
     return storage_declared(machine, family)

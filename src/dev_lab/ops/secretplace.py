@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import getpass
 import hashlib
 import json
 import os
@@ -38,8 +39,10 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 from lab_commons.storage import Storage
+from lab_commons.storage import declared as storage_declared
 
 from dev_lab.ops.config import OpsConfig
+from dev_lab.ops.consent.client import verify_held
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.served import credential_files
 
@@ -96,10 +99,6 @@ def declared(config: OpsConfig) -> dict[str, str]:
 
 def workstation_declared(storage: Storage | None = None, *, user: str | None = None) -> dict[str, str]:
     """The reached storage remotes' ``credentials_file``s, each owned by *user* (default: the caller)."""
-    import getpass  # noqa: PLC0415 -- only the workstation door names its user
-
-    from lab_commons.storage import declared as storage_declared  # noqa: PLC0415 -- read only on a workstation
-
     found = storage_declared() if storage is None else storage
     owner = getpass.getuser() if user is None else user
     return {str(remote.credentials_file): owner for remote in found.reach if remote.credentials_file is not None}
@@ -171,8 +170,6 @@ def add_parser(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
 
 def _own(_path: Path, user: str | None, _group: str | None) -> None:
     """A workstation's file is the caller's own: nothing to change; another declared owner is refused."""
-    import getpass  # noqa: PLC0415
-
     if user not in {None, getpass.getuser()}:
         msg = f"a workstation places only its own user's files, not {user}'s"
         raise SecretRefused(msg)
@@ -193,8 +190,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit('refused: place needs --grant <id> (python -m dev_lab.ops.consent grant <request.json> --code <code>)',
              err=True)  # fmt: skip
         return 2
-    from dev_lab.ops.consent.client import verify_held  # noqa: PLC0415 -- only the workstation verb spends a grant
-
     try:
         said = place(
             workstation_declared(), 'this machine file ([storage.reach.<remote>] credentials_file)', args.path, content,
