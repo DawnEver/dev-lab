@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from _branch_repos import advance
 from _forge_state import StateForge
+from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
 from test_dev_forgereview import _DECLARED, FakeCommand, _can, _work
 
 from dev_lab.dev.ciworkflows import workflows
@@ -27,6 +28,13 @@ from dev_lab.dev.forgework import ACTIONS_BOT
 from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewturn import REVIEW_DUE_SAID, REVIEW_LABEL, review_turn
+
+
+@pytest.fixture(autouse=True)
+def _review_on_the_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bind review on hpc: this module drives the serve's review tick, which reviews nothing else (D73)."""
+    carry(monkeypatch, HPC_REVIEWED)
+
 
 _BASE = 'integrate/main'
 _PARTS = 'scope=full ran=3 hands=-'
@@ -142,7 +150,8 @@ def test_inside_a_gitea_actions_job_the_decision_leaves_the_asking_to_a_serve(
     assert forge.labeled == []
 
 
-def test_the_tick_is_what_starts_the_review_on_both_forges(tmp_path: Path) -> None:
+def test_the_tick_is_what_starts_the_review_on_both_forges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    carry(monkeypatch, EVERY_CI)  # the RENDER of a CI-reviewed repo, not this module's serve tick
     hub, tea = tmp_path / 'hub', tmp_path / 'tea'
     hub.mkdir()
     tea.mkdir()

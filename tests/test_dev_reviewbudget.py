@@ -13,6 +13,7 @@ import pytest
 from _branch_repos import advance
 from _forge_state import StateForge, called_due
 from _review_doubles import _doc, _state
+from _roles_fixtures import HPC_REVIEWED, carry
 from test_dev_forgereview import FakeCommand, _forge, _work
 
 from dev_lab.dev.forge import Forge
@@ -45,6 +46,13 @@ from dev_lab.dev.reviewbudget import (
     share_of,
     tag_of,
 )
+
+
+@pytest.fixture(autouse=True)
+def _review_on_the_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bind review on hpc: this module drives the serve's review tick, which reviews nothing else (D73)."""
+    carry(monkeypatch, HPC_REVIEWED)
+
 
 _BUDGET = 1000.0
 _REVIEW = Review(command=('reviewer', '--range', RANGE_FIELD))
