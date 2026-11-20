@@ -17,8 +17,7 @@ from test_dev_forgereview import _LANE_POLICY, _work
 
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeheadgate import GATES
-from dev_lab.dev.forgemerge import decide, judged
-from dev_lab.dev.forgereview_declared import review_from
+from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import CommitStatus, status_list, status_post
 from dev_lab.dev.forgework import ACTIONS_BOT, GITEA, GITEA_ACTIONS_LOGIN
@@ -32,6 +31,7 @@ from dev_lab.dev.reviewgate import (
     review_missing,
     status_gate,
 )
+from dev_lab.dev.roles import CI, HOST
 
 _BASE = 'integrate/main'
 _SECURED = ('tests/security', 'success', 'nothing found')
@@ -209,8 +209,8 @@ def _judge_repo() -> tuple[StateForge, str, int]:
     return forge, head, forge.add_pull('pr/x', _BASE, sha=head)
 
 
-def _gate(forge: StateForge, head: str) -> str | None:
-    return review_gate(forge, base=_BASE)(status_list(forge, head))
+def _gate(forge: StateForge, head: str, *, by: str = CI) -> str | None:
+    return review_gate(forge, base=_BASE, by=by)(status_list(forge, head))
 
 
 @pytest.mark.parametrize(
@@ -230,7 +230,7 @@ def test_a_judge_repo_s_merge_never_waits_on_the_judge(verdicts: tuple[tuple[str
     for login, state in verdicts:
         forge.add_review(number, login=login, state=state, commit=head)
     status_post(forge, head, context=HOLD_CONTEXT, state='pending', description='held')
-    assert _gate(forge, head) is None
+    assert _gate(forge, head, by=HOST) is None
 
 
 def test_a_serve_repo_is_unaffected_by_a_judge_approval() -> None:
@@ -240,26 +240,6 @@ def test_a_serve_repo_is_unaffected_by_a_judge_approval() -> None:
     forge.add_review(number, login=_JUDGE_LOGIN, state='APPROVED', commit=head)
     assert _gate(forge, head) == review_missing(status_list(forge, head), forge_posted(forge))
     assert _gate(forge, head) is not None
-
-
-def test_a_judge_declaration_without_a_judge_login_is_refused() -> None:
-    with pytest.raises(ValueError, match='judge_login'):
-        review_from('[tool.dev_lab.review]\nwhere = "judge"\n', 'x')
-    forge, head, _ = _judge_repo()
-    forge.pyproject_at[_BASE] = '[tool.dev_lab.review]\nwhere = "judge"\n'
-    with pytest.raises(ValueError, match='judge_login'):
-        _gate(forge, head)
-
-
-def test_a_judge_base_without_a_login_is_reported_never_a_crash_nor_a_wait(tmp_path: Path) -> None:
-    work, head = _work(tmp_path)
-    forge = StateForge()
-    forge.pyproject_at[_LANE_POLICY.integration] = '[tool.dev_lab.review]\nwhere = "judge"\n'
-    number = forge.add_pull('pr/x', _LANE_POLICY.integration, sha=head)
-    found = judged(work, forge, _LANE_POLICY, branch='pr/x', number=number, head=head)
-    assert found.review is not None
-    assert 'judge_login' in found.review
-    assert not any('judge_login' in line for line in found.missing)
 
 
 def test_a_head_is_reviewed_only_by_a_posted_successful_review_with_no_hold_pending() -> None:
