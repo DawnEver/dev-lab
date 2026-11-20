@@ -58,7 +58,9 @@ elif rest[0] == 'merge': (git / 'HEAD_SHA').write_text((git / 'UP_SHA').read_tex
 FAKE_BOOTSTRAP: Final = r"""
 import pathlib, sys
 with pathlib.Path(sys.argv[1]).open('a') as f: f.write('bootstrap ' + sys.argv[-1] + '\n')
-python = pathlib.Path(sys.argv[-1], sys.argv[2]); python.parent.mkdir(parents=True, exist_ok=True); python.touch()
+root = pathlib.Path(sys.argv[-1]); (root / '.venv-current').write_text('x' + chr(10))  # the one pointer
+python = root.joinpath('.venvs', 'x', *pathlib.Path(sys.argv[2]).parts[1:])
+python.parent.mkdir(parents=True, exist_ok=True); python.touch()
 """
 
 FAKE_PYTHON: Final = r"""

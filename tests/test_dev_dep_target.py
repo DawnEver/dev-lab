@@ -187,16 +187,18 @@ def test_sync_failure_is_nonzero_publishes_nothing_and_keeps_the_anchors(tmp_pat
     readings = iter(('before', 'after'))
     monkeypatch.setattr(dep.Port, 'env_key', lambda _self, _python=None: next(readings))
 
-    venv.EnvBuilder().create(tmp_path / '.venv')
+    live = tmp_path / venvpointer.HOME / 'live'
+    venv.EnvBuilder().create(live)
+    venvcurrent.publish(tmp_path, live)
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(returncode=17, stdout='', stderr='')
 
     assert dep.main(['--bootstrap', str(tmp_path)], run=run, cwd=tmp_path) == 17
     assert anchor.exists()
-    assert venvpointer.current(tmp_path) == tmp_path / '.venv'
-    built = [p.name for p in (tmp_path / venvpointer.HOME).iterdir() if p.name != venvcurrent.BUILD_LOCK]
-    assert not built, 'only the worktree build lock stays'
+    assert venvpointer.current(tmp_path) == live
+    built = [p.name for p in (tmp_path / venvpointer.HOME).iterdir() if p.name not in {venvcurrent.BUILD_LOCK, 'live'}]
+    assert not built, 'only the live env and the worktree build lock stay'
 
 
 def test_a_lane_cannot_target_main_but_main_can_bootstrap_the_lane(tmp_path) -> None:
@@ -234,20 +236,21 @@ def test_an_unknown_extra_refuses_before_sync(tmp_path) -> None:
         dep.main(['--bootstrap', str(tmp_path), '--extra', 'undeclared'], cwd=tmp_path)
 
 
-def test_bootstrap_refuses_an_own_venv_alias_to_another_environment(tmp_path) -> None:
+def test_bootstrap_refuses_a_named_environment_that_links_to_another_checkouts(tmp_path) -> None:
     owner = tmp_path / 'owner'
     lane = tmp_path / 'lane'
-    owner.mkdir()
-    lane.mkdir()
-    venv.EnvBuilder().create(owner / '.venv')
+    venv.EnvBuilder().create(owner / venvpointer.HOME / 'x')
+    (lane / venvpointer.HOME).mkdir(parents=True)
     (lane / 'pyproject.toml').write_text('[project]\nname="lane"\nversion="0"\n', encoding='utf-8')
-    alias = lane / '.venv'
+    link = lane / venvpointer.HOME / 'x'
     if os.name == 'nt':
         cmd = shutil.which('cmd')
         assert cmd is not None
-        subprocess.run([cmd, '/c', 'mklink', '/J', str(alias), str(owner / '.venv')], check=True, capture_output=True)
+        argv = [cmd, '/c', 'mklink', '/J', str(link), str(owner / venvpointer.HOME / 'x')]
+        subprocess.run(argv, check=True, capture_output=True)
     else:
-        alias.symlink_to(owner / '.venv', target_is_directory=True)
+        link.symlink_to(owner / venvpointer.HOME / 'x', target_is_directory=True)
+    (lane / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(returncode=0, stdout='', stderr='')

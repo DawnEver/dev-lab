@@ -152,13 +152,13 @@ def test_the_background_follow_detaches_for_a_behind_checkout_or_unwired_hooks(t
     assert len(started) == 2, 'PLANTED CONTROL: a current venv, checkout and hooks detach nothing'
 
 
-def _published(tmp_path: Path) -> tuple[Path, Path, Path]:
-    """A checkout whose pointer names ``.venvs/x`` beside a LEGACY ``.venv`` directory: (root, legacy, current)."""
+def _published(tmp_path: Path, other: str) -> tuple[Path, Path, Path]:
+    """A checkout whose pointer names ``.venvs/x`` beside an *other* environment directory: (root, other, current)."""
     root = tmp_path / 'main'
     root.mkdir()
     (root / 'pyproject.toml').write_text('[project]\nname = "r"\n', encoding='utf-8')
     pythons = []
-    for env in (root / venvpointer.ALIAS, root / venvpointer.HOME / 'x'):
+    for env in (root / other, root / venvpointer.HOME / 'x'):
         python = env.joinpath(*VENV_LAYOUTS[os.name][1:])
         python.parent.mkdir(parents=True)
         python.write_text('', encoding='utf-8')
@@ -168,35 +168,33 @@ def _published(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def test_the_bootstrap_runs_from_the_current_environment(tmp_path: Path, monkeypatch) -> None:
-    root, legacy, current = _published(tmp_path)
+    root, older, current = _published(tmp_path, f'{venvpointer.HOME}/old')
     ran: list[list[str]] = []
     monkeypatch.setattr(venvfollow._door, 'run', lambda argv, **_: ran.append(argv) or SimpleNamespace(returncode=0))
-    monkeypatch.setattr(sys, 'executable', str(legacy))
+    monkeypatch.setattr(sys, 'executable', str(older))
     assert venvfollow.follow(root, busy=lambda _r: '') == venvfollow.BOOTSTRAPPED
     assert ran[-1][:4] == [str(current), '-m', 'dev_lab.dev.dep', '--bootstrap']
     (root / venvpointer.POINTER).unlink()
     (root / 'uv.lock').write_text('rev = "2"\n', encoding='utf-8')
     venvfollow.follow(root, busy=lambda _r: '')
-    assert ran[-1][0] == str(legacy), 'PLANTED CONTROL: no pointer: the legacy .venv is current'
+    assert ran[-1][0] == str(older), 'PLANTED CONTROL: no pointer names a current one: the launcher stays'
 
 
-def test_a_legacy_venv_makes_the_follow_due_and_it_retires_once_unheld(tmp_path: Path, monkeypatch) -> None:
-    """The drain retries at every follow: held, the legacy ``.venv`` stays; unheld, it becomes the current alias."""
-    root, legacy, current = _published(tmp_path)
+def test_a_retired_venv_makes_the_follow_due_and_goes_once_unheld(tmp_path: Path, monkeypatch) -> None:
+    """The migration retries at every follow: held, the retired ``.venv`` stays; unheld, it moves aside."""
+    root, legacy, current = _published(tmp_path, venvpointer.RETIRED_ALIAS)
     venvfollow.stamp(root, venvfollow.env_key(root))
     monkeypatch.setattr(venvfollow.checkoutfollow, 'behind', lambda _r: False)
     monkeypatch.setattr(venvfollow.hook_install, 'unwired', lambda _r: False)
     monkeypatch.setattr(venvfollow.checkoutfollow, 'advance', lambda _r: '')
     monkeypatch.setattr(venvfollow.hook_install, 'rewire', lambda _r: '')
-    assert venvfollow.due(root), 'a legacy .venv the pointer passed over is due for its drain'
+    assert venvfollow.due(root), 'a retired .venv is due for its migration'
     holder = Process(4242, 1, str(legacy), f'{legacy} -m app run', 3600.0, str(tmp_path))
     monkeypatch.setattr(venvfollow, 'processes', lambda: [holder])
     venvfollow.main(['--root', str(root)])
-    alias = root / venvpointer.ALIAS
     assert legacy.is_file(), 'PLANTED CONTROL: held, the legacy directory stays'
-    assert not os.path.isjunction(alias)
-    assert not alias.is_symlink()
     monkeypatch.setattr(venvfollow, 'processes', list)
     venvfollow.main(['--root', str(root)])
-    assert alias.resolve() == current.parents[1].resolve(), 'unheld: .venv is now the alias of the current env'
-    assert not venvfollow.due(root), 'PLANTED CONTROL: drained, nothing is due'
+    assert not (root / venvpointer.RETIRED_ALIAS).exists(), 'unheld: .venv is gone'
+    assert venvpointer.named(root) == current.parents[1], 'the pointer still names the current env'
+    assert not venvfollow.due(root), 'PLANTED CONTROL: migrated, nothing is due'

@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _venv_fake import current_env
 
 from dev_lab.dev import hook_install, venvpointer
 from dev_lab.dev.famtests.hookinstall import (
@@ -280,7 +281,7 @@ def test_a_venv_less_commit_is_refused_naming_the_bootstrap_door(repo: Path) -> 
 
 def test_a_half_built_venv_is_passed_over_and_the_commit_refused_naming_the_door(repo: Path) -> None:
     """A venv whose interpreter exists but cannot import dev_lab is not exec'd into a bare ``No module named``."""
-    venv = repo / '.venv' / 'bin'
+    venv = current_env(repo) / 'bin'
     venv.mkdir(parents=True)
     fake = venv / 'python'
     fake.write_text('#!/bin/sh\necho "No module named dev_lab" >&2\nexit 1\n', encoding='utf-8', newline='\n')
@@ -303,7 +304,7 @@ def test_no_interpreter_anywhere_refuses_the_commit_in_one_line(repo: Path, tmp_
 
 def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path) -> None:
     """PLANTED CONTROL: the checkout's own venv wins over the fallback, and a failing hook still refuses."""
-    venv = repo / '.venv' / 'bin'
+    venv = current_env(repo) / 'bin'
     venv.mkdir(parents=True)
     fake = venv / 'python'
     fake.write_text(
@@ -330,16 +331,18 @@ def _fallback(stage_shim: str) -> str:
 
 
 def test_a_recorded_checkout_interpreter_follows_that_checkouts_current_environment(tmp_path: Path) -> None:
-    """A fallback recorded from a legacy ``.venv`` (or an older ``.venvs/<id>``) re-resolves at every run."""
+    """A fallback recorded from an older ``.venvs/<id>`` re-resolves at every run; the retired ``.venv`` never does."""
     root = tmp_path / 'main'
     tail = CANDIDATE_RELATIVE_PATHS[0][1:]
-    (root / venvpointer.HOME / 'x').mkdir(parents=True)
-    (root / venvpointer.ALIAS).mkdir()
-    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
-    recorded = root.joinpath(venvpointer.ALIAS, *tail).as_posix()
+    (root / venvpointer.HOME / 'old').mkdir(parents=True)
+    current_env(root, 'x')
+    recorded = root.joinpath(venvpointer.HOME, 'old', *tail).as_posix()
     assert _fallback(shim('pre-commit', recorded)) == root.joinpath(venvpointer.HOME, 'x', *tail).as_posix()
     (root / venvpointer.POINTER).unlink()
-    assert _fallback(shim('pre-commit', recorded)) == recorded, 'PLANTED CONTROL: no pointer: .venv is current'
+    unset = root.joinpath(venvpointer.POINTER, *tail).as_posix()
+    assert _fallback(shim('pre-commit', recorded)) == unset, 'no pointer: the miss names the pointer'
+    retired = root.joinpath(venvpointer.RETIRED_ALIAS, *tail).as_posix()
+    assert _fallback(shim('pre-commit', retired)) == retired, 'PLANTED CONTROL: .venv is no checkout env now'
     elsewhere = (tmp_path / 'python-install' / 'python').as_posix()
     assert _fallback(shim('pre-commit', elsewhere)) == elsewhere, 'not a checkout env: recorded verbatim'
 
@@ -429,7 +432,7 @@ def test_a_worktree_without_a_venv_runs_its_hooks_on_the_main_checkouts_interpre
     subprocess.run(
         [_GIT, '-C', str(repo), 'worktree', 'add', '-q', '--detach', str(tree)], check=True, capture_output=True
     )
-    fake = repo.joinpath(*CANDIDATE_RELATIVE_PATHS[-1])
+    fake = current_env(repo).joinpath(*CANDIDATE_RELATIVE_PATHS[-1][1:])
     fake.parent.mkdir(parents=True)
     fake.write_text('#!/bin/sh\necho "main interpreter: $*" >&2\n', encoding='utf-8', newline='\n')
     fake.chmod(0o755)

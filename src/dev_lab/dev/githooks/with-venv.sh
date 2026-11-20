@@ -5,7 +5,7 @@
 #   python -m dev_lab.dev.githooks script with-venv pytest -q
 #   python -m dev_lab.dev.githooks script with-venv scripts/some_tool.py --flag
 #
-# EACH WORKTREE OWNS ITS `.venv`. A lane's own environment is
+# EACH WORKTREE OWNS ITS ENVIRONMENT (the one `.venv-current` names). A lane's own environment is
 # the isolated case: a dependency change belongs to the lane instead of being a change to everyone's
 # environment, and `PYTHONPATH` juggling stops being necessary because the lane's own editable
 # install already points at the lane's own source.
@@ -32,7 +32,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THIS_ROOT="$(git rev-parse --show-toplevel)"
 
 # AN INTERPRETER THAT EXISTS IS NOT AN ENVIRONMENT THAT WORKS, and the difference is invisible
-# exactly where it hurts. MEASURED 2026-08-15: a worktree carried a `.venv` holding three files --
+# exactly where it hurts. MEASURED 2026-08-15: a worktree carried an env holding three files --
 # `_virtualenv.pth`, `_virtualenv.py`, `__pycache__` -- and no distributions at all. A stub like that
 # is what `virtualenv` leaves when a creation is interrupted, or what a tool makes to hold a path.
 # `-x` on its `python.exe` says yes, so it won the preference over MAIN's populated venv and every
@@ -78,7 +78,7 @@ PYTHON=''
 _SAW_VENV=''
 # The current environment (dev-lab #641): rendered by `node venv_resolver.js --shell`, never edited here.
 # BEGIN venv_resolver.js --shell
-_current_env() { _n=""; if [ -f "$1/.venv-current" ]; then _n="$(head -n 1 "$1/.venv-current" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"; fi; case "$_n" in (""|.|..|*/*|*\\*|*:*) echo "$1/.venv" ;; (*) if [ -d "$1/.venvs/$_n" ]; then echo "$1/.venvs/$_n"; else echo "$1/.venv"; fi ;; esac; }
+_current_env() { _n=""; if [ -f "$1/.venv-current" ]; then _n="$(head -n 1 "$1/.venv-current" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"; fi; case "$_n" in (""|.|..|*/*|*\\*|*:*) echo "$1/.venv-current" ;; (*) if [ -d "$1/.venvs/$_n" ]; then echo "$1/.venvs/$_n"; else echo "$1/.venv-current"; fi ;; esac; }
 # END venv_resolver.js --shell
 
 for root in "${THIS_ROOT}"; do
@@ -95,9 +95,9 @@ done
 
 if [ -z "${PYTHON}" ]; then
   if [ -n "${_SAW_VENV}" ]; then
-    echo "with-venv: this checkout's .venv cannot provide '${_NEEDED_MODULE}': missing TOOL." >&2
+    echo "with-venv: this checkout's current environment cannot provide '${_NEEDED_MODULE}': missing TOOL." >&2
   else
-    echo "with-venv: no populated .venv under ${THIS_ROOT}." >&2
+    echo "with-venv: no populated environment named by ${THIS_ROOT}/.venv-current." >&2
   fi
   echo "  Use an interpreter with lab-commons: python -m dev_lab.dev.dep --bootstrap \"${THIS_ROOT}\"." >&2
   exit 1
@@ -105,7 +105,7 @@ fi
 
 # Resolving the INTERPRETER is only half of it, and the half that does not bite until you push from
 # a lane. A type checker picks the environment it ANALYSES against from the project root it runs in
-# -- it looks for a `.venv` there -- so a lane WITHOUT one silently falls back to the system Python
+# -- it looks for its default env there -- so a lane WITHOUT one silently falls back to the system Python
 # and every third-party import goes unresolved. MEASURED 2026-07-28 pushing from a worktree: 41
 # errors, all of them "could not be resolved", against files that are clean on MAIN. Passing
 # `--pythonpath` takes the same file from 2 errors to 0.

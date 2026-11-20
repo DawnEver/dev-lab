@@ -21,6 +21,7 @@ import venv
 from pathlib import Path
 
 import pytest
+from _venv_fake import current_env
 
 from dev_lab.dev import agent_guard, agent_wiring, agenthooks, hook_adoption, native_session
 from dev_lab.dev.githooks import bash_executable
@@ -452,8 +453,8 @@ def test_a_local_rule_shadowing_a_family_rule_is_refused() -> None:
 def _venv_with_dev_lab_at(root: Path, installed: str, locked: str) -> dict[str, str]:
     """*root* a checkout whose venv holds a dev-lab at *installed* and whose ``uv.lock`` pins *locked*."""
     agent_guard.install_guard(root)
-    venv.EnvBuilder(with_pip=False).create(root / '.venv')
-    site = next((root / '.venv').glob('**/site-packages'))
+    venv.EnvBuilder(with_pip=False).create(current_env(root))
+    site = next((current_env(root)).glob('**/site-packages'))
     info = site / 'dev_lab-0.dist-info'
     info.mkdir()
     (info / 'METADATA').write_text('Metadata-Version: 2.1\nName: dev-lab\nVersion: 0\n', encoding='utf-8')
@@ -574,7 +575,7 @@ def test_the_installed_node_launcher_and_python_share_the_exact_native_identity_
     if accepted:
         assert native_session.session_of({'CODEX_THREAD_ID': value}) == value
         assert done.returncode == 0, done.stderr
-        assert 'no .venv interpreter' in done.stderr
+        assert 'no interpreter in its current environment' in done.stderr
     else:
         with pytest.raises(ValueError, match='Door:'):
             native_session.session_of({'CODEX_THREAD_ID': value})

@@ -12,9 +12,10 @@ A layer with no ``[deploy]`` host, or whose host is not one of its grant's login
 others still deploy (exit 2).
 
 AN ACCOUNT WITH NO KIT VENV IS FIRST INSTALLED (:func:`first_install`): a key-only account has no other door, so
-when ``~/<root>/dev-lab/.venv`` has no interpreter, uv is installed into ``~/.local/bin`` if absent, the
+when the kit's current environment has no interpreter, uv is installed into ``~/.local/bin`` if absent, the
 kit is cloned where missing (only the kit: a forge-hosted repo needs the reader credential placed later), and the
-kit is ``uv sync --frozen``-ed; a kit with its venv skips the step.
+kit is ``uv sync --frozen``-ed into ``.venvs/first`` and ``.venv-current`` names it; a kit with its venv skips
+the step.
 
 THE ROLE IS THE WORKSTATION'S (user rulings 2026-11-09): each grant's ``role`` and the ``[hpc.roles]`` table
 (:mod:`dev_lab.dev.hpcaccount.division`) are passed to the account's deploy, which refuses when its own ``[deploy]
@@ -70,7 +71,7 @@ from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of
 from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
-from dev_lab.dev.venvpointer import shell_interpreter
+from dev_lab.dev.venvpointer import HOME, POINTER, shell_interpreter
 
 __all__ = [
     'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
@@ -283,6 +284,14 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
 
 #: The official uv installer (user approval 2026-11-16: an HPC account may install uv into ``~/.local/bin``).
 UV_INSTALLER: Final = 'https://astral.sh/uv/install.sh'
+#: The kit's first environment, under the environments' home; the pointer names it once synced.
+FIRST_ENV: Final = 'first'
+
+
+def _first_sync() -> str:
+    """``uv sync`` into ``.venvs/<FIRST_ENV>``, then the pointer names it -- never uv's default env."""
+    env = f'{HOME}/{FIRST_ENV}'
+    return f'UV_PROJECT_ENVIRONMENT={env} uv sync --frozen && printf "%s\\n" {FIRST_ENV} > {POINTER}'
 
 
 def first_install(grant: Grant, target: Target) -> str:
@@ -290,7 +299,8 @@ def first_install(grant: Grant, target: Target) -> str:
 
     A key-only account has no door for a first install (raw ssh is refused), and every later step runs the kit's
     venv python. So, only when that interpreter is missing: uv into ``~/.local/bin`` unless one is on PATH, each
-    declared repo cloned at its ref where its checkout is absent, then ``uv sync --frozen`` in the kit.
+    declared repo cloned at its ref where its checkout is absent, then ``uv sync --frozen`` in the kit into
+    :data:`FIRST_ENV` under the environments' home, which the pointer then names: the one statement of the env.
     """
     root = PurePosixPath(paths_of_root(target.root).root) / 'repos'
     kit = root / KIT
@@ -303,7 +313,7 @@ def first_install(grant: Grant, target: Target) -> str:
         f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
         'export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0',
         f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
-        f'mkdir -p {root}', *clones, f'( cd {kit} && uv sync --frozen )',
+        f'mkdir -p {root}', *clones, f'( cd {kit} && {_first_sync()} )',
     ]  # fmt: skip
     body = ' && '.join([*grant.setup, *steps])
     return f'{{ [ -x {shell_interpreter(str(kit))} ] || ( {body} ); }}'

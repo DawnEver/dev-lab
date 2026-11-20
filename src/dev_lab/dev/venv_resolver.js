@@ -5,7 +5,8 @@
 // dev_lab.dev.venvpointer.current; tests/test_dev_venv_resolver.py holds all three to one answer on 20 layouts.
 //
 // THE RULE: the first line of <root>/.venv-current, surrounding whitespace removed, names a directory under
-// <root>/.venvs/ -- a name with no `/`, `\` or `:` that is not `.` or `..`; when it names none, <root>/.venv.
+// <root>/.venvs/ -- a name with no `/`, `\` or `:` that is not `.` or `..`; when it names none, the pointer itself:
+// a file, so no interpreter resolves under it and every miss names the pointer (door: dev_lab.dev.dep --bootstrap).
 // The pointer is replaced atomically, so a reader sees the old name or the new one; Windows refuses the open in
 // the instant of the swap, and that is retried, never read as absent.
 'use strict';
@@ -14,7 +15,6 @@ const path = require('path');
 
 const POINTER = '.venv-current';
 const HOME = '.venvs';
-const ALIAS = '.venv';
 const READ_TRIES = 50;
 //: Both interpreter layouts, probed in this order (dev_lab.dev.venvpath.CANDIDATE_RELATIVE_PATHS).
 const TAILS = [['Scripts', 'python.exe'], ['bin', 'python']];
@@ -44,7 +44,7 @@ function currentEnv(root) {
       if (fs.statSync(env).isDirectory()) return env;
     } catch {}
   }
-  return path.join(root, ALIAS);
+  return path.join(root, POINTER);
 }
 
 /** The first existing interpreter of `root`'s current environment, else null. */
@@ -64,13 +64,13 @@ function shellFunction() {
   return (
     '_current_env() { _n=""; ' +
     `if [ -f "$1/${POINTER}" ]; then _n="$(head -n 1 "$1/${POINTER}" | ${strip})"; fi; ` +
-    `case "$_n" in (""|.|..|*/*|*\\\\*|*:*) echo "$1/${ALIAS}" ;; ` +
-    `(*) if [ -d "$1/${HOME}/$_n" ]; then echo "$1/${HOME}/$_n"; else echo "$1/${ALIAS}"; fi ;; ` +
+    `case "$_n" in (""|.|..|*/*|*\\\\*|*:*) echo "$1/${POINTER}" ;; ` +
+    `(*) if [ -d "$1/${HOME}/$_n" ]; then echo "$1/${HOME}/$_n"; else echo "$1/${POINTER}"; fi ;; ` +
     'esac; }'
   );
 }
 
-module.exports = { ALIAS, HOME, POINTER, TAILS, currentEnv, interpreter, shellFunction };
+module.exports = { HOME, POINTER, TAILS, currentEnv, interpreter, shellFunction };
 
 if (require.main === module) {
   const [verb, root] = process.argv.slice(2);

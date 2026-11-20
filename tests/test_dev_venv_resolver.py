@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from dev_lab.dev import agent_guard, venvcurrent, venvpointer
+from dev_lab.dev import agent_guard, venvpointer
 from dev_lab.dev.jsrun import node_path
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 
@@ -51,7 +51,7 @@ def _layout(root: Path, layout: tuple[str | None, tuple[str, ...], bool]) -> Pat
     for name in envs:
         (root / venvpointer.HOME / name).mkdir(parents=True)
     if legacy:
-        (root / venvpointer.ALIAS).mkdir()
+        (root / venvpointer.RETIRED_ALIAS).mkdir()  # planted: the rule never reads it
     if pointer is not None:
         (root / venvpointer.POINTER).write_bytes(pointer.encode('utf-8'))
     return root
@@ -77,7 +77,7 @@ def test_the_three_resolvers_agree_on_every_layout(tmp_path: Path) -> None:
     for index, layout in enumerate(LAYOUTS):
         root = _layout(tmp_path / f'r{index}', layout)
         expected = venvpointer.current(root)
-        named += expected != root / venvpointer.ALIAS
+        named += expected != root / venvpointer.POINTER
         js = _run([str(node_path()), str(RESOLVER), '--current', str(root)])
         sh = _run([str(SH), '-c', f'{venvpointer.shell_function()}\n_current_env "$1"', 'sh', root.as_posix()])
         assert _same(js, expected), (layout, js, expected)
@@ -119,17 +119,8 @@ def test_a_watch_yields_only_an_environment_a_newer_one_superseded(tmp_path: Pat
     root = _layout(tmp_path / 'root', ('new\n', ('old', 'new'), True))
     assert venvpointer.superseded(root / venvpointer.HOME / 'old')
     assert not venvpointer.superseded(root / venvpointer.HOME / 'new'), 'PLANTED CONTROL: the current env stays'
-    assert venvpointer.superseded(root / venvpointer.ALIAS), 'a legacy .venv the pointer passed over drains'
+    assert not venvpointer.superseded(root / venvpointer.RETIRED_ALIAS), 'the retired .venv is no checkout env'
     assert not venvpointer.superseded(tmp_path / 'python-install'), 'not a checkout env: never yields'
-
-
-def test_a_legacy_venv_yields_only_when_a_pointer_names_another_environment(tmp_path: Path) -> None:
-    bare = _layout(tmp_path / 'bare', (None, (), True))
-    assert not venvpointer.superseded(bare / venvpointer.ALIAS), 'PLANTED CONTROL: no pointer: .venv is current'
-    aliased = tmp_path / 'aliased'
-    (aliased / venvpointer.HOME / 'new').mkdir(parents=True)
-    venvcurrent.publish(aliased, aliased / venvpointer.HOME / 'new')
-    assert not venvpointer.superseded(aliased / venvpointer.ALIAS), '.venv as the alias of the current env stays'
 
 
 def _interpreter(env: Path) -> Path:
@@ -139,19 +130,19 @@ def _interpreter(env: Path) -> Path:
     return python
 
 
-def test_a_launch_from_a_legacy_or_an_older_environment_takes_the_current_one(tmp_path: Path) -> None:
+def test_a_launch_from_an_older_environment_takes_the_current_one(tmp_path: Path) -> None:
     """The doors that start a child (a detached follow or reclaim, a bootstrap) re-resolve their own interpreter."""
     root = _layout(tmp_path / 'root', ('x\n', ('old', 'x'), True))
-    legacy, old = _interpreter(root / venvpointer.ALIAS), _interpreter(root / venvpointer.HOME / 'old')
-    new = _interpreter(root / venvpointer.HOME / 'x')
-    assert Path(venvpointer.current_interpreter(legacy)) == new
+    old, new = _interpreter(root / venvpointer.HOME / 'old'), _interpreter(root / venvpointer.HOME / 'x')
     assert Path(venvpointer.current_interpreter(old)) == new
     assert venvpointer.current_interpreter(new) == str(new)
-    bare = _layout(tmp_path / 'bare', (None, (), True))
-    held = _interpreter(bare / venvpointer.ALIAS)
-    assert venvpointer.current_interpreter(held) == str(held), 'PLANTED CONTROL: no pointer: .venv is current'
-    empty = _layout(tmp_path / 'empty', ('y\n', ('y',), True))
-    stays = _interpreter(empty / venvpointer.ALIAS)
+    retired = _interpreter(root / venvpointer.RETIRED_ALIAS)
+    assert venvpointer.current_interpreter(retired) == str(retired), 'the retired .venv is no checkout env'
+    bare = _layout(tmp_path / 'bare', (None, ('old',), False))
+    held = _interpreter(bare / venvpointer.HOME / 'old')
+    assert venvpointer.current_interpreter(held) == str(held), 'PLANTED CONTROL: no pointer names a current one'
+    empty = _layout(tmp_path / 'empty', ('y\n', ('y', 'old'), False))
+    stays = _interpreter(empty / venvpointer.HOME / 'old')
     assert venvpointer.current_interpreter(stays) == str(stays), 'a current env with no interpreter is not taken'
     outside = _interpreter(tmp_path / 'python-install')
     assert venvpointer.current_interpreter(outside) == str(outside), 'not a checkout env: unchanged'

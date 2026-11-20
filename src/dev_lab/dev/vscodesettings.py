@@ -1,9 +1,11 @@
 """The editor keys a checkout's ``.vscode/settings.json`` carries, rendered from facts declared elsewhere.
 
 The directories an editor must not index or watch ARE the bulky trees a checkout holds: the in-tree defaults of
-:data:`lab_commons.storage.KINDS` (output, venvs, worktrees, build), the venv pointer of
-:data:`dev_lab.dev.venvpath.VENV_LAYOUTS`, and whatever the repo declares as its own
+:data:`lab_commons.storage.KINDS` (output, venvs, worktrees, build) and whatever the repo declares as its own
 (``[tool.dev_lab.vscode] exclude = ["attic"]``). Nothing here lists a directory by hand.
+
+The editor's interpreter is handed to it explicitly, ``python.defaultInterpreterPath``: the current environment's
+(:func:`dev_lab.dev.venvpointer.current`), since ``.venv-current`` alone names it and no alias stands beside it.
 
 Only the MANAGED keys are written; every other key of the file is the user's and is kept as it was. The file
 is read as strict JSON: a ``settings.json`` holding comments is refused by name rather than rewritten, because
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import tomllib
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Final
@@ -26,6 +29,7 @@ from lab_commons.storage import KINDS
 
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.venvpath import VENV_LAYOUTS
+from dev_lab.dev.venvpointer import current
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -77,8 +81,7 @@ def _outermost(paths: Iterable[str]) -> tuple[str, ...]:
 def excluded(root: Path) -> tuple[str, ...]:
     """Every directory an editor of *root* must neither index nor watch, outermost only, sorted."""
     kinds = (default for default in KINDS.values() if default is not None)
-    pointers = {layout[0] for layout in VENV_LAYOUTS.values()}
-    return _outermost((*kinds, *pointers, *_repo_extras(root)))
+    return _outermost((*kinds, *_repo_extras(root)))
 
 
 def managed(root: Path) -> dict[str, Any]:
@@ -86,6 +89,7 @@ def managed(root: Path) -> dict[str, Any]:
     dirs = excluded(root)
     return {
         'npm.autoDetect': 'off',
+        'python.defaultInterpreterPath': current(root).joinpath(*VENV_LAYOUTS[os.name][1:]).as_posix(),
         'search.followSymlinks': False,
         'search.exclude': {f'**/{name}': True for name in dirs},
         'files.watcherExclude': {f'**/{name}/**': True for name in dirs},

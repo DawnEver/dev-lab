@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING
 
 import pytest
+from _venv_fake import current_env
 
+from dev_lab.dev import venvpointer
 from dev_lab.dev import vscodesettings as vs
+from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,10 +26,19 @@ def _settings(root: Path) -> dict:
     return json.loads((root / vs.RELATIVE).read_text(encoding='utf-8'))
 
 
-def test_the_excludes_are_the_storage_kinds_and_the_venv_pointer(tmp_path: Path) -> None:
+def test_the_excludes_are_the_storage_kinds(tmp_path: Path) -> None:
     dirs = vs.excluded(_repo(tmp_path))
-    assert set(dirs) == {'output', '.venvs', '.claude/worktrees', 'target', '.venv'}
+    assert set(dirs) == {'output', '.venvs', '.claude/worktrees', 'target'}
     assert 'output/temp' not in dirs, 'a nested kind is covered by its parent'
+
+
+def test_the_editor_is_handed_the_environment_the_pointer_names(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    tail = VENV_LAYOUTS[os.name][1:]
+    unset = vs.managed(root)['python.defaultInterpreterPath']
+    assert unset == root.joinpath(venvpointer.POINTER, *tail).as_posix(), 'PLANTED CONTROL: no pointer names none'
+    env = current_env(root, 'e1')
+    assert vs.managed(root)['python.defaultInterpreterPath'] == env.joinpath(*tail).as_posix()
 
 
 def test_a_repo_declares_its_own_extra_directory(tmp_path: Path) -> None:

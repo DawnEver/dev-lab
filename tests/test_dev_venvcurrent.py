@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -120,37 +121,49 @@ def test_a_reader_never_sees_a_partial_pointer(tmp_path) -> None:
     assert set(names) <= seen, 'PLANTED CONTROL: the reader saw both publications'
 
 
-def test_a_legacy_venv_directory_moves_aside_once_nothing_runs_from_it(tmp_path) -> None:
+def test_a_legacy_venv_directory_moves_aside_once_and_becomes_current_when_no_pointer_names_one(tmp_path) -> None:
     root = tmp_path / 'main'
-    legacy = root / venvpointer.ALIAS
+    legacy = root / venvpointer.RETIRED_ALIAS
     venv.EnvBuilder(with_pip=False).create(legacy)
-    assert venvpointer.current(root) == legacy, 'no pointer: the legacy layout resolves'
+    assert venvpointer.current(root) == root / venvpointer.POINTER, 'no pointer: nothing is current, .venv unread'
+    holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 60.0, str(tmp_path))
+    assert 'kept' in venvcurrent.retire_alias(root, census=lambda: [holder]), 'PLANTED CONTROL: held, it stays'
+    assert legacy.is_dir()
+    assert venvcurrent.retire_alias(root, census=list).startswith('legacy')
+    assert not legacy.exists(), 'gone once'
+    adopted = venvpointer.named(root)
+    assert adopted is not None, 'no pointer named one: the moved directory is published'
+    assert adopted.joinpath(*TAIL).is_file()
+    assert venvcurrent.retire_alias(root, census=list) == '', 'once: nothing left to retire'
+
+
+def test_a_legacy_directory_beside_a_pointer_moves_aside_and_the_pointer_stays(tmp_path) -> None:
+    root = tmp_path / 'main'
     new = root / venvpointer.HOME / 'new'
     new.mkdir(parents=True)
-    assert 'legacy directory' in venvcurrent.publish(root, new)
-    assert venvpointer.current(root) == new, 'the pointer rules before the migration'
-    holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 60.0, str(tmp_path))
-    assert 'kept' in venvcurrent.reclaim(root, census=lambda: [holder])[0], 'PLANTED CONTROL: held, it stays'
-    assert legacy.is_dir()
-    assert venvcurrent.reclaim(root, census=list)[0].startswith('legacy')
-    assert legacy.resolve() == new.resolve(), '.venv is now the alias of the current env'
+    venvcurrent.publish(root, new)
+    (root / venvpointer.RETIRED_ALIAS).mkdir()
+    assert venvcurrent.retire_alias(root, census=list).startswith('legacy')
+    assert venvpointer.named(root) == new, 'the pointer already ruled: it is unchanged'
 
 
-def test_a_bootstrap_whose_venv_alias_stays_stale_fails_and_names_why(tmp_path, capsys) -> None:
-    """O16: the pointer moved but a held legacy ``.venv`` still runs the old env -- the door must not report success."""
+def test_a_venv_link_is_removed_once_and_publish_writes_none(tmp_path) -> None:
     root = tmp_path / 'main'
-    _project(root)
-    (root / venvpointer.POINTER).unlink()
-    legacy = root / venvpointer.ALIAS
-    legacy.unlink() if legacy.is_symlink() else legacy.rmdir()  # the junction _project published: now legacy
-    venv.EnvBuilder(with_pip=False).create(legacy)
-    holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 3600.0, str(tmp_path))
-    assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=lambda: [holder]) == 1
-    out = capsys.readouterr().out
-    assert f'{legacy} still runs' in out
-    assert str(venvpointer.current(root).joinpath(*TAIL)) in out, 'the door: the published interpreter'
-    assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=list) == 0, 'PLANTED CONTROL: unheld'
-    assert legacy.resolve() == venvpointer.current(root).resolve()
+    new = root / venvpointer.HOME / 'new'
+    new.mkdir(parents=True)
+    assert venvcurrent.publish(root, new).endswith('-> new')
+    alias = root / venvpointer.RETIRED_ALIAS
+    assert not venvcurrent.holds_alias(root), 'publish writes no alias'
+    if sys.platform == 'win32':
+        cmd = shutil.which('cmd')
+        assert cmd is not None
+        subprocess.run([cmd, '/c', 'mklink', '/J', str(alias), str(new)], check=True, capture_output=True)
+    else:
+        alias.symlink_to(new, target_is_directory=True)
+    assert venvcurrent.holds_alias(root)
+    assert 'removed' in venvcurrent.retire_alias(root, census=list)
+    assert not venvcurrent.holds_alias(root)
+    assert new.is_dir(), 'PLANTED CONTROL: the environment the link named is untouched'
 
 
 _HOLD = """

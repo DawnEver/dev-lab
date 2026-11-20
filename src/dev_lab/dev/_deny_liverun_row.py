@@ -36,7 +36,7 @@ LIVE_RUN: dict[str, object] = {
     ),
     'matches': 'command',
     'when': 'live-run',
-    'hazard': 'a run in progress executes this checkout and its .venv; changing either mid-run makes its '
+    'hazard': 'a run in progress executes this checkout and its environment; changing either mid-run makes its '
     'result describe a tree that never existed.',
     'remedy': 'Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait for '
     f'the run, or stop it yourself: {PYTHON_SLOT} -m dev_lab.dev.stoprun --pid <pid>.',

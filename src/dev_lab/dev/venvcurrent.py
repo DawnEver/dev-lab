@@ -7,12 +7,12 @@ process: :mod:`dev_lab.dev.dep` builds each new one beside the live one at ``ROO
 temp file, ``os.replace``). A running process keeps the environment it started from; every new launch reads
 the pointer -- this module, ``agent_launcher.js`` and the githooks' ``with-venv.sh`` -- and takes the new one.
 
-THE POINTER IS THE SOURCE OF TRUTH. ``ROOT/.venv`` stays as a junction (a symlink on POSIX) to the current
-environment for tools that only know that path; it is re-pointed best-effort after the swap. A checkout with
-no pointer is the legacy layout (a plain ``.venv`` directory) and resolves there: the one-time migration
-moves that directory aside into ``.venvs/`` the first time nothing executes from it (:func:`retire_passed_over`), and
-``.venv`` becomes the alias -- so a launcher or hook still spelling ``.venv`` runs the current environment. It is
-retried by every publish, every reclaim and every follow (:mod:`dev_lab.dev.venvfollow`) until it lands.
+THE POINTER IS THE ONLY STATEMENT OF THE CURRENT ENVIRONMENT (user ruling 2026-11-20). No alias stands beside it:
+an external tool is handed the environment explicitly (``UV_PROJECT_ENVIRONMENT``, the rendered editor settings).
+The retired spelling (:data:`~dev_lab.dev.venvpointer.RETIRED_ALIAS`) goes ONCE (:func:`retire_alias`): a link
+is removed; a legacy plain directory moves into ``.venvs/`` the first time nothing executes from it, and becomes
+current when no pointer names one. It is retried by every reclaim and every follow (:mod:`dev_lab.dev.venvfollow`)
+until it lands.
 
 An old environment is reclaimed (:func:`reclaim`) only when no process executes from it -- the holder census
 of :func:`dev_lab.dev.liverun.removal_holders` -- and never while it is being built (its :data:`BUILDING`
@@ -32,7 +32,6 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import os
-import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -43,10 +42,7 @@ from lab_commons.census import processes
 from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.liverun import Census, label, removal_holders
 from dev_lab.dev.servelock import held
-from dev_lab.dev.venvpointer import ALIAS, HOME, POINTER, named
-
-if sys.platform == 'win32':
-    import _winapi
+from dev_lab.dev.venvpointer import HOME, POINTER, RETIRED_ALIAS, named
 
 __all__ = [
     'BUILDING',
@@ -58,12 +54,11 @@ __all__ = [
     'building',
     'exclusive_build',
     'fresh',
-    'passed_over',
+    'holds_alias',
     'publish',
     'reclaim',
     'reclaimed',
-    'retire_passed_over',
-    'stale_alias',
+    'retire_alias',
     'target',
 ]
 
@@ -120,17 +115,17 @@ def abandon(env: Path) -> None:
 
 
 def publish(root: Path, env: Path) -> str:
-    """Make *env* current: atomically replace :data:`POINTER`, then re-point :data:`ALIAS` best-effort.
+    """Make *env* current: atomically replace :data:`POINTER`; one line saying so.
 
     A reader sees the old name or the new one, never a partial file: the content is written whole to a temp file
-    beside the pointer and ``os.replace``-d over it. Returns one line on what became of the alias.
+    beside the pointer and ``os.replace``-d over it.
     """
     root, env = Path(root), Path(env)
     temporary = root / f'{POINTER}.{os.getpid()}.tmp'
     temporary.write_text(env.name + '\n', encoding='utf-8')
     _replace(temporary, root / POINTER)
     _marker(env).unlink(missing_ok=True)
-    return _repoint(root, env)
+    return f'{root / POINTER} -> {env.name}'
 
 
 def _replace(source: Path, target: Path, *, tries: int = 200) -> None:
@@ -149,61 +144,38 @@ def _is_link(path: Path) -> bool:
     return path.is_symlink() or os.path.isjunction(path)
 
 
-def _link(alias: Path, env: Path) -> None:
-    if sys.platform == 'win32':
-        _winapi.CreateJunction(str(env), str(alias))
-    else:
-        alias.symlink_to(env, target_is_directory=True)
+def holds_alias(root: Path) -> bool:
+    """Whether *root* still holds the retired :data:`RETIRED_ALIAS`, as a link or a directory."""
+    alias = Path(root) / RETIRED_ALIAS
+    return alias.exists() or _is_link(alias)
 
 
-def _repoint(root: Path, env: Path) -> str:
-    """Point :data:`ALIAS` at *env*; a legacy directory there is left for :func:`retire_passed_over`."""
-    alias = root / ALIAS
-    if alias.exists() and not _is_link(alias):
-        return f'{alias} is a legacy directory; it moves aside once nothing runs from it (the pointer already rules)'
-    try:
-        if _is_link(alias):
-            alias.unlink() if alias.is_symlink() else alias.rmdir()
-        _link(alias, env)
-    except OSError as exc:
-        return f'{alias} not re-pointed ({exc}); the pointer {root / POINTER} still names {env.name}'
-    return f'{alias} -> {env}'
+def retire_alias(root: Path, *, census: Census = processes) -> str:
+    """THE ONE-TIME MIGRATION to the pointer alone; ``''`` once *root* holds no :data:`RETIRED_ALIAS`.
 
-
-def stale_alias(root: Path, env: Path, python: Path | None = None) -> str:
-    """Why :data:`ALIAS` does not run the current *env* and the door out, ``''`` when it does (or is absent).
-
-    *python* is *env*'s interpreter, named as the direct way round a held ``.venv``.
+    A link is removed. A plain directory (the legacy layout) moves into :data:`HOME` once nothing executes from it,
+    and is published when no pointer names an environment yet.
     """
-    alias = Path(root) / ALIAS
-    if not alias.exists() or alias.resolve() == Path(env).resolve():
-        return ''
-    why = f'{alias} still runs {alias.resolve()}, not the published {env}'
-    return (
-        why if python is None else f'{why}. Stop what runs from it and re-run this bootstrap, or run {python} directly.'
-    )
-
-
-def passed_over(root: Path) -> bool:
-    """Whether *root*'s :data:`ALIAS` is a plain directory the pointer passed over (:func:`retire_passed_over`)."""
-    alias = Path(root) / ALIAS
-    return named(root) is not None and alias.is_dir() and not _is_link(alias)
-
-
-def retire_passed_over(root: Path, *, census: Census = processes) -> str:
-    """The ONE-TIME migration: a plain ``.venv`` directory moves into :data:`HOME` once nothing executes from it."""
     root = Path(root)
-    alias, env = root / ALIAS, named(root)
-    if env is None or not passed_over(root):
+    alias = root / RETIRED_ALIAS
+    if _is_link(alias):
+        try:
+            alias.unlink() if alias.is_symlink() else alias.rmdir()
+        except OSError as exc:
+            return f'{alias} kept: {exc}'
+        return f'{alias} removed: {POINTER} alone names the environment'
+    if not alias.is_dir():
         return ''
     if users := removal_holders(alias, census=census):
         return f'legacy {alias} kept: {len(users)} process(es) run from it ({label(users[0])})'
     aside = root / HOME / f'legacy-{time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())}'
     try:
+        aside.parent.mkdir(parents=True, exist_ok=True)
         alias.replace(aside)
     except OSError as exc:
         return f'legacy {alias} kept: {exc}'
-    return f'legacy {alias} moved to {aside}; ' + _repoint(root, env)
+    moved = f'legacy {alias} moved to {aside}'
+    return moved if named(root) is not None else f'{moved}; {publish(root, aside)}'
 
 
 def building(env: Path) -> bool:
@@ -247,7 +219,7 @@ def reclaim(root: Path, *, census: Census = processes, building_here: bool = Fal
 
 
 def _reclaim(root: Path, *, census: Census) -> tuple[str, ...]:
-    lines = [line] if (line := retire_passed_over(root, census=census)) else []
+    lines = [line] if (line := retire_alias(root, census=census)) else []
     home, live = root / HOME, named(root)
     if not home.is_dir() or live is None:
         return tuple(lines)

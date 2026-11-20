@@ -42,6 +42,7 @@ from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
 from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
+from dev_lab.dev.venvpointer import RETIRED_ALIAS
 
 __all__ = [
     'DISCARD', 'OLD_IN_HOME', 'OLD_IN_ROOT', 'STRAYS', 'Drift', 'account_drift', 'compare', 'compare_lines',
@@ -145,7 +146,7 @@ def strays(home: Path, root: Path) -> tuple[str, ...]:
     :data:`OLD_IN_HOME`, :data:`OLD_IN_ROOT`, and a ``repos/<repo>/.venv`` (``.venv-current`` alone names the env).
     """
     old = [home / p for p in OLD_IN_HOME] + [root / p for p in OLD_IN_ROOT]
-    old += [repo / '.venv' for repo in sorted((root / 'repos').glob('*'))]
+    old += [repo / RETIRED_ALIAS for repo in sorted((root / 'repos').glob('*'))]
     return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in old if p.exists() or p.is_symlink())
 
 

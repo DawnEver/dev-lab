@@ -31,7 +31,7 @@ def _interpreter(env: Path) -> Path:
 
 def test_a_detached_run_takes_the_current_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / 'main'
-    legacy = _interpreter(root / venvpointer.ALIAS)
+    legacy = _interpreter(root / venvpointer.HOME / 'old')
     current = _interpreter(root / venvpointer.HOME / 'x')
     (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
     started: list[list[str]] = []
@@ -41,4 +41,4 @@ def test_a_detached_run_takes_the_current_environment(tmp_path: Path, monkeypatc
     assert started[-1] == [str(current), '-m', 'dev_lab.dev.reclaimrun']
     (root / venvpointer.POINTER).unlink()
     backgroundrun.detach_argv(root, ['-m', 'dev_lab.dev.reclaimrun'])
-    assert started[-1][0] == str(legacy), 'PLANTED CONTROL: no pointer: the legacy .venv is current'
+    assert started[-1][0] == str(legacy), 'PLANTED CONTROL: no pointer names a current one: unchanged'

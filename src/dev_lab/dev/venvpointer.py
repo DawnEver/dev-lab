@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import Final
 
 __all__ = [
-    'ALIAS',
     'HOME',
     'POINTER',
     'READ_TRIES',
+    'RETIRED_ALIAS',
     'current',
     'current_interpreter',
     'env_checkout',
@@ -32,8 +32,9 @@ __all__ = [
 POINTER: Final = '.venv-current'
 #: Where every environment lives, side by side.
 HOME: Final = '.venvs'
-#: The alias kept for external tools: a junction/symlink to the current environment; the legacy layout's directory.
-ALIAS: Final = '.venv'
+#: The retired spelling: once a junction to the current environment, before that the legacy layout's directory.
+#: Nothing reads it; :func:`dev_lab.dev.venvcurrent.retire_alias` removes it once, ``hpcaccount drift`` reports it.
+RETIRED_ALIAS: Final = '.venv'
 #: Windows refuses to open a file in the instant ``os.replace`` swaps it: the read is retried this often.
 READ_TRIES: Final = 50
 
@@ -60,16 +61,18 @@ def _read(pointer: Path) -> str:
 
 
 def current(root: Path) -> Path:
-    """The environment a NEW launch in checkout *root* runs from: the pointer's, else the legacy ``.venv``."""
-    return named(root) or Path(root) / ALIAS
+    """The environment a NEW launch in checkout *root* runs from: the one the pointer names.
+
+    Pointing at nothing, the answer is the pointer itself: a file, so no interpreter resolves under it and every
+    miss names :data:`POINTER` as its cause (the door: ``dev_lab.dev.dep --bootstrap``).
+    """
+    return named(root) or Path(root) / POINTER
 
 
 def env_checkout(prefix: str | Path) -> Path | None:
-    """The checkout whose environment *prefix* is (a ``ROOT/.venvs/<name>`` or a ``ROOT/.venv``), else ``None``."""
+    """The checkout whose environment *prefix* is (a ``ROOT/.venvs/<name>``), else ``None``."""
     prefix = Path(prefix)
-    if prefix.parent.name == HOME:
-        return prefix.parent.parent
-    return prefix.parent if prefix.name == ALIAS else None
+    return prefix.parent.parent if prefix.parent.name == HOME else None
 
 
 def superseded(prefix: str | Path) -> bool:

@@ -17,21 +17,16 @@ from dev_lab.dev.liverun import Census
 __all__ = ['publish_built']
 
 
-def publish_built(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census, base: str) -> int:
+def publish_built(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census) -> None:
     """Publish the environment just built (or drop a failed build), then reclaim every one nothing runs from.
 
-    Nonzero when the build is published but the :data:`~dev_lab.dev.venvpointer.ALIAS` still runs another
-    environment (a held legacy ``.venv`` directory): a caller of ``.venv`` would still meet the stale one.
+    The pointer alone names the environment, so a published build is current.
     """
     if prefix == live or not ok:
         if prefix != live:
             venvcurrent.abandon(prefix)
-        return 0
+        return
     record(root, prefix)  # the trees this environment now holds its components at
     emit(f'published {prefix}: {venvcurrent.publish(root, prefix)}')
     for line in venvcurrent.reclaim(root, census=census, building_here=True):
         emit(line)
-    if why := venvcurrent.stale_alias(root, prefix, prefix.joinpath(*Path(base).relative_to(live).parts)):
-        emit(f'REFUSED: {why}')
-        return 1
-    return 0
