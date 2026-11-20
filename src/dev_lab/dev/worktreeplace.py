@@ -34,11 +34,9 @@ from dev_lab.dev.storage import worktrees_root
 __all__ = [
     'WORKTREES_REL',
     'Misplaced',
-    'family_root',
     'home',
     'is_inside',
     'listed_worktrees',
-    'main_checkout',
     'misplaced_worktrees',
     'remedy',
     'work_root',
@@ -80,37 +78,6 @@ def is_inside(path: Path, main: Path) -> bool:
     """Does *path* lie strictly inside *main*'s worktree home (:func:`home`)? PURE apart from config and ``resolve``."""
     base = _norm(home(main))
     return _norm(path).startswith(base + '/')
-
-
-def main_checkout(root: Path) -> Path:
-    """The MAIN checkout of the repository *root* belongs to -- itself, unless *root* is a linked worktree.
-
-    THE CONSEQUENCE OF THIS RULE, CLOSED AT THE SOURCE. A linked worktree lives at
-    ``<main>/.claude/worktrees/<name>``, so ``<checkout>/..`` is no longer where the family's other repos
-    are. Every sibling lookup goes through :func:`family_root`, which reads git's COMMON directory --
-    shared by every worktree of one repo -- rather than the checkout path.
-
-    Raises:
-        RuntimeError: when git cannot answer -- a guessed root would read the wrong siblings silently.
-
-    """
-    done = _door.run(
-        [_GIT, '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=False,
-        timeout=60,
-    )
-    if done.returncode != 0:
-        msg = f'git rev-parse --git-common-dir failed in {root}: {done.stderr.strip()}'
-        raise RuntimeError(msg)
-    return Path(done.stdout.strip()).parent
-
-
-def family_root(root: Path) -> Path:
-    """The directory holding the family's checkouts side by side: the MAIN checkout's parent."""
-    return main_checkout(root).parent
 
 
 def listed_worktrees(root: Path) -> tuple[Path, ...]:
