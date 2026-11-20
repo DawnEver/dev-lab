@@ -275,7 +275,7 @@ def cluster_plan(
             Doomed(
                 tree,
                 'tree-not-in-flight',
-                keep=_kept_streams(ci, tree.name, unrecorded.get(tree.name)),
+                keep=_kept_streams(ci, tree, unrecorded.get(tree.name)),
                 idle_hours=policy.min_age_hours,
             )
             for tree in _entries(ci / 'trees')
@@ -311,12 +311,12 @@ def _current_tag(state: Mapping[str, Any] | None) -> str:
     return str(((state or {}).get('current') or {}).get('tag', ''))
 
 
-def _kept_streams(ci: Path, sha: str, state: Mapping[str, Any] | None) -> tuple[tuple[Path, Path], ...]:
-    """An unrecorded run's round stream and the one file :func:`lab_commons.hpc.records.stream_sources` keeps."""
+def _kept_streams(ci: Path, tree: Path, state: Mapping[str, Any] | None) -> tuple[tuple[Path, Path], ...]:
+    """An unrecorded run's round stream in *tree*; the one file stream_sources keeps."""
     if not (tag := _current_tag(state)):
         return ()
-    live, kept = (ci / source.split('/ci/', 1)[1] for source in stream_sources(sha, tag))
-    return ((live, kept),)
+    live, kept = (source.removeprefix('"$LAB_ROOT"/') for source in stream_sources(tree.name, tag))
+    return ((tree / live.split('/tree/', 1)[1], ci / kept),)
 
 
 def _retired_kept_streams(ci: Path, states: list[tuple[Path, dict[str, Any], datetime]]) -> list[Doomed]:
@@ -332,7 +332,7 @@ def _retired_kept_streams(ci: Path, states: list[tuple[Path, dict[str, Any], dat
             continue
         tag = _current_tag(state)
         live = not (ci / 'trees' / path.name).exists() and 'record' not in state and tag
-        keep = ((old / f'{tag}.txt', _kept_streams(ci, path.name, state)[0][1]),) if live else ()
+        keep = ((old / f'{tag}.txt', _kept_streams(ci, path, state)[0][1]),) if live else ()
         doomed.append(Doomed(old, 'streams-upgraded', keep=keep))
     return doomed
 
