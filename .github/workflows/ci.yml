@@ -166,6 +166,7 @@
       "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && (needs.parts.outputs.matrix != '')) }}",
       "name": "tests/${{ matrix.part }}",
       "runs-on": "${{ matrix.runs-on }}",
+      "timeout-minutes": 90,
       "steps": [
         {
           "uses": "actions/checkout@v4",
