@@ -117,8 +117,7 @@ def test_candidates_are_unlanded_branches_without_an_open_pr(tmp_path: Path) -> 
 
 def test_the_serve_pass_opens_continuations_before_anything_prunes(monkeypatch: pytest.MonkeyPatch) -> None:
     order: list[str] = []
-    for name in ('serve_close_landed', 'serve_sweep', 'serve_prune', 'serve_records_prune', 'hygiene', 'starved',
-                 'prompt', 'relock', 'drift_step'):  # fmt: skip
+    for name in ('prune_duty', 'hygiene', 'starved', 'prompt', 'relock', 'drift_step'):  # fmt: skip
         monkeypatch.setattr(forgeservesteps, name, lambda *_a, _n=name, **_k: order.append(_n))
     monkeypatch.setattr(forgeservesteps, 'serve_continue_landed', lambda *_a, **_k: order.append('continue'))
     carry(monkeypatch, HPC_REPO)  # the hpc tick merges and prunes
@@ -127,7 +126,7 @@ def test_the_serve_pass_opens_continuations_before_anything_prunes(monkeypatch: 
         alarm=lambda _a: None,
     )  # fmt: skip
     assert order[0] == 'continue'
-    assert order.index('continue') < order.index('serve_prune') < order.index('relock')
+    assert order.index('continue') < order.index('prune_duty') < order.index('relock')
 
 
 def test_a_serve_pass_that_cannot_read_alarms_and_never_raises(tmp_path: Path) -> None:

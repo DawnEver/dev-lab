@@ -162,9 +162,7 @@ def test_the_repo_wide_pass_runs_the_census_after_the_relock_and_a_failure_is_sa
 ) -> None:
     """The census rides the elected poller's repo-wide pass; one that cannot run is said, never a crash."""
     order: list[str] = []
-    for name in ('serve_continue_landed', 'serve_close_landed', 'serve_sweep', 'serve_prune', 'serve_records_prune',
-                 'hygiene', 'starved',
-                 'prompt'):  # fmt: skip
+    for name in ('serve_continue_landed', 'prune_duty', 'hygiene', 'starved', 'prompt'):  # fmt: skip
         monkeypatch.setattr(forgeservesteps, name, lambda *_a, **_k: None)
     carry(monkeypatch, HPC_REPO)  # the hpc tick prunes: prune is bound to hpc
     monkeypatch.setattr(forgeservesteps, 'relock', lambda *_a, **_k: order.append('relock'))

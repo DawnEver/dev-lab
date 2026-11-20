@@ -2,15 +2,16 @@
 # uv.lock's `revision` line is the WRITER'S format, so two uv releases relocking the same pins churn it and conflict.
 # The forge keeps this at the newest uv release: a `forge serve` tick's relock (dev_lab.dev.relock) reads it against
 # the newest release tag and raises it in the same pull request that relocks with that uv.
-version = "0.13.7"
+version = "0.13.9"
 
 # The sha256 of each platform's archive of that release (dev_lab.dev.uvrelease.ASSETS), read from the release's
 # <asset>.sha256 files when the version above moved (lockcheck.pin_uv); a lock writer is that exact uv, installed
 # user-space beside any other pinned uv, never the host's PATH uv moved back and forth (2026-11-20).
+
 [sha256]
-windows-amd64 = "0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021"
-windows-arm64 = "505d9e65e7692bac3ddf98c66754aa26c5050c409c184af30a881a0a72cc85e3"
-linux-amd64 = "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83"
-linux-arm64 = "71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc"
-osx-amd64 = "20c47e4c1f630b8abaff8c291fa9b9aa300fef92c4fbff95adf198b55287cda7"
-osx-arm64 = "81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731"
+linux-amd64 = "a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5"
+linux-arm64 = "0797542018e541a9288855df555c8077eed06f7a47d206362030480e8ecc9f3d"
+osx-amd64 = "617a3211261b0fc739562f0071aa34e9739797c510208ede8e2977c30903d041"
+osx-arm64 = "5aeca67f2283f75235de40d0bd9c0a5bbc5fce23b6d48b3bf9fa1b2db08382ca"
+windows-amd64 = "edd61f7f5728a56cc62455386661860bdfc7bab65872f39b0c25bdcc1d8e1beb"
+windows-arm64 = "72eed595983a4d7d22d79f21065b0f4479cc7e5c7a89104bb410c8f47559a878"

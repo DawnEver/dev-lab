@@ -71,14 +71,15 @@ def test_migrate_refuses_an_unbound_kind_and_a_foreign_target(tmp_path: Path) ->
 
 def _reaching(tmp_path: Path) -> object:
     family = {'storage': {'remotes': {'results': {'type': 's3', 'endpoint': 'https://objects.example'}}}}
-    return declared({'storage': {'reach': ['results'], 'secrets': str(tmp_path / 'secrets')}}, family)
+    machine = {'storage': {'reach': {'results': {'credentials_file': str(tmp_path / 'secrets' / 'results')}}}}
+    return declared(machine, family)
 
 
 def test_render_joins_family_options_and_the_placed_secret_outside_the_repo(tmp_path: Path) -> None:
     tree = _repo(tmp_path)
     reach = _reaching(tmp_path)
     (tmp_path / 'secrets').mkdir()
-    (tmp_path / 'secrets' / 'results.toml').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
+    (tmp_path / 'secrets' / 'results').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
     out = storage.render(tmp_path / 'conf' / 'rclone.conf', repo=tree, declared=reach)
     assert out.read_text(encoding='utf-8') == (
         '[results]\ntype = s3\nendpoint = https://objects.example\nsecret_access_key = s3cr3t\n'
@@ -88,10 +89,12 @@ def test_render_joins_family_options_and_the_placed_secret_outside_the_repo(tmp_
 def test_render_refuses_a_missing_secret_and_a_path_inside_the_repo(tmp_path: Path) -> None:
     tree = _repo(tmp_path)
     reach = _reaching(tmp_path)
-    with pytest.raises(StorageError, match=r'no secret for remote .results.'):
+    with pytest.raises(
+        StorageError, match=r'no secret for remote .results. at its declared credentials_file .*results'
+    ):
         storage.render(tmp_path / 'rclone.conf', repo=tree, declared=reach)
     (tmp_path / 'secrets').mkdir()
-    (tmp_path / 'secrets' / 'results.toml').write_text('type = "s3"\n', encoding='utf-8')
+    (tmp_path / 'secrets' / 'results').write_text('type = "s3"\n', encoding='utf-8')
     with pytest.raises(StorageError, match=r'restates .type.'):
         storage.rendered(reach)
     with pytest.raises(ValueError, match='never in a repo'):
