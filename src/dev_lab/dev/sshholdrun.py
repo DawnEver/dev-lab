@@ -40,9 +40,13 @@ def _exchange(dest: str, command: str, timeout_s: float) -> dict[str, Any]:
 
 
 def stdin_script(command: str, stdin: bytes, end: str) -> str:
-    """*command* reading *stdin* exactly: base64 heredoc DATA in the held shell's stream, never a file or an argv."""
+    """*command* reading *stdin* exactly: base64 heredoc DATA in the held shell's stream, never a file or an argv.
+
+    The pipe feeds the WHOLE command as one group: ``a | b && c`` would feed ``b`` alone, and ``c`` would read the
+    session's own stream (measured 2026-11-20: a staged credential line read nothing -- exit 1, no output).
+    """
     data = base64.encodebytes(stdin).decode('ascii').rstrip('\n')
-    return f"base64 -d <<'{end}' | {command}\n{data}\n{end}"
+    return f"base64 -d <<'{end}' | {{ {command}; }}\n{data}\n{end}"
 
 
 def run_command(

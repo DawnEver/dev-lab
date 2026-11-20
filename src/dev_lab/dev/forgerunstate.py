@@ -17,7 +17,9 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import os
 import re
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -276,10 +278,18 @@ def held_names() -> set[str]:
 
 
 def touch(run: Run) -> None:
-    """Mark *run* advanced now: its file's mtime is when a tick last reached it (:func:`live`'s order)."""
+    """Mark *run* advanced now: its file's mtime is when a tick last reached it (:func:`live`'s order).
+
+    The mark is strictly after every other run's: a coarse filesystem clock (Linux stamps mtimes per tick, not per
+    nanosecond) gave two touches in one tick EQUAL mtimes, the name broke the tie, and a run reached a moment ago
+    sorted first again (measured 2026-11-20, CI).
+    """
     path = _path(run)
-    if path.exists():
-        path.touch()
+    if not path.exists():
+        return
+    others = [one.stat().st_mtime_ns for one in directory().glob('*.json') if one != path]
+    stamp = max([time.time_ns(), *(newest + 1 for newest in others)])
+    os.utime(path, ns=(stamp, stamp))
 
 
 def drop(run: Run) -> None:
