@@ -14,17 +14,22 @@ printed, or hashed. ``git credential`` is never run (it may prompt, and it would
 
 from __future__ import annotations
 
+import argparse
 import shutil
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
 
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.venvpath import running_interpreter
 
-__all__ = ['PLACE_DOOR', 'STORE_ONLY', 'USE_STORE_DOOR', 'drift', 'helpers', 'stored_logins', 'use_store']
+__all__ = [
+    'PLACE_DOOR', 'STORE_ONLY', 'USE_STORE_DOOR', 'add_use_store', 'drift', 'helpers', 'stored_logins', 'use_declared',
+    'use_store',
+]  # fmt: skip
 
 #: The host-scoped helper list that reads only the store.
 STORE_ONLY: Final = ['', 'store']
@@ -51,6 +56,22 @@ def use_store(host: str) -> None:
     _door.run([git, 'config', '--global', '--unset-all', key], capture_output=True, check=False)
     for value in STORE_ONLY:
         _door.run([git, 'config', '--global', '--add', key, value], capture_output=True, check=True)
+
+
+def add_use_store(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``use-store`` verb on *verbs* (the ``devhost`` subparsers)."""
+    storing = verbs.add_parser('use-store', help='make one declared forge host read only the git credential store')
+    storing.add_argument('--host', required=True, help='a forge host this machine declares the store helper for')
+
+
+def use_declared(dev: Mapping[str, Any], host: str, apply: Callable[[str], None] = use_store) -> int:
+    """Make *host* read only the store -- refused unless *dev* (this machine's ``[dev]``) declares the store helper."""
+    if dev.get('helpers', {}).get(host) != 'store':
+        emit(f'use-store: refused -- this machine declares no store helper for {host} ([dev] helpers.{host})')
+        return 2
+    apply(host)
+    emit(f'{host}: git reads only the store (credential.https://{host}.helper = "", store)')
+    return 0
 
 
 def stored_logins(host: str, lines: Iterable[str]) -> set[str]:

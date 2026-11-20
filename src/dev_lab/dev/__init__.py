@@ -624,7 +624,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   listed at SessionStart, census in ``devhost drift``, a clone of a checked-out family repo refused.
 * :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrolment door, ``[bridge]``.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
+* :mod:`dev_lab.dev.devdeclared` -- the effective ``[dev]`` of a host: the family's table under the host file's.
 * :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.
+* :mod:`dev_lab.dev.forgecredential` -- this machine's forge helper and stored logins against its declaration.
 * :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,
   after the checkout follows integration and before stale hooks are reinstalled.

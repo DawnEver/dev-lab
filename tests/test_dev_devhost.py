@@ -12,7 +12,7 @@ import pytest
 from _arch_corpus import module_names
 from _ops_fixtures import git
 
-from dev_lab.dev import devhost, devschema, vendordetect, venvfollow
+from dev_lab.dev import devdeclared, devhost, devschema, vendordetect, venvfollow
 from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -526,9 +526,9 @@ def test_forge_credential_drift_is_part_of_drift_with_the_declared_dev(
 
 
 def test_use_store_applies_only_for_a_host_declaring_the_store_helper(tmp_path: Path) -> None:
-    live = _rendered_machine(tmp_path)
+    dev = devdeclared.declared_by(_rendered_machine(tmp_path)['devhost'])
     applied: list[str] = []
-    assert devhost.use_store(live, 'not.declared', applied.append) == 2
+    assert devhost.forgecredential.use_declared(dev, 'not.declared', applied.append) == 2
     assert applied == []
-    assert devhost.use_store(live, 'forge.example', applied.append) == 0
+    assert devhost.forgecredential.use_declared(dev, 'forge.example', applied.append) == 0
     assert applied == ['forge.example']
