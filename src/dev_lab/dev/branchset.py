@@ -50,6 +50,7 @@ from lab_commons.log import emit
 from dev_lab.dev.branchfate import discard, settle
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.familyrepos import manifest_text
 from dev_lab.dev.reclaim import QUIET_S, reclaim
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -185,13 +186,12 @@ def declared_branchset(root: Path) -> BranchSet:
         BranchSetNotDeclared: no readable manifest, no table, no trunk, or sessions not a list of names.
 
     """
-    manifest = root / 'pyproject.toml'
     try:
-        text = manifest.read_text(encoding='utf-8')
+        text, origin = manifest_text(root)
     except OSError as exc:
-        msg = f'{manifest} is not a readable TOML manifest: {exc}'
+        msg = f'{root / "pyproject.toml"} is not a readable TOML manifest: {exc}'
         raise BranchSetNotDeclared(msg) from exc
-    return branchset_from(text, str(manifest))
+    return branchset_from(text, origin)  # no manifest and no family row: '' refuses naming both doors
 
 
 def branchset_at(root: Path, rev: str) -> BranchSet:

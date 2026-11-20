@@ -291,7 +291,9 @@ def _off_task(root: Path, declared: BranchSet, branch: str, env: Mapping[str, st
         return [
             (
                 f'{P7}: a pushed head carries its task ({shape}), and this agent session is bound to no task, '
-                f'so {branch} has none.\nDoor: {DOOR}; then push it as {declared.task_head("<task>", feature)}.'
+                f'so {branch} has none; a short fix binds to an open task too (any task the family holds, from any '
+                f'repo once the task is a forge issue), and there are no flat pr/<feature> heads.\n'
+                f'Door: {DOOR}; then push it as {declared.task_head("<task>", feature)}.'
             )
         ]
     slug = slug_of(task)

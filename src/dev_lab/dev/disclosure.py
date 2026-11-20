@@ -55,9 +55,15 @@ DEFAULT_BUDGET: Final = Budget(max_lines=3, max_line_chars=320)
 #: the row fields every turn or every refusal carries. A row-field budget above its longest row is
 #: slack and is lowered in the edit that freed it.
 BUDGETS: Final[dict[str, Budget]] = {
-    'refusal': Budget(max_lines=3, max_line_chars=320, needs_details=True),
+    'refusal': Budget(
+        max_lines=3,
+        max_line_chars=342,
+        needs_details=True,
+        reason='the longest line is RECURSIVE-DELETE naming six doors with their interpreter (342, 2026-11-20); '
+        'every other refusal fits 320',
+    ),
     'cross-repo-refusal': Budget(
-        max_lines=4, max_line_chars=320, reason='the engine adds one header line naming the targeted repo'
+        max_lines=4, max_line_chars=342, reason='the engine adds one header line naming the targeted repo'
     ),
     'rule-statement': Budget(
         max_lines=1,
@@ -67,9 +73,10 @@ BUDGETS: Final[dict[str, Budget]] = {
     'deny-hazard': Budget(max_lines=1, max_line_chars=132),
     'deny-remedy': Budget(
         max_lines=1,
-        max_line_chars=278,
+        max_line_chars=342,
         reason='a refusal names, per need, the exact unified door command with its flags (user ruling 2026-11-10); '
-        'RECURSIVE-DELETE names five doors and measured 278 (2026-11-20) -- cut below that, a door loses its flag',
+        'RECURSIVE-DELETE names six doors, each with its interpreter, and measured 342 (2026-11-20, +the whole-clone '
+        'door) -- cut below that, a door loses its flag or its interpreter',
     ),
 }
 

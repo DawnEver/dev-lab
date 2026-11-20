@@ -78,6 +78,11 @@ POLICY: Final[tuple[Door, ...]] = (
         SUBAGENT,
         'The worktree census; pruning removes only a clean, pushed worktree, archiving moves its outputs home.',
     ),
+    Door(
+        module_argv('cloneremove'),
+        MAIN,
+        'Removing a whole redundant clone the user approved, refused while anything in it is unique.',
+    ),
     Door(module_argv('family', 'check'), SUBAGENT, "Read-only: every fact of this machine's family members, named."),
     Door(module_argv('family', 'join'), MAIN, 'Making a repo a family member: clone, record, protect, set its secret.'),
     Door(

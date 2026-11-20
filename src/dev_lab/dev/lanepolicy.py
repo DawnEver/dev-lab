@@ -22,6 +22,7 @@ from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.familyrepos import manifest_text
 
 __all__ = [
     'FAMILY_INTEGRATION',
@@ -105,9 +106,8 @@ class Policy:
 
 
 def load_policy(root: Path) -> Policy:
-    """*root*'s working-tree ``[tool.dev_lab.integrator]``; a missing manifest is refused like a missing table."""
-    manifest = root / 'pyproject.toml'
-    return policy_from(manifest.read_text(encoding='utf-8') if manifest.is_file() else '', str(manifest))
+    """*root*'s working-tree ``[tool.dev_lab.integrator]``, a data repo's from its family row; neither is refused."""
+    return policy_from(*manifest_text(root))
 
 
 def policy_at(root: Path, rev: str) -> Policy:

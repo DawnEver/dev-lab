@@ -90,3 +90,20 @@ def test_the_verb_refuses_a_named_pr_whose_head_is_not_contained(tmp_path: Path)
     assert code == 1
     assert forge.pulls[still]['state'] == 'open'
     assert any(f'#{still}' in line and 'not on integrate/main' in line for line in said)
+
+
+def test_the_verb_always_reports_what_it_closed(tmp_path: Path) -> None:
+    work, forge, done, _, _ = _setup(tmp_path)
+    said: list[str] = []
+    close_landed(work, forge, session='s', fetch=fetch_origin, say=said.append, summarize=True)
+    assert said[-1] == f'closed 1: #{done}'
+    again: list[str] = []
+    close_landed(work, forge, session='s', fetch=fetch_origin, say=again.append, summarize=True)
+    assert again == ['none landed'], 'PLANTED: a pass that closes nothing still says so'
+
+
+def test_the_serve_tick_stays_quiet_when_nothing_landed(tmp_path: Path) -> None:
+    work, forge, _, _, _ = _setup(tmp_path)
+    _tick(work, forge)
+    _code, said = _tick(work, forge)
+    assert said == []
