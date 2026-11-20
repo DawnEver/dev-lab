@@ -96,7 +96,7 @@ UNFILLED: Final = 'FILL-ON-THIS-MACHINE'
 #: Keys the family and host ``[dev]`` must hold between them.
 REQUIRED: Final = ('ref',)
 #: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys).
-MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation')
+MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation', 'storage')
 #: The machine file's ``[ssh]`` table as a host file declares it (rendered by :func:`dev_lab.dev.devhost.render`,
 #: read by :mod:`dev_lab.dev.sshhold`): ``jump`` -- destination -> bastion, the declared per-host route; ``hold`` --
 #: :data:`SSH_HOLD`.

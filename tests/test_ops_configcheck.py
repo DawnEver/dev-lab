@@ -205,3 +205,20 @@ def test_forge_repos_off_the_family_are_refused(tmp_path: Path, family: str, nam
     """Planted control: the forge's set is derived from [family_repos]; a repo either side lacks is named."""
     found = check_host(_write(tmp_path, 'f.toml', FORGE_HOST), _write(tmp_path, 'family.toml', family))
     assert [line for line in found if '[ops.forge] repos' in line and named in line], found
+
+
+REACH = '[storage.reach.results]\ncredentials_file = "~/.secrets/results"\n'
+
+
+def test_a_host_file_declares_which_storage_remote_it_reaches(tmp_path: Path) -> None:
+    """[storage.reach] is the host's own fact (lab_commons.storage); PLANTED CONTROL: an unknown table stays refused."""
+    family = _write(tmp_path, 'family.toml', '[dev]\nref = "integrate/main"\n')
+    host = DEV_HOST.replace('ref = "integrate/main"\n', '')
+    assert check_host(_write(tmp_path, 'G.toml', host + '\n' + REACH), family) == []
+    found = check_host(_write(tmp_path, 'H.toml', host + '\n[nope]\nx = 1\n'), family)
+    assert [line for line in found if 'nope is not a declared key' in line]
+
+
+def test_an_account_file_declares_which_storage_remote_it_reaches() -> None:
+    host = {'deploy': {'host': 'login01'}, 'storage': {'reach': {'results': {'credentials_file': '~/.secrets/r'}}}}
+    assert not [line for line in accounthost.check(Path('c-u.toml'), host, {}) if 'storage' in line]

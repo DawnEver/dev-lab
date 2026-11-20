@@ -30,6 +30,7 @@ TABLES: Final[Mapping[str, Any]] = {
     'schedule': {},
     'env': {},
     'capabilities': {},
+    'storage': {'reach': {}},  # which storage remotes this account reaches (lab_commons.storage)
     'hpc': {'paging': {}},
 }
 #: ``[deploy]`` keys the family grant owns: stated in an account file they would be a second copy.
