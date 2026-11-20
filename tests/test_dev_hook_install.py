@@ -6,12 +6,14 @@ remedy); an older shim of ours is STALE and replaced; somebody else's file is FO
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from _venv_fake import linked_env
 
 from dev_lab.dev import hook_install, venvpointer
 from dev_lab.dev.famtests.hookinstall import (
@@ -329,17 +331,26 @@ def _fallback(stage_shim: str) -> str:
     return done.stdout
 
 
+def _native(answer: str) -> Path:
+    """A shell path in this platform's spelling, resolved (git bash on Windows prints ``/c/...``)."""
+    if os.name == 'nt' and answer.startswith('/'):
+        cygpath = Path(shutil.which('sh') or 'sh').with_name('cygpath')
+        answer = subprocess.run([str(cygpath), '-w', answer], capture_output=True, text=True, check=True).stdout.strip()
+    return Path(answer).resolve()
+
+
 def test_a_recorded_checkout_interpreter_follows_that_checkouts_current_environment(tmp_path: Path) -> None:
-    """A fallback recorded from a legacy ``.venv`` (or an older ``.venvs/<id>``) re-resolves at every run."""
+    """A fallback recorded from an older ``.venvs/<id>`` (or ``.venv`` itself) re-resolves at every run."""
     root = tmp_path / 'main'
     tail = CANDIDATE_RELATIVE_PATHS[0][1:]
-    (root / venvpointer.HOME / 'x').mkdir(parents=True)
-    (root / venvpointer.ALIAS).mkdir()
-    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
-    recorded = root.joinpath(venvpointer.ALIAS, *tail).as_posix()
-    assert _fallback(shim('pre-commit', recorded)) == root.joinpath(venvpointer.HOME, 'x', *tail).as_posix()
-    (root / venvpointer.POINTER).unlink()
-    assert _fallback(shim('pre-commit', recorded)) == recorded, 'PLANTED CONTROL: no pointer: .venv is current'
+    (root / venvpointer.HOME / 'old').mkdir(parents=True)
+    current = linked_env(root, 'x')
+    recorded = root.joinpath(venvpointer.HOME, 'old', *tail).as_posix()
+    assert _native(_fallback(shim('pre-commit', recorded))) == current.joinpath(*tail).resolve()
+    link = root / venvpointer.POINTER
+    link.unlink() if link.is_symlink() else link.rmdir()
+    unset = _fallback(shim('pre-commit', recorded))
+    assert unset.endswith('/.venv/' + '/'.join(tail)), 'PLANTED CONTROL: no .venv: the miss names it'
     elsewhere = (tmp_path / 'python-install' / 'python').as_posix()
     assert _fallback(shim('pre-commit', elsewhere)) == elsewhere, 'not a checkout env: recorded verbatim'
 

@@ -82,7 +82,7 @@ def _refresh(step: Step, spec: Deployment, home: Path, repo: Repo, probed: dict[
     if rc := update(step, spec, home, repo):
         return f'its checkout update exited {rc}', []
     try:
-        if lacking := _lacking(step, declared(checkout_of(spec, home, repo)).needs, probed):
+        if lacking := _lacking(step, declared(checkout_of(spec, repo)).needs, probed):
             return f'{account()} lacks {", ".join(lacking)} (`--version` does not run in the tick environment)', lacking
         rc = build(step, spec, home, repo)
     except REFUSALS as why:
@@ -135,13 +135,13 @@ def tick(
         emit(f'[tick] {name} refused to serve: [deploy] role is {role}; only a {VERIFICATION} account serves', err=True)
         return 2
     try:
-        ours = serves_here(spec, home, repo)
+        ours = serves_here(spec, repo)
     except Unbound as undeclared:
         emit(f'[tick] {name} released, not served this tick: {undeclared}', err=True)
         return 2
-    here = served(spec, home)
+    here = served(spec)
     serve_off({one.name: one.name in here for one in spec.repos}, account(), alarm=alarm, repo=repo.url)
     if not ours:
         return 0  # checked out and fresh; its producer is not the HPC, so this account never serves its queue
-    checkout = checkout_of(spec, home, repo)
+    checkout = checkout_of(spec, repo)
     return run(host_serve_argv(), cwd=checkout, check=False).returncode

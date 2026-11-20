@@ -40,7 +40,7 @@ _DIVISION = Division(grant_roles={'alice': 'verification'})
 _FORGE = DeclaredForge(Path('forge-a.toml'), ('forge.example',), {'forge-ci': ('org/dev-lab',)})
 _MINTED = 'tok3n-SECRET-value'
 _REPO = 'https://forge.example/org/dev-lab.git'
-_DEPLOY = '[deploy]\nhost = "login1.example"\nroot = "src"\n'
+_DEPLOY = '[deploy]\nhost = "login1.example"\nroot = "/r/src"\n'
 _STAMP = '20261112T120000Z'
 
 
@@ -91,7 +91,7 @@ def test_the_token_is_staged_verified_then_placed() -> None:
     staged = [(cmd, stdin) for cmd, stdin in seen if stdin]
     assert staged == [(stage_command(_STAMP), f'https://forge-ci:{_MINTED}@forge.example\n')]
     role = next(cmd for cmd in commands if 'auth role' in cmd)
-    assert role.startswith(verify_prefix('forge.example', _STAMP) + 'cd ~/src/dev-lab && ')
+    assert role.startswith(verify_prefix('forge.example', _STAMP) + 'cd /r/src/repos/dev-lab && ')
     assert f'--url {_REPO}' in role  # the default: the login's first declared repo on the forge
     rewrite = rewrite_command('forge.example', _STAMP, login='forge-ci', staged=True)
     assert commands.index(role) < commands.index(rewrite)  # verified BEFORE the store is touched
@@ -403,10 +403,10 @@ def test_a_research_account_deployed_behind_its_login_alias_takes_its_credential
     """
     aliased = (Grant(user='alice', hosts=('login.example',), slurm_account='acct', role='research'),)
     division = Division(grant_roles={'alice': 'research'})
-    alias = '[deploy]\nhost = "login.example"\nroot = "src"\n'
+    alias = '[deploy]\nhost = "login.example"\nroot = "/r/src"\n'
     code, said, _, _ = _run('alice@login.example', grants=aliased, division=division, deployed=alias)
     assert code == 0, said
-    node = '[deploy]\nhost = "login04"\nroot = "src"\n'
+    node = '[deploy]\nhost = "login04"\nroot = "/r/src"\n'
     code, said, _, _ = _run('alice@login.example', grants=aliased, division=division, deployed=node)
     assert code == 2
     assert 'login04' in said[-1]

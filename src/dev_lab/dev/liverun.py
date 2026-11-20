@@ -68,7 +68,7 @@ from dev_lab.dev import gitdirs
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 from dev_lab.dev.venvpath import PYTHON_SLOT, current_os_name, expand_interpreter, running_interpreter
-from dev_lab.dev.venvpointer import ALIAS, POINTER
+from dev_lab.dev.venvpointer import POINTER, RETIRED_POINTER
 
 __all__ = [
     'NOT_THE_TREE',
@@ -100,8 +100,8 @@ NOT_THE_TREE: Final = tuple(
     dict.fromkeys(
         [
             *(Path(default).parts[0] for kind in _UNREAD_KINDS if (default := storage.KINDS[kind])),
-            ALIAS,
             POINTER,
+            RETIRED_POINTER,
         ]
     )
 )

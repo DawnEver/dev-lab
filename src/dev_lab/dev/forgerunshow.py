@@ -2,7 +2,7 @@
 
 User ruling 2026-10-31: never depend on ssh to learn what a verdict did; the cluster being unreachable from a
 workstation is NORMAL. A run's status only says ``running 40/93 done 12/93``; which tests a round failed, timed
-out or lost to the OOM killer -- and why -- lived in the round's streams under ``~/ci/trees/<sha>/.lab-ci``.
+out or lost to the OOM killer -- and why -- lived in the round's streams under ``<root>/runs/<sha>/tree/.lab-ci``.
 
 ONE SOURCE, TWO STAGES. Each folded round carries its losses (``rounds[n]['lost']``, written by
 :func:`lab_commons.hpc.records.round_losses`): every failed, out-of-memory, timed-out or killed id with its kind,

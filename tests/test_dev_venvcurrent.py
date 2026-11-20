@@ -14,6 +14,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from lab_commons.census import Process, processes
 
 from dev_lab.dev import dep, venvcurrent, venvpointer
@@ -95,7 +96,12 @@ def test_an_env_being_built_is_not_reclaimed_and_a_failed_build_is_dropped(tmp_p
     assert not building.with_name(building.name + venvcurrent.BUILDING).exists()
 
 
-def test_a_reader_never_sees_a_partial_pointer(tmp_path) -> None:
+def test_a_reader_sees_the_old_env_or_the_new_one_and_on_windows_at_most_the_measured_gap(tmp_path) -> None:
+    """A reader sees the old env or the new one; on Windows, at most the measured gap.
+
+    POSIX swaps the symlink atomically; Windows replaces no directory atomically (module docstring), so a reader
+    there may find no ``.venv`` for the swap's few milliseconds -- and then names the bootstrap door.
+    """
     root = tmp_path / 'main'
     _project(root)
     names = ('a' * 40, 'b' * 40)
@@ -117,41 +123,46 @@ def test_a_reader_never_sees_a_partial_pointer(tmp_path) -> None:
     finally:
         stop.set()
         reader.join()
-    assert seen <= {*names, 'old'}, f'a partial or missing pointer was read: {seen - {*names, "old"}}'
+    allowed = {*names, 'old'} | ({None} if sys.platform == 'win32' else set())
+    assert seen <= allowed, f'a partial or missing pointer was read: {seen - allowed}'
     assert set(names) <= seen, 'PLANTED CONTROL: the reader saw both publications'
 
 
-def test_a_legacy_venv_directory_moves_aside_once_nothing_runs_from_it(tmp_path) -> None:
+def test_a_plain_venv_moves_aside_on_publish_and_a_held_one_refuses_by_name(tmp_path) -> None:
     root = tmp_path / 'main'
-    legacy = root / venvpointer.ALIAS
-    venv.EnvBuilder(with_pip=False).create(legacy)
-    assert venvpointer.current(root) == legacy, 'no pointer: the legacy layout resolves'
+    plain = root / venvpointer.POINTER
+    venv.EnvBuilder(with_pip=False).create(plain)
+    assert venvpointer.current(root) == plain.resolve(), 'never published: the plain .venv is current'
     new = root / venvpointer.HOME / 'new'
     new.mkdir(parents=True)
-    assert 'legacy directory' in venvcurrent.publish(root, new)
-    assert venvpointer.current(root) == new, 'the pointer rules before the migration'
-    holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 60.0, str(tmp_path))
-    assert 'kept' in venvcurrent.reclaim(root, census=lambda: [holder])[0], 'PLANTED CONTROL: held, it stays'
-    assert legacy.is_dir()
-    assert venvcurrent.reclaim(root, census=list)[0].startswith('legacy')
-    assert legacy.resolve() == new.resolve(), '.venv is now the alias of the current env'
+    holder = Process(1, 0, str(plain.joinpath(*TAIL)), 'python -m app run', 60.0, str(tmp_path))
+    with pytest.raises(venvcurrent.PublishRefused, match='stop them and re-run'):
+        venvcurrent.publish(root, new, census=lambda: [holder])
+    assert venvpointer.named(root) is None, 'PLANTED CONTROL: held, nothing was published'
+    assert venvcurrent.publish(root, new, census=list).endswith(str(new))
+    assert venvpointer.named(root) == new.resolve(), '.venv now links to the published env'
+    assert [p.name.startswith('legacy-') for p in (root / venvpointer.HOME).iterdir()].count(True) == 1
 
 
-def test_a_bootstrap_whose_venv_alias_stays_stale_fails_and_names_why(tmp_path, capsys) -> None:
-    """O16: the pointer moved but a held legacy ``.venv`` still runs the old env -- the door must not report success."""
+def test_the_retired_pointer_file_is_migrated_once(tmp_path) -> None:
     root = tmp_path / 'main'
-    _project(root)
-    (root / venvpointer.POINTER).unlink()
-    legacy = root / venvpointer.ALIAS
-    legacy.unlink() if legacy.is_symlink() else legacy.rmdir()  # the junction _project published: now legacy
-    venv.EnvBuilder(with_pip=False).create(legacy)
-    holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 3600.0, str(tmp_path))
-    assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=lambda: [holder]) == 1
-    out = capsys.readouterr().out
-    assert f'{legacy} still runs' in out
-    assert str(venvpointer.current(root).joinpath(*TAIL)) in out, 'the door: the published interpreter'
-    assert dep.main(['--bootstrap', str(root)], run=_uv, cwd=tmp_path, census=list) == 0, 'PLANTED CONTROL: unheld'
-    assert legacy.resolve() == venvpointer.current(root).resolve()
+    env = root / venvpointer.HOME / 'named'
+    env.mkdir(parents=True)
+    (root / venvpointer.RETIRED_POINTER).write_text('named\n', encoding='utf-8')
+    assert venvcurrent.pending_migration(root)
+    assert 'migrated' in venvcurrent.migrate(root, census=list)
+    assert venvpointer.named(root) == env.resolve(), '.venv links to the env the file named'
+    assert not venvcurrent.pending_migration(root), 'the file is gone'
+    assert venvcurrent.migrate(root, census=list) == '', 'PLANTED CONTROL: once'
+
+
+def test_a_retired_pointer_naming_nothing_goes_and_leaves_venv_alone(tmp_path) -> None:
+    root = tmp_path / 'main'
+    (root / venvpointer.POINTER).mkdir(parents=True)
+    (root / venvpointer.RETIRED_POINTER).write_text('gone\n', encoding='utf-8')
+    venvcurrent.migrate(root, census=list)
+    assert not venvcurrent.pending_migration(root)
+    assert (root / venvpointer.POINTER).is_dir(), 'the plain .venv stays current'
 
 
 _HOLD = """

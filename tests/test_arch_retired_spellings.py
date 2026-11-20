@@ -335,7 +335,7 @@ RETIRED_SPELLINGS: Final = {
         "2026-11-17: the leaf scan's remedy -- a consumer's tree path is that consumer's data, never the leaf's",
     ),
     '_adopt_plain_venv': (
-        'dev_lab.dev.venvcurrent.retire_passed_over, retried by every publish, reclaim and follow',
+        'dev_lab.dev.venvcurrent.publish sets a plain .venv aside; migrate removes .venv-current once',
         '2026-11-17: a held legacy .venv never drained; the follow retries the drain from the current environment',
     ),
 }

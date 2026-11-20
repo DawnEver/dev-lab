@@ -11,7 +11,7 @@ STILL OVER, THE ALARM NAMES THE LIMIT AND THE CONSUMERS (user ruling 2026-10-14)
 2,020,000-file hard limit with 43 GB of 1 TB used, and the alarm said only "still near its quota" -- not
 which limit, nor that 1.34 M of the files were one experiment directory the forge does not own.
 :func:`pressure_text` states bytes and files used/limit, which one binds, and the biggest directories of
-the home by FILE COUNT (:func:`consumers`), each one outside :data:`FORGE_OWNED` marked "not forge-owned,
+the home by FILE COUNT (:func:`consumers`), each one outside the declared account root marked "not forge-owned,
 not touched".
 """
 
@@ -29,7 +29,6 @@ from typing import Any, Final
 import lab_commons.launch as _door
 
 __all__ = [
-    'FORGE_OWNED',
     'Usage',
     'consumers',
     'count_files',
@@ -50,9 +49,6 @@ _QUOTA_ROW: Final = re.compile(r'^\S+\s+\S+\s+USR\s+(\d+)\s+(\d+)\s+\d+\s+\d+[^|
 # ``quota -w``: filesystem, KB used (``*`` when over), quota, limit, [grace], files used, quota, limit
 _LINUX_ROW: Final = re.compile(r'^\s*/\S+\s+(\d+)\*?\s+(\d+)\s+\d+\s+(?:\S+\s+)??(\d+)\*?\s+(\d+)\s+\d+', re.MULTILINE)
 _MMLSQUOTA: Final = ('mmlsquota', '/usr/lpp/mmfs/bin/mmlsquota')
-
-#: The directories of an account home the forge owns (:mod:`dev_lab.dev.retention`); nothing else is touched.
-FORGE_OWNED: Final = ('ci',)
 
 
 @dataclass(frozen=True)
@@ -155,15 +151,16 @@ def count_files(path: Path) -> int:
     return 1 + sum(len(dirs) + len(names) for _, dirs, names in os.walk(path))
 
 
-def consumers(home: Path, *, count: Callable[[Path], int] = count_files, top: int = 8) -> list[tuple[Path, int, bool]]:
+def consumers(
+    home: Path, root: Path, *, count: Callable[[Path], int] = count_files, top: int = 8
+) -> list[tuple[Path, int, bool]]:
     """The *top* directories of *home* by file count, most first, each with whether the forge owns it.
 
-    A forge-owned directory (:data:`FORGE_OWNED`) is counted per child, so ``ci/trees`` and ``ci/envs``
-    are named apart; any other directory is one entry.
+    The forge owns the declared account *root* (:mod:`lab_commons.hpc.layout`) and nothing else; it is
+    counted per child, so ``runs`` and ``envs`` are named apart; any other directory is one entry.
     """
-    owned = [home / name for name in FORGE_OWNED]
-    seen = [(p, False) for p in sorted(home.iterdir()) if p not in owned and p.is_dir() and not p.is_symlink()]
-    seen += [(p, True) for root in owned if root.is_dir() for p in sorted(root.iterdir()) if p.is_dir()]
+    seen = [(p, False) for p in sorted(home.iterdir()) if p != root and p.is_dir() and not p.is_symlink()]
+    seen += [(p, True) for p in sorted(root.iterdir()) if p.is_dir()] if root.is_dir() else []
     counted = [(path, count(path), mine) for path, mine in seen]
     return sorted(counted, key=lambda row: -row[1])[:top]
 
@@ -176,13 +173,13 @@ def storage_text(usage: Usage | None) -> str:
     return f'{usage.text()}{full}'
 
 
-def pressure_text(usage: Usage | None, freed: tuple[int, int], home: Path | None) -> str:
+def pressure_text(usage: Usage | None, freed: tuple[int, int], home: Path | None, root: Path) -> str:
     """The storage alarm's body: what was freed, which limit binds, used/limit of each, *home*'s biggest consumers."""
     head = f'freed {freed[0]} bytes and {freed[1]} files; still over [retention] pressure'
     if usage is None:
         return f'{head}; the quota is unreadable'
     lines = [f'{head} on {usage.binding(*freed)}: {usage.text()}']
-    heavy = consumers(home) if home is not None else []
+    heavy = consumers(home, root) if home is not None else []
     lines += [f'- {path}: {n} files' + ('' if mine else ' (not forge-owned, not touched)') for path, n, mine in heavy]
     return '\n'.join(lines)
 

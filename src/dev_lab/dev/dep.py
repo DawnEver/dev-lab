@@ -464,7 +464,7 @@ def _run(
         )
     except (_dep_project.OtherUvRefused, _dep_project.ForeignEnvRefused, _dep_local.OverlayRefused) as exc:
         emit(f'REFUSED: {exc}')
-        publish_built(root, prefix, live, ok=False, census=census, base=base)
+        publish_built(root, prefix, live, ok=False, census=census)
         return 1
     port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
@@ -485,7 +485,7 @@ def _run(
         emit(f'REFUSED: {exc}')
         return 1
     emit(result.render())
-    stale = publish_built(root, prefix, live, ok=not result.returncode, census=census, base=base)
+    stale = publish_built(root, prefix, live, ok=not result.returncode, census=census)
     synced = syncing and not args.dry_run and not result.returncode
     return result.returncode or (after_sync(root, python, run=run) if synced else 0) or stale
 

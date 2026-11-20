@@ -6,9 +6,9 @@ from pathlib import Path
 
 from lab_commons.census import Process
 
-from dev_lab.dev import venvprune
+from dev_lab.dev import venvcurrent, venvprune
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
-from dev_lab.dev.venvpointer import HOME, POINTER
+from dev_lab.dev.venvpointer import HOME
 
 
 def _checkout(root: Path, *names: str, current: str | None) -> Path:
@@ -16,7 +16,7 @@ def _checkout(root: Path, *names: str, current: str | None) -> Path:
         (root / HOME / name).mkdir(parents=True)
         (root / HOME / name / 'payload').write_bytes(b'x' * 10)
     if current is not None:
-        (root / POINTER).write_text(current + '\n', encoding='utf-8')
+        venvcurrent.publish(root, root / HOME / current, census=list)
     return root
 
 

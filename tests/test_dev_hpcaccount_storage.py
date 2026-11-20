@@ -19,13 +19,13 @@ _FLEET = (
     Grant(user='alice', hosts=_HOSTS, slurm_account='acct'),
     Grant(user='bob', hosts=_HOSTS, slurm_account='acct'),
 )
-_DEPLOY = '[deploy]\nhost = "login01.example"\nroot = "src"\n'
+_DEPLOY = '[deploy]\nhost = "login01.example"\nroot = "/r/src"\n'
 _QUOTA = 'Disk quotas for user alice\n  /home  29G  30G  30G  999k* 1000k 1000k'
 
 
 def _line(argv: str) -> str:
     """The remote line in the account's dev-lab checkout, run by its current environment (the one resolver)."""
-    return f'cd ~/src/dev-lab && {shell_interpreter(".")} {argv}'
+    return f'cd /r/src/repos/dev-lab && {shell_interpreter(".")} {argv}'
 
 
 def _account(*, ticks: str = '2', unreachable: bool = False, seen: list[str]) -> Runner:

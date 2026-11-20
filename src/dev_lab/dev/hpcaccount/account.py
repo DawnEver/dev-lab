@@ -75,7 +75,7 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck, *, serv
     ``git ls-remote`` is its whole check (a server holds only a read token).
     """
     emit('[credentials] git credential helper and the forge API per served repo; git ls-remote per repo')
-    off = unserved(spec, home)
+    off = unserved(spec)
     served_repos = [repo for repo in spec.repos if serves and repo.name not in off]
     helper = step.read([*step.tools.git, 'config', '--global', '--get', 'credential.helper']).stdout.strip()
     store = home / '.git-credentials'

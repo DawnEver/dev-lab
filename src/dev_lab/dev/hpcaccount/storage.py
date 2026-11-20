@@ -8,7 +8,7 @@ grant's own login hosts (never an agent's own ssh -- HPC-THROUGH-THE-DOOR):
 * the account's quota (``quota -s``: blocks AND files -- files are the binding resource of a cluster home);
 * whether its crontab carries the deploy's tick lines (``# lab-commons-deploy:``), i.e. whether serve ticks at all;
 * with ``--census`` instead of a retention run, the FILES of every top-level entry of the home (dotdirs
-  included: the uv cache, toolchains, ``~/ci``) and the :data:`CENSUS_DEEP` largest one level below, most files
+  included: the uv cache, toolchains, the account root) and the :data:`CENSUS_DEEP` largest one level below, most files
   first -- ONE read-only walk (``du --inodes -x``). Files are what binds a cluster home, so bytes, a second walk
   of the same tree, are not taken. ``du`` counts a hard-linked file once: uv links envs from its cache, so an env
   costs few files of its own;
@@ -134,7 +134,7 @@ def ticks_command() -> str:
 
 
 def retention_command(target: Target, *, apply: bool) -> str:
-    """The shell line that runs the account's own retention over its ``~/ci``: a dry run unless *apply*."""
+    """The shell line that runs the account's own retention over its declared root: a dry run unless *apply*."""
     return in_checkout(target, ['-m', 'dev_lab.dev.retention', '--cluster', *(['--apply'] if apply else [])])
 
 

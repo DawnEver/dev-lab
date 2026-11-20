@@ -95,7 +95,7 @@ def _stamped(path: Path, key: str) -> bool:
     return path.is_file() and path.read_text(encoding='utf-8') == key
 
 
-def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
+def build(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     """Build *repo*'s ``.venv`` and native build, each skipped while its input key is unchanged.
 
     The venv is exactly what the repo's committed lock pins (PIN + FRESHNESS, user ruling 2026-10-17): nothing is
@@ -105,7 +105,7 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
     succeeded: a tick running from the live environment never sees it rewritten under it, and a failed build is
     abandoned with the live one untouched. The passed-over environment is left for ``venvprune``.
     """
-    checkout = checkout_of(spec, home, repo)
+    checkout = checkout_of(spec, repo)
     if step.dry:
         step.change(f'{repo.name}: build .venv with its [tool.lab_commons.hpc] install (e.g. uv sync --extra dev)', [])
         step.change(f'{repo.name}: its native build, when declared, into {checkout / ".lab-native"}', [])
@@ -118,7 +118,7 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
     env = {
         'UV_PYTHON': spec.python,
         'UV_PYTHON_PREFERENCE': 'only-managed',
-        'UV_CACHE_DIR': str(uv_cache(home)),
+        'UV_CACHE_DIR': str(uv_cache(spec.root)),
         'UV_LINK_MODE': 'hardlink',
     }
     inputs = builds.dependency_inputs or ('pyproject.toml', 'uv.lock')
@@ -135,14 +135,18 @@ def build(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
             return rc
         beside.mkdir(parents=True, exist_ok=True)
         (beside / '.lab-deploy-env').write_text(env_key, encoding='utf-8')
-        emit(f'  {repo.name}: {venvcurrent.publish(checkout, beside)}')
+        try:
+            emit(f'  {repo.name}: {venvcurrent.publish(checkout, beside)}')
+        except venvcurrent.PublishRefused as refused:
+            emit(f'  {repo.name}: REFUSED: {refused}')
+            return 1
     # LEDGER-MIGRATES-ON-INSTALL: every deploy, idempotent, so a venv stamped before the verb existed migrates too
     if rc := boxmigrate.migrate(str(venvpointer.current(checkout) / 'bin' / 'python')):
         return rc
-    return _native(step, home, checkout, builds, {**env, 'ENV_KEY': env_key}) if builds.native_build else 0
+    return _native(step, spec.root, checkout, builds, {**env, 'ENV_KEY': env_key}) if builds.native_build else 0
 
 
-def _native(step: Step, home: Path, checkout: Path, builds: Builds, env: dict[str, str]) -> int:
+def _native(step: Step, root: str, checkout: Path, builds: Builds, env: dict[str, str]) -> int:
     """The repo's native build into ``<checkout>/.lab-native``, in its native key's own cargo target."""
     key = _key(step, checkout, builds.native_inputs, builds.native_build, env['UV_PYTHON'], env.pop('ENV_KEY'))
     out = checkout / '.lab-native'
@@ -151,7 +155,7 @@ def _native(step: Step, home: Path, checkout: Path, builds: Builds, env: dict[st
         emit(f'  {checkout.name}: native build current (key {key[:12]})')
         return 0
     script = f'mkdir -p "$CARGO_TARGET_DIR" && exec 8> "$CARGO_TARGET_DIR.lock" && flock 8 && {builds.native_build}'
-    env |= {'LAB_CI_NATIVE': str(out), 'CARGO_TARGET_DIR': str(home / cargo_target(key))}
+    env |= {'LAB_CI_NATIVE': str(out), 'CARGO_TARGET_DIR': str(Path(root) / cargo_target(key))}
     if rc := step.change(
         f'{checkout.name}: native {builds.native_build}', [*step.tools.sh, script], cwd=checkout, env=env
     ):
@@ -161,13 +165,13 @@ def _native(step: Step, home: Path, checkout: Path, builds: Builds, env: dict[st
     return 0
 
 
-def update(step: Step, spec: Deployment, home: Path, repo: Repo) -> int:
+def update(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     """Clone *repo*, or fetch its ref and check it out; then its submodules at their pinned commits.
 
     A product consumes its components by path (:mod:`dev_lab.dev.components`), so a checkout
     without its submodules builds a venv that cannot resolve them.
     """
-    checkout, git = checkout_of(spec, home, repo), step.tools.git
+    checkout, git = checkout_of(spec, repo), step.tools.git
     if not (checkout / '.git').exists():
         argv = [*git, 'clone', '-q', '-b', repo.ref, repo.url, str(checkout)]
         rc = step.change(f'git clone -b {repo.ref} {repo.url} {checkout}', argv)
@@ -207,17 +211,23 @@ def crontab(step: Step, lines: Sequence[str]) -> int:
     )
 
 
-def login(step: Step, home: Path) -> int:
-    """One marked :func:`login_line` in each of :func:`login_files`, written once, each file backed up first."""
-    emit("[login] the login shell's PATH names the tick's user installs")
-    line = login_line(home)
+def login(step: Step, home: Path, root: str) -> int:
+    """The ONE marked :func:`login_line` in each of :func:`login_files`, each file backed up first.
+
+    A marked line that differs (an older line, another root) is replaced in place, never kept beside the new one.
+    """
+    emit("[login] the login shell's PATH names the tick's user installs and LAB_ROOT the declared root")
+    line = login_line(home, root)
     for path in login_files(home):
-        if path.is_file() and LOGIN_MARK in path.read_text(encoding='utf-8', errors='replace'):
+        text = path.read_text(encoding='utf-8', errors='replace') if path.is_file() else ''
+        marked = [one for one in text.splitlines() if LOGIN_MARK in one]
+        if marked == [line]:
             emit(f'  {path}: current')
             continue
         file, backup = shlex.quote(str(path)), shlex.quote(f'{path}.lab-deploy.bak')
         keep = f'[ ! -e {file} ] || [ -e {backup} ] || cp -p {file} {backup}'
-        script = f'{{ {keep}; }} && echo {shlex.quote(line)} >> {file}'
+        drop = f'{{ [ ! -e {file} ] || sed -i {shlex.quote(f"/{LOGIN_MARK}/d")} {file}; }}'
+        script = f'{{ {keep}; }} && {drop} && echo {shlex.quote(line)} >> {file}'
         if rc := step.change(f'{path}: back up, then append {line}', [*step.tools.sh, script]):
             return rc
     return 0

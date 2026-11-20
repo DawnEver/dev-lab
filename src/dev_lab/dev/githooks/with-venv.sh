@@ -78,7 +78,7 @@ PYTHON=''
 _SAW_VENV=''
 # The current environment (dev-lab #641): rendered by `node venv_resolver.js --shell`, never edited here.
 # BEGIN venv_resolver.js --shell
-_current_env() { _n=""; if [ -f "$1/.venv-current" ]; then _n="$(head -n 1 "$1/.venv-current" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"; fi; case "$_n" in (""|.|..|*/*|*\\*|*:*) echo "$1/.venv" ;; (*) if [ -d "$1/.venvs/$_n" ]; then echo "$1/.venvs/$_n"; else echo "$1/.venv"; fi ;; esac; }
+_current_env() { if [ -d "$1/.venv" ]; then (cd -P "$1/.venv" && pwd -P); else echo "$1/.venv"; fi; }
 # END venv_resolver.js --shell
 
 for root in "${THIS_ROOT}"; do

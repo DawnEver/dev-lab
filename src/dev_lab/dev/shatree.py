@@ -5,7 +5,7 @@ in the checkout it serves from -- the integrator's MAIN checkout, which sat at e
 THAT tree and posted on THAT sha, and the claim on 4e394b6 was released with no part. A producer that
 judges whatever its serving checkout holds judges the wrong commit whenever the two differ.
 
-THE CLUSTER'S RULE, LOCALLY. A cluster run is judged in ``~/ci/trees/<sha>``, a detached worktree of
+THE CLUSTER'S RULE, LOCALLY. A cluster run is judged in ``<root>/runs/<sha>/tree``, a detached worktree of
 that one commit with its submodules at their pinned commits (:mod:`lab_commons.hpc.run`). A local
 part is judged the same way: :func:`open_tree` adds ``<main checkout>/.claude/worktrees/forge-<sha12>-<context>``
 (:func:`~dev_lab.dev.worktreeplace.home` -- the repository's worktree home), detached

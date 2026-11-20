@@ -17,7 +17,7 @@ of three things a checkout can be left behind on, and the follow takes them in d
 move the lock), then the VENV, then the HOOKS (:func:`dev_lab.dev.hook_install.rewire` -- a stale or predecessor
 shim never reaches the current table, so only something outside a git hook can replace it). ``--background``
 detaches when any of the three is due -- or when a legacy ``.venv`` directory the pointer passed over is still
-in place: the follow retries its drain (:func:`dev_lab.dev.venvcurrent.retire_passed_over`), which waits for no holder.
+in place: the follow retries its drain (:func:`dev_lab.dev.venvcurrent.migrate`), which waits for no holder.
 The bootstrap it runs starts from the checkout's current environment, never the one the follow was launched from.
 
 THE BEHIND NOTICE (``--session-start`` too, :func:`behind_notice`): one line when the trunk checkout's HEAD is
@@ -219,10 +219,10 @@ def toplevel(cwd: Path) -> Path | None:
 
 
 def due(checkout: Path) -> bool:
-    """*checkout*'s venv is :func:`stale` or a legacy directory, it is behind integration, or a hook is not live."""
+    """*checkout*'s venv is :func:`stale` or holds the retired pointer file, it is behind, or a hook is not live."""
     return (
         stale(checkout) is not None
-        or venvcurrent.passed_over(checkout)
+        or venvcurrent.pending_migration(checkout)
         or checkoutfollow.behind(checkout)
         or hook_install.unwired(checkout)
     )
@@ -270,7 +270,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
             if moved := checkoutfollow.advance(root):
                 emit(moved)
             emit(f'venv {root}: {follow(root)}')
-            if retired := venvcurrent.retire_passed_over(root, census=processes):
+            if retired := venvcurrent.migrate(root, census=processes):
                 emit(retired)
             _follow_checkout_files(root)
     except OSError as exc:  # a hook never blocks the session or the git verb it serves
