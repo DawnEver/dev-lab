@@ -25,6 +25,12 @@ holds its verdict-posting login and the config source's reader (``[hpc.roles.<ro
 After a placement, git's ``store`` helper is set when NO global helper is configured (one already set is kept):
 a store line git never consults reads as anonymous (measured 2026-11-20 on three research accounts).
 
+READ BACK BEFORE IT SAYS SO (2026-11-20). After the rewrite the forge's ``auth role`` runs again through git's own
+helper (no staged file): only when the STORED line answers as ``--login`` does the door print ``verified: ...`` and
+exit 0; anything else (a failover node whose write landed nowhere) exits 2 naming what answered. ``--from-output
+<name>`` reads the token from the consent output ``outputs/<name>`` (:func:`dev_lab.dev.planrunsteps.stdout_path`)
+instead of stdin and deletes that file ONLY after a verified placement -- a caller never removes a token by hand.
+
 DECLARED ONLY: the account must hold a ``[[hpc.grant]]`` and the login must be declared -- a role's ``reader``
 (:mod:`~dev_lab.dev.hpcaccount.division`) or an ``[ops.forge.accounts]`` login; when the account's role names a
 reader, the login must be that reader. Anything else is refused before any connection.
@@ -33,11 +39,11 @@ reader, the login must be that reader. Anything else is refused before any conne
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
-from urllib.parse import urlsplit
 
 from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
@@ -57,6 +63,7 @@ from dev_lab.dev.credstore import (
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleet import declared_target, in_checkout
 from dev_lab.dev.hpcaccount.transport import grant_runner
+from dev_lab.dev.planrunsteps import stdout_path
 
 __all__ = [
     'declared_logins',
@@ -164,8 +171,15 @@ def place_credential(
         say(f'credential: refused -- {refusal}')
         return 2
     shell(_STORE_HELPER, None)  # a store line git never consults reads as anonymous (measured 2026-11-20)
-    host = urlsplit(repo).hostname or ''
-    say(f'{user}: the forge answers as {login} on {repo}; placed {digest(token)} for {host} (0600) {backup}'.strip())
+    try:
+        stored = str(json.loads(shell(role, None) or '{}').get('login') or '')
+    except (RuntimeError, OSError, ValueError) as failed:
+        stored = f'an error ({failed})'
+    if stored != login:
+        said = stored or 'anonymous'
+        say(f'credential: not verified -- {user}: the stored line answers {repo} as {said}, not {login}')
+        return 2
+    say(f'verified: {user}: the stored line answers {repo} as {login}; placed {digest(token)} (0600) {backup}')
     return 0
 
 
@@ -209,6 +223,12 @@ def parser() -> argparse.ArgumentParser:
         '--host-config', type=Path, metavar='<host config>', help="the forge host's reviewed config (with --login)"
     )
     made.add_argument(
+        '--from-output',
+        default='',
+        metavar='<name>',
+        help='read the token from the consent output outputs/<name>, deleted only after a verified placement',
+    )
+    made.add_argument(
         '--url', default='', metavar='<repo url>', help="a repository url on the host config's forge (with --login)"
     )
     return made
@@ -232,14 +252,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (CredentialRefused, PermissionError, LookupError, ValueError) as refused:
         emit(f'credential: refused -- {refused}')
         return 2
+    source = Path(args.from_output).name if args.from_output else ''
+    if args.from_output and (source != args.from_output or source in {'', '.', '..'}):
+        emit(f'credential: refused -- --from-output takes a bare output name, not {args.from_output!r}', err=True)
+        return 2
     if forge is None:
         return drop_host(args.account, host=args.drop_host, login=args.login, grants=machine.grants, say=emit)
     if why := unreachable(args.account, machine.grants):
         emit(f'credential: refused -- {why}; nothing was read from stdin, so the token stays with you', err=True)
         return 2
-    token = sys.stdin.read().strip()
-    return place_credential(
+    output = stdout_path(source) if source else None
+    try:
+        token = output.read_text(encoding='utf-8').strip() if output else sys.stdin.read().strip()
+    except OSError as failed:
+        emit(f'credential: refused -- {failed}', err=True)
+        return 2
+    code = place_credential(
         args.account, login=args.login, token=token, url=args.url, forge=forge, grants=machine.grants,
         division=division_of(machine),
         say=emit,
     )  # fmt: skip
+    if output and code == 0:
+        output.unlink()
+        emit(f'credential: removed the placed consent output {source}')
+    return code

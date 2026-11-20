@@ -463,3 +463,73 @@ def test_a_placed_store_line_is_read_because_the_store_helper_is_set_when_none_i
     )
     assert '[ -n "$(git config --global --get-all credential.helper)" ] ||' in helper
     assert 'git config --global credential.helper store' in helper
+
+
+def _failover_account(seen: list[tuple[str, str | None]]) -> Runner:
+    """An account whose store write landed nowhere: the staged check answers, the stored line reads as anonymous."""
+    honest = _account(answers='forge-ci', seen=seen)
+
+    def shell(cmd: str, stdin: str | None = None) -> str:
+        if 'auth role' in cmd and not cmd.startswith(verify_prefix('forge.example', _STAMP)):
+            seen.append((cmd, stdin))
+            return json.dumps({'login': None})
+        return honest(cmd, stdin)
+
+    return shell
+
+
+def test_a_placement_the_stored_line_does_not_answer_is_refused_without_a_success_line() -> None:
+    """Measured 2026-11-20: after a login-node failover a placement printed nothing and the token was deleted.
+
+    The STORED line is read back (the forge's ``auth role`` through git's own helper, no staged file) and must
+    answer as the login; PLANTED: a store that reads as anonymous exits non-zero and says no ``verified``.
+    """
+    seen: list[tuple[str, str | None]] = []
+    said: list[str] = []
+    code = place_credential(
+        'alice@login2.example', login='forge-ci', token=_MINTED, url='', forge=_FORGE, grants=_FLEET,
+        division=_DIVISION, say=said.append, connect=lambda _g: _failover_account(seen), stamp=_STAMP,
+    )  # fmt: skip
+    assert code == 2
+    assert not any('verified' in line and 'not verified' not in line for line in said)
+    assert 'anonymous' in said[-1]
+    code, said, _, _ = _run()
+    assert code == 0
+    assert said[-1].startswith('verified: ')
+
+
+def _main_from_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, placed: int) -> tuple[int, Path]:
+    out = tmp_path / 'state' / 'consent' / 'outputs' / 'forge-ci-reader.token'
+    out.parent.mkdir(parents=True)
+    out.write_text(_MINTED + '\n', encoding='utf-8')
+    monkeypatch.setattr(credential, 'stdout_path', lambda name: out.parent / name)
+    monkeypatch.setattr(credential, 'reached_machine', lambda _a: Machine(session=None, grants=_FLEET, roles={}))
+    monkeypatch.setattr(credential, 'grant_runner', lambda _g, _t=0: lambda _c, _s=None: '')
+    tokens: list[str] = []
+    monkeypatch.setattr(credential, 'place_credential', lambda *_a, **k: tokens.append(k['token']) or placed)
+    monkeypatch.setattr('sys.stdin', _Unread())
+    argv = ['alice@login1.example', '--login', 'forge-ci', '--host-config', str(_host_config(tmp_path))]
+    code = credential.main([*argv, '--from-output', out.name])
+    assert tokens == [_MINTED]
+    return code, out
+
+
+def test_from_output_removes_the_consent_output_only_after_a_verified_placement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The door, not the caller, deletes the minted token; PLANTED: a failed placement keeps the file."""
+    code, out = _main_from_output(tmp_path, monkeypatch, placed=2)
+    assert code == 2
+    assert out.exists()
+
+
+def test_from_output_deletes_the_file_after_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    code, out = _main_from_output(tmp_path, monkeypatch, placed=0)
+    assert code == 0
+    assert not out.exists()
+
+
+def test_from_output_refuses_a_name_with_a_path_part(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(credential, 'reached_machine', lambda _a: Machine(session=None, grants=_FLEET, roles={}))
+    argv = ['alice@login1.example', '--login', 'forge-ci', '--host-config', str(_host_config(tmp_path))]
+    assert credential.main([*argv, '--from-output', '../x.token']) == 2
