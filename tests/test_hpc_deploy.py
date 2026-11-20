@@ -1020,3 +1020,25 @@ def test_a_research_deploy_naming_a_host_outside_its_grant_is_refused(
 def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
     carry(monkeypatch, HPC_REPO)
+
+
+def test_a_cloned_repo_this_account_does_not_serve_is_read_with_the_stored_reader(
+    box: Box, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A private forge repo answers no anonymous read, served here or not.
+
+    Measured 2026-11-20 on two research accounts: once the two private product repos were cloned, their checkouts
+    declared no role bound here, so the deploy's ``git ls-remote`` ran with ``credential.helper=`` emptied and the
+    private forge refused it (exit 128) though the stored server-reader answered. Every repo is read with the
+    account's own helper. PLANTED CONTROL: the same account's refused read is still refused.
+    """
+    assert box.run(*DECLARE) == 0
+    _as_role(box, deploy_spec.RESEARCH)
+    monkeypatch.setattr(deploy_spec, 'roles_at', lambda _checkout: EVERY_CI)  # every cloned checkout: unserved here
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 0
+    remote = [line for line in box.logged().splitlines() if 'ls-remote' in line]
+    assert remote
+    assert all('credential.helper=' not in line for line in remote)
+    monkeypatch.setenv('FAKE_GIT_DENY', '/beta.git')
+    assert box.run() == 2

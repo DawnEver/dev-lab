@@ -1626,3 +1626,20 @@ def test_a_part_job_keeps_its_verify_log_whatever_ends_it(tmp_path: Path) -> Non
 def _produce_step(job: dict) -> dict:
     """The part job's produce step, by name: the log keeper follows it (it is no longer the last step)."""
     return next(step for step in job['steps'] if step.get('name') == 'Produce and post the part')
+
+
+def test_a_hosted_part_carries_a_job_timeout_derived_from_the_repo_s_selection_wall(tmp_path: Path) -> None:
+    """The part job's ``timeout-minutes`` is the declared selection wall plus the setup-and-post margin.
+
+    A part with no job timeout hung for hours at GitHub's 360-minute default (dev-lab run 44731106374, windows,
+    2026-11-20).
+    """
+    _hosted(tmp_path)
+    pyproject = tmp_path / 'pyproject.toml'
+    pyproject.write_text(ACTIONS_REPO, encoding='utf-8')
+    default = workflows(tmp_path)['ci.yml']['jobs']['part']['timeout-minutes']
+    assert default == ciworkflows.part_timeout_minutes(3600) == 60 + ciworkflows.PART_MARGIN_MIN
+    # PLANTED CONTROL: a repo declaring a longer wall renders a longer timeout, so the value is read, not constant.
+    pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.verify]\nwall_s = 7230\n', encoding='utf-8')
+    assert workflows(tmp_path)['ci.yml']['jobs']['part']['timeout-minutes'] == 121 + ciworkflows.PART_MARGIN_MIN
+    assert isinstance(default, int), 'GitHub reads timeout-minutes as a number'

@@ -68,8 +68,9 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck, *, serv
 
     Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81) -- one whose
     checkout does not declare another producer (:func:`~dev_lab.dev.hpcaccount.spec.unserved`; one not yet cloned
-    is checked as served, so a first deploy still proves its token); any other is only cloned and fetched, so an
-    anonymous ``git ls-remote`` -- no credential helper -- must succeed.
+    is checked as served, so a first deploy still proves its token); any other is only cloned and fetched. Every repo
+    is read with the account's own helper: a private forge repo answers no anonymous read, served here or not
+    (measured 2026-11-20: two research accounts' cloned, unserved product repos were refused at exit 128).
     An account whose role never *serves* (research) ticks nothing, so no repo there needs the tick's scopes:
     ``git ls-remote`` is its whole check (a server holds only a read token).
     """
@@ -83,8 +84,7 @@ def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck, *, serv
         return 2
     denied = []
     for repo in spec.repos:
-        anonymous = () if repo.name not in off else ('-c', 'credential.helper=', '-c', 'credential.interactive=never')
-        rc = step.read([*step.tools.git, *anonymous, 'ls-remote', repo.url, f'refs/heads/{repo.ref}']).returncode
+        rc = step.read([*step.tools.git, 'ls-remote', repo.url, f'refs/heads/{repo.ref}']).returncode
         emit(f'  {repo.name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
         if rc:
             denied.append(repo.name)

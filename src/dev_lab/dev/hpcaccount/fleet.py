@@ -12,8 +12,9 @@ A layer with no ``[deploy]`` host, or whose host is not one of its grant's login
 others still deploy (exit 2).
 
 AN ACCOUNT WITH NO KIT VENV IS FIRST INSTALLED (:func:`first_install`): a key-only account has no other door, so
-when ``~/<root>/dev-lab/.venv`` has no interpreter, uv is installed into ``~/.local/bin`` if absent, each declared
-repo is cloned where missing, and the kit is ``uv sync --frozen``-ed; a kit with its venv skips the step.
+when ``~/<root>/dev-lab/.venv`` has no interpreter, uv is installed into ``~/.local/bin`` if absent, the
+kit is cloned where missing (only the kit: a forge-hosted repo needs the reader credential placed later), and the
+kit is ``uv sync --frozen``-ed; a kit with its venv skips the step.
 
 THE ROLE IS THE WORKSTATION'S (user rulings 2026-11-09): each grant's ``role`` and the ``[hpc.roles]`` table
 (:mod:`dev_lab.dev.hpcaccount.division`) are passed to the account's deploy, which refuses when its own ``[deploy]
@@ -22,7 +23,8 @@ role`` differs, naming both. A grant role the table does not name is refused her
 Then it runs, through the one transport (:mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held session when
 one is live, else ONE detached ``ssh -o BatchMode=yes <user>@<declared host>``), that account's own
 ``python -m dev_lab.dev.hpcaccount deploy`` in ``~/<root>/dev-lab`` -- after the kit's own tick has
-refreshed that checkout (:func:`refresh_kit`), so a fix to the deploy reaches an account that never ticks --
+refreshed that checkout (:func:`refresh_kit`; with the layer's kit ref, a direct fast-forward under the tick's lock,
+since the tick reads the stale machine file), so a fix to the deploy reaches an account that never ticks --
 and writes everything it prints to one log
 per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat.
 
@@ -61,7 +63,8 @@ from lab_commons.log import emit
 from dev_lab.dev import accounthost
 from dev_lab.dev.credstore import STORE, valid_host
 from dev_lab.dev.datedlog import dated_log
-from dev_lab.dev.devhost import OWN_TABLE, config_source, host_file
+from dev_lab.dev.devdeclared import OWN_TABLE
+from dev_lab.dev.devhost import config_source, host_file
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT
@@ -148,7 +151,7 @@ def _checked(grant: Grant, deploy: Mapping[str, Any], looked: str, door: str) ->
             '(the family declaration is the source: redeploy with --root naming it)'
         )
     repos = tuple((r['name'], r['url'], r['ref']) for r in deploy.get('repos', ()) if {'name', 'url', 'ref'} <= set(r))
-    return Target(named[0], root, deploy.get('role', ''), repos)
+    return Target(named[0], root, deploy.get('role') or grant.role, repos)  # unstated: the family grant's role
 
 
 @dataclass(frozen=True)
@@ -205,7 +208,7 @@ def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
     ``devhost render --write`` replaces the file, its old copy backed up. In the grant's ``setup`` environment.
     """
     forge = urlsplit(source.url).hostname or ''
-    clone = f'"$HOME/{account_clone(target, source)}"'
+    clone = f'"{_under_home(account_clone(target, source))}"'
     backups = f'"$HOME/{_BASE}/$(date -u +%y/%m/%d)/devhost"'
     credential = (
         f"grep -qs '@{forge}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
@@ -224,6 +227,11 @@ def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
         f'{{ {drift} --from {clone} ; true; }}', f'{render} --from {clone} --backups {backups}',
     ]  # fmt: skip
     return f'( {" && ".join([*grant.setup, *steps])} )'
+
+
+def _under_home(path: PurePosixPath) -> str:
+    """*path* as the account's shell reads it: an absolute root as it stands, a relative one under ``$HOME``."""
+    return path.as_posix() if path.is_absolute() else f'$HOME/{path.as_posix()}'
 
 
 def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
@@ -280,9 +288,10 @@ def first_install(grant: Grant, target: Target) -> str:
     """
     root = PurePosixPath('~', target.root)
     kit = root / KIT
-    clones = [
+    clones = [  # the kit alone: a forge-hosted product repo needs a reader credential the deploy places later
         f'{{ [ -d {root / name}/.git ] || git clone -q --branch {shlex.quote(ref)} {shlex.quote(url)} {root / name}; }}'
         for name, url, ref in target.repos
+        if name == KIT
     ]
     steps = [
         f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
@@ -305,8 +314,33 @@ def refresh_kit(grant: Grant, target: Target) -> str:
     """
     kit = PurePosixPath('~', target.root, KIT)
     recorded = f'echo "[deploy-fleet] kit at $(git -C {kit} rev-parse HEAD)"'
+    ref = next((ref for name, _url, ref in target.repos if name == KIT), '')
     tick = f'{in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
+    if ref:
+        tick = f'{_move_kit(kit, ref)} ; {recorded}'
     return f'bash -lc {shlex.quote("; ".join([*grant.setup, tick]))}' if grant.setup else tick
+
+
+def _move_kit(kit: PurePosixPath, ref: str) -> str:
+    """The kit fast-forwarded to its LAYER-declared *ref* and its own venv re-synced, under the cron tick's lock.
+
+    Never through the kit's tick: that reads the account's machine file, which is the stale thing this deploy is
+    about to render over (2026-11-20: a retired key crashed it before it refreshed; an old root sent it to another
+    checkout). The lock is the cron tick's, so the kit keeps one writer at a time.
+    """
+    remote = f'refs/remotes/origin/{ref}'
+    python = shell_interpreter('.')
+    body = ' && '.join([
+        f'git fetch -q origin {shlex.quote(f"+refs/heads/{ref}:{remote}")}',
+        f'git checkout -q -B {shlex.quote(ref)} {shlex.quote(remote)}',
+        f'py={python}',
+        'UV_PROJECT_ENVIRONMENT="${py%/bin/python}" uv sync --frozen',
+    ])  # fmt: skip
+    lock = f'~/.cache/lab-forge-{KIT}.lock'
+    return (
+        f'( export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0; mkdir -p ~/.cache; cd {kit} && '
+        f'flock -w 600 {lock} bash -c {shlex.quote(body)} )'
+    )
 
 
 def _serving_twice(grants: Sequence[Grant], accounts: Sequence[str], division: Division | None) -> list[str]:

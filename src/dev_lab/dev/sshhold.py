@@ -201,11 +201,27 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _unopenable(dest: str | None, plan: Path | None) -> str:
+    """Why ``open`` is refused before any code is read; ``''`` when it may ask for one.
+
+    It names neither or both of a dest and a plan, or a dest naming no account (ssh would log in as THIS machine's
+    user: measured 2026-11-20, a TOTP code spent on a refused key).
+    """
+    if (plan is None) == (dest is None):
+        return 'sshhold: open names <dest> or --plan (which opens every host it names), exactly one'
+    if dest is None or '@' in dest:
+        return ''
+    return (
+        f"sshhold: refused -- {dest} names no account, so ssh would log in as THIS machine's user and spend the code "
+        f'on a refused key: open <user>@{dest} (the account its [[hpc.grant]] or host file declares)'
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """The CLI; ``run`` exits with the remote status, a refusal with 2, a lost session with 255."""
     args = _parser().parse_args(argv)
-    if args.verb == 'open' and (args.plan is None) == (args.dest is None):
-        emit('sshhold: open names <dest> or --plan (which opens every host it names), exactly one', err=True)
+    if args.verb == 'open' and (why := _unopenable(args.dest, args.plan)):
+        emit(why, err=True)
         return 2
     try:
         if args.verb == 'open':
