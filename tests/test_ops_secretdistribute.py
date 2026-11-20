@@ -29,7 +29,8 @@ REACH = '[storage.reach.results]\ncredentials_file = "~/.secrets/results"\n'
 
 
 def test_the_plan_takes_only_accounts_that_declare_the_reach(tmp_path: Path) -> None:
-    clone = _clone(tmp_path, {'clus-one': REACH, 'clus-two': '[deploy]\nhost = "x"\n', 'desk': REACH, 'here': REACH})
+    desk = '[dev]\nos = "x"\n' + REACH
+    clone = _clone(tmp_path, {'clus-one': REACH, 'clus-two': '[deploy]\nhost = "x"\n', 'desk': desk, 'here': REACH})
     work = plan('results', clone=clone, grants=[_grant('one'), _grant('two')], this_host='here')
     assert [t.grant.user for t in work.accounts] == ['one']  # 'two' declares no reach: never written
     assert work.by_hand == ('desk',)  # this machine is not listed; a workstation is named for its own enter
@@ -94,3 +95,26 @@ def test_an_unreachable_account_is_named_and_the_rest_still_go() -> None:
 
 def test_the_module_reuses_the_action_the_issuer_knows() -> None:
     assert secretdistribute.ACTION == 'ops.secret.place'
+
+
+FAMILY_REACH = """
+[storage.remotes.results]
+type = "s3"
+[storage.remotes.results.reach]
+credentials_file = "~/.secrets/results"
+"""
+
+
+def test_a_family_reach_plans_every_account_and_names_the_rest(tmp_path: Path) -> None:
+    """Stated once in the family: every reached account, every workstation named, an unreached account named."""
+    clone = _clone(tmp_path, {
+        'clus-one': '[deploy]\nhost = "x"\n', 'clus-other': '[deploy]\nhost = "y"\n',
+        'desk': '[dev]\nos = "x"\n', 'server': '[ops]\nx = 1\n', 'here': '[dev]\n',
+    })  # fmt: skip
+    (clone / 'family.toml').write_text(FAMILY_REACH, encoding='utf-8')
+    work = plan('results', clone=clone, grants=[_grant('one')], this_host='here')
+    assert [(t.grant.user, t.path) for t in work.accounts] == [('one', '~/.secrets/results')]
+    assert work.by_hand == ('desk',)  # a workstation; the ops server is no workstation
+    assert work.unreached == ('clus-other',)
+    nothing = plan('other', clone=clone, grants=[_grant('one')], this_host='here')  # PLANTED: no reach, no target
+    assert (nothing.accounts, nothing.by_hand, nothing.unreached) == ((), (), ())

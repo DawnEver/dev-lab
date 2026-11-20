@@ -129,7 +129,10 @@ def test_check_lists_the_remote_through_the_rendered_config(tmp_path: Path) -> N
 
     said = storage.check('results', repo=tree, to=tmp_path / 'conf' / 'rclone.conf', declared=reach, run=run,
                          rclone='rclone')  # fmt: skip
-    assert ran == [['rclone', '--config', str(tmp_path / 'conf' / 'rclone.conf'), 'lsd', 'results:']]
+    assert ran == [
+        ['rclone', '--config', str(tmp_path / 'conf' / 'rclone.conf'), *storage.CHECK_BOUNDS, 'lsd', 'results:']
+    ]
+    assert '--retries' in storage.CHECK_BOUNDS  # bounded: a refused key answers in seconds, never a hung terminal
     assert said.startswith('results: reached (2 top-level')
     assert 's3cr3t' not in said
 
