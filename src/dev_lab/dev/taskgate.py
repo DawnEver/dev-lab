@@ -6,8 +6,10 @@ rem task. A human push is not judged.
 
 ONE SOURCE, TWO SIDES (2026-11-16). rem owns the ledger and the binding: its ``UserPromptSubmit`` hook binds a
 session on the user's ``task: <slug>`` prompt, and its ``PreToolUse`` task guard covers the work inside the session.
-This gate is the GIT side only -- a pure reader of rem's files (:mod:`dev_lab.dev.taskbinding`, rem's documented
-contract), run at pre-push and never at a commit: a local commit is in-session work, already rem's.
+This gate is the GIT side -- a pure reader of rem's files (:mod:`dev_lab.dev.taskbinding`, rem's documented
+contract), run at commit-msg AND pre-push: rem's PreToolUse guard exists only under Claude Code, so the git side is
+the backstop that holds for Codex, Antigravity or any agent (2026-11-20; sessions read by
+:mod:`dev_lab.dev.native_session`).
 
 THE BINDING IS THE USER'S WORD (decision D5, 2026-11-15): the task a session works on is the one its user bound it
 to, never a guess from a worktree directory or a branch name. An unbound session is refused naming rem's door: the
@@ -18,7 +20,8 @@ not only a required one: ``PUSHED-HEAD-CARRIES-ITS-TASK`` in the ``session-branc
 rem's journal (JOURNAL.md) is appended to and read only through rem's own CLI, found at :data:`REM_ENV` (a path to
 ``task.js``), else in Claude Code's installed-plugins record.
 
-* :func:`refusal` -- the ``task-bound`` pre-push row (``githooks/base.toml``); it reads files only, no rem CLI.
+* :func:`refusal` -- the ``task-bound-commit`` commit-msg and ``task-bound`` pre-push rows (``githooks/base.toml``);
+  it reads files only, no rem CLI.
 * :func:`record` -- ``forge pr create`` / ``forge issue create`` append the opened URL to the bound task's journal
   (``task.js log``), so the task names its own PRs and issues.
 * :func:`task_prs` -- the PR numbers a task's journal names: what ``forge watch --task <slug>`` watches.
@@ -45,6 +48,7 @@ from dev_lab.dev.native_session import session_of
 from dev_lab.dev.taskbinding import slug_of
 
 __all__ = [
+    'COMMIT_HOOK_ID',
     'HOOK_ID',
     'REM_ENV',
     'RULE',
@@ -62,6 +66,7 @@ __all__ = [
 RULE: Final = 'SESSION-COMMITS-UNDER-ITS-TASK'
 #: The id this guard runs under in ``githooks/base.toml``.
 HOOK_ID: Final = 'task-bound'
+COMMIT_HOOK_ID: Final = 'task-bound-commit'
 #: A path to rem's ``task.js``; overrides the installed-plugin lookup.
 REM_ENV: Final = 'DEV_LAB_REM_TASK'
 _TABLE: Final = 'task'

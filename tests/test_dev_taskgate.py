@@ -90,11 +90,22 @@ def test_an_unbound_session_is_refused_naming_rems_door(tmp_path: Path) -> None:
     assert taskbinding.binding_path(_SESSION).as_posix() in said, 'and the exact file it read'
 
 
-def test_the_gate_is_one_pre_push_row_and_no_commit_is_judged() -> None:
-    """In-session work is rem's PreToolUse guard; the git side judges a push once, never a commit."""
+def test_the_gate_judges_every_commit_and_every_push_for_any_agent() -> None:
+    """The git side is the agent-independent backstop: rem's PreToolUse guard exists only under Claude Code."""
     gate = 'dev_lab.dev.taskgate'
-    found = [(stage, row['id']) for stage, rows in base_rows().items() for row in rows if gate in row['run']]
-    assert found == [('pre-push', taskgate.HOOK_ID)]
+    found = sorted((stage, row['id']) for stage, rows in base_rows().items() for row in rows if gate in row['run'])
+    assert found == [('commit-msg', taskgate.COMMIT_HOOK_ID), ('pre-push', taskgate.HOOK_ID)]
+
+
+@pytest.mark.parametrize('native', ['CODEX_THREAD_ID', 'ANTIGRAVITY_CONVERSATION_ID'])
+def test_a_codex_or_agy_session_is_judged_like_a_claude_one(tmp_path: Path, native: str) -> None:
+    """Planted control: the same unbound repo passes a human (no session) and refuses each agent's session."""
+    root = _repo(tmp_path, required=True)
+    assert taskgate.refusal(root, env={}) is None
+    said = taskgate.refusal(root, env={native: _SESSION})
+    assert said is not None
+    assert taskgate.RULE in said
+    assert '`task: <slug>`' in said
 
 
 def test_a_binding_rem_wrote_is_read_at_pre_push(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
