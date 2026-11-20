@@ -61,7 +61,8 @@ from lab_commons.log import emit
 from dev_lab.dev import accounthost
 from dev_lab.dev.credstore import STORE, valid_host
 from dev_lab.dev.datedlog import dated_log
-from dev_lab.dev.devhost import OWN_TABLE, config_source, host_file
+from dev_lab.dev.devdeclared import OWN_TABLE
+from dev_lab.dev.devhost import config_source, host_file
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.spec import DEFAULT_ROOT, KIT

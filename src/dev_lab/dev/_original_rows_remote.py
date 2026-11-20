@@ -29,6 +29,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: 2026-11-12, its stage-verify-replace core shared with a workstation's own placement door.
     'credstore',
     'devcredential',
+    # ORIGINAL: 2026-11-20, tokens never rotate (user ruling): the helper and store-line presence checked by drift.
+    'forgecredential',
+    # ORIGINAL: 2026-11-20, the effective [dev] split from devhost at the module-size band for the credential doors.
+    'devdeclared',
     # The hpcaccount verbs, which deploy and run on a remote cluster account (moved here from `_original_rows.py`
     # at the module-size band, 2026-11-13). No consumer guard is superseded: these forge-launching verbs moved from
     # the lab-commons owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.

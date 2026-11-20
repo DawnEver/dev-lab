@@ -58,44 +58,25 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devprofile, familyrepos, tomlleaves, vendordetect
+from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, tomlleaves, vendordetect
 from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, merge
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'LOCAL_DOOR', 'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'drift',
+    'LOCAL_DOOR', 'RENDER_DOOR', 'config_source', 'declared_channels', 'drift',
     'host_file', 'local_set', 'main', 'notice', 'render',
 ]  # fmt: skip
 
-#: The render's own table: which host and clone it came from.
-OWN_TABLE: Final = 'devhost'
 #: A key one side lacks (``None`` is not a TOML value, but a sentinel says so outright).
 _ABSENT: Final = object()
 
 
 def _read(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding='utf-8'))
-
-
-def declared(host_file: Path, family_file: Path) -> dict[str, Any]:
-    """The effective ``[dev]``: the family's under the host's -- under the default profile's for an undeclared host."""
-    family = _read(family_file) if family_file.is_file() else {}
-    shared = devprofile.family_dev(family)
-    if not host_file.is_file():
-        host, _ = devprofile.host_declaration(family_file.parent, host_file.stem)
-        return {**shared, **host['dev']}  # the profile REPLACES a shared key: its forges = {} grants no account
-    return _merge(shared, _read(host_file).get('dev', {}))
-
-
-def _merge(under: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
-    out = dict(under)
-    for key, value in over.items():
-        both = isinstance(value, Mapping) and isinstance(out.get(key), Mapping)
-        out[key] = _merge(out[key], value) if both else value
-    return out
 
 
 def _digest(path: Path) -> str:
@@ -140,18 +121,18 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     family_file, host_file = _sources(clone, host)
     family = _read(family_file)
     parsed, unmanaged = devprofile.host_declaration(clone, host)
-    layered = _merge({k: v for k, v in family.items() if k != 'dev'}, {k: v for k, v in parsed.items() if k != 'dev'})
+    layered = merge({k: v for k, v in family.items() if k != 'dev'}, {k: v for k, v in parsed.items() if k != 'dev'})
     vendors = parsed.get('dev', {}).get('vendors', {})
     seats = {name: {'seats': vendor['seats']} for name, vendor in vendors.items() if vendor.get('seats')}
-    layered = _merge(layered, {'capabilities': seats} if seats else {})
-    layered = _merge(layered, {'hpc': {'reach': hpc_reach(parsed.get('dev', {}))}} if 'hpc' in layered else {})
-    layered = _merge(layered, accounthost.derived(host, family) if accounthost.is_account(parsed) else {})
+    layered = merge(layered, {'capabilities': seats} if seats else {})
+    layered = merge(layered, {'hpc': {'reach': hpc_reach(parsed.get('dev', {}))}} if 'hpc' in layered else {})
+    layered = merge(layered, accounthost.derived(host, family) if accounthost.is_account(parsed) else {})
     if not accounthost.is_account(parsed):
         dev = declared(host_file, family_file)
-        layered = _merge(layered, devprofile.bridge_tables(dev, live))
-        layered = _merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
+        layered = merge(layered, devprofile.bridge_tables(dev, live))
+        layered = merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
     if channels := parsed.get('dev', {}).get('channels'):
-        layered = _merge(layered, {CHANNELS_TABLE: {'channels': channels}})
+        layered = merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     local = {k: v for k, v in live.items() if k not in layered and k != OWN_TABLE}
     own = {'host': host, 'source': clone.resolve().as_posix()}  # absolute: never the reader's CWD (#556)
     own |= {devprofile.UNMANAGED: host} if unmanaged else {}
@@ -209,6 +190,7 @@ def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
     if names := unfilled(dev):
         found.insert(0, fill_remedy(names))
     found += familyrepos.census(live)
+    found += forgecredential.drift(dev)
     checkout = live.get('repos', {}).get('dev-lab')
     if (want := dev.get('ref')) and checkout and (on := _branch(checkout)) not in {want, None}:
         found.append(f'the dev-lab checkout is on {on!r}, declared ref {want!r}')
@@ -380,7 +362,7 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``drift`` (exit 1 on drift), ``render`` (``--write`` backs up), ``detect``, ``session-start``, ``channels``."""
+    """``drift`` (exit 1), ``render`` (``--write`` backs up), ``detect``, ``session-start``, ``channels``, use-store."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -396,6 +378,7 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     making.add_argument('--write', action='store_true', help='back the live file up, then replace it')
     making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
+    forgecredential.add_use_store(verbs)
     setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
     local_verbs = setting.add_subparsers(dest='local_verb', required=True)
     one = local_verbs.add_parser('set', help='set <table>.<key> to <value>')
@@ -414,10 +397,13 @@ def main(argv: list[str] | None = None) -> int:
         if said := notice(live):
             emit(said)
         return 0
-    if args.verb == 'channels':
-        return _channels(live)
-    if args.verb == 'drift':
-        return _drift(path, live, args.clone)
+    plain = {
+        'channels': lambda: _channels(live),
+        'drift': lambda: _drift(path, live, args.clone),
+        'use-store': lambda: forgecredential.use_declared(declared_by(live.get(OWN_TABLE, {})), args.host),
+    }
+    if args.verb in plain:
+        return plain[args.verb]()
     if args.verb == 'local':
         return _local_verb(args, path, live)
     if args.verb == 'detect':

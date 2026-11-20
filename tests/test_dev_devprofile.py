@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from lab_commons.hpc.grants import AccessRefused
 
-from dev_lab.dev import devcredential, devhost, devprofile, devschema
+from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devschema
 from dev_lab.dev.hpcaccount import division
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -47,7 +47,7 @@ def test_an_unknown_hostname_renders_the_default_stamped_unmanaged(tmp_path: Pat
     assert rendered['devhost']['hooks'] == 'warn'
     assert rendered['hpc']['reach'] == [], 'the default reaches no HPC role'
     assert 'capabilities' not in rendered, 'the default holds no vendor seat'
-    dev = devhost.declared(clone / 'hosts' / 'stranger.toml', clone / 'family.toml')
+    dev = devdeclared.declared(clone / 'hosts' / 'stranger.toml', clone / 'family.toml')
     assert dev['forges'] == {}, "the default REPLACES the family's forges: no write account"
 
 
