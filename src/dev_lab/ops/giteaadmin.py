@@ -89,9 +89,12 @@ class Forge:
         if restated:
             msg = f'[ops.forge.accounts] {", ".join(restated)} restates [ops.forge] repos; drop its repos'
             raise ValueError(msg)
-        filled = {login: row if 'repos' in row else {**row, 'repos': list(self.repos)}
-                  for login, row in self.accounts.items()}  # fmt: skip
-        object.__setattr__(self, 'accounts', filled)
+
+    @property
+    def holdings(self) -> Mapping[str, Mapping[str, Any]]:
+        """Each login's row with its ``repos``: its own, else the forge's set (``accounts`` stays as declared)."""
+        return {login: row if 'repos' in row else {**row, 'repos': list(self.repos)}
+                for login, row in self.accounts.items()}  # fmt: skip
 
 
 class ForgeRefused(ValueError):

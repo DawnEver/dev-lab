@@ -179,7 +179,7 @@ def read_forge(host_config: Path) -> DeclaredForge:
     if forge is None or not forge.accounts or caddy is None or not caddy.sites:
         msg = f'the host config {host_config} declares no [ops.forge.accounts] and [ops.caddy] sites: not a forge'
         raise CredentialRefused(msg)
-    accounts = {login: tuple(row.get('repos', ())) for login, row in forge.accounts.items()}
+    accounts = {login: tuple(row.get('repos', ())) for login, row in forge.holdings.items()}
     return DeclaredForge(host_config, tuple(caddy.sites), accounts)
 
 
