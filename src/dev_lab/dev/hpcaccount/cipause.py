@@ -34,7 +34,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount import cicron, deploy
 from dev_lab.dev.hpcaccount.cimark import RESUME_DOOR, marker
-from dev_lab.dev.hpcaccount.drift import DISCARD, account_drift
+from dev_lab.dev.hpcaccount.drift import DISCARD, account_drift, unrenderable
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, cron_lines, grant_setup, load, ticked
 from dev_lab.dev.hpcaccount.steps import Step, Tools, crontab
 
@@ -77,7 +77,7 @@ def _lost(step: Step, home: Path, machine: Path, args: argparse.Namespace) -> li
     found = account_drift(step, home, machine, args.clone.expanduser(), args.host)
     if isinstance(found, str):
         return f'its drift cannot be computed -- {found}'
-    lost = [f'{what}: {item}' for what, drift in found.items() for item in drift.unrenderable()]
+    lost = unrenderable(found)
     if lost and not args.discard_drift:
         items = ''.join(f'\n  {item}' for item in lost)
         return (

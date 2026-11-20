@@ -10,7 +10,10 @@ useless, everything worth keeping is in the config source). Two renders are comp
   (:func:`~dev_lab.dev.hpcaccount.spec.cron_lines`).
 
 Each yields three lists: ONLY ON THE ACCOUNT (drift: fold it into the config source or discard it), ONLY IN THE
-RENDER (what the next render adds) and DIFFERING values. A value whose key names a token, key, password or secret,
+RENDER (what the next render adds) and DIFFERING values. A third report, ``old copies`` (:func:`strays`), lists
+what the layout before the declared root left behind, with its file count: the dry-run list for the user's ruling
+(migration is a reclone; nothing removes them by hand), never config the account would lose.
+A value whose key names a token, key, password or secret,
 or that looks encoded (long hex or base64), is printed only as ``<redacted, sha256:xxxx>``. Nothing is written: no
 render, no fetch of the clone, no crontab. Exit 0 agrees, 1 drift, 2 refused.
 
@@ -35,17 +38,26 @@ from lab_commons.log import emit
 
 from dev_lab.dev import devhost
 from dev_lab.dev._machinefile import render_value
+from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
 from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
 
-__all__ = ['DISCARD', 'Drift', 'account_drift', 'compare', 'compare_lines', 'main', 'report', 'shown']
+__all__ = [
+    'DISCARD', 'OLD_IN_HOME', 'OLD_IN_ROOT', 'STRAYS', 'Drift', 'account_drift', 'compare', 'compare_lines',
+    'main', 'report', 'shown', 'strays', 'unrenderable',
+]  # fmt: skip
 
 #: The switch with which ``ci-pause`` accepts the loss of what the config source cannot render.
 DISCARD: Final = '--discard-drift'
 _SECRET_KEY: Final = re.compile(r'token|key|password|secret', re.IGNORECASE)
 _ENCODED: Final = re.compile(r'[0-9a-fA-F]{32,}|[A-Za-z0-9+/_-]{40,}={0,2}')
 _ENCODED_WORD: Final = re.compile(r'[0-9a-fA-F]{32,}|[A-Za-z0-9+_-]{40,}={0,2}')  # a path's '/' is no secret
+#: The report of old copies (:func:`strays`).
+STRAYS: Final = 'old copies'
+#: Where the layout before the declared root kept the forge, home-relative and root-relative.
+OLD_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
+OLD_IN_ROOT: Final = ('dev-lab', 'src')
 _SECRET_ASSIGN: Final = re.compile(r'(token|key|password|secret)\w*\s*=', re.IGNORECASE)
 
 
@@ -127,6 +139,21 @@ def compare_lines(held: Sequence[str], wanted: Sequence[str]) -> Drift:
     )
 
 
+def strays(home: Path, root: Path) -> tuple[str, ...]:
+    """Each old copy on the account with its file count; read only.
+
+    :data:`OLD_IN_HOME`, :data:`OLD_IN_ROOT`, and a ``repos/<repo>/.venv`` (``.venv-current`` alone names the env).
+    """
+    old = [home / p for p in OLD_IN_HOME] + [root / p for p in OLD_IN_ROOT]
+    old += [repo / '.venv' for repo in sorted((root / 'repos').glob('*'))]
+    return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in old if p.exists() or p.is_symlink())
+
+
+def unrenderable(found: Mapping[str, Drift]) -> list[str]:
+    """What a render would lose, ``<report>: <item>``; an old copy is no config, so :data:`STRAYS` is not in it."""
+    return [f'{what}: {item}' for what, drift in found.items() if what != STRAYS for item in drift.unrenderable()]
+
+
 def account_drift(step: Step, home: Path, machine: Path, clone: Path, host: str) -> dict[str, Drift] | str:
     """``{'machine file': ..., 'crontab': ...}`` for this account; else why it cannot be compared (nothing read)."""
     if not (clone / devhost.host_file(host)).is_file() or not (clone / 'family.toml').is_file():
@@ -148,13 +175,19 @@ def account_drift(step: Step, home: Path, machine: Path, clone: Path, host: str)
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     setup = next((grant.setup for grant in grants if grant.user == user), ())
     wanted = cron_lines(spec, home, slurm=slurm, setup=setup) if spec is not None else []
-    return {'machine file': compare(live, rendered), 'crontab': compare_lines(held, wanted)}
+    found = {'machine file': compare(live, rendered), 'crontab': compare_lines(held, wanted)}
+    old = strays(home, Path(spec.root)) if spec is not None else ()
+    return {**found, STRAYS: Drift(only_on_account=old)}
 
 
 def report(found: Mapping[str, Drift]) -> list[str]:
     """The printed lines of *found*: each list headed, an empty list omitted."""
     lines: list[str] = []
     for what, drift in found.items():
+        if what == STRAYS:
+            lines += [f'{what} (nothing removes them; the dry-run list for a ruling):'] if drift.only_on_account else []
+            lines += [f'  {item}' for item in drift.only_on_account]
+            continue
         for title, items in (
             ('only on the account (fold into the config source, or discard)', drift.only_on_account),
             ('only in the render (the next render adds it)', drift.only_in_render),

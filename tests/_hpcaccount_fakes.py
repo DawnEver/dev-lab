@@ -57,7 +57,7 @@ def clone_of(tmp_path: Path, family: str = FAMILY) -> Path:
 def home_of(tmp_path: Path, extra: str = '', family: str = FAMILY) -> tuple[Path, Path, Path]:
     """A home, the clone, and a machine file that IS the clone's render plus *extra* (the account's own drift)."""
     home = tmp_path / 'home'
-    home.mkdir()
+    home.mkdir(exist_ok=True)
     clone = clone_of(tmp_path, family)
     machine = tmp_path / 'machine.toml'
     machine.write_text(devhost.render(clone, HOST, {}) + extra, encoding='utf-8')
