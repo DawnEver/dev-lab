@@ -13,10 +13,10 @@ from dev_lab.dev._dep_network import CHILD_WALL_S
 from dev_lab.dev.boxmigrate import migrate as migrate_box
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
-__all__ = ['after_sync', 'refresh_automode']
+__all__ = ['after_sync', 'refresh_automode', 'retire_anchors']
 
 
 def after_sync(root: Path, python: str, *, run: Callable[..., Any]) -> int:
@@ -38,3 +38,15 @@ def refresh_automode(root: Path, *, run: Callable[..., Any]) -> None:
         timeout=CHILD_WALL_S,
         cwd=root,
     )
+
+
+def retire_anchors(paths: Sequence[Path]) -> tuple[str, ...]:
+    """H2, REMEDIED. Delete every anchor that exists, and return what was retired.
+
+    DELETED rather than rewritten to FAIL: a missing anchor cannot be mistaken for a verdict about
+    anything, whereas a synthetic FAIL line would put on record a result that no run produced.
+    """
+    retired = [path for path in paths if path.exists()]
+    for path in retired:
+        path.unlink()
+    return tuple(str(path) for path in retired)
