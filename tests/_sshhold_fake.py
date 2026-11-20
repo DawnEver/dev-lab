@@ -73,7 +73,7 @@ def main() -> int:
         found = _MARKER.search(raw)
         if not found:
             continue
-        body = ''.join(lines)[len('{ ') :].split('\n} </dev/null 2>&1', 1)[0]
+        body = ''.join(lines)[len('( ') :].split('\n) </dev/null 2>&1', 1)[0]
         lines.clear()
         if body.strip() == '__drop__':
             return 255

@@ -28,8 +28,12 @@ def frame(command: str, nonce: str) -> str:
     Its stdin is /dev/null: the held shell reads its COMMANDS from stdin, so a command that read it would swallow
     every later frame and its marker (measured 2026-11-20 on Cirrus). Data a command needs rides its own heredoc
     (:func:`dev_lab.dev.sshholdrun.stdin_script`), which the redirect does not touch.
+
+    It runs in its own SUBSHELL: an ``export`` or ``cd`` never outlives it. Measured 2026-11-20 on Cirrus: a
+    placement's verify step exported a GIT_CONFIG helper reset into the held shell, and every later command of the
+    session ran with the account's store helper emptied.
     """
-    return f'{{ {command}\n}} </dev/null 2>&1; printf \'\\n__SSHHOLD_{nonce}_%s\\n\' "$?"\n'
+    return f'( {command}\n) </dev/null 2>&1; printf \'\\n__SSHHOLD_{nonce}_%s\\n\' "$?"\n'
 
 
 def split_marker(text: str, nonce: str) -> tuple[str, int] | None:

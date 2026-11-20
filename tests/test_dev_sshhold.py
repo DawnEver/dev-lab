@@ -30,7 +30,7 @@ CODE = '481516'
 
 def test_a_frame_runs_the_command_merged_and_ends_on_the_marker_with_its_status() -> None:
     framed = sshholdwire.frame('echo hi', 'abc')
-    assert framed.startswith('{ echo hi\n} </dev/null 2>&1')
+    assert framed.startswith('( echo hi\n) </dev/null 2>&1')
     assert '__SSHHOLD_abc_%s' in framed
     assert framed.endswith('\n')
 
@@ -368,3 +368,26 @@ def test_a_dest_without_its_user_is_refused_before_the_code_is_spent(
     monkeypatch.setattr(sshhold, 'given_code', lambda code: code or '1')
     assert sshhold.main(['open', 'alice@login.example', '--hours', '1', '--code', '1']) == 0
     assert opened == ['alice@login.example']
+
+
+def test_a_frame_leaves_no_state_in_the_held_shell_for_the_next_one() -> None:
+    """Each held command runs in its own subshell: an ``export`` or ``cd`` never outlives it.
+
+    Measured 2026-11-20 (Cirrus): the credential placement's verify step exported GIT_CONFIG_COUNT/KEY/VALUE (helper
+    reset to the staged file) into the held ``bash -s``; every later command in the session -- the deploy's fetches
+    -- ran with the helper emptied and failed "could not read Username". PLANTED CONTROL: within one frame the
+    export still applies.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    bash = shutil.which('bash')
+    assert bash, 'the held remote shell is bash'
+    stream = sshholdwire.frame('export HELD_PROBE=leaked && echo "in:$HELD_PROBE"', 'a') + sshholdwire.frame(
+        'echo "after:${HELD_PROBE:-clean}"', 'b'
+    )
+    done = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=stream, capture_output=True, text=True,
+                          timeout=30, check=False)  # fmt: skip
+    first, rest = done.stdout.split('__SSHHOLD_a_0\n', 1)
+    assert first.strip() == 'in:leaked'
+    assert sshholdwire.split_marker(rest, 'b') == ('after:clean\n', 0)
