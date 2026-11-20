@@ -58,7 +58,7 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, tomlleaves, vendordetect
+from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, forgeenrol, tomlleaves, vendordetect
 from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
@@ -362,7 +362,7 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``drift`` (exit 1), ``render`` (``--write`` backs up), ``detect``, ``session-start``, ``channels``, use-store."""
+    """The verbs: drift (exit 1), render (--write backs up), detect, session-start, channels, use-store, enrol."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -379,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--write', action='store_true', help='back the live file up, then replace it')
     making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
     forgecredential.add_use_store(verbs)
+    forgeenrol.add_enrol(verbs)
     setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
     local_verbs = setting.add_subparsers(dest='local_verb', required=True)
     one = local_verbs.add_parser('set', help='set <table>.<key> to <value>')
@@ -401,6 +402,7 @@ def main(argv: list[str] | None = None) -> int:
         'channels': lambda: _channels(live),
         'drift': lambda: _drift(path, live, args.clone),
         'use-store': lambda: forgecredential.use_declared(declared_by(live.get(OWN_TABLE, {})), args.host),
+        'enrol': lambda: forgeenrol.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
     }
     if args.verb in plain:
         return plain[args.verb]()

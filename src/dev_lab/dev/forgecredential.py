@@ -27,8 +27,8 @@ from dev_lab.dev.checkout import git_out
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'PLACE_DOOR', 'STORE_ONLY', 'USE_STORE_DOOR', 'add_use_store', 'drift', 'helpers', 'stored_logins', 'use_declared',
-    'use_store',
+    'PLACE_DOOR', 'STORE_ONLY', 'USE_STORE_DOOR', 'add_use_store', 'drift', 'helpers', 'store_lines', 'stored_logins',
+    'use_declared', 'use_store',
 ]  # fmt: skip
 
 #: The host-scoped helper list that reads only the store.
@@ -87,7 +87,8 @@ def stored_logins(host: str, lines: Iterable[str]) -> set[str]:
     return found
 
 
-def _store_lines(store: Path) -> list[str]:
+def store_lines(store: Path) -> list[str]:
+    """*store*'s lines (none when it is unreadable); callers keep only scheme, user and host of each."""
     try:
         return store.read_text(encoding='utf-8').splitlines()
     except OSError:
@@ -102,7 +103,7 @@ def drift(
 ) -> list[str]:
     """One line per declared forge login or helper this machine departs from, each naming its door."""
     found: list[str] = []
-    lines = _store_lines(STORE if store is None else store)
+    lines = store_lines(STORE if store is None else store)
     declared_helpers = dev.get('helpers', {})
     for host, logins in sorted(dev.get('forges', {}).items()):
         if not logins:
