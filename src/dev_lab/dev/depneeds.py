@@ -35,10 +35,11 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons import extras
-from lab_commons.hpc.needsets import BASE, needs_of
+from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 
 from dev_lab.dev import taskbinding
+from dev_lab.dev.partrows import needs_of_row
 
 __all__ = ['bound_task_extras', 'declared_needs', 'extras_for', 'flags', 'main', 'missing_for_part', 'task_needs']
 
@@ -119,7 +120,7 @@ def extras_for(root: Path, needs: tuple[str, ...]) -> tuple[str, ...]:
 
 def flags(root: Path, part: str) -> str:
     """The ``uv sync`` extra flags an environment of *root* for *part* (a need-set name) selects."""
-    return ' '.join(f'--extra {extra}' for extra in extras_for(root, tuple(sorted(needs_of(part)))))
+    return ' '.join(f'--extra {extra}' for extra in extras_for(root, tuple(sorted(needs_of_row(part)))))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

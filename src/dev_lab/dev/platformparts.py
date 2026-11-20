@@ -282,8 +282,7 @@ def cluster_part(root: Path, head: str) -> ClusterPart:
     if 'hpc' not in tables:
         msg = f'{head[:12]} declares no [{name}] table: a cluster part needs it (its venv: [tool.dev_lab.dep])'
         raise UndeclaredPart(msg)
-    hpc = tables['hpc']
-    if 'install' in hpc:
+    if 'install' in (hpc := tables['hpc']):
         raise UndeclaredPart(RETIRED_INSTALL)
     collect = _text(hpc, name, 'collect', '"tests"', required=False)
     outputs = declared_strings(hpc.get('outputs'), name, 'outputs', '["output/fields/*.h5"]', required=False)

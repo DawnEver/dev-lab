@@ -260,7 +260,7 @@ def test_sync_defaults_to_no_extras_and_upgrades_each_git_requirement(tmp_path) 
     """D78: with nothing declared and no --extra, no extra is installed -- never every available one."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n'
-        '[project.optional-dependencies]\ndev=[]\ngeometry=[]\n',
+        '[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\ngeometry=[]\n',
         encoding='utf-8',
     )
     calls = []
@@ -377,7 +377,7 @@ def test_lock_upgrade_rewrites_the_lock_at_the_newest_then_builds_exactly_it(tmp
     """The door lockcheck's refusal names: `uv lock --upgrade`, then a FROZEN sync of the declared extras."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n'
-        '[project.optional-dependencies]\ndev=[]\n',
+        '[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\n',
         encoding='utf-8',
     )
     calls, run = _recording()
@@ -538,7 +538,7 @@ def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(t
 def test_an_explicit_extra_still_selects_it(tmp_path) -> None:
     """PLANTED CONTROL for the no-extras default: an explicit --extra (e.g. all) is honoured."""
     (tmp_path / 'pyproject.toml').write_text(
-        '[project]\nname="empty"\nversion="0"\n[project.optional-dependencies]\ndev=[]\nall=[]\n',
+        '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\nall=[]\n',
         encoding='utf-8',
     )
     calls = []
