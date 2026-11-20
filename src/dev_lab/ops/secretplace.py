@@ -8,9 +8,11 @@ the ``chown`` step. So the door writes exactly one declared path:
     python -m dev_lab.ops.secretplace request --path P < content   # the consent request: {action, subject}
     python -m dev_lab.ops --config C secret place --path P --credential CRED < content   # an ops host
     python -m dev_lab.ops.secretplace place --path P --grant ID < content                # a workstation
-    python -m dev_lab.ops.secretplace enter --path P     # a workstation, a person at its terminal: all of it, once
+    python -m dev_lab.ops.secretplace enter --remote R       # a person at a terminal: asked once, placed, checked
+    python -m dev_lab.ops.secretplace distribute --remote R  # then to every account that declares R (one code)
 
-* ``enter`` is the person's door: it asks each secret key of the reached remote whose ``credentials_file`` is P
+* ``enter`` is the person's door: it asks each secret key of the reached remote R (its ``credentials_file`` is
+  this machine's own declaration, :func:`path_of`)
   (:data:`TRANSPORT_SECRETS` by the remote's ``type``) without echo, builds the file in memory, asks the issuer for
   the consent of exactly that path and content -- the person's one code, also without echo -- places it, and lists
   the remote (``python -m dev_lab.dev.storage check``). The secret is typed once and lives only in this process and
@@ -50,6 +52,7 @@ from lab_commons.storage import Storage, StorageError
 from lab_commons.storage import declared as storage_declared
 
 from dev_lab.dev.storage import check
+from dev_lab.ops import secretdistribute
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent.client import grant, verify_held
 from dev_lab.ops.consent.credential import ConsentRefused
@@ -62,6 +65,7 @@ __all__ = [
     'add_parser',
     'declared',
     'enter',
+    'path_of',
     'place',
     'request',
     'subject',
@@ -250,44 +254,70 @@ def _own(_path: Path, user: str | None, _group: str | None) -> None:
         raise SecretRefused(msg)
 
 
+def path_of(storage: Storage, remote: str) -> str:
+    """The ``credentials_file`` this machine declares for *remote* -- its own declaration, never an argument."""
+    for found in storage.reach:
+        if found.name == remote and found.credentials_file is not None:
+            return str(found.credentials_file)
+    msg = f'this machine declares no [storage.reach.{remote}] credentials_file: declare it in its host file first'
+    raise SecretRefused(msg)
+
+
+def _distribute(remote: str) -> int:
+    """Send the secret placed here to every account that declares *remote*, under one consent code."""
+    content = Path(path_of(storage_declared(), remote)).expanduser().read_bytes()
+    requests = Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent'
+    return secretdistribute.run(remote, content, requests=requests, say=emit)
+
+
+def _by_remote(action: str, remote: str) -> int:
+    """``enter --remote`` / ``distribute --remote``: the path comes from this machine's own declaration."""
+    if action == 'distribute':
+        return _distribute(remote)
+    for line in enter(
+        path_of(storage_declared(), remote), storage=storage_declared(), ask=getpass.getpass,
+        tty=sys.stdin.isatty(), grant=grant, check=lambda name: check(name, repo=Path.cwd()),
+        requests=Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent',
+    ):  # fmt: skip
+        emit(line)
+    return 0
+
+
+def _by_path(action: str, path: str, held: str) -> int:
+    """``request`` / ``place --grant`` (the content on stdin) for one declared path."""
+    if action in {'enter', 'distribute'}:
+        msg = f'{action} takes --remote <name>: its path is the one this machine declares'
+        raise SecretRefused(msg)
+    content = sys.stdin.buffer.read()
+    if action == 'request':
+        emit(json.dumps(request(str(Path(path).expanduser()), content)))
+        return 0
+    if not held:
+        msg = 'place needs --grant <id> (python -m dev_lab.ops.consent grant <request.json> --code <code>)'
+        raise SecretRefused(msg)
+    emit(place(
+        workstation_declared(), 'this machine file ([storage.reach.<remote>] credentials_file)', path, content,
+        redeem=lambda _found, wanted: verify_held(held, action=ACTION, subject=wanted), credential={}, chown=_own,
+    ))  # fmt: skip
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """``request``/``place --grant`` (content on stdin), or ``enter``: a person at a terminal, all of it once."""
+    """``enter``/``distribute --remote R`` (a person at a terminal); ``request``/``place --grant`` (stdin)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops.secretplace', description=__doc__.splitlines()[0])
-    parser.add_argument('action', choices=('request', 'place', 'enter'))
-    parser.add_argument('--path', required=True)
+    parser.add_argument('action', choices=('request', 'place', 'enter', 'distribute'))
+    where = parser.add_mutually_exclusive_group(required=True)
+    where.add_argument('--path', help='a declared secret file (request, place)')
+    where.add_argument('--remote', help='a storage remote this machine reaches (enter, distribute)')
     parser.add_argument('--grant', default='', help='place: the held ops.secret.place credential id the user granted')
     args = parser.parse_args(argv)
-    if args.action == 'enter':
-        try:
-            for line in enter(
-                args.path, storage=storage_declared(), ask=getpass.getpass, tty=sys.stdin.isatty(),
-                grant=grant, check=lambda remote: check(remote, repo=Path.cwd()),
-                requests=Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent',
-            ):  # fmt: skip
-                emit(line)
-        except (SecretRefused, ConsentRefused, StorageError, OSError, ValueError) as refused:
-            emit(f'refused: {refused}', err=True)
-            return 2
-        return 0
-    content = sys.stdin.buffer.read()
-    if args.action == 'request':
-        emit(json.dumps(request(str(Path(args.path).expanduser()), content)))
-        return 0
-    if not args.grant:
-        emit('refused: place needs --grant <id> (python -m dev_lab.ops.consent grant <request.json> --code <code>)',
-             err=True)  # fmt: skip
-        return 2
     try:
-        said = place(
-            workstation_declared(), 'this machine file ([storage.reach.<remote>] credentials_file)', args.path, content,
-            redeem=lambda _found, wanted: verify_held(args.grant, action=ACTION, subject=wanted), credential={},
-            chown=_own,
-        )  # fmt: skip
-    except (SecretRefused, ConsentRefused, OSError, ValueError) as refused:
+        if args.remote:
+            return _by_remote(args.action, args.remote)
+        return _by_path(args.action, args.path, args.grant)
+    except (SecretRefused, ConsentRefused, StorageError, OSError, ValueError, LookupError) as refused:
         emit(f'refused: {refused}', err=True)
         return 2
-    emit(said)
-    return 0
 
 
 if __name__ == '__main__':

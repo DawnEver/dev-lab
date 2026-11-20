@@ -262,3 +262,16 @@ def test_enter_refuses_an_undeclared_path_before_asking(tmp_path: Path) -> None:
             grant=lambda _f: tmp_path, requests=tmp_path, check=str,
         )  # fmt: skip
     assert asked == []
+
+
+def test_enter_finds_its_path_in_this_machines_declaration(tmp_path: Path) -> None:
+    storage = _reaching(tmp_path)
+    assert secretplace.path_of(storage, 'results') == str(tmp_path / 'secrets' / 'results')
+    with pytest.raises(SecretRefused, match=r'declares no \[storage\.reach\.other\]'):
+        secretplace.path_of(storage, 'other')  # the planted control: an undeclared remote names its door
+
+
+def test_enter_and_distribute_take_a_remote_never_a_path(capsys: pytest.CaptureFixture[str]) -> None:
+    for action in ('enter', 'distribute'):
+        assert secretplace.main([action, '--path', '~/x']) == 2
+        assert 'takes --remote' in capsys.readouterr().err
