@@ -206,7 +206,8 @@ def script_temp_env(root: Path, environ: Mapping[str, str]) -> dict[str, str]:
 
     D27 for a script suite: ``os.tmpdir()`` reads TMPDIR on POSIX and TEMP/TMP on Windows, so every ``mkdtemp``
     a JS test makes lands in the managed dated tree, never system temp. The pid keeps two runs started in the same
-    second apart.
+    second apart. That temp lies INSIDE the checkout, so it is also added to ``GIT_CEILING_DIRECTORIES`` (git's own
+    contract, as the pytest door does): a sandbox made under it never discovers the enclosing checkout.
 
     Raises:
         UndeclaredOutput: *root* declares no output root -- no fallback to system temp.
@@ -215,4 +216,6 @@ def script_temp_env(root: Path, environ: Mapping[str, str]) -> dict[str, str]:
     stamp = dt.datetime.now().astimezone().strftime('%H-%M-%S')
     fresh = output_dir(root, SCRIPT_TEST_TEMP_KIND) / f'{stamp}-{os.getpid()}'
     fresh.mkdir(parents=True, exist_ok=True)
-    return dict(environ) | dict.fromkeys(('TMPDIR', 'TEMP', 'TMP'), str(fresh))
+    held = [entry for entry in environ.get('GIT_CEILING_DIRECTORIES', '').split(os.pathsep) if entry]
+    ceilings = os.pathsep.join([*held, str(fresh)])
+    return dict(environ) | dict.fromkeys(('TMPDIR', 'TEMP', 'TMP'), str(fresh)) | {'GIT_CEILING_DIRECTORIES': ceilings}

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import inspect
+import os
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,22 @@ def test_a_script_suite_s_temp_env_points_every_temp_variable_into_the_dated_tre
     assert temp.is_dir()
     assert temp.parent == output_dir(tmp_path, SCRIPT_TEST_TEMP_KIND)
     assert env['PATH'] == 'p', 'the rest of the environment is kept'
+
+
+def test_a_script_suite_s_temp_is_a_git_ceiling_so_a_sandbox_never_finds_the_checkout(tmp_path: Path) -> None:
+    """The dated temp sits inside the checkout, so git (and a walk to the nearest .git) must stop at it."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
+    env = script_temp_env(tmp_path, {'GIT_CEILING_DIRECTORIES': 'C:/held'})
+    ceilings = env['GIT_CEILING_DIRECTORIES'].split(os.pathsep)
+    assert env['TMPDIR'] in ceilings
+    assert 'C:/held' in ceilings, 'an inherited ceiling is kept'
+
+
+def test_planted_a_script_suite_with_no_inherited_ceiling_gets_its_temp_alone(tmp_path: Path) -> None:
+    """PLANTED CONTROL: with no inherited ceiling the temp alone is the ceiling, never an empty entry."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
+    env = script_temp_env(tmp_path, {})
+    assert env['GIT_CEILING_DIRECTORIES'] == env['TMPDIR']
 
 
 def test_planted_a_script_suite_in_an_undeclared_root_is_refused_never_system_temp(tmp_path: Path) -> None:
