@@ -166,6 +166,13 @@ def test_a_public_repos_opaque_card_vouches_the_raw_trailer_and_vouches_no_other
     assert vouched([other], owners)[0].origin_host == ''
 
 
+def test_a_hashed_trailer_is_vouched_by_the_raw_cards_publisher_and_by_no_other() -> None:
+    """A denylisted host is stamped as its ``host_id``; a private repo's card keeps the raw name. CONTROL: carol."""
+    claimed = dataclasses.replace(_cand('lane/x', 'pr'), origin='bob', origin_host=host_id('WS9'))
+    assert vouched([claimed], {'WS9': ('bob',)}) == (claimed,)
+    assert vouched([claimed], {'WS9': ('carol',)})[0].origin_host == ''
+
+
 def test_on_a_scarce_host_integration_then_prs_oldest_first_precede_every_other_class() -> None:
     """QUEUE ORDER (user ruling 2026-10-22): integration, then PRs OLDEST FIRST, then the rest by score.
 
