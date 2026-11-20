@@ -388,3 +388,20 @@ def test_a_research_account_deployed_behind_its_login_alias_takes_its_credential
     code, said, _, _ = _run('alice@login.example', grants=aliased, division=division, deployed=node)
     assert code == 2
     assert 'login04' in said[-1]
+
+
+def test_a_placed_store_line_is_read_because_the_store_helper_is_set_when_none_is() -> None:
+    """A store line git never consults reads as anonymous.
+
+    Measured 2026-11-20: three research accounts took a verified reader line, then the deploy's ``git ls-remote``
+    of the private forge repos still exited 128 -- no global ``credential.helper``, so git never read the store.
+    The placement sets ``store`` when NO helper is configured, after the rewrite; PLANTED CONTROL: it never
+    overrides one already set (the command keeps a configured helper).
+    """
+    code, _said, seen, _ = _run()
+    assert code == 0
+    commands = [cmd for cmd, _ in seen]
+    helper = next(cmd for cmd in commands if 'credential.helper' in cmd and 'config --global' in cmd)
+    assert commands.index(rewrite_command('forge.example', _STAMP, staged=True)) < commands.index(helper)
+    assert '[ -n "$(git config --global --get-all credential.helper)" ] ||' in helper
+    assert 'git config --global credential.helper store' in helper
