@@ -192,6 +192,8 @@ _ENFORCED = {
     'TASK-HEARS-ITS-FORGE-EVENTS': (guard('tests/test_dev_sessionwatch.py'),),
     # User ruling 2026-11-13: every wall teaches -- a refusal that named no door is a gap closed before the task.
     'WALLS-ARE-RECORDED': (guard('tests/test_dev_walls.py'), guard('tests/test_dev_hooks.py')),
+    # User ruling 2026-11-20: a relative path leaves the user digging through nested worktrees.
+    'USER-PATHS-ARE-ABSOLUTE': (guard('tests/test_dev_handback.py'),),
     # User ruling 2026-11-17 (D24): a slow hook let a 30-second TOTP code expire.
     'HOOK-UNDER-FIVE-SECONDS': (guard('tests/test_dev_hook_budget.py'),),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),

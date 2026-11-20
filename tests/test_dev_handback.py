@@ -11,7 +11,7 @@ import pytest
 
 from dev_lab.dev import walls
 from dev_lab.dev.disclosure import details_for, problems
-from dev_lab.dev.handback import INTERACTIVE_ONLY, handed_commands, main, refusal
+from dev_lab.dev.handback import INTERACTIVE_ONLY, handed_commands, main, path_refusal, refusal, relative_paths
 
 # The incident, 2026-10-26, verbatim in shape.
 _INCIDENT = (
@@ -135,3 +135,56 @@ def test_a_blocked_stop_is_this_sessions_wall_with_its_remedy(tmp_path: Path) ->
     _run({'last_assistant_message': 'Please run `git push origin main`.', 'cwd': str(tmp_path), 'session_id': 's'})
     [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
     assert (line['rule'], line['remedy_present'], line['session']) == ('AGENT-RUNS-ITS-OWN-COMMANDS', True, 's')
+
+
+# USER-PATHS-ARE-ABSOLUTE (user ruling 2026-11-20): a path addressed to the user is absolute.
+@pytest.mark.parametrize(
+    'text',
+    [
+        'Figure: output/logs/x.png',
+        'See `output/logs/26/11/20/plot/x.png` for the plot.',
+        'Changed src/dev_lab/dev/handback.py:42 and `tests/test_dev_handback.py`.',
+        '![mesh](output/logs/mesh.png)',
+        'The memory is in .claude/memory/2026/11/20 now.',
+        'Read ../other/readme.md first.',
+        r'Data in output\logs\x.csv.',
+    ],
+)
+def test_a_relative_path_handed_to_the_user_is_found(text: str) -> None:
+    assert relative_paths(text), text
+    assert path_refusal(text) is not None
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        # PLANTED control: the absolute forms the refusal's door asks for.
+        'Figure: D:/work/repo/output/logs/x.png',
+        r'Figure: D:\Documents\repo\output\logs\x.png',
+        'Written to /srv/repo/output/logs/x.png and ~/repo/notes.md.',
+        'Bug at `D:/Documents/repo/src/dev_lab/dev/handback.py:42`.',
+        # Not filesystem paths: branches, refs, identifiers, prose, URLs, dates.
+        'Pushed pr/user-paths-absolute onto origin/integrate/main.',
+        'The `a/b` ratio and/or the `numerator/denominator` split; 11/20.',
+        'PR at https://github.com/org/repo/pull/12 and docs at https://x.org/a/b.html.',
+        'Code is code:\n```python\nopen("output/x.png")\n```',
+    ],
+)
+def test_an_absolute_path_or_a_non_path_is_let_through(text: str) -> None:
+    assert path_refusal(text) is None, relative_paths(text)
+
+
+def test_the_path_refusal_names_its_rule_and_its_door() -> None:
+    reason = path_refusal('Figure: output/logs/x.png')
+    assert reason is not None
+    assert reason.startswith('USER-PATHS-ARE-ABSOLUTE')
+    assert 'absolute path' in reason
+    assert problems(reason, 'refusal') == []
+    assert reason.splitlines()[-1] == details_for('USER-PATHS-ARE-ABSOLUTE')
+
+
+def test_a_relative_path_blocks_the_stop_and_is_recorded(tmp_path: Path) -> None:
+    decision = json.loads(_run({'last_assistant_message': 'See output/x.png', 'cwd': str(tmp_path)}))
+    assert decision['decision'] == 'block'
+    [line] = [json.loads(raw) for raw in walls.ledger(tmp_path).read_text(encoding='utf-8').splitlines()]
+    assert line['rule'] == 'USER-PATHS-ARE-ABSOLUTE'

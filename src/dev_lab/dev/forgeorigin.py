@@ -8,11 +8,17 @@ forge-recorded author of the PR vouches for it, as the login that publishes that
 publishes (:func:`dev_lab.dev.forgehosts.this_host`: ``<cluster>/<account>`` on a cluster login node).
 The one family hook that rewrites its input: it
 appends the trailer (replacing an earlier one) and never refuses a commit.
+
+A HOST NAME ON THE PRIVATE-MARKER DENYLIST IS NEVER STAMPED (2026-11-20: the stamp wrote a raw workstation
+name the ``private-markers-messages`` pre-push hook then refused, so every commit made there was unpushable).
+:func:`stamped_host` writes such a name as its opaque :func:`~dev_lab.dev.forgehosts.host_id` -- the same
+id a public card carries -- and :func:`vouched` matches either spelling.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import re
 import subprocess
 import sys
 from collections.abc import Collection, Mapping, Sequence
@@ -27,8 +33,9 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import host_id, this_host
 from dev_lab.dev.forgework import GITHUB, Client
+from dev_lab.dev.privatemarkers import load_markers
 
-__all__ = ['ORIGIN_HOST', 'head_login', 'main', 'origin_host_of', 'stamp', 'vouched']
+__all__ = ['ORIGIN_HOST', 'head_login', 'main', 'origin_host_of', 'stamp', 'stamped_host', 'vouched']
 
 #: The commit trailer naming the host card a commit was made on (written by the ``forge-host`` commit-msg hook).
 ORIGIN_HOST: Final = 'Forge-Host'
@@ -80,7 +87,8 @@ def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -
 
 
 def _vouched(one: Candidate, owners: Mapping[str, Collection[str]]) -> Candidate:
-    publishers = (*owners.get(one.origin_host, ()), *owners.get(host_id(one.origin_host), ()))
+    hashed = [login for host, logins in owners.items() if host_id(host) == one.origin_host for login in logins]
+    publishers = (*owners.get(one.origin_host, ()), *owners.get(host_id(one.origin_host), ()), *hashed)
     if not one.origin_host or one.origin in publishers:
         return one
     if one.kind != REQUEST:
@@ -102,11 +110,16 @@ def stamp(message_file: str, host: str) -> None:
     )  # fmt: skip
 
 
+def stamped_host(host: str, markers: Sequence[re.Pattern[str]]) -> str:
+    """*host* as the trailer may carry it: its :func:`host_id` when a private marker names it, else itself."""
+    return host_id(host) if any(marker.search(host) for marker in markers) else host
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """The hook: stamp the message file git hands it; 0 on every path, and a failure is SAID."""
     args = list(sys.argv[1:] if argv is None else argv)
     try:
-        stamp(args[-1], this_host())
+        stamp(args[-1], stamped_host(this_host(), load_markers()))
     except (IndexError, OSError, subprocess.SubprocessError) as failed:
         emit(f'[forge-host] no origin host stamped: {failed}', err=True)
     return 0
