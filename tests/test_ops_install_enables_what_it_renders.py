@@ -6,10 +6,12 @@ Account, package and sshd steps stay the operator's; a follow timer rendered but
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
 from dev_lab.ops import enableunits, hostverbs
 from dev_lab.ops.install import Rendered
+from dev_lab.ops.pgroles import Postgres
 
 if TYPE_CHECKING:
     from dev_lab.ops.config import OpsConfig
@@ -50,13 +52,13 @@ def test_a_unit_that_does_not_enable_is_named_not_swallowed() -> None:
     assert failed == ('b.service',)
 
 
-def _as_root_install(monkeypatch, root: Path) -> list[tuple[str, ...]]:
+def _as_root_install(monkeypatch, root: Path, postgres: Postgres | None = None) -> list[tuple[str, ...]]:
     enabled: list[tuple[str, ...]] = []
     monkeypatch.setattr(hostverbs.sys, 'platform', 'linux')
     monkeypatch.setattr(hostverbs.os, 'geteuid', lambda: 0, raising=False)
     monkeypatch.setattr(hostverbs.install, 'install', lambda *_a, **_k: Rendered({}, STEPS))
     monkeypatch.setattr(hostverbs.enableunits, 'enable', lambda units: enabled.append(tuple(units)) or ())
-    assert hostverbs.install_verb(cast('OpsConfig', None), root) == 0
+    assert hostverbs.install_verb(cast('OpsConfig', SimpleNamespace(postgres=postgres)), root) == 0
     return enabled
 
 
@@ -68,3 +70,18 @@ def test_install_as_root_on_the_live_host_enables_its_units(monkeypatch) -> None
 
 def test_install_into_a_staging_root_enables_nothing(monkeypatch, tmp_path: Path) -> None:
     assert _as_root_install(monkeypatch, tmp_path) == []
+
+
+def test_declared_pg_roles_are_ensured_on_the_live_host_and_printed_elsewhere(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    """PLANTED CONTROL: only the live host as root runs the ensure; a staging root only prints it."""
+    declared = Postgres(roles={'supervisor': ('pg_monitor',)})
+    ensured: list[Postgres] = []
+    monkeypatch.setattr(hostverbs.pgroles, 'ensure', lambda postgres: ensured.append(postgres) or True)
+    _as_root_install(monkeypatch, tmp_path, declared)
+    assert ensured == []
+    assert 'runuser -u postgres -- psql' in capsys.readouterr().out
+    _as_root_install(monkeypatch, Path('/'), declared)
+    assert ensured == [declared]
+    assert 'ensured' in capsys.readouterr().out

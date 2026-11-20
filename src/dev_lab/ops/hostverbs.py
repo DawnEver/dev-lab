@@ -27,6 +27,7 @@ from dev_lab.ops import (
     install,
     judge,
     offsite,
+    pgroles,
     probe,
     promote,
     sshkey,
@@ -103,6 +104,12 @@ def install_verb(config: OpsConfig, root: Path) -> int:
         for unit in units:
             emit(f'{"FAILED" if unit in failed else "enabled":9} {unit}')
         steps += tuple(f'journalctl --no-pager -u {unit}  (it did not enable)' for unit in failed)
+        if config.postgres is not None:  # declared roles: ensured, like the units, only from a consented config
+            ensured = pgroles.ensure(config.postgres)
+            emit(f'{"ensured" if ensured else "FAILED":9} [ops.postgres] roles {", ".join(config.postgres.roles)}')
+            steps += () if ensured else (pgroles.step(config.postgres),)
+    elif config.postgres is not None:
+        steps += (pgroles.step(config.postgres),)
     if steps:
         emit('\n'.join(['next, on the live host:', *(f'  {step}' for step in steps)]))
     return 0
