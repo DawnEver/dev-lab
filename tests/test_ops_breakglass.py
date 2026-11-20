@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 from _forge_fake import Loopback, Recorder, answer, serve
 from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
+from _roles_fixtures import HPC_REPO, carry
 
 from dev_lab.dev.breakglass import reason
 from dev_lab.dev.failprint import Fingerprints
@@ -40,7 +41,7 @@ from dev_lab.ops.totp import STEP
 HEAD = 'a' * 40
 KEY = 'SHA256:agentkey'
 HOUR = 3600.0
-DECLARED = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n[tool.dev_lab.protection]\nproducer = "hpc"\n'
+DECLARED = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
 GREEN = (
     CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=-', ''),
     CommitStatus('tests/security', 'success', 'nothing found', ''),
@@ -866,3 +867,9 @@ def test_with_no_wave_the_merge_check_still_refuses_the_new_subject() -> None:
     why = hidden_reds(prints.__getitem__, HEAD, 'integrate/main', statuses)
     assert why is not None
     assert 'b.py' in why
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

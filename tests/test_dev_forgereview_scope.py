@@ -13,9 +13,11 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge, called_due
+from _roles_fixtures import HPC_REVIEWED, carry
 
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgereview import review_tick
@@ -32,6 +34,13 @@ from dev_lab.dev.forgereview_scope import (
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewcode import CODE, NOT_CODE, ONLY_GENERATED, is_code
+
+
+@pytest.fixture(autouse=True)
+def _review_on_the_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bind review on hpc: these tests drive the serve's review tick, which reviews nothing else (D73)."""
+    carry(monkeypatch, HPC_REVIEWED)
+
 
 _SLICED = ('reviewer', '--range', RANGE_FIELD, '--lens', LENS_FIELD, '--paths', PATHS_FIELD)
 _WIDE = Budget(slice_bytes=10**6, total_bytes=10**7)

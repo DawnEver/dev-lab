@@ -62,6 +62,7 @@ from dev_lab.dev import (
     forgestuck,
     forgesync,
     forgetakeover,
+    forgetask,
     forgetick,
     forgetidy,
     forgetry,
@@ -76,8 +77,6 @@ from dev_lab.dev import (
     prsuperseded,
     pushwatch,
     servelock,
-    taskbinding,
-    taskgate,
     walls,
 )
 from dev_lab.dev._forge_records import pull_of
@@ -110,9 +109,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'integration': forgeintegration.main,
     'merge': forgemergeready.main,
     'notices': forgenotice.main,
-    'review': lambda argv: (forgereview_bundle.main if argv[:1] in (['prepare'], ['judge']) else forgetakeover.main)(
-        argv
-    ),
+    'review': lambda argv: (forgereview_bundle.main if argv[:1] == ['judge'] else forgetakeover.main)(argv),
     'secrets': forgesecrets.main,
     'label': forgelabel.main,
     'headgate': forgeheadgate.main,
@@ -186,12 +183,14 @@ def _parser() -> argparse.ArgumentParser:
     listing = _verb(issue, 'list')
     listing.add_argument('--state', choices=('open', 'closed', 'all'), default='open')
     listing.add_argument('--limit', type=int, default=30)
+    listing.add_argument('--label', action='append', default=[], help='only issues carrying it (repeatable)')
     for name in ('view', 'close'):
         _verb(issue, name).add_argument('number', type=int)
     create = _verb(issue, 'create')
     create.add_argument('--title', required=True)
     create.add_argument('--body', default='')
     create.add_argument('--kind', required=True, choices=KINDS, help='an issue is a need, defect or decision')
+    create.add_argument('--label', action='append', default=[], help='also label it; a missing one is created')
     label = _verb(issue, 'label')
     label.add_argument('number', type=int)
     label.add_argument('--add', nargs='+', default=[], help='labels to put on it; a missing one is created first')
@@ -236,9 +235,9 @@ def pr_close(client: Client, number: int, reason: str) -> PullRequest:
 
 def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
-        ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit),
+        ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
         ('issue', 'view'): lambda: client.issue_view(args.number),
-        ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind),
+        ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind, args.label),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
         ('issue', 'label'): lambda: _relabelled(client, args),
@@ -294,7 +293,8 @@ def _refused(
         return None
     if why:
         emit(f'[forge] scanning the {what} for private markers: {why}', err=True)
-    return privatemarkers.text_refusal('\n'.join(texts(args)), what)
+    public = privatemarkers.public_names(root, env=env, transport=transport)
+    return privatemarkers.text_refusal('\n'.join(texts(args)), what, public=public)
 
 
 #: Each write verb that publishes typed text: what a refusal calls it, and the argument fields that hold it.
@@ -305,28 +305,6 @@ _PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace],
     ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
     ('issue', 'label'): ('label names', lambda a: (*a.add, *a.remove)),
 }
-
-
-def _task_head_advice(head: str, env: Mapping[str, str] | None) -> tuple[str, ...]:
-    """A session bound to a task is told its PR heads are ``pr/<task>/<feature>`` (:mod:`dev_lab.dev.taskbinding`)."""
-    try:
-        task = taskbinding.session_task(os.environ if env is None else env)
-    except ValueError:
-        return ()
-    said = None if task is None else taskbinding.head_advice(head, taskbinding.slug_of(task))
-    return () if said is None else (said,)
-
-
-def _record_in_task(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
-    """An opened PR or issue is appended to the bound rem task's journal (:func:`taskgate.record`)."""
-    if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
-        return
-    if (
-        isinstance(result, (PullRequest, Issue))
-        and (url := result.url)
-        and (said := taskgate.record(root, args.noun, url, env=env, read=taskgate.reader_for(env, Path.home())))
-    ):
-        emit(f'[forge] {said}', err=True)  # the task names its own PRs and issues
 
 
 def issue_and_pr(
@@ -347,7 +325,7 @@ def issue_and_pr(
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            said := _task_head_advice(args.head, env)
+            said := forgetask.head_advice(args.head, env)
             + pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
@@ -362,7 +340,7 @@ def issue_and_pr(
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
-    _record_in_task(args, result, root, os.environ if env is None else env)
+    forgetask.record(args, result, root, os.environ if env is None else env)
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
         data = [dataclasses.asdict(item) for item in items]

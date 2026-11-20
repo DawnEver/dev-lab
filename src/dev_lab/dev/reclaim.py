@@ -38,6 +38,7 @@ from dev_lab.dev.checkout import (
     git_out,
     locked_trees,
     orphan_directories,
+    split_drifted,
     unmerged_changes,
     worktrees,
 )
@@ -227,8 +228,9 @@ def unlanded_work(tree: Path, generated: tuple[str, ...] = ()) -> str:
     loose = untracked_work(tree, generated) if blocking is not None else None
     if blocking is None or loose is None:
         return 'unreadable'
+    edits, door = split_drifted(tree, blocking)
     if blocking:
-        return f'tracked changes -- {UNLANDED_DOORS}: {_shown(blocking)}'
+        return f'tracked changes -- {UNLANDED_DOORS}: {_shown(edits)}' if edits else f'{door}: {_shown(blocking)}'
     return f'untracked work -- {UNLANDED_DOORS}: {_shown(loose)}' if loose else ''
 
 

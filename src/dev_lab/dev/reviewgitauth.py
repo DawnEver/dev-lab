@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-__all__ = ['FORGE_TOKEN_ENVS', 'SERVER_ENVS', 'TokenInEnvironment', 'git_env', 'take']
+__all__ = ['FORGE_TOKEN_ENVS', 'SERVER_ENVS', 'TokenInEnvironment', 'git_env', 'hold', 'take']
 
 SERVER_ENVS = ('FORGE_URL', 'GITHUB_SERVER_URL')  # the forge the checkout's origin is on; the first set one
 FORGE_TOKEN_ENVS = ('FAMILY_READ_TOKEN', 'GITHUB_TOKEN')  # never in the review door's environment
@@ -65,11 +65,19 @@ def take(git_file: Path | None, api_file: Path | None, environ: Mapping[str, str
         msg = f'{", ".join(leaked)} in the review door environment: hand the token over by file instead'
         raise TokenInEnvironment(msg)
     server = next((value for name in SERVER_ENVS if (value := env.get(name, ''))), '')
-    _held.clear()
-    if git_token and server:
-        basic = base64.b64encode(f'x-access-token:{git_token}'.encode()).decode()
-        _held.update({'key': f'http.{server.rstrip("/")}/.extraHeader', 'value': f'Authorization: basic {basic}'})
+    hold(server, git_token)
     return api_token
+
+
+def hold(server: str, token: str) -> None:
+    """Hold *token* as the auth header of the door's git calls to *server* (:func:`git_env`); empty: hold none.
+
+    The judge host holds its own forge token in memory (never an environment): it calls this before fetching a head.
+    """
+    _held.clear()
+    if token and server:
+        basic = base64.b64encode(f'x-access-token:{token}'.encode()).decode()
+        _held.update({'key': f'http.{server.rstrip("/")}/.extraHeader', 'value': f'Authorization: basic {basic}'})
 
 
 def _slots(env: Mapping[str, str]) -> int:

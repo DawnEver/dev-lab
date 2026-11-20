@@ -14,6 +14,7 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
+from _roles_fixtures import EVERY_CI, HPC_REPO, carry
 from test_dev_githook_scripts import _plant_checker
 
 from dev_lab.dev import forgeintegration, forgemessages
@@ -31,10 +32,7 @@ from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 _DECLARED = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
 
 POLICY = dataclasses.replace(_DECLARED, pr_merges_since='0' * 40)
-_MANIFEST = (
-    "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
-    "[tool.dev_lab.protection]\nproducer = 'hpc'\n"
-)
+_MANIFEST = "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
 
 
 def _green() -> list[dict[str, object]]:
@@ -301,17 +299,19 @@ def test_the_tick_merges_a_green_pr_once_declared_and_never_without(tmp_path: Pa
     assert 'merged by the forge' in comment['body']
 
 
-def test_the_tick_leaves_the_merge_to_a_repo_s_merge_job_and_still_says_the_decision(tmp_path: Path) -> None:
-    """P3: a repo declaring the CI merger is merged by its Gitea job; PLANTED CONTROL: the test above merges."""
+def test_the_tick_leaves_the_merge_to_a_repo_s_merge_job_and_still_says_the_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3: merge bound to ci -- its Gitea job merges; PLANTED CONTROL: the test above (merge on hpc) merges."""
     work, head = _work(tmp_path)
-    (work / 'pyproject.toml').write_text(_MANIFEST + '[tool.dev_lab.ci."merge.yml"]\n', encoding='utf-8')
+    carry(monkeypatch, EVERY_CI)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
     forge.statuses[head] = _green()
     _tick(work, forge, head, POLICY)
     assert forge.merges == []
     (comment,) = forge.comments[number]
-    assert 'ready: the merge.yml job merges it' in comment['body']
+    assert 'ready: its CI merge job merges it' in comment['body']
 
 
 def test_a_pr_with_a_failed_part_stays_open(tmp_path: Path) -> None:
@@ -611,3 +611,9 @@ def test_an_environment_or_scheduling_result_never_holds_the_merge(tmp_path: Pat
     assert not judge('error', 'released: a defect of the commit class=code').ready, 'CONTROL: the code'
     assert not judge('failure', 'scope=full ran=3 hands=-').ready, 'CONTROL: a judged FAIL'
     assert not judge('error', 'released: something').ready, 'CONTROL: an unowned error'
+
+
+@pytest.fixture(autouse=True)
+def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
+    carry(monkeypatch, HPC_REPO)

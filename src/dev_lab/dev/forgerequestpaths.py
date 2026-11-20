@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 __all__ = ['JMAG', 'LINUX', 'NOT_A_PATH', 'WINDOWS', 'blobs', 'path_refusal', 'placement', 'prefetch', 'test_roots']
 
-#: The OS every test Linux can run is placed on, and the one tool a Windows host serves a selection for.
+#: The two OS a selection is placed on, and the tool that puts it on Windows.
 LINUX: Final = 'linux'
 WINDOWS: Final = 'windows'
 JMAG: Final = 'jmag'
@@ -38,16 +38,16 @@ _HELD: dict[tuple[str, str, tuple[str, ...]], dict[str, bytes]] = {}
 
 
 def placement(sources: Mapping[str, bytes], sha: str, resources: Sequence[str]) -> frozenset[str]:
-    """The need-set a selection's *sources* at *sha* run under: ``{linux}``, or its markers plus ``windows``.
+    """The need-set a selection's *sources* at *sha* run under: its markers plus its OS.
 
     Each file's ``pytest.mark.<name>`` spellings among the declared *resources* are read from its source at
     *sha*, as :func:`blobs` read it (a mark a conftest applies by directory is not seen). A selection holding
-    a ``jmag`` test runs on Windows with every resource its files name; one naming no resource but ``linux``
-    runs on Linux; any other resource is refused (Linux cannot run it, and Windows serves a selection only
-    for ``jmag``).
+    a ``jmag`` (or ``windows``) test runs on Windows with every resource its files name; any other runs on Linux
+    with every resource its files name -- ``heavy`` among them, so a test the developer's box cannot hold goes
+    to the host that declares it (#513), and a need-set no host supplies waits visibly in ``forge queue``.
 
     Raises:
-        ValueError: a file is unreadable at *sha*, or the selection names a resource no placement serves.
+        ValueError: a file is unreadable at *sha*.
 
     """
     marks: set[str] = set()
@@ -57,15 +57,9 @@ def placement(sources: Mapping[str, bytes], sha: str, resources: Sequence[str]) 
         except (SyntaxError, ValueError) as why:
             msg = f'{path!r} at {sha[:12]} is unreadable as Python: {why}'
             raise ValueError(msg) from why
-    if JMAG in marks:
+    if JMAG in marks or WINDOWS in marks:
         return frozenset(marks | {WINDOWS})
-    if beyond := sorted(marks - {LINUX}):
-        msg = (
-            f'the selection needs {beyond}: Linux cannot run it and a Windows host serves a selection only for '
-            f'{JMAG!r} tests -- run it where that resource is'
-        )
-        raise ValueError(msg)
-    return frozenset({LINUX})
+    return frozenset(marks | {LINUX})
 
 
 def test_roots(text: str) -> tuple[str, ...]:

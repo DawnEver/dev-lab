@@ -49,7 +49,7 @@ from dev_lab.dev.hpcaccount.spec import (
 )
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, update
 from dev_lab.dev.lockcheck import uv_version
-from dev_lab.dev.producers import UndeclaredProducer
+from dev_lab.dev.roles import Unbound
 
 __all__ = ['account', 'follow_uv', 'tick']
 
@@ -136,7 +136,7 @@ def tick(
         return 2
     try:
         ours = serves_here(spec, home, repo)
-    except UndeclaredProducer as undeclared:
+    except Unbound as undeclared:
         emit(f'[tick] {name} released, not served this tick: {undeclared}', err=True)
         return 2
     here = served(spec, home)

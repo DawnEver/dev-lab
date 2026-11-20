@@ -8,7 +8,7 @@ judgement (:func:`judge`) refuses a head when either holds:
   than :data:`~dev_lab.dev.locklag.LAG_WINDOW` (:func:`~dev_lab.dev.locklag.lag_of`). A fetch that fails refuses
   with the network's reason, never passes unchecked. The window is the one ``lock/lag`` reads (DECISION 14): an
   exact-contains rule, measured 2026-11-15 on a repo landing a commit every few minutes, went stale on four heads in
-  a row before review could start, and review waits on this gate (REVIEW IS THE LAST GATE);
+  a row before review could start, and review waits on this gate (REVIEW RUNS LAST, ADVISORY);
 * STALE -- the head's lock pins a floated sibling (dev-lab, lab-commons, ...) past the same window behind its line:
   :func:`dev_lab.dev.locklag.within_window`, the ONE window the forge's ``lock/lag`` also reads (DECISION 14) --
   exact heads made every landing stale every dependent PR. A sibling line that cannot be fetched is named with
