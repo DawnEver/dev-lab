@@ -126,3 +126,30 @@ def test_the_enrolment_door_names_the_config_sources_own_checkout_loop() -> None
     assert 'forge pr create` FROM that worktree' in text
     # the control: the render door is still named last
     assert text.rstrip().endswith('render --host WSX --write')
+
+
+def test_local_set_heals_the_missing_bridge_interpreter_it_names(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Measured 2026-11-20: the refusal named `local set tools.python`, and that door refused itself.
+
+    PLANTED CONTROL: render with the key still unset is refused by name and writes nothing.
+    """
+    clone = _clone(tmp_path)
+    rendered = tomllib.loads(devhost.render(clone, 'ws', LIVE))
+    rendered.pop('tools')
+    rendered.pop('bridge')
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(devhost.dumps(rendered), encoding='utf-8')
+    before = machine.read_text(encoding='utf-8')
+    backups = str(tmp_path / 'b')
+    code = devhost.main(['--machine', str(machine), 'render', '--write', '--backups', backups])
+    assert code == 2, 'a render missing the local interpreter is refused, never a traceback'
+    assert r'local set tools.python' in capsys.readouterr().err
+    assert machine.read_text(encoding='utf-8') == before, 'a refused render writes nothing'
+    python = '/opt/tools/bin/python'
+    code = devhost.main(['--machine', str(machine), 'local', 'set', 'tools.python', python, '--backups', backups])
+    assert code == 0, 'the door the refusal names sets the key it names'
+    healed = tomllib.loads(machine.read_text(encoding='utf-8'))
+    assert healed['tools']['python'] == python
+    assert healed['bridge']['hpc']['command'][0] == python

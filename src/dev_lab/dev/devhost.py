@@ -213,8 +213,13 @@ def _owner(path: tuple[str, ...], clone: Path, host: str) -> str:
 
 
 def _layered(clone: Path, host: str) -> set[str]:
-    """The tables the family and host layers render; every other table is local."""
-    return set(tomllib.loads(render(clone, host, {}))) - {OWN_TABLE}
+    """The tables the family and host layers render; every other table is local.
+
+    Asked of the LAYERS alone: a local value a layer reads (the bridge's ``[tools] python``) is stood in for, so the
+    question never refuses for the very local key ``local set`` is about to supply (2026-11-20).
+    """
+    stand_in = {devprofile.TOOLS_TABLE: {'python': 'python'}}
+    return set(tomllib.loads(render(clone, host, stand_in))) - {OWN_TABLE, devprofile.TOOLS_TABLE}
 
 
 def notice(live: Mapping[str, Any] | None = None) -> str | None:
@@ -293,6 +298,9 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
         text = render(clone, host, live)
     except (LookupError, TypeError) as undeclared:
         emit(f'refused: {undeclared}; declare it in the config source', err=True)
+        return 2
+    except ValueError as local:  # a local key the layers read is unset: its door is named, nothing is written
+        emit(f'refused: {local}; {path} is unchanged', err=True)
         return 2
     if not (clone / host_file(host)).is_file():
         emit(f'render: {devprofile.enrolment(host)}', err=True)
