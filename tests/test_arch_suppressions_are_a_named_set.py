@@ -535,6 +535,16 @@ ALLOWED: Final[dict[Site, str]] = {
         "with answer as body, to.open('wb') as out:",
     ): "urlopen's answer is a context manager at runtime; typeshed's union lacks it",
     (
+        'src/dev_lab/dev/uvrelease.py',
+        'PLR2004',
+        'if not words or len(words[0]) != 64:',
+    ): 'a sha256 is 64 hex digits: the length IS the format being checked',
+    (
+        'src/dev_lab/dev/uvrelease.py',
+        'S310',
+        'with urllib.request.urlopen(toolrelease.request(url), timeout=60) as body:',
+    ): "the URL is the pinned uv release's https .sha256 URL from uv.toml's own table, never input",
+    (
         'tests/test_dev_forgewaves.py',
         'E731',
         'send = lambda _t, r: calls.append(r) or (0, _STATUS)',

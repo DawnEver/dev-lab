@@ -25,6 +25,8 @@ from _arch_corpus import ROOT, assert_floor, parse, rel, source_modules
 OPENS_A_CONNECTION: Final[dict[str, str]] = {
     'src/dev_lab/dev/toolrelease.py': 'not a forge: a pinned tool release download (the release host the tool '
     'table declares), its bytes refused unless their sha256 matches the pin',
+    'src/dev_lab/dev/uvrelease.py': 'not a forge: the .sha256 files of the pinned uv release (the release host '
+    'uv.toml declares), read only to pin the digests of a moving version',
     'src/dev_lab/dev/forge.py': 'forge_transport: the connection every forgework.Client exchange opens inside '
     'forgefailure.retried',
     'src/dev_lab/ops/giteaadmin.py': '_exchange: the exchange local_api runs through forgefailure.retried',
