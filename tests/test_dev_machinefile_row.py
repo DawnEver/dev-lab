@@ -19,7 +19,9 @@ _PRINT = 'from dev_lab.dev import _deny_machinefile_row as r; print("/".join(r._
 
 
 def _parts(env: dict[str, str]) -> str:
-    done = subprocess.run([sys.executable, '-c', _PRINT], env=env, capture_output=True, text=True, check=False)
+    done = subprocess.run(
+        [sys.executable, '-c', _PRINT], env=env, capture_output=True, text=True, encoding='utf-8', check=False
+    )
     assert done.returncode == 0, done.stderr
     return done.stdout.strip()
 
