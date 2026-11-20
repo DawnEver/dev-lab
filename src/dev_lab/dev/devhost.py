@@ -50,7 +50,7 @@ import hashlib
 import json
 import platform
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -58,7 +58,7 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devprofile, familyrepos, tomlleaves, vendordetect
+from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, tomlleaves, vendordetect
 from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
@@ -67,7 +67,7 @@ from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'LOCAL_DOOR', 'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'drift',
-    'host_file', 'local_set', 'main', 'notice', 'render',
+    'host_file', 'local_set', 'main', 'notice', 'render', 'this_machine', 'use_store',
 ]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
@@ -88,6 +88,21 @@ def declared(host_file: Path, family_file: Path) -> dict[str, Any]:
         host, _ = devprofile.host_declaration(family_file.parent, host_file.stem)
         return {**shared, **host['dev']}  # the profile REPLACES a shared key: its forges = {} grants no account
     return _merge(shared, _read(host_file).get('dev', {}))
+
+
+def this_machine(host_config: Path | None = None) -> dict[str, Any]:
+    """The effective ``[dev]`` of *host_config*, else of the host and clone this machine's render records."""
+    if host_config is not None:
+        return declared(host_config, host_config.parent.parent / 'family.toml')
+    return _declared_by(machineconfig.machine())
+
+
+def _declared_by(live: Mapping[str, Any]) -> dict[str, Any]:
+    own = live.get(OWN_TABLE, {})
+    if not own.get('host') or not own.get('source'):
+        return {}
+    source = Path(own['source'])
+    return declared(source / 'hosts' / f'{own["host"]}.toml', source / 'family.toml')
 
 
 def _merge(under: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
@@ -209,6 +224,7 @@ def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
     if names := unfilled(dev):
         found.insert(0, fill_remedy(names))
     found += familyrepos.census(live)
+    found += forgecredential.drift(dev)
     checkout = live.get('repos', {}).get('dev-lab')
     if (want := dev.get('ref')) and checkout and (on := _branch(checkout)) not in {want, None}:
         found.append(f'the dev-lab checkout is on {on!r}, declared ref {want!r}')
@@ -379,8 +395,18 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
     return 0
 
 
+def use_store(live: Mapping[str, Any], host: str, apply: Callable[[str], None] = forgecredential.use_store) -> int:
+    """Make *host* read only the store -- refused unless this machine's declaration names the store helper for it."""
+    if _declared_by(live).get('helpers', {}).get(host) != 'store':
+        emit(f'use-store: refused -- this machine declares no store helper for {host} ([dev] helpers.{host})')
+        return 2
+    apply(host)
+    emit(f'{host}: git reads only the store (credential.https://{host}.helper = "", store)')
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """``drift`` (exit 1 on drift), ``render`` (``--write`` backs up), ``detect``, ``session-start``, ``channels``."""
+    """``drift`` (exit 1), ``render`` (``--write`` backs up), ``detect``, ``session-start``, ``channels``, use-store."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -396,6 +422,8 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     making.add_argument('--write', action='store_true', help='back the live file up, then replace it')
     making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
+    storing = verbs.add_parser('use-store', help='make one declared forge host read only the git credential store')
+    storing.add_argument('--host', required=True, help='a forge host this machine declares the store helper for')
     setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
     local_verbs = setting.add_subparsers(dest='local_verb', required=True)
     one = local_verbs.add_parser('set', help='set <table>.<key> to <value>')
@@ -414,10 +442,12 @@ def main(argv: list[str] | None = None) -> int:
         if said := notice(live):
             emit(said)
         return 0
-    if args.verb == 'channels':
-        return _channels(live)
-    if args.verb == 'drift':
-        return _drift(path, live, args.clone)
+    if args.verb in {'channels', 'drift', 'use-store'}:
+        return {
+            'channels': lambda: _channels(live),
+            'drift': lambda: _drift(path, live, args.clone),
+            'use-store': lambda: use_store(live, args.host),
+        }[args.verb]()
     if args.verb == 'local':
         return _local_verb(args, path, live)
     if args.verb == 'detect':

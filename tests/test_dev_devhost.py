@@ -20,6 +20,7 @@ FAMILY = """\
 [dev]
 ref = "integrate/main"
 forges = { "forge.example" = ["dev-user"] }
+helpers = { "forge.example" = "store" }
 
 [consent]
 endpoint = "consent@forge.example"
@@ -141,6 +142,12 @@ def test_a_declared_table_replaces_the_live_copy(tmp_path: Path) -> None:
     live = tomllib.loads(LOCAL + '\n[consent]\nendpoint = "consent@stale"\n')
     rendered = tomllib.loads(devhost.render(_clone(tmp_path), 'ws', live))
     assert rendered['consent'] == {'endpoint': 'consent@forge.example'}
+
+
+@pytest.fixture(autouse=True)
+def _credentials_agree(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real git store and helpers are not the fixture's: credential drift is tested on its own."""
+    monkeypatch.setattr(devhost.forgecredential, 'drift', lambda _dev: [])
 
 
 def _rendered_machine(tmp_path: Path) -> dict:
@@ -507,3 +514,21 @@ def test_an_account_file_defect_is_refused_by_name(tmp_path: Path, name: str, te
     clone = _account(tmp_path, text, name)
     found = check_host(clone / f'hosts/{name}.toml', clone / 'family.toml')
     assert any(named in line for line in found), found
+
+
+def test_forge_credential_drift_is_part_of_drift_with_the_declared_dev(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict] = []
+    monkeypatch.setattr(devhost.forgecredential, 'drift', lambda dev: seen.append(dev) or ['forge x: missing'])
+    assert devhost.drift(_rendered_machine(tmp_path)) == ['forge x: missing']
+    assert seen[0]['forges'] == {'forge.example': ['dev-user']}
+
+
+def test_use_store_applies_only_for_a_host_declaring_the_store_helper(tmp_path: Path) -> None:
+    live = _rendered_machine(tmp_path)
+    applied: list[str] = []
+    assert devhost.use_store(live, 'not.declared', applied.append) == 2
+    assert applied == []
+    assert devhost.use_store(live, 'forge.example', applied.append) == 0
+    assert applied == ['forge.example']

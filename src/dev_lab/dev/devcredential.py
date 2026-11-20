@@ -25,7 +25,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 from urllib.parse import urlsplit
 
 import lab_commons.launch as _door
@@ -33,17 +33,10 @@ from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
 from dev_lab.dev import devhost, devprofile
-from dev_lab.dev.checkout import git_out
 from dev_lab.dev.credstore import CredentialRefused, DeclaredForge, Shell, digest, place_verified, read_forge
-from dev_lab.dev.venvpath import running_interpreter
+from dev_lab.dev.forgecredential import STORE_ONLY, helpers, use_store
 
-__all__ = ['DOOR', 'STORE_ONLY', 'helpers', 'local_shell', 'main', 'place', 'use_store']
-
-#: This door, as a remedy names it.
-DOOR: Final = (
-    f'{running_interpreter()} -m dev_lab.dev.devcredential --login <login> '
-    '--forge-config <forge host file> < <minted token file>'
-)
+__all__ = ['local_shell', 'main', 'place']
 
 
 def local_shell(cmd: str, stdin: str | None) -> str:
@@ -60,24 +53,6 @@ def local_shell(cmd: str, stdin: str | None) -> str:
         msg = f'exit {done.returncode}: {done.stderr.decode("utf-8", "replace").strip()[-300:]}'
         raise RuntimeError(msg)
     return done.stdout.decode('utf-8', 'replace')
-
-
-def helpers(host: str) -> list[str]:
-    """The credential helpers configured for ``https://<host>`` alone (an empty entry resets the inherited list)."""
-    said = git_out(Path.cwd(), 'config', '--global', '--get-all', f'credential.https://{host}.helper')
-    return [line.strip() for line in (said or '').splitlines()]
-
-
-def use_store(host: str) -> None:
-    """Make ``https://<host>`` read ONLY the store: reset the inherited helpers for that host, then ``store``."""
-    git, key = shutil.which('git') or 'git', f'credential.https://{host}.helper'
-    _door.run([git, 'config', '--global', '--unset-all', key], capture_output=True, check=False)
-    for value in ('', 'store'):
-        _door.run([git, 'config', '--global', '--add', key, value], capture_output=True, check=True)
-
-
-#: The host-scoped helper list that reads only the store.
-STORE_ONLY: Final = ['', 'store']
 
 
 def _store_only(
@@ -148,16 +123,6 @@ def place(
     return 0
 
 
-def _dev_table(host_config: Path | None) -> dict[str, Any]:
-    if host_config is not None:
-        return devhost.declared(host_config, host_config.parent.parent / 'family.toml')
-    own = machineconfig.machine().get(devhost.OWN_TABLE, {})
-    if not own.get('host') or not own.get('source'):
-        return {}
-    source = Path(own['source'])
-    return devhost.declared(source / 'hosts' / f'{own["host"]}.toml', source / 'family.toml')
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     """Place the token on stdin for a declared login of this machine."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devcredential', description=__doc__.splitlines()[0])
@@ -175,7 +140,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'credential: refused -- {refused}')
         return 2
     token = sys.stdin.read().strip()
-    dev = _dev_table(args.host_config)
+    dev = devhost.this_machine(args.host_config)
     return place(login=args.login, token=token, url=args.url, forge=forge, dev=dev, say=emit)
 
 
