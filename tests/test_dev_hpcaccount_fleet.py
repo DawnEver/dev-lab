@@ -521,3 +521,18 @@ def test_a_layer_naming_no_role_takes_its_grants_role(tmp_path: Path) -> None:
     kept = layer_target(grant, _source(tmp_path, users=('alice',), deploy={'alice': stated}))
     assert isinstance(kept, Target)
     assert kept.role == 'x'
+
+
+def test_the_deploy_itself_runs_in_the_grants_setup() -> None:
+    """The venvs the deploy builds compile in the cluster's declared environment, as its ticks run.
+
+    Measured 2026-11-20 (Cirrus): the cluster setup (CC=gcc, a GNU linker) wrapped the refresh and the render but
+    not the deploy, so numerics-lab built with Cray's `cc` and rust-lld refused its plugin options.
+    PLANTED CONTROL: a grant with no setup deploys unwrapped.
+    """
+    grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', setup=('export CC=gcc',), cluster_name='c1')
+    command = deploy_command(grant, Target('login02.example', 'src'), _SRC)
+    tail = command[command.rindex('-m dev_lab.dev.devhost render') :]
+    assert tail.index('export CC=gcc') < tail.index('-m dev_lab.dev.hpcaccount deploy')
+    plain = deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
+    assert 'export CC=gcc' not in plain
