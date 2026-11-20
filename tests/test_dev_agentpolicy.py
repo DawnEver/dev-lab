@@ -154,3 +154,15 @@ def test_a_break_glass_merge_waives_the_tests_and_names_their_state() -> None:
 def test_the_integrator_s_standing_work_is_an_intent(phrase: str) -> None:
     """The integrator's sanctioned work is declared, so the classifier judges it against a stated purpose."""
     assert any(phrase in intent for intent in INTENTS), phrase
+
+
+def test_a_subagent_reads_the_held_sessions_but_never_runs_on_one() -> None:
+    """2026-11-20: a fleet subagent was refused ``sshhold status`` -- a local read of which sessions are held.
+
+    PLANTED CONTROL: ``sshhold run`` stays the main session's: a command on the session the user authenticated with
+    their code cannot be judged read-only from its text.
+    """
+    pattern = f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})'
+    assert _door(('python', '-m', 'dev_lab.dev.sshhold', 'status')).actor == SUBAGENT
+    assert not re.match(pattern, f'{INTERPRETERS[0]} -m dev_lab.dev.sshhold status')
+    assert re.match(pattern, f'{INTERPRETERS[0]} -m dev_lab.dev.sshhold run u@h "uptime"')

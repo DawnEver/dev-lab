@@ -265,3 +265,22 @@ def test_a_plan_naming_an_action_this_client_lacks_is_refused_before_the_code_is
             1, CODE, plan, 'abc', grant=lambda *_a: sent.append('granted') or [], routes=sshhold.route, opener=str
         )
     assert sent == []
+
+
+def test_a_dest_without_its_user_is_refused_before_the_code_is_spent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dest names its account; without one nothing is opened and no code is read.
+
+    Measured 2026-11-20: ``open login.cirrus...`` logged in as the LOCAL user, the key was refused, and the user's one
+    TOTP code was spent on it. PLANTED CONTROL: the same host with its user reaches the opener.
+    """
+    opened: list[str] = []
+    monkeypatch.setattr(sshhold, 'open_session', lambda dest, *_a, **_k: opened.append(dest) or f'{dest}: open')
+    monkeypatch.setattr(sshhold, 'given_code', lambda _code: pytest.fail('the code must not be read'))
+    assert sshhold.main(['open', 'login.example', '--hours', '1']) == 2
+    assert '<user>@login.example' in capsys.readouterr().err
+    assert opened == []
+    monkeypatch.setattr(sshhold, 'given_code', lambda code: code or '1')
+    assert sshhold.main(['open', 'alice@login.example', '--hours', '1', '--code', '1']) == 0
+    assert opened == ['alice@login.example']
