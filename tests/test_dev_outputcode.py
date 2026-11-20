@@ -12,9 +12,11 @@ import io
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from dev_lab.dev import testtemp
 from dev_lab.dev._deny_outputcode_row import OUTPUT_HOLDS_NO_CODE
 from dev_lab.dev.codeplace import main
 from dev_lab.dev.outputcode import code_doors_into_output, refuse_code_in_output
@@ -106,3 +108,27 @@ def test_no_door_in_src_writes_code_under_output() -> None:
         for line in code_doors_into_output(path.read_text(encoding='utf-8'))
     ]
     assert not found, f'OUTPUT-HOLDS-NO-CODE: these doors write code/bundles/checkouts under output/: {found}'
+
+
+@pytest.mark.parametrize(
+    ('basetemp', 'refused'),
+    [('output/logs/26/11/20/pytest/s', True), ('output/x', True), ('elsewhere/s', False)],
+)
+def test_a_test_temp_root_under_output_is_refused_and_one_outside_is_kept(
+    checkout: Path, basetemp: str, *, refused: bool
+) -> None:
+    """D104: a test temp dir holds planted code, so OUTPUT-HOLDS-NO-CODE has no test-temp exception (PLANTED)."""
+    config = SimpleNamespace(option=SimpleNamespace(basetemp=str(checkout / basetemp)), rootpath=checkout)
+    if refused:
+        with pytest.raises(pytest.UsageError, match='OUTPUT-HOLDS-NO-CODE'):
+            testtemp.configure(config)
+    else:
+        testtemp.configure(config)
+        assert config.option.basetemp == str(checkout / basetemp)
+
+
+def test_an_unset_test_temp_root_is_chosen_outside_every_output_tree(checkout: Path) -> None:
+    config = SimpleNamespace(option=SimpleNamespace(basetemp=None), rootpath=checkout)
+    testtemp.configure(config)
+    assert 'output' not in Path(config.option.basetemp).resolve().parts
+    assert 'output' not in Path(testtemp.script_temp_env({})['TMPDIR']).resolve().parts

@@ -1,6 +1,6 @@
 """The ``pytest11`` entry point that runs dev-lab's always-on family rows in every repo installing it.
 
-It also puts every test temp dir in the repo's dated tree (:mod:`dev_lab.dev.testtemp`).
+It also puts every test temp dir in a swept system-temp entry (:mod:`dev_lab.dev.testtemp`).
 
 A SHIM OUTSIDE ``dev_lab.dev`` ON PURPOSE, and it imports nothing from dev_lab at load. pytest
 loads a ``pytest11`` plugin BEFORE pytest-cov starts measuring, so a module imported at plugin load
@@ -21,7 +21,7 @@ __all__ = ['pytest_collection_modifyitems', 'pytest_configure', 'pytest_fixture_
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
-    """Put pytest's base temp in the dated tree (:func:`dev_lab.dev.testtemp.configure`), before tmpdir reads it."""
+    """Put pytest's base temp in a swept system-temp entry (:func:`dev_lab.dev.testtemp.configure`) first."""
     importlib.import_module('dev_lab.dev.testtemp').configure(config)
 
 

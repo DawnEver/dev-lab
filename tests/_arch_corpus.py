@@ -21,7 +21,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Final
 
-from dev_lab.dev.datedlog import declared_output
 from dev_lab.dev.rules import tracked_files
 
 #: The repo root: this file is ``<root>/tests/_arch_corpus.py``.
@@ -105,11 +104,10 @@ def rel(path: Path) -> str:
 def corpus_key(path: Path) -> str:
     """*path*'s key in a finding: :func:`rel` inside the checkout's code, the bare name for a planted file.
 
-    A planted file lives in pytest's temp dir, which is under the checkout's declared output tree
-    (``dev_lab.dev.testtemp``) -- program output, never code -- so that tree counts as outside.
+    A planted file lives in pytest's temp dir, a system-temp entry outside the checkout (``dev_lab.dev.testtemp``).
     """
     resolved = path.resolve()
-    if resolved.is_relative_to(ROOT) and not resolved.is_relative_to(ROOT / declared_output(ROOT)):
+    if resolved.is_relative_to(ROOT):
         return rel(resolved)
     return path.name
 
