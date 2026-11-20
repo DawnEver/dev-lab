@@ -89,22 +89,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'tests/test_dev_forgereview_bundle.py',
         'arg-type',
-        'said = fp.prepare(root, forge, 7, env=env)',
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        "fp.prepare(on_github.root, on_github.forge, 7, env={'GITHUB_ACTIONS': 'true'})",
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        'said = fp.prepare(root, forge, 7, env={})',
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        'return fb.judge_pending(forge, runtimes=_RUNTIMES, run=run), seen',
+        'return fb.judge_pending(forge, runtimes=_RUNTIMES, fetch=prepared.fetch, run=run), seen',
     ): 'a FakeForge stands in for the Client the judge takes: a test double, not a subclass the type checker can see',
     (
         'tests/test_dev_forgereview_bundle.py',
@@ -133,16 +118,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'BLE001',
         'except Exception as failed:',
     ): 'the pre-clone settle never fails the job: any fact it cannot read means the full review runs',
-    (
-        'src/dev_lab/dev/actionsartifact.py',
-        'S310',
-        'request = urllib.request.Request(url, data=body, method=method, headers=dict(headers))',
-    ): "the runner's own results URL or the upload URL it signed, refused above unless http(s)",
-    (
-        'src/dev_lab/dev/actionsartifact.py',
-        'S310',
-        'with urllib.request.urlopen(request, timeout=60) as answer:',
-    ): 'opens only the request built above, its scheme checked',
     (
         'src/dev_lab/dev/reviewcode.py',
         'S310',

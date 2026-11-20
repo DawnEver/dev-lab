@@ -266,11 +266,17 @@ def uv_version(root: Path | None = None) -> str:
     return found['version']
 
 
-def pin_uv(tree: Path, version: str) -> None:
-    """Rewrite the version of *tree*'s :data:`UV_PIN` to *version*, every other line as it was."""
+def pin_uv(tree: Path, version: str, sums: Mapping[str, str]) -> None:
+    """Rewrite *tree*'s :data:`UV_PIN` to *version* AND that release's per-platform *sums*, every other line kept.
+
+    The digests move with the version in the same change (:mod:`dev_lab.dev.uvrelease`): a pin naming a version
+    its ``[sha256]`` does not describe would install nothing, or the wrong archive.
+    """
     path = tree / UV_PIN
-    text = path.read_text(encoding='utf-8')
-    path.write_text(_UV_PINNED.sub(lambda m: f'{m["lead"]}"{version}"', text, count=1), encoding='utf-8')
+    text = _UV_PINNED.sub(lambda m: f'{m["lead"]}"{version}"', path.read_text(encoding='utf-8'), count=1)
+    head = text.split('\n[sha256]\n', 1)[0].rstrip('\n')
+    table = '\n'.join(f'{key} = "{digest}"' for key, digest in sorted(sums.items()))
+    path.write_text(f'{head}\n\n[sha256]\n{table}\n', encoding='utf-8')
 
 
 def _channel(text: str) -> str | None:

@@ -37,10 +37,11 @@ from typing import Any, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.diskusage import remove_tree
+from dev_lab.dev.familyroot import main_checkout
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.platformparts import UndeclaredPart, record_directory
 from dev_lab.dev.venvpath import checkout_interpreter, current_os_name
-from dev_lab.dev.worktreeplace import home, main_checkout
+from dev_lab.dev.worktreeplace import home
 
 __all__ = [
     'TREE_PREFIX',

@@ -120,6 +120,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   never rewrite).
 * :mod:`dev_lab.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
   ``[tool.dev_lab.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
+* :mod:`dev_lab.dev.ciworkflowshape` -- a rendered workflow's pure transforms: layers merged, jobs placed by role.
 * :mod:`dev_lab.dev.vscodesettings` -- the editor excludes a checkout carries, derived from the storage kinds.
 * :mod:`dev_lab.dev.nightlycron` -- a workflow's ``nightly`` declaration read as the cron it schedules.
 * :mod:`dev_lab.dev.githooks` -- the TOML hook table, its one runner (``python -m
@@ -367,6 +368,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgerecordkeep` -- what a records prune keeps: record names, live shas, the selection.
 * :mod:`dev_lab.dev.forgeunit` -- compute units on the forge: shared results (first wins), a unit offered as a Job.
 * :mod:`dev_lab.dev.toolrelease` -- a pinned tool release (rclone): sha256-checked, installed user-space.
+* :mod:`dev_lab.dev.familyroot` -- the MAIN checkout and the family root, from git alone (no lab-commons subpackage).
+* :mod:`dev_lab.dev.commonsfloor` -- COMMONS-BELOW-FLOOR: a kit missing a lab_commons module names its heal.
+* :mod:`dev_lab.dev.uvrelease` -- the lock writer is the pinned uv release, sha256-checked, installed beside any other.
 * :mod:`dev_lab.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``[priority] hosts`` entry matches.
 * :mod:`dev_lab.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
 * :mod:`dev_lab.dev.forgerequest` -- a request: an issue-declared job ranked, admitted and run on the part path.
@@ -468,10 +472,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in USD inside the family's month, fitted.
 * :mod:`dev_lab.dev.reviewcap` -- a review that did not run is waived at the merge, warned and recorded, never passed.
 * :mod:`dev_lab.dev.reviewbundle` -- a PR head's review bundle: the changed files both sides, checked against the forge.
-* :mod:`dev_lab.dev.forgereview_pointer` -- where the judge's bundle comes from: the prepare run's artifact, a preparer.
-* :mod:`dev_lab.dev.actionsartifact` -- an artifact only its own Actions run can attach, and what a reader takes of it.
+* :mod:`dev_lab.dev.reviewforgediff` -- the forge's own diff of a PR, parsed: a review bundle is held to its paths.
 * :mod:`dev_lab.dev.forgereview_gate` -- the one review gate merge, merge-ready and Break-Glass read.
-* :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review prepare`` / ``judge``: the judge host's review of a bundle.
+* :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review judge``: the judge host fetches, prepares and judges a bundle.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
 * :mod:`dev_lab.dev.reviewturn` -- the review runs last and is advisory: the merge decision says a head waits or is due.
 * :mod:`dev_lab.dev.reviewgitauth` -- the review door's forge tokens, read from files, never from an environment.
@@ -550,7 +553,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.prcurrent` -- PR-HEAD-IS-CURRENT: ``pr ready`` is refused, and a ``pr/*`` push warned, when the
   head lacks an ``origin/<integration>`` landing older than the TIME lag window or its lock pins a floated sibling
   past it (remedy ``forge sync``); the push is also warned when the pushing venv does not hold what that lock pins.
-* :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
+* :mod:`dev_lab.dev.branchpolicy` -- BRANCH-POLICY-OBSERVED: an unlanded origin branch past ``max_ahead`` or
+  ``max_idle_hours`` keeps one stable-keyed integration issue, closed when it clears; ``prune_duty`` is the ``prune``
+  role's one pass, run by its executor (an hpc tick, or the forge feed of the bound host).
+* :mod:`dev_lab.dev.branchprune` -- MERGED-BRANCHES-PRUNED: the prune role's executor deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones; it is the
   command line of ``delete`` and ``sweep``.
 * :mod:`dev_lab.dev.branchdelete` -- LOSSLESS-DELETE and LANDED-BRANCHES-SWEPT: a branch is deleted only when
@@ -614,6 +620,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.tomlleaves` -- a parsed TOML table's leaf keys by path, and their ``[table].key`` spelling.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;
   drift named key by key with its owning layer; ``local set|unset``, the one door into the local layer.
+* :mod:`dev_lab.dev.backedup` -- a file replaced whole and atomically, its previous content kept in a dated backup.
 * :mod:`dev_lab.dev.machineguard` -- MACHINE-FILE-IS-RENDERED: the refusal of any write onto the machine file but
   its doors.
 * :mod:`dev_lab.dev.familyrepos` -- FAMILY-REPO-IS-CHECKED-OUT: ``[repos]`` against the family's ``[family_repos]``:

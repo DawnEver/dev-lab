@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 from _branch_repos import advance, clone_pair
 from _forge_state import StateForge, called_due
+from _roles_fixtures import HPC_REVIEWED
+from _roles_fixtures import carry as carry_roles
 
 from dev_lab.dev.branchreview import (
     RECORD_TITLE,
@@ -37,6 +39,13 @@ from dev_lab.dev.forgereview_stands import carry
 from dev_lab.dev.forgestatus import status_list
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.prcontinue import open_continuation
+
+
+@pytest.fixture(autouse=True)
+def _review_on_the_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bind review on hpc: this module drives the serve's review tick, which reviews nothing else (D73)."""
+    carry_roles(monkeypatch, HPC_REVIEWED)
+
 
 _BASE = 'integrate/main'
 _TARGET = f'origin/{_BASE}'

@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from dev_lab.dev import _dep_project, dep
+from dev_lab.dev import _dep_project, dep, toolrelease, uvrelease
 from dev_lab.dev.hpcaccount.checks import INSTALLERS
 from dev_lab.dev.lockcheck import UV_PIN, uv_version
 
@@ -37,30 +37,69 @@ def _recording() -> tuple[list[tuple[str, ...]], object]:
     return calls, run
 
 
+def _no_download(monkeypatch: pytest.MonkeyPatch, base: Path) -> list[str]:
+    """Every pinned uv lands in *base*; the "download" writes a stub and records the version it was asked for."""
+    asked: list[str] = []
+
+    def install(release, *, directory: Path, key: str) -> Path:
+        asked.append(release.version)
+        exe = directory / release.exe(windows=key.startswith('windows-'))
+        exe.parent.mkdir(parents=True, exist_ok=True)
+        exe.write_text('stub', encoding='utf-8')
+        return exe
+
+    monkeypatch.setattr(toolrelease, 'tool_dir', lambda **_kw: base)
+    monkeypatch.setattr(toolrelease, 'install_release', install)
+    return asked
+
+
 @pytest.mark.parametrize('argv', [['--lock-upgrade'], ['--sync'], ['--upgrade-package', 'peer']])
-def test_a_lock_writer_on_another_uv_is_refused_by_name_and_nothing_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], argv: list[str]
+def test_another_path_uv_never_writes_the_lock_the_pinned_one_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> None:
+    """The PATH uv is another version: the pinned one is installed BESIDE it and writes the lock; PATH untouched."""
+    _project(tmp_path)
+    monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: _OTHER)
+    asked = _no_download(monkeypatch, tmp_path / 'tools')
+    calls, run = _recording()
+    assert dep.main(argv, cwd=tmp_path, run=run) == 0
+    assert asked == [uv_version()]
+    writers = {call[0] for call in calls if len(call) > 1 and call[1] in {'lock', 'sync'} and '--frozen' not in call}
+    assert writers
+    assert all(Path(writer).parent.name == uv_version() for writer in writers)
+
+
+def test_a_pinned_uv_that_cannot_be_had_is_refused_by_name_and_nothing_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _project(tmp_path)
     monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: _OTHER)
+    monkeypatch.setattr(toolrelease, 'tool_dir', lambda **_kw: tmp_path / 'tools')
+
+    def unreachable(*_args: object, **_kwargs: object) -> Path:
+        msg = 'HTTP 503'
+        raise toolrelease.DownloadRefused(msg)
+
+    monkeypatch.setattr(toolrelease, 'install_release', unreachable)
     calls, run = _recording()
-    assert dep.main(argv, cwd=tmp_path, run=run) == 1
+    assert dep.main(['--lock-upgrade'], cwd=tmp_path, run=run) == 1
     assert calls == []
     out = capsys.readouterr().out
     assert 'REFUSED' in out
-    assert _OTHER in out
     assert uv_version() in out
-    assert f'uv self update {uv_version()}' in out
+    assert '--lock-upgrade' in out
 
 
 @pytest.mark.parametrize('argv', [['--lock-upgrade'], ['--sync']])
 def test_the_declared_uv_writes_the_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> None:
-    """PLANTED CONTROL for the refusal above: the same call on the declared uv runs."""
+    """PLANTED CONTROL: a PATH uv that IS the pinned version writes the lock itself; nothing is installed."""
     _project(tmp_path)
     monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: uv_version())
+    asked = _no_download(monkeypatch, tmp_path / 'tools')
     calls, run = _recording()
     assert dep.main(argv, cwd=tmp_path, run=run) == 0
     assert calls
+    assert asked == []
 
 
 def test_a_frozen_bootstrap_writes_no_lock_so_any_uv_may_build_it(
@@ -90,7 +129,8 @@ def test_the_lock_upgrade_of_a_tree_carrying_the_uv_pin_raises_it_and_is_written
 ) -> None:
     """User directive 2026-11-05: the door moves dev-lab's uv pin to the newest release, written BY that uv.
 
-    PLANTED control: the old uv on PATH is refused and the pin stays where it was.
+    The old uv on PATH stays; the new release is installed beside it, writes the lock, and the pin moves with its
+    digests. PLANTED control: a release whose digests cannot be read writes nothing and the pin stays.
     """
     _project(tmp_path)
     pin = tmp_path / UV_PIN
@@ -99,10 +139,20 @@ def test_the_lock_upgrade_of_a_tree_carrying_the_uv_pin_raises_it_and_is_written
     calls, run = _recording()
     upgrade = _dep_project.lock_upgrade
     monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: '0.13.7')
+    asked = _no_download(monkeypatch, tmp_path / 'tools')
+
+    def unreadable(version: str, *, read: object = None) -> dict[str, str]:
+        msg = f'uv {version}: unreachable ({read})'
+        raise OSError(msg)
+
+    monkeypatch.setattr(uvrelease, 'digests', unreadable)
     assert upgrade(tmp_path, 'py', run=run, dry_run=False, environment={}, newest=lambda: '0.13.8') == 1
     assert calls == []
     assert pin.read_text(encoding='utf-8') == 'version = "0.13.7"\n'
-    monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: '0.13.8')
+    monkeypatch.setattr(uvrelease, 'digests', lambda _version, **_kw: dict.fromkeys(uvrelease.ASSETS, 'c' * 64))
     assert upgrade(tmp_path, 'py', run=run, dry_run=False, environment={}, newest=lambda: '0.13.8') == 0
-    assert calls
-    assert pin.read_text(encoding='utf-8') == 'version = "0.13.8"\n'
+    assert asked == ['0.13.8']
+    assert Path(calls[0][0]).parent.name == '0.13.8'
+    text = pin.read_text(encoding='utf-8')
+    assert text.startswith('version = "0.13.8"\n')
+    assert text.count('c' * 64) == len(uvrelease.ASSETS)

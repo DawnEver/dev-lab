@@ -1,6 +1,6 @@
 """A review bundle is built from the diff's files only, and the judge refuses one it cannot trust.
 
-PREPARE runs on the untrusted runner and holds no reviewer token; JUDGE runs on the reviewer host and never
+PREPARE fetches the head bare and blobless on the judge host (D77); JUDGE runs on the reviewer host and never
 executes PR content, trusting nothing the producer wrote that it can read from the forge (D3). The planted controls:
 a tampered byte, a stale head or merge base, a file whose content is not the blob the diff names, a malformed
 document, a forge diff the bundle does not match (a quoted path, a rename, a mode change) are each refused, while the
@@ -19,7 +19,7 @@ import lab_commons.launch as _door
 import pytest
 from _forge_fake import git_out, run_git
 
-from dev_lab.dev import reviewbundle
+from dev_lab.dev import reviewbundle, reviewforgediff
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev.reviewbundle import BundleRefused
 
@@ -154,18 +154,18 @@ def test_the_forges_own_diff_must_name_the_bundles_blobs(tmp_path: Path, flags: 
     bundle, root, base, head = _built(tmp_path)
     diff = _forge_diff(root, base, head, *flags)
     assert '"a/' in diff  # the quoted header is really in play
-    reviewbundle.matches_forge(bundle, diff)
+    reviewforgediff.matches_forge(bundle, diff)
     (root / 'kept.py').write_text('x = 99\n', encoding='utf-8')
     run_git(root, 'commit', '-q', '-am', 'other')
     with pytest.raises(BundleRefused, match='forge'):
-        reviewbundle.matches_forge(bundle, _forge_diff(root, base, 'HEAD', *flags))
+        reviewforgediff.matches_forge(bundle, _forge_diff(root, base, 'HEAD', *flags))
 
 
 @pytest.mark.parametrize('dropped', [_ODD, 'renamed.py', 'mode.sh'])
 def test_a_bundle_omitting_any_file_the_forge_diff_names_is_refused(tmp_path: Path, dropped: str) -> None:
     bundle, root, base, head = _built(tmp_path)
     with pytest.raises(BundleRefused, match='forge diff changes'):
-        reviewbundle.matches_forge(_without(bundle, dropped), _forge_diff(root, base, head))
+        reviewforgediff.matches_forge(_without(bundle, dropped), _forge_diff(root, base, head))
 
 
 def test_a_rename_whose_bytes_the_bundle_changed_is_refused(tmp_path: Path) -> None:
@@ -176,13 +176,13 @@ def test_a_rename_whose_bytes_the_bundle_changed_is_refused(tmp_path: Path) -> N
     )
     swapped = dataclasses.replace(bundle, files=files)
     with pytest.raises(BundleRefused, match=r'renamed\.py'):
-        reviewbundle.matches_forge(swapped, _forge_diff(root, base, head))
+        reviewforgediff.matches_forge(swapped, _forge_diff(root, base, head))
 
 
 def test_a_header_the_judge_cannot_parse_is_refused(tmp_path: Path) -> None:
     bundle, _, _, _ = _built(tmp_path)
     with pytest.raises(BundleRefused, match='cannot parse'):
-        reviewbundle.matches_forge(bundle, 'diff --git a/x.py c/y.py\nindex 1..2 100644\n')
+        reviewforgediff.matches_forge(bundle, 'diff --git a/x.py c/y.py\nindex 1..2 100644\n')
 
 
 def test_the_judge_reads_the_forges_diff_on_plain_files_with_no_repository(tmp_path: Path) -> None:
@@ -257,3 +257,52 @@ def test_a_path_escaping_the_tree_is_refused(tmp_path: Path) -> None:
     rewritten = _rewritten(forged)
     with pytest.raises(BundleRefused, match='escape'):
         reviewbundle.load(rewritten, reviewbundle.digest_of(rewritten))
+
+
+def _served(tmp_path: Path) -> tuple[Path, str, str, str]:
+    """A repository standing in for the forge: integration ``main`` and the PR head under ``refs/pull/7/head``."""
+    root, base, head = _repo(tmp_path)
+    run_git(root, 'update-ref', 'refs/pull/7/head', head)
+    run_git(root, 'update-ref', 'refs/heads/main', base)  # integration is the base; the head lives only in the PR ref
+    return root, base, head, root.as_uri()
+
+
+def test_the_judge_fetches_the_head_and_builds_the_same_bundle(tmp_path: Path) -> None:
+    """The judge prepares its own bundle: fetched blobless from the forge, built by the ONE builder (D77)."""
+    source, _base, head, url = _served(tmp_path)
+    fetched = reviewbundle.fetched(tmp_path / 'judge', url, _pull(head))
+    assert reviewbundle.prepare(fetched, repo='o/r', pull=_pull(head)) == reviewbundle.prepare(
+        source, repo='o/r', pull=_pull(head)
+    )
+    assert not (fetched / 'kept.py').exists(), 'bare: no tree is ever checked out'
+
+
+def test_a_head_the_forge_no_longer_serves_is_not_built(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the PR moved after the listing -- the fetched head is not the pull's, so nothing is built."""
+    _source, base, _head, url = _served(tmp_path)
+    with pytest.raises(OSError, match='moved'):
+        reviewbundle.fetched(tmp_path / 'judge', url, _pull(base))
+
+
+def test_preparing_runs_nothing_the_head_carries(tmp_path: Path) -> None:
+    """THE HEAD IS UNTRUSTED: a hook, a script and a submodule it carries never run while the judge prepares.
+
+    PLANTED CONTROL: the very script, run by hand, does write the sentinel -- so its absence is a measurement.
+    """
+    source, _base, _head, url = _served(tmp_path)
+    sentinel = tmp_path / 'ran'
+    script = f'#!/bin/sh\necho ran > "{sentinel.as_posix()}"\n'
+    for name in ('hooks/post-checkout', 'hooks/reference-transaction', 'hooks/post-merge', 'setup.sh'):
+        (source / name).parent.mkdir(exist_ok=True)
+        (source / name).write_text(script, encoding='utf-8')
+    (source / '.gitmodules').write_text('[submodule "s"]\n\tpath = s\n\turl = ./nowhere\n', encoding='utf-8')
+    run_git(source, 'add', '-A', '.')
+    run_git(source, 'commit', '-q', '-m', 'carries scripts')
+    head = git_out(source, 'rev-parse', 'HEAD')
+    run_git(source, 'update-ref', 'refs/pull/7/head', head)
+    fetched = reviewbundle.fetched(tmp_path / 'judge', url, _pull(head))
+    reviewbundle.prepare(fetched, repo='o/r', pull=_pull(head))
+    assert not sentinel.exists()
+    assert not any((fetched / 'hooks').glob('*')) if (fetched / 'hooks').exists() else True
+    _door.run(['sh', str(source / 'setup.sh')], check=True)  # the control: the script itself works
+    assert sentinel.exists()

@@ -11,7 +11,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, INTEGRATOR, PRODUCER, FakeGitea, FakeGitHub, refused
+from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, INTEGRATOR, FakeGitea, FakeGitHub, refused
 
 from dev_lab.dev import _protect_gitea, forgeprotect
 from dev_lab.dev.forge import Forge
@@ -22,7 +22,9 @@ from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 GITHUB = Forge('github.com', 'owner', 'alpha')
 GITEA = Forge('gitea.example', 'owner', 'alpha')
-JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
+#: The protection table's header: a case appends its key right under it (no placement line exists since D73).
+_TABLE = '[tool.dev_lab.protection]' + chr(10)
+JUDGED = '[tool.dev_lab.review]\njudge_login = "review-bot"\n'
 
 
 # -- the declaration -------------------------------------------------------------------------------------------------
@@ -32,11 +34,11 @@ JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "review-bot"\n'
     ('text', 'said'),
     [
         (INTEGRATOR, 'declares no forges'),
-        (GITEA_TEXT.replace(PRODUCER, PRODUCER + 'extra = 1\n'), 'unknown key'),
+        (GITEA_TEXT.replace(_TABLE, _TABLE + 'extra = 1\n'), 'unknown key'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\npromote = ["p"]\n', 'names no breakglass'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = "b"\nwho = 1\n', 'unknown'),
-        (GITEA_TEXT.replace(PRODUCER, PRODUCER + 'approvals = 1\n'), 'the judge is advisory'),
-        ((GITEA_TEXT + JUDGED).replace(PRODUCER, PRODUCER + 'approvals = -1\n'), 'below zero'),
+        (GITEA_TEXT.replace(_TABLE, _TABLE + 'approvals = 1\n'), 'the judge is advisory'),
+        ((GITEA_TEXT + JUDGED).replace(_TABLE, _TABLE + 'approvals = -1\n'), 'below zero'),
     ],
 )
 def test_a_declaration_that_cannot_mean_anything_is_refused(text: str, said: str) -> None:
@@ -348,7 +350,7 @@ def test_the_door_is_the_forge_noun() -> None:
 
 # -- a GitHub App judge ------------------------------------------------------------------------------------------------
 
-APP_JUDGED = '[tool.dev_lab.review]\nwhere = "judge"\njudge_app = 5619495\n'
+APP_JUDGED = '[tool.dev_lab.review]\njudge_app = 5619495\n'
 
 
 def test_a_judged_repo_requires_no_judge_check_and_no_approval_on_either_forge() -> None:
@@ -359,7 +361,7 @@ def test_a_judged_repo_requires_no_judge_check_and_no_approval_on_either_forge()
     assert (tea.judge_app, tea.approvals, tea.approver) == (0, 0, '')
     for text in (GITEA_TEXT + JUDGED, GITHUB_TEXT + APP_JUDGED):
         with pytest.raises(ValueError, match='the judge is advisory'):
-            declaration_from(text.replace(PRODUCER, PRODUCER + 'approvals = 1\n'), 'p')
+            declaration_from(text.replace(_TABLE, _TABLE + 'approvals = 1\n'), 'p')
 
 
 def test_github_bypasses_every_declared_actor_an_app_beside_the_admin_role() -> None:

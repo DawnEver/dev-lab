@@ -285,6 +285,12 @@ POLICY: Final[tuple[Door, ...]] = (
         'another live branch or open pull request; never a force push and never a lossy delete.',
     ),
     Door(
+        module_argv('branchprune', 'task'),
+        MAIN,
+        "Deleting a closed task's pull request branches, each only when every commit on it is already on the "
+        'integration branch or on another live branch or open pull request; every branch kept is named with why.',
+    ),
+    Door(
         ('gh', 'workflow', 'enable'),
         MAIN,
         'Re-enabling a GitHub Actions workflow of a family repository that the integrator paused '

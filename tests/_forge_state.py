@@ -218,7 +218,7 @@ class StateForge(Client):
         since = datetime.fromisoformat(query['since']) if 'since' in query else None
         newest = sorted(self.issues_by_number.items(), reverse=True)
         listed = [
-            i | {'comments': len(self.comments[n]), 'labels': self._issue_labels(str(n))}
+            i | {'comments': len(self.comments[n]), 'labels': [*i['labels'], *self._issue_labels(str(n))]}
             for n, i in newest
             if state in ('all', i['state']) and (since is None or datetime.fromisoformat(i['updated_at']) >= since)
         ]

@@ -22,7 +22,12 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
     'failprint',  # a failure fingerprint: test id plus the subjects its failure names (finding D13, 2026-11-16)
-    'producers',  # each repo's one producer, actions or hpc, and its optional parts (ruling 2026-11-16)
+    'roles',  # the forge roles each repo's work is bound to, read from the family layer (D73; replaced producers)
+    'disposable',  # a throwaway worktree's lease: scratch and discard without a landing (split from reclaim)
+    'scratchtree',  # the scratch worktree door, --scratch and --discard (split from reclaim)
+    'forgetask',  # the forge task verbs, split from forgecli to keep it under the module bound
+    'tomlleaves',  # the TOML leaf reader devhost renders through, split from devhost
+    'vendordetect',  # detect installed vendor tools for the machine file, split from devhost
     'rolecheck',  # the guard refusing what contradicts the family's roles binding (D73)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
@@ -89,6 +94,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'componentbump',
     'shatree',
     'branchprune',
+    'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)
     'branchdelete',
     'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
@@ -318,6 +324,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'gitfailure',  # ORIGINAL: split from runner: the runner's own failed git query, named (O21, 2026-11-19)
     'filechecks',
     'ciworkflows',
+    'ciworkflowshape',  # a rendered workflow's pure transforms, split from ciworkflows (2026-11-20)
+    'backedup',  # a file replaced whole, its previous content kept: the machine-file doors' one write (2026-11-20)
     'nightlycron',  # ORIGINAL: split from ciworkflows: a workflow's nightly declaration as a cron (D63, 2026-11-19)
     'rendergoldens',  # ORIGINAL: no consumer pinned another repo's renders (contract 5, 2026-11-12)
     # ORIGINAL: new mechanisms no consumer held a file for.
@@ -385,7 +393,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'reviewcode',
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
-    'actionsartifact',  # an Actions run's own artifact, new here
+    'reviewforgediff',  # the forge's own diff parsed, split from reviewbundle (2026-11-20)
     # ORIGINAL: user ruling 2026-11-07, one table of agent doors; it replaces kit-internal copies, no consumer's.
     'agentpolicy',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.
@@ -406,4 +414,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'depneeds',
     # ORIGINAL: D76 (2026-11-18), a pinned, sha256-checked tool installed user-space; no consumer held one.
     'toolrelease',
+    # ORIGINAL: 2026-11-20, the MAIN checkout and family root read from git alone, importable against any lab-commons.
+    'familyroot',
+    # ORIGINAL: 2026-11-20, COMMONS-BELOW-FLOOR names the heal of a kit whose lab-commons predates its dev-lab.
+    'commonsfloor',
+    # ORIGINAL: 2026-11-20, the uv that writes a lock is the pinned release installed beside any other.
+    'uvrelease',
 )

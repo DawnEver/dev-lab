@@ -6,7 +6,14 @@ had no command that put it on another: the ops account's sudo admits fixed comma
 the ``chown`` step. So the door writes exactly one declared path:
 
     python -m dev_lab.ops.secretplace request --path P < content   # the consent request: {action, subject}
-    python -m dev_lab.ops --config C secret place --path P --credential CRED < content
+    python -m dev_lab.ops --config C secret place --path P --credential CRED < content   # an ops host
+    python -m dev_lab.ops.secretplace place --path P --grant ID < content                # a workstation
+
+* An ops host's declared files come from its ops config (:func:`declared`). A workstation has no ops config: its
+  declared files are the ``credentials_file`` of every storage remote THIS machine reaches
+  (:func:`lab_commons.storage.declared`, read from the machine file), owned by the user running the door
+  (:func:`workstation_declared`). Its consent is the held grant ``ID`` the user's code minted
+  (``python -m dev_lab.ops.consent grant``), redeemed through :func:`dev_lab.ops.consent.client.verify_held`.
 
 * The consent action is :data:`ACTION`, single use. Its subject binds the path AND the content's sha256, never the
   value, so a credential the user granted for one file cannot write another file, or other bytes to the same one.
@@ -21,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import getpass
 import hashlib
 import json
 import os
@@ -30,12 +38,24 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.log import emit
+from lab_commons.storage import Storage
+from lab_commons.storage import declared as storage_declared
 
 from dev_lab.ops.config import OpsConfig
+from dev_lab.ops.consent.client import verify_held
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.served import credential_files
 
-__all__ = ['ACTION', 'SecretRefused', 'add_parser', 'declared', 'place', 'request', 'subject']
+__all__ = [
+    'ACTION',
+    'SecretRefused',
+    'add_parser',
+    'declared',
+    'place',
+    'request',
+    'subject',
+    'workstation_declared',
+]
 
 ACTION: Final = 'ops.secret.place'
 
@@ -77,21 +97,38 @@ def declared(config: OpsConfig) -> dict[str, str]:
     return owners
 
 
+def workstation_declared(storage: Storage | None = None, *, user: str | None = None) -> dict[str, str]:
+    """The reached storage remotes' ``credentials_file``s, each owned by *user* (default: the caller)."""
+    found = storage_declared() if storage is None else storage
+    owner = getpass.getuser() if user is None else user
+    return {str(remote.credentials_file): owner for remote in found.reach if remote.credentials_file is not None}
+
+
+def _same(path: str, owners: Mapping[str, str]) -> str | None:
+    """The declared key *path* names, compared after ``~`` expansion; None when it names none."""
+    wanted = Path(path).expanduser()
+    return next((key for key in owners if Path(key).expanduser() == wanted), None)
+
+
 def place(
-    config: OpsConfig, path: str, content: bytes, *, redeem: Redeem, credential: Mapping[str, Any],
-    chown: Chown, root: Path = Path('/'),
+    owners: Mapping[str, str], source: str, path: str, content: bytes, *, redeem: Redeem,
+    credential: Mapping[str, Any], chown: Chown, root: Path | None = None,
 ) -> str:  # fmt: skip
     """Write *content* at the declared *path*, owned by its declared reader, mode 0600; what it did, value-free.
+
+    *owners* is the declared files of *source* (:func:`declared` of an ops config, :func:`workstation_declared` of
+    a workstation); *root* defaults to the path's own anchor.
 
     Raises:
         SecretRefused: the path is not declared, the content is empty, or the credential does not consent to exactly
             this path and content.
 
     """
-    owners = declared(config)
-    if path not in owners:
-        msg = f'{path} is not a secret file {config.path} declares; declared: {sorted(owners) or "none"}'
+    key = _same(path, owners)
+    if key is None:
+        msg = f'{path} is not a secret file {source} declares; declared: {sorted(owners) or "none"}'
         raise SecretRefused(msg)
+    path = key  # the declared spelling is what the consent subject names
     if not content.strip():
         msg = f'no content on stdin for {path}: pipe the secret in, never pass it as an argument'
         raise SecretRefused(msg)
@@ -100,7 +137,9 @@ def place(
     except ConsentRefused as refused:
         msg = f'{path}: {refused}; grant {json.dumps(request(path, content))} and pass its credential'
         raise SecretRefused(msg) from refused
-    target = root / Path(path).relative_to(Path(path).anchor)
+    local = Path(path).expanduser()
+    root = Path(local.anchor) if root is None else root
+    target = root / local.relative_to(local.anchor)
     target.parent.mkdir(parents=True, exist_ok=True)
     fresh = target.with_name(f'.{target.name}.placing')
     with contextlib.suppress(FileNotFoundError):
@@ -109,13 +148,13 @@ def place(
     with os.fdopen(handle, 'wb') as out:
         out.write(content)
     try:
-        chown(fresh, owners[path], None)
+        chown(fresh, owners[key], None)
         fresh.replace(target)
     finally:
         with contextlib.suppress(FileNotFoundError):
             fresh.unlink()
     digest = hashlib.sha256(content).hexdigest()[:12]
-    return f'[ops secret] placed {path} (sha256 {digest}), owner {owners[path]}, mode 0600'
+    return f'[ops secret] placed {path} (sha256 {digest}), owner {owners[key]}, mode 0600'
 
 
 def add_parser(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -129,13 +168,38 @@ def add_parser(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     )
 
 
+def _own(_path: Path, user: str | None, _group: str | None) -> None:
+    """A workstation's file is the caller's own: nothing to change; another declared owner is refused."""
+    if user not in {None, getpass.getuser()}:
+        msg = f"a workstation places only its own user's files, not {user}'s"
+        raise SecretRefused(msg)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """``request --path P``: print the consent request for the content on stdin; no host config is needed."""
+    """``request --path P``: the consent request for stdin; ``place --path P --grant ID``: a workstation's placement."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops.secretplace', description=__doc__.splitlines()[0])
-    parser.add_argument('action', choices=('request',))
+    parser.add_argument('action', choices=('request', 'place'))
     parser.add_argument('--path', required=True)
+    parser.add_argument('--grant', default='', help='place: the held ops.secret.place credential id the user granted')
     args = parser.parse_args(argv)
-    emit(json.dumps(request(args.path, sys.stdin.buffer.read())))
+    content = sys.stdin.buffer.read()
+    if args.action == 'request':
+        emit(json.dumps(request(str(Path(args.path).expanduser()), content)))
+        return 0
+    if not args.grant:
+        emit('refused: place needs --grant <id> (python -m dev_lab.ops.consent grant <request.json> --code <code>)',
+             err=True)  # fmt: skip
+        return 2
+    try:
+        said = place(
+            workstation_declared(), 'this machine file ([storage.reach.<remote>] credentials_file)', args.path, content,
+            redeem=lambda _found, wanted: verify_held(args.grant, action=ACTION, subject=wanted), credential={},
+            chown=_own,
+        )  # fmt: skip
+    except (SecretRefused, ConsentRefused, OSError, ValueError) as refused:
+        emit(f'refused: {refused}', err=True)
+        return 2
+    emit(said)
     return 0
 
 

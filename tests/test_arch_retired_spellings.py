@@ -91,12 +91,29 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     'SERVED_KEY': (
-        'ciworkflows.ROLE_KEY / BY_KEY: a job renders where the family binds its role to its kind (role_jobs)',
+        'ciworkflowshape.ROLE_KEY / BY_KEY: a job renders where the family binds its role to its kind (role_jobs)',
         'toolchain D73 2026-11-18: one render rule by role replaces the judge-only served mark',
     ),
     '[tool.dev_lab.protection] producer': (
         "the family layer's [roles.<forge>] (dev_lab.dev.roles.retired_placement refuses the key by name)",
         'toolchain D73 2026-11-18: a repo declares no placement, migrated once',
+    ),
+    **dict.fromkeys(
+        (
+            'forgereview_pointer',
+            'actionsartifact',
+            'trusted_bundle',
+            'PREPARE_WORKFLOW',
+            'review_runs',
+            'RunsUnread',
+            'run_pulls_listed',
+            'forge review prepare',
+            'BUNDLE_CONTEXT',
+        ),
+        (
+            'reviewbundle.fetched + reviewbundle.prepare on the judge host (forgereview_bundle.fetch_from)',
+            'toolchain D77 2026-11-18: the judge fetches each head and prepares its own bundle; no CI job or pointer',
+        ),
     ),
     **dict.fromkeys(
         ('check-case-conflict', 'check-json', 'check-merge-conflict', 'check-toml'),

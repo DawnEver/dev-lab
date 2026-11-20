@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons import home as _home
+from lab_commons.config import section
 
 if TYPE_CHECKING:
     from dev_lab.dev.forge import Forge
@@ -34,6 +35,7 @@ __all__ = [
     'read_json',
     'record_own',
     'route',
+    'seconds',
 ]
 
 #: The label prefix that subscribes a thread to a task: ``task:<slug>``.
@@ -171,3 +173,19 @@ def route(thread: Thread, labels: tuple[str, ...], pr_tasks: dict[str, set[str]]
     """The tasks *thread* belongs to: its ``task:<slug>`` labels and the tasks whose sessions opened it."""
     named = {label[len(LABEL) :] for label in labels if label.startswith(LABEL) and len(label) > len(LABEL)}
     return named | pr_tasks.get(thread.key, set())
+
+
+def seconds(table_name: str, key: str, default: int, table: object = None) -> int:
+    """``[<table_name>] <key>`` of the machine file (or *table*) as positive whole seconds, else *default*.
+
+    Raises:
+        ValueError: the declared value is not a positive integer (named, with its key).
+
+    """
+    if table is None:
+        table = section(table_name)
+    value = table.get(key, default) if isinstance(table, dict) else default
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        msg = f'[{table_name}] {key} must be a positive integer of seconds, not {value!r}'
+        raise ValueError(msg)
+    return value

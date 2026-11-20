@@ -17,15 +17,14 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev import agenthooks
+from dev_lab.dev.familyroot import family_root, main_checkout
 from dev_lab.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.venvpath import checkout_interpreter, current_os_name, venv_interpreter
 from dev_lab.dev.worktreeplace import (
     WORKTREES_REL,
-    family_root,
     is_inside,
     listed_worktrees,
-    main_checkout,
     misplaced_worktrees,
     remedy,
 )

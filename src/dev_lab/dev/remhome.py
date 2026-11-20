@@ -106,10 +106,9 @@ def _forge_current(held: object) -> bool:
         return False
     return (
         isinstance(argv, list)
-        and len(argv) == 3  # noqa: PLR2004 -- interpreter, -m, module
+        and argv[1:] == ['-m', FORGE_MODULE]  # so exactly three items: the interpreter, -m, the module
         and isinstance(argv[0], str)
         and _expand(argv[0]) == Path(sys.executable)
-        and argv[1:] == ['-m', FORGE_MODULE]
     )
 
 

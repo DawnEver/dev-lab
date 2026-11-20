@@ -15,8 +15,8 @@ import pytest
 from _ops_fixtures import git
 from lab_commons.config import CONFIG_ENV
 
-from dev_lab.dev.ciworkflows import placed, render, role_jobs
-from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
+from dev_lab.dev.ciworkflows import placed, render
+from dev_lab.dev.ciworkflowshape import role_jobs
 from dev_lab.dev.rolecheck import CI_WORKFLOW, host_refusals, repo_refusals
 from dev_lab.dev.roles import (
     CI,
@@ -81,8 +81,6 @@ GITHUB: Final = Roles.of_kinds(tests=CI, review=HOST, merge=CI, promote=CI, prun
 #: No role on CI: a planted Gitea repo of the HPC.
 GITEA: Final = Roles.of_kinds(tests=HPC, review=HOST, merge=HPC, promote=HOST, prune=HPC)
 EVERY_CI: Final = Roles.of_kinds(**dict.fromkeys(ROLES, CI))
-#: dev-lab's own layer placing the judge's prepare on GitHub.
-PREPARE_LAYER: Final = '[tool.dev_lab.ci."review-prepare.yml"]\nforge = "github"\n'
 
 
 def _layer(**changed: object) -> dict[str, Any]:
@@ -219,24 +217,28 @@ def test_this_repo_declares_no_placement() -> None:
 # -- the render -------------------------------------------------------------------------------------------------------
 
 
-def test_a_repo_with_no_role_on_ci_renders_only_the_judges_prepare() -> None:
-    """The judge reviews a bundle the forge's CI prepares: the one job a Gitea HPC repo still renders."""
-    bare = OWN.replace(PREPARE_LAYER, '')
-    assert set(placed(bare, 'x', 'gitea', GITEA)) == {PREPARE_WORKFLOW}
-    no_judge = Roles.of_kinds(tests=HPC, review=HPC, merge=HPC, promote=HOST, prune=HPC)
-    assert placed(bare, 'x', 'gitea', no_judge) == {}
+def test_a_repo_with_no_role_on_ci_renders_no_workflow() -> None:
+    """D77: the judge prepares its own bundle, so a Gitea repo of the HPC and a judge renders nothing at all.
+
+    PLANTED CONTROL: the same Gitea repo with every role on the forge's CI renders, and GitHub's ``ci.yml`` does.
+    """
+    assert placed(OWN, 'x', 'gitea', GITEA) == {}
+    assert placed(OWN, 'x', 'gitea', EVERY_CI), 'PLANTED CONTROL: on the forge CI the same Gitea repo renders'
+    assert CI_WORKFLOW in placed(OWN, 'x', 'github', GITHUB)
+
+
+def test_a_retired_workflow_still_declared_is_refused_by_name() -> None:
+    """FORMATS-MIGRATE-ONCE: a repo still declaring the judge's old prepare workflow is told to delete it."""
+    stale = OWN + '\n[tool.dev_lab.ci."review-prepare.yml"]\nforge = "github"\n'
+    with pytest.raises(ValueError, match=r'retired workflow -- review-prepare.yml: the judge fetches each head'):
+        placed(stale, 'x', 'github', GITHUB)
+    assert 'review-prepare.yml' not in placed(OWN, 'x', 'github', GITHUB)  # PLANTED CONTROL: clean, it renders
 
 
 def test_every_rendered_workflow_carries_the_kinds_its_job_reads() -> None:
     rendered = placed(OWN, 'x', 'github', GITHUB)
     assert CI_WORKFLOW in rendered
     assert {flow['env'][ROLES_ENV] for _, flow in rendered.values()} == {GITHUB.env()}
-
-
-def test_the_judge_prepare_renders_only_where_review_is_bound_to_a_host() -> None:
-    assert PREPARE_WORKFLOW in placed(OWN, 'x', 'github', GITHUB)
-    bare = OWN.replace('[tool.dev_lab.ci."review-prepare.yml"]\nforge = "github"\n', '')
-    assert PREPARE_WORKFLOW not in placed(bare, 'x', 'github', EVERY_CI)
 
 
 def test_a_mix_of_executors_no_workflow_can_hold_is_refused() -> None:

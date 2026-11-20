@@ -109,9 +109,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'integration': forgeintegration.main,
     'merge': forgemergeready.main,
     'notices': forgenotice.main,
-    'review': lambda argv: (forgereview_bundle.main if argv[:1] in (['prepare'], ['judge']) else forgetakeover.main)(
-        argv
-    ),
+    'review': lambda argv: (forgereview_bundle.main if argv[:1] == ['judge'] else forgetakeover.main)(argv),
     'secrets': forgesecrets.main,
     'label': forgelabel.main,
     'headgate': forgeheadgate.main,

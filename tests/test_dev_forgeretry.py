@@ -18,9 +18,8 @@ from typing import Any
 import pytest
 
 from dev_lab.dev import forgesecrets
-from dev_lab.dev.actionsartifact import retrying
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgefailure import RATE_WAIT_CAP_S, Answer, ForgeCallFailed, pause
+from dev_lab.dev.forgefailure import RATE_WAIT_CAP_S, ForgeCallFailed, pause
 from dev_lab.dev.forgesecrets import Target
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Diagnosis, Disposition, classify, run_network_verb
@@ -158,32 +157,6 @@ def test_the_pause_reads_an_http_date_and_caps_the_wait() -> None:
     assert pause(limited, {'X-RateLimit-Reset': str(10 + int(RATE_WAIT_CAP_S) + 1)}, now=10.0) is None
     assert pause(limited, {'X-RateLimit-Reset': '5'}, now=10.0) == 0.0, 'a reset already past waits nothing'
     assert pause(Diagnosis.TRANSIENT, {'Retry-After': '999'}, now=0.0) == DEFAULT_BACKOFF_S
-
-
-def test_the_artifact_protocol_goes_through_the_same_door() -> None:
-    planted = [Answer(503, b''), Answer(200, b'{"ok": true}')]
-    sent: list[str] = []
-
-    def exchange(method: str, url: str, _body: bytes, _headers: object) -> Answer:
-        sent.append(f'{method} {url}')
-        return planted.pop(0)
-
-    slept: list[float] = []
-    assert retrying(exchange, sleep=slept.append)('POST', 'https://r.example/twirp/x', b'', {}) == b'{"ok": true}'
-    assert (len(sent), slept) == (2, [DEFAULT_BACKOFF_S])
-
-
-def test_a_refused_artifact_call_is_not_repeated_and_its_report_holds_no_signed_query() -> None:
-    sent: list[str] = []
-
-    def exchange(_method: str, url: str, _body: bytes, _headers: object) -> Answer:
-        sent.append(url)
-        return Answer(409, b'already exists')
-
-    with pytest.raises(ForgeCallFailed) as failed:
-        retrying(exchange, sleep=lambda _: None)('PUT', 'https://blob.example/a?sig=SECRET', b'', {})
-    assert len(sent) == 1
-    assert 'SECRET' not in str(failed.value)
 
 
 @pytest.mark.parametrize(

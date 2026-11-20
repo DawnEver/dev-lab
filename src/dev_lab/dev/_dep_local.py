@@ -30,8 +30,8 @@ from lab_commons.log import emit
 
 from dev_lab.dev._dep_components import _tree
 from dev_lab.dev._dep_network import CHILD_WALL_S
+from dev_lab.dev.familyroot import family_root
 from dev_lab.dev.netverb import run_network_verb
-from dev_lab.dev.worktreeplace import family_root
 
 __all__ = [
     'STAMP_FILE',

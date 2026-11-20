@@ -28,9 +28,8 @@ __all__ = ['HAZARD', 'REMEDY', 'RULE_ID', 'refuse_write']
 RULE_ID: Final = 'MACHINE-FILE-IS-RENDERED'
 HAZARD: Final = 'the machine file is a render: a hand edit is lost at the next render or changes a fact unrecorded.'
 REMEDY: Final = (
-    'A family or host key: change it in the config source (family.toml or hosts/<machine>.toml) through its pull '
-    'request, then `{python} -m dev_lab.dev.devhost render --write`. A local key ([repos], [user]): '
-    '`{python} -m dev_lab.dev.devhost local set <table>.<key> <value>` (or `local unset <table>.<key>`).'
+    'family/host key: change family.toml or hosts/<machine>.toml by PR, then `{python} -m dev_lab.dev.devhost render '
+    '--write`; local key: `{python} -m dev_lab.dev.devhost local set <table>.<key> <value>` (or local unset)'
 )
 
 

@@ -7,6 +7,10 @@ written into each repo by :mod:`dev_lab.dev.famfiles` beside the principles page
 GENERATED ONLY WHEN ABSENT OR IDENTICAL. An existing ``.claude/rem.json`` that differs is a repo's deliberate
 choice: :func:`dev_lab.dev.famfiles.render_agent_files` never clobbers it, reports it and exits non-zero.
 Whoever owns that choice reconciles it by hand.
+
+A CLOSED TASK PRUNES ITS BRANCHES (user ruling D25, 2026-11-17): rem's generic ``onClose`` argv runs after a
+close passes its refusals, with ``{slug}`` the closed task; here it is ``branchprune task``, which deletes each
+``pr/<slug>/*`` head losslessly and names every one it keeps. Its refusals never block the close; rem records them.
 """
 
 from __future__ import annotations
@@ -20,7 +24,10 @@ if TYPE_CHECKING:
 __all__ = ['CONFIG', 'REL', 'render']
 
 REL: Final = '.claude/rem.json'
-CONFIG: Final = {'backlog': 'issues'}
+CONFIG: Final = {
+    'backlog': 'issues',
+    'onClose': ['uv', 'run', '--no-sync', 'python', '-m', 'dev_lab.dev.branchprune', 'task', '{slug}'],
+}
 
 
 def render() -> str:

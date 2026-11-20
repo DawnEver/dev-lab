@@ -424,8 +424,8 @@ def test_a_uv_pin_below_the_newest_release_is_stale_refreshable_and_pinning_move
     found = stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8')
     assert found == (f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.13.8',)
     assert refreshable(found[0])
-    pin_uv(tmp_path, '0.13.8')
-    assert pin.read_text(encoding='utf-8') == '# why\nversion = "0.13.8"\n'
+    pin_uv(tmp_path, '0.13.8', {'linux-amd64': 'd' * 64})
+    assert pin.read_text(encoding='utf-8') == f'# why\nversion = "0.13.8"\n\n[sha256]\nlinux-amd64 = "{"d" * 64}"\n'
     assert uv_version(tmp_path) == '0.13.8'
     assert stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8') == ()
 
@@ -436,9 +436,16 @@ def test_a_uv_pin_below_the_newest_release_is_stale_refreshable_and_pinning_move
     assert stale(tmp_path / 'none', resolve=fresh, uv=unread) == ()
 
 
-def test_the_uv_pin_is_raised_to_the_newest_release_of_2026_11_05() -> None:
-    """The first freshening, by hand: 0.13.5 -> 0.13.7 (the newest release on 2026-11-05)."""
-    assert uv_version() == '0.13.7'
+def test_the_uv_pin_never_falls_below_the_first_freshening() -> None:
+    """The first freshening, by hand, raised 0.13.5 to 0.13.7 (the newest release on 2026-11-05).
+
+    Since then every relock keeps the pin at the newest release (2638a1f5), so the pin is a FLOOR here, never an
+    equality: an exact value would go red on the next relock while nothing is wrong. PLANTED CONTROL: the pre-2026-11-05
+    pin sits below that floor.
+    """
+    floor = (0, 13, 7)
+    assert tuple(int(part) for part in uv_version().split('.')) >= floor
+    assert floor > (0, 13, 5)
 
 
 @pytest.mark.parametrize('locked', [False, True])

@@ -57,7 +57,10 @@ def _refusal(pull: PullRequest, branch: str, base: str) -> str:
     return (
         f'{RULE}: {branch} is the head of PR #{pull.number} into {base}, which the forge closed unmerged, and no open '
         f'PR has it; this push would reach no integration branch. Open a new PR from it (`python -m dev_lab.dev.forge '
-        f'pr create --head {branch} --base {base} --title ...`), or push the commits to a new branch name'
+        f'pr create --head {branch} --base {base} --title ...`), or push the commits to a new branch name. When the '
+        f'integrator ABSORBED it (`git merge-base --is-ancestor {branch} origin/{base}` succeeds), the next feature '
+        f'is a fresh head: `git branch -m {branch} <pr/task/next-feature>`, push that, then `forge pr create` it '
+        f'(docs-src/dev/integration.md#an-absorbed-pr-continues-on-a-fresh-head)'
     )
 
 

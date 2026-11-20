@@ -24,12 +24,10 @@ from dev_lab.dev._forgebackends import (
     require_producer,
 )
 from dev_lab.dev._protect_gitea import body as gitea_body
-from dev_lab.dev.ciworkflows import placed
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecontexts import JUDGE_CHECK, MERGE_READY_CONTEXT, REVIEW_CONTEXT
 from dev_lab.dev.forgeprotect import INTEGRATION, TRUNK, required_contexts, targets
 from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 from dev_lab.dev.roles import CI, HOST
 
 JUDGE_LOGIN = '[tool.dev_lab.review]\njudge_login = "judge"\n'
@@ -51,14 +49,10 @@ def test_github_wires_no_serve_host_and_gitea_every_producer() -> None:
 def test_a_github_repo_s_gate_names_only_actions_produced_contexts_judge_or_not(
     review: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The judge host still reviews (review-prepare.yml renders), but no required context or approval waits on it.
-
-    PLANTED CONTROL: the repo whose review is bound to a judge renders its prepare workflow; one on CI does not.
-    """
+    """The judge host still reviews (it prepares its own bundle, D77); no required context or approval waits on it."""
     roles = CI_REPO if review else EVERY_CI
     carry(monkeypatch, roles)
     text = GITHUB_TEXT + review
-    assert (PREPARE_WORKFLOW in placed(text, 'p', 'github', roles)) is bool(review)
     contexts = required_contexts(text, 'p', HUB)
     assert contexts[INTEGRATION] == (MERGE_READY_CONTEXT,)
     assert all(JUDGE_CHECK not in one and REVIEW_CONTEXT not in one for one in contexts.values())

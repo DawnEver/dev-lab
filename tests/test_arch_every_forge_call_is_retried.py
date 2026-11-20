@@ -1,8 +1,8 @@
 """EVERY FORGE CALL RETRIES: no HTTP exchange opens outside the one retrying loop, unless named here with its reason.
 
 The loop is :func:`dev_lab.dev.forgefailure.retried` (transient -> retry with backoff, rate limit -> wait, refused
-credential -> stop with the named remedy); :class:`dev_lab.dev.forgework.Client` and
-:func:`dev_lab.dev.actionsartifact.retrying` run every exchange through it. INCIDENT 2026-11-12: the review job's
+credential -> stop with the named remedy); :class:`dev_lab.dev.forgework.Client` runs every
+exchange through it. INCIDENT 2026-11-12: the review job's
 first step (``reviewcode``) called the forge raw, once, and swallowed every failure -- a refused job token included;
 ``ops.giteaadmin`` asked the host's Gitea with no retry, and the review workflow's inline fetch did the same.
 
@@ -27,8 +27,6 @@ OPENS_A_CONNECTION: Final[dict[str, str]] = {
     'table declares), its bytes refused unless their sha256 matches the pin',
     'src/dev_lab/dev/forge.py': 'forge_transport: the connection every forgework.Client exchange opens inside '
     'forgefailure.retried',
-    'src/dev_lab/dev/actionsartifact.py': '_urllib_once: the exchange actionsartifact.retrying runs through '
-    'forgefailure.retried',
     'src/dev_lab/ops/giteaadmin.py': '_exchange: the exchange local_api runs through forgefailure.retried',
     'src/dev_lab/dev/reviewcode.py': 'stdlib only (fetched alone before any install): forge_call is the bare twin '
     'of forgefailure.retried, every decision pinned by test_the_bare_loop_decides_as_the_family_loop_does',
@@ -40,8 +38,9 @@ OPENS_A_CONNECTION: Final[dict[str, str]] = {
     'src/dev_lab/supervise/transport.py': 'alert webhooks, not a forge',
 }
 
-#: The openers the scan finds: MEASURED 2026-11-12 at 8 (every row above); a floor refuses an unread corpus.
-OPENER_FLOOR: Final = 8
+#: The openers the scan finds: MEASURED 2026-11-12 at 8, 7 since D77 deleted the Actions artifact client (each row above
+#: is one); a floor refuses an unread corpus.
+OPENER_FLOOR: Final = 7
 
 _CONNECTIONS: Final = frozenset({'HTTPConnection', 'HTTPSConnection'})
 

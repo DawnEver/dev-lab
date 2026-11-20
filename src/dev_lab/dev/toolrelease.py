@@ -28,6 +28,7 @@ import hashlib
 import os
 import platform
 import shutil
+import tarfile
 import tempfile
 import urllib.error
 import urllib.request
@@ -51,6 +52,7 @@ __all__ = [
     'UnsupportedPlatform',
     'door',
     'install',
+    'install_release',
     'main',
     'platform_key',
     'request',
@@ -209,7 +211,31 @@ def install(
     fetch: Callable[[str, Path], None] = _download,
 ) -> Path:
     """Download *name*'s pinned archive for *key*, verify its sha256, and place its executable in *directory*."""
-    release = RELEASES[name]
+    return install_release(RELEASES[name], directory=directory, key=key, fetch=fetch)
+
+
+def _member(archive: Path, member: str) -> bytes:
+    """The one declared *member* of a ``.zip`` or ``.tar.gz`` *archive*; no other path is ever read or written."""
+    if archive.name.endswith('.tar.gz'):
+        with tarfile.open(archive, 'r:gz') as bundle:
+            found = bundle.extractfile(member)
+            if found is None:
+                msg = f'{archive.name} carries no file {member}'
+                raise KeyError(msg)
+            return found.read()
+    with zipfile.ZipFile(archive) as bundle:
+        return bundle.read(member)
+
+
+def install_release(
+    release: Release,
+    *,
+    directory: Path | None = None,
+    key: str | None = None,
+    fetch: Callable[[str, Path], None] = _download,
+) -> Path:
+    """Download *release*'s archive for *key*, verify its sha256, and place its executable in *directory*."""
+    name = release.name
     where = key or platform_key()
     if where not in release.assets:
         msg = f'{name} {release.version} publishes no archive for {where} (it has: {", ".join(sorted(release.assets))})'
@@ -225,9 +251,9 @@ def install(
         if digest != pinned:
             msg = f'{asset} has sha256 {digest}, not the pinned {pinned}; the download was discarded'
             raise ChecksumMismatch(msg)
-        member = release.member.format(stem=asset.removesuffix('.zip')) + ('.exe' if windows else '')
-        with zipfile.ZipFile(archive) as bundle:
-            body = bundle.read(member)
+        stem = asset.removesuffix('.zip').removesuffix('.tar.gz')
+        member = release.member.format(stem=stem) + ('.exe' if windows else '')
+        body = _member(archive, member)
         target.parent.mkdir(parents=True, exist_ok=True)
         staged = target.with_name(f'{target.name}.{TEMP_PREFIX}new')
         staged.write_bytes(body)
@@ -255,7 +281,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             emit(f'would install {args.tool} {release.version} ({platform_key()}) into {tool_dir()}')
             return 0
         emit(f'installed {args.tool} {release.version}: {install(args.tool)}')
-    except (ToolAbsent, UnsupportedPlatform, ChecksumMismatch, OSError, zipfile.BadZipFile, KeyError) as why:
+    except (
+        ToolAbsent,
+        UnsupportedPlatform,
+        ChecksumMismatch,
+        OSError,
+        zipfile.BadZipFile,
+        tarfile.TarError,
+        KeyError,
+    ) as why:
         emit(f'{args.tool}: refused -- {why}', err=True)
         return 2
     return 0

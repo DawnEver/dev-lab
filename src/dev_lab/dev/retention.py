@@ -48,6 +48,7 @@ from lab_commons.hpc.records import kept_text
 from lab_commons.log import emit
 
 from dev_lab.dev.diskusage import Usage, files_first, measure, pressure_text, read_usage, remove_tree
+from dev_lab.dev.familyroot import main_checkout
 from dev_lab.dev.forgerunstate import directory as run_files
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.retentionplan import (
@@ -63,7 +64,6 @@ from dev_lab.dev.retentionplan import (
     workstation_plan,
 )
 from dev_lab.dev.servelock import held
-from dev_lab.dev.worktreeplace import main_checkout
 
 __all__ = ['EVENT', 'Freed', 'apply', 'main', 'serve_pass', 'summary']
 

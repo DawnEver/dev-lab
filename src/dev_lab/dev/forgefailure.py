@@ -15,7 +15,7 @@ wait the forge names (``Retry-After``, else ``X-RateLimit-Reset``), and reported
 that wait is past :data:`RATE_WAIT_CAP_S` -- an attempt before the reset is refused by construction.
 
 :func:`retried` IS THE ONE LOOP every forge HTTP exchange runs through: the client's JSON calls and raw reads
-(:class:`~dev_lab.dev.forgework.Client`) and the Actions artifact protocol (:mod:`dev_lab.dev.actionsartifact`).
+(:class:`~dev_lab.dev.forgework.Client`).
 :class:`ForgeCallFailed` is what every caller of a forge verb catches.
 """
 

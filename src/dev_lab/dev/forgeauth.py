@@ -54,6 +54,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import forgeverdict
 from dev_lab.dev._forgebackends import GITHUB_HOST
+from dev_lab.dev.familyroot import family_root
 from dev_lab.dev.forge import (
     AUTH_REFUSED,
     Forge,
@@ -72,7 +73,6 @@ from dev_lab.dev.forgekeyfile import USAGE, digest, export_keys, import_keys
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.netverb import Diagnosis
 from dev_lab.dev.venvpath import running_interpreter
-from dev_lab.dev.worktreeplace import family_root
 
 __all__ = [
     'TICK_SCOPES',

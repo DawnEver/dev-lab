@@ -42,6 +42,7 @@ __all__ = [
     'LOCAL_TABLE',
     'REMEDY',
     'RULE_ID',
+    'SET_DOOR',
     'census',
     'clone_refusal',
     'declaration',
@@ -62,7 +63,7 @@ REMEDY: Final = (
     '.claude/worktrees/<slug> origin/<branch>). Its path is wrong? '
     '{python} -m dev_lab.dev.devhost local set repos.<name> <absolute path>.'
 )
-_SET_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost local set {LOCAL_TABLE}.<name> <absolute path>'
+SET_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost local set {LOCAL_TABLE}.<name> <absolute path>'
 _UNSET_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost local unset {LOCAL_TABLE}.'
 _URL: Final = re.compile(r'(?:[a-z][a-z0-9+.-]*://|[\w.-]+@[\w.-]+:)[^\s"\';&|()]+', re.IGNORECASE)
 
@@ -99,7 +100,7 @@ def census(live: Mapping[str, Any]) -> list[str]:
     if not family:
         return []
     found = [
-        f'family repo {name} has no [{LOCAL_TABLE}] path: set its checkout with {_SET_DOOR}, or clone '
+        f'family repo {name} has no [{LOCAL_TABLE}] path: set its checkout with {SET_DOOR}, or clone '
         f'{family[name].get("remote", "<remote>")} at {family[name].get("branch", "<branch>")} first'
         for name in sorted(set(family) - set(local))
     ]

@@ -172,11 +172,6 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/continue.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
-        _g(
-            '.github/workflows/review-prepare.yml',
-            'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]',
-            CIWORKFLOWS,
-        ),
         _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
         ProjectFile(
             'docs-src/dev/index.md',

@@ -48,7 +48,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import platform
 import tomllib
 from collections.abc import Mapping
@@ -61,13 +60,14 @@ from lab_commons.log import emit
 
 from dev_lab.dev import accounthost, devprofile, familyrepos, tomlleaves, vendordetect
 from dev_lab.dev._machinefile import dumps, merged, render_value
+from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'LOCAL_DOOR', 'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'drift',
-    'host_file', 'local_set', 'main', 'notice', 'render', 'replace_backed_up',
+    'host_file', 'local_set', 'main', 'notice', 'render',
 ]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
@@ -148,7 +148,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     layered = _merge(layered, accounthost.derived(host, family) if accounthost.is_account(parsed) else {})
     if not accounthost.is_account(parsed):
         dev = declared(host_file, family_file)
-        layered = _merge(layered, devprofile.bridge_tables(dev))
+        layered = _merge(layered, devprofile.bridge_tables(dev, live))
         layered = _merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
     if channels := parsed.get('dev', {}).get('channels'):
         layered = _merge(layered, {CHANNELS_TABLE: {'channels': channels}})
@@ -258,18 +258,6 @@ RENDER_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost render --w
 LOCAL_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost local set <table>.<key> <value>'
 
 
-def replace_backed_up(path: Path, text: str, backups: Path) -> Path:
-    """Replace *path* with *text* atomically, its previous content first copied into *backups*; the copy's path."""
-    backups.mkdir(parents=True, exist_ok=True)
-    backup = backups / f'{path.name}.{datetime.now(UTC):%Y%m%dT%H%M%SZ}'
-    if path.is_file():
-        backup.write_bytes(path.read_bytes())
-    staged = path.with_name(f'{path.name}.{os.getpid()}.tmp')
-    staged.write_text(text, encoding='utf-8')
-    staged.replace(path)
-    return backup
-
-
 def _source(clone: Path | None, own: Mapping[str, Any]) -> Path | None:
     return clone or (Path(own['source']) if own.get('source') else None)
 
@@ -285,7 +273,11 @@ def _drift(path: Path, live: Mapping[str, Any], clone: Path | None) -> int:
 
 def _detect(source: Path | None) -> int:
     if source is None:
-        emit('refused: detect needs --from (no [devhost] in the machine file)', err=True)
+        emit(
+            "refused: detect needs --from <the config source's checkout> (no [devhost] in the machine file): "
+            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
+            err=True,
+        )
         return 2
     homes = vendordetect.detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
     for name, home in homes.items():
@@ -309,7 +301,11 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
     own = live.get(OWN_TABLE, {})
     host, clone = args.host or own.get('host') or platform.node(), _source(args.clone, own)
     if not host or clone is None:
-        emit('refused: render needs --from, the config-source clone (no [devhost] in the machine file)', err=True)
+        emit(
+            "refused: render needs --from <the config source's checkout> (no [devhost] in the machine file): "
+            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
+            err=True,
+        )
         return 2
     try:
         text = render(clone, host, live)

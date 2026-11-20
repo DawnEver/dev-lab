@@ -168,8 +168,8 @@ the merge audit, the messages, not a draft. The merge decision (`reviewturn.revi
 - only the review missing: `tests/review` is `pending` `due: ...`, and the review runs. GitHub: `ci.yml`'s
   `merge-ready` job and `merge-tick.yml` read `; review due` in the decision's line and start their `review` job
   (`forge review run --pr N` / `--due`, which also resumes pending batches); the next tick merges. Gitea: the
-  decision applies the PR label `review-due`, whose `pull_request_target` `labeled` event starts `review.yml` (and a
-  judge repo's prepare). Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision
+  decision applies the PR label `review-due`, whose `pull_request_target` `labeled` event starts `review.yml` (a judge
+  repo starts nothing: the judge fetches and prepares the head itself, D77). Gitea starts no workflow for its Actions user's event, so inside `merge.yml` the decision
   only says the review is due and the serve's tick (its own login) asks;
 - `forgereview.review_pull` reviews nothing whose latest `tests/review` is absent or `waits`, whoever started it (a
   push, a hand-added label, a serve tick); the judge (review bound to a host) judges only a head called due.
@@ -341,6 +341,20 @@ integration branch after `merges_only_since` that is not a two-parent merge with
 whose merge audit passes.
 
 The CPU/box seat stays a RESOURCE lock; it decides no ownership.
+
+## An absorbed PR continues on a fresh head
+
+A long task is one session and a series of short `pr/<task>/<feature>` heads, each landed in turn (#674). When the
+integrator composes a task PR into the integration branch it may close that PR unmerged and delete its remote
+branch; a further push onto the old head is then refused by NO-PUSH-ONTO-A-CLOSED-PR, and `forge pr create` on it
+answers 404. The cycle that keeps PR-HEAD-IS-CURRENT and the task gate:
+
+1. `git merge-base --is-ancestor <old head> origin/<integration>` -- the work landed (else open a new PR from it).
+2. `git branch -m pr/<task>/<old> pr/<task>/<next-feature>` -- the next feature is a fresh head.
+3. `sh scripts/hooks/with-retry.sh push -u origin pr/<task>/<next-feature>`.
+4. `python -m dev_lab.dev.forge pr create --head pr/<task>/<next-feature> --base <integration> --title ...`.
+
+The NO-PUSH-ONTO-A-CLOSED-PR refusal names steps 1 and 2 (`dev_lab.dev.closedpush`).
 
 ## Child branches sync from integration
 
