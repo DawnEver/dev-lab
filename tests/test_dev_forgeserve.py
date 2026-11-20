@@ -1431,6 +1431,22 @@ def test_a_cluster_host_publishes_its_card_before_each_run_it_advances(monkeypat
     assert sorted(report.in_flight) == shas
 
 
+def test_a_touched_run_sorts_last_even_when_the_clock_has_not_moved(monkeypatch, tmp_path: Path) -> None:
+    """A coarse filesystem clock never lets a run just reached sort first again.
+
+    CI 2026-11-20 (Linux): two touches inside one mtime tick got EQUAL stamps, the name broke the tie, and the
+    second slow tick restarted at the run the first had reached. PLANTED CONTROL: untouched, the runs keep their
+    start order.
+    """
+    shas = _runs_on_disk(monkeypatch, tmp_path, 3)
+    assert [run.sha for run in forgerunstate.live('https://f/o/r.git')] == shas, 'PLANTED: start order'
+    frozen = forgerunstate.time.time_ns()
+    monkeypatch.setattr(forgerunstate.time, 'time_ns', lambda: frozen)
+    for run in forgerunstate.live('https://f/o/r.git')[:2]:
+        forgerunstate.touch(run)
+    assert [run.sha for run in forgerunstate.live('https://f/o/r.git')] == [shas[2], shas[0], shas[1]]
+
+
 def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(monkeypatch, tmp_path: Path) -> None:
     """A tick is bounded: once its period is spent it advances no further run; the rest stay in flight.
 
