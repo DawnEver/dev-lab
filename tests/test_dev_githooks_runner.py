@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _venv_fake import linked_env
 
 from dev_lab.dev import venvpointer, walls
 from dev_lab.dev.githooks import main as githooks_main
@@ -526,22 +527,20 @@ def test_the_running_interpreter_is_borrowed_unless_it_is_the_checkouts_own(repo
     assert not borrowed_interpreter(checkout), 'PLANTED CONTROL: the checkout whose own environment runs this'
 
 
-def test_only_the_environment_the_pointer_names_is_the_checkouts_own(
+def test_only_the_environment_venv_links_to_is_the_checkouts_own(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One rule names a checkout's environment (``venvpointer.current``): the retired ``.venv`` never is it."""
+    """One rule names a checkout's environment (``venvpointer.current``): ``.venv`` resolved."""
     root = tmp_path / 'main'
-    legacy, current = root / venvpointer.RETIRED_ALIAS, root / venvpointer.HOME / 'x'
-    legacy.mkdir(parents=True)
-    current.mkdir(parents=True)
-    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
-    monkeypatch.setattr(sys, 'prefix', str(legacy))
-    assert borrowed_interpreter(root), 'the pointer names .venvs/x: the retired directory is not current'
+    older = root / venvpointer.HOME / 'old'
+    older.mkdir(parents=True)
+    current = linked_env(root, 'x')
+    monkeypatch.setattr(sys, 'prefix', str(older))
+    assert borrowed_interpreter(root), '.venv links to .venvs/x: an older env is not current'
     monkeypatch.setattr(sys, 'prefix', str(current))
-    assert not borrowed_interpreter(root), 'PLANTED CONTROL: the named environment is the checkout own'
-    (root / venvpointer.POINTER).unlink()
-    monkeypatch.setattr(sys, 'prefix', str(legacy))
-    assert borrowed_interpreter(root), 'no pointer: nothing is current, the retired directory least of all'
+    assert not borrowed_interpreter(root), 'PLANTED CONTROL: the linked env is the checkout own'
+    monkeypatch.setattr(sys, 'prefix', str(root / venvpointer.POINTER))
+    assert not borrowed_interpreter(root), 'through the link itself: the same env'
 
 
 @pytest.mark.parametrize(

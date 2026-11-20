@@ -27,7 +27,7 @@ from dev_lab.dev.lockcheck import (
 )
 from dev_lab.dev.uvfollow import follow
 from dev_lab.dev.venvpath import VENV_LAYOUTS
-from dev_lab.dev.venvpointer import HOME, current
+from dev_lab.dev.venvpointer import current
 
 
 def _checkout(cwd: Path, git_binary: str) -> tuple[Path, Path] | None:
@@ -110,7 +110,7 @@ class ForeignEnvRefused(ValueError):
 
 
 def own_interpreter(root: Path, python: str) -> str:
-    """*python* when it is a file inside *root*'s own ``.venvs/``; else refuse naming it and the door.
+    """*python* when it is a file inside *root*'s own ``.venvs/``/``.venv``; else refuse naming both and the door.
 
     SYNC-OWNS-ITS-ENV (2026-11-17): ``forge sync`` in a checkout with no venv fell back to the interpreter that
     invoked it -- another checkout's venv -- and ran ``uv sync --python <that>``. A sync may strip or replace an
@@ -118,11 +118,11 @@ def own_interpreter(root: Path, python: str) -> str:
     """
     candidate = Path(python) if Path(python).is_file() else Path(sys.executable)
     resolved = candidate.absolute()
-    owned = tuple(base / name for base in {root.absolute(), root.resolve()} for name in (HOME,))
+    owned = tuple(base / name for base in {root.absolute(), root.resolve()} for name in ('.venvs', '.venv'))
     if Path(python).is_file() and any(resolved.is_relative_to(home) for home in owned):
         return python
     msg = (
-        f'SYNC-OWNS-ITS-ENV: the interpreter {candidate} is not inside the own .venvs/ of the checkout '
+        f'SYNC-OWNS-ITS-ENV: the interpreter {candidate} is not inside the own .venvs/ or .venv of the checkout '
         f'{root}, and a sync never runs under a foreign environment.\n'
         f'{sys.executable} -m dev_lab.dev.dep --bootstrap {root}'
     )

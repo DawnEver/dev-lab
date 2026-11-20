@@ -1,85 +1,89 @@
-"""WHICH ENVIRONMENT A NEW LAUNCH TAKES: the one reader of ``ROOT/.venv-current`` (dev-lab #632).
+"""WHICH ENVIRONMENT A NEW LAUNCH TAKES: the one reader of ``ROOT/.venv`` (dev-lab #632; user ruling 2026-11-20).
+
+``.venv`` IS THE POINTER -- the name every tool (uv, VS Code, IDEs, docs) already expects. It is a link (a Windows
+junction, a POSIX symlink) to the published environment ``ROOT/.venvs/<name>``, swapped by
+:func:`dev_lab.dev.venvcurrent.publish`; a plain ``.venv`` directory (a checkout never published) is its own
+environment. The retired pointer file ``.venv-current`` (:data:`RETIRED_POINTER`) is removed once by the migration.
 
 THE RULE is authored once, in the shipped ``venv_resolver.js`` (dev-lab #641): every JS door requires it, its
 ``--shell`` rendering is the block ``githooks/with-venv.sh`` carries (:func:`shell_function` reads it there for the
 git hook shims and the remote deploy lines), and this module is its Python twin -- tests hold all three to one answer.
-Dependency-free so :mod:`dev_lab.dev.venvpath` can resolve through it; :mod:`dev_lab.dev.venvcurrent` builds,
-publishes and reclaims.
+Each answers the RESOLVED environment, so a launch holds the published directory, never the link, and a later swap
+leaves it running where it started. Dependency-free so :mod:`dev_lab.dev.venvpath` can resolve through it.
 """
 
 from __future__ import annotations
 
+import os
 import sys
-import time
 from pathlib import Path
 from typing import Final
 
 __all__ = [
     'HOME',
     'POINTER',
-    'READ_TRIES',
-    'RETIRED_ALIAS',
+    'RETIRED_POINTER',
     'current',
     'current_interpreter',
     'env_checkout',
+    'is_link',
     'named',
     'shell_function',
     'shell_interpreter',
     'superseded',
 ]
 
-#: The one file whose content names the current environment (a directory name under :data:`HOME`).
-POINTER: Final = '.venv-current'
-#: Where every environment lives, side by side.
+#: THE POINTER: a link to the current environment, or (never published) the environment itself.
+POINTER: Final = '.venv'
+#: Where every published environment lives, side by side.
 HOME: Final = '.venvs'
-#: The retired spelling: once a junction to the current environment, before that the legacy layout's directory.
-#: Nothing reads it; :func:`dev_lab.dev.venvcurrent.retire_alias` removes it once, ``hpcaccount drift`` reports it.
-RETIRED_ALIAS: Final = '.venv'
-#: Windows refuses to open a file in the instant ``os.replace`` swaps it: the read is retried this often.
-READ_TRIES: Final = 50
+#: The retired pointer file (2026-11-16 .. 2026-11-20): the migration removes it once, the guard refuses its spelling.
+RETIRED_POINTER: Final = '.venv-current'
+
+
+def is_link(path: Path) -> bool:
+    """Whether *path* is a symlink or a Windows junction (not a plain directory)."""
+    return path.is_symlink() or os.path.isjunction(path)
 
 
 def named(root: Path) -> Path | None:
-    """The environment the pointer names, when the pointer exists and names a directory under :data:`HOME`."""
-    name = _read(Path(root) / POINTER)
-    if not name or name in {'.', '..'} or any(char in name for char in '/\\:'):
+    """The published environment :data:`POINTER` links to: a directory under :data:`HOME`; else ``None``."""
+    link = Path(root) / POINTER
+    if not is_link(link):
         return None
-    env = Path(root) / HOME / name
-    return env if env.is_dir() else None
-
-
-def _read(pointer: Path) -> str:
-    """The pointer's content, ``''`` when absent; a sharing violation mid-swap is retried, never read as absent."""
-    for _ in range(READ_TRIES):
-        try:
-            return pointer.read_text(encoding='utf-8').split('\n', 1)[0].strip()
-        except PermissionError:
-            time.sleep(0.01)
-        except OSError:
-            return ''
-    return ''
+    try:
+        env = link.resolve(strict=True)
+    except OSError:
+        return None
+    return env if env.parent.name == HOME and env.is_dir() else None
 
 
 def current(root: Path) -> Path:
-    """The environment a NEW launch in checkout *root* runs from: the one the pointer names.
+    """The environment a NEW launch in checkout *root* runs from: :data:`POINTER` resolved.
 
-    Pointing at nothing, the answer is the pointer itself: a file, so no interpreter resolves under it and every
-    miss names :data:`POINTER` as its cause (the door: ``dev_lab.dev.dep --bootstrap``).
+    A missing or dangling ``.venv`` answers ``ROOT/.venv`` itself, so every miss names it (the door:
+    ``dev_lab.dev.dep --bootstrap``).
     """
-    return named(root) or Path(root) / POINTER
+    link = Path(root) / POINTER
+    try:
+        return link.resolve(strict=True)
+    except OSError:
+        return link
 
 
 def env_checkout(prefix: str | Path) -> Path | None:
-    """The checkout whose environment *prefix* is (a ``ROOT/.venvs/<name>``), else ``None``."""
+    """The checkout whose environment *prefix* is (a ``ROOT/.venvs/<name>`` or a ``ROOT/.venv``), else ``None``."""
     prefix = Path(prefix)
-    return prefix.parent.parent if prefix.parent.name == HOME else None
+    if prefix.parent.name == HOME:
+        return prefix.parent.parent
+    return prefix.parent if prefix.name == POINTER else None
 
 
 def superseded(prefix: str | Path) -> bool:
     """Whether another environment than *prefix* (a checkout's ``.venvs/<name>`` or ``.venv``) is now current.
 
-    A legacy ``.venv`` directory is superseded once the pointer names another environment, so what runs from it
-    yields and the directory drains; ``.venv`` as the alias of the current environment is not.
+    A plain ``.venv`` directory is superseded once ``.venv`` links to a published environment, so what runs from it
+    yields and the directory drains; the environment ``.venv`` links to is not.
     """
     root = env_checkout(prefix)
     return root is not None and current(root).resolve() != Path(prefix).resolve()

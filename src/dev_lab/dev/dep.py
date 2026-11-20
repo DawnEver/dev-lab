@@ -485,9 +485,9 @@ def _run(
         emit(f'REFUSED: {exc}')
         return 1
     emit(result.render())
-    publish_built(root, prefix, live, ok=not result.returncode, census=census)
+    stale = publish_built(root, prefix, live, ok=not result.returncode, census=census)
     synced = syncing and not args.dry_run and not result.returncode
-    return result.returncode or (after_sync(root, python, run=run) if synced else 0)
+    return result.returncode or (after_sync(root, python, run=run) if synced else 0) or stale
 
 
 if __name__ == '__main__':

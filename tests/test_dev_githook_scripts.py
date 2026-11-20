@@ -97,9 +97,8 @@ def _plant_venv(root: Path, *, distributions: bool = True, pythonpath: Path | No
     The shim is what makes "which venv won" and "what the child received" readable at all. A real
     ``python -m venv`` would answer neither, and would cost a second of wall clock per arm.
     """
-    venv = root / '.venvs' / 'planted'
+    venv = root / '.venv'
     (venv / 'bin').mkdir(parents=True)
-    (root / '.venv-current').write_text('planted\n', encoding='utf-8')  # the one pointer names it
     if distributions:
         (venv / 'lib' / 'python3.12' / 'site-packages' / 'planted-1.0.dist-info').mkdir(parents=True)
     log = venv / 'calls.log'
@@ -317,7 +316,7 @@ def test_a_STUB_venv_is_not_an_environment(repo: Path) -> None:
     _plant_venv(repo, distributions=False, pythonpath=None)
     done = _run('with-venv', ['labtest_planted_tool'], cwd=repo, env={})
     assert done.returncode == 1
-    assert 'no populated environment named by' in done.stderr, done.stderr
+    assert 'no populated .venv under' in done.stderr, done.stderr
     assert 'missing TOOL' not in done.stderr, 'a placeholder venv must not be reported as a missing tool'
 
 

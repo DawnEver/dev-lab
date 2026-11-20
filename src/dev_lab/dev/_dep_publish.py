@@ -17,16 +17,22 @@ from dev_lab.dev.liverun import Census
 __all__ = ['publish_built']
 
 
-def publish_built(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census) -> None:
+def publish_built(root: Path, prefix: Path, live: Path, *, ok: bool, census: Census) -> int:
     """Publish the environment just built (or drop a failed build), then reclaim every one nothing runs from.
 
-    The pointer alone names the environment, so a published build is current.
+    Nonzero when the build cannot be published: a plain ``.venv`` directory a process still runs from
+    (:class:`~dev_lab.dev.venvcurrent.PublishRefused`).
     """
     if prefix == live or not ok:
         if prefix != live:
             venvcurrent.abandon(prefix)
-        return
+        return 0
     record(root, prefix)  # the trees this environment now holds its components at
-    emit(f'published {prefix}: {venvcurrent.publish(root, prefix)}')
+    try:
+        emit(f'published {prefix}: {venvcurrent.publish(root, prefix, census=census)}')
+    except venvcurrent.PublishRefused as refused:
+        emit(f'REFUSED: {refused}')
+        return 1
     for line in venvcurrent.reclaim(root, census=census, building_here=True):
         emit(line)
+    return 0

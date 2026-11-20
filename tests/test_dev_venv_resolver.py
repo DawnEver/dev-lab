@@ -1,8 +1,9 @@
 """ONE RESOLVER (dev-lab #641): the shipped JS rule, its rendered shell twin and the Python twin give one answer.
 
-PLANTED CONTROLS: the layouts include every way a pointer can fail to name an environment (absent, empty, a path,
-a dot name, a name with no directory), so a resolver that always answered ``.venv`` -- or always the pointer --
-disagrees; a watch from a superseded environment yields, one from the current one does not.
+``.venv`` is the pointer (user ruling 2026-11-20): a link to ``.venvs/<name>``, or a plain environment never
+published. PLANTED CONTROLS: the layouts include a missing ``.venv``, a dangling link and a plain directory, so a
+resolver that always answered the link path -- or always a ``.venvs`` entry -- disagrees; a watch from a superseded
+environment yields, one from the current one does not.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from _venv_fake import linked_env
+
 from dev_lab.dev import agent_guard, venvpointer
 from dev_lab.dev.jsrun import node_path
 from dev_lab.dev.venvpath import VENV_LAYOUTS
@@ -20,41 +23,32 @@ RESOLVER = Path(venvpointer.__file__).with_name('venv_resolver.js')
 SH = shutil.which('sh')
 TAIL = VENV_LAYOUTS[os.name][1:]
 
-#: (pointer content or None for no pointer, environment directories under .venvs/, also a legacy .venv?)
-LAYOUTS: tuple[tuple[str | None, tuple[str, ...], bool], ...] = (
-    (None, (), False),
-    (None, (), True),
-    (None, ('a',), True),
-    ('a', ('a',), False),
-    ('a', ('a',), True),
-    ('a\n', ('a', 'b'), True),
-    ('b\r\n', ('a', 'b'), True),
-    ('  b  \n', ('b',), False),
-    ('b\nextra\n', ('b', 'extra'), True),
-    ('', ('a',), True),
-    ('   \n', ('a',), True),
-    ('missing', ('a',), True),
-    ('missing', (), False),
-    ('.', ('a',), True),
-    ('..', ('a',), True),
-    ('a/b', ('a',), True),
-    ('a\\b', ('a',), True),
-    ('c:x', ('x',), True),
-    ('env-2026.11.16_1', ('env-2026.11.16_1', 'old'), True),
-    ('\nb', ('b',), True),
-)
 
-
-def _layout(root: Path, layout: tuple[str | None, tuple[str, ...], bool]) -> Path:
-    pointer, envs, legacy = layout
+def _missing(root: Path) -> None:
     root.mkdir(parents=True)
-    for name in envs:
-        (root / venvpointer.HOME / name).mkdir(parents=True)
-    if legacy:
-        (root / venvpointer.RETIRED_ALIAS).mkdir()  # planted: the rule never reads it
-    if pointer is not None:
-        (root / venvpointer.POINTER).write_bytes(pointer.encode('utf-8'))
-    return root
+
+
+def _plain(root: Path) -> None:
+    (root / venvpointer.POINTER).mkdir(parents=True)
+
+
+def _linked(root: Path) -> None:
+    (root / venvpointer.HOME / 'old').mkdir(parents=True)
+    linked_env(root, 'new')
+
+
+def _dangling(root: Path) -> None:
+    env = linked_env(root, 'gone')
+    env.rmdir()
+
+
+#: Each way a checkout can hold its pointer, and the environment the rule answers.
+LAYOUTS = {
+    'missing': (_missing, lambda root: root / venvpointer.POINTER),
+    'plain': (_plain, lambda root: root / venvpointer.POINTER),
+    'linked': (_linked, lambda root: root / venvpointer.HOME / 'new'),
+    'dangling': (_dangling, lambda root: root / venvpointer.POINTER),
+}
 
 
 def _run(argv: list[str]) -> str:
@@ -64,25 +58,30 @@ def _run(argv: list[str]) -> str:
 
 
 def _same(answer: str, expected: Path) -> bool:
-    return Path(answer).resolve() == expected.resolve()
+    return os.path.normcase(os.path.realpath(answer)) == os.path.normcase(os.path.realpath(expected))
 
 
-def test_there_are_twenty_distinct_layouts() -> None:
-    assert len(set(LAYOUTS)) == 20
+def _native(answer: str) -> str:
+    """A shell answer in this platform's spelling (git bash on Windows prints ``/c/...``)."""
+    if os.name == 'nt' and SH and answer.startswith('/'):
+        return _run([str(Path(SH).with_name('cygpath')), '-w', answer])
+    return answer
 
 
 def test_the_three_resolvers_agree_on_every_layout(tmp_path: Path) -> None:
     assert SH, 'the shell twin runs in a POSIX sh: every host the kit serves has one'
-    named = 0
-    for index, layout in enumerate(LAYOUTS):
-        root = _layout(tmp_path / f'r{index}', layout)
-        expected = venvpointer.current(root)
-        named += expected != root / venvpointer.POINTER
+    for name, (plant, expected_of) in LAYOUTS.items():
+        root = tmp_path / name
+        plant(root)
+        expected = expected_of(root)
+        assert _same(str(venvpointer.current(root)), expected), (name, venvpointer.current(root))
         js = _run([str(node_path()), str(RESOLVER), '--current', str(root)])
         sh = _run([str(SH), '-c', f'{venvpointer.shell_function()}\n_current_env "$1"', 'sh', root.as_posix()])
-        assert _same(js, expected), (layout, js, expected)
-        assert _same(sh, expected), (layout, sh, expected)
-    assert 0 < named < len(LAYOUTS), 'PLANTED CONTROL: the layouts exercise both answers'
+        assert _same(js, expected), (name, js, expected)
+        assert _same(_native(sh), expected), (name, sh, expected)
+    linked = tmp_path / 'linked'
+    assert venvpointer.named(linked) == (linked / venvpointer.HOME / 'new').resolve()
+    assert venvpointer.named(tmp_path / 'plain') is None, 'PLANTED CONTROL: a plain .venv is no published env'
 
 
 def test_the_shell_twin_in_with_venv_is_the_rendering_of_the_js_rule() -> None:
@@ -91,22 +90,12 @@ def test_the_shell_twin_in_with_venv_is_the_rendering_of_the_js_rule() -> None:
     assert '%' not in rendered, 'a crontab line embeds it, and cron reads % as a newline'
 
 
-def test_every_case_arm_of_the_shell_twin_opens_its_paren() -> None:
-    """Every arm is written ``(pattern)``: macOS bash 3.2 ends a ``$(...)`` at an arm's bare ``)``.
-
-    :func:`venvpointer.shell_interpreter` puts the twin INSIDE a command substitution, so a bare arm broke it there.
-    """
-    body = venvpointer.shell_function()
-    arms = body[body.index(' in ') + 4 : body.index('esac')].split(';;')
-    assert [arm.strip()[0] for arm in arms if arm.strip()] == ['(', '('], body
-
-
 def test_no_door_carries_its_own_pointer_reader() -> None:
     dev = RESOLVER.parent
     for door in (dev / 'agent_launcher.js', dev / 'agenthooks' / 'deny-commands.js'):
         text = door.read_text(encoding='utf-8')
         assert 'venv_resolver.js' in text, door
-        assert venvpointer.POINTER not in text, f'{door} reads the pointer itself'
+        assert 'realpath' not in text, f'{door} resolves the pointer itself'
 
 
 def test_the_installer_puts_the_resolver_beside_the_launcher_and_the_engine(tmp_path: Path) -> None:
@@ -116,11 +105,18 @@ def test_the_installer_puts_the_resolver_beside_the_launcher_and_the_engine(tmp_
 
 
 def test_a_watch_yields_only_an_environment_a_newer_one_superseded(tmp_path: Path) -> None:
-    root = _layout(tmp_path / 'root', ('new\n', ('old', 'new'), True))
+    root = tmp_path / 'root'
+    _linked(root)
     assert venvpointer.superseded(root / venvpointer.HOME / 'old')
     assert not venvpointer.superseded(root / venvpointer.HOME / 'new'), 'PLANTED CONTROL: the current env stays'
-    assert not venvpointer.superseded(root / venvpointer.RETIRED_ALIAS), 'the retired .venv is no checkout env'
+    assert not venvpointer.superseded(root / venvpointer.POINTER), '.venv itself is the current env'
     assert not venvpointer.superseded(tmp_path / 'python-install'), 'not a checkout env: never yields'
+
+
+def test_a_plain_venv_is_current_until_a_publish(tmp_path: Path) -> None:
+    root = tmp_path / 'plain'
+    _plain(root)
+    assert not venvpointer.superseded(root / venvpointer.POINTER), 'PLANTED CONTROL: never published, it is current'
 
 
 def _interpreter(env: Path) -> Path:
@@ -132,17 +128,15 @@ def _interpreter(env: Path) -> Path:
 
 def test_a_launch_from_an_older_environment_takes_the_current_one(tmp_path: Path) -> None:
     """The doors that start a child (a detached follow or reclaim, a bootstrap) re-resolve their own interpreter."""
-    root = _layout(tmp_path / 'root', ('x\n', ('old', 'x'), True))
-    old, new = _interpreter(root / venvpointer.HOME / 'old'), _interpreter(root / venvpointer.HOME / 'x')
-    assert Path(venvpointer.current_interpreter(old)) == new
-    assert venvpointer.current_interpreter(new) == str(new)
-    retired = _interpreter(root / venvpointer.RETIRED_ALIAS)
-    assert venvpointer.current_interpreter(retired) == str(retired), 'the retired .venv is no checkout env'
-    bare = _layout(tmp_path / 'bare', (None, ('old',), False))
+    root = tmp_path / 'root'
+    old = _interpreter(root / venvpointer.HOME / 'old')
+    new = _interpreter(linked_env(root, 'x'))
+    assert Path(venvpointer.current_interpreter(old)).resolve() == new.resolve()
+    assert Path(venvpointer.current_interpreter(new)).resolve() == new.resolve()
+    through = root / venvpointer.POINTER / Path(*TAIL)
+    assert Path(venvpointer.current_interpreter(through)).resolve() == new.resolve(), 'through the link: current'
+    bare = tmp_path / 'bare'
     held = _interpreter(bare / venvpointer.HOME / 'old')
-    assert venvpointer.current_interpreter(held) == str(held), 'PLANTED CONTROL: no pointer names a current one'
-    empty = _layout(tmp_path / 'empty', ('y\n', ('y', 'old'), False))
-    stays = _interpreter(empty / venvpointer.HOME / 'old')
-    assert venvpointer.current_interpreter(stays) == str(stays), 'a current env with no interpreter is not taken'
+    assert venvpointer.current_interpreter(held) == str(held), 'PLANTED CONTROL: no .venv: unchanged'
     outside = _interpreter(tmp_path / 'python-install')
     assert venvpointer.current_interpreter(outside) == str(outside), 'not a checkout env: unchanged'

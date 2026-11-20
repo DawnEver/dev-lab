@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -15,6 +14,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from lab_commons.census import Process, processes
 
 from dev_lab.dev import dep, venvcurrent, venvpointer
@@ -95,7 +95,12 @@ def test_an_env_being_built_is_not_reclaimed_and_a_failed_build_is_dropped(tmp_p
     assert not building.with_name(building.name + venvcurrent.BUILDING).exists()
 
 
-def test_a_reader_never_sees_a_partial_pointer(tmp_path) -> None:
+def test_a_reader_sees_the_old_env_or_the_new_one_and_on_windows_at_most_the_measured_gap(tmp_path) -> None:
+    """A reader sees the old env or the new one; on Windows, at most the measured gap.
+
+    POSIX swaps the symlink atomically; Windows replaces no directory atomically (module docstring), so a reader
+    there may find no ``.venv`` for the swap's few milliseconds -- and then names the bootstrap door.
+    """
     root = tmp_path / 'main'
     _project(root)
     names = ('a' * 40, 'b' * 40)
@@ -117,53 +122,46 @@ def test_a_reader_never_sees_a_partial_pointer(tmp_path) -> None:
     finally:
         stop.set()
         reader.join()
-    assert seen <= {*names, 'old'}, f'a partial or missing pointer was read: {seen - {*names, "old"}}'
+    allowed = {*names, 'old'} | ({None} if sys.platform == 'win32' else set())
+    assert seen <= allowed, f'a partial or missing pointer was read: {seen - allowed}'
     assert set(names) <= seen, 'PLANTED CONTROL: the reader saw both publications'
 
 
-def test_a_legacy_venv_directory_moves_aside_once_and_becomes_current_when_no_pointer_names_one(tmp_path) -> None:
+def test_a_plain_venv_moves_aside_on_publish_and_a_held_one_refuses_by_name(tmp_path) -> None:
     root = tmp_path / 'main'
-    legacy = root / venvpointer.RETIRED_ALIAS
-    venv.EnvBuilder(with_pip=False).create(legacy)
-    assert venvpointer.current(root) == root / venvpointer.POINTER, 'no pointer: nothing is current, .venv unread'
-    holder = Process(1, 0, str(legacy.joinpath(*TAIL)), 'python -m app run', 60.0, str(tmp_path))
-    assert 'kept' in venvcurrent.retire_alias(root, census=lambda: [holder]), 'PLANTED CONTROL: held, it stays'
-    assert legacy.is_dir()
-    assert venvcurrent.retire_alias(root, census=list).startswith('legacy')
-    assert not legacy.exists(), 'gone once'
-    adopted = venvpointer.named(root)
-    assert adopted is not None, 'no pointer named one: the moved directory is published'
-    assert adopted.joinpath(*TAIL).is_file()
-    assert venvcurrent.retire_alias(root, census=list) == '', 'once: nothing left to retire'
-
-
-def test_a_legacy_directory_beside_a_pointer_moves_aside_and_the_pointer_stays(tmp_path) -> None:
-    root = tmp_path / 'main'
+    plain = root / venvpointer.POINTER
+    venv.EnvBuilder(with_pip=False).create(plain)
+    assert venvpointer.current(root) == plain.resolve(), 'never published: the plain .venv is current'
     new = root / venvpointer.HOME / 'new'
     new.mkdir(parents=True)
-    venvcurrent.publish(root, new)
-    (root / venvpointer.RETIRED_ALIAS).mkdir()
-    assert venvcurrent.retire_alias(root, census=list).startswith('legacy')
-    assert venvpointer.named(root) == new, 'the pointer already ruled: it is unchanged'
+    holder = Process(1, 0, str(plain.joinpath(*TAIL)), 'python -m app run', 60.0, str(tmp_path))
+    with pytest.raises(venvcurrent.PublishRefused, match='stop them and re-run'):
+        venvcurrent.publish(root, new, census=lambda: [holder])
+    assert venvpointer.named(root) is None, 'PLANTED CONTROL: held, nothing was published'
+    assert venvcurrent.publish(root, new, census=list).endswith(str(new))
+    assert venvpointer.named(root) == new.resolve(), '.venv now links to the published env'
+    assert [p.name.startswith('legacy-') for p in (root / venvpointer.HOME).iterdir()].count(True) == 1
 
 
-def test_a_venv_link_is_removed_once_and_publish_writes_none(tmp_path) -> None:
+def test_the_retired_pointer_file_is_migrated_once(tmp_path) -> None:
     root = tmp_path / 'main'
-    new = root / venvpointer.HOME / 'new'
-    new.mkdir(parents=True)
-    assert venvcurrent.publish(root, new).endswith('-> new')
-    alias = root / venvpointer.RETIRED_ALIAS
-    assert not venvcurrent.holds_alias(root), 'publish writes no alias'
-    if sys.platform == 'win32':
-        cmd = shutil.which('cmd')
-        assert cmd is not None
-        subprocess.run([cmd, '/c', 'mklink', '/J', str(alias), str(new)], check=True, capture_output=True)
-    else:
-        alias.symlink_to(new, target_is_directory=True)
-    assert venvcurrent.holds_alias(root)
-    assert 'removed' in venvcurrent.retire_alias(root, census=list)
-    assert not venvcurrent.holds_alias(root)
-    assert new.is_dir(), 'PLANTED CONTROL: the environment the link named is untouched'
+    env = root / venvpointer.HOME / 'named'
+    env.mkdir(parents=True)
+    (root / venvpointer.RETIRED_POINTER).write_text('named\n', encoding='utf-8')
+    assert venvcurrent.pending_migration(root)
+    assert 'migrated' in venvcurrent.migrate(root, census=list)
+    assert venvpointer.named(root) == env.resolve(), '.venv links to the env the file named'
+    assert not venvcurrent.pending_migration(root), 'the file is gone'
+    assert venvcurrent.migrate(root, census=list) == '', 'PLANTED CONTROL: once'
+
+
+def test_a_retired_pointer_naming_nothing_goes_and_leaves_venv_alone(tmp_path) -> None:
+    root = tmp_path / 'main'
+    (root / venvpointer.POINTER).mkdir(parents=True)
+    (root / venvpointer.RETIRED_POINTER).write_text('gone\n', encoding='utf-8')
+    venvcurrent.migrate(root, census=list)
+    assert not venvcurrent.pending_migration(root)
+    assert (root / venvpointer.POINTER).is_dir(), 'the plain .venv stays current'
 
 
 _HOLD = """

@@ -157,14 +157,16 @@ def test_a_fleet_verb_with_no_forwarded_flag_parses(monkeypatch: pytest.MonkeyPa
 def test_old_copies_are_listed_with_their_files_and_never_touched(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The pre-layout copies and a ``.venv`` link are the dry-run list for the user's ruling; drift removes nothing.
+    """The pre-layout copies and a retired ``.venv-current`` are the dry-run list; drift removes nothing.
 
     PLANTED CONTROL: the declared layout's own ``repos/<repo>`` and ``envs`` are no old copy.
     """
     home, root = tmp_path / 'home', tmp_path / 'root'
     for old in (home / 'ci' / 'trees' / 'abc', home / '.local' / 'share' / 'lab-forge', root / 'src'):
         old.mkdir(parents=True)
-    (root / 'repos' / 'r' / '.venv').mkdir(parents=True)
+    (root / 'repos' / 'r').mkdir(parents=True)
+    (root / 'repos' / 'r' / '.venv-current').write_text('x', encoding='utf-8')
+    (root / 'repos' / 'r' / '.venv').mkdir()  # PLANTED CONTROL: the pointer itself is no old copy
     (root / 'envs' / 'k').mkdir(parents=True)
     code, before, after = _run(tmp_path)
     out = capsys.readouterr().out
@@ -173,7 +175,8 @@ def test_old_copies_are_listed_with_their_files_and_never_touched(
     assert f'  {(home / "ci").as_posix()}: 3 files' in out
     assert f'  {(home / ".local/share/lab-forge").as_posix()}: 1 files' in out
     assert f'  {(root / "src").as_posix()}: 1 files' in out
-    assert f'  {(root / "repos/r/.venv").as_posix()}: 1 files' in out
+    assert f'  {(root / "repos/r/.venv-current").as_posix()}: 1 files' in out
+    assert f'{(root / "repos/r/.venv").as_posix()}:' not in out
     assert 'envs' not in out
     assert f'{(root / "repos/r").as_posix()}:' not in out
     assert before == after, 'drift removed nothing'

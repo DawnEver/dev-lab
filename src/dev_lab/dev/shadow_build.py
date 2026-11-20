@@ -105,7 +105,7 @@ def refuse_shared_venv_write(target: Path) -> None:
         msg = (
             f'{resolved} is inside the active environment at {root}. Nothing here installs: '
             f'a write would change the installed baseline this benchmark measures. Each checkout '
-            f'owns its environment; dependency installation uses the checked dep door. Build to a directory '
+            f'owns its .venv; dependency installation uses the checked dep door. Build to a directory '
             f'OUTSIDE it and shadow it via PYTHONPATH.'
         )
         raise SharedVenvWriteError(msg)

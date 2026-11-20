@@ -107,9 +107,7 @@ def build(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     """
     checkout = checkout_of(spec, repo)
     if step.dry:
-        step.change(
-            f'{repo.name}: build its environment with its [tool.lab_commons.hpc] install (e.g. uv sync --extra dev)', []
-        )
+        step.change(f'{repo.name}: build .venv with its [tool.lab_commons.hpc] install (e.g. uv sync --extra dev)', [])
         step.change(f'{repo.name}: its native build, when declared, into {checkout / ".lab-native"}', [])
         step.change(f'{repo.name}: box ledger migration, when its lab-commons provides the verb', [])
         return 0
@@ -137,7 +135,11 @@ def build(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
             return rc
         beside.mkdir(parents=True, exist_ok=True)
         (beside / '.lab-deploy-env').write_text(env_key, encoding='utf-8')
-        emit(f'  {repo.name}: {venvcurrent.publish(checkout, beside)}')
+        try:
+            emit(f'  {repo.name}: {venvcurrent.publish(checkout, beside)}')
+        except venvcurrent.PublishRefused as refused:
+            emit(f'  {repo.name}: REFUSED: {refused}')
+            return 1
     # LEDGER-MIGRATES-ON-INSTALL: every deploy, idempotent, so a venv stamped before the verb existed migrates too
     if rc := boxmigrate.migrate(str(venvpointer.current(checkout) / 'bin' / 'python')):
         return rc

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _venv_fake import current_env
 from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant, Machine
@@ -423,7 +422,7 @@ def test_a_first_install_precedes_the_kits_tick_and_clones_the_layers_repos() ->
     assert command.index('[first-install]') < command.index('+refs/heads/main:refs/remotes/origin/main')
     assert f'[ -x {shell_interpreter("/r/src/repos/dev-lab")} ] ||' in command
     assert 'git clone -q --branch main https://forge.example/team/dev-lab.git /r/src/repos/dev-lab' in command
-    assert '( cd /r/src/repos/dev-lab && UV_PROJECT_ENVIRONMENT=.venvs/first uv sync --frozen' in command
+    assert '( cd /r/src/repos/dev-lab && uv sync --frozen )' in command
     assert 'https://astral.sh/uv/install.sh' in command
 
 
@@ -432,15 +431,14 @@ def _first_install(tmp_path: Path, *, venv: bool) -> str:
     bash = shutil.which('bash')
     assert bash, 'the first-install line runs in bash on the account'
     home, stubs, root = tmp_path / 'home', tmp_path / 'stubs', tmp_path / 'root'
-    (root / 'repos' / 'dev-lab').mkdir(parents=True)
+    (root / 'repos' / 'dev-lab' / '.venv' / 'bin').mkdir(parents=True)
     home.mkdir()
     stubs.mkdir()
     for tool in ('uv', 'git', 'curl'):
         (stubs / tool).write_text(f'#!/bin/sh\necho {tool} "$@" >> "$HOME/calls"\n', encoding='utf-8', newline='\n')
         (stubs / tool).chmod(0o755)
     if venv:
-        python = current_env(root / 'repos' / 'dev-lab', 'first') / 'bin' / 'python'
-        python.parent.mkdir()
+        python = root / 'repos' / 'dev-lab' / '.venv' / 'bin' / 'python'
         python.write_text('#!/bin/sh\n', encoding='utf-8', newline='\n')
         python.chmod(0o755)
     line = first_install(_FLEET[0], Target('login02.example', root.as_posix(), repos=_REPOS))
@@ -454,9 +452,6 @@ def _first_install(tmp_path: Path, *, venv: bool) -> str:
 def test_a_kit_with_no_venv_is_first_installed(tmp_path: Path) -> None:
     calls = _first_install(tmp_path, venv=False)
     assert 'uv sync --frozen' in calls
-    kit = tmp_path / 'root' / 'repos' / 'dev-lab'
-    assert (kit / '.venv-current').read_text(encoding='utf-8') == 'first\n', 'the pointer names the first env'
-    assert not (kit / '.venv').exists(), "never uv's default env"
     assert 'curl' not in calls, 'a uv already on PATH is not reinstalled'
 
 

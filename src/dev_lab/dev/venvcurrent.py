@@ -3,16 +3,17 @@
 Windows cannot overwrite an in-use ``python.exe`` or DLL, so an in-place venv upgrade waits for a free moment
 that a live session, a watch or an MCP server may never leave. So no environment is ever changed under a
 process: :mod:`dev_lab.dev.dep` builds each new one beside the live one at ``ROOT/.venvs/<name>/`` and
-:func:`publish` makes it current by atomically replacing ONE pointer file, ``ROOT/.venv-current`` (write a
-temp file, ``os.replace``). A running process keeps the environment it started from; every new launch reads
-the pointer -- this module, ``agent_launcher.js`` and the githooks' ``with-venv.sh`` -- and takes the new one.
+:func:`publish` makes it current by swapping ONE link, ``ROOT/.venv`` (user ruling 2026-11-20: ``.venv`` is the
+name every tool expects): a symlink on POSIX, replaced atomically (a temp link ``os.replace``-d over it); a junction on
+Windows, where no directory replace is atomic, so a temp junction is made first and the swap is a removal and a
+rename -- measured 2026-11-20 at a 5-8 ms gap for a remove-and-create, with processes running from the old target
+and through the link itself; a reader in that gap finds no ``.venv`` and names the bootstrap door. A running process
+keeps the environment it started from (every resolver answers ``.venv`` RESOLVED); every new launch takes the new one.
 
-THE POINTER IS THE ONLY STATEMENT OF THE CURRENT ENVIRONMENT (user ruling 2026-11-20). No alias stands beside it:
-an external tool is handed the environment explicitly (``UV_PROJECT_ENVIRONMENT``, the rendered editor settings).
-The retired spelling (:data:`~dev_lab.dev.venvpointer.RETIRED_ALIAS`) goes ONCE (:func:`retire_alias`): a link
-is removed; a legacy plain directory moves into ``.venvs/`` the first time nothing executes from it, and becomes
-current when no pointer names one. It is retried by every reclaim and every follow (:mod:`dev_lab.dev.venvfollow`)
-until it lands.
+A plain ``.venv`` directory (a checkout never published) is its own environment until a publish: it moves into
+``.venvs/`` first, once nothing executes from it, else the publish is refused by name. The retired pointer file
+``.venv-current`` is migrated ONCE (:func:`migrate`, FORMATS-MIGRATE-ONCE): ``.venv`` is linked to the environment
+it names, and the file is removed. Every reclaim and every follow (:mod:`dev_lab.dev.venvfollow`) retries it.
 
 An old environment is reclaimed (:func:`reclaim`) only when no process executes from it -- the holder census
 of :func:`dev_lab.dev.liverun.removal_holders` -- and never while it is being built (its :data:`BUILDING`
@@ -32,6 +33,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import os
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -42,7 +44,10 @@ from lab_commons.census import processes
 from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.liverun import Census, label, removal_holders
 from dev_lab.dev.servelock import held
-from dev_lab.dev.venvpointer import HOME, POINTER, RETIRED_ALIAS, named
+from dev_lab.dev.venvpointer import HOME, POINTER, RETIRED_POINTER, is_link, named
+
+if sys.platform == 'win32':
+    import _winapi
 
 __all__ = [
     'BUILDING',
@@ -50,15 +55,16 @@ __all__ = [
     'BUILD_WALL_S',
     'RECLAIMING',
     'BuildBusy',
+    'PublishRefused',
     'abandon',
     'building',
     'exclusive_build',
     'fresh',
-    'holds_alias',
+    'migrate',
+    'pending_migration',
     'publish',
     'reclaim',
     'reclaimed',
-    'retire_alias',
     'target',
 ]
 
@@ -114,68 +120,97 @@ def abandon(env: Path) -> None:
     _marker(env).unlink(missing_ok=True)
 
 
-def publish(root: Path, env: Path) -> str:
-    """Make *env* current: atomically replace :data:`POINTER`; one line saying so.
+class PublishRefused(OSError):
+    """A publish that could not make its environment current; the message names why and the door."""
 
-    A reader sees the old name or the new one, never a partial file: the content is written whole to a temp file
-    beside the pointer and ``os.replace``-d over it.
+
+def publish(root: Path, env: Path, *, census: Census = processes) -> str:
+    """Make *env* current: swap :data:`POINTER` to link to it; one line saying so.
+
+    A plain ``.venv`` directory moves into :data:`HOME` first (:func:`_set_aside`); held, the publish is refused
+    by name and *env* stays built, unpublished.
     """
     root, env = Path(root), Path(env)
-    temporary = root / f'{POINTER}.{os.getpid()}.tmp'
-    temporary.write_text(env.name + '\n', encoding='utf-8')
-    _replace(temporary, root / POINTER)
+    link = root / POINTER
+    if link.is_dir() and not is_link(link) and (why := _set_aside(root, census=census)):
+        msg = f'{env} built but not published: {why}'
+        raise PublishRefused(msg)
+    _swap(link, env)
     _marker(env).unlink(missing_ok=True)
-    return f'{root / POINTER} -> {env.name}'
+    (root / RETIRED_POINTER).unlink(missing_ok=True)
+    return f'{link} -> {env}'
 
 
-def _replace(source: Path, target: Path, *, tries: int = 200) -> None:
-    """``os.replace``, retried while a Windows reader holds *target* open without delete sharing (Python's own)."""
-    for _ in range(tries - 1):
+def _link(link: Path, env: Path) -> None:
+    if sys.platform == 'win32':
+        _winapi.CreateJunction(str(env), str(link))
+    else:
+        link.symlink_to(env, target_is_directory=True)
+
+
+def _swap(link: Path, env: Path, *, tries: int = 200) -> None:
+    """Point *link* at *env*: a temp link first, then the one short step that replaces *link* (module docstring)."""
+    temporary = link.with_name(f'{link.name}.{os.getpid()}.tmp')
+    if is_link(temporary):
+        _unlink(temporary)
+    _link(temporary, env)
+    for attempt in range(tries):
         try:
-            source.replace(target)
+            if sys.platform == 'win32' and is_link(link):
+                _unlink(link)  # Windows replaces no directory atomically: removal and rename, the gap measured
+            temporary.replace(link)
         except PermissionError:
+            if attempt == tries - 1:
+                _unlink(temporary)
+                raise
             time.sleep(0.01)
         else:
             return
-    source.replace(target)
 
 
-def _is_link(path: Path) -> bool:
-    return path.is_symlink() or os.path.isjunction(path)
+def _unlink(link: Path) -> None:
+    link.unlink() if link.is_symlink() else link.rmdir()
 
 
-def holds_alias(root: Path) -> bool:
-    """Whether *root* still holds the retired :data:`RETIRED_ALIAS`, as a link or a directory."""
-    alias = Path(root) / RETIRED_ALIAS
-    return alias.exists() or _is_link(alias)
-
-
-def retire_alias(root: Path, *, census: Census = processes) -> str:
-    """THE ONE-TIME MIGRATION to the pointer alone; ``''`` once *root* holds no :data:`RETIRED_ALIAS`.
-
-    A link is removed. A plain directory (the legacy layout) moves into :data:`HOME` once nothing executes from it,
-    and is published when no pointer names an environment yet.
-    """
-    root = Path(root)
-    alias = root / RETIRED_ALIAS
-    if _is_link(alias):
-        try:
-            alias.unlink() if alias.is_symlink() else alias.rmdir()
-        except OSError as exc:
-            return f'{alias} kept: {exc}'
-        return f'{alias} removed: {POINTER} alone names the environment'
-    if not alias.is_dir():
-        return ''
-    if users := removal_holders(alias, census=census):
-        return f'legacy {alias} kept: {len(users)} process(es) run from it ({label(users[0])})'
+def _set_aside(root: Path, *, census: Census) -> str:
+    """Move a plain ``.venv`` directory into :data:`HOME` once nothing executes from it; why not, else ``''``."""
+    plain = root / POINTER
+    if users := removal_holders(plain, census=census):
+        held = f'{len(users)} process(es) run from it ({label(users[0])})'
+        return f'{plain} is a plain environment {held}; stop them and re-run'
     aside = root / HOME / f'legacy-{time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())}'
     try:
         aside.parent.mkdir(parents=True, exist_ok=True)
-        alias.replace(aside)
+        plain.replace(aside)
     except OSError as exc:
-        return f'legacy {alias} kept: {exc}'
-    moved = f'legacy {alias} moved to {aside}'
-    return moved if named(root) is not None else f'{moved}; {publish(root, aside)}'
+        return f'{plain} could not move into {HOME}: {exc}'
+    return ''
+
+
+def pending_migration(root: Path) -> bool:
+    """Whether *root* still holds the retired :data:`RETIRED_POINTER` file."""
+    return (Path(root) / RETIRED_POINTER).exists()
+
+
+def migrate(root: Path, *, census: Census = processes) -> str:
+    """THE ONE-TIME MIGRATION off :data:`RETIRED_POINTER`; ``''`` once *root* holds none.
+
+    ``.venv`` is linked to the environment the file names (a plain ``.venv`` moved aside first), then the file goes.
+    A file naming no environment goes too: ``.venv`` alone decides.
+    """
+    root = Path(root)
+    retired = root / RETIRED_POINTER
+    if not retired.exists():
+        return ''
+    name = retired.read_text(encoding='utf-8').split('\n', 1)[0].strip()
+    env = root / HOME / name
+    if name and name not in {'.', '..'} and not any(c in name for c in '/\\:') and env.is_dir() and named(root) != env:
+        try:
+            publish(root, env, census=census)
+        except OSError as exc:
+            return f'{retired} kept: {exc}'
+    retired.unlink(missing_ok=True)
+    return f'{retired} migrated: {root / POINTER} -> {named(root) or "(unpublished)"}'
 
 
 def building(env: Path) -> bool:
@@ -219,7 +254,7 @@ def reclaim(root: Path, *, census: Census = processes, building_here: bool = Fal
 
 
 def _reclaim(root: Path, *, census: Census) -> tuple[str, ...]:
-    lines = [line] if (line := retire_alias(root, census=census)) else []
+    lines = [line] if (line := migrate(root, census=census)) else []
     home, live = root / HOME, named(root)
     if not home.is_dir() or live is None:
         return tuple(lines)

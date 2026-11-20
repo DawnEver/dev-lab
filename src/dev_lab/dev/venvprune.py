@@ -2,7 +2,7 @@
 
 :mod:`dev_lab.dev.venvcurrent` publishes each new environment beside the live one and reclaims the old ones after a
 publish; one a holder kept then, or one a checkout never re-published past, stays on disk. This door sweeps them
-across many checkouts at once. Per checkout with a ``.venv-current`` pointer it KEEPS: the environment the pointer
+across many checkouts at once. Per checkout whose ``.venv`` is a link it KEEPS: the environment the link
 names, the newest one (by its ``<utc stamp>``), one being built, and any a live process executes from (the holder
 census of :func:`dev_lab.dev.liverun.removal_holders`, as ``dep`` reads it). Everything else is listed with its bytes
 and, with ``--apply``, removed moved-aside first (:func:`dev_lab.dev.venvcurrent.reclaimed`). A checkout without a
@@ -27,7 +27,7 @@ from lab_commons.census import processes
 from dev_lab.dev.diskusage import measure
 from dev_lab.dev.liverun import Census, removal_holders
 from dev_lab.dev.venvcurrent import BUILDING, RECLAIMING, building, reclaimed
-from dev_lab.dev.venvpointer import HOME, POINTER, named
+from dev_lab.dev.venvpointer import HOME, POINTER, is_link, named
 
 __all__ = ['Row', 'checkouts', 'main', 'plan']
 
@@ -49,13 +49,13 @@ def checkouts(roots: Iterable[Path]) -> Iterator[Path]:
     for root in map(Path, roots):
         if not root.is_dir():
             continue
-        repos = [root] if (root / POINTER).is_file() else sorted(p for p in root.iterdir() if p.is_dir())
+        repos = [root] if is_link(root / POINTER) else sorted(p for p in root.iterdir() if p.is_dir())
         for repo in repos:
-            if (repo / POINTER).is_file():
+            if is_link(repo / POINTER):
                 yield repo
             trees = repo / '.claude' / 'worktrees'
             if trees.is_dir():
-                yield from (tree for tree in sorted(trees.iterdir()) if (tree / POINTER).is_file())
+                yield from (tree for tree in sorted(trees.iterdir()) if is_link(tree / POINTER))
 
 
 def _stamp(env: Path) -> str:

@@ -18,7 +18,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from _venv_fake import current_env
 
 from dev_lab.dev import forgeservesteps, locklag, relock
 from dev_lab.dev.forgealarm import Alarm
@@ -524,7 +523,7 @@ def test_a_render_that_fails_is_a_named_refusal_and_pushes_nothing(world: tuple[
 def test_a_tree_without_its_venv_is_refused_not_rendered_with_this_interpreter(tmp_path: Path) -> None:
     """The running interpreter holds the OLD pin: rendering with it would carry the stale workflow (#71 review)."""
     (tmp_path / '.gitignore').write_text('x\n', encoding='utf-8')
-    with pytest.raises(RelockFailed, match='no current environment'):
+    with pytest.raises(RelockFailed, match=r'no \.venv'):
         rerender(tmp_path)
 
 
@@ -533,7 +532,7 @@ def test_rerender_runs_every_due_renderer_with_the_trees_interpreter_and_names_a
     assert not any(line.endswith(': rendered') for line in rerender(tmp_path, run=lambda _argv, _tree: 1))
     (tmp_path / '.claude' / 'hooks').mkdir(parents=True)
     (tmp_path / '.claude' / 'hooks' / 'deny-commands.js').write_text('x\n', encoding='utf-8')
-    python = current_env(tmp_path) / 'bin' / 'python'
+    python = tmp_path / '.venv' / 'bin' / 'python'
     python.parent.mkdir(parents=True)
     python.write_text('', encoding='utf-8')
     ran: list[list[str]] = []
@@ -544,10 +543,10 @@ def test_rerender_runs_every_due_renderer_with_the_trees_interpreter_and_names_a
 
 
 def test_planted_control_a_tree_with_its_venv_renders_with_that_interpreter(tmp_path: Path) -> None:
-    for python in (current_env(tmp_path) / 'Scripts' / 'python.exe', current_env(tmp_path) / 'bin' / 'python'):
+    for python in (tmp_path / '.venv' / 'Scripts' / 'python.exe', tmp_path / '.venv' / 'bin' / 'python'):
         python.parent.mkdir(parents=True, exist_ok=True)
         python.write_text('', encoding='utf-8')
-    assert Path(_tree_python(tmp_path)).parent.parent == current_env(tmp_path)
+    assert Path(_tree_python(tmp_path)).parent.parent == tmp_path / '.venv'
 
 
 def _uv_bumped(tree: Path, _packages: Sequence[str]) -> int:
@@ -749,11 +748,11 @@ def test_the_lock_door_runs_the_trees_own_interpreter_not_the_callers(monkeypatc
 
     2026-11-19: ``forge sync`` launched it from a STALE caller env whose older dev_lab refused the tree's alias.
     """
-    for python in (current_env(tmp_path) / 'Scripts' / 'python.exe', current_env(tmp_path) / 'bin' / 'python'):
+    for python in (tmp_path / '.venv' / 'Scripts' / 'python.exe', tmp_path / '.venv' / 'bin' / 'python'):
         python.parent.mkdir(parents=True, exist_ok=True)
         python.write_text('', encoding='utf-8')
     argv = _ran_door(monkeypatch, tmp_path)
-    assert Path(argv[0]).parent.parent == current_env(tmp_path)
+    assert Path(argv[0]).parent.parent == tmp_path / '.venv'
     assert argv[1:] == ['-m', 'dev_lab.dev.dep', '--lock-upgrade', str(tmp_path), '--upgrade-package=dev-lab']
 
 

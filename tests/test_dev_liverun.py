@@ -22,7 +22,7 @@ import pytest
 from lab_commons.census import Process, processes
 from lab_commons.proc import kill_process_tree
 
-from dev_lab.dev import agenthooks, dep, liverun, venvpointer, worktreeplace
+from dev_lab.dev import agenthooks, dep, liverun, worktreeplace
 from dev_lab.dev.disclosure import problems
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
@@ -40,8 +40,8 @@ def _checkout(path: Path) -> Path:
 def _proc(
     pid: int, exe: Path | str, *, ppid: int = 1, age: float | None = 600.0, cmd: str = '', cwd: Path | str | None = None
 ) -> Process:
-    """A process; by default a sweep, whose cwd is the checkout its env interpreter (``.venvs/x/...``) lives in."""
-    where = str(Path(exe).parents[3]) if cwd is None and exe else str(cwd or '')
+    """A process; by default a sweep, whose cwd is the checkout its venv interpreter lives in."""
+    where = str(Path(exe).parents[2]) if cwd is None and exe else str(cwd or '')
     return Process(pid, ppid, str(exe), cmd or f'{exe} -m app case sweep cases/x', age, where)
 
 
@@ -61,15 +61,8 @@ def _own_words(text: str, root: Path) -> str:
     return text.replace(root.as_posix(), 'C:/repo').replace(str(root), 'C:/repo')
 
 
-def _env(root: Path) -> Path:
-    """*root*'s current environment directory, ``.venvs/x``, the pointer naming it (the directory is the caller's)."""
-    (root / venvpointer.HOME).mkdir(parents=True, exist_ok=True)
-    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
-    return root / venvpointer.HOME / 'x'
-
-
 def _venv_python(root: Path) -> Path:
-    return _env(root) / _SCRIPTS / _PYTHON
+    return root / '.venv' / _SCRIPTS / _PYTHON
 
 
 # ----------------------------------------------------------------------------------------- which process is a run
@@ -79,14 +72,14 @@ def test_a_sweep_reading_the_tree_locks_the_tree_and_its_venv(tree: Path) -> Non
     """PLANTED: the measured v3 shape -- venv interpreter, cwd in the tree (`-m` puts the cwd on sys.path)."""
     run = _proc(4242, _venv_python(tree))
     assert liverun.live_runs(tree, census=lambda: [run], me=1) == (run,)
-    assert liverun.executing_from(_env(tree), census=lambda: [run], me=1) == (run,)
+    assert liverun.executing_from(tree / '.venv', census=lambda: [run], me=1) == (run,)
 
 
 def test_a_serve_in_its_own_work_root_locks_the_venv_and_not_the_tree(tree: Path) -> None:
     """PLANTED: a forge serve executes from the venv and works in its own root, so the tree stays editable."""
     serve = _proc(5151, _venv_python(tree), cwd=tree / '.claude' / 'worktrees', cmd='python -m dev_lab.dev.forge serve')
     assert liverun.live_runs(tree, census=lambda: [serve], me=1) == ()
-    assert liverun.executing_from(_env(tree), census=lambda: [serve], me=1) == (serve,)
+    assert liverun.executing_from(tree / '.venv', census=lambda: [serve], me=1) == (serve,)
 
 
 def test_a_log_tail_in_the_tree_is_not_a_reader_and_a_script_it_names_is(tree: Path) -> None:
@@ -364,7 +357,7 @@ def test_dep_retries_a_transient_resolve_through_the_network_door(tmp_path: Path
 def live_tree(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[Path, int]]:
     """A throwaway checkout with a REAL venv and a REAL sleeper executing from it, old enough to be a run."""
     root = _checkout(tmp_path_factory.mktemp('live') / 'repo')
-    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(_env(root))], check=True, timeout=300)
+    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(root / '.venv')], check=True, timeout=300)
     sleeper = subprocess.Popen([str(_venv_python(root)), '-c', 'import time; time.sleep(300)'], cwd=root)
     try:
         deadline = time.monotonic() + 60
@@ -403,7 +396,7 @@ def test_the_real_engine_refuses_a_merge_into_a_live_tree_and_allows_an_idle_one
     """PLANTED BOTH WAYS through the locked Node: the same `git -C <tree> merge` is refused live and free idle."""
     root, pid = live_tree
     session = _checkout(tmp_path / 'session')
-    _junction(_env(session), Path(sys.prefix))
+    _junction(session / '.venv', Path(sys.prefix))
     hooks = session / '.claude' / 'hooks'
     hooks.mkdir(parents=True)
     rules = hooks / 'deny-rules.json'
@@ -425,7 +418,7 @@ def _session_whose_interpreter_cannot_answer(root: Path) -> Path:
     """A session checkout whose ``.venv`` python is NOT Python (a copy of the locked Node): every probe crashes."""
     session = _checkout(root)
     node = node_path()
-    python = _env(session) / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+    python = session / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     python.parent.mkdir(parents=True)
     try:
         os.link(node, python)
@@ -486,9 +479,9 @@ def test_the_live_run_target_is_the_tree_the_matching_segment_acts_in(tmp_path: 
 def test_a_session_venv_without_the_kit_is_no_refusal(tmp_path: Path) -> None:
     """A checkout mid-adoption has a real interpreter that cannot import dev_lab: nobody to ask, not a crash."""
     session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
-    python = _env(session) / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
-    shutil.rmtree(_env(session))
-    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(_env(session))], check=True, timeout=120)
+    python = session / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+    shutil.rmtree(session / '.venv')
+    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(session / '.venv')], check=True, timeout=120)
     assert python.exists()
     tree = _checkout(tmp_path / 'tree')
     rules = session / '.claude' / 'hooks' / 'deny-rules.json'
@@ -592,7 +585,7 @@ def test_the_real_engine_judges_the_target_worktree_not_the_checkout_holding_it(
     """
     root, _pid = live_tree
     session = _checkout(tmp_path / 'session')
-    _junction(_env(session), Path(sys.prefix))
+    _junction(session / '.venv', Path(sys.prefix))
     hooks = session / '.claude' / 'hooks'
     hooks.mkdir(parents=True)
     rules = hooks / 'deny-rules.json'
@@ -625,7 +618,7 @@ def test_the_real_engine_judges_the_tree_a_wrapped_command_acts_in_not_the_cwd(
     """
     root, pid = live_tree
     session = _checkout(tmp_path / 'session')
-    _junction(_env(session), Path(sys.prefix))
+    _junction(session / '.venv', Path(sys.prefix))
     hooks = session / '.claude' / 'hooks'
     hooks.mkdir(parents=True)
     rules = hooks / 'deny-rules.json'
@@ -646,7 +639,7 @@ def test_a_removal_never_counts_its_own_launcher_but_still_counts_its_kin(tmp_pa
     unrelated process running the same line, still hold the tree.
     """
     tree = _checkout(tmp_path / 'tree')
-    exe = _env(tmp_path / 'main') / _SCRIPTS / _PYTHON
+    exe = tmp_path / 'main' / '.venv' / _SCRIPTS / _PYTHON
     line = f'{exe} -m dev_lab.dev.worktrees --remove x --root {tree}'
     launcher = Process(10, 1, str(exe), line, 5.0, str(tree))
     me = Process(11, 10, str(exe), line, 5.0, str(tree))

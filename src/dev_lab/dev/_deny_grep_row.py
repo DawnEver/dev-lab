@@ -16,7 +16,7 @@ RECURSIVE_GREP: dict[str, object] = {
     # A short-flag cluster carrying r/R (-r, -rn, -nR) or the long spelling, anywhere after the verb.
     'pattern': r'[ef]?grep(?:\.exe)?(?:\s+\S+)*?\s+(?:-[a-zA-Z]*[rR][a-zA-Z]*|--(?:dereference-)?recursive)(?=\s|$)',
     'matches': 'command',
-    'hazard': 'a recursive grep walks every git-ignored tree (.venvs, output, target) and can run for minutes.',
+    'hazard': 'a recursive grep walks every git-ignored tree (.venv, output, target) and can run for minutes.',
     'remedy': 'Search tracked files: git grep -n <pattern> [-- <paths>], or use the built-in Grep tool.',
     'needs': None,
     # Measured 2026-11-16: `-r` on one named FILE was hinted; the engine admits a line whose operands are all files.

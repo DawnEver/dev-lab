@@ -79,7 +79,7 @@ function withMain() {
 
 const python = interpreter(roots[0]) || withMain().slice(1).map(interpreter).find(Boolean);
 if (!python) {
-  process.stderr.write(`[hook] skipped ${process.argv.slice(2).join(' ')}: no interpreter in its current environment\n`);
+  process.stderr.write(`[hook] skipped ${process.argv.slice(2).join(' ')}: no .venv interpreter\n`);
   process.exit(0);
 }
 

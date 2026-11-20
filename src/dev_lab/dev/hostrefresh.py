@@ -90,7 +90,7 @@ def sync_venv(step: Step, bootstrap: Sequence[str], checkout: Path) -> int:
     """Sync *checkout*'s venv when :func:`dev_lab.dev.venvfollow.stale`; the stamp only after it succeeded."""
     key = stale(checkout)
     if key is None:
-        emit(f'  {checkout.name}: environment current')
+        emit(f'  {checkout.name}: .venv current')
         return 0
     # The door's own rule: a primary checkout's environment moves only from that checkout.
     what = f'{checkout.name}: -m dev_lab.dev.dep --bootstrap {checkout}'

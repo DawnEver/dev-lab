@@ -68,7 +68,7 @@ from dev_lab.dev import gitdirs
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 from dev_lab.dev.venvpath import PYTHON_SLOT, current_os_name, expand_interpreter, running_interpreter
-from dev_lab.dev.venvpointer import POINTER, RETIRED_ALIAS
+from dev_lab.dev.venvpointer import POINTER, RETIRED_POINTER
 
 __all__ = [
     'NOT_THE_TREE',
@@ -95,13 +95,13 @@ RULE_ID: Final = str(LIVE_RUN['id'])
 _UNREAD_KINDS: Final = ('output', 'venvs', 'worktrees', 'vendor_cache', 'temp')
 
 #: Top-level directories of a checkout that no run reads: a write there never changes what a run executes. Derived
-#: from the in-tree defaults of :data:`_UNREAD_KINDS` (one spelling of each), plus the retired alias and the pointer.
+#: from the in-tree defaults of :data:`_UNREAD_KINDS` (one spelling of each), plus the venv alias and pointer.
 NOT_THE_TREE: Final = tuple(
     dict.fromkeys(
         [
             *(Path(default).parts[0] for kind in _UNREAD_KINDS if (default := storage.KINDS[kind])),
-            RETIRED_ALIAS,
             POINTER,
+            RETIRED_POINTER,
         ]
     )
 )
@@ -410,9 +410,7 @@ def refusal(root: Path | str, runs: Sequence[Process]) -> str:
     rule = rules_by_id(DENY_RULES)[RULE_ID]
     first, more = runs[0], len(runs) - 1
     who = f'pid {first.pid} ({label(first)})' + (f' and {more} more' if more else '')
-    clause = (
-        f'{RULE_ID}: {Path(root).as_posix()} is in use by {who}; changing it or its environment now corrupts that work.'
-    )
+    clause = f'{RULE_ID}: {Path(root).as_posix()} is in use by {who}; changing it or its .venv now corrupts that work.'
     stoppable = next((one for one in runs if not is_session(one)), None)
     if stoppable is None:
         exit_text = (

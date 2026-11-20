@@ -6,13 +6,14 @@ remedy); an older shim of ours is STALE and replaced; somebody else's file is FO
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-from _venv_fake import current_env
+from _venv_fake import linked_env
 
 from dev_lab.dev import hook_install, venvpointer
 from dev_lab.dev.famtests.hookinstall import (
@@ -281,7 +282,7 @@ def test_a_venv_less_commit_is_refused_naming_the_bootstrap_door(repo: Path) -> 
 
 def test_a_half_built_venv_is_passed_over_and_the_commit_refused_naming_the_door(repo: Path) -> None:
     """A venv whose interpreter exists but cannot import dev_lab is not exec'd into a bare ``No module named``."""
-    venv = current_env(repo) / 'bin'
+    venv = repo / '.venv' / 'bin'
     venv.mkdir(parents=True)
     fake = venv / 'python'
     fake.write_text('#!/bin/sh\necho "No module named dev_lab" >&2\nexit 1\n', encoding='utf-8', newline='\n')
@@ -304,7 +305,7 @@ def test_no_interpreter_anywhere_refuses_the_commit_in_one_line(repo: Path, tmp_
 
 def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path) -> None:
     """PLANTED CONTROL: the checkout's own venv wins over the fallback, and a failing hook still refuses."""
-    venv = current_env(repo) / 'bin'
+    venv = repo / '.venv' / 'bin'
     venv.mkdir(parents=True)
     fake = venv / 'python'
     fake.write_text(
@@ -330,19 +331,26 @@ def _fallback(stage_shim: str) -> str:
     return done.stdout
 
 
+def _native(answer: str) -> Path:
+    """A shell path in this platform's spelling, resolved (git bash on Windows prints ``/c/...``)."""
+    if os.name == 'nt' and answer.startswith('/'):
+        cygpath = Path(shutil.which('sh') or 'sh').with_name('cygpath')
+        answer = subprocess.run([str(cygpath), '-w', answer], capture_output=True, text=True, check=True).stdout.strip()
+    return Path(answer).resolve()
+
+
 def test_a_recorded_checkout_interpreter_follows_that_checkouts_current_environment(tmp_path: Path) -> None:
-    """A fallback recorded from an older ``.venvs/<id>`` re-resolves at every run; the retired ``.venv`` never does."""
+    """A fallback recorded from an older ``.venvs/<id>`` (or ``.venv`` itself) re-resolves at every run."""
     root = tmp_path / 'main'
     tail = CANDIDATE_RELATIVE_PATHS[0][1:]
     (root / venvpointer.HOME / 'old').mkdir(parents=True)
-    current_env(root, 'x')
+    current = linked_env(root, 'x')
     recorded = root.joinpath(venvpointer.HOME, 'old', *tail).as_posix()
-    assert _fallback(shim('pre-commit', recorded)) == root.joinpath(venvpointer.HOME, 'x', *tail).as_posix()
-    (root / venvpointer.POINTER).unlink()
-    unset = root.joinpath(venvpointer.POINTER, *tail).as_posix()
-    assert _fallback(shim('pre-commit', recorded)) == unset, 'no pointer: the miss names the pointer'
-    retired = root.joinpath(venvpointer.RETIRED_ALIAS, *tail).as_posix()
-    assert _fallback(shim('pre-commit', retired)) == retired, 'PLANTED CONTROL: .venv is no checkout env now'
+    assert _native(_fallback(shim('pre-commit', recorded))) == current.joinpath(*tail).resolve()
+    link = root / venvpointer.POINTER
+    link.unlink() if link.is_symlink() else link.rmdir()
+    unset = _fallback(shim('pre-commit', recorded))
+    assert unset.endswith('/.venv/' + '/'.join(tail)), 'PLANTED CONTROL: no .venv: the miss names it'
     elsewhere = (tmp_path / 'python-install' / 'python').as_posix()
     assert _fallback(shim('pre-commit', elsewhere)) == elsewhere, 'not a checkout env: recorded verbatim'
 
@@ -432,7 +440,7 @@ def test_a_worktree_without_a_venv_runs_its_hooks_on_the_main_checkouts_interpre
     subprocess.run(
         [_GIT, '-C', str(repo), 'worktree', 'add', '-q', '--detach', str(tree)], check=True, capture_output=True
     )
-    fake = current_env(repo).joinpath(*CANDIDATE_RELATIVE_PATHS[-1][1:])
+    fake = repo.joinpath(*CANDIDATE_RELATIVE_PATHS[-1])
     fake.parent.mkdir(parents=True)
     fake.write_text('#!/bin/sh\necho "main interpreter: $*" >&2\n', encoding='utf-8', newline='\n')
     fake.chmod(0o755)

@@ -11,17 +11,15 @@ import io
 import json
 import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
 
+from _venv_fake import linked_env
 from lab_commons.census import Process
 
 from dev_lab.dev import venvfollow, venvpointer
 from dev_lab.dev.githooks.table import ADVISORY, base_rows, merge
 from dev_lab.dev.venvpath import VENV_LAYOUTS
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _checkout(tmp_path: Path) -> Path:
@@ -152,49 +150,48 @@ def test_the_background_follow_detaches_for_a_behind_checkout_or_unwired_hooks(t
     assert len(started) == 2, 'PLANTED CONTROL: a current venv, checkout and hooks detach nothing'
 
 
-def _published(tmp_path: Path, other: str) -> tuple[Path, Path, Path]:
-    """A checkout whose pointer names ``.venvs/x`` beside an *other* environment directory: (root, other, current)."""
+def _published(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A checkout whose ``.venv`` links to ``.venvs/x``, beside an older ``.venvs/old``: (root, older, current)."""
     root = tmp_path / 'main'
     root.mkdir()
     (root / 'pyproject.toml').write_text('[project]\nname = "r"\n', encoding='utf-8')
     pythons = []
-    for env in (root / other, root / venvpointer.HOME / 'x'):
+    for env in (root / venvpointer.HOME / 'old', root / venvpointer.HOME / 'x'):
         python = env.joinpath(*VENV_LAYOUTS[os.name][1:])
         python.parent.mkdir(parents=True)
         python.write_text('', encoding='utf-8')
         pythons.append(python)
-    (root / venvpointer.POINTER).write_text('x\n', encoding='utf-8')
+    linked_env(root, 'x')
     return root, pythons[0], pythons[1]
 
 
 def test_the_bootstrap_runs_from_the_current_environment(tmp_path: Path, monkeypatch) -> None:
-    root, older, current = _published(tmp_path, f'{venvpointer.HOME}/old')
+    root, older, current = _published(tmp_path)
     ran: list[list[str]] = []
     monkeypatch.setattr(venvfollow._door, 'run', lambda argv, **_: ran.append(argv) or SimpleNamespace(returncode=0))
     monkeypatch.setattr(sys, 'executable', str(older))
     assert venvfollow.follow(root, busy=lambda _r: '') == venvfollow.BOOTSTRAPPED
-    assert ran[-1][:4] == [str(current), '-m', 'dev_lab.dev.dep', '--bootstrap']
-    (root / venvpointer.POINTER).unlink()
+    assert Path(ran[-1][0]).resolve() == current.resolve()
+    assert ran[-1][1:4] == ['-m', 'dev_lab.dev.dep', '--bootstrap']
+    link = root / venvpointer.POINTER
+    link.unlink() if link.is_symlink() else link.rmdir()
     (root / 'uv.lock').write_text('rev = "2"\n', encoding='utf-8')
     venvfollow.follow(root, busy=lambda _r: '')
-    assert ran[-1][0] == str(older), 'PLANTED CONTROL: no pointer names a current one: the launcher stays'
+    assert ran[-1][0] == str(older), 'PLANTED CONTROL: no .venv: the launcher stays'
 
 
-def test_a_retired_venv_makes_the_follow_due_and_goes_once_unheld(tmp_path: Path, monkeypatch) -> None:
-    """The migration retries at every follow: held, the retired ``.venv`` stays; unheld, it moves aside."""
-    root, legacy, current = _published(tmp_path, venvpointer.RETIRED_ALIAS)
+def test_the_retired_pointer_file_makes_the_follow_due_and_is_migrated_once(tmp_path: Path, monkeypatch) -> None:
+    root, _older, current = _published(tmp_path)
     venvfollow.stamp(root, venvfollow.env_key(root))
     monkeypatch.setattr(venvfollow.checkoutfollow, 'behind', lambda _r: False)
     monkeypatch.setattr(venvfollow.hook_install, 'unwired', lambda _r: False)
     monkeypatch.setattr(venvfollow.checkoutfollow, 'advance', lambda _r: '')
     monkeypatch.setattr(venvfollow.hook_install, 'rewire', lambda _r: '')
-    assert venvfollow.due(root), 'a retired .venv is due for its migration'
-    holder = Process(4242, 1, str(legacy), f'{legacy} -m app run', 3600.0, str(tmp_path))
-    monkeypatch.setattr(venvfollow, 'processes', lambda: [holder])
-    venvfollow.main(['--root', str(root)])
-    assert legacy.is_file(), 'PLANTED CONTROL: held, the legacy directory stays'
+    assert not venvfollow.due(root), 'PLANTED CONTROL: linked, current, nothing due'
+    (root / venvpointer.RETIRED_POINTER).write_text('x\n', encoding='utf-8')
+    assert venvfollow.due(root), 'a retired pointer file is due for its migration'
     monkeypatch.setattr(venvfollow, 'processes', list)
     venvfollow.main(['--root', str(root)])
-    assert not (root / venvpointer.RETIRED_ALIAS).exists(), 'unheld: .venv is gone'
-    assert venvpointer.named(root) == current.parents[1], 'the pointer still names the current env'
-    assert not venvfollow.due(root), 'PLANTED CONTROL: migrated, nothing is due'
+    assert not (root / venvpointer.RETIRED_POINTER).exists(), 'migrated once'
+    assert venvpointer.named(root) == current.parents[1].resolve()
+    assert not venvfollow.due(root)

@@ -1,15 +1,16 @@
-"""A checkout environment as the one rule reads it: ``<root>/.venvs/<name>`` named by ``<root>/.venv-current``."""
+"""A published checkout environment as the one rule reads it: ``<root>/.venv`` linked to ``<root>/.venvs/<name>``."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from dev_lab.dev.venvpointer import HOME, POINTER
+from dev_lab.dev import venvcurrent
+from dev_lab.dev.venvpointer import HOME
 
 
-def current_env(root: Path, name: str = 'x') -> Path:
-    """Create ``<root>/.venvs/<name>`` and point ``.venv-current`` at it; the environment directory."""
-    env = root / HOME / name
+def linked_env(root: Path, name: str = 'x') -> Path:
+    """Create ``<root>/.venvs/<name>`` and publish it (``.venv`` links to it); the environment directory."""
+    env = Path(root) / HOME / name
     env.mkdir(parents=True, exist_ok=True)
-    (root / POINTER).write_text(f'{name}\n', encoding='utf-8')
+    venvcurrent.publish(root, env, census=list)
     return env

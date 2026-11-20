@@ -312,20 +312,20 @@ def _interpreters(tree: Path) -> tuple[Path, Path]:
 def _tree_python(tree: Path) -> str:
     """The interpreter the door synced into *tree*: it holds the NEW pin.
 
-    Raises RelockFailed when *tree* has no current environment: this one holds the OLD pin, and rendering with it
+    Raises RelockFailed when *tree* has no ``.venv``: this interpreter holds the OLD pin, and rendering with it
     would carry the stale workflow the relock exists to replace.
     """
     for candidate in _interpreters(tree):
         if candidate.is_file():
             return str(candidate)
-    msg = f'{tree} has no current environment: the render needs the interpreter of the new pin; run the lock door first'
+    msg = f'{tree} has no .venv: the render needs the interpreter that holds the new pin; run the lock door first'
     raise RelockFailed(msg)
 
 
 def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _exit) -> tuple[str, ...]:
     """The one door (:func:`dev_lab.dev.famfiles.render_repo`) in *tree*, under its NEW interpreter.
 
-    The rendered files depend on the dev-lab the lock now pins, so each runs under the tree's own environment the
+    The rendered files depend on the dev-lab the lock now pins, so each runs under the tree's own ``.venv`` the
     door re-synced. Answers one line per renderer, rendered or skipped and why
     (:func:`~dev_lab.dev.famfiles.plan`). RAISES
     :class:`RelockFailed` naming the renderer when its declared input is missing or it exits non-zero.
