@@ -34,6 +34,7 @@ from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configretired import refuse as refuse_retired
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
 from dev_lab.ops.giteaadmin import Forge
+from dev_lab.ops.pgroles import Postgres
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.served import app_of_forge, credential_files, served, served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
@@ -294,6 +295,7 @@ class OpsConfig:
     environment_file: str = ''
     caddy: Caddy | None = None
     status: Status | None = None
+    postgres: Postgres | None = None
 
     def checkout(self, url: str) -> Path:
         """Where the host keeps its clone of *url*."""
@@ -305,7 +307,7 @@ class OpsConfig:
 OPS_KEYS: Final = frozenset({
     'home', 'python', 'repos', 'environment_file',
     'promote', 'breakglass', 'consent', 'consent_client', 'backup', 'access', 'caddy', 'supervise', 'judge',
-    'upgrade', 'probe', 'config', 'forge', 'status',
+    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres',
 })  # fmt: skip
 
 
@@ -331,6 +333,7 @@ def _role[
         Forge,
         Caddy,
         Status,
+        Postgres,
     )
 ](cls: type[T], table: object, where: str) -> T | None:
     if table is None or (isinstance(table, dict) and table.get('enabled') is False):
@@ -450,6 +453,7 @@ def load(
         forge=_role(Forge, ops.get('forge'), '[ops.forge]'),
         environment_file=environment_file,
         status=_role(Status, ops.get('status'), '[ops.status]'),
+        postgres=_role(Postgres, ops.get('postgres'), '[ops.postgres]'),
     )
     if found.status is not None and (found.caddy is None or found.supervise is None):
         msg = (

@@ -210,6 +210,7 @@ def _publish(
         installed=card.installed_sha(),
         upgrade=card.last_audit(Path(args.card_audit)) if args.card_audit else None,
         memory=card.own_memory(),
+        history=tuple(args.card_history),
     )
     try:
         card.write(path, found)
@@ -234,6 +235,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--dry-run', action='store_true', help='resolve and gate, but act on nothing')
     parser.add_argument('--card', default='', help='rewrite the status card here after every cycle')
     parser.add_argument('--card-audit', default='', help='the auto-upgrade audit whose last line the card carries')
+    parser.add_argument(
+        '--card-history', action='append', default=[], help='a metric whose hourly history the card keeps (repeat)'
+    )
     args = parser.parse_args(argv)
 
     config, registry, store, project = _context(args)

@@ -150,3 +150,65 @@ def test_a_check_handed_a_card_publishes_it_with_every_enabled_component(tmp_pat
     assert 'disk_usage' in found['components']
     assert 'http_health' not in found['components']
     assert 'root_free_gb' in found['metrics']
+
+
+_KEYS = ('forge_requests', 'pg_connections_total')
+
+
+def _history(*cycles: tuple[datetime, dict[str, float]]) -> dict:
+    found: dict | None = None
+    for at, metrics in cycles:
+        found = status.card(
+            CycleResult(status='healthy', metrics=metrics),
+            at,
+            components=(),
+            interval_s=300,
+            previous=found,
+            history=_KEYS,
+        )
+    assert found is not None
+    return found['history']
+
+
+def test_a_declared_series_keeps_hourly_min_avg_max_and_its_latest_value() -> None:
+    later = _AT + timedelta(minutes=5)
+    found = _history(
+        (_AT, {'forge_requests': 4.0, 'pg_connections_total': 10.0}),
+        (later, {'forge_requests': 8.0, 'pg_connections_total': 12.0}),
+    )
+    assert found['window_h'] == status.HISTORY_HOURS
+    assert found['series']['forge_requests'] == {
+        'latest': 8.0,
+        'hours': [{'hour': _AT.isoformat(), 'n': 2, 'min': 4.0, 'avg': 6.0, 'max': 8.0, 'unknown': 0}],
+    }
+
+
+def test_an_absent_reading_is_unknown_never_zero() -> None:
+    """PLANTED CONTROL: a cycle whose sampler failed folds no value -- min stays 4, not 0 -- and says unknown."""
+    found = _history((_AT, {'forge_requests': 4.0}), (_AT + timedelta(minutes=5), {}))
+    series = found['series']['forge_requests']
+    assert series['latest'] is None
+    assert series['hours'] == [{'hour': _AT.isoformat(), 'n': 1, 'min': 4.0, 'avg': 4.0, 'max': 4.0, 'unknown': 1}]
+    never = found['series']['pg_connections_total']['hours']
+    assert never == [{'hour': _AT.isoformat(), 'n': 0, 'min': None, 'avg': None, 'max': None, 'unknown': 2}]
+
+
+def test_hours_older_than_the_window_are_dropped_and_undeclared_series_are_not_kept() -> None:
+    old = _AT - timedelta(hours=status.HISTORY_HOURS)
+    found = _history((old, {'forge_requests': 1.0, 'root_free_gb': 3.0}), (_AT, {'forge_requests': 2.0}))
+    assert [hour['hour'] for hour in found['series']['forge_requests']['hours']] == [_AT.isoformat()]
+    assert set(found['series']) == set(_KEYS)
+
+
+def test_no_declared_history_publishes_none_and_the_rendering_shows_the_latest_hour() -> None:
+    assert _card(CycleResult(status='healthy'))['history'] is None
+    found = status.card(
+        CycleResult(status='healthy', metrics={'forge_requests': 3.0}),
+        _AT,
+        components=(),
+        interval_s=300,
+        history=('forge_requests', 'pg_connections_total'),
+    )
+    rendered = status.render('forge', found, _AT)
+    assert 'forge_requests now 3 (this hour min 3 avg 3 max 3)' in rendered
+    assert 'pg_connections_total now unknown' in rendered
