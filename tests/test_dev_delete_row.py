@@ -149,6 +149,16 @@ def test_an_unlanded_lane_names_the_discard_door_never_a_move_under_output() -> 
         assert 'never a worktree' in text
 
 
+def test_an_approved_delete_is_staged_in_scratch_never_under_output() -> None:
+    """D104: output/ holds no code or checkout (OUTPUT-HOLDS-NO-CODE), so the approved-delete exit is scratch clear."""
+    rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']
+    section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
+    section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
+    for text in (rule.remedy, section):
+        assert 'scratch clear <NAME> --yes' in text
+        assert 'moves the approved path under `output/`' not in text
+
+
 def test_an_archived_tree_branch_or_detached_names_the_remove_door() -> None:
     """Wall 2026-11-17: ``--discard`` takes a BRANCH, so a detached tree had no door; ``worktrees --remove`` is it."""
     rule = rules_by_id(DENY_RULES)['RECURSIVE-DELETE']

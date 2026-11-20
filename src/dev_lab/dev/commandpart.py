@@ -34,12 +34,12 @@ from lab_commons.hpc.shell import FULL
 from lab_commons.hpc.testcells import upgraded
 from lab_commons.log import emit
 
-from dev_lab.dev.datedlog import UndeclaredOutput, script_temp_env
 from dev_lab.dev.famtests.alwayson import run_checks
 from dev_lab.dev.localpart import local_record, post_local
 from dev_lab.dev.partrows import row_part
 from dev_lab.dev.platformparts import part_context, record_directory
 from dev_lab.dev.producer import Owner, ProducerExit, full_suite_refusal, unreachable
+from dev_lab.dev.testtemp import script_temp_env
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -70,15 +70,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             emit(f'commandpart: {node}: {cells[node].why}', err=True)
         # Resolved on PATH first: on Windows `npm` is `npm.cmd`, which a bare name cannot start (WinError 2).
         program = shutil.which(command[0]) or command[0]
-        # D27: the suite temp dirs (the TMPDIR, TEMP and TMP variables) land in the dated tree, asked at run.
+        # D104: the suite temp dirs (the TMPDIR, TEMP and TMP variables) land in one swept system-temp entry.
         code = (
             1
             if failed
             else _door.run(
-                [program, *command[1:]], cwd=args.root, env=script_temp_env(args.root, os.environ), check=False
+                [program, *command[1:]], cwd=args.root, env=script_temp_env(os.environ), check=False
             ).returncode
         )
-    except (OSError, subprocess.CalledProcessError, UndeclaredOutput) as cannot:
+    except (OSError, subprocess.CalledProcessError) as cannot:
         emit(f'commandpart: unreachable -- cannot run {command[0]!r} here: {cannot}', err=True)
         return unreachable(f'cannot run {command[0]!r}: {cannot}', Owner.ENVIRONMENT)
     sha = head.stdout.strip()

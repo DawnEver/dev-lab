@@ -54,7 +54,6 @@ from lab_commons.log import emit
 
 from dev_lab.dev import gitdirs
 from dev_lab.dev.consentguard import refuse_write as refuse_consent_write
-from dev_lab.dev.datedlog import TEST_TEMP_KIND, kind_dirs
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.machineguard import refuse_write as refuse_machine_file_write
 from dev_lab.dev.outputcode import refuse_code_in_output
@@ -253,13 +252,9 @@ def declared_placement(root: Path) -> Placement:
 
 
 def declared_misplaced(root: Path) -> list[str]:
-    """:func:`misplaced_code` over *root* with the placement *root* declares -- the adopter's scan.
-
-    The test runner's dated temp dirs are pruned too: a planted file there is a fixture, not a one-off that escaped.
-    """
+    """:func:`misplaced_code` over *root* with the placement *root* declares -- the adopter's scan."""
     placement = declared_placement(root)
-    pruned = (*placement.pruned_paths, *kind_dirs(root, TEST_TEMP_KIND))
-    return misplaced_code(root, code_roots=placement.code_roots, pruned_paths=pruned)
+    return misplaced_code(root, code_roots=placement.code_roots, pruned_paths=placement.pruned_paths)
 
 
 def _home_for(rel: str) -> str:

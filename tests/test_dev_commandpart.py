@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from _forge_fake import make_repo, run_git
 from lab_commons.outcomes import Conclusion
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import commandpart
 from dev_lab.dev.cjk import CJK_RANGES
-from dev_lab.dev.datedlog import SCRIPT_TEST_TEMP_KIND, output_dir
 from dev_lab.dev.famtests.alwayson import required_ids
 from dev_lab.dev.platformparts import part_context, part_of
 from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit, producing
+from dev_lab.dev.testtemp import SCRIPT_KIND
 
 _SHA = 'a' * 40
 _ENVS: list[dict[str, str]] = []
@@ -170,12 +172,13 @@ def test_the_program_is_resolved_on_path_so_a_windows_cmd_shim_runs(tmp_path: Pa
     assert list(posted[0]['cells']) == ['npm test']
 
 
-def test_the_command_s_temp_is_the_dated_tree_never_system_temp(tmp_path: Path, monkeypatch) -> None:
-    """D27 for a script suite: the command runs with TMPDIR/TEMP/TMP under ``<output>/<date>/scripttest/``."""
+def test_the_command_s_temp_is_a_swept_system_temp_entry_never_output(tmp_path: Path, monkeypatch) -> None:
+    """D104 for a script suite: the command runs with TMPDIR/TEMP/TMP naming one owned system-temp entry."""
     _ENVS.clear()
     _wired(tmp_path, monkeypatch, code=0)
     assert commandpart.main(['--root', str(tmp_path), 'base', '--', 'npm', 'test']) == ProducerExit.PASS
     (env,) = _ENVS
     temp = Path(env['TMPDIR'])
     assert env['TEMP'] == env['TMP'] == env['TMPDIR']
-    assert temp.parent == output_dir(tmp_path, SCRIPT_TEST_TEMP_KIND)
+    assert temp.name.startswith(f'{TEMP_PREFIX}{SCRIPT_KIND}-')
+    assert temp.parent == Path(tempfile.gettempdir())

@@ -6,8 +6,8 @@ naming its own git dir (``gitdir: <path>``), whose ``commondir`` names the repos
 ``.git`` is the directory itself. Anything unreadable answers ``None``, and the caller decides what that means.
 
 THE WALK STOPS WHERE GIT'S DOES: at a directory named in ``GIT_CEILING_DIRECTORIES`` (git's own contract), so a
-tree below a ceiling -- a test's sandbox under the checkout's output tree (:mod:`dev_lab.dev.testtemp`) -- is
-outside any checkout here exactly as it is to ``git`` itself. One walk, :func:`ancestors`, serves every reader.
+tree below a ceiling is outside any checkout here exactly as it is to ``git`` itself. One walk, :func:`ancestors`,
+serves every reader.
 """
 
 from __future__ import annotations

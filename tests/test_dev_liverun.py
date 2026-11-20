@@ -55,7 +55,7 @@ def tree(tmp_path: Path) -> Path:
 def _own_words(text: str, root: Path) -> str:
     """*text* with *root* spelled as a short stand-in: the budget judges the message, not where the test's tree sits.
 
-    The tree is a caller's data, and pytest's temp dir under the checkout's output tree (D27) is far deeper than a
+    The tree is a caller's data, and pytest's system-temp dir (D104) can be far deeper than a
     worktree a refusal names in practice.
     """
     return text.replace(root.as_posix(), 'C:/repo').replace(str(root), 'C:/repo')
