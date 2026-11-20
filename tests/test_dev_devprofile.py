@@ -6,7 +6,9 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from lab_commons import storage
 from lab_commons.hpc.grants import AccessRefused
+from lab_commons.storage import StorageError
 
 from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devschema
 from dev_lab.dev.hpcaccount import division
@@ -153,3 +155,26 @@ def test_local_set_heals_the_missing_bridge_interpreter_it_names(
     healed = tomllib.loads(machine.read_text(encoding='utf-8'))
     assert healed['tools']['python'] == python
     assert healed['bridge']['hpc']['command'][0] == python
+
+
+def test_the_render_never_copies_a_family_only_storage_fact(tmp_path: Path) -> None:
+    """The render never copies the family's [storage] remotes; it names the [family] source the reader uses.
+
+    Measured 2026-11-20: the copy was refused by the storage reader ("a family fact"), so every pre-push failed.
+
+    PLANTED CONTROL: the same remotes in a machine file are refused by the reader.
+    """
+    family_text = FAMILY + ('\n[storage.remotes.store-x]\ntype = "s3"\nendpoint = "https://store.example"\n')
+    host_text = HOST + '\n[storage.reach.store-x]\ncredentials_file = "/secrets/store-x"\n'
+    clone = _clone(tmp_path, family_text)
+    (clone / 'hosts' / 'ws.toml').write_text(host_text, encoding='utf-8')
+    rendered = tomllib.loads(devhost.render(clone, 'ws', LIVE))
+    assert 'remotes' not in rendered.get('storage', {}), 'a family-only fact stays in the family file'
+    assert rendered['storage']['reach'] == {'store-x': {'credentials_file': '/secrets/store-x'}}
+    family = tomllib.loads(family_text)
+    assert rendered['family'] == {'source': clone.resolve().as_posix()}
+    assert [remote.name for remote in storage.declared(rendered, family).reach] == ['store-x']
+    with pytest.raises(StorageError, match='family fact'):
+        storage.declared(
+            {**rendered, 'storage': {**rendered['storage'], 'remotes': family['storage']['remotes']}}, family
+        )

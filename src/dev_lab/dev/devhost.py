@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons import config as machineconfig
+from lab_commons import storage
 from lab_commons.log import emit
 
 from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, forgeenrol, tomlleaves, vendordetect
@@ -116,6 +117,28 @@ def config_source(live: Mapping[str, Any] | None = None) -> str:
     return url.strip()
 
 
+#: Keys a reader takes from the FAMILY file only and refuses in a machine file (lab_commons.storage: "a family fact").
+_FAMILY_ONLY: Final = {storage.TABLE: frozenset({'remotes'})}
+
+
+def _family_facts_stay_home(layered: Mapping[str, Any], clone: Path) -> dict[str, Any]:
+    """*layered* without the family-only keys, and with ``[family] source`` naming the clone they are read from.
+
+    Measured 2026-11-20: the render copied the family's ``[storage] remotes`` into the machine file, which the storage
+    reader refuses, and named no ``[family]`` source, so the reader could not reach the remotes either.
+    """
+    kept = {name: dict(rows) if isinstance(rows, Mapping) else rows for name, rows in layered.items()}
+    for table, keys in _FAMILY_ONLY.items():
+        rows = kept.get(table)
+        if isinstance(rows, dict):
+            for key in keys:
+                rows.pop(key, None)
+            if not rows:
+                kept.pop(table)
+    kept.setdefault(machineconfig.FAMILY_TABLE, {'source': clone.resolve().as_posix()})
+    return kept
+
+
 def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
     """The machine file for *host*: family ⊕ host (``[dev]`` aside) ⊕ the *live* file's local-only tables."""
     family_file, host_file = _sources(clone, host)
@@ -133,6 +156,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
         layered = merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
     if channels := parsed.get('dev', {}).get('channels'):
         layered = merge(layered, {CHANNELS_TABLE: {'channels': channels}})
+    layered = _family_facts_stay_home(layered, clone)
     local = {k: v for k, v in live.items() if k not in layered and k != OWN_TABLE}
     own = {'host': host, 'source': clone.resolve().as_posix()}  # absolute: never the reader's CWD (#556)
     own |= {devprofile.UNMANAGED: host} if unmanaged else {}
