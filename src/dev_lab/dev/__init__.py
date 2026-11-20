@@ -369,6 +369,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.toolrelease` -- a pinned tool release (rclone): sha256-checked, installed user-space.
 * :mod:`dev_lab.dev.familyroot` -- the MAIN checkout and the family root, from git alone (no lab-commons subpackage).
 * :mod:`dev_lab.dev.commonsfloor` -- COMMONS-BELOW-FLOOR: a kit missing a lab_commons module names its heal.
+* :mod:`dev_lab.dev.uvrelease` -- the lock writer is the pinned uv release, sha256-checked, installed beside any other.
 * :mod:`dev_lab.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``[priority] hosts`` entry matches.
 * :mod:`dev_lab.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
 * :mod:`dev_lab.dev.forgerequest` -- a request: an issue-declared job ranked, admitted and run on the part path.

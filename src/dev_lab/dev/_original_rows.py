@@ -408,4 +408,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'familyroot',
     # ORIGINAL: 2026-11-20, COMMONS-BELOW-FLOOR names the heal of a kit whose lab-commons predates its dev-lab.
     'commonsfloor',
+    # ORIGINAL: 2026-11-20, the uv that writes a lock is the pinned release installed beside any other.
+    'uvrelease',
 )
