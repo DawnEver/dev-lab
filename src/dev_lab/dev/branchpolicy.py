@@ -166,6 +166,7 @@ def observe(root: Path, repo: str, *, now: datetime) -> tuple[Alarm, ...]:
 def prune_duty(
     root: Path,
     client: Client,
+    repo: str,
     *,
     now: datetime,
     say: Callable[[str], None],
@@ -174,17 +175,18 @@ def prune_duty(
     """THE ``prune`` role's pass, whoever executes it: close landed PRs, sweep, prune, prune records, observe.
 
     The refs must be fetched already. Each step only alarms on failure; the policy observation last, so it reads
-    what the prune left.
+    what the prune left. *repo* is the forge identity the alarms carry, given by the caller (the serve tick names its
+    repo; the feed derives it from the remote) -- never read back off *client*.
     """
     serve_close_landed(root, client, say=say, alarm=alarm)
     serve_sweep(root, client, say=say, alarm=alarm)
     serve_prune(root, client, now=now, say=say, alarm=alarm)
     serve_records_prune(root, client, now=now, say=say, alarm=alarm)
     try:
-        for raised in observe(root, client.forge.repo, now=now):
+        for raised in observe(root, repo, now=now):
             alarm(raised)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
-        alarm(Alarm(INTEGRATION, client.forge.repo, 'the branch policy was not observed', str(failed)))
+        alarm(Alarm(INTEGRATION, repo, 'the branch policy was not observed', str(failed)))
 
 
 def run_here(
@@ -214,7 +216,12 @@ def run_here(
             say(f'[prune duty] {root}: not run: {why}')
             continue
         prune_duty(
-            root, clients(forge), now=now, say=say, alarm=lambda one: say(f'[prune duty] {one.subject}: {one.body}')
+            root,
+            clients(forge),
+            forge.repo,
+            now=now,
+            say=say,
+            alarm=lambda one: say(f'[prune duty] {one.subject}: {one.body}'),
         )
         done.append(forge.identity)
     return tuple(done)
