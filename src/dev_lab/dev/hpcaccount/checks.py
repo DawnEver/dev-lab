@@ -35,6 +35,7 @@ from __future__ import annotations
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
@@ -87,20 +88,28 @@ LOGIN_MARK: Final = '# lab-commons-deploy:path'
 
 
 def runs(sh: Sequence[str], environment: str, tool: str) -> bool:
-    """Whether ``<tool> --version`` exits 0 under the shell prefix *environment*, run through the *sh* argv."""
-    try:
-        done = _door.run(
-            [*sh, f'{environment}; {shlex.quote(tool)} --version'],
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            timeout=_PROBE_TIMEOUT_S,
-            check=False,
-        )
-    except OSError:
-        return False
-    return done.returncode == 0
+    """Whether ``<tool> --version`` exits 0 under the shell prefix *environment*, run through the *sh* argv.
+
+    A probe that times out is retried once: a cold login shell (``module load`` filling its cache) is slow, not
+    absent (measured 2026-11-20 on Ada: an uncaught timeout killed the deploy). Two timeouts read as "does not run".
+    """
+    for _attempt in range(2):
+        try:
+            done = _door.run(
+                [*sh, f'{environment}; {shlex.quote(tool)} --version'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=_PROBE_TIMEOUT_S,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            continue
+        except OSError:
+            return False
+        return done.returncode == 0
+    return False
 
 
 def login_files(home: Path) -> list[Path]:

@@ -236,6 +236,18 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_arch_formats_migrate_once.py',),
     ),
+    (
+        'ALL-EXTRAS-REFUSED',
+        (
+            'Every environment selects its extras for its need-set from the repo`s ONE declaration '
+            '(`[tool.dev_lab.dep] extras` + `needs`, read by `lab_commons.extras`): a CI part syncs the declared '
+            'extras plus those its need-set maps to (`dev_lab.dev.depneeds flags`), a cluster build and a research '
+            'job likewise (user, 2026-11-20: most tasks need no torch). No step syncs every extra: a rendered '
+            '`--all-extras` / `--extra all` is refused at render, `[tool.lab_commons.hpc] install` is retired, and '
+            'a repo with optional dependencies and no declared extras is refused by name.'
+        ),
+        ('tests/test_dev_ciworkflows.py', 'tests/test_dev_depneeds.py'),
+    ),
 )
 
 

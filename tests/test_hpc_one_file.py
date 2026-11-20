@@ -34,8 +34,9 @@ from lab_commons.hpc.cluster import files_of, gather, render_script, run_home, s
 from lab_commons.hpc.config import Cluster, Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.hpc.jobs import gather_job
+from lab_commons.hpc.layout import NATIVE
 from lab_commons.hpc.plan import make_plan
-from lab_commons.hpc.shell import BUILD_FAILED, UV_PRUNE, RunSpec, build_script, cache_dir, facts
+from lab_commons.hpc.shell import BUILD_FAILED, UV_CACHE, UV_PRUNE, RunSpec, build_script, cache_dir, facts
 from lab_commons.hpc.slurm import parse_snapshot
 from lab_commons.hpc.tree import NotSubmitted
 from lab_commons.hpc.worker import RESULTS, TAIL_LINES, Rejected, append_event, close_shard, run_shard
@@ -325,14 +326,14 @@ def test_the_artifact_build_leaves_one_file_and_copies_from_the_one_uv_cache() -
     assert 'mktemp -d "${TMPDIR:-/tmp}/' in script
     assert 'EXIT' in script
     assert f'archive {SHA} | tar -x' in script, 'exported, never a worktree'
-    assert 'UV_CACHE_DIR="$LAB_ROOT"/cache/uv UV_LINK_MODE=copy' in script, 'one cache, copied'
+    assert f'UV_CACHE_DIR={UV_CACHE}' in script, 'one shared uv cache under the root, hardlinked from'
     for gone in ('worktree add', '/envs/', '/runs/', '$S/uv-cache'):
         assert gone not in script, gone
     assert 'for p in src cases;' in script, 'the source roots and the declared paths, nothing else'
     assert 'PYTHONPATH="$ART/tree/src${PYTHONPATH' in script
     assert 'tar -czf "$A.part" -C "$S/pack" . && mv "$A.part" "$A"' in script, 'one file, atomically'
     native = artifact_script(RunSpec(sha=SHA, repo_url='u', builds=replace(BUILDS, native_key='n9', native_build='b')))
-    assert '/native/n9' in native, 'a native build stays keyed'
+    assert f'{NATIVE}/n9' in native, 'a native build stays keyed'
     assert '$ART/native' in native, 'and is packed'
 
 
@@ -356,7 +357,7 @@ def test_build_artifact_answers_the_path_or_refuses_with_the_log() -> None:
 
 
 def test_the_declaration_names_what_the_artifact_carries() -> None:
-    text = '[tool.lab_commons.hpc]\ninstall = "uv sync"\nsource_roots = ["src"]\nartifact_paths = ["cases"]\n'
+    text = '[tool.lab_commons.hpc]\nsource_roots = ["src"]\nartifact_paths = ["cases"]\n'
     assert read_builds(text).artifact_paths == ('cases',)
 
 
@@ -384,6 +385,12 @@ def _commit(work: Path, files: dict[str, str]) -> str:
 
 def _project(name: str, deps: str = '') -> str:
     return f'[project]\nname = "{name}"\nversion = "0"\nrequires-python = ">=3.9"\ndependencies = [{deps}]\n'
+
+
+def _bash_path(path: Path) -> str:
+    """*path* as the bash the test drives reads it: MSYS converts HOME itself, never LAB_ROOT (``C:`` is a tar host)."""
+    posix = path.as_posix()
+    return f'/{posix[0].lower()}{posix[2:]}' if os.name == 'nt' and posix[1:2] == ':' else posix
 
 
 def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_install(tmp_path: Path) -> None:
@@ -423,16 +430,16 @@ def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_in
     install = f'uv sync -q --frozen --offline --no-install-package dep && {posix_layout}'
     builds = Builds(install=install, source_roots=('components',), env_key='k1')
     spec = RunSpec(sha=sha, repo_url=urls['top'], builds=builds, python=Path(sys.executable).as_posix())
-    cache = Path(cache_dir(spec.repo_url).replace('"$LAB_ROOT"', home.as_posix()))
+    cache = Path(cache_dir(spec.repo_url).replace('"$LAB_ROOT"', (home / 'ci').as_posix()))
     _git('clone', '-q', '--bare', urls['top'], cache)
     env = {
         **os.environ,
         'HOME': home.as_posix(),
+        'LAB_ROOT': _bash_path(home / 'ci'),
         'GIT_CONFIG_PARAMETERS': "'protocol.file.allow=always'",
     }
     done = subprocess.run(
-        # LAB_ROOT in bash's own path form: a drive-letter root reads as tar's ``host:file``
-        [bash_executable(), '-c', 'export LAB_ROOT="$HOME"\n' + artifact_script(spec)],
+        [bash_executable(), '-c', artifact_script(spec)],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -442,7 +449,7 @@ def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_in
     assert BUILD_FAILED not in done.stdout, done.stdout
     assert done.returncode == 0, (done.stdout, done.stderr)
     assert facts(done.stdout)['artifact'].endswith(f'/artifacts/{sha}.tar.gz')
-    with tarfile.open(home / 'artifacts' / f'{sha}.tar.gz') as tar:
+    with tarfile.open(home / 'ci' / 'artifacts' / f'{sha}.tar.gz') as tar:
         names = set(tar.getnames())
         pinned = tar.extractfile('./tree/components/dep/dep/__init__.py')
         assert pinned is not None

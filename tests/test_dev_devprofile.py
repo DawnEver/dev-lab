@@ -6,9 +6,12 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from lab_commons import config as machineconfig
+from lab_commons import storage
 from lab_commons.hpc.grants import AccessRefused
+from lab_commons.storage import StorageError
 
-from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devschema
+from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devschema, tomlleaves
 from dev_lab.dev.hpcaccount import division
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -126,3 +129,87 @@ def test_the_enrolment_door_names_the_config_sources_own_checkout_loop() -> None
     assert 'forge pr create` FROM that worktree' in text
     # the control: the render door is still named last
     assert text.rstrip().endswith('render --host WSX --write')
+
+
+def test_local_set_heals_the_missing_bridge_interpreter_it_names(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Measured 2026-11-20: the refusal named `local set tools.python`, and that door refused itself.
+
+    PLANTED CONTROL: render with the key still unset is refused by name and writes nothing.
+    """
+    clone = _clone(tmp_path)
+    rendered = tomllib.loads(devhost.render(clone, 'ws', LIVE))
+    rendered.pop('tools')
+    rendered.pop('bridge')
+    machine = tmp_path / 'machine.toml'
+    machine.write_text(devhost.dumps(rendered), encoding='utf-8')
+    before = machine.read_text(encoding='utf-8')
+    backups = str(tmp_path / 'b')
+    code = devhost.main(['--machine', str(machine), 'render', '--write', '--backups', backups])
+    assert code == 2, 'a render missing the local interpreter is refused, never a traceback'
+    assert r'local set tools.python' in capsys.readouterr().err
+    assert machine.read_text(encoding='utf-8') == before, 'a refused render writes nothing'
+    python = '/opt/tools/bin/python'
+    code = devhost.main(['--machine', str(machine), 'local', 'set', 'tools.python', python, '--backups', backups])
+    assert code == 0, 'the door the refusal names sets the key it names'
+    healed = tomllib.loads(machine.read_text(encoding='utf-8'))
+    assert healed['tools']['python'] == python
+    assert healed['bridge']['hpc']['command'][0] == python
+
+
+def test_the_render_never_copies_a_family_only_storage_fact(tmp_path: Path) -> None:
+    """The render never copies the family's [storage] remotes; it names the [family] source the reader uses.
+
+    Measured 2026-11-20: the copy was refused by the storage reader ("a family fact"), so every pre-push failed.
+
+    PLANTED CONTROL: the same remotes in a machine file are refused by the reader.
+    """
+    family_text = FAMILY + ('\n[storage.remotes.store-x]\ntype = "s3"\nendpoint = "https://store.example"\n')
+    host_text = HOST + '\n[storage.reach.store-x]\ncredentials_file = "/secrets/store-x"\n'
+    clone = _clone(tmp_path, family_text)
+    (clone / 'hosts' / 'ws.toml').write_text(host_text, encoding='utf-8')
+    rendered = tomllib.loads(devhost.render(clone, 'ws', LIVE))
+    assert 'remotes' not in rendered.get('storage', {}), 'a family-only fact stays in the family file'
+    assert rendered['storage']['reach'] == {'store-x': {'credentials_file': '/secrets/store-x'}}
+    family = tomllib.loads(family_text)
+    assert rendered['family'] == {'source': clone.resolve().as_posix()}
+    assert [remote.name for remote in storage.declared(rendered, family).reach] == ['store-x']
+    with pytest.raises(StorageError, match='family fact'):
+        storage.declared(
+            {**rendered, 'storage': {**rendered['storage'], 'remotes': family['storage']['remotes']}}, family
+        )
+
+
+def test_the_render_restates_no_family_leaf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With [family] source declared, the machine file holds no leaf the family file holds (one rule, every table).
+
+    Measured 2026-11-20: after [storage] remotes, the render still copied [breakglass] endpoint and the reader
+    refused it ("restates a key the family layer holds"). An older render's copy in the live file is dropped too.
+
+    PLANTED CONTROL: the reader's own restatement check refuses the old copy the render no longer writes.
+    """
+    family_text = FAMILY + '\n[breakglass]\nendpoint = "bg@forge.example"\n'
+    clone = _clone(tmp_path, family_text)
+    stale = {**LIVE, 'breakglass': {'endpoint': 'bg@forge.example'}}
+    rendered = tomllib.loads(devhost.render(clone, 'ws', stale))
+    family = {k: v for k, v in tomllib.loads(family_text).items() if k != 'dev'}
+    restated = sorted(set(tomlleaves.leaves(rendered)) & set(tomlleaves.leaves(family)))
+    assert restated == [], f'the render restates family leaves {restated}'
+    assert rendered['family'] == {'source': clone.resolve().as_posix()}
+    monkeypatch.setattr(machineconfig, 'family', lambda: family)
+    monkeypatch.setattr(machineconfig, 'machine', lambda: rendered)
+    assert machineconfig.section('breakglass') == family['breakglass'], 'the reader takes it from the family file'
+    monkeypatch.setattr(machineconfig, 'machine', lambda: stale)
+    with pytest.raises(ValueError, match='restates a key the family layer holds'):
+        machineconfig.section('breakglass')
+
+
+def test_a_host_value_for_a_family_leaf_is_refused_by_name(tmp_path: Path) -> None:
+    """A host giving a family leaf another value is refused at render, naming the family file -- never silently lost."""
+    clone = _clone(tmp_path, FAMILY + '\n[breakglass]\nendpoint = "bg@forge.example"\n')
+    (clone / 'hosts' / 'ws.toml').write_text(
+        HOST + '\n[breakglass]\nendpoint = "other@forge.example"\n', encoding='utf-8'
+    )
+    with pytest.raises(ValueError, match=r'\[breakglass\]\.endpoint.*family file'):
+        devhost.render(clone, 'ws', LIVE)

@@ -112,3 +112,33 @@ def test_rclone_installs_through_the_pinned_release_door() -> None:
     script = deploy_checks.INSTALLERS['rclone']
     assert script.endswith('-m dev_lab.dev.toolrelease install rclone')
     assert 'curl' not in script
+
+
+def test_a_probe_that_times_out_is_retried_once_and_never_crashes_the_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A slow login shell (a cold ``module load``) is a slow probe, not a crash.
+
+    Measured 2026-11-20 on Ada: ``bash -lc '...; module load git-...; uv --version'`` passed 60 s and the deploy
+    died on an uncaught ``TimeoutExpired``. The probe is retried once (the module cache is warm then); two timeouts
+    read as "does not run", which the deploy refuses or installs by name. PLANTED CONTROL: a probe that answers
+    on its retry runs.
+    """
+    import subprocess  # noqa: PLC0415
+
+    calls: list[int] = []
+
+    def slow_then(answer: int | None) -> object:
+        def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(1)
+            if len(calls) == 1 or answer is None:
+                raise subprocess.TimeoutExpired(argv, float(kwargs.get('timeout', 0)))  # type: ignore[arg-type]
+            return subprocess.CompletedProcess(argv, answer, '', '')
+
+        return run
+
+    monkeypatch.setattr(deploy_checks._door, 'run', slow_then(0))
+    assert deploy_checks.runs(('bash', '-lc'), 'module load x', 'uv') is True
+    assert len(calls) == 2
+    calls.clear()
+    monkeypatch.setattr(deploy_checks._door, 'run', slow_then(None))
+    assert deploy_checks.runs(('bash', '-lc'), 'module load x', 'uv') is False
+    assert len(calls) == 2

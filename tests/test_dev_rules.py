@@ -43,7 +43,9 @@ from dev_lab.dev.rules import (
 #: the rule's own name, in the same commit as the removal.
 _IDS = frozenset(
     {
+        'SCHEDULER-ONLY-FOR-SERVING',
         'AGENT-GUARD',
+        'ALL-EXTRAS-REFUSED',
         'BAR-IS-A-CONSTANT',
         'CODE-IN-CODE-ROOTS',
         'DECLARATION-LIES',

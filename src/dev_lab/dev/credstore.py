@@ -8,7 +8,8 @@ The token is never on an argv and never printed: it arrives as a shell's stdin, 
 ``printf`` (builtins). The line is staged alone in ``~/.git-credentials.new-<ts>`` (umask 077); the forge's own
 ``auth role``, run with git's credential helper pointed at ONLY that file, must answer as the login. Then the store
 is rewritten (:func:`rewrite_command`): a backup ``~/.git-credentials.bak-<ts>`` (0600) first, every other line kept,
-the forge's line replaced, mode 0600, atomic ``mv``. A refusal deletes the staged file and leaves the store untouched.
+the forge's line for THAT LOGIN replaced (one line per host and login), mode 0600, atomic ``mv``. A refusal
+deletes the staged file and leaves the store untouched.
 
 THE FORGE IS THE HOST CONFIG'S (:func:`read_forge`): its sites and accounts come from the forge host's reviewed
 config, never a copy; a url on another host is refused before anything is staged.
@@ -43,6 +44,7 @@ __all__ = [
     'stage_command',
     'stamp_now',
     'valid_host',
+    'valid_login',
     'verify_prefix',
 ]
 
@@ -52,6 +54,7 @@ Shell = Callable[[str, str | None], str]
 #: The store git's ``credential.helper store`` reads, under ``$HOME``.
 STORE: Final = '.git-credentials'
 _HOST: Final = re.compile(r'[A-Za-z0-9.-]+')
+_LOGIN: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
 _STAMP: Final = re.compile(r'[0-9]{8}T[0-9]{6}Z')
 
 
@@ -63,6 +66,11 @@ def digest(token: str) -> str:
 def stamp_now() -> str:
     """The UTC timestamp a staged file and a backup are named by."""
     return datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
+
+
+def valid_login(login: str) -> bool:
+    """*login* is a bare forge login (no separator, quote or shell metacharacter)."""
+    return _LOGIN.fullmatch(login) is not None
 
 
 def valid_host(host: str) -> bool:
@@ -115,14 +123,19 @@ def discard_command(stamp: str) -> str:
     return f'rm -f {_staged(stamp)}'
 
 
-def rewrite_command(host: str, stamp: str, *, staged: bool) -> str:
-    """The shell line that backs up ``~/.git-credentials`` and removes *host*'s line -- replaced by the staged one.
+def rewrite_command(host: str, stamp: str, *, login: str, staged: bool) -> str:
+    """The shell line that backs up ``~/.git-credentials`` and removes *login*'s *host* line -- replaced if staged.
 
-    The backup ``~/.git-credentials.bak-<stamp>`` (0600) is taken when a store exists and its path echoed; every
-    other line is kept; the new file is written under ``umask 077``, ``chmod 600`` and moved into place atomically.
+    ONE LINE PER (HOST, LOGIN) (2026-11-20): another login's line on the same host is kept, so one account holds a
+    verdict-posting login and a reader side by side; a url naming its user selects that line. The backup
+    ``~/.git-credentials.bak-<stamp>`` (0600) is taken when a store exists and its path echoed; every other line is
+    kept; the new file is written under ``umask 077``, ``chmod 600`` and moved into place atomically.
     """
     _checked(host, stamp)
-    own = r'^https?://[^@/]*@' + host.replace('.', r'\.') + r'(:[0-9]+)?/?$'
+    if not valid_login(login):
+        msg = f'not a forge login: {login!r}'
+        raise ValueError(msg)
+    own = r'^https?://' + login.replace('.', r'\.') + r'(:[^@/]*)?@' + host.replace('.', r'\.') + r'(:[0-9]+)?/?$'
     add, done = (f' && cat {_staged(stamp)}', f' && rm -f {_staged(stamp)}') if staged else ('', '')
     return (
         f'umask 077 && f="$HOME/{STORE}" && b="$f.bak-{stamp}" && '
@@ -198,4 +211,4 @@ def place_verified(shell: Shell, *, login: str, token: str, repo: str, role: str
     if answered != login:
         shell(discard_command(stamp), None)
         return f'the forge answers {repo} as {answered or "anonymous"}, not {login}; ~/{STORE} untouched', ''
-    return '', shell(rewrite_command(host, stamp, staged=True), None).strip()
+    return '', shell(rewrite_command(host, stamp, login=login, staged=True), None).strip()

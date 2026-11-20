@@ -158,7 +158,8 @@ def test_the_render_layers_family_host_and_local_and_drops_dev(tmp_path: Path) -
     clone = _clone(tmp_path)
     text = devhost.render(clone, 'ws', tomllib.loads(LOCAL))
     assert text.startswith('# RENDERED')
-    rendered = tomllib.loads(text)
+    assert 'consent' not in tomllib.loads(text), 'a family table stays in the family file'
+    rendered = devdeclared.layered(tomllib.loads(text))  # the whole machine a reader sees
     assert rendered['consent'] == {'endpoint': 'consent@forge.example'}
     assert rendered['hpc']['grant'] == [{'user': 'u1', 'cluster': 'c', 'slurm_account': 'a', 'role': 'research'}]
     assert rendered['hpc']['reach'] == ['research'], "the host's [dev] hpc renders as the machine's reach"
@@ -172,7 +173,8 @@ def test_the_render_layers_family_host_and_local_and_drops_dev(tmp_path: Path) -
 def test_a_declared_table_replaces_the_live_copy(tmp_path: Path) -> None:
     live = tomllib.loads(LOCAL + '\n[consent]\nendpoint = "consent@stale"\n')
     rendered = tomllib.loads(devhost.render(_clone(tmp_path), 'ws', live))
-    assert rendered['consent'] == {'endpoint': 'consent@forge.example'}
+    assert 'consent' not in rendered, 'the stale local copy of a family table is dropped, not kept'
+    assert devdeclared.layered(rendered)['consent'] == {'endpoint': 'consent@forge.example'}
 
 
 @pytest.fixture(autouse=True)
@@ -384,7 +386,7 @@ at = 08:30:00
 def test_toml_dates_round_trip_through_the_render(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
     _write(clone, 'family.toml', FAMILY + '\n' + DATED)
-    rendered = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
+    rendered = devdeclared.layered(tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL))))
     budget = rendered['hpc']['clusters']['d']['slurm_accounts']['b']['budget']
     assert budget == tomllib.loads(DATED)['hpc']['clusters']['d']['slurm_accounts']['b']['budget']
 
@@ -523,7 +525,7 @@ def _account(tmp_path: Path, text: str = ACCOUNT, name: str = 'c-u1') -> Path:
 def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> None:
     clone = _account(tmp_path)
     assert check_host(clone / 'hosts/c-u1.toml', clone / 'family.toml') == []
-    rendered = tomllib.loads(devhost.render(clone, 'c-u1', {}))
+    rendered = devdeclared.layered(tomllib.loads(devhost.render(clone, 'c-u1', {})))
     assert rendered['deploy']['role'] == 'research', 'the role is the family grant, derived, never restated'
     assert rendered['hpc']['reach'] == ['research'], 'an account reaches its own grant: its role, derived'
     assert rendered['hpc']['paging'] == {'page_cpus': 8, 'page_mem_gb': 20}

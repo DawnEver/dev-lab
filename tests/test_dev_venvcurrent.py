@@ -29,7 +29,8 @@ TAIL = VENV_LAYOUTS[os.name][1:]
 def _project(root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / 'pyproject.toml').write_text(
-        '[project]\nname="example"\nversion="0"\n[project.optional-dependencies]\ndev=[]\n', encoding='utf-8'
+        '[project]\nname="example"\nversion="0"\n[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\n',
+        encoding='utf-8',
     )
     old = root / venvpointer.HOME / 'old'
     venv.EnvBuilder(with_pip=False).create(old)

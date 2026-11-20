@@ -227,9 +227,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.verb == 'open':
             if args.plan is not None:
                 sshholdplan.offered(args.plan)  # before the code is asked
+            check_hours(args.hours, ceiling())  # before the code is asked
             code, jump = given_code(args.code), args.jump
             if args.plan is not None:
-                check_hours(args.hours, ceiling())  # before the code is spent on the grants
                 opened, lines = sshholdplan.open_planned(
                     args.hours, code, args.plan, args.digest, routes=lambda dest: route(dest, jump), opener=open_session
                 )

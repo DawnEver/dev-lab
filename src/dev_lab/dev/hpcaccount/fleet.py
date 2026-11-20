@@ -60,7 +60,7 @@ from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost
+from dev_lab.dev import accounthost, devhost, tomlleaves
 from dev_lab.dev.credstore import STORE, valid_host
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.devdeclared import OWN_TABLE
@@ -205,24 +205,31 @@ def layer_refusal(grant: Grant, source: ConfigSource) -> str:
     return ''
 
 
-def render_command(grant: Grant, target: Target, source: ConfigSource) -> str:
+def render_command(grant: Grant, target: Target, source: ConfigSource, *, reader: str = '') -> str:
     """The shell line that renders *grant*'s machine file ON its account from the config source's clone there.
 
     The clone is ``<root>/repos/<config repo>``, fetched with the account's stored credential (refused, naming the door
     that places one, when none is stored for the forge); ``devhost drift`` prints what the render changes, then
     ``devhost render --write`` replaces the file, its old copy backed up. In the grant's ``setup`` environment.
+    With *reader* (the role's ``config_reader``), the url names that login, so git's store answers with ITS line
+    even when the account holds another login's line for the same forge (one line per host and login, 2026-11-20).
     """
-    forge = urlsplit(source.url).hostname or ''
+    split = urlsplit(source.url)
+    forge = split.hostname or ''
+    url = split._replace(netloc=f'{reader}@{split.netloc}').geturl() if reader else source.url
     clone = shlex.quote(account_clone(target, source).as_posix())
     backups = f'"$HOME/{_BASE}/$(date -u +%y/%m/%d)/devhost"'
+    held = f'://{reader}:[^@/]*@{forge}' if reader else f'@{forge}'
     credential = (
-        f"grep -qs '@{forge}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
+        f"grep -qs '{held}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
         f'~/{STORE}: place one with python -m dev_lab.dev.hpcaccount credential {grant.user}@{target.host} --login '
-        f"<reader> --host-config <config source clone>'; exit 2; }}"
+        f"{reader or '<reader>'} --host-config <config source clone>'; exit 2; }}"
     )
+    quoted = shlex.quote(url)
     fetch = (
-        f'if [ -d {clone}/.git ]; then git -C {clone} pull -q --ff-only; '
-        f'else git clone -q {shlex.quote(source.url)} {clone}; fi'
+        f'if [ -d {clone}/.git ]; then git -C {clone} remote set-url origin {quoted} '
+        f'&& git -C {clone} pull -q --ff-only; '
+        f'else git clone -q {quoted} {clone}; fi'
     )
     name = account_host(grant)
     drift = in_checkout(target, ['-m', 'dev_lab.dev.devhost', 'drift'])
@@ -277,8 +284,12 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     if division is not None and (role := division.role_of(grant.user)):
         deploy += ['--fleet-role', role, '--role-table', json.dumps(dict(division.roles[role]), sort_keys=True)]
     refreshed = f'{first_install(grant, target)} && {refresh_kit(grant, target)}'
-    rendered = f'{render_command(grant, target, source)} && {in_checkout(target, deploy)}'
-    return f'{paused_guard(target.root)} && {refreshed} ; {rendered}'
+    reader = division.config_reader(grant.user) if division is not None else ''
+    deployed = in_checkout(target, deploy)
+    if grant.setup:  # the venvs it builds compile in the cluster's declared environment, as its ticks run
+        deployed = f'( {" && ".join([*grant.setup, deployed])} )'
+    rendered = render_command(grant, target, source, reader=reader)
+    return f'{paused_guard(target.root)} && {refreshed} ; {rendered} && {deployed}'
 
 
 #: The official uv installer (user approval 2026-11-16: an HPC account may install uv into ``~/.local/bin``).
@@ -424,6 +435,30 @@ def deploy_fleet(
     return 2 if refused else 0
 
 
+def stale_render(live: Mapping[str, Any]) -> str:
+    """Why *live* (this machine's file) is not the render of its config source; ``''`` when it is.
+
+    The deploy line is built from THIS machine's grants, so a stale render deploys stale family facts (measured
+    2026-11-20: a cluster ``setup`` landed in the source, the machine file was never re-rendered, and every deploy ran
+    without it).
+    """
+    own = live.get(OWN_TABLE, {})
+    if not own.get('host') or not own.get('source'):
+        return ''  # not a render at all: config_source_of refuses it by name
+    clone = Path(own['source'])
+    rendered = tomlleaves.leaves(tomllib.loads(devhost.render(clone, own['host'], live)))
+    have = tomlleaves.leaves(live)
+    differ = sorted(path for path in set(rendered) | set(have) if rendered.get(path) != have.get(path))
+    if not differ:
+        return ''
+    first = ', '.join(f'{tomlleaves.dotted(path)} ({"absent" if path not in have else "not the render"})'
+                      for path in differ[:3])  # fmt: skip
+    return (
+        f'the machine file is not the render of {clone.as_posix()} ({len(differ)} key(s): {first}); re-render it '
+        f'first: python -m dev_lab.dev.devhost render --host {own["host"]} --write'
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``deploy-fleet`` and start it."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount deploy-fleet', description=__doc__.splitlines()[0])
@@ -432,9 +467,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         machine = reached_machine(args.account)
-        source = config_source_of(machineconfig.machine())
+        live = machineconfig.machine()
+        source = config_source_of(live)
     except (PermissionError, LookupError, ValueError) as refused:
         emit(f'deploy-fleet: refused -- {refused}')
+        return 2
+    if why := stale_render(live):
+        emit(f'deploy-fleet: refused -- {why}')
         return 2
     return deploy_fleet(
         machine.grants,

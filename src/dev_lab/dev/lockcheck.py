@@ -42,6 +42,7 @@ import lab_commons.launch as _door
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.netverb import Report, run_network_verb
+from dev_lab.dev.uvfollow import due
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -49,7 +50,7 @@ if TYPE_CHECKING:
 __all__ = [
     'DOOR', 'FRESHENED', 'LOCK', 'NOT_RENDERED', 'REMEDY', 'TOOLCHAIN', 'UNRESOLVED', 'UV_PIN', 'UV_RELEASES',
     'lock_problems', 'mount_submodules', 'newest_stable', 'newest_uv', 'pin_stable', 'pin_uv', 'refreshable', 'stale',
-    'toolchain_problems', 'unreasoned_holds', 'unrendered', 'uv_version',
+    'toolchain_problems', 'unreasoned_holds', 'unrendered', 'uv_due', 'uv_policy', 'uv_version',
 ]  # fmt: skip
 
 #: The lockfile every family repo commits.
@@ -96,6 +97,7 @@ _CHANNEL: Final = re.compile(r'^(?P<lead>\s*channel\s*=\s*)["\'](?P<channel>[^"\
 _EXACT: Final = re.compile(r'^\d+\.\d+\.\d+$')
 _UV_PINNED: Final = re.compile(r'^(?P<lead>version\s*=\s*)"(?P<version>[^"\n]*)"', re.MULTILINE)
 #: A release tag ``ls-remote`` lists: ``<sha>\trefs/tags/0.13.7``; a pre-release tag has a suffix and never matches.
+_UV_FOLLOW: Final = re.compile(r'^follow\s*=\s*"(?P<policy>[^"\n]*)"', re.MULTILINE)
 _RELEASE_TAG: Final = re.compile(r'\trefs/tags/v?(?P<version>\d+\.\d+\.\d+)$', re.MULTILINE)
 #: ``rustup check``'s stable line: ``Up to date : <v> (...)`` or ``Update available : <old> (...) -> <v> (...)``.
 #: rustup's case and the space before the colon vary by release (1.29 on Linux prints ``update available:``).
@@ -257,13 +259,32 @@ def newest_uv(*, check: Callable[[], Report] = _uv_tags) -> str:
 
 def uv_version(root: Path | None = None) -> str:
     """The uv *root* pins at :data:`UV_PIN` when it carries one (a dev-lab checkout), else this dev-lab's own."""
-    pin = root / UV_PIN if root is not None else None
-    path = pin if pin is not None and pin.is_file() else Path(__file__).with_name('uv.toml')
+    path = _pin_path(root)
     found = _UV_PINNED.search(path.read_text(encoding='utf-8'))
     if found is None:
         msg = f'{path} pins no uv `version = "X.Y.Z"`'
         raise ValueError(msg)
     return found['version']
+
+
+def _pin_path(root: Path | None) -> Path:
+    pin = root / UV_PIN if root is not None else None
+    return pin if pin is not None and pin.is_file() else Path(__file__).with_name('uv.toml')
+
+
+def uv_policy(root: Path | None = None) -> str:
+    """The uv auto-update policy *root*'s :data:`UV_PIN` declares (``follow``), read like :func:`uv_version`."""
+    path = _pin_path(root)
+    found = _UV_FOLLOW.search(path.read_text(encoding='utf-8'))
+    if found is None:
+        msg = f'{path} declares no uv `follow = "minor"|"patch"`'
+        raise ValueError(msg)
+    return found['policy']
+
+
+def uv_due(root: Path | None, newest: str) -> str:
+    """The uv *root*'s pin should be at given the *newest* release, under its declared :func:`uv_policy`."""
+    return due(uv_version(root), newest, uv_policy(root))
 
 
 def pin_uv(tree: Path, version: str, sums: Mapping[str, str]) -> None:
@@ -352,8 +373,8 @@ def _uv_stale(tree: Path, uv: Callable[[], str]) -> tuple[str, ...]:
         newest = uv()
     except OSError as why:
         return (f'the newest uv release could not be read: {why}',)
-    pinned = uv_version(tree)
-    return () if pinned == newest else (f'{UV_PIN} is not the newest uv: {pinned} -> {newest}',)
+    pinned, wanted = uv_version(tree), uv_due(tree, newest)
+    return () if pinned == wanted else (f'{UV_PIN} is not the newest uv: {pinned} -> {wanted}',)
 
 
 def lock_problems(root: Path, sha: str) -> tuple[str, ...]:

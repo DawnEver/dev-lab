@@ -41,7 +41,6 @@ issues (the host card). Measured 2026-10-12: a token that read every repo over g
 from __future__ import annotations
 
 import argparse
-import getpass
 import json
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -54,6 +53,8 @@ from lab_commons.log import emit
 
 from dev_lab.dev import forgeverdict
 from dev_lab.dev._forgebackends import GITHUB_HOST
+from dev_lab.dev.ask import AskRefused
+from dev_lab.dev.ask import value as asked_value
 from dev_lab.dev.familyroot import family_root
 from dev_lab.dev.forge import (
     AUTH_REFUSED,
@@ -174,6 +175,8 @@ def repo_role(
 #: The exit of ``auth check|status`` when the forge could not be asked: no answer, a 5xx, an unmeasured 401/403.
 #: EX_TEMPFAIL, so a caller tells it from a refusal (exit 1) by the code, never by reading the message.
 UNREACHABLE_EXIT: Final = 75
+#: Said with the token prompt: what the value is and where the person finds it.
+TOKEN_HINT: Final = f'the forge user settings -> Applications -> Generate token, scopes {TICK_SCOPES}'
 
 #: The lead of the message ``auth check|status`` give with :data:`UNREACHABLE_EXIT`.
 UNREACHABLE: Final = 'the forge did not answer -- NOT a token fault, do not re-store it; re-run the same command'
@@ -286,7 +289,7 @@ def main(
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
     transport: Transport = forge_transport,
-    read_secret: Callable[[str], str] = getpass.getpass,
+    read_secret: Callable[[str], str] = input,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
 ) -> int:
@@ -300,7 +303,12 @@ def main(
     if args.token_stdin:
         token = stdin.read().strip()
     else:
-        token = read_secret(f'Personal access token for {forge.host} (input hidden): ').strip()
+        try:
+            token = asked_value(f'{forge.host} personal access token', hint=TOKEN_HINT, ask=read_secret,
+                                say=lambda line: emit(line, err=True))  # fmt: skip
+        except AskRefused as refused:
+            emit(f'[forge] {refused}; nothing was stored', err=True)
+            return _USAGE
     if not token:
         emit('[forge] no token given; nothing was stored', err=True)
         return _USAGE

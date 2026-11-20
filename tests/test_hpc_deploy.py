@@ -47,10 +47,12 @@ DECLARE: Final = (
 SACCT: Final = 'acct-free|cpu=96,mem=360G\nacct-free|cpu=96,mem=360G\n'
 
 FAKE_CRONTAB: Final = r"""
-import pathlib, sys
+import os, pathlib, sys
 state = pathlib.Path(sys.argv[1])
 log = state.parent / 'calls.log'
 with log.open('a') as f: f.write('crontab ' + ' '.join(sys.argv[2:]) + '\n')
+if os.environ.get('FAKE_CRONTAB_FORBID'):
+    sys.stderr.write('You (me) are not allowed to use this program (crontab)\n'); sys.exit(1)
 if sys.argv[2] == '-l':
     if not state.exists():
         sys.stderr.write('no crontab for me\n'); sys.exit(1)
@@ -77,7 +79,10 @@ if 'ls-remote' in args:
 if args[0] == 'clone':
     target = pathlib.Path(args[-1])
     (target / '.git').mkdir(parents=True)
-    (target / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync --extra dev"\n')
+    (target / 'pyproject.toml').write_text(
+        '[project.optional-dependencies]\ndev = ["x"]\n[tool.dev_lab.dep]\n'
+        'extras = ["dev"]\n[tool.lab_commons.hpc]\n'
+    )
 """
 
 FAKE_ANSWER: Final = r"""
@@ -186,7 +191,7 @@ def test_a_repo_declaring_a_retired_table_is_refused_alone_and_the_others_are_se
     assert box.run(*DECLARE) == 0
     beta = box.root / 'repos' / 'beta' / 'pyproject.toml'
     retired = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))  # its spelling lives in the registry
-    _write(beta, f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{retired}\nx = 1\n')
+    _write(beta, f'[tool.lab_commons.hpc]\n{retired}\nx = 1\n')
     capsys.readouterr()
     assert box.run() == 2, 'a refused repo still fails the deploy -- after the others are served'
     marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
@@ -207,7 +212,7 @@ def test_a_repo_whose_hpc_declaration_is_invalid_is_refused_alone_and_the_others
     """The 2026-10-18 Ada incident: ``read_builds`` refused one repo's table inside ``[tools]``; the deploy crashed."""
     assert box.run(*DECLARE) == 0
     beta = box.root / 'repos' / 'beta' / 'pyproject.toml'
-    _write(beta, '[tool.lab_commons.hpc]\ninstall = "uv sync"\ndependency_inputs = ["uv.lock"]\n')
+    _write(beta, '[tool.lab_commons.hpc]\ndependency_inputs = ["uv.lock"]\n')
     capsys.readouterr()
     assert box.run() == 2, 'a refused repo still fails the deploy -- after the others are served'
     marked = [line for line in box.crontab.read_text(encoding='utf-8').splitlines() if deploy_spec.MARK in line]
@@ -282,7 +287,7 @@ def test_dry_run_touches_nothing_and_prints_every_action(box: Box, capsys: pytes
 def test_the_venv_is_built_once_per_declaration(box: Box) -> None:
     assert box.run(*DECLARE) == 0
     assert box.run() == 0
-    assert box.logged().count('uv sync --extra dev') == 3  # one per repo, not per run
+    assert box.logged().count('uv sync --frozen --extra dev') == 3  # one per repo, not per run
 
 
 def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(box: Box) -> None:
@@ -298,7 +303,7 @@ def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(b
     assert (first / '.lab-deploy-env').is_file()
     pyproject = alpha / 'pyproject.toml'
     pyproject.write_text(
-        pyproject.read_text(encoding='utf-8').replace('--extra dev', '--extra moved'), encoding='utf-8'
+        pyproject.read_text(encoding='utf-8').replace('extras = ["dev"]', 'extras = []'), encoding='utf-8'
     )
     assert box.run() == 0
     second = venvpointer.named(alpha)
@@ -585,8 +590,7 @@ def test_a_repo_declaring_rclone_artefacts_has_its_remote_checked_and_a_missing_
     assert box.run(*DECLARE) == 0
     alpha = box.root / 'repos' / 'alpha' / 'pyproject.toml'
     alpha.write_text(
-        '[tool.lab_commons.hpc]\ninstall = "uv sync"\n'
-        '[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "hpc-data:consumer-a"\n',
+        '[tool.lab_commons.hpc]\n[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "hpc-data:consumer-a"\n',
         encoding='utf-8',
     )
     rclone = (sys.executable, str(_write(tmp_path / 'rclone.py', FAKE_RCLONE)), str(box.calls), state)
@@ -786,7 +790,7 @@ def test_a_checkout_whose_roles_are_unbound_is_released_by_name(
     assert box.run(*DECLARE) == 0
     pyproject = box.root / 'repos' / 'beta' / 'pyproject.toml'
     served: list[tuple[list[str], Path, str]] = []
-    _write(pyproject, '[tool.lab_commons.hpc]\ninstall = "x"\n')
+    _write(pyproject, '[tool.lab_commons.hpc]\n')
     carry(monkeypatch, EVERY_CI)
     assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: every role on CI -- refreshed, not served'
     monkeypatch.delenv(ROLES_ENV)
@@ -810,10 +814,14 @@ def _marked(box: Box) -> set[str]:
     return {line.rsplit(deploy_spec.MARK, 1)[1] for line in lines if deploy_spec.MARK in line}
 
 
-def test_a_research_account_carries_no_serve_line_and_its_deploy_removes_the_marked_ones(
+def test_a_research_account_carries_no_serve_line_and_leaves_crontab_untouched(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """User ruling 2026-11-06: only a Forge Verification account serves. PLANTED CONTROL: verification writes them."""
+    """User ruling 2026-11-06: only a Forge Verification account serves; a research deploy never touches crontab.
+
+    A role switched away from verification drops its lines through the explicit door (``deploy --remove``).
+    PLANTED CONTROL: verification writes them.
+    """
     _write(box.crontab, '0 1 * * * echo mine\n')
     assert box.run(*DECLARE) == 0
     assert _marked(box) == {'dev-lab', 'alpha', 'beta'}, 'the planted control: a verification account serves'
@@ -821,12 +829,13 @@ def test_a_research_account_carries_no_serve_line_and_its_deploy_removes_the_mar
     capsys.readouterr()
     box.calls.unlink(missing_ok=True)
     assert box.run() == 0
-    assert _marked(box) == set()
-    assert box.crontab.read_text(encoding='utf-8') == '0 1 * * * echo mine\n', 'every other line kept'
-    assert capsys.readouterr().out.count('crontab: remove ') == 3, 'each removed line is printed'
     calls = box.logged()
+    assert 'crontab' not in calls
     assert 'hpcaccount tick' not in calls, 'a research account is never ticked'
     assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'
+    assert box.run('--remove') == 0
+    assert _marked(box) == set()
+    assert box.crontab.read_text(encoding='utf-8') == '0 1 * * * echo mine\n', 'every other line kept'
 
 
 def test_a_research_deploy_asks_only_to_read(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
@@ -890,8 +899,9 @@ def test_a_role_beyond_the_defaults_needs_the_workstations_table(box: Box, capsy
     capsys.readouterr()
     assert box.run() == 2
     assert 'deploy-fleet' in capsys.readouterr().err
+    box.calls.unlink(missing_ok=True)
     assert box.run(*_fleet('batch', serves=False, read_only=True)) == 0
-    assert _marked(box) == set(), 'its table says it does not serve'
+    assert 'crontab' not in box.logged(), 'its table says it does not serve: no scheduler step at all'
 
 
 def test_a_serve_tick_on_a_research_account_refuses_naming_the_role(
@@ -1051,3 +1061,32 @@ def test_a_cloned_repo_this_account_does_not_serve_is_read_with_the_stored_reade
     assert all('credential.helper=' not in line for line in remote)
     monkeypatch.setenv('FAKE_GIT_DENY', '/beta.git')
     assert box.run() == 2
+
+
+def test_a_research_deploy_has_nothing_of_serving(
+    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A research account never serves, so its deploy has no cron, no tick, no serve-git proof and no CI-PAUSED gate.
+
+    User, 2026-11-20: "why would a research host need cron?" Measured the same day on Cirrus: ``crontab -l`` -- which
+    the cluster forbids -- refused a research deploy that wanted zero lines. A research deploy is the kit, its
+    declared repos, their venvs and the reader check. PLANTED CONTROL: a verification account on the same box still
+    reads crontab, and is refused when it cannot.
+    """
+    assert box.run(*DECLARE) == 0
+    monkeypatch.setenv('FAKE_CRONTAB_FORBID', '1')
+    capsys.readouterr()
+    assert box.run() == 2, 'the planted control: a serving account cannot place its lines'
+    assert 'not allowed' in capsys.readouterr().err
+    _as_role(box, deploy_spec.RESEARCH)
+    (box.home / '.cache' / 'dev-lab').mkdir(parents=True, exist_ok=True)
+    (box.home / '.cache' / 'dev-lab' / 'CI-PAUSED').write_text('paused by the fleet\n', encoding='utf-8')
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 0
+    out = capsys.readouterr().out
+    calls = box.logged()
+    assert 'crontab' not in calls
+    assert '[cron]' not in out
+    assert '[tick]' not in out
+    assert 'merge-tree' not in calls
+    assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'

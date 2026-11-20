@@ -3,6 +3,9 @@
 # The forge keeps this at the newest uv release: a `forge serve` tick's relock (dev_lab.dev.relock) reads it against
 # the newest release tag and raises it in the same pull request that relocks with that uv.
 version = "0.13.9"
+# How far the forge moves the version above on its own (user ruling D101, 2026-11-20; dev_lab.dev.uvfollow.POLICIES):
+# "minor" moves it only to a newer MINOR release, "patch" to any newer release.
+follow = "minor"
 
 # The sha256 of each platform's archive of that release (dev_lab.dev.uvrelease.ASSETS), read from the release's
 # <asset>.sha256 files when the version above moved (lockcheck.pin_uv); a lock writer is that exact uv, installed

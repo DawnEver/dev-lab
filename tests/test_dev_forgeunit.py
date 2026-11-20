@@ -177,7 +177,7 @@ def test_a_sized_compute_unit_keeps_its_positive_fractional_memory() -> None:
 def _repo(tmp_path: Path) -> Path:
     repo = tmp_path / 'repo'
     repo.mkdir()
-    (repo / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\ninstall = "uv sync"\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\n', encoding='utf-8')
     for args in (('init', '-q'), ('add', 'pyproject.toml'), ('commit', '-q', '-m', 'init')):
         subprocess.run(
             [_GIT, '-c', 'user.name=t', '-c', 'user.email=t@t', *args], cwd=repo, check=True, capture_output=True,

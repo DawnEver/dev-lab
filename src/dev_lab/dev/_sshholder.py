@@ -119,7 +119,7 @@ def _say(word: dict[str, Any]) -> None:
     os.dup2(devnull, sys.stdout.fileno())  # the opener stops reading; nothing more goes to its pipe
 
 
-def _answer(conn: socket.socket, token: str, holder: Holder) -> tuple[dict[str, Any], bool]:
+def _answer(conn: socket.socket, token: str, holder: Holder, one_run: threading.Lock) -> tuple[dict[str, Any], bool]:
     with conn.makefile('rb') as lines:
         asked = json.loads(lines.readline() or b'{}')
     if not hmac.compare_digest(str(asked.get('token', '')), token):
@@ -130,39 +130,51 @@ def _answer(conn: socket.socket, token: str, holder: Holder) -> tuple[dict[str, 
     if verb == 'close':
         return {'ok': True}, True
     if verb == 'run':
-        reply = holder.exchange(
-            str(asked.get('command', '')), float(asked.get('timeout_s', sshholdrun.DEFAULT_TIMEOUT_S))
-        )
+        with one_run:  # one ssh connection carries one command at a time; a ping never waits behind it
+            reply = holder.exchange(
+                str(asked.get('command', '')), float(asked.get('timeout_s', sshholdrun.DEFAULT_TIMEOUT_S))
+            )
         return reply, bool(reply.get('fatal', False))
     return {'error': f'unknown verb {verb!r}'}, False
 
 
 def serve(dest: str, hours: float, holder: Holder, listener: socket.socket) -> None:
-    """Record the session, then answer one client at a time until a verb, the ceiling or a set idle limit ends it."""
+    """Record the session, then answer each client on its own thread until a verb, the ceiling or an idle limit.
+
+    Runs share the one ssh connection under a lock; a ping or a close answers at once, so a holder busy with a
+    long run is never read as dead (measured 2026-11-20: pings waited behind a deploy, timed out, and the live
+    session's state was deleted).
+    """
     opened = time.time()
     token = secrets.token_urlsafe(32)
     session = sshholdstate.Session(dest, os.getpid(), listener.getsockname()[1], token, opened, opened + hours * 3600)
     sshholdstate.write_session(session)
-    idle, last = sshhold.idle_s(), time.monotonic()
+    idle, last = sshhold.idle_s(), [time.monotonic()]
+    ending, one_run = threading.Event(), threading.Lock()
+
+    def client(conn: socket.socket) -> None:
+        with conn:
+            conn.settimeout(None)
+            reply, ends = _answer(conn, token, holder, one_run)
+            with contextlib.suppress(OSError):
+                conn.sendall(json.dumps(reply).encode('utf-8') + b'\n')
+        last[0] = time.monotonic()
+        if ends:
+            ending.set()
+
     _say({'ok': True, 'pid': session.pid})
     listener.settimeout(_TICK_S)
     try:
-        while not sshhold.session_over(
-            now=time.time(), expires=session.expires, quiet_s=time.monotonic() - last, idle=idle
+        while not ending.is_set() and not sshhold.session_over(
+            now=time.time(), expires=session.expires, quiet_s=time.monotonic() - last[0], idle=idle
         ):
             try:
                 conn, _ = listener.accept()
             except TimeoutError:
                 continue
-            with conn:
-                conn.settimeout(None)
-                reply, ending = _answer(conn, token, holder)
-                with contextlib.suppress(OSError):
-                    conn.sendall(json.dumps(reply).encode('utf-8') + b'\n')
-            last = time.monotonic()
-            if ending:
-                return
-        sshholdstate.audit('expire', dest, status=0)
+            threading.Thread(target=client, args=(conn,), daemon=True).start()
+        if not ending.is_set():
+            sshholdstate.audit('expire', dest, status=0)
     finally:
         holder.stop()
         sshholdstate.forget(dest)

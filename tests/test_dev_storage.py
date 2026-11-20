@@ -70,20 +70,36 @@ def test_migrate_refuses_an_unbound_kind_and_a_foreign_target(tmp_path: Path) ->
 
 
 def _reaching(tmp_path: Path) -> object:
-    family = {'storage': {'remotes': {'results': {'type': 's3', 'endpoint': 'https://objects.example'}}}}
+    remote = {
+        'type': 's3', 'endpoint': 'https://objects.example', 'access_key_id': 'AKIA-declared',
+        'secret_keys': ['secret_access_key'],
+    }  # fmt: skip
     machine = {'storage': {'reach': {'results': {'credentials_file': str(tmp_path / 'secrets' / 'results')}}}}
-    return declared(machine, family)
+    return declared(machine, {'storage': {'remotes': {'results': remote}}})
 
 
 def test_render_joins_family_options_and_the_placed_secret_outside_the_repo(tmp_path: Path) -> None:
+    """The declared access key ID and the placed secret meet only in the render."""
     tree = _repo(tmp_path)
     reach = _reaching(tmp_path)
     (tmp_path / 'secrets').mkdir()
     (tmp_path / 'secrets' / 'results').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
     out = storage.render(tmp_path / 'conf' / 'rclone.conf', repo=tree, declared=reach)
     assert out.read_text(encoding='utf-8') == (
-        '[results]\ntype = s3\nendpoint = https://objects.example\nsecret_access_key = s3cr3t\n'
+        '[results]\ntype = s3\nendpoint = https://objects.example\naccess_key_id = AKIA-declared\n'
+        'secret_access_key = s3cr3t\n'
     )
+
+
+def test_render_refuses_a_placed_file_restating_a_fact_and_names_the_migration(tmp_path: Path) -> None:
+    """D51: an older file holding the access key ID is refused by name with its one-time migration."""
+    tree = _repo(tmp_path)
+    (tmp_path / 'secrets').mkdir()
+    (tmp_path / 'secrets' / 'results').write_text(
+        'access_key_id = "AKIA-declared"\nsecret_access_key = "s3cr3t"\n', encoding='utf-8'
+    )
+    with pytest.raises(StorageError, match=r'restates .access_key_id.*secretplace migrate --remote results'):
+        storage.render(tmp_path / 'rclone.conf', repo=tree, declared=_reaching(tmp_path))
 
 
 def test_render_refuses_a_missing_secret_and_a_path_inside_the_repo(tmp_path: Path) -> None:
@@ -116,3 +132,35 @@ def test_a_durable_key_never_lands_under_the_aged_out_scratch_prefix() -> None:
     with pytest.raises(ArtefactRefused, match='the prefix a remote ages out'):
         check_key(f'{SCRATCH_PREFIX}/vendor/abc.tar.gz')
     check_key('vendor/scratch/abc.tar.gz')  # PLANTED CONTROL: only the FIRST segment is the aged-out prefix
+
+
+def test_check_lists_the_remote_through_the_rendered_config(tmp_path: Path) -> None:
+    tree, reach, ran = _repo(tmp_path), _reaching(tmp_path), []
+    (tmp_path / 'secrets').mkdir()
+    (tmp_path / 'secrets' / 'results').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
+
+    def run(argv: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
+        ran.append(argv)
+        return subprocess.CompletedProcess(argv, 0, 'dir-a\ndir-b\n', '')
+
+    said = storage.check('results', repo=tree, to=tmp_path / 'conf' / 'rclone.conf', declared=reach, run=run,
+                         rclone='rclone')  # fmt: skip
+    assert ran == [
+        ['rclone', '--config', str(tmp_path / 'conf' / 'rclone.conf'), *storage.CHECK_BOUNDS, 'lsd', 'results:']
+    ]
+    assert '--retries' in storage.CHECK_BOUNDS  # bounded: a refused key answers in seconds, never a hung terminal
+    assert said.startswith('results: reached (2 top-level')
+    assert 's3cr3t' not in said
+
+
+def test_check_refuses_an_unreached_remote_and_a_failed_listing(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a remote this machine does not reach, and an rclone refusal, are both refused by name."""
+    tree, reach = _repo(tmp_path), _reaching(tmp_path)
+    (tmp_path / 'secrets').mkdir()
+    (tmp_path / 'secrets' / 'results').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
+    with pytest.raises(StorageError, match='not a remote this machine reaches'):
+        storage.check('other', repo=tree, to=tmp_path / 'c.conf', declared=reach, rclone='rclone')
+    refused = subprocess.CompletedProcess([], 1, '', 'AccessDenied: bad key\n')
+    with pytest.raises(StorageError, match=r'could not list results: \(exit 1\) AccessDenied'):
+        storage.check('results', repo=tree, to=tmp_path / 'c.conf', declared=reach, rclone='rclone',
+                      run=lambda *_a, **_k: refused)  # fmt: skip

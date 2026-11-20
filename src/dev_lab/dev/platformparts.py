@@ -62,8 +62,8 @@ interpreter of a tree the producer builds at that commit, cwd = that tree (:mod:
 a CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluster's login node
 (:mod:`dev_lab.dev.forgerun`), from :func:`cluster_part`::
 
-    [tool.lab_commons.hpc]                 # a part produced on the cluster
-    install = "uv sync --extra dev"          # must install the project: its venv reports the env key
+    [tool.lab_commons.hpc]                 # a part produced on the cluster; its venv's sync is derived from
+                                           # [tool.dev_lab.dep] for the part's need-set (lab_commons.extras)
     needs = ["cargo", "cc"]                # optional: login-node commands beyond git and uv
     collect = "tests"                      # optional: pytest arguments selecting the tests
 
@@ -97,6 +97,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from lab_commons.hpc.builds import RETIRED_INSTALL
 from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, selecting, vocabulary_at
 from lab_commons.hpc.records import cells_of, read_record
@@ -271,14 +272,18 @@ class ClusterPart:
 def cluster_part(root: Path, head: str) -> ClusterPart:
     """A cluster (scope full) part of commit *head*, filled from the declarations alone.
 
-    The build (install, needs) is NOT here: ``hpc`` reads it from the commit itself at *head*.
+    The build (its derived sync, needs) is NOT here: ``hpc`` reads it from the commit itself at *head*.
 
     Raises:
         UndeclaredPart: a declaration it needs is absent or malformed; the message names the key.
 
     """
-    hpc, name = declared_tables(root, head).get('hpc', {}), 'tool.lab_commons.hpc'
-    _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)
+    tables, name = declared_tables(root, head), 'tool.lab_commons.hpc'
+    if 'hpc' not in tables:
+        msg = f'{head[:12]} declares no [{name}] table: a cluster part needs it (its venv: [tool.dev_lab.dep])'
+        raise UndeclaredPart(msg)
+    if 'install' in (hpc := tables['hpc']):
+        raise UndeclaredPart(RETIRED_INSTALL)
     collect = _text(hpc, name, 'collect', '"tests"', required=False)
     outputs = declared_strings(hpc.get('outputs'), name, 'outputs', '["output/fields/*.h5"]', required=False)
     return ClusterPart(

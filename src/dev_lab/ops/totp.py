@@ -46,7 +46,7 @@ _MIN_BITS: Final = 80
 
 
 class TotpRefused(ValueError):
-    """The code was refused; the message says why without echoing the code."""
+    """The code was refused; the message says why without repeating the code."""
 
 
 def _key(secret: str) -> bytes:

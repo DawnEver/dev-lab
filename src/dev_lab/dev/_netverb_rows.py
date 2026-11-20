@@ -28,6 +28,15 @@ from typing import Final
 #: refs", and reading that first would turn a refusal into three refusals.
 ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
     (
+        # AN INSTALLER COULD NOT REPLACE A FILE A RUNNING PROCESS HOLDS. Measured 2026-11-20: `winget install
+        # astral-sh.uv --version X --force` failed 3/3 as unclassified with `remove: Access is denied` on
+        # `WinGet/Packages/astral-sh.uv_.../uv.exe` -- running uv processes held it. Windows refuses to delete
+        # a running exe but allows renaming it, so the cure is moving it aside, never waiting and retrying.
+        'file-held',
+        False,
+        ('remove: access is denied',),
+    ),
+    (
         # GIT'S OWN PROTOCOL POLICY REFUSED A LOCAL TRANSPORT. Measured 2026-10-19 downstream: `dep
         # --bootstrap <worktree>` ran `git submodule update --init --recursive`, whose submodule URL is a
         # LOCAL path (the main checkout's `.git/modules/...`), and git refused it as `transport 'file' not
@@ -156,6 +165,10 @@ REMEDIES: Final[dict[str, str]] = {
         'a LOCAL-path remote (a submodule cloned from a checkout .git/modules directory) needs '
         '`git -c protocol.file.allow=always ...` on that one command -- '
         'dev_lab.dev._dep_network.init_submodules passes it'
+    ),
+    'file-held': (
+        'a running process holds a file the installer must replace -- move the held file aside (renaming a '
+        'running exe is allowed) and install again; dev_lab.dev.uvfollow does this for uv'
     ),
     # A forge refusal's answer is a JSON body no reader sees unless it is quoted: ForgeCallFailed appends it.
     'forge-refused': 'the forge answered and refused this call -- fix what its answer names',

@@ -95,7 +95,8 @@ def test_a_uv_that_does_not_reach_the_pin_says_why(installs: str | None) -> None
 
 def _project(root: Path) -> None:
     (root / 'pyproject.toml').write_text(
-        '[project]\nname="empty"\nversion="0"\n[project.optional-dependencies]\ndev=[]\n', encoding='utf-8'
+        '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\n',
+        encoding='utf-8',
     )
 
 

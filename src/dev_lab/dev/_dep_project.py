@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import lab_commons.launch as _door
+from lab_commons import extras
 from lab_commons.log import emit
 
 from dev_lab.dev import uvrelease
@@ -23,6 +24,7 @@ from dev_lab.dev.lockcheck import (
     pin_stable,
     pin_uv,
     unreasoned_holds,
+    uv_due,
     uv_version,
 )
 from dev_lab.dev.uvfollow import follow
@@ -216,7 +218,7 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
     declaration = declared_table(manifest, 'dep', {})
     available = manifest.get('project', {}).get('optional-dependencies', {})
-    selected = requested if requested is not None else declaration.get('extras', ())
+    selected = requested if requested is not None else extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
     if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
         msg = 'tool.dev_lab.dep.extras must be an array of declared extra names'
         raise ValueError(msg)
@@ -262,7 +264,7 @@ def lock_upgrade(
         emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
         return 1
     try:
-        required = newest() if (root / UV_PIN).is_file() and not packages else uv_version(root)
+        required = uv_due(root, newest()) if (root / UV_PIN).is_file() and not packages else uv_version(root)
         command = lock_upgrade_command(root, python, required, packages)
     except (OtherUvRefused, ForeignEnvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')

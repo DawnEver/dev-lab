@@ -416,18 +416,22 @@ def test_a_uv_pin_below_the_newest_release_is_stale_refreshable_and_pinning_move
     """PLANTED control: the same tree pinned at the newest uv is fresh, and a tree with no pin is never read."""
     pin = tmp_path / UV_PIN
     pin.parent.mkdir(parents=True)
-    pin.write_text('# why\nversion = "0.13.7"\n', encoding='utf-8')
+    pin.write_text('# why\nversion = "0.13.7"\nfollow = "minor"\n', encoding='utf-8')
 
     def fresh(_tree: Path) -> object:
         return _rustup('')
 
-    found = stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8')
-    assert found == (f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.13.8',)
+    assert stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8') == (), 'D101: a patch release never moves a minor pin'
+    found = stale(tmp_path, resolve=fresh, uv=lambda: '0.14.0')
+    assert found == (f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.14.0',)
     assert refreshable(found[0])
-    pin_uv(tmp_path, '0.13.8', {'linux-amd64': 'd' * 64})
-    assert pin.read_text(encoding='utf-8') == f'# why\nversion = "0.13.8"\n\n[sha256]\nlinux-amd64 = "{"d" * 64}"\n'
-    assert uv_version(tmp_path) == '0.13.8'
-    assert stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8') == ()
+    pin_uv(tmp_path, '0.14.0', {'linux-amd64': 'd' * 64})
+    assert (
+        pin.read_text(encoding='utf-8')
+        == f'# why\nversion = "0.14.0"\nfollow = "minor"\n\n[sha256]\nlinux-amd64 = "{"d" * 64}"\n'
+    )
+    assert uv_version(tmp_path) == '0.14.0'
+    assert stale(tmp_path, resolve=fresh, uv=lambda: '0.14.0') == ()
 
     def unread() -> str:
         msg = 'a tree without the uv pin reads no uv release'

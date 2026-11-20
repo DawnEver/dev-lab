@@ -59,7 +59,7 @@ def test_unmapped_needs_and_the_base_part_ask_nothing(tmp_path: Path) -> None:
 
 def test_a_need_mapped_to_an_undeclared_extra_is_refused_by_name(tmp_path: Path) -> None:
     root = _root(tmp_path, _MANIFEST.replace('simba="simba"', 'simba="nosuch"'))
-    with pytest.raises(ValueError, match=r"tool.dev_lab.dep.needs: simba -> 'nosuch' is no declared extra"):
+    with pytest.raises(ValueError, match=r"names \['nosuch'\], no declared extra"):
         depneeds.missing_for_part(root, 'simba', installed=lambda _name: True)
 
 
@@ -119,3 +119,22 @@ def test_a_root_with_no_manifest_needs_nothing(tmp_path: Path) -> None:
     """A tree with no pyproject declares no needs, so no part is refused for a missing extra."""
     assert depneeds.declared_needs(tmp_path) == {}
     assert depneeds.missing_for_part(tmp_path, 'base') is None
+
+
+# --- one reader: CI's per-part sync derives its extras through lab_commons.extras ---
+
+
+def test_a_part_needing_nothing_heavy_syncs_only_the_declared_extras(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    assert depneeds.flags(root, 'base') == '--extra dev'
+    assert depneeds.flags(root, 'gpu+simba') == '--extra dev --extra learn --extra simba'
+
+
+def test_the_flags_door_prints_the_part_selection_and_refuses_an_undeclared_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _root(tmp_path)
+    assert depneeds.main(['flags', '--root', str(root), '--part', 'simba']) == 0
+    assert capsys.readouterr().out.strip() == '--extra dev --extra simba'
+    undeclared = _root(tmp_path, _MANIFEST.replace('extras=["dev"]\n', ''))
+    assert depneeds.main(['flags', '--root', str(undeclared)]) == 2, 'planted: no declared extras is refused'
