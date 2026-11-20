@@ -169,3 +169,46 @@ def test_the_door_removes_through_the_cli(work: Path, capsys: pytest.CaptureFixt
     assert main(['--root', str(work), '--remove', 'loose']) == 0
     assert 'removed' in capsys.readouterr().out
     assert not _tree(work, 'loose').exists()
+
+
+def test_a_tree_whose_directory_is_already_gone_is_pruned_not_crashed_on(work: Path) -> None:
+    """A tree whose directory is already gone is pruned (dev-lab#791 wall 1).
+
+    A timed-out removal left the record but not the directory; the next ``--remove`` crashed
+    with ``git could not say which refs contain  in <tree>``. A gone directory holds nothing: its record is pruned.
+    PLANTED CONTROL: the sibling tree, whose directory stands, is untouched.
+    """
+    shutil.rmtree(_tree(work, 'loose'))
+    removed, line = remove(work, 'loose', census=_idle)
+    assert removed, line
+    assert 'already gone' in line
+    assert not any(row.endswith('loose') for row in _registered(work).splitlines())
+    assert _tree(work, 'lane').is_dir()
+
+
+def test_a_submodule_at_another_commit_names_its_checkout_door_not_discard(work: Path, tmp_path: Path) -> None:
+    """A drifted submodule names its real door (dev-lab#791 wall 2).
+
+    A submodule checked out at another commit read as ``tracked changes`` and named ``branchset --discard``; the
+    remedy is checking out the recorded sha. PLANTED CONTROL: a tracked edit beside it still names the unlanded
+    doors.
+    """
+    (tmp_path / 'sub').mkdir()
+    sub = plant_checkout(tmp_path / 'sub', trunk='main').work
+    _run(work, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(sub), 'vendored')
+    _run(work, 'commit', '-q', '-m', 'vendor')
+    tree = _tree(work, 'lane')
+    _run(tree, 'merge', '-q', '--ff-only', 'main')
+    _run(tree, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    (tree / 'vendored' / 'drift.txt').write_text('x\n', encoding='utf-8')
+    _run(tree / 'vendored', 'add', 'drift.txt')
+    _run(tree / 'vendored', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'drift')
+    removed, line = remove(work, 'lane', census=_idle)
+    assert not removed
+    assert 'submodule update --checkout' in line
+    assert 'vendored' in line
+    assert 'branchset --discard' not in line
+    (tree / '.gitignore').write_text('edited\n', encoding='utf-8')
+    removed, line = remove(work, 'lane', census=_idle)
+    assert not removed
+    assert 'branchset --discard' in line

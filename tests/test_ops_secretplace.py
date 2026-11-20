@@ -51,7 +51,16 @@ def _chown(seen: list[tuple[str, str | None]]) -> Callable[[Path, str | None, st
 def test_a_declared_path_is_written_0600_for_its_declared_reader(tmp_path: Path) -> None:
     host, root, owned = _host(tmp_path), tmp_path / 'root', []
     consent = _Consent(secretplace.subject(JUDGE_FILE, SECRET))
-    said = secretplace.place(host, JUDGE_FILE, SECRET, redeem=consent, credential={}, chown=_chown(owned), root=root)
+    said = secretplace.place(
+        secretplace.declared(host),
+        str(host.path),
+        JUDGE_FILE,
+        SECRET,
+        redeem=consent,
+        credential={},
+        chown=_chown(owned),
+        root=root,
+    )
     target = root / 'etc/review-bot/gitea-token'
     assert target.read_bytes() == SECRET
     assert owned == [('.gitea-token.placing', 'judge')]  # owned BEFORE the rename: never a wider file
@@ -65,8 +74,8 @@ def test_an_undeclared_path_is_refused_before_the_consent_is_spent(tmp_path: Pat
     host = _host(tmp_path)
     consent = _Consent(secretplace.subject('/etc/shadow', SECRET))
     with pytest.raises(SecretRefused, match=r'not a secret file .* declares; declared: \[.*gitea-token'):
-        secretplace.place(host, '/etc/shadow', SECRET, redeem=consent, credential={}, chown=_chown([]),
-                          root=tmp_path / 'root')  # fmt: skip
+        secretplace.place(secretplace.declared(host), str(host.path), '/etc/shadow', SECRET, redeem=consent,
+                          credential={}, chown=_chown([]), root=tmp_path / 'root')  # fmt: skip
     assert not consent.spent
 
 
@@ -75,7 +84,16 @@ def test_a_credential_for_other_bytes_does_not_write_these(tmp_path: Path) -> No
     host, root = _host(tmp_path), tmp_path / 'root'
     consent = _Consent(secretplace.subject(JUDGE_FILE, b'the-value-the-user-was-shown\n'))
     with pytest.raises(SecretRefused) as refused:
-        secretplace.place(host, JUDGE_FILE, SECRET, redeem=consent, credential={}, chown=_chown([]), root=root)
+        secretplace.place(
+            secretplace.declared(host),
+            str(host.path),
+            JUDGE_FILE,
+            SECRET,
+            redeem=consent,
+            credential={},
+            chown=_chown([]),
+            root=root,
+        )
     assert SECRET.decode().strip() not in str(refused.value)  # the refusal names the request, never the value
     assert json.loads(str(refused.value).split('grant ', 1)[1].split(' and pass', 1)[0]) == secretplace.request(
         JUDGE_FILE, SECRET
@@ -86,16 +104,34 @@ def test_a_credential_for_other_bytes_does_not_write_these(tmp_path: Path) -> No
 def test_a_spent_credential_places_once(tmp_path: Path) -> None:
     host, root = _host(tmp_path), tmp_path / 'root'
     consent = _Consent(secretplace.subject(JUDGE_FILE, SECRET))
-    secretplace.place(host, JUDGE_FILE, SECRET, redeem=consent, credential={}, chown=_chown([]), root=root)
+    secretplace.place(
+        secretplace.declared(host),
+        str(host.path),
+        JUDGE_FILE,
+        SECRET,
+        redeem=consent,
+        credential={},
+        chown=_chown([]),
+        root=root,
+    )
     with pytest.raises(SecretRefused, match='does not consent'):
-        secretplace.place(host, JUDGE_FILE, SECRET, redeem=consent, credential={}, chown=_chown([]), root=root)
+        secretplace.place(
+            secretplace.declared(host),
+            str(host.path),
+            JUDGE_FILE,
+            SECRET,
+            redeem=consent,
+            credential={},
+            chown=_chown([]),
+            root=root,
+        )
 
 
 def test_empty_content_is_refused(tmp_path: Path) -> None:
     host = _host(tmp_path)
     with pytest.raises(SecretRefused, match='no content on stdin'):
-        secretplace.place(host, JUDGE_FILE, b'\n', redeem=_Consent(''), credential={}, chown=_chown([]),
-                          root=tmp_path / 'root')  # fmt: skip
+        secretplace.place(secretplace.declared(host), str(host.path), JUDGE_FILE, b'\n', redeem=_Consent(''),
+                          credential={}, chown=_chown([]), root=tmp_path / 'root')  # fmt: skip
 
 
 def test_the_subject_binds_both_the_path_and_the_content() -> None:
@@ -115,7 +151,7 @@ def test_the_ops_cli_routes_secret_place_and_reads_stdin(tmp_path: Path, monkeyp
     host = _host(tmp_path)
     seen: dict[str, object] = {}
 
-    def fake_place(_config: object, path: str, content: bytes, **kwargs: object) -> str:
+    def fake_place(_owners: object, _source: str, path: str, content: bytes, **kwargs: object) -> str:
         seen.update(path=path, content=content, credential=kwargs['credential'])
         return 'placed'
 
@@ -127,3 +163,33 @@ def test_the_ops_cli_routes_secret_place_and_reads_stdin(tmp_path: Path, monkeyp
     argv = ['--config', str(host.path), 'secret', 'place', '--path', JUDGE_FILE, '--credential', str(credential)]
     assert ops_main.main(argv) == 0
     assert seen == {'path': JUDGE_FILE, 'content': SECRET, 'credential': {'id': 'x'}}
+
+
+def _reaching(tmp_path: Path) -> object:
+    from lab_commons.storage import declared as storage_declared  # noqa: PLC0415 -- the workstation layer only
+
+    family = {'storage': {'remotes': {'results': {'type': 's3'}}}}
+    machine = {'storage': {'reach': {'results': {'credentials_file': str(tmp_path / 'secrets' / 'results')}}}}
+    return storage_declared(machine, family)
+
+
+def test_a_workstation_places_the_credentials_file_its_machine_declares(tmp_path: Path) -> None:
+    owners = secretplace.workstation_declared(_reaching(tmp_path), user='me')
+    wanted = str(tmp_path / 'secrets' / 'results')
+    assert owners == {wanted: 'me'}
+    consent = _Consent(secretplace.subject(wanted, SECRET))
+    said = secretplace.place(owners, 'the machine file', wanted, SECRET, redeem=consent, credential={},
+                             chown=_chown([]))  # fmt: skip
+    assert (tmp_path / 'secrets' / 'results').read_bytes() == SECRET
+    assert 'owner me' in said
+
+
+def test_a_workstation_refuses_a_path_its_machine_does_not_declare(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a file beside the declared one is never written, and the consent is never spent."""
+    owners = secretplace.workstation_declared(_reaching(tmp_path), user='me')
+    stray = str(tmp_path / 'secrets' / 'other')
+    consent = _Consent(secretplace.subject(stray, SECRET))
+    with pytest.raises(SecretRefused, match=r'not a secret file the machine file declares'):
+        secretplace.place(owners, 'the machine file', stray, SECRET, redeem=consent, credential={}, chown=_chown([]))
+    assert not consent.spent
+    assert not (tmp_path / 'secrets' / 'other').exists()

@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from dev_lab.dev.checkout import DEFAULT_WORKTREE_HOME, git_out, locked_trees, worktrees
+from dev_lab.dev.checkout import git_out, locked_trees, worktrees
 from dev_lab.dev.disposable import disposable_base, marker
 from dev_lab.dev.reclaim import (
     _LIVE,
@@ -20,6 +20,7 @@ from dev_lab.dev.reclaim import (
     occupancy,
     repository_at,
 )
+from dev_lab.dev.worktreeplace import home as worktree_home
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -27,16 +28,19 @@ if TYPE_CHECKING:
 __all__ = ['discard', 'scratch']
 
 
-def _scratch_path(root: Path, name: str, home: Path) -> tuple[Path, Path] | None:
-    """(main checkout, ``<main>/<home>/<name>``) when *name* is one plain path segment and git reads *root*."""
+def _scratch_path(root: Path, name: str, home: Path | None) -> tuple[Path, Path] | None:
+    """(main checkout, ``<home>/<name>``) when *name* is one plain segment and git reads *root*.
+
+    *home* None is the repository's worktree home (:func:`dev_lab.dev.worktreeplace.home`), bound or in-tree.
+    """
     trees = worktrees(root)
     if not trees or name in {'', '.', '..'} or any(sep in name for sep in '/\\:'):
         return None
     main = trees[0][0].resolve()
-    return main, main / home / name
+    return main, (main / home if home is not None else worktree_home(main)) / name
 
 
-def scratch(root: Path, name: str, sha: str, *, home: Path = DEFAULT_WORKTREE_HOME) -> str:
+def scratch(root: Path, name: str, sha: str, *, home: Path | None = None) -> str:
     """Make a DETACHED tree ``<home>/<name>`` of *root*'s main checkout at *sha* and declare it DISPOSABLE.
 
     The throwaway comparison checkout (a base to diff tests against): its untracked and ignored content is scratch,
@@ -59,9 +63,7 @@ def scratch(root: Path, name: str, sha: str, *, home: Path = DEFAULT_WORKTREE_HO
     return f'made     {tree}  [detached {commit[:12]}, disposable]'
 
 
-def discard(
-    root: Path, name: str, *, home: Path = DEFAULT_WORKTREE_HOME, occupied: Callable[[Path], bool] | None = None
-) -> str:
+def discard(root: Path, name: str, *, home: Path | None = None, occupied: Callable[[Path], bool] | None = None) -> str:
     """Remove the DISPOSABLE tree ``<home>/<name>`` of *root*'s main checkout now; one line, ``removed`` or why not.
 
     Refused: a path that is not a registered linked worktree, a main checkout or repository

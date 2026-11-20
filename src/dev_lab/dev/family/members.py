@@ -10,7 +10,7 @@ absolute checkout path, the place a checkout's location is declared. A member's 
 ``origin``. Membership by MANIFEST (:func:`dev_lab.dev.family.is_member`) is still the member's own fact; this
 list is which members THIS machine works with, and :func:`check` refuses a listed checkout that is no member. What
 else lists repos DERIVES from it (``forge secrets sync``'s targets); which members a host SERVES is no list at all,
-but each member's own ``producer`` (:mod:`dev_lab.dev.producers`, user ruling 2026-11-16).
+but the family's roles binding (:mod:`dev_lab.dev.roles`, D73).
 
 :func:`check` names, per member, every fact that is not so (:class:`Finding`): cloned, beside its siblings,
 onboarded (:func:`~dev_lab.dev.famtests.onboarding.onboarding_gaps`, read from ``origin/<integration>`` -- never a

@@ -6,7 +6,7 @@ differs. On Gitea the ``forge serve`` tick runs :func:`step` over every open PR;
 ``forge review run --pr <N>`` (:func:`dev_lab.dev.forgereview_job.review_run`) for the one PR its event names. Both
 run :func:`review_pull`.
 
-REVIEW IS THE LAST GATE (user ruling 2026-11-05; integrator ruling M8 2026-11-06). The merge decision asks
+REVIEW RUNS LAST, ADVISORY (user ruling 2026-11-05; integrator ruling M8 2026-11-06). The merge decision asks
 (:func:`dev_lab.dev.reviewturn.review_turn`): a head is reviewed only once the decision called it DUE -- tests
 green, no conflict, every other condition standing. A head with no review status, or the decision's WAITS, is
 not reviewed and nothing is posted or spent, whoever started the run; a push asks for nothing.
@@ -75,7 +75,7 @@ from dev_lab.dev.forgereview_command import (
     can_start,
     run_command,
 )
-from dev_lab.dev.forgereview_declared import JUDGE, PATHS_FIELD, Review, command_for, review_at
+from dev_lab.dev.forgereview_declared import PATHS_FIELD, Review, command_for, review_at
 from dev_lab.dev.forgereview_findings import FindingsInvalid, UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgereview_identity import ReviewerRefused, identity, ruling, self_review
 from dev_lab.dev.forgereview_runtimes import retired_table
@@ -99,6 +99,7 @@ from dev_lab.dev.reviewcap import unreviewed_line
 from dev_lab.dev.reviewcode import ONLY_GENERATED
 from dev_lab.dev.reviewgate import forge_posted, post_review
 from dev_lab.dev.reviewruntime import review_runtimes
+from dev_lab.dev.roles import HPC, REVIEW, roles_at
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgereview_advice import Record
@@ -207,7 +208,7 @@ def review_pull(root: Path, client: Client, review: Review, pull: PullRequest, r
     settled = latest is not None and (latest.state != 'pending' or latest.description.startswith(UNREVIEWED_STATUS))
     carry = carried_for(client, pull, review.reviewers)
     moved = restands(client, pull, record, carry, latest)  # a disposition moved a held verdict: no model call
-    if moved is not None or (not asked and _not_called(latest)):  # the last gate: no call on a red or conflicting head
+    if moved is not None or (not asked and _not_called(latest)):  # it runs last: no call on a red or conflicting head
         return moved
     if not claimable(latest, runner.clock(), review.stale, run_ended(client)) and not (asked and settled):
         return None
@@ -347,9 +348,10 @@ def review_tick(
     """:func:`review_pull` on every open, non-draft PR into *base* -- the serve tick's trigger; the lines said.
 
     *quiet* is the debounce (D52): :func:`step` passes the declared ``quiet``; zero reviews every head now.
-    A base declaring ``where = "judge"`` is reviewed by the judge host alone (:mod:`forgereview_bundle`): nothing.
+    A repo whose ``review`` the family binds to no ``hpc`` executor is reviewed elsewhere -- the judge host
+    (:mod:`forgereview_bundle`) or its forge's review job: nothing here.
     """
-    if review.where == JUDGE:
+    if roles_at(root).kind(REVIEW) != HPC:  # a host (a judge) or the forge's CI reviews it: never this tick
         return ()
     runner = Runner(
         host=host,

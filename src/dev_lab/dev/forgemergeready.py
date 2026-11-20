@@ -1,8 +1,8 @@
 """``forge merge ready [--pr <N>]``: post each PR head its ONE merge decision status, and merge a ready head.
 
 Split out of :mod:`dev_lab.dev.forgemerge`, which DECIDES (:func:`~dev_lab.dev.forgemerge.judged`); this posts
-that decision as :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT` and, where the job merges (GitHub, or a
-repo that :func:`~dev_lab.dev.forgemerge.ci_merges`), asks the forge to merge
+that decision as :data:`~dev_lab.dev.forgecontexts.MERGE_READY_CONTEXT` and, where the job merges (a repo whose
+``merge`` the family binds to ``ci``, :mod:`dev_lab.dev.roles`), asks the forge to merge
 (:func:`dev_lab.dev.forgemergecall.merge`). One PR's failure never stops the tick.
 """
 
@@ -24,11 +24,10 @@ from dev_lab.dev.forgecontexts import MERGE_READY_CONTEXT
 from dev_lab.dev.forgedraft import waiting
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehold import HELD, is_held
-from dev_lab.dev.forgemerge import EXTERNAL, Decision, ci_merges, external, judged
+from dev_lab.dev.forgemerge import EXTERNAL, Decision, external, judged
 from dev_lab.dev.forgemergecall import merge
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgestatus import status_post
-from dev_lab.dev.forgework import GITHUB
 from dev_lab.dev.lanepolicy import (
     FAMILY_INTEGRATION,
     UNDECLARED_INTEGRATION,
@@ -37,6 +36,7 @@ from dev_lab.dev.lanepolicy import (
     load_policy,
 )
 from dev_lab.dev.reviewturn import review_turn
+from dev_lab.dev.roles import CI, MERGE, roles_at
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest
@@ -62,8 +62,8 @@ def ready(root: Path, client: Client, number: int) -> str:
     so. A checkout declaring no ``integration`` (:class:`~dev_lab.dev.lanepolicy.IntegrationNotDeclared`) -- the
     base of the very PR that adopts the table -- still judges a PR into
     :data:`~dev_lab.dev.lanepolicy.FAMILY_INTEGRATION`, noting :data:`~dev_lab.dev.lanepolicy.UNDECLARED_INTEGRATION`;
-    a PR into any other base is ``failure`` naming the declaration that is the exit. On GitHub, or where the repo
-    :func:`~dev_lab.dev.forgemerge.ci_merges`, a ``success`` is followed by the merge
+    a PR into any other base is ``failure`` naming the declaration that is the exit. Where the family binds ``merge``
+    to ``ci`` (:mod:`dev_lab.dev.roles`), a ``success`` is followed by the merge
     of that judged head (:func:`~dev_lab.dev.forgemergecall.merge`); a refusal -- the head
     moved, a required check still pending, a token the branch protection does not let merge -- raises
     :class:`NotMerged` saying it (hosts-config #25, 2026-11-13: a ready PR the job could not merge left the job
@@ -95,9 +95,9 @@ def ready(root: Path, client: Client, number: int) -> str:
     elif decision.review is not None and not missing:
         why = f'{READY}{suffix}, WARNED -- its advisory review: {decision.review}'
     status_post(client, pull.head_sha, context=MERGE_READY_CONTEXT, state=state, description=why)
-    turn = review_turn(client, number, pull.head_sha, decision)  # the review is the last gate: asked here
+    turn = review_turn(client, number, pull.head_sha, decision)  # the advisory review is asked for here
     said = f'#{number} {pull.head_sha[:12]} {MERGE_READY_CONTEXT} {state}: {why}{turn}'
-    if missing or (client.backend is not GITHUB and not ci_merges(root)):
+    if missing or roles_at(root).kind(MERGE) != CI:
         return said
     said = _merged(root, client, pull, decision.message, said)
     if unpassed := decision.unreviewed or decision.review:

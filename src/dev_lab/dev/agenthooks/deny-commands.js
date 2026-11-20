@@ -535,9 +535,20 @@ function undeclaredDoor(rule, target, shown) {
   return `${shown} declares no door for it: declare one in its pyproject.toml as [tool.dev_lab.doors] ${rule.name} = "<the command that runs it there>"`;
 }
 
+/** The interpreter a FAMILY door is printed with: the session checkout's, whose rendered rules named the door --
+ * never the target's, whose older kit may lack the verb (2026-11-19, `worktrees --remove` in a sibling repo). */
+function doorPython(checkout) {
+  try {
+    return remedyPython(sessionRoot || checkout || root);
+  } catch (missing) {
+    return `<${missing.message}>`;
+  }
+}
+
 /** `text` with `{root}` as the cwd and the interpreter tokens as `checkout`'s absolute interpreter. */
 function expand(text, checkout) {
-  const out = String(text).replaceAll('{root}', root);
+  let out = String(text).replaceAll('{root}', root);
+  if (out.includes('{door}')) out = out.replaceAll('{door}', doorPython(checkout));
   if (!checkout || !/\{python\}|<venv python>/.test(out)) return out;
   let python;
   try {

@@ -89,22 +89,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'tests/test_dev_forgereview_bundle.py',
         'arg-type',
-        'said = fp.prepare(root, forge, 7, env=env)',
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        "fp.prepare(on_github.root, on_github.forge, 7, env={'GITHUB_ACTIONS': 'true'})",
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        'said = fp.prepare(root, forge, 7, env={})',
-    ): 'a FakeForge stands in for the Client prepare takes: a test double, not a subclass the type checker can see',
-    (
-        'tests/test_dev_forgereview_bundle.py',
-        'arg-type',
-        'return fb.judge_pending(forge, runtimes=_RUNTIMES, run=run), seen',
+        'return fb.judge_pending(forge, runtimes=_RUNTIMES, fetch=prepared.fetch, run=run), seen',
     ): 'a FakeForge stands in for the Client the judge takes: a test double, not a subclass the type checker can see',
     (
         'tests/test_dev_forgereview_bundle.py',
@@ -134,16 +119,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'except Exception as failed:',
     ): 'the pre-clone settle never fails the job: any fact it cannot read means the full review runs',
     (
-        'src/dev_lab/dev/actionsartifact.py',
-        'S310',
-        'request = urllib.request.Request(url, data=body, method=method, headers=dict(headers))',
-    ): "the runner's own results URL or the upload URL it signed, refused above unless http(s)",
-    (
-        'src/dev_lab/dev/actionsartifact.py',
-        'S310',
-        'with urllib.request.urlopen(request, timeout=60) as answer:',
-    ): 'opens only the request built above, its scheme checked',
-    (
         'src/dev_lab/dev/reviewcode.py',
         'S310',
         'request = urllib.request.Request(url, data=data, method=method)',
@@ -158,11 +133,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'S310',
         'with urllib.request.urlopen(request, timeout=30) as answer:',
     ): 'opens only the request built above to [ops.forge] api',
-    (
-        'src/dev_lab/dev/toolrelease.py',
-        'S310',
-        "with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S) as answer, to.open('wb') as out:",
-    ): 'a pinned https release URL built from the declared tool table, its bytes refused unless the sha256 matches',
     (
         'src/dev_lab/dev/forgememo.py',
         'ANN401',
@@ -544,6 +514,41 @@ ALLOWED: Final[dict[Site, str]] = {
         'override',
         'def encoding(self) -> str:',
     ): "a routed stream's encoding is its calling thread's target's, so it is a property where typeshed has a field",
+    (
+        'src/dev_lab/dev/machineguard.py',
+        'PLC0415',
+        'from dev_lab.dev.venvpath import running_interpreter',
+    ): 'deferred: the machine-file guard imports nothing heavy on the hook path; only the rendered door text needs it',
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'S310',
+        "return urllib.request.Request(url, headers={'User-Agent': USER_AGENT})",
+    ): "the URL is a pinned release's https download URL from the module's own table, never input",
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'arg-type',
+        'shutil.copyfileobj(body, out)',
+    ): "urlopen's answer is a binary file object; typeshed types it as the union it opens",
+    (
+        'src/dev_lab/dev/toolrelease.py',
+        'attr-defined',
+        "with answer as body, to.open('wb') as out:",
+    ): "urlopen's answer is a context manager at runtime; typeshed's union lacks it",
+    (
+        'tests/test_dev_forgewaves.py',
+        'E731',
+        'send = lambda _t, r: calls.append(r) or (0, _STATUS)',
+    ): 'a one-line recording fake handed to the code under test',
+    (
+        'tests/test_dev_toolrelease.py',
+        'arg-type',
+        'raise urllib.error.HTTPError(url, 403, reason, None, None)',
+    ): 'the fake refusal needs no headers or body; the code under test reads only the status',
+    (
+        'tests/test_dev_toolrelease.py',
+        'attr-defined',
+        "seen.append(req.get_header('User-agent'))",
+    ): 'the fake opener receives the Request the code built; typeshed types it as str | Request',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

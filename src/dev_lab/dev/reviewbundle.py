@@ -1,7 +1,8 @@
-"""A REVIEW BUNDLE: what a PR's review reads, built where PR code runs and judged where it never does.
+"""A REVIEW BUNDLE: what a PR's review reads, built and judged on a host where no PR code ever runs.
 
-The review splits in two (user decision 2026-11-03, the forge-bot on its own host). PREPARE runs on the CI runner --
-the untrusted side, holding no reviewer token -- and writes ONE deterministic JSON document: the exact bytes of only
+The review splits in two (user decision 2026-11-03, the forge-bot on its own host). PREPARE (:func:`fetched`, then
+:func:`prepare`) runs on the judge host itself since D77 -- over a bare, blobless fetch of the head that executes
+nothing the head carries -- and writes ONE deterministic JSON document: the exact bytes of only
 the changed files on both sides, their blob ids, and the PR's identity. The JUDGE decides which are BINARY, from
 the bytes it verified (:attr:`Changed.binary`: a NUL in the first :data:`BINARY_PROBE` bytes of either side), and
 hands the reviewer only the text ones (user decision 2026-11-03) -- never the producer's say-so, never the tree's
@@ -67,6 +68,7 @@ __all__ = [
     'current',
     'digest_of',
     'dump',
+    'fetched',
     'is_binary',
     'judge',
     'load',
@@ -185,6 +187,43 @@ def prepare(root: Path, *, repo: str, pull: PullRequest) -> Bundle:
     rows = sorted(_raw(root, merge_base, head), key=lambda row: row[2])
     files = tuple(_changed(root, old, new, path) for old, new, path in rows)
     return Bundle(repo=repo, pr=pull.number, base_ref=pull.base, base_sha=merge_base, head_sha=head, files=files)
+
+
+def fetched(root: Path, url: str, pull: PullRequest) -> Path:
+    """A bare, blobless repository at *root* holding ``origin/<pull.base>`` and *pull*'s head, fetched from *url*.
+
+    THE JUDGE PREPARES ITS OWN BUNDLE (D77): it fetches the head from the forge itself and builds the bundle with
+    :func:`prepare`, so no CI job, artifact or pointer stands between the forge and the judge. THE HEAD IS UNTRUSTED
+    AND NOTHING OF IT RUNS: the repository is bare (no tree is ever checked out, so no filter or attribute driver
+    applies), created with an empty template and a hooks path that does not exist (no hook of any kind fires), never
+    recurses into submodules, and admits only *url*'s own transport; :func:`prepare` then asks git for object ids
+    and blob bytes alone. The forge's auth header is the one :func:`~dev_lab.dev.reviewgitauth.hold` holds.
+
+    Raises:
+        OSError: a git call failed, or the head the forge serves is not *pull*'s (it moved: retried next run).
+
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    scheme = url.split('://', 1)[0] if '://' in url else 'file'
+    _git(root, 'init', '-q', '--bare', '--template=', '.')
+    for key, value in (
+        ('core.hooksPath', str(root / 'no-hooks')),
+        ('submodule.recurse', 'false'),
+        ('fetch.recurseSubmodules', 'false'),
+        ('protocol.allow', 'never'),
+        (f'protocol.{scheme}.allow', 'always'),
+    ):
+        _git(root, 'config', key, value)
+    _git(root, 'remote', 'add', 'origin', url)
+    _git(
+        root, 'fetch', '-q', '--no-tags', '--no-recurse-submodules', '--filter=blob:none', 'origin',
+        f'+refs/heads/{pull.base}:refs/remotes/origin/{pull.base}', f'+refs/pull/{pull.number}/head:refs/pull/head',
+    )  # fmt: skip
+    served = _git(root, 'rev-parse', 'refs/pull/head')[1].decode('ascii').strip()
+    if served != pull.head_sha:
+        msg = f'#{pull.number} moved: the forge serves {served[:12]}, not the listed {pull.head_sha[:12]}'
+        raise OSError(msg)
+    return root
 
 
 def dump(bundle: Bundle) -> tuple[bytes, str]:
