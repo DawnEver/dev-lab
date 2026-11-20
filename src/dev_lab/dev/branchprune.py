@@ -7,7 +7,7 @@ on its serve tick (:func:`serve_prune`), after the tick's ``git fetch --prune``.
 deletion is pinned to the judged sha, so two hosts racing delete once and the second finds it gone (a no-op).
 
 AN ORIGIN BRANCH IS A ROW of :func:`survey` when it is NOT declared (the branch set, the integration branch,
-the trunk) and its tip has sat idle -- its committer date -- for at least ``grace_hours``. Then:
+the trunk) and its tip has sat idle -- its committer date -- for at least ``max_idle_hours``. Then:
 
 * MERGED (:data:`MERGED`): its tip is an ancestor of origin's integration branch or trunk, and no open pull
   request has it as head. Deleted (:data:`DELETE`) when the repo declares ``prune_merged = true``, else
@@ -137,7 +137,7 @@ def survey(
         ref, sha, stamp = line.split('\t')
         name = ref.removeprefix(ORIGIN)
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
-        if name in keep or idle_h < branchset.grace_hours:
+        if name in keep or idle_h < branchset.max_idle_hours:
             continue
         if branchset.is_ephemeral(name) and name in heads:
             continue  # its open PR owns it
@@ -169,12 +169,15 @@ def _live_tip(client: Client, name: str) -> str | None:
     return str(commit.get('id') or commit.get('sha') or '')
 
 
-def _delete(client: Client, row: Row, say: Callable[[str], None]) -> bool:
-    """Delete *row*'s branch if its live tip is still the judged sha; whether it was deleted."""
+def _delete(client: Client, row: Row, say: Callable[[str], None], merged_now: Callable[[str], bool]) -> bool:
+    """Delete *row*'s branch if its live tip is still the judged sha AND still merged now; whether it was deleted."""
     live = _live_tip(client, row.ref)
     if live != row.sha:
         state = 'gone already' if live is None else f'moved to {live[:12]}'
         say(f'[prune] kept {row.ref}: {state} since the survey judged {row.sha[:12]}')
+        return False
+    if not merged_now(row.sha):
+        say(f'[prune] kept {row.ref}: {row.sha[:12]} is no longer held by integration or the trunk at delete time')
         return False
     path = client.backend.branch_delete.format(name=urllib.parse.quote(row.ref, safe='/'))
     try:
@@ -208,13 +211,22 @@ def prune(
     now: datetime,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
+    fetch: Callable[[Path], None] = fetch_origin,
 ) -> tuple[Row, ...]:
     """One pass over origin: delete what the declaration allows, alarm what was deleted and what is stale.
 
-    Reads the branch set and the integration policy from *root*; the refs must be fetched already.
+    Reads the branch set and the integration policy from *root*; the refs must be fetched already. Before each
+    deletion origin is *fetch*-ed again and the judged sha re-checked as an ancestor of integration or the trunk,
+    so a base rewound since the survey keeps the branch (the survey's answer is never trusted at delete time).
     """
     rows = listing(root, client, now=now)
-    deleted = [row for row in rows if row.action == DELETE and _delete(client, row, say)]
+    policy = load_policy(root)
+
+    def merged_now(sha: str) -> bool:
+        fetch(root)
+        return any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in _holders(root, policy))
+
+    deleted = [row for row in rows if row.action == DELETE and _delete(client, row, say, merged_now)]
     repo = client.forge.repo
     if deleted:
         body = '\n'.join(f'{row.ref} {row.sha[:12]} ({row.rule}, idle {row.idle_h:.0f} h)' for row in deleted)
