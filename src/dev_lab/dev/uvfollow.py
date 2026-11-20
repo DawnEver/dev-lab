@@ -23,26 +23,60 @@ cluster deploy and every kit tick (:mod:`dev_lab.dev.hpcaccount`) and ``ops upgr
 (:func:`dev_lab.ops.upgrade.follow_uv`)
 call the same follower, and ``family check`` names a pin lagging the newest release (:func:`lag`).
 
+A HELD BINARY IS MOVED ASIDE (measured 2026-11-20: a WinGet downgrade failed 3/3 as unclassified with ``remove:
+Access is denied`` on ``WinGet/Packages/astral-sh.uv_.../uv.exe`` -- running uv processes held it). The network door
+classifies that refusal as ``file-held`` (:mod:`dev_lab.dev._netverb_rows`); :func:`follow` then renames the
+package's executables aside (renaming a running exe is allowed, deleting it is not) and installs once more. The
+moved files are deleted by a later :func:`follow` (:func:`sweep`) once nothing holds them.
+
+THE POLICY (user ruling D101, 2026-11-20) is ``follow`` in ``uv.toml`` (:func:`~dev_lab.dev.lockcheck.uv_policy`):
+``minor`` moves the pin only to a newer MINOR release, ``patch`` to any newer release; :func:`due` applies it.
+
 When the update cannot land, :func:`follow` says why; the door's refusal carries it, and on a serving host the
 relock step alarms with it (:func:`dev_lab.dev.forgeservesteps.relock`).
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from enum import StrEnum
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import Final
 
-from dev_lab.dev.netverb import Report, run_network_verb
+from dev_lab.dev.netverb import Diagnosis, Report, run_network_verb
 
-__all__ = ['WINGET_ID', 'Route', 'follow', 'lag', 'route_of', 'update_argv']
+__all__ = [
+    'ASIDE',
+    'POLICIES',
+    'WINGET_ID',
+    'Route',
+    'due',
+    'follow',
+    'held_package',
+    'lag',
+    'move_aside',
+    'route_of',
+    'sweep',
+    'update_argv',
+]
 
 #: The WinGet package uv is installed as on Windows hosts (docs-src/dev/adding-a-workstation.md).
 WINGET_ID: Final = 'astral-sh.uv'
 
 #: Seconds one installer attempt may take: a download plus an install, never a hang.
 _UPDATE_TIMEOUT_S: Final = 600
+
+#: The uv auto-update policies ``uv.toml``'s ``follow`` may name: the release part a pin moves on.
+POLICIES: Final = ('minor', 'patch')
+#: The executables a WinGet uv package carries, each of which a running process may hold.
+_EXECUTABLES: Final = ('uv.exe', 'uvx.exe', 'uvw.exe')
+#: The suffix a held executable is renamed to; :func:`sweep` deletes such files once nothing holds them.
+ASIDE: Final = '.held-aside'
+#: The package directory a ``remove: Access is denied`` refusal names.
+_HELD_DIR: Final = re.compile(
+    r"""(?P<dir>(?:[A-Za-z]:)?[^\s"':]*?WinGet[\\/]Packages[\\/]astral-sh\.uv_[^\\/\s"']+)""", re.IGNORECASE
+)
 
 
 class Route(StrEnum):
@@ -84,7 +118,13 @@ def follow(
     if found == version:
         return ''
     argv = update_argv(uv, version)
-    report = (run or run_network_verb)(argv, timeout=_UPDATE_TIMEOUT_S)
+    door = run or run_network_verb
+    report = door(argv, timeout=_UPDATE_TIMEOUT_S)
+    package = held_package(report)
+    if package is not None:
+        sweep(package)
+        move_aside(package)
+        report = door(argv, timeout=_UPDATE_TIMEOUT_S)
     now = version_of(uv)
     if now == version:
         return ''
@@ -92,10 +132,56 @@ def follow(
     return f'uv {found or "(unreadable)"} at {uv} did not follow to {version} through `{" ".join(argv)}`{said}'
 
 
-def lag(pinned: str, newest: str) -> str:
-    """Why the *pinned* uv lags the *newest* release, one sentence; ``''`` when it does not."""
+def held_package(report: Report) -> Path | None:
+    """The WinGet uv package directory a ``file-held`` refusal in *report* names; ``None`` for any other answer."""
+    if report.ok or report.diagnosis is not Diagnosis.FILE_HELD:
+        return None
+    output = report.attempts[-1].output if report.attempts else ''
+    found = _HELD_DIR.search(output)
+    return Path(found['dir']) if found else None
 
-    def parts(version: str) -> tuple[int, ...]:
-        return tuple(int(part) for part in version.split('.'))
 
-    return f'the uv pin {pinned} lags the newest release {newest}' if parts(pinned) < parts(newest) else ''
+def move_aside(package: Path) -> tuple[Path, ...]:
+    """Rename each uv executable in *package* to ``<name><ASIDE>`` so an installer can write a new one; the moved."""
+    moved = []
+    for name in _EXECUTABLES:
+        exe = package / name
+        if exe.is_file():
+            target = exe.with_name(name + ASIDE)
+            exe.replace(target)
+            moved.append(target)
+    return tuple(moved)
+
+
+def sweep(package: Path) -> tuple[Path, ...]:
+    """Delete the executables :func:`move_aside` left in *package* that nothing holds now; the ones still held."""
+    still = []
+    for aside in package.glob(f'*{ASIDE}') if package.is_dir() else ():
+        try:
+            aside.unlink()
+        except PermissionError:
+            still.append(aside)
+    return tuple(still)
+
+
+def _parts(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split('.'))
+
+
+def due(pinned: str, newest: str, policy: str) -> str:
+    """The uv the pin should be at under *policy* (:data:`POLICIES`): *newest* when it moves, else *pinned*.
+
+    ``minor`` moves only when *newest* is a newer ``major.minor``; ``patch`` on any newer release.
+    """
+    if policy not in POLICIES:
+        msg = f'uv follow policy {policy!r} is none of {", ".join(POLICIES)}'
+        raise ValueError(msg)
+    width = 2 if policy == 'minor' else 3
+    return newest if _parts(newest)[:width] > _parts(pinned)[:width] else pinned
+
+
+def lag(pinned: str, newest: str, policy: str) -> str:
+    """Why the *pinned* uv lags the *newest* release under *policy*, one sentence; ``''`` when it does not."""
+    if due(pinned, newest, policy) == pinned:
+        return ''
+    return f'the uv pin {pinned} lags the newest release {newest} ({policy} policy)'

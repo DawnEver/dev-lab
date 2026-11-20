@@ -115,6 +115,8 @@ class Diagnosis(StrEnum):
     PERMISSION_REFUSED = 'permission-refused'
     REMOTE_ABSENT = 'remote-absent'
     TRANSPORT_REFUSED = 'transport-refused'
+    #: An installer could not replace a file a running process holds (``remove: Access is denied``).
+    FILE_HELD = 'file-held'
     STOPPED_BY_CALLER = 'stopped-by-caller'
 
 

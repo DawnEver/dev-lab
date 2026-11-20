@@ -193,7 +193,7 @@ def test_the_dist_is_the_word_the_change_names() -> None:
     assert dist_of(_PINT) == 'pint'
     assert dist_of('uv.lock is not the newest resolution: Add ruff v0.17.1') == 'ruff'
     assert dist_of('uv.lock is not the newest resolution: something else entirely') == 'lock'
-    assert dist_of(f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.13.8') == 'uv'
+    assert dist_of(f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.14.0') == 'uv'
 
 
 def test_in_house_is_a_git_source_following_a_line_read_off_the_lock() -> None:
@@ -550,16 +550,16 @@ def test_planted_control_a_tree_with_its_venv_renders_with_that_interpreter(tmp_
 
 
 def _uv_bumped(tree: Path, _packages: Sequence[str]) -> int:
-    (tree / UV_PIN).write_text('version = "0.13.8"\n', encoding='utf-8')
+    (tree / UV_PIN).write_text('version = "0.14.0"\nfollow = "minor"\n', encoding='utf-8')
     return 0
 
 
 def test_a_uv_pin_behind_the_newest_release_is_carried_like_a_stale_lock(world: tuple[Path, Path, str]) -> None:
     """User directive 2026-11-05: the forge raises dev-lab's uv pin by the same relock pull request."""
     clone, origin, _ = world
-    sha = _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\n'})
+    sha = _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\nfollow = "minor"\n'})
     said = _carry(
-        clone, _Forge(), resolve=_fresh, uv=lambda: '0.13.8', follow_uv=lambda _version: '', upgrade=_uv_bumped
+        clone, _Forge(), resolve=_fresh, uv=lambda: '0.14.0', follow_uv=lambda _version: '', upgrade=_uv_bumped
     )
     assert said.startswith(f'relocked integrate/main at {sha[:12]} onto {BRANCH}')
     assert _git(origin, 'diff', '--name-only', sha, BRANCH) == UV_PIN
@@ -574,13 +574,13 @@ def test_planted_control_a_host_without_the_new_uv_refuses_the_relock_naming_the
 ) -> None:
     """A lock is never written by the old uv: the relock RAISES naming ``uv self update`` and pushes nothing."""
     clone, origin, _ = world
-    _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\n'})
-    with pytest.raises(RelockFailed, match=r'uv self update 0\.13\.8'):
+    _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\nfollow = "minor"\n'})
+    with pytest.raises(RelockFailed, match=r'uv self update 0.14.0'):
         _carry(
             clone,
             _Forge(),
             resolve=_fresh,
-            uv=lambda: '0.13.8',
+            uv=lambda: '0.14.0',
             follow_uv=lambda version: f'uv 0.13.7 did not follow to {version}',
             upgrade=_never,
         )
