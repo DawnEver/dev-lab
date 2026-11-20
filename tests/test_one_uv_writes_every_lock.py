@@ -23,7 +23,8 @@ _OTHER = '0.0.1'
 
 def _project(root: Path) -> None:
     (root / 'pyproject.toml').write_text(
-        '[project]\nname="empty"\nversion="0"\n[project.optional-dependencies]\ndev=[]\n', encoding='utf-8'
+        '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\n',
+        encoding='utf-8',
     )
 
 
@@ -135,7 +136,7 @@ def test_the_lock_upgrade_of_a_tree_carrying_the_uv_pin_raises_it_and_is_written
     _project(tmp_path)
     pin = tmp_path / UV_PIN
     pin.parent.mkdir(parents=True)
-    pin.write_text('version = "0.13.7"\n', encoding='utf-8')
+    pin.write_text('version = "0.13.7"\nfollow = "minor"\n', encoding='utf-8')
     calls, run = _recording()
     upgrade = _dep_project.lock_upgrade
     monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda _uv: '0.13.7')
@@ -146,13 +147,13 @@ def test_the_lock_upgrade_of_a_tree_carrying_the_uv_pin_raises_it_and_is_written
         raise OSError(msg)
 
     monkeypatch.setattr(uvrelease, 'digests', unreadable)
-    assert upgrade(tmp_path, 'py', run=run, dry_run=False, environment={}, newest=lambda: '0.13.8') == 1
+    assert upgrade(tmp_path, 'py', run=run, dry_run=False, environment={}, newest=lambda: '0.14.0') == 1
     assert calls == []
-    assert pin.read_text(encoding='utf-8') == 'version = "0.13.7"\n'
+    assert pin.read_text(encoding='utf-8') == 'version = "0.13.7"\nfollow = "minor"\n'
     monkeypatch.setattr(uvrelease, 'digests', lambda _version, **_kw: dict.fromkeys(uvrelease.ASSETS, 'c' * 64))
-    assert upgrade(tmp_path, 'py', run=run, dry_run=False, environment={}, newest=lambda: '0.13.8') == 0
-    assert asked == ['0.13.8']
-    assert Path(calls[0][0]).parent.name == '0.13.8'
+    assert upgrade(tmp_path, 'py', run=run, dry_run=False, environment={}, newest=lambda: '0.14.0') == 0
+    assert asked == ['0.14.0']
+    assert Path(calls[0][0]).parent.name == '0.14.0'
     text = pin.read_text(encoding='utf-8')
-    assert text.startswith('version = "0.13.8"\n')
+    assert text.startswith('version = "0.14.0"\nfollow = "minor"\n')
     assert text.count('c' * 64) == len(uvrelease.ASSETS)

@@ -96,8 +96,14 @@ run = ["python", "-m", "dev_lab.dev.mergeresolution"]
 # SESSION-COMMITS-UNDER-ITS-TASK (dev_lab.dev.taskgate, user ruling 2026-11-14): in a repo declaring
 # [tool.dev_lab.task] required = true, an agent session pushes only while its USER bound it to an open task
 # (`task: <slug>` prompt, bound by rem's UserPromptSubmit hook and read through dev_lab.dev.taskbinding; D5
-# 2026-11-15), and a pr/ branch only under pr/<task>/. The ONE taskgate row: in-session work (a commit) is rem's
-# PreToolUse task guard. Opt-in; a repo that does not declare it is never judged.
+# 2026-11-15), and a pr/ branch only under pr/<task>/. Judged at every commit too: rem's PreToolUse guard is Claude
+# Code's alone, so the git rows are the backstop for Codex, Antigravity or any agent. Opt-in; a repo that does not
+# declare it is never judged.
+[[commit-msg]]
+id = "task-bound-commit"
+run = ["python", "-m", "dev_lab.dev.taskgate"]
+always_run = true
+
 [[pre-push]]
 id = "task-bound"
 run = ["python", "-m", "dev_lab.dev.taskgate"]

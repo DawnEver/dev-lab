@@ -24,6 +24,7 @@ from dev_lab.dev.lockcheck import (
     pin_stable,
     pin_uv,
     unreasoned_holds,
+    uv_due,
     uv_version,
 )
 from dev_lab.dev.uvfollow import follow
@@ -263,7 +264,7 @@ def lock_upgrade(
         emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
         return 1
     try:
-        required = newest() if (root / UV_PIN).is_file() and not packages else uv_version(root)
+        required = uv_due(root, newest()) if (root / UV_PIN).is_file() and not packages else uv_version(root)
         command = lock_upgrade_command(root, python, required, packages)
     except (OtherUvRefused, ForeignEnvRefused, OSError) as exc:
         emit(f'REFUSED: {exc}')

@@ -34,8 +34,9 @@ from lab_commons.hpc.cluster import files_of, gather, render_script, run_home, s
 from lab_commons.hpc.config import Cluster, Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.hpc.jobs import gather_job
+from lab_commons.hpc.layout import NATIVE
 from lab_commons.hpc.plan import make_plan
-from lab_commons.hpc.shell import BUILD_FAILED, UV_PRUNE, RunSpec, build_script, cache_dir, facts
+from lab_commons.hpc.shell import BUILD_FAILED, UV_CACHE, UV_PRUNE, RunSpec, build_script, cache_dir, facts
 from lab_commons.hpc.slurm import parse_snapshot
 from lab_commons.hpc.tree import NotSubmitted
 from lab_commons.hpc.worker import RESULTS, TAIL_LINES, Rejected, append_event, close_shard, run_shard
@@ -292,11 +293,11 @@ def test_the_task_script_keeps_its_output_node_local_and_closes_its_shard() -> N
 
 def test_a_commits_runs_live_under_its_sha_and_hold_three_files(tmp_path: Path) -> None:
     job = JobSpec(name='sweep', entry='m:f', sha=SHA, repo_url='https://x/r.git')
-    assert run_home(job) == f'~/ci/jobs/{SHA}'
+    assert run_home(job) == f'"$LAB_ROOT"/jobs/{SHA}'
     assert run_home(JobSpec(workdir='~/p')) == '~/p/.lab-hpc', 'PLANTED CONTROL: a job at no commit'
     login = Login({'sbatch': '42\n'})
     sub = submit(login, _plan(), Config(job=job, source=tmp_path / 'j.toml'), list(range(10)), stamp='t0')
-    assert sub.run_dir == f'~/ci/jobs/{SHA}/sweep-t0'
+    assert sub.run_dir == f'"$LAB_ROOT"/jobs/{SHA}/sweep-t0'
     made = login.calls[0][0]
     assert made.startswith('mkdir -p ')
     assert 'logs' not in made
@@ -320,26 +321,26 @@ def test_the_artifact_format_is_a_declared_choice_and_the_image_is_refused_for_g
 
 def test_the_artifact_build_leaves_one_file_and_no_resident_cache() -> None:
     script = artifact_script(RunSpec(sha=SHA, repo_url='https://x/r.git', builds=BUILDS))
-    assert f'A="$HOME"/ci/artifacts/{SHA}.tar.gz' in script
+    assert f'A="$LAB_ROOT"/artifacts/{SHA}.tar.gz' in script
     assert 'if [ ! -s "$A" ]' in script, 'an artifact that exists is reused'
     assert 'mktemp -d "${TMPDIR:-/tmp}/' in script
     assert 'EXIT' in script
     assert f'archive {SHA} | tar -x' in script, 'exported, never a worktree'
-    assert 'UV_CACHE_DIR="$S/uv-cache"' in script, 'phase 4: the uv cache dies with the scratch'
+    assert f'UV_CACHE_DIR={UV_CACHE}' in script, 'one shared uv cache under the root, hardlinked from'
     for gone in ('worktree add', 'ci/envs', 'ci/trees', 'ci/uv-cache'):
         assert gone not in script, gone
     assert 'for p in src cases;' in script, 'the source roots and the declared paths, nothing else'
     assert 'PYTHONPATH="$ART/tree/src${PYTHONPATH' in script
     assert 'tar -czf "$A.part" -C "$S/pack" . && mv "$A.part" "$A"' in script, 'one file, atomically'
     native = artifact_script(RunSpec(sha=SHA, repo_url='u', builds=replace(BUILDS, native_key='n9', native_build='b')))
-    assert 'ci/native/n9' in native, 'a native build stays keyed'
+    assert f'{NATIVE}/n9' in native, 'a native build stays keyed'
     assert '$ART/native' in native, 'and is packed'
 
 
 def test_the_task_enters_the_unpacked_artifact() -> None:
     lines = enter_lines(SHA)
     assert lines[0] == 'ART="${TMPDIR:-/tmp}/lab-artifact-${SLURM_JOB_ID}"'
-    assert f'tar -xzf "$HOME"/ci/artifacts/{SHA}.tar.gz -C "$ART"' in lines[2]
+    assert f'tar -xzf "$LAB_ROOT"/artifacts/{SHA}.tar.gz -C "$ART"' in lines[2]
     assert lines[-2:] == ('. "$ART/activate.sh"', 'cd "$ART/tree"')
 
 
@@ -388,6 +389,12 @@ def _project(name: str, deps: str = '') -> str:
     return f'[project]\nname = "{name}"\nversion = "0"\nrequires-python = ">=3.9"\ndependencies = [{deps}]\n'
 
 
+def _bash_path(path: Path) -> str:
+    """*path* as the bash the test drives reads it: MSYS converts HOME itself, never LAB_ROOT (``C:`` is a tar host)."""
+    posix = path.as_posix()
+    return f'/{posix[0].lower()}{posix[2:]}' if os.name == 'nt' and posix[1:2] == ':' else posix
+
+
 def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_install(tmp_path: Path) -> None:
     """A submodule that is a path dependency reaches the install at the commit the exported sha pins.
 
@@ -425,9 +432,14 @@ def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_in
     install = f'uv sync -q --frozen --offline --no-install-package dep && {posix_layout}'
     builds = Builds(install=install, source_roots=('components',), env_key='k1')
     spec = RunSpec(sha=sha, repo_url=urls['top'], builds=builds, python=Path(sys.executable).as_posix())
-    cache = Path(cache_dir(spec.repo_url).replace('"$HOME"', home.as_posix()))
+    cache = Path(cache_dir(spec.repo_url).replace('"$LAB_ROOT"', (home / 'ci').as_posix()))
     _git('clone', '-q', '--bare', urls['top'], cache)
-    env = {**os.environ, 'HOME': home.as_posix(), 'GIT_CONFIG_PARAMETERS': "'protocol.file.allow=always'"}
+    env = {
+        **os.environ,
+        'HOME': home.as_posix(),
+        'LAB_ROOT': _bash_path(home / 'ci'),
+        'GIT_CONFIG_PARAMETERS': "'protocol.file.allow=always'",
+    }
     done = subprocess.run(
         [bash_executable(), '-c', artifact_script(spec)],
         capture_output=True,

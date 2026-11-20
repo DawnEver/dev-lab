@@ -57,31 +57,43 @@ class Plan:
     remote: str
     accounts: tuple[Target, ...]
     by_hand: tuple[str, ...]
+    unreached: tuple[str, ...] = ()
 
 
-def _reach(host_file: Path, remote: str) -> str:
-    """The ``credentials_file`` *host_file* declares for *remote*; ``''`` when it declares no reach."""
+def _file(table: object) -> str:
+    return str(table.get('credentials_file', '')) if isinstance(table, Mapping) else ''
+
+
+def _reach(host_file: Path, remote: str, everyone: str) -> str:
+    """The ``credentials_file`` *host_file*'s machine uses for *remote*: its own, else the family's *everyone*."""
     if not host_file.is_file():
         return ''
     reach = tomllib.loads(host_file.read_text(encoding='utf-8')).get('storage', {}).get('reach', {})
-    found = reach.get(remote, {})
-    return str(found.get('credentials_file', '')) if isinstance(found, Mapping) else ''
+    return _file(reach.get(remote)) or everyone
+
+
+def _everyone(clone: Path, remote: str) -> str:
+    """The file every machine keeps *remote*'s key in when the family reaches it for all (``remotes.<r>.reach``)."""
+    family = (
+        tomllib.loads((clone / 'family.toml').read_text(encoding='utf-8')) if (clone / 'family.toml').is_file() else {}
+    )
+    return _file(family.get('storage', {}).get('remotes', {}).get(remote, {}).get('reach'))
 
 
 def plan(remote: str, *, clone: Path, grants: Sequence[Grant], this_host: str) -> Plan:
-    """Every declared reach of *remote* in the config-source *clone*: reached accounts, and the rest by hand."""
-    accounts, names = [], set()
+    """Every machine reaching *remote* in the config-source *clone* (its own reach, or the family's for all)."""
+    accounts, names, everyone = [], set(), _everyone(clone, remote)
     for reached in grants:
         name = account_host(reached)
         names.add(name)
-        if path := _reach(clone / 'hosts' / f'{name}.toml', remote):
+        if path := _reach(clone / 'hosts' / f'{name}.toml', remote, everyone):
             accounts.append(Target(reached, path))
-    by_hand = sorted(
-        file.stem
-        for file in (clone / 'hosts').glob('*.toml')
-        if file.stem not in names and file.stem != this_host and _reach(file, remote)
-    )
-    return Plan(remote, tuple(accounts), tuple(by_hand))
+    rest = [file for file in sorted((clone / 'hosts').glob('*.toml')) if file.stem not in names | {this_host}]
+    reaching = [file for file in rest if _reach(file, remote, everyone)]
+    kinds = {file.stem: tomllib.loads(file.read_text(encoding='utf-8')) for file in reaching}
+    by_hand = tuple(name for name, table in kinds.items() if 'dev' in table and 'deploy' not in table)
+    unreached = tuple(name for name, table in kinds.items() if 'deploy' in table)
+    return Plan(remote, tuple(accounts), by_hand, unreached)
 
 
 def subject(work: Plan, content: bytes) -> str:
@@ -122,8 +134,11 @@ def distribute(
         said = _check(shell, target.grant, work.remote)
         say(f'{user}: placed {target.path} (sha256 {digest[:12]}, 0600); {said}')
     for host in work.by_hand:
-        say(f'{host}: declares the reach but has no push channel -- run there: '
+        say(f'{host}: a workstation, no push channel -- its person runs there: '
             f'python -m dev_lab.ops.secretplace enter --remote {work.remote}')  # fmt: skip
+    for account in work.unreached:
+        say(f'{account}: an account this session does not reach (its role: hpcaccount.session status) -- run '
+            f'distribute again from a session that reaches it')  # fmt: skip
     return 2 if failed else 0
 
 
@@ -151,5 +166,5 @@ def run(remote: str, content: bytes, *, requests: Path, say: Callable[[str], Non
     asked.write_text(json.dumps({'action': ACTION, 'subject': wanted}), encoding='utf-8')
     say(f'[ops secret] {remote}: content sha256 {hashlib.sha256(content).hexdigest()[:12]}; request {asked}')
     if work.accounts:
-        verify_held(grant(asked).stem, action=ACTION, subject=wanted)
+        verify_held(grant(asked, ask=input).stem, action=ACTION, subject=wanted)
     return distribute(work, content, connect=grant_runner, say=say)

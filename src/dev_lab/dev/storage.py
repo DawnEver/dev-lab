@@ -59,6 +59,9 @@ MARKER: Final = '.storage-migrated'
 
 #: Where ``render`` writes when no ``--to`` is given: outside every repo, beside the machine's config.
 DEFAULT_RCLONE: Final = Path('~/.config/lab-commons/rclone.conf')
+#: A check answers in seconds or says why: rclone's default retries made a refused key look like a hung terminal
+#: (measured 2026-11-20).
+CHECK_BOUNDS: Final = ('--contimeout', '15s', '--timeout', '30s', '--retries', '1', '--low-level-retries', '1')
 #: Where ``publish`` writes the machine's bound roots for readers with no TOML parser (the agent-guard engine).
 DEFAULT_ROOTS: Final = Path('~/.config/lab-commons/storage-roots.json')
 #: The variable that moves :data:`DEFAULT_ROOTS` (a test's own file).
@@ -198,7 +201,11 @@ def rendered(declared: _storage.Storage) -> str:
             raise _storage.StorageError(msg)
         secret = tomllib.loads(secret_file.read_text(encoding='utf-8'))
         if clash := sorted(set(secret) & set(remote.options)):
-            msg = f'{secret_file} restates {clash[0]!r}, a family option of {remote.name!r}: keep only secrets there'
+            msg = (
+                f'{secret_file} restates {clash[0]!r}, a declared fact of {remote.name!r}: it holds only '
+                f'{list(remote.secret_keys)}; run once '
+                f'`python -m dev_lab.ops.secretplace migrate --remote {remote.name}`'
+            )
             raise _storage.StorageError(msg)
         lines = [f'[{remote.name}]', *(f'{k} = {v}' for k, v in {**remote.options, **secret}.items())]
         blocks.append('\n'.join(lines))
@@ -262,10 +269,12 @@ def check(
         raise _storage.StorageError(msg)
     written = render(to, repo=repo, declared=declared)
     exe = rclone or _rclone_exe()
-    done = run([exe, '--config', str(written), 'lsd', f'{remote}:'], capture_output=True, text=True, timeout=120,
-               check=False)  # fmt: skip
+    done = run([exe, '--config', str(written), *CHECK_BOUNDS, 'lsd', f'{remote}:'], capture_output=True, text=True,
+               timeout=120, check=False)  # fmt: skip
     if done.returncode != 0:
-        said = (done.stderr or done.stdout).strip().splitlines()[-3:]
+        said = [line for line in (done.stderr or done.stdout).strip().splitlines() if 'ERROR' in line][-1:] or (
+            (done.stderr or done.stdout).strip().splitlines()[-1:]
+        )
         msg = f'rclone could not list {remote}: (exit {done.returncode}) {" | ".join(said)}'
         raise _storage.StorageError(msg)
     return f'{remote}: reached ({len(done.stdout.splitlines())} top-level entr(y/ies)) through {written}'

@@ -751,3 +751,27 @@ def test_interpreter_code_is_read_without_its_string_literals(rules: Path) -> No
     bash = agenthooks.decide('rm -rf .claude/worktrees/lane', rules)
     assert bash is not None
     assert bash.startswith('RECURSIVE-DELETE:'), bash
+
+
+def test_family_rules_are_the_rows_every_repo_ships_and_judge_without_any_repo(tmp_path: Path) -> None:
+    """D99: the agent bridges guard an UNTRUSTED repo with the installed family rows, never the repo's copy.
+
+    Planted control: a row that needs a repo artefact is NOT in the family set, so the door cannot
+    be a blind dump of the registry; and a plain command passes, so it is not a constant refusal.
+    """
+    proc = subprocess.run(
+        [sys.executable, '-m', 'dev_lab.dev.agenthooks', '--family-rules'],
+        capture_output=True,
+        text=True,
+        check=True,
+        encoding='utf-8',
+    )
+    rows = json.loads(proc.stdout)
+    ids = {row['name'] for row in rows}
+    unconditional = {rule.id for rule in DENY_RULES if rule.needs is None}
+    assert ids == unconditional
+    assert {rule.id for rule in DENY_RULES if rule.needs is not None}.isdisjoint(ids)
+    rules = tmp_path / 'family.json'
+    rules.write_text(proc.stdout, encoding='utf-8')
+    assert agenthooks.decide('git reset --hard HEAD', rules, cwd=tmp_path) is not None
+    assert agenthooks.decide('git status', rules, cwd=tmp_path) is None

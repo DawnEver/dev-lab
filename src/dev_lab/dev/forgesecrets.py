@@ -229,7 +229,7 @@ def _store_from(task: str, name: str, source: Path, store: Callable[[str, str], 
         return 2
     try:
         store(task, bundle)
-    except (OSError, NoCredential) as failed:  # its message is not echoed: it never names a key, but need not
+    except (OSError, NoCredential) as failed:  # its message is not printed: it never names a key, but need not
         emit(f'[secrets] refused: storing {source} failed ({type(failed).__name__}); the file is kept', err=True)
         return 2
     try:
