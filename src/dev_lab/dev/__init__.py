@@ -469,6 +469,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.reviewbudget` -- a PR's review capped in USD inside the family's month, fitted.
 * :mod:`dev_lab.dev.reviewcap` -- a review that did not run is waived at the merge, warned and recorded, never passed.
 * :mod:`dev_lab.dev.reviewbundle` -- a PR head's review bundle: the changed files both sides, checked against the forge.
+* :mod:`dev_lab.dev.reviewforgediff` -- the forge's own diff of a PR, parsed: a review bundle is held to its paths.
 * :mod:`dev_lab.dev.forgereview_gate` -- the one review gate merge, merge-ready and Break-Glass read.
 * :mod:`dev_lab.dev.forgereview_bundle` -- ``forge review judge``: the judge host fetches, prepares and judges a bundle.
 * :mod:`dev_lab.dev.reviewgate` -- the ONE predicate of a reviewed head, for the merge and Break-Glass.
