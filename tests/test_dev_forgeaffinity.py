@@ -7,13 +7,14 @@ from datetime import UTC, datetime, timedelta
 from importlib.metadata import entry_points
 from pathlib import Path
 
+import pytest
 from lab_commons.compute.model import INTEGRATION, REQUEST, Candidate
 from lab_commons.hpc.affinity import READER
 from lab_commons.hpc.grants import Affinity
 from lab_commons.hpc.shell import FULL
 
 from dev_lab.dev import forgeaffinity, forgehosts
-from dev_lab.dev.forgeaffinity import DEFERRED, covers, declared, deferral, defers
+from dev_lab.dev.forgeaffinity import DEFERRED, HELD, claims_of, covers, declared, deferral, defers, holds
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.hpcaccount import spec
 
@@ -105,3 +106,38 @@ def test_with_no_affinity_declared_on_any_card_the_reader_returns_none() -> None
 def test_the_reader_is_installed_where_lab_commons_looks_for_it() -> None:
     (point,) = entry_points(group=READER)
     assert point.load() is forgeaffinity.research_affinity
+
+
+def test_a_seat_reads_its_claims_off_its_own_deploy_row(tmp_path: Path) -> None:
+    """User ruling 2026-11-20: a returning verification account opens one repo's integration tip at a time."""
+    rows = (
+        spec.Repo('r', 'https://forge.example.org/o/r.git', 'main', claims='integration'),
+        spec.Repo('q', 'https://forge.example.org/o/q', 'main', claims='none'),
+        spec.Repo('s', 'https://forge.example.org/o/s', 'main'),
+    )
+    path = tmp_path / 'config.toml'
+    path.write_text(spec.render(spec.Deployment('h', 'src', '3.13', rows)), encoding='utf-8')
+    assert claims_of(path, 'https://forge.example.org/o/r') == 'integration'
+    assert claims_of(path, 'https://forge.example.org/o/q.git') == 'none'
+    assert claims_of(path, 'https://forge.example.org/o/s') == '', 'PLANTED CONTROL: undeclared claims everything'
+    assert claims_of(tmp_path / 'absent.toml', 'https://forge.example.org/o/r') == '', 'a workstation has no [deploy]'
+
+
+def test_claims_integration_holds_every_part_but_the_integration_tips() -> None:
+    tip = _part('a' * 40, age_min=1)
+    head = Candidate('o/r', 'pr/x', 'b' * 40, 'base', INTEGRATION, NOW, FULL)
+    held = holds('integration', 'integrate/main')
+    assert held(tip) == ''
+    assert held(head).startswith(HELD)
+    assert 'pr/x' in held(head)
+    assert holds('none', 'integrate/main')(tip).startswith(HELD), 'none holds even the tip'
+    assert holds('', 'integrate/main')(head) == '', 'PLANTED CONTROL: undeclared holds nothing'
+
+
+def test_an_unknown_claims_value_is_refused_naming_the_choices(tmp_path: Path) -> None:
+    path = tmp_path / 'config.toml'
+    good = spec.render(spec.Deployment('h', 'src', '3.13', (spec.Repo('r', 'https://f.example/o/r', 'main'),)))
+    path.write_text(good.replace('ref = "main"', 'ref = "main", claims = "tip"'), encoding='utf-8')
+    with pytest.raises(ValueError, match='claims') as refused:
+        spec.load(path)
+    assert 'integration' in str(refused.value)

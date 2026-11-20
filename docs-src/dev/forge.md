@@ -411,6 +411,12 @@ repos = [
 ]
 ```
 
+A row may also narrow what the account claims of that repo while the integrator reopens it step by step (user
+ruling 2026-11-20: a returning verification account first verifies each repo's integration tip, one repo at a time):
+`claims = "none"` claims nothing, `claims = "integration"` only the integration branch's tip; with no `claims` the
+account claims everything. A held part waits, named `held by this seat's [deploy] claims`; widening is the
+integrator's edit of the account file.
+
 Its tick reads the row and publishes `verify` on its host card (`verify first: tests/*`), so every other seat learns
 the affined accounts from the cards it already reads. No account name is written in dev-lab.
 

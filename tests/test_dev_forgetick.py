@@ -41,7 +41,7 @@ from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev import forgeproduce, forgerounds, forgetick
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgeaffinity import DEFERRED
+from dev_lab.dev.forgeaffinity import DEFERRED, HELD
 from dev_lab.dev.forgeclaim import (
     CLAIMED,
     DEFAULT_LEASE,
@@ -1462,3 +1462,27 @@ def test_a_cluster_seat_claims_a_verify_part_by_the_declared_affinity(server, tm
 def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
     carry(monkeypatch, HPC_REPO)
+
+
+@pytest.mark.parametrize(('claims', 'claimed'), [('none', False), ('integration', True), ('', True)])
+def test_a_cluster_seat_claims_only_what_its_deploy_row_opens(
+    server, tmp_path: Path, *, claims: str, claimed: bool
+) -> None:
+    """User ruling 2026-11-20: a returning verify account opens one repo's integration tip first, then widens.
+
+    The part is the integration tip: ``integration`` claims it, ``none`` holds it, named (PLANTED CONTROL: undeclared
+    claims it as before).
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _declare(
+        repo, tips, '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.dev_lab.parts]\noutput = "output/logs"\n'
+    )
+    me = Claim('G', 'alice', LATER, 'ada/alice')
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me)]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    report = _tick(repo, server, seat=SEAT, host='linux', verify=('tests/*',), borrow=False, cards=[], claims=claims)
+    assert bool(report.claimed) is claimed
+    if not claimed:
+        assert any(HELD in line and 'integrate/main' in line for line in report.lines)
+        assert not [r for r in Recorder.received if r['method'] == 'POST'], 'a held part posts nothing'
