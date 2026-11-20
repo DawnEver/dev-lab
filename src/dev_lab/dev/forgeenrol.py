@@ -38,7 +38,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import forgecredential
+from dev_lab.dev import devcredential, forgecredential
 from dev_lab.dev.credstore import CredentialRefused, DeclaredForge, read_forge
 from dev_lab.dev.planrunsteps import stdout_path
 from dev_lab.dev.venvpath import running_interpreter
@@ -214,12 +214,9 @@ def complete(
     run: Runner,
     say: Callable[[str], None],
     home: Path | None = None,
-    place: Callable[..., int] | None = None,
+    place: Callable[..., int] = devcredential.place,
 ) -> int:
     """Open the plan with *code*, mint, place each token, delete each minted file; 0 only when all were placed."""
-    if place is None:
-        from dev_lab.dev.devcredential import place  # noqa: PLC0415 -- devcredential reads devhost, which runs this door
-
     plan, steps, shown = str(enrolment.plan), str(enrolment.steps), enrolment.digest
     hold = [python, '-m', 'dev_lab.dev.sshhold', 'open', '--hours', '1', '--plan', plan, '--digest', shown]
     if run([*hold, '--code', code]):

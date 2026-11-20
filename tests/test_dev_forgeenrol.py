@@ -14,7 +14,7 @@ from dev_lab.dev.forgeenrol import SCOPE, Enrolment, EnrolRefused, complete, loa
 from dev_lab.dev.planrunsteps import stdout_path
 from dev_lab.ops.forgerequests import TokenRequest
 
-_SECRET = 'tok3n-SECRET-value'  # noqa: S105 -- a planted value no output may carry
+_PLANTED = 'tok3n-planted-value'  # a planted value no output may carry
 _HOST = 'forge.example'
 _DEV = {'forges': {_HOST: ['dev-user'], 'github.com': ['someone']}, 'helpers': {_HOST: 'store'}}
 _FORGE = DeclaredForge(Path('forge.toml'), (_HOST,), {'dev-user': ('team/repo',)})
@@ -36,7 +36,7 @@ def _prepare(
 ) -> tuple[list[str], Enrolment | None, list[str]]:
     fixed: list[str] = []
     said, plan = prepare(
-        dev=_DEV, machine='WS9', forge=forge, door=ops_door(_forge_file(tmp_path)), dest_host='10.0.0.1',
+        dev=_DEV, machine='WS9', forge=forge, door=ops_door(_forge_file(tmp_path)), dest_host='forgehost.example',
         out=tmp_path / 'consent', store=_store(tmp_path, *lines), helpers_for=lambda _h: list(helpers),
         store_for=fixed.append,
     )  # fmt: skip
@@ -61,11 +61,11 @@ def test_a_forge_host_without_a_forge_sudo_line_is_refused(tmp_path: Path) -> No
 
 def test_only_logins_on_the_forges_sites_and_absent_from_the_store_are_missing(tmp_path: Path) -> None:
     assert missing(_DEV, _FORGE, store=_store(tmp_path)) == ['dev-user']
-    assert missing(_DEV, _FORGE, store=_store(tmp_path, f'https://dev-user:{_SECRET}@{_HOST}')) == []
+    assert missing(_DEV, _FORGE, store=_store(tmp_path, f'https://dev-user:{_PLANTED}@{_HOST}')) == []
 
 
 def test_a_stored_machine_writes_no_plan(tmp_path: Path) -> None:
-    said, plan, fixed = _prepare(tmp_path, f'https://dev-user:{_SECRET}@{_HOST}')
+    said, plan, fixed = _prepare(tmp_path, f'https://dev-user:{_PLANTED}@{_HOST}')
     assert plan is None
     assert fixed == []
     assert 'nothing to mint' in said[-1]
@@ -73,7 +73,7 @@ def test_a_stored_machine_writes_no_plan(tmp_path: Path) -> None:
 
 
 def test_a_wrong_helper_is_fixed_without_consent(tmp_path: Path) -> None:
-    _said, _plan, fixed = _prepare(tmp_path, f'https://dev-user:{_SECRET}@{_HOST}', helpers=['manager'])
+    _said, _plan, fixed = _prepare(tmp_path, f'https://dev-user:{_PLANTED}@{_HOST}', helpers=['manager'])
     assert fixed == [_HOST]
 
 
@@ -81,8 +81,8 @@ def test_the_plan_mints_each_missing_login_named_after_the_machine(tmp_path: Pat
     _said, plan, _fixed = _prepare(tmp_path)
     assert plan is not None
     body = json.loads(plan.plan.read_text(encoding='utf-8'))
-    assert body['hosts'] == ['ops@10.0.0.1']
-    assert body['grants'] == [{'host': 'ops@10.0.0.1', 'action': 'ops.forge.token',
+    assert body['hosts'] == ['ops@forgehost.example']
+    assert body['grants'] == [{'host': 'ops@forgehost.example', 'action': 'ops.forge.token',
                                'subject': TokenRequest('dev-user', 'WS9', SCOPE, rotate=False).subject()}]  # fmt: skip
     steps = json.loads(plan.steps.read_text(encoding='utf-8'))
     assert steps['python'] == '/opt/v/bin/python'
@@ -110,7 +110,7 @@ class _Run:
         if self.mint:
             path = stdout_path('dev-user-WS9.token', self.home)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(_SECRET + '\n', encoding='utf-8')
+            path.write_text(_PLANTED + '\n', encoding='utf-8')
         return 0
 
 
@@ -136,9 +136,9 @@ def test_the_code_opens_the_plan_mints_and_places_then_deletes_the_minted_file(t
     assert run.calls[0][:4] == ['py', '-m', 'dev_lab.dev.sshhold', 'open']
     assert run.calls[0][-2:] == ['--code', '123456']
     assert run.calls[1][:4] == ['py', '-m', 'dev_lab.dev.planrun', 'run']
-    assert [(p['login'], p['token']) for p in places] == [('dev-user', _SECRET)]
+    assert [(p['login'], p['token']) for p in places] == [('dev-user', _PLANTED)]
     assert not stdout_path('dev-user-WS9.token', run.home).exists()
-    assert not any(_SECRET in line for line in said)
+    assert not any(_PLANTED in line for line in said)
 
 
 def test_a_refused_placement_still_deletes_the_minted_file_and_fails(tmp_path: Path) -> None:
