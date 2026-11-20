@@ -82,8 +82,14 @@ def check(path: Path, host: Mapping[str, Any], family: Mapping[str, Any]) -> lis
     """Defects of the account file at *path* (parsed: *host*) against the *family* file."""
     name = path.stem
     found = []
-    if grant_of(name, family) is None:
+    grant = grant_of(name, family)
+    if grant is None:
         found.append(f'{name} names no family grant: an account file is hosts/<cluster>-<user>.toml of a [[hpc.grant]]')
+    elif 'schedule' in host and grant.get('role') != 'verification':
+        found.append(
+            f'[schedule] on a {grant.get("role") or "role-less"} account: the tick period exists only for a serving '
+            '(verification) account -- delete the table (SCHEDULER-ONLY-FOR-SERVING)'
+        )
     found += [f"deploy.{key} is the family grant's; the render derives it" for key in _DERIVED if key in host['deploy']]
     found += [
         f'{key} restates the family file; it lives there once'

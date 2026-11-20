@@ -222,3 +222,20 @@ def test_a_host_file_declares_which_storage_remote_it_reaches(tmp_path: Path) ->
 def test_an_account_file_declares_which_storage_remote_it_reaches() -> None:
     host = {'deploy': {'host': 'login01'}, 'storage': {'reach': {'results': {'credentials_file': '~/.secrets/r'}}}}
     assert not [line for line in accounthost.check(Path('c-u.toml'), host, {}) if 'storage' in line]
+
+
+def test_a_non_serving_account_declaring_a_schedule_is_refused() -> None:
+    """SCHEDULER-ONLY-FOR-SERVING, at the declaration: ``[schedule]`` (the tick period) is serving baggage elsewhere.
+
+    Measured 2026-11-20: every Ada research account file carried ``[schedule] tick_minutes = 15``.
+    PLANTED CONTROL: the same table on a verification account is admitted.
+    """
+
+    def family(role: str) -> dict[str, object]:
+        return {'hpc': {'grant': [{'cluster': 'c', 'user': 'u', 'role': role, 'slurm_account': 'a'}]}}
+
+    host = {'deploy': {'host': 'login01'}, 'schedule': {'tick_minutes': 15}}
+    refused = accounthost.check(Path('c-u.toml'), host, family('research'))
+    assert [line for line in refused if '[schedule]' in line and 'SCHEDULER-ONLY-FOR-SERVING' in line], refused
+    admitted = accounthost.check(Path('c-u.toml'), host, family('verification'))
+    assert not [line for line in admitted if '[schedule]' in line], admitted

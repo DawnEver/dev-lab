@@ -208,6 +208,24 @@ def _tools(
     return 0
 
 
+#: Every deploy phase, in order. The SERVING phases exist only to tick a verification account's queue: the scheduler
+#: (cron) and what it alone needs -- the serve tick's git, a tick now. Rule ``SCHEDULER-ONLY-FOR-SERVING``.
+PHASES: Final = (
+    'credentials', 'reader', 'grant', 'store', 'serve-git', 'checkouts', 'tools', 'login', 'venvs', 'artefacts',
+    'cron', 'tick',
+)  # fmt: skip
+SERVING_PHASES: Final = frozenset({'serve-git', 'cron', 'tick'})
+
+
+def phases_of(*, serves: bool) -> tuple[str, ...]:
+    """The deploy phases of a role that *serves* (its ``[hpc.roles]`` ``serves``), in order.
+
+    A role that does not serve has none of :data:`SERVING_PHASES` -- no scheduler, no tick (user, 2026-11-20: a
+    research host needs no cron).
+    """
+    return PHASES if serves else tuple(name for name in PHASES if name not in SERVING_PHASES)
+
+
 def _cron(
     step: Step,
     spec: Deployment,
@@ -292,14 +310,16 @@ def deploy(
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
     args = parser(__doc__.splitlines()[0]).parse_args(list(argv))
     path = args.config or config_path()
-    spec = paused_refusal(home) or resolve(args, path)  # CI-PAUSED: only ci-resume-fleet brings the cron back
+    spec = resolve(args, path)
     semantics = (
         {} if isinstance(spec, str) or args.remove else account_role(spec.role, args.fleet_role, args.role_table)
     )
-    if isinstance(spec, str) or isinstance(semantics, str):
-        emit(f'deploy refused: {spec if isinstance(spec, str) else semantics}', err=True)
+    serves = isinstance(semantics, dict) and bool(semantics.get('serves', False))
+    paused = paused_refusal(home) if serves else ''  # CI-PAUSED gates the serving cron; a research deploy has none
+    if why := (spec if isinstance(spec, str) else semantics if isinstance(semantics, str) else paused):
+        emit(f'deploy refused: {why}', err=True)
         return 2
-    serves = bool(semantics.get('serves', False))
+    assert not isinstance(spec, str)  # noqa: S101 -- narrowed by the refusal above
     short = hostname.split('.', 1)[0]
     emit(f'[host] account {os.environ.get("USER") or os.environ.get("USERNAME", "?")} on {short}')
     if why := host_refusal(spec, path, short, serves=serves, table=args.grant_table):
@@ -317,19 +337,19 @@ def deploy(
     refused: Refused = {}
     setup: list[str] = []  # the grant's setup lines: every tick runs inside them
     artefacts = '[artefacts] the rclone remote, where a repo declares one'
-    phases = (
-        lambda: credentials(step, spec, home, api or auth_check, serves=serves),
-        lambda: reader(spec, home, role or role_of, semantics=semantics),
-        lambda: grant(step, path, args.grant_table),
-        lambda: store(step, spec, path),
-        lambda: _serve_git(step, home, path, slurm, setup, env=spec.env),
-        lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
-        lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
-        lambda: login(step, home),
-        lambda: _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused),
-        lambda: _each(step, spec, home, artefacts, _artefacts, refused=refused),
-        lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
-        lambda: _each(
+    every: dict[str, Callable[[], int]] = {
+        'credentials': lambda: credentials(step, spec, home, api or auth_check, serves=serves),
+        'reader': lambda: reader(spec, home, role or role_of, semantics=semantics),
+        'grant': lambda: grant(step, path, args.grant_table),
+        'store': lambda: store(step, spec, path),
+        'serve-git': lambda: _serve_git(step, home, path, slurm, setup, env=spec.env),
+        'checkouts': lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
+        'tools': lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
+        'login': lambda: login(step, home),
+        'venvs': lambda: _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused),
+        'artefacts': lambda: _each(step, spec, home, artefacts, _artefacts, refused=refused),
+        'cron': lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
+        'tick': lambda: _each(
             step,
             spec,
             home,
@@ -337,9 +357,9 @@ def deploy(
             lambda *a: _tick(*a, serves=serves, slurm=slurm, setup=setup),
             refused=refused,
         ),
-    )
-    for phase in phases:
-        if rc := phase():
+    }
+    for name in phases_of(serves=serves):
+        if rc := every[name]():
             return rc
     return _report(spec, refused, short, alarm)
 
