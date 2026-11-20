@@ -73,6 +73,10 @@ FAMILY_ONLY: Final = ('default', 'apps')
 #: ``[dev]`` keys that are one machine's facts and never the family's: ``channels`` -- session channel source ->
 #: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority).
 HOST_ONLY: Final = ('channels',)
+#: ``[dev]`` keys the family declares for every machine and a host may OVERRIDE with a different value: ``forges`` --
+#: the workstation login is one person's, so another person's machine names its own. A host restating the family's
+#: value is still refused: one fact, one place.
+OVERRIDABLE: Final = ('forges',)
 #: The machine-file table ``[dev] channels`` renders into, as ``[agent] channels``: its consumer is the agent session
 #: (the harness and its channel plugins), not the dev tooling, so the table is named for who reads it.
 CHANNELS_TABLE: Final = 'agent'
@@ -211,12 +215,20 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
     return found
 
 
-def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[str]:
+def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[tuple[str, Any]]:
     for key, value in table.items():
         if isinstance(value, Mapping):
             yield from _leaves(value, f'{prefix}{key}.')
         else:
-            yield f'{prefix}{key}'
+            yield f'{prefix}{key}', value
+
+
+def _restated(host: Mapping[str, Any], family: Mapping[str, Any]) -> list[str]:
+    """Leaves *host* shares with *family*: any of them, but an :data:`OVERRIDABLE` one only when its value is equal."""
+    ours, theirs = dict(_leaves(host)), dict(_leaves(family))
+    overridable = tuple(f'dev.{key}.' for key in OVERRIDABLE)
+    return sorted(key for key in ours.keys() & theirs.keys()
+                  if not key.startswith(overridable) or ours[key] == theirs[key])  # fmt: skip
 
 
 def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> list[str]:
@@ -225,7 +237,7 @@ def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> l
     found = _shape(host.get('dev', {}), '[dev]')
     found += [f'[dev].{key} is the family default profile; it lives in family.toml' for key in FAMILY_ONLY
               if key in host.get('dev', {})]  # fmt: skip
-    restated = sorted(set(_leaves(host)) & set(_leaves(shared)))
+    restated = _restated(host, shared)
     found += [f'{key} restates the family file; it lives there once' for key in restated]
     merged = {**shared.get('dev', {}), **host.get('dev', {})}
     found += [f'[dev].{key} is required (host or family file)' for key in REQUIRED if key not in merged]

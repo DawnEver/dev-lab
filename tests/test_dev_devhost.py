@@ -108,6 +108,37 @@ def test_a_dev_host_defect_is_refused_by_name(tmp_path: Path, host: str, named: 
     assert [line for line in found if named in line], found
 
 
+def test_a_host_forge_login_equal_to_the_family_one_is_refused(tmp_path: Path) -> None:
+    """The family declares the workstation login once; a host copying it is a second source (planted control)."""
+    host = HOST.replace('os = "windows"', 'os = "windows"\nforges = { "forge.example" = ["dev-user"] }')
+    clone = _clone(tmp_path, host)
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert [line for line in found if 'forges' in line and 'restates' in line], found
+
+
+def test_a_host_forge_login_that_differs_overrides_the_family_one(tmp_path: Path) -> None:
+    """Another person's machine names its own login: an override, not a restatement."""
+    host = HOST.replace('os = "windows"', 'os = "windows"\nforges = { "forge.example" = ["other-user"] }')
+    clone = _clone(tmp_path, host)
+    assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
+    assert devhost.declared(clone / 'hosts/ws.toml', clone / 'family.toml')['forges'] == {
+        'forge.example': ['other-user'],
+    }
+
+
+def test_a_host_without_forges_inherits_the_family_login(tmp_path: Path) -> None:
+    clone = _clone(tmp_path)
+    assert devhost.declared(clone / 'hosts/ws.toml', clone / 'family.toml')['forges'] == {
+        'forge.example': ['dev-user'],
+    }
+
+
+def test_a_differing_host_value_of_a_non_overridable_key_still_restates(tmp_path: Path) -> None:
+    clone = _clone(tmp_path, HOST.replace('os = "windows"', 'os = "windows"\nref = "main"'))
+    found = check_host(clone / 'hosts/ws.toml', clone / 'family.toml')
+    assert [line for line in found if 'ref restates' in line], found
+
+
 def test_a_server_file_may_not_carry_a_machine_table(tmp_path: Path) -> None:
     server = _write(tmp_path, 's.toml', '[ops]\nhome = "/h"\npython = "/p"\n\n[capabilities.x]\nseats = 1\n')
     assert any('capabilities' in line for line in check_host(server))

@@ -72,7 +72,7 @@ def declared_request(role: Forge, login: str) -> AccountRequest:
         ForgeRefused: *login* is not declared, or its role or repositories are malformed.
 
     """
-    row = role.accounts.get(login)
+    row = role.holdings.get(login)
     if row is None:
         msg = f'{login} is not declared in [ops.forge.accounts]; declared: {sorted(role.accounts)}'
         raise ForgeRefused(msg)

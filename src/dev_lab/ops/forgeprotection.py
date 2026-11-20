@@ -122,7 +122,7 @@ class Protection:
 
 def declared_repos(role: Forge) -> frozenset[str]:
     """Every ``owner/name`` ``[ops.forge.accounts]`` names: the repos this host serves, and so may protect."""
-    return frozenset(str(repo) for row in role.accounts.values() for repo in row.get('repos', ()))
+    return frozenset(str(repo) for row in role.holdings.values() for repo in row.get('repos', ()))
 
 
 def public_host(role: Forge) -> str:
