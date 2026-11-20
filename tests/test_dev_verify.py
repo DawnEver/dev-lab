@@ -1466,17 +1466,25 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     own, so the run key differs from any enclosing verify and it cannot attach to it.
     """
     records = {'LAB_COMMONS_RESOURCE_DIR': str(tmp_path), BOX_ENV: str(tmp_path / 'box.sqlite')}
-    holder = subprocess.Popen(
-        [sys.executable, '-c', _HOLD_SEAT],
-        env=os.environ | records,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding='utf-8',
-    )
+    # stdout is the handshake channel; stderr (a box's low-disk watermark warning, say) goes to its own
+    # file so a diagnostic line can never stand in front of 'held' -- and it is quoted when the handshake fails.
+    diagnostics = tmp_path / 'holder.stderr'
+    with diagnostics.open('w', encoding='utf-8') as errors:
+        holder = subprocess.Popen(
+            [sys.executable, '-c', _HOLD_SEAT],
+            env=os.environ | records,
+            stdout=subprocess.PIPE,
+            stderr=errors,
+            text=True,
+            encoding='utf-8',
+        )
     try:
         assert holder.stdout is not None
-        assert holder.stdout.readline().strip() == 'held', 'the planted holder never took the light seats'
+        handshake = holder.stdout.readline().strip()
+        assert handshake == 'held', (
+            f'the planted holder never took the light seats: {handshake!r}; '
+            f'stderr: {diagnostics.read_text(encoding="utf-8")}'
+        )
         done = subprocess.run(
             [
                 sys.executable,

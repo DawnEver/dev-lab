@@ -141,14 +141,20 @@ def bound_names(body: list[ast.stmt]) -> set[str]:
             # TRUE ``__all__`` entry. The blind spot ran in that direction only -- it manufactured a
             # lie where there was none, never the reverse -- so nothing already declared was wrong.
             names.add(node.name.id)
-        elif isinstance(node, ast.If | ast.Try):
-            names |= bound_names(node.body)
-            names |= bound_names(node.orelse)
-            if isinstance(node, ast.Try):
-                names |= bound_names(node.finalbody)
-                for handler in node.handlers:
-                    names |= bound_names(handler.body)
+        elif isinstance(node, ast.If | ast.Try | ast.With):
+            # A module-level ``with`` (an import guard, e.g. dep's commonsfloor) binds its body at module level.
+            names |= bound_names(_branch_bodies(node))
     return names
+
+
+def _branch_bodies(node: ast.If | ast.Try | ast.With) -> list[ast.stmt]:
+    """Every statement a module-level ``if``/``try``/``with`` runs at module level, in any branch."""
+    if isinstance(node, ast.With):
+        return list(node.body)
+    body = [*node.body, *node.orelse]
+    if isinstance(node, ast.Try):
+        body += [*node.finalbody, *(stmt for handler in node.handlers for stmt in handler.body)]
+    return body
 
 
 def module_names(module: ModuleType) -> set[str]:

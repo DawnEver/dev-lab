@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from dev_lab.dev import _dep_project, dep, uvfollow
+from dev_lab.dev import _dep_project, dep, toolrelease, uvfollow
 from dev_lab.dev.lockcheck import uv_version
 from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.uvfollow import WINGET_ID, Route, follow, route_of, update_argv
@@ -99,14 +99,29 @@ def _project(root: Path) -> None:
     )
 
 
-def test_the_dependency_door_moves_a_stale_uv_then_writes_the_lock(
+def test_the_dependency_door_writes_with_the_pinned_uv_beside_a_stale_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The G incident, end to end: a stale uv on PATH no longer fails the lock -- it follows, then writes."""
+    """The G incident, end to end (#827): a stale uv on PATH no longer fails the lock and is never moved.
+
+    The pinned release is placed beside it (user-space, sha256-checked) and writes the lock; the host's
+    PATH uv stays as it was, so two pins in flight can no longer flip it back and forth.
+    """
     _project(tmp_path)
     host = _Host(_STALE, installs=uv_version())
     monkeypatch.setattr(_dep_project, 'installed_uv_version', host.version_of)
     monkeypatch.setattr(uvfollow, 'run_network_verb', host.run)
+    placed: list[Path] = []
+
+    def install(_member: object, *, directory: Path, key: str) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        exe = directory / ('uv.exe' if key.startswith('windows-') else 'uv')
+        exe.write_text('', encoding='utf-8')
+        placed.append(exe)
+        return exe
+
+    monkeypatch.setattr(toolrelease, 'install_release', install)
+    monkeypatch.setattr(toolrelease, 'tool_dir', lambda **_kw: tmp_path / 'tools')
     calls: list[tuple[str, ...]] = []
 
     def run(argv: Sequence[str], **_kwargs: object) -> SimpleNamespace:
@@ -114,6 +129,9 @@ def test_the_dependency_door_moves_a_stale_uv_then_writes_the_lock(
         return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     assert dep.main(['--lock-upgrade'], cwd=tmp_path, run=run) == 0
-    assert len(host.ran) == 1
-    assert uv_version() in host.ran[0]
-    assert any('lock' in call for call in calls)
+    assert host.ran == []  # the PATH uv is never moved
+    assert len(placed) == 1
+    assert uv_version() in str(placed[0])
+    locks = [call for call in calls if 'lock' in call]
+    assert locks
+    assert all(call[0] == str(placed[0]) for call in locks)
