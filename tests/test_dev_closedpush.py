@@ -51,6 +51,8 @@ def test_a_closed_unmerged_prs_branch_is_refused_naming_the_remedy() -> None:
     assert 'closed' in found[0]
     assert f'forge pr create --head pr/x --base {_BASE}' in found[0]
     assert 'new branch name' in found[0]
+    assert f'merge-base --is-ancestor pr/x origin/{_BASE}' in found[0], 'an absorbed head names its ancestry check'
+    assert 'git branch -m pr/x' in found[0], 'and its rename onto a fresh feature head (#674)'
 
 
 def test_an_open_prs_branch_passes() -> None:
