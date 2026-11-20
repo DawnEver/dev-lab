@@ -88,3 +88,16 @@ def test_a_card_with_no_allowlist_no_supervisor_or_an_unsafe_path_is_refused(
 def test_a_route_in_a_site_the_caddyfile_does_not_hold_is_refused() -> None:
     with pytest.raises(ValueError, match=r'nowhere\.example'):
         status_routed(_CADDYFILE, site='nowhere.example', path='/s.json', file='/v/card.json', allow=('192.0.2.4',))
+
+
+def test_a_declared_history_is_handed_to_the_supervisor_one_series_per_flag(tmp_path: Path) -> None:
+    path, root = _host(tmp_path, _HOST + _STATUS + 'history = ["forge_requests", "pg_connections_total"]\n')
+    install(load(path), root)
+    unit = (root / 'etc/systemd/system/dev-lab-supervise.service').read_text(encoding='utf-8')
+    assert '--card-history forge_requests --card-history pg_connections_total' in unit
+
+
+def test_a_history_series_that_is_not_a_plain_name_is_refused(tmp_path: Path) -> None:
+    path, _root = _host(tmp_path, _HOST + _STATUS + 'history = ["x; rm -rf /"]\n')
+    with pytest.raises(ValueError, match='history'):
+        load(path)

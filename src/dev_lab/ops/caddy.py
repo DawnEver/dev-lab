@@ -41,29 +41,38 @@ class Caddy:
 #: A path that lands in the Caddyfile: plain characters only, so it cannot widen the config it is written into.
 _PLAIN: Final = re.compile(r'/[A-Za-z0-9/_.-]+')
 
+#: A metric name handed to the supervisor's unit line: lower-case word characters only.
+_METRIC: Final = re.compile(r'[a-z0-9_]+')
+
 
 @dataclass(frozen=True)
 class Status:
     """The host's status card (:mod:`dev_lab.supervise.card`): where the supervisor writes it, where Caddy serves it.
 
     ``file`` is the card (absolute; its directory holds nothing else -- it is what Caddy's ``root`` names); ``site``
-    the Caddyfile site that serves it at ``path``, to the ``[ops.caddy] allow`` list only.
+    the Caddyfile site that serves it at ``path``, to the ``[ops.caddy] allow`` list only. ``history`` names the
+    metrics whose hourly history the card keeps (2026-11-20).
     """
 
     file: str
     site: str
     path: str = '/dev-lab/status.json'
+    history: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """Refuse a value that is not a plain absolute path: each lands in a file root's web server parses."""
+        """Refuse a path that is not plain and absolute, or a history name that is not a plain metric name."""
         for key, value in (('file', self.file), ('path', self.path)):
             if not _PLAIN.fullmatch(value) or '..' in value:
                 msg = f'[ops.status] {key} must be an absolute plain path, got {value!r}'
                 raise ValueError(msg)
+        if bad := [name for name in self.history if not _METRIC.fullmatch(str(name))]:
+            msg = f'[ops.status] history names metrics ([a-z0-9_]), got {bad}'
+            raise ValueError(msg)
 
     def flags(self, audit: str) -> list[str]:
-        """The supervisor's ``--card`` flags: the card, and the auto-upgrade *audit* whose last line it quotes."""
-        return ['--card', self.file, '--card-audit', audit]
+        """The supervisor's ``--card`` flags: the card, the auto-upgrade *audit* it quotes, each history series."""
+        history = [flag for name in self.history for flag in ('--card-history', name)]
+        return ['--card', self.file, '--card-audit', audit, *history]
 
     def directory_step(self, owner: str) -> str:
         """The step making the card's own directory: world-readable for Caddy, *owner*'s (empty: root) to write."""

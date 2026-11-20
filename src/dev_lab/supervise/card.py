@@ -10,6 +10,11 @@ of this cycle came from it); the supervisor's own memory against its cgroup cap;
 (disk free, RAM, a queue depth a probe declares); the last error with its time -- kept across quiet cycles, redacted
 (:func:`dev_lab.supervise.report.redact`); the installed dev-lab sha; the last auto-upgrade audit line.
 
+A HISTORY WITHOUT A SECOND STORE (2026-11-20): each series ``--card-history`` declares keeps, ON THE CARD, its latest
+value and one bucket per UTC hour (n, min, avg, max, and how many cycles could not read it) for the last
+:data:`HISTORY_HOURS`. Each cycle folds into the card it replaces, so the card is the one record and survives a
+restart. A series a cycle did not read is ``unknown`` -- latest None, the hour's ``unknown`` counted -- never a 0.
+
 A CARD NOBODY REWRITES SAYS "UP" FOREVER, so it carries its own ``interval_s`` and the reader judges it
 :func:`is_stale` past :data:`STALE_CYCLES` intervals -- the same multiple the unit's watchdog allows.
 """
@@ -21,7 +26,7 @@ import json
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -29,6 +34,7 @@ from dev_lab.supervise.loop import CycleResult
 from dev_lab.supervise.report import redact
 
 __all__ = [
+    'HISTORY_HOURS',
     'SCHEMA',
     'STALE_CYCLES',
     'card',
@@ -47,6 +53,9 @@ SCHEMA: Final = 1
 #: Past this many intervals without a rewrite, a card is stale: its supervisor is not cycling.
 STALE_CYCLES: Final = 3
 
+#: How far back a declared series' hourly history reaches: one week.
+HISTORY_HOURS: Final = 7 * 24
+
 _MB: Final = 2**20
 _DISTRIBUTION: Final = 'dev-lab'
 _PROC_CGROUP: Final = Path('/proc/self/cgroup')
@@ -63,10 +72,12 @@ def card(
     installed: str = '',
     upgrade: Mapping[str, Any] | None = None,
     memory: Mapping[str, float | None] | None = None,
+    history: Sequence[str] = (),
 ) -> dict[str, Any]:
     """The card of one cycle: *result* at *at*, the enabled *components*, and the host facts beside it.
 
-    *previous* is the card this one replaces: its ``last_error`` survives a cycle that found nothing.
+    *previous* is the card this one replaces: its ``last_error`` survives a cycle that found nothing, and its
+    ``history`` of each declared *history* series is folded forward (:func:`_folded`).
     """
     down = {anomaly.source.split('.', 1)[0] for anomaly in result.anomalies}
     last_error = (previous or {}).get('last_error')
@@ -81,10 +92,34 @@ def card(
         'components': {name: 'down' if name in down else 'up' for name in components},
         'memory': dict(memory) if memory is not None else None,
         'metrics': dict(sorted(result.metrics.items())),
+        'history': _folded((previous or {}).get('history'), result.metrics, at, history) if history else None,
         'last_error': last_error,
         'dev_lab': installed,
         'upgrade': dict(upgrade) if upgrade is not None else None,
     }
+
+
+def _folded(previous: object, metrics: Mapping[str, float], at: datetime, keys: Sequence[str]) -> dict[str, Any]:
+    """Each of *keys*' hourly buckets of *previous* inside the window, with this cycle's reading folded in."""
+    hour = at.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+    floor = (hour - timedelta(hours=HISTORY_HOURS - 1)).isoformat()
+    known = previous.get('series', {}) if isinstance(previous, dict) else {}
+    series: dict[str, Any] = {}
+    for key in keys:
+        hours = [dict(one) for one in (known.get(key) or {}).get('hours', ()) if str(one.get('hour')) >= floor]
+        if not hours or hours[-1]['hour'] != hour.isoformat():
+            hours.append({'hour': hour.isoformat(), 'n': 0, 'min': None, 'avg': None, 'max': None, 'unknown': 0})
+        bucket, value = hours[-1], metrics.get(key)
+        if value is None:
+            bucket['unknown'] += 1
+        else:
+            n = bucket['n']
+            bucket['min'] = value if bucket['min'] is None else min(bucket['min'], value)
+            bucket['max'] = value if bucket['max'] is None else max(bucket['max'], value)
+            bucket['avg'] = value if bucket['avg'] is None else (bucket['avg'] * n + value) / (n + 1)
+            bucket['n'] = n + 1
+        series[key] = {'latest': value, 'hours': hours}
+    return {'window_h': HISTORY_HOURS, 'series': series}
 
 
 def write(path: Path, found: Mapping[str, Any]) -> None:
@@ -177,6 +212,11 @@ def render(name: str, found: Mapping[str, Any], now: datetime) -> str:
         lines.append(f'  memory: {memory["current_mb"]} MB of {cap}')
     if metrics := found.get('metrics'):
         lines.append('  metrics: ' + ' '.join(f'{key}={value:g}' for key, value in metrics.items()))
+    for key, kept in ((found.get('history') or {}).get('series') or {}).items():
+        now_value = 'unknown' if kept.get('latest') is None else f'{kept["latest"]:g}'
+        last = (kept.get('hours') or [{}])[-1]
+        hour = f' (this hour min {last["min"]:g} avg {last["avg"]:g} max {last["max"]:g})' if last.get('n') else ''
+        lines.append(f'  {key} now {now_value}{hour}')
     if error := found.get('last_error'):
         lines.append(f'  last error: {error["at"]} {error["source"]}: {error["message"]}')
     lines.append(f'  dev-lab: {found.get("dev_lab") or "unknown"}')
