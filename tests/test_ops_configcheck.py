@@ -205,3 +205,20 @@ def test_forge_repos_off_the_family_are_refused(tmp_path: Path, family: str, nam
     """Planted control: the forge's set is derived from [family_repos]; a repo either side lacks is named."""
     found = check_host(_write(tmp_path, 'f.toml', FORGE_HOST), _write(tmp_path, 'family.toml', family))
     assert [line for line in found if '[ops.forge] repos' in line and named in line], found
+
+
+def test_a_non_serving_account_declaring_a_schedule_is_refused() -> None:
+    """SCHEDULER-ONLY-FOR-SERVING, at the declaration: ``[schedule]`` (the tick period) is serving baggage elsewhere.
+
+    Measured 2026-11-20: every Ada research account file carried ``[schedule] tick_minutes = 15``.
+    PLANTED CONTROL: the same table on a verification account is admitted.
+    """
+
+    def family(role: str) -> dict[str, object]:
+        return {'hpc': {'grant': [{'cluster': 'c', 'user': 'u', 'role': role, 'slurm_account': 'a'}]}}
+
+    host = {'deploy': {'host': 'login01'}, 'schedule': {'tick_minutes': 15}}
+    refused = accounthost.check(Path('c-u.toml'), host, family('research'))
+    assert [line for line in refused if '[schedule]' in line and 'SCHEDULER-ONLY-FOR-SERVING' in line], refused
+    admitted = accounthost.check(Path('c-u.toml'), host, family('verification'))
+    assert not [line for line in admitted if '[schedule]' in line], admitted

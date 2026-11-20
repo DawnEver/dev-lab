@@ -16,6 +16,6 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'scheduler step, no tick and no serving gate of any kind, and nothing reads or writes its scheduler. '
             'Our marked lines left on such an account are dropped through the explicit door (`deploy --remove`).'
         ),
-        ('tests/test_hpc_scheduler_only_for_serving.py',),
+        ('tests/test_hpc_scheduler_only_for_serving.py', 'tests/test_ops_configcheck.py'),
     ),
 )
