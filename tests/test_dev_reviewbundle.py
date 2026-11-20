@@ -19,7 +19,7 @@ import lab_commons.launch as _door
 import pytest
 from _forge_fake import git_out, run_git
 
-from dev_lab.dev import reviewbundle
+from dev_lab.dev import reviewbundle, reviewforgediff
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev.reviewbundle import BundleRefused
 
@@ -154,18 +154,18 @@ def test_the_forges_own_diff_must_name_the_bundles_blobs(tmp_path: Path, flags: 
     bundle, root, base, head = _built(tmp_path)
     diff = _forge_diff(root, base, head, *flags)
     assert '"a/' in diff  # the quoted header is really in play
-    reviewbundle.matches_forge(bundle, diff)
+    reviewforgediff.matches_forge(bundle, diff)
     (root / 'kept.py').write_text('x = 99\n', encoding='utf-8')
     run_git(root, 'commit', '-q', '-am', 'other')
     with pytest.raises(BundleRefused, match='forge'):
-        reviewbundle.matches_forge(bundle, _forge_diff(root, base, 'HEAD', *flags))
+        reviewforgediff.matches_forge(bundle, _forge_diff(root, base, 'HEAD', *flags))
 
 
 @pytest.mark.parametrize('dropped', [_ODD, 'renamed.py', 'mode.sh'])
 def test_a_bundle_omitting_any_file_the_forge_diff_names_is_refused(tmp_path: Path, dropped: str) -> None:
     bundle, root, base, head = _built(tmp_path)
     with pytest.raises(BundleRefused, match='forge diff changes'):
-        reviewbundle.matches_forge(_without(bundle, dropped), _forge_diff(root, base, head))
+        reviewforgediff.matches_forge(_without(bundle, dropped), _forge_diff(root, base, head))
 
 
 def test_a_rename_whose_bytes_the_bundle_changed_is_refused(tmp_path: Path) -> None:
@@ -176,13 +176,13 @@ def test_a_rename_whose_bytes_the_bundle_changed_is_refused(tmp_path: Path) -> N
     )
     swapped = dataclasses.replace(bundle, files=files)
     with pytest.raises(BundleRefused, match=r'renamed\.py'):
-        reviewbundle.matches_forge(swapped, _forge_diff(root, base, head))
+        reviewforgediff.matches_forge(swapped, _forge_diff(root, base, head))
 
 
 def test_a_header_the_judge_cannot_parse_is_refused(tmp_path: Path) -> None:
     bundle, _, _, _ = _built(tmp_path)
     with pytest.raises(BundleRefused, match='cannot parse'):
-        reviewbundle.matches_forge(bundle, 'diff --git a/x.py c/y.py\nindex 1..2 100644\n')
+        reviewforgediff.matches_forge(bundle, 'diff --git a/x.py c/y.py\nindex 1..2 100644\n')
 
 
 def test_the_judge_reads_the_forges_diff_on_plain_files_with_no_repository(tmp_path: Path) -> None:

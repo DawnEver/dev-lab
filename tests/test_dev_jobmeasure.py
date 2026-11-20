@@ -9,7 +9,8 @@ from typing import Any
 import pytest
 from _forge_fake import git_out, run_git
 
-from dev_lab.dev.ciworkflows import measurement_isolated, workflows
+from dev_lab.dev.ciworkflows import workflows
+from dev_lab.dev.ciworkflowshape import measurement_isolated
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.logref import LogRef, stamp_line
 from dev_lab.dev.producer import OUTCOME_VAR, PRODUCING_VAR

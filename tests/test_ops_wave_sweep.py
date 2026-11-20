@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from _ops_fixtures import GLASS, config
+from _roles_fixtures import HPC_REPO, carry
 from test_ops_breakglass import GREEN, HEAD, FakeForge, Host
 
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -229,7 +230,9 @@ def test_a_pending_test_part_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
     assert _merged(host) == [], 'a part still running waits (forgemergewaits.parts_wait), never lands'
 
 
-def test_a_head_without_its_security_check_is_not_merged(tmp_path) -> None:  # PLANTED CONTROL
+def test_a_head_without_its_security_check_is_not_merged(tmp_path, monkeypatch) -> None:  # PLANTED CONTROL
+    # tests/security is a serve-posted status: only a repo whose tests are bound off CI waits on it (2026-11-16).
+    carry(monkeypatch, HPC_REPO)
     unchecked = 'f' * 40
     host = _host(tmp_path, [Pull(7, 'integrate/main', unchecked, draft=False)], {unchecked: _current(GREEN[0])})
     host.open(max_merges=5)

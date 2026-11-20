@@ -35,22 +35,17 @@ from lab_commons.config import CONFIG_ENV, FAMILY_TABLE
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.taskkeys import REVIEW_TASK, loader
 from dev_lab.ops import forcecommand
-from dev_lab.ops.access import Prepared, keys_file, prepare, secret_file
+from dev_lab.ops.access import Prepared, prepare, secret_file
 from dev_lab.ops.access import files as access_files
-from dev_lab.ops.backuprole import Backup
 from dev_lab.ops.caddy import install_caddy
-from dev_lab.ops.config import Breakglass, Judge, OpsConfig, Probe
+from dev_lab.ops.config import Breakglass, Judge, OpsConfig
 from dev_lab.ops.installpaths import Chown, keys_dir, prepare_paths, under
-from dev_lab.ops.placement import Placement
+from dev_lab.ops.installunits import SUPERVISE, UNIT, door, scheduled, service_unit
 from dev_lab.ops.totp import write_private
-from dev_lab.ops.upgradefollow import AUDIT
-from dev_lab.supervise.daemon import watchdog_seconds
 
 __all__ = ['BREAKGLASS_MACHINE', 'Rendered', 'family_env', 'files', 'install']
 
-_UNIT = 'dev-lab-ops'
-#: The supervisor's own service.
-_SUPERVISE = 'dev-lab-supervise'
+_UNIT = UNIT
 
 
 @dataclass(frozen=True)
@@ -61,31 +56,13 @@ class Rendered:
     next_steps: tuple[str, ...] = ()
 
 
-def _door(config: OpsConfig, *verb: str) -> str:
-    return shlex.join([config.python, '-m', 'dev_lab.ops', '--config', str(config.path), *verb])
-
-
-def _service(
-    config: OpsConfig, role: Placement, what: str, body: list[str], *, network: bool, wanted_by: str = ''
-) -> str:
-    """One service unit: its ordering, the environment file, its slice, then *body* under ``[Service]``."""
-    online = ['network-online.target'] if network else []
-    unit = [f'Description={what}']
-    unit += [f'Wants={name}' for name in (*online, *role.wants)] + [f'After={name}' for name in (*online, *role.after)]
-    service = [f'EnvironmentFile={config.environment_file}'] if config.environment_file else []
-    service += [f'Slice={role.slice}'] if role.slice else []
-    text = '[Unit]\n' + ''.join(f'{line}\n' for line in unit) + '[Service]\n'
-    text += ''.join(f'{line}\n' for line in (*service, *body))
-    return text + (f'[Install]\nWantedBy={wanted_by}\n' if wanted_by else '')
-
-
 def _promote(config: OpsConfig) -> dict[str, str]:
     role = config.promote
     if role is None:
         return {}
     body = ['Type=oneshot', f'User={role.user}', f'Environment=HOME={config.home}',
-            f'ExecStart={_door(config, "promote")}', f'MemoryMax={role.memory_max}']  # fmt: skip
-    service = _service(config, role, 'Fast-forward each trunk when integrate promote admits it (dev_lab.ops)', body,
+            f'ExecStart={door(config, "promote")}', f'MemoryMax={role.memory_max}']  # fmt: skip
+    service = service_unit(config, role, 'Fast-forward each trunk when integrate promote admits it (dev_lab.ops)', body,
                        network=True)  # fmt: skip
     timer = (
         '[Unit]\nDescription=Nightly trunk promotion (dev_lab.ops)\n'
@@ -103,9 +80,9 @@ def _judge(config: OpsConfig) -> dict[str, str]:
         return {}
     extra = [f'EnvironmentFile={role.environment_file}'] if role.environment_file else []
     home = f'Environment=HOME={role.home_dir}'  # ai-lab reads its model keys from this HOME's credential store
-    body = ['Type=oneshot', f'User={role.user}', home, *extra, f'ExecStart={_door(config, "judge")}',
+    body = ['Type=oneshot', f'User={role.user}', home, *extra, f'ExecStart={door(config, "judge")}',
             f'MemoryMax={role.memory_max}']  # fmt: skip
-    service = _service(config, role, 'Judge every prepared review bundle (dev_lab.ops)', body, network=True)
+    service = service_unit(config, role, 'Judge every prepared review bundle (dev_lab.ops)', body, network=True)
     timer = (
         '[Unit]\nDescription=Bundle-review judge pass (dev_lab.ops)\n'
         f'[Timer]\nOnCalendar={role.schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
@@ -122,8 +99,8 @@ def _family_machine_file(family: Mapping[str, Any]) -> str:
     return f'[{FAMILY_TABLE}]\n' + ''.join(f'{key} = {json.dumps(family[key])}\n' for key in keys)
 
 
-#: The machine file break-glass's serve and tick read (root-relative): its ``[family]`` table only.
-BREAKGLASS_MACHINE: Final = 'etc/dev-lab/ops/breakglass-machine.toml'
+#: The machine file break-glass's serve and tick read (absolute, as every host path here): its ``[family]`` only.
+BREAKGLASS_MACHINE: Final = '/etc/dev-lab/ops/breakglass-machine.toml'
 
 
 def family_env(role: Breakglass | None) -> dict[str, str]:
@@ -132,7 +109,7 @@ def family_env(role: Breakglass | None) -> dict[str, str]:
     Break-glass runs as root (its forced command sudoes, its tick has no ``User=``), so it cannot rely on a HOME
     layout as the judge does: the verb sets :data:`~lab_commons.config.CONFIG_ENV` itself before it reads a role.
     """
-    return {CONFIG_ENV: f'/{BREAKGLASS_MACHINE}'} if role is not None and role.family else {}
+    return {CONFIG_ENV: BREAKGLASS_MACHINE} if role is not None and role.family else {}
 
 
 def _judge_machine_file(role: Judge) -> str:
@@ -143,135 +120,28 @@ def _judge_machine_file(role: Judge) -> str:
 
 def _consent(config: OpsConfig) -> dict[str, str]:
     role = config.consent
-    return {} if role is None else forcecommand.files(_UNIT, role.account, role.keys, _door(config, 'consent', 'serve'))
+    return {} if role is None else forcecommand.files(_UNIT, role.account, role.keys, door(config, 'consent', 'serve'))
 
 
 def _breakglass(config: OpsConfig) -> dict[str, str]:
     role = config.breakglass
     if role is None:
         return {}
-    tick_service = _service(
+    tick_service = service_unit(
         config, role, 'Land the green PRs of an open wave, end expired waves, resend wave summaries (dev_lab.ops)',
-        ['Type=oneshot', f'ExecStart={_door(config, "breakglass", "tick")}'], network=True,
+        ['Type=oneshot', f'ExecStart={door(config, "breakglass", "tick")}'], network=True,
     )  # fmt: skip
     tick_timer = (
         '[Unit]\nDescription=Break-glass wave tick (dev_lab.ops)\n'
         f'[Timer]\nOnCalendar={role.tick}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
     )
-    machine = {BREAKGLASS_MACHINE: _family_machine_file(role.family)} if role.family else {}
+    machine = {BREAKGLASS_MACHINE.lstrip('/'): _family_machine_file(role.family)} if role.family else {}
     return {
         f'etc/systemd/system/{_UNIT}-breakglass-tick.service': tick_service,
         f'etc/systemd/system/{_UNIT}-breakglass-tick.timer': tick_timer,
-        **forcecommand.files(_UNIT, role.account, role.keys, _door(config, 'breakglass', 'serve')),
+        **forcecommand.files(_UNIT, role.account, role.keys, door(config, 'breakglass', 'serve')),
         **machine,
     }
-
-
-def _timer(config: OpsConfig, role: Backup | Probe, name: str, what: str, exec_start: str) -> dict[str, str]:
-    body = ['Type=oneshot', f'User={role.user}', f'ExecStart={exec_start}', 'Nice=10']
-    service = _service(config, role, f'{what} (dev_lab.ops)', body, network=True)
-    timer = (
-        f'[Unit]\nDescription={what} (dev_lab.ops)\n'
-        f'[Timer]\nOnCalendar={role.schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
-    )
-    return {f'etc/systemd/system/{_UNIT}-{name}.service': service, f'etc/systemd/system/{_UNIT}-{name}.timer': timer}
-
-
-def _backup(config: OpsConfig) -> dict[str, str]:
-    role = config.backup
-    if role is None:
-        return {}
-    rendered: dict[str, str] = {}
-    if role.dumpers:
-        export = _door(config, 'backup', 'export')
-        keys = keys_file(role.account)
-        line = f'restrict,command="sudo -n {export}" '
-        rendered |= {
-            f'etc/ssh/sshd_config.d/62-{_UNIT}-{role.account}.conf': (
-                f'Match User {role.account}\n    AuthorizedKeysFile {keys}\n    ForceCommand sudo -n {export}\n'
-                '    AllowTcpForwarding no\n    AllowAgentForwarding no\n    X11Forwarding no\n    PermitTTY no\n'
-            ),
-            keys.lstrip('/'): ''.join(f'{line}{key}\n' for key in role.keys),
-            f'etc/sudoers.d/{_UNIT}-{role.account}': f'{role.account} ALL=(root) NOPASSWD: {export}\n',
-        }
-    if role.source:
-        if not role.schedule:
-            msg = '[ops.backup] pulls (source is set) but declares no schedule'
-            raise ValueError(msg)
-        rendered |= _timer(config, role, 'backup-pull', 'Pull the forge backup', _door(config, 'backup', 'pull'))
-    return rendered
-
-
-def _probe(config: OpsConfig) -> dict[str, str]:
-    role = config.probe
-    if role is None:
-        return {}
-    return _timer(config, role, 'probe', 'Probe forge protection and CI runs', _door(config, 'probe'))
-
-
-def _root_timer(config: OpsConfig, name: str, what: str, schedule: str, *verb: str) -> dict[str, str]:
-    """A root oneshot service running the door's *verb*, and its ``OnCalendar`` timer."""
-    env = [f'EnvironmentFile={config.environment_file}'] if config.environment_file else []
-    service = (
-        f'[Unit]\nDescription={what}\nWants=network-online.target\nAfter=network-online.target\n[Service]\n'
-        + ''.join(f'{line}\n' for line in (*env, 'Type=oneshot', f'ExecStart={_door(config, *verb)}'))
-    )
-    timer = (
-        f'[Unit]\nDescription={what}\n'
-        f'[Timer]\nOnCalendar={schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
-    )
-    unit = f'etc/systemd/system/{_UNIT}-{name}'
-    return {f'{unit}.service': service, f'{unit}.timer': timer}
-
-
-def _upgrade_follow(config: OpsConfig) -> dict[str, str]:
-    """The ``upgrade --follow`` timer: root, since it installs into ``[ops] python``'s environment."""
-    if (role := config.upgrade) is None or not role.follow:
-        return {}
-    what = f'Follow {role.follow} of the dev-lab source (dev_lab.ops)'
-    return _root_timer(config, 'upgrade-follow', what, role.schedule, 'upgrade', '--follow')
-
-
-def _config_tick(config: OpsConfig) -> dict[str, str]:
-    """The ``config tick`` timer: root, since it replaces the root-owned live file through the door."""
-    if (source := config.config_source) is None or not source.schedule:
-        return {}
-    what = 'Apply the merged config source (dev_lab.ops)'
-    return _root_timer(config, 'config-tick', what, source.schedule, 'config', 'tick')
-
-
-def _supervise(config: OpsConfig) -> dict[str, str]:
-    role = config.supervise
-    if role is None:
-        return {}
-    serve = shlex.join(
-        [
-            config.python,
-            '-m',
-            'dev_lab.supervise',
-            'serve',
-            '--project',
-            role.project,
-            '--config',
-            str(config.path),
-            *(config.status.flags(f'{config.home.as_posix()}/{AUDIT}') if config.status else []),
-        ]
-    )
-    # THE DAEMON SPEAKS sd_notify (`supervise.notify`): READY once, WATCHDOG once per cycle. Under
-    # Type=simple nobody listens, and the timeout is the loop's own cycle, never a second literal.
-    body = [
-        'Type=notify',
-        'NotifyAccess=main',
-        f'WatchdogSec={watchdog_seconds(config.merged)}',
-        *([f'User={role.user}'] if role.user else []),
-        f'ExecStart={serve}',
-        'Restart=always',
-        'RestartSec=10',
-        *([f'MemoryMax={role.memory_max}'] if role.memory_max else []),
-    ]
-    service = _service(config, role, 'Host supervisor (dev_lab.supervise)', body, network=True,
-                       wanted_by='multi-user.target')  # fmt: skip
-    return {f'etc/systemd/system/{_SUPERVISE}.service': service}
 
 
 def files(config: OpsConfig) -> dict[str, str]:
@@ -284,12 +154,8 @@ def files(config: OpsConfig) -> dict[str, str]:
         **_judge(config),
         **_breakglass(config),
         **_consent(config),
-        **_backup(config),
-        **_probe(config),
-        **_config_tick(config),
-        **_upgrade_follow(config),
         **access,
-        **_supervise(config),
+        **scheduled(config),
     }
 
 
@@ -299,9 +165,9 @@ def _consent_steps(config: OpsConfig, root: Path) -> list[str]:
         return []
     steps = forcecommand.steps(_UNIT, issuer.account)
     if not under(root, issuer.key).is_file():
-        steps.append(_door(config, 'consent', 'keygen'))
+        steps.append(door(config, 'consent', 'keygen'))
     if not under(root, issuer.totp).is_file():
-        steps.append(_door(config, 'consent', 'enrol'))
+        steps.append(door(config, 'consent', 'enrol'))
     return steps
 
 
@@ -333,14 +199,14 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                   'sshd -t && systemctl reload ssh']  # fmt: skip
         if access is not None and access.needs_secret:
             steps.append(
-                f'{_door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
-                f'secret: {_door(config, "access", "adopt", "--secret-file", "-")})'
+                f'{door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
+                f'secret: {door(config, "access", "adopt", "--secret-file", "-")})'
             )
     if (role := config.supervise) is not None:
         steps += [
             *([config.status.directory_step(role.user)] if config.status else []),
             'systemctl daemon-reload',
-            f'systemctl enable --now {_SUPERVISE}.service',
+            f'systemctl enable --now {SUPERVISE}.service',
         ]
     return tuple(steps)
 

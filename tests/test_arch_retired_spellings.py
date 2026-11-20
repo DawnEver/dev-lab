@@ -91,7 +91,7 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     'SERVED_KEY': (
-        'ciworkflows.ROLE_KEY / BY_KEY: a job renders where the family binds its role to its kind (role_jobs)',
+        'ciworkflowshape.ROLE_KEY / BY_KEY: a job renders where the family binds its role to its kind (role_jobs)',
         'toolchain D73 2026-11-18: one render rule by role replaces the judge-only served mark',
     ),
     '[tool.dev_lab.protection] producer': (

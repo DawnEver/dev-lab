@@ -146,15 +146,17 @@ def test_an_app_judge_on_gitea_is_refused() -> None:
         app_verdicts(Client(Forge('gitea.example', 'o', 'r'), 't'), HEAD)
 
 
-_JUDGE = '[tool.dev_lab.review]\nwhere = "judge"\n'
+#: A judged repo's review table: the family binds review to a host (D73), so it declares only the identity.
+_JUDGE = '[tool.dev_lab.review]\n'
 
 
 def test_a_judge_repo_declares_exactly_one_identity() -> None:
     assert review_from(_JUDGE + f'judge_app = {APP}\n', 'x').judge_app == APP
     assert review_from(_JUDGE + 'judge_login = "bot"\n', 'x').judge_login == 'bot'
-    for both_or_none in ('', f'judge_login = "bot"\njudge_app = {APP}\n'):
-        with pytest.raises(ValueError, match='exactly ONE identity'):
-            review_from(_JUDGE + both_or_none, 'x')
+    with pytest.raises(ValueError, match='exactly ONE identity'):
+        review_from(_JUDGE + f'judge_login = "bot"\njudge_app = {APP}\n', 'x')
+    # Naming no judge is no longer refused here: whether review is a judge's is the family's binding (D73).
+    assert review_from(_JUDGE, 'x').judge_login == ''
 
 
 @pytest.mark.parametrize('bad', ['true', '-1', '"5619495"'])

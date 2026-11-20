@@ -48,7 +48,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import platform
 import tomllib
 from collections.abc import Mapping
@@ -61,13 +60,14 @@ from lab_commons.log import emit
 
 from dev_lab.dev import accounthost, devprofile, familyrepos, tomlleaves, vendordetect
 from dev_lab.dev._machinefile import dumps, merged, render_value
+from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'LOCAL_DOOR', 'OWN_TABLE', 'RENDER_DOOR', 'config_source', 'declared', 'declared_channels', 'drift',
-    'host_file', 'local_set', 'main', 'notice', 'render', 'replace_backed_up',
+    'host_file', 'local_set', 'main', 'notice', 'render',
 ]  # fmt: skip
 
 #: The render's own table: which host and clone it came from.
@@ -256,18 +256,6 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
 RENDER_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost render --write'
 #: The door that sets one key of the machine's own (local) layer.
 LOCAL_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost local set <table>.<key> <value>'
-
-
-def replace_backed_up(path: Path, text: str, backups: Path) -> Path:
-    """Replace *path* with *text* atomically, its previous content first copied into *backups*; the copy's path."""
-    backups.mkdir(parents=True, exist_ok=True)
-    backup = backups / f'{path.name}.{datetime.now(UTC):%Y%m%dT%H%M%SZ}'
-    if path.is_file():
-        backup.write_bytes(path.read_bytes())
-    staged = path.with_name(f'{path.name}.{os.getpid()}.tmp')
-    staged.write_text(text, encoding='utf-8')
-    staged.replace(path)
-    return backup
 
 
 def _source(clone: Path | None, own: Mapping[str, Any]) -> Path | None:

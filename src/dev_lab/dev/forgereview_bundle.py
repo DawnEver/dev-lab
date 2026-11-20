@@ -16,7 +16,7 @@ trusts NOTHING the producer wrote that it can read or derive from the forge (D3)
 
   - it prepares the bundle of that head itself (above), never reading one any other process wrote;
   - it verifies the bundle (:func:`~dev_lab.dev.reviewbundle.current`
-    against the FORGE's merge base, :func:`~dev_lab.dev.reviewbundle.matches_forge` against the forge's own diff);
+    against the FORGE's merge base, :func:`~dev_lab.dev.reviewforgediff.matches_forge` against the forge's own diff);
   - it reads the declaration FRESH from the forge's integration branch, and hands the reviewer the FORGE's diff,
     never the producer's;
   - a binary change to a path the declaration calls code (:func:`~dev_lab.dev.forgereview_scope.is_code`) is
@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import reviewbundle
+from dev_lab.dev import reviewbundle, reviewforgediff
 from dev_lab.dev._forgebackends import GITHUB
 from dev_lab.dev.forgeapp import app_client, app_of
 from dev_lab.dev.forgeclient import client_for
@@ -219,7 +219,7 @@ def judge_one(
             bundle = reviewbundle.prepare(repo, repo=client.forge.repo, pull=pull)
             diff, merge_base = client.pull_diff(pull.number), forge_merge_base(client, pull)
             reviewbundle.current(bundle, pull, repo=client.forge.repo, merge_base=merge_base)
-            reviewbundle.matches_forge(bundle, diff)
+            reviewforgediff.matches_forge(bundle, diff)
         except BundleRefused as refused:
             return Verdict(_CHANGES, f'**Review bundle refused** for `{pull.head_sha[:12]}`: {refused}')
         except _UNREAD as failed:

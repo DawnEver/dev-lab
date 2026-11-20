@@ -97,15 +97,15 @@ def _with_glass_family(tmp_path: Path) -> OpsConfig:
 def test_break_glass_reads_the_roles_through_a_rendered_family_machine_file(tmp_path: Path) -> None:
     """D73: break-glass reads who produces tests from the family's roles -- install renders its machine file."""
     host = _with_glass_family(tmp_path)
-    rendered = tomllib.loads(files(host)[BREAKGLASS_MACHINE])
+    rendered = tomllib.loads(files(host)[BREAKGLASS_MACHINE.lstrip('/')])
     assert rendered == {'family': {'source': '/etc/dev-lab/family.toml', 'max_age': '7 d'}}
-    assert family_env(host.breakglass) == {CONFIG_ENV: f'/{BREAKGLASS_MACHINE}'}
+    assert family_env(host.breakglass) == {CONFIG_ENV: BREAKGLASS_MACHINE}
 
 
 def test_no_break_glass_family_renders_no_machine_file_and_sets_no_env(tmp_path: Path) -> None:
     """PLANTED CONTROL: without [ops.breakglass.family] nothing is rendered and the process keeps its own config."""
     host = config(tmp_path, [])
-    assert BREAKGLASS_MACHINE not in files(host)
+    assert BREAKGLASS_MACHINE.lstrip('/') not in files(host)
     assert family_env(host.breakglass) == {}
 
 
@@ -133,4 +133,4 @@ def test_the_break_glass_verb_points_lab_commons_at_its_machine_file(
 
     monkeypatch.setattr(hostverbs.consentverbs, 'ends', ends)
     assert hostverbs.breakglass_verb(host, 'tick') == 2
-    assert seen == [f'/{BREAKGLASS_MACHINE}']
+    assert seen == [BREAKGLASS_MACHINE]
