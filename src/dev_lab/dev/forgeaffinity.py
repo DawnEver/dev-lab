@@ -46,17 +46,22 @@ from dev_lab.dev.platformparts import part_context
 
 __all__ = [
     'DEFERRED',
+    'HELD',
+    'claims_of',
     'context_of',
     'covers',
     'declared',
     'deferral',
     'defers',
+    'holds',
     'research_affinity',
     'research_affinity_of',
 ]
 
 #: How a covered part a non-affined seat waits on is blocked: on its queue row and its host card.
 DEFERRED: Final = 'deferred to the verify accounts'
+#: How a part this seat's ``[deploy]`` row narrows its claims away from waits (user ruling 2026-11-20).
+HELD: Final = "held by this seat's [deploy] claims"
 
 
 def covers(patterns: Sequence[str], context: str) -> bool:
@@ -74,6 +79,28 @@ def declared(path: Path, repo_url: str) -> tuple[str, ...]:
     spec = load(path)
     want = _bare(repo_url)
     return next((repo.verify for repo in spec.repos if _bare(repo.url) == want), ()) if spec else ()
+
+
+def claims_of(path: Path, repo_url: str) -> str:
+    """The ``claims`` this account's ``[deploy]`` row for *repo_url* narrows to; ``''`` (everything) when none."""
+    spec = load(path)
+    want = _bare(repo_url)
+    return next((repo.claims for repo in spec.repos if _bare(repo.url) == want), '') if spec else ''
+
+
+def holds(claims: str, integration: str) -> Callable[[Candidate], str]:
+    """Why a seat whose row declares *claims* does not claim a candidate; ``''`` when it may.
+
+    ``"none"`` holds every part, ``"integration"`` every part but the *integration* branch's; undeclared holds none.
+    Widening is the integrator's edit of the declaration, never a flag (user ruling 2026-11-20).
+    """
+
+    def held(one: Candidate) -> str:
+        if claims == 'none' or (claims == 'integration' and one.ref != integration):
+            return f'{HELD} = "{claims}" ({one.ref}): the integrator widens it in the account file'
+        return ''
+
+    return held
 
 
 def _bare(url: str) -> str:

@@ -93,7 +93,7 @@ from dev_lab.dev.forge import (
     fetch_origin,
     forge_transport,
 )
-from dev_lab.dev.forgeaffinity import context_of, covers, declared, deferral
+from dev_lab.dev.forgeaffinity import claims_of, context_of, covers, declared, deferral, holds
 from dev_lab.dev.forgeclaim import (
     DEFAULT_LEASE,
     Claim,
@@ -206,6 +206,7 @@ def tick(
     cards: Sequence[HostCard] = (),
     verify: Sequence[str] | None = None,
     borrow: bool | None = None,
+    claims: str | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -233,7 +234,9 @@ def tick(
     produces first (default: its ``[deploy]`` row for this repo, :func:`dev_lab.dev.forgeaffinity.declared`); on a
     cluster seat a covered part is ordered first, and a part another live card covers is deferred
     (:mod:`dev_lab.dev.forgeaffinity`). *borrow* is the user's unexpired ``verify->research`` opt-in (default: the
-    allocation record on the forge, read only when a live affined card could defer something).
+    allocation record on the forge, read only when a live affined card could defer something). *claims* narrows what
+    a cluster seat claims (default: its ``[deploy]`` row's ``claims``, :func:`dev_lab.dev.forgeaffinity.claims_of`):
+    a held part is never considered here and waits, named (user ruling 2026-11-20).
     """
     lines = _status_flushed(root, client)
     fetch(root)
@@ -282,6 +285,10 @@ def tick(
         priority=lambda one: favoured(one) or covers(mine, context_of(one)),
     )  # fmt: skip
     ranked = tip_first(ranked, policy.integration)
+    if serve.hpc:  # A RETURNING VERIFY SEAT OPENS STEP BY STEP (user ruling 2026-11-20)
+        ranked = _opened(
+            ranked, claims_of(config_path(), origin_url(root)) if claims is None else claims, policy.integration, lines
+        )
     if serve.hpc:  # HPC ACCOUNT AFFINITY (dev_lab.dev.forgeaffinity): a workstation is never gated
         live = any(card.verify and not card.stale(now) for card in cards)
         opted = (live and _opted_in(built, now)) if borrow is None else borrow
@@ -321,6 +328,18 @@ def tick(
         taken.store_why,
         tuple(taken.pending),
     )
+
+
+def _opened(ranked: Sequence[Ranked], claims: str, integration: str, lines: list[str]) -> tuple[Ranked, ...]:
+    """*ranked* less what *claims* holds (:func:`dev_lab.dev.forgeaffinity.holds`); each held part named in *lines*."""
+    held = holds(claims, integration)
+    kept = []
+    for one in ranked:
+        if why := held(one.candidate):
+            lines.append(f'waiting {one.candidate.ref}@{one.candidate.sha[:12]}: {why}')
+        else:
+            kept.append(one)
+    return tuple(kept)
 
 
 def _opted_in(client: Client, now: datetime) -> bool:
