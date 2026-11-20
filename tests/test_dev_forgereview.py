@@ -21,6 +21,7 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge, called_due
 from _review_doubles import _state
+from _roles_fixtures import CI_REPO, HPC_REVIEWED, carry
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import forgereview_command
@@ -68,6 +69,13 @@ from dev_lab.dev.reviewcap import UNREVIEWED, unreviewed_line, waiver_of
 from dev_lab.dev.reviewgate import github_posted, status_gate
 
 _LANE_POLICY = Policy(integration='integrate/main')  # every repo declares its integration branch (D83)
+
+
+@pytest.fixture(autouse=True)
+def _review_on_the_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bind review on hpc: this module drives the serve's review tick, which reviews nothing else (D73)."""
+    carry(monkeypatch, HPC_REVIEWED)
+
 
 _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
@@ -146,6 +154,19 @@ def _posted(forge: StateForge, head: str) -> list[dict]:
 
 def _tick(work: Path, forge: StateForge, command: FakeCommand, review: Review | None = None) -> tuple[str, ...]:
     return review_tick(work, forge, review or _DECLARED, base='integrate/main', run=command, ready=_can, host='box')
+
+
+def test_the_serve_tick_reviews_nothing_whose_review_is_bound_elsewhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED control for the module fixture: review on a host (a judge), the same due head runs no command."""
+    carry(monkeypatch, CI_REPO)
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    command = FakeCommand(_output(severity='HIGH'))
+    assert _tick(work, forge, command) == ()
+    assert command.ran == []
+    assert not forge.comments.get(number)
 
 
 def test_the_declared_command_reviews_the_merge_base_range_and_its_advice_is_posted(tmp_path: Path) -> None:
@@ -590,7 +611,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     assert {field.name for field in dataclasses.fields(Review)} == {
         'command', 'model', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light',
         'code', 'not_code', 'reviewers', 'backlog',
-        'claim_stale', 'quiet', 'where', 'bundle', 'judge_login', 'judge_app', 'preparers',
+        'claim_stale', 'quiet', 'bundle', 'judge_login', 'judge_app', 'preparers',
         'batch', 'on_expiry', 'batch_wait',
     }  # fmt: skip
 

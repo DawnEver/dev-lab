@@ -15,6 +15,7 @@ from typing import Final
 __all__ = ['ORIGINAL_MODULES']
 
 ORIGINAL_MODULES: Final[tuple[str, ...]] = (
+    'vscodesettings',  # ORIGINAL: the editor excludes a checkout carries, derived from the storage kinds (2026-11-19)
     'callorigins',  # extracted in-kit lexical binding owner for reflection and tolerance scanners
     'ab_bench',
     'issuekind',  # an issue is a need: the kind door and the one notice migration (ruling 2026-11-14)
@@ -22,7 +23,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'producer',
     'failprint',  # a failure fingerprint: test id plus the subjects its failure names (finding D13, 2026-11-16)
     'producers',  # each repo's one producer, actions or hpc, and its optional parts (ruling 2026-11-16)
-    'producercheck',  # the guard refusing what contradicts a producer declaration (ruling 2026-11-16)
+    'rolecheck',  # the guard refusing what contradicts the family's roles binding (D73)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
     'verifybox',

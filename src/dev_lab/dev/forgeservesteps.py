@@ -33,7 +33,6 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeintegration import alarms as sync_alarms
 from dev_lab.dev.forgeintegration import tick as integration_tick
-from dev_lab.dev.forgemerge import CI_MERGER, ci_merges
 from dev_lab.dev.forgeorphan import alarms as orphans
 from dev_lab.dev.forgepulls import ListingIncomplete, pr_list
 from dev_lab.dev.forgequeue import forge_queue, unadmitted
@@ -54,6 +53,7 @@ from dev_lab.dev.prcurrent import ready_refusals
 from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.relock import carry
+from dev_lab.dev.roles import HPC, MERGE, PRUNE, REVIEW, roles_at
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgeproduce import Produced
@@ -156,9 +156,15 @@ def prompt(
 
 
 def review(root: Path, built: Client, *, say: Callable[[str], None], host: str) -> None:
-    """The PR review on EVERY serving host, poller or not: the step itself skips a host that cannot run it."""
+    """The PR review on EVERY serving host, poller or not, where the family binds ``review`` to ``hpc``.
+
+    The step itself skips a host that cannot run it.
+    """
     try:
         policy = load_policy(root)
+        if (by := roles_at(root).kind(REVIEW)) != HPC:
+            say(f'[serve] review = "{by}": its executor reviews the PRs, never this hpc tick')
+            return
     except (OSError, ValueError) as failed:
         say(f'[serve] the PR review did not run: {failed}')
         return
@@ -263,17 +269,19 @@ def repo_wide(
     In order: open the continuations of landed branches (:mod:`dev_lab.dev.prcontinue`) -- before anything prunes a
     branch whose PR merged -- close the landed PRs, sweep, prune, prune the records, tidy, starve, prompt, relock,
     and the drift census (:mod:`dev_lab.dev.drift`) -- after the relock, so it reads what the relock left. The
-    family watch is per machine, not here (:func:`family`). A repo that
-    declares the CI merger (:func:`~dev_lab.dev.forgemerge.ci_merges`) closes and sweeps in that Gitea job instead.
+    family watch is per machine, not here (:func:`family`). Closing landed PRs, the sweep and both prunes are the
+    ``prune`` role, run here only where the family binds it to ``hpc`` (:mod:`dev_lab.dev.roles`, D70).
     """
-    serve_continue_landed(root, client(root), say=say, alarm=alarm)
-    if ci_merges(root):
-        say(f'[serve] the {CI_MERGER} job closes landed PRs and sweeps landed branches')
+    roles = roles_at(root)
+    if roles.kind(MERGE) == HPC:
+        serve_continue_landed(root, client(root), say=say, alarm=alarm)
+    if (prune := roles.kind(PRUNE)) != HPC:
+        say(f'[serve] prune = "{prune}": its executor closes landed PRs, sweeps and prunes, never this hpc tick')
     else:
         serve_close_landed(root, client(root), say=say, alarm=alarm)
         serve_sweep(root, client(root), say=say, alarm=alarm)
-    serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
-    serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+        serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+        serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     hygiene(root, client(root), say=say)
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)

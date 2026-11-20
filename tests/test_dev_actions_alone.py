@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT
+from _roles_fixtures import CI_REPO, EVERY_CI, carry
 
 from dev_lab.dev import forgereview_gate, integrate
 from dev_lab.dev._forgebackends import (
@@ -29,9 +30,10 @@ from dev_lab.dev.forgecontexts import JUDGE_CHECK, MERGE_READY_CONTEXT, REVIEW_C
 from dev_lab.dev.forgeprotect import INTEGRATION, TRUNK, required_contexts, targets
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
+from dev_lab.dev.roles import CI, HOST
 
-JUDGE_LOGIN = '[tool.dev_lab.review]\nwhere = "judge"\njudge_login = "judge"\n'
-JUDGE_APP = '[tool.dev_lab.review]\nwhere = "judge"\njudge_app = 5619495\n'
+JUDGE_LOGIN = '[tool.dev_lab.review]\njudge_login = "judge"\n'
+JUDGE_APP = '[tool.dev_lab.review]\njudge_app = 5619495\n'
 HUB = Forge('github.com', 'owner', 'alpha')
 TEA = Forge('gitea.example', 'owner', 'alpha')
 
@@ -46,13 +48,17 @@ def test_github_wires_no_serve_host_and_gitea_every_producer() -> None:
 
 
 @pytest.mark.parametrize('review', [JUDGE_APP, ''])
-def test_a_github_repo_s_gate_names_only_actions_produced_contexts_judge_or_not(review: str) -> None:
+def test_a_github_repo_s_gate_names_only_actions_produced_contexts_judge_or_not(
+    review: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The judge host still reviews (review-prepare.yml renders), but no required context or approval waits on it.
 
-    PLANTED CONTROL: the judge repo renders its prepare workflow; the serve repo does not.
+    PLANTED CONTROL: the repo whose review is bound to a judge renders its prepare workflow; one on CI does not.
     """
+    roles = CI_REPO if review else EVERY_CI
+    carry(monkeypatch, roles)
     text = GITHUB_TEXT + review
-    assert (PREPARE_WORKFLOW in placed(text, 'p', 'github')) is bool(review)
+    assert (PREPARE_WORKFLOW in placed(text, 'p', 'github', roles)) is bool(review)
     contexts = required_contexts(text, 'p', HUB)
     assert contexts[INTEGRATION] == (MERGE_READY_CONTEXT,)
     assert all(JUDGE_CHECK not in one and REVIEW_CONTEXT not in one for one in contexts.values())
@@ -81,17 +87,15 @@ def test_a_serve_host_s_integration_requires_no_context_and_its_trunk_still_requ
 def test_no_merge_gate_waits_on_the_judge_on_either_forge(monkeypatch: pytest.MonkeyPatch, backend, judge_app) -> None:
     """User ruling 2026-11-11: the judge's verdict is advisory on both forges, never waited on.
 
-    PLANTED CONTROL: a serve repo with no tests/review posted still waits on its review.
+    PLANTED CONTROL: a repo reviewed on CI with no tests/review posted still waits on its review.
     """
     assert JUDGE_HOST in ADVISORY
-    judge = SimpleNamespace(where='judge', judge_app=judge_app, judge_login='judge')
-    monkeypatch.setattr(forgereview_gate, 'forge_review', lambda _client, _base: judge)
+    assert judge_app in {0, 5619495}  # the judge's identity never changes the reading
     unapproved = [CommitStatus('tests/base', 'success', 'scope=full ran=1 hands=-', '')]
-    assert forgereview_gate.review_gate(SimpleNamespace(backend=backend), base='integrate/main')(unapproved) is None
-    serve = SimpleNamespace(where='serve', judge_app=0, judge_login='')
-    monkeypatch.setattr(forgereview_gate, 'forge_review', lambda _client, _base: serve)
+    client = SimpleNamespace(backend=backend)
+    assert forgereview_gate.review_gate(client, base='integrate/main', by=HOST)(unapproved) is None
     monkeypatch.setattr(forgereview_gate, 'forge_posted', lambda _client: lambda _status: True)
-    assert forgereview_gate.review_gate(SimpleNamespace(backend=backend), base='integrate/main')(unapproved) is not None
+    assert forgereview_gate.review_gate(client, base='integrate/main', by=CI)(unapproved) is not None
 
 
 @pytest.mark.parametrize(('backend', 'waived'), [(GITHUB, {'femm'}), (GITEA, set())])

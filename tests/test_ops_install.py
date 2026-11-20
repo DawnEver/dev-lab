@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import os
+import tomllib
 from pathlib import Path
 
 import pytest
 from _ops_fixtures import config
+from lab_commons.config import CONFIG_ENV
 
 from dev_lab.dev.privatemarkers import load_markers, scan_text
+from dev_lab.ops import hostverbs
 from dev_lab.ops.__main__ import main
-from dev_lab.ops.config import load
-from dev_lab.ops.install import files, install
+from dev_lab.ops.config import OpsConfig, load
+from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.install import BREAKGLASS_MACHINE, family_env, files, install
 
 
 def test_install_renders_units_sshd_and_sudoers_and_is_idempotent(tmp_path: Path) -> None:
@@ -78,3 +83,54 @@ def test_the_door_refuses_a_file_with_no_ops_table(tmp_path: Path) -> None:
     path = tmp_path / 'supervise.toml'
     path.write_text('[target]\nname = "x"\n', encoding='utf-8')
     assert main(['--config', str(path), 'install', '--root', str(tmp_path / 'r')]) == 2
+
+
+_GLASS_FAMILY = '\n[ops.breakglass.family]\nsource = "/etc/dev-lab/family.toml"\nmax_age = "7 d"\n'
+
+
+def _with_glass_family(tmp_path: Path) -> OpsConfig:
+    host = config(tmp_path, [])
+    host.path.write_text(host.path.read_text(encoding='utf-8') + _GLASS_FAMILY, encoding='utf-8')
+    return load(host.path, environ={})
+
+
+def test_break_glass_reads_the_roles_through_a_rendered_family_machine_file(tmp_path: Path) -> None:
+    """D73: break-glass reads who produces tests from the family's roles -- install renders its machine file."""
+    host = _with_glass_family(tmp_path)
+    rendered = tomllib.loads(files(host)[BREAKGLASS_MACHINE])
+    assert rendered == {'family': {'source': '/etc/dev-lab/family.toml', 'max_age': '7 d'}}
+    assert family_env(host.breakglass) == {CONFIG_ENV: f'/{BREAKGLASS_MACHINE}'}
+
+
+def test_no_break_glass_family_renders_no_machine_file_and_sets_no_env(tmp_path: Path) -> None:
+    """PLANTED CONTROL: without [ops.breakglass.family] nothing is rendered and the process keeps its own config."""
+    host = config(tmp_path, [])
+    assert BREAKGLASS_MACHINE not in files(host)
+    assert family_env(host.breakglass) == {}
+
+
+def test_a_break_glass_family_with_no_source_is_refused_at_load(tmp_path: Path) -> None:
+    host = config(tmp_path, [])
+    host.path.write_text(
+        host.path.read_text(encoding='utf-8') + '\n[ops.breakglass.family]\nmax_age = "7 d"\n', encoding='utf-8'
+    )
+    with pytest.raises(ValueError, match=r'\[ops\.breakglass\.family\] names no source'):
+        load(host.path, environ={})
+
+
+def test_the_break_glass_verb_points_lab_commons_at_its_machine_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The serve/tick process reads the roles through the rendered machine file, not a HOME it does not have."""
+    host = _with_glass_family(tmp_path)
+    monkeypatch.delenv(CONFIG_ENV, raising=False)
+    seen: list[str | None] = []
+
+    def ends(*_args: object, **_kwargs: object) -> tuple[object, object]:
+        seen.append(os.environ.get(CONFIG_ENV))
+        msg = 'stop here'
+        raise ConsentRefused(msg)
+
+    monkeypatch.setattr(hostverbs.consentverbs, 'ends', ends)
+    assert hostverbs.breakglass_verb(host, 'tick') == 2
+    assert seen == [f'/{BREAKGLASS_MACHINE}']

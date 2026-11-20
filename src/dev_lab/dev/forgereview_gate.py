@@ -11,11 +11,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dev_lab.dev._forgebackends import ADVISORY, JUDGE_HOST, require_producer
-from dev_lab.dev.forgereview_declared import JUDGE, forge_review
 from dev_lab.dev.reviewgate import (
     forge_posted,
     status_gate,
 )
+from dev_lab.dev.roles import HOST
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
@@ -24,21 +24,21 @@ if TYPE_CHECKING:
 __all__ = ['review_gate']
 
 
-def review_gate(client: Client, *, base: str) -> Reviewed:
+def review_gate(client: Client, *, base: str, by: str) -> Reviewed:
     """THE ONE READING of whether a head is reviewed, which merge-ready reports and never waits on.
 
-    The mode is the TRUSTED declaration at *base* (:func:`forge_review`): a ``serve`` repo is reviewed when the forge
-    posted a ``tests/review`` success (:func:`~dev_lab.dev.reviewgate.review_missing`). A ``judge`` repo's verdict is
+    *by* is the kind the family binds ``review`` to (:mod:`dev_lab.dev.roles`): reviewed by ``ci`` or ``hpc``, a head
+    is reviewed when the forge posted a ``tests/review`` success (:func:`~dev_lab.dev.reviewgate.review_missing`);
+    *base* names the trusted declaration (:func:`forge_review`). A ``host`` (judge) review's verdict is
     ADVISORY (:data:`~dev_lab.dev._forgebackends.ADVISORY`, user ruling 2026-11-11): posted as information on Gitea,
     never a merge condition on either forge, so its gate never waits.
 
     Raises:
-        NotWired: a ``judge`` declaration on a forge that wires no judge host (GitHub: Actions alone, 2026-11-11).
+        NotWired: review bound to a host on a forge that wires no judge host.
 
     """
-    review = forge_review(client, base)
-    if review.where == JUDGE:
-        require_producer(client.backend, JUDGE_HOST, f'[tool.dev_lab.review] where = "{JUDGE}" at {base}')
+    if by == HOST:
+        require_producer(client.backend, JUDGE_HOST, f'review bound to a host (a judge) for {base}')
         if JUDGE_HOST in ADVISORY:  # posted as information, never waited on (user ruling 2026-11-11)
             return lambda _statuses: None
     return status_gate(forge_posted(client))
