@@ -272,7 +272,10 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     if division is not None and (role := division.role_of(grant.user)):
         deploy += ['--fleet-role', role, '--role-table', json.dumps(dict(division.roles[role]), sort_keys=True)]
     refreshed = f'{first_install(grant, target)} && {refresh_kit(grant, target)}'
-    return f'{paused_guard()} && {refreshed} ; {render_command(grant, target, source)} && {in_checkout(target, deploy)}'
+    deployed = in_checkout(target, deploy)
+    if grant.setup:  # the venvs it builds compile in the cluster's declared environment, as its ticks run
+        deployed = f'( {" && ".join([*grant.setup, deployed])} )'
+    return f'{paused_guard()} && {refreshed} ; {render_command(grant, target, source)} && {deployed}'
 
 
 #: The official uv installer (user approval 2026-11-16: an HPC account may install uv into ``~/.local/bin``).
