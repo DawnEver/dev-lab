@@ -166,7 +166,7 @@ def test_performs_is_true_only_for_the_bound_host() -> None:
 
 def test_run_here_runs_the_duty_only_on_the_bound_machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ran: list[Path] = []
-    monkeypatch.setattr(branchpolicy, 'prune_duty', lambda root, _client, **_kw: ran.append(root))
+    monkeypatch.setattr(branchpolicy, 'prune_duty', lambda root, _client, _repo, **_kw: ran.append(root))
     monkeypatch.setattr(branchpolicy, 'forge_from_remote', lambda _root: StateForge().forge)
     mine, theirs = tmp_path / 'mine', tmp_path / 'theirs'
     roles = {mine: _bound(Executor(HOST, host='box-a')), theirs: _bound(Executor(CI))}
