@@ -58,6 +58,17 @@ def test_a_large_file_is_measured_against_the_declared_threshold(tmp_path: Path)
     assert main(['large-files', '--max-kb', '4', str(path)]) == 0
 
 
+def test_a_large_file_finding_names_its_doors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """EVERY-WALL-TEACHES: a numerics-lab fixture (1.4 MB) was refused with a size and no door (2026-11-20)."""
+    path = tmp_path / 'fixture.json'
+    path.write_bytes(b'x' * 3 * 1024)
+    assert main(['large-files', '--max-kb', '2', str(path)]) == 1
+    said = capsys.readouterr().out
+    assert '--exclude large-files=' in said, said
+    assert '--max-kb' in said, said
+    assert '[[tool.dev_lab.hooks.pre-commit]]' in said, said
+
+
 def test_a_case_conflict_with_a_tracked_path_is_a_finding(tmp_path: Path, monkeypatch) -> None:
     git = shutil.which('git') or 'git'
     subprocess.run([git, 'init', '-q', str(tmp_path)], check=True, capture_output=True)
