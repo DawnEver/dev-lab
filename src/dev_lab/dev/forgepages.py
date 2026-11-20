@@ -6,7 +6,8 @@ returned only the first page -- a listing of 1000 open issues read 50.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import urllib.parse
+from collections.abc import Callable, Sequence
 from typing import Any, Final
 
 from dev_lab.dev._forge_records import Issue, _issue, is_pull
@@ -29,10 +30,22 @@ def paged(read: Callable[[int, int], list], limit: int) -> tuple:
     return tuple(found[:limit])
 
 
-def issues(call: Callable[[str, str], Any], url: str, state: str, limit: int) -> tuple[Issue, ...]:
-    """Issues in *state* among the first *limit* rows of *url* (a list query with ``{state}``/``{limit}``).
+def issues(
+    call: Callable[[str, str], Any], url: str, state: str, limit: int, labels: Sequence[str] = ()
+) -> tuple[Issue, ...]:
+    """Issues in *state* carrying every one of *labels*, among the first *limit* rows of *url*.
 
-    GitHub lists pull requests under ``issues`` too; they are dropped after reading.
+    *url* is a list query with ``{state}``/``{limit}``. Both forges take ``labels=<a,b>`` by NAME, but Gitea
+    IGNORES a name it does not know and answers every issue -- so the rows are filtered again by the labels
+    they carry, and an unknown label lists nothing. GitHub lists pull requests under ``issues`` too; they are
+    dropped after reading.
     """
+    if labels:
+        url = f'{url}&labels={urllib.parse.quote(",".join(labels))}'
     rows = paged(lambda page, size: call('GET', f'{url.format(state=state, limit=size)}&page={page}'), limit)
-    return tuple(_issue(row) for row in rows if not is_pull(row))
+    wanted = set(labels)
+    return tuple(
+        _issue(row)
+        for row in rows
+        if not is_pull(row) and wanted <= {str(one['name']) for one in row.get('labels') or ()}
+    )

@@ -185,12 +185,14 @@ def _parser() -> argparse.ArgumentParser:
     listing = _verb(issue, 'list')
     listing.add_argument('--state', choices=('open', 'closed', 'all'), default='open')
     listing.add_argument('--limit', type=int, default=30)
+    listing.add_argument('--label', action='append', default=[], help='only issues carrying it (repeatable)')
     for name in ('view', 'close'):
         _verb(issue, name).add_argument('number', type=int)
     create = _verb(issue, 'create')
     create.add_argument('--title', required=True)
     create.add_argument('--body', default='')
     create.add_argument('--kind', required=True, choices=KINDS, help='an issue is a need, defect or decision')
+    create.add_argument('--label', action='append', default=[], help='also label it; a missing one is created')
     label = _verb(issue, 'label')
     label.add_argument('number', type=int)
     label.add_argument('--add', nargs='+', default=[], help='labels to put on it; a missing one is created first')
@@ -235,9 +237,9 @@ def pr_close(client: Client, number: int, reason: str) -> PullRequest:
 
 def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
-        ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit),
+        ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
         ('issue', 'view'): lambda: client.issue_view(args.number),
-        ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind),
+        ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind, args.label),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
         ('issue', 'label'): lambda: _relabelled(client, args),
@@ -293,7 +295,8 @@ def _refused(
         return None
     if why:
         emit(f'[forge] scanning the {what} for private markers: {why}', err=True)
-    return privatemarkers.text_refusal('\n'.join(texts(args)), what)
+    public = privatemarkers.public_names(root, env=env, transport=transport)
+    return privatemarkers.text_refusal('\n'.join(texts(args)), what, public=public)
 
 
 #: Each write verb that publishes typed text: what a refusal calls it, and the argument fields that hold it.

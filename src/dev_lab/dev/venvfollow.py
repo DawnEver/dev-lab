@@ -48,7 +48,7 @@ import lab_commons.launch as _door
 from lab_commons.census import processes
 from lab_commons.log import emit
 
-from dev_lab.dev import checkoutfollow, hook_install, liverun, venvcurrent
+from dev_lab.dev import checkoutfollow, hook_install, liverun, venvcurrent, vscodesettings
 from dev_lab.dev.backgroundrun import detach_argv, held
 from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.lockpins import Installed, installed_git, sync_door
@@ -237,6 +237,13 @@ def _session_root(stdin: TextIO) -> Path | None:
     return toplevel(Path(cwd))
 
 
+def _follow_checkout_files(root: Path) -> None:
+    """The files a checkout derives from its kit: the hook shims, then the editor's managed settings."""
+    for said in (hook_install.rewire(root), vscodesettings.follow(root)):
+        if said:
+            emit(said)
+
+
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """Follow integration, the lock and the hooks: inline, ``--background`` or ``--session-start``. Always 0."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.venvfollow', description=main.__doc__)
@@ -265,8 +272,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
             emit(f'venv {root}: {follow(root)}')
             if retired := venvcurrent.retire_passed_over(root, census=processes):
                 emit(retired)
-            if rewired := hook_install.rewire(root):
-                emit(rewired)
+            _follow_checkout_files(root)
     except OSError as exc:  # a hook never blocks the session or the git verb it serves
         emit(f'venv follow did not run: {exc}')
     return 0

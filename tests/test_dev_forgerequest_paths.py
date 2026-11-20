@@ -24,6 +24,7 @@ from dev_lab.dev.forgerequest import (
     prefetch_requests,
     request_body,
 )
+from dev_lab.dev.forgerequestpaths import placement
 
 _PYPROJECT = """
 [tool.lab_commons.tests]
@@ -220,3 +221,27 @@ def test_every_request_of_a_queue_read_is_declared_from_one_git_child(
     assert sum('cat-file' in argv for argv in spawned) == 1, 'a prefetched request was read again'
     assert declared_request(root, second, TESTS, ('tests/test_a.py',)).part
     assert sum('cat-file' in argv for argv in spawned) == 2, 'an unprefetched request was served without a read'
+
+
+def _src(*marks: str) -> bytes:
+    lines = ['import pytest', '', *(f'@pytest.mark.{one}' for one in marks), 'def test_x():', '    pass', '']
+    return '\n'.join(lines).encode()
+
+
+_RESOURCES = ('heavy', 'jmag', 'linux', 'reference', 'windows')
+
+
+def test_a_heavy_selection_runs_on_linux_where_heavy_is_supplied() -> None:
+    """#513: a test the developer's box cannot hold is placed on the host that declares ``heavy``, not refused."""
+    assert placement({'tests/test_h.py': _src('heavy')}, 'a' * 40, _RESOURCES) == frozenset({'heavy', 'linux'})
+
+
+def test_a_plain_selection_still_runs_on_linux_alone() -> None:
+    """PLANTED CONTROL: no resource mark -> the bare Linux need-set, as before."""
+    assert placement({'tests/test_p.py': _src()}, 'a' * 40, _RESOURCES) == frozenset({'linux'})
+
+
+def test_a_jmag_selection_still_runs_on_windows() -> None:
+    """PLANTED CONTROL: jmag keeps Windows, with every mark it carries."""
+    got = placement({'tests/test_j.py': _src('jmag', 'heavy')}, 'a' * 40, _RESOURCES)
+    assert got == frozenset({'jmag', 'heavy', 'windows'})

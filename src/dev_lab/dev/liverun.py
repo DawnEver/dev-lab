@@ -318,7 +318,26 @@ def removal_holders(root: Path | str, *, census: Census = processes, me: int | N
     ancestor, judged that tree free, and deleted every tracked file before the held interpreter refused.
     """
     mine = os.getpid() if me is None else me
-    return tuple(one for one in census() if one.pid != mine and one.executable and _occupies(one, root))
+    table = tuple(census())
+    asker = _launch_chain(table, mine)
+    return tuple(one for one in table if one.pid not in asker and one.executable and _occupies(one, root))
+
+
+def _launch_chain(table: Sequence[Process], me: int) -> set[int]:
+    """The asker and every ancestor handing on its very same arguments (dev-lab#791).
+
+    A venv launcher re-spawns the base interpreter with them, so ``worktrees --remove`` refused itself as
+    ``live run: pid N (dev_lab.dev.worktrees)``. Any other ancestor -- a session, a shell -- still holds the tree.
+    """
+    by_pid = {one.pid: one for one in table}
+    chain, at = {me}, me
+    words = _arguments(by_pid[me]) if me in by_pid else None
+    while words is not None and (parent := by_pid.get(by_pid[at].ppid)) and parent.pid not in chain:
+        if _arguments(parent) != words:
+            break
+        chain.add(parent.pid)
+        at = parent.pid
+    return chain
 
 
 #: A holder that is a whole agent SESSION, not a run: an ai-lab session wrapper or the Claude CLI itself.

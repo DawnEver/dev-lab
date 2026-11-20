@@ -117,6 +117,7 @@ class Deployment:
     partitions: tuple[str, ...] = ()
     role: str = ''
     tick_minutes: int = DEFAULT_TICK_MINUTES  # from [schedule], never [deploy]: one period per host
+    env: tuple[tuple[str, str], ...] = ()  # from [env]: this account's own tool paths, exported in every tick
 
 
 def load(path: Path) -> Deployment | None:
@@ -146,6 +147,7 @@ def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
             partitions=tuple(raw.get('partitions', ())),
             role=_role(path, raw.get('role', '')),
             tick_minutes=_tick_minutes(path, table.get('schedule', {})),
+            env=_env(path, table.get('env', {})),
         )
     except KeyError as missing:
         msg = f'[deploy] in {path} lacks {missing}'
@@ -168,6 +170,27 @@ def role_refusal(spec: Deployment, path: Path) -> str:
         f'[deploy] role is undeclared in {path}: declare role = "{VERIFICATION}" (a Forge Verification account, '
         f'which runs the forge serve cron) or role = "{RESEARCH}" (never serves) -- user ruling 2026-11-06'
     )
+
+
+#: An ``[env]`` name: a shell variable, upper case by convention so it never shadows a shell's own.
+_ENV_NAME: Final = re.compile(r'[A-Z_][A-Z0-9_]*')
+
+
+def _env(path: Path, table: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    """``[env]``: this account's own tool paths (``FEMM_DIR = "~/opt/femm"``), each a string; else refused by name.
+
+    The ONE home of a per-account variable (#621): a grant's ``setup`` is a family fact shared by every account of
+    the cluster, so a per-account export there would be a second copy. A leading ``~/`` is the account's home.
+    """
+    bad = [
+        f'{key} = {value!r}' for key, value in table.items() if not _ENV_NAME.fullmatch(key) or type(value) is not str
+    ]
+    if bad:
+        msg = (
+            f'[env] in {path}: {"; ".join(bad)} -- each name is a shell variable (A-Z, 0-9, _) and each value a string'
+        )
+        raise ValueError(msg)
+    return tuple(sorted(table.items()))
 
 
 def _tick_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
@@ -379,7 +402,7 @@ def tick_command(
     cache = home / '.cache'
     lab = next(one for one in spec.repos if one.name == KIT)
     command = (
-        f'{tick_environment(home, slurm, setup)}; '
+        f'{tick_environment(home, slurm, setup, spec.env)}; '
         f'cd {shlex.quote(str(checkout_of(spec, home, lab)))} && '
         f'flock -n {shlex.quote(str(cache / f"lab-forge-{repo.name}.lock"))} '
         f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
@@ -388,14 +411,22 @@ def tick_command(
     return command + (f' >> {shlex.quote(str(cache / f"lab-forge-{repo.name}.log"))} 2>&1' if log else '')
 
 
-def tick_environment(home: Path, slurm: Sequence[str] = (), setup: Sequence[str] = ()) -> str:
-    """The shell prefix that makes a tick's environment: cron's PATH (:func:`tick_dirs`), then the grant *setup*.
+def tick_environment(
+    home: Path, slurm: Sequence[str] = (), setup: Sequence[str] = (), env: Sequence[tuple[str, str]] = ()
+) -> str:
+    """The shell prefix of a tick's environment: cron's PATH, the account's *env*, then the grant *setup*.
 
+    PATH is :func:`tick_dirs`; *env* is the account's ``[env]``, exported so every job the tick submits inherits it.
     The ONE definition of that environment: the cron line runs it, and the deploy proves the tick's git in it.
     """
-    cache = shlex.quote(str(uv_cache(home)))
-    exported = f'export UV_CACHE_DIR={cache} UV_LINK_MODE=hardlink'
+    pairs = [('UV_CACHE_DIR', str(uv_cache(home))), *((key, _homed(home, value)) for key, value in env)]
+    exported = 'export ' + ' '.join(f'{key}={shlex.quote(value)}' for key, value in pairs) + ' UV_LINK_MODE=hardlink'
     return '; '.join([f'PATH={":".join(tick_dirs(home, slurm))}', exported, *setup])
+
+
+def _homed(home: Path, value: str) -> str:
+    """*value* with a leading ``~/`` made the account's *home* (a quoted ``~`` never expands in a shell)."""
+    return str(home / value[2:]) if value.startswith('~/') else value
 
 
 def uv_cache(home: Path) -> Path:

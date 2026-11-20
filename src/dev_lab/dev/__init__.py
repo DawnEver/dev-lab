@@ -120,6 +120,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   never rewrite).
 * :mod:`dev_lab.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
   ``[tool.dev_lab.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
+* :mod:`dev_lab.dev.vscodesettings` -- the editor excludes a checkout carries, derived from the storage kinds.
 * :mod:`dev_lab.dev.nightlycron` -- a workflow's ``nightly`` declaration read as the cron it schedules.
 * :mod:`dev_lab.dev.githooks` -- the TOML hook table, its one runner (``python -m
 * :mod:`dev_lab.dev.keepignored` -- a path a merge or checkout stopped tracking and the repo ignores is kept.
