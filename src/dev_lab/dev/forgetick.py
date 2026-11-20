@@ -61,7 +61,7 @@ import shlex
 import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -81,8 +81,6 @@ from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.allocation import RECORD as ALLOCATION
-from lab_commons.hpc.allocation import VERIFY_BORROWS_RESEARCH, borrowing
 from lab_commons.log import emit
 
 from dev_lab.dev.artefacts import remote_problem
@@ -93,7 +91,7 @@ from dev_lab.dev.forge import (
     fetch_origin,
     forge_transport,
 )
-from dev_lab.dev.forgeaffinity import claims_of, context_of, covers, declared, deferral, holds
+from dev_lab.dev.forgeaffinity import claims_of, context_of, covers, declared, deferral, holds, opened, opted_in
 from dev_lab.dev.forgeclaim import (
     DEFAULT_LEASE,
     Claim,
@@ -110,7 +108,6 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from dev_lab.dev.forgerecords import read_named
 from dev_lab.dev.forgerequest import declared_request
 from dev_lab.dev.forgerequesthost import remind, request_authors
 from dev_lab.dev.forgescarce import unreached
@@ -285,13 +282,11 @@ def tick(
         priority=lambda one: favoured(one) or covers(mine, context_of(one)),
     )  # fmt: skip
     ranked = tip_first(ranked, policy.integration)
-    if serve.hpc:  # A RETURNING VERIFY SEAT OPENS STEP BY STEP (user ruling 2026-11-20)
-        ranked = _opened(
-            ranked, claims_of(config_path(), origin_url(root)) if claims is None else claims, policy.integration, lines
-        )
-    if serve.hpc:  # HPC ACCOUNT AFFINITY (dev_lab.dev.forgeaffinity): a workstation is never gated
+    if serve.hpc:  # A RETURNING VERIFY SEAT OPENS STEP BY STEP, THEN HPC ACCOUNT AFFINITY: a workstation is never gated
+        held = holds(claims_of(config_path(), origin_url(root)) if claims is None else claims, policy.integration)
+        ranked = opened(ranked, held, lines)
         live = any(card.verify and not card.stale(now) for card in cards)
-        opted = (live and _opted_in(built, now)) if borrow is None else borrow
+        opted = (live and opted_in(built, now)) if borrow is None else borrow
         taken.defer = deferral(cards, now=now, borrow=opted, mine=mine)
     for item in ranked:
         taken.consider(item)
@@ -328,27 +323,6 @@ def tick(
         taken.store_why,
         tuple(taken.pending),
     )
-
-
-def _opened(ranked: Sequence[Ranked], claims: str, integration: str, lines: list[str]) -> tuple[Ranked, ...]:
-    """*ranked* less what *claims* holds (:func:`dev_lab.dev.forgeaffinity.holds`); each held part named in *lines*."""
-    held = holds(claims, integration)
-    kept = []
-    for one in ranked:
-        if why := held(one.candidate):
-            lines.append(f'waiting {one.candidate.ref}@{one.candidate.sha[:12]}: {why}')
-        else:
-            kept.append(one)
-    return tuple(kept)
-
-
-def _opted_in(client: Client, now: datetime) -> bool:
-    """Whether the allocation record allows ``verify->research`` at *now*; an unreadable record allows nothing."""
-    try:
-        raw = read_named(client, ALLOCATION)
-        return VERIFY_BORROWS_RESEARCH in borrowing(None if raw is None else raw.decode('utf-8'), now=now)
-    except (OSError, ValueError, ForgeCallFailed):
-        return False
 
 
 def _whole(scope: str, *, cluster: bool) -> Supply:
