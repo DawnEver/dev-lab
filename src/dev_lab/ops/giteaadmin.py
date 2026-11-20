@@ -66,7 +66,8 @@ class Forge:
     use, deleted after it) grants a repository collaborator, which the Gitea CLI cannot. ``binary``, ``config`` and
     ``user`` run the Gitea CLI as the Gitea user. ``accounts`` declares each machine account,
     ``{login: {role, repos}}`` with a role of :data:`ROLE_GRANTS`; a ``read`` login may hold ``read:*`` scopes only, a
-    ``breakglass`` login :data:`BREAKGLASS_SCOPES` only;
+    ``breakglass`` login :data:`BREAKGLASS_SCOPES` only. ``repos`` is the forge's repository set, stated ONCE: a
+    login that names no ``repos`` holds exactly it, and one that restates it is refused (it lives here once);
     ``email_domain`` the address a made account gets; ``log`` the audit (who, what -- never a token).
     """
 
@@ -76,8 +77,21 @@ class Forge:
     config: str = '/etc/gitea/app.ini'
     user: str = 'gitea'
     accounts: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    repos: tuple[str, ...] = ()
     email_domain: str = 'noreply.invalid'
     log: str = '/var/log/dev-lab-ops/forge.jsonl'
+
+    def __post_init__(self) -> None:
+        """Refuse a login restating ``repos``; give each login that names none the forge's set."""
+        shared = sorted(set(self.repos))
+        restated = sorted(login for login, row in self.accounts.items()
+                          if shared and 'repos' in row and sorted(set(row['repos'])) == shared)  # fmt: skip
+        if restated:
+            msg = f'[ops.forge.accounts] {", ".join(restated)} restates [ops.forge] repos; drop its repos'
+            raise ValueError(msg)
+        filled = {login: row if 'repos' in row else {**row, 'repos': list(self.repos)}
+                  for login, row in self.accounts.items()}  # fmt: skip
+        object.__setattr__(self, 'accounts', filled)
 
 
 class ForgeRefused(ValueError):

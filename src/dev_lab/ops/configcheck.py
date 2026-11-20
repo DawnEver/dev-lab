@@ -32,6 +32,7 @@ import tomllib
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 from lab_commons.log import emit
 
@@ -82,6 +83,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
             opsconfig.load(path, environ={}, as_root=False, structure_only=True)
         except (ValueError, TypeError, KeyError) as bad:
             return [*found, f'{path.name}: {bad}']
+        found += [f'{path.name}: {line}' for line in _forge_repos(parsed.get('ops', {}), shared)]
     schema = {
         **DEFAULTS,
         'ops': {},
@@ -91,6 +93,29 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         **({app: {} for app in devschema.app_tables(shared)} if 'dev' in parsed else {}),
     }
     return found + [f'{path.name}: {key} is not a declared key' for key in _undeclared(parsed, schema)]
+
+
+def _forge_repos(ops: Mapping[str, Any], family: Mapping[str, Any]) -> list[str]:
+    """``[ops.forge] repos`` against the family: exactly the ``[family_repos]`` rows on this host's forge sites.
+
+    The family names every repository once; the forge's set is that list read on the forge's own sites
+    (``[ops.caddy] sites``), so a repo added to the family and missed here (or kept here after it left) is named.
+    """
+    declared = ops.get('forge', {}).get('repos')
+    sites = set(ops.get('caddy', {}).get('sites', ()))
+    rows = family.get('family_repos')
+    if declared is None or not sites or not isinstance(rows, Mapping):
+        return []
+    on_forge = set()
+    for row in rows.values():
+        url = urlsplit(str(row.get('remote', '')) if isinstance(row, Mapping) else '')
+        if url.hostname in sites:
+            on_forge.add(url.path.strip('/').removesuffix('.git'))
+    missing, extra = sorted(on_forge - set(declared)), sorted(set(declared) - on_forge)
+    found = [f'[ops.forge] repos is missing {missing}: [family_repos] lists them on {sorted(sites)}'] if missing else []
+    if extra:
+        found.append(f'[ops.forge] repos has extra {extra}: no [family_repos] row on {sorted(sites)}')
+    return found
 
 
 def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[tuple[str, Any]]:

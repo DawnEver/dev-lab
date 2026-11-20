@@ -673,7 +673,11 @@ change in that file still needs consent. Once the table exists, changing it is a
 
 A machine account is declared once, `[ops.forge.accounts] <login> = {role = "read"|"write"|"review"|"breakglass", repos = [...]}`,
 one role per login (a reader for every server that pulls code, a writer for the hosts that post verdicts, a reviewer
-for the judge, a break-glass merger for the consent host). It and each of its per-host tokens are made only through
+for the judge, a break-glass merger for the consent host). The forge's repository set is stated once, `[ops.forge] repos`: a login
+that names no `repos` holds exactly it, a login restating it is refused, and `configcheck` refuses the set unless it
+is exactly the family's `[family_repos]` rows on the host's `[ops.caddy] sites`. A development machine's login is
+declared once in the family's `[dev] forges`; a host file overrides it only with a DIFFERENT login (another
+person's machine) -- restating the family's value is refused (`devschema.OVERRIDABLE`). It and each of its per-host tokens are made only through
 `python -m dev_lab.ops --config <file> forge account ensure --login <L>` and
 `... forge token mint --login <L> --name <N> --scope <S> [--rotate]` (:mod:`dev_lab.ops.forgeaccounts`), which the
 `ops` account runs through its fixed sudo line. `ensure` reads the role and repositories from the declaration, so an

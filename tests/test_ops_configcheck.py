@@ -162,3 +162,46 @@ def test_a_family_declared_app_table_is_open_in_an_account_file() -> None:
         line for line in accounthost.check(Path('c-u.toml'), host, opened) if 'demo is not an account table' in line
     ]
     assert [line for line in accounthost.check(Path('c-u.toml'), host, {}) if 'demo is not an account table' in line]
+
+
+FORGE_HOST = """\
+[ops]
+home = "/var/lib/ops"
+python = "/opt/dev-lab/.venv/bin/python"
+
+[ops.caddy]
+sites = ["forge.example"]
+allow = ["127.0.0.1/32"]
+
+[ops.forge]
+api = "http://127.0.0.1:3000"
+admin = "site-admin"
+repos = ["o/a", "o/b"]
+
+[ops.forge.accounts.reader]
+role = "read"
+"""
+FORGE_FAMILY = """\
+[family_repos]
+a = { remote = "https://forge.example/o/a.git", branch = "main" }
+b = { remote = "https://forge.example/o/b.git", branch = "main" }
+c = { remote = "https://github.com/x/c.git", branch = "main" }
+"""
+
+
+def test_the_forge_repos_are_the_family_repos_on_that_forge(tmp_path: Path) -> None:
+    host, family = _write(tmp_path, 'f.toml', FORGE_HOST), _write(tmp_path, 'family.toml', FORGE_FAMILY)
+    assert check_host(host, family) == []
+
+
+@pytest.mark.parametrize(
+    ('family', 'named'),
+    [
+        (FORGE_FAMILY + 'd = { remote = "https://forge.example/o/d.git", branch = "main" }\n', "missing ['o/d']"),
+        (FORGE_FAMILY.replace('o/b.git', 'o/z.git'), "extra ['o/b']"),
+    ],
+)
+def test_forge_repos_off_the_family_are_refused(tmp_path: Path, family: str, named: str) -> None:
+    """Planted control: the forge's set is derived from [family_repos]; a repo either side lacks is named."""
+    found = check_host(_write(tmp_path, 'f.toml', FORGE_HOST), _write(tmp_path, 'family.toml', family))
+    assert [line for line in found if '[ops.forge] repos' in line and named in line], found
