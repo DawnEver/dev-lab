@@ -471,3 +471,32 @@ def test_list_needs_no_credential_and_prints_names_only(capsys: pytest.CaptureFi
     gitea = FakeGitea(users={'server-reader'}, tokens={'server-reader': {'host-x': 'r'}})
     assert forgeaccounts.run_list(gitea, args) == 0
     assert capsys.readouterr().out.splitlines() == ['host-x']
+
+
+def test_an_account_without_repos_takes_the_forge_repos() -> None:
+    """``[ops.forge] repos`` is stated once; a login listing no repos holds exactly those."""
+    role = Forge(
+        api='http://127.0.0.1:3000',
+        admin='site-admin',
+        repos=('owner/a', 'owner/b'),
+        accounts={'reader': {'role': 'read'}, 'judge': {'role': 'review', 'repos': ['owner/a', 'owner/c']}},
+    )
+    assert forgerequests.declared_request(role, 'reader').repos == ('owner/a', 'owner/b')
+    assert forgerequests.declared_request(role, 'judge').repos == ('owner/a', 'owner/c')
+
+
+def test_an_account_restating_the_forge_repos_is_refused() -> None:
+    """Planted control: the default exists so the list lives once; a copy of it is the second source."""
+    with pytest.raises(ValueError, match=r'reader.*restates \[ops.forge\] repos'):
+        Forge(
+            api='http://127.0.0.1:3000',
+            admin='site-admin',
+            repos=('owner/a', 'owner/b'),
+            accounts={'reader': {'role': 'read', 'repos': ['owner/b', 'owner/a']}},
+        )
+
+
+def test_an_account_with_no_repos_anywhere_is_still_refused() -> None:
+    role = Forge(api='http://127.0.0.1:3000', admin='site-admin', accounts={'reader': {'role': 'read'}})
+    with pytest.raises(ForgeRefused, match='at least one repo'):
+        forgerequests.declared_request(role, 'reader')

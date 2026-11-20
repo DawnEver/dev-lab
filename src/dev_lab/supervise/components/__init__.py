@@ -8,14 +8,16 @@ list below IS the shipped set, and a target's own module states its contribution
 
 Grouped by family rather than one file per probe: ``health`` asks whether something answers and
 whether its answer is what it should be, ``resources`` asks whether the box is running out of
-anything (``pressure``: the D54 host-pressure reading), ``progress`` asks whether a long job is still
-moving, and ``deploy`` asks whether a release is safe to activate.
+anything (``pressure``: the D54 host-pressure reading; ``forgeload``: requests and database
+connections), ``progress`` asks whether a long job is still moving, and ``deploy`` asks whether a
+release is safe to activate.
 """
 
 from __future__ import annotations
 
 from dev_lab.supervise.component import Component
 from dev_lab.supervise.components.deploy import Deploy
+from dev_lab.supervise.components.forgeload import ForgeLoad
 from dev_lab.supervise.components.health import Heartbeat, HttpHealth, ShellProbe
 from dev_lab.supervise.components.pressure import HostPressure
 from dev_lab.supervise.components.progress import ProgressTracker
@@ -25,6 +27,7 @@ __all__ = [
     'COMPONENTS',
     'Deploy',
     'DiskUsage',
+    'ForgeLoad',
     'Heartbeat',
     'HostPressure',
     'HttpHealth',
@@ -43,6 +46,7 @@ COMPONENTS: list[Component] = [
     DiskUsage(),
     ProcessMonitor(),
     HostPressure(),
+    ForgeLoad(),
     LogScanner(),
     ProgressTracker(),
     Deploy(),

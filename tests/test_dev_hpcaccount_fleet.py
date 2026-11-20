@@ -325,6 +325,22 @@ def test_an_account_with_no_stored_reader_credential_is_refused_naming_the_door(
     assert command.index('.git-credentials') < command.index('git clone'), 'refused before any fetch'
 
 
+def test_a_declared_config_reader_reads_the_config_source_by_its_own_line() -> None:
+    """A verification account holds forge-ci and the reader on one host: the url names the reader (2026-11-20).
+
+    git's store answers a url carrying a user with THAT user's line only. PLANTED CONTROL: with no reader declared
+    the url and the presence check stay login-free.
+    """
+    command = render_command(_FLEET[1], Target('login01.example', 'work'), _SRC, reader='server-reader')
+    assert 'git clone -q https://server-reader@forge.example/team/config-source.git' in command
+    assert 'remote set-url origin https://server-reader@forge.example/team/config-source.git' in command
+    assert "grep -qs '://server-reader:[^@/]*@forge.example' ~/.git-credentials ||" in command
+    assert '--login server-reader' in command
+    plain = render_command(_FLEET[1], Target('login01.example', 'work'), _SRC)
+    assert 'server-reader' not in plain
+    assert 'git clone -q https://forge.example/team/config-source.git' in plain
+
+
 def test_the_grants_setup_wraps_the_render() -> None:
     grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', setup=('module load git-x',), cluster_name='c1')
     command = render_command(grant, Target('login02.example', 'src'), _SRC)
@@ -521,3 +537,18 @@ def test_a_layer_naming_no_role_takes_its_grants_role(tmp_path: Path) -> None:
     kept = layer_target(grant, _source(tmp_path, users=('alice',), deploy={'alice': stated}))
     assert isinstance(kept, Target)
     assert kept.role == 'x'
+
+
+def test_the_deploy_itself_runs_in_the_grants_setup() -> None:
+    """The venvs the deploy builds compile in the cluster's declared environment, as its ticks run.
+
+    Measured 2026-11-20 (Cirrus): the cluster setup (CC=gcc, a GNU linker) wrapped the refresh and the render but
+    not the deploy, so numerics-lab built with Cray's `cc` and rust-lld refused its plugin options.
+    PLANTED CONTROL: a grant with no setup deploys unwrapped.
+    """
+    grant = Grant(user='alice', hosts=_HOSTS, slurm_account='acct', setup=('export CC=gcc',), cluster_name='c1')
+    command = deploy_command(grant, Target('login02.example', 'src'), _SRC)
+    tail = command[command.rindex('-m dev_lab.dev.devhost render') :]
+    assert tail.index('export CC=gcc') < tail.index('-m dev_lab.dev.hpcaccount deploy')
+    plain = deploy_command(_FLEET[0], Target('login02.example', 'src'), _SRC)
+    assert 'export CC=gcc' not in plain

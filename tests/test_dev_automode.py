@@ -180,9 +180,10 @@ def test_an_unreadable_source_writes_nothing_and_says_why(tmp_path: Path, monkey
 
 def test_the_dependency_door_renders_it_in_its_own_process(tmp_path: Path) -> None:
     calls: list[list[str]] = []
-    refresh_automode(tmp_path, run=lambda argv, **_kw: calls.append(list(argv)))
-    ((*_, module, verb, flag, repo),) = calls
+    refresh_automode(tmp_path, 'synced-python', run=lambda argv, **_kw: calls.append(list(argv)))
+    ((python, _m, module, verb, flag, repo),) = calls
     assert (module, verb, flag, repo) == ('dev_lab.dev.automode', 'write', '--repo', str(tmp_path))
+    assert python == 'synced-python', "the synced env's interpreter, never the caller's (a sync may retire that env)"
 
 
 #: The SHAPES a real fleet fact takes in this family: a private (RFC 1918) address, a university AD or Ada host.

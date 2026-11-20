@@ -1,4 +1,4 @@
-"""``hpcaccount credential <user@host> --login L --host-config F [--url U]`` < token; or ``--drop-host H``.
+"""``hpcaccount credential <user@host> --login L --host-config F [--url U]`` < token; or ``--login L --drop-host H``.
 
 PLACES ONE MINTED FORGE TOKEN ON A KEY-ONLY CLUSTER ACCOUNT (user ruling 2026-11-12: agents place tokens
 themselves). The token is read from THIS process's stdin, never argv; everything printed names it only by a sha256
@@ -19,7 +19,9 @@ own ``auth role`` (:func:`dev_lab.dev.hpcaccount.account.role_of`'s verb), run i
 with git's credential helper pointed at ONLY that file, must answer as ``--login``. Only then is the store rewritten
 (:func:`rewrite_command`): a backup ``~/.git-credentials.bak-<ts>`` (0600) first, then every other line kept, the
 forge's line replaced, mode 0600, atomic ``mv``. A refusal deletes the staged file and leaves the store untouched.
-``--drop-host H`` removes exactly H's line through the same rewrite and backup -- the repair for a damaged line.
+ONE LINE PER (HOST, LOGIN) (2026-11-20): another login's line on the same host is kept, so a verification account
+holds its verdict-posting login and the config source's reader (``[hpc.roles.<role>] config_reader``) side by side.
+``--login L --drop-host H`` removes exactly L's line for H through the same rewrite and backup -- the repair door.
 After a placement, git's ``store`` helper is set when NO global helper is configured (one already set is kept):
 a store line git never consults reads as anonymous (measured 2026-11-20 on three research accounts).
 
@@ -34,6 +36,7 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Final
 from urllib.parse import urlsplit
 
 from lab_commons.hpc.cluster import Runner
@@ -69,9 +72,13 @@ _STORE_HELPER = (
 )
 
 
+#: The role keys naming a forge login an account of that role may hold.
+_READERS: Final = ('reader', 'config_reader')
+
+
 def declared_logins(division: Division, forge: DeclaredForge) -> frozenset[str]:
-    """Every declared forge login: each role's ``reader`` and each of *forge*'s accounts."""
-    readers = {str(table['reader']) for table in division.roles.values() if table.get('reader')}
+    """Every declared forge login: each role's ``reader`` and ``config_reader``, and each of *forge*'s accounts."""
+    readers = {str(table[key]) for table in division.roles.values() for key in _READERS if table.get(key)}
     return frozenset(readers | set(forge.accounts))
 
 
@@ -92,9 +99,11 @@ def _refusal(grant: Grant | None, account: str, *, login: str, forge: DeclaredFo
     if login not in (logins := declared_logins(division, forge)):
         declared = '[hpc.roles.*] reader, the host config [ops.forge.accounts]'
         return f'the forge login {login!r} is not declared ({declared}): {sorted(logins)}'
-    reader = str(division.roles.get(division.role_of(user), {}).get('reader', ''))
-    if reader and login != reader:
-        return f"{user}'s role {division.role_of(user)!r} reads as {reader!r}, not {login!r}"
+    table = division.roles.get(division.role_of(user), {})
+    reader, config_reader = str(table.get('reader', '')), str(table.get('config_reader', ''))
+    if reader and login not in {reader, config_reader}:
+        also = f' (config source: {config_reader!r})' if config_reader else ''
+        return f"{user}'s role {division.role_of(user)!r} reads as {reader!r}{also}, not {login!r}"
     return ''
 
 
@@ -164,12 +173,13 @@ def drop_host(
     account: str,
     *,
     host: str,
+    login: str,
     grants: Sequence[Grant],
     say: Callable[[str], None],
     connect: Callable[[Grant], Runner] = grant_runner,
     stamp: str = '',
 ) -> int:
-    """Remove exactly *host*'s line of *account*'s ``~/.git-credentials``, after a backup; 2 on refusal."""
+    """Remove exactly *login*'s *host* line of *account*'s ``~/.git-credentials``, after a backup; 2 on refusal."""
     user = account.partition('@')[0]
     grant = next((g for g in grants if g.user == user), None)
     why = _grant_refusal(grant, account) or ('' if valid_host(host) else f'not a host name: {host!r}')
@@ -177,11 +187,11 @@ def drop_host(
         say(f'credential: refused -- {why}')
         return 2
     try:
-        backup = connect(grant)(rewrite_command(host, stamp or stamp_now(), staged=False), None).strip()
-    except (RuntimeError, OSError) as failed:
+        backup = connect(grant)(rewrite_command(host, stamp or stamp_now(), login=login, staged=False), None).strip()
+    except (RuntimeError, OSError, ValueError) as failed:
         say(f'credential: refused -- {user}: {failed}')
         return 2
-    say(f'{user}: dropped the {host} line of ~/{STORE} {backup}'.strip())
+    say(f'{user}: dropped the {login}@{host} line of ~/{STORE} {backup}'.strip())
     return 0
 
 
@@ -189,9 +199,12 @@ def parser() -> argparse.ArgumentParser:
     """The ``credential`` command line: the one source of its usage (:func:`usage`)."""
     made = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount credential', description=__doc__.splitlines()[0])
     made.add_argument('account', metavar='<user>@<login host>', help='a declared [[hpc.grant]] account')
-    verb = made.add_mutually_exclusive_group(required=True)
-    verb.add_argument('--login', metavar='<forge login>', help='the declared forge login the token on stdin belongs to')
-    verb.add_argument('--drop-host', metavar='<host>', help="remove exactly this host's line (after a backup)")
+    made.add_argument(
+        '--login', required=True, metavar='<forge login>', help='the declared forge login the token on stdin belongs to'
+    )
+    made.add_argument(
+        '--drop-host', metavar='<host>', help="instead: remove exactly --login's line for this host (after a backup)"
+    )
     made.add_argument(
         '--host-config', type=Path, metavar='<host config>', help="the forge host's reviewed config (with --login)"
     )
@@ -220,7 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'credential: refused -- {refused}')
         return 2
     if forge is None:
-        return drop_host(args.account, host=args.drop_host, grants=machine.grants, say=emit)
+        return drop_host(args.account, host=args.drop_host, login=args.login, grants=machine.grants, say=emit)
     if why := unreachable(args.account, machine.grants):
         emit(f'credential: refused -- {why}; nothing was read from stdin, so the token stays with you', err=True)
         return 2
