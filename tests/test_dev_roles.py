@@ -361,3 +361,28 @@ def test_a_machine_with_no_roles_reads_no_layer(tmp_path: Path, monkeypatch: pyt
     assert machine_layer() == {}
     with pytest.raises(Unbound, match='no family layer on this machine'):
         roles_of_url('https://forge.example/team/app.git', env={})
+
+
+def test_a_worktree_is_named_by_its_origin_not_its_path(tmp_path: Path) -> None:
+    """A worktree lives at <repo>/.claude/worktrees/<name>: its repo is origin's, never `worktrees/<name>`."""
+    tree = tmp_path / '.claude' / 'worktrees' / 'lane'
+    tree.mkdir(parents=True)
+    git(tree, 'init', '-q')
+    git(tree, 'remote', 'add', 'origin', 'https://forge.example/team/app.git')
+    with pytest.raises(Unbound, match=r'^team/app: no family layer') as refused:
+        roles_at(tree, layer={}, env={})
+    assert 'worktrees/lane' not in str(refused.value)
+
+
+def test_a_checkout_with_no_origin_is_still_named_by_its_path(tmp_path: Path) -> None:
+    """PLANTED CONTROL: with no remote to read, the path names the repo (a CI job's checkout reads carried kinds)."""
+    tree = tmp_path / 'team' / 'app'
+    tree.mkdir(parents=True)
+    with pytest.raises(Unbound, match=r'^team/app: no family layer'):
+        roles_at(tree, layer={}, env={})
+
+
+def test_the_unbound_refusal_names_the_render_door_for_a_rendered_machine(tmp_path: Path) -> None:
+    """A dev machine whose file predates [roles] heals by re-rendering it, not by hand-declaring [family]."""
+    with pytest.raises(Unbound, match=r'devhost render --write'):
+        roles_at(tmp_path, layer={}, env={})
