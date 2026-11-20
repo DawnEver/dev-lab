@@ -88,7 +88,12 @@ def test_a_planted_module_is_refused(tmp_path: Path) -> None:
     aliased.write_text("__all__ = ['Row']\ntype Row = tuple[str, ...]\n", encoding='utf-8')
     annotated = tmp_path / 'annotated.py'
     annotated.write_text('__all__: list[str] = []' + chr(10), encoding='utf-8')
-    problems = surface_problems((missing, lying, clean, aliased, annotated))
+    guarded = tmp_path / 'guarded.py'
+    guarded.write_text(
+        "__all__ = ['X']" + chr(10) + 'with open(__file__):' + chr(10) + '    from os import sep as X' + chr(10),
+        encoding='utf-8',
+    )
+    problems = surface_problems((missing, lying, clean, aliased, annotated, guarded))
     assert any('declares no __all__' in p for p in problems)
     assert any("names 'gone'" in p for p in problems)
     assert not any('clean.py' in p for p in problems)
@@ -97,6 +102,8 @@ def test_a_planted_module_is_refused(tmp_path: Path) -> None:
     # An ANNOTATED `__all__` is a declaration, and an EMPTY one is the strongest kind: it says the
     # module publishes nothing, which is exactly the claim the unseeing reading erased.
     assert not any('annotated.py' in p for p in problems)
+    # A name imported inside a module-level `with` (an import guard) is bound at module level.
+    assert not any('guarded.py' in p for p in problems)
 
 
 def test_the_guard_reads_this_repo() -> None:

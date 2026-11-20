@@ -80,7 +80,7 @@ from dev_lab.dev.commonsfloor import importing
 
 with importing():
     from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
-    from dev_lab.dev._dep_aftersync import after_sync
+    from dev_lab.dev._dep_aftersync import after_sync, retire_anchors
     from dev_lab.dev._dep_components import changed
     from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
     from dev_lab.dev._dep_pip import has_pip
@@ -200,18 +200,6 @@ def _held_refusal(name: str, refused: Refused, prefix: str) -> HeldEnvironmentEr
         f'an environment it never tested. Wait for that run to finish and re-issue; nothing else is '
         f'required.'
     )
-
-
-def retire_anchors(paths: Sequence[Path]) -> tuple[str, ...]:
-    """H2, REMEDIED. Delete every anchor that exists, and return what was retired.
-
-    DELETED rather than rewritten to FAIL: a missing anchor cannot be mistaken for a verdict about
-    anything, whereas a synthetic FAIL line would put on record a result that no run produced.
-    """
-    retired = [path for path in paths if path.exists()]
-    for path in retired:
-        path.unlink()
-    return tuple(str(path) for path in retired)
 
 
 def pip_argv(
