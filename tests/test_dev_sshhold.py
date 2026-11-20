@@ -26,7 +26,7 @@ CODE = '481516'
 
 def test_a_frame_runs_the_command_merged_and_ends_on_the_marker_with_its_status() -> None:
     framed = sshholdwire.frame('echo hi', 'abc')
-    assert framed.startswith('{ echo hi\n} 2>&1')
+    assert framed.startswith('{ echo hi\n} </dev/null 2>&1')
     assert '__SSHHOLD_abc_%s' in framed
     assert framed.endswith('\n')
 
@@ -296,3 +296,25 @@ def test_a_holder_busy_with_a_long_run_still_answers_and_is_never_forgotten(monk
     finally:
         sshhold.close_session(dest)
     assert not sshholdwire.ping(session)
+
+
+def test_a_command_that_reads_stdin_never_swallows_the_next_frame() -> None:
+    """The held shell reads its commands from stdin, so a command must never read that stream.
+
+    Measured 2026-11-20 (Cirrus): a placement's remote step read stdin -- the held ``bash -s`` stream -- and ate every
+    later frame and its marker; the session hung until its timeout closed it. A frame without data runs with stdin
+    from /dev/null. PLANTED CONTROL: data sent as a frame's stdin still reaches the command.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    bash = shutil.which('bash')
+    assert bash, 'the held remote shell is bash'
+    stream = sshholdwire.frame('cat', 'one') + sshholdwire.frame('echo second', 'two')
+    done = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=stream, capture_output=True, text=True,
+                          timeout=30, check=False)  # fmt: skip
+    assert sshholdwire.split_marker(done.stdout.split('__SSHHOLD_one_0\n', 1)[1], 'two') == ('second\n', 0)
+    fed = sshholdrun.stdin_script('cat', b'data-line\n', '__END_X')
+    piped = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=sshholdwire.frame(fed, 'three'),
+                           capture_output=True, text=True, timeout=30, check=False)  # fmt: skip
+    assert sshholdwire.split_marker(piped.stdout, 'three') == ('data-line\n', 0)
