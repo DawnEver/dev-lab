@@ -17,6 +17,7 @@ from dev_lab.dev import branchpolicy
 from dev_lab.dev.branchpolicy import OVER_AHEAD, PREFIX, STALE, derive, observe, run_here, wanted
 from dev_lab.dev.branchprune import prune
 from dev_lab.dev.branchset import BranchSetKeyRetired, BranchSetNotDeclared, declared_branchset
+from dev_lab.dev.forgealarm import INTEGRATION
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.roles import CI, HOST, HPC, PRUNE, Executor, Roles, performs
 from tests._forge_state import StateForge
@@ -96,35 +97,32 @@ def test_a_lane_inside_both_bounds_is_no_row(tmp_path: Path) -> None:
     assert derive(root, declared_branchset(root), load_policy(root), now=NOW) == ()
 
 
-# ---------------------------------------------------------------------------------------------- the issues
+# ---------------------------------------------------------------------------------------------- the alarms
 
 
-def test_observe_keeps_one_issue_per_row_writes_nothing_twice_and_closes_a_cleared_row(tmp_path: Path) -> None:
+def test_observe_raises_one_alarm_per_row_and_none_once_the_row_clears(tmp_path: Path) -> None:
+    """A row is an alarm, never an issue (2026-11-19); a cleared row raises nothing -- nothing is stored."""
     root, _ = _planted(tmp_path, extra='max_idle_hours = 12\n')
-    forge = StateForge()
-    first = observe(root, forge, now=NOW)
-    assert [(r.area, r.action) for r in first] == [(f'{PREFIX}{STALE} lane/unmerged', 'created')]
-    again = observe(root, forge, now=NOW)
-    assert [r.action for r in again] == ['unchanged']
+    first = observe(root, 'o/r', now=NOW)
+    assert [(a.kind, a.about, a.subject) for a in first] == [
+        (INTEGRATION, f'{STALE} lane/unmerged', f'{PREFIX}{STALE} lane/unmerged')
+    ]
     _git(root, 'checkout', '-q', 'integrate/main')
     _git(root, 'merge', '-q', '--no-ff', '-m', 'land it', 'lane/unmerged')
     _git(root, 'push', '-q', 'origin', 'integrate/main')
     _git(root, 'fetch', '-q', '--prune', 'origin')
-    cleared = observe(root, forge, now=NOW)
-    assert [(r.area, r.action) for r in cleared] == [(f'{PREFIX}{STALE} lane/unmerged', 'closed')]
+    assert observe(root, 'o/r', now=NOW) == ()
 
 
-def test_the_issue_key_carries_no_sha_so_a_moved_branch_keeps_its_issue(tmp_path: Path) -> None:
+def test_the_alarm_key_carries_no_sha_so_a_moved_branch_repeats_as_one(tmp_path: Path) -> None:
     root, _ = _planted(tmp_path, extra='max_idle_hours = 12\n')
-    forge = StateForge()
-    observe(root, forge, now=NOW)
+    before = observe(root, 'o/r', now=NOW)
     _git(root, 'checkout', '-q', 'lane/unmerged')
     _commit(root, 'more')
     _git(root, 'push', '-q', 'origin', 'lane/unmerged')
     _git(root, 'fetch', '-q', '--prune', 'origin')
-    moved = observe(root, forge, now=NOW)
-    assert [r.action for r in moved] == ['updated']
-    assert len([i for i in forge.issues_by_number.values() if i['title'].startswith(PREFIX)]) == 1
+    after = observe(root, 'o/r', now=NOW)
+    assert [a.about for a in after] == [a.about for a in before]
 
 
 # ---------------------------------------------------------------------------------------------- delete time

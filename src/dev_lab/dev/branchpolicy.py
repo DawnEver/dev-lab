@@ -1,4 +1,4 @@
-"""BRANCH-POLICY-OBSERVED: an unlanded origin branch holding too much unlanded work, or idle too long, is an issue.
+"""BRANCH-POLICY-OBSERVED: an unlanded origin branch holding too much unlanded work, or idle too long, is an alarm.
 
 User ruling D46 (integrator, 2026-11-19): the branch policy is a per-repo DECLARATION in
 ``[tool.dev_lab.branchset]`` (:mod:`dev_lab.dev.branchset`) and an OBSERVER derives what breaks it:
@@ -14,10 +14,10 @@ RETIRING is the user's call, never the observer's: LAND the branch with a declar
 ``pr/`` head, then ``branchprune delete`` it (LOSSLESS-DELETE). A branch merged into integration or the trunk is
 never a row: the prune owns it (:mod:`dev_lab.dev.branchprune`).
 
-ONE ISSUE PER ROW, KEYED STABLY. A row's title is ``integration: branch policy <kind> <branch>`` -- no sha, so a
-branch that moves keeps its issue -- and :func:`observe` reconciles the open issues under that prefix
-(:func:`dev_lab.dev.forgeroute.reconcile`): a new row opens one, a changed body updates it, re-observing writes
-nothing, and a row that cleared CLOSES its issue. Read from the local refs: the caller fetches first.
+ONE ALARM PER ROW, NEVER AN ISSUE (user ruling 2026-11-19: issues do not record events nor fan out). A row
+is an ``integration`` alarm on the host card and the session feed, keyed by ``about = <kind> <branch>`` -- no
+sha, so a branch that moves repeats as the same alarm -- and a row that cleared simply stops being raised: the
+state is derived each pass, never stored. Read from the local refs: the caller fetches first.
 
 WHO RUNS IT is the ``prune`` role's executor (:mod:`dev_lab.dev.roles`) -- :func:`prune_duty`, the one pass every
 executor kind calls, so a policy is observed and a merged head deleted in exactly one place per repo.
@@ -46,7 +46,6 @@ from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
-from dev_lab.dev.forgeroute import Routed, reconcile
 from dev_lab.dev.forgethreads import feed_dir, read_json, seconds
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.prlanded import serve_close_landed
@@ -154,11 +153,14 @@ def wanted(rows: tuple[PolicyRow, ...], branchset: BranchSet, integration: str) 
     return {row.title: row.body(integration, bounds[row.kind]) for row in rows}
 
 
-def observe(root: Path, client: Client, *, now: datetime) -> tuple[Routed, ...]:
-    """Derive *root*'s rows and reconcile their issues: open new, update changed, close cleared."""
+def observe(root: Path, repo: str, *, now: datetime) -> tuple[Alarm, ...]:
+    """Derive *root*'s rows as alarms: one per row, keyed by kind and branch, nothing stored."""
     branchset, policy = declared_branchset(root), load_policy(root)
     rows = derive(root, branchset, policy, now=now)
-    return reconcile(client, PREFIX, wanted(rows, branchset, policy.integration))
+    bodies = wanted(rows, branchset, policy.integration)
+    return tuple(
+        Alarm(INTEGRATION, repo, row.title, bodies[row.title], about=f'{row.kind} {row.branch}') for row in rows
+    )
 
 
 def prune_duty(
@@ -179,9 +181,8 @@ def prune_duty(
     serve_prune(root, client, now=now, say=say, alarm=alarm)
     serve_records_prune(root, client, now=now, say=say, alarm=alarm)
     try:
-        for routed in observe(root, client, now=now):
-            if routed.action != 'unchanged':
-                say(f'[branch policy] {routed.action} #{routed.number}: {routed.area}')
+        for raised in observe(root, client.forge.repo, now=now):
+            alarm(raised)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         alarm(Alarm(INTEGRATION, client.forge.repo, 'the branch policy was not observed', str(failed)))
 

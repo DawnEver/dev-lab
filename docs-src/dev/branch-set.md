@@ -39,8 +39,9 @@ The `prune` role's executor (`dev_lab.dev.roles`: an hpc tick, or the forge feed
 | `over-ahead` | the branch holds more than `max_ahead` commits integration lacks | land it now, and record why it ran past the limit (no test producer, nobody integrating, lane withheld finished work) -- never split it |
 | `stale` | its tip is idle `max_idle_hours` | land it through a PR, or retire it |
 
-Each row keeps ONE open issue titled `integration: branch policy <kind> <branch>` -- no sha, so a moved branch keeps
-it; re-observing writes nothing, and a cleared row closes it. Retiring is the user's call: LAND the branch with a
+Each row is an `integration` ALARM on the host card and the session feed, never an issue (user ruling 2026-11-19:
+issues neither record events nor fan out), keyed `<kind> <branch>` -- no sha, so a moved branch repeats as the same
+alarm; a cleared row simply stops being raised, since nothing is stored. Retiring is the user's call: LAND the branch with a
 declared `git merge -s ours` PR, then `branchprune delete`. A merged branch is never a row; the prune owns it, and
 re-checks at DELETE time, after a fresh fetch, that integration or the trunk still holds the judged sha.
 
