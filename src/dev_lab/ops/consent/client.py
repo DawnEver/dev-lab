@@ -6,9 +6,9 @@ A client holds no secret. The machine file's ``[consent]`` table names the issue
 (``issuer.pub`` beside this module) is the fallback.
 
 :func:`grant` takes the cluster code the USER gave -- the agent passes it as ``code`` or on stdin, a terminal is
-prompted without echo (user ruling 2026-11-08) -- and writes the credential to
+asked through :func:`dev_lab.dev.ask.code`, shown as typed (user ruling D94, 2026-11-20) -- and writes the credential to
 :func:`dev_lab.dev.consentguard.state_dir` ``/<id>.json``, which only the grant writes (CONSENT-CODE-FROM-THE-USER).
-The code is sent once and never echoed, logged or kept.
+The code is sent once and never logged or kept.
 
 :func:`redeem` is the gate of an IRREVERSIBLE action (a spend, a merge, a wave): the signature and expiry verify
 offline, then the use is registered online with the issuer; an issuer that cannot be reached REFUSES, never admits.
@@ -16,7 +16,6 @@ offline, then the use is registered online with the issuer; an issuer that canno
 
 from __future__ import annotations
 
-import getpass
 import json
 import sys
 import time
@@ -29,6 +28,8 @@ from typing import Any, Final
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.config import section
 
+from dev_lab.dev.ask import AskRefused
+from dev_lab.dev.ask import code as asked_code
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
 from dev_lab.ops.consent.door import Send, handshake, offer, ssh_send
@@ -54,7 +55,6 @@ __all__ = [
 #: The machine-file table.
 TABLE: Final = 'consent'
 _DIGITS: Final = 6
-_PROMPT: Final = 'Cluster code (not echoed): '
 _PACKAGED: Final = 'issuer.pub'
 #: The serve verb's exit status for a refusal (as every ops door's).
 _REFUSED: Final = 2
@@ -164,22 +164,29 @@ def spent_ids(ids: list[str], table: Mapping[str, Any] | None = None, *, send: S
 
 
 def given_code(
-    code: str | None, *, tty: bool | None = None, ask: Callable[[str], str] = getpass.getpass,
-    read: Callable[[], str] = sys.stdin.readline,
+    code: str | None, *, tty: bool | None = None, ask: Callable[[str], str] = input,
+    read: Callable[[], str] = sys.stdin.readline, what: str = 'this consent',
 ) -> str:  # fmt: skip
-    """The code the USER gave: *code* when passed, else a no-echo prompt on a terminal, else one stdin line.
+    """The code the USER gave, checked as six digits BEFORE it is sent (:func:`dev_lab.dev.ask.code`).
 
-    The one intake of a user's code (CONSENT-CODE-FROM-THE-USER): a grant here, and ``sshhold open``.
+    *code* when passed (the code the user gave an agent), else asked SHOWN AS TYPED at a terminal (D94), else one
+    stdin line. The one intake of a user's code (CONSENT-CODE-FROM-THE-USER): a grant here, and ``sshhold open``.
+
+    Raises:
+        ConsentRefused: not six digits (control characters from a Windows paste, a short copy): nothing is sent.
+
     """
-    given = code if code is not None else ask(_PROMPT) if (sys.stdin.isatty() if tty is None else tty) else read()
-    return given.strip()
+    on_tty = sys.stdin.isatty() if tty is None else tty
+    given = code if code is not None or on_tty else read()
+    try:
+        return asked_code(given, what=what, ask=ask)
+    except AskRefused as refused:
+        msg = f'the cluster code {refused}; nothing was sent -- ask the user for a fresh code'
+        raise ConsentRefused(msg) from refused
 
 
 def _six_digits(code: str) -> str:
-    if not (len(code) == _DIGITS and code.isdigit()):
-        msg = f'the cluster code must be six digits (got {len(code)} characters)'
-        raise ConsentRefused(msg)
-    return code
+    return given_code(code)
 
 
 def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any]:
@@ -242,7 +249,7 @@ def grant(
     table: Mapping[str, Any] | None = None,
     code: str | None = None,
     tty: bool | None = None,
-    ask: Callable[[str], str] = getpass.getpass,
+    ask: Callable[[str], str] = input,
     read: Callable[[], str] = sys.stdin.readline,
     send: Send = ssh_send,
     home: Path | None = None,

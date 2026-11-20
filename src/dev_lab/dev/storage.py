@@ -201,7 +201,11 @@ def rendered(declared: _storage.Storage) -> str:
             raise _storage.StorageError(msg)
         secret = tomllib.loads(secret_file.read_text(encoding='utf-8'))
         if clash := sorted(set(secret) & set(remote.options)):
-            msg = f'{secret_file} restates {clash[0]!r}, a family option of {remote.name!r}: keep only secrets there'
+            msg = (
+                f'{secret_file} restates {clash[0]!r}, a declared fact of {remote.name!r}: it holds only '
+                f'{list(remote.secret_keys)}; run once '
+                f'`python -m dev_lab.ops.secretplace migrate --remote {remote.name}`'
+            )
             raise _storage.StorageError(msg)
         lines = [f'[{remote.name}]', *(f'{k} = {v}' for k, v in {**remote.options, **secret}.items())]
         blocks.append('\n'.join(lines))
