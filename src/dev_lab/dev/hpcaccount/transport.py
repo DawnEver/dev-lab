@@ -57,7 +57,8 @@ def _held_runner(dest: str, timeout: float) -> Runner:
         data = None if stdin is None else stdin.encode('utf-8')
         output, status = sshholdrun.run_command(dest, command, timeout, stdin=data)
         if status:
-            msg = f'{dest} (held session) exited {status}: {output.strip()}'
+            said = output.strip() or '(no output)'
+            msg = f'{dest} (held session) exited {status} running `{command}`: {said}'  # the token is never argv
             raise RuntimeError(msg)
         return output
 

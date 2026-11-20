@@ -235,7 +235,7 @@ def test_a_runs_stdin_rides_heredoc_data_and_the_audit_keeps_only_its_digest(mon
     assert sshholdrun.run_command('ops@fake', 'sudo -n place', stdin=secret) == ('', 0)
     script = sent[0]
     head, data, end = script.split('\n', 2)[0], script.split('\n')[1:-1], script.split('\n')[-1]
-    assert head == f"base64 -d <<'{end}' | sudo -n place"  # the data is heredoc DATA, never the command line
+    assert head == f"base64 -d <<'{end}' | {{ sudo -n place; }}"  # the data is heredoc DATA, never the command line
     assert base64.b64decode(''.join(data)) == secret  # exact bytes, no added newline
     line = json.loads(sshholdstate.audit_path().read_text(encoding='utf-8').splitlines()[-1])
     assert line['command'] == 'sudo -n place'
@@ -318,3 +318,40 @@ def test_a_command_that_reads_stdin_never_swallows_the_next_frame() -> None:
     piped = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=sshholdwire.frame(fed, 'three'),
                            capture_output=True, text=True, timeout=30, check=False)  # fmt: skip
     assert sshholdwire.split_marker(piped.stdout, 'three') == ('data-line\n', 0)
+
+
+def test_a_compound_command_reads_all_of_its_stdin_through_the_held_shell() -> None:
+    """The heredoc pipes into the WHOLE command, not only its first simple command.
+
+    Measured 2026-11-20 (Cirrus): the placement's ``umask 077 && IFS= read -r line && printf ...`` piped only into
+    ``umask``; ``read`` read the session's own stream (swallowing frames), then, with stdin /dev/null, nothing --
+    exit 1 with no output. PLANTED CONTROL: a single simple command still reads its data.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    bash = shutil.which('bash')
+    assert bash, 'the held remote shell is bash'
+
+    def held(command: str, data: bytes) -> tuple[str, int] | None:
+        framed = sshholdwire.frame(sshholdrun.stdin_script(command, data, '__END_Y'), 'n')
+        done = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=framed, capture_output=True, text=True,
+                              timeout=30, check=False)  # fmt: skip
+        return sshholdwire.split_marker(done.stdout, 'n')
+
+    assert held('umask 077 && IFS= read -r line && printf "%s\n" "$line"', b'secret-line\n') == ('secret-line\n', 0)
+    assert held('cat', b'one\n') == ('one\n', 0)
+
+
+def test_a_failed_held_command_names_itself_and_says_when_it_printed_nothing() -> None:
+    """``exited 1:`` and nothing else teaches nothing; the refusal names the command and its empty output."""
+    from dev_lab.dev.hpcaccount import transport  # noqa: PLC0415
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(transport.sshholdrun, 'run_command', lambda *_a, **_k: ('', 1))
+        with pytest.raises(RuntimeError) as refused:
+            transport._held_runner('u@h', 5)('umask 077 && IFS= read -r line', None)
+    said = str(refused.value)
+    assert 'exited 1' in said
+    assert 'umask 077 && IFS= read -r line' in said
+    assert '(no output)' in said
