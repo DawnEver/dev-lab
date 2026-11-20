@@ -126,12 +126,16 @@ class Deployment:
     env: tuple[tuple[str, str], ...] = ()  # from [env]: this account's own tool paths, exported in every tick
 
 
-def load(path: Path) -> Deployment | None:
-    """The ``[deploy]`` table of the machine file at *path*; ``None`` when undeclared, a missing key refused."""
-    return parse(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}, path)
+def load(path: Path, *, root: str = '') -> Deployment | None:
+    """The ``[deploy]`` table of the machine file at *path*; ``None`` when undeclared, a missing key refused.
+
+    *root* is the cluster's declared root the caller was handed (deploy-fleet's grant table), taken when the file
+    states none.
+    """
+    return parse(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}, path, root=root)
 
 
-def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
+def parse(table: Mapping[str, Any], path: Path, *, root: str = '') -> Deployment | None:
     """The ``[deploy]`` of an already-read machine-file *table* (named *path* in a refusal); see :func:`load`."""
     raw = table.get('deploy')
     if not raw:
@@ -144,7 +148,7 @@ def parse(table: Mapping[str, Any], path: Path) -> Deployment | None:
     try:
         return Deployment(
             host=raw['host'],
-            root=_root(path, raw),
+            root=_root(path, raw, root),
             python=raw.get('python', DEFAULT_PYTHON),
             repos=tuple(
                 Repo(r['name'], r['url'], r['ref'], tuple(r.get('verify', ())), _claims(path, r))
@@ -492,10 +496,10 @@ def checkout_of(spec: Deployment, repo: Repo) -> Path:
     return Path(paths_of(spec, serves=False).repo(repo.name))
 
 
-def _root(path: Path, raw: Mapping[str, Any]) -> str:
-    """The declared ``[deploy] root``: absolute, the render's copy of ``[hpc.clusters.<c>] root``; else refused."""
+def _root(path: Path, raw: Mapping[str, Any], granted: str = '') -> str:
+    """The declared ``[deploy] root``, else the *granted* cluster root; absolute, else refused."""
     try:
-        return account_paths(raw.get('root', ''), serves=False, account=str(path)).root
+        return account_paths(raw.get('root') or granted, serves=False, account=str(path)).root
     except RootUndeclared as refused:
         raise ValueError(str(refused)) from None
 

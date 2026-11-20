@@ -18,21 +18,27 @@ A login host that asks a second factor (key + keyboard-interactive TOTP) can nev
 from __future__ import annotations
 
 import shlex
+import subprocess
 from typing import IO, Any, Final
 
-from lab_commons.hpc.cluster import Runner, failover_runner, ssh_runner
+from lab_commons.hpc.cluster import CONNECT_TIMEOUT, Runner, Unreachable, failover_runner, ssh_runner
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev import remote, sshholdrun, sshholdstate, sshholdwire
 from dev_lab.dev.sshholdwire import HoldRefused
 
-__all__ = ['DEPLOY_S', 'HoldRefused', 'describe', 'door', 'grant_runner', 'held', 'host_runner', 'start']
+__all__ = [
+    'DEPLOY_S', 'PROBE_S', 'HoldRefused', 'describe', 'door', 'grant_runner', 'held', 'host_runner', 'ordered_targets',
+    'start',
+]  # fmt: skip
 
 #: How long one deploy may take on a held session (it runs in the foreground there: the holder owns the stream).
 DEPLOY_S: Final = 3600.0
 #: What ssh says when a host wanted a second factor that BatchMode cannot type.
 _SECOND_FACTOR: Final = 'keyboard-interactive'
 _TIMEOUT: Final = 300.0
+#: How long a failover host may take to answer ``true`` before it is skipped: ssh's connect bound plus a login shell.
+PROBE_S: Final = CONNECT_TIMEOUT + 15.0
 
 
 def door(dest: str) -> str:
@@ -86,12 +92,46 @@ def host_runner(dest: str, timeout: float = _TIMEOUT) -> Runner:
     return _held_runner(dest, timeout) if held(dest) else _ssh(dest, timeout)
 
 
-def grant_runner(grant: Grant, timeout: float = _TIMEOUT) -> Runner:
-    """The grant's login hosts: the first with a live held session, else key-only ssh over them in order."""
-    for dest in grant.targets:
+def ordered_targets(grant: Grant, first: str = '') -> tuple[str, ...]:
+    """*grant*'s ssh targets, the one *first* (``user@host``, host in full or by its first DNS label) names leading.
+
+    Measured 2026-11-20: a credential for ``user@hpclogin02`` probed hpclogin01 first and waited out a 300 s
+    timeout there before failing over; the host the caller named is the one it means.
+    """
+    host = first.partition('@')[2]
+    named = [t for t in grant.targets if host and host in {t.partition('@')[2], t.partition('@')[2].split('.', 1)[0]}]
+    return (*named, *(t for t in grant.targets if t not in named))
+
+
+def _probed(dest: str, runner: Runner) -> Runner:
+    """*runner*, used once *dest* answers ``true`` within :data:`PROBE_S`; a silent host is :class:`Unreachable`."""
+    answered: list[bool] = []
+
+    def run(command: str, stdin: str | None = None) -> str:
+        if not answered:
+            try:
+                _ssh(dest, PROBE_S)('true', None)
+            except subprocess.TimeoutExpired as silent:
+                msg = f'{dest} did not answer a probe within {PROBE_S:.0f} s'
+                raise Unreachable(msg) from silent
+            answered.append(True)
+        return runner(command, stdin)
+
+    return run
+
+
+def grant_runner(grant: Grant, timeout: float = _TIMEOUT, *, first: str = '') -> Runner:
+    """The grant's login hosts, *first* leading: the first with a live held session, else key-only ssh in order.
+
+    A host failed over TO is probed first with a short bound (:data:`PROBE_S`), so a silent one costs seconds,
+    never the full *timeout*.
+    """
+    order = ordered_targets(grant, first)
+    for dest in order:
         if held(dest):
             return _held_runner(dest, timeout)
-    return failover_runner([(dest, _ssh(dest, timeout)) for dest in grant.targets])
+    lead, *rest = order
+    return failover_runner([(lead, _ssh(lead, timeout)), *((d, _probed(d, _ssh(d, timeout))) for d in rest)])
 
 
 def describe(dest: str, command: str) -> str:

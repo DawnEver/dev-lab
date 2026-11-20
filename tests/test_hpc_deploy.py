@@ -1090,3 +1090,24 @@ def test_a_research_deploy_has_nothing_of_serving(
     assert '[tick]' not in out
     assert 'merge-tree' not in calls
     assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'
+
+
+def test_a_machine_file_without_a_root_deploys_at_the_root_its_grant_table_declares(tmp_path: Path) -> None:
+    """Measured 2026-11-20: every rendered account [deploy] names no root (the family's cluster holds it).
+
+    The deploy refused "no root declared" on every account though deploy-fleet handed it the cluster's root in
+    ``--grant-table``. PLANTED CONTROL: with no grant table the same file is still refused, naming the root.
+    """
+    from dev_lab.dev.hpcaccount.declaration import declaration, parser  # noqa: PLC0415
+
+    machine = _write(
+        tmp_path / 'machine.toml',
+        '[deploy]\nhost = "login02"\nrepos = [{ name = "dev-lab", url = "https://x/dev-lab.git", ref = "main" }]\n',
+    )
+    rooted = replace(DECLARED, root='/r/declared/lab')
+    args = parser().parse_args(['--grant-table', json.dumps(grant_slice(rooted))])
+    spec = declaration(args, machine)
+    assert not isinstance(spec, str), spec
+    assert spec.root == '/r/declared/lab'
+    with pytest.raises(ValueError, match='no root declared'):
+        declaration(parser().parse_args([]), machine)

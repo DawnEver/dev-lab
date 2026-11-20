@@ -579,3 +579,28 @@ def test_the_deploy_itself_runs_in_the_grants_setup() -> None:
     assert tail.index('export CC=gcc') < tail.index('-m dev_lab.dev.hpcaccount deploy')
     plain = deploy_command(_FLEET[0], Target('login02.example', '/r/src'), _SRC)
     assert 'export CC=gcc' not in plain
+
+
+def test_every_account_leaves_its_dated_log_even_when_it_exits_early(tmp_path: Path) -> None:
+    """Measured 2026-11-20: two accounts' deploy-fleet runs left no new log, so their failure was unreadable.
+
+    A refused account and a launch that fails before the deploy runs each write their cause to the account's log.
+    PLANTED CONTROL: a started account's log names what was started.
+    """
+    said: list[str] = []
+
+    def launch(dest: str, _command: str, _log: object) -> None:
+        if dest.startswith('bob@'):
+            msg = 'the held session of bob is recorded but its holder does not answer'
+            raise RuntimeError(msg)
+
+    code = deploy_fleet(
+        _FLEET, (), home=tmp_path, source=_source(tmp_path, deploy=_DEPLOY), dry_run=False, say=said.append,
+        launch=launch,
+    )  # fmt: skip
+    assert code == 2
+    logs = {p.stem: p.read_text(encoding='utf-8') for p in tmp_path.rglob('*.log')}
+    assert set(logs) == {'alice', 'bob', 'carol'}
+    assert 'holder does not answer' in logs['bob']
+    assert 'refused' in logs['carol']
+    assert 'started' in logs['alice']

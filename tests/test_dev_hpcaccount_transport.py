@@ -118,3 +118,36 @@ def test_any_other_ssh_failure_is_not_dressed_as_a_second_factor(monkeypatch: py
     with pytest.raises(RuntimeError) as failed:
         transport.host_runner(_DEST)('ls')
     assert not isinstance(failed.value, transport.HoldRefused)
+
+
+def test_the_named_login_host_is_tried_first_and_a_failover_host_is_probed_briefly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Measured 2026-11-20: a credential for ``user@login02`` waited out 300 s on login01 before failing over.
+
+    The host the dest names leads; a host failed over TO answers a :data:`transport.PROBE_S` probe first.
+    PLANTED CONTROL: with no host named the declared order stands.
+    """
+    _hold(monkeypatch, recorded=set(), alive=True)
+    opened: list[tuple[str, float, str]] = []
+
+    def ssh(dest: str, timeout: float) -> Runner:
+        def run(command: str, _stdin: str | None = None) -> str:
+            opened.append((dest, timeout, command))
+            if dest == 'alice@login02.example':
+                said = 'down'
+                raise transport.Unreachable(said)
+            return 'out'
+
+        return run
+
+    monkeypatch.setattr(transport, 'ssh_runner', ssh)
+    assert transport.ordered_targets(_GRANT, 'alice@login02') == ('alice@login02.example', 'alice@login01.example')
+    assert transport.ordered_targets(_GRANT) == _GRANT.targets
+    assert transport.grant_runner(_GRANT, first='alice@login02')('hostname') == 'out'
+    assert opened == [
+        ('alice@login02.example', 300.0, 'hostname'),
+        ('alice@login01.example', transport.PROBE_S, 'true'),
+        ('alice@login01.example', 300.0, 'hostname'),
+    ]
+    assert transport.PROBE_S < 60

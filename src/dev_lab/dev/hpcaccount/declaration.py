@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from lab_commons.log import emit
 
@@ -52,9 +54,20 @@ def parser(deploy_doc: str = '') -> argparse.ArgumentParser:
     return parser
 
 
+def granted_root(table: Mapping[str, Any] | None) -> str:
+    """The cluster root deploy-fleet's ``--grant-table`` declares (:func:`~dev_lab.dev.hpcaccount.fleet.grant_slice`).
+
+    Measured 2026-11-20: every account file's rendered ``[deploy]`` names no root (the family's cluster holds it), so
+    a deploy reading only the machine file refused "no root declared" on every account; the root it was handed is
+    the family's own. ``''`` when the table names none.
+    """
+    clusters = (table or {}).get('clusters', {})
+    return next((str(c['root']) for c in clusters.values() if isinstance(c, Mapping) and c.get('root')), '')
+
+
 def declaration(args: argparse.Namespace, path: Path) -> Deployment | str:
     """The declared deployment (stored, else from the flags); a refusal is returned as its message."""
-    stored = load(path)
+    stored = load(path, root=granted_root(args.grant_table))
     if not (args.host or args.repo):
         return stored or (
             f'no [deploy] in {path}: declare it once with --host <login host> --repo <name>=<https url>@<branch> ...'
@@ -85,7 +98,7 @@ def resolve(args: argparse.Namespace, path: Path) -> Deployment | str:
 
 def store(step: Step, spec: Deployment, path: Path) -> int:
     """Store a first declaration once the host and every credential have passed."""
-    if load(path) is not None:
+    if load(path, root=spec.root) is not None:
         return 0
     emit('[declare]')
     if step.dry:
