@@ -11,6 +11,7 @@ from typing import Any
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import uvrelease
 from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.installdoor import floating_requirements
@@ -81,20 +82,27 @@ def uv_remedy(version: str) -> str:
     return f'run `uv self update {version}` (WinGet: `winget install --id astral-sh.uv -e --version {version}`)'
 
 
-def lock_writer(uv: str, required: str) -> str:
-    """*uv*, moved to *required* first (:func:`~dev_lab.dev.uvfollow.follow`), the one uv that writes every lock.
+def pin_file(root: Path) -> Path:
+    """The uv pin a lock under *root* is written by: *root*'s own (a dev-lab checkout), else this kit's."""
+    own = root / UV_PIN
+    return own if own.is_file() else Path(__file__).with_name('uv.toml')
 
-    A uv that cannot follow is refused with why and the remedy: a lock written by another uv churns its revision line.
+
+def lock_writer(uv: str, required: str, pin: Path) -> str:
+    """The uv of exactly *required* that writes every lock: *uv* when it is that version, else that release's own.
+
+    Never by moving the host's ``PATH`` uv (:mod:`dev_lab.dev.uvrelease`): two pins in flight on one host used to
+    flip it back and forth. A uv that cannot be had is refused with why and the door: a lock written by another uv
+    churns its revision line.
     """
-    found = installed_uv_version(uv)
-    if found != required and (why := follow_pin(uv, required)):
+    try:
+        return uvrelease.writer(uvrelease.release(pin, required), uv, version_of=installed_uv_version)
+    except (OSError, ValueError, KeyError) as why:
         msg = (
-            f'{uv} is uv {found or "(unreadable)"}, but every lock is written by uv {required} '
-            f'({UV_PIN}): a lock written by another uv churns its revision line, and {why}. '
-            f'{uv_remedy(required).capitalize()}'
+            f'every lock is written by uv {required} ({UV_PIN}), and that uv could not be had beside {uv}: {why}. '
+            f'Retry `{sys.executable} -m dev_lab.dev.dep --lock-upgrade <root>` once the release is reachable'
         )
-        raise OtherUvRefused(msg)
-    return uv
+        raise OtherUvRefused(msg) from why
 
 
 class ForeignEnvRefused(ValueError):
@@ -164,7 +172,7 @@ def uv_command(
             command.extend(('--reinstall-package', package))
     if frozen:
         return [*command, '--frozen']
-    command[0] = lock_writer(uv, uv_version(root))  # an unfrozen sync or lock may rewrite uv.lock
+    command[0] = lock_writer(uv, uv_version(root), pin_file(root))  # an unfrozen sync or lock may rewrite uv.lock
     upgrades = set(upgrade_packages)
     if syncing:
         upgrades.update(floating_requirements(root / 'pyproject.toml'))
@@ -183,7 +191,7 @@ def lock_upgrade_command(root: Path, python: str, required: str, packages: Seque
         msg = 'a lock upgrade requires uv on PATH'
         raise FileNotFoundError(msg)
     interpreter = own_interpreter(root, python)
-    uv = lock_writer(uv, required)
+    uv = lock_writer(uv, required, pin_file(root))
     moves = [part for package in packages for part in ('--upgrade-package', package)] or ['--upgrade']
     return [uv, 'lock', *moves, '--project', str(root), '--python', interpreter]
 
@@ -266,5 +274,6 @@ def lock_upgrade(
     if code == 0 and not packages and (root / TOOLCHAIN).is_file():
         pin_stable(root, stable())
     if code == 0 and not packages and (root / UV_PIN).is_file():
-        pin_uv(root, required)
+        moved = uvrelease.release(pin_file(root), required)
+        pin_uv(root, required, {key: digest for key, (_asset, digest) in moved.assets.items()})
     return code

@@ -39,9 +39,9 @@ from pathlib import Path
 from typing import Final
 
 from dev_lab.dev.doorcensus import sibling_paths
+from dev_lab.dev.familyroot import family_root
 from dev_lab.dev.ruffwaivers import ruff_config as kit_ruff_config
 from dev_lab.dev.ruffwaivers import ruff_waivers
-from dev_lab.dev.worktreeplace import family_root
 
 __all__ = [
     'MOVES',

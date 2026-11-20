@@ -424,8 +424,8 @@ def test_a_uv_pin_below_the_newest_release_is_stale_refreshable_and_pinning_move
     found = stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8')
     assert found == (f'{UV_PIN} is not the newest uv: 0.13.7 -> 0.13.8',)
     assert refreshable(found[0])
-    pin_uv(tmp_path, '0.13.8')
-    assert pin.read_text(encoding='utf-8') == '# why\nversion = "0.13.8"\n'
+    pin_uv(tmp_path, '0.13.8', {'linux-amd64': 'd' * 64})
+    assert pin.read_text(encoding='utf-8') == f'# why\nversion = "0.13.8"\n\n[sha256]\nlinux-amd64 = "{"d" * 64}"\n'
     assert uv_version(tmp_path) == '0.13.8'
     assert stale(tmp_path, resolve=fresh, uv=lambda: '0.13.8') == ()
 

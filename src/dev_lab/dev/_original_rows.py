@@ -412,4 +412,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'depneeds',
     # ORIGINAL: D76 (2026-11-18), a pinned, sha256-checked tool installed user-space; no consumer held one.
     'toolrelease',
+    # ORIGINAL: 2026-11-20, the MAIN checkout and family root read from git alone, importable against any lab-commons.
+    'familyroot',
+    # ORIGINAL: 2026-11-20, COMMONS-BELOW-FLOOR names the heal of a kit whose lab-commons predates its dev-lab.
+    'commonsfloor',
+    # ORIGINAL: 2026-11-20, the uv that writes a lock is the pinned release installed beside any other.
+    'uvrelease',
 )

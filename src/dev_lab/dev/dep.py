@@ -76,14 +76,17 @@ from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
-from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
-from dev_lab.dev._dep_aftersync import after_sync
-from dev_lab.dev._dep_components import changed
-from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
-from dev_lab.dev._dep_pip import has_pip
-from dev_lab.dev._dep_publish import publish_built
-from dev_lab.dev.envseat import EnvironmentSeat
-from dev_lab.dev.liverun import Census, env_in_use, executing_from
+from dev_lab.dev.commonsfloor import importing
+
+with importing():
+    from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
+    from dev_lab.dev._dep_aftersync import after_sync
+    from dev_lab.dev._dep_components import changed
+    from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
+    from dev_lab.dev._dep_pip import has_pip
+    from dev_lab.dev._dep_publish import publish_built
+    from dev_lab.dev.envseat import EnvironmentSeat
+    from dev_lab.dev.liverun import Census, env_in_use, executing_from
 
 __all__ = [
     'CHILD_WALL_S',
