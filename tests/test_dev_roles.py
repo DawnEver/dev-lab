@@ -15,7 +15,8 @@ import pytest
 from _ops_fixtures import git
 from lab_commons.config import CONFIG_ENV
 
-from dev_lab.dev.ciworkflows import placed, render, role_jobs
+from dev_lab.dev.ciworkflows import placed, render
+from dev_lab.dev.ciworkflowshape import role_jobs
 from dev_lab.dev.rolecheck import CI_WORKFLOW, host_refusals, repo_refusals
 from dev_lab.dev.roles import (
     CI,

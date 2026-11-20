@@ -24,27 +24,22 @@ from typing import Any
 import pytest
 from _roles_fixtures import CI_REPO, EVERY_CI, carry
 
-from dev_lab.dev import ciworkflows
+from dev_lab.dev import ciworkflows, ciworkflowshape
 from dev_lab.dev.ciworkflows import (
     BASE_PATH,
-    PR_EVENTS,
     RENDER_COMMAND,
     RUNNERS,
     SHARED,
     STAMP,
-    USE_STEPS,
-    _bare,
     base_names,
     drift,
-    expand,
     main,
-    merge,
-    ready_only,
     render,
     repo_forge,
     workflows,
     write,
 )
+from dev_lab.dev.ciworkflowshape import PR_EVENTS, USE_STEPS, _bare, expand, merge, ready_only
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.gitenv import unlocated
 from dev_lab.dev.jobparts import PULL_REQUEST_SYSTEMS, systems_for
@@ -1246,7 +1241,7 @@ def test_a_judge_repo_renders_no_job_that_reviews_on_the_runner(
     """``where = "judge"``: the judge host posts the verdict, so no rendered job runs ``forge review run``.
 
     Such a job could only print "not reviewed here" and exit 1 -- a red check on every judge-reviewed PR (dev-lab
-    #413, 2026-11-11). A review job renders only where review is bound to ci (:data:`~ciworkflows.ROLE_KEY`), and
+    #413, 2026-11-11). A review job renders only where review is bound to ci (:data:`~ciworkflowshape.ROLE_KEY`), and
     a workflow left with no job is not rendered; the role mark itself never is.
     PLANTED CONTROL: the same tables in a serve repo render every review job.
     """
@@ -1258,13 +1253,13 @@ def test_a_judge_repo_renders_no_job_that_reviews_on_the_runner(
         carry(monkeypatch, roles)
         (tmp_path / 'pyproject.toml').write_text(ACTIONS_REPO + review + tables, encoding='utf-8')
         rendered = {name: render(flow) for name, flow in workflows(tmp_path).items()}
-        assert all(f'"{ciworkflows.ROLE_KEY}":' not in text for text in rendered.values())
+        assert all(f'"{ciworkflowshape.ROLE_KEY}":' not in text for text in rendered.values())
         running = sorted(name for name, text in rendered.items() if 'forge review run' in text)
         assert bool(running) is reviews, running
         for flow in workflows(tmp_path).values():
             jobs = flow.get('jobs', {})
             assert jobs, 'a workflow with no job is not rendered'
-            assert all(ciworkflows.needs(job) <= set(jobs) for job in jobs.values())
+            assert all(ciworkflowshape.needs(job) <= set(jobs) for job in jobs.values())
 
 
 def test_the_settle_step_s_own_reads_retry_a_transient_and_report_a_refused_token(
