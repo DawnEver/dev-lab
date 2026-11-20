@@ -155,7 +155,7 @@ def test_a_script_suite_s_temp_env_points_every_temp_variable_into_the_dated_tre
 def test_a_script_suite_s_temp_is_a_git_ceiling_so_a_sandbox_never_finds_the_checkout(tmp_path: Path) -> None:
     """The dated temp sits inside the checkout, so git (and a walk to the nearest .git) must stop at it."""
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', encoding='utf-8')
-    held = str(tmp_path / 'held')  # a native path: 'C:/held' splits at ':' under POSIX os.pathsep
+    held = str(tmp_path / 'held')  # a native path: a drive-letter path splits at ':' under POSIX os.pathsep
     env = script_temp_env(tmp_path, {'GIT_CEILING_DIRECTORIES': held})
     ceilings = env['GIT_CEILING_DIRECTORIES'].split(os.pathsep)
     assert env['TMPDIR'] in ceilings
