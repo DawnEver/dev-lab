@@ -46,10 +46,10 @@ class _Connection(http.client.HTTPConnection):
         super().__init__('fake.invalid', timeout=1)
         self._status, self._body, self._seen = status, body, seen
 
-    def request(self, method: str, url: str, headers: dict[str, str] | None = None) -> None:  # type: ignore[override]
+    def request(self, method: str, url: str, headers: dict[str, str] | None = None) -> None:
         self._seen.append(dict(headers or {}))
 
-    def getresponse(self) -> _Reply:  # type: ignore[override]
+    def getresponse(self) -> _Reply:
         return _Reply(self._status, self._body)
 
     def close(self) -> None:

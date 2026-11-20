@@ -53,12 +53,11 @@ class Postgres:
         if not _ROLE.fullmatch(self.os_user):
             msg = f'[ops.postgres] os_user {self.os_user!r} must match {_ROLE.pattern}'
             raise ValueError(msg)
-        object.__setattr__(self, 'roles', {name: tuple(grants) for name, grants in sorted(self.roles.items())})
 
 
 def _sql(postgres: Postgres) -> str:
     parts = []
-    for name, grants in postgres.roles.items():
+    for name, grants in sorted(postgres.roles.items()):
         parts.append(
             f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{name}') "
             f'THEN CREATE ROLE "{name}" LOGIN; END IF; END $$;'

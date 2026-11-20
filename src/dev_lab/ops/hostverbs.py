@@ -106,7 +106,8 @@ def install_verb(config: OpsConfig, root: Path) -> int:
         steps += tuple(f'journalctl --no-pager -u {unit}  (it did not enable)' for unit in failed)
         if config.postgres is not None:  # declared roles: ensured, like the units, only from a consented config
             ensured = pgroles.ensure(config.postgres)
-            emit(f'{"ensured" if ensured else "FAILED":9} [ops.postgres] roles {", ".join(config.postgres.roles)}')
+            roles = ', '.join(sorted(config.postgres.roles))
+            emit(f'{"ensured" if ensured else "FAILED":9} [ops.postgres] roles {roles}')
             steps += () if ensured else (pgroles.step(config.postgres),)
     elif config.postgres is not None:
         steps += (pgroles.step(config.postgres),)

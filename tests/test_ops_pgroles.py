@@ -47,7 +47,7 @@ def test_a_grant_that_is_not_predefined_or_an_unsafe_name_is_refused(roles: dict
 def test_the_declaration_loads_from_ops_postgres(tmp_path: Path) -> None:
     path = tmp_path / 'supervise.toml'
     path.write_text(_HOST + '[ops.postgres]\nroles = { "supervisor" = ["pg_monitor"] }\n', encoding='utf-8')
-    assert load(path).postgres == Postgres(roles={'supervisor': ('pg_monitor',)})
+    assert load(path).postgres == Postgres(roles={'supervisor': ['pg_monitor']})
 
 
 def test_ensure_reports_a_failure_and_install_prints_it_off_the_live_host() -> None:
