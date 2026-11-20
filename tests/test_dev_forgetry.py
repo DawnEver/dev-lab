@@ -1,6 +1,7 @@
 """``forge try``: a selection is PLACED by its markers and published only where a host has room NOW.
 
-PLANTED CONTROLS: an unmarked file runs on Linux, a ``jmag`` file on Windows, a ``femm`` file is refused by name;
+PLANTED CONTROLS: an unmarked file runs on Linux, a ``jmag`` file on Windows, a ``femm`` file keeps its marker and
+no card without femm on Linux admits it (#513);
 a fresh card with room admits, a stale card, a cluster seat and a full host each say why not; a request past
 its deadline is refused ``no room``, never left waiting.
 """
@@ -17,7 +18,6 @@ from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgerequest import (
     TESTS,
     Declared,
-    UndeclaredRequest,
     declared_request,
     parse_deadline,
     request_body,
@@ -60,9 +60,14 @@ def test_a_selection_holding_a_jmag_test_is_placed_on_windows(repo: tuple[Path, 
     assert needs == {'jmag', 'windows'}
 
 
-def test_a_selection_needing_another_windows_tool_is_refused_by_name(repo: tuple[Path, str]) -> None:
-    with pytest.raises(UndeclaredRequest, match="needs \\['femm'\\]"):
-        declared_request(*repo, TESTS, ('tests/test_femm.py',))
+def test_a_selection_needing_another_tool_keeps_it_and_no_card_without_it_admits(repo: tuple[Path, str]) -> None:
+    """#513: placement keeps every marked resource; a need-set no host supplies waits visibly, named per card."""
+    wanted = declared_request(*repo, TESTS, ('tests/test_femm.py',))
+    assert wanted.needs == frozenset({'femm', 'linux'})
+    cards = (_card('g', 'windows', cpu=16, mem_gb=64, femm=1), _card('box', 'linux', cpu=8, mem_gb=32))
+    fits, why = room(cards, wanted, NOW)
+    assert fits == []
+    assert len(why) == 2, 'each card says why it cannot hold femm on Linux'
 
 
 def _card(host: str, platform: str, *, cpu: float, mem_gb: float, ticked: datetime = NOW, **more: float) -> HostCard:

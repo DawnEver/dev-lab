@@ -13,6 +13,7 @@ import pytest
 import test_dev_forgetick
 from _box_fake import ended, record
 from _forge_fake import Recorder, answer, git_out, run_git
+from _roles_fixtures import HPC_REPO, carry
 from lab_commons.box import Capacity
 from lab_commons.compute.learned import LOCAL, Run, run_of
 from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
@@ -55,6 +56,12 @@ FEMM_HOST = Supply(
     'G', Resources(cpu=4.0, mem_gb=16.0, femm=1.0, windows=1.0), frozenset({'cpu', 'mem_gb', 'femm', 'windows'})
 )
 PLAIN_HOST = Supply('G', Resources(cpu=4.0), frozenset({'cpu', 'windows'}))
+
+
+@pytest.fixture(autouse=True)
+def _tests_on_hpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bind tests on hpc: only an HPC-bound repo offers its parts and requests to a serve host (D70-D73)."""
+    carry(monkeypatch, HPC_REPO)
 
 
 @pytest.fixture(autouse=True)
