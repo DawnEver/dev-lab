@@ -286,8 +286,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--list', action='store_true', help='print every shipped engine, one per line')
     parser.add_argument('--check', metavar='COMMAND', help='ask the engine whether it denies COMMAND')
     parser.add_argument('--rules', type=Path, help='the deny-rules.json --check judges against')
+    parser.add_argument(
+        '--family-rules',
+        action='store_true',
+        help='print the rows every family repo ships (no repo artefact needed): what an agent bridge '
+        'enforces in a repo it does not trust, from this install and never from the repo (D99)',
+    )
     parsed = parser.parse_args(argv)
 
+    if parsed.family_rules:
+        from dev_lab.dev.hook_adoption import HookAdoption, render  # noqa: PLC0415 -- hook_adoption sits above this leaf
+
+        emit(render(HookAdoption(app_name='family')).rstrip('\n'))
+        return 0
     if parsed.list:
         emit('\n'.join(ENGINES))
         return 0
