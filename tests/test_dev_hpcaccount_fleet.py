@@ -539,6 +539,34 @@ def test_a_layer_naming_no_role_takes_its_grants_role(tmp_path: Path) -> None:
     assert kept.role == 'x'
 
 
+def _workstation(tmp_path: Path, family: str) -> Path:
+    clone = tmp_path / 'source'
+    (clone / 'hosts').mkdir(parents=True)
+    (clone / 'family.toml').write_text(family, encoding='utf-8')
+    (clone / 'hosts' / 'WS.toml').write_text('[dev]\nhpc = ["research"]\n', encoding='utf-8')
+    return clone
+
+
+def test_deploy_fleet_refuses_a_machine_file_that_is_not_its_render(tmp_path: Path) -> None:
+    """The deploy line is built from THIS machine's grants, so a stale render deploys stale family facts.
+
+    Measured 2026-11-20: hosts-config gained a cluster `setup` (CC=gcc), but the workstation's machine file was never
+    re-rendered, so every Cirrus deploy ran without it. PLANTED CONTROL: the fresh render deploys.
+    """
+    from dev_lab.dev import devhost  # noqa: PLC0415
+    from dev_lab.dev.hpcaccount.fleet import stale_render  # noqa: PLC0415
+
+    clone = _workstation(tmp_path, '[hpc.clusters.c1]\nhosts = ["login01"]\n')
+    import tomllib  # noqa: PLC0415
+
+    fresh = tomllib.loads(devhost.render(clone, 'WS', {}))
+    assert stale_render(fresh) == ''
+    (clone / 'family.toml').write_text('[hpc.clusters.c1]\nhosts = ["login01"]\nsetup = ["export CC=gcc"]\n', 'utf-8')
+    why = stale_render(fresh)
+    assert 'devhost render' in why
+    assert 'not the render' in why or 'absent' in why
+
+
 def test_the_deploy_itself_runs_in_the_grants_setup() -> None:
     """The venvs the deploy builds compile in the cluster's declared environment, as its ticks run.
 

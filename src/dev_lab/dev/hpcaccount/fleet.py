@@ -60,7 +60,7 @@ from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost
+from dev_lab.dev import accounthost, devhost, tomlleaves
 from dev_lab.dev.credstore import STORE, valid_host
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.devdeclared import OWN_TABLE
@@ -428,6 +428,30 @@ def deploy_fleet(
     return 2 if refused else 0
 
 
+def stale_render(live: Mapping[str, Any]) -> str:
+    """Why *live* (this machine's file) is not the render of its config source; ``''`` when it is.
+
+    The deploy line is built from THIS machine's grants, so a stale render deploys stale family facts (measured
+    2026-11-20: a cluster ``setup`` landed in the source, the machine file was never re-rendered, and every deploy ran
+    without it).
+    """
+    own = live.get(OWN_TABLE, {})
+    if not own.get('host') or not own.get('source'):
+        return ''  # not a render at all: config_source_of refuses it by name
+    clone = Path(own['source'])
+    rendered = tomlleaves.leaves(tomllib.loads(devhost.render(clone, own['host'], live)))
+    have = tomlleaves.leaves(live)
+    differ = sorted(path for path in set(rendered) | set(have) if rendered.get(path) != have.get(path))
+    if not differ:
+        return ''
+    first = ', '.join(f'{tomlleaves.dotted(path)} ({"absent" if path not in have else "not the render"})'
+                      for path in differ[:3])  # fmt: skip
+    return (
+        f'the machine file is not the render of {clone.as_posix()} ({len(differ)} key(s): {first}); re-render it '
+        f'first: python -m dev_lab.dev.devhost render --host {own["host"]} --write'
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``deploy-fleet`` and start it."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount deploy-fleet', description=__doc__.splitlines()[0])
@@ -436,9 +460,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         machine = reached_machine(args.account)
-        source = config_source_of(machineconfig.machine())
+        live = machineconfig.machine()
+        source = config_source_of(live)
     except (PermissionError, LookupError, ValueError) as refused:
         emit(f'deploy-fleet: refused -- {refused}')
+        return 2
+    if why := stale_render(live):
+        emit(f'deploy-fleet: refused -- {why}')
         return 2
     return deploy_fleet(
         machine.grants,
