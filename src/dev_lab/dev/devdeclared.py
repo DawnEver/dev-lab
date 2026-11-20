@@ -17,7 +17,7 @@ from lab_commons import config as machineconfig
 
 from dev_lab.dev import devprofile
 
-__all__ = ['OWN_TABLE', 'declared', 'declared_by', 'merge', 'this_machine']
+__all__ = ['OWN_TABLE', 'declared', 'declared_by', 'layered', 'merge', 'this_machine']
 
 #: The render's own table in a machine file: which host and clone it came from.
 OWN_TABLE: Final = 'devhost'
@@ -34,6 +34,21 @@ def merge(under: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
         both = isinstance(value, Mapping) and isinstance(out.get(key), Mapping)
         out[key] = merge(out[key], value) if both else value
     return out
+
+
+def layered(live: Mapping[str, Any]) -> dict[str, Any]:
+    """*live* over the family file its ``[family] source`` names (``[dev]`` aside): the whole machine a reader sees.
+
+    A rendered machine file holds the host and local layers only; a caller handed the whole file (drift, the
+    family-repo census) reads family facts through this view, never from a copy in the machine file.
+    """
+    declared_family = live.get(machineconfig.FAMILY_TABLE)
+    if not isinstance(declared_family, Mapping) or 'source' not in declared_family:
+        return dict(live)
+    source = Path(str(declared_family['source'])).expanduser()
+    path = source / str(declared_family.get('file', 'family.toml')) if source.is_dir() else source
+    family = {k: v for k, v in _read(path).items() if k != 'dev'} if path.is_file() else {}
+    return merge(family, live)
 
 
 def declared(host_file: Path, family_file: Path) -> dict[str, Any]:
