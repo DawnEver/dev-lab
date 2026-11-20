@@ -47,10 +47,12 @@ DECLARE: Final = (
 SACCT: Final = 'acct-free|cpu=96,mem=360G\nacct-free|cpu=96,mem=360G\n'
 
 FAKE_CRONTAB: Final = r"""
-import pathlib, sys
+import os, pathlib, sys
 state = pathlib.Path(sys.argv[1])
 log = state.parent / 'calls.log'
 with log.open('a') as f: f.write('crontab ' + ' '.join(sys.argv[2:]) + '\n')
+if os.environ.get('FAKE_CRONTAB_FORBID'):
+    sys.stderr.write('You (me) are not allowed to use this program (crontab)\n'); sys.exit(1)
 if sys.argv[2] == '-l':
     if not state.exists():
         sys.stderr.write('no crontab for me\n'); sys.exit(1)
@@ -802,10 +804,14 @@ def _marked(box: Box) -> set[str]:
     return {line.rsplit(deploy_spec.MARK, 1)[1] for line in lines if deploy_spec.MARK in line}
 
 
-def test_a_research_account_carries_no_serve_line_and_its_deploy_removes_the_marked_ones(
+def test_a_research_account_carries_no_serve_line_and_leaves_crontab_untouched(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """User ruling 2026-11-06: only a Forge Verification account serves. PLANTED CONTROL: verification writes them."""
+    """User ruling 2026-11-06: only a Forge Verification account serves; a research deploy never touches crontab.
+
+    A role switched away from verification drops its lines through the explicit door (``deploy --remove``).
+    PLANTED CONTROL: verification writes them.
+    """
     _write(box.crontab, '0 1 * * * echo mine\n')
     assert box.run(*DECLARE) == 0
     assert _marked(box) == {'dev-lab', 'alpha', 'beta'}, 'the planted control: a verification account serves'
@@ -813,12 +819,13 @@ def test_a_research_account_carries_no_serve_line_and_its_deploy_removes_the_mar
     capsys.readouterr()
     box.calls.unlink(missing_ok=True)
     assert box.run() == 0
-    assert _marked(box) == set()
-    assert box.crontab.read_text(encoding='utf-8') == '0 1 * * * echo mine\n', 'every other line kept'
-    assert capsys.readouterr().out.count('crontab: remove ') == 3, 'each removed line is printed'
     calls = box.logged()
+    assert 'crontab' not in calls
     assert 'hpcaccount tick' not in calls, 'a research account is never ticked'
     assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'
+    assert box.run('--remove') == 0
+    assert _marked(box) == set()
+    assert box.crontab.read_text(encoding='utf-8') == '0 1 * * * echo mine\n', 'every other line kept'
 
 
 def test_a_research_deploy_asks_only_to_read(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
@@ -882,8 +889,9 @@ def test_a_role_beyond_the_defaults_needs_the_workstations_table(box: Box, capsy
     capsys.readouterr()
     assert box.run() == 2
     assert 'deploy-fleet' in capsys.readouterr().err
+    box.calls.unlink(missing_ok=True)
     assert box.run(*_fleet('batch', serves=False, read_only=True)) == 0
-    assert _marked(box) == set(), 'its table says it does not serve'
+    assert 'crontab' not in box.logged(), 'its table says it does not serve: no scheduler step at all'
 
 
 def test_a_serve_tick_on_a_research_account_refuses_naming_the_role(
@@ -1042,3 +1050,32 @@ def test_a_cloned_repo_this_account_does_not_serve_is_read_with_the_stored_reade
     assert all('credential.helper=' not in line for line in remote)
     monkeypatch.setenv('FAKE_GIT_DENY', '/beta.git')
     assert box.run() == 2
+
+
+def test_a_research_deploy_has_nothing_of_serving(
+    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A research account never serves, so its deploy has no cron, no tick, no serve-git proof and no CI-PAUSED gate.
+
+    User, 2026-11-20: "why would a research host need cron?" Measured the same day on Cirrus: ``crontab -l`` -- which
+    the cluster forbids -- refused a research deploy that wanted zero lines. A research deploy is the kit, its
+    declared repos, their venvs and the reader check. PLANTED CONTROL: a verification account on the same box still
+    reads crontab, and is refused when it cannot.
+    """
+    assert box.run(*DECLARE) == 0
+    monkeypatch.setenv('FAKE_CRONTAB_FORBID', '1')
+    capsys.readouterr()
+    assert box.run() == 2, 'the planted control: a serving account cannot place its lines'
+    assert 'not allowed' in capsys.readouterr().err
+    _as_role(box, deploy_spec.RESEARCH)
+    (box.home / '.cache' / 'dev-lab').mkdir(parents=True, exist_ok=True)
+    (box.home / '.cache' / 'dev-lab' / 'CI-PAUSED').write_text('paused by the fleet\n', encoding='utf-8')
+    box.calls.unlink(missing_ok=True)
+    assert box.run() == 0
+    out = capsys.readouterr().out
+    calls = box.logged()
+    assert 'crontab' not in calls
+    assert '[cron]' not in out
+    assert '[tick]' not in out
+    assert 'merge-tree' not in calls
+    assert 'fetch -q origin' in calls, 'its checkouts are still kept for research'

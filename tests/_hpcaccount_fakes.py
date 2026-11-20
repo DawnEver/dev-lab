@@ -13,9 +13,10 @@ from dev_lab.dev.hpcaccount.fleet import ConfigSource
 from dev_lab.dev.hpcaccount.steps import Tools
 
 FAKE_CRONTAB: Final = r"""
-import pathlib, sys
+import os, pathlib, sys
 state = pathlib.Path(sys.argv[1])
 if sys.argv[2] == '-l':
+    if os.environ.get('FAKE_CRONTAB_FORBID'): sys.stderr.write('not allowed to use this program\n'); sys.exit(1)
     if state.name == 'broken': sys.stderr.write('permission denied\n'); sys.exit(1)
     if not state.exists(): sys.stderr.write('no crontab for me\n'); sys.exit(1)
     sys.stdout.write(state.read_text())
