@@ -35,7 +35,6 @@ from dev_lab.dev.forgestatus import status_post
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
-    from dev_lab.dev._forgebackends import Backend
     from dev_lab.dev.forgestatus import CommitStatus
     from dev_lab.dev.forgework import Client
 
@@ -44,11 +43,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     'APPROVED',
-    'PREPARE_WORKFLOW',
     'RERUN',
     'VERDICT_STATES',
     'DeclarationUnread',
-    'RunsUnread',
     'app_verdicts',
     'forge_posted',
     'github_posted',
@@ -57,7 +54,6 @@ __all__ = [
     'post_review',
     'posted_verdicts',
     'review_missing',
-    'review_runs',
     'standing_verdicts',
     'status_gate',
 ]
@@ -65,19 +61,9 @@ __all__ = [
 #: The remedy for a head with no forge-posted review: the forge reviews it again, never a session.
 RERUN: Final = "re-run the forge's review of the head (the PR's review job)"
 
-#: The base's workflow whose run attaches a judge repo's bundle (:mod:`~dev_lab.dev.forgereview_pointer`);
-#: :mod:`~dev_lab.dev.ciworkflows` renders it, on either forge, under this name: the one the judge lists runs by.
-PREPARE_WORKFLOW: Final = 'review-prepare.yml'
-
-#: The event a run of the BASE's workflow for a PR is stored under (Gitea: ``notifier_helper.go``, 1.27; GitHub alike).
-REVIEW_EVENT: Final = 'pull_request_target'
-
 #: The PR review state of an approval, and every state a judge's verdict leaves, as each forge reports them back.
 APPROVED: Final = 'APPROVED'
 VERDICT_STATES: Final = frozenset({APPROVED, 'REQUEST_CHANGES', 'CHANGES_REQUESTED'})
-
-#: How many of the repository's runs at a head are read: a head is re-run a handful of times, never this many.
-_RUNS_READ: Final = 50
 
 _NOT_FOUND: Final = 404
 
@@ -89,10 +75,6 @@ def github_posted(status: CommitStatus) -> bool:
 
 class DeclarationUnread(ValueError):
     """The repo's ``pyproject.toml`` at a ref could not be read: whose review counts is undecided, so none does."""
-
-
-class RunsUnread(ValueError):
-    """The forge's runs at a head could not be read: whether its review run concluded success is undecided."""
 
 
 class RepoReader(Protocol):
@@ -126,46 +108,6 @@ def file_at(client: RepoReader, path: str, ref: str) -> str:
         msg = f'{path} at {ref}: the forge answered no content'
         raise DeclarationUnread(msg)
     return base64.b64decode(content).decode()
-
-
-def review_runs(client: Client, head: str, *, workflow: str, pull: int | None = None) -> list[dict[str, Any]]:
-    """The runs of the base's *workflow* at *head*, newest first, as the forge lists them.
-
-    Only a :data:`REVIEW_EVENT` run whose ``path`` is ``<workflow>@<ref>`` (Gitea's converter:
-    ``fmt.Sprintf("%s@%s", run.WorkflowID, run.Ref)``, the entry file's name) -- the one workflow a PR cannot edit.
-    Given *pull*, only a run of THAT pull request (:func:`_of_workflow`; Gitea: ``<ref>`` is its
-    ``refs/pull/<n>/head``, GitHub: its ``pull_requests``), so a second PR of the same head into a branch whose
-    workflow its author wrote is never one of them.
-    """
-    query = f'head_sha={head}&{client.backend.page_param}={_RUNS_READ}'
-    listed: Any = client.call('GET', f'{client.repo}/actions/runs?{query}')
-    runs = (listed or {}).get('workflow_runs') if isinstance(listed, dict) else None
-    if not isinstance(runs, list):
-        msg = f'the runs at {head[:12]}: the forge answered no list'
-        raise RunsUnread(msg)
-    honest = [
-        run for run in runs
-        if run.get('head_sha') == head and run.get('event') == REVIEW_EVENT
-        and _of_workflow(run, workflow, pull, client.backend)
-    ]  # fmt: skip
-    return sorted(honest, key=lambda run: int(run.get('id') or 0), reverse=True)
-
-
-def _of_workflow(run: dict[str, Any], workflow: str, pull: int | None, backend: Backend) -> bool:
-    """Whether *run* is of the base's *workflow* -- given *pull*, for THAT pull request alone.
-
-    Gitea names the pull request in the run's ``path``. GitHub lists the file alone and names the pull request in
-    ``pull_requests``, which must be exactly *pull*: a fork's run lists none and a run listing two is undecided, so
-    neither is ever one of them.
-    """
-    path = str(run.get('path') or '')
-    if backend.run_pulls_listed:
-        listed = run.get('pull_requests')
-        pulls = [one.get('number') for one in listed if isinstance(one, dict)] if isinstance(listed, list) else []
-        return path == backend.run_path.format(workflow=workflow) and (pull is None or pulls == [pull])
-    if pull is None:
-        return path.startswith(f'{workflow}@')
-    return path == backend.run_path.format(workflow=workflow, pull=pull)
 
 
 def forge_posted(client: Client) -> Callable[[CommitStatus], bool]:

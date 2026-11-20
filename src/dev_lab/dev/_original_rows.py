@@ -383,7 +383,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'reviewcode',
     # ORIGINAL: the bundle review splits PREPARE from JUDGE (user decision 2026-11-03); nothing held either half.
     'reviewbundle',
-    'actionsartifact',  # an Actions run's own artifact, new here
     # ORIGINAL: user ruling 2026-11-07, one table of agent doors; it replaces kit-internal copies, no consumer's.
     'agentpolicy',
     # ORIGINAL: split out of `agentpolicy` inside the kit (2026-11-10); no consumer held it.

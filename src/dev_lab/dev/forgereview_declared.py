@@ -30,15 +30,14 @@ THE COMMAND IS THE FAMILY'S (:data:`FAMILY_COMMAND`): a repo declares only where
     judge_login = "<login>"    # a judge on Gitea: the forge login whose PR review it posts
     judge_app = 0              # on GitHub, INSTEAD of judge_login: the App id whose
                                # `review/judge` check run gates the merge (forgeapp); exactly one of the two
-    preparers = []             # logins (never the Actions bot) whose review/bundle pointer the judge reads
     batch = true               # FAMILY_BATCH: model calls via the vendor batch endpoint ({batch}); false: at once
     on_expiry = "sync"         # a request the batch let expire (24 h): answered at once ("sync") or failed ("fail")
     batch_wait = "20 min"      # DEFAULT_BATCH_WAIT: one review waits this long on its batches, then pending
 
 WHO reviews is never declared here: it is the family's binding of ``review`` (:mod:`dev_lab.dev.roles`, D73) -- a
 ``host`` (the independent judge over a verified bundle), an ``hpc`` executor's serve tick, or ``ci`` (the forge's
-review job). Retired keys (:data:`RETIRED_KEYS`: ``max_tokens``, ``rules``, ``max_rounds``, ``judge``, ``where``) are
-refused by name.
+review job). Retired keys (:data:`RETIRED_KEYS`: ``max_tokens``, ``rules``, ``max_rounds``, ``judge``, ``where``,
+``preparers``) are refused by name.
 """
 
 from __future__ import annotations
@@ -56,7 +55,6 @@ from lab_commons.units import Q_
 
 from dev_lab.dev import forgereview_batch as batching_
 from dev_lab.dev import forgereview_scope, reviewcode
-from dev_lab.dev._forgebackends import ACTIONS_BOT
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_command import ReviewUnsupported
 from dev_lab.dev.forgereview_runtimes import DERIVED_RUNTIMES, HOST_FIELD, RUNTIMES_TABLE, retired_field, runtime_names
@@ -164,6 +162,7 @@ RETIRED_KEYS: Final = {
     'max_rounds': 'a PR is reviewed once (user ruling 2026-11-06): there are no rounds to cap',
     'judge': 'a one-shot review re-judges nothing and adjudicates no claim (user ruling 2026-11-06)',
     'where': "a repo declares no placement: bind review in the family layer's [roles.<forge>] (D73)",
+    'preparers': 'the judge fetches each head and prepares its bundle itself (D77): no preparer is read',
 }
 
 _TABLE: Final = 'review'
@@ -196,7 +195,6 @@ class Review:
     bundle: tuple[str, ...] = FAMILY_BUNDLE  # the judge's command over {bundle}
     judge_login: str = ''  # a judge on Gitea: the ONE login whose PR review gates the merge, never inferred
     judge_app: int = 0  # a judge on GitHub: the ONE App id whose JUDGE_CHECK run gates the merge
-    preparers: tuple[str, ...] = ()  # a judge: logins (never the Actions bot) whose bundle pointer is read
     batch: bool = batching_.FAMILY_BATCH  # via the vendor batch endpoint; False: at once (forgereview_batch)
     on_expiry: str = batching_.FAMILY_ON_EXPIRY  # an expired batch request: one of batching_.ON_EXPIRY
     batch_wait: str = batching_.DEFAULT_BATCH_WAIT  # a duration: one review waits this long, then posts pending
@@ -211,9 +209,6 @@ class Review:
             raise ValueError(msg)
         if BUNDLE_FIELD not in self.bundle:
             msg = f'bundle = {list(self.bundle)} names no {BUNDLE_FIELD}: the judge would read no bundle'
-            raise ValueError(msg)
-        if forged := {ACTIONS_BOT, ''} & set(self.preparers):
-            msg = f'preparers = {sorted(forged)}: an identity every Actions job posts as is no preparer'
             raise ValueError(msg)
         batching_.check_expiry(self.on_expiry)
         stale_after(self)

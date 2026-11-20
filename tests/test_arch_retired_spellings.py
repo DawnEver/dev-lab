@@ -99,6 +99,23 @@ RETIRED_SPELLINGS: Final = {
         'toolchain D73 2026-11-18: a repo declares no placement, migrated once',
     ),
     **dict.fromkeys(
+        (
+            'forgereview_pointer',
+            'actionsartifact',
+            'trusted_bundle',
+            'PREPARE_WORKFLOW',
+            'review_runs',
+            'RunsUnread',
+            'run_pulls_listed',
+            'forge review prepare',
+            'BUNDLE_CONTEXT',
+        ),
+        (
+            'reviewbundle.fetched + reviewbundle.prepare on the judge host (forgereview_bundle.fetch_from)',
+            'toolchain D77 2026-11-18: the judge fetches each head and prepares its own bundle; no CI job or pointer',
+        ),
+    ),
+    **dict.fromkeys(
         ('check-case-conflict', 'check-json', 'check-merge-conflict', 'check-toml'),
         (
             'the one `filechecks` hook row (`dev_lab.dev.filechecks all`; a check is skipped or narrowed by name)',

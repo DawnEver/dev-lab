@@ -44,11 +44,9 @@ has no workflow. A workflow left with no job is not rendered, so a repo with no 
 Every rendered workflow carries the repo's kinds as :data:`~dev_lab.dev.roles.ROLES_ENV`, so a job -- which holds no
 family layer -- reads the same binding the render did.
 
-THE JUDGE'S PREPARE: where ``review`` is bound to a ``host`` (a judge), the base's :data:`PREPARE` table (its job
-``by = "host"``) is rendered under :data:`~dev_lab.dev.reviewgate.PREPARE_WORKFLOW` -- the one name the judge
-reads its runs by (:func:`~dev_lab.dev.forgereview_pointer.trusted_bundle`) -- a repo layer of that name merged over
-it; the layer's ``forge`` picks the forge it runs on (Gitea by default). Any other repo renders none, and a layer of
-that name there is refused.
+THE JUDGE NEEDS NO WORKFLOW (D77): where ``review`` is bound to a ``host`` (a judge), that host fetches each head and
+prepares its bundle itself (:func:`~dev_lab.dev.reviewbundle.fetched`), so nothing is rendered for it; the forge
+must still wire the judge as a producer (:func:`placed`).
 
 A DRAFT RUNS NOTHING (user ruling 2026-11-05): every job of a workflow a PR event starts (:data:`PR_EVENTS`) is
 AND-guarded at render by :data:`~dev_lab.dev.forgedraft.READY_ONLY` (:func:`ready_only`) -- never typed per job.
@@ -87,7 +85,6 @@ from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
 from dev_lab.dev.forgedraft import READY_ONLY
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.nightlycron import scheduled
-from dev_lab.dev.reviewgate import PREPARE_WORKFLOW
 from dev_lab.dev.roles import CI, HOST, REVIEW, ROLES, ROLES_ENV, Roles, roles_at
 
 __all__ = [
@@ -97,10 +94,10 @@ __all__ = [
     'FORGE_KEY',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
-    'PREPARE',
     'PR_EVENTS',
     'RENDERED_BY',
     'RENDER_COMMAND',
+    'RETIRED_WORKFLOWS',
     'ROLE_KEY',
     'RUNNERS',
     'SHARED',
@@ -129,8 +126,6 @@ BASE_PATH: Final = Path(__file__).resolve().parent / 'ci_base.toml'
 #: The top-level table of named step lists; never a workflow.
 SHARED: Final = '_steps'
 
-#: The top-level table of a judge repo's prepare workflow, rendered as ``PREPARE_WORKFLOW``; never a repo's key.
-PREPARE: Final = '_prepare'
 
 #: The top-level table of Gitea runner labels; never a workflow.
 RUNNERS: Final = '_runners'
@@ -153,6 +148,11 @@ RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
 ROLE_KEY: Final = 'role'
 #: A job key, never rendered: the executor kind the job works for (``ci`` when omitted).
 BY_KEY: Final = 'by'
+
+#: A workflow the base no longer renders, each with why; a repo still declaring one is refused by name (migrate once).
+RETIRED_WORKFLOWS: Final = {
+    'review-prepare.yml': 'the judge fetches each head and prepares its bundle itself (D77)',
+}
 
 
 def runner_labels() -> dict[str, str]:
@@ -388,17 +388,15 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
     """
     base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
     declared = dict(declared_table(tomllib.loads(text), 'ci', {}))
+    if stale := sorted(set(declared) & set(RETIRED_WORKFLOWS)):
+        why = '; '.join(f'{name}: {RETIRED_WORKFLOWS[name]}' for name in stale)
+        msg = f'{origin}: [tool.dev_lab.ci] declares a retired workflow -- {why}; delete the table and its file'
+        raise ValueError(msg)
     for name in base_names(forge):
         declared.setdefault(name, {})
     shared = merge(base.get(SHARED, {}), declared.pop(SHARED, {}))
-    prepare = base.pop(PREPARE)
     if roles.kind(REVIEW) == HOST:
         require_producer(BACKENDS[forge], JUDGE_HOST, f'{origin}: review bound to a host (a judge)')
-        base[PREPARE_WORKFLOW] = prepare
-        declared.setdefault(PREPARE_WORKFLOW, {})
-    elif PREPARE_WORKFLOW in declared:
-        msg = f'[tool.dev_lab.ci."{PREPARE_WORKFLOW}"]: rendered only where review is bound to a host (a judge)'
-        raise ValueError(msg)
     hosted = hostedparts.hosted_parts(text)
     integration = _integration(text, origin)
     out = {}
