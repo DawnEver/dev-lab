@@ -22,7 +22,12 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'commitmsg',  # the in-kit message checker that replaced commitizen (ruling 2026-11-05)
     'producer',
     'failprint',  # a failure fingerprint: test id plus the subjects its failure names (finding D13, 2026-11-16)
-    'producers',  # each repo's one producer, actions or hpc, and its optional parts (ruling 2026-11-16)
+    'roles',  # the forge roles each repo's work is bound to, read from the family layer (D73; replaced producers)
+    'disposable',  # a throwaway worktree's lease: scratch and discard without a landing (split from reclaim)
+    'scratchtree',  # the scratch worktree door, --scratch and --discard (split from reclaim)
+    'forgetask',  # the forge task verbs, split from forgecli to keep it under the module bound
+    'tomlleaves',  # the TOML leaf reader devhost renders through, split from devhost
+    'vendordetect',  # detect installed vendor tools for the machine file, split from devhost
     'rolecheck',  # the guard refusing what contradicts the family's roles binding (D73)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
