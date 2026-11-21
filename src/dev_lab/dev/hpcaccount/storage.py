@@ -37,9 +37,8 @@ from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.division import division_of, reached_machine
-from dev_lab.dev.hpcaccount.fleet import declared_target
+from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.spec import MARK
-from dev_lab.dev.hpcaccount.target import Target, in_checkout
 from dev_lab.dev.hpcaccount.transport import grant_runner, host_runner
 
 __all__ = [

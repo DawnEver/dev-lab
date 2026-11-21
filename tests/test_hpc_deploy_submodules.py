@@ -45,7 +45,7 @@ def test_a_fresh_clone_and_an_update_both_check_out_the_pinned_component(
     monkeypatch.setenv('GIT_CONFIG_VALUE_0', 'always')
     engine, product = _product(tmp_path)
     repo = Repo('product', product.as_uri(), 'main')
-    spec = Deployment('h', (tmp_path / 'root').as_posix(), '3.13', (repo,))  # a declared root, never a real /
+    spec = Deployment('h', (tmp_path / 'root').as_posix(), '3.13', (repo,))
     home = tmp_path / 'home'
     step = Step(Tools(), dry=False)
 

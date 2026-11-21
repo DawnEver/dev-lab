@@ -34,16 +34,17 @@ from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configretired import refuse as refuse_retired
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
-from dev_lab.ops.credentialroles import Breakglass, Judge
 from dev_lab.ops.giteaadmin import Forge
+from dev_lab.ops.judgerole import Judge
 from dev_lab.ops.pgroles import Postgres
 from dev_lab.ops.placement import Placement
-from dev_lab.ops.served import served
+from dev_lab.ops.served import served, served_by
 from dev_lab.supervise.config import ENV_PREFIX, load_config
 
 __all__ = [
     'INTEGRATION_REF',
     'OPS_KEYS',
+    'Breakglass',
     'ConfigSource',
     'Forge',
     'OpsConfig',
@@ -124,6 +125,63 @@ class Upgrade:
     uv: str = ''
     follow: str = ''
     schedule: str = '*:0/15'
+
+
+@dataclass(frozen=True)
+class Breakglass(Placement):
+    """The emergency merge: the restricted account and its keys, the repos it serves, a token per forge, the waves.
+
+    ``repos`` are the clone URLs it may merge into -- ITS OWN set, never ``[ops] repos`` (what promote fetches): a
+    forge host may break glass on repos it does not promote, on any forge. Each URL names its forge (the host);
+    ``tokens`` maps each forge host to the ONE file holding that forge's break-glass token, so every repo on that
+    forge merges as that identity. A repo is named by its full identity ``<host>/<owner>/<repo>``
+    (:attr:`dev_lab.dev.forge.Forge.identity`), so one name on two forges or two owners is two repos. A repo whose
+    forge names no token, a token no repo uses, an empty set and one identity twice are refused at load.
+
+    ``state`` is a directory (the waves and their reports). A wave's window and merge cap are the params of the
+    ``breakglass.wave`` consent credential that opens it (:mod:`dev_lab.ops.consent`); the role declares only their
+    CEILINGS (user ruling 2026-11-06): ``wave_hours_max`` the longest window, ``max_merges_max`` the largest cap
+    (``0`` = no ceiling). A non-positive or NaN window ceiling and a negative cap ceiling are refused at load.
+    ``tick`` is when the timer ends expired waves and resends a wave summary no alert channel delivered (a systemd
+    ``OnCalendar``). ``family`` is the break-glass processes' lab-commons family layer, ``{source, file, max_age}``:
+    a wave reads who produces each repo's tests from the family's roles binding (:mod:`dev_lab.dev.roles`, D73), so
+    install renders it as the ``[family]`` table of the machine file its serve and tick read
+    (:data:`dev_lab.ops.install.BREAKGLASS_MACHINE`, :func:`dev_lab.ops.install.family_env`).
+    """
+
+    account: str
+    state: str
+    log: str
+    repos: tuple[str, ...] = ()
+    tokens: Mapping[str, str] = field(default_factory=dict)
+    apps: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    keys: tuple[str, ...] = ()
+    min_reason: int = 10
+    wave_hours_max: float = 24.0
+    max_merges_max: int = 0
+    tick: str = 'hourly'
+    family: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Refuse a declaration that lies (see the class docstring)."""
+        served_by(self.repos, self.tokens, self.apps, '[ops.breakglass]')
+        if self.family and not self.family.get('source'):
+            msg = '[ops.breakglass.family] names no source (the family file on this host)'
+            raise ValueError(msg)
+        if not self.wave_hours_max > 0:  # NaN fails too
+            msg = f'[ops.breakglass] wave_hours_max ({self.wave_hours_max}) must be positive'
+            raise ValueError(msg)
+        if self.max_merges_max < 0:
+            msg = f'[ops.breakglass] max_merges_max ({self.max_merges_max}) must not be negative'
+            raise ValueError(msg)
+
+    def repo(self, identity: str) -> str | None:
+        """The clone URL of the repository ``<host>/<owner>/<repo>`` *identity*, else ``None``."""
+        return next((url for url in self.repos if forge_of_url(url).identity == identity), None)
+
+    def token_file(self, url: str) -> str:
+        """The file holding the break-glass token of *url*'s forge (a forge with no App: Gitea)."""
+        return self.tokens[forge_of_url(url).host]
 
 
 @dataclass(frozen=True)

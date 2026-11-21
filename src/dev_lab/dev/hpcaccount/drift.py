@@ -4,7 +4,7 @@ THE CONFIG SOURCE IS THE TRUTH; AN ACCOUNT IS A RENDER OF IT (user ruling 2026-1
 useless, everything worth keeping is in the config source). Two renders are compared with what the account holds:
 
 * its machine file, rendered from ``--from <clone>`` for ``--host <cluster>-<user>``
-  (:func:`dev_lab.dev.devrender.render`) with NO local table carried over -- a table only the live file holds is
+  (:func:`dev_lab.dev.devhost.render`) with NO local table carried over -- a table only the live file holds is
   exactly what a lost account loses -- diffed table-by-key against the live file;
 * ``crontab -l``, against the lines the deploy writes from that render
   (:func:`~dev_lab.dev.hpcaccount.spec.cron_lines`).
@@ -37,10 +37,10 @@ from lab_commons.config import config_path
 from lab_commons.hpc.grants import declared_grants
 from lab_commons.log import emit
 
-from dev_lab.dev import devrender
+from dev_lab.dev import devhost
 from dev_lab.dev._machinefile import render_value
 from dev_lab.dev.backedup import replace_backed_up
-from dev_lab.dev.devdeclared import OWN_TABLE, layered
+from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
 from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
@@ -48,8 +48,19 @@ from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.venvpointer import RETIRED_POINTER
 
 __all__ = [
-    'DISCARD', 'PRE_ROOT_IN_HOME', 'PRE_ROOT_IN_ROOT', 'STRAYS', 'Drift', 'account_drift', 'compare', 'compare_lines',
-    'main', 'report', 'shown', 'strays', 'unrenderable',
+    'DISCARD',
+    'STRAYS',
+    'STRAYS_IN_HOME',
+    'STRAYS_IN_ROOT',
+    'Drift',
+    'account_drift',
+    'compare',
+    'compare_lines',
+    'main',
+    'report',
+    'shown',
+    'strays',
+    'unrenderable',
 ]  # fmt: skip
 
 #: The switch with which ``ci-pause`` accepts the loss of what the config source cannot render.
@@ -60,8 +71,8 @@ _ENCODED_WORD: Final = re.compile(r'[0-9a-fA-F]{32,}|[A-Za-z0-9+_-]{40,}={0,2}')
 #: The report of old copies (:func:`strays`).
 STRAYS: Final = 'old copies'
 #: Where the layout before the declared root kept the forge, home-relative and root-relative.
-PRE_ROOT_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
-PRE_ROOT_IN_ROOT: Final = ('dev-lab', 'src')
+STRAYS_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
+STRAYS_IN_ROOT: Final = ('dev-lab', 'src')
 _SECRET_ASSIGN: Final = re.compile(r'(token|key|password|secret)\w*\s*=', re.IGNORECASE)
 
 
@@ -146,9 +157,9 @@ def compare_lines(held: Sequence[str], wanted: Sequence[str]) -> Drift:
 def strays(home: Path, root: Path) -> tuple[str, ...]:
     """Each old copy on the account with its file count; read only.
 
-    :data:`PRE_ROOT_IN_HOME`, :data:`PRE_ROOT_IN_ROOT`, and a retired ``repos/<repo>/.venv-current`` file.
+    :data:`STRAYS_IN_HOME`, :data:`STRAYS_IN_ROOT`, and a retired ``repos/<repo>/.venv-current`` file.
     """
-    old = [home / p for p in PRE_ROOT_IN_HOME] + [root / p for p in PRE_ROOT_IN_ROOT]
+    old = [home / p for p in STRAYS_IN_HOME] + [root / p for p in STRAYS_IN_ROOT]
     old += [repo / RETIRED_POINTER for repo in sorted((root / 'repos').glob('*'))]
     return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in old if p.exists() or p.is_symlink())
 
@@ -160,15 +171,14 @@ def unrenderable(found: Mapping[str, Drift]) -> list[str]:
 
 def account_drift(step: Step, home: Path, machine: Path, clone: Path, host: str) -> dict[str, Drift] | str:
     """``{'machine file': ..., 'crontab': ...}`` for this account; else why it cannot be compared (nothing read)."""
-    if not (clone / devrender.host_file(host)).is_file() or not (clone / 'family.toml').is_file():
-        return (
-            f'{clone.as_posix()} holds no family.toml and {devrender.host_file(host)}: deploy-fleet fetches that clone'
-        )
+    if not (clone / devhost.host_file(host)).is_file() or not (clone / 'family.toml').is_file():
+        return f'{clone.as_posix()} holds no family.toml and {devhost.host_file(host)}: deploy-fleet fetches that clone'
     try:
-        rendered = tomllib.loads(devrender.render(clone, host, {}))
+        rendered = tomllib.loads(devhost.render(clone, host, {}))
         live = tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {}
-        spec = parse(rendered, clone / devrender.host_file(host))
-        grants, _ = declared_grants(layered(rendered).get('hpc', {}))  # the grants stay in the family file
+        whole = layered(rendered)  # a render holds no family leaf: the grants are read under it (devdeclared)
+        spec = parse(whole, clone / devhost.host_file(host))
+        grants, _ = declared_grants(whole.get('hpc', {}))
     except (OSError, ValueError) as failed:  # TOMLDecodeError is a ValueError
         return f'cannot render {host} from {clone.as_posix()}: {failed}'
     if spec is None or spec.role != VERIFICATION:  # SCHEDULER-ONLY-FOR-SERVING: no crontab to compare, none read
@@ -215,7 +225,7 @@ def _discard(drift: Drift, *, home: Path, machine: Path, clone: Path, host: str,
         emit(f'[dry-run] would discard {len(drift.only_on_account)} item(s) only {machine} holds:{items}')
         return 1
     live = tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {}
-    text = devrender.render(clone, host, {key: value for key, value in live.items() if key == OWN_TABLE})
+    text = devhost.render(clone, host, {key: value for key, value in live.items() if key == devhost.OWN_TABLE})
     backup = replace_backed_up(machine, text, home / '.cache' / 'dev-lab' / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost')
     emit(f'discarded {len(drift.only_on_account)} item(s); re-rendered {machine}; the previous file is {backup}{items}')
     return 0

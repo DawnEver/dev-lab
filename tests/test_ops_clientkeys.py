@@ -42,7 +42,11 @@ def test_every_development_machines_declared_key_is_derived_once_in_name_order()
     assert clientkeys.derive({name: FILES[name] for name in ('nokey.toml', 'ada-user.toml', 'forge.toml')}) == ()
 
 
-@pytest.mark.parametrize('bad', ['-----BEGIN OPENSSH ' + 'PRIVATE KEY-----', '', 'ssh-ed25519', 'AAAA dev@x'])
+#: A private-key ARMOUR line, joined at runtime so the source holds no secret-shaped literal for a scanner to flag.
+PRIVATE_ARMOUR = '-----BEGIN OPENSSH ' + 'PRIVATE KEY-----'
+
+
+@pytest.mark.parametrize('bad', [PRIVATE_ARMOUR, '', 'ssh-ed25519', 'AAAA dev@x'])
 def test_a_malformed_key_is_refused_naming_its_file(bad: str) -> None:
     with pytest.raises(ValueError, match=r'ws\.toml \[dev\] client_keys\[0\]'):
         clientkeys.derive({'ws.toml': f'[dev]\nclient_keys = ["{bad}"]\n'})

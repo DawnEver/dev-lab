@@ -1,7 +1,7 @@
-"""An account machine file's ``[hpc]`` slice: its grants, login hosts and set-up, read and rewritten.
+"""The ``[hpc]`` slice of a machine file: the grants and login hosts it declares, read, rendered and cut out.
 
-Split from :mod:`dev_lab.dev.hpcaccount.spec` at the module-size band (2026-11-21): ``spec`` holds the
-``[deploy]`` declaration, this module the ``[hpc]`` one beside it in the same file.
+Split from :mod:`dev_lab.dev.hpcaccount.spec` (the ``[deploy]`` declaration): this reads the OTHER table
+of the same file.
 """
 
 from __future__ import annotations
@@ -15,9 +15,8 @@ from typing import Any, Final
 from lab_commons.hpc.grants import declared_grants
 
 from dev_lab.dev._machinefile import dumps
-from dev_lab.dev.devdeclared import layered
 
-__all__ = ['grant_refusal', 'grant_setup', 'login_hosts', 'render_grant', 'without_hpc']
+__all__ = ['grant_refusal', 'grant_setup', 'has_grant', 'login_hosts', 'render_grant', 'without_hpc']
 
 
 def render_grant(table: Mapping[str, Any]) -> str:
@@ -26,14 +25,18 @@ def render_grant(table: Mapping[str, Any]) -> str:
 
 
 def _hpc_of(path: Path) -> dict[str, Any]:
-    """The ``[hpc]`` a reader of the machine file at *path* sees: its own over the family file's (grants stay there)."""
-    return layered(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
+    return (tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
 
 
 def login_hosts(path: Path, table: Mapping[str, Any] | None) -> frozenset[str]:
     """Every login host a cluster declares -- in the passed ``[hpc]`` slice *table*, else the machine file at *path*."""
     hpc = table if table is not None else _hpc_of(path)
     return frozenset(host for cluster in hpc.get('clusters', {}).values() for host in cluster.get('hosts', ()))
+
+
+def has_grant(path: Path, user: str) -> bool:
+    """Whether the machine file at *path* already grants *user*."""
+    return any(grant.get('user') == user for grant in _hpc_of(path).get('grant', []))
 
 
 def grant_refusal(path: Path) -> str:

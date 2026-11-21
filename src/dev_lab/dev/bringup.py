@@ -32,7 +32,7 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import devprofile, devrender, familyrepos, forgecredential
+from dev_lab.dev import devprofile, familyrepos, forgecredential
 from dev_lab.dev.devdeclared import OWN_TABLE, declared
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops.clientkeys import DEV_KEY
@@ -72,9 +72,9 @@ def _public_keys(ssh_dir: Path) -> tuple[str, ...]:
     """The machine's ssh public key lines, without their comments (``<type> <base64>``)."""
     found = []
     for pub in sorted(ssh_dir.glob('*.pub')) if ssh_dir.is_dir() else ():
-        words = pub.read_text(encoding='utf-8', errors='replace').split()
-        if words[1:]:  # a key line is "<type> <base64> [comment]"
-            found.append(f'{words[0]} {words[1]}')
+        kind, *rest = pub.read_text(encoding='utf-8', errors='replace').split() or ['']
+        if rest:  # a key line is "<type> <base64> [comment]"
+            found.append(f'{kind} {rest[0]}')
     return tuple(found)
 
 
@@ -145,10 +145,10 @@ def walls(
     clone = Path(own['source']) if own.get('source') else None
     host = own.get('host') or ''
     if clone is None or not (clone / 'family.toml').is_file():
-        door = f'no config-source clone here: {familyrepos.SET_DOOR}, then {devrender.RENDER_DOOR} --from <clone>'
+        door = f'no config-source clone here: {familyrepos.SET_DOOR}, then {devhost.RENDER_DOOR} --from <clone>'
         return [Wall('config-source', green=False, said=door)]
     found = [Wall('config-source', green=True, said=clone.as_posix())]
-    host_file = clone / devrender.host_file(host)
+    host_file = clone / devhost.host_file(host)
     if not host_file.is_file():
         return [*found, Wall('enrolment', green=False, said=devprofile.enrolment(host))]
     found.append(Wall('enrolment', green=True, said=f'{host} is declared'))

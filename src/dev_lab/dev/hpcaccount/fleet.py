@@ -11,8 +11,7 @@ overwrites it, so a stale remote ``[deploy]`` is never read and never refuses. I
 A layer with no ``[deploy]`` host, or whose host is not one of its grant's login hosts, is refused by name and the
 others still deploy (exit 2).
 
-AN ACCOUNT WITH NO KIT VENV IS FIRST INSTALLED (:func:`~dev_lab.dev.hpcaccount.target.first_install`): a key-only
-account has no other door, so
+AN ACCOUNT WITH NO KIT VENV IS FIRST INSTALLED (:func:`first_install`): a key-only account has no other door, so
 when ``~/<root>/dev-lab/.venv`` has no interpreter, uv is installed into ``~/.local/bin`` if absent, the
 kit is cloned where missing (only the kit: a forge-hosted repo needs the reader credential placed later), and the
 kit is ``uv sync --frozen``-ed; a kit with its venv skips the step.
@@ -24,8 +23,7 @@ role`` differs, naming both. A grant role the table does not name is refused her
 Then it runs, through the one transport (:mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held session when
 one is live, else ONE detached ``ssh -o BatchMode=yes <user>@<declared host>``), that account's own
 ``python -m dev_lab.dev.hpcaccount deploy`` in ``~/<root>/dev-lab`` -- after the kit's own tick has
-refreshed that checkout (:func:`~dev_lab.dev.hpcaccount.target.refresh_kit`; with the layer's kit ref, a direct
-fast-forward under the tick's lock,
+refreshed that checkout (:func:`refresh_kit`; with the layer's kit ref, a direct fast-forward under the tick's lock,
 since the tick reads the stale machine file), so a fix to the deploy reaches an account that never ticks --
 and writes everything it prints to one log
 per account (``~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log``). The deploy is safe to repeat.
@@ -46,8 +44,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import ntpath
-import posixpath
 import shlex
 import sys
 import tomllib
@@ -64,21 +60,24 @@ from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devrender, tomlleaves
+from dev_lab.dev import accounthost
 from dev_lab.dev.credstore import STORE, valid_host
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.devdeclared import OWN_TABLE
-from dev_lab.dev.devrender import config_source, host_file
+from dev_lab.dev.devhost import host_file
+from dev_lab.dev.devsource import config_source
 from dev_lab.dev.hpcaccount.cimark import paused_guard
-from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
-from dev_lab.dev.hpcaccount.target import Target, first_install, in_checkout, refresh_kit, repo_dir
+from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
+from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
+from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
+from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
-    'KIND', 'ConfigSource', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
-    'deploy_command', 'deploy_fleet', 'layer_refusal', 'layer_target', 'main',
-    'render_command',
+    'KIND', 'ConfigSource', 'Target', 'account_clone', 'account_host', 'config_source_of', 'declared_target',
+    'deploy_command', 'deploy_fleet', 'first_install', 'in_checkout', 'layer_refusal', 'layer_target', 'main',
+    'refresh_kit', 'render_command',
 ]  # fmt: skip
 
 #: The dated-log kind every account's log is written under.
@@ -95,6 +94,16 @@ _READ_DEPLOY: Final = f'f={_MACHINE_FILE}; echo "# $f"; ' + 'sed -n \'/^\\[deplo
 
 #: Runs one deploy on a dest: ``(dest, command, log) -> object`` (:func:`dev_lab.dev.hpcaccount.transport.start`).
 Launch = Callable[[str, str, IO[Any]], object]
+
+
+@dataclass(frozen=True)
+class Target:
+    """Where one account deploys: its declared login host, checkout root and role (``''``: undeclared)."""
+
+    host: str
+    root: str
+    role: str = ''
+    repos: tuple[tuple[str, str, str], ...] = ()  # (name, https url, ref): what a first install clones
 
 
 def declared_target(grant: Grant, shell: Runner, *, as_deployed: bool = False) -> Target | str:
@@ -143,23 +152,9 @@ def _checked(
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
     if len(named) > 1:
         return f'{grant.user}: refused -- its [deploy] host {host} is ambiguous: it names {named}; declare one in full'
-    root = deploy.get('root', grant.root)  # an unstated root is the cluster's: declared, never a default
-    if not root:
-        return (
-            f'{grant.user}: refused -- no root declared: declare [hpc.clusters.{grant.cluster_name}] root (or the '
-            f"account file's [deploy] root) in the family config, on a filesystem the compute nodes see"
-        )
-    relative = not (posixpath.isabs(root) or ntpath.isabs(root))  # lab_commons.hpc.layout.account_paths' test
-    if as_deployed and relative:  # the pre-root layout: home-relative, its checkouts at ~/<root>/<name>
-        root = f'~/{str(root).removeprefix("~/")}'
-    elif relative or (grant.root and root != grant.root and not as_deployed):
-        why = (
-            'must be an absolute path (a declared root, never ~)'
-            if relative
-            else f'is not the root its cluster declares {grant.root} (the family declaration is the source: '
-            'redeploy with --root naming it)'
-        )
-        return f'{grant.user}: refused -- its [deploy] root {root} {why}'
+    root, refused = deploy_root(grant, deploy, as_deployed=as_deployed)
+    if refused:
+        return f'{grant.user}: refused -- {refused}'
     repos = tuple((r['name'], r['url'], r['ref']) for r in deploy.get('repos', ()) if {'name', 'url', 'ref'} <= set(r))
     return Target(named[0], root, deploy.get('role') or grant.role, repos)  # unstated: the family grant's role
 
@@ -173,7 +168,7 @@ class ConfigSource:
 
 
 def config_source_of(live: Mapping[str, Any]) -> ConfigSource:
-    """The workstation's config source, from its machine file's ``[devhost]`` (:func:`.devrender.config_source`).
+    """The workstation's config source, from its machine file's ``[devhost]`` (:func:`devsource.config_source`).
 
     Raises:
         ValueError: the machine file is not a render, or its clone's ``origin`` is absent or not an https url.
@@ -246,9 +241,26 @@ def render_command(grant: Grant, target: Target, source: ConfigSource, *, reader
     return f'( {" && ".join([*grant.setup, *steps])} )'
 
 
+def repo_dir(target: Target, name: str) -> PurePosixPath:
+    """*target*'s checkout of *name*: ``<root>/repos/<name>`` (:mod:`lab_commons.hpc.layout`).
+
+    A ``~/`` root is an account deployed before the declared root (only :func:`declared_target`'s *as_deployed*
+    read yields one): its checkouts sit at ``~/<root>/<name>``, the layout it was deployed with.
+    """
+    if target.root.startswith('~/'):
+        return PurePosixPath(target.root, name)
+    return PurePosixPath(paths_of_root(target.root).repo(name))
+
+
 def account_clone(target: Target, source: ConfigSource) -> PurePosixPath:
     """Where *target*'s account holds its config-source clone: ``<root>/repos/<config repo>``."""
     return repo_dir(target, PurePosixPath(urlsplit(source.url).path).stem)
+
+
+def in_checkout(target: Target, argv: Sequence[str]) -> str:
+    """The shell line that runs ``python <argv>`` in *target*'s declared dev-lab checkout, with its venv."""
+    kit = repo_dir(target, KIT)  # every cluster login host is POSIX
+    return f'cd {kit} && {shell_interpreter(".")} {shlex.join(argv)}'
 
 
 def grant_slice(grant: Grant) -> dict[str, Any]:
@@ -286,20 +298,73 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     return f'{paused_guard(target.root)} && {refreshed} ; {rendered} && {deployed}'
 
 
-def _serving_twice(grants: Sequence[Grant], accounts: Sequence[str], division: Division | None) -> list[str]:
-    """The accounts this run DEPLOYS that serve and hold more than one grant -- two grants there are two tick hosts.
+#: The official uv installer (user approval 2026-11-16: an HPC account may install uv into ``~/.local/bin``).
+UV_INSTALLER: Final = 'https://astral.sh/uv/install.sh'
 
-    A research account's several grants are several allocations (no tick), and an account outside *accounts* is not
-    deployed by this run, so neither is refused. A role no table names counts as serving: the guard stays on.
+
+def first_install(grant: Grant, target: Target) -> str:
+    """The shell line that gives *target* a kit venv when it has none, else does nothing.
+
+    A key-only account has no door for a first install (raw ssh is refused), and every later step runs the kit's
+    venv python. So, only when that interpreter is missing: uv into ``~/.local/bin`` unless one is on PATH, each
+    declared repo cloned at its ref where its checkout is absent, then ``uv sync --frozen`` in the kit.
     """
-    roles = division.roles if division is not None else DEFAULT_ROLES
-    selected = set(accounts) or {grant.user for grant in grants}
-    users = [grant.user for grant in grants if grant.user in selected]
+    root = PurePosixPath(paths_of_root(target.root).root) / 'repos'
+    kit = root / KIT
+    clones = [  # the kit alone: a forge-hosted product repo needs a reader credential the deploy places later
+        f'{{ [ -d {root / name}/.git ] || git clone -q --branch {shlex.quote(ref)} {shlex.quote(url)} {root / name}; }}'
+        for name, url, ref in target.repos
+        if name == KIT
+    ]
+    steps = [
+        f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
+        'export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0',
+        f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
+        f'mkdir -p {root}', *clones, f'( cd {kit} && uv sync --frozen )',
+    ]  # fmt: skip
+    body = ' && '.join([*grant.setup, *steps])
+    return f'{{ [ -x {shell_interpreter(str(kit))} ] || ( {body} ); }}'
 
-    def serves(user: str) -> bool:
-        return any(bool(roles.get(grant.role, {}).get('serves', True)) for grant in grants if grant.user == user)
 
-    return sorted({user for user in users if users.count(user) > 1 and serves(user)})
+def refresh_kit(grant: Grant, target: Target) -> str:
+    """The shell line that brings *target*'s kit to its declared tip BEFORE the deploy runs, and records the sha.
+
+    A dead account cannot heal itself: its kit moves only on its own cron tick, which never runs, so a fix to
+    ``deploy`` would never reach it. The step is the kit's OWN tick (:mod:`dev_lab.dev.hpcaccount.tick`, the one
+    writer of the host checkout), never a second refresh; in the grant's ``setup`` environment, as the cron line
+    runs it (:func:`dev_lab.dev.hpcaccount.spec.tick_command`). The deploy follows whatever the tick exits: a
+    research kit refreshes, then refuses to serve.
+    """
+    kit = repo_dir(target, KIT)
+    recorded = f'echo "[deploy-fleet] kit at $(git -C {kit} rev-parse HEAD)"'
+    ref = next((ref for name, _url, ref in target.repos if name == KIT), '')
+    tick = f'{in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
+    if ref:
+        tick = f'{_move_kit(kit, ref)} ; {recorded}'
+    return f'bash -lc {shlex.quote("; ".join([*grant.setup, tick]))}' if grant.setup else tick
+
+
+def _move_kit(kit: PurePosixPath, ref: str) -> str:
+    """The kit fast-forwarded to its LAYER-declared *ref* and its own venv re-synced, under the cron tick's lock.
+
+    Never through the kit's tick: that reads the account's machine file, which is the stale thing this deploy is
+    about to render over (2026-11-20: a retired key crashed it before it refreshed; an old root sent it to another
+    checkout). The lock is the cron tick's, so the kit keeps one writer at a time.
+    """
+    remote = f'refs/remotes/origin/{ref}'
+    python = shell_interpreter('.')
+    body = ' && '.join([
+        f'git fetch -q origin {shlex.quote(f"+refs/heads/{ref}:{remote}")}',
+        f'git checkout -q -B {shlex.quote(ref)} {shlex.quote(remote)}',
+        f'py={python}',
+        'UV_PROJECT_ENVIRONMENT="${py%/bin/python}" uv sync --frozen',
+    ])  # fmt: skip
+    serve = kit.parent.parent / 'serve'  # <root>/repos/dev-lab -> <root>/serve: the cron tick's own lock
+    lock = serve / f'{KIT}.lock'
+    return (
+        f'( export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0; mkdir -p {serve}; cd {kit} && '
+        f'flock -w 600 {lock} bash -c {shlex.quote(body)} )'
+    )
 
 
 def _target(grant: Grant, source: ConfigSource, division: Division | None) -> Target | str:
@@ -326,12 +391,8 @@ def deploy_fleet(
     division: Division | None = None,
 ) -> int:
     """Start each account's deploy on its declared host; 2 when any account was refused."""
-    if twice := _serving_twice(grants, accounts, division):
-        say(
-            f'deploy-fleet: refused -- {twice} serve under more than one [[hpc.grant]]: a serving account ticks from '
-            f'ONE login host. Keep one grant per serving account in the machine file, or deploy the others alone '
-            f'(--account <user>)'
-        )
+    if why := serving_twice_refusal(grants, accounts, division):
+        say(f'deploy-fleet: refused -- {why}')
         return 2
     fleet: dict[str, Grant] = {}
     for grant in grants:  # a non-serving account's further grants are allocations, not hosts: its first one deploys
@@ -377,30 +438,6 @@ def _log_line(path: Path, line: str, *, dry_run: bool) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('a', encoding='utf-8') as log:
             log.write(f'[deploy-fleet] {line}\n')
-
-
-def stale_render(live: Mapping[str, Any]) -> str:
-    """Why *live* (this machine's file) is not the render of its config source; ``''`` when it is.
-
-    The deploy line is built from THIS machine's grants, so a stale render deploys stale family facts (measured
-    2026-11-20: a cluster ``setup`` landed in the source, the machine file was never re-rendered, and every deploy ran
-    without it).
-    """
-    own = live.get(OWN_TABLE, {})
-    if not own.get('host') or not own.get('source'):
-        return ''  # not a render at all: config_source_of refuses it by name
-    clone = Path(own['source'])
-    rendered = tomlleaves.leaves(tomllib.loads(devrender.render(clone, own['host'], live)))
-    have = tomlleaves.leaves(live)
-    differ = sorted(path for path in set(rendered) | set(have) if rendered.get(path) != have.get(path))
-    if not differ:
-        return ''
-    first = ', '.join(f'{tomlleaves.dotted(path)} ({"absent" if path not in have else "not the render"})'
-                      for path in differ[:3])  # fmt: skip
-    return (
-        f'the machine file is not the render of {clone.as_posix()} ({len(differ)} key(s): {first}); re-render it '
-        f'first: python -m dev_lab.dev.devhost render --host {own["host"]} --write'
-    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

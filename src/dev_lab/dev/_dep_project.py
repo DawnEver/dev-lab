@@ -201,7 +201,7 @@ def lock_upgrade_command(root: Path, python: str, required: str, packages: Seque
 def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
     """Resolve only project-owned anchors, including symlink and drive-path refusals."""
     if not isinstance(anchors, (list, tuple)) or any(not isinstance(path, str) for path in anchors):
-        msg = 'tool.dev_lab.dep.anchors must be an array of project-relative paths'
+        msg = 'tool.dev_lab.anchors.paths must be an array of project-relative paths'
         raise ValueError(msg)
     paths = tuple((root / path).resolve() for path in anchors)
     if any(
@@ -214,9 +214,12 @@ def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
 
 
 def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tuple[str, ...], tuple[Path, ...]]:
-    """Validate target-owned environment, extras and anchors before mutation."""
+    """Validate target-owned environment, extras and anchors before mutation.
+
+    Anchors live in their own ``[tool.dev_lab.anchors] paths``: ``[tool.dev_lab.dep]`` is
+    :mod:`lab_commons.extras`'s closed table, read by that one reader, which refuses any key it does not own.
+    """
     manifest = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    declaration = declared_table(manifest, 'dep', {})
     available = manifest.get('project', {}).get('optional-dependencies', {})
     selected = requested if requested is not None else extras.extras_for(manifest, (), str(root / 'pyproject.toml'))
     if not isinstance(selected, (list, tuple)) or any(not isinstance(name, str) for name in selected):
@@ -234,7 +237,7 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
         )
         raise ValueError(msg)
     python = str(prefix.joinpath(*VENV_LAYOUTS[os.name][1:]))
-    return python, tuple(selected), anchor_paths(root, declaration.get('anchors', ()))
+    return python, tuple(selected), anchor_paths(root, declared_table(manifest, 'anchors', {}).get('paths', ()))
 
 
 def lock_upgrade(

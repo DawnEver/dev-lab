@@ -28,6 +28,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgetask',  # the forge task verbs, split from forgecli to keep it under the module bound
     'tomlleaves',  # the TOML leaf reader devhost renders through, split from devhost
     'vendordetect',  # detect installed vendor tools for the machine file, split from devhost
+    'devsource',  # the config source's forge URL, split from devhost at the module-size band (2026-11-21)
+    'bringup',  # ORIGINAL: devhost bringup --check, a new workstation's walls with their doors (2026-11-20)
+    'ask',  # ORIGINAL: the one visible intake of a typed value, checked before it is spent (D94, 2026-11-20)
+    'outputcode',  # ORIGINAL: OUTPUT-HOLDS-NO-CODE's Write/Edit half and source scan (user ruling 2026-11-20)
+    'taskcarry',  # ORIGINAL: a rem task's ledger carried between hosts as refs/tasks/<slug> (hosts-config #78)
     'rolecheck',  # the guard refusing what contradicts the family's roles binding (D73)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
@@ -351,7 +356,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'venvfollow',
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
-    'devrender',  # ORIGINAL: the render itself, split from devhost at the module-size band (2026-11-21)
     'devschema',
     'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrolment (2026-11-16)
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
@@ -419,12 +423,4 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'commonsfloor',
     # ORIGINAL: 2026-11-20, the uv that writes a lock is the pinned release installed beside any other.
     'uvrelease',
-    # ORIGINAL: 2026-11-20, one visible intake of every typed value; only a declared secret is asked hidden (D94).
-    'ask',
-    # ORIGINAL: 2026-11-21, the bring-up preflight of a new or migrated workstation: every wall with its door.
-    'bringup',
-    # ORIGINAL: 2026-11-20, OUTPUT-HOLDS-NO-CODE's Write/Edit half and its source scan.
-    'outputcode',
-    # ORIGINAL: 2026-11-21, a rem task's ledger carried between hosts through the forge as refs/tasks/<slug>.
-    'taskcarry',
 )

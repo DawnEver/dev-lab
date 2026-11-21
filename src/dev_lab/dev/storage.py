@@ -31,7 +31,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons import launch
+from lab_commons import launch as _door
 from lab_commons import storage as _storage
 from lab_commons.log import emit
 
@@ -255,7 +255,7 @@ type Run = Callable[..., subprocess.CompletedProcess[str]]
 
 def check(
     remote: str, *, repo: Path, to: Path = DEFAULT_RCLONE, declared: _storage.Storage | None = None,
-    run: Run = launch.run, rclone: str | None = None,
+    run: Run = _door.run, rclone: str | None = None,
 ) -> str:  # fmt: skip
     """Render, then list *remote*'s top level through rclone; what was reached, value-free.
 

@@ -22,6 +22,7 @@ from dev_lab.dev.credstore import (
     DeclaredForge,
     digest,
     discard_command,
+    named_fill_command,
     read_forge,
     rewrite_command,
     stage_command,
@@ -30,7 +31,7 @@ from dev_lab.dev.credstore import (
 from dev_lab.dev.devcredential import local_shell
 from dev_lab.dev.hpcaccount import credential
 from dev_lab.dev.hpcaccount.account import _READER_REMEDY
-from dev_lab.dev.hpcaccount.credential import declared_logins, drop_host, place_credential, usage
+from dev_lab.dev.hpcaccount.credential import declared_logins, drop_host, named_login, place_credential, usage
 from dev_lab.dev.hpcaccount.division import Division
 from dev_lab.dev.sshholdwire import HoldRefused
 
@@ -47,6 +48,8 @@ _STAMP = '20261112T120000Z'
 def _account(*, answers: str, seen: list[tuple[str, str | None]], deployed: str = _DEPLOY) -> Runner:
     def shell(cmd: str, stdin: str | None = None) -> str:
         seen.append((cmd, stdin))
+        if 'git credential fill' in cmd:  # a named login's read-back: the stored line returns the placed token
+            return _MINTED + chr(10)
         if 'sed -n' in cmd:
             return deployed
         if 'auth role' in cmd:
@@ -274,7 +277,7 @@ def test_stage_then_rewrite_replaces_only_its_forge_line_after_a_backup(tmp_path
     _bash(tmp_path, stage_command(_STAMP), line + '\n')
     assert store.read_text(encoding='utf-8') == before  # staging never touches the store
     said = _bash(tmp_path, rewrite_command('forge.example', _STAMP, login='forge-ci', staged=True))
-    assert store.read_text(encoding='utf-8').splitlines() == [other, lookalike, reader, prefixed, line]
+    assert store.read_text(encoding='utf-8').splitlines() == [line, other, lookalike, reader, prefixed]
     backup = tmp_path / f'.git-credentials.bak-{_STAMP}'
     assert backup.read_text(encoding='utf-8') == before
     assert backup.name in said
@@ -568,3 +571,84 @@ def test_an_account_deployed_at_an_old_home_relative_root_still_takes_its_creden
     stale = credential.declared_target(rooted[0], lambda _c, _s=None: old)
     assert isinstance(stale, str)
     assert 'must be an absolute path' in stale
+
+
+_WRITER_AND_READER = Division(
+    grant_roles={'alice': 'verification'},
+    roles={'verification': {'serves': True, 'read_only': False, 'config_reader': 'server-reader'}},
+)
+
+
+def _place_line(tmp_path: Path, login: str, token: str, *, first: bool) -> None:
+    _bash(tmp_path, stage_command(_STAMP), _stored(login, 'forge.example', token) + '\n')
+    _bash(tmp_path, rewrite_command('forge.example', _STAMP, login=login, staged=True, first=first))
+
+
+def _unnamed_password(tmp_path: Path) -> str:
+    asked = "printf 'protocol=https\\nhost=forge.example\\n\\n' | git credential fill | sed -n 's/^password=//p'"
+    return _bash(tmp_path, asked).strip()
+
+
+@pytest.mark.parametrize('order', [('forge-ci', 'server-reader'), ('server-reader', 'forge-ci')])
+def test_two_logins_on_one_host_each_answer_their_own_request(tmp_path: Path, order: tuple[str, str]) -> None:
+    """Two logins on one host: the unnamed request answers as the writer, a request naming one as that one.
+
+    Measured 2026-11-21 on the verification accounts: with the writer and the config reader on one host, git's
+    ``store`` returned the FIRST line to the serve's unnamed request, so whichever was placed first answered it.
+
+    The writer (unnamed) goes first and the config reader (named) last, in either placement order: the unnamed
+    request answers as the writer, the request naming the reader as the reader. PLANTED CONTROL: the reader placed
+    first-in-file (the old append) takes the unnamed request -- the order is what decides it.
+    """
+    _bash(tmp_path, 'git config --global credential.helper store')
+    tokens = {'forge-ci': 'writer-TOKEN', 'server-reader': 'reader-TOKEN'}
+    for login in order:
+        _place_line(tmp_path, login, tokens[login], first=not named_login(_WRITER_AND_READER, 'alice', login))
+    assert _unnamed_password(tmp_path) == tokens['forge-ci']
+    for login, token in tokens.items():
+        assert _bash(tmp_path, named_fill_command('forge.example', login)).strip() == token
+    _place_line(tmp_path, 'server-reader', tokens['server-reader'], first=True)
+    assert _unnamed_password(tmp_path) == tokens['server-reader']
+
+
+def test_only_a_config_reader_distinct_from_the_unnamed_login_is_named() -> None:
+    assert named_login(_WRITER_AND_READER, 'alice', 'server-reader')
+    assert not named_login(_WRITER_AND_READER, 'alice', 'forge-ci')
+    research = {'reader': 'server-reader', 'config_reader': 'server-reader'}
+    same = Division(grant_roles={'alice': 'r'}, roles={'r': research})
+    assert not named_login(same, 'alice', 'server-reader')  # PLANTED: a research reader IS the unnamed login
+
+
+def test_a_config_reader_is_read_back_by_a_request_naming_it() -> None:
+    """A config reader's stored line is read back by git's fill naming it, never by the unnamed ``auth role``.
+
+    The forge's ``auth role`` asks for the host alone, so it answers as the writer even when the reader's line was
+    placed right: the read-back of a named login is git's fill naming it, which must return the placed token.
+    PLANTED CONTROL: a fill returning another token is refused, not verified.
+    """
+
+    def account(fill: str, seen: list[tuple[str, str | None]]) -> Runner:
+        honest = _account(answers='server-reader', seen=seen)
+
+        def shell(cmd: str, stdin: str | None = None) -> str:
+            if 'git credential fill' in cmd:
+                seen.append((cmd, stdin))
+                return fill + '\n'
+            if 'auth role' in cmd and not cmd.startswith(verify_prefix('forge.example', _STAMP)):
+                return json.dumps({'login': 'forge-ci'})  # the unnamed request: the writer's line
+            return honest(cmd, stdin)
+
+        return shell
+
+    forge = DeclaredForge(Path('f.toml'), ('forge.example',), {'forge-ci': ('org/dev-lab',)})
+    for fill, code in ((_MINTED, 0), ('stale-token', 2)):
+        seen: list[tuple[str, str | None]] = []
+        said: list[str] = []
+        got = place_credential(
+            'alice@login2.example', login='server-reader', token=_MINTED, url=_REPO, forge=forge, grants=_FLEET,
+            division=_WRITER_AND_READER, say=said.append, connect=lambda _g, f=fill, s=seen: account(f, s),
+            stamp=_STAMP,
+        )  # fmt: skip
+        assert got == code, said
+        rewrite = rewrite_command('forge.example', _STAMP, login='server-reader', staged=True, first=False)
+        assert rewrite in [cmd for cmd, _ in seen]

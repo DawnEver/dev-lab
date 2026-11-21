@@ -11,8 +11,7 @@ from lab_commons import storage
 from lab_commons.hpc.grants import AccessRefused
 from lab_commons.storage import StorageError
 
-from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devrender, devschema, tomlleaves
-from dev_lab.dev._machinefile import dumps
+from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devschema, tomlleaves
 from dev_lab.dev.hpcaccount import division
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -48,7 +47,7 @@ def _clone(tmp_path: Path, family: str = FAMILY) -> Path:
 
 def test_an_unknown_hostname_renders_the_default_stamped_unmanaged(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
-    rendered = tomllib.loads(devrender.render(clone, 'stranger', LIVE))
+    rendered = tomllib.loads(devhost.render(clone, 'stranger', LIVE))
     assert rendered['devhost']['unmanaged'] == 'stranger'
     assert rendered['devhost']['hooks'] == 'warn'
     assert rendered['hpc']['reach'] == [], 'the default reaches no HPC role'
@@ -59,7 +58,7 @@ def test_an_unknown_hostname_renders_the_default_stamped_unmanaged(tmp_path: Pat
 
 def test_a_declared_host_is_unaffected(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
-    rendered = tomllib.loads(devrender.render(clone, 'ws', LIVE))
+    rendered = tomllib.loads(devhost.render(clone, 'ws', LIVE))
     assert 'unmanaged' not in rendered['devhost']
     assert 'hooks' not in rendered['devhost']
     assert rendered['hpc']['reach'] == ['research']
@@ -72,7 +71,7 @@ def test_a_declared_host_is_unaffected(tmp_path: Path) -> None:
 def test_bridge_hpc_renders_on_every_dev_machine_from_the_family(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
     for host in ('ws', 'stranger'):
-        hpc = tomllib.loads(devrender.render(clone, host, LIVE))['bridge']['hpc']
+        hpc = tomllib.loads(devhost.render(clone, host, LIVE))['bridge']['hpc']
         assert hpc['command'] == [BRIDGE[host], *devprofile.HPC_READ_DOOR]
         assert hpc['cadence_hours'] == 6
 
@@ -88,10 +87,10 @@ def test_the_bridge_interpreter_is_derived_from_the_dev_lab_checkout_never_the_r
     renders = []
     for caller in ('/wt/a/.venvs/x/python', '/wt/b/.venv/python'):
         monkeypatch.setattr(devprofile, 'running_interpreter', lambda caller=caller: caller)
-        renders.append(devrender.render(clone, 'ws', LIVE))
+        renders.append(devhost.render(clone, 'ws', LIVE))
     assert renders[0] == renders[1]
     with pytest.raises(ValueError, match=r'local set repos\.dev-lab'):
-        devrender.render(clone, 'ws', {})
+        devhost.render(clone, 'ws', {})
 
 
 def test_drift_names_an_unrenderable_machine_file_never_crashes(tmp_path: Path) -> None:
@@ -111,13 +110,13 @@ def test_drift_names_an_unrenderable_machine_file_never_crashes(tmp_path: Path) 
 def test_without_a_declared_default_an_unknown_host_is_refused_by_name(tmp_path: Path) -> None:
     clone = _clone(tmp_path, FAMILY.replace('[dev.default]\nforges = {}\nhpc = []\nhooks = "warn"\n', ''))
     with pytest.raises(LookupError, match=r'\[dev.default\]'):
-        devrender.render(clone, 'stranger', LIVE)
+        devhost.render(clone, 'stranger', LIVE)
 
 
 def test_the_unmanaged_machine_is_refused_write_and_hpc_naming_the_enrolment_door(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    live = tomllib.loads(devrender.render(_clone(tmp_path), 'stranger', LIVE))
+    live = tomllib.loads(devhost.render(_clone(tmp_path), 'stranger', LIVE))
     monkeypatch.setattr(division.config, 'machine', lambda: live)
     with pytest.raises(AccessRefused, match=r'declare hosts/stranger\.toml .* render --host stranger'):
         division.reached_machine()
@@ -156,11 +155,11 @@ def test_local_set_heals_the_missing_checkout_the_bridge_refusal_names(
     PLANTED CONTROL: render with the checkout still unset is refused by name and writes nothing.
     """
     clone = _clone(tmp_path)
-    rendered = tomllib.loads(devrender.render(clone, 'ws', LIVE))
+    rendered = tomllib.loads(devhost.render(clone, 'ws', LIVE))
     rendered.pop('repos')
     rendered.pop('bridge')
     machine = tmp_path / 'machine.toml'
-    machine.write_text(dumps(rendered), encoding='utf-8')
+    machine.write_text(devhost.dumps(rendered), encoding='utf-8')
     before = machine.read_text(encoding='utf-8')
     backups = str(tmp_path / 'b')
     code = devhost.main(['--machine', str(machine), 'render', '--write', '--backups', backups])
@@ -188,7 +187,7 @@ def test_the_render_never_copies_a_family_only_storage_fact(tmp_path: Path) -> N
     host_text = HOST + '\n[storage.reach.store-x]\ncredentials_file = "/secrets/store-x"\n'
     clone = _clone(tmp_path, family_text)
     (clone / 'hosts' / 'ws.toml').write_text(host_text, encoding='utf-8')
-    rendered = tomllib.loads(devrender.render(clone, 'ws', LIVE))
+    rendered = tomllib.loads(devhost.render(clone, 'ws', LIVE))
     assert 'remotes' not in rendered.get('storage', {}), 'a family-only fact stays in the family file'
     assert rendered['storage']['reach'] == {'store-x': {'credentials_file': '/secrets/store-x'}}
     family = tomllib.loads(family_text)
@@ -211,7 +210,7 @@ def test_the_render_restates_no_family_leaf(tmp_path: Path, monkeypatch: pytest.
     family_text = FAMILY + '\n[breakglass]\nendpoint = "bg@forge.example"\n'
     clone = _clone(tmp_path, family_text)
     stale = {**LIVE, 'breakglass': {'endpoint': 'bg@forge.example'}}
-    rendered = tomllib.loads(devrender.render(clone, 'ws', stale))
+    rendered = tomllib.loads(devhost.render(clone, 'ws', stale))
     family = {k: v for k, v in tomllib.loads(family_text).items() if k != 'dev'}
     restated = sorted(set(tomlleaves.leaves(rendered)) & set(tomlleaves.leaves(family)))
     assert restated == [], f'the render restates family leaves {restated}'
@@ -231,4 +230,4 @@ def test_a_host_value_for_a_family_leaf_is_refused_by_name(tmp_path: Path) -> No
         HOST + '\n[breakglass]\nendpoint = "other@forge.example"\n', encoding='utf-8'
     )
     with pytest.raises(ValueError, match=r'\[breakglass\]\.endpoint.*family file'):
-        devrender.render(clone, 'ws', LIVE)
+        devhost.render(clone, 'ws', LIVE)

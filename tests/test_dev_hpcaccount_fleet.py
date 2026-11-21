@@ -14,20 +14,22 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant, Machine
 
-from dev_lab.dev import devrender
+from dev_lab.dev import devhost
 from dev_lab.dev.hpcaccount import declaration
 from dev_lab.dev.hpcaccount.division import Division, division_of
 from dev_lab.dev.hpcaccount.fleet import (
     _READ_DEPLOY,
     ConfigSource,
+    Target,
     declared_target,
     deploy_command,
     deploy_fleet,
+    first_install,
     layer_target,
     render_command,
-    stale_render,
+    repo_dir,
 )
-from dev_lab.dev.hpcaccount.target import Target, first_install, repo_dir
+from dev_lab.dev.hpcaccount.fleetguard import stale_render
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -548,16 +550,15 @@ def _workstation(tmp_path: Path, family: str) -> Path:
 
 
 def test_deploy_fleet_refuses_a_machine_file_that_is_not_its_render(tmp_path: Path) -> None:
-    """The deploy line is built from THIS machine's file, so a stale render deploys stale host facts.
+    """The deploy line is built from THIS machine's grants, so a stale render deploys stale family facts.
 
     Measured 2026-11-20: hosts-config gained a cluster `setup` (CC=gcc), but the workstation's machine file was never
-    re-rendered, so every Cirrus deploy ran without it. The render now keeps family facts in the family file, which
-    every reader layers live, so the stale fact planted here is the HOST layer's. PLANTED CONTROL: the fresh render
-    deploys.
+    re-rendered, so every Cirrus deploy ran without it. Since a render restates no family leaf (#865), a family fact
+    is read live under the machine file; what can go stale is the HOST layer, so the planted change is there.
+    PLANTED CONTROL: the fresh render deploys.
     """
     clone = _workstation(tmp_path, '[hpc.clusters.c1]\nhosts = ["login01"]\n')
-
-    fresh = tomllib.loads(devrender.render(clone, 'WS', {}))
+    fresh = tomllib.loads(devhost.render(clone, 'WS', {}))
     assert stale_render(fresh) == ''
     (clone / 'hosts' / 'WS.toml').write_text('[dev]\nhpc = ["research", "verification"]\n', encoding='utf-8')
     why = stale_render(fresh)

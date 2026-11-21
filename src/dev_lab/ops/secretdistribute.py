@@ -32,8 +32,7 @@ from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev.hpcaccount.division import reached_machine
-from dev_lab.dev.hpcaccount.fleet import account_host, config_source_of, declared_target
-from dev_lab.dev.hpcaccount.target import in_checkout
+from dev_lab.dev.hpcaccount.fleet import account_host, config_source_of, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.transport import grant_runner
 from dev_lab.ops.consent.client import grant, verify_held
 

@@ -21,7 +21,7 @@ from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgestatus import CommitStatus, fingerprints_at, status_list
 from dev_lab.dev.forgework import Client, Transport, forge_transport
 from dev_lab.dev.reviewgate import manifest_at
-from dev_lab.ops.credentialroles import Breakglass
+from dev_lab.ops.config import Breakglass
 from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.wavesweep import Pull
 

@@ -12,8 +12,7 @@ import pytest
 from _arch_corpus import module_names
 from _ops_fixtures import git
 
-from dev_lab.dev import devdeclared, devhost, devrender, devschema, vendordetect, venvfollow
-from dev_lab.dev._machinefile import dumps
+from dev_lab.dev import devdeclared, devhost, devschema, devsource, vendordetect, venvfollow
 from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -157,7 +156,7 @@ def test_a_family_dev_key_outside_the_schema_is_refused(tmp_path: Path) -> None:
 
 def test_the_render_layers_family_host_and_local_and_drops_dev(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
-    text = devrender.render(clone, 'ws', tomllib.loads(LOCAL))
+    text = devhost.render(clone, 'ws', tomllib.loads(LOCAL))
     assert text.startswith('# RENDERED')
     assert 'consent' not in tomllib.loads(text), 'a family table stays in the family file'
     rendered = devdeclared.layered(tomllib.loads(text))  # the whole machine a reader sees
@@ -173,7 +172,7 @@ def test_the_render_layers_family_host_and_local_and_drops_dev(tmp_path: Path) -
 
 def test_a_declared_table_replaces_the_live_copy(tmp_path: Path) -> None:
     live = tomllib.loads(LOCAL + '\n[consent]\nendpoint = "consent@stale"\n')
-    rendered = tomllib.loads(devrender.render(_clone(tmp_path), 'ws', live))
+    rendered = tomllib.loads(devhost.render(_clone(tmp_path), 'ws', live))
     assert 'consent' not in rendered, 'the stale local copy of a family table is dropped, not kept'
     assert devdeclared.layered(rendered)['consent'] == {'endpoint': 'consent@forge.example'}
 
@@ -185,7 +184,7 @@ def _credentials_agree(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _rendered_machine(tmp_path: Path) -> dict:
-    return tomllib.loads(devrender.render(_clone(tmp_path), 'ws', tomllib.loads(LOCAL)))
+    return tomllib.loads(devhost.render(_clone(tmp_path), 'ws', tomllib.loads(LOCAL)))
 
 
 def test_a_fresh_render_has_no_drift_and_an_unrendered_file_is_silent(tmp_path: Path) -> None:
@@ -199,7 +198,7 @@ def test_a_hand_edit_is_drift_named_by_key_and_its_owning_layer(tmp_path: Path) 
     live['consent'] = {'endpoint': 'consent@elsewhere'}
     del live['capabilities']
     live['hpc']['reach'] = ['verification']
-    edit = f'change it there through its pull request, then {devrender.RENDER_DOOR}'
+    edit = f'change it there through its pull request, then {devhost.RENDER_DOOR}'
     assert devhost.drift(live) == [
         f'[capabilities].solverx.in_use.process is absent -- host layer (hosts/ws.toml): {edit}',
         f'[capabilities].solverx.seats is absent -- host layer (hosts/ws.toml [dev], rendered): {edit}',
@@ -208,7 +207,7 @@ def test_a_hand_edit_is_drift_named_by_key_and_its_owning_layer(tmp_path: Path) 
     ]
     line = devhost.notice(live)
     assert line is not None
-    assert devrender.RENDER_DOOR in line
+    assert devhost.RENDER_DOOR in line
 
 
 def test_a_family_repo_without_a_path_is_drift_with_its_door(tmp_path: Path) -> None:
@@ -219,7 +218,7 @@ def test_a_family_repo_without_a_path_is_drift_with_its_door(tmp_path: Path) -> 
         'other = { remote = "https://forge.example/o/other.git", branch = "main" }\n',
         encoding='utf-8',
     )
-    live = tomllib.loads(devrender.render(clone, 'ws', tomllib.loads(LOCAL)))
+    live = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
     found = devhost.drift(live)
     assert len(found) == 1, found
     assert found[0].startswith('family repo other has no [repos] path')
@@ -234,7 +233,7 @@ def test_the_local_door_refuses_a_rendered_table(tmp_path: Path) -> None:
 
 def test_the_local_door_re_renders_a_rendered_machine_file(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
-    machine = _write(tmp_path, 'machine/m.toml', devrender.render(clone, 'ws', tomllib.loads(LOCAL)))
+    machine = _write(tmp_path, 'machine/m.toml', devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
     other = (tmp_path / 'other').as_posix()
     argv = ['--machine', str(machine), 'local', 'set', 'repos.other', other, '--backups', str(tmp_path / 'b')]
     assert devhost.main(argv) == 0
@@ -260,7 +259,7 @@ def test_a_stale_source_path_is_one_drift_line_and_from_names_the_clone(tmp_path
     assert '--from' in stale
     compared = devhost.drift(live, clone)  # the control: --from renders, so it compares key by key
     assert any(line.startswith('[devhost].source is not the render') for line in compared), compared
-    machine = _write(tmp_path, 'machine/m.toml', dumps(live))
+    machine = _write(tmp_path, 'machine/m.toml', devhost.dumps(live))
     assert devhost.main(['--machine', str(machine), 'drift', '--from', str(clone)]) == 1
 
 
@@ -294,7 +293,7 @@ def test_a_resources_type_defect_is_refused(tmp_path: Path) -> None:
 
 def test_a_vendor_with_seats_and_no_home_is_named_with_the_detect_door(tmp_path: Path) -> None:
     clone = _clone(tmp_path, HOST.replace('home = "C:/Program Files/SolverX"\n', ''))
-    live = tomllib.loads(devrender.render(clone, 'ws', tomllib.loads(LOCAL)))
+    live = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
     assert devhost.drift(live) == [devschema.fill_remedy(['solverx'])]
     line = devhost.notice(live)
     assert line is not None
@@ -304,7 +303,7 @@ def test_a_vendor_with_seats_and_no_home_is_named_with_the_detect_door(tmp_path:
 
 def _unfilled_machine(tmp_path: Path) -> dict:
     clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{devschema.UNFILLED}"'))
-    return tomllib.loads(devrender.render(clone, 'ws', tomllib.loads(LOCAL)))
+    return tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
 
 
 def test_the_placeholder_passes_configcheck_and_is_named_by_render_and_drift(tmp_path: Path) -> None:
@@ -319,12 +318,12 @@ def test_the_session_start_verb_says_the_unfilled_home_and_a_render_says_nothing
     """The notice the Stop hook once blocked on is said at session start, as context, never a block."""
     unfilled, rendered = tmp_path / 'unfilled.toml', tmp_path / 'rendered.toml'
     clone = _clone(tmp_path, HOST.replace('"C:/Program Files/SolverX"', f'"{devschema.UNFILLED}"'))
-    unfilled.write_text(devrender.render(clone, 'ws', tomllib.loads(LOCAL)), encoding='utf-8')
+    unfilled.write_text(devhost.render(clone, 'ws', tomllib.loads(LOCAL)), encoding='utf-8')
     assert devhost.main(['--machine', str(unfilled), 'session-start']) == 0
     said = capsys.readouterr().out
     assert devschema.DETECT_DOOR in said
     assert 'decision' not in said, 'a notice, never a block'
-    rendered.write_text(devrender.render(_clone(tmp_path / 'b'), 'ws', tomllib.loads(LOCAL)), encoding='utf-8')
+    rendered.write_text(devhost.render(_clone(tmp_path / 'b'), 'ws', tomllib.loads(LOCAL)), encoding='utf-8')
     assert devhost.main(['--machine', str(rendered), 'session-start']) == 0
     assert capsys.readouterr().out == '', 'PLANTED CONTROL: a machine file that is its render says nothing'
 
@@ -370,7 +369,7 @@ def test_a_detect_entry_that_is_not_a_pattern_list_is_refused(tmp_path: Path) ->
 def test_a_host_declaring_no_hpc_renders_a_reach_of_none(tmp_path: Path) -> None:
     """PLANTED CONTROL for the reach render: a host with no [dev] hpc reaches nothing, never the family's accounts."""
     rendered = tomllib.loads(
-        devrender.render(_clone(tmp_path, HOST.replace('hpc = ["research"]\n', '')), 'ws', tomllib.loads(LOCAL))
+        devhost.render(_clone(tmp_path, HOST.replace('hpc = ["research"]\n', '')), 'ws', tomllib.loads(LOCAL))
     )
     assert rendered['hpc']['reach'] == []
 
@@ -387,7 +386,7 @@ at = 08:30:00
 def test_toml_dates_round_trip_through_the_render(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
     _write(clone, 'family.toml', FAMILY + '\n' + DATED)
-    rendered = devdeclared.layered(tomllib.loads(devrender.render(clone, 'ws', tomllib.loads(LOCAL))))
+    rendered = devdeclared.layered(tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL))))
     budget = rendered['hpc']['clusters']['d']['slurm_accounts']['b']['budget']
     assert budget == tomllib.loads(DATED)['hpc']['clusters']['d']['slurm_accounts']['b']['budget']
 
@@ -409,17 +408,17 @@ CHANNELS = HOST.replace('os = "windows"\n', 'os = "windows"\nchannels = { "bridg
 def test_declared_channels_render_as_the_agent_table_and_read_back(tmp_path: Path) -> None:
     clone = _clone(tmp_path, CHANNELS)
     assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
-    rendered = tomllib.loads(devrender.render(clone, 'ws', tomllib.loads(LOCAL)))
+    rendered = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
     assert rendered['agent'] == {'channels': {'bridge-x': 'user-x'}}
-    assert devhost.declared_channels(rendered) == {'bridge-x': 'user-x'}
+    assert devschema.declared_channels(rendered) == {'bridge-x': 'user-x'}
     assert devhost.drift(rendered) == []
 
 
 def test_a_machine_declaring_no_channel_grants_none(tmp_path: Path) -> None:
     rendered = _rendered_machine(tmp_path)
     assert 'agent' not in rendered, 'no declaration renders no table, never an empty grant'
-    assert devhost.declared_channels(rendered) == {}
-    assert devhost.declared_channels(tomllib.loads(LOCAL)) == {}
+    assert devschema.declared_channels(rendered) == {}
+    assert devschema.declared_channels(tomllib.loads(LOCAL)) == {}
 
 
 @pytest.mark.parametrize(
@@ -439,7 +438,7 @@ def test_a_channel_declaration_that_is_not_source_to_user_strings_is_refused(tmp
     assert [line for line in found if 'channels' in line], found
     live = {'agent': {'channels': tomllib.loads(f'c = {channels}')['c']}}
     with pytest.raises(ValueError, match='channels'):
-        devhost.declared_channels(live)
+        devschema.declared_channels(live)
 
 
 def test_channels_are_one_machine_fact_never_the_family(tmp_path: Path) -> None:
@@ -479,20 +478,20 @@ def test_a_relative_from_renders_an_absolute_source(tmp_path: Path, monkeypatch:
     """#556: ``--from .`` once rendered ``source = "."``, so the config source followed whatever the CWD was."""
     clone = _clone(tmp_path)
     monkeypatch.chdir(clone.parent)
-    rendered = tomllib.loads(devrender.render(Path(clone.name), 'ws', tomllib.loads(LOCAL)))
+    rendered = tomllib.loads(devhost.render(Path(clone.name), 'ws', tomllib.loads(LOCAL)))
     assert rendered['devhost']['source'] == clone.resolve().as_posix()
 
 
 def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path: Path) -> None:
     """#556: a relative ``[devhost] source`` resolves against the CWD; it is refused, never read from another clone."""
     with pytest.raises(ValueError, match=r'relative.*devhost render --host G --from <absolute clone> --write'):
-        devrender.config_source({'devhost': {'host': 'G', 'source': '.'}})
+        devsource.config_source({'devhost': {'host': 'G', 'source': '.'}})
     # the control: an absolute clone with an origin is its origin
     clone = _clone(tmp_path)
     git(tmp_path, 'init', '-q', str(clone))
     git(clone, 'remote', 'add', 'origin', 'https://forge.example/t/hc.git')
     assert (
-        devrender.config_source({'devhost': {'host': 'G', 'source': clone.as_posix()}})
+        devsource.config_source({'devhost': {'host': 'G', 'source': clone.as_posix()}})
         == 'https://forge.example/t/hc.git'
     )
 
@@ -502,7 +501,7 @@ def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path:
 ACCOUNT = """\
 [deploy]
 host = "login01"
-root = "/src"
+root = "/scratch/u1"
 python = "3.13"
 repos = [{ name = "dev-lab", url = "https://forge.example/o/dev-lab.git", ref = "integrate/main" }]
 
@@ -523,7 +522,7 @@ def _account(tmp_path: Path, text: str = ACCOUNT, name: str = 'c-u1') -> Path:
 def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> None:
     clone = _account(tmp_path)
     assert check_host(clone / 'hosts/c-u1.toml', clone / 'family.toml') == []
-    rendered = devdeclared.layered(tomllib.loads(devrender.render(clone, 'c-u1', {})))
+    rendered = devdeclared.layered(tomllib.loads(devhost.render(clone, 'c-u1', {})))
     assert rendered['deploy']['role'] == 'research', 'the role is the family grant, derived, never restated'
     assert rendered['hpc']['reach'] == ['research'], 'an account reaches its own grant: its role, derived'
     assert rendered['hpc']['paging'] == {'page_cpus': 8, 'page_mem_gb': 20}
@@ -534,10 +533,11 @@ def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> No
     ('name', 'text', 'named'),
     [
         ('c-u9', ACCOUNT, 'no family grant'),
-        ('c-u1', ACCOUNT.replace('root = "/src"', 'root = "/src"\nrole = "research"'), 'deploy.role'),
+        ('c-u1', ACCOUNT.replace('root = "/scratch/u1"', 'root = "/scratch/u1"\nrole = "research"'), 'deploy.role'),
         ('c-u1', ACCOUNT + '\n[[hpc.grant]]\nuser = "u1"\n', 'hpc.grant'),
         ('c-u1', ACCOUNT + '\n[consent]\nendpoint = "consent@forge.example"\n', 'restates'),
         ('c-u1', ACCOUNT + '\n[bogus]\nx = 1\n', 'bogus'),
+        ('c-u1', ACCOUNT + '\n[schedule]\ntick_minutes = 15\n', '[schedule] on a research account'),
         ('c-u1', ACCOUNT.replace('repos = [', 'repo = ['), 'deploy'),
     ],
 )

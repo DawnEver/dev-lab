@@ -55,15 +55,16 @@ others, then exits 2 naming each refused repo and raising one forge ``run`` alar
 
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import socket
 import sys
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.config import config_path
@@ -78,7 +79,7 @@ from dev_lab.dev.hpcaccount.cimark import paused_refusal
 from dev_lab.dev.hpcaccount.declaration import parser, resolve, store
 from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
-from dev_lab.dev.hpcaccount.grantfile import grant_setup
+from dev_lab.dev.hpcaccount.grantslice import grant_setup
 from dev_lab.dev.hpcaccount.spec import (
     Deployment,
     Repo,
@@ -304,6 +305,18 @@ def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink) -> 
     return 2
 
 
+def _admitted(args: argparse.Namespace, path: Path) -> tuple[Deployment, Mapping[str, Any]] | str:
+    """The resolved declaration and its role's semantics, or why the deploy is refused before the host is asked."""
+    spec = resolve(args, path)
+    if isinstance(spec, str):
+        return spec
+    semantics = {} if args.remove else account_role(spec.role, args.fleet_role, args.role_table)
+    if isinstance(semantics, str):
+        return semantics
+    # CI-PAUSED gates the serving cron; a research deploy has none
+    return (paused_refusal(spec.root) if semantics.get('serves', False) else '') or (spec, semantics)
+
+
 def deploy(
     argv: Sequence[str],
     *,
@@ -317,17 +330,12 @@ def deploy(
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
     args = parser(__doc__.splitlines()[0]).parse_args(list(argv))
     path = args.config or config_path()
-    spec = resolve(args, path)
-    semantics = (
-        {} if isinstance(spec, str) or args.remove else account_role(spec.role, args.fleet_role, args.role_table)
-    )
-    serves = isinstance(semantics, dict) and bool(semantics.get('serves', False))
-    # CI-PAUSED gates the serving cron; a research deploy has none
-    paused = paused_refusal(spec.root) if serves and not isinstance(spec, str) else ''
-    why = spec if isinstance(spec, str) else semantics if isinstance(semantics, str) else paused
-    if isinstance(spec, str) or why:  # the isinstance narrows spec for everything below
-        emit(f'deploy refused: {why}', err=True)
+    admitted = _admitted(args, path)
+    if isinstance(admitted, str):
+        emit(f'deploy refused: {admitted}', err=True)
         return 2
+    spec, semantics = admitted
+    serves = bool(semantics.get('serves', False))
     short = hostname.split('.', 1)[0]
     emit(f'[host] account {os.environ.get("USER") or os.environ.get("USERNAME", "?")} on {short}')
     if why := host_refusal(spec, path, short, serves=serves, table=args.grant_table):

@@ -9,6 +9,8 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons import config as machineconfig
+
 from dev_lab.dev import remote
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops import clientkeys
@@ -37,6 +39,7 @@ __all__ = [
     'channel_defects',
     'check',
     'check_family',
+    'declared_channels',
     'fill_remedy',
     'home_of',
     'hpc_reach',
@@ -102,7 +105,7 @@ UNFILLED: Final = 'FILL-ON-THIS-MACHINE'
 REQUIRED: Final = ('ref',)
 #: The machine-file tables a host file may declare for its machine (each open: its consumer owns its keys).
 MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation', 'storage')
-#: The machine file's ``[ssh]`` table as a host file declares it (rendered by :func:`dev_lab.dev.devrender.render`,
+#: The machine file's ``[ssh]`` table as a host file declares it (rendered by :func:`dev_lab.dev.devhost.render`,
 #: read by :mod:`dev_lab.dev.sshhold`): ``jump`` -- destination -> bastion, the declared per-host route; ``hold`` --
 #: :data:`SSH_HOLD`; ``host_keys`` -- endpoint host -> its ``"<type> <base64>"`` host key, the one key a declared
 #: endpoint (``[consent]``, ``[breakglass]``) is checked against (:data:`dev_lab.dev.remote.HOST_KEY_RULE`).
@@ -338,3 +341,19 @@ def home_of(dev: Mapping[str, Any], vendor: str) -> Path:
     if not home or home == UNFILLED:
         raise HomeUnfilled(fill_remedy([vendor]))
     return Path(home)
+
+
+def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:
+    """Return this machine's session channels: source -> the user whose messages through it ARE the machine's user.
+
+    Read from the machine file's ``[agent] channels`` (the render of the host file's ``[dev] channels``). Empty when
+    none is declared: an undeclared channel or user carries no authority.
+
+    Raises:
+        ValueError: the table is not non-empty source strings to non-empty user strings -- never read past.
+
+    """
+    channels = (machineconfig.machine() if live is None else live).get(CHANNELS_TABLE, {}).get('channels', {})
+    if defects := channel_defects(channels, f'[{CHANNELS_TABLE}].channels'):
+        raise ValueError('; '.join(defects))
+    return dict(channels)

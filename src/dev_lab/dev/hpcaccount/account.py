@@ -24,11 +24,8 @@ from lab_commons.log import emit
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.forgeauth import UNREACHABLE_EXIT
 from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
-from dev_lab.dev.hpcaccount.grantfile import grant_refusal, render_grant, without_hpc
-from dev_lab.dev.hpcaccount.spec import (
-    Deployment,
-    unserved,
-)
+from dev_lab.dev.hpcaccount.grantslice import grant_refusal, render_grant, without_hpc
+from dev_lab.dev.hpcaccount.spec import Deployment, unserved
 from dev_lab.dev.hpcaccount.steps import Step
 
 __all__ = ['UNREACHED', 'ApiCheck', 'RoleCheck', 'auth_check', 'credentials', 'grant', 'reader', 'role_of']

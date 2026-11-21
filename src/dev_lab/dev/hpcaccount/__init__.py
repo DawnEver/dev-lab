@@ -4,8 +4,7 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
 2026-10-22) so lab-commons never reaches the dev system:
 
 * ``deploy [--dry-run|--remove]`` (:mod:`~dev_lab.dev.hpcaccount.deploy`) makes this account's login host a
-  ``forge serve`` host in one run; its data is :mod:`~dev_lab.dev.hpcaccount.spec` (the ``[hpc]`` slice
-  :mod:`~dev_lab.dev.hpcaccount.grantfile`), its account checks
+  ``forge serve`` host in one run; its data is :mod:`~dev_lab.dev.hpcaccount.spec`, its account checks
   :mod:`~dev_lab.dev.hpcaccount.account` and :mod:`~dev_lab.dev.hpcaccount.checks`, its steps
   :mod:`~dev_lab.dev.hpcaccount.steps`, its host check :mod:`~dev_lab.dev.hpcaccount.deployhost`, its declaration
   :mod:`~dev_lab.dev.hpcaccount.declaration`.
@@ -16,8 +15,7 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`lab_commons.hpc.allocation`); the forge's own submits read it (:mod:`dev_lab.dev.forgeslurm`).
 
 * ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpcaccount.fleet`) starts, over the transport,
-  every declared account's own ``deploy``, one log per account; the per-account target and its kit steps are
-  :mod:`~dev_lab.dev.hpcaccount.target`.
+  every declared account's own ``deploy``, one log per account.
 * ``drift-fleet (--cluster <name> | --account <user>)...`` (:mod:`~dev_lab.dev.hpcaccount.accountset`) runs, on each
   selected account, its own read-only ``drift`` (:mod:`~dev_lab.dev.hpcaccount.drift`): what the account holds that
   its config source cannot render. Neither filter given is refused. Nothing on an account is backed up: the config

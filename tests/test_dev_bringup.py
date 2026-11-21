@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from dev_lab.dev import bringup, devhost, devrender
+from dev_lab.dev import bringup, devhost
 from dev_lab.ops.consent.door import hello
 
 KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA1dtjiBuQjg+mT4+rUmSfSrdgiwtUSw9TlircWVvVC0'
@@ -33,7 +33,7 @@ def _machine(tmp_path: Path, *, declared: bool = True, keyed: bool = True) -> di
     (ssh / 'id_ed25519.pub').write_text(f'{KEY} me@here\n', encoding='utf-8')
     live = {'repos': {'dev-lab': (tmp_path / 'dev-lab').as_posix()}, 'devhost': {'host': 'ws', 'source': str(clone)}}
     if declared:
-        live = {**tomllib.loads(devrender.render(clone, 'ws', live)), 'repos': live['repos']}
+        live = {**tomllib.loads(devhost.render(clone, 'ws', live)), 'repos': live['repos']}
     return live
 
 

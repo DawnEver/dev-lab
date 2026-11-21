@@ -23,7 +23,7 @@ from typing import Any, Final
 
 from lab_commons.config import section
 
-from dev_lab.dev import devrender, forgesecrets, sshholdwire
+from dev_lab.dev import devhost, devsource, forgesecrets, sshholdwire
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.planremote import Remote
@@ -176,7 +176,7 @@ class Readers:
     declared: Declared = declared_at
     text: SourceReader = text_at
     listed: configdoor.SourceLister = listed_at
-    config_source: Callable[[], str] = devrender.config_source
+    config_source: Callable[[], str] = devsource.config_source
     issued: IssuerSubject = issuer_subject
 
 
@@ -184,7 +184,7 @@ def config_subject(
     host: str, read: SourceReader, source: str, ref: str = 'main', *, listed: configdoor.SourceLister = listed_at
 ) -> str:
     """The :data:`CONFIG_ACTION` subject of *host*'s reviewed file (``hosts/<host>.toml`` in *source*), derived here."""
-    return configdoor.local_subject(source, devrender.host_file(host), read, ref, listed=listed)
+    return configdoor.local_subject(source, devhost.host_file(host), read, ref, listed=listed)
 
 
 def _derivable(step: Step) -> bool:
@@ -231,9 +231,7 @@ def _unsettled(plan: Plan, steps: Steps, index: int, readers: Readers) -> str | 
     """
     step = steps.steps[index]
     try:
-        first = configdoor.unsettled_subject(
-            readers.config_source(), devrender.host_file(step.config_host), readers.text
-        )
+        first = configdoor.unsettled_subject(readers.config_source(), devhost.host_file(step.config_host), readers.text)
     except (*UNREAD, configdoor.ConfigRefused) as unread:
         return f'BLOCKED -- the subject a host without the family derives cannot be read here ({unread})'
     if first is None or first == plan.grants[index]['subject']:
