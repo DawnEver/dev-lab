@@ -13,7 +13,7 @@ from _ops_fixtures import git
 from dev_lab.dev import remote
 from dev_lab.dev._forge_records import PullRequest
 from dev_lab.dev.consentguard import state_dir
-from dev_lab.dev.forgebreakglass import merge_main, wave_main
+from dev_lab.dev.forgebreakglass import merge_main, promote_trunk, wave_main
 from dev_lab.dev.forgecli import NOUNS, PR_VERBS
 from dev_lab.dev.forgework import Client
 from dev_lab.ops.consent import door as consent_door
@@ -198,3 +198,18 @@ def test_ssh_send_goes_through_the_one_remote_transport(monkeypatch: pytest.Monk
     assert [row[:3] for row in seen] == [('c@h', '{"a": 1}\n', 'k'), ('c@h', '{"a": 1}\n', None)]
     assert seen[0][3]  # SSH-HOST-KEY-DECLARED: the declared key's known_hosts, never ssh's own default
     assert seen[1][3] == 'kh'
+
+
+def test_promote_trunk_sends_the_repo_sha_and_reason_and_no_credential(tmp_path: Path) -> None:
+    """The client asks; the wave's server decides and pushes (user ruling D105)."""
+    sent: list[dict[str, object]] = []
+
+    def send(_table: object, request: dict[str, object]) -> tuple[int, str]:
+        sent.append(request)
+        return 0, 'promoted'
+
+    git(tmp_path, 'init', '-q')
+    git(tmp_path, 'remote', 'add', 'origin', 'https://github.com/owner/alpha.git')
+    code = promote_trunk(tmp_path, 'a' * 40, 'CI is down', table={'endpoint': 'u@h'}, send=send)
+    assert code == 0
+    assert sent == [{'action': 'promote', 'repo': 'github.com/owner/alpha', 'sha': 'a' * 40, 'reason': 'CI is down'}]

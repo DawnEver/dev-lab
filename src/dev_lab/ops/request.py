@@ -12,10 +12,10 @@ import re
 from dataclasses import dataclass
 from typing import Any, Final
 
-__all__ = ['ACTIONS', 'Ack', 'Malformed', 'Merge', 'Open', 'Request', 'parse']
+__all__ = ['ACTIONS', 'Ack', 'Malformed', 'Merge', 'Open', 'Promote', 'Request', 'parse']
 
 #: Every action the role answers.
-ACTIONS: Final = ('open', 'merge', 'close', 'ack', 'status')
+ACTIONS: Final = ('open', 'merge', 'promote', 'close', 'ack', 'status')
 _SHA: Final = re.compile(r'^[0-9a-f]{40}([0-9a-f]{24})?$')
 
 
@@ -41,6 +41,15 @@ class Merge:
 
 
 @dataclass(frozen=True)
+class Promote:
+    """``promote``: which repository's trunk moves to which integration commit, and why."""
+
+    repo: str
+    sha: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class Ack:
     """``ack``: which wave (``''`` = the oldest unacknowledged), and who acknowledges it."""
 
@@ -53,7 +62,7 @@ class Request:
     """One parsed request: its action and that action's fields (``None`` for ``close`` / ``status``)."""
 
     action: str
-    fields: Open | Merge | Ack | None
+    fields: Open | Merge | Promote | Ack | None
 
 
 def _str(data: dict[str, Any], key: str, *, required: bool = True) -> str:
@@ -94,6 +103,12 @@ def parse(line: str) -> Request:
             msg = 'head must be a full commit sha'
             raise Malformed(msg)
         return Request(action, Merge(_str(data, 'repo'), _int(data.get('pr'), 'pr'), head, _str(data, 'reason')))
+    if action == 'promote':
+        sha = _str(data, 'sha')
+        if not _SHA.match(sha):
+            msg = 'sha must be a full commit sha'
+            raise Malformed(msg)
+        return Request(action, Promote(_str(data, 'repo'), sha, _str(data, 'reason')))
     if action == 'ack':
         return Request(action, Ack(_str(data, 'id', required=False), _str(data, 'by', required=False) or 'unnamed'))
     return Request(action, None)

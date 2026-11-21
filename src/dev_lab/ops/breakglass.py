@@ -40,6 +40,11 @@ One request is one JSON line with an ``action``:
   ``Break-Glass: <reason>`` trailer (so :func:`dev_lab.dev.breakglass.notices` opens the follow-up issue every use
   owes), audit ``(repo, pr, head, reason)`` under the id of the consent credential that opened the wave -- the
   wave's one grant has no subject, so each use is tied to it here; the merge that reaches the cap ends the wave;
+* ``promote {repo, sha, reason}`` -- the user's EMERGENCY trunk move (``integrate promote <sha> --breakglass``):
+  refused outside an open wave, for a repository not served, a short reason, a sha off the integration branch or a
+  trunk it does not fast-forward; else a NON-FORCED push of the trunk by the break-glass identity (the trunk
+  ruleset's ``always`` bypass actor), counted as one of the wave's merges and audited with the parts state read
+  then. Nothing is posted: no passing status is ever fabricated;
 * ``close`` -- end the open wave; ``ack {id?, by}`` -- record who acknowledged an audit (the oldest unacknowledged
   when no id), no code;
 * ``status`` -- every wave's state; :meth:`Server.tick` (a timer) ends an expired wave and resends a summary no
@@ -69,10 +74,11 @@ from dev_lab.dev.forgehold import HOLD_LABEL, RELEASE_DOOR, is_held
 from dev_lab.dev.forgemerge import hidden_reds
 from dev_lab.dev.forgemergewaits import green_waits
 from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
-from dev_lab.ops.breakglassforge import Forge
+from dev_lab.ops.breakglassforge import Forge, NotFastForward
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.client import Register, redeem
@@ -254,8 +260,8 @@ class Server:
             self._announce({'action': '?', 'outcome': f'refused: {refused}'}, 'break-glass REFUSED', str(refused))
             raise refused from bad
         verbs: dict[str, Callable[[Any], str]] = {
-            'open': self._open, 'merge': self._merge, 'close': self._close_verb, 'ack': self._ack,
-            'status': self._status,
+            'open': self._open, 'merge': self._merge, 'promote': self._promote, 'close': self._close_verb,
+            'ack': self._ack, 'status': self._status,
         }  # fmt: skip
         try:
             with exclusive(self.state):
@@ -305,6 +311,45 @@ class Server:
         said = f'{_merged(tests)} {repo}#{pr} at {head[:12]} into {integration} (wave {held.id})'
         self._audit({'wave': held.id, 'outcome': 'merged', 'consent': held.consent, 'repo': repo, 'pr': pr,
                      'head': head, 'reason': reason, 'tests': tests})  # fmt: skip
+        if held.full():
+            self._close(held)
+            said += f'; the cap of {held.max_merges} ended the wave'
+        return said
+
+    def _promote(self, asked: requests.Promote) -> str:
+        """Fast-forward a served repository's trunk to an integration commit past its parts, inside the open wave.
+
+        The trunk and integration branch are the ones the promoted commit declares. The push is non-forced, by the
+        break-glass identity (the trunk ruleset's bypass actor); nothing is posted to the forge, so no passing status
+        is fabricated -- the parts state read now is the audit's record.
+        """
+        if (held := self._current()) is None:
+            msg = 'no break-glass wave is open: the user opens one (forge breakglass open, with their code)'
+            raise BreakglassRefused(msg)
+        url = self.role.repo(asked.repo)
+        if url is None:
+            msg = f'{asked.repo} is not a repository this host serves'
+            raise BreakglassRefused(msg)
+        if len(asked.reason) < self.role.min_reason:
+            msg = f'a reason of at least {self.role.min_reason} characters is required'
+            raise BreakglassRefused(msg)
+        forge = self.forge_for(url)
+        try:
+            policy = policy_from(forge.declaration(asked.sha), f'{asked.repo}@{asked.sha[:12]}:pyproject.toml')
+        except ValueError as unread:
+            raise BreakglassRefused(str(unread)) from unread
+        parts = tests_at(forge.statuses(asked.sha), asked.sha, tests=roles_of_url(url).kind(TESTS))
+        try:
+            old = forge.fast_forward(policy.trunk, policy.integration, asked.sha)
+        except NotFastForward as refused:
+            raise BreakglassRefused(str(refused)) from refused
+        held.merges.append(waves.Merge(asked.repo, 0, asked.sha, asked.reason, self.now(), self.key, parts,
+                                       policy.trunk))  # fmt: skip
+        waves.save(self.state, held)
+        said = f'promoted {asked.repo} {policy.trunk} {old[:12]} -> {asked.sha[:12]} (wave {held.id}); parts: {parts}'
+        self._audit({'wave': held.id, 'outcome': 'promoted', 'consent': held.consent, 'repo': asked.repo,
+                     'trunk': policy.trunk, 'from': old, 'sha': asked.sha, 'reason': asked.reason,
+                     'parts': parts})  # fmt: skip
         if held.full():
             self._close(held)
             said += f'; the cap of {held.max_merges} ended the wave'

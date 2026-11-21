@@ -27,7 +27,7 @@ def _iso(at: float) -> str:
 
 @dataclass(frozen=True)
 class Merge:
-    """One merge the wave made."""
+    """One merge the wave made; with *trunk* set, a PROMOTION of that trunk to *head* (``pr`` is then ``0``)."""
 
     repo: str
     pr: int
@@ -38,6 +38,15 @@ class Merge:
     key: str = ''
     #: The head's test state at merge time (:func:`dev_lab.ops.breakglass.tests_at`): passed, red or untested.
     tests: str = ''
+    #: The trunk a break-glass promotion moved to *head* (``integrate promote --breakglass``); ``''`` for a merge.
+    trunk: str = ''
+
+    def line(self) -> str:
+        """The entry's line in the wave's report."""
+        what = f'{self.repo} {self.trunk} promoted to' if self.trunk else f'{self.repo}#{self.pr} at'
+        return f'- {_iso(self.at)} {what} {self.head} by key {self.key or "unknown"}: {self.reason} ' + (
+            f'(parts: {self.tests or "unrecorded"})' if self.trunk else f'(tests: {self.tests or "unrecorded"})'
+        )
 
 
 @dataclass
@@ -106,11 +115,7 @@ def report(state: Path, wave: Wave) -> str:
         f'ended {_iso(wave.closed or wave.expires)}, '
         f'{len(wave.merges)} merge(s)' + ('' if wave.merges else ': no merge'),
         '',
-        *(
-            f'- {_iso(m.at)} {m.repo}#{m.pr} at {m.head} by key {m.key or "unknown"}: {m.reason} '
-            f'(tests: {m.tests or "unrecorded"})'
-            for m in wave.merges
-        ),
+        *(merge.line() for merge in wave.merges),
         '',
         f'Acknowledge: `python -m dev_lab.dev.forge breakglass ack {wave.id}`.',
     ]

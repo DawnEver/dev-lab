@@ -33,6 +33,9 @@ _LISTS: Final = ('_usernames', '_contexts', '_username')
 #: What Gitea shows a READ credential of a branch's protection; every other fact is the repository admin's to read.
 READABLE: Final = ('enable_status_check', 'status_check_contexts', 'required_approvals')
 #: Said in every step a read credential's plan holds.
+#: The trunk's role name (:data:`dev_lab.dev.forgeprotect.TRUNK`, restated: that module imports this one).
+_TRUNK: Final = 'trunk'
+
 READ_IN_PART: Final = 'read without a repository admin'
 
 
@@ -48,12 +51,14 @@ def body(target: Target) -> dict[str, Any]:
     if target.judge_app:
         msg = f'judge_app = {target.judge_app}: a Gitea forge has no GitHub App; declare judge_login'
         raise ValueError(msg)
-    pushed = bool(target.pushers)
+    # the break-glass login pushes the trunk's emergency fast-forward (user ruling D105): it joins the push whitelist
+    pushers = sorted({*target.pushers, login}) if target.role == _TRUNK and target.pushers else sorted(target.pushers)
+    pushed = bool(pushers)
     return {
         'rule_name': target.branch,
         'enable_push': pushed,
         'enable_push_whitelist': pushed,
-        'push_whitelist_usernames': sorted(target.pushers),
+        'push_whitelist_usernames': pushers,
         'enable_force_push': False,
         'enable_merge_whitelist': not target.via_pull_request,
         'merge_whitelist_usernames': [],

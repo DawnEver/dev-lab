@@ -81,9 +81,12 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'The trunk moves only by fast-forward to an integration commit whose every required '
             '`tests/<part>` part stands PASS at scope full, through `integrate promote`; it refuses with the '
-            'missing parts named, and refuses a trunk that cannot fast-forward rather than merging into it.'
+            'missing parts named and the emergency door, and refuses a trunk that cannot fast-forward rather than '
+            'merging into it. The ONE exception is the user emergency: inside an open break-glass wave, '
+            '`integrate promote <sha> --breakglass --reason` has the wave server fast-forward it past the parts, '
+            'counted and audited, no status posted (user ruling D105).'
         ),
-        ('tests/test_dev_integrate.py', 'tests/test_dev_pushgate.py'),
+        ('tests/test_dev_integrate.py', 'tests/test_dev_pushgate.py', 'tests/test_ops_breakglass.py'),
     ),
     (
         'PRS-TARGET-INTEGRATION',
