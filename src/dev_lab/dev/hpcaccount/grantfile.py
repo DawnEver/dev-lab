@@ -17,6 +17,8 @@ from lab_commons.hpc.grants import declared_grants
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.devdeclared import layered
 
+__all__ = ['grant_refusal', 'grant_setup', 'login_hosts', 'render_grant', 'without_hpc']
+
 
 def render_grant(table: Mapping[str, Any]) -> str:
     """*table* (an ``[hpc]`` slice) as the machine-file text :mod:`lab_commons.hpc.grants` reads."""

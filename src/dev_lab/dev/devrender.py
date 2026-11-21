@@ -22,6 +22,8 @@ from dev_lab.dev.devdeclared import OWN_TABLE, declared, merge
 from dev_lab.dev.devschema import CHANNELS_TABLE, hpc_reach
 from dev_lab.dev.venvpath import running_interpreter
 
+__all__ = ['RENDER_DOOR', 'config_source', 'host_file', 'read_toml', 'render', 'sources']
+
 #: The door that re-renders this machine's file from its recorded host and clone.
 RENDER_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost render --write'
 
