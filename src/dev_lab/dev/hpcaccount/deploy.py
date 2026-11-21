@@ -78,12 +78,12 @@ from dev_lab.dev.hpcaccount.cimark import paused_refusal
 from dev_lab.dev.hpcaccount.declaration import parser, resolve, store
 from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
+from dev_lab.dev.hpcaccount.grantfile import grant_setup
 from dev_lab.dev.hpcaccount.spec import (
     Deployment,
     Repo,
     checkout_of,
     cron_lines,
-    grant_setup,
     tick_command,
     tick_dirs,
     tick_environment,

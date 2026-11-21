@@ -35,7 +35,8 @@ from lab_commons.log import emit
 from dev_lab.dev.hpcaccount import cicron, deploy
 from dev_lab.dev.hpcaccount.cimark import RESUME_DOOR, marker
 from dev_lab.dev.hpcaccount.drift import DISCARD, account_drift, unrenderable
-from dev_lab.dev.hpcaccount.spec import MARK, Deployment, cron_lines, grant_setup, load, ticked
+from dev_lab.dev.hpcaccount.grantfile import grant_setup
+from dev_lab.dev.hpcaccount.spec import MARK, Deployment, cron_lines, load, ticked
 from dev_lab.dev.hpcaccount.steps import Step, Tools, crontab
 
 __all__ = ['ci_pause', 'ci_resume', 'main_pause', 'main_resume']
