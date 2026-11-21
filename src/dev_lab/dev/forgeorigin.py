@@ -8,11 +8,16 @@ forge-recorded author of the PR vouches for it, as the login that publishes that
 publishes (:func:`dev_lab.dev.forgehosts.this_host`: ``<cluster>/<account>`` on a cluster login node).
 The one family hook that rewrites its input: it
 appends the trailer (replacing an earlier one) and never refuses a commit.
+
+A public repository -- or a raw name the machine-local private denylist matches -- is stamped with the opaque
+:func:`~dev_lab.dev.forgehosts.host_id` instead (:func:`stamped_name`), exactly as its card is redacted: else the
+stamp itself names a private value and ``private-markers-messages`` refuses every push from that host.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import re
 import subprocess
 import sys
 from collections.abc import Collection, Mapping, Sequence
@@ -27,8 +32,9 @@ from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import host_id, this_host
 from dev_lab.dev.forgework import GITHUB, Client
+from dev_lab.dev.privatemarkers import MARKERS_FILE, load_markers, repo_is_private, scan_text
 
-__all__ = ['ORIGIN_HOST', 'head_login', 'main', 'origin_host_of', 'stamp', 'vouched']
+__all__ = ['ORIGIN_HOST', 'head_login', 'main', 'origin_host_of', 'stamp', 'stamped_name', 'vouched']
 
 #: The commit trailer naming the host card a commit was made on (written by the ``forge-host`` commit-msg hook).
 ORIGIN_HOST: Final = 'Forge-Host'
@@ -102,11 +108,22 @@ def stamp(message_file: str, host: str) -> None:
     )  # fmt: skip
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def stamped_name(host: str, root: Path, markers: tuple[re.Pattern[str], ...]) -> str:
+    """*host* as the stamp may carry it: the raw name only in a PRIVATE repo and only when no *markers* match it.
+
+    The marker check runs first, so a matched name never waits on (or depends on) the forge's visibility answer;
+    an unreadable visibility reads as public (:func:`~dev_lab.dev.privatemarkers.repo_is_private` fails closed).
+    """
+    if scan_text(host, markers) or not repo_is_private(root)[0]:
+        return host_id(host)
+    return host
+
+
+def main(argv: Sequence[str] | None = None, *, root: Path | None = None) -> int:
     """The hook: stamp the message file git hands it; 0 on every path, and a failure is SAID."""
     args = list(sys.argv[1:] if argv is None else argv)
     try:
-        stamp(args[-1], this_host())
+        stamp(args[-1], stamped_name(this_host(), Path.cwd() if root is None else root, load_markers(MARKERS_FILE)))
     except (IndexError, OSError, subprocess.SubprocessError) as failed:
         emit(f'[forge-host] no origin host stamped: {failed}', err=True)
     return 0
