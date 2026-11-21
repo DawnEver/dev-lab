@@ -223,6 +223,12 @@ _ENFORCED = {
     # over this checkout's own `git worktree list`.
     'PROJECT-FILES-HAVE-ONE-SOURCE': (guard('tests/test_dev_famfiles.py'), guard('tests/test_dev_famconfig.py')),
     'WORKTREES-STAY-INSIDE': (guard('tests/test_dev_worktreeplace.py'), guard('tests/test_dev_hooks.py')),
+    # User ruling 2026-11-20: worktree work was parked under output/. The deny row and the src/ scan refuse it.
+    'OUTPUT-HOLDS-NO-CODE': (guard('tests/test_dev_outputcode.py'),),
+    # User 2026-11-20: a research deploy called crontab on a cluster forbidding it; steps derive from `serves`.
+    'SCHEDULER-ONLY-FOR-SERVING': (guard('tests/test_hpc_scheduler_only_for_serving.py'),),
+    # 2026-11-20: a new workstation's doors died on a bare host-key failure; remote refuses an undeclared key.
+    'SSH-HOST-KEY-DECLARED': (guard('tests/test_dev_remote_host_keys.py'),),
 }
 
 #: Rules this repo does NOT yet refuse a violation of, BY NAME with the reason. A mapping rather than

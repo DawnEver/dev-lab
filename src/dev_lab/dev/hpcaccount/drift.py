@@ -40,6 +40,7 @@ from lab_commons.log import emit
 from dev_lab.dev import devhost
 from dev_lab.dev._machinefile import render_value
 from dev_lab.dev.backedup import replace_backed_up
+from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
 from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
@@ -47,8 +48,19 @@ from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.venvpointer import RETIRED_POINTER
 
 __all__ = [
-    'DISCARD', 'OLD_IN_HOME', 'OLD_IN_ROOT', 'STRAYS', 'Drift', 'account_drift', 'compare', 'compare_lines',
-    'main', 'report', 'shown', 'strays', 'unrenderable',
+    'DISCARD',
+    'STRAYS',
+    'STRAYS_IN_HOME',
+    'STRAYS_IN_ROOT',
+    'Drift',
+    'account_drift',
+    'compare',
+    'compare_lines',
+    'main',
+    'report',
+    'shown',
+    'strays',
+    'unrenderable',
 ]  # fmt: skip
 
 #: The switch with which ``ci-pause`` accepts the loss of what the config source cannot render.
@@ -59,8 +71,8 @@ _ENCODED_WORD: Final = re.compile(r'[0-9a-fA-F]{32,}|[A-Za-z0-9+_-]{40,}={0,2}')
 #: The report of old copies (:func:`strays`).
 STRAYS: Final = 'old copies'
 #: Where the layout before the declared root kept the forge, home-relative and root-relative.
-OLD_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
-OLD_IN_ROOT: Final = ('dev-lab', 'src')
+STRAYS_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
+STRAYS_IN_ROOT: Final = ('dev-lab', 'src')
 _SECRET_ASSIGN: Final = re.compile(r'(token|key|password|secret)\w*\s*=', re.IGNORECASE)
 
 
@@ -145,9 +157,9 @@ def compare_lines(held: Sequence[str], wanted: Sequence[str]) -> Drift:
 def strays(home: Path, root: Path) -> tuple[str, ...]:
     """Each old copy on the account with its file count; read only.
 
-    :data:`OLD_IN_HOME`, :data:`OLD_IN_ROOT`, and a retired ``repos/<repo>/.venv-current`` file.
+    :data:`STRAYS_IN_HOME`, :data:`STRAYS_IN_ROOT`, and a retired ``repos/<repo>/.venv-current`` file.
     """
-    old = [home / p for p in OLD_IN_HOME] + [root / p for p in OLD_IN_ROOT]
+    old = [home / p for p in STRAYS_IN_HOME] + [root / p for p in STRAYS_IN_ROOT]
     old += [repo / RETIRED_POINTER for repo in sorted((root / 'repos').glob('*'))]
     return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in old if p.exists() or p.is_symlink())
 
@@ -164,8 +176,9 @@ def account_drift(step: Step, home: Path, machine: Path, clone: Path, host: str)
     try:
         rendered = tomllib.loads(devhost.render(clone, host, {}))
         live = tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {}
-        spec = parse(rendered, clone / devhost.host_file(host))
-        grants, _ = declared_grants(rendered.get('hpc', {}))
+        whole = layered(rendered)  # a render holds no family leaf: the grants are read under it (devdeclared)
+        spec = parse(whole, clone / devhost.host_file(host))
+        grants, _ = declared_grants(whole.get('hpc', {}))
     except (OSError, ValueError) as failed:  # TOMLDecodeError is a ValueError
         return f'cannot render {host} from {clone.as_posix()}: {failed}'
     if spec is None or spec.role != VERIFICATION:  # SCHEDULER-ONLY-FOR-SERVING: no crontab to compare, none read

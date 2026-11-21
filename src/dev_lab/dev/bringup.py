@@ -72,9 +72,9 @@ def _public_keys(ssh_dir: Path) -> tuple[str, ...]:
     """The machine's ssh public key lines, without their comments (``<type> <base64>``)."""
     found = []
     for pub in sorted(ssh_dir.glob('*.pub')) if ssh_dir.is_dir() else ():
-        words = pub.read_text(encoding='utf-8', errors='replace').split()
-        if len(words) >= 2:  # noqa: PLR2004 -- a key line is "<type> <base64> [comment]"
-            found.append(f'{words[0]} {words[1]}')
+        kind, *rest = pub.read_text(encoding='utf-8', errors='replace').split() or ['']
+        if rest:  # a key line is "<type> <base64> [comment]"
+            found.append(f'{kind} {rest[0]}')
     return tuple(found)
 
 

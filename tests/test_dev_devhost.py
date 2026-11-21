@@ -12,7 +12,7 @@ import pytest
 from _arch_corpus import module_names
 from _ops_fixtures import git
 
-from dev_lab.dev import devdeclared, devhost, devschema, vendordetect, venvfollow
+from dev_lab.dev import devdeclared, devhost, devschema, devsource, vendordetect, venvfollow
 from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -410,15 +410,15 @@ def test_declared_channels_render_as_the_agent_table_and_read_back(tmp_path: Pat
     assert check_host(clone / 'hosts/ws.toml', clone / 'family.toml') == []
     rendered = tomllib.loads(devhost.render(clone, 'ws', tomllib.loads(LOCAL)))
     assert rendered['agent'] == {'channels': {'bridge-x': 'user-x'}}
-    assert devhost.declared_channels(rendered) == {'bridge-x': 'user-x'}
+    assert devschema.declared_channels(rendered) == {'bridge-x': 'user-x'}
     assert devhost.drift(rendered) == []
 
 
 def test_a_machine_declaring_no_channel_grants_none(tmp_path: Path) -> None:
     rendered = _rendered_machine(tmp_path)
     assert 'agent' not in rendered, 'no declaration renders no table, never an empty grant'
-    assert devhost.declared_channels(rendered) == {}
-    assert devhost.declared_channels(tomllib.loads(LOCAL)) == {}
+    assert devschema.declared_channels(rendered) == {}
+    assert devschema.declared_channels(tomllib.loads(LOCAL)) == {}
 
 
 @pytest.mark.parametrize(
@@ -438,7 +438,7 @@ def test_a_channel_declaration_that_is_not_source_to_user_strings_is_refused(tmp
     assert [line for line in found if 'channels' in line], found
     live = {'agent': {'channels': tomllib.loads(f'c = {channels}')['c']}}
     with pytest.raises(ValueError, match='channels'):
-        devhost.declared_channels(live)
+        devschema.declared_channels(live)
 
 
 def test_channels_are_one_machine_fact_never_the_family(tmp_path: Path) -> None:
@@ -485,13 +485,13 @@ def test_a_relative_from_renders_an_absolute_source(tmp_path: Path, monkeypatch:
 def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path: Path) -> None:
     """#556: a relative ``[devhost] source`` resolves against the CWD; it is refused, never read from another clone."""
     with pytest.raises(ValueError, match=r'relative.*devhost render --host G --from <absolute clone> --write'):
-        devhost.config_source({'devhost': {'host': 'G', 'source': '.'}})
+        devsource.config_source({'devhost': {'host': 'G', 'source': '.'}})
     # the control: an absolute clone with an origin is its origin
     clone = _clone(tmp_path)
     git(tmp_path, 'init', '-q', str(clone))
     git(clone, 'remote', 'add', 'origin', 'https://forge.example/t/hc.git')
     assert (
-        devhost.config_source({'devhost': {'host': 'G', 'source': clone.as_posix()}})
+        devsource.config_source({'devhost': {'host': 'G', 'source': clone.as_posix()}})
         == 'https://forge.example/t/hc.git'
     )
 
@@ -501,12 +501,9 @@ def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path:
 ACCOUNT = """\
 [deploy]
 host = "login01"
-root = "src"
+root = "/scratch/u1"
 python = "3.13"
 repos = [{ name = "dev-lab", url = "https://forge.example/o/dev-lab.git", ref = "integrate/main" }]
-
-[schedule]
-tick_minutes = 15
 
 [hpc.paging]
 page_cpus = 8
@@ -536,10 +533,11 @@ def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> No
     ('name', 'text', 'named'),
     [
         ('c-u9', ACCOUNT, 'no family grant'),
-        ('c-u1', ACCOUNT.replace('root = "src"', 'root = "src"\nrole = "research"'), 'deploy.role'),
+        ('c-u1', ACCOUNT.replace('root = "/scratch/u1"', 'root = "/scratch/u1"\nrole = "research"'), 'deploy.role'),
         ('c-u1', ACCOUNT + '\n[[hpc.grant]]\nuser = "u1"\n', 'hpc.grant'),
         ('c-u1', ACCOUNT + '\n[consent]\nendpoint = "consent@forge.example"\n', 'restates'),
         ('c-u1', ACCOUNT + '\n[bogus]\nx = 1\n', 'bogus'),
+        ('c-u1', ACCOUNT + '\n[schedule]\ntick_minutes = 15\n', '[schedule] on a research account'),
         ('c-u1', ACCOUNT.replace('repos = [', 'repo = ['), 'deploy'),
     ],
 )

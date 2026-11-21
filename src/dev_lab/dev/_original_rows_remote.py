@@ -57,6 +57,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'drift',
     'division',  # ORIGINAL: the workstation's HPC division as data (user rulings 2026-11-09)
     'fleet',
+    # ORIGINAL: 2026-11-21, deploy-fleet's run-wide refusals, split from fleet at the module-size band.
+    'fleetguard',
+    # ORIGINAL: 2026-11-21, the machine file's [hpc] slice (grants, login hosts), split from spec at the size band.
+    'grantslice',
     'spec',
     'steps',
     'tick',

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant, Machine
 
+from dev_lab.dev import devhost
 from dev_lab.dev.hpcaccount import declaration
 from dev_lab.dev.hpcaccount.division import Division, division_of
 from dev_lab.dev.hpcaccount.fleet import (
@@ -27,6 +29,7 @@ from dev_lab.dev.hpcaccount.fleet import (
     render_command,
     repo_dir,
 )
+from dev_lab.dev.hpcaccount.fleetguard import stale_render
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -550,17 +553,14 @@ def test_deploy_fleet_refuses_a_machine_file_that_is_not_its_render(tmp_path: Pa
     """The deploy line is built from THIS machine's grants, so a stale render deploys stale family facts.
 
     Measured 2026-11-20: hosts-config gained a cluster `setup` (CC=gcc), but the workstation's machine file was never
-    re-rendered, so every Cirrus deploy ran without it. PLANTED CONTROL: the fresh render deploys.
+    re-rendered, so every Cirrus deploy ran without it. Since a render restates no family leaf (#865), a family fact
+    is read live under the machine file; what can go stale is the HOST layer, so the planted change is there.
+    PLANTED CONTROL: the fresh render deploys.
     """
-    from dev_lab.dev import devhost  # noqa: PLC0415
-    from dev_lab.dev.hpcaccount.fleet import stale_render  # noqa: PLC0415
-
     clone = _workstation(tmp_path, '[hpc.clusters.c1]\nhosts = ["login01"]\n')
-    import tomllib  # noqa: PLC0415
-
     fresh = tomllib.loads(devhost.render(clone, 'WS', {}))
     assert stale_render(fresh) == ''
-    (clone / 'family.toml').write_text('[hpc.clusters.c1]\nhosts = ["login01"]\nsetup = ["export CC=gcc"]\n', 'utf-8')
+    (clone / 'hosts' / 'WS.toml').write_text('[dev]\nhpc = ["research", "verification"]\n', encoding='utf-8')
     why = stale_render(fresh)
     assert 'devhost render' in why
     assert 'not the render' in why or 'absent' in why

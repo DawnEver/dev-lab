@@ -180,7 +180,10 @@ def test_the_render_never_copies_a_family_only_storage_fact(tmp_path: Path) -> N
 
     PLANTED CONTROL: the same remotes in a machine file are refused by the reader.
     """
-    family_text = FAMILY + ('\n[storage.remotes.store-x]\ntype = "s3"\nendpoint = "https://store.example"\n')
+    family_text = FAMILY + (
+        '\n[storage.remotes.store-x]\ntype = "s3"\nendpoint = "https://store.example"\n'
+        'secret_keys = ["secret_access_key"]\n'
+    )
     host_text = HOST + '\n[storage.reach.store-x]\ncredentials_file = "/secrets/store-x"\n'
     clone = _clone(tmp_path, family_text)
     (clone / 'hosts' / 'ws.toml').write_text(host_text, encoding='utf-8')

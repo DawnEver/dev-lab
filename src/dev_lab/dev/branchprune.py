@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, delete, delete_tags, delete_task, sweep
+from dev_lab.dev.branchdelete import DOOR, delete, delete_contained_tags, delete_task, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN
@@ -312,7 +312,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
         if args.verb == 'delete':
             return delete(root, args.branches, client=client, session=session, fetch=fetch_origin, say=say)
         if args.verb == 'tag':
-            return delete_tags(root, args.tags, fetch=fetch_origin, say=say)
+            return delete_contained_tags(root, args.tags, fetch=fetch_origin, say=say)
         if args.verb == 'task':
             return delete_task(root, args.slug, client=client, session=session, fetch=fetch_origin, say=say)
         return sweep(root, client=client, session=session, fetch=fetch_origin, say=say, local=args.local)

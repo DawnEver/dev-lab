@@ -258,3 +258,37 @@ def test_a_non_serving_account_declaring_a_schedule_is_refused() -> None:
     assert [line for line in refused if '[schedule]' in line and 'SCHEDULER-ONLY-FOR-SERVING' in line], refused
     admitted = accounthost.check(Path('c-u.toml'), host, family('verification'))
     assert not [line for line in admitted if '[schedule]' in line], admitted
+
+
+def test_a_storage_remote_judges_its_keys_by_its_own_secret_keys(tmp_path: Path) -> None:
+    """A remote's ``secret_keys`` is the one source of which of its keys are secret (hosts-config family.toml, D95).
+
+    Measured 2026-11-21: the declared public ``access_key_id`` (40 hex) was refused by the token-shape heuristic.
+    PLANTED CONTROL: a key the remote lists in ``secret_keys`` holding a value is still refused.
+    """
+    remote = (
+        '[storage.remotes.r]\ntype = "s3"\naccess_key_id = "' + 'a' * 40 + '"\nsecret_keys = ["secret_access_key"]\n'
+    )
+    assert check_family(_write(tmp_path, 'ok.toml', remote)) == []
+    found = check_family(_write(tmp_path, 'bad.toml', remote + 'secret_access_key = "plain"\n'))
+    assert [line for line in found if 'storage.remotes.r.secret_access_key holds a secret value' in line], found
+
+
+def test_an_account_file_takes_its_root_from_the_family_cluster() -> None:
+    """An account file states no root; its cluster's ``[hpc.clusters.<c>] root`` is it (dev-lab #878).
+
+    Measured 2026-11-21: configcheck refused "no root declared" on every account file of a family declaring the root.
+    PLANTED CONTROL: a family whose cluster declares no root still refuses.
+    """
+    host = {'deploy': {'host': 'login01', 'repos': [{'name': 'r', 'url': 'https://x/r.git', 'ref': 'main'}]}}
+    grant = [{'cluster': 'c', 'user': 'u', 'role': 'research', 'slurm_account': 'a'}]
+
+    def family(cluster: dict[str, str]) -> dict[str, object]:
+        return {'hpc': {'clusters': {'c': cluster}, 'grant': grant}}
+
+    def rootless(found: list[str]) -> list[str]:
+        return [line for line in found if 'no root declared' in line]
+
+    path = Path('c-u.toml')
+    assert not rootless(accounthost.check(path, host, family({'root': '/fs/{user}/lab'})))
+    assert rootless(accounthost.check(path, host, family({})))

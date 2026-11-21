@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Final
 
@@ -220,8 +221,6 @@ def test_discard_drift_rerenders_the_account_dropping_only_what_the_source_canno
 
 
 def test_drift_fleet_forwards_discard_drift_and_dry_run() -> None:
-    import inspect  # noqa: PLC0415
-
     source = inspect.getsource(hpcaccount)
     assert "verb='drift', flags=('--dry-run', '--discard-drift')" in source
 

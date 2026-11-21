@@ -12,7 +12,7 @@ from pathlib import Path
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 
-from dev_lab.dev.branchdelete import TAG_DOOR, TAG_EVENT, delete_tags
+from dev_lab.dev.branchdelete import CONTAINED_TAG_DOOR, TAG_EVENT, delete_contained_tags
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 
@@ -35,7 +35,7 @@ def test_a_contained_tag_is_recorded_then_deleted_and_an_uncontained_one_survive
     _tag(work, 'stray', stray)
     run_git(work, 'push', '-q', '--no-verify', 'origin', '--delete', 'lane/x')
     said: list[str] = []
-    code = delete_tags(work, ['v1', 'stray'], fetch=fetch_origin, say=said.append)
+    code = delete_contained_tags(work, ['v1', 'stray'], fetch=fetch_origin, say=said.append)
     assert code == 1, 'the uncontained tag fails the call'
     assert not _on_origin(work, 'v1')
     assert _on_origin(work, 'stray'), 'PLANTED CONTROL: a tag naming uncontained work is never deleted'
@@ -48,9 +48,9 @@ def test_a_contained_tag_is_recorded_then_deleted_and_an_uncontained_one_survive
 def test_a_missing_tag_is_named(tmp_path: Path) -> None:
     _, work = clone_pair(tmp_path)
     said: list[str] = []
-    assert delete_tags(work, ['nope'], fetch=fetch_origin, say=said.append) == 1
+    assert delete_contained_tags(work, ['nope'], fetch=fetch_origin, say=said.append) == 1
     assert any('nope' in line and 'origin holds no such tag' in line for line in said)
 
 
 def test_the_raw_delete_refusal_names_the_tag_door() -> None:
-    assert TAG_DOOR.removeprefix('python ') in rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy
+    assert CONTAINED_TAG_DOOR.removeprefix('python ') in rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy

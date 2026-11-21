@@ -55,7 +55,7 @@ class _Account:
             return 'f' * 64 if self.wrong else hashlib.sha256((stdin or '').encode()).hexdigest()
         if 'storage' in command:
             return 'results: reached'
-        return '# the machine file\n[deploy]\nhost = "login.test"\nroot = "r"\n'
+        return '# the machine file\n[deploy]\nhost = "login.test"\nroot = "/r"\n'  # a declared root is absolute
 
 
 def test_distribute_writes_the_declared_path_and_checks_it() -> None:

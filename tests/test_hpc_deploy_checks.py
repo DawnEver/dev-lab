@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Final
@@ -122,15 +123,13 @@ def test_a_probe_that_times_out_is_retried_once_and_never_crashes_the_deploy(mon
     read as "does not run", which the deploy refuses or installs by name. PLANTED CONTROL: a probe that answers
     on its retry runs.
     """
-    import subprocess  # noqa: PLC0415
-
     calls: list[int] = []
 
     def slow_then(answer: int | None) -> object:
         def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             calls.append(1)
             if len(calls) == 1 or answer is None:
-                raise subprocess.TimeoutExpired(argv, float(kwargs.get('timeout', 0)))  # type: ignore[arg-type]
+                raise subprocess.TimeoutExpired(argv, float(str(kwargs.get('timeout', 0))))
             return subprocess.CompletedProcess(argv, answer, '', '')
 
         return run
