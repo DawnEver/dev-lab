@@ -419,4 +419,12 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'commonsfloor',
     # ORIGINAL: 2026-11-20, the uv that writes a lock is the pinned release installed beside any other.
     'uvrelease',
+    # ORIGINAL: 2026-11-20, one visible intake of every typed value; only a declared secret is asked hidden (D94).
+    'ask',
+    # ORIGINAL: 2026-11-21, the bring-up preflight of a new or migrated workstation: every wall with its door.
+    'bringup',
+    # ORIGINAL: 2026-11-20, OUTPUT-HOLDS-NO-CODE's Write/Edit half and its source scan.
+    'outputcode',
+    # ORIGINAL: 2026-11-21, a rem task's ledger carried between hosts through the forge as refs/tasks/<slug>.
+    'taskcarry',
 )

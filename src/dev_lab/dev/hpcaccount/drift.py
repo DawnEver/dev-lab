@@ -48,7 +48,7 @@ from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.venvpointer import RETIRED_POINTER
 
 __all__ = [
-    'DISCARD', 'OLD_IN_HOME', 'OLD_IN_ROOT', 'STRAYS', 'Drift', 'account_drift', 'compare', 'compare_lines',
+    'DISCARD', 'PRE_ROOT_IN_HOME', 'PRE_ROOT_IN_ROOT', 'STRAYS', 'Drift', 'account_drift', 'compare', 'compare_lines',
     'main', 'report', 'shown', 'strays', 'unrenderable',
 ]  # fmt: skip
 
@@ -60,8 +60,8 @@ _ENCODED_WORD: Final = re.compile(r'[0-9a-fA-F]{32,}|[A-Za-z0-9+_-]{40,}={0,2}')
 #: The report of old copies (:func:`strays`).
 STRAYS: Final = 'old copies'
 #: Where the layout before the declared root kept the forge, home-relative and root-relative.
-OLD_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
-OLD_IN_ROOT: Final = ('dev-lab', 'src')
+PRE_ROOT_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
+PRE_ROOT_IN_ROOT: Final = ('dev-lab', 'src')
 _SECRET_ASSIGN: Final = re.compile(r'(token|key|password|secret)\w*\s*=', re.IGNORECASE)
 
 
@@ -146,9 +146,9 @@ def compare_lines(held: Sequence[str], wanted: Sequence[str]) -> Drift:
 def strays(home: Path, root: Path) -> tuple[str, ...]:
     """Each old copy on the account with its file count; read only.
 
-    :data:`OLD_IN_HOME`, :data:`OLD_IN_ROOT`, and a retired ``repos/<repo>/.venv-current`` file.
+    :data:`PRE_ROOT_IN_HOME`, :data:`PRE_ROOT_IN_ROOT`, and a retired ``repos/<repo>/.venv-current`` file.
     """
-    old = [home / p for p in OLD_IN_HOME] + [root / p for p in OLD_IN_ROOT]
+    old = [home / p for p in PRE_ROOT_IN_HOME] + [root / p for p in PRE_ROOT_IN_ROOT]
     old += [repo / RETIRED_POINTER for repo in sorted((root / 'repos').glob('*'))]
     return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in old if p.exists() or p.is_symlink())
 

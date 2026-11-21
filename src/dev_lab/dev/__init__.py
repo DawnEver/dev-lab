@@ -620,6 +620,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   drift named key by key with its owning layer; ``local set|unset``, the one door into the local layer.
 * :mod:`dev_lab.dev.devrender` -- the machine file rendered (family ⊕ host ⊕ local) and the config source it reads.
 * :mod:`dev_lab.dev.backedup` -- a file replaced whole and atomically, its previous content kept in a dated backup.
+* :mod:`dev_lab.dev.bringup` -- the bring-up preflight: every wall a new or migrated workstation hits, with its door.
+* :mod:`dev_lab.dev.ask` -- the one intake of what a person types: shown as typed, checked against its declared shape.
+* :mod:`dev_lab.dev.outputcode` -- OUTPUT-HOLDS-NO-CODE's Write/Edit half and the source scan for doors into output/.
 * :mod:`dev_lab.dev.machineguard` -- MACHINE-FILE-IS-RENDERED: the refusal of any write onto the machine file but
   its doors.
 * :mod:`dev_lab.dev.familyrepos` -- FAMILY-REPO-IS-CHECKED-OUT: ``[repos]`` against the family's ``[family_repos]``:

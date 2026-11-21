@@ -108,7 +108,9 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-11-17 AT 596 (the 11-17 wave: repostate, hostedparts, deletejudge, pushdelete): floor 571.
 #: RE-TAKEN 2026-11-19 AT 617 (the L3 refs: artefactfolder, artefactindex, artefactrestore, artefactstores): floor 592.
 #: RE-TAKEN 2026-11-20 AT 631 (the 11-19 wave: roles, branch policy, storage roots, door doors): floor 606.
-FILE_FLOOR = 606
+#: RE-TAKEN 2026-11-21 AT 655 (the 11-20/11-21 wave: ask, bringup, outputcode, devrender, hpcaccount target and
+#: grantfile): floor 630.
+FILE_FLOOR = 630
 
 
 def _tree() -> dict[str, str]:

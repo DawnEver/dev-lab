@@ -70,6 +70,12 @@ _ENFORCED = {
     'SCRATCH-IS-NEVER-COMMITTED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_scratch.py')),
     'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_strays.py')),
     'WRITES-STAY-IN-THE-TREE': (guard('tests/test_dev_writeroots.py'), guard('tests/test_dev_tmpsweep.py')),
+    'OUTPUT-HOLDS-NO-CODE': (guard('tests/test_dev_outputcode.py'), guard('tests/test_dev_verifiedby.py')),
+    'SCHEDULER-ONLY-FOR-SERVING': (
+        guard('tests/test_hpc_scheduler_only_for_serving.py'),
+        guard('tests/test_ops_configcheck.py'),
+    ),
+    'SSH-HOST-KEY-DECLARED': (guard('tests/test_dev_remote_host_keys.py'), guard('tests/test_ops_configcheck.py')),
     'DECLARATION-LIES': (
         guard('tests/test_arch_public_surface.py'),
         guard('tests/test_arch_rules_pages.py'),
