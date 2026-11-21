@@ -8,9 +8,11 @@ token is read from stdin, never argv; output names it only by a sha256 prefix.
 DECLARED ONLY, before anything is staged: the login must be one this machine declares for that forge host
 (``[dev] forges.<host>`` of its host file, :mod:`dev_lab.dev.devdeclared`) AND a login the forge host's config declares
 (``[ops.forge.accounts]``, where ``forge token mint`` mints it); the url must be on that forge. The store helper is a
-DECLARATION (``[dev] helpers.<host> = "store"``): the door applies it -- the host's inherited helpers reset by an
-empty entry, then ``store``, so ONLY ``~/.git-credentials`` answers for that host and every other host keeps the
-machine's own helper. A host with no declared store helper is refused: a placement git never reads is dead.
+DECLARATION (``[dev] helpers.<host> = "store"``): the door applies it AFTER the verified placement, once the store
+holds every login declared for that host -- the host's inherited helpers reset by an empty entry, then ``store``, so
+ONLY ``~/.git-credentials`` answers for that host and every other host keeps the machine's own helper. Never before:
+an incomplete store read alone cuts the host off the forge. A host with no declared store helper is refused: a
+placement git never reads is dead.
 
 Getting the token: a one-code consent plan whose step is ``forge token mint`` with ``stdout_local``
 (:mod:`dev_lab.dev.planrun`) writes it owner-only on this machine; pipe that file into this door, then delete it.
@@ -34,7 +36,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import devdeclared, devprofile
 from dev_lab.dev.credstore import CredentialRefused, DeclaredForge, Shell, digest, place_verified, read_forge
-from dev_lab.dev.forgecredential import STORE_ONLY, helpers, use_store
+from dev_lab.dev.forgecredential import STORE, STORE_ONLY, helpers, store_lines, unstored, use_store
 
 __all__ = ['local_shell', 'main', 'place']
 
@@ -64,7 +66,7 @@ def _store_only(
     try:
         store_for(host)
     except (RuntimeError, OSError, subprocess.CalledProcessError) as failed:
-        say(f'credential: refused -- the store helper for {host} could not be set: {failed}')
+        say(f'credential: placed, but the store helper for {host} could not be set: {failed}')
         return False
     say(f'{host}: git reads only the store (credential.https://{host}.helper = "", store)')
     return True
@@ -101,6 +103,7 @@ def place(
     helpers_for: Callable[[str], list[str]] = helpers,
     store_for: Callable[[str], None] = use_store,
     python: str = sys.executable,
+    store: Path | None = None,
 ) -> int:
     """Place *token* as *login* after the declarations allow it and the forge answers as *login*; 2 on refusal."""
     why, repo = _declared(login=login, token=token, url=url, forge=forge, dev=dev)
@@ -108,8 +111,6 @@ def place(
         say(f'credential: refused -- {why}')
         return 2
     host = urlsplit(repo).hostname or ''
-    if not _store_only(host, helpers_for, store_for, say):
-        return 2
     role = shlex.join([Path(python).as_posix(), '-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', repo])
     try:
         refusal, backup = place_verified(shell, login=login, token=token, repo=repo, role=role)
@@ -120,7 +121,10 @@ def place(
         say(f'credential: refused -- {refusal}')
         return 2
     say(f'the forge answers as {login} on {repo}; placed {digest(token)} for {host} (0600) {backup}'.strip())
-    return 0
+    if absent := unstored(dev, host, store_lines(STORE if store is None else store), placed=login):
+        say(f'{host}: git keeps its own helpers until every declared login is placed (still missing: {absent})')
+        return 0
+    return 0 if _store_only(host, helpers_for, store_for, say) else 2
 
 
 def main(argv: Sequence[str] | None = None) -> int:

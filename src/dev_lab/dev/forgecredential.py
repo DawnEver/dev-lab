@@ -4,9 +4,12 @@ A development machine declares, per forge host, the logins its agents use (``[de
 git must read for that host (``[dev] helpers.<host>``; the family declares ``store``). Tokens never rotate by default
 (user ruling 2026-11-20), so a credential is placed ONCE and its absence is drift, not a schedule:
 
+- each declared login must have a line in the store for that host; its door is :mod:`dev_lab.dev.devcredential`;
 - the helper list for ``https://<host>`` must be exactly ``["", "store"]`` -- the inherited helpers reset, then the
-  store, so ONLY ``~/.git-credentials`` answers for that host; ``devhost use-store --host H`` applies it;
-- each declared login must have a line in the store for that host; its door is :mod:`dev_lab.dev.devcredential`.
+  store, so ONLY ``~/.git-credentials`` answers for that host. STORE FIRST, HELPER SECOND: switching to the store
+  while it lacks a declared login cuts the host off the forge (the machine's working helper is reset away), so the
+  place door switches it itself once every declared login is stored, and ``devhost use-store --host H`` refuses
+  while one is missing (measured 2026-11-21: offered before any token existed, it cost a workstation the forge).
 
 PRESENCE ONLY: a store line is parsed for its scheme, user and host; the secret part is never read into a value,
 printed, or hashed. ``git credential`` is never run (it may prompt, and it would return the secret).
@@ -28,7 +31,7 @@ from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
     'PLACE_DOOR', 'STORE_ONLY', 'USE_STORE_DOOR', 'add_use_store', 'drift', 'helpers', 'store_lines', 'stored_logins',
-    'use_declared', 'use_store',
+    'unstored', 'use_declared', 'use_store',
 ]  # fmt: skip
 
 #: The host-scoped helper list that reads only the store.
@@ -64,10 +67,20 @@ def add_use_store(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     storing.add_argument('--host', required=True, help='a forge host this machine declares the store helper for')
 
 
-def use_declared(dev: Mapping[str, Any], host: str, apply: Callable[[str], None] = use_store) -> int:
-    """Make *host* read only the store -- refused unless *dev* (this machine's ``[dev]``) declares the store helper."""
+def use_declared(
+    dev: Mapping[str, Any], host: str, apply: Callable[[str], None] = use_store, store: Path | None = None
+) -> int:
+    """Make *host* read only the store, refused unless declared AND the store holds every declared login.
+
+    Reading only a store that lacks a login *dev* declares for *host* cuts the host off the forge (2026-11-21).
+    """
     if dev.get('helpers', {}).get(host) != 'store':
         emit(f'use-store: refused -- this machine declares no store helper for {host} ([dev] helpers.{host})')
+        return 2
+    if absent := unstored(dev, host, store_lines(STORE if store is None else store)):
+        emit(f'use-store: refused -- the store holds no credential for {host} login(s) {absent}; reading only it '
+             'would cut this host off the forge. Mint each (forge token mint, a one-code consent plan), then place '
+             f'it: {PLACE_DOOR.format(login=absent[0])} -- placing switches the helper itself')  # fmt: skip
         return 2
     apply(host)
     emit(f'{host}: git reads only the store (credential.https://{host}.helper = "", store)')
@@ -85,6 +98,12 @@ def stored_logins(host: str, lines: Iterable[str]) -> set[str]:
         if where.split('/', 1)[0].split(':', 1)[0].lower() == host.lower():
             found.add(userinfo.split(':', 1)[0])
     return found
+
+
+def unstored(dev: Mapping[str, Any], host: str, lines: Iterable[str], placed: str = '') -> list[str]:
+    """The logins *dev* declares for *host* with no line in *lines* (*placed* counts as stored)."""
+    held = stored_logins(host, lines) | ({placed} if placed else set())
+    return [login for login in dev.get('forges', {}).get(host, []) if login not in held]
 
 
 def store_lines(store: Path) -> list[str]:
@@ -113,14 +132,13 @@ def drift(
             found.append(f'forge {host}: no store helper declared ([dev] helpers.{host} = "store"), so no placed '
                          'token is read -- declare it in the family file through its pull request')  # fmt: skip
             continue
-        if (have := helpers_for(host)) != STORE_ONLY:
+        if absent := unstored(dev, host, lines):
+            found += [
+                f'forge {host}: no stored credential for declared login {login!r} -- mint one (forge token mint, a '
+                f'one-code consent plan), then {PLACE_DOOR.format(login=login)} (placing switches git to the store)'
+                for login in absent
+            ]
+        elif (have := helpers_for(host)) != STORE_ONLY:
             found.append(f'forge {host}: git reads helpers {have}, declared only the store {STORE_ONLY} -- '
                          f'{USE_STORE_DOOR.format(host=host)}')  # fmt: skip
-        stored = stored_logins(host, lines)
-        found += [
-            f'forge {host}: no stored credential for declared login {login!r} -- mint one (forge token mint, a '
-            f'one-code consent plan), then {PLACE_DOOR.format(login=login)}'
-            for login in logins
-            if login not in stored
-        ]
     return found
