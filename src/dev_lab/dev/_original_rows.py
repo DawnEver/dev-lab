@@ -334,6 +334,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: new mechanisms no consumer held a file for.
     'automode',
     'jobparts',
+    'hostedjobs',  # ORIGINAL: split from jobparts: a hosted part's own workflow job render (2026-11-21)
     'hostedparts',  # ORIGINAL: split from jobparts: the hosted-part declaration reader (2026-11-17)
     # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
     'jobmeasure',
