@@ -74,7 +74,7 @@ def test_a_seat_reads_its_affinity_off_its_own_deploy_row(tmp_path: Path) -> Non
         spec.Repo('q', 'https://forge.example.org/o/q', 'main'),
     )
     path = tmp_path / 'config.toml'
-    path.write_text(spec.render(spec.Deployment('h', 'src', '3.13', rows)), encoding='utf-8')
+    path.write_text(spec.render(spec.Deployment('h', '/scratch/h', '3.13', rows)), encoding='utf-8')
     assert declared(path, 'https://forge.example.org/o/r') == ('tests/*',)
     assert declared(path, 'https://forge.example.org/o/q.git') == (), 'PLANTED CONTROL: q declares none'
     assert declared(tmp_path / 'absent.toml', 'https://forge.example.org/o/r') == (), 'a workstation has no [deploy]'
@@ -116,7 +116,7 @@ def test_a_seat_reads_its_claims_off_its_own_deploy_row(tmp_path: Path) -> None:
         spec.Repo('s', 'https://forge.example.org/o/s', 'main'),
     )
     path = tmp_path / 'config.toml'
-    path.write_text(spec.render(spec.Deployment('h', 'src', '3.13', rows)), encoding='utf-8')
+    path.write_text(spec.render(spec.Deployment('h', '/scratch/h', '3.13', rows)), encoding='utf-8')
     assert claims_of(path, 'https://forge.example.org/o/r') == 'integration'
     assert claims_of(path, 'https://forge.example.org/o/q.git') == 'none'
     assert claims_of(path, 'https://forge.example.org/o/s') == '', 'PLANTED CONTROL: undeclared claims everything'
@@ -136,7 +136,7 @@ def test_claims_integration_holds_every_part_but_the_integration_tips() -> None:
 
 def test_an_unknown_claims_value_is_refused_naming_the_choices(tmp_path: Path) -> None:
     path = tmp_path / 'config.toml'
-    good = spec.render(spec.Deployment('h', 'src', '3.13', (spec.Repo('r', 'https://f.example/o/r', 'main'),)))
+    good = spec.render(spec.Deployment('h', '/scratch/h', '3.13', (spec.Repo('r', 'https://f.example/o/r', 'main'),)))
     path.write_text(good.replace('ref = "main"', 'ref = "main", claims = "tip"'), encoding='utf-8')
     with pytest.raises(ValueError, match='claims') as refused:
         spec.load(path)

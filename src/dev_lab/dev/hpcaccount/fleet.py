@@ -44,6 +44,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import ntpath
+import posixpath
 import shlex
 import sys
 import tomllib
@@ -156,7 +158,7 @@ def _checked(
             f'{grant.user}: refused -- no root declared: declare [hpc.clusters.{grant.cluster_name}] root (or the '
             f"account file's [deploy] root) in the family config, on a filesystem the compute nodes see"
         )
-    relative = not str(root).startswith('/')
+    relative = not (posixpath.isabs(str(root)) or ntpath.isabs(str(root)))  # as lab_commons.hpc.layout reads it
     if as_deployed and relative:  # the pre-root layout: home-relative, its checkouts at ~/<root>/<name>
         root = f'~/{str(root).removeprefix("~/")}'
     elif relative or (grant.root and root != grant.root and not as_deployed):

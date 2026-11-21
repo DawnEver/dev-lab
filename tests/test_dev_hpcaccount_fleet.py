@@ -550,7 +550,9 @@ def test_deploy_fleet_refuses_a_machine_file_that_is_not_its_render(tmp_path: Pa
     """The deploy line is built from THIS machine's grants, so a stale render deploys stale family facts.
 
     Measured 2026-11-20: hosts-config gained a cluster `setup` (CC=gcc), but the workstation's machine file was never
-    re-rendered, so every Cirrus deploy ran without it. PLANTED CONTROL: the fresh render deploys.
+    re-rendered, so every Cirrus deploy ran without it. Since a render restates no family leaf (#865), a family fact
+    is read live under the machine file; what can go stale is the HOST layer, so the planted change is there.
+    PLANTED CONTROL: the fresh render deploys.
     """
     from dev_lab.dev import devhost  # noqa: PLC0415
     from dev_lab.dev.hpcaccount.fleet import stale_render  # noqa: PLC0415
@@ -560,7 +562,7 @@ def test_deploy_fleet_refuses_a_machine_file_that_is_not_its_render(tmp_path: Pa
 
     fresh = tomllib.loads(devhost.render(clone, 'WS', {}))
     assert stale_render(fresh) == ''
-    (clone / 'family.toml').write_text('[hpc.clusters.c1]\nhosts = ["login01"]\nsetup = ["export CC=gcc"]\n', 'utf-8')
+    (clone / 'hosts' / 'WS.toml').write_text('[dev]\nhpc = ["research", "verification"]\n', encoding='utf-8')
     why = stale_render(fresh)
     assert 'devhost render' in why
     assert 'not the render' in why or 'absent' in why
