@@ -510,9 +510,10 @@ def test_a_pull_request_merge_gate_never_waits_on_a_hosted_part() -> None:
 _RUN_ENV = {'GITHUB_SERVER_URL': 'https://github.com', 'GITHUB_REPOSITORY': 'o/r', 'GITHUB_RUN_ID': '7'}
 
 
-def _producing(monkeypatch, child: object) -> StateForge:
+def _producing(monkeypatch, child: object, forge: StateForge | None = None) -> StateForge:
     """A ``produce`` of ``base@windows`` whose producer is *child* (given the env and the forge); the forge."""
-    forge = StateForge()
+    forge = forge or StateForge()
+    monkeypatch.setattr(jobparts.time, 'sleep', lambda _s: None)
 
     def run(argv: list[str], **kwargs: object) -> SimpleNamespace:
         if argv[:2] == ['git', 'rev-parse']:
@@ -677,3 +678,38 @@ def test_a_producer_whose_result_is_held_has_it_delivered_and_never_posts_error_
     assert jobparts.produce(tmp_path, 'base@windows', forge, env={}) == 0
     assert held == [(SHA, 'tests/base@windows')], 'the job delivers its own unit before it reads the forge'
     assert [s.state for s in status_list(forge, SHA)] == ['success'], 'no error over its own pass'
+
+
+class _LaggingForge(StateForge):
+    """A forge whose status LIST misses everything for its first *lag* reads, as GitHub's lags its POST."""
+
+    def __init__(self, lag: int) -> None:
+        super().__init__()
+        self.lag = lag
+
+    def call(self, method: str, path: str, *args: object, **kwargs: object) -> object:
+        if method == 'GET' and '/statuses' in path and self.lag > 0:
+            self.lag -= 1
+            return []
+        return super().call(method, path, *args, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ('lag', 'states'), [(jobparts.SETTLE_READS - 1, ['success']), (jobparts.SETTLE_READS, ['error'])]
+)
+def test_a_part_the_list_shows_late_is_read_back_and_never_overwritten_with_error(
+    tmp_path: Path, monkeypatch, lag: int, states: list[str]
+) -> None:
+    """dev-lab run 44917070995: tests/base posted success, the next read missed it and the job posted error over it.
+
+    PLANTED CONTROL: a list that stays blind past the bound still ends in the named error, never a silent pass.
+    """
+
+    def posts(_env: dict[str, str], forge: _LaggingForge) -> int:
+        status_post(forge, SHA, context='tests/base@windows', state='success', description='scope=full ran=1')
+        forge.lag = lag
+        return 0
+
+    forge = _producing(monkeypatch, posts, _LaggingForge(0))
+    assert jobparts.produce(tmp_path, 'base@windows', forge, env={}) == (0 if states == ['success'] else 1)
+    assert [s.state for s in status_list(forge, SHA)] == states
