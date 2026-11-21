@@ -66,6 +66,7 @@ import os
 import shlex
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -124,6 +125,12 @@ PULL_REQUEST_SYSTEMS: Final = ('linux', 'windows')
 
 #: What an expected part no job settled says (``pending``): never a part's own description, so never a part.
 ABSENT: Final = 'absent: no job settled this part'
+
+#: How often, and how many seconds apart, :func:`produce` re-reads the forge for the part its producer posted.
+#: GitHub's status LIST lags its POST (dev-lab run 44917070995: a success posted at 15:12:15 read absent a second
+#: later, and the job posted ``error`` over it); the bound keeps a producer that truly posted nothing a named red.
+SETTLE_READS: Final = 6
+SETTLE_WAIT_S: Final = 2.0
 
 #: What ``tests/base`` says when the parts matrix could not be derived: no part job can run, so none will post.
 NO_MATRIX: Final = 'no parts matrix (jobparts matrix failed; its job log says why)'
@@ -417,6 +424,7 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
 
     The job IS the producer of ``tests/<part>`` at that sha, so the child carries :func:`producing` -- the same
     marker ``forge serve`` hands its producer -- and the full suite it runs is admitted for that part only.
+    The part is read back with a bound (:func:`_settled`): the forge's list lags its post.
     A producer that ends with no settled part (unreachable, inconclusive, refused, crashed) leaves no row
     pending: the job posts it ``error`` on *client* -- the reason the producer declared (:func:`outage_said`),
     else its exit code's (:func:`release_reason`) -- naming this run, and exits non-zero.
@@ -432,13 +440,26 @@ def produce(root: Path, part: str, client: Client, *, env: Mapping[str, str] | N
         said = outcome.read_text(encoding='utf-8') if outcome.is_file() else ''
     for line in deliver_unit(root, client, sha, context):  # its own held result first (forgeoutbox.deliver_unit)
         emit(f'[jobparts] {line}', err=True)
-    latest = {status.context: status for status in status_list(client, sha)}
-    if context in latest and latest[context].state in _SETTLED:
+    if _settled(client, sha, context):
         return code
     description = outage_said(said) or release_reason(code, outage=None)
     status_post(client, sha, context=context, state='error', description=description, target_url=_run_url(given))
     emit(f'[jobparts] {context}: error {description}', err=True)
     return code or 1
+
+
+def _settled(client: Client, sha: str, context: str) -> bool:
+    """Whether *context* reads settled at *sha*, re-read :data:`SETTLE_READS` times :data:`SETTLE_WAIT_S` apart.
+
+    The list endpoint lags the post: one read right after the producer exits can miss the part it just posted.
+    """
+    for attempt in range(SETTLE_READS):
+        if attempt:
+            time.sleep(SETTLE_WAIT_S)
+        latest = {status.context: status for status in status_list(client, sha)}
+        if context in latest and latest[context].state in _SETTLED:
+            return True
+    return False
 
 
 def _head(root: Path) -> str:
