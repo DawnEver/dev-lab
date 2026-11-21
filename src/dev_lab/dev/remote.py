@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import IO, Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 __all__ = [
     'CONNECT_TIMEOUT_S',
@@ -79,7 +80,7 @@ def host_key_line(target: str, declared: Mapping[str, object]) -> str:
         why = 'is not declared'
     elif HOST_KEY_UNFILLED in key:
         why = f'is still the placeholder {HOST_KEY_UNFILLED}'
-    elif len(parts) < 2 or parts[0] not in _KEY_TYPES:  # noqa: PLR2004 -- a type and its base64
+    elif not parts[1:] or parts[0] not in _KEY_TYPES:  # a type and its base64
         why = f'{key!r} is not a "<type> <base64>" key line ({", ".join(_KEY_TYPES)})'
     else:
         return f'{host} {parts[0]} {parts[1]}'
@@ -161,7 +162,7 @@ def declared_piped(
 
     """
     entry = host_key_line(target, host_keys)
-    with tempfile.TemporaryDirectory(prefix='dev-lab-known-hosts-') as tmp:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}known-hosts-') as tmp:
         known = Path(tmp) / 'known_hosts'
         known.write_text(entry + '\n', encoding='utf-8')
         return piped(target, line, identity=identity, timeout_s=timeout_s, known_hosts=str(known))

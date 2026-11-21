@@ -335,7 +335,10 @@ def _native(answer: str) -> Path:
     """A shell path in this platform's spelling, resolved (git bash on Windows prints ``/c/...``)."""
     if os.name == 'nt' and answer.startswith('/'):
         cygpath = Path(shutil.which('sh') or 'sh').with_name('cygpath')
-        answer = subprocess.run([str(cygpath), '-w', answer], capture_output=True, text=True, check=True).stdout.strip()
+        done = subprocess.run(
+            [str(cygpath), '-w', answer], capture_output=True, text=True, encoding='utf-8', check=True
+        )
+        answer = done.stdout.strip()
     return Path(answer).resolve()
 
 

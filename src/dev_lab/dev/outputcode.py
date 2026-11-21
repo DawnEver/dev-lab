@@ -67,14 +67,19 @@ def _writes_code(node: ast.AST) -> bool:
     return any(verb in pairs for verb in _CODE_VERBS)
 
 
+#: The statements that hold a nested block of statements.
+_BLOCK_STATEMENTS = (
+    ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith, ast.Try, ast.TryStar, ast.Match,
+)  # fmt: skip
+
+
 def _simple_statements(function: ast.AST) -> list[ast.stmt]:
     """*function*'s statements that hold no nested block, in source order."""
     nested = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-    blocks = ('body', 'orelse', 'finalbody', 'handlers', 'cases')
     found = [
         sub
         for sub in ast.walk(function)
-        if isinstance(sub, ast.stmt) and not isinstance(sub, nested) and not any(hasattr(sub, b) for b in blocks)
+        if isinstance(sub, ast.stmt) and not isinstance(sub, nested) and not isinstance(sub, _BLOCK_STATEMENTS)
     ]
     return sorted(found, key=lambda sub: (sub.lineno, sub.col_offset))
 
