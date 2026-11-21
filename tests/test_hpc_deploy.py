@@ -454,6 +454,25 @@ def test_a_grant_in_a_retired_shape_is_migrated_from_the_passed_slice_once(
     assert box.machine.read_text(encoding='utf-8') == before, 'migrates once'
 
 
+def test_a_machine_file_with_an_hpc_table_but_no_grant_gains_the_grant_in_that_one_table(box: Box) -> None:
+    """Measured 2026-11-20 on Ada: the deploy appended a second ``[hpc]`` to a file already holding one.
+
+    The rendered file held ``[hpc] reach`` and no grant; the old append wrote a second
+    ``[hpc]`` and every later read raised "Cannot declare ('hpc',) twice". The grant joins the ONE table, its keys kept.
+    PLANTED CONTROL: the pre-fix append made this file unparseable.
+    """
+    box.machine.parent.mkdir(parents=True, exist_ok=True)
+    box.machine.write_text('[other]\nkeep = 1\n\n[hpc]\nreach = ["research"]\n', encoding='utf-8')
+    assert box.run(*DECLARE) == 0
+    text = box.machine.read_text(encoding='utf-8')
+    table = tomllib.loads(text)
+    assert text.count('[hpc]') == 1, text
+    assert table['hpc']['reach'] == ['verification'], 'the passed slice wins its own keys'
+    assert table['other'] == {'keep': 1}
+    (grant,) = load_grants(table['hpc']).grants
+    assert grant.account == ('alice', 'acct-free')
+
+
 def test_a_grant_in_a_retired_shape_with_no_passed_slice_is_refused_naming_deploy_fleet(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
