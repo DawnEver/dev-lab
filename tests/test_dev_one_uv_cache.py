@@ -29,7 +29,7 @@ def test_the_tick_environment_exports_the_one_cache_and_hardlinks(tmp_path: Path
 def test_retention_retires_the_default_cache_and_keeps_the_declared_one(tmp_path: Path) -> None:
     (tmp_path / '.cache' / 'uv').mkdir(parents=True)
     spec.uv_cache(tmp_path.as_posix()).mkdir(parents=True)
-    doomed = retentionplan._home_rules(tmp_path, retentionplan.Policy(), datetime.now(UTC))
+    doomed = retentionplan._home_rules(tmp_path, tmp_path, retentionplan.Policy(), datetime.now(UTC))
     paths = {d.path: d.rule for d in doomed}
     assert paths.get(tmp_path / '.cache' / 'uv') == 'uv-default-cache-retired'
     assert spec.uv_cache(tmp_path.as_posix()) not in paths
