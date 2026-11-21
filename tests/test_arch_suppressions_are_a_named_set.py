@@ -102,6 +102,24 @@ ALLOWED: Final[dict[Site, str]] = {
         'claimed: bool,',
     ): 'a parametrized case argument: pytest passes it by name, so the positional-bool hazard cannot occur',
     (
+        'src/dev_lab/dev/agenthooks/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev.hook_adoption import HookAdoption, render',
+    ): 'hook_adoption sits above the agenthooks leaf it renders; a module-scope import is an upward import, so '
+    '--family-rules resolves it where the flag is read',
+    (
+        'src/dev_lab/dev/bringup.py',
+        'PLC0415',
+        'from dev_lab.dev import devhost',
+    ): 'devhost wires the bringup verb (devhost imports bringup), so a module-scope import is a cycle; the drift '
+    'bringup reads is resolved at call time',
+    (
+        'src/dev_lab/dev/testtemp.py',
+        'PLC0415',
+        'import pytest',
+    ): 'a script suite imports this module without pytest installed; pytest is imported only on the refusal path '
+    'that raises its UsageError',
+    (
         'src/dev_lab/dev/forgerequest.py',
         'PLC0415',
         'from dev_lab.dev.forgeunit import unit_request',

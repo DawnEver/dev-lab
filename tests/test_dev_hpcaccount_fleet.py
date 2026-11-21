@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant, Machine
 
+from dev_lab.dev import devrender
 from dev_lab.dev.hpcaccount import declaration
 from dev_lab.dev.hpcaccount.division import Division, division_of
 from dev_lab.dev.hpcaccount.fleet import (
@@ -23,6 +25,7 @@ from dev_lab.dev.hpcaccount.fleet import (
     deploy_fleet,
     layer_target,
     render_command,
+    stale_render,
 )
 from dev_lab.dev.hpcaccount.target import Target, first_install, repo_dir
 from dev_lab.dev.venvpointer import shell_interpreter
@@ -552,11 +555,7 @@ def test_deploy_fleet_refuses_a_machine_file_that_is_not_its_render(tmp_path: Pa
     every reader layers live, so the stale fact planted here is the HOST layer's. PLANTED CONTROL: the fresh render
     deploys.
     """
-    from dev_lab.dev import devrender  # noqa: PLC0415
-    from dev_lab.dev.hpcaccount.fleet import stale_render  # noqa: PLC0415
-
     clone = _workstation(tmp_path, '[hpc.clusters.c1]\nhosts = ["login01"]\n')
-    import tomllib  # noqa: PLC0415
 
     fresh = tomllib.loads(devrender.render(clone, 'WS', {}))
     assert stale_render(fresh) == ''

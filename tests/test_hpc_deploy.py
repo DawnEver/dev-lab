@@ -26,6 +26,7 @@ from dev_lab.dev.hpcaccount import deploy, tick
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount import steps as deploy_steps
 from dev_lab.dev.hpcaccount.account import UNREACHED
+from dev_lab.dev.hpcaccount.declaration import declaration, parser
 from dev_lab.dev.hpcaccount.fleet import grant_slice
 from dev_lab.dev.hpcaccount.steps import Tools
 from dev_lab.dev.roles import ROLES_ENV
@@ -1117,8 +1118,6 @@ def test_a_machine_file_without_a_root_deploys_at_the_root_its_grant_table_decla
     The deploy refused "no root declared" on every account though deploy-fleet handed it the cluster's root in
     ``--grant-table``. PLANTED CONTROL: with no grant table the same file is still refused, naming the root.
     """
-    from dev_lab.dev.hpcaccount.declaration import declaration, parser  # noqa: PLC0415
-
     machine = _write(
         tmp_path / 'machine.toml',
         '[deploy]\nhost = "login02"\nrepos = [{ name = "dev-lab", url = "https://x/dev-lab.git", ref = "main" }]\n',

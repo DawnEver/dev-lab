@@ -324,10 +324,10 @@ def deploy(
     serves = isinstance(semantics, dict) and bool(semantics.get('serves', False))
     # CI-PAUSED gates the serving cron; a research deploy has none
     paused = paused_refusal(spec.root) if serves and not isinstance(spec, str) else ''
-    if why := (spec if isinstance(spec, str) else semantics if isinstance(semantics, str) else paused):
+    why = spec if isinstance(spec, str) else semantics if isinstance(semantics, str) else paused
+    if isinstance(spec, str) or why:  # the isinstance narrows spec for everything below
         emit(f'deploy refused: {why}', err=True)
         return 2
-    assert not isinstance(spec, str)  # noqa: S101 -- narrowed by the refusal above
     short = hostname.split('.', 1)[0]
     emit(f'[host] account {os.environ.get("USER") or os.environ.get("USERNAME", "?")} on {short}')
     if why := host_refusal(spec, path, short, serves=serves, table=args.grant_table):

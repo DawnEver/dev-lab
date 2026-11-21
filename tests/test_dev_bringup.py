@@ -6,6 +6,8 @@ machine's key not authorised on the issuer, an issuer too old to handshake. Each
 
 from __future__ import annotations
 
+import json
+import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -31,15 +33,11 @@ def _machine(tmp_path: Path, *, declared: bool = True, keyed: bool = True) -> di
     (ssh / 'id_ed25519.pub').write_text(f'{KEY} me@here\n', encoding='utf-8')
     live = {'repos': {'dev-lab': (tmp_path / 'dev-lab').as_posix()}, 'devhost': {'host': 'ws', 'source': str(clone)}}
     if declared:
-        import tomllib  # noqa: PLC0415
-
         live = {**tomllib.loads(devrender.render(clone, 'ws', live)), 'repos': live['repos']}
     return live
 
 
 def _speaks(_table: Mapping[str, Any], _request: dict[str, Any]) -> tuple[int, str]:
-    import json  # noqa: PLC0415
-
     return 0, json.dumps(hello())
 
 
