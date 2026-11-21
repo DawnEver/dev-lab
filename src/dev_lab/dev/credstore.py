@@ -38,6 +38,7 @@ __all__ = [
     'Shell',
     'digest',
     'discard_command',
+    'named_fill_command',
     'place_verified',
     'read_forge',
     'rewrite_command',
@@ -123,11 +124,14 @@ def discard_command(stamp: str) -> str:
     return f'rm -f {_staged(stamp)}'
 
 
-def rewrite_command(host: str, stamp: str, *, login: str, staged: bool) -> str:
+def rewrite_command(host: str, stamp: str, *, login: str, staged: bool, first: bool = True) -> str:
     """The shell line that backs up ``~/.git-credentials`` and removes *login*'s *host* line -- replaced if staged.
 
     ONE LINE PER (HOST, LOGIN) (2026-11-20): another login's line on the same host is kept, so one account holds a
-    verdict-posting login and a reader side by side; a url naming its user selects that line. The backup
+    verdict-posting login and a reader side by side; a url naming its user selects that line. A request naming NO
+    user gets the FIRST line for the host (git's ``store`` helper), so ORDER decides who answers it (measured
+    2026-11-21: a reader placed beside the writer answered the serve as the reader). The staged line goes *first*
+    when its login is the one an unnamed request is for, else last, after every line it must not shadow. The backup
     ``~/.git-credentials.bak-<stamp>`` (0600) is taken when a store exists and its path echoed; every other line is
     kept; the new file is written under ``umask 077``, ``chmod 600`` and moved into place atomically.
     """
@@ -136,11 +140,13 @@ def rewrite_command(host: str, stamp: str, *, login: str, staged: bool) -> str:
         msg = f'not a forge login: {login!r}'
         raise ValueError(msg)
     own = r'^https?://' + login.replace('.', r'\.') + r'(:[^@/]*)?@' + host.replace('.', r'\.') + r'(:[0-9]+)?/?$'
-    add, done = (f' && cat {_staged(stamp)}', f' && rm -f {_staged(stamp)}') if staged else ('', '')
+    cat, done = (f'cat {_staged(stamp)}', f' && rm -f {_staged(stamp)}') if staged else ('', '')
+    kept = f'{{ grep -v -E {shlex.quote(own)} "$f" 2>/dev/null || true; }}'
+    body = '; '.join(part for part in ((cat, kept) if first else (kept, cat)) if part)
     return (
         f'umask 077 && f="$HOME/{STORE}" && b="$f.bak-{stamp}" && '
         '{ [ ! -e "$f" ] || { cp "$f" "$b" && chmod 600 "$b" && echo "backup $b"; }; } && t="$(mktemp "$f.XXXXXX")" '
-        f'&& {{ {{ grep -v -E {shlex.quote(own)} "$f" 2>/dev/null || true; }}{add}; }} > "$t" '
+        f'&& {{ {body}; }} > "$t" '
         f'&& chmod 600 "$t" && mv -f "$t" "$f"{done}'
     )
 
@@ -196,8 +202,25 @@ def read_forge(host_config: Path) -> DeclaredForge:
     return DeclaredForge(host_config, tuple(caddy.sites), accounts)
 
 
-def place_verified(shell: Shell, *, login: str, token: str, repo: str, role: str, stamp: str = '') -> tuple[str, str]:
+def named_fill_command(host: str, login: str) -> str:
+    """The shell line that prints the password git's helper returns for a request on *host* naming *login*.
+
+    The read-back of a login reached by a url naming it (a config reader beside the writer): the forge's
+    ``auth role`` asks for the host alone, so it would read the unnamed answer, never this login's line.
+    """
+    if not valid_host(host) or not valid_login(login):
+        msg = f'not a forge host and login: {host!r} {login!r}'
+        raise ValueError(msg)
+    asked = shlex.quote(f'protocol=https\\nhost={host}\\nusername={login}\\n\\n')
+    return f"printf {asked} | GIT_TERMINAL_PROMPT=0 git credential fill 2>/dev/null | sed -n 's/^password=//p'"
+
+
+def place_verified(
+    shell: Shell, *, login: str, token: str, repo: str, role: str, stamp: str = '', first: bool = True
+) -> tuple[str, str]:
     """Stage *token* as *login* for *repo*'s host, verify with the *role* command, then replace.
+
+    *first* places the line ahead of the host's other lines (see :func:`rewrite_command`).
 
     Returns ``(refusal, '')`` when the forge answered as anyone but *login* (the store untouched), else
     ``('', backup line)``.
@@ -211,4 +234,4 @@ def place_verified(shell: Shell, *, login: str, token: str, repo: str, role: str
     if answered != login:
         shell(discard_command(stamp), None)
         return f'the forge answers {repo} as {answered or "anonymous"}, not {login}; ~/{STORE} untouched', ''
-    return '', shell(rewrite_command(host, stamp, login=login, staged=True), None).strip()
+    return '', shell(rewrite_command(host, stamp, login=login, staged=True, first=first), None).strip()
