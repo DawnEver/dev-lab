@@ -41,6 +41,7 @@ tries afresh.
 from __future__ import annotations
 
 import contextlib
+import os
 import re
 import shutil
 import sys
@@ -53,7 +54,7 @@ from urllib.parse import parse_qs
 
 import lab_commons.launch as _door
 
-from dev_lab.dev._dep_project import follow_pin, uv_remedy
+from dev_lab.dev._dep_project import OtherUvRefused, lock_writer, pin_file, uv_remedy
 from dev_lab.dev.famfiles import due_renderers, render_repo
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
@@ -69,6 +70,7 @@ from dev_lab.dev.lockcheck import (
     newest_uv,
     refreshable,
     stale,
+    uv_version,
 )
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.trackedrender import RenderRefused
@@ -293,16 +295,35 @@ def door_upgrade(tree: Path, packages: Sequence[str] = ()) -> int:
     """The one writer of a lock: ``dev_lab.dev.dep --lock-upgrade <tree>``, moving only *packages* when named.
 
     It runs from *tree*'s own environment when it has one: that holds the dev_lab *tree*'s lock pins, while the
-    caller's may be older and refuse what the tree's bootstrap made (a ``.venv`` alias, 2026-11-19).
+    caller's may be older and refuse what the tree's bootstrap made (a ``.venv`` alias, 2026-11-19). That kit may
+    also be older than the beside-installed writer (2026-11-21: one predating :mod:`dev_lab.dev.uvrelease` tried
+    ``uv self update`` on a pip-installed uv), so THIS kit places the pinned uv (:func:`lock_writer_for`) and puts
+    its directory first on the door's ``PATH``: whatever kit runs, the uv it finds is already the pinned one.
+    RAISES :class:`RelockFailed` naming why when that uv cannot be had.
     """
+    try:
+        writer = lock_writer_for(tree)
+    except OtherUvRefused as why:
+        raise RelockFailed(str(why)) from why
     owned = [candidate for candidate in _interpreters(tree) if candidate.is_file()]
     argv = [str(owned[0]) if owned else sys.executable, '-m', 'dev_lab.dev.dep', '--lock-upgrade', str(tree)]
     argv += [f'--upgrade-package={package}' for package in packages]
-    return _exit(argv, tree)
+    path = os.pathsep.join((str(Path(writer).parent), os.environ.get('PATH', '')))
+    return _exit(argv, tree, env={**os.environ, 'PATH': path})
 
 
-def _exit(argv: list[str], tree: Path) -> int:
-    return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
+def lock_writer_for(tree: Path, version: str | None = None) -> str:
+    """The pinned uv (*version*, else *tree*'s pin) that writes *tree*'s lock, installed beside the host's when needed.
+
+    Never the host's ``PATH`` uv moved (:func:`~dev_lab.dev._dep_project.lock_writer`). RAISES
+    :class:`~dev_lab.dev._dep_project.OtherUvRefused` naming why when it cannot be had.
+    """
+    uv = shutil.which('uv') or ''
+    return lock_writer(uv, version or uv_version(tree), pin_file(tree))
+
+
+def _exit(argv: list[str], tree: Path, env: dict[str, str] | None = None) -> int:
+    return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree, env=env).returncode
 
 
 def _interpreters(tree: Path) -> tuple[Path, Path]:
@@ -337,10 +358,13 @@ def rerender(tree: Path, *, run: Callable[[list[str], Path], int] = _exit) -> tu
         raise RelockFailed(str(exc)) from exc
 
 
-def _follow_host_uv(version: str) -> str:
-    """Move the uv on this host's PATH to *version* (:func:`~dev_lab.dev.uvfollow.follow`); ``''`` once it is."""
-    uv = shutil.which('uv')
-    return follow_pin(uv, version) if uv else 'this host has no uv on PATH'
+def _writer_ready(version: str, tree: Path | None = None) -> str:
+    """Place uv *version* beside the host's as the lock writer (:func:`lock_writer_for`); ``''`` once, else why."""
+    try:
+        lock_writer_for(tree or Path.cwd(), version)
+    except OtherUvRefused as why:
+        return str(why)
+    return ''
 
 
 def _uv_raise(lines: Sequence[str]) -> str | None:
@@ -404,7 +428,7 @@ def carry(
     resolve: Callable[[Path], Report] | None = None,
     stable: Callable[[], str] = newest_stable,
     uv: Callable[[], str] = newest_uv,
-    follow_uv: Callable[[str], str] = _follow_host_uv,
+    follow_uv: Callable[[str], str] = _writer_ready,
     upgrade: Callable[[Path, Sequence[str]], int] = door_upgrade,
     rerender: Callable[[Path], Sequence[str]] = rerender,
     remote_head: Callable[[Path], str] = _remote_head,
@@ -414,11 +438,11 @@ def carry(
 
     *pulls* lists the open pull requests, *create* opens one (``Client.pr_create``), *edit* rewrites one's body and
     *close* closes one (``Client.issue_edit``/``issue_close``); *now* is the epoch clock the cadence reads.
-    *resolve*, *stable*, *uv*, *follow_uv*, *upgrade*, *rerender*, *remote_head* and *push* are the resolution, the
-    newest Rust stable, the newest uv, this host's uv moved to a version, the door, the render, origin's relock head
-    and the leased push -- each a seam a test plants. A relock that raises the uv pin is written BY the new uv: the
-    host's uv follows to it first, and where it cannot, the relock RAISES naming why and the update rather than
-    writing with the old one.
+    *resolve*, *stable*, *uv*, *follow_uv*, *upgrade*, *rerender*, *remote_head* and *push* are the resolution,
+    the newest Rust stable, the newest uv, the pinned uv of a version placed beside this host's, the door, the
+    render, origin's relock head and the leased push -- each a seam a test plants. A relock that raises the uv pin
+    is written BY the new uv: the pinned release is placed beside the host's uv first, and where it cannot, the
+    relock RAISES naming why rather than writing with the old one.
     """
     rolling = next((pull for pull in pulls() if pull.head == BRANCH), None)
     base = f'origin/{policy.integration}'

@@ -19,7 +19,8 @@ from typing import Any, cast
 
 import pytest
 
-from dev_lab.dev import forgeservesteps, locklag, relock
+from dev_lab.dev import _dep_project, forgeservesteps, locklag, relock, uvfollow
+from dev_lab.dev._dep_project import OtherUvRefused
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgesync import relock_floating
 from dev_lab.dev.forgework import Client, PullRequest
@@ -572,10 +573,10 @@ def _not_followed(version: str) -> str:
 def test_planted_control_a_host_without_the_new_uv_refuses_the_relock_naming_the_update(
     world: tuple[Path, Path, str],
 ) -> None:
-    """A lock is never written by the old uv: the relock RAISES naming ``uv self update`` and pushes nothing."""
+    """A lock is never written by the old uv: the relock RAISES naming the beside-installed release; pushes nothing."""
     clone, origin, _ = world
     _commit(world, 'pin uv', {UV_PIN: 'version = "0.13.7"\nfollow = "minor"\n'})
-    with pytest.raises(RelockFailed, match=r'uv self update 0.14.0'):
+    with pytest.raises(RelockFailed, match=r'uv 0.14.0 release reachable'):
         _carry(
             clone,
             _Forge(),
@@ -731,14 +732,17 @@ def test_forge_sync_relocks_a_branch_rev_source_and_leaves_a_sha_pinned_one(tmp_
     assert reads == ['integrate/main'], 'the lag reads the branch the rev names'
 
 
-def _ran_door(monkeypatch, tree: Path) -> list[str]:
+def _ran_door(monkeypatch, tree: Path, envs: list[dict[str, str]] | None = None) -> list[str]:
     seen: list[list[str]] = []
 
-    def fake(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         seen.append(argv)
+        if envs is not None:
+            envs.append(cast('dict[str, str]', kwargs['env']))
         return subprocess.CompletedProcess(argv, 0, '', '')
 
     monkeypatch.setattr(relock._door, 'run', fake)
+    monkeypatch.setattr(relock, 'lock_writer_for', lambda _tree: str(tree / 'tools' / 'uv' / '0.13.9' / 'uv.exe'))
     assert relock.door_upgrade(tree, ('dev-lab',)) == 0
     return seen[0]
 
@@ -758,3 +762,42 @@ def test_the_lock_door_runs_the_trees_own_interpreter_not_the_callers(monkeypatc
 
 def test_planted_control_a_tree_without_an_environment_runs_the_door_from_the_caller(monkeypatch, tmp_path) -> None:
     assert _ran_door(monkeypatch, tmp_path)[0] == sys.executable
+
+
+def test_the_door_finds_the_pinned_writer_first_on_path_whatever_kit_the_tree_runs(monkeypatch, tmp_path) -> None:
+    """The caller places the pinned uv beside the host's and puts it first on the door's PATH.
+
+    2026-11-21: ``forge sync`` ran the door from a tree whose OLDER dev_lab predates the beside-installed writer;
+    it found a pip-installed uv 0.13.7 on PATH and tried ``uv self update``. Whatever kit runs the door now, the
+    first uv on its PATH is already the pinned one, so no kit moves the host's uv.
+    """
+    envs: list[dict[str, str]] = []
+    _ran_door(monkeypatch, tmp_path, envs)
+    first = envs[0]['PATH'].split(os.pathsep)[0]
+    assert Path(first) == tmp_path / 'tools' / 'uv' / '0.13.9'
+
+
+def test_planted_control_a_writer_that_cannot_be_had_fails_the_door_by_name(monkeypatch, tmp_path) -> None:
+    def refuse(_tree: Path) -> str:
+        msg = 'every lock is written by uv 0.13.9, and that uv could not be had'
+        raise OtherUvRefused(msg)
+
+    monkeypatch.setattr(relock, 'lock_writer_for', refuse)
+    monkeypatch.setattr(relock._door, 'run', lambda *_a, **_k: pytest.fail('the door ran without its writer'))
+    with pytest.raises(relock.RelockFailed, match='could not be had'):
+        relock.door_upgrade(tmp_path)
+
+
+def test_lock_writer_for_never_moves_a_pip_installed_path_uv(monkeypatch, tmp_path) -> None:
+    """A PATH uv of the wrong version installed by pip: the writer is the beside release; nothing self-updates."""
+    path_uv = str(tmp_path / 'Python313' / 'Scripts' / 'uv.EXE')
+    placed = tmp_path / 'tools' / 'uv' / '0.13.9' / 'uv.exe'
+    monkeypatch.setattr(relock.shutil, 'which', lambda _name: path_uv)
+    monkeypatch.setattr(_dep_project, 'installed_uv_version', lambda uv: '0.13.7' if uv == path_uv else '0.13.9')
+    monkeypatch.setattr(uvfollow, 'run_network_verb', lambda *_a, **_k: pytest.fail('the PATH uv was moved'))
+    monkeypatch.setattr(
+        _dep_project.uvrelease,
+        'writer',
+        lambda wanted, uv, **_kw: str(placed) if uv == path_uv and wanted.version else pytest.fail(uv),
+    )
+    assert relock.lock_writer_for(tmp_path) == str(placed)
