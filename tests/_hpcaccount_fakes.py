@@ -8,7 +8,7 @@ from typing import Final
 
 from lab_commons.hpc.grants import Grant
 
-from dev_lab.dev import devhost
+from dev_lab.dev import devrender
 from dev_lab.dev.hpcaccount.fleet import ConfigSource
 from dev_lab.dev.hpcaccount.steps import Tools
 
@@ -51,7 +51,7 @@ def clone_of(tmp_path: Path, family: str = FAMILY) -> Path:
     (clone / 'hosts').mkdir(parents=True)
     (clone / 'family.toml').write_text(family, encoding='utf-8')
     root = (tmp_path / 'root').as_posix()
-    (clone / devhost.host_file(HOST)).write_text(LAYER.format(root=root), encoding='utf-8')
+    (clone / devrender.host_file(HOST)).write_text(LAYER.format(root=root), encoding='utf-8')
     return clone
 
 
@@ -61,7 +61,7 @@ def home_of(tmp_path: Path, extra: str = '', family: str = FAMILY) -> tuple[Path
     home.mkdir(exist_ok=True)
     clone = clone_of(tmp_path, family)
     machine = tmp_path / 'machine.toml'
-    machine.write_text(devhost.render(clone, HOST, {}) + extra, encoding='utf-8')
+    machine.write_text(devrender.render(clone, HOST, {}) + extra, encoding='utf-8')
     return home, clone, machine
 
 

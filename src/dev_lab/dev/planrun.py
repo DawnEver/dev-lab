@@ -52,7 +52,7 @@ forge at the ref, rendered as the host renders it), so building the plan needs n
 prints it. So does an ``ops.config`` step naming its host's declaration (``{"argv": ["config", "apply"],
 "config_host": "<name>"}``): :func:`dev_lab.ops.configdoor.local_subject` reads ``hosts/<name>.toml`` (and the family
 file it declares) from the config source -- the ``origin`` of the clone the machine file's ``[devhost]`` names
-(:func:`.devhost.config_source`) -- through the forge client, and digests exactly what the host's fetch reads. A host
+(:func:`.devrender.config_source`) -- through the forge client, and digests exactly what the host's fetch reads. A host
 that does not answer (no held session for a second-factor account) is UNREACHABLE: its derivable steps are checked
 here and its doors at run (``run`` asks every host first); any other step on it is blocked. A host that answers is
 still asked for the subject. A remote is the held session when one is open, else key-only ssh (:mod:`.planremote`).

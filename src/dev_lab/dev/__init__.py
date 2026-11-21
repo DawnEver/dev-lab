@@ -618,6 +618,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.tomlleaves` -- a parsed TOML table's leaf keys by path, and their ``[table].key`` spelling.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;
   drift named key by key with its owning layer; ``local set|unset``, the one door into the local layer.
+* :mod:`dev_lab.dev.devrender` -- the machine file rendered (family ⊕ host ⊕ local) and the config source it reads.
 * :mod:`dev_lab.dev.backedup` -- a file replaced whole and atomically, its previous content kept in a dated backup.
 * :mod:`dev_lab.dev.machineguard` -- MACHINE-FILE-IS-RENDERED: the refusal of any write onto the machine file but
   its doors.

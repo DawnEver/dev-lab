@@ -11,7 +11,7 @@ account, role) once; ``hosts/<cluster>-<user>.toml`` declares only what is true 
 
 The file's NAME names its grant: an account file whose ``<cluster>-<user>`` is no family grant is refused, and so is
 a key the family file already holds. :func:`dev_lab.ops.configcheck.check_host` calls :func:`check`;
-:func:`dev_lab.dev.devhost.render` layers :func:`derived` over the file.
+:func:`dev_lab.dev.devrender.render` layers :func:`derived` over the file.
 """
 
 from __future__ import annotations
