@@ -7,11 +7,13 @@ real directory, with a real thread as the leader, because the property is about 
 
 from __future__ import annotations
 
+import contextlib
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from lab_commons.box import hold, holdings
+from lab_commons.box import Refused, hold, holdings
 
 from dev_lab.dev import inflight
 from dev_lab.dev.inflight import RunKey, leader_run, run_once, seat
@@ -85,6 +87,30 @@ def test_a_leader_that_raises_releases_its_claim(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match='boom'):
         run_once(KEY, boom, directory=tmp_path, poll_s=0.01)
     assert leader_run(KEY) is None
+
+
+def test_a_refusal_that_is_not_the_seat_raises_instead_of_looping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A wall that refuses at once (the free-space floor) is no leader to wait for: it raises, named.
+
+    MEASURED 2026-11-21, dev-lab tests/base@windows: the hosted runner's C: had 30 GiB free under the 50 GiB
+    floor, every hold was refused, no leader was ever found, and the loop polled until the 90-minute job
+    timeout cancelled the part. PLANTED CONTROL: the seat contention arm above still attaches.
+    """
+    calls: list[int] = []
+
+    @contextlib.contextmanager
+    def floor(*_args: object, **_kwargs: object) -> Iterator[None]:
+        calls.append(1)
+        msg = 'inflight:x: refused at once, a volume it writes is below the free-space floor'
+        raise Refused(msg)
+        yield  # a context manager whose ENTER refuses, as lab_commons.box.hold does
+
+    monkeypatch.setattr(inflight, 'hold', floor)
+    with pytest.raises(Refused, match='free-space floor'):
+        run_once(KEY, lambda: 'PASS', directory=tmp_path, poll_s=0.01)
+    assert calls == [1], 'a refusal at once was retried'
 
 
 def test_the_key_digest_separates_every_field() -> None:

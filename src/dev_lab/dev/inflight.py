@@ -13,6 +13,9 @@ the leader's run id off its :class:`~lab_commons.box.Holding`, and WAITS for the
 seat. A crashed leader is reaped by the ledger (pid and creation stamp), so a crash never leaves a queue
 waiting forever and no lock file is ever left behind. A leader that RAISES releases its seat and writes
 no result, and its followers take the key over in turn -- nothing was measured, so nothing is shared.
+Only the seat's own refusal (:class:`~lab_commons.box.NotAdmitted`) means a leader: a refusal AT ONCE (a
+volume under the free-space floor) raises, named -- retried, it polled a hosted part to its job timeout
+(dev-lab tests/base@windows, 2026-11-21).
 
 THE RESULT DIRECTORY IS BOX-WIDE, NOT PER REPO: beside the ledger, outside every repository, because two
 worktrees whose trees hash alike ARE the same request.
@@ -31,7 +34,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.box import Refused, box_path, hold, holdings
+from lab_commons.box import NotAdmitted, box_path, hold, holdings
 from lab_commons.compute.durable import durable_text
 
 if TYPE_CHECKING:
@@ -110,7 +113,7 @@ def run_once(key: RunKey, work: Callable[[], str], *, directory: Path, poll_s: f
         held = hold({name: 1}, RUN_WALL_S, name, 0.0, key=f'{name}:{mine}')
         try:
             held.__enter__()
-        except Refused:
+        except NotAdmitted:  # the seat is taken; any other refusal (a free-space floor) is no leader: it raises
             theirs = leader_run(key)
             answer = None if theirs is None else _wait_for(directory, key, theirs, poll_s=poll_s)
             if answer is not None:
