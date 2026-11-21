@@ -506,6 +506,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
+* :mod:`dev_lab.dev.taskcarry` -- carries a rem task's ledger to another host as origin's refs/tasks/<slug>.
 * :mod:`dev_lab.dev.taskbinding` -- the ONE reader of rem's task ledger and session binding (rem writes both).
 * :mod:`dev_lab.dev.remplugin` -- which rem the session's harness runs: an unbound push names an absent or old one.
 * :mod:`dev_lab.dev.remhome` -- the machine home handed to rem: ``LAB_COMMONS_HOME`` in the user Claude settings.
