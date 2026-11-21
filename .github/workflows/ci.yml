@@ -160,8 +160,7 @@
     },
     "part": {
       "env": {
-        "GITHUB_TOKEN": "${{ github.token }}",
-        "LAB_COMMONS_BOX": "${{ runner.temp }}/lab-commons/box.sqlite"
+        "GITHUB_TOKEN": "${{ github.token }}"
       },
       "needs": "parts",
       "if": "${{ (!(github.event.pull_request.draft || startsWith(github.event.pull_request.title, 'WIP:') || startsWith(github.event.pull_request.title, '[WIP]'))) && ((inputs.measurement_paths == '' && inputs.measurement_sha == '') && (needs.parts.outputs.matrix != '')) }}",
@@ -194,6 +193,9 @@
         },
         {
           "name": "Produce and post the part",
+          "env": {
+            "LAB_COMMONS_BOX": "${{ runner.temp }}/lab-commons/box.sqlite"
+          },
           "run": "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}"
         },
         {

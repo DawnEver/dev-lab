@@ -522,7 +522,7 @@ def test_a_hosted_part_renders_its_own_full_run_only_job_and_only_its_setup_step
         "${{ needs.parts.outputs.matrix != '' && needs.parts.outputs.event != 'pull_request' }}"
     )
     assert job['name'] == 'tests/live'
-    carrying = [step for step in job['steps'] if 'env' in step]
+    carrying = [step for step in job['steps'] if 'secrets.' in str(step.get('env', {}))]
     assert len(carrying) == 1
     setup = carrying[0]
     assert setup['env'] == {'AI_LAB_KEYS_LIVE': '${{ secrets.AI_LAB_KEYS_LIVE }}'}
@@ -573,7 +573,9 @@ def test_a_hosted_setup_runs_before_the_tests_and_only_a_secret_withholds_the_pu
     setup = linux['steps'][linux['steps'].index(produce) - 1]
     assert setup == {'name': 'Set up tests/linux', 'run': 'sudo apt-get install -y xvfb'}
     assert produce['run'].endswith('jobparts produce linux')
-    assert not any('env' in step or 'credential' in step.get('run', '') for step in linux['steps']), 'no key store'
+    assert not any(
+        'secrets.' in str(step.get('env', {})) or 'credential' in step.get('run', '') for step in linux['steps']
+    ), 'no key store'
     runs = [step.get('run', '') for step in live['steps']]
     assert runs.index('make x') < next(i for i, run in enumerate(runs) if run.endswith('jobparts produce live'))
     assert _forgets_keys(live)
@@ -1685,3 +1687,45 @@ def test_a_layer_syncing_every_extra_is_refused_by_name() -> None:
     with pytest.raises(ValueError, match='ALL-EXTRAS-REFUSED'):
         ciworkflows.refuse_everything(['uv sync --extra all'], 'x')
     ciworkflows.refuse_everything({'steps': [{'run': 'uv sync --frozen --extra dev'}]}, 'x')
+
+
+# GitHub's context availability table: a job-level ``env`` may read only these contexts. ``runner`` (and ``steps``,
+# ``job``, ``env``) exist only inside a step, and one reference outside it makes GitHub reject the WHOLE workflow
+# file -- no job runs, the run is red with "a workflow file issue" (dev-lab ci.yml, LAB_COMMONS_BOX on runner.temp,
+# 2026-11-21). A render test cannot see it: the YAML is valid, only GitHub's evaluator refuses it.
+_JOB_ENV_CONTEXTS = frozenset({'github', 'needs', 'strategy', 'matrix', 'vars', 'secrets', 'inputs'})
+_CONTEXT_REFERENCE = re.compile(r'\$\{\{(.*?)\}\}', re.DOTALL)
+_CONTEXT_NAME = re.compile(r"(?<![\w.'])([a-z_][a-z0-9_-]*)\s*(?=[.\[])")
+
+
+def _contexts_outside_job_env(env: dict[str, Any]) -> set[str]:
+    """Every context named in *env*'s expressions that a job-level ``env`` cannot read."""
+    named = {
+        name
+        for value in env.values()
+        for expression in _CONTEXT_REFERENCE.findall(str(value))
+        for name in _CONTEXT_NAME.findall(expression)
+    }
+    return named - _JOB_ENV_CONTEXTS
+
+
+def test_the_job_env_check_names_a_step_only_context() -> None:
+    # PLANTED-CONTROL: the check below must be able to say no.
+    assert _contexts_outside_job_env({'BOX': '${{ runner.temp }}/box.sqlite', 'T': '${{ github.token }}'}) == {'runner'}
+    assert (
+        _contexts_outside_job_env({'P': '${{ matrix.part }}', 'Q': '${{ fromJSON(needs.parts.outputs.m) }}'}) == set()
+    )
+
+
+@pytest.mark.parametrize('extra', ['', '[tool.dev_lab.ci."ci.yml"]\n'])
+def test_no_job_env_reads_a_context_github_refuses_there(tmp_path: Path, extra: str) -> None:
+    (_hosted(tmp_path) / 'pyproject.toml').write_text(ACTIONS_REPO + extra, encoding='utf-8')
+    rendered = workflows(tmp_path)
+    assert rendered, 'a floor: no workflow rendered checks nothing'
+    refused = {
+        f'{name}:{job_name}': bad
+        for name, workflow in rendered.items()
+        for job_name, job in workflow.get('jobs', {}).items()
+        if (bad := _contexts_outside_job_env(job.get('env', {})))
+    }
+    assert refused == {}, 'a step-only context (runner, steps, job, env) belongs in a STEP env, not the job env'

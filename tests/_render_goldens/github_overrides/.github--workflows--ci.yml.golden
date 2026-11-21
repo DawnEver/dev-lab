@@ -193,6 +193,9 @@
         },
         {
           "name": "Produce and post the part",
+          "env": {
+            "LAB_COMMONS_BOX": "${{ runner.temp }}/lab-commons/box.sqlite"
+          },
           "run": "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}"
         },
         {

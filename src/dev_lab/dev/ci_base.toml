@@ -148,10 +148,7 @@ pending = "${{ steps.pending.outputs.pending }}"
 
 ["ci.yml".jobs.part]
 role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
-# The box ledger (and its inflight results beside it) on the runner's own work volume: a hosted Windows runner's
-# default C:\ProgramData had 30 GiB free under the 50 GiB floor, every hold was refused, and the part polled to its
-# job timeout (dev-lab tests/base@windows, 2026-11-21). The runner is ephemeral, so its ledger is too.
-env = { GITHUB_TOKEN = "${{ github.token }}", LAB_COMMONS_BOX = "${{ runner.temp }}/lab-commons/box.sqlite" }
+env = { GITHUB_TOKEN = "${{ github.token }}" }
 needs = "parts"
 if = "${{ needs.parts.outputs.matrix != '' }}"
 name = "tests/${{ matrix.part }}"
@@ -164,7 +161,11 @@ steps = [
     # THE PART'S OWN EXTRAS (user, 2026-11-20: most parts need no torch): the declared extras plus those its need-set
     # maps to, from the repo's one declaration (dev_lab.dev.depneeds flags -> lab_commons.extras); never all of them.
     { name = "Sync the part's extras", shell = "bash", run = 'uv sync --frozen $(uv run --no-sync python -m dev_lab.dev.depneeds flags --part "${{ matrix.part }}")' },
-    { name = "Produce and post the part", run = "uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}" },
+    # The box ledger (and its inflight results beside it) on the runner's own work volume: a hosted Windows runner's
+    # default C:\ProgramData had 30 GiB free under the 50 GiB floor, every hold was refused, and the part polled to
+    # its job timeout (dev-lab tests/base@windows, 2026-11-21); the runner is ephemeral, so its ledger is too. A STEP
+    # env: GitHub refuses the runner context in a job env, and with it the whole workflow file (2026-11-21).
+    { name = "Produce and post the part", env = { LAB_COMMONS_BOX = "${{ runner.temp }}/lab-commons/box.sqlite" }, run ="uv run --no-sync python -m dev_lab.dev.jobparts produce ${{ matrix.part }}" },
     # A red, hung or cancelled part kept no log, so its cause was unreadable (document-lab tests/windows, 2026-11-18):
     # the run's verify log is attached whatever ended the job (always(): a failure, a cancel, the job timeout).
     { name = "Keep the part's verify log", if = "${{ always() }}", uses = "actions/upload-artifact@v4", with = { name = "verify-log-${{ matrix.part }}-${{ github.run_attempt }}", path = "**/verify/verify-*.log", if-no-files-found = "warn" } },
