@@ -219,6 +219,46 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
   issue; the wave sends ONE summary alert when it ends. Client: `python -m dev_lab.dev.forge breakglass
   open|close|ack|status` and `forge pr breakglass` (`dev_lab.dev.forgebreakglass`).
 
+### Reaching the issuer and break-glass: HTTPS, or ssh
+
+User directive and ruling 2026-11-21: a workstation with dev-lab and the user's code opens break-glass by itself;
+no host key or client key has to be distributed by someone who already has access. So both endpoints have an
+HTTPS door beside their ssh ForceCommand (`dev_lab.ops.httpsdoor`); ssh stays selectable.
+
+- **Client.** The family's `[consent]` / `[breakglass]` tables declare `https = "https://<forge>/dev-lab/consent"`
+  (resp. `/dev-lab/breakglass`) beside `endpoint`; a declared `https` wins (`dev_lab.ops.consent.door.endpoint_send`).
+  The server's identity is its TLS certificate, checked against the system trust store; `https_pin = "sha256/..."`
+  optionally pins its key (`httpsdoor.spki_pin`). Every refusal names its cause and door: outside the allowlist
+  (HTTP 403), unreachable (use the ssh endpoint), a pin mismatch, a throttled peer.
+- **Server.** A role's `https_port` / `https_site` render a relay unit (`dev-lab-ops-<role>-https.service`) running
+  as the role's restricted account on `127.0.0.1:<https_port>` ONLY; each POST is the same one JSON line the
+  ForceCommand takes, run through the same serve verb (`sudo -n ... serve --https`, its one extra sudoers line).
+  Caddy routes the path inside the allowlisted site (`dev_lab.ops.caddy.doors_routed`): the route refuses
+  `not remote_ip <[ops.caddy] allow>` with 403 before it proxies, and a site holding no `remote_ip` matcher, or one
+  outside `[ops.caddy] sites`, is refused at load and at install (fail closed).
+- **Authorization without a client key**, verb by verb:
+
+| endpoint | verb | over ssh | over HTTPS |
+|---|---|---|---|
+| consent | `hello` | key | open: a read of the field set and actions (no throttle) |
+| consent | `subject` | key | a read: the registry's `--subject` form only, nothing acting (throttle check) |
+| consent | `issue`, `issue-plan` | key + TOTP | TOTP; every attempt strikes the peer throttle |
+| consent | `fetch-unspent` | key | TOTP (`consent recover --code`): re-delivery of live credentials needs the user |
+| consent | `register` | key | the signed credential itself (only its holder has it); one use, as over ssh |
+| consent | `spent` | key | open: answers only about the ids it is given |
+| breakglass | `open` | key + credential | the `breakglass.wave` credential (signed, single-use, registered) |
+| breakglass | `merge`, `close` | key | the credential that OPENED the open wave (signature checked, id = the wave's consent) |
+| breakglass | `ack` | key | the credential that opened THAT wave; it acknowledges only it |
+| breakglass | `status` | key | open: a read of wave ids and states |
+
+- **Brute force.** Every code-taking request strikes a per-peer throttle (`httpsdoor.Throttle`): past
+  `https_attempts` per `https_window_minutes` the peer is refused for `https_lock_minutes`, and the lockout alerts
+  once through `[alerts]`; the issuer's own wrong-code lockout stays on top. A break-glass authorization that fails
+  strikes it too. Every request is audited as before (the audit `key` reads `https:<peer>`), and every merge still
+  alerts in the wave's summary.
+- The client records which credential opened its wave (`breakglass-wave.json` in the consent state directory);
+  over HTTPS only that workstation acts in the wave.
+
 ## 7. Configuration files
 
 | file | where | owns | reader |

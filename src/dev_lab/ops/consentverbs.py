@@ -22,7 +22,7 @@ import lab_commons.launch as _door
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from lab_commons.log import emit
 
-from dev_lab.ops import totp
+from dev_lab.ops import httpsdoor, totp
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.client import Register, public_key, remote_register
@@ -140,8 +140,14 @@ def _derive(config: OpsConfig, argv: Sequence[str]) -> tuple[int, str]:
     return done.returncode, (done.stdout + done.stderr).decode('utf-8', 'replace')
 
 
-def run(config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callable[[str], None]) -> int:
-    """Route one verb of :data:`VERBS`; *show* displays an enrolment's otpauth URI (as a QR or the bare URI)."""
+def run(
+    config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callable[[str], None], https: bool = False
+) -> int:
+    """Route one verb of :data:`VERBS`; *show* displays an enrolment's otpauth URI (as a QR or the bare URI).
+
+    ``serve`` with *https* answers a request the HTTPS door relayed (:mod:`dev_lab.ops.httpsdoor`): no ssh key
+    admitted it, so :func:`.serve.handle` authorizes each verb itself and throttles the peer.
+    """
     if verb == 'ready':
         return ready(config, alert=alert)
     role = config.consent
@@ -154,8 +160,16 @@ def run(config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callab
         elif verb == 'keygen':  # the PUBLIC key goes to every verifier: [consent] public_key, or the package
             emit(public_text(keygen(Path(role.key), force=force).public_key()))
         else:
+            if https and not role.https_port:
+                emit(
+                    f'[ops] {config.path} declares no [ops.consent] https_port: this host serves no HTTPS door',
+                    err=True,
+                )
+                return 2
+            guard = httpsdoor.alerting(role, Path(role.state), alert=alert, refused=ConsentRefused) if https else None
             line = sys.stdin.readline()
-            emit(serve.handle(issuer(role, alert=alert), line, derive=lambda argv: _derive(config, argv)))
+            emit(serve.handle(issuer(role, alert=alert), line, derive=lambda argv: _derive(config, argv), https=guard,
+                              peer=httpsdoor.peer()))  # fmt: skip
     except (ConsentRefused, totp.TotpRefused) as refused:
         emit(f'refused: {refused}', err=True)
         return 2

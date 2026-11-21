@@ -50,10 +50,15 @@ class Ack:
 
 @dataclass(frozen=True)
 class Request:
-    """One parsed request: its action and that action's fields (``None`` for ``close`` / ``status``)."""
+    """One parsed request: its action and that action's fields (``None`` for ``close`` / ``status``).
+
+    ``wave`` is the credential that opened the wave, which ``merge``/``close``/``ack`` carry over HTTPS (no ssh key
+    admits them there: :mod:`dev_lab.ops.httpsdoor`); ``None`` when not sent.
+    """
 
     action: str
     fields: Open | Merge | Ack | None
+    wave: dict[str, Any] | None = None
 
 
 def _str(data: dict[str, Any], key: str, *, required: bool = True) -> str:
@@ -82,6 +87,10 @@ def parse(line: str) -> Request:
         msg = f'action must be one of {"|".join(ACTIONS)}'
         raise Malformed(msg)
     action = data['action']
+    wave = data.get('credential') if action != 'open' else None
+    if wave is not None and not isinstance(wave, dict):
+        msg = "credential must be the wave's opening consent credential (a JSON object)"
+        raise Malformed(msg)
     if action == 'open':
         credential = data.get('credential')
         if not isinstance(credential, dict):
@@ -93,7 +102,9 @@ def parse(line: str) -> Request:
         if not _SHA.match(head):
             msg = 'head must be a full commit sha'
             raise Malformed(msg)
-        return Request(action, Merge(_str(data, 'repo'), _int(data.get('pr'), 'pr'), head, _str(data, 'reason')))
+        merge = Merge(_str(data, 'repo'), _int(data.get('pr'), 'pr'), head, _str(data, 'reason'))
+        return Request(action, merge, wave)
     if action == 'ack':
-        return Request(action, Ack(_str(data, 'id', required=False), _str(data, 'by', required=False) or 'unnamed'))
-    return Request(action, None)
+        ack = Ack(_str(data, 'id', required=False), _str(data, 'by', required=False) or 'unnamed')
+        return Request(action, ack, wave)
+    return Request(action, None, wave)

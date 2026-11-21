@@ -58,7 +58,7 @@ from dev_lab.dev.forgethreads import (
 )
 from dev_lab.dev.forgewatch import SESSION_EVERY_S, YIELDED, clients_at, env_superseded
 from dev_lab.dev.sessionpoll import poll_session
-from dev_lab.ops.consent.door import ssh_send
+from dev_lab.ops.consent.door import endpoint_send
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
@@ -354,7 +354,7 @@ def run(
             poll_once(clients=clients)
             branchpolicy.duty_once(clients=clients, now=time.time(), every_s=duty_every, checkouts=_checkouts())
             with contextlib.suppress(OSError, ValueError):  # the wave audit is news, never a reason to stop hearing
-                forgewaves.refresh(ssh_send)
+                forgewaves.refresh(endpoint_send)
             sleep(period)
         return YIELDED
 

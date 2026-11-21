@@ -42,7 +42,7 @@ from dev_lab.dev.reviewgate import DeclarationUnread, file_at, manifest_at
 from dev_lab.ops import configdoor, forgeprotection
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, handshake, record_preflight, ssh_send, subject_read
+from dev_lab.ops.consent.door import Send, endpoint_send, handshake, record_preflight, subject_read
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
 from dev_lab.ops.giteaadmin import ForgeRefused
 
@@ -148,7 +148,7 @@ type IssuerSubject = Callable[[str, str, list[str]], str]
 
 def issuer_subject(dest: str, action: str, argv: list[str]) -> str:
     """*dest*'s subject for *action* as *argv*, through the ``[consent]`` issuer's read-only ``subject`` verb."""
-    return subject_read(section(TABLE), dest, action, argv, send=ssh_send)
+    return subject_read(section(TABLE), dest, action, argv, send=endpoint_send)
 
 
 @dataclass(frozen=True)
@@ -331,7 +331,7 @@ def preflight(
 
 
 def offered(
-    plan: Plan, found: tuple[bool, list[str]], *, table: Mapping[str, Any] | None = None, send: Send = ssh_send,
+    plan: Plan, found: tuple[bool, list[str]], *, table: Mapping[str, Any] | None = None, send: Send = endpoint_send,
     home: Path | None = None,
 ) -> tuple[bool, list[str]]:  # fmt: skip
     """*found*, a preflight's verdict, completed by the issuer handshake and recorded for its digest when green."""

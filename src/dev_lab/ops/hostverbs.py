@@ -24,6 +24,7 @@ from dev_lab.ops import (
     breakglassforge,
     consentverbs,
     enableunits,
+    httpsdoor,
     install,
     judge,
     offsite,
@@ -184,11 +185,14 @@ def _issuer(config: OpsConfig, role: Consent) -> Issuer:
     return consentverbs.issuer(role, alert=lambda title, detail: alert(config, title, detail))
 
 
-def breakglass_verb(config: OpsConfig, verb: str) -> int:
-    """``breakglass serve|tick``: the break-glass wave server, or one tick of it."""
+def breakglass_verb(config: OpsConfig, verb: str, *, https: bool = False) -> int:
+    """``breakglass serve|tick``: the break-glass wave server, or one tick of it; ``--https``: relayed by the door."""
     role = config.breakglass
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.breakglass]', err=True)
+        return 2
+    if https and not role.https_port:
+        emit(f'[ops] {config.path} declares no [ops.breakglass] https_port: this host serves no HTTPS door', err=True)
         return 2
     os.environ.update(install.family_env(role))  # its roles binding comes from the family layer install rendered
     try:
@@ -203,7 +207,13 @@ def breakglass_verb(config: OpsConfig, verb: str) -> int:
         now=time.time,
         consent_key=verifier,
         register=register,
-        key=sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),
+        key=f'https:{httpsdoor.peer()}' if https else sshkey.fingerprint(os.environ.get(sshkey.ENV, '')),
+        https=httpsdoor.alerting(
+            role, Path(role.state), alert=lambda t, d: alert(config, t, d), refused=breakglass.Throttled
+        )
+        if https
+        else None,
+        peer=httpsdoor.peer(),
     )
     try:
         said = server.tick() if verb == 'tick' else server.handle(sys.stdin.readline())

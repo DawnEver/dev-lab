@@ -34,6 +34,7 @@ from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configretired import refuse as refuse_retired
 from dev_lab.ops.consentrole import Access, Consent, ConsentClient
 from dev_lab.ops.giteaadmin import Forge
+from dev_lab.ops.httpsdoor import HttpsDoor
 from dev_lab.ops.pgroles import Postgres
 from dev_lab.ops.placement import Placement
 from dev_lab.ops.served import app_of_forge, credential_files, served, served_by
@@ -178,7 +179,7 @@ class Upgrade:
 
 
 @dataclass(frozen=True)
-class Breakglass(Placement):
+class Breakglass(Placement, HttpsDoor):
     """The emergency merge: the restricted account and its keys, the repos it serves, a token per forge, the waves.
 
     ``repos`` are the clone URLs it may merge into -- ITS OWN set, never ``[ops] repos`` (what promote fetches): a
@@ -197,6 +198,7 @@ class Breakglass(Placement):
     a wave reads who produces each repo's tests from the family's roles binding (:mod:`dev_lab.dev.roles`, D73), so
     install renders it as the ``[family]`` table of the machine file its serve and tick read
     (:data:`dev_lab.ops.install.BREAKGLASS_MACHINE`, :func:`dev_lab.ops.install.family_env`).
+    The ``https_*`` keys declare its HTTPS door (:class:`~dev_lab.ops.httpsdoor.HttpsDoor`).
     """
 
     account: str
@@ -214,6 +216,7 @@ class Breakglass(Placement):
 
     def __post_init__(self) -> None:
         """Refuse a declaration that lies (see the class docstring)."""
+        HttpsDoor.__post_init__(self)
         served_by(self.repos, self.tokens, self.apps, '[ops.breakglass]')
         if self.family and not self.family.get('source'):
             msg = '[ops.breakglass.family] names no source (the family file on this host)'
@@ -455,6 +458,7 @@ def load(
         status=_role(Status, ops.get('status'), '[ops.status]'),
         postgres=_role(Postgres, ops.get('postgres'), '[ops.postgres]'),
     )
+    _doors_behind_the_allowlist(found)
     if found.status is not None and (found.caddy is None or found.supervise is None):
         msg = (
             '[ops.status] needs [ops.caddy] (the allowlist the card is served behind) and [ops.supervise] '
@@ -462,6 +466,27 @@ def load(
         )
         raise ValueError(msg)
     return found
+
+
+def _doors_behind_the_allowlist(found: OpsConfig) -> None:
+    """Refuse an HTTPS door that could be routed outside ``[ops.caddy] allow`` (user ruling 2026-11-21: fail closed).
+
+    A door needs ``[ops.caddy]``, and its ``https_site`` must be one the allowlist rewrites (any site when ``sites``
+    is empty -- install then still refuses a site holding no ``remote_ip`` matcher); two doors never share a port.
+    """
+    doors = {name: role for name, role in (('consent', found.consent), ('breakglass', found.breakglass))
+             if role is not None and role.https_port}  # fmt: skip
+    for name, role in doors.items():
+        if found.caddy is None:
+            msg = f'[ops.{name}] https_port needs [ops.caddy]: the door is served only behind its remote_ip allowlist'
+            raise ValueError(msg)
+        if found.caddy.sites and role.https_site not in found.caddy.sites:
+            msg = (f'[ops.{name}] https_site {role.https_site!r} is not an allowlisted [ops.caddy] site '
+                   f'{list(found.caddy.sites)}: the door would be served outside the allowlist')  # fmt: skip
+            raise ValueError(msg)
+    if len({role.https_port for role in doors.values()}) < len(doors):
+        msg = '[ops.consent] and [ops.breakglass] declare one https_port: each door has its own relay'
+        raise ValueError(msg)
 
 
 def _backup(table: object) -> Backup | None:

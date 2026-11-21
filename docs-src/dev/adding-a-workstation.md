@@ -65,6 +65,13 @@ written: no `[reserve]`, no seats. Every other table, key and comment of the fil
    lock -- [the reviewer](integration.md#the-pr-review-is-one-shot-advice)), and deletes the retired `lab-forge-serve`
    Task where an older deploy registered it. A second run changes nothing.
 
+## Consent and break-glass need nothing more
+
+Where the family declares an `https` URL in `[consent]` and `[breakglass]`, this workstation reaches the consent
+issuer and the break-glass server over HTTPS from inside the forge allowlist: no ssh host key to distribute and no
+client key to authorize. dev-lab and the user's code are all it needs
+([topology](topology.md#reaching-the-issuer-and-break-glass-https-or-ssh)).
+
 ## Verify
 
 Re-run the deploy: a second run changes nothing, and `[task] lab-forge-serve ... none installed` says nothing

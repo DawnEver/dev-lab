@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from dev_lab.ops.httpsdoor import HttpsDoor
+
 __all__ = ['Access', 'Consent', 'ConsentClient']
 
 
 @dataclass(frozen=True)
-class Consent:
+class Consent(HttpsDoor):
     """The consent ISSUER (:mod:`dev_lab.ops.consent.issuer`): the cluster's TOTP seed, its signing key, its ledger.
 
     ``account`` is the restricted ssh account whose ForceCommand is ``consent serve``, ``keys`` its ssh keys; ``totp``
@@ -21,6 +23,7 @@ class Consent:
     credential and labels the Authenticator entry; ``lockout_after`` consecutive wrong codes refuse every code for
     ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`). ``max_grants`` is the most grants one plan's code may buy: the
     user approves a plan by the digest of ALL of it, so its length is a declared host value, not a safety constant.
+    The ``https_*`` keys declare its HTTPS door (:class:`~dev_lab.ops.httpsdoor.HttpsDoor`).
     """
 
     account: str
@@ -38,17 +41,27 @@ class Consent:
 class ConsentClient:
     """Where a host that is NOT the issuer verifies and registers a consent (:mod:`dev_lab.ops.consent.client`).
 
-    ``endpoint`` is the issuer's ``<account>@<host>`` (its ForceCommand ``consent serve``), ``identity`` the ssh key
+    ``https`` is the issuer's HTTPS door (preferred when set; ``https_pin`` optionally pins its key,
+    :func:`~dev_lab.ops.httpsdoor.spki_pin`), ``endpoint`` the issuer's ``<account>@<host>`` (its ForceCommand
+    ``consent serve``), ``identity`` the ssh key
     this host's root signs in with (empty: ssh's default), ``known_hosts`` the file the issuer's host key is checked
     against strictly (empty: ssh's default) -- both may live in the ops user's home, made by that user and readable
     by root, since root keeps no ``~/.ssh`` -- and ``public_key`` the issuer's (empty: the packaged ``issuer.pub``).
     Read from THIS file, never root's machine file: an ops verb runs as root under ``sudo``.
     """
 
-    endpoint: str
+    endpoint: str = ''
     public_key: str = ''
     identity: str = ''
     known_hosts: str = ''
+    https: str = ''
+    https_pin: str = ''
+
+    def __post_init__(self) -> None:
+        """Refuse a client that names no way to reach its issuer."""
+        if not self.endpoint and not self.https:
+            msg = '[ops.consent_client] declares neither https = "https://<forge>/dev-lab/consent" nor endpoint'
+            raise ValueError(msg)
 
     def table(self) -> dict[str, str]:
         """The client table :func:`~dev_lab.ops.consent.client.public_key` and ``remote_register`` read."""
@@ -57,6 +70,8 @@ class ConsentClient:
             'public_key': self.public_key,
             'identity': self.identity,
             'known_hosts': self.known_hosts,
+            'https': self.https,
+            'https_pin': self.https_pin,
         }
 
 

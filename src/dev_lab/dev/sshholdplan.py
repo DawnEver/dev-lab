@@ -29,7 +29,7 @@ from dev_lab.dev.sshholdstate import audit, read_session
 from dev_lab.dev.sshholdwire import HoldRefused, ping
 from dev_lab.ops.consent.client import TABLE, grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, offer, ssh_send
+from dev_lab.ops.consent.door import Send, endpoint_send, offer
 from dev_lab.ops.consent.plan import not_registered, parsed, unregistered
 from dev_lab.ops.totp import STEP
 
@@ -98,7 +98,7 @@ def _held(dest: str) -> bool:
     return (session := read_session(dest)) is not None and ping(session)
 
 
-def offered(plan: Path, *, send: Send = ssh_send) -> None:
+def offered(plan: Path, *, send: Send = endpoint_send) -> None:
     """Refuse *plan* before its code is asked (:func:`dev_lab.ops.consent.door.offer`), as :class:`HoldRefused`."""
     try:
         offer(parsed(json.loads(plan.read_text(encoding='utf-8'))), section(TABLE), send=send)

@@ -162,6 +162,11 @@ class Issuer:
         guarded(self.state, check, now=self.now(), after=self.lockout_after, minutes=self.lockout_minutes,
                 on_lock=self.on_lock, refused=ConsentRefused)  # fmt: skip
 
+    def confirm(self, code: str) -> None:
+        """Spend the user's TOTP *code* with no grant: what an HTTPS ``fetch-unspent`` pays (no ssh key admits it)."""
+        with exclusive(self.state):
+            self._code(code)
+
     def issue(self, request: object, code: str) -> dict[str, Any]:
         """The signed credential *request* asks for, paid for with the user's TOTP *code*."""
         return self._issue([requested(request)], code, plan=None)[0]  # before the code: a refused request spends none

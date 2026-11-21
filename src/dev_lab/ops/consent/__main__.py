@@ -28,13 +28,15 @@ from lab_commons.log import emit
 
 from dev_lab.ops.consent.client import TABLE, grant, recover
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, offer, ssh_send
+from dev_lab.ops.consent.door import Send, endpoint_send, offer
 from dev_lab.ops.consent.plan import parsed, show
 
 __all__ = ['main']
 
 
-def main(argv: Sequence[str] | None = None, *, table: Mapping[str, Any] | None = None, send: Send = ssh_send) -> int:
+def main(
+    argv: Sequence[str] | None = None, *, table: Mapping[str, Any] | None = None, send: Send = endpoint_send
+) -> int:
     """Route ``grant``, ``plan`` and ``recover``; see the module docstring."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.ops.consent', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -42,8 +44,9 @@ def main(argv: Sequence[str] | None = None, *, table: Mapping[str, Any] | None =
     granting.add_argument('request', type=Path, help='the request JSON an agent prepared')
     granting.add_argument('--code', default=None, help='the cluster code the USER gave (else stdin or a prompt)')
     verbs.add_parser('plan', help='show a plan and the digest its one code consents to').add_argument('plan', type=Path)
-    fetching = verbs.add_parser('recover', help="fetch again a plan's granted, never-used credentials; no code")
+    fetching = verbs.add_parser('recover', help="fetch again a plan's granted, never-used credentials")
     fetching.add_argument('plan', type=Path)
+    fetching.add_argument('--code', default=None, help='over HTTPS: the code the USER gave (no ssh key admits it)')
     fetching.add_argument('--digest', required=True, help="the plan's digest, as shown to the user")
     args = parser.parse_args(argv)
     try:
@@ -54,7 +57,7 @@ def main(argv: Sequence[str] | None = None, *, table: Mapping[str, Any] | None =
             emit('[consent] offered: ask the user for the one code')
             return 0
         if args.verb == 'recover':
-            written = recover(args.plan, args.digest)
+            written = recover(args.plan, args.digest, code=args.code)
             said = '\n'.join(f'[consent] recovered: {path}' for path in written)
             emit(said or '[consent] nothing unspent to recover')
             return 0

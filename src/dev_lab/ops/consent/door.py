@@ -16,9 +16,10 @@ runs as it shows the plan. A refusal here spends no code: the user is never aske
   for its digest -- every host door and every subject (incident 2026-11-16: a plan whose subject could not be
   derived was granted, and its code was wasted).
 
-:func:`ssh_send` is the one JSON-line transport to an endpoint table (consent issuer, break-glass server); it
-lives here so the consent client imports no ``dev_lab.dev`` client module (the former
-``ops.consent -> dev.forgebreakglass`` import cycle).
+:func:`endpoint_send` is the one JSON-line transport to an endpoint table (consent issuer, break-glass server):
+HTTPS when the table declares ``https`` (:func:`dev_lab.ops.httpsdoor.https_send` -- no client key, no host key to
+distribute), else :func:`ssh_send` to its ``endpoint``. It lives here so the consent client imports no
+``dev_lab.dev`` client module (the former ``ops.consent -> dev.forgebreakglass`` import cycle).
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.credential import FIELDS, ConsentRefused
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
+from dev_lab.ops.httpsdoor import https_send
 from dev_lab.ops.totp import write_private
 
 __all__ = [
@@ -41,6 +43,7 @@ __all__ = [
     'ISSUER_UPGRADE',
     'PREFLIGHT_FRESH_S',
     'Send',
+    'endpoint_send',
     'handshake',
     'hello',
     'offer',
@@ -73,6 +76,18 @@ def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, st
     known_hosts = str(table['known_hosts']) if table.get('known_hosts') else None
     line = json.dumps(request) + '\n'
     return remote.piped(str(table['endpoint']), line, identity=identity, known_hosts=known_hosts, timeout_s=180)
+
+
+def endpoint_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
+    """Send *request* to *table*: over HTTPS when it declares ``https``, else over ssh to its ``endpoint``."""
+    if table.get('https'):
+        return https_send(table, request)
+    if not table.get('endpoint'):
+        return 2, (
+            'the endpoint table declares neither https = "https://<forge>/dev-lab/<role>" nor endpoint = '
+            '"<account>@<host>": add the family [consent]/[breakglass] table (dev-lab: docs-src/dev/topology.md)'
+        )
+    return ssh_send(table, request)
 
 
 def hello() -> dict[str, list[str]]:

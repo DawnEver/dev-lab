@@ -8,10 +8,13 @@ TOTP step, so a second command would spend its window); ``open --credential <id>
 ``close`` ends the wave early;
 ``ack [ID]`` records who acknowledged an audit report (no code; it never blocks a wave).
 
-The endpoint is the machine file's ``[breakglass]`` table (``endpoint = "<account>@<host>"``, optional
-``identity = "<ssh key path>"``); every request is one JSON line over ``ssh -T``
-(:func:`dev_lab.ops.consent.door.ssh_send`, the consent client's one transport). The client holds no secret and
-cannot authorize itself. A PR's head is pinned: one that moved after it was shown is refused server side.
+The endpoint is the machine file's ``[breakglass]`` table: ``https = "https://<forge>/dev-lab/breakglass"`` (preferred
+-- no ssh key to register, :mod:`dev_lab.ops.httpsdoor`) or ``endpoint = "<account>@<host>"`` (optional ``identity``);
+every request is one JSON line (:func:`dev_lab.ops.consent.door.endpoint_send`, the consent client's one transport).
+The client cannot authorize itself. Over HTTPS no key admits it, so ``merge``/``close``/``ack`` carry the wave's
+opening credential: ``open`` records which one in the consent state directory (:data:`WAVE_HELD`), and only the
+workstation that opened the wave (or one handed that file) acts in it. A PR's head is pinned: one that moved after it
+was shown is refused server side.
 """
 
 from __future__ import annotations
@@ -34,10 +37,10 @@ from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgework import Client
 from dev_lab.ops.consent.client import grant
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, ssh_send
-from dev_lab.ops.totp import STEP
+from dev_lab.ops.consent.door import Send, endpoint_send
+from dev_lab.ops.totp import STEP, write_private
 
-__all__ = ['TABLE', 'merge_main', 'wave_main']
+__all__ = ['TABLE', 'WAVE_HELD', 'merge_main', 'wave_main']
 
 #: The machine-file table naming the endpoint.
 TABLE: Final = 'breakglass'
@@ -45,10 +48,43 @@ TABLE: Final = 'breakglass'
 
 def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
     found = section(TABLE) if table is None else table
-    if not found.get('endpoint'):
-        emit(f'[breakglass] the machine file has no [{TABLE}] endpoint = "<account>@<host>"', err=True)
+    if not found.get('endpoint') and not found.get('https'):
+        emit(f'[breakglass] the machine file has no [{TABLE}] https = "https://<forge>/dev-lab/breakglass" nor '
+             'endpoint = "<account>@<host>"; the family table declares them -- pull hosts-config',
+             err=True)  # fmt: skip
         return None
     return found
+
+
+#: The consent state file naming the credential that opened this workstation's wave (HTTPS authorization).
+WAVE_HELD: Final = 'breakglass-wave.json'
+
+
+def _with_wave(request: dict[str, Any], table: Mapping[str, Any], home: Path | None) -> dict[str, Any] | None:
+    """*request* with the wave's opening credential when held here; ``None`` (said) when HTTPS needs it and none is."""
+    held = state_dir(home) / WAVE_HELD
+    if held.is_file():
+        ident = json.loads(held.read_text(encoding='utf-8')).get('credential', '')
+        credential = state_dir(home) / f'{ident}.json'
+        if ident and credential.is_file():
+            return request | {'credential': json.loads(credential.read_text(encoding='utf-8'))}
+    if table.get('https'):
+        emit(
+            f'[breakglass] {request["action"]} over HTTPS carries the credential that opened the wave, and this '
+            f'workstation holds none ({held}): open the wave here (forge breakglass open --code <code> ...), or '
+            'act from the workstation that opened it',
+            err=True,
+        )
+        return None
+    return request
+
+
+def _opened(home: Path | None, credential: dict[str, Any]) -> None:
+    """Record which credential opened this workstation's wave (kept beside it in the consent state directory)."""
+    target = state_dir(home) / f'{credential["id"]}.json'
+    if not target.is_file():
+        write_private(target, json.dumps(credential, indent=1, sort_keys=True) + '\n')
+    write_private(state_dir(home) / WAVE_HELD, json.dumps({'credential': credential['id']}) + '\n')
 
 
 #: The consent action a wave opens on.
@@ -104,7 +140,7 @@ def wave_main(
     argv: Sequence[str] | None = None,
     *,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     home: Path | None = None,
     grant_: Grant = grant,
 ) -> int:
@@ -132,7 +168,12 @@ def wave_main(
             request['credential'] = json.loads(held.read_text(encoding='utf-8'))
     if args.action == 'ack':
         request |= {'id': args.id, 'by': f'{getpass.getuser()}@{socket.gethostname()}'}
-    return _answer(send, config, request)
+    if args.action in {'close', 'ack'} and (request := _with_wave(request, config, home)) is None:
+        return 2
+    code = _answer(send, config, request)
+    if args.action == 'open' and code == 0:
+        _opened(home, request['credential'])
+    return code
 
 
 def merge_main(
@@ -141,7 +182,8 @@ def merge_main(
     cwd: Path | None = None,
     client: Client | None = None,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
+    home: Path | None = None,
 ) -> int:
     """``pr breakglass <N> --reason R``: merge inside the open wave; exit 0 merged or was, 2 refused, 1 unreachable."""
     parser = argparse.ArgumentParser(
@@ -168,6 +210,8 @@ def merge_main(
         return 2
     emit(f'BREAK-GLASS {repo}#{pull.number} [{pull.state}] {pull.title}: {pull.head} -> {pull.base} at {pull.head_sha}')
     request = {'action': 'merge', 'repo': repo, 'pr': pull.number, 'head': pull.head_sha, 'reason': args.reason}
+    if (request := _with_wave(request, config, home)) is None:
+        return 2
     code = _answer(send, config, request)
     if code == 0:
         sessionprs.ended(forge_from_remote(root), pull.number)  # TASK-HEARS-ITS-FORGE-EVENTS: the merging door records

@@ -32,7 +32,7 @@ from dev_lab.dev.ask import AskRefused
 from dev_lab.dev.ask import code as asked_code
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
-from dev_lab.ops.consent.door import Send, handshake, offer, ssh_send
+from dev_lab.ops.consent.door import Send, endpoint_send, handshake, offer
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.consent.plan import request as plan_request
@@ -137,8 +137,8 @@ def verify_held(
     )  # fmt: skip
 
 
-def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> Register:
-    """A :data:`Register` over ssh to ``[consent] endpoint``; exit 2 is the issuer's refusal, anything else raises."""
+def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = endpoint_send) -> Register:
+    """A :data:`Register` at the issuer (``[consent] https`` when declared, else ssh); exit 2 is its refusal."""
     found = _endpoint(table)
 
     def register(credential: Mapping[str, Any], amount: int) -> object:
@@ -153,7 +153,7 @@ def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_
     return register
 
 
-def spent_ids(ids: list[str], table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> set[str]:
+def spent_ids(ids: list[str], table: Mapping[str, Any] | None = None, *, send: Send = endpoint_send) -> set[str]:
     """Which of *ids* the issuer's ledger says were used; raises when it cannot say (the caller then keeps them)."""
     status, said = send(_endpoint(table), {'verb': 'spent', 'ids': list(ids)})
     answers = [found for line in said.splitlines() if isinstance(found := _json_line(line), list)]
@@ -191,8 +191,11 @@ def _six_digits(code: str) -> str:
 
 def _endpoint(table: Mapping[str, Any] | None) -> Mapping[str, Any]:
     found = section(TABLE) if table is None else table
-    if not found.get('endpoint'):
-        msg = f'the machine file has no [{TABLE}] endpoint = "<account>@<host>"'
+    if not found.get('endpoint') and not found.get('https'):
+        msg = (
+            f'the machine file has no [{TABLE}] https = "https://<forge>/dev-lab/consent" (preferred: no key to '
+            f'register) nor endpoint = "<account>@<host>"; the family table declares them -- pull hosts-config'
+        )
         raise ConsentRefused(msg)
     return found
 
@@ -251,7 +254,7 @@ def grant(
     tty: bool | None = None,
     ask: Callable[[str], str] = input,
     read: Callable[[], str] = sys.stdin.readline,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     home: Path | None = None,
     now: Callable[[], float] = time.time,
 ) -> Path:
@@ -278,7 +281,7 @@ def grant_plan(
     host: str,
     *,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     home: Path | None = None,
     now: Callable[[], float] = time.time,
 ) -> list[Path]:
@@ -311,18 +314,30 @@ def recover(
     plan_file: Path,
     shown: str,
     *,
+    code: str | None = None,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     home: Path | None = None,
     now: Callable[[], float] = time.time,
 ) -> list[Path]:
-    """Fetch AGAIN the plan's granted, never-used credentials (:meth:`.issuer.Issuer.unspent`); no code is asked.
+    """Fetch AGAIN the plan's granted, never-used credentials (:meth:`.issuer.Issuer.unspent`).
 
     Re-delivery, never a grant: the issuer answers the signed credentials it issued for this plan's digest, and each
-    is refused here unless it verifies and names a grant of the plan the user was *shown*, at most once.
+    is refused here unless it verifies and names a grant of the plan the user was *shown*, at most once. Over ssh the
+    consent key admits it with no code; over HTTPS nothing but the user's *code* does (:mod:`.serve`).
+
+    Raises:
+        ConsentRefused: over HTTPS without a code (nothing is sent), or the issuer refused.
+
     """
     found = _endpoint(table)
     plan = load_plan(plan_file, shown)
     within = Counter((grant_['action'], grant_['subject']) for grant_ in plan.grants)
-    payload = {'verb': 'fetch-unspent', 'plan': plan.digest}
+    payload: dict[str, Any] = {'verb': 'fetch-unspent', 'plan': plan.digest}
+    if found.get('https'):
+        if code is None:
+            msg = ("over HTTPS, recover pays the user's code (no ssh key admits it): ask the user for one and pass "
+                   '`--code <code>`')  # fmt: skip
+            raise ConsentRefused(msg)
+        payload['code'] = _six_digits(code)
     return _issued(found, payload, send=send, home=home, now=now(), within=within, plan=plan.digest)

@@ -37,8 +37,9 @@ from dev_lab.dev.taskkeys import REVIEW_TASK, loader
 from dev_lab.ops import forcecommand
 from dev_lab.ops.access import Prepared, prepare, secret_file
 from dev_lab.ops.access import files as access_files
-from dev_lab.ops.caddy import install_caddy
+from dev_lab.ops.caddy import Door, install_caddy
 from dev_lab.ops.config import Breakglass, Judge, OpsConfig
+from dev_lab.ops.httpsdoor import PATHS, HttpsDoor
 from dev_lab.ops.installpaths import Chown, keys_dir, prepare_paths, under
 from dev_lab.ops.installunits import SUPERVISE, UNIT, door, scheduled, service_unit
 from dev_lab.ops.totp import write_private
@@ -118,9 +119,42 @@ def _judge_machine_file(role: Judge) -> str:
     return f'{role.home_dir}/{machine_home}/{under_home}'
 
 
+def _https_unit(name: str) -> str:
+    return f'{_UNIT}-{name}-https.service'
+
+
+def _https_door(config: OpsConfig, name: str, role: HttpsDoor, account: str) -> tuple[str, dict[str, str]]:
+    """*role*'s HTTPS door: the serve command its relay may sudo, and the relay's unit; both empty when undeclared.
+
+    The relay (:mod:`dev_lab.ops.httpsdoor`) runs as the role's restricted *account* on 127.0.0.1 only; Caddy routes
+    the allowlisted site's path to it (:func:`dev_lab.ops.caddy.doors_routed`).
+    """
+    if not role.https_port:
+        return '', {}
+    serve = door(config, name, 'serve', '--https')
+    relay = shlex.join([config.python, '-m', 'dev_lab.ops.httpsdoor', '--port', str(role.https_port), '--role', name,
+                        '--', 'sudo', '-n', *shlex.split(serve)])  # fmt: skip
+    unit = (
+        f'[Unit]\nDescription=HTTPS door of {name}: relays {PATHS[name]} on 127.0.0.1:{role.https_port} (dev_lab.ops)\n'
+        'Wants=network-online.target\nAfter=network-online.target\n'
+        f'[Service]\nUser={account}\nExecStart={relay}\nRestart=always\nRestartSec=5\n'
+        '[Install]\nWantedBy=multi-user.target\n'
+    )
+    return serve, {f'etc/systemd/system/{_https_unit(name)}': unit}
+
+
+def https_doors(config: OpsConfig) -> list[Door]:
+    """The Caddy route of every declared HTTPS door."""
+    roles = (('consent', config.consent), ('breakglass', config.breakglass))
+    return [Door(role.https_site, PATHS[name], role.https_port) for name, role in roles if role and role.https_port]
+
+
 def _consent(config: OpsConfig) -> dict[str, str]:
     role = config.consent
-    return {} if role is None else forcecommand.files(_UNIT, role.account, role.keys, door(config, 'consent', 'serve'))
+    if role is None:
+        return {}
+    https, unit = _https_door(config, 'consent', role, role.account)
+    return {**forcecommand.files(_UNIT, role.account, role.keys, door(config, 'consent', 'serve'), https), **unit}
 
 
 def _breakglass(config: OpsConfig) -> dict[str, str]:
@@ -136,10 +170,12 @@ def _breakglass(config: OpsConfig) -> dict[str, str]:
         f'[Timer]\nOnCalendar={role.tick}\nPersistent=true\n[Install]\nWantedBy=timers.target\n'
     )
     machine = {BREAKGLASS_MACHINE.lstrip('/'): _family_machine_file(role.family)} if role.family else {}
+    https, unit = _https_door(config, 'breakglass', role, role.account)
     return {
         f'etc/systemd/system/{_UNIT}-breakglass-tick.service': tick_service,
         f'etc/systemd/system/{_UNIT}-breakglass-tick.timer': tick_timer,
-        **forcecommand.files(_UNIT, role.account, role.keys, door(config, 'breakglass', 'serve')),
+        **forcecommand.files(_UNIT, role.account, role.keys, door(config, 'breakglass', 'serve'), https),
+        **unit,
         **machine,
     }
 
@@ -171,6 +207,13 @@ def _consent_steps(config: OpsConfig, root: Path) -> list[str]:
     return steps
 
 
+def _https_steps(config: OpsConfig) -> list[str]:
+    """Start every declared HTTPS door's relay (its Caddy route is in the Caddyfile reload step)."""
+    units = [_https_unit(name) for name, role in (('consent', config.consent), ('breakglass', config.breakglass))
+             if role is not None and role.https_port]  # fmt: skip
+    return ['systemctl daemon-reload', *(f'systemctl enable --now {unit}' for unit in units)] if units else []
+
+
 def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared | None) -> tuple[str, ...]:
     steps = []
     if config.promote is not None:
@@ -183,6 +226,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
         steps += [*forcecommand.steps(_UNIT, role.account), 'systemctl daemon-reload',
                   f'systemctl enable --now {_UNIT}-breakglass-tick.timer']  # fmt: skip
     steps += _consent_steps(config, root)
+    steps += _https_steps(config)
     if (backup := config.backup) is not None and backup.dumpers:
         steps += [f'id {backup.account} || useradd --create-home --shell /bin/sh {backup.account}',
                   f'visudo -cf /etc/sudoers.d/{_UNIT}-{backup.account}', 'sshd -t && systemctl reload ssh']  # fmt: skip
@@ -259,7 +303,7 @@ def install(config: OpsConfig, root: Path, *, chown: Chown | None = None) -> Ren
     private = access.private if access is not None else {}
     rendered |= (access.public if access is not None else {}) | private
     done, prepared = prepare_paths(config, root, chown)
-    prepared += install_caddy(config.caddy, root, rendered, config.status)
+    prepared += install_caddy(config.caddy, root, rendered, config.status, https_doors(config))
     accounts = (config.breakglass, config.consent, config.access)
     if any(role is not None for role in accounts) or (config.backup and config.backup.dumpers):
         prepared += keys_dir(root, chown, done)

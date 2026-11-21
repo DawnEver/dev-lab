@@ -45,6 +45,12 @@ One request is one JSON line with an ``action``:
 * ``status`` -- every wave's state; :meth:`Server.tick` (a timer) ends an expired wave and resends a summary no
   channel delivered.
 
+OVER HTTPS (:mod:`dev_lab.ops.httpsdoor`, user ruling 2026-11-21: TOTP-only authorization) no ssh key admits a
+request, so :meth:`Server.handle` authorizes each one itself when :attr:`Server.https` is set: ``open`` by its
+credential (as over ssh), ``merge``/``close``/``ack`` by the credential that OPENED the wave they act on (signature
+checked; its id must be the wave's ``consent``), ``status`` as a read. A peer the door's :class:`~dev_lab.ops.
+httpsdoor.Throttle` has locked is refused; each failed authorization strikes it, and the lockout alerts.
+
 ALERTS (user rulings 2026-11-04, "one final acceptance is enough"): a wave sends ONE alert -- its summary (id, the
 opening key, the window, every merge with its full head and reason) when it ENDS, and only if it merged; opening, each
 merge and an empty wave are audited only, and nothing reminds. Delivery is recorded on the wave (``summarized``), so
@@ -76,17 +82,35 @@ from dev_lab.ops.breakglassforge import Forge
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.client import Register, redeem
-from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.consent.credential import ConsentRefused, verify
+from dev_lab.ops.httpsdoor import Throttle
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.wavesweep import integration_at, sweep
 
-__all__ = ['BreakglassRefused', 'ConsentWanted', 'Held', 'HeldBack', 'Server', 'merge_message']
+__all__ = [
+    'BreakglassRefused',
+    'ConsentWanted',
+    'Held',
+    'HeldBack',
+    'Server',
+    'Throttled',
+    'Unauthorized',
+    'merge_message',
+]
 
 _HOUR = 3600.0
 
 
 class BreakglassRefused(RuntimeError):
     """The request was refused; the message is what the client prints."""
+
+
+class Unauthorized(BreakglassRefused):
+    """The request's authorization failed (a credential refused): over HTTPS it strikes the peer's throttle."""
+
+
+class Throttled(BreakglassRefused):
+    """The HTTPS peer is locked out (:class:`~dev_lab.ops.httpsdoor.Throttle`): audited, not re-alerted per request."""
 
 
 class HeldBack(BreakglassRefused):
@@ -178,6 +202,10 @@ class Server:
     register: Register
     #: The fingerprint of the ssh key this session authenticated with (:mod:`dev_lab.ops.sshkey`), ``''`` unknown.
     key: str = ''
+    #: Set when the request arrived over HTTPS: the peer's throttle; no ssh key admitted it (see the module doc).
+    https: Throttle | None = None
+    #: The HTTPS caller's address, as Caddy saw it.
+    peer: str = ''
 
     @property
     def role(self) -> Breakglass:
@@ -258,8 +286,20 @@ class Server:
             'status': self._status,
         }  # fmt: skip
         try:
+            if self.https is not None:
+                self.https.check(self.peer)
             with exclusive(self.state):
-                return verbs[parsed.action](parsed.fields)
+                fields = self._authorized(parsed) if self.https is not None else parsed.fields
+                return verbs[parsed.action](fields)
+        except Throttled as locked:  # the lockout alerted once, when it began
+            self._audit({'action': parsed.action, 'peer': self.peer, 'outcome': f'refused: {locked}'})
+            raise
+        except Unauthorized as refused:
+            line_ = {'action': parsed.action, 'peer': self.peer, 'outcome': f'refused: {refused}'}
+            self._announce(line_, f'break-glass {parsed.action} REFUSED', str(refused))
+            if self.https is not None:
+                self.https.strike(self.peer)  # past the allowance: locks, alerts, and raises that refusal instead
+            raise
         except BreakglassRefused as refused:
             line_ = {'action': parsed.action, 'outcome': f'refused: {refused}'}
             self._announce(line_, f'break-glass {parsed.action} REFUSED', str(refused))
@@ -278,7 +318,7 @@ class Server:
             granted = redeem(asked.credential, action='breakglass.wave', subject=None, key=self.consent_key,
                              register=self.register, now=self.now())  # fmt: skip
         except ConsentRefused as refused:
-            raise BreakglassRefused(str(refused)) from refused
+            raise Unauthorized(str(refused)) from refused
         now = self.now()
         stamp = datetime.fromtimestamp(now, UTC).strftime('%Y%m%dT%H%M%SZ')
         opened = waves.Wave(stamp, now, now + hours * _HOUR, cap, key=self.key, consent=granted.id)
@@ -287,6 +327,43 @@ class Server:
         self._audit({'wave': opened.id, 'outcome': 'opened', 'hours': hours, 'max_merges': cap,
                      'consent': granted.id})  # fmt: skip
         return said
+
+    def _authorized(self, parsed: requests.Request) -> requests.Open | requests.Merge | requests.Ack | None:
+        """*parsed*'s fields once its HTTPS authorization holds (see the module docstring); ``ack`` names its wave.
+
+        Raises:
+            Unauthorized: a ``merge``/``close``/``ack`` without the opening credential, with one that does not verify
+                or opened no wave here, or one acting on a wave it did not open.
+
+        """
+        if parsed.action in {'open', 'status'}:
+            return parsed.fields
+        credential = parsed.wave
+        if credential is None:
+            msg = (f'over HTTPS, {parsed.action} carries the credential that opened the wave (no ssh key admits it): '
+                   'run it from the workstation that opened the wave')  # fmt: skip
+            raise Unauthorized(msg)
+        issued = credential.get('issued')
+        try:  # the signature only: the wave's own window, not the credential's, bounds what it authorizes
+            found = verify(credential, self.consent_key, now=issued if isinstance(issued, int | float) else 0.0)
+        except ConsentRefused as refused:
+            msg = f'the wave credential does not verify: {refused}'
+            raise Unauthorized(msg) from refused
+        wave = next((held for held in waves.held(self.state) if held.consent == found.id), None)
+        if found.action != 'breakglass.wave' or wave is None:
+            msg = f'credential {found.id} opened no break-glass wave here'
+            raise Unauthorized(msg)
+        if parsed.action == 'ack':
+            asked = parsed.fields
+            if asked.id and asked.id != wave.id:
+                msg = f'the credential opened wave {wave.id}, not {asked.id}'
+                raise Unauthorized(msg)
+            return requests.Ack(wave.id, asked.by)
+        current = self._current()
+        if current is not None and current.id != wave.id:
+            msg = f'the credential opened wave {wave.id}, not the open wave {current.id}'
+            raise Unauthorized(msg)
+        return parsed.fields
 
     def _merge(self, asked: requests.Merge) -> str:
         if (held := self._current()) is None:

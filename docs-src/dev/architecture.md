@@ -52,6 +52,9 @@ mechanisms; each is owned where it is linked:
   single-use signed credential per grant (`dev_lab.ops.consent`, [topology](topology.md)).
 - Break-glass bypasses the review AND the tests inside an open wave, each merge audited with its test state at
   merge (`dev_lab.ops.breakglass::tests_at`) under the consent that opened the wave.
+- Both are reached over HTTPS behind the forge's Caddy allowlist, or over ssh (`dev_lab.ops.httpsdoor`;
+  [topology](topology.md#reaching-the-issuer-and-break-glass-https-or-ssh)): a new workstation needs only dev-lab
+  and the user's code.
 - The AI review is ADVISORY on both forges: it runs and posts, the merge decision reports it, nothing waits on it
   (contract 4 below, article 3).
 

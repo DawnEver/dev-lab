@@ -63,10 +63,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     verbs.add_parser('probe')
     glass = verbs.add_parser('breakglass')
     glass.add_argument('action', choices=('serve', 'tick'))
+    glass.add_argument('--https', action='store_true', help='serve: a request the HTTPS door relayed (no ssh key)')
     issuing = verbs.add_parser('consent')
     issuing.add_argument('action', choices=consentverbs.VERBS)
     issuing.add_argument('--force', action='store_true', help='enrol / keygen: replace an existing secret / key')
     issuing.add_argument('--uri', action='store_true', help='enrol: print the otpauth URI, not its QR')
+    issuing.add_argument('--https', action='store_true', help='serve: a request the HTTPS door relayed (no ssh key)')
     verbs.add_parser('backup').add_argument('action', choices=('export', 'pull'))
     opened = verbs.add_parser('access')
     opened.add_argument('action', choices=('enrol', 'adopt'))
@@ -106,11 +108,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             config, args.action, force=args.force, uri_only=args.uri, secret_from=args.secret_file
         ),
         'probe': lambda: probe_verb(config),
-        'breakglass': lambda: breakglass_verb(config, args.action),
+        'breakglass': lambda: breakglass_verb(config, args.action, https=args.https),
         'consent': lambda: consentverbs.run(
             config,
             args.action,
             force=args.force,
+            https=args.https,
             alert=lambda title, detail: alert(config, title, detail),
             show=lambda link: show(link, uri_only=args.uri),
         ),
