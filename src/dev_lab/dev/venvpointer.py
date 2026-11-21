@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Final
 
@@ -46,9 +47,27 @@ def is_link(path: Path) -> bool:
     return path.is_symlink() or os.path.isjunction(path)
 
 
+#: How often a reader re-reads a MISSING pointer before believing it, and how long it waits between reads. A rename
+#: over a link is atomic to the link's state, not to every concurrent lookup: macOS (APFS) was measured
+#: (dev-lab CI run 44895307619) letting a reader find no ``.venv`` mid ``os.replace``, and the Windows swap has its
+#: measured 5-8 ms gap (:mod:`dev_lab.dev.venvcurrent`). A miss that outlives the rereads is real.
+REREADS: Final = 10
+REREAD_WAIT_S: Final = 0.002
+
+
 def named(root: Path) -> Path | None:
-    """The published environment :data:`POINTER` links to: a directory under :data:`HOME`; else ``None``."""
-    link = Path(root) / POINTER
+    """The published environment :data:`POINTER` links to: a directory under :data:`HOME`; else ``None``.
+
+    A miss is re-read up to :data:`REREADS` times, so a swap in flight reads as the old env or the new one.
+    """
+    for attempt in range(REREADS + 1):
+        if (env := _named_once(Path(root) / POINTER)) is not None or attempt == REREADS:
+            return env
+        time.sleep(REREAD_WAIT_S)
+    return None
+
+
+def _named_once(link: Path) -> Path | None:
     if not is_link(link):
         return None
     try:
@@ -61,14 +80,18 @@ def named(root: Path) -> Path | None:
 def current(root: Path) -> Path:
     """The environment a NEW launch in checkout *root* runs from: :data:`POINTER` resolved.
 
-    A missing or dangling ``.venv`` answers ``ROOT/.venv`` itself, so every miss names it (the door:
-    ``dev_lab.dev.dep --bootstrap``).
+    A missing or dangling ``.venv`` (re-read like :func:`named`) answers ``ROOT/.venv`` itself, so every miss names
+    it (the door: ``dev_lab.dev.dep --bootstrap``).
     """
     link = Path(root) / POINTER
-    try:
-        return link.resolve(strict=True)
-    except OSError:
-        return link
+    for attempt in range(REREADS + 1):
+        try:
+            return link.resolve(strict=True)
+        except OSError:
+            if attempt == REREADS:
+                return link
+            time.sleep(REREAD_WAIT_S)
+    return link
 
 
 def env_checkout(prefix: str | Path) -> Path | None:

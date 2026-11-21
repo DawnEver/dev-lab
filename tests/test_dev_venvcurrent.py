@@ -128,6 +128,23 @@ def test_a_reader_sees_the_old_env_or_the_new_one_and_on_windows_at_most_the_mea
     assert set(names) <= seen, 'PLANTED CONTROL: the reader saw both publications'
 
 
+def test_a_reader_rereads_a_pointer_missing_mid_swap_and_believes_a_lasting_miss(tmp_path, monkeypatch) -> None:
+    """The macOS red (CI run 44895307619): a lookup racing the rename found no ``.venv``. Fault-injected here.
+
+    The first lookups see the pointer gone, as a reader racing the swap did; the reader must still answer the env.
+    """
+    root = tmp_path / 'main'
+    env = root / venvpointer.HOME / 'a'
+    env.mkdir(parents=True)
+    venvcurrent.publish(root, env, census=list)
+    real = venvpointer.is_link
+    misses = iter([False] * venvpointer.REREADS)
+    monkeypatch.setattr(venvpointer, 'is_link', lambda p: next(misses, None) is None and real(p))
+    assert venvpointer.named(root) == env.resolve(), 'a pointer missing mid-swap read as the env'
+    monkeypatch.setattr(venvpointer, 'is_link', lambda _p: False)
+    assert venvpointer.named(root) is None, 'PLANTED CONTROL: a miss that outlives the rereads is real'
+
+
 def test_a_plain_venv_moves_aside_on_publish_and_a_held_one_refuses_by_name(tmp_path) -> None:
     root = tmp_path / 'main'
     plain = root / venvpointer.POINTER
