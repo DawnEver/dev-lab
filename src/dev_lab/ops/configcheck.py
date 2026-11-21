@@ -149,7 +149,17 @@ def check_family(path: Path) -> list[str]:
         for name in LOCAL_ONLY
         if name in parsed
     ]
-    for dotted, value in _leaves({key: item for key, item in parsed.items() if key not in LOCAL_ONLY}):
+    remotes = parsed.get('storage', {}).get('remotes', {})
+    for name, remote in remotes.items():  # a remote's own secret_keys is the one source of which keys are secret
+        found += [
+            f'{path.name}: storage.remotes.{name}.{key} holds a secret value; name a file holding it (`*_file`)'
+            for key in remote.get('secret_keys', ())
+            if remote.get(key)
+        ]
+    judged = {key: item for key, item in parsed.items() if key not in LOCAL_ONLY}
+    if remotes:
+        judged['storage'] = {key: item for key, item in parsed['storage'].items() if key != 'remotes'}
+    for dotted, value in _leaves(judged):
         if not isinstance(value, str) or not value:
             continue
         leaf = dotted.rsplit('.', 1)[-1]
