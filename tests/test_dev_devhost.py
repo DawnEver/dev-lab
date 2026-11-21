@@ -13,6 +13,7 @@ from _arch_corpus import module_names
 from _ops_fixtures import git
 
 from dev_lab.dev import devdeclared, devhost, devrender, devschema, vendordetect, venvfollow
+from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.agent_wiring import WIRING
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -259,7 +260,7 @@ def test_a_stale_source_path_is_one_drift_line_and_from_names_the_clone(tmp_path
     assert '--from' in stale
     compared = devhost.drift(live, clone)  # the control: --from renders, so it compares key by key
     assert any(line.startswith('[devhost].source is not the render') for line in compared), compared
-    machine = _write(tmp_path, 'machine/m.toml', devhost.dumps(live))
+    machine = _write(tmp_path, 'machine/m.toml', dumps(live))
     assert devhost.main(['--machine', str(machine), 'drift', '--from', str(clone)]) == 1
 
 
@@ -501,12 +502,9 @@ def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path:
 ACCOUNT = """\
 [deploy]
 host = "login01"
-root = "src"
+root = "/src"
 python = "3.13"
 repos = [{ name = "dev-lab", url = "https://forge.example/o/dev-lab.git", ref = "integrate/main" }]
-
-[schedule]
-tick_minutes = 15
 
 [hpc.paging]
 page_cpus = 8
@@ -536,7 +534,7 @@ def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> No
     ('name', 'text', 'named'),
     [
         ('c-u9', ACCOUNT, 'no family grant'),
-        ('c-u1', ACCOUNT.replace('root = "src"', 'root = "src"\nrole = "research"'), 'deploy.role'),
+        ('c-u1', ACCOUNT.replace('root = "/src"', 'root = "/src"\nrole = "research"'), 'deploy.role'),
         ('c-u1', ACCOUNT + '\n[[hpc.grant]]\nuser = "u1"\n', 'hpc.grant'),
         ('c-u1', ACCOUNT + '\n[consent]\nendpoint = "consent@forge.example"\n', 'restates'),
         ('c-u1', ACCOUNT + '\n[bogus]\nx = 1\n', 'bogus'),

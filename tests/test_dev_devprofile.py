@@ -12,6 +12,7 @@ from lab_commons.hpc.grants import AccessRefused
 from lab_commons.storage import StorageError
 
 from dev_lab.dev import devcredential, devdeclared, devhost, devprofile, devrender, devschema, tomlleaves
+from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount import division
 from dev_lab.ops.configcheck import check_family, check_host
 
@@ -159,7 +160,7 @@ def test_local_set_heals_the_missing_checkout_the_bridge_refusal_names(
     rendered.pop('repos')
     rendered.pop('bridge')
     machine = tmp_path / 'machine.toml'
-    machine.write_text(devhost.dumps(rendered), encoding='utf-8')
+    machine.write_text(dumps(rendered), encoding='utf-8')
     before = machine.read_text(encoding='utf-8')
     backups = str(tmp_path / 'b')
     code = devhost.main(['--machine', str(machine), 'render', '--write', '--backups', backups])
@@ -180,7 +181,10 @@ def test_the_render_never_copies_a_family_only_storage_fact(tmp_path: Path) -> N
 
     PLANTED CONTROL: the same remotes in a machine file are refused by the reader.
     """
-    family_text = FAMILY + ('\n[storage.remotes.store-x]\ntype = "s3"\nendpoint = "https://store.example"\n')
+    family_text = FAMILY + (
+        '\n[storage.remotes.store-x]\ntype = "s3"\nendpoint = "https://store.example"\n'
+        'secret_keys = ["secret_access_key"]\n'
+    )
     host_text = HOST + '\n[storage.reach.store-x]\ncredentials_file = "/secrets/store-x"\n'
     clone = _clone(tmp_path, family_text)
     (clone / 'hosts' / 'ws.toml').write_text(host_text, encoding='utf-8')
