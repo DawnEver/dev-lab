@@ -149,7 +149,7 @@ pending = "${{ steps.pending.outputs.pending }}"
 ["ci.yml".jobs.part]
 role = "tests"  # ciworkflows renders it only where the family binds this role to ci (roles, D73)
 # The box ledger (and its inflight results beside it) on the runner's own work volume: a hosted Windows runner's
-# default C:\ProgramData had 30 GiB free under the 50 GiB floor, every hold was refused, and the part polled to its
+# default ledger volume (the system drive) had 30 GiB free under the 50 GiB floor, every hold was refused, and the part polled to its
 # job timeout (dev-lab tests/base@windows, 2026-11-21). The runner is ephemeral, so its ledger is too.
 env = { GITHUB_TOKEN = "${{ github.token }}", LAB_COMMONS_BOX = "${{ github.workspace }}/../lab-commons/box.sqlite" }
 needs = "parts"
