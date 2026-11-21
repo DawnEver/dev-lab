@@ -45,12 +45,12 @@ def test_a_fresh_clone_and_an_update_both_check_out_the_pinned_component(
     monkeypatch.setenv('GIT_CONFIG_VALUE_0', 'always')
     engine, product = _product(tmp_path)
     repo = Repo('product', product.as_uri(), 'main')
-    spec = Deployment('h', 'src', '3.13', (repo,))
+    spec = Deployment('h', (tmp_path / 'root').as_posix(), '3.13', (repo,))
     home = tmp_path / 'home'
     step = Step(Tools(), dry=False)
 
     assert update(step, spec, home, repo) == 0
-    mounted = checkout_of(spec, home, repo) / 'components' / 'numerics-lab'
+    mounted = checkout_of(spec, repo) / 'components' / 'numerics-lab'
     assert (mounted / 'core.py').read_text(encoding='utf-8') == 'X = 1\n', 'the clone carries its component'
 
     (engine / 'core.py').write_text('X = 2\n', encoding='utf-8')

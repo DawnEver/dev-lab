@@ -40,6 +40,7 @@ from lab_commons.log import emit
 from dev_lab.dev import devhost
 from dev_lab.dev._machinefile import render_value
 from dev_lab.dev.backedup import replace_backed_up
+from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
 from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
@@ -164,8 +165,9 @@ def account_drift(step: Step, home: Path, machine: Path, clone: Path, host: str)
     try:
         rendered = tomllib.loads(devhost.render(clone, host, {}))
         live = tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {}
-        spec = parse(rendered, clone / devhost.host_file(host))
-        grants, _ = declared_grants(rendered.get('hpc', {}))
+        whole = layered(rendered)  # a render holds no family leaf: the grants are read under it (devdeclared)
+        spec = parse(whole, clone / devhost.host_file(host))
+        grants, _ = declared_grants(whole.get('hpc', {}))
     except (OSError, ValueError) as failed:  # TOMLDecodeError is a ValueError
         return f'cannot render {host} from {clone.as_posix()}: {failed}'
     if spec is None or spec.role != VERIFICATION:  # SCHEDULER-ONLY-FOR-SERVING: no crontab to compare, none read

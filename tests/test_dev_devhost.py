@@ -501,12 +501,9 @@ def test_the_config_source_refuses_a_relative_clone_and_names_the_door(tmp_path:
 ACCOUNT = """\
 [deploy]
 host = "login01"
-root = "src"
+root = "/scratch/u1"
 python = "3.13"
 repos = [{ name = "dev-lab", url = "https://forge.example/o/dev-lab.git", ref = "integrate/main" }]
-
-[schedule]
-tick_minutes = 15
 
 [hpc.paging]
 page_cpus = 8
@@ -536,10 +533,11 @@ def test_an_account_file_passes_and_renders_its_grant_role(tmp_path: Path) -> No
     ('name', 'text', 'named'),
     [
         ('c-u9', ACCOUNT, 'no family grant'),
-        ('c-u1', ACCOUNT.replace('root = "src"', 'root = "src"\nrole = "research"'), 'deploy.role'),
+        ('c-u1', ACCOUNT.replace('root = "/scratch/u1"', 'root = "/scratch/u1"\nrole = "research"'), 'deploy.role'),
         ('c-u1', ACCOUNT + '\n[[hpc.grant]]\nuser = "u1"\n', 'hpc.grant'),
         ('c-u1', ACCOUNT + '\n[consent]\nendpoint = "consent@forge.example"\n', 'restates'),
         ('c-u1', ACCOUNT + '\n[bogus]\nx = 1\n', 'bogus'),
+        ('c-u1', ACCOUNT + '\n[schedule]\ntick_minutes = 15\n', '[schedule] on a research account'),
         ('c-u1', ACCOUNT.replace('repos = [', 'repo = ['), 'deploy'),
     ],
 )
