@@ -11,7 +11,7 @@ import pytest
 from _forge_fake import make_repo, run_git
 from _forge_state import StateForge
 
-from dev_lab.dev import forgemergewaits, hostedparts, jobparts, localpart, partrows, platformparts
+from dev_lab.dev import forgemergewaits, hostedjobs, hostedparts, jobparts, localpart, partrows, platformparts
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -652,7 +652,7 @@ def test_a_manual_hosted_part_is_off_the_gate_and_its_job_runs_only_on_a_dispatc
     assert jobparts.off_gate(['base', 'live'], declared) == {'live'}
     assert jobparts.off_gate(['base', 'live'], {'live': hostedparts.Hosted(('live',))}) == set(), 'PLANTED CONTROL'
     workflow = {'jobs': {'part': {'steps': [{'run': 'x'}, {'run': 'produce ${{ matrix.part }}'}]}}}
-    job = jobparts.hosted_jobs(workflow, declared)['jobs']['part-live']
+    job = hostedjobs.hosted_jobs(workflow, declared)['jobs']['part-live']
     assert "needs.parts.outputs.event == 'workflow_dispatch'" in job['if']
 
 

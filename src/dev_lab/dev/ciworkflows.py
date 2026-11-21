@@ -56,7 +56,7 @@ a repo whose review is a producer its forge does not wire is refused at render (
 wired on both forges, and ADVISORY: its verdict never gates a merge (:data:`~dev_lab.dev._forgebackends.ADVISORY`).
 
 A HOSTED PART (a setup, secrets or both) gets its own job, cut from the matrix ``part`` job
-(:func:`dev_lab.dev.jobparts.hosted_jobs`): the one place a repo's
+(:func:`dev_lab.dev.hostedjobs.hosted_jobs`): the one place a repo's
 ``[tool.dev_lab.parts] hosted`` declaration reaches a workflow.
 
 THE REVIEW TOOLING IS PINNED ONCE, BY LOCKS: the ``door`` steps install the dev-lab commit the BASE's ``uv.lock`` pins
@@ -79,7 +79,7 @@ from typing import Any, Final, cast
 from lab_commons import extras
 from lab_commons.log import emit
 
-from dev_lab.dev import hostedparts, jobparts
+from dev_lab.dev import hostedjobs, hostedparts
 from dev_lab.dev._forgebackends import BACKENDS, JUDGE_HOST, backend_for, require_producer
 from dev_lab.dev.ciworkflowshape import (
     expand,
@@ -263,7 +263,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         merged = merge(base.get(name, {}), layer)
         forge = merged.pop(FORGE_KEY, 'github')
         merged = merge(merged, merged.pop(BY_FORGE, {}).get(forge, {}))
-        expanded = jobparts.hosted_jobs(expand(role_jobs(merged, roles, f'{origin} {name}'), shared), hosted)
+        expanded = hostedjobs.hosted_jobs(expand(role_jobs(merged, roles, f'{origin} {name}'), shared), hosted)
         workflow = ready_only(measurement_isolated(expanded))
         if 'jobs' in workflow and not workflow['jobs']:
             continue  # no job's role is on its executor here: the forge's CI runs nothing of this workflow
