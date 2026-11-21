@@ -24,10 +24,11 @@ token is never painted on a screen; stderr carries counts, names and sha256 pref
 stored, each under its file username. A GCM OAuth access token (username ``OAUTH_USER``) travels too but
 expires; that host re-authenticates through GCM on its first push.
 
-``auth role --url <repo url>`` prints, as one JSON object, who the stored credential is on that repository and
-whether it may write there (``{"login", "push", "admin"}``; an empty login when git holds none, so git pulls
-anonymously). The hpcaccount deploy reads it to refuse a research account pulling with a writer (user ruling
-2026-11-09).
+``auth role --url <repo url> [--login <login>]`` prints, as one JSON object, who the stored credential is on
+that repository and whether it may write there (``{"login", "push", "admin"}``; an empty login when git holds
+none, so git pulls anonymously). With ``--login`` it reads THAT login's store line for the host, never the first one git
+finds (a store holds one line per host and login, 2026-11-20). The hpcaccount deploy reads it to refuse a
+research account pulling with a writer (user ruling 2026-11-09).
 
 ``auth status`` names the login the stored token authenticates as -- never the secret.
 
@@ -156,16 +157,21 @@ class RepoRole(NamedTuple):
 
 
 def repo_role(
-    forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = forge_transport
+    forge: Forge,
+    *,
+    cwd: Path,
+    env: Mapping[str, str] | None = None,
+    transport: Transport = forge_transport,
+    login: str = '',
 ) -> RepoRole:
-    """*forge*'s repository as the stored credential sees it; an empty login when git holds none.
+    """*forge*'s repository as the stored credential sees it (*login*'s own line when given); ``''`` when none.
 
     Raises:
         ForgeCallFailed: the forge refused the credential or the repository read.
 
     """
     try:
-        client = stored_client(forge, cwd=cwd, env=env, transport=transport)
+        client = stored_client(forge, cwd=cwd, env=env, transport=transport, username=login)
     except NoCredential:
         return RepoRole('', push=False, admin=False)
     permissions = client.call('GET', client.repo).get('permissions') or {}
@@ -275,6 +281,7 @@ def _parser() -> argparse.ArgumentParser:
     tick.add_argument('--url', help="the repository's https url (default: this checkout's origin)")
     role = verbs.add_parser('role', help='who the stored token is on a repository and whether it may write (JSON)')
     role.add_argument('--url', help="the repository's https url (default: this checkout's origin)")
+    role.add_argument('--login', default='', help="read this login's stored line for the host, never the first")
     return parser
 
 
@@ -341,7 +348,8 @@ def _without_prompt(
         text = stdin.read() if args.from_file == '-' else Path(args.from_file).read_text(encoding='utf-8')
         return import_keys(text, root, env, transport)
     if args.verb == 'role':
-        return _role(forge_of_url(args.url) if args.url else forge_from_remote(root), root, env, transport, stdout)
+        forge = forge_of_url(args.url) if args.url else forge_from_remote(root)
+        return _role(forge, root, env, transport, stdout, login=args.login)
     if args.verb == 'check':
         return _check(forge_of_url(args.url) if args.url else forge_from_remote(root), root, env, transport)
     return _status(_forge(root, args.host), root, env, transport)
@@ -362,9 +370,11 @@ def _check(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: T
     return 0
 
 
-def _role(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Transport, out: TextIO) -> int:
+def _role(
+    forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Transport, out: TextIO, *, login: str = ''
+) -> int:
     try:
-        role = repo_role(forge, cwd=root, env=env, transport=transport)
+        role = repo_role(forge, cwd=root, env=env, transport=transport, login=login)
     except ForgeCallFailed as failed:
         emit(f'[forge] {forge.host}/{forge.owner}/{forge.repo}: the forge refused the role read. {failed}', err=True)
         return 1

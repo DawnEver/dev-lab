@@ -38,6 +38,7 @@ __all__ = [
     'DEFAULT_TICK_MINUTES',
     'KIT',
     'MARK',
+    'REPAIR_DOOR',
     'RESEARCH',
     'VERIFICATION',
     'Deployment',
@@ -52,6 +53,7 @@ __all__ = [
     'parse',
     'parse_repo',
     'paths_of',
+    'read_machine',
     'render',
     'render_grant',
     'role_refusal',
@@ -126,13 +128,41 @@ class Deployment:
     env: tuple[tuple[str, str], ...] = ()  # from [env]: this account's own tool paths, exported in every tick
 
 
+#: The one-time migration of a machine file the pre-#878 grant() left with several ``[hpc]`` tables.
+REPAIR_DOOR: Final = 'python -m dev_lab.dev.hpcaccount repair-machine-file [--config <machine file>] --apply'
+
+#: A bare ``[hpc]`` header line -- the table the old append code declared twice.
+_HPC_HEADER: Final = re.compile(r'^\s*\[\s*hpc\s*\]\s*(#.*)?$', re.MULTILINE)
+
+
+def read_machine(path: Path) -> dict[str, Any]:
+    """The machine file at *path* as TOML (``{}`` when absent); the several-``[hpc]`` old shape refused by name.
+
+    FORMATS-MIGRATE-ONCE: the reader keeps only the current shape (one ``[hpc]``); a file the pre-#878 append code
+    left with a second ``[hpc]`` is refused naming :data:`REPAIR_DOOR`, which migrates it once (2026-11-21).
+    """
+    if not path.is_file():
+        return {}
+    text = path.read_text(encoding='utf-8')
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as broken:
+        if len(_HPC_HEADER.findall(text)) > 1:
+            msg = (
+                f'{path} declares [hpc] {len(_HPC_HEADER.findall(text))} times (written by the append-grant code '
+                f'before #878), so it cannot be read: migrate it once with {REPAIR_DOOR}'
+            )
+            raise ValueError(msg) from broken
+        raise
+
+
 def load(path: Path, *, root: str = '') -> Deployment | None:
     """The ``[deploy]`` table of the machine file at *path*; ``None`` when undeclared, a missing key refused.
 
     *root* is the cluster's declared root the caller was handed (deploy-fleet's grant table), taken when the file
     states none.
     """
-    return parse(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}, path, root=root)
+    return parse(read_machine(path), path, root=root)
 
 
 def parse(table: Mapping[str, Any], path: Path, *, root: str = '') -> Deployment | None:
@@ -267,7 +297,7 @@ def render_grant(table: Mapping[str, Any]) -> str:
 
 
 def _hpc_of(path: Path) -> dict[str, Any]:
-    return (tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
+    return read_machine(path).get('hpc', {})
 
 
 def login_hosts(path: Path, table: Mapping[str, Any] | None) -> frozenset[str]:

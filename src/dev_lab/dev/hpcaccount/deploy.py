@@ -317,7 +317,10 @@ def deploy(
     """Run the deployment *argv* asks for; 0 done, 2 refused (the message names the remedy and refused repos)."""
     args = parser(__doc__.splitlines()[0]).parse_args(list(argv))
     path = args.config or config_path()
-    spec = resolve(args, path)
+    try:
+        spec = resolve(args, path)
+    except ValueError as unreadable:  # e.g. the several-[hpc] old shape, refused naming its one-time repair door
+        spec = str(unreadable)
     semantics = (
         {} if isinstance(spec, str) or args.remove else account_role(spec.role, args.fleet_role, args.role_table)
     )
