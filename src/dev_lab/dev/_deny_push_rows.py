@@ -52,8 +52,8 @@ PUSH_ROWS: tuple[dict[str, object], ...] = (
         'pattern': PUSH_VERB + r'[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
         'matches': 'command',
         'hazard': 'a raw remote delete can lose commits held nowhere else.',
-        'remedy': 'a branch: `{python} -m dev_lab.dev.branchprune delete <branch>` (LOSSLESS-DELETE); '
-        'a tag: `{python} -m dev_lab.dev.branchprune tag <tag>`.',
+        'remedy': 'a branch: `{python} -m dev_lab.dev.branchprune delete <branch>`; one it refuses is MERGED, or '
+        'LANDED by a `git merge -s ours` PR; a tag: `{python} -m dev_lab.dev.branchprune tag <tag>`.',
         'needs': None,
         'refuses': (
             'git push origin --delete lane/x',

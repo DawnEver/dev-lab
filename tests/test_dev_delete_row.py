@@ -155,8 +155,9 @@ def test_an_approved_delete_is_staged_in_scratch_never_under_output() -> None:
     section = (Path(__file__).resolve().parents[1] / disclosure.REFUSALS_DOC).read_text(encoding='utf-8')
     section = section.split('\n## RECURSIVE-DELETE\n', 1)[1].split('\n## ', 1)[0]
     for text in (rule.remedy, section):
-        assert 'scratch clear <NAME> --yes' in text
+        assert 'scratch' in text
         assert 'moves the approved path under `output/`' not in text
+    assert 'scratch clear <NAME> --yes' in section, 'the refusal names scratch/; its section names the clear'
 
 
 def test_an_archived_tree_branch_or_detached_names_the_remove_door() -> None:

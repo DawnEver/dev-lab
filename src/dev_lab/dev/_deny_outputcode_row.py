@@ -11,6 +11,8 @@ hook with this row's hazard and remedy; the source-scan half is
 
 from __future__ import annotations
 
+from dev_lab.dev.venvpath import DOOR_SLOT
+
 __all__ = ['CODE_SUFFIXES', 'OUTPUT_HOLDS_NO_CODE']
 
 #: The ONE list of what counts as code, a bundle or a patch: never written under ``output/``.
@@ -34,7 +36,7 @@ OUTPUT_HOLDS_NO_CODE: dict[str, object] = {
     'matches': 'argument',
     'hazard': 'output/ holds only what a program regenerates; code, a patch or a bundle there is unlanded work.',
     'remedy': 'Commit it on its branch and push it; a one-off goes to scratch/; unwanted work is discarded: '
-    'python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>".',
+    f'{DOOR_SLOT} -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>".',
     'needs': None,
     'refuses': (
         'git diff > output/logs/26/11/20/lane/uncommitted.patch',
