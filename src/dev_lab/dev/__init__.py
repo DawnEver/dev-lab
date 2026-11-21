@@ -618,6 +618,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.tomlleaves` -- a parsed TOML table's leaf keys by path, and their ``[table].key`` spelling.
 * :mod:`dev_lab.dev.devhost` -- a development machine's ``[dev]`` host-file table: checked, compared read-only;
   drift named key by key with its owning layer; ``local set|unset``, the one door into the local layer.
+* :mod:`dev_lab.dev.devsource` -- the config source's forge URL: the ``origin`` of the ``[devhost]`` clone.
+* :mod:`dev_lab.dev.bringup` -- ``devhost bringup --check``: every wall a new workstation hits, with its door.
+* :mod:`dev_lab.dev.ask` -- the one intake of a typed value: shown as typed, checked against its shape first.
+* :mod:`dev_lab.dev.outputcode` -- OUTPUT-HOLDS-NO-CODE: the Write/Edit refusal of code under ``output/``, and the
+  source scan for a door writing it there.
 * :mod:`dev_lab.dev.backedup` -- a file replaced whole and atomically, its previous content kept in a dated backup.
 * :mod:`dev_lab.dev.machineguard` -- MACHINE-FILE-IS-RENDERED: the refusal of any write onto the machine file but
   its doors.

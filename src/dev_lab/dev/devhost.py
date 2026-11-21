@@ -18,7 +18,7 @@ A host file restating a family key is refused (:func:`check`). ``[dev]`` (:data:
 ``resources`` (:data:`RESOURCES`; :func:`usable` is the part this user holds), ``vendors.<name>`` (:data:`VENDOR`),
 ``detect`` (vendor -> install-home glob patterns, family-wide),
 ``channels`` (session channel source -> user, host-only; rendered as ``[agent] channels``, read by
-:func:`declared_channels`). ``[dev]`` is not rendered itself; a vendor's ``seats > 0`` renders as
+:func:`.devschema.declared_channels`). ``[dev]`` is not rendered itself; a vendor's ``seats > 0`` renders as
 ``[capabilities.<vendor>] seats``, its one consumer-facing copy.
 
 Install homes are found ON each machine: ``detect`` globs the family's patterns locally and prints the host-file
@@ -64,21 +64,22 @@ from dev_lab.dev import (
     accounthost,
     bringup,
     devprofile,
+    devschema,
     familyrepos,
     forgecredential,
     forgeenrol,
     tomlleaves,
     vendordetect,
 )
-from dev_lab.dev._machinefile import dumps, merged, render_value
+from dev_lab.dev._machinefile import dumps, merged
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, layered, merge
-from dev_lab.dev.devschema import CHANNELS_TABLE, channel_defects, fill_remedy, hpc_reach, unfilled
+from dev_lab.dev.devschema import CHANNELS_TABLE, fill_remedy, hpc_reach, unfilled
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'LOCAL_DOOR', 'RENDER_DOOR', 'config_source', 'declared_channels', 'drift',
+    'LOCAL_DOOR', 'RENDER_DOOR', 'drift',
     'host_file', 'local_set', 'main', 'notice', 'render',
 ]  # fmt: skip
 
@@ -101,30 +102,6 @@ def host_file(host: str) -> str:
 
 def _sources(clone: Path, host: str) -> tuple[Path, Path]:
     return clone / 'family.toml', clone / host_file(host)
-
-
-def config_source(live: Mapping[str, Any] | None = None) -> str:
-    """The config source's forge URL: the ``origin`` of the clone the machine file's ``[devhost]`` names.
-
-    Raises:
-        ValueError: the machine file is not a render (no ``[devhost] source``), the source is relative (it would
-            follow the CWD to another clone, #556), or that clone has no ``origin``.
-
-    """
-    own = (machineconfig.machine() if live is None else live).get(OWN_TABLE, {})
-    if not own.get('source'):
-        msg = f'the machine file has no [{OWN_TABLE}] source: render it (devhost render --host NAME --from CLONE)'
-        raise ValueError(msg)
-    if not Path(own['source']).is_absolute():
-        msg = (f"the machine file's [{OWN_TABLE}] source {own['source']!r} is relative, so it would resolve against "
-               f"the current directory and read another clone's origin: re-render it with an absolute clone -- "
-               f"devhost render --host {own.get('host') or 'NAME'} --from <absolute clone> --write")  # fmt: skip
-        raise ValueError(msg)
-    url = git_out(Path(own['source']), 'remote', 'get-url', 'origin')
-    if not url:
-        msg = f'{own["source"]} has no origin remote: the config source is unknown here'
-        raise ValueError(msg)
-    return url.strip()
 
 
 def _family_facts_stay_home(layered: Mapping[str, Any], family: Mapping[str, Any], clone: Path) -> dict[str, Any]:
@@ -191,22 +168,6 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
         f'this machine keeps {sorted(local)}.\n\n'
     )
     return header + dumps({**layered, **local, **own})
-
-
-def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:
-    """Return this machine's session channels: source -> the user whose messages through it ARE the machine's user.
-
-    Read from the machine file's ``[agent] channels`` (the render of the host file's ``[dev] channels``). Empty when
-    none is declared: an undeclared channel or user carries no authority.
-
-    Raises:
-        ValueError: the table is not non-empty source strings to non-empty user strings -- never read past.
-
-    """
-    channels = (machineconfig.machine() if live is None else live).get(CHANNELS_TABLE, {}).get('channels', {})
-    if defects := channel_defects(channels, f'[{CHANNELS_TABLE}].channels'):
-        raise ValueError('; '.join(defects))
-    return dict(channels)
 
 
 def _branch(checkout: str) -> str | None:
@@ -314,25 +275,9 @@ def _drift(path: Path, live: Mapping[str, Any], clone: Path | None) -> int:
     return 1 if found else 0
 
 
-def _detect(source: Path | None) -> int:
-    if source is None:
-        emit(
-            "refused: detect needs --from <the config source's checkout> (no [devhost] in the machine file): "
-            'clone the config source as a family repo and set its path -- ' + familyrepos.SET_DOOR,
-            err=True,
-        )
-        return 2
-    homes = vendordetect.detect(_read(source / 'family.toml').get('dev', {}).get('detect', {}))
-    for name, home in homes.items():
-        emit(f'[dev.vendors.{name}]\nhome = {render_value(home)}\n')
-    if not homes:
-        emit('no declared vendor pattern matched on this machine')
-    return 0
-
-
 def _channels(live: Mapping[str, Any]) -> int:
     try:
-        channels = declared_channels(live)
+        channels = devschema.declared_channels(live)
     except ValueError as malformed:
         emit(f'refused: {malformed}', err=True)
         return 2
@@ -478,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.verb == 'local':
         return _local_verb(args, path, live)
     if args.verb == 'detect':
-        return _detect(_source(args.clone, live.get(OWN_TABLE, {})))
+        return vendordetect.report(_source(args.clone, live.get(OWN_TABLE, {})))
     return _render_verb(args, path, live)
 
 

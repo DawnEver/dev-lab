@@ -48,13 +48,13 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
 __all__ = [
+    'CONTAINED_TAG_DOOR',
     'DELETED_EVENT',
     'DOOR',
     'MERGE_OR_LAND',
-    'TAG_DOOR',
     'TAG_EVENT',
     'delete',
-    'delete_tags',
+    'delete_contained_tags',
     'delete_task',
     'landed',
     'serve_sweep',
@@ -66,7 +66,7 @@ DELETED_EVENT: Final = 'lab_commons.forge.branch-delete'
 #: The door an agent deletes a remote branch through (PUSH-REMOTE-DELETE's remedy names it).
 DOOR: Final = 'python -m dev_lab.dev.branchprune delete <branch>...'
 #: The door an agent deletes a remote TAG through: only one whose commit integration or the trunk contains.
-TAG_DOOR: Final = 'python -m dev_lab.dev.branchprune tag <tag>'
+CONTAINED_TAG_DOOR: Final = 'python -m dev_lab.dev.branchprune tag <tag>'
 #: The ``event`` of the record each tag deletion writes BEFORE its push (name, ref sha, commit).
 TAG_EVENT: Final = 'lab_commons.forge.tag-delete'
 #: What a LOSSY refusal adds: the two doors MERGE-OR-DELETE leaves (D22), never a tag.
@@ -145,7 +145,7 @@ def _push_tag_delete(root: Path, tag: str, sha: str) -> str:
     return '' if report.ok else report.remedy
 
 
-def delete_tags(
+def delete_contained_tags(
     root: Path,
     tags: Sequence[str],
     *,

@@ -535,6 +535,21 @@ ALLOWED: Final[dict[Site, str]] = {
         "with answer as body, to.open('wb') as out:",
     ): "urlopen's answer is a context manager at runtime; typeshed's union lacks it",
     (
+        'src/dev_lab/dev/agenthooks/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev.hook_adoption import HookAdoption, render',
+    ): 'hook_adoption sits ABOVE this hook-path leaf (it imports the deny table); only --family-rules reads it',
+    (
+        'src/dev_lab/dev/bringup.py',
+        'PLC0415',
+        'from dev_lab.dev import devhost',
+    ): 'devhost imports bringup to wire its verb, so a module-scope import back is a cycle; walls() reads its door',
+    (
+        'src/dev_lab/dev/testtemp.py',
+        'PLC0415',
+        'import pytest',
+    ): 'script suites import this module where pytest is not installed; only the --basetemp refusal raises its error',
+    (
         'src/dev_lab/dev/uvrelease.py',
         'PLR2004',
         'if not words or len(words[0]) != 64:',

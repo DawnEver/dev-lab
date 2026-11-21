@@ -28,6 +28,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgetask',  # the forge task verbs, split from forgecli to keep it under the module bound
     'tomlleaves',  # the TOML leaf reader devhost renders through, split from devhost
     'vendordetect',  # detect installed vendor tools for the machine file, split from devhost
+    'devsource',  # the config source's forge URL, split from devhost at the module-size band (2026-11-21)
+    'bringup',  # ORIGINAL: devhost bringup --check, a new workstation's walls with their doors (2026-11-20)
+    'ask',  # ORIGINAL: the one visible intake of a typed value, checked before it is spent (D94, 2026-11-20)
+    'outputcode',  # ORIGINAL: OUTPUT-HOLDS-NO-CODE's Write/Edit half and source scan (user ruling 2026-11-20)
+    'taskcarry',  # ORIGINAL: a rem task's ledger carried between hosts as refs/tasks/<slug> (hosts-config #78)
     'rolecheck',  # the guard refusing what contradicts the family's roles binding (D73)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
