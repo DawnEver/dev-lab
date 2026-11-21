@@ -209,6 +209,11 @@ deltas = "tests/_famconfig_delta.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The per-test ceiling (pytest-timeout). Without it a test that hangs only on one host runs to the box wall and
+# the whole part is INCONCLUSIVE with no name (tests/base@windows, 2026-11-21: killed at the 60-min wall, no test
+# named). The slowest test measured 191 s on a Windows workstation (test_dev_units single descent); 600 s is that
+# on a 2-vCPU hosted runner with margin, and far under the wall, so a hang now fails BY NAME with its stacks.
+timeout = 600
 markers = [
     "not_applicable: a skip of this test is NOT_APPLICABLE (lab_commons.hpc.pytest_item.judged); any other skip is refused",
 ]
