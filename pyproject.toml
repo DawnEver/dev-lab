@@ -209,6 +209,9 @@ deltas = "tests/_famconfig_delta.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The per-test ceiling, below the verify wall: a wedge dies as its own named red (Windows: a `node down`
+# xdist names and restarts) instead of the wall killing the session unnamed (tests/test_a_hang_names_its_test.py).
+timeout = 600
 markers = [
     "not_applicable: a skip of this test is NOT_APPLICABLE (lab_commons.hpc.pytest_item.judged); any other skip is refused",
 ]
