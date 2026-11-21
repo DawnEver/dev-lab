@@ -141,7 +141,7 @@ def test_the_hpc_build_migrates_after_its_venv_and_reports_a_failure(tmp_path, m
     checkout = tmp_path / 'repo'
     checkout.mkdir()
     (checkout / 'pyproject.toml').write_text('[tool.lab_commons.hpc]\n', encoding='utf-8')
-    spec = SimpleNamespace(python='3.12')
+    spec = SimpleNamespace(python='3.12', root=(tmp_path / 'root').as_posix())
     monkeypatch.setattr(steps, 'checkout_of', lambda *_a: checkout)
     monkeypatch.setattr(steps, '_key', lambda *_a: 'k')
     step = steps.Step(steps.Tools(sh=('true',)), dry=False)
