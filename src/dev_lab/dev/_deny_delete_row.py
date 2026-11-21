@@ -71,7 +71,7 @@ RECURSIVE_DELETE: dict[str, object] = {
     'matches': 'command',
     'hazard': 'a raw recursive delete judges deletability by hand; on 2026-10-27 one took a MAIN checkout.',
     'remedy': (
-        f'{DOOR_SLOT} -m dev_lab.dev.scratch clear --yes|{DOOR_SLOT} -m dev_lab.dev.branchset --apply|'
+        f'{DOOR_SLOT} -m dev_lab.dev.scratch clear <NAME> --yes|{DOOR_SLOT} -m dev_lab.dev.branchset --apply|'
         f'{DOOR_SLOT} -m dev_lab.dev.branchset --discard <branch> --approved <why>|detached '
         f'{DOOR_SLOT} -m dev_lab.dev.worktrees --remove <name>|{DOOR_SLOT} -m dev_lab.dev.venvprune --apply; '
         'never a worktree? ask the user'

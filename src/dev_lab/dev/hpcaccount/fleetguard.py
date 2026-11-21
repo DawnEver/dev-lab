@@ -3,10 +3,13 @@
 Split from :mod:`dev_lab.dev.hpcaccount.fleet`: a stale machine-file render (:func:`stale_render`) and a serving
 account holding two grants (:func:`serving_twice_refusal`) refuse the whole run;
 an account's own refusal skips only it.
+An account's declared root is judged here too (:func:`deploy_root`), the one check fleet's target reading shares.
 """
 
 from __future__ import annotations
 
+import ntpath
+import posixpath
 import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -18,7 +21,7 @@ from dev_lab.dev import devhost, tomlleaves
 from dev_lab.dev.devdeclared import OWN_TABLE
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division
 
-__all__ = ['serving_twice_refusal', 'stale_render']
+__all__ = ['deploy_root', 'serving_twice_refusal', 'stale_render']
 
 
 def serving_twice_refusal(grants: Sequence[Grant], accounts: Sequence[str], division: Division | None) -> str:
@@ -64,3 +67,28 @@ def stale_render(live: Mapping[str, Any]) -> str:
         f'the machine file is not the render of {clone.as_posix()} ({len(differ)} key(s): {first}); re-render it '
         f'first: python -m dev_lab.dev.devhost render --host {own["host"]} --write'
     )
+
+
+def deploy_root(grant: Grant, deploy: Mapping[str, Any], *, as_deployed: bool = False) -> tuple[str, str]:
+    """The root *deploy* declares for *grant*, and why it is refused (``''`` when it is not).
+
+    An unstated root is the cluster's: declared, never a default. A relative root is refused, except as already
+    deployed: the pre-root layout was home-relative, its checkouts at ``~/<root>/<name>``.
+    """
+    root = deploy.get('root', grant.root)
+    if not root:
+        return '', (
+            f'no root declared: declare [hpc.clusters.{grant.cluster_name}] root (or the '
+            f"account file's [deploy] root) in the family config, on a filesystem the compute nodes see"
+        )
+    relative = not (posixpath.isabs(str(root)) or ntpath.isabs(str(root)))  # as lab_commons.hpc.layout reads it
+    if as_deployed and relative:
+        return f'~/{str(root).removeprefix("~/")}', ''
+    if relative:
+        return root, f'its [deploy] root {root} must be an absolute path (a declared root, never ~)'
+    if grant.root and root != grant.root and not as_deployed:
+        return root, (
+            f'its [deploy] root {root} is not the root its cluster declares {grant.root} (the family declaration '
+            'is the source: redeploy with --root naming it)'
+        )
+    return root, ''

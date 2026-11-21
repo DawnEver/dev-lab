@@ -169,7 +169,7 @@ def test_real_bootstrap_B_runs_while_A_has_a_verdict_and_B_syncs_beside_its_own(
 @pytest.mark.parametrize('anchor', ['../another-lane/verdict', 'C:/another-lane/verdict', '/another-lane/verdict'])
 def test_sync_refuses_anchors_outside_its_project_before_mutating(tmp_path, anchor) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        f'[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nanchors=["{anchor}"]\n',
+        f'[project]\nname="empty"\nversion="0"\n[tool.dev_lab.anchors]\npaths=["{anchor}"]\n',
         encoding='utf-8',
     )
     with pytest.raises(ValueError, match='inside the target project'):
@@ -179,7 +179,7 @@ def test_sync_refuses_anchors_outside_its_project_before_mutating(tmp_path, anch
 def test_sync_failure_is_nonzero_publishes_nothing_and_keeps_the_anchors(tmp_path, monkeypatch) -> None:
     """A failed build beside the live environment is dropped: the live one never moved, so no verdict is void."""
     (tmp_path / 'pyproject.toml').write_text(
-        '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nanchors=["verdict"]\n',
+        '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.anchors]\npaths=["verdict"]\n',
         encoding='utf-8',
     )
     anchor = tmp_path / 'verdict'

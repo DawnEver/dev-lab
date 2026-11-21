@@ -44,8 +44,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import ntpath
-import posixpath
 import shlex
 import sys
 import tomllib
@@ -70,7 +68,7 @@ from dev_lab.dev.devhost import host_file
 from dev_lab.dev.devsource import config_source
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
-from dev_lab.dev.hpcaccount.fleetguard import serving_twice_refusal, stale_render
+from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
 from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
@@ -154,23 +152,9 @@ def _checked(
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
     if len(named) > 1:
         return f'{grant.user}: refused -- its [deploy] host {host} is ambiguous: it names {named}; declare one in full'
-    root = deploy.get('root', grant.root)  # an unstated root is the cluster's: declared, never a default
-    if not root:
-        return (
-            f'{grant.user}: refused -- no root declared: declare [hpc.clusters.{grant.cluster_name}] root (or the '
-            f"account file's [deploy] root) in the family config, on a filesystem the compute nodes see"
-        )
-    relative = not (posixpath.isabs(str(root)) or ntpath.isabs(str(root)))  # as lab_commons.hpc.layout reads it
-    if as_deployed and relative:  # the pre-root layout: home-relative, its checkouts at ~/<root>/<name>
-        root = f'~/{str(root).removeprefix("~/")}'
-    elif relative or (grant.root and root != grant.root and not as_deployed):
-        why = (
-            'must be an absolute path (a declared root, never ~)'
-            if relative
-            else f'is not the root its cluster declares {grant.root} (the family declaration is the source: '
-            'redeploy with --root naming it)'
-        )
-        return f'{grant.user}: refused -- its [deploy] root {root} {why}'
+    root, refused = deploy_root(grant, deploy, as_deployed=as_deployed)
+    if refused:
+        return f'{grant.user}: refused -- {refused}'
     repos = tuple((r['name'], r['url'], r['ref']) for r in deploy.get('repos', ()) if {'name', 'url', 'ref'} <= set(r))
     return Target(named[0], root, deploy.get('role') or grant.role, repos)  # unstated: the family grant's role
 
