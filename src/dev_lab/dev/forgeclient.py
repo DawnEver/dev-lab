@@ -54,8 +54,11 @@ def stored_client(
     transport: Transport = forge_transport,
     stamp: str | None = None,
     token: str = '',
+    username: str = '',
 ) -> Client:
     """A client presenting the credential git's store holds for *forge*, refreshed as git does on a 401.
+
+    With *username*, the store's line for THAT login on the host (one line per host and login), never the first.
 
     Inside a workflow job on the forge's own Actions the job token is the credential, never refreshed: the
     *token* given, else the job's env (:func:`actions_token`).
@@ -66,7 +69,7 @@ def stored_client(
     """
     if job := token or actions_token(forge, os.environ if env is None else env):
         return Client(forge, job, transport=transport, username=backend_for(forge).actions_login, stamp=stamp)
-    username, secret = _forge.credential_for(forge.host, cwd=cwd, env=env)
+    username, secret = _forge.credential_for(forge.host, username=username or None, cwd=cwd, env=env)
 
     def refresh(refused_user: str, refused: str) -> CredentialRefresh:
         return _forge.refresh_credential(forge.host, (refused_user, refused), cwd=cwd, env=env)

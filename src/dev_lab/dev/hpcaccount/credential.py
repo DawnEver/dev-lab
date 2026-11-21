@@ -25,11 +25,13 @@ holds its verdict-posting login and the config source's reader (``[hpc.roles.<ro
 After a placement, git's ``store`` helper is set when NO global helper is configured (one already set is kept):
 a store line git never consults reads as anonymous (measured 2026-11-20 on three research accounts).
 
-READ BACK BEFORE IT SAYS SO (2026-11-20). After the rewrite the forge's ``auth role`` runs again through git's own
-helper (no staged file): only when the STORED line answers as ``--login`` does the door print ``verified: ...`` and
-exit 0; anything else (a failover node whose write landed nowhere) exits 2 naming what answered. ``--from-output
-<name>`` reads the token from the consent output ``outputs/<name>`` (:func:`dev_lab.dev.planrunsteps.stdout_path`)
-instead of stdin and deletes that file ONLY after a verified placement -- a caller never removes a token by hand.
+READ BACK BEFORE IT SAYS SO (2026-11-20). After the rewrite the forge's ``auth role --login <login>`` runs
+again through git's own helper (no staged file), reading THAT login's line -- unscoped it read the host's first line
+and a placed reader answered as forge-ci (2026-11-21): only when the STORED line answers as ``--login`` does the
+door print ``verified: ...`` and exit 0; anything else (a failover node whose write landed nowhere) exits 2 naming
+what answered. ``--from-output <name>`` reads the token from the consent output ``outputs/<name>``
+(:func:`dev_lab.dev.planrunsteps.stdout_path`) instead of stdin and deletes that file ONLY after a verified
+placement -- a caller never removes a token by hand.
 
 DECLARED ONLY: the account must hold a ``[[hpc.grant]]`` and the login must be declared -- a role's ``reader``
 (:mod:`~dev_lab.dev.hpcaccount.division`) or an ``[ops.forge.accounts]`` login; when the account's role names a
@@ -162,7 +164,8 @@ def place_credential(
         if isinstance(target, str):
             say(f'credential: {target}')
             return 2
-        role = in_checkout(target, ['-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', repo])
+        # --login: the store holds one line per (host, login); unscoped, git answers with the FIRST (2026-11-21)
+        role = in_checkout(target, ['-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', repo, '--login', login])
         refusal, backup = place_verified(shell, login=login, token=token, repo=repo, role=role, stamp=stamp)
     except (RuntimeError, OSError, ValueError) as failed:
         say(f'credential: refused -- {user}: {failed}')

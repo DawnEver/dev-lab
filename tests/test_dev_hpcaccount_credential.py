@@ -101,6 +101,20 @@ def test_the_token_is_staged_verified_then_placed() -> None:
     assert '.git-credentials.bak-' + _STAMP in said[-1]
 
 
+def test_the_read_back_asks_for_the_placed_logins_own_store_line() -> None:
+    """Measured 2026-11-21: a placed config_reader read back as forge-ci, the host's FIRST stored line.
+
+    The account keeps one line per (host, login), so the read-back names the login; without it git answers with
+    whichever line comes first. PLANTED CONTROL: the other login's role command is absent.
+    """
+    code, _, seen, _ = _run(login='forge-ci')
+    roles = [cmd for cmd, _ in seen if 'auth role' in cmd]
+    assert code == 0
+    assert len(roles) == 2  # the staged verification and the read-back of the stored line
+    assert all(cmd.endswith(' --login forge-ci') for cmd in roles)
+    assert not any('--login forge-ro' in cmd for cmd in roles)
+
+
 def test_a_url_off_the_declared_forge_is_refused_before_any_connection() -> None:
     """PLANTED CONTROL: the account's GitHub origin for a forge login -- the line it once destroyed."""
     code, said, seen, connected = _run(url='https://github.com/org/dev-lab.git')
