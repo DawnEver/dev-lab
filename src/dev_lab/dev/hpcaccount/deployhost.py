@@ -1,7 +1,7 @@
 """Which node may run an account's ``deploy`` -- the host check :mod:`~dev_lab.dev.hpcaccount.deploy` runs first.
 
 A serving account is pinned to the one node its cron runs on; an account that never serves may deploy from any of
-its grant's login hosts (:func:`~dev_lab.dev.hpcaccount.spec.login_hosts`).
+its grant's login hosts (:func:`~dev_lab.dev.hpcaccount.grantslice.login_hosts`).
 """
 
 from __future__ import annotations
@@ -10,7 +10,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from dev_lab.dev.hpcaccount.spec import Deployment, login_hosts
+from dev_lab.dev.hpcaccount.grantslice import login_hosts
+from dev_lab.dev.hpcaccount.spec import Deployment
 
 __all__ = ['host_refusal']
 

@@ -23,7 +23,7 @@ from typing import Any, Final
 
 from lab_commons.config import section
 
-from dev_lab.dev import devhost, forgesecrets, sshholdwire
+from dev_lab.dev import devhost, devsource, forgesecrets, sshholdwire
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.planremote import Remote
@@ -176,7 +176,7 @@ class Readers:
     declared: Declared = declared_at
     text: SourceReader = text_at
     listed: configdoor.SourceLister = listed_at
-    config_source: Callable[[], str] = devhost.config_source
+    config_source: Callable[[], str] = devsource.config_source
     issued: IssuerSubject = issuer_subject
 
 

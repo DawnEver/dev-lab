@@ -38,9 +38,10 @@ from dev_lab.ops import forcecommand
 from dev_lab.ops.access import Prepared, prepare, secret_file
 from dev_lab.ops.access import files as access_files
 from dev_lab.ops.caddy import install_caddy
-from dev_lab.ops.config import Breakglass, Judge, OpsConfig
+from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.installpaths import Chown, keys_dir, prepare_paths, under
 from dev_lab.ops.installunits import SUPERVISE, UNIT, door, scheduled, service_unit
+from dev_lab.ops.judgerole import Judge
 from dev_lab.ops.totp import write_private
 
 __all__ = ['BREAKGLASS_MACHINE', 'Rendered', 'family_env', 'files', 'install']

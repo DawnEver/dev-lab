@@ -9,6 +9,8 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons import config as machineconfig
+
 from dev_lab.dev import remote
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops import clientkeys
@@ -37,6 +39,7 @@ __all__ = [
     'channel_defects',
     'check',
     'check_family',
+    'declared_channels',
     'fill_remedy',
     'home_of',
     'hpc_reach',
@@ -338,3 +341,19 @@ def home_of(dev: Mapping[str, Any], vendor: str) -> Path:
     if not home or home == UNFILLED:
         raise HomeUnfilled(fill_remedy([vendor]))
     return Path(home)
+
+
+def declared_channels(live: Mapping[str, Any] | None = None) -> dict[str, str]:
+    """Return this machine's session channels: source -> the user whose messages through it ARE the machine's user.
+
+    Read from the machine file's ``[agent] channels`` (the render of the host file's ``[dev] channels``). Empty when
+    none is declared: an undeclared channel or user carries no authority.
+
+    Raises:
+        ValueError: the table is not non-empty source strings to non-empty user strings -- never read past.
+
+    """
+    channels = (machineconfig.machine() if live is None else live).get(CHANNELS_TABLE, {}).get('channels', {})
+    if defects := channel_defects(channels, f'[{CHANNELS_TABLE}].channels'):
+        raise ValueError('; '.join(defects))
+    return dict(channels)

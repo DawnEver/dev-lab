@@ -74,7 +74,7 @@ RECURSIVE_DELETE: dict[str, object] = {
         f'{DOOR_SLOT} -m dev_lab.dev.scratch clear --yes|{DOOR_SLOT} -m dev_lab.dev.branchset --apply|'
         f'{DOOR_SLOT} -m dev_lab.dev.branchset --discard <branch> --approved <why>|detached '
         f'{DOOR_SLOT} -m dev_lab.dev.worktrees --remove <name>|{DOOR_SLOT} -m dev_lab.dev.venvprune --apply; '
-        'never a worktree? ask the user; once approved, move it into scratch/ and scratch clear <NAME> --yes'
+        'never a worktree? ask the user'
     ),
     'needs': None,
     'refuses': (
