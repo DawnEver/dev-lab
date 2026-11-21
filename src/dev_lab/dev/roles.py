@@ -282,7 +282,15 @@ def roles_of(forge: Forge, *, layer: Mapping[str, Any] | None = None, env: Mappi
     repo = f'{forge.owner}/{forge.repo}'
     if layer:
         return roles_for(layer, backend_for(forge).name, repo)
-    carried = (os.environ if env is None else env).get(ROLES_ENV, '')
+    env = os.environ if env is None else env
+    carried = env.get(ROLES_ENV, '')
+    if not carried and env.get('CI'):
+        msg = (
+            f'{repo}: this CI job carries no {ROLES_ENV} -- a stale workflow, rendered before the renderer carried '
+            "the family's roles into every workflow's env: re-render it in the repo with "
+            '`python -m dev_lab.dev.ciworkflows render` on a machine holding the family layer, and commit the result'
+        )
+        raise Unbound(msg)
     if not carried:
         msg = (
             f'{repo}: no family layer on this machine and no {ROLES_ENV} carried -- the roles binding lives in the '
