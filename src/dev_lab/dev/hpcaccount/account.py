@@ -12,7 +12,6 @@ import json
 import os
 import stat
 import sys
-import tomllib
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Final
@@ -27,6 +26,7 @@ from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
 from dev_lab.dev.hpcaccount.spec import (
     Deployment,
     grant_refusal,
+    read_machine,
     render_grant,
     unserved,
     without_hpc,
@@ -192,7 +192,7 @@ def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
     emit("[grant] this account's own [hpc] slice")
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     held = path.read_text(encoding='utf-8') if path.is_file() else ''
-    hpc = tomllib.loads(held).get('hpc', {})
+    hpc = read_machine(path).get('hpc', {})  # the several-[hpc] old shape is refused naming its repair door
     holds = any(g.get('user') == user for g in hpc.get('grant', []))
     retired = grant_refusal(path) if holds else ''
     if holds and not retired:

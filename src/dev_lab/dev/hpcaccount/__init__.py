@@ -26,6 +26,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   refuse the account (:mod:`~dev_lab.dev.hpcaccount.cimark`).
 * ``forget --repo <url> --row <key> (--account <user>... | --fleet) [--dry-run]``
   (:mod:`~dev_lab.dev.hpcaccount.forget`) runs lab-commons' ``learned forget`` of one row on each account.
+* ``repair-machine-file [--config <path>] [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.repairfile`) migrates, once,
+  a machine file the pre-#878 grant left with several ``[hpc]`` tables into one; a dry run unless ``--apply``.
 * ``retention (--account <user>... | --fleet) [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.storage`) prints each
   account's quota (files and blocks), whether its serve ticks, and its OWN in-flight-aware retention report (a dry
   run, or the deletion with ``--apply``).
@@ -63,7 +65,7 @@ __all__ = ['main']
 _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
-    'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | '
+    'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | repair-machine-file [...] | '
     'tick <repo>... | allocate [...]}'
 )
 
@@ -79,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         drift,
         fleet,
         forget,
+        repairfile,
         storage,
         tick,
     )
@@ -100,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
         'forget': forget.main,
+        'repair-machine-file': repairfile.main,
         'retention': storage.main,
         'allocate': allocate.allocate,
     }
