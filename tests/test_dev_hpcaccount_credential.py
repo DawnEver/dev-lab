@@ -552,3 +552,19 @@ def test_an_account_deployed_at_an_old_root_still_takes_its_credential() -> None
     stale = credential.declared_target(rooted[0], lambda _c, _s=None: old)
     assert isinstance(stale, str)
     assert 'is not the root its cluster declares' in stale
+
+
+def test_an_account_deployed_at_an_old_home_relative_root_still_takes_its_credential() -> None:
+    """Measured 2026-11-20 (ezxmw9): root '.local/share/lab-forge/repos' was refused "must be an absolute path".
+
+    The pre-root layout held checkouts at ``~/<root>/<name>``; the home-level store needs only that checkout.
+    PLANTED CONTROL: the deploy-side read (no ``as_deployed``) still refuses the relative root by name.
+    """
+    rooted = (Grant(user='alice', hosts=_HOSTS, slurm_account='acct', root='/r/declared/lab'),)
+    old = '[deploy]\nhost = "login2.example"\nroot = ".local/share/lab-forge/repos"\n'
+    code, said, seen, _ = _run(grants=rooted, deployed=old)
+    assert code == 0, said
+    assert any('cd ~/.local/share/lab-forge/repos/dev-lab && ' in cmd for cmd, _ in seen)
+    stale = credential.declared_target(rooted[0], lambda _c, _s=None: old)
+    assert isinstance(stale, str)
+    assert 'must be an absolute path' in stale

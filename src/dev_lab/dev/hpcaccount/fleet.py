@@ -156,11 +156,17 @@ def _checked(
             f'{grant.user}: refused -- no root declared: declare [hpc.clusters.{grant.cluster_name}] root (or the '
             f"account file's [deploy] root) in the family config, on a filesystem the compute nodes see"
         )
-    if grant.root and root != grant.root and not as_deployed:
-        return (
-            f'{grant.user}: refused -- its [deploy] root {root} is not the root its cluster declares {grant.root} '
-            '(the family declaration is the source: redeploy with --root naming it)'
+    relative = not str(root).startswith('/')
+    if as_deployed and relative:  # the pre-root layout: home-relative, its checkouts at ~/<root>/<name>
+        root = f'~/{str(root).removeprefix("~/")}'
+    elif relative or (grant.root and root != grant.root and not as_deployed):
+        why = (
+            'must be an absolute path (a declared root, never ~)'
+            if relative
+            else f'is not the root its cluster declares {grant.root} (the family declaration is the source: '
+            'redeploy with --root naming it)'
         )
+        return f'{grant.user}: refused -- its [deploy] root {root} {why}'
     repos = tuple((r['name'], r['url'], r['ref']) for r in deploy.get('repos', ()) if {'name', 'url', 'ref'} <= set(r))
     return Target(named[0], root, deploy.get('role') or grant.role, repos)  # unstated: the family grant's role
 
@@ -248,7 +254,13 @@ def render_command(grant: Grant, target: Target, source: ConfigSource, *, reader
 
 
 def repo_dir(target: Target, name: str) -> PurePosixPath:
-    """*target*'s checkout of *name*: ``<root>/repos/<name>`` (:mod:`lab_commons.hpc.layout`)."""
+    """*target*'s checkout of *name*: ``<root>/repos/<name>`` (:mod:`lab_commons.hpc.layout`).
+
+    A ``~/`` root is an account deployed before the declared root (only :func:`declared_target`'s *as_deployed*
+    read yields one): its checkouts sit at ``~/<root>/<name>``, the layout it was deployed with.
+    """
+    if target.root.startswith('~/'):
+        return PurePosixPath(target.root, name)
     return PurePosixPath(paths_of_root(target.root).repo(name))
 
 

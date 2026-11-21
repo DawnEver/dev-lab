@@ -12,6 +12,7 @@ import json
 import os
 import stat
 import sys
+import tomllib
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Final
@@ -26,7 +27,6 @@ from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
 from dev_lab.dev.hpcaccount.spec import (
     Deployment,
     grant_refusal,
-    has_grant,
     render_grant,
     unserved,
     without_hpc,
@@ -191,14 +191,17 @@ def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
     """
     emit("[grant] this account's own [hpc] slice")
     user = step.read([*step.tools.id, '-un']).stdout.strip()
-    retired = grant_refusal(path) if has_grant(path, user) else ''
-    if has_grant(path, user) and not retired:
+    held = path.read_text(encoding='utf-8') if path.is_file() else ''
+    hpc = tomllib.loads(held).get('hpc', {})
+    holds = any(g.get('user') == user for g in hpc.get('grant', []))
+    retired = grant_refusal(path) if holds else ''
+    if holds and not retired:
         emit(f'  {user} already holds a grant in {path}')
         return 0
     if table is None:
-        held = f'holds a grant this kit refuses ({retired})' if retired else f'holds no grant for {user}'
+        holds = f'holds a grant this kit refuses ({retired})' if retired else f'holds no grant for {user}'
         emit(
-            f'deploy refused: {path} {held} and none was passed: deploy it through deploy-fleet '
+            f'deploy refused: {path} {holds} and none was passed: deploy it through deploy-fleet '
             '(the family declaration is the one source of a grant)',
             err=True,
         )
@@ -211,14 +214,15 @@ def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
     if why := association_refusal(user, sacct.stdout, rows[0]['slurm_account']):
         emit(f'deploy refused: {why}', err=True)
         return 2
-    text = render_grant(table)
+    # ONE [hpc]: the file's other [hpc] keys (reach ...) are merged under the passed slice, never a second table
+    kept = {} if retired else hpc
+    text = render_grant({**kept, **table})
     if step.dry:
         emit(f'  [dry-run] {"replace the [hpc] slice of" if retired else "write to"} {path}:{text}')
         return 0
     path.parent.mkdir(parents=True, exist_ok=True)
-    held = path.read_text(encoding='utf-8') if path.is_file() else ''
     # FORMATS-MIGRATE-ONCE: a refused slice is rewritten from the passed declaration; every other table is kept
-    path.write_text((without_hpc(held) if retired else held) + text, encoding='utf-8')
+    path.write_text(without_hpc(held) + text, encoding='utf-8')
     done = f'migrated the grant of {user} in {path}: the file held {retired}' if retired else 'wrote the grant'
     emit(f'  {done} ({user}, {rows[0]["slurm_account"]}) to {path}')
     return 0
