@@ -15,6 +15,7 @@ from typing import Any, Final
 from lab_commons.hpc.grants import declared_grants
 
 from dev_lab.dev._machinefile import dumps
+from dev_lab.dev.devdeclared import layered
 
 
 def render_grant(table: Mapping[str, Any]) -> str:
@@ -23,7 +24,8 @@ def render_grant(table: Mapping[str, Any]) -> str:
 
 
 def _hpc_of(path: Path) -> dict[str, Any]:
-    return (tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
+    """The ``[hpc]`` a reader of the machine file at *path* sees: its own over the family file's (grants stay there)."""
+    return layered(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
 
 
 def login_hosts(path: Path, table: Mapping[str, Any] | None) -> frozenset[str]:
