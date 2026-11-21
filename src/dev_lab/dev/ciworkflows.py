@@ -90,16 +90,18 @@ from dev_lab.dev.ciworkflowshape import (
 )
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
+from dev_lab.dev.jobparts import HOSTED_RUNNERS
 from dev_lab.dev.lanepolicy import FAMILY_INTEGRATION, policy_from
 from dev_lab.dev.nightlycron import scheduled
 from dev_lab.dev.roles import HOST, REVIEW, ROLES_ENV, Roles, roles_at
-from dev_lab.dev.verifybox import wall_of
+from dev_lab.dev.verifybox import wall_of, walls_by_os
 
 __all__ = [
     'BASE_PATH',
     'BY_FORGE',
     'EXTRAS_PLACEHOLDER',
     'FORGE_KEY',
+    'GITHUB_JOB_LIMIT_MIN',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
     'PART_MARGIN_MIN',
@@ -115,6 +117,7 @@ __all__ = [
     'declared_forge',
     'drift',
     'follow_checks',
+    'part_timeout',
     'part_timeout_minutes',
     'placed',
     'refuse_everything',
@@ -144,6 +147,9 @@ EXTRAS_PLACEHOLDER: Final = '@extras@'
 PART_TIMEOUT_PLACEHOLDER: Final = '@part-timeout-minutes@'
 #: Minutes a part spends outside its selection wall: checkout, sync, posting and the log upload.
 PART_MARGIN_MIN: Final = 30
+
+#: GitHub's limit on one hosted job: a part whose timeout passes it must be sharded, never declared longer.
+GITHUB_JOB_LIMIT_MIN: Final = 360
 #: The directory each forge's Actions runs its workflows from.
 WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('.gitea') / 'workflows'}
 
@@ -256,7 +262,7 @@ def placed(text: str, origin: str, forge: str, roles: Roles) -> dict[str, tuple[
         require_producer(BACKENDS[forge], JUDGE_HOST, f'{origin}: review bound to a host (a judge)')
     hosted = hostedparts.hosted_parts(text)
     integration = _integration(text, origin)
-    timeout = part_timeout_minutes(wall_of(declared_table(tomllib.loads(text), 'verify', {}), origin))
+    timeout = part_timeout(declared_table(tomllib.loads(text), 'verify', {}), origin)
     extras_words = ''.join(f' --extra {name}' for name in extras.extras_for(tomllib.loads(text), (), origin))
     out = {}
     for name, layer in sorted(declared.items()):
@@ -313,11 +319,39 @@ def part_timeout_minutes(wall_s: int) -> int:
     """A hosted part's job timeout: its selection wall *wall_s*, in whole minutes up, plus :data:`PART_MARGIN_MIN`.
 
     Without one a hung part ran to GitHub's 360-minute default and its run never reached promote (2026-11-20).
+
+    Raises:
+        ValueError: the timeout passes :data:`GITHUB_JOB_LIMIT_MIN`; shard the part instead.
+
     """
-    return -(-wall_s // 60) + PART_MARGIN_MIN
+    minutes = -(-wall_s // 60) + PART_MARGIN_MIN
+    if minutes > GITHUB_JOB_LIMIT_MIN:
+        msg = (
+            f"a selection wall of {wall_s} s renders a {minutes}-minute part timeout, past GitHub's "
+            f'{GITHUB_JOB_LIMIT_MIN}-minute job limit: shard the part instead of declaring a longer wall'
+        )
+        raise ValueError(msg)
+    return minutes
 
 
-def _named(value: object, integration: str, timeout: int, extras_words: str = '') -> object:
+def part_timeout(table: dict[str, Any], origin: str) -> int | str:
+    """The part job's ``timeout-minutes`` from one ``[tool.dev_lab.verify]`` *table*. PURE.
+
+    The default wall's number when no OS declares its own; else an expression choosing each declared OS's timeout
+    by the row's runner (D112), which GitHub reads as a number through ``fromJSON``.
+    """
+    default = part_timeout_minutes(wall_of(table, origin))
+    by_os = walls_by_os(table, origin)
+    if not by_os:
+        return default
+    choices = ''.join(
+        f"matrix.runs-on == '{HOSTED_RUNNERS[system]}' && '{part_timeout_minutes(wall)}' || "
+        for system, wall in by_os.items()
+    )
+    return f"${{{{ fromJSON({choices}'{default}') }}}}"
+
+
+def _named(value: object, integration: str, timeout: int | str, extras_words: str = '') -> object:
     """*value* with its placeholders rendered (integration branch, part timeout, declared extras). PURE.
 
     :data:`INTEGRATION_PLACEHOLDER` in every string becomes *integration*, :data:`EXTRAS_PLACEHOLDER` the
