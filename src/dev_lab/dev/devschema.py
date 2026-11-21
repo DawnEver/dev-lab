@@ -9,6 +9,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from dev_lab.dev import remote
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
@@ -99,8 +100,9 @@ REQUIRED: Final = ('ref',)
 MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation', 'storage')
 #: The machine file's ``[ssh]`` table as a host file declares it (rendered by :func:`dev_lab.dev.devhost.render`,
 #: read by :mod:`dev_lab.dev.sshhold`): ``jump`` -- destination -> bastion, the declared per-host route; ``hold`` --
-#: :data:`SSH_HOLD`.
-SSH: Final = {'jump': dict, 'hold': dict}
+#: :data:`SSH_HOLD`; ``host_keys`` -- endpoint host -> its ``"<type> <base64>"`` host key, the one key a declared
+#: endpoint (``[consent]``, ``[breakglass]``) is checked against (:data:`dev_lab.dev.remote.HOST_KEY_RULE`).
+SSH: Final = {'jump': dict, 'hold': dict, 'host_keys': dict}
 #: ``[ssh.hold]``: the session ceiling and the idle limit.
 SSH_HOLD: Final = {'max_hours': (int, float), 'idle_minutes': (int, float)}
 #: The door that finds this machine's vendor install homes.
@@ -166,7 +168,21 @@ def ssh_defects(ssh: object, where: str = 'ssh') -> list[str]:
     hold = ssh.get('hold')
     if isinstance(hold, dict):
         found += _typed(hold, SSH_HOLD, f'{where}.hold')
+    keys = ssh.get('host_keys')
+    if isinstance(keys, dict):
+        found += [f'{where}.host_keys.{host!r}: {why}' for host in keys if (why := _host_key_defect(host, keys))]
     return found
+
+
+def _host_key_defect(host: str, keys: Mapping[str, Any]) -> str | None:
+    """Why *host*'s declared key is malformed; ``None`` for a key line or the not-yet-filled placeholder."""
+    if keys.get(host) == remote.HOST_KEY_UNFILLED:
+        return None  # accepted here, refused by name where it is used
+    try:
+        remote.host_key_line(f'check@{host}', keys)
+    except remote.HostKeyUndeclared as refused:
+        return str(refused)
+    return None
 
 
 def _bridge(table: Mapping[str, Any], where: str) -> list[str]:

@@ -18,4 +18,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_hpc_scheduler_only_for_serving.py', 'tests/test_ops_configcheck.py'),
     ),
+    (
+        'SSH-HOST-KEY-DECLARED',
+        (
+            # Why: 2026-11-20, a new workstation's break-glass and consent doors died on a bare "Host key
+            # verification failed" -- no host key was declared anywhere and the refusal named no door.
+            "A declared ssh endpoint's host key is declared once (the family's [ssh.host_keys], from a trusted "
+            'source, never a keyscan from the machine asking) and every door to it checks that key strictly. '
+            'A missing or placeholder key refuses before ssh runs and a mismatch is named, each with the '
+            'declaration and how to fill it.'
+        ),
+        ('tests/test_dev_remote_host_keys.py', 'tests/test_ops_configcheck.py'),
+    ),
 )
