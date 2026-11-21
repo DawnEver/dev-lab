@@ -30,7 +30,8 @@ from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.hpcaccount.division import reached_machine
-from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
+from dev_lab.dev.hpcaccount.fleet import declared_target
+from dev_lab.dev.hpcaccount.target import Target, in_checkout
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
 __all__ = ['forget_command', 'forget_fleet', 'main', 'peek_command']

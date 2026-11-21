@@ -61,7 +61,8 @@ from dev_lab.dev.credstore import (
     valid_host,
 )
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
-from dev_lab.dev.hpcaccount.fleet import declared_target, in_checkout
+from dev_lab.dev.hpcaccount.fleet import declared_target
+from dev_lab.dev.hpcaccount.target import in_checkout
 from dev_lab.dev.hpcaccount.transport import grant_runner
 from dev_lab.dev.planrunsteps import stdout_path
 

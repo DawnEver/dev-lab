@@ -18,15 +18,13 @@ from dev_lab.dev.hpcaccount.division import Division, division_of
 from dev_lab.dev.hpcaccount.fleet import (
     _READ_DEPLOY,
     ConfigSource,
-    Target,
     declared_target,
     deploy_command,
     deploy_fleet,
-    first_install,
     layer_target,
     render_command,
-    repo_dir,
 )
+from dev_lab.dev.hpcaccount.target import Target, first_install, repo_dir
 from dev_lab.dev.venvpointer import shell_interpreter
 
 _HOSTS = ('login01.example', 'login02.example')
@@ -552,13 +550,13 @@ def test_deploy_fleet_refuses_a_machine_file_that_is_not_its_render(tmp_path: Pa
     Measured 2026-11-20: hosts-config gained a cluster `setup` (CC=gcc), but the workstation's machine file was never
     re-rendered, so every Cirrus deploy ran without it. PLANTED CONTROL: the fresh render deploys.
     """
-    from dev_lab.dev import devhost  # noqa: PLC0415
+    from dev_lab.dev import devrender  # noqa: PLC0415
     from dev_lab.dev.hpcaccount.fleet import stale_render  # noqa: PLC0415
 
     clone = _workstation(tmp_path, '[hpc.clusters.c1]\nhosts = ["login01"]\n')
     import tomllib  # noqa: PLC0415
 
-    fresh = tomllib.loads(devhost.render(clone, 'WS', {}))
+    fresh = tomllib.loads(devrender.render(clone, 'WS', {}))
     assert stale_render(fresh) == ''
     (clone / 'family.toml').write_text('[hpc.clusters.c1]\nhosts = ["login01"]\nsetup = ["export CC=gcc"]\n', 'utf-8')
     why = stale_render(fresh)
