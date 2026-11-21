@@ -60,13 +60,15 @@ from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devhost, tomlleaves
+from dev_lab.dev import accounthost
 from dev_lab.dev.credstore import STORE, valid_host
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.devdeclared import OWN_TABLE
-from dev_lab.dev.devhost import config_source, host_file
+from dev_lab.dev.devhost import host_file
+from dev_lab.dev.devsource import config_source
 from dev_lab.dev.hpcaccount.cimark import paused_guard
-from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES, Division, division_of, reached_machine
+from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
+from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
 from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
@@ -150,23 +152,9 @@ def _checked(
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
     if len(named) > 1:
         return f'{grant.user}: refused -- its [deploy] host {host} is ambiguous: it names {named}; declare one in full'
-    root = deploy.get('root', grant.root)  # an unstated root is the cluster's: declared, never a default
-    if not root:
-        return (
-            f'{grant.user}: refused -- no root declared: declare [hpc.clusters.{grant.cluster_name}] root (or the '
-            f"account file's [deploy] root) in the family config, on a filesystem the compute nodes see"
-        )
-    relative = not str(root).startswith('/')
-    if as_deployed and relative:  # the pre-root layout: home-relative, its checkouts at ~/<root>/<name>
-        root = f'~/{str(root).removeprefix("~/")}'
-    elif relative or (grant.root and root != grant.root and not as_deployed):
-        why = (
-            'must be an absolute path (a declared root, never ~)'
-            if relative
-            else f'is not the root its cluster declares {grant.root} (the family declaration is the source: '
-            'redeploy with --root naming it)'
-        )
-        return f'{grant.user}: refused -- its [deploy] root {root} {why}'
+    root, refused = deploy_root(grant, deploy, as_deployed=as_deployed)
+    if refused:
+        return f'{grant.user}: refused -- {refused}'
     repos = tuple((r['name'], r['url'], r['ref']) for r in deploy.get('repos', ()) if {'name', 'url', 'ref'} <= set(r))
     return Target(named[0], root, deploy.get('role') or grant.role, repos)  # unstated: the family grant's role
 
@@ -180,7 +168,7 @@ class ConfigSource:
 
 
 def config_source_of(live: Mapping[str, Any]) -> ConfigSource:
-    """The workstation's config source, from its machine file's ``[devhost]`` (:func:`devhost.config_source`).
+    """The workstation's config source, from its machine file's ``[devhost]`` (:func:`devsource.config_source`).
 
     Raises:
         ValueError: the machine file is not a render, or its clone's ``origin`` is absent or not an https url.
@@ -379,22 +367,6 @@ def _move_kit(kit: PurePosixPath, ref: str) -> str:
     )
 
 
-def _serving_twice(grants: Sequence[Grant], accounts: Sequence[str], division: Division | None) -> list[str]:
-    """The accounts this run DEPLOYS that serve and hold more than one grant -- two grants there are two tick hosts.
-
-    A research account's several grants are several allocations (no tick), and an account outside *accounts* is not
-    deployed by this run, so neither is refused. A role no table names counts as serving: the guard stays on.
-    """
-    roles = division.roles if division is not None else DEFAULT_ROLES
-    selected = set(accounts) or {grant.user for grant in grants}
-    users = [grant.user for grant in grants if grant.user in selected]
-
-    def serves(user: str) -> bool:
-        return any(bool(roles.get(grant.role, {}).get('serves', True)) for grant in grants if grant.user == user)
-
-    return sorted({user for user in users if users.count(user) > 1 and serves(user)})
-
-
 def _target(grant: Grant, source: ConfigSource, division: Division | None) -> Target | str:
     """Where *grant*'s account deploys; else why it is refused (its role, its layer, then its declared host)."""
     if division is not None and (why := division.refusal(grant.user)):
@@ -419,12 +391,8 @@ def deploy_fleet(
     division: Division | None = None,
 ) -> int:
     """Start each account's deploy on its declared host; 2 when any account was refused."""
-    if twice := _serving_twice(grants, accounts, division):
-        say(
-            f'deploy-fleet: refused -- {twice} serve under more than one [[hpc.grant]]: a serving account ticks from '
-            f'ONE login host. Keep one grant per serving account in the machine file, or deploy the others alone '
-            f'(--account <user>)'
-        )
+    if why := serving_twice_refusal(grants, accounts, division):
+        say(f'deploy-fleet: refused -- {why}')
         return 2
     fleet: dict[str, Grant] = {}
     for grant in grants:  # a non-serving account's further grants are allocations, not hosts: its first one deploys
@@ -470,30 +438,6 @@ def _log_line(path: Path, line: str, *, dry_run: bool) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('a', encoding='utf-8') as log:
             log.write(f'[deploy-fleet] {line}\n')
-
-
-def stale_render(live: Mapping[str, Any]) -> str:
-    """Why *live* (this machine's file) is not the render of its config source; ``''`` when it is.
-
-    The deploy line is built from THIS machine's grants, so a stale render deploys stale family facts (measured
-    2026-11-20: a cluster ``setup`` landed in the source, the machine file was never re-rendered, and every deploy ran
-    without it).
-    """
-    own = live.get(OWN_TABLE, {})
-    if not own.get('host') or not own.get('source'):
-        return ''  # not a render at all: config_source_of refuses it by name
-    clone = Path(own['source'])
-    rendered = tomlleaves.leaves(tomllib.loads(devhost.render(clone, own['host'], live)))
-    have = tomlleaves.leaves(live)
-    differ = sorted(path for path in set(rendered) | set(have) if rendered.get(path) != have.get(path))
-    if not differ:
-        return ''
-    first = ', '.join(f'{tomlleaves.dotted(path)} ({"absent" if path not in have else "not the render"})'
-                      for path in differ[:3])  # fmt: skip
-    return (
-        f'the machine file is not the render of {clone.as_posix()} ({len(differ)} key(s): {first}); re-render it '
-        f'first: python -m dev_lab.dev.devhost render --host {own["host"]} --write'
-    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

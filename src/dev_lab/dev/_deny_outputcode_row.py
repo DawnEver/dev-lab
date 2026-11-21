@@ -34,7 +34,7 @@ OUTPUT_HOLDS_NO_CODE: dict[str, object] = {
     'matches': 'argument',
     'hazard': 'output/ holds only what a program regenerates; code, a patch or a bundle there is unlanded work.',
     'remedy': 'Commit it on its branch and push it; a one-off goes to scratch/; unwanted work is discarded: '
-    'python -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>".',
+    '{python} -m dev_lab.dev.branchset --discard <branch> --approved "<the user words>".',
     'needs': None,
     'refuses': (
         'git diff > output/logs/26/11/20/lane/uncommitted.patch',

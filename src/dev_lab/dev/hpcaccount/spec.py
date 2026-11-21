@@ -23,11 +23,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.hpc.grants import declared_grants
 from lab_commons.hpc.layout import ROOT_VAR, AccountPaths, RootUndeclared, account_paths
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
 from dev_lab.dev.roles import HPC, ROLES, Unbound, roles_at
 from dev_lab.dev.venvpointer import shell_interpreter
@@ -44,16 +42,13 @@ __all__ = [
     'Repo',
     'checkout_of',
     'cron_lines',
-    'has_grant',
     'host_serve_argv',
     'load',
-    'login_hosts',
     'merge_crontab',
     'parse',
     'parse_repo',
     'paths_of',
     'render',
-    'render_grant',
     'role_refusal',
     'served',
     'serves_here',
@@ -259,61 +254,6 @@ def render(spec: Deployment) -> str:
 
 def _list(values: Sequence[str]) -> str:
     return '[' + ', '.join(_toml(v) for v in values) + ']'
-
-
-def render_grant(table: Mapping[str, Any]) -> str:
-    """*table* (an ``[hpc]`` slice) as the machine-file text :mod:`lab_commons.hpc.grants` reads."""
-    return '\n' + dumps({'hpc': dict(table)})
-
-
-def _hpc_of(path: Path) -> dict[str, Any]:
-    return (tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}).get('hpc', {})
-
-
-def login_hosts(path: Path, table: Mapping[str, Any] | None) -> frozenset[str]:
-    """Every login host a cluster declares -- in the passed ``[hpc]`` slice *table*, else the machine file at *path*."""
-    hpc = table if table is not None else _hpc_of(path)
-    return frozenset(host for cluster in hpc.get('clusters', {}).values() for host in cluster.get('hosts', ()))
-
-
-def has_grant(path: Path, user: str) -> bool:
-    """Whether the machine file at *path* already grants *user*."""
-    return any(grant.get('user') == user for grant in _hpc_of(path).get('grant', []))
-
-
-def grant_refusal(path: Path) -> str:
-    """Why this kit cannot load the ``[hpc]`` slice of the machine file at *path* (``''``: it loads)."""
-    try:
-        declared_grants(_hpc_of(path))
-    except ValueError as refused:
-        return str(refused)
-    return ''
-
-
-#: A TOML table or array-of-tables header line; group 1 is the table's dotted name.
-_HEADER: Final = re.compile(r'^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
-
-
-def without_hpc(text: str) -> str:
-    """*text* without its ``[hpc]`` slice -- every ``[hpc]``, ``[hpc.*]`` and ``[[hpc.*]]`` table; the rest kept."""
-    kept: list[str] = []
-    inside = False
-    for line in text.splitlines():
-        if header := _HEADER.match(line):
-            name = header.group(1)
-            inside = name == 'hpc' or name.startswith('hpc.')
-        if not inside:
-            kept.append(line)
-    return '\n'.join(kept).rstrip('\n') + '\n'
-
-
-def grant_setup(path: Path, user: str) -> tuple[str, ...]:
-    """The set-up of *user*'s cluster, as the machine file at *path* declares it -- the cluster's own environment."""
-    hpc = _hpc_of(path)
-    if not any(grant.get('user') == user for grant in hpc.get('grant', [])):
-        return ()
-    grants, _ = declared_grants(hpc)
-    return next((grant.setup for grant in grants if grant.user == user), ())
 
 
 def parse_repo(text: str) -> Repo:

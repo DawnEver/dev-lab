@@ -41,7 +41,7 @@ def checkout(tmp_path: Path) -> Path:
     [
         ('output/logs/26/11/20/probe/probe.py', True),
         ('output/moved/lane.bundle', True),
-        ('output/worktree-archive/lane/uncommitted.patch', True),
+        ('output/parked/lane/uncommitted.patch', True),
         ('output/x.TOML', True),
         ('output/a/b.ipynb', True),
         ('output/run.sh', True),

@@ -28,6 +28,7 @@ from typing import Final
 
 from lab_commons import launch
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import taskbinding
 
@@ -91,7 +92,7 @@ def carry(root: Path, slug: str) -> str:
         msg = f'no task {slug} in the ledger {task.parent.as_posix()}: open it with rem task-open, or receive it'
         raise CarryRefused(msg)
     parent = _fetched(root, slug)
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}taskcarry-') as scratch:
         env = _private_index(task, Path(scratch) / 'index')
         _checked(task, 'add', '-A', '-f', '.', env=env)
         tree = _checked(task, 'write-tree', env=env)
@@ -119,7 +120,7 @@ def receive(root: Path, slug: str, *, replace: bool = False) -> str:
             raise CarryRefused(msg)
         shutil.rmtree(task)
     task.mkdir(parents=True)
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}taskcarry-') as scratch:
         env = _private_index(task, Path(scratch) / 'index')
         _checked(task, 'read-tree', sha, env=env)
         _checked(task, 'checkout-index', '-a', '-f', env=env)

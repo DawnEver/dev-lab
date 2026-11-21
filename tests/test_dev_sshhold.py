@@ -378,16 +378,13 @@ def test_a_frame_leaves_no_state_in_the_held_shell_for_the_next_one() -> None:
     -- ran with the helper emptied and failed "could not read Username". PLANTED CONTROL: within one frame the
     export still applies.
     """
-    import shutil  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
-
     bash = shutil.which('bash')
     assert bash, 'the held remote shell is bash'
     stream = sshholdwire.frame('export HELD_PROBE=leaked && echo "in:$HELD_PROBE"', 'a') + sshholdwire.frame(
         'echo "after:${HELD_PROBE:-clean}"', 'b'
     )
     done = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=stream, capture_output=True, text=True,
-                          timeout=30, check=False)  # fmt: skip
+                          encoding='utf-8', timeout=30, check=False)  # fmt: skip
     first, rest = done.stdout.split('__SSHHOLD_a_0\n', 1)
     assert first.strip() == 'in:leaked'
     assert sshholdwire.split_marker(rest, 'b') == ('after:clean\n', 0)
