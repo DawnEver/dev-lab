@@ -40,7 +40,7 @@ from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import RECEIPT_FRESH_S, Send, reached, ssh_send
 from dev_lab.ops.totp import STEP
 
-__all__ = ['TABLE', 'merge_main', 'wave_main']
+__all__ = ['TABLE', 'merge_main', 'promote_trunk', 'wave_main']
 
 #: The machine-file table naming the endpoint.
 TABLE: Final = 'breakglass'
@@ -172,6 +172,21 @@ def wave_main(
     if args.action == 'ack':
         request |= {'id': args.id, 'by': f'{getpass.getuser()}@{socket.gethostname()}'}
     return _answer(send, config, request)
+
+
+def promote_trunk(
+    root: Path, sha: str, reason: str, *, table: Mapping[str, Any] | None = None, send: Send = ssh_send
+) -> int:
+    """``integrate promote <sha> --breakglass --reason R``: the wave's server fast-forwards the trunk; exit 0/2/1.
+
+    The server decides everything (open wave, served repo, *sha* on integration, a fast-forward) and pushes as the
+    break-glass identity; this client holds no credential that could move the trunk itself.
+    """
+    if (config := _endpoint(table)) is None:
+        return 2
+    repo = forge_from_remote(root).identity
+    emit(f'BREAK-GLASS PROMOTE {repo} trunk -> {sha}')
+    return _answer(send, config, {'action': 'promote', 'repo': repo, 'sha': sha, 'reason': reason})
 
 
 def merge_main(

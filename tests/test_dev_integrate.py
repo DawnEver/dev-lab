@@ -285,3 +285,40 @@ def test_on_github_only_the_promote_job_moves_the_trunk_and_no_push_the_ruleset_
         assert 'git push' not in said
         assert 'nightly promote job' in said
         assert 'gh run list --workflow ci.yml --event schedule' in said
+
+
+# -- the emergency door (user ruling D105) ----------------------------------------------------------------------------
+
+
+def test_a_promote_refused_on_its_parts_names_the_break_glass_door(
+    server, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every wall teaches: the refusal says how the USER moves the trunk anyway, and the trunk stays."""
+    bare, repo = clone_pair(tmp_path)
+    tip = advance(repo, 'integrate/main', 'f.txt', 'f\n')
+    before = git_out(bare, 'rev-parse', 'main')
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(repo, tip, state='failure')]))
+    built = client(GITEA, Loopback(server))
+    assert integrate.main(['promote', tip], cwd=repo, client=built, fetch=lambda _: None) == 2
+    said = capsys.readouterr().err
+    assert f'integrate promote {tip} --breakglass --reason' in said
+    assert 'forge breakglass open --code' in said
+    assert git_out(bare, 'rev-parse', 'main') == before
+
+
+def test_breakglass_hands_one_sha_and_its_reason_to_the_wave_and_moves_nothing_itself(tmp_path: Path) -> None:
+    """PLANTED: no reason, or --newest, is refused before the wave is asked."""
+    asked: list[tuple[Path, str, str]] = []
+
+    def wave(root: Path, sha: str, reason: str) -> int:
+        asked.append((root, sha, reason))
+        return 0
+
+    sha = 'a' * 40
+    assert integrate.main(['promote', '--breakglass', sha], cwd=tmp_path, breakglass=wave) == 2
+    assert integrate.main(['promote', '--breakglass', '--newest', '--reason', 'r', sha], cwd=tmp_path,
+                          breakglass=wave) == 2  # fmt: skip
+    assert asked == []
+    assert integrate.main(['promote', sha, '--breakglass', '--reason', ' CI down '], cwd=tmp_path,
+                          breakglass=wave) == 0  # fmt: skip
+    assert asked == [(tmp_path, sha, 'CI down')]
