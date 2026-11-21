@@ -37,6 +37,14 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         ('remove: access is denied',),
     ),
     (
+        # uv REFUSED TO UPDATE ITSELF: it was not installed by its standalone scripts. Measured 2026-11-21: `uv.EXE
+        # self update 0.13.9` on a Python install's `Scripts/uv.EXE` gave up 3/3 as unclassified; uv's answer is
+        # about how it was installed, which no attempt changes.
+        'self-update-refused',
+        False,
+        ('self-update is only available for uv binaries installed via the standalone installation scripts',),
+    ),
+    (
         # GIT'S OWN PROTOCOL POLICY REFUSED A LOCAL TRANSPORT. Measured 2026-10-19 downstream: `dep
         # --bootstrap <worktree>` ran `git submodule update --init --recursive`, whose submodule URL is a
         # LOCAL path (the main checkout's `.git/modules/...`), and git refused it as `transport 'file' not
@@ -169,6 +177,11 @@ REMEDIES: Final[dict[str, str]] = {
     'file-held': (
         'a running process holds a file the installer must replace -- move the held file aside (renaming a '
         'running exe is allowed) and install again; dev_lab.dev.uvfollow does this for uv'
+    ),
+    'self-update-refused': (
+        'this uv was installed by pip or a package manager, so move it through that installer (`<its python> -m '
+        'pip install uv==<version>`); a lock never needs it moved -- dev_lab.dev.uvrelease installs the pinned '
+        'release beside it as the lock writer'
     ),
     # A forge refusal's answer is a JSON body no reader sees unless it is quoted: ForgeCallFailed appends it.
     'forge-refused': 'the forge answered and refused this call -- fix what its answer names',

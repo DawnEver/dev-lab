@@ -117,6 +117,8 @@ class Diagnosis(StrEnum):
     TRANSPORT_REFUSED = 'transport-refused'
     #: An installer could not replace a file a running process holds (``remove: Access is denied``).
     FILE_HELD = 'file-held'
+    #: ``uv self update`` refused a uv no standalone installer put there (pip, a package manager).
+    SELF_UPDATE_REFUSED = 'self-update-refused'
     STOPPED_BY_CALLER = 'stopped-by-caller'
 
 

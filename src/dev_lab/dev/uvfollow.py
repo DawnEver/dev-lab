@@ -13,8 +13,10 @@ no poller and no second schedule is added.
 
 THE ROUTE IT WAS INSTALLED BY. uv updates through the installer that put it there, read from where the binary
 lives (:func:`route_of`): a WinGet install (``.../WinGet/Links`` or ``.../WinGet/Packages/astral-sh.uv_...``)
-is reinstalled at exactly the version by ``winget``; any other (the standalone installer, ``~/.local/bin`` or
-``~/.cargo/bin``) by ``uv self update <version>``, which itself refuses a uv no installer of its own put there --
+is reinstalled at exactly the version by ``winget``; one in a Python install's ``Scripts``/``bin`` (pip put
+it there; measured 2026-11-21, ``self update`` refused it 3/3) by that Python's ``pip install uv==<version>``;
+any other (the standalone installer, ``~/.local/bin`` or ``~/.cargo/bin``) by ``uv self update <version>``,
+which itself refuses a uv no installer of its own put there (``self-update-refused``) --
 that refusal is reported, not guessed around. Both reach the network, so both run through
 :func:`~dev_lab.dev.netverb.run_network_verb` and a transient failure is retried, not reported as "stale uv".
 
@@ -83,13 +85,27 @@ class Route(StrEnum):
     """The installer that put a uv binary where it is -- the one that may move it."""
 
     WINGET = 'winget'
+    #: A Python install's ``Scripts``/``bin`` (pip put it there): ``uv self update`` refuses it, its pip moves it.
+    PIP = 'pip'
     STANDALONE = 'standalone'
 
 
+def _python_beside(uv: str) -> Path | None:
+    """The interpreter of the Python install whose ``Scripts``/``bin`` holds *uv*; ``None`` when none does."""
+    scripts = Path(uv).parent
+    for home in (scripts.parent, scripts):
+        for name in ('python.exe', 'python3', 'python'):
+            if (home / name).is_file():
+                return home / name
+    return None
+
+
 def route_of(uv: str) -> Route:
-    """Which installer owns the uv at *uv*: WinGet when the path runs through its tree, else uv's own."""
+    """Which installer owns the uv at *uv*: WinGet by its tree, pip by a Python beside it, else uv's own."""
     parts = [part.lower() for part in PurePath(uv.replace('\\', '/')).parts]
-    return Route.WINGET if 'winget' in parts else Route.STANDALONE
+    if 'winget' in parts:
+        return Route.WINGET
+    return Route.PIP if _python_beside(uv) is not None else Route.STANDALONE
 
 
 def update_argv(uv: str, version: str) -> list[str]:
@@ -99,6 +115,8 @@ def update_argv(uv: str, version: str) -> list[str]:
             'winget', 'install', '--id', WINGET_ID, '--exact', '--version', version, '--force', '--silent',
             '--disable-interactivity', '--accept-package-agreements', '--accept-source-agreements',
         ]  # fmt: skip
+    if (python := _python_beside(uv)) is not None:
+        return [str(python), '-m', 'pip', 'install', f'uv=={version}']
     return [uv, 'self', 'update', version]
 
 

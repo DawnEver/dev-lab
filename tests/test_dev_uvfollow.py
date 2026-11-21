@@ -157,3 +157,40 @@ def test_a_held_winget_uv_is_classified_by_name_moved_aside_and_installed_again(
     assert follow(uv, '0.13.9', version_of=lambda _uv: '0.14.0', run=refused).startswith('uv 0.14.0 at ')
     assert len(other) == 1
     assert [p.name for p in package.iterdir()] == ['uv.exe']
+
+
+_NOT_STANDALONE = (
+    'error: Self-update is only available for uv binaries installed via the standalone installation scripts.\n'
+    'If you installed uv with pip, brew, or another package manager, update uv with `pip install --upgrade`, '
+    '`brew upgrade`, or similar.'
+)
+
+
+def test_a_pip_installed_uv_follows_through_its_own_python_never_self_update(tmp_path: Path) -> None:
+    """A uv in a Python install's ``Scripts`` moves through that Python's pip; ``uv self update`` refuses it.
+
+    2026-11-21: a Program Files Python's ``Scripts/uv.EXE`` was sent ``self update`` and gave up 3/3 as
+    unclassified. PLANTED CONTROL: a uv with no Python beside it stays on the standalone route.
+    """
+    python = tmp_path / 'Python313' / 'python.exe'
+    (python.parent / 'Scripts').mkdir(parents=True)
+    python.write_text('', encoding='utf-8')
+    uv = str(python.parent / 'Scripts' / 'uv.EXE')
+    assert uvfollow.route_of(uv) is uvfollow.Route.PIP
+    assert uvfollow.update_argv(uv, '0.13.9') == [str(python), '-m', 'pip', 'install', 'uv==0.13.9']
+    lone = str(tmp_path / 'home' / '.local' / 'bin' / 'uv')
+    assert uvfollow.route_of(lone) is uvfollow.Route.STANDALONE
+    assert uvfollow.update_argv(lone, '0.13.9') == [lone, 'self', 'update', '0.13.9']
+
+
+def test_the_self_update_refusal_is_named_and_names_a_door_that_works() -> None:
+    """``uv self update`` on a non-standalone uv is ``self-update-refused``: permanent, and its remedy is a door.
+
+    PLANTED CONTROL: an unrelated message stays unclassified.
+    """
+    assert classify(_NOT_STANDALONE) is Diagnosis.SELF_UPDATE_REFUSED
+    assert not is_retryable(Diagnosis.SELF_UPDATE_REFUSED)
+    said = _held_report(('uv', 'self', 'update', '0.13.9'), _NOT_STANDALONE).remedy
+    assert 'self-update-refused' in said
+    assert 'uvrelease' in said
+    assert classify('some other failure') is Diagnosis.UNCLASSIFIED

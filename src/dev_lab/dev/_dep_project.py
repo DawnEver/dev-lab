@@ -81,7 +81,7 @@ def installed_uv_version(uv: str) -> str:
 
 def uv_remedy(version: str) -> str:
     """How a host gets uv *version*."""
-    return f'run `uv self update {version}` (WinGet: `winget install --id astral-sh.uv -e --version {version}`)'
+    return f'make the uv {version} release reachable (dev_lab.dev.uvrelease installs it beside the PATH uv) and rerun'
 
 
 def pin_file(root: Path) -> Path:
