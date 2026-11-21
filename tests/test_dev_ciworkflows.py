@@ -1645,6 +1645,45 @@ def test_a_hosted_part_carries_a_job_timeout_derived_from_the_repo_s_selection_w
     assert isinstance(default, int), 'GitHub reads timeout-minutes as a number'
 
 
+def test_a_platform_declaring_its_own_wall_renders_its_own_part_timeout(tmp_path: Path) -> None:
+    """D112: ``[tool.dev_lab.verify.wall_s_by_os]`` gives one OS its own wall; the rest keep ``wall_s``.
+
+    Every dev-lab tests/base@windows row ran into the 90-minute timeout its 60-minute default wall rendered,
+    while linux and macos finished inside it (2026-11-20/21), so the run never reached promote.
+    """
+    _hosted(tmp_path)
+    pyproject = tmp_path / 'pyproject.toml'
+    pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.verify.wall_s_by_os]\nwindows = 9000\n', encoding='utf-8')
+    timeout = workflows(tmp_path)['ci.yml']['jobs']['part']['timeout-minutes']
+    windows, default = 150 + ciworkflows.PART_MARGIN_MIN, 60 + ciworkflows.PART_MARGIN_MIN
+    assert timeout == f"${{{{ fromJSON(matrix.runs-on == 'windows-latest' && '{windows}' || '{default}') }}}}"
+    # PLANTED CONTROL: an undeclared OS keeps the plain default number.
+    pyproject.write_text(ACTIONS_REPO, encoding='utf-8')
+    assert workflows(tmp_path)['ci.yml']['jobs']['part']['timeout-minutes'] == default
+
+
+def test_a_wall_beyond_github_s_job_limit_is_refused_by_name(tmp_path: Path) -> None:
+    """A wall whose timeout passes GitHub's 360-minute job limit is refused: sharding the part is the door."""
+    _hosted(tmp_path)
+    pyproject = tmp_path / 'pyproject.toml'
+    pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.verify.wall_s_by_os]\nwindows = 20000\n', encoding='utf-8')
+    with pytest.raises(ValueError, match=r'360-minute.*shard'):
+        workflows(tmp_path)
+    # PLANTED CONTROL: the largest wall that fits renders.
+    limit = (ciworkflows.GITHUB_JOB_LIMIT_MIN - ciworkflows.PART_MARGIN_MIN) * 60
+    pyproject.write_text(ACTIONS_REPO + f'[tool.dev_lab.verify.wall_s_by_os]\nwindows = {limit}\n', encoding='utf-8')
+    assert "'360'" in workflows(tmp_path)['ci.yml']['jobs']['part']['timeout-minutes']
+
+
+def test_an_unknown_os_in_the_wall_table_is_refused_by_name(tmp_path: Path) -> None:
+    """A typo'd OS key would silently keep the default wall; it is refused naming the OSes there are."""
+    _hosted(tmp_path)
+    pyproject = tmp_path / 'pyproject.toml'
+    pyproject.write_text(ACTIONS_REPO + '[tool.dev_lab.verify.wall_s_by_os]\nwin = 9000\n', encoding='utf-8')
+    with pytest.raises(ValueError, match=r"wall_s_by_os.*'win'.*windows"):
+        workflows(tmp_path)
+
+
 _EXTRAS = '[project.optional-dependencies]\ndev = ["pytest"]\nlearn = ["torch"]\n[tool.dev_lab.dep]\nextras = ["dev"]\n'
 
 

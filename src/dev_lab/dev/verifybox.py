@@ -33,6 +33,7 @@ from lab_commons.box.ledger import holdings
 from lab_commons.box.supply import Reading, room
 from lab_commons.compute import learned
 from lab_commons.compute.model import Demand, Resources
+from lab_commons.compute.probe import OS_NAMES
 from lab_commons.file_io import read_toml
 from lab_commons.log import emit
 
@@ -60,6 +61,7 @@ __all__ = [
     'selection_workers',
     'serial_width',
     'wall_of',
+    'walls_by_os',
     'xdist_installed',
 ]
 
@@ -181,14 +183,37 @@ def declared_wall_s(root: Path) -> int:
     """
     manifest = root / 'pyproject.toml'
     table = declared_table(read_toml(manifest), 'verify', {}) if manifest.is_file() else {}
-    return wall_of(table, manifest)
+    return wall_of(table, manifest, OS_NAMES.get(sys.platform))
 
 
-def wall_of(table: Mapping[str, object], where: object) -> int:
-    """The ``wall_s`` of one parsed ``[tool.dev_lab.verify]`` *table* (read at *where*), else the default."""
-    value = table.get('wall_s', SELECTION_WALL_S)
+def wall_of(table: Mapping[str, object], where: object, system: str | None = None) -> int:
+    """The selection wall of one parsed ``[tool.dev_lab.verify]`` *table* (read at *where*) on OS *system*.
+
+    *system*'s ``wall_s_by_os`` entry when declared (D112: one OS's full selection outgrows the others'), else
+    ``wall_s``, else :data:`SELECTION_WALL_S`.
+    """
+    by_os = walls_by_os(table, where)
+    if system in by_os:
+        return by_os[system]
+    return _seconds(table.get('wall_s', SELECTION_WALL_S), 'wall_s', where)
+
+
+def walls_by_os(table: Mapping[str, object], where: object) -> dict[str, int]:
+    """``wall_s_by_os`` of one parsed ``[tool.dev_lab.verify]`` *table*: OS name -> wall in seconds, by name."""
+    declared = table.get('wall_s_by_os', {})
+    if not isinstance(declared, Mapping):  # a TOML value: the reader refuses it as a ValueError like its siblings
+        msg = f'[tool.dev_lab.verify] wall_s_by_os in {where} is {declared!r}: declare a table of OS = seconds'
+        raise ValueError(msg)  # noqa: TRY004 -- a malformed declaration, not a caller type error
+    systems = sorted(set(OS_NAMES.values()))
+    if unknown := sorted(set(declared) - set(systems)):
+        msg = f'[tool.dev_lab.verify] wall_s_by_os in {where} names {unknown!r}: the OSes are {systems}'
+        raise ValueError(msg)
+    return {system: _seconds(value, f'wall_s_by_os.{system}', where) for system, value in sorted(declared.items())}
+
+
+def _seconds(value: object, key: str, where: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        msg = f'[tool.dev_lab.verify] wall_s in {where} is {value!r}: declare the selection wall in whole seconds (> 0)'
+        msg = f'[tool.dev_lab.verify] {key} in {where} is {value!r}: declare the selection wall in whole seconds (> 0)'
         raise ValueError(msg)
     return value
 
