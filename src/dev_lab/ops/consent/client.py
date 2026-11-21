@@ -10,6 +10,12 @@ asked through :func:`dev_lab.dev.ask.code`, shown as typed (user ruling D94, 202
 :func:`dev_lab.dev.consentguard.state_dir` ``/<id>.json``, which only the grant writes (CONSENT-CODE-FROM-THE-USER).
 The code is sent once and never logged or kept.
 
+:func:`preflight` proves, with NO code, that a lone request's grant can succeed -- endpoint and key declared, the
+issuer reached over ssh (:func:`.door.reached`), the version handshake, the subject still current (:data:`SUBJECTS`),
+and any check the calling verb adds -- and writes its receipt (:func:`.door.record_receipt`). :func:`grant` refuses
+a code given in advance without a fresh receipt before any network call; a code typed at its prompt is asked only
+after the same preflight ran inline.
+
 :func:`redeem` is the gate of an IRREVERSIBLE action (a spend, a merge, a wave): the signature and expiry verify
 offline, then the use is registered online with the issuer; an issuer that cannot be reached REFUSES, never admits.
 """
@@ -17,10 +23,11 @@ offline, then the use is registered online with the issuer; an issuer that canno
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from importlib import resources
 from pathlib import Path
 from typing import Any, Final
@@ -31,19 +38,24 @@ from lab_commons.config import section
 from dev_lab.dev.ask import AskRefused
 from dev_lab.dev.ask import code as asked_code
 from dev_lab.dev.consentguard import state_dir
+from dev_lab.dev.native_session import session_of
+from dev_lab.dev.taskbinding import task_id
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
-from dev_lab.ops.consent.door import Send, handshake, offer, ssh_send
+from dev_lab.ops.consent.door import Send, handshake, offer, reached, record_receipt, require_receipt, ssh_send
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.consent.plan import request as plan_request
 from dev_lab.ops.totp import write_private
 
 __all__ = [
+    'SUBJECTS',
     'TABLE',
+    'Check',
     'Register',
     'given_code',
     'grant',
     'grant_plan',
+    'preflight',
     'public_key',
     'recover',
     'redeem',
@@ -58,6 +70,36 @@ _DIGITS: Final = 6
 _PACKAGED: Final = 'issuer.pub'
 #: The serve verb's exit status for a refusal (as every ops door's).
 _REFUSED: Final = 2
+
+#: An action-specific precondition a verb adds to its preflight; raises :class:`ConsentRefused` naming its door.
+Check = Callable[[], None]
+
+
+def _session_current(subject: str) -> str:
+    current = session_of()
+    if current == subject:
+        return ''
+    return (f'the request names session {subject}, this session is {current or "(none)"}: write it again '
+            '(`python -m dev_lab.dev.hpcaccount.session request`)')  # fmt: skip
+
+
+def _task_current(subject: str) -> str:
+    slug = subject.split('@', 1)[0]
+    try:
+        current = task_id(Path.cwd(), slug)
+    except (ValueError, OSError, subprocess.CalledProcessError) as gone:
+        return f'the request names task {subject}, which is not open here ({gone}): open it, then write the request'
+    if current == subject:
+        return ''
+    return (f'the request names task {subject}, the open task is {current}: write it again '
+            f'(`python -m dev_lab.dev.hpcaccount.session request --task {slug}`)')  # fmt: skip
+
+
+#: Per action, whether a request's subject is still CURRENT: ``''`` when it is, else why and how to write it again.
+SUBJECTS: Final[Mapping[str, Callable[[str], str]]] = {
+    'session.integrator': _session_current,
+    'task.integrator': _task_current,
+}
 
 #: Registers one use of a credential with the issuer: ``(credential, amount)``; raises :class:`ConsentRefused`.
 Register = Callable[[Mapping[str, Any], int], object]
@@ -243,6 +285,35 @@ def _issued(
     return written
 
 
+def preflight(
+    request: Mapping[str, Any],
+    *,
+    table: Mapping[str, Any] | None = None,
+    send: Send = ssh_send,
+    checks: Iterable[Check] = (),
+    subjects: Mapping[str, Callable[[str], str]] = SUBJECTS,
+    home: Path | None = None,
+    now: float | None = None,
+) -> Path:
+    """Prove *request*'s grant can succeed, with no code; the receipt written (:func:`.door.record_receipt`).
+
+    Raises:
+        ConsentRefused: no endpoint or key, a malformed request, the issuer unreachable (named by its transport) or
+            skewed, a subject no longer current, or a failed *checks* -- each naming its door; no receipt is written.
+
+    """
+    found = _endpoint(table)
+    public_key(found)
+    requested(dict(request))
+    if (current := subjects.get(str(request['action']))) and (stale := current(str(request['subject']))):
+        msg = f'no code asked: {stale}'
+        raise ConsentRefused(msg)
+    handshake(found, send=reached(send), actions=[request['action']])
+    for check in checks:
+        check()
+    return record_receipt(request, home=home, now=now)
+
+
 def grant(
     request_file: Path,
     *,
@@ -258,16 +329,22 @@ def grant(
     """Ask the issuer for the credential *request_file* describes; the file it was written to.
 
     Raises:
-        ConsentRefused: the issuer fails the handshake (:func:`.door.handshake`), the code is not six digits, the
-            request is malformed, or the issuer refused.
+        ConsentRefused: a code given in advance has no fresh receipt (:func:`.door.require_receipt`), the preflight
+            fails before a prompt (:func:`preflight`), the code is not six digits, or the issuer refused.
 
     """
     found = _endpoint(table)
     public_key(found)  # refused here, before the user spends a code
     request = json.loads(request_file.read_text(encoding='utf-8'))
     requested(request)
-    handshake(found, send=send, actions=[request['action']])  # before the code is asked
-    given = _six_digits(given_code(code, tty=tty, ask=ask, read=read))
+    on_tty = sys.stdin.isatty() if tty is None else tty
+    if code is not None or not on_tty:  # the code was asked BEFORE this call: its preflight must have preceded it
+        given = _six_digits(given_code(code, tty=on_tty, ask=ask, read=read))
+        require_receipt(request, home=home, now=now())  # local: refused before any network call
+        handshake(found, send=reached(send), actions=[request['action']])
+    else:  # the prompt follows a green preflight, run here
+        preflight(request, table=found, send=send, home=home, now=now())
+        given = _six_digits(given_code(code, tty=on_tty, ask=ask, read=read))
     return _issued(found, {'verb': 'issue', 'request': request, 'code': given}, send=send, home=home, now=now())[0]
 
 

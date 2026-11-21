@@ -20,7 +20,7 @@ from dev_lab.ops import consentverbs, redeemverbs
 from dev_lab.ops.config import OpsConfig, load
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.actions import ACTIONS
-from dev_lab.ops.consent.client import grant, public_key, redeem, remote_register
+from dev_lab.ops.consent.client import grant, preflight, public_key, redeem, remote_register
 from dev_lab.ops.consent.credential import FIELDS, SKEW_S, ConsentRefused, public_text, verify
 from dev_lab.ops.consent.issuer import Issuer, keygen
 from dev_lab.ops.totp import STEP
@@ -218,6 +218,7 @@ def test_the_code_the_user_gave_is_passed_by_the_agent(host: Host, tmp_path: Pat
             now=lambda: host.clock[0],
         )  # fmt: skip
 
+    preflight(WAVE, table=table, send=send, home=tmp_path, now=host.clock[0])  # a code given in advance needs it
     written = run(code=host.code(), tty=False)
     assert written.parent == state_dir(tmp_path)
     assert json.loads(written.read_text(encoding='utf-8'))['action'] == 'breakglass.wave'
