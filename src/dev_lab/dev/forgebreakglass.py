@@ -2,7 +2,10 @@
 
 The client half of :mod:`dev_lab.ops.breakglass`. A WAVE opens on a ``breakglass.wave`` consent credential the USER
 granted. ``open --code <code> --hours H --max-merges N`` grants it AND opens in ONE call (the code lives one 30-second
-TOTP step, so a second command would spend its window); ``open --credential <id>`` opens on one already granted
+TOTP step, so a second command would spend its window) -- and ONLY after ``open --preflight --hours H --max-merges N``
+was green: it proves, with no code, that the consent issuer and this server answer (a host key never enrolled is named
+with its ``devhost enrol`` door) and writes the receipt the ``--code`` call needs
+(:func:`dev_lab.ops.consent.client.preflight`). ``open --credential <id>`` opens on one already granted
 (``python -m dev_lab.ops.consent grant <request.json>``) from the consent state directory. Inside the wave
 ``pr breakglass`` merges with no code -- the server sends ONE summary of what actually merged when the wave ends.
 ``close`` ends the wave early;
@@ -32,9 +35,9 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgework import Client
-from dev_lab.ops.consent.client import grant
+from dev_lab.ops.consent.client import grant, preflight
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, ssh_send
+from dev_lab.ops.consent.door import RECEIPT_FRESH_S, Send, reached, ssh_send
 from dev_lab.ops.totp import STEP
 
 __all__ = ['TABLE', 'merge_main', 'wave_main']
@@ -56,6 +59,8 @@ WAVE: Final = 'breakglass.wave'
 
 #: Grants a request file into a credential file (:func:`dev_lab.ops.consent.client.grant`).
 Grant = Callable[..., Path]
+#: Proves a request can be granted and writes its receipt (:func:`dev_lab.ops.consent.client.preflight`).
+Preflight = Callable[..., Path]
 
 
 def _wave_request(hours: float | str, max_merges: int | str) -> dict[str, Any]:
@@ -68,12 +73,40 @@ def _refuse_open(held: Path) -> int:
     ready = json.dumps(_wave_request('<H>', '<N>'))
     emit(
         f"[breakglass] open needs the user's code or a granted {WAVE} credential ({held} is not one). The code lives "
-        f'about {STEP} s, so spend it in ONE call: python -m dev_lab.dev.forge breakglass open --code <code> '
+        f'about {STEP} s, so spend it in ONE call after a green preflight: python -m dev_lab.dev.forge breakglass '
+        'open --preflight --hours <H> --max-merges <N>, then ask, then open --code <code> '
         f'--hours <H> --max-merges <N> (preferred). Or grant first -- write {ready} to <request.json>, run python -m '
         'dev_lab.ops.consent grant <request.json> --code <code>, then open --credential <id>',
         err=True,
     )
     return 2
+
+
+def _preflight(args: argparse.Namespace, config: Mapping[str, Any], send: Send, home: Path | None,
+               preflight_: Preflight) -> int:  # fmt: skip
+    """``open --preflight``: the consent issuer and this server answer, with no code; the receipt ``--code`` needs."""
+    if args.hours is None or args.max_merges is None:
+        emit(
+            '[breakglass] open --preflight needs --hours <H> and --max-merges <N>, the bounds --code will name',
+            err=True,
+        )
+        return 2
+
+    def server_answers() -> None:
+        status, said = reached(send, 'the break-glass server')(config, {'action': 'status'})
+        if status != 0:
+            msg = f'no code asked: the break-glass server answered {status}: {said}'
+            raise ConsentRefused(msg)
+
+    try:
+        preflight_(_wave_request(args.hours, args.max_merges), checks=[server_answers], home=home)
+    except (ConsentRefused, OSError, ValueError) as refused:
+        emit(f'[breakglass] preflight refused, ask the user for no code: {refused}', err=True)
+        return 2
+    emit(f'[breakglass] preflight green: ask the user for the code now, then within {RECEIPT_FRESH_S:.0f} s run '
+         f'python -m dev_lab.dev.forge breakglass open --code <code> --hours {args.hours:g} '
+         f'--max-merges {args.max_merges}')  # fmt: skip
+    return 0
 
 
 def _granted(args: argparse.Namespace, home: Path | None, grant_: Grant) -> dict[str, Any] | None:
@@ -107,18 +140,24 @@ def wave_main(
     send: Send = ssh_send,
     home: Path | None = None,
     grant_: Grant = grant,
+    preflight_: Preflight = preflight,
 ) -> int:
     """``breakglass open|close|ack|status``: exit 0 done, 2 refused, 1 the endpoint could not be reached."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.forge breakglass', description=__doc__.splitlines()[0])
     parser.add_argument('action', choices=('open', 'close', 'ack', 'status'))
     parser.add_argument('id', nargs='?', default='', help='ack: the wave (default: the oldest unacknowledged)')
     parser.add_argument('--credential', default='', help='open: the id of the breakglass.wave credential granted')
-    parser.add_argument('--code', default='', help="open: the USER's code; grants the wave and opens it in one call")
+    parser.add_argument('--preflight', action='store_true', help='open: prove, with no code, that --code can succeed')
+    parser.add_argument(
+        '--code', default='', help="open: the USER's code (after --preflight); grants and opens at once"
+    )
     parser.add_argument('--hours', type=float, default=None, help='open --code: the wave window in hours')
     parser.add_argument('--max-merges', type=int, default=None, help='open --code: the merge cap of the wave')
     args = parser.parse_args(argv)
     if (config := _endpoint(table)) is None:
         return 2
+    if args.action == 'open' and args.preflight:
+        return _preflight(args, config, send, home, preflight_)
     request: dict[str, Any] = {'action': args.action}
     if args.action == 'open':
         if args.code:

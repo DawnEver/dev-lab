@@ -15,6 +15,14 @@ runs as it shows the plan. A refusal here spends no code: the user is never aske
 * :func:`record_preflight` / :func:`offer`: a plan is offered for a code only after ``planrun preflight`` was green
   for its digest -- every host door and every subject (incident 2026-11-16: a plan whose subject could not be
   derived was granted, and its code was wasted).
+* THE RECEIPT of a lone request (:func:`record_receipt` / :func:`require_receipt`): its preflight
+  (:func:`dev_lab.ops.consent.client.preflight`) was green for its action and subject within
+  :data:`RECEIPT_FRESH_S`; a code given in advance (``--code``, stdin) without one is refused before any network
+  call, naming :data:`PREFLIGHT_DOOR` (incidents 2026-11-20: an issuer without the handshake, a host key never
+  enrolled, a task identity changed after the request was written). :func:`fresh_receipts` is the read a Stop
+  hook takes through ``python -m dev_lab.ops.consent receipts``.
+* :func:`reached` wraps a :data:`Send` so an ssh transport failure (255) is named by its cause and door -- an unknown
+  host key is ``devhost enrol`` -- never read as an old issuer.
 
 :func:`ssh_send` is the one JSON-line transport to an endpoint table (consent issuer, break-glass server); it
 lives here so the consent client imports no ``dev_lab.dev`` client module (the former
@@ -23,6 +31,7 @@ lives here so the consent client imports no ``dev_lab.dev`` client module (the f
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -41,13 +50,21 @@ from dev_lab.ops.totp import write_private
 __all__ = [
     'CLIENT_UPGRADE',
     'ISSUER_UPGRADE',
+    'PREFLIGHT_DOOR',
     'PREFLIGHT_FRESH_S',
+    'RECEIPT_FRESH_S',
+    'SSH_FAILED',
     'Send',
+    'fresh_receipts',
     'handshake',
     'hello',
     'offer',
+    'reached',
     'read_argv',
+    'receipt_path',
     'record_preflight',
+    'record_receipt',
+    'require_receipt',
     'ssh_send',
     'subject_read',
 ]
@@ -67,6 +84,14 @@ ISSUER_UPGRADE: Final = (
 )
 #: How long a green preflight offers its plan for a code.
 PREFLIGHT_FRESH_S: Final = 3600.0
+#: How long a lone request's green preflight admits the code the user gives for it.
+RECEIPT_FRESH_S: Final = 300.0
+#: The preflight a lone request's code waits for (a verb may expose it as its own ``--preflight``).
+PREFLIGHT_DOOR: Final = 'python -m dev_lab.ops.consent preflight <request.json>'
+#: ssh's own exit status: the transport failed, the remote command never ran.
+SSH_FAILED: Final = 255
+_HOST_KEY: Final = 'Host key verification failed'
+_RECEIPTS: Final = 'receipts'
 
 
 def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
@@ -87,6 +112,31 @@ def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, st
         )
     except remote.HostKeyUndeclared as refused:
         return 255, str(refused)
+
+
+def reached(send: Send, what: str = 'the consent issuer') -> Send:
+    """*send*, refusing an ssh transport failure by its cause and door before any answer is read as the issuer's.
+
+    Raises:
+        ConsentRefused: ssh exited 255 -- an unknown host key names ``devhost enrol``, anything else the endpoint.
+
+    """
+
+    def wrapped(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
+        status, said = send(table, request)
+        if status != SSH_FAILED:
+            return status, said
+        endpoint = str(table.get('endpoint') or '(no endpoint)')
+        last = said.strip().splitlines()[-1] if said.strip() else 'no output'
+        if _HOST_KEY in said:
+            door = ("this machine does not know the host's key (never enrolled): run `python -m dev_lab.dev.devhost "
+                    'enrol` here, then preflight again')  # fmt: skip
+        else:
+            door = 'it is unreachable over ssh: check the endpoint, its identity and the network, then preflight again'
+        msg = f'no code asked: {what} {endpoint} -- {door} ({last})'
+        raise ConsentRefused(msg)
+
+    return wrapped
 
 
 def hello() -> dict[str, list[str]]:
@@ -209,3 +259,57 @@ def offer(
                'planrun preflight --plan <plan.json> --steps <steps.json>` and fix every blocker')  # fmt: skip
         raise ConsentRefused(msg)
     handshake(table, send=send, actions=[grant['action'] for grant in plan.grants])
+
+
+def receipt_path(action: str, subject: str, *, home: Path | None = None) -> Path:
+    """Where the receipt of *action* on *subject* lives: one file per pair, never the subject in its name."""
+    key = hashlib.sha256(f'{action}\n{subject}'.encode()).hexdigest()[:32]
+    return state_dir(home) / 'preflight' / _RECEIPTS / f'{key}.json'
+
+
+def record_receipt(request: Mapping[str, Any], *, home: Path | None = None, now: float | None = None) -> Path:
+    """Record that *request*'s preflight was green; the receipt's path."""
+    action, subject = str(request['action']), str(request['subject'])
+    path = receipt_path(action, subject, home=home)
+    stamp = {'action': action, 'subject': subject, 'at': time.time() if now is None else now}
+    write_private(path, json.dumps(stamp) + '\n')
+    return path
+
+
+def _age(path: Path, clock: float) -> float | None:
+    try:
+        return clock - float(json.loads(path.read_text(encoding='utf-8'))['at'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def require_receipt(request: Mapping[str, Any], *, home: Path | None = None, now: float | None = None) -> None:
+    """Refuse a code given in advance for *request* unless its preflight was green within :data:`RECEIPT_FRESH_S`.
+
+    Local only: nothing is sent.
+
+    Raises:
+        ConsentRefused: no receipt for this action and subject, or a stale one -- naming :data:`PREFLIGHT_DOOR`.
+
+    """
+    action, subject = str(request.get('action')), str(request.get('subject'))
+    age = _age(receipt_path(action, subject, home=home), time.time() if now is None else now)
+    if age is not None and 0 <= age <= RECEIPT_FRESH_S:
+        return
+    why = 'none recorded' if age is None else f'the green one is {age:.0f} s old'
+    msg = (
+        f'no code asked: no fresh preflight for {action} on {subject[:40]!r} ({why}): run `{PREFLIGHT_DOOR}` (or the '
+        f"verb's --preflight) BEFORE asking the user for a code, then pass the code within {RECEIPT_FRESH_S:.0f} s"
+    )
+    raise ConsentRefused(msg)
+
+
+def fresh_receipts(*, home: Path | None = None, now: float | None = None) -> list[dict[str, Any]]:
+    """Every receipt still fresh, oldest first: what a code may be asked for right now."""
+    folder, clock = state_dir(home) / 'preflight' / _RECEIPTS, time.time() if now is None else now
+    found = []
+    for path in sorted(folder.glob('*.json')) if folder.is_dir() else ():
+        age = _age(path, clock)
+        if age is not None and 0 <= age <= RECEIPT_FRESH_S:
+            found.append(json.loads(path.read_text(encoding='utf-8')))
+    return sorted(found, key=lambda stamp: stamp['at'])
