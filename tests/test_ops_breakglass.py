@@ -32,9 +32,10 @@ from dev_lab.dev.netverb import Report
 from dev_lab.dev.reviewgate import DeclarationUnread
 from dev_lab.ops.breakglass import BreakglassRefused, Server, merge_message
 from dev_lab.ops.breakglassforge import ClientForge
-from dev_lab.ops.config import Breakglass, OpsConfig
+from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.issuer import Issuer
+from dev_lab.ops.credentialroles import Breakglass
 from dev_lab.ops.served import app_of_forge
 from dev_lab.ops.totp import STEP
 

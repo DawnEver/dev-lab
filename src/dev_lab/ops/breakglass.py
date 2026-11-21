@@ -73,10 +73,11 @@ from dev_lab.dev.roles import TESTS, roles_of_url
 from dev_lab.ops import request as requests
 from dev_lab.ops import wave as waves
 from dev_lab.ops.breakglassforge import Forge
-from dev_lab.ops.config import Breakglass, OpsConfig
+from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.client import Register, redeem
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.credentialroles import Breakglass
 from dev_lab.ops.statelock import exclusive
 from dev_lab.ops.wavesweep import integration_at, sweep
 

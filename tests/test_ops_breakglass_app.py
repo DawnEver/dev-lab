@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from dev_lab.ops import breakglassforge, configretired
-from dev_lab.ops.config import Breakglass
+from dev_lab.ops.credentialroles import Breakglass
 from dev_lab.ops.secretplace import declared
 from dev_lab.ops.served import app_of_forge, credential_files
 from tests._ops_fixtures import GLASS, config
