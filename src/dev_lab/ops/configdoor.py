@@ -24,6 +24,10 @@ the credential's subject binds both texts (:func:`digest`) WHENEVER a family is 
 subject is a function of the reviewed source alone and an operator derives it with no session on the host
 (:func:`local_subject`); ``config tick`` parks a boundary change as ``needs-consent``.
 
+CLIENT KEYS (``[ops.config] clients``, :mod:`dev_lab.ops.clientkeys`): the same clone's development-machine files
+yield the derived ``[ops.clients]`` the candidate carries (:func:`with_clients`), so the subject covers them and
+authorising a new workstation is one reviewed line in its own host file plus one ``ops.config`` consent here.
+
 FIRST CONTACT (:func:`anchor`): a host whose live file has neither ``[ops.consent]`` nor ``[ops.consent_client]``
 can verify no credential, so the table that would let it verify one could never pass the boundary. Exactly that one
 table -- nothing else -- is then taken from the REVIEWED source (``[ops.config]``'s merged file, the trust root the
@@ -47,6 +51,7 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.netverb import run_network_verb
+from dev_lab.ops import clientkeys
 
 if TYPE_CHECKING:
     from dev_lab.ops.config import ConfigSource
@@ -54,6 +59,7 @@ if TYPE_CHECKING:
 __all__ = [
     'ACTION', 'ANCHOR', 'FAMILY_KEY', 'ROUTINE', 'Applied', 'ConfigRefused', 'Family', 'Fetched', 'anchor', 'apply',
     'boundary', 'changes', 'digest', 'fetch', 'git_with_env', 'loadable', 'local_subject', 'tick', 'unsettled_subject',
+    'with_clients',
 ]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
@@ -195,21 +201,62 @@ def fetch(source: ConfigSource, *, run: EnvRunner) -> Fetched:
             msg = f'fetching {source.source}@{source.ref} failed (git exit {status})'
             raise ConfigRefused(msg)
         texts = [_read(target, source, name) for name in (source.path, source.family.get('file'))]
+        if where := _clients_declared(texts[0]):  # the REVIEWED file's own declaration, never the live one's
+            files = {found.name: found.read_text(encoding='utf-8') for found in (target / where).glob('*.toml')}
+            texts[0] = with_clients(texts[0], files, where)
     family = Family(Path(source.family['to']), texts[1]) if source.family else None
     return Fetched(texts[0], family)
 
 
 #: ``(source url, path, ref)`` -> that file's text at the ref of the source, read off the host (a forge read).
 type SourceReader = Callable[[str, str, str], str]
+#: ``(source url, directory, ref)`` -> the file names directly in that directory at the ref, read off the host.
+type SourceLister = Callable[[str, str, str], list[str]]
 
 
-def local_subject(source: str, path: str, read: SourceReader, ref: str = 'main') -> str:
+def with_clients(text: str, files: Mapping[str, str], where: str) -> str:
+    """Host file *text* with ``[ops.clients]`` derived from *files* (the ``*.toml`` of *where*, name -> text).
+
+    Raises:
+        ConfigRefused: a file declares a malformed key, or *text* writes the derived table by hand.
+
+    """
+    try:
+        return clientkeys.fold(text, clientkeys.derive(files), where)
+    except ValueError as bad:
+        raise ConfigRefused(str(bad)) from bad
+
+
+def _clients_declared(text: str) -> str:
+    """The ``[ops.config] clients`` directory *text* declares; ``''`` when none (or *text* is not TOML yet).
+
+    Read from the CANDIDATE, so the apply that first declares ``clients`` already carries the derived keys: keyed on
+    the live table instead, that first apply would drop every workstation key the file stops listing by hand.
+    """
+    try:
+        table = tomllib.loads(text).get('ops', {}).get('config', {})
+    except tomllib.TOMLDecodeError:
+        return ''
+    return str(table.get('clients', '')) if isinstance(table, Mapping) else ''
+
+
+def _clients_of(source: str, where: str, ref: str, read: SourceReader, listed: SourceLister | None) -> dict[str, str]:
+    if listed is None:
+        msg = f'[ops.config] clients = {where!r}: the subject needs the listing of {where}/ at {ref}; none was given'
+        raise ConfigRefused(msg)
+    return {name: read(source, f'{where}/{name}', ref) for name in listed(source, where, ref) if name.endswith('.toml')}
+
+
+def local_subject(
+    source: str, path: str, read: SourceReader, ref: str = 'main', *, listed: SourceLister | None = None
+) -> str:
     """``config apply --subject`` of the host whose reviewed file is *path* in *source*, derived HERE.
 
     The host fetches what its LIVE ``[ops.config]`` declares; the candidate is assumed to declare the same table (the
     reviewed file names its own source, path, ref and family), so the table read at *ref* is followed once to the
     declared ``ref``/``path``; a declaration that still moves, or names another source, is refused: a plan that
-    changes ``[ops.config]`` itself is derived by the host. Then :func:`digest` of exactly what :func:`fetch` reads.
+    changes ``[ops.config]`` itself is derived by the host. Then :func:`digest` of exactly what :func:`fetch` reads --
+    with the derived ``[ops.clients]`` when the table declares ``clients``, read through *listed*.
 
     Raises:
         ConfigRefused: the file declares no ``[ops.config]``, names another source, or does not settle.
@@ -232,6 +279,8 @@ def local_subject(source: str, path: str, read: SourceReader, ref: str = 'main')
         if declared == (path, ref):
             family = table.get('family') or {}
             placed = Family(Path(family['to']), read(source, family['file'], ref)) if family else None
+            if where := _clients_declared(text):
+                text = with_clients(text, _clients_of(source, where, ref, read, listed), where)
             return digest(text, placed)
         path, ref = declared
     msg = f'{source}: [ops.config] does not settle on one path and ref (last {path}@{ref})'

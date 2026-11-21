@@ -37,6 +37,7 @@ from urllib.parse import urlsplit
 from lab_commons.log import emit
 
 from dev_lab.dev import accounthost, devschema, rolecheck, roles
+from dev_lab.ops import clientkeys
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
 from dev_lab.supervise.config import DEFAULTS
@@ -74,6 +75,9 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
     if accounthost.is_account(parsed):
         return [f'{path.name}: {line}' for line in accounthost.check(path, parsed, shared)]
     found = rolecheck.host_refusals(path.name, parsed)
+    if clientkeys.TABLE in parsed.get('ops', {}):
+        found.append(f'{path.name}: [ops.{clientkeys.TABLE}] is derived by config fetch ([ops.config] clients); '
+                     f'declare a machine key as [dev] {clientkeys.DEV_KEY} in its own host file')  # fmt: skip
     if 'dev' in parsed:
         found += [f'{path.name}: {line}' for line in devschema.check(parsed, shared)]
         if 'ssh' in parsed:
