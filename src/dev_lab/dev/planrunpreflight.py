@@ -57,6 +57,7 @@ __all__ = [
     'declared_at',
     'host_ready',
     'issuer_subject',
+    'listed_at',
     'offered',
     'preflight',
     'protect_target',
@@ -125,6 +126,20 @@ def declared_at(forge: str, repo: str, ref: str) -> str:
     return manifest_at(client_for(Path.cwd(), url=f'https://{forge}/{repo}.git'), ref)
 
 
+def listed_at(source: str, where: str, ref: str) -> list[str]:
+    """The file names directly in directory *where* at *ref* of the forge repo at *source*, read here."""
+    client = client_for(Path.cwd(), url=source)
+    try:
+        answer: Any = client.call('GET', f'{client.repo}/contents/{where}?ref={ref}')
+    except ForgeCallFailed as failed:
+        msg = f'{where}/ at {ref} cannot be listed: {failed}'
+        raise DeclarationUnread(msg) from failed
+    if not isinstance(answer, list):
+        msg = f'{where} at {ref} is not a directory'
+        raise DeclarationUnread(msg)
+    return [str(entry['name']) for entry in answer if isinstance(entry, dict) and entry.get('type') == 'file']
+
+
 def text_at(source: str, path: str, ref: str) -> str:
     """*path* at *ref* of the forge repo at *source* (an https clone URL), read here through the forge client."""
     return file_at(client_for(Path.cwd(), url=source), path, ref)
@@ -160,13 +175,16 @@ class Readers:
 
     declared: Declared = declared_at
     text: SourceReader = text_at
+    listed: configdoor.SourceLister = listed_at
     config_source: Callable[[], str] = devhost.config_source
     issued: IssuerSubject = issuer_subject
 
 
-def config_subject(host: str, read: SourceReader, source: str, ref: str = 'main') -> str:
+def config_subject(
+    host: str, read: SourceReader, source: str, ref: str = 'main', *, listed: configdoor.SourceLister = listed_at
+) -> str:
     """The :data:`CONFIG_ACTION` subject of *host*'s reviewed file (``hosts/<host>.toml`` in *source*), derived here."""
-    return configdoor.local_subject(source, devhost.host_file(host), read, ref)
+    return configdoor.local_subject(source, devhost.host_file(host), read, ref, listed=listed)
 
 
 def _derivable(step: Step) -> bool:
@@ -177,7 +195,7 @@ def _local_subject(step: Step, readers: Readers) -> tuple[str, str]:
     """``(subject, where it was read)`` of a :func:`_derivable` step."""
     if step.config_host:
         source = readers.config_source()
-        return config_subject(step.config_host, readers.text, source), source
+        return config_subject(step.config_host, readers.text, source, listed=readers.listed), source
     repo, ref = protect_target(step.argv)
     read = partial(readers.declared, step.forge, repo)
     return forgeprotection.local_subject(repo, ref, step.forge, read), step.forge

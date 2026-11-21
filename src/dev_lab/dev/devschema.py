@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from dev_lab.dev.venvpath import running_interpreter
+from dev_lab.ops import clientkeys
 
 __all__ = [
     'BRIDGE',
@@ -57,6 +58,7 @@ VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': st
 SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
     'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict, 'apps': list,
+    'client_keys': list,
 }  # fmt: skip
 #: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
 #: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
@@ -71,8 +73,10 @@ HOOK_MODES: Final = ('enforce', 'warn')
 #: (:mod:`dev_lab.dev.devprofile`).
 FAMILY_ONLY: Final = ('default', 'apps')
 #: ``[dev]`` keys that are one machine's facts and never the family's: ``channels`` -- session channel source ->
-#: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority).
-HOST_ONLY: Final = ('channels',)
+#: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority);
+#: ``client_keys`` -- the machine's ssh client public keys, from which a server derives who may reach its approval
+#: accounts (:mod:`dev_lab.ops.clientkeys`).
+HOST_ONLY: Final = ('channels', 'client_keys')
 #: ``[dev]`` keys the family declares for every machine and a host may OVERRIDE with a different value: ``forges`` --
 #: the workstation login is one person's, so another person's machine names its own. A host restating the family's
 #: value is still refused: one fact, one place.
@@ -204,6 +208,8 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
         found.append(f'{where}.hooks {table["hooks"]!r} is not one of {list(HOOK_MODES)}')
     if 'channels' in table:
         found += channel_defects(table['channels'], f'{where}.channels')
+    if 'client_keys' in table:
+        found += clientkeys.defects(table['client_keys'], f'{where}.client_keys')
     found += _named_lists(table, 'detect', where, 'glob patterns')
     found += _resources(table, where)
     vendors = table.get('vendors') if isinstance(table.get('vendors'), dict) else {}

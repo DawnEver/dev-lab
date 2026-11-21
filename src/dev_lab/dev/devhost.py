@@ -34,6 +34,8 @@ dev-lab`` checkout's branch with ``ref``; the ``SessionStart`` notice (:func:`no
 ``session-start`` is that notice's ONE trigger, wired once per session (:data:`dev_lab.dev.agent_wiring.WIRING`):
 machine-file drift and an unfilled install home cannot change within a turn, so no ``Stop`` re-reads them.
 
+``python -m dev_lab.dev.devhost bringup --check`` -- the ONE preflight of a new or migrated workstation
+(:mod:`dev_lab.dev.bringup`): every wall with its door, and which doors then spend a code;
 ``python -m dev_lab.dev.devhost drift [--from CLONE]`` -- read only, exit 1 on drift: each drifted KEY with the layer
 owning it and that layer's door, then the family-repo census (:func:`dev_lab.dev.familyrepos.census`);
 ``python -m dev_lab.dev.devhost local set|unset <table>.<key> [value]`` -- the ONE door into the local layer
@@ -58,7 +60,16 @@ from typing import Any, Final
 from lab_commons import config as machineconfig
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devprofile, familyrepos, forgecredential, forgeenrol, tomlleaves, vendordetect
+from dev_lab.dev import (
+    accounthost,
+    bringup,
+    devprofile,
+    familyrepos,
+    forgecredential,
+    forgeenrol,
+    tomlleaves,
+    vendordetect,
+)
 from dev_lab.dev._machinefile import dumps, merged, render_value
 from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
@@ -214,7 +225,15 @@ def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
     clone, host = clone or Path(own['source']), own['host']
     if not (clone / 'family.toml').is_file():
         return [f'the config source {clone.as_posix()} is not a clone here: name one with drift --from <clone>']
-    rendered, have = tomlleaves.leaves(tomllib.loads(render(clone, host, live))), tomlleaves.leaves(live)
+    try:
+        text = render(clone, host, live)
+    except (
+        LookupError,
+        TypeError,
+        ValueError,
+    ) as unrenderable:  # a wall is a drift line naming its door, never a crash
+        return [f'the machine file cannot be rendered: {unrenderable}']
+    rendered, have = tomlleaves.leaves(tomllib.loads(text)), tomlleaves.leaves(live)
     found = [
         f'{tomlleaves.dotted(path)} is {"absent" if path not in have else "not the render"} -- '
         f'{_owner(path, clone, host)}'
@@ -251,12 +270,12 @@ def _owner(path: tuple[str, ...], clone: Path, host: str) -> str:
 def _layered(clone: Path, host: str) -> set[str]:
     """The tables the family and host layers render; every other table is local.
 
-    Asked of the LAYERS alone: a local value a layer reads (the bridge's ``[tools] python``) is stood in for, so the
+    Asked of the LAYERS alone: a local value a layer reads (the bridge's ``[repos] dev-lab``) is stood in for, so the
     question never refuses for the very local key ``local set`` is about to supply (2026-11-20).
     """
-    stand_in = {devprofile.TOOLS_TABLE: {'python': 'python'}}
+    stand_in = {familyrepos.LOCAL_TABLE: {devprofile.BRIDGE_CHECKOUT: '/dev-lab'}}
     family = {k for k in _read(_sources(clone, host)[0]) if k != 'dev'}
-    return (set(tomllib.loads(render(clone, host, stand_in))) | family) - {OWN_TABLE, devprofile.TOOLS_TABLE}
+    return (set(tomllib.loads(render(clone, host, stand_in))) | family) - {OWN_TABLE, familyrepos.LOCAL_TABLE}
 
 
 def notice(live: Mapping[str, Any] | None = None) -> str | None:
@@ -407,7 +426,7 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    """The verbs: drift (exit 1), render (--write backs up), detect, session-start, channels, use-store, enrol."""
+    """The verbs: drift, render, detect, session-start, channels, use-store, enrol, bringup (each its help)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -425,6 +444,10 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
     forgecredential.add_use_store(verbs)
     forgeenrol.add_enrol(verbs)
+    checking = verbs.add_parser(
+        'bringup', help='list every wall a new or migrated workstation hits, each with its door'
+    )
+    checking.add_argument('--check', action='store_true', required=True, help='read only; exit 1 while a wall stands')
     setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
     local_verbs = setting.add_subparsers(dest='local_verb', required=True)
     one = local_verbs.add_parser('set', help='set <table>.<key> to <value>')
@@ -447,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         'channels': lambda: _channels(live),
         'drift': lambda: _drift(path, live, args.clone),
         'use-store': lambda: forgecredential.use_declared(declared_by(live.get(OWN_TABLE, {})), args.host),
+        'bringup': lambda: bringup.main(live),
         'enrol': lambda: forgeenrol.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
     }
     if args.verb in plain:

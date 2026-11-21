@@ -31,8 +31,10 @@ session_reach = { lead = ["verification"] }
 """
 
 HOST = '[dev]\nhpc = ["research"]\nos = "windows"\n'
-#: The machine's stable tool interpreter, a local-only fact (#782).
-LIVE = {'tools': {'python': '/opt/tools/bin/python'}}
+#: The machine's dev-lab checkout, the local fact the bridge interpreter derives from (#782, D96).
+LIVE = {'repos': {'dev-lab': '/opt/dev-lab'}}
+#: The derived bridge interpreter per declared os: the checkout's ``.venv`` pointer, never resolved.
+BRIDGE = {'ws': '/opt/dev-lab/.venv/Scripts/python.exe', 'stranger': '/opt/dev-lab/.venv/bin/python'}
 
 
 def _clone(tmp_path: Path, family: str = FAMILY) -> Path:
@@ -70,16 +72,16 @@ def test_bridge_hpc_renders_on_every_dev_machine_from_the_family(tmp_path: Path)
     clone = _clone(tmp_path)
     for host in ('ws', 'stranger'):
         hpc = tomllib.loads(devhost.render(clone, host, LIVE))['bridge']['hpc']
-        assert hpc['command'] == [LIVE['tools']['python'], *devprofile.HPC_READ_DOOR]
+        assert hpc['command'] == [BRIDGE[host], *devprofile.HPC_READ_DOOR]
         assert hpc['cadence_hours'] == 6
 
 
-def test_the_bridge_interpreter_is_the_machines_declared_one_never_the_renderers(
+def test_the_bridge_interpreter_is_derived_from_the_dev_lab_checkout_never_the_renderers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#782: two renders from different interpreters agree byte for byte; an undeclared one is refused by name.
+    """#782, D96: two renders from different interpreters agree byte for byte; no checkout is refused by name.
 
-    PLANTED CONTROL: the same family and host with no ``[tools] python`` is refused, naming the local door.
+    PLANTED CONTROL: the same family and host with no ``[repos] dev-lab`` is refused, naming the local door.
     """
     clone = _clone(tmp_path)
     renders = []
@@ -87,8 +89,22 @@ def test_the_bridge_interpreter_is_the_machines_declared_one_never_the_renderers
         monkeypatch.setattr(devprofile, 'running_interpreter', lambda caller=caller: caller)
         renders.append(devhost.render(clone, 'ws', LIVE))
     assert renders[0] == renders[1]
-    with pytest.raises(ValueError, match=r'local set tools\.python'):
+    with pytest.raises(ValueError, match=r'local set repos\.dev-lab'):
         devhost.render(clone, 'ws', {})
+
+
+def test_drift_names_an_unrenderable_machine_file_never_crashes(tmp_path: Path) -> None:
+    """2026-11-20: ``devhost drift`` crashed on the bridge interpreter's refusal; it is one line naming the door.
+
+    PLANTED CONTROL: the same machine with its dev-lab checkout set drifts on no render line.
+    """
+    clone = _clone(tmp_path)
+    own = {'devhost': {'host': 'ws', 'source': str(clone)}}
+    found = devhost.drift(own)
+    assert found[0].startswith('the machine file cannot be rendered:'), found
+    assert 'local set repos.dev-lab' in found[0]
+    healed = devhost.drift({**own, **LIVE})
+    assert not any('cannot be rendered' in line for line in healed), healed
 
 
 def test_without_a_declared_default_an_unknown_host_is_refused_by_name(tmp_path: Path) -> None:
@@ -131,31 +147,30 @@ def test_the_enrolment_door_names_the_config_sources_own_checkout_loop() -> None
     assert text.rstrip().endswith('render --host WSX --write')
 
 
-def test_local_set_heals_the_missing_bridge_interpreter_it_names(
+def test_local_set_heals_the_missing_checkout_the_bridge_refusal_names(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Measured 2026-11-20: the refusal named `local set tools.python`, and that door refused itself.
+    """Measured 2026-11-20: a refusal's door refused itself; the door it names now sets the key it names.
 
-    PLANTED CONTROL: render with the key still unset is refused by name and writes nothing.
+    PLANTED CONTROL: render with the checkout still unset is refused by name and writes nothing.
     """
     clone = _clone(tmp_path)
     rendered = tomllib.loads(devhost.render(clone, 'ws', LIVE))
-    rendered.pop('tools')
+    rendered.pop('repos')
     rendered.pop('bridge')
     machine = tmp_path / 'machine.toml'
     machine.write_text(devhost.dumps(rendered), encoding='utf-8')
     before = machine.read_text(encoding='utf-8')
     backups = str(tmp_path / 'b')
     code = devhost.main(['--machine', str(machine), 'render', '--write', '--backups', backups])
-    assert code == 2, 'a render missing the local interpreter is refused, never a traceback'
-    assert r'local set tools.python' in capsys.readouterr().err
+    assert code == 2, 'a render missing the local checkout is refused, never a traceback'
+    assert 'local set repos.dev-lab' in capsys.readouterr().err
     assert machine.read_text(encoding='utf-8') == before, 'a refused render writes nothing'
-    python = '/opt/tools/bin/python'
-    code = devhost.main(['--machine', str(machine), 'local', 'set', 'tools.python', python, '--backups', backups])
+    checkout = (tmp_path / 'dev-lab').as_posix()
+    code = devhost.main(['--machine', str(machine), 'local', 'set', 'repos.dev-lab', checkout, '--backups', backups])
     assert code == 0, 'the door the refusal names sets the key it names'
     healed = tomllib.loads(machine.read_text(encoding='utf-8'))
-    assert healed['tools']['python'] == python
-    assert healed['bridge']['hpc']['command'][0] == python
+    assert healed['bridge']['hpc']['command'][0] == f'{checkout}/.venv/Scripts/python.exe'
 
 
 def test_the_render_never_copies_a_family_only_storage_fact(tmp_path: Path) -> None:

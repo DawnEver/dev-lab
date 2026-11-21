@@ -29,6 +29,7 @@ from typing import Any, Final
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.taskkeys import require_bundle
+from dev_lab.ops import clientkeys
 from dev_lab.ops.backuprole import Backup, Offsite
 from dev_lab.ops.caddy import Caddy, Status
 from dev_lab.ops.configretired import refuse as refuse_retired
@@ -137,6 +138,10 @@ class ConfigSource:
 
     ``family``, ``{file, to}``: the family file (``file`` in the same source, at the same ref) the door also puts at
     the absolute ``to`` on this host, where ``[ops.judge.family] source`` reads it (:mod:`.configdoor`).
+
+    ``clients``: a directory of the same source whose development-machine files declare ``[dev] client_keys``; the
+    fetch derives them into the candidate's ``[ops.clients]`` (:mod:`.clientkeys`), reading the declaration from the
+    fetched candidate itself, so the first apply that declares it already carries the keys. Empty: none derived.
     """
 
     source: str
@@ -145,6 +150,7 @@ class ConfigSource:
     ref: str = 'main'
     schedule: str = ''
     family: Mapping[str, str] = field(default_factory=dict)
+    clients: str = ''
 
     def __post_init__(self) -> None:
         """Refuse a family declaration that is not exactly ``{file, to}`` with ``to`` absolute."""
@@ -307,7 +313,7 @@ class OpsConfig:
 OPS_KEYS: Final = frozenset({
     'home', 'python', 'repos', 'environment_file',
     'promote', 'breakglass', 'consent', 'consent_client', 'backup', 'access', 'caddy', 'supervise', 'judge',
-    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres',
+    'upgrade', 'probe', 'config', 'forge', 'status', 'postgres', clientkeys.TABLE,
 })  # fmt: skip
 
 
@@ -455,6 +461,7 @@ def load(
         status=_role(Status, ops.get('status'), '[ops.status]'),
         postgres=_role(Postgres, ops.get('postgres'), '[ops.postgres]'),
     )
+    found = _with_clients(found, ops.get(clientkeys.TABLE))
     if found.status is not None and (found.caddy is None or found.supervise is None):
         msg = (
             '[ops.status] needs [ops.caddy] (the allowlist the card is served behind) and [ops.supervise] '
@@ -462,6 +469,30 @@ def load(
         )
         raise ValueError(msg)
     return found
+
+
+def _with_clients(found: OpsConfig, table: object) -> OpsConfig:
+    """*found* with the derived ``[ops.clients] keys`` (:mod:`.clientkeys`) added to the break-glass and consent keys.
+
+    Raises:
+        ValueError: the table is not exactly ``{keys}`` of public key lines.
+
+    """
+    if table is None:
+        return found
+    if not isinstance(table, dict) or set(table) != {'keys'} or not isinstance(table['keys'], list):
+        msg = f'[ops.{clientkeys.TABLE}] is the derived {{keys = [...]}} only'
+        raise ValueError(msg)
+    if table['keys'] and (bad := clientkeys.defects(table['keys'], f'[ops.{clientkeys.TABLE}] keys')):
+        raise ValueError('; '.join(bad))
+    derived = tuple(table['keys'])
+
+    def joined(own: tuple[str, ...]) -> tuple[str, ...]:
+        return own + tuple(key for key in derived if key not in own)
+
+    breakglass = replace(found.breakglass, keys=joined(found.breakglass.keys)) if found.breakglass else None
+    consent = replace(found.consent, keys=joined(found.consent.keys)) if found.consent else None
+    return replace(found, breakglass=breakglass, consent=consent)
 
 
 def _backup(table: object) -> Backup | None:

@@ -223,7 +223,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 
 | file | where | owns | reader |
 |---|---|---|---|
-| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`), `[tools]` | `lab_commons.config`, `lab_commons.home` |
+| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
 | family layer | `family.toml` in the host-configuration repo | `[[hpc.grant]]`, AI spend caps, the review month -- a machine file restating a key is refused | `lab_commons.config` `[family]` |
 | repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows` |
 | host file | `/etc/dev-lab/supervise.toml`, reviewed as `hosts/<server>.toml` | `[ops.*]`, `[components.*]`, `[alerts]`, `[cycle]` | `dev_lab.ops.config`, `dev_lab.supervise.config` |
@@ -240,6 +240,17 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 ## 8. Setting up
 
 ### A new development workstation
+
+**Start and end with the one preflight:** `python -m dev_lab.dev.devhost bringup --check` (`dev_lab.dev.bringup`)
+lists every wall -- config-source clone, enrolment (`hosts/<machine>.toml`), the derived bridge interpreter, machine
+file drift, the machine's ssh client key declared in its host file's `[dev] client_keys`, the consent issuer (host
+key, key admitted, version handshake), the forge credential -- each with its door, and names last the walls whose
+door spends a code. A code is asked only once every no-code wall is green.
+
+The approval logins (`breakglass@`, `consent@`) accept the machine because its host file declares its key: a host
+whose `[ops.config]` declares `clients = "<dir>"` derives `[ops.clients]` from every `<dir>/*.toml` `[dev]
+client_keys` at fetch (`dev_lab.ops.clientkeys`), and `config apply` (one `ops.config` code) then `install` write
+the key files. No server lists a workstation key by hand.
 
 1. Install `git`, `uv`, `node` and `codex` -- [adding a workstation](adding-a-workstation.md#deploy-step-by-step).
 2. Clone each member beside its siblings and record it in the machine file's `[repos]` (name -> absolute path).

@@ -261,7 +261,9 @@ def _parser() -> argparse.ArgumentParser:
 
 def _subject(args: argparse.Namespace, readers: Readers) -> str:
     if args.config:
-        return config_subject(args.config, readers.text, readers.config_source(), args.ref or 'main')
+        return config_subject(
+            args.config, readers.text, readers.config_source(), args.ref or 'main', listed=readers.listed
+        )
     if not args.repo:
         msg = '--forge needs --repo owner/name'
         raise ConsentRefused(msg)
