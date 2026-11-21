@@ -16,6 +16,7 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.forgebreakglass import merge_main, wave_main
 from dev_lab.dev.forgecli import NOUNS, PR_VERBS
 from dev_lab.dev.forgework import Client
+from dev_lab.ops.consent import door as consent_door
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import ssh_send
 
@@ -191,6 +192,9 @@ def test_ssh_send_goes_through_the_one_remote_transport(monkeypatch: pytest.Monk
         return 0, 'ok'
 
     monkeypatch.setattr(remote, 'piped', piped)
+    monkeypatch.setattr(consent_door, 'section', lambda _name: {'host_keys': {'h': 'ssh-ed25519 AAAAkey'}})
     assert ssh_send({'endpoint': 'c@h', 'identity': 'k'}, {'a': 1}) == (0, 'ok')
     assert ssh_send({'endpoint': 'c@h', 'known_hosts': 'kh'}, {'a': 1}) == (0, 'ok')
-    assert seen == [('c@h', '{"a": 1}\n', 'k', None), ('c@h', '{"a": 1}\n', None, 'kh')]
+    assert [row[:3] for row in seen] == [('c@h', '{"a": 1}\n', 'k'), ('c@h', '{"a": 1}\n', None)]
+    assert seen[0][3]  # SSH-HOST-KEY-DECLARED: the declared key's known_hosts, never ssh's own default
+    assert seen[1][3] == 'kh'

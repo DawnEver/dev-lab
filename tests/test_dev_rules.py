@@ -44,6 +44,7 @@ from dev_lab.dev.rules import (
 _IDS = frozenset(
     {
         'SCHEDULER-ONLY-FOR-SERVING',
+        'SSH-HOST-KEY-DECLARED',
         'AGENT-GUARD',
         'ALL-EXTRAS-REFUSED',
         'BAR-IS-A-CONSTANT',

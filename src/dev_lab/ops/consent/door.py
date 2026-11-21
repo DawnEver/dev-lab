@@ -29,6 +29,8 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.config import section
+
 from dev_lab.dev import remote
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.ops.consent.actions import ACTIONS
@@ -68,11 +70,23 @@ PREFLIGHT_FRESH_S: Final = 3600.0
 
 
 def ssh_send(table: Mapping[str, Any], request: dict[str, Any]) -> tuple[int, str]:
-    """Send *request* as one JSON line to *table*'s ``endpoint`` over ``ssh -T``; ``(exit status, its output)``."""
+    """Send *request* as one JSON line to *table*'s ``endpoint`` over ``ssh -T``; ``(exit status, its output)``.
+
+    The endpoint's host key is checked strictly: against *table*'s ``known_hosts`` file where a host table names
+    one, else against the machine file's ``[ssh] host_keys`` declaration (``remote.HOST_KEY_RULE``). A missing or
+    placeholder declaration answers status 255 with the named refusal; ssh never runs.
+    """
     identity = str(table['identity']) if table.get('identity') else None
-    known_hosts = str(table['known_hosts']) if table.get('known_hosts') else None
-    line = json.dumps(request) + '\n'
-    return remote.piped(str(table['endpoint']), line, identity=identity, known_hosts=known_hosts, timeout_s=180)
+    endpoint, line = str(table['endpoint']), json.dumps(request) + '\n'
+    if table.get('known_hosts'):
+        return remote.piped(endpoint, line, identity=identity, known_hosts=str(table['known_hosts']), timeout_s=180)
+    declared = section('ssh').get('host_keys')
+    try:
+        return remote.declared_piped(
+            endpoint, line, identity=identity, timeout_s=180, host_keys=declared if isinstance(declared, dict) else {}
+        )
+    except remote.HostKeyUndeclared as refused:
+        return 255, str(refused)
 
 
 def hello() -> dict[str, list[str]]:

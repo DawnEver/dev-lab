@@ -128,6 +128,14 @@ def test_an_ssh_key_or_value_off_the_schema_is_refused(tmp_path: Path, extra: st
     assert named in found[0]
 
 
+def test_a_host_key_or_its_unfilled_placeholder_is_declarable(tmp_path: Path) -> None:
+    """SSH-HOST-KEY-DECLARED: the placeholder passes the check and is refused where the door uses it."""
+    key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
+    for value in (key, 'FILL-FROM-A-TRUSTED-SOURCE'):
+        text = f'{DEV_HOST}\n[ssh.host_keys]\n"node.example" = "{value}"\n'
+        assert check_host(_write(tmp_path, 'G.toml', text)) == []
+
+
 def test_a_dev_host_file_carrying_serve_is_refused(tmp_path: Path) -> None:
     """A workstation never serves a merge's parts (user ruling 2026-11-16); PLANTED CONTROL: the same card without."""
     assert check_host(_write(tmp_path, 'G.toml', DEV_HOST + '\n' + SSH_ROUTES)) == []
