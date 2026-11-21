@@ -21,12 +21,15 @@ with git's credential helper pointed at ONLY that file, must answer as ``--login
 forge's line replaced, mode 0600, atomic ``mv``. A refusal deletes the staged file and leaves the store untouched.
 ONE LINE PER (HOST, LOGIN) (2026-11-20): another login's line on the same host is kept, so a verification account
 holds its verdict-posting login and the config source's reader (``[hpc.roles.<role>] config_reader``) side by side.
+An unnamed request gets the host's FIRST line, so the login it is for goes first and a ``config_reader`` reached
+only through a url naming it goes last (:func:`named_login`; measured 2026-11-21, the reader answered the serve).
 ``--login L --drop-host H`` removes exactly L's line for H through the same rewrite and backup -- the repair door.
 After a placement, git's ``store`` helper is set when NO global helper is configured (one already set is kept):
 a store line git never consults reads as anonymous (measured 2026-11-20 on three research accounts).
 
 READ BACK BEFORE IT SAYS SO (2026-11-20). After the rewrite the forge's ``auth role`` runs again through git's own
-helper (no staged file): only when the STORED line answers as ``--login`` does the door print ``verified: ...`` and
+helper (no staged file) -- for a named login, git's fill for a request naming it must return the token -- only when
+the STORED line answers as ``--login`` does the door print ``verified: ...`` and
 exit 0; anything else (a failover node whose write landed nowhere) exits 2 naming what answered. ``--from-output
 <name>`` reads the token from the consent output ``outputs/<name>`` (:func:`dev_lab.dev.planrunsteps.stdout_path`)
 instead of stdin and deletes that file ONLY after a verified placement -- a caller never removes a token by hand.
@@ -44,6 +47,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
+from urllib.parse import urlsplit
 
 from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
@@ -54,6 +58,7 @@ from dev_lab.dev.credstore import (
     CredentialRefused,
     DeclaredForge,
     digest,
+    named_fill_command,
     place_verified,
     read_forge,
     rewrite_command,
@@ -69,6 +74,7 @@ __all__ = [
     'declared_logins',
     'drop_host',
     'main',
+    'named_login',
     'place_credential',
     'unreachable',
 ]
@@ -112,6 +118,16 @@ def _refusal(grant: Grant | None, account: str, *, login: str, forge: DeclaredFo
         also = f' (config source: {config_reader!r})' if config_reader else ''
         return f"{user}'s role {division.role_of(user)!r} reads as {reader!r}{also}, not {login!r}"
     return ''
+
+
+def named_login(division: Division, user: str, login: str) -> bool:
+    """Whether *user* reaches *login* only through a url naming it.
+
+    That is its role's ``config_reader`` when it is not the login an unnamed request is for (the role's
+    ``reader``; on a writer account, the writer).
+    """
+    table = division.roles.get(division.role_of(user), {})
+    return login == str(table.get('config_reader') or '') != str(table.get('reader') or '')
 
 
 def unreachable(account: str, grants: Sequence[Grant]) -> str:
@@ -163,7 +179,10 @@ def place_credential(
             say(f'credential: {target}')
             return 2
         role = in_checkout(target, ['-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', repo])
-        refusal, backup = place_verified(shell, login=login, token=token, repo=repo, role=role, stamp=stamp)
+        named = named_login(division, user, login)
+        refusal, backup = place_verified(
+            shell, login=login, token=token, repo=repo, role=role, stamp=stamp, first=not named
+        )
     except (RuntimeError, OSError, ValueError) as failed:
         say(f'credential: refused -- {user}: {failed}')
         return 2
@@ -172,7 +191,11 @@ def place_credential(
         return 2
     shell(_STORE_HELPER, None)  # a store line git never consults reads as anonymous (measured 2026-11-20)
     try:
-        stored = str(json.loads(shell(role, None) or '{}').get('login') or '')
+        if named:  # its url names it; the forge's ``auth role`` asks for the host alone
+            host = urlsplit(repo).hostname or ''
+            stored = login if shell(named_fill_command(host, login), None).strip() == token else 'another token'
+        else:
+            stored = str(json.loads(shell(role, None) or '{}').get('login') or '')
     except (RuntimeError, OSError, ValueError) as failed:
         stored = f'an error ({failed})'
     if stored != login:
