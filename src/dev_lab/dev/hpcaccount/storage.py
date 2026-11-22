@@ -38,7 +38,8 @@ from lab_commons.hpc.grants import Grant
 from lab_commons.hpc.layout import ROOT_VAR
 from lab_commons.log import emit
 
-from dev_lab.dev.diskusage import MMLSQUOTA
+from dev_lab.dev import quotawatch
+from dev_lab.dev.diskusage import MMLSQUOTA, parse_mmlsquota, parse_quota
 from dev_lab.dev.hpcaccount.division import division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.spec import MARK
@@ -70,6 +71,12 @@ QUOTA: Final = (
     '[ -n "$kept" ] || { kept="quota by ${tool%% *} (exit $rc: over quota, or the tool failed):"; held="$out"; }; '
     'done; [ -n "$kept" ] && { echo "$kept"; echo "$held"; exit 0; }; '
     'echo "quota: none of mmlsquota, quota, lfs answered on this host" )'
+)
+#: The quota in KB, for :func:`usage_of`: ``mmlsquota`` (each of :data:`MMLSQUOTA`), else ``quota -w``; an over-quota
+#: exit is still the answer, so no exit status is read.
+USAGE: Final = (
+    '( for tool in ' + ' '.join(MMLSQUOTA) + '; do command -v "$tool" >/dev/null 2>&1 && '
+    '{ "$tool" 2>/dev/null; exit 0; }; done; quota -w 2>/dev/null; true )'
 )
 #: The remedy of a cluster whose login hosts do not answer: it is reached only from its own network.
 UNREACHABLE: Final = (
@@ -141,6 +148,12 @@ def _too_slow(slow: subprocess.TimeoutExpired) -> str:
     )
 
 
+def usage_of(user: str, text: str) -> list[str]:
+    """*user*'s ONE usage-vs-quota line (files and bytes with headroom) and its named warning, from :data:`USAGE`."""
+    usage = parse_mmlsquota(text) or parse_quota(text)
+    return quotawatch.lines(usage, quotawatch.declared_lines(), who=user)
+
+
 def ticks_command() -> str:
     """The shell line that counts the deploy's tick lines in the account's crontab (0: serve does not tick)."""
     return f"crontab -l 2>/dev/null | grep -c -F '{MARK}' || true"
@@ -179,7 +192,11 @@ def _one(grant: Grant, shell: Runner, pin: Pin, *, apply: bool, census: bool, se
     # the deploy writes the crontab on its declared host; another login host's crontab says nothing about it
     ticks = pin(grant, target.host)(ticks_command(), None).strip().splitlines()
     count = ticks[-1] if ticks else '0'
-    lines = [f'{grant.user}: quota', *shell(QUOTA, None).rstrip().splitlines()]
+    lines = [
+        f'{grant.user}: quota',
+        *shell(QUOTA, None).rstrip().splitlines(),
+        *usage_of(grant.user, shell(USAGE, None)),
+    ]
     lines.append(tick_line(grant.user, target.host, count, serves=serves))
     if census:
         lines.append(f'{grant.user}: census (files, path; most files first)')

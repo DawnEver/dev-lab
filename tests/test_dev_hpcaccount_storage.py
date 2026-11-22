@@ -321,3 +321,25 @@ def test_a_quota_tool_that_exits_non_zero_over_quota_is_still_the_answer() -> No
 def test_mmlsquota_is_looked_for_where_the_accounts_retention_reads_it() -> None:
     for candidate in MMLSQUOTA:
         assert f'"{candidate} --block-size auto"' in storage.QUOTA
+
+
+#: ``quota -w`` in KB: files past 95% of their soft quota, bytes far from theirs.
+_QUOTA_W = 'Disk quotas for user alice\n  /home  1000  1000000  1100000  1990000*  2000000  2020000'
+
+
+def test_every_account_gets_one_usage_vs_quota_line_naming_the_line_it_reached() -> None:
+    said = storage.usage_of('alice', _QUOTA_W)
+    assert said[0].startswith('alice: usage files 1990000/2000000 (99.5%), headroom 10000 files; bytes ')
+    assert said[1].startswith('alice: QUOTA-FULL: files at 99.5%')
+
+
+def test_planted_control_an_account_well_under_is_one_line_and_unread_says_so() -> None:
+    calm = _QUOTA_W.replace('1990000*', '200000')
+    assert len(storage.usage_of('bob', calm)) == 1
+    assert storage.usage_of('bob', 'no tool') == [f'bob: {storage.quotawatch.UNREAD}']
+
+
+def test_the_fleet_read_prints_the_usage_line_per_account() -> None:
+    _code, said, _seen = _run()
+    assert any(line.startswith('alice: usage') for line in said)
+    assert any(line.startswith('bob: usage') for line in said)
