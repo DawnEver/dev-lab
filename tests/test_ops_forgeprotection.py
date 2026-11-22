@@ -10,6 +10,7 @@ import argparse
 import json
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from _protect_fakes import GITEA_TEXT, FakeGitea
@@ -17,8 +18,9 @@ from _protect_fakes import GITEA_TEXT, FakeGitea
 from dev_lab.dev import forgeprotect
 from dev_lab.dev.forge import Forge as Remote
 from dev_lab.dev.forgefailure import Answer
-from dev_lab.ops import forgeaccounts, forgeprotection
-from dev_lab.ops.config import Forge
+from dev_lab.dev.roles import ROLES, ROLES_ENV
+from dev_lab.ops import forgeaccounts, forgeprotection, redeemverbs
+from dev_lab.ops.config import ConfigSource, Forge
 from dev_lab.ops.consent.actions import ACTIONS, SINGLE
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.giteaadmin import ForgeRefused, local_api
@@ -221,3 +223,75 @@ def test_the_local_subject_is_the_one_the_host_prints(tmp_path: Path, capsys: py
     assert forgeprotection.local_subject('owner/alpha', 'main', 'gitea.example', texts.__getitem__) != on_host
     assert forgeprotection.local_subject('owner/alpha', REF, 'gitea.example', lambda _ref: other) != on_host
     assert forgeprotection.local_subject('owner/alpha', 'main', 'gitea.example', lambda _ref: GITEA_TEXT) != on_host
+
+
+# -- the roles a host renders under: the family file its own config places --------------------------------------------
+
+#: A family file binding every role of a Gitea repo to the forge's CI: the kinds every test here carries.
+FAMILY = '[roles.gitea]\n' + ''.join(f'{role} = "ci"\n' for role in ROLES)
+
+
+def _source(tmp_path: Path, *, family: bool = True) -> ConfigSource:
+    """A host's ``[ops.config]``; its family ``to`` lies under *tmp_path* (a stand-in: this box's path has a drive)."""
+    if not family:
+        return ConfigSource('https://gitea.example/owner/hosts.git', 'hosts/h.toml', '/etc/token')
+    placed = {'file': 'family.toml', 'to': str(tmp_path / 'etc' / 'family.toml')}
+    return SimpleNamespace(family=placed)  # type: ignore[return-value]
+
+
+def _placed(tmp_path: Path, text: str = FAMILY) -> ConfigSource:
+    source = _source(tmp_path)
+    Path(source.family['to']).parent.mkdir(parents=True)
+    Path(source.family['to']).write_text(text, encoding='utf-8')
+    return source
+
+
+def test_the_host_renders_under_the_family_file_its_config_places_not_the_logins_machine_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Measured 2026-11-22: ``sudo ... forge protect apply`` ran as root, whose machine file holds no family layer.
+
+    The granted step was refused ("no family layer on this machine") though ``[ops.config] family`` had placed the
+    family file. PLANTED CONTROL: with no layer handed in, the same login (no roles carried) is still refused.
+    """
+    carried = forgeprotection.rendered(_role(tmp_path), _gitea(), 'owner/alpha', REF).subject()
+    monkeypatch.delenv(ROLES_ENV)  # root under sudo: an empty machine file, no render's kinds
+    with pytest.raises(ForgeRefused, match='no family layer on this machine'):
+        forgeprotection.rendered(_role(tmp_path), _gitea(), 'owner/alpha', REF)
+    layer = forgeprotection.family_layer(_placed(tmp_path))
+    assert forgeprotection.rendered(_role(tmp_path), _gitea(), 'owner/alpha', REF, layer=layer).subject() == carried
+    gitea = _gitea()
+    args = _args('apply', subject=True)
+    assert forgeprotection.run(_role(tmp_path), args, _never, api_for=lambda _repo: gitea, layer=layer) == 0
+    assert capsys.readouterr().out.strip() == carried  # the subject a workstation derives is unchanged
+
+
+def test_a_host_declaring_no_family_file_is_refused_naming_the_declaration(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the declared, placed file is read; a declared file not yet placed names its path."""
+    for undeclared in (None, _source(tmp_path, family=False)):
+        with pytest.raises(ForgeRefused, match=r'declares no \[ops.config\] family'):
+            forgeprotection.family_layer(undeclared)
+    with pytest.raises(ForgeRefused, match=r'family.toml \(\[ops.config\] family.to\) cannot be read'):
+        forgeprotection.family_layer(_source(tmp_path))
+    assert set(forgeprotection.family_layer(_placed(tmp_path))['roles']['gitea']) == set(ROLES)
+
+
+def test_the_ops_door_hands_the_verb_the_placed_family_and_refuses_the_subject_read_without_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--subject`` (what a preflight asks) takes the same door as ``apply``: no family, no subject, exit 2."""
+    seen: list[object] = []
+
+    def ran(_role: object, _args: object, _redeem: object, *, layer: object) -> int:
+        seen.append(layer)
+        return 0
+
+    monkeypatch.setattr(forgeprotection, 'run', ran)
+    args = _args('apply', subject=True)
+    bare = SimpleNamespace(forge=_role(tmp_path), config_source=_source(tmp_path, family=False), path='h.toml')
+    assert redeemverbs.forge_verb(bare, args) == 2
+    assert 'refused: this host declares no [ops.config] family' in capsys.readouterr().err
+    assert seen == []
+    host = SimpleNamespace(forge=_role(tmp_path), config_source=_placed(tmp_path), path='h.toml')
+    assert redeemverbs.forge_verb(host, args) == 0  # the control
+    assert seen == [forgeprotection.family_layer(host.config_source)]

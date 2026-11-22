@@ -109,7 +109,9 @@ the same on both (`python -m dev_lab.dev.forge ...`, the backend chosen by the U
   human admin login: `python -m dev_lab.ops --config <supervise.toml> forge protect plan|apply --repo <owner/name>
   --ref <sha>` reads the declaration at that commit from the forge itself, renders it with this one renderer and
   writes it as the site admin, behind one single-use `ops.forge.protect` consent whose subject is the digest of the
-  repo, the ref and the rendered protection (`--subject` prints it with no code, so `planrun preflight` checks it);
+  repo, the ref and the rendered protection (`--subject` prints it with no code, so `planrun preflight` checks it:
+  derived on the workstation, then asked of a reached host). The roles it renders under are those of the family
+  file `[ops.config] family` places (its `to`), whichever login runs it; a host declaring none is refused by name;
   an undeclared repo (`[ops.forge.accounts]`) is refused before the forge is asked (`dev_lab.ops.forgeprotection`).
 - Who produces is the forge's data (`_forgebackends.Backend.producers`, user rulings 2026-11-11): a GitHub repo is
   gated and promoted by its Actions jobs alone -- no forge serve host, cluster or workstation; a part no

@@ -56,6 +56,7 @@ class FakeHost:
         self.doors = {('config', 'apply'), ('secret', 'place')}
         self.ready = (0, '[ops consent] ready: key abcdef, uses register at the local issuer')
         self.subjects = {'config': APPLY['subject'], 'secret': PLACE['subject']}
+        self.refusals: dict[str, str] = {}  # verb -> what its ``--subject`` read refuses with (exit 2)
         self.commands: list[str] = []
         self.files: dict[str, str] = {}
         self.outcomes: dict[str, tuple[str, int, bool]] = {}  # verb -> (output, status, registers its use)
@@ -76,7 +77,8 @@ class FakeHost:
         if verb == ('consent', 'ready'):
             return self.ready[1], self.ready[0]
         if '--subject' in words:
-            return self.subjects[verb[0]] + '\n', 0
+            refused = self.refusals.get(verb[0])
+            return (refused + '\n', 2) if refused else (self.subjects[verb[0]] + '\n', 0)
         if words[:2] == ['rm', '-f']:
             self.files.pop(words[2], None)
             return '', 0
@@ -704,10 +706,13 @@ def test_a_grant_this_client_does_not_know_blocks_the_preflight_naming_the_updat
     assert planrunpreflight.preflight(PLAN, STEPS, lambda _dest: FakeHost())[0]  # the control: every action known
 
 
-def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -> None:
+def test_a_protect_subject_is_derived_here_and_still_asked_of_its_reached_host() -> None:
     """``ops.forge.protect`` with a ``forge`` key: the subject is :func:`forgeprotection.local_subject`, computed here.
 
-    PLANTED: a declaration that renders another protection blocks, naming both subjects.
+    A REACHED host is asked for it too (2026-11-22: ``green (subject derived here)`` over a host that could not
+    render the protection -- no family layer for its roles -- and the granted step was refused at run).
+    PLANTED: a declaration that renders another protection blocks, naming both subjects; a host that cannot derive
+    the subject blocks, naming its refusal.
     """
     want = forgeprotection.local_subject('owner/alpha', 'integrate/main', 'gitea.example', lambda _ref: GITEA_TEXT)
     plan = parsed({'hosts': [HOST], 'grants': [{'host': HOST, 'action': forgeprotection.ACTION, 'subject': want}]})
@@ -716,6 +721,7 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
     )
     host = FakeHost()
     host.doors.add(('forge', 'protect'))
+    host.subjects['forge'] = want
     reads: list[tuple[str, str, str]] = []
 
     def declared(forge: str, repo: str, ref: str) -> str:
@@ -726,12 +732,22 @@ def test_a_protect_subject_is_derived_here_so_the_host_is_never_asked_for_it() -
     green, lines = planrunpreflight.preflight(plan, planrunsteps.Steps((step,)), lambda _d: host, readers=readers)
     assert green, lines
     assert reads == [('gitea.example', 'owner/alpha', 'integrate/main')]
-    assert not any('--subject' in command for command in host.commands)
+    assert [shlex.split(command)[-4:] for command in host.commands if '--subject' in command] == [
+        ['apply', '--repo', 'owner/alpha', '--subject']
+    ]
     other = GITEA_TEXT.replace('promote-bot', 'other-bot')
     readers = planrunpreflight.Readers(declared=lambda *_: other)
     green, lines = planrunpreflight.preflight(plan, planrunsteps.Steps((step,)), lambda _d: host, readers=readers)
     assert not green
     assert any('derived here' in line and want[:12] in line for line in lines), lines
+    lost = FakeHost()  # the host of 2026-11-22: its door is there, the family layer its roles are bound in is not
+    lost.doors.add(('forge', 'protect'))
+    lost.refusals['forge'] = 'refused: this host declares no [ops.config] family'
+    readers = planrunpreflight.Readers(declared=lambda *_: GITEA_TEXT)
+    green, lines = planrunpreflight.preflight(plan, planrunsteps.Steps((step,)), lambda _d: lost, readers=readers)
+    assert not green
+    assert 'BLOCKED -- the host could not derive the subject (refused: this host declares no' in lines[1], lines
+    assert lines[-1].startswith('preflight: BLOCKED')
 
 
 def test_a_derivable_subject_whose_door_waits_on_a_config_step_is_still_derived_here() -> None:

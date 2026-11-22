@@ -27,6 +27,7 @@ from dev_lab.ops import (
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent.client import redeem
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.giteaadmin import ForgeRefused
 from dev_lab.ops.hostverbs import alert
 
 __all__ = ['forge_verb', 'redeemer', 'secret_place', 'upgrade_verb']
@@ -54,7 +55,12 @@ def forge_verb(config: OpsConfig, args: argparse.Namespace) -> int:
         emit(f'[ops] {config.path} enables no [ops.forge]', err=True)
         return 2
     if args.kind == 'protect':  # plan reads no consent key; apply builds its redeemer when it spends
-        return forgeprotection.run(config.forge, args, lambda: redeemer(config))
+        try:  # its roles are the placed family file's, never the login's machine file (root under sudo holds none)
+            layer = forgeprotection.family_layer(config.config_source)
+        except ForgeRefused as refused:
+            emit(f'refused: {refused}', err=True)
+            return 2
+        return forgeprotection.run(config.forge, args, lambda: redeemer(config), layer=layer)
     try:
         redeem_for = redeemer(config)
     except ConsentRefused as refused:
