@@ -42,11 +42,13 @@ def offered(
     if not green:
         return found
     try:
-        handshake(section(TABLE) if table is None else table, send=send, actions=[g['action'] for g in plan.grants])
+        asked = [grant['action'] for grant in plan.grants]
+        runs = handshake(section(TABLE) if table is None else table, send=send, actions=asked)
     except ConsentRefused as skewed:
         return False, [*lines[:-1], f'issuer: BLOCKED -- {skewed}', BLOCKED]
     record_preflight(plan, steps=steps, home=home)
-    return True, [*lines, f'issuer: agrees; plan {plan.digest[:12]} offered for one code']
+    said = f'runs dev-lab {runs[:12]}' if runs else 'reports no dev-lab commit'
+    return True, [*lines, f'issuer: agrees ({said}); plan {plan.digest[:12]} offered for one code']
 
 
 def reproved(

@@ -38,6 +38,7 @@ lives here so the consent client imports no ``dev_lab.dev`` client module (the f
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -65,6 +66,7 @@ __all__ = [
     'fresh_receipts',
     'handshake',
     'hello',
+    'installed_commit',
     'offer',
     'plan_preflights',
     'preflighted_steps',
@@ -154,9 +156,22 @@ def reached(send: Send, what: str = 'the consent issuer') -> Send:
     return wrapped
 
 
-def hello() -> dict[str, list[str]]:
-    """What this side speaks: the credential field set and the registry actions (the issuer's ``hello`` answer)."""
-    return {'fields': list(FIELDS), 'actions': sorted(ACTIONS)}
+def installed_commit() -> str:
+    """The vcs commit this process's dev-lab was installed from (its ``direct_url.json``); ``''`` when none is."""
+    try:
+        text = importlib.metadata.distribution('dev-lab').read_text('direct_url.json')
+        return str(json.loads(text or '{}').get('vcs_info', {}).get('commit_id', ''))
+    except (importlib.metadata.PackageNotFoundError, ValueError, AttributeError):
+        return ''
+
+
+def hello() -> dict[str, Any]:
+    """What this side speaks: the credential field set, the registry actions, and the dev-lab commit it runs.
+
+    The issuer's ``hello`` answer. ``dev_lab`` is the installed commit (:func:`installed_commit`), so "is the host
+    upgraded?" is answered by a read that takes no code.
+    """
+    return {'fields': list(FIELDS), 'actions': sorted(ACTIONS), 'dev_lab': installed_commit()}
 
 
 #: The argv words a ``subject`` read refuses: each makes the verb act (redeem a credential, follow a ref) or is the
@@ -224,8 +239,10 @@ def _answer(said: str) -> object:
     return None
 
 
-def handshake(table: Mapping[str, Any], *, send: Send, actions: Iterable[str] = ()) -> None:
+def handshake(table: Mapping[str, Any], *, send: Send, actions: Iterable[str] = ()) -> str:
     """Refuse, before any code, an issuer this client cannot redeem with; *actions* are the ones about to be asked.
+
+    Answers the dev-lab commit the issuer reports running (``''``: an issuer that reports none).
 
     Raises:
         ConsentRefused: the issuer predates ``hello``, its field set differs, or it lacks an asked action -- each
@@ -246,6 +263,7 @@ def handshake(table: Mapping[str, Any], *, send: Send, actions: Iterable[str] = 
     if unknown := sorted(set(actions) - set(answer.get('actions') or [])):
         msg = f'no code asked: the issuer does not know {unknown}: {ISSUER_UPGRADE}'
         raise ConsentRefused(msg)
+    return str(answer.get('dev_lab') or '')
 
 
 def _stamp(digest: str, home: Path | None) -> Path:

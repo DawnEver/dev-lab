@@ -56,7 +56,7 @@ def forge_verb(config: OpsConfig, args: argparse.Namespace) -> int:
         return 2
     if args.kind == 'protect':  # plan reads no consent key; apply builds its redeemer when it spends
         try:  # its roles are the placed family file's, never the login's machine file (root under sudo holds none)
-            layer = forgeprotection.family_layer(config.config_source)
+            layer = forgeprotection.bound_layer(config.config_source, config.forge, args.repo)
         except ForgeRefused as refused:
             emit(f'refused: {refused}', err=True)
             return 2

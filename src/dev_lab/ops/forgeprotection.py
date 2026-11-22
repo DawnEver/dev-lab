@@ -28,6 +28,11 @@ THE ROLES IT RENDERS UNDER ARE THE FAMILY FILE'S THAT THIS HOST'S OWN CONFIG PLA
 ``sudo`` as root, which holds no machine file, and refused a granted step with "no family layer on this machine"
 while the family file lay at its declared path. A host declaring no ``[ops.config] family`` is refused naming that
 declaration -- on ``--subject`` too, so a preflight that asks the host is told before a code is spent.
+
+A PLACED FILE THAT BINDS NOTHING SAYS SO (:func:`bound_layer`). Measured 2026-11-22: a host already running the fix
+held a placed family file with no roles for the forge asked, and still answered the workstation's "no family layer
+on this machine and no DEV_LAB_ROLES carried" -- an empty layer read as no layer. The host's refusal names the
+placed path and its door, ``ops config apply``; it never speaks of a machine file.
 """
 
 from __future__ import annotations
@@ -47,6 +52,7 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import forgeprotect
+from dev_lab.dev._forgebackends import backend_for
 from dev_lab.dev.forge import Forge as Remote
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
@@ -67,6 +73,7 @@ __all__ = [
     'Protection',
     'add_parser',
     'apply',
+    'bound_layer',
     'declared_repos',
     'family_layer',
     'local_subject',
@@ -173,6 +180,29 @@ def family_layer(source: ConfigSource | None) -> dict[str, Any]:
     except (OSError, ValueError) as unread:
         msg = f'{placed} ([ops.config] family.to) cannot be read: {unread} -- `config apply` places the family file'
         raise ForgeRefused(msg) from unread
+
+
+def bound_layer(source: ConfigSource | None, role: Forge, repo: str) -> dict[str, Any]:
+    """:func:`family_layer`, refused when the placed file binds no role for *repo* on this host's forge.
+
+    Raises:
+        ForgeRefused: as :func:`family_layer`, or the placed file is stale -- naming its path and ``ops config apply``.
+
+    """
+    layer = family_layer(source)
+    owner, _, name = repo.partition('/')
+    forge = backend_for(Remote(public_host(role), owner, name)).name
+    table = layer.get('roles')
+    table = table if isinstance(table, Mapping) else {}
+    repos = table.get('repos')
+    if not (table.get(forge) or (isinstance(repos, Mapping) and repos.get(repo))):
+        placed = source.family['to'] if source is not None else ''
+        msg = (
+            f'{placed} ([ops.config] family.to) binds no role for {forge}/{repo}: the placed family file is stale '
+            'or empty -- re-apply the config: `ops config apply` (it fetches and places the reviewed family file)'
+        )
+        raise ForgeRefused(msg)
+    return layer
 
 
 def rendered(
