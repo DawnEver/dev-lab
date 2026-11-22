@@ -6,6 +6,8 @@ source. Each test plants the case that must say no beside the one that says yes.
 
 from __future__ import annotations
 
+from functools import partial
+
 from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 
@@ -43,10 +45,10 @@ def _account(home: dict[str, str], seen: list[str]) -> Runner:
     return shell
 
 
-def _place(home: dict[str, str], seen: list[str], said: list[str], **kw: object) -> int:
+def _place(home: dict[str, str], seen: list[str], said: list[str]) -> int:
     return keys.place_keys(
         'alice@login1.example', files=FILES, grants=GRANTS, division=DIVISION, say=said.append,
-        connect=lambda _g: _account(home, seen), stamp='T', **kw,  # type: ignore[arg-type]
+        connect=lambda _g: _account(home, seen), stamp='T',
     )  # fmt: skip
 
 
@@ -105,11 +107,11 @@ def test_the_dry_run_connects_to_nothing_and_prints_hashes_only() -> None:
 def test_every_refusal_names_its_door() -> None:
     said: list[str] = []
     none = Division(grant_roles={'alice': 'nobody'})
-    kw = {'files': FILES, 'grants': GRANTS, 'say': said.append, 'dry_run': True}
-    assert keys.place_keys('alice@login1.example', division=none, **kw) == 2  # type: ignore[arg-type]
+    refused = partial(keys.place_keys, files=FILES, grants=GRANTS, say=said.append, dry_run=True)
+    assert refused('alice@login1.example', division=none) == 2
     assert '[dev] hpc' in said[-1]
     assert 'client_keys' in said[-1]
-    assert keys.place_keys('bob@login1.example', division=DIVISION, **kw) == 2  # type: ignore[arg-type]
+    assert refused('bob@login1.example', division=DIVISION) == 2
     assert '[[hpc.grant]]' in said[-1]
 
 
