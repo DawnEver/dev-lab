@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _forge_fake import Loopback, Recorder, answer, serve
+from _branch_repos import advance, clone_pair
+from _forge_fake import Loopback, Recorder, answer, git_out, run_git, serve
 from _ops_fixtures import ALPHA, GLASS, MIRROR, NOW, code, config
 from _roles_fixtures import HPC_REPO, carry
 
@@ -31,7 +32,7 @@ from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.netverb import Report
 from dev_lab.dev.reviewgate import DeclarationUnread
 from dev_lab.ops.breakglass import BreakglassRefused, Server, merge_message
-from dev_lab.ops.breakglassforge import ClientForge
+from dev_lab.ops.breakglassforge import ClientForge, NotFastForward, fast_forward
 from dev_lab.ops.config import Breakglass, OpsConfig
 from dev_lab.ops.configcheck import LABEL
 from dev_lab.ops.consent.issuer import Issuer
@@ -64,6 +65,8 @@ class FakeForge:
     unreadable: frozenset[int] = frozenset()
     #: Each ref's failure fingerprints (none by default: a green head reads no record).
     prints: dict[str, Fingerprints] = field(default_factory=dict)
+    #: A non-empty reason plants a trunk the sha cannot fast-forward (or a sha off integration).
+    refuse_ff: str = ''
 
     def labels(self, number: int) -> tuple[str, ...]:
         if number in self.unreadable:
@@ -93,6 +96,12 @@ class FakeForge:
     def merge(self, number: int, *, head: str, message: str) -> None:
         del head
         self.calls.append(('merge', number, message))
+
+    def fast_forward(self, trunk: str, integration: str, sha: str) -> str:
+        if self.refuse_ff:
+            raise NotFastForward(self.refuse_ff)
+        self.calls.append(('fast_forward', 0, f'{trunk}<-{integration}@{sha}'))
+        return 'b' * 40
 
 
 @dataclass
@@ -873,3 +882,73 @@ def test_with_no_wave_the_merge_check_still_refuses_the_new_subject() -> None:
 def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
     carry(monkeypatch, HPC_REPO)
+
+
+# -- the emergency trunk promotion (user ruling D105) -----------------------------------------------------------------
+
+
+def _promote(host: Host, **overrides: object) -> str:
+    host.forge.manifests[HEAD] = DECLARED
+    return host.ask('promote', **{'repo': ALPHA, 'sha': HEAD, 'reason': 'CI is down for a day', **overrides})
+
+
+def test_a_promotion_outside_a_wave_is_refused_and_pushes_nothing(host: Host) -> None:
+    with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):
+        _promote(host)
+    assert host.forge.calls == []
+
+
+def test_a_promotion_inside_a_wave_pushes_the_trunk_counts_and_audits_and_posts_nothing(host: Host) -> None:
+    host.open(max_merges=2)
+    host.forge.posted = []  # untested: the wave waives the parts, and says so
+    said = _promote(host)
+    assert said.startswith(f'promoted {ALPHA} main bbbbbbbbbbbb -> {HEAD[:12]}')
+    assert 'untested' in said
+    assert host.forge.calls == [('fast_forward', 0, f'main<-integrate/main@{HEAD}')]  # no comment, no status
+    report = host.ask('close')
+    assert f'{ALPHA} main promoted to {HEAD} by key {KEY}: CI is down for a day (parts: untested' in report
+
+
+def test_a_promotion_counts_against_the_cap(host: Host) -> None:
+    host.open(max_merges=1)
+    assert 'the cap of 1 ended the wave' in _promote(host)
+    with pytest.raises(BreakglassRefused, match='no break-glass wave is open'):
+        _promote(host)
+
+
+def test_a_promotion_that_cannot_fast_forward_is_refused_and_not_counted(host: Host) -> None:
+    host.open(max_merges=1)
+    host.forge.refuse_ff = 'main (cccccccccccc) is not an ancestor of aaaaaaaaaaaa: it cannot fast-forward'
+    with pytest.raises(BreakglassRefused, match='cannot fast-forward'):
+        _promote(host)
+    host.forge.refuse_ff = ''
+    assert _promote(host).startswith('promoted')  # CONTROL: the refusal spent nothing of the cap
+
+
+def test_a_promotion_of_an_unserved_repo_or_without_a_reason_is_refused(host: Host) -> None:
+    host.open()
+    with pytest.raises(BreakglassRefused, match='not a repository this host serves'):
+        _promote(host, repo='forge.example/o/unknown')
+    with pytest.raises(BreakglassRefused, match='a reason of at least'):
+        _promote(host, reason='short')
+    assert host.forge.calls == []
+
+
+def test_fast_forward_pushes_an_integration_commit_and_refuses_one_off_it_or_not_a_fast_forward(
+    tmp_path: Path,
+) -> None:
+    """PLANTED both ways, against a real bare repository: only an integration commit containing the trunk moves it."""
+    bare, work = clone_pair(tmp_path)
+    url = bare.as_uri()
+    tip = advance(work, 'integrate/main', 'i1.txt', 'i\n')
+    stray = advance(work, 'side', 'stray.txt', 's\n')
+    with pytest.raises(NotFastForward, match='not a commit of integrate/main'):
+        fast_forward(url, '', 'main', 'integrate/main', stray)
+    old = git_out(bare, 'rev-parse', 'main')
+    assert fast_forward(url, '', 'main', 'integrate/main', tip) == old
+    assert git_out(bare, 'rev-parse', 'main') == tip
+    run_git(work, 'fetch', '-q', 'origin')
+    advance(work, 'main', 'hotfix.txt', 'h\n')
+    later = advance(work, 'integrate/main', 'i2.txt', 'i2\n')
+    with pytest.raises(NotFastForward, match='cannot fast-forward'):
+        fast_forward(url, '', 'main', 'integrate/main', later)

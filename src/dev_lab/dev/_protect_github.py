@@ -6,8 +6,12 @@ left beside a ruleset is a SECOND, undeclared rule (both apply, the stricter win
 
 A RULESET CANNOT NAME A USER. Its bypass actors are a repository role, a GitHub App or a team
 (``role:admin|maintain|write``, ``app:<id>``, ``team:<id>``); on a personal repository the role is the only kind, so
-the break-glass identity is the role it holds. Every bypass is ``pull_request`` mode: the actor may MERGE a pull
-request past the rules -- break-glass merges one -- and may never push past them. Nor can a ruleset name the
+the break-glass identity is the role it holds. On the INTEGRATION branch every bypass is ``pull_request`` mode:
+the actor may MERGE a pull request past the rules -- break-glass merges one -- and may never push past them. On
+the TRUNK an App or team actor is ``always`` (user ruling D105, 2026-11-21; a ROLE, a human's, stays
+``pull_request``): the break-glass server's emergency promotion is a non-forced PUSH past the required parts,
+inside a wave the user opened (:mod:`dev_lab.ops.breakglass` ``promote``); ``non_fast_forward`` still binds every
+actor's push. Nor can a ruleset name the
 approving login, and none is needed: the judge is advisory on every forge (user ruling 2026-11-11), so the
 ruleset counts no approval. The trunk is pushed by the promotion's job token, judged by the required contexts, so a
 GitHub forge declares no ``promote`` identity.
@@ -35,11 +39,13 @@ PREFIX: Final = 'dev-lab '
 
 #: GitHub's built-in repository roles, by the ids its rulesets API names them with.
 _ROLES: Final = {'admin': 5, 'maintain': 2, 'write': 4}
+#: The trunk's role name (:data:`dev_lab.dev.forgeprotect.TRUNK`; imported there, so restated as its value).
+_TRUNK: Final = 'trunk'
 _KINDS: Final = {'role': 'RepositoryRole', 'app': 'Integration', 'team': 'Team'}
 
 
-def actor(spec: str) -> dict[str, Any]:
-    """The bypass actor *spec* names (``role:admin``, ``app:<id>``, ``team:<id>``), in ``pull_request`` mode."""
+def actor(spec: str, mode: str = 'pull_request') -> dict[str, Any]:
+    """The bypass actor *spec* names (``role:admin``, ``app:<id>``, ``team:<id>``), in *mode*."""
     kind, _, value = spec.partition(':')
     if kind == 'role' and value in _ROLES:
         found = _ROLES[value]
@@ -51,7 +57,15 @@ def actor(spec: str) -> dict[str, Any]:
             '-- never a login, which no ruleset can name'
         )
         raise ValueError(msg)
-    return {'actor_id': found, 'actor_type': _KINDS[kind], 'bypass_mode': 'pull_request'}
+    return {'actor_id': found, 'actor_type': _KINDS[kind], 'bypass_mode': mode}
+
+
+def _mode(target: Target, spec: str) -> str:
+    """``always`` for the break-glass SERVER's identity (an App or team) on the trunk, else ``pull_request``.
+
+    A repository ROLE is a human's: it never pushes the trunk past its parts, wave or no wave (user ruling D105).
+    """
+    return 'always' if target.role == _TRUNK and not spec.startswith('role:') else 'pull_request'
 
 
 def ruleset(target: Target) -> dict[str, Any]:
@@ -76,7 +90,7 @@ def ruleset(target: Target) -> dict[str, Any]:
         'target': 'branch',
         'enforcement': 'active',
         'conditions': {'ref_name': {'include': [f'refs/heads/{target.branch}'], 'exclude': []}},
-        'bypass_actors': [actor(spec) for spec in target.bypass],
+        'bypass_actors': [actor(spec, _mode(target, spec)) for spec in target.bypass],
         'rules': rules,
     }
 

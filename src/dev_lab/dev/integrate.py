@@ -21,6 +21,10 @@ promotion -- and says ``promotable`` with when the job runs. On Gitea the host's
   :data:`DEPTH`), promoting the NEWEST that passes (W5, dev-lab#644: integration moves faster than a full run, so the
   tip alone was refused nightly and a consumer's trunk froze). Every commit passed over is an ALARM naming its
   reason (:func:`newest`), never a quiet refusal.
+* ``promote <sha> --breakglass --reason <why>`` -- the USER's EMERGENCY door (user ruling D105): the break-glass
+  server fast-forwards the trunk inside the wave the user opened, past the parts, still only to an integration commit
+  the trunk fast-forwards to; counted and audited by the wave, no status posted
+  (:func:`dev_lab.dev.forgebreakglass.promote_trunk`).
 * ``pending <sha>`` -- print ``pending=true`` while the trunk does not hold *sha*, else ``pending=false`` (a
   ``$GITHUB_OUTPUT`` line): the nightly promotion run (D48-1A) tests and promotes integration's tip only while it is
   pending, so a tip already promoted runs nothing.
@@ -52,6 +56,7 @@ from lab_commons.outcomes import Conclusion
 from dev_lab.dev import metrics
 from dev_lab.dev._forgebackends import FORGE_SERVE, GITHUB, actions_token, backend_for
 from dev_lab.dev.forge import fetch_origin
+from dev_lab.dev.forgebreakglass import promote_trunk
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgestatus import CommitStatus, status_history
@@ -67,12 +72,18 @@ from dev_lab.dev.trialmerge import contains, rev
 from dev_lab.dev.unproduced import unproduced_waived
 from dev_lab.dev.verdictenv import verdict_policy_at
 
-__all__ = ['DEPTH', 'IntegrateRefused', 'Promotion', 'decide', 'main', 'newest', 'pending', 'promote']
+__all__ = ['DEPTH', 'EMERGENCY', 'IntegrateRefused', 'Promotion', 'decide', 'main', 'newest', 'pending', 'promote']
 
 _GIT: Final = shutil.which('git') or 'git'
 
 #: How many first parents below the tip ``promote --newest`` decides before it refuses.
 DEPTH: Final = 64
+
+#: A promotion refused on its parts names the emergency door (every-wall-teaches).
+EMERGENCY: Final = (
+    'emergency: open a break-glass wave (python -m dev_lab.dev.forge breakglass open --code <code> --hours H '
+    '--max-merges N), then python -m dev_lab.dev.integrate promote <sha> --breakglass --reason "<why>"'
+)
 
 #: The refusal's id in the metrics log (:mod:`dev_lab.dev.metrics`).
 _RULE: Final = 'integrate-promote'
@@ -160,7 +171,8 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
     policy = verdict_policy_at(root, found)
     parts = standing(statuses, head=found, scope=FULL, waived=waived, required=required, policy=policy)
     if parts.result is not Conclusion.PASS:
-        return Promotion('refused', found, (f'the parts of {found[:12]} stand {parts.result.name}', *parts.problems))
+        why = f'the parts of {found[:12]} stand {parts.result.name}'
+        return Promotion('refused', found, (why, *parts.problems, EMERGENCY.replace('<sha>', found)))
     return Promotion(
         'promote', found, tuple(f'tests/{part}: off the gate, no Actions job produces it' for part in sorted(off))
     )
@@ -229,6 +241,18 @@ def _log(root: Path, kind: str, sha: str) -> None:
     metrics.record(kind, root=root, repo=metrics.repo_of(root), vcs_ref_head_revision=sha, **named)
 
 
+def _quiet(_line: str) -> None:
+    """No one else hears the alarms."""
+
+
+def _breakglass(args: argparse.Namespace, root: Path, run: Callable[[Path, str, str], int]) -> int:
+    """``promote <sha> --breakglass --reason R``: ONE sha and a reason, else refused; the wave's server moves it."""
+    if args.newest or not args.reason.strip():
+        emit('[integrate] REFUSED: --breakglass promotes ONE named <sha> and needs --reason "<why>"', err=True)
+        return 2
+    return run(root, args.sha, args.reason.strip())
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -236,6 +260,7 @@ def main(
     client: Client | None = None,
     fetch: Callable[[Path], None] = fetch_origin,
     said: Callable[[str], None] | None = None,
+    breakglass: Callable[[Path, str, str], int] = promote_trunk,
 ) -> int:
     """``promote <sha>``: exit 0 done, 2 refused, 1 on a failure.
 
@@ -247,16 +272,20 @@ def main(
     verbs = parser.add_subparsers(dest='verb', required=True)
     promoting = verbs.add_parser('promote')
     promoting.add_argument('--newest', action='store_true', help='promote the newest first parent that passes')
+    promoting.add_argument('--breakglass', action='store_true', help='EMERGENCY: past the parts, inside an open wave')
+    promoting.add_argument('--reason', default='', help='--breakglass: why the parts cannot be waited for (audited)')
     promoting.add_argument('sha')
     verbs.add_parser('pending', help='print pending=true while the trunk does not hold <sha>').add_argument('sha')
     args = parser.parse_args(argv)
     root = Path.cwd() if cwd is None else cwd
+    if args.verb == 'promote' and args.breakglass:
+        return _breakglass(args, root, breakglass)
     try:
         fetch(root)
         if args.verb == 'pending':
             emit(f'pending={str(pending(root, _policy(root, args.sha), args.sha)).lower()}')
             return 0
-        found = promote(root, client or client_for(root), args.sha, walk=args.verb == 'promote' and args.newest)
+        found = promote(root, client or client_for(root), args.sha, walk=args.newest)
         trunk = _policy(root, args.sha).trunk
     except IntegrateRefused as refused:
         _log(root, metrics.REFUSAL, args.sha)
@@ -268,8 +297,7 @@ def main(
     for over in found.passed_over:  # never a quiet refusal: each commit passed over is said, with why
         alarm = f'[integrate] ALARM: {over.sha[:12]} passed over: ' + '; '.join(over.reasons)
         emit(alarm, err=True)
-        if said is not None:
-            said(alarm)
+        (said or _quiet)(alarm)
     if found.action == 'refused':
         _log(root, metrics.REFUSAL, args.sha)
         emit(f'[integrate] REFUSED: {trunk} stays where it is.', err=True)
@@ -284,11 +312,11 @@ def main(
             f'[integrate] {found.sha} may promote, and {trunk} stays where it is: on GitHub the ruleset admits a '
             f'push of {trunk} from the nightly promote job alone (ci.yml jobs.promote, cron "{NIGHTLY_CRON}" UTC), '
             f'which promotes a green {_policy(root, args.sha).integration} tip. When it ran: '
-            f'gh run list --workflow ci.yml --event schedule'
+            f'gh run list --workflow ci.yml --event schedule. It cannot wait? ' + EMERGENCY.replace('<sha>', found.sha)
         )
-        return 0
-    verb = 'already at' if found.action == 'current' else 'fast-forwarded to'
-    emit(f'[integrate] origin/{trunk} {verb} {found.sha}')
+    else:
+        moved = 'already at' if found.action == 'current' else 'fast-forwarded to'
+        emit(f'[integrate] origin/{trunk} {moved} {found.sha}')
     return 0
 
 

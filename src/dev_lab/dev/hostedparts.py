@@ -1,7 +1,7 @@
 """``[tool.dev_lab.parts] hosted``: the parts run in a hosted job of their own, read and refused here.
 
 Split from :mod:`dev_lab.dev.jobparts` (2026-11-17, its size band), which renders each declared part's job
-(:func:`dev_lab.dev.jobparts.hosted_jobs`). A declared part is a PRODUCED resource naming a ``setup`` command, the
+(:func:`dev_lab.dev.hostedjobs.hosted_jobs`). A declared part is a PRODUCED resource naming a ``setup`` command, the
 ai-lab ``tasks`` whose key bundles it loads, or both; anything else is refused naming the shape to write.
 """
 

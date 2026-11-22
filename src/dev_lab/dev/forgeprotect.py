@@ -43,11 +43,12 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
 
+from lab_commons import config as machineconfig
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 
@@ -56,13 +57,16 @@ from dev_lab.dev._forgebackends import GITHUB, backend_for
 from dev_lab.dev._protect_steps import Step
 from dev_lab.dev.ciworkflows import WORKFLOW_DIRS, placed
 from dev_lab.dev.family import declared_table
-from dev_lab.dev.forge import Forge
+from dev_lab.dev.familyrepos import FAMILY_TABLE
+from dev_lab.dev.forge import Forge, forge_of_url
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, MERGE_READY_CONTEXT
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgereview_declared import review_from
+from dev_lab.dev.forgework import Client
 from dev_lab.dev.jobparts import rows
 from dev_lab.dev.lanepolicy import policy_from
+from dev_lab.dev.reviewgate import manifest_at
 from dev_lab.dev.roles import retired_placement, roles_of
 
 __all__ = [
@@ -71,10 +75,12 @@ __all__ = [
     'Api',
     'Declaration',
     'Identities',
+    'Member',
     'Step',
     'Target',
     'apply',
     'declaration_from',
+    'family',
     'main',
     'plan',
     'render',
@@ -93,6 +99,17 @@ _PART_JOB: Final = f'{CONTEXT_PREFIX}${{{{ matrix.part }}}}'
 
 #: The event a promotion's parts run under: not a pull request, so every OS row.
 _PROMOTION_EVENT: Final = 'push'
+
+
+@dataclass(frozen=True)
+class Member:
+    """One family repo's rendered protection, or why it could not render (*refused*; then *forge* is ``None``)."""
+
+    name: str
+    remote: str
+    forge: Forge | None
+    targets: tuple[Target, ...]
+    refused: str = ''
 
 
 class Api(Protocol):
@@ -260,13 +277,78 @@ def render(steps: Sequence[Step]) -> list[str]:
     return [line for step in steps for line in (step.subject, *(f'    {said}' for said in step.lines))]
 
 
+def family(rows: Mapping[str, Mapping[str, Any]], declaration: Callable[[str, str], str]) -> list[Member]:
+    """Every family repo's protection, from ITS OWN declaration at its integration branch (the one source).
+
+    *rows* is the family's ``[family_repos]`` (``name = {remote, branch}``, the config source's family layer);
+    *declaration* reads ``pyproject.toml`` of a remote at a branch. A repo whose declaration cannot render is a
+    :class:`Member` carrying its refusal, never dropped: the family is applied whole or said where it is not.
+    """
+    found = []
+    for name, row in sorted(rows.items()):
+        remote, branch = str(row.get('remote', '')), str(row.get('branch', ''))
+        origin = f'{name}@{branch}:pyproject.toml'
+        try:
+            forge = forge_of_url(remote)
+            found.append(Member(name, remote, forge, targets(declaration(remote, branch), origin, forge)))
+        except (ValueError, ForgeCallFailed) as refused:
+            found.append(Member(name, remote, None, (), str(refused)))
+    return found
+
+
+def _one(verb: str, client: Client, wanted: Sequence[Target]) -> int:
+    """Plan, check or apply *wanted* on *client*'s repository; the exit code, every line emitted."""
+    try:
+        steps = apply(client, client.forge, wanted) if verb == 'apply' else plan(client, client.forge, wanted)
+    except ForgeCallFailed as failed:
+        for line in refusal(failed, wanted):
+            emit(line, err=True)
+        return 1
+    except PermissionError as refused:  # a read credential's plan: the forge host writes (_protect_gitea)
+        emit(f'[protect] {client.forge.identity}: {refused}', err=True)
+        return 2
+    emit(f'[protect] {client.forge.identity}: ' + (f'{len(steps)} difference(s)' if steps else 'as declared'))
+    for line in render(steps):
+        emit(f'  {line}')
+    return 1 if steps and verb != 'plan' else 0
+
+
+def _family_main(verb: str, root: Path) -> int:
+    live = machineconfig.config_path()
+    rows = (tomllib.loads(live.read_text(encoding='utf-8')) if live.is_file() else {}).get(FAMILY_TABLE, {})
+    if not rows:
+        emit(
+            f'[protect] the machine file holds no [{FAMILY_TABLE}]: render it (python -m dev_lab.dev.devhost)', err=True
+        )
+        return 2
+
+    def declared(remote: str, branch: str) -> str:
+        return manifest_at(client_for(root, url=remote), branch)
+
+    worst = 0
+    for member in family(rows, declared):
+        if member.refused:
+            emit(f'[protect] {member.name}: {member.refused}', err=True)
+            worst = max(worst, 2)
+            continue
+        worst = max(worst, _one(verb, client_for(root, url=member.remote), member.targets))
+    return worst
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """``plan`` prints the differences; ``check`` exits 1 on any; ``apply`` writes them (an administrator's verb)."""
+    """``plan`` prints the differences; ``check`` exits 1 on any; ``apply`` writes them (an administrator's verb).
+
+    ``--family``: every repo of the family's ``[family_repos]``, each from its own declaration at its integration
+    branch -- one command for the whole family on every forge this credential administers.
+    """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.forge protect', description=main.__doc__)
     parser.add_argument('verb', choices=('plan', 'check', 'apply'))
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose declaration is rendered')
     parser.add_argument('--url', default='', help="another forge's copy of the repository (default: origin)")
+    parser.add_argument('--family', action='store_true', help='every [family_repos] repo, each its own declaration')
     args = parser.parse_args(argv)
+    if args.family:
+        return _family_main(args.verb, args.root)
     manifest = args.root / 'pyproject.toml'
     text = manifest.read_text(encoding='utf-8') if manifest.is_file() else ''
     client = client_for(args.root, url=args.url)
@@ -275,16 +357,4 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as refused:
         emit(f'[protect] {refused}', err=True)
         return 2
-    try:
-        steps = apply(client, client.forge, wanted) if args.verb == 'apply' else plan(client, client.forge, wanted)
-    except ForgeCallFailed as failed:
-        for line in refusal(failed, wanted):
-            emit(line, err=True)
-        return 1
-    except PermissionError as refused:  # a read credential's plan: the forge host writes (_protect_gitea)
-        emit(f'[protect] {refused}', err=True)
-        return 2
-    emit(f'[protect] {client.forge.identity}: ' + (f'{len(steps)} difference(s)' if steps else 'as declared'))
-    for line in render(steps):
-        emit(f'  {line}')
-    return 1 if steps and args.verb != 'plan' else 0
+    return _one(args.verb, client, wanted)

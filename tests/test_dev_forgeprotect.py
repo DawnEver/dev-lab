@@ -279,7 +279,10 @@ def test_gitea_names_every_hand_set_difference_and_apply_removes_them() -> None:
     wanted = targets(GITEA_TEXT, 'p', GITEA)
     steps = {step.subject: step.lines for step in plan(forge, GITEA, wanted)}
     trunk = steps['trunk main: branch protection differs -> update']
-    assert "push_whitelist_usernames: live=['promote-bot', 'user-a-admin'] declared=['promote-bot']" in trunk
+    assert (
+        "push_whitelist_usernames: live=['promote-bot', 'user-a-admin'] declared=['breakglass-bot', 'promote-bot']"
+        in trunk
+    )
     assert 'block_admin_merge_override: live=True declared=False' in trunk
     integration = steps['integration integrate/main: branch protection differs -> update']
     assert any(line.startswith('status_check_contexts: the forge did not answer') for line in integration)
@@ -424,3 +427,54 @@ def test_a_rejected_review_never_blocks_and_the_admin_can_still_merge_by_hand() 
         rule = _protect_gitea.body(target)
         assert rule['block_on_rejected_reviews'] is False, target
         assert rule['block_admin_merge_override'] is False, target
+
+
+# -- the trunk's emergency bypass (user ruling D105) ------------------------------------------------------------------
+
+
+def test_github_breakglass_bypasses_always_on_the_trunk_and_only_by_pull_request_on_integration() -> None:
+    """PLANTED both ways: the trunk's actor pushes past the parts; integration's still only merges a pull request."""
+    text = (
+        INTEGRATOR
+        + '[tool.dev_lab.protection.forges."github.com"]'
+        + chr(10)
+        + 'breakglass = ["app:4242", "role:admin"]'
+        + chr(10)
+    )
+    integration, trunk = (forgeprotect._protect_github.ruleset(one) for one in targets(text, 'p', GITHUB))
+    modes = {(one['actor_type'], one['bypass_mode']) for one in trunk['bypass_actors']}
+    assert modes == {('Integration', 'always'), ('RepositoryRole', 'pull_request')}  # a human role never pushes past
+    assert {one['bypass_mode'] for one in integration['bypass_actors']} == {'pull_request'}
+    assert 'non_fast_forward' in {rule['type'] for rule in trunk['rules']}  # a bypass never forces
+
+
+def test_gitea_breakglass_login_joins_the_trunk_push_whitelist_only() -> None:
+    integration, trunk = (_protect_gitea.body(one) for one in targets(GITEA_TEXT, 'p', GITEA))
+    assert trunk['push_whitelist_usernames'] == ['breakglass-bot', 'promote-bot']
+    assert integration['push_whitelist_usernames'] == []
+    assert trunk['enable_force_push'] is False
+
+
+def test_a_family_of_n_repos_renders_n_trunk_protections_each_from_its_own_declaration() -> None:
+    """PLANTED: a repo whose declaration names no row for its forge is said refused, never silently dropped."""
+    rows = {
+        'alpha': {'remote': 'https://github.com/owner/alpha.git', 'branch': 'integrate/main'},
+        'beta': {'remote': 'https://github.com/owner/beta.git', 'branch': 'integrate/main'},
+        'gamma': {'remote': 'https://gitea.example/owner/gamma.git', 'branch': 'integrate/main'},
+        'stray': {'remote': 'https://gitea.example/owner/stray.git', 'branch': 'main'},
+    }
+    app = INTEGRATOR + '[tool.dev_lab.protection.forges."github.com"]' + chr(10) + 'breakglass = ["app:4242"]' + chr(10)
+    texts = {'alpha': app, 'beta': app, 'gamma': GITEA_TEXT, 'stray': app}
+    members = forgeprotect.family(rows, lambda remote, _branch: texts[remote.rsplit('/', 1)[1][:-4]])
+    assert [m.name for m in members] == ['alpha', 'beta', 'gamma', 'stray']
+    *served, stray = members
+    assert 'names no "gitea.example"' in stray.refused
+    trunks = [next(t for t in m.targets if t.role == TRUNK) for m in served]
+    assert len(trunks) == 3
+    for member, trunk in zip(served, trunks, strict=True):
+        if member.forge is not None and member.forge.host == 'github.com':
+            assert {a['bypass_mode'] for a in forgeprotect._protect_github.ruleset(trunk)['bypass_actors']} == {
+                'always'
+            }
+        else:
+            assert 'breakglass-bot' in _protect_gitea.body(trunk)['push_whitelist_usernames']

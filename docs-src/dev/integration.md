@@ -441,6 +441,13 @@ required `tests/<part>` part stands PASS at scope `full`. It refuses naming the 
 trunk that is not an ancestor of `<sha>` rather than merging. No merge commit ever lands on the trunk; the
 push admission row checks the same standing when the holder pushes it.
 
+EMERGENCY (user ruling D105): `integrate promote <sha> --breakglass --reason "<why>"` asks the open break-glass
+wave's server (`forge breakglass open --code ...` opened it) to move the trunk past the parts. The server keeps
+the shape rule -- `<sha>` on integration, a fast-forward -- pushes non-forced as the break-glass identity, counts
+it as one of the wave's merges and audits the parts state it read; it posts no status. `forge protect apply
+--family` makes that identity the trunk's only push-past-checks actor (GitHub: `bypass_mode: always` on the trunk
+ruleset, `pull_request` on integration; Gitea: the break-glass login in the trunk push whitelist).
+
 ## The merge audit
 
 `MERGE-DEVIATIONS-NAMED`: a merge may not lose or rewrite a test in silence.
