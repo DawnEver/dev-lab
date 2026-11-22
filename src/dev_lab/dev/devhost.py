@@ -76,12 +76,10 @@ from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, layered, merge
 from dev_lab.dev.devschema import CHANNELS_TABLE, fill_remedy, hpc_reach, unfilled
+from dev_lab.dev.hpcaccount.grantslice import Unreadable, read_machine
 from dev_lab.dev.venvpath import running_interpreter
 
-__all__ = [
-    'LOCAL_DOOR', 'RENDER_DOOR', 'drift',
-    'host_file', 'local_set', 'main', 'notice', 'render',
-]  # fmt: skip
+__all__ = ['LOCAL_DOOR', 'RENDER_DOOR', 'drift', 'host_file', 'local_set', 'main', 'notice', 'render']
 
 #: A key one side lacks (``None`` is not a TOML value, but a sentinel says so outright).
 _ABSENT: Final = object()
@@ -188,11 +186,7 @@ def drift(live: Mapping[str, Any], clone: Path | None = None) -> list[str]:
         return [f'the config source {clone.as_posix()} is not a clone here: name one with drift --from <clone>']
     try:
         text = render(clone, host, live)
-    except (
-        LookupError,
-        TypeError,
-        ValueError,
-    ) as unrenderable:  # a wall is a drift line naming its door, never a crash
+    except (LookupError, TypeError, ValueError) as unrenderable:  # a wall is a drift line with its door, not a crash
         return [f'the machine file cannot be rendered: {unrenderable}']
     rendered, have = tomlleaves.leaves(tomllib.loads(text)), tomlleaves.leaves(live)
     found = [
@@ -404,7 +398,11 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
     args = parser.parse_args(argv)
     path = args.machine or machineconfig.config_path()
-    live = _read(path) if path.is_file() else {}
+    try:  # the render alone repairs the one old shape; every other verb names it and its door
+        live = read_machine(path, repair=args.verb == 'render')
+    except Unreadable as broken:
+        emit(f'refused: {broken}', err=True)
+        return 0 if args.verb == 'session-start' else 2
     if args.verb == 'session-start':
         if where := familyrepos.notice():
             emit(where)  # every session starts knowing where the family's checkouts live

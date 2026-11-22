@@ -79,7 +79,7 @@ from dev_lab.dev.hpcaccount.cimark import paused_refusal
 from dev_lab.dev.hpcaccount.declaration import parser, resolve, store
 from dev_lab.dev.hpcaccount.deployhost import host_refusal
 from dev_lab.dev.hpcaccount.division import account_role
-from dev_lab.dev.hpcaccount.grantslice import grant_setup
+from dev_lab.dev.hpcaccount.grantslice import Unreadable, grant_setup
 from dev_lab.dev.hpcaccount.spec import (
     Deployment,
     Repo,
@@ -307,7 +307,10 @@ def _report(spec: Deployment, refused: Refused, host: str, alarm: AlarmSink) -> 
 
 def _admitted(args: argparse.Namespace, path: Path) -> tuple[Deployment, Mapping[str, Any]] | str:
     """The resolved declaration and its role's semantics, or why the deploy is refused before the host is asked."""
-    spec = resolve(args, path)
+    try:
+        spec = resolve(args, path)
+    except Unreadable as broken:  # a hand-run deploy; a fleet deploy's render repaired the old shape before this
+        return str(broken)
     if isinstance(spec, str):
         return spec
     semantics = {} if args.remove else account_role(spec.role, args.fleet_role, args.role_table)

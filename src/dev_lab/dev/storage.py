@@ -33,9 +33,11 @@ from typing import Final
 
 from lab_commons import launch as _door
 from lab_commons import storage as _storage
+from lab_commons.config import config_path
 from lab_commons.log import emit
 
 from dev_lab.dev.gitdirs import common_dir
+from dev_lab.dev.hpcaccount.grantslice import read_machine
 
 __all__ = [
     'MARKER',
@@ -300,6 +302,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         each.add_argument('--tree', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     try:
+        read_machine(config_path())  # an unreadable machine file names its cause and its door, not a parser line
         declared = _storage.declared()
         if args.verb == 'where':
             for kind in args.kinds or list(_storage.KINDS):
