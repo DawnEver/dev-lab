@@ -27,7 +27,7 @@ from lab_commons.hpc.layout import ROOT_VAR, AccountPaths, RootUndeclared, accou
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
-from dev_lab.dev.roles import HPC, ROLES, Unbound, roles_at
+from dev_lab.dev.roles import HPC, ROLES, Roles, Unbound, roles_at, roles_of_url
 from dev_lab.dev.venvpointer import shell_interpreter
 
 __all__ = [
@@ -313,16 +313,26 @@ def served(spec: Deployment) -> frozenset[str]:
 
 
 def unserved(spec: Deployment) -> frozenset[str]:
-    """The repos with no role bound to this account: never served here, never given the token."""
+    """The repos with no role bound to this account: never served here, never given the token.
+
+    The family's binding of the repo's URL decides (:func:`~dev_lab.dev.roles.roles_of_url`), never whether a
+    checkout exists: the credentials phase runs before the first clone, so on a fresh root every repo the family
+    binds elsewhere (hosted CI) read as served and was refused for a credential nothing there uses (measured
+    2026-11-22). A repo whose roles are unbound stays checked: its tick names why.
+    """
     found = set()
     for repo in spec.repos:
-        pyproject = checkout_of(spec, repo) / 'pyproject.toml'
         try:
-            if pyproject.is_file() and not serves_here(spec, repo):
+            if not _bound_here(spec, roles_of_url(repo.url)):
                 found.add(repo.name)
         except Unbound:
             continue
     return frozenset(found)
+
+
+def _bound_here(spec: Deployment, roles: Roles) -> bool:
+    """Whether *roles* binds a role to this account's grant role; a carried binding names kinds only (``''``)."""
+    return any(roles.kind(role) == HPC and roles.of(role).grant_role in {spec.role, ''} for role in ROLES)
 
 
 def serves_here(spec: Deployment, repo: Repo) -> bool:
@@ -337,10 +347,7 @@ def serves_here(spec: Deployment, repo: Repo) -> bool:
     checkout = checkout_of(spec, repo)
     if not (checkout / 'pyproject.toml').is_file():
         return False
-    roles = roles_at(checkout)
-    return any(  # a carried binding names kinds only (''): any hpc executor
-        roles.kind(role) == HPC and roles.of(role).grant_role in {spec.role, ''} for role in ROLES
-    )
+    return _bound_here(spec, roles_at(checkout))
 
 
 def merge_crontab(current: str, lines: Sequence[str]) -> str:
