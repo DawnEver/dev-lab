@@ -42,7 +42,7 @@ from lab_commons.config import section
 
 from dev_lab.dev import remote
 from dev_lab.dev.consentguard import state_dir
-from dev_lab.ops.consent.actions import ACTIONS
+from dev_lab.ops.consent.actions import ACTIONS, read_answer
 from dev_lab.ops.consent.credential import FIELDS, ConsentRefused
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
 from dev_lab.ops.totp import write_private
@@ -175,8 +175,13 @@ def _host(dest: str) -> str:
     return dest.rsplit('@', 1)[-1]
 
 
-def subject_read(table: Mapping[str, Any], dest: str, action: str, argv: list[str], *, send: Send) -> str:
-    """The subject *dest* derives for *action* run as *argv*, read through the issuer's ``subject`` verb -- no code.
+def subject_read(
+    table: Mapping[str, Any], dest: str, action: str, argv: list[str], *, send: Send
+) -> tuple[str, str | None]:
+    """``(subject, standing refusal)`` *dest* answers for *action* run as *argv*, through the issuer -- no code.
+
+    The refusal is what the host would refuse the request with as it stands (:func:`.actions.read_answer`), else
+    ``None``.
 
     Raises:
         ConsentRefused: the issuer is not *dest*'s host (it reads only its own), or it refused or could not derive.
@@ -188,11 +193,11 @@ def subject_read(table: Mapping[str, Any], dest: str, action: str, argv: list[st
         msg = f'the issuer ({_host(endpoint) or "none declared"}) reads only its own host, not {_host(dest)}'
         raise ConsentRefused(msg)
     status, said = send(table, {'verb': 'subject', 'action': action, 'argv': argv})
-    lines = [line.strip() for line in said.splitlines() if line.strip()]
-    if status or not lines:
-        msg = f'the issuer could not read the subject ({status}): {lines[-1] if lines else "no answer"}'
+    subject, refusal = read_answer(said)
+    if status or not subject:
+        msg = f'the issuer could not read the subject ({status}): {subject or "no answer"}'
         raise ConsentRefused(msg)
-    return lines[-1]
+    return subject, refusal
 
 
 def _answer(said: str) -> object:
