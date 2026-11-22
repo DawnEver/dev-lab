@@ -19,22 +19,25 @@ own ``auth role`` (:func:`dev_lab.dev.hpcaccount.account.role_of`'s verb), run i
 with git's credential helper pointed at ONLY that file, must answer as ``--login``. Only then is the store rewritten
 (:func:`rewrite_command`): a backup ``~/.git-credentials.bak-<ts>`` (0600) first, then every other line kept, the
 forge's line replaced, mode 0600, atomic ``mv``. A refusal deletes the staged file and leaves the store untouched.
-ONE LINE PER (HOST, LOGIN) (2026-11-20): another login's line on the same host is kept, so a verification account
-holds its verdict-posting login and the config source's reader (``[hpc.roles.<role>] config_reader``) side by side.
-An unnamed request gets the host's FIRST line, so the login it is for goes first and a ``config_reader`` reached
-only through a url naming it goes last (:func:`named_login`; measured 2026-11-21, the reader answered the serve).
-``--login L --drop-host H`` removes exactly L's line for H through the same rewrite and backup -- the repair door.
+A NAMED READER HAS ITS OWN FILE (2026-11-22). A verification account holds its verdict-posting login and the config
+source's reader (``[hpc.roles.<role>] config_reader``, :func:`named_login`) for one forge host. The reader's line is
+placed in ``~/.git-credentials.reader`` (:data:`~dev_lab.dev.credstore.READER_STORE`), never in the shared store:
+git moves a line it approves to the top of the store, so the reader's own pull made it answer the unnamed request
+after every deploy (measured on two accounts), whatever order a placement wrote. A line the shared store still
+holds for the reader is removed by the same placement, after the store's backup, and the door refuses when one
+remains. ``--login L --drop-host H`` removes exactly L's line for H from both files, each after its backup.
 After a placement, git's ``store`` helper is set when NO global helper is configured (one already set is kept):
 a store line git never consults reads as anonymous (measured 2026-11-20 on three research accounts).
 
 A NAMED LOGIN NEVER TAKES THE UNNAMED REQUEST (2026-11-22). A role declares no writer by name: the writer is
 whoever answers the host's unnamed request, the one a serve posts with. Around a named placement that request is
 asked before and after; an answer that changed (measured: the reader shadowed the writer, the reader's own
-read-back passed, every tick was refused) puts the store back from the placement's backup
-(:func:`~dev_lab.dev.credstore.restore_command`) and exits 2 naming both logins.
+read-back passed, every tick was refused) exits 2 naming both logins, the store put back from the placement's
+backup (:func:`~dev_lab.dev.credstore.restore_command`) when the placement wrote it.
 
 READ BACK BEFORE IT SAYS SO (2026-11-20). After the rewrite the forge's ``auth role`` runs again through git's own
-helper (no staged file) -- for a named login, git's fill for a request naming it must return the token -- only when
+helper (no staged file) -- for a named login, a fill naming it through the reader file's get-only helper
+(:func:`~dev_lab.dev.credstore.named_fill_command`) must return the token -- only when
 the STORED line answers as ``--login`` does the door print ``verified: ...`` and
 exit 0; anything else (a failover node whose write landed nowhere) exits 2 naming what answered. ``--from-output
 <name>`` reads the token from the consent output ``outputs/<name>`` (:func:`dev_lab.dev.planrunsteps.stdout_path`)
@@ -61,10 +64,13 @@ from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev.credstore import (
+    READER_STORE,
     STORE,
     CredentialRefused,
     DeclaredForge,
     digest,
+    drop_held_command,
+    held_command,
     named_fill_command,
     place_verified,
     read_forge,
@@ -134,8 +140,7 @@ def named_login(division: Division, user: str, login: str) -> bool:
     That is its role's ``config_reader`` when it is not the login an unnamed request is for (the role's
     ``reader``; on a writer account, the writer).
     """
-    table = division.roles.get(division.role_of(user), {})
-    return login == str(table.get('config_reader') or '') != str(table.get('reader') or '')
+    return login == division.named_reader(user) != ''
 
 
 def unreachable(account: str, grants: Sequence[Grant]) -> str:
@@ -191,7 +196,7 @@ def place_credential(
         before = _unnamed(shell, role) if named else ''  # who a serve posts as, before this line exists
         stamp = stamp or stamp_now()
         refusal, backup = place_verified(
-            shell, login=login, token=token, repo=repo, role=role, stamp=stamp, first=not named
+            shell, login=login, token=token, repo=repo, role=role, stamp=stamp, named=named
         )
     except (RuntimeError, OSError, ValueError) as failed:
         say(f'credential: refused -- {user}: {failed}')
@@ -206,7 +211,8 @@ def place_credential(
     ):
         say(f'credential: {why}')
         return 2
-    say(f'verified: {user}: the stored line answers {repo} as {login}; placed {digest(token)} (0600) {backup}')
+    held = f'~/{READER_STORE}' if named else 'the stored line'
+    say(f'verified: {user}: {held} answers {repo} as {login}; placed {digest(token)} (0600) {backup}')
     return 0
 
 
@@ -223,13 +229,17 @@ class _Asked:
 def _stored_refusal(shell: Runner, asked: _Asked, named_token: str) -> str:
     """Why the STORED line does not answer as the placed login; ``''`` when it does.
 
-    With *named_token* (a login reached only by a url naming it) the read is git's fill naming it, which must return
-    that token: the forge's ``auth role`` asks for the host alone.
+    With *named_token* (a login reached only by a url naming it) the read is a fill naming it from the reader file,
+    which must return that token (the forge's ``auth role`` asks for the host alone) -- and the shared store must
+    hold no line for it: one left there is moved first by the reader's next pull.
     """
+    host = urlsplit(asked.repo).hostname or ''
     try:
-        if named_token:
-            fill = named_fill_command(urlsplit(asked.repo).hostname or '', asked.login)
-            stored = asked.login if shell(fill, None).strip() == named_token else 'another token'
+        if named_token and shell(held_command(host, asked.login), None).strip():
+            stored = f'{asked.login} from ~/{STORE}, where a named reader must hold no line,'
+        elif named_token:
+            stored = asked.login if shell(named_fill_command(host, asked.login), None).strip() == named_token else ''
+            stored = stored or 'another token'
         else:
             stored = _unnamed(shell, asked.role)
     except (RuntimeError, OSError, ValueError) as failed:
@@ -245,7 +255,8 @@ def _shadow_refusal(shell: Runner, asked: _Asked, before: str, stamp: str, backu
 
     *before* is who answered it ahead of the placement -- the writer a serve posts as (a role names none). ``''``
     (nothing stored) or the placed login itself shadowed nobody. A changed answer restores the store from the
-    placement's backup, so the refusal leaves the account as it was found.
+    placement's backup when the placement wrote it (it removed a line the store held for the reader), so the
+    refusal leaves the store as it was found.
     """
     if before in {'', asked.login}:
         return ''
@@ -256,8 +267,9 @@ def _shadow_refusal(shell: Runner, asked: _Asked, before: str, stamp: str, backu
     if after == before:
         return ''
     try:
-        shell(restore_command(stamp), None)
-        undone = f'~/{STORE} restored from its {backup}'.strip()
+        if f'/{STORE}.bak-{stamp}' in backup:
+            shell(restore_command(stamp), None)
+        undone = f'~/{STORE} is as it was before this placement ({backup})'
     except (RuntimeError, OSError) as failed:
         undone = f'~/{STORE} NOT restored ({failed}): remove the line with --login {asked.login} --drop-host <host>'
     return (
@@ -281,19 +293,22 @@ def drop_host(
     connect: Callable[[Grant], Runner] = grant_runner,
     stamp: str = '',
 ) -> int:
-    """Remove exactly *login*'s *host* line of *account*'s ``~/.git-credentials``, after a backup; 2 on refusal."""
+    """Remove exactly *login*'s *host* line of *account*'s store and reader file, each after a backup; 2 on refusal."""
     user = account.partition('@')[0]
     grant = next((g for g in grants if g.user == user), None)
     why = _grant_refusal(grant, account) or ('' if valid_host(host) else f'not a host name: {host!r}')
     if why or grant is None:
         say(f'credential: refused -- {why}')
         return 2
+    stamp = stamp or stamp_now()
     try:
-        backup = connect(grant)(rewrite_command(host, stamp or stamp_now(), login=login, staged=False), None).strip()
+        shell = connect(grant)
+        backup = shell(rewrite_command(host, stamp, login=login, staged=False), None).strip()
+        backup = f'{backup} {shell(drop_held_command(host, stamp, login=login, store=READER_STORE), None)}'.strip()
     except (RuntimeError, OSError, ValueError) as failed:
         say(f'credential: refused -- {user}: {failed}')
         return 2
-    say(f'{user}: dropped the {login}@{host} line of ~/{STORE} {backup}'.strip())
+    say(f'{user}: dropped the {login}@{host} line of ~/{STORE} and ~/{READER_STORE} {backup}'.strip())
     return 0
 
 

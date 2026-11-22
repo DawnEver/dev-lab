@@ -33,7 +33,8 @@ file is the render of the config source's ``family.toml`` and ``hosts/<cluster>-
 (:mod:`dev_lab.dev.accounthost`), and that render runs ON the account, so it runs here, between the kit's tick and
 the deploy (:func:`render_command`): the account clones or fast-forwards the config source (THIS workstation's
 ``[devhost]`` clone's origin, :class:`ConfigSource`) with its stored reader credential -- none stored for that forge
-is refused naming ``hpcaccount credential`` -- prints ``devhost drift --from`` that clone (what the render
+is refused naming ``hpcaccount credential``; a role's named ``config_reader`` is read from its own file, get-only,
+so the fetch never rewrites the shared store -- prints ``devhost drift --from`` that clone (what the render
 changes), then ``devhost render --write`` (the old file backed up under ``~/.cache/dev-lab/<yy>/<mm>/<dd>/devhost``).
 A failed render stops that account's deploy. Before any ssh, an account whose grant names no cluster, whose
 ``<cluster>-<user>`` the family file declares no grant for, or whose ``hosts/<cluster>-<user>.toml`` this
@@ -61,7 +62,7 @@ from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
 
 from dev_lab.dev import accounthost
-from dev_lab.dev.credstore import STORE, valid_host
+from dev_lab.dev.credstore import READER_STORE, STORE, move_reader_command, reader_git, valid_host
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.devdeclared import OWN_TABLE
 from dev_lab.dev.devhost import host_file
@@ -205,37 +206,48 @@ def layer_refusal(grant: Grant, source: ConfigSource) -> str:
     return ''
 
 
-def render_command(grant: Grant, target: Target, source: ConfigSource, *, reader: str = '') -> str:
+def render_command(grant: Grant, target: Target, source: ConfigSource, *, reader: str = '', named: bool = False) -> str:
     """The shell line that renders *grant*'s machine file ON its account from the config source's clone there.
 
     The clone is ``<root>/repos/<config repo>``, fetched with the account's stored credential (refused, naming the door
     that places one, when none is stored for the forge); ``devhost drift`` prints what the render changes, then
     ``devhost render --write`` replaces the file, its old copy backed up. In the grant's ``setup`` environment.
-    With *reader* (the role's ``config_reader``), the url names that login, so git's store answers with ITS line
-    even when the account holds another login's line for the same forge (one line per host and login, 2026-11-20).
+    With *reader* (the login the role reads the config source as) the url names that login. *named* (a
+    ``config_reader`` that is not the login the store's unnamed request is for,
+    :meth:`~dev_lab.dev.hpcaccount.division.Division.named_reader`): its token is read from its OWN file through a
+    get-only helper on these git calls alone (:func:`~dev_lab.dev.credstore.reader_git`), so nothing the fetch
+    authenticates can write or reorder the shared store (measured 2026-11-22: git approved the reader after each
+    pull and the ``store`` helper moved its line first, so the deploy's own check was answered by the read-only
+    login). An account still holding the reader's line in the shared store has it MOVED first
+    (:func:`~dev_lab.dev.credstore.move_reader_command`, once).
     """
     split = urlsplit(source.url)
     forge = split.hostname or ''
     url = split._replace(netloc=f'{reader}@{split.netloc}').geturl() if reader else source.url
     clone = shlex.quote(account_clone(target, source).as_posix())
     backups = f'"$HOME/{_BASE}/$(date -u +%y/%m/%d)/devhost"'
-    held = f'://{reader}:[^@/]*@{forge}' if reader else f'@{forge}'
+    held, store, git = f'@{forge}', STORE, 'git'
+    if reader:
+        held = f'://{reader}:[^@/]*@{forge}'
+    if reader and named:
+        store, git = READER_STORE, f'git {reader_git(forge)}'
     credential = (
-        f"grep -qs '{held}' ~/{STORE} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
-        f'~/{STORE}: place one with python -m dev_lab.dev.hpcaccount credential {grant.user}@{target.host} --login '
+        f"grep -qs '{held}' ~/{store} || {{ echo '[render] refused -- no stored reader credential for {forge} in "
+        f'~/{store}: place one with python -m dev_lab.dev.hpcaccount credential {grant.user}@{target.host} --login '
         f"{reader or '<reader>'} --host-config <config source clone>'; exit 2; }}"
     )
     quoted = shlex.quote(url)
     fetch = (
         f'if [ -d {clone}/.git ]; then git -C {clone} remote set-url origin {quoted} '
-        f'&& git -C {clone} pull -q --ff-only; '
-        f'else git clone -q {quoted} {clone}; fi'
+        f'&& {git} -C {clone} pull -q --ff-only; '
+        f'else {git} clone -q {quoted} {clone}; fi'
     )
+    moved = [move_reader_command(forge, reader)] if reader and named else []
     name = account_host(grant)
     drift = in_checkout(target, ['-m', 'dev_lab.dev.devhost', 'drift'])
     render = in_checkout(target, ['-m', 'dev_lab.dev.devhost', 'render', '--host', name, '--write'])
     steps = [
-        'export GIT_TERMINAL_PROMPT=0', credential, fetch, f'echo "[render] {name}: what the render changes"',
+        'export GIT_TERMINAL_PROMPT=0', *moved, credential, fetch, f'echo "[render] {name}: what the render changes"',
         f'{{ {drift} --from {clone} ; true; }}', f'{render} --from {clone} --backups {backups}',
     ]  # fmt: skip
     return f'( {" && ".join([*grant.setup, *steps])} )'
@@ -294,7 +306,8 @@ def deploy_command(grant: Grant, target: Target, source: ConfigSource, division:
     deployed = in_checkout(target, deploy)
     if grant.setup:  # the venvs it builds compile in the cluster's declared environment, as its ticks run
         deployed = f'( {" && ".join([*grant.setup, deployed])} )'
-    rendered = render_command(grant, target, source, reader=reader)
+    named = division is not None and division.named_reader(grant.user) == reader != ''
+    rendered = render_command(grant, target, source, reader=reader, named=named)
     return f'{paused_guard(target.root)} && {refreshed} ; {rendered} && {deployed}'
 
 

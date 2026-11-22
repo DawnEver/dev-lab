@@ -11,6 +11,14 @@ is rewritten (:func:`rewrite_command`): a backup ``~/.git-credentials.bak-<ts>``
 the forge's line for THAT LOGIN replaced (one line per host and login), mode 0600, atomic ``mv``. A refusal
 deletes the staged file and leaves the store untouched.
 
+A NAMED READER NEVER LIVES IN THE SHARED STORE (2026-11-22). A login reached only by a url naming it (a role's
+``config_reader`` beside the writer) keeps its line in its OWN file, :data:`READER_STORE`, read by a GET-ONLY helper
+on the command line of exactly that login's git calls (:func:`reader_git`). Measured on two verification accounts:
+with both lines in ``~/.git-credentials``, git's ``credential approve`` after every authenticated pull as the reader
+made the ``store`` helper rewrite the file with the reader FIRST, so the host's unnamed request -- the one a serve
+posts with -- answered as the read-only login after every deploy. Order in a shared file is not a place to keep a
+fact git rewrites. :func:`move_reader_command` is the ONE migration of an account that still holds the old shape.
+
 THE FORGE IS THE HOST CONFIG'S (:func:`read_forge`): its sites and accounts come from the forge host's reviewed
 config, never a copy; a url on another host is refused before anything is staged.
 """
@@ -32,15 +40,20 @@ from urllib.parse import quote, urlsplit
 from dev_lab.ops.config import load as load_host_config
 
 __all__ = [
+    'READER_STORE',
     'STORE',
     'CredentialRefused',
     'DeclaredForge',
     'Shell',
     'digest',
     'discard_command',
+    'drop_held_command',
+    'held_command',
+    'move_reader_command',
     'named_fill_command',
     'place_verified',
     'read_forge',
+    'reader_git',
     'restore_command',
     'rewrite_command',
     'stage_command',
@@ -55,6 +68,9 @@ Shell = Callable[[str, str | None], str]
 
 #: The store git's ``credential.helper store`` reads, under ``$HOME``.
 STORE: Final = '.git-credentials'
+#: The owner-only file, beside the store, that holds a NAMED reader's line: git's store format, read only through
+#: :func:`reader_git`, so no git call can write or reorder it and it never answers a request the store answers.
+READER_STORE: Final = f'{STORE}.reader'
 _HOST: Final = re.compile(r'[A-Za-z0-9.-]+')
 _LOGIN: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
 _STAMP: Final = re.compile(r'[0-9]{8}T[0-9]{6}Z')
@@ -125,31 +141,90 @@ def discard_command(stamp: str) -> str:
     return f'rm -f {_staged(stamp)}'
 
 
-def rewrite_command(host: str, stamp: str, *, login: str, staged: bool, first: bool = True) -> str:
-    """The shell line that backs up ``~/.git-credentials`` and removes *login*'s *host* line -- replaced if staged.
-
-    ONE LINE PER (HOST, LOGIN) (2026-11-20): another login's line on the same host is kept, so one account holds a
-    verdict-posting login and a reader side by side; a url naming its user selects that line. A request naming NO
-    user gets the FIRST line for the host (git's ``store`` helper), so ORDER decides who answers it (measured
-    2026-11-21: a reader placed beside the writer answered the serve as the reader). The staged line goes *first*
-    when its login is the one an unnamed request is for, else last, after every line it must not shadow. The backup
-    ``~/.git-credentials.bak-<stamp>`` (0600) is taken when a store exists and its path echoed; every other line is
-    kept; the new file is written under ``umask 077``, ``chmod 600`` and moved into place atomically.
-    """
-    _checked(host, stamp)
+def _own(host: str, login: str) -> str:
+    """The quoted ``grep -E`` pattern matching exactly *login*'s line for *host* in a store file."""
+    if not valid_host(host):
+        msg = f'not a forge host name: {host!r}'
+        raise ValueError(msg)
     if not valid_login(login):
         msg = f'not a forge login: {login!r}'
         raise ValueError(msg)
-    own = r'^https?://' + login.replace('.', r'\.') + r'(:[^@/]*)?@' + host.replace('.', r'\.') + r'(:[0-9]+)?/?$'
-    cat, done = (f'cat {_staged(stamp)}', f' && rm -f {_staged(stamp)}') if staged else ('', '')
-    kept = f'{{ grep -v -E {shlex.quote(own)} "$f" 2>/dev/null || true; }}'
-    body = '; '.join(part for part in ((cat, kept) if first else (kept, cat)) if part)
+    dotted = (login.replace('.', r'\.'), host.replace('.', r'\.'))
+    return shlex.quote(r'^https?://' + dotted[0] + r'(:[^@/]*)?@' + dotted[1] + r'(:[0-9]+)?/?$')
+
+
+def _replace(own: str, *, store: str, stamp: str, source: str, done: str = '') -> str:
+    """Back ``~/<store>`` up as ``.bak-<stamp>``, then write *source*'s line and every line *own* does not match."""
+    kept = f'{{ grep -v -E {own} "$f" 2>/dev/null || true; }}'
     return (
-        f'umask 077 && f="$HOME/{STORE}" && b="$f.bak-{stamp}" && '
+        f'umask 077 && f="$HOME/{store}" && b="$f.bak-{stamp}" && '
         '{ [ ! -e "$f" ] || { cp "$f" "$b" && chmod 600 "$b" && echo "backup $b"; }; } && t="$(mktemp "$f.XXXXXX")" '
-        f'&& {{ {body}; }} > "$t" '
+        f'&& {{ {"; ".join(part for part in (source, kept) if part)}; }} > "$t" '
         f'&& chmod 600 "$t" && mv -f "$t" "$f"{done}'
     )
+
+
+def rewrite_command(host: str, stamp: str, *, login: str, staged: bool, store: str = STORE) -> str:
+    """The shell line that backs up ``~/<store>`` and removes *login*'s *host* line -- replaced if staged.
+
+    ONE LINE PER (HOST, LOGIN): another login's line on the same host is kept. A request naming NO user gets the
+    host's FIRST line (git's ``store`` helper), and git itself moves a line first whenever it approves it (measured
+    2026-11-22), so no placement order lasts: the shared store holds the one login an unnamed request is for, and
+    a named reader's line goes to *store* :data:`READER_STORE`. The backup ``~/<store>.bak-<stamp>`` (0600) is
+    taken when the file exists and its path echoed; every other line is kept; the new file is written under
+    ``umask 077``, ``chmod 600`` and moved into place atomically.
+    """
+    _checked(host, stamp)
+    cat, done = (f'cat {_staged(stamp)}', f' && rm -f {_staged(stamp)}') if staged else ('', '')
+    return _replace(_own(host, login), store=store, stamp=stamp, source=cat, done=done)
+
+
+def _held(host: str, login: str, store: str) -> str:
+    return f'grep -q -s -E {_own(host, login)} "$HOME/{store}"'
+
+
+def held_command(host: str, login: str, store: str = STORE) -> str:
+    """The shell line that prints ``held`` when ``~/<store>`` holds *login*'s *host* line, else nothing."""
+    return f'if {_held(host, login, store)}; then echo held; fi'
+
+
+def drop_held_command(host: str, stamp: str, *, login: str, store: str = STORE) -> str:
+    """:func:`rewrite_command` removing *login*'s *host* line, run only when ``~/<store>`` holds one."""
+    dropped = rewrite_command(host, stamp, login=login, staged=False, store=store)
+    return f'if {_held(host, login, store)}; then {dropped}; fi'
+
+
+def move_reader_command(host: str, login: str) -> str:
+    """The shell line that MOVES *login*'s *host* line from the shared store to :data:`READER_STORE`; else nothing.
+
+    THE ONE MIGRATION (FORMATS-MIGRATE-ONCE) of an account placed while a named reader shared the store: both files
+    are backed up (``.bak-<now>``, 0600), the reader file is written first, then the line leaves the store, so a
+    cut between the two leaves the line in both and the next run finishes it. A store without the line runs
+    nothing, so it is safe to repeat; every other line, and their order, is kept. Prints no token.
+    """
+    own, stamp = _own(host, login), '$(date -u +%Y%m%dT%H%M%SZ)'
+    taken = f'grep -E {own} "$HOME/{STORE}" | head -n 1'
+    return (
+        f'if {_held(host, login, STORE)}; then {_replace(own, store=READER_STORE, stamp=stamp, source=taken)} && '
+        f'{_replace(own, store=STORE, stamp=stamp, source="")} && '
+        f'echo "moved the {login} line for {host} from ~/{STORE} to ~/{READER_STORE}"; fi'
+    )
+
+
+def reader_git(host: str) -> str:
+    """The ``git`` options that make ONE git call read *host*'s credential from :data:`READER_STORE`, get-only.
+
+    Every inherited helper is reset -- the generic list and *host*'s URL-scoped one, as :func:`verify_prefix` does --
+    and replaced by a helper that answers ``get`` from the reader file and does nothing for ``store`` and ``erase``:
+    whatever the call authenticates, approves or rejects, no file is written or reordered. ``$HOME`` stays literal
+    for the helper's own shell.
+    """
+    if not valid_host(host):
+        msg = f'not a forge host name: {host!r}'
+        raise ValueError(msg)
+    get = f'!f() {{ [ "$1" != get ] || git credential-store --file "$HOME/{READER_STORE}" get; }}; f'
+    keys = ('credential.helper', f'credential.https://{host}.helper')
+    return ' '.join(f'-c {key}= -c {shlex.quote(f"{key}={get}")}' for key in keys)
 
 
 class CredentialRefused(ValueError):
@@ -217,27 +292,28 @@ def restore_command(stamp: str) -> str:
 
 
 def named_fill_command(host: str, login: str) -> str:
-    """The shell line that prints the password git's helper returns for a request on *host* naming *login*.
+    """The shell line that prints the password the reader file returns for a request on *host* naming *login*.
 
-    The read-back of a login reached by a url naming it (a config reader beside the writer): the forge's
-    ``auth role`` asks for the host alone, so it would read the unnamed answer, never this login's line.
+    The read-back of a login reached by a url naming it (a config reader beside the writer), asked exactly as its
+    git calls ask (:func:`reader_git`): the forge's ``auth role`` asks for the host alone, so it reads the store's
+    unnamed answer, never this login's line.
     """
-    if not valid_host(host) or not valid_login(login):
-        msg = f'not a forge host and login: {host!r} {login!r}'
-        raise ValueError(msg)
+    _own(host, login)
     asked = shlex.quote(f'protocol=https\\nhost={host}\\nusername={login}\\n\\n')
-    return f"printf {asked} | GIT_TERMINAL_PROMPT=0 git credential fill 2>/dev/null | sed -n 's/^password=//p'"
+    fill = f'GIT_TERMINAL_PROMPT=0 git {reader_git(host)} credential fill'
+    return f"printf {asked} | {fill} 2>/dev/null | sed -n 's/^password=//p'"
 
 
 def place_verified(
-    shell: Shell, *, login: str, token: str, repo: str, role: str, stamp: str = '', first: bool = True
+    shell: Shell, *, login: str, token: str, repo: str, role: str, stamp: str = '', named: bool = False
 ) -> tuple[str, str]:
     """Stage *token* as *login* for *repo*'s host, verify with the *role* command, then replace.
 
-    *first* places the line ahead of the host's other lines (see :func:`rewrite_command`).
+    *named* (a login reached only by a url naming it) places the line in :data:`READER_STORE` and removes any line
+    the shared store still holds for it, after that store's own backup.
 
     Returns ``(refusal, '')`` when the forge answered as anyone but *login* (the store untouched), else
-    ``('', backup line)``.
+    ``('', backup lines)``.
     """
     stamp, host = stamp or stamp_now(), urlsplit(repo).hostname or ''
     shell(stage_command(stamp), f'https://{quote(login, safe="")}:{quote(token, safe="")}@{host}\n')
@@ -248,4 +324,8 @@ def place_verified(
     if answered != login:
         shell(discard_command(stamp), None)
         return f'the forge answers {repo} as {answered or "anonymous"}, not {login}; ~/{STORE} untouched', ''
-    return '', shell(rewrite_command(host, stamp, login=login, staged=True, first=first), None).strip()
+    if not named:
+        return '', shell(rewrite_command(host, stamp, login=login, staged=True), None).strip()
+    placed = shell(rewrite_command(host, stamp, login=login, staged=True, store=READER_STORE), None).strip()
+    left = shell(drop_held_command(host, stamp, login=login), None).strip()
+    return '', ' '.join(part for part in (placed, left) if part)

@@ -11,7 +11,7 @@ table, which ``deploy-fleet`` reads and passes to each account's deploy::
     serves = false                       # runs the forge serve cron
     read_only = true                     # a stored forge credential with push/admin is REFUSED (else reported)
     reader = "<forge login>"             # optional: the read-only login that credential must be
-    config_reader = "<forge login>"      # optional: the login that reads the config source, its own store line
+    config_reader = "<forge login>"      # optional: the login that reads the config source, in its own file
 
 A declared ``[hpc.roles]`` REPLACES the defaults whole (never merged), so the file names every role it uses. The
 reader is per role, so one shared read-only login is the same value on each role, and a role may still differ.
@@ -60,6 +60,17 @@ class Division:
         """The login *user*'s role reads the config source as (``config_reader``, else ``reader``); ``''`` if none."""
         table = self.roles.get(self.role_of(user), {})
         return str(table.get('config_reader') or table.get('reader') or '')
+
+    def named_reader(self, user: str) -> str:
+        """*user*'s ``config_reader`` when only a url naming it reaches it, else ``''``.
+
+        That is a ``config_reader`` other than the login the store's unnamed request is for (the role's
+        ``reader``; on a writer account, the writer): its line lives in its own file, never the shared store
+        (:data:`dev_lab.dev.credstore.READER_STORE`).
+        """
+        table = self.roles.get(self.role_of(user), {})
+        named = str(table.get('config_reader') or '')
+        return named if named != str(table.get('reader') or '') else ''
 
     def refusal(self, user: str) -> str | None:
         """Why *user*'s declared role is not in the table; ``None`` when it is, or none is declared."""
