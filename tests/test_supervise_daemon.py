@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from lab_commons.box import hold
 from lab_commons.compute.model import Demand
+from lab_commons.config import CONFIG_ENV
 
 from dev_lab.supervise import daemon
 from dev_lab.supervise.cli import build_registry
@@ -92,6 +95,61 @@ def test_a_cycle_that_finds_the_seat_taken_skips_rather_than_fails(tmp_path: Pat
     with hold(Demand({'supervise_unit_test': 1, 'cpu': 0, 'mem_gb': 0.0}), 60, 'another cycle', 0.0, key='k'):
         assert loop.once(_CLOCK) is None
     assert probe.runs == 0, 'the seat is taken before any work, so no check should have run'
+
+
+def test_a_cycle_the_box_refuses_outright_is_not_called_a_held_seat(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refusal that is no held seat says what it is: nothing else is doing this cycle's work.
+
+    The machine here declares a free-space floor no volume keeps, which is the refusal the hosted runner gave.
+    """
+    Path(os.environ[CONFIG_ENV]).write_text('[storage]\nfree_floor_gb = 1e12\n', encoding='utf-8')
+    probe = _Probe()
+    assert _loop(tmp_path, probe).once(_CLOCK) is None
+    said = capsys.readouterr().out
+    assert 'the box refused this cycle' in said
+    assert 'free-space floor' in said
+    assert 'another cycle holds' not in said
+    assert probe.runs == 0
+
+
+#: How long ``serve(once=True)`` may take to return after its one cycle was skipped, before the test stops it.
+_ONCE_RETURNS_WITHIN_S = 10.0
+
+
+def test_serve_once_returns_when_its_one_cycle_was_skipped(tmp_path: Path) -> None:
+    """ONCE IS ONE ATTEMPT, NOT ONE RESULT. A skipped cycle yields nothing, and ``once`` used to wait for a result.
+
+    Measured on a hosted Windows runner (dev-lab tests/base@windows, 2026-11-22): the box refused every cycle (its
+    volume was under the free-space floor), so ``serve(once=True)`` slept one interval and tried again, forever --
+    three tests each ran into the 600 s per-test ceiling and took their worker down with them. A timer-driven
+    host that finds the seat taken wants the same thing: return, and let the next tick try.
+
+    THE WAIT IS BOUNDED HERE AND NAMED: a timer sets the stop flag after ``_ONCE_RETURNS_WITHIN_S`` and says it
+    had to, so a regression fails in ten seconds naming what it waited for instead of wedging the suite.
+    """
+    probe = _Probe()
+    loop = _loop(tmp_path, probe)
+    rescued = threading.Event()
+
+    def rescue() -> None:
+        rescued.set()
+        loop.stop.set()
+
+    timer = threading.Timer(_ONCE_RETURNS_WITHIN_S, rescue)
+    timer.start()
+    try:
+        with hold(Demand({'supervise_unit_test': 1, 'cpu': 0, 'mem_gb': 0.0}), 60, 'another cycle', 0.0, key='k'):
+            code = serve(loop, once=True)
+    finally:
+        timer.cancel()
+    assert not rescued.is_set(), (
+        f'serve(once=True) was still waiting for a second cycle {_ONCE_RETURNS_WITHIN_S:g} s after its one '
+        'cycle was skipped'
+    )
+    assert probe.runs == 0, 'the seat was taken, so no check ran'
+    assert code == 0, 'a skip is not a failure'
 
 
 def test_serve_once_runs_one_cycle_and_returns(tmp_path: Path) -> None:

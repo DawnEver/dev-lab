@@ -4,7 +4,9 @@ A test that falls through to the default root shares the HOST's live seats (a si
 stranger's directory on a cluster node) and its result then depends on who else is on the box. A
 test that means the default root says so with ``monkeypatch.delenv``. The machine config is the
 test's own for the same reason, and so is the machine home: a finished run LEARNS into its ``state``
-(:mod:`lab_commons.compute.learned`).
+(:mod:`lab_commons.compute.learned`). That machine file declares the test box's free-space floor: the box
+refuses a hold on a volume under the machine's floor, and a host's free disk never decides a test's result
+(test_a_test_box_keeps_its_own_floor).
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from _box_fake import TEST_MACHINE
 from _roles_fixtures import EVERY_CI, carry
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
@@ -31,9 +34,15 @@ from dev_lab.dev.storage import ROOTS_ENV
 
 
 @pytest.fixture(autouse=True)
-def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _a_box_of_its_own(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv(BOX_ENV, str(tmp_path / 'lab-commons-box' / 'box.sqlite'))
-    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'lab-commons-machine' / 'config.toml'))
+    # BESIDE tmp_path, never in it: the file exists before the test runs, and a test's tmp_path starts empty
+    # (several hand it whole to a reader that refuses an entry it does not know).
+    machine = tmp_path_factory.mktemp('lab-commons-machine') / 'config.toml'
+    machine.write_text(TEST_MACHINE, encoding='utf-8')
+    monkeypatch.setenv(CONFIG_ENV, str(machine))
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'lab-commons-home'))
     # The roots this machine PUBLISHED for the guard engine (storage publish): a test plants its own, never reads ours.
     monkeypatch.setenv(ROOTS_ENV, str(tmp_path / 'lab-commons-storage' / 'storage-roots.json'))

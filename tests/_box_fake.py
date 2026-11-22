@@ -9,11 +9,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
+from typing import Final
 
 from lab_commons.box import Capacity, ProcessEnd, Refused, write_ended
 from lab_commons.box.supply import Reading
 
 from dev_lab.supervise.process.base import Ran
+
+#: The test machine's file: its box keeps one MiB free, never the 50 GiB default measured against the host's
+#: system-temp volume (a hosted Windows runner had 30 GiB there and every held test was refused). The suite's
+#: machine file is this (``conftest._a_box_of_its_own``); a test that plants its own machine and takes a real hold
+#: writes it there too. A test that means another floor says so.
+TEST_MACHINE: Final = '[storage]\nfree_floor_gb = 0.001\n'
 
 
 def ended(code: int, reason: str = 'exit') -> ProcessEnd:
