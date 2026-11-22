@@ -6,13 +6,13 @@ remedy); an older shim of ours is STALE and replaced; somebody else's file is FO
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from _sh_native import native
 from _venv_fake import linked_env
 
 from dev_lab.dev import hook_install, venvpointer
@@ -333,12 +333,7 @@ def _fallback(stage_shim: str) -> str:
 
 def _native(answer: str) -> Path:
     """A shell path in this platform's spelling, resolved (git bash on Windows prints ``/c/...``)."""
-    if os.name == 'nt' and answer.startswith('/'):
-        cygpath = Path(shutil.which('sh') or 'sh').with_name('cygpath')
-        answer = subprocess.run(
-            [str(cygpath), '-w', answer], capture_output=True, text=True, encoding='utf-8', check=True
-        ).stdout.strip()
-    return Path(answer).resolve()
+    return Path(native(answer, shutil.which('sh') or 'sh')).resolve()
 
 
 def test_a_recorded_checkout_interpreter_follows_that_checkouts_current_environment(tmp_path: Path) -> None:

@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from _sh_native import native
 from _venv_fake import linked_env
 
 from dev_lab.dev import agent_guard, venvpointer
@@ -61,13 +62,6 @@ def _same(answer: str, expected: Path) -> bool:
     return os.path.normcase(os.path.realpath(answer)) == os.path.normcase(os.path.realpath(expected))
 
 
-def _native(answer: str) -> str:
-    """A shell answer in this platform's spelling (git bash on Windows prints ``/c/...``)."""
-    if os.name == 'nt' and SH and answer.startswith('/'):
-        return _run([str(Path(SH).with_name('cygpath')), '-w', answer])
-    return answer
-
-
 def test_the_three_resolvers_agree_on_every_layout(tmp_path: Path) -> None:
     assert SH, 'the shell twin runs in a POSIX sh: every host the kit serves has one'
     for name, (plant, expected_of) in LAYOUTS.items():
@@ -78,7 +72,7 @@ def test_the_three_resolvers_agree_on_every_layout(tmp_path: Path) -> None:
         js = _run([str(node_path()), str(RESOLVER), '--current', str(root)])
         sh = _run([str(SH), '-c', f'{venvpointer.shell_function()}\n_current_env "$1"', 'sh', root.as_posix()])
         assert _same(js, expected), (name, js, expected)
-        assert _same(_native(sh), expected), (name, sh, expected)
+        assert _same(native(sh, SH), expected), (name, sh, expected)
     linked = tmp_path / 'linked'
     assert venvpointer.named(linked) == (linked / venvpointer.HOME / 'new').resolve()
     assert venvpointer.named(tmp_path / 'plain') is None, 'PLANTED CONTROL: a plain .venv is no published env'
