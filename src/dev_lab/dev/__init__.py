@@ -180,6 +180,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   whether it may claim the skip census.
 * :mod:`dev_lab.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
+* :mod:`dev_lab.dev.forgeservedeclared` -- the machine-file tables a serve reads; a refused one is a named release.
 * :mod:`dev_lab.dev.forgeservesteps` -- the contained steps after a serve tick: issue alarms, hygiene, retention.
 * :mod:`dev_lab.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
 * :mod:`dev_lab.dev.forgeintent` -- a local run's claim journaled before it runs; a restart re-attaches to it.
@@ -414,6 +415,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``report --json``, every declared grant's day, quota and budget for a reader outside dev-lab.
 * :mod:`dev_lab.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
   store cleanup its host owns.
+* :mod:`dev_lab.dev.accountsweep` -- the caller's retention rules streamed to an account too full to update its kit.
 * :mod:`dev_lab.dev.oldcopies` -- the copies an account's old layout left behind, and the retention rule removing them.
 * :mod:`dev_lab.dev.retention` -- the storage retention pass serve runs every tick, and its quota alarm.
 * :mod:`dev_lab.dev.retentionplan` -- what retention deletes: a tree or env once nothing in flight needs it.

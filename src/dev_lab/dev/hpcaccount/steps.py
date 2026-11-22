@@ -17,8 +17,8 @@ from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
 from dev_lab.dev import boxmigrate, venvcurrent, venvpointer
-from dev_lab.dev.diskusage import remove_tree
 from dev_lab.dev.hpcaccount import selfclean
+from dev_lab.dev.hpcaccount.checkout import clone, converge
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
 
@@ -199,26 +199,14 @@ def _native(step: Step, root: str, checkout: Path, builds: Builds, env: dict[str
 
 
 def update(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
-    """Clone *repo*, or fetch its ref and check it out; then its submodules at their pinned commits.
+    """Clone *repo*, or converge its checkout on the declared ref; then its submodules at their pinned commits.
 
-    A product consumes its components by path (:mod:`dev_lab.dev.components`), so a checkout
-    without its submodules builds a venv that cannot resolve them.
+    An existing checkout is made the ref whatever an interrupted deploy left (:func:`.checkout.converge`); one that
+    holds a commit or a tracked change of its own is refused by name. A product consumes its components by path
+    (:mod:`dev_lab.dev.components`), so a checkout without its submodules builds a venv that cannot resolve them.
     """
     checkout, git = checkout_of(spec, repo), step.tools.git
-    if not (checkout / '.git').exists():
-        argv = [*git, 'clone', '-q', '-b', repo.ref, repo.url, str(checkout)]
-        if rc := step.change(f'git clone -b {repo.ref} {repo.url} {checkout}', argv):
-            remove_tree(checkout)  # a failed fresh clone leaves nothing half-checked-out
-            return rc
-    else:
-        remote = f'refs/remotes/origin/{repo.ref}'
-        rc = step.change(
-            f'{repo.name}: git fetch origin {repo.ref}',
-            [*git, '-C', str(checkout), 'fetch', '-q', 'origin', f'+refs/heads/{repo.ref}:{remote}'],
-        ) or step.change(
-            f'{repo.name}: git checkout -B {repo.ref} origin/{repo.ref}',
-            [*git, '-C', str(checkout), 'checkout', '-q', '-B', repo.ref, remote],
-        )
+    rc = converge(step, checkout, repo) if (checkout / '.git').exists() else clone(step, checkout, repo)
     if rc or not (checkout / '.gitmodules').is_file():
         return rc
     return step.change(

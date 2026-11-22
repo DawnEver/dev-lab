@@ -12,22 +12,33 @@ state, so each escape is found once and :func:`step` sounds it once (:data:`~dev
 deduplicated per path by the alarm's repeat window).
 
 WHAT IS ALLOWED is the machine home's resolver's, never restated here: a home entry is no escape when it holds
-or lies in one of ``lab_commons.home``'s write roots or agent repos (:func:`allowed_roots`), or when the resolver
-exempts it -- agent host configuration and git's credential store (user ruling 2026-11-07).
+or lies in one of ``lab_commons.home``'s write roots or agent repos, or in the account's ONE declared root where
+it has one (``LAB_ROOT``, :func:`lab_commons.hpc.layout.local_root`) (:func:`allowed_roots`), or when the
+resolver exempts it -- agent host configuration and git's credential store (user ruling 2026-11-07).
+
+THE ALARM IS FOR A RUN WRITING OUTSIDE ITS TREE, so the home is judged by what a run can add to it (measured
+2026-11-22: a served account alarmed its own ``.bashrc``, ``.cache``, ``.config`` and its declared root on every
+tick). The state keeps the names the home held at the last scan: a DOTFILE that was already there is the
+account's own login state (a profile, a tool's cache or configuration) and its changing is no escape; a NEW
+entry, dotfile or not, and a changed entry that is not a dotfile, still are. The credential door's own files
+(:data:`~dev_lab.dev.credstore.STORE` and its ``.reader`` / ``.bak-<ts>`` / ``.new-<ts>`` siblings) are login
+state it writes by design, never a run's.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from pathlib import Path
 from typing import Final
 
 from lab_commons import home as machine
 from lab_commons.compute.durable import durable_text
 from lab_commons.config import section
+from lab_commons.hpc.layout import RootUndeclared, local_root
 
+from dev_lab.dev.credstore import STORE
 from dev_lab.dev.forgealarm import ESCAPE, Alarm
 from dev_lab.supervise.hostalarms import state_path
 
@@ -40,8 +51,15 @@ STATE_NAME: Final = 'escapes.json'
 
 
 def allowed_roots() -> tuple[Path, ...]:
-    """The roots a write may land in, as ``lab_commons.home`` declares them: its write roots and agent repos."""
-    return (*machine.write_roots(), *machine.agent_repos().values())
+    """The roots a write may land in: ``lab_commons.home``'s write roots and agent repos, and the declared root.
+
+    The declared root is a served account's (``LAB_ROOT``, exported by its deploy); a machine with none has none.
+    """
+    try:
+        declared: tuple[Path, ...] = (Path(local_root().root),)
+    except RootUndeclared:
+        declared = ()
+    return (*machine.write_roots(), *machine.agent_repos().values(), *declared)
 
 
 def _under(path: Path, roots: Iterable[Path]) -> bool:
@@ -59,19 +77,40 @@ def _changed(entries: Iterable[Path], since: float) -> list[Path]:
     return found
 
 
-def scan(roots: Sequence[Path], *, home: Path, allowed: Sequence[Path], since: float) -> list[Path]:
+def _login_state(name: str, known: Collection[str]) -> bool:
+    """Whether the home entry *name* is the account's own login state: a dotfile already there, or the store's."""
+    return (name.startswith('.') and name in known) or name == STORE or name.startswith(f'{STORE}.')
+
+
+def scan(
+    roots: Sequence[Path], *, home: Path, allowed: Sequence[Path], since: float, known: Collection[str] = ()
+) -> list[Path]:
     """Every entry of a watched root, and every top-level home entry outside *allowed*, changed after *since*.
 
-    A home entry ``lab_commons.home`` exempts (agent host configuration, git's credential store) is never one.
+    A home entry ``lab_commons.home`` exempts (agent host configuration, git's credential store) is never one,
+    nor is the account's login state: a dotfile the home already held (*known*) or the credential door's files.
     """
     found: list[Path] = []
     for root in roots:
         if root.is_dir():
             found += _changed(sorted(root.iterdir()), since)
     if home.is_dir():
-        outside = (one for one in sorted(home.iterdir()) if not (_under(one, allowed) or machine.exempt(one)))
+        outside = (
+            one
+            for one in sorted(home.iterdir())
+            if not (_under(one, allowed) or _login_state(one.name, known) or machine.exempt(one))
+        )
         found += _changed(outside, since)
     return found
+
+
+def _names(home: Path) -> list[str]:
+    return sorted(one.name for one in home.iterdir()) if home.is_dir() else []
+
+
+def _remember(state: Path, now: float, home: Path) -> None:
+    state.parent.mkdir(parents=True, exist_ok=True)
+    durable_text(state, json.dumps({'scanned': now, 'home': _names(home)}))
 
 
 def _watched(home: Path) -> tuple[Path, ...]:
@@ -90,24 +129,24 @@ def step(
 ) -> list[Path]:
     """One tick's census: scan since the last one, sound each escape once, remember the scan time.
 
-    The first scan on a host records a baseline and sounds nothing.
+    The first scan on a host -- no state, or one that does not name the home's entries -- records a baseline and
+    sounds nothing.
     """
     home = home or Path.home()
     state = state or state_path().with_name(STATE_NAME)
     now = time.time()
     try:
-        since = float(json.loads(state.read_text(encoding='utf-8'))['scanned'])
+        record = json.loads(state.read_text(encoding='utf-8'))
+        since, known = float(record['scanned']), frozenset(map(str, record['home']))
     except (OSError, ValueError, KeyError, TypeError):
-        since = None  # the first scan is the baseline: what already sits there is the 11-03 sweep's, not news
-    if since is None:
-        state.parent.mkdir(parents=True, exist_ok=True)
-        durable_text(state, json.dumps({'scanned': now}))
+        _remember(state, now, home)  # the baseline: what already sits there is the 11-03 sweep's, not news
         return []
     found = scan(
         _watched(home) if roots is None else roots,
         home=home,
         allowed=allowed_roots() if allowed is None else allowed,
         since=since,
+        known=known,
     )
     for path in found:
         alarm(Alarm(
@@ -117,6 +156,5 @@ def step(
             'its writer (a vendor tool writes into its cwd or its own temp: give it one under output/).',
             about=path.as_posix(),
         ))  # fmt: skip
-    state.parent.mkdir(parents=True, exist_ok=True)
-    durable_text(state, json.dumps({'scanned': now}))
+    _remember(state, now, home)
     return found
