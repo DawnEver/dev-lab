@@ -107,3 +107,22 @@ def test_a_host_tables_own_known_hosts_file_is_kept(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(door, 'section', lambda _name: {})
     assert door.ssh_send({'endpoint': TARGET, 'known_hosts': str(own)}, {'verb': 'hello'}) == (0, 'ok')
     assert f'UserKnownHostsFile={own}' in seen[0][0]
+
+
+def test_ssh_argv_checks_a_declared_host_strictly_against_its_declared_key_alone() -> None:
+    """The argv names a known_hosts holding the declared line only, with strict checking.
+
+    PLANTED CONTROL: an undeclared host keeps ssh's default -- no known_hosts option at all.
+    """
+    argv = remote.ssh_argv(f'dev@{HOST}', 'true', batch=True, host_keys={HOST: KEY})
+    assert 'StrictHostKeyChecking=yes' in argv
+    known = next(a.split('=', 1)[1] for a in argv if a.startswith('UserKnownHostsFile='))
+    assert Path(known).read_text(encoding='utf-8') == f'{HOST} {KEY}\n'
+    assert argv[-2:] == [f'dev@{HOST}', 'bash -lc true']
+    plain = remote.ssh_argv('dev@other.example', 'true', batch=True, host_keys={HOST: KEY})
+    assert not any('KnownHosts' in a or 'Strict' in a for a in plain)
+
+
+def test_ssh_argv_refuses_a_placeholder_declaration_naming_its_door() -> None:
+    with pytest.raises(remote.HostKeyUndeclared, match=remote.HOST_KEYS_DECLARATION.replace('[', r'\[')):
+        remote.ssh_argv(f'dev@{HOST}', 'true', batch=True, host_keys={HOST: remote.HOST_KEY_UNFILLED})
