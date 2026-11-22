@@ -119,21 +119,15 @@ from typing import Any
 
 import lab_commons.launch as _door
 from lab_commons.box import Holding, holdings
-from lab_commons.box.machine import provided
 from lab_commons.box.providers import inventory
 from lab_commons.compute.model import Supply
 from lab_commons.compute.presence import Presence, declared_versions, refresh
-from lab_commons.compute.priority import PRIORITY_TABLE, Priority
-from lab_commons.compute.serves import SERVE_TABLE, Serves
-from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
 from dev_lab.dev import forgerun, forgerunstate, forgesubmit, metrics, retention
 from dev_lab.dev._forgebackends import FORGE_SERVE, NotWired, require_producer
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, forge_transport
-from dev_lab.dev.forgeaffinity import declared
 from dev_lab.dev.forgealarm import (
     AUTH,
     IDLE,
@@ -154,6 +148,7 @@ from dev_lab.dev.forgepoller import POLL_LEASE_TICKS, polls
 from dev_lab.dev.forgeproduce import Produced, produce
 from dev_lab.dev.forgerounds import Rounds, box_now, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
+from dev_lab.dev.forgeservedeclared import DeclarationRefused, declaration
 from dev_lab.dev.forgeservesteps import (
     cancel_stalled,
     cancel_strays,
@@ -167,7 +162,6 @@ from dev_lab.dev.forgeservesteps import (
 from dev_lab.dev.forgeslurm import slurm_cluster, standing_of
 from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.hpcaccount.spec import load
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import work_root
@@ -223,7 +217,6 @@ def serve(
     ``None`` submits inline (the detached ``--submit`` process itself).
     """
     repo = origin_url(root)
-    table = section('schedule') if table is None else table
     raised: list[Alarm] = []  # every alarm this tick, for its host card
     alarm = recording(alarm, raised)
 
@@ -231,13 +224,8 @@ def serve(
         alarm(Alarm(RUN, repo, 'a live cluster run this tool cannot read', why, about=why.split(maxsplit=1)[0]))
 
     runs = list(forgerunstate.live(repo, refused=refused)) if seat is not None else []
-    refuse_retired_keys('serve', section('serve'))
-    refuse_retired_keys('capabilities', section('capabilities'))
-    tools = {name: one.row() for name, one in inventory(provided(section('capabilities')), present(root)).items()}
-    priority = Priority.of(section(PRIORITY_TABLE))
-    serves = Serves.of(section(SERVE_TABLE))
-    verify = declared(config_path(), repo) if seat is not None else ()  # HPC account affinity
-    role = deployed.role if seat is not None and (deployed := load(config_path())) else ''  # its card shows it
+    table, capable, priority, serves, verify, role = declaration(repo, seat, table)  # refused: a named release
+    tools = {name: one.row() for name, one in inventory(capable, present(root)).items()}
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     if slurm is not None:
         cancel_strays(slurm, repo, seat, alarm)
@@ -392,7 +380,7 @@ def main(
     transport: Transport = forge_transport,
     seat_of: Callable[[], ClusterAccount | None] = this_seat,
 ) -> int:
-    """``serve [--json]``: 0 served, 1 forge or run state failed, 2 contract broke."""
+    """``serve [--json]``: 0 served, 1 forge or run state failed, 2 contract broke or declaration refused."""
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge serve', description=__doc__.splitlines()[0])
     parser.add_argument('--lease-hours', type=float, default=DEFAULT_LEASE.total_seconds() / 3600)
     parser.add_argument('--json', action='store_true', help='print the whole report as JSON')
@@ -429,10 +417,10 @@ def main(
         sound(Alarm(AUTH, str(root), f'no stored forge credential on {card_host(machine, seat)}', str(missing)))
         emit(f'[serve] {missing}', err=True)
         return 1
-    except (ForgeCallFailed, PostFailed, NotWired, forgerunstate.ForeignSchema, OSError) as failed:
+    except (DeclarationRefused, ForgeCallFailed, PostFailed, NotWired, forgerunstate.ForeignSchema, OSError) as failed:
         _host_failure(root, failed)
         emit(f'[serve] {failed}', err=True)
-        return 1
+        return (1, ProducerExit.USAGE)[isinstance(failed, DeclarationRefused)]
     except Exception as defect:
         _host_failure(root, defect)
         raise

@@ -180,6 +180,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   whether it may claim the skip census.
 * :mod:`dev_lab.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
+* :mod:`dev_lab.dev.forgeservedeclared` -- the machine-file tables a serve reads; a refused one is a named release.
 * :mod:`dev_lab.dev.forgeservesteps` -- the contained steps after a serve tick: issue alarms, hygiene, retention.
 * :mod:`dev_lab.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
 * :mod:`dev_lab.dev.forgeintent` -- a local run's claim journaled before it runs; a restart re-attaches to it.
