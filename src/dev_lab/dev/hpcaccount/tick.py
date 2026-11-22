@@ -55,6 +55,12 @@ __all__ = ['account', 'follow_uv', 'tick']
 
 _runs = runs
 
+#: The door of a machine file its layered reader refuses: the file is a render, so it is rendered again.
+RERENDER = (
+    "this account's machine file is a render of the config source: re-render it from the workstation with "
+    'python -m dev_lab.dev.hpcaccount deploy-fleet --account <user>'
+)
+
 
 def account() -> str:
     """The cluster account this tick runs as."""
@@ -90,6 +96,28 @@ def _refresh(step: Step, spec: Deployment, home: Path, repo: Repo, probed: dict[
     return (f'its venv build exited {rc}' if rc else ''), []
 
 
+def _declared(name: str, path: Path) -> tuple[Deployment, Repo] | str:
+    """The deployment *path* declares and its repo *name*; else why this tick has none -- named, never a traceback."""
+    try:
+        spec = load(path)
+    except ValueError as refused:
+        return str(refused)
+    repo = next((one for one in spec.repos if one.name == name), None) if spec else None
+    if spec is None or repo is None:
+        return f'{name} is not a served repo of [deploy] in {path}'
+    return spec, repo
+
+
+def _ours(spec: Deployment, repo: Repo) -> bool | str:
+    """Whether this account serves *repo*; else why the family's binding cannot be read."""
+    try:
+        return serves_here(spec, repo)
+    except Unbound as undeclared:
+        return str(undeclared)
+    except ValueError as refused:  # the layered reader's own refusal (lab_commons.config.section)
+        return f'{refused} -- {RERENDER}'
+
+
 def tick(
     name: str,
     *,
@@ -116,11 +144,11 @@ def tick(
     collided on ``.git/index.lock``. Serving is the host kit's ``forge serve`` in the repo's
     checkout (:func:`~dev_lab.dev.hpcaccount.spec.host_serve_argv`), never the repo venv's.
     """
-    spec = load(config or config_path())
-    repo = next((one for one in spec.repos if one.name == name), None) if spec else None
-    if spec is None or repo is None:
-        emit(f'[tick] refused: {name} is not a served repo of [deploy] in {config or config_path()}', err=True)
+    found = _declared(name, config or config_path())
+    if isinstance(found, str):
+        emit(f'[tick] refused: {found}', err=True)
         return 2
+    spec, repo = found
     step = Step(tools or Tools(), dry=False)
     if lagging := follow_uv(name):
         alarm(Alarm(NEEDS, repo.url, f'{account()} runs a uv that is not the pin', lagging, about='uv'))
@@ -134,10 +162,9 @@ def tick(
         role = spec.role or 'undeclared'
         emit(f'[tick] {name} refused to serve: [deploy] role is {role}; only a {VERIFICATION} account serves', err=True)
         return 2
-    try:
-        ours = serves_here(spec, repo)
-    except Unbound as undeclared:
-        emit(f'[tick] {name} released, not served this tick: {undeclared}', err=True)
+    ours = _ours(spec, repo)
+    if isinstance(ours, str):
+        emit(f'[tick] {name} released, not served this tick: {ours}', err=True)
         return 2
     here = served(spec)
     serve_off({one.name: one.name in here for one in spec.repos}, account(), alarm=alarm, repo=repo.url)

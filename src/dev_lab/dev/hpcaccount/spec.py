@@ -16,7 +16,6 @@ import argparse
 import re
 import shlex
 import sys
-import tomllib
 import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -27,7 +26,7 @@ from lab_commons.hpc.layout import ROOT_VAR, AccountPaths, RootUndeclared, accou
 from lab_commons.hpc.retired import RETIRED
 
 from dev_lab.dev.hpcaccount.division import DEFAULT_ROLES
-from dev_lab.dev.hpcaccount.grantslice import granted_root
+from dev_lab.dev.hpcaccount.grantslice import granted_root, machine_table
 from dev_lab.dev.roles import HPC, ROLES, Roles, Unbound, roles_at, roles_of_url
 from dev_lab.dev.venvpointer import shell_interpreter
 
@@ -125,12 +124,12 @@ class Deployment:
 def load(path: Path, *, root: str = '') -> Deployment | None:
     """The ``[deploy]`` table of the machine file at *path*; ``None`` when undeclared, a missing key refused.
 
-    A ``[deploy]`` stating no root is at its grant's cluster root, read from the ``[hpc]`` slice the file itself
-    holds (:func:`~dev_lab.dev.hpcaccount.grantslice.granted_root`): the file a deploy leaves is all a tick reads.
-    *root* is that root as the caller was handed it, for a file not yet holding its slice (deploy-fleet's grant
-    table, before the grant is written).
+    A ``[deploy]`` stating no root is at its grant's cluster root, read from the ``[hpc]`` of the family file the
+    machine file names (:func:`~dev_lab.dev.hpcaccount.grantslice.machine_table`, ``granted_root``): the render a
+    deploy leaves is all a tick reads. *root* is that root as the caller was handed it, for a hand-declared file
+    naming no family (deploy-fleet's grant table, before the grant is written).
     """
-    return parse(tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}, path, root=root)
+    return parse(machine_table(path), path, root=root)
 
 
 def parse(table: Mapping[str, Any], path: Path, *, root: str = '') -> Deployment | None:

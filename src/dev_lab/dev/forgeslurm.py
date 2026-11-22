@@ -44,7 +44,7 @@ from lab_commons.box.providers import account_seats
 from lab_commons.compute import learned
 from lab_commons.compute.measured import Measured
 from lab_commons.compute.presence import cached
-from lab_commons.config import config_path
+from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.allocation import resolve
 from lab_commons.hpc.builds import builds_at
@@ -426,7 +426,9 @@ def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:
     machine = load_grants()
     if machine.session is None:  # an explicit $LC_HPC_SESSION wins; else the forge names its own stream
         machine = replace(machine, session=Session(FORGE_SESSION))
-    grants = tuple(grant for grant in machine.grants if grant.user == seat.account)
+    # an account's machine file reads every family grant its role reaches: its own is the one its render names
+    own = section('devhost').get('host', '')
+    grants = tuple(g for g in machine.grants if g.user == seat.account and own in ('', f'{g.cluster_name}-{g.user}'))
     if not grants:
         msg = (
             f'no [[hpc.grant]] in {config_path()} has user = "{seat.account}" (the Slurm user this runs as); '
