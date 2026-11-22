@@ -26,6 +26,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'storage',
     # ORIGINAL: user ruling 2026-11-12, an agent places a minted forge token on a key-only account.
     'credential',
+    # ORIGINAL: user ruling 2026-11-22, an account's login keys derived from hosts-config [dev] client_keys and hpc.
+    'keys',
     # ORIGINAL: 2026-11-12, its stage-verify-replace core shared with a workstation's own placement door.
     'credstore',
     'devcredential',
