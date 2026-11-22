@@ -5,7 +5,7 @@ A DEADLOCK, measured 2026-11-22: an account at its FILE quota (2,019,981 of 2,02
 there -- no rule for what filled it -- and freed ten files. The cleanup must not depend on the account's kit.
 
 So the workstation STREAMS THIS FILE to the account's interpreter on stdin (``python - <spec>``,
-:func:`dev_lab.dev.hpcaccount.storage.sweep_command`): the rules are always the caller's version and NOTHING IS
+:func:`dev_lab.dev.hpcaccount.storage.streamed_rules_command`): the rules are always the caller's version and NOTHING IS
 WRITTEN on the account -- no temp file, no checkout, no import of the kit. It therefore imports nothing but the
 standard library and holds NO LIST of its own: what an old copy is, and the names of the environment pointer,
 arrive in the spec from their one source (:mod:`dev_lab.dev.oldcopies`, :mod:`dev_lab.dev.venvpointer`).
@@ -38,9 +38,12 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+__all__ = ['EVENT', 'OLD_COPY', 'UV_TMP', 'VENV', 'candidates', 'crontab', 'main', 'processes', 'referenced', 'sweep']
+
 EVENT = 'lab_commons.forge.retention'
 OLD_COPY, VENV, UV_TMP = 'old-copy', 'venv-not-current', 'uv-cache-tmp'
 _MB = 1024**2
+_OWNER = stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC
 
 
 def _real(path: object) -> str:
@@ -72,7 +75,14 @@ def processes(proc: Path = Path('/proc')) -> list[dict] | None:
 def crontab() -> str | None:
     """The account's ``crontab -l`` (``''``: it has none); ``None`` when it cannot be read."""
     try:
-        done = subprocess.run(['crontab', '-l'], capture_output=True, text=True, errors='replace', check=False)  # noqa: S607
+        done = subprocess.run(
+            ['crontab', '-l'],  # noqa: S607
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+        )
     except OSError:
         return None
     if done.returncode:
@@ -125,22 +135,29 @@ def _measure(path: Path) -> tuple[int, int]:
     for here, dirs, names in os.walk(path):
         for name in (*names, *dirs):
             try:
-                size += os.lstat(os.path.join(here, name)).st_size  # noqa: PTH118 -- one string join per entry
+                size += Path(here, name).lstat().st_size
             except OSError:
                 continue
             files += 1
     return size, files
 
 
-def _writable(func: object, path: str, _exc: object) -> None:
-    os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)  # noqa: PTH101 -- rmtree hands a string
-    func(path)  # type: ignore[operator]
+def _writable(path: Path) -> None:
+    """Make every entry of the tree at *path* writable, so a read-only file a build left can be removed."""
+    path.chmod(_OWNER)
+    for here, dirs, names in os.walk(path):
+        for entry in (Path(here, name) for name in (*dirs, *names)):
+            if not entry.is_symlink():
+                entry.chmod(_OWNER)
 
 
 def _remove(path: Path) -> None:
     if path.is_dir() and not path.is_symlink():
-        retry = {'onexc': _writable} if sys.version_info >= (3, 12) else {'onerror': _writable}
-        shutil.rmtree(path, **retry)  # type: ignore[arg-type]
+        try:
+            shutil.rmtree(path)
+        except PermissionError:  # a read-only entry; no rmtree error hook spans 3.8 and 3.12+ alike
+            _writable(path)
+            shutil.rmtree(path)
     else:
         path.unlink()
 

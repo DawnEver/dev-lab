@@ -13,7 +13,7 @@ grant's own login hosts (never an agent's own ssh -- HPC-THROUGH-THE-DOOR):
   of the same tree, are not taken. ``du`` counts a hard-linked file once: uv links envs from its cache, so an env
   costs few files of its own;
 * otherwise, a dry run or the deletion itself with ``--apply``, in two parts. FIRST THE CALLER'S RULES, STREAMED
-  (:func:`sweep_command`, :mod:`dev_lab.dev.accountsweep`): old copies, environments no pointer names, uv's
+  (:func:`streamed_rules_command`, :mod:`dev_lab.dev.accountsweep`): old copies, environments no pointer names, uv's
   interrupted-install leftovers -- this workstation's version, run by the account's interpreter from stdin, nothing
   written there, so an account too full to update its kit is still reclaimed. THEN the account's OWN ``python -m
   dev_lab.dev.retention --cluster`` in its declared checkout: the in-flight-aware rules (runs, trees, builds, logs)
@@ -61,7 +61,7 @@ __all__ = [
     'census_rows',
     'retention_command',
     'retention_fleet',
-    'sweep_command',
+    'streamed_rules_command',
     'sweep_spec',
     'ticks_command',
 ]
@@ -182,7 +182,7 @@ def sweep_spec(target: Target, *, apply: bool) -> dict[str, object]:
     }  # fmt: skip
 
 
-def sweep_command(target: Target, *, apply: bool) -> str:
+def streamed_rules_command(target: Target, *, apply: bool) -> str:
     """The shell line that runs THE CALLER'S rules on the account, their source on stdin (:data:`SWEEP_SOURCE`).
 
     The interpreter is the account's own: its kit's current environment where that runs, else ``python3`` -- an
@@ -235,7 +235,7 @@ def _one(grant: Grant, shell: Runner, pin: Pin, *, apply: bool, census: bool, se
     mode = '--apply' if apply else '(dry run)'
     # the caller's rules first, streamed: they need nothing of the account's kit, which may be the thing that is full
     lines.append(f"{grant.user}: retention {mode}, the caller's rules (streamed; nothing is written on the account)")
-    lines.extend(shell(sweep_command(target, apply=apply), SWEEP_SOURCE).rstrip().splitlines())
+    lines.extend(shell(streamed_rules_command(target, apply=apply), SWEEP_SOURCE).rstrip().splitlines())
     lines.append(f"{grant.user}: retention {mode}, the account kit's own rules")
     try:
         lines.extend(shell(retention_command(target, apply=apply), None).rstrip().splitlines())

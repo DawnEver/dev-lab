@@ -209,7 +209,7 @@ def _crontab(run: Callable[..., Any] = _door.run) -> str | None:
     return done.stdout or ''
 
 
-def _with_old_copies(plan: Plan, home: Path, account: Path, say: Callable[[str], None]) -> Plan:
+def _with_left_behind(plan: Plan, home: Path, account: Path, say: Callable[[str], None]) -> Plan:
     """*plan* and the account's old copies (:mod:`dev_lab.dev.oldcopies`); a referenced one is kept and said."""
     doomed, kept = oldcopies.plan(home, account, cwd=Path.cwd(), crontab=_crontab)
     for line in kept:
@@ -269,7 +269,7 @@ def serve_pass(
         if not mine:
             return None
         plan = (planner or _plan_for)(root, policy, cluster=cluster, home=home, account=account, now=now, live=live())
-        plan = _with_old_copies(plan, home, account, say) if cluster else plan
+        plan = _with_left_behind(plan, home, account, say) if cluster else plan
         done = apply(plan, policy, usage=measured, dry_run=False, say=say, run=run)
     if done.over:
         freed = (done.freed_bytes, done.freed_files)
@@ -300,7 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     plan = _plan_for(
         Path.cwd(), policy, cluster=args.cluster, home=home, account=account, now=now, live=_live_shas()
     )  # fmt: skip
-    plan = _with_old_copies(plan, home, account, emit) if args.cluster else plan
+    plan = _with_left_behind(plan, home, account, emit) if args.cluster else plan
     usage = read_usage(home if args.cluster else Path.cwd(), cluster=args.cluster)
     done = apply(plan, policy, usage=usage, dry_run=not args.apply, say=emit)
     for line in summary(done, usage, applied=args.apply):

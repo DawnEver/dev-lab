@@ -676,7 +676,7 @@ def test_a_tick_refreshes_its_repo_before_the_repos_own_forge_serve(box: Box) ->
     assert cwd == src / 'alpha'
     assert argv == deploy_spec.host_serve_argv(), 'the HOST kit serves; the repo venv only runs its producers'
     before = logged[start:]
-    assert f'git -C {src / "alpha"} checkout -q -B trunk' in before
+    assert f'git -C {src / "alpha"} checkout -q -f -B trunk' in before
     assert '--reinstall-package' not in before, 'a served venv is exactly its lock'
 
 
@@ -701,7 +701,7 @@ def test_only_the_lab_commons_tick_writes_the_shared_kit_checkout(box: Box) -> N
     lock.unlink()
     start = len(box.logged())
     assert _tick(box, deploy_spec.KIT, served) == 0
-    assert f'git -C {kit} checkout -q -B trunk' in box.logged()[start:], "the kit's own tick refreshes it"
+    assert f'git -C {kit} checkout -q -f -B trunk' in box.logged()[start:], "the kit's own tick refreshes it"
 
 
 def test_a_repo_whose_refresh_fails_is_released_by_name_and_its_forge_never_runs(
