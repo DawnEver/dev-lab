@@ -29,6 +29,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 
 __all__ = [
+    'MMLSQUOTA',
     'Usage',
     'consumers',
     'count_files',
@@ -48,7 +49,8 @@ __all__ = [
 _QUOTA_ROW: Final = re.compile(r'^\S+\s+\S+\s+USR\s+(\d+)\s+(\d+)\s+\d+\s+\d+[^|\n]*\|\s*(\d+)\s+(\d+)', re.MULTILINE)
 # ``quota -w``: filesystem, KB used (``*`` when over), quota, limit, [grace], files used, quota, limit
 _LINUX_ROW: Final = re.compile(r'^\s*/\S+\s+(\d+)\*?\s+(\d+)\s+\d+\s+(?:\S+\s+)??(\d+)\*?\s+(\d+)\s+\d+', re.MULTILINE)
-_MMLSQUOTA: Final = ('mmlsquota', '/usr/lpp/mmfs/bin/mmlsquota')
+#: Where ``mmlsquota`` is looked for: on PATH, then GPFS's own bin (cron's and a non-interactive shell's PATH lack it).
+MMLSQUOTA: Final = ('mmlsquota', '/usr/lpp/mmfs/bin/mmlsquota')
 
 
 @dataclass(frozen=True)
@@ -119,7 +121,7 @@ def read_usage(home: Path, *, cluster: bool, run: Callable[..., Any] = _door.run
     if not cluster:
         disk = shutil.disk_usage(home)
         return Usage(disk.used, disk.total, None, None)
-    readers = [((name,), parse_mmlsquota) for name in _MMLSQUOTA] + [(('quota', '-w'), parse_quota)]
+    readers = [((name,), parse_mmlsquota) for name in MMLSQUOTA] + [(('quota', '-w'), parse_quota)]
     for argv, parse in readers:
         if found := shutil.which(argv[0]) or (Path(argv[0]).is_file() and argv[0]):
             done = run(
