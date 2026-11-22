@@ -48,7 +48,7 @@ from lab_commons.hpc.layout import RootUndeclared, local_root
 from lab_commons.hpc.records import kept_text
 from lab_commons.log import emit
 
-from dev_lab.dev import oldcopies
+from dev_lab.dev import oldcopies, quotawatch
 from dev_lab.dev.diskusage import Usage, files_first, measure, pressure_text, read_usage, remove_tree
 from dev_lab.dev.familyroot import main_checkout
 from dev_lab.dev.forgerunstate import directory as run_files
@@ -92,6 +92,7 @@ class Freed:
     over: bool
     by_rule: Mapping[str, tuple[int, int, int]] = dataclasses.field(default_factory=dict)
     alarm: str = ''  # still over: the body of the storage alarm (dev_lab.dev.diskusage.pressure_text)
+    watch: str = ''  # still over: ``QUOTA-NEAR on files`` -- the named warning and the ceiling that binds
 
 
 def _remove(doomed: Doomed) -> None:
@@ -166,8 +167,12 @@ def apply(
     return Freed(freed[0], freed[1], over, by_rule)
 
 
-def summary(done: Freed, usage: Usage | None, *, applied: bool) -> list[str]:
-    """One line per rule (paths, MB, files), the total, then usage now -> after for bytes and FILES."""
+def summary(done: Freed, usage: Usage | None, *, applied: bool, policy: Policy | None = None) -> list[str]:
+    """One line per rule (paths, MB, files), the total, then usage now -> after for bytes and FILES.
+
+    With *policy*, what is left is then judged against its two lines (:mod:`dev_lab.dev.quotawatch`): files and
+    bytes with their headroom, and the named warning -- of usage as it stands, so a dry run warns of now.
+    """
     verb = 'deleted' if applied else 'would delete'
     lines = [
         f'[retention] {verb} {rule}: {paths} paths, {size / _MB:.1f} MB, {files} files'
@@ -176,6 +181,8 @@ def summary(done: Freed, usage: Usage | None, *, applied: bool) -> list[str]:
     total = sum(paths for paths, _, _ in done.by_rule.values())
     lines.append(f'[retention] {verb} {total} paths, {done.freed_bytes / _MB:.1f} MB, {done.freed_files} files')
     after = usage.after(done.freed_bytes, done.freed_files) if usage is not None else []
+    left = quotawatch.freed(usage, done.freed_bytes, done.freed_files) if applied else usage
+    after += quotawatch.lines(left, policy) if policy is not None else []
     return lines + [f'[retention] {line}' for line in after]
 
 
@@ -271,9 +278,15 @@ def serve_pass(
         plan = (planner or _plan_for)(root, policy, cluster=cluster, home=home, account=account, now=now, live=live())
         plan = _with_old_copies(plan, home, account, say) if cluster else plan
         done = apply(plan, policy, usage=measured, dry_run=False, say=say, run=run)
+    for line in quotawatch.lines(quotawatch.freed(measured, done.freed_bytes, done.freed_files), policy):
+        say(f'[retention] {line}')
     if done.over:
         freed = (done.freed_bytes, done.freed_files)
-        done = dataclasses.replace(done, alarm=pressure_text(measured, freed, home if cluster else None, account))
+        watch = quotawatch.judge(quotawatch.freed(measured, *freed), policy)  # which line, which ceiling, the door
+        body = pressure_text(measured, freed, home if cluster else None, account)
+        named = f'{watch.name} on {watch.binding}' if watch.near else ''
+        alarm = '\n'.join(filter(None, (watch.text, body)))
+        done = dataclasses.replace(done, alarm=alarm, watch=named)
     return done
 
 
@@ -303,7 +316,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     plan = _with_old_copies(plan, home, account, emit) if args.cluster else plan
     usage = read_usage(home if args.cluster else Path.cwd(), cluster=args.cluster)
     done = apply(plan, policy, usage=usage, dry_run=not args.apply, say=emit)
-    for line in summary(done, usage, applied=args.apply):
+    for line in summary(done, usage, applied=args.apply, policy=policy):
         emit(line)
     return 0
 

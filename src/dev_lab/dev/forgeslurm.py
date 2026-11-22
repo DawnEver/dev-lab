@@ -64,7 +64,7 @@ from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
 from lab_commons.resources import Engine
 
-from dev_lab.dev import hpcusage
+from dev_lab.dev import hpcusage, quotawatch
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, env_carries, reached_tests, read_by
 from dev_lab.dev.forgeoom import learn_floors, oom_floors, task_files, task_items
@@ -397,7 +397,9 @@ class SlurmCluster:
             read.append((snapshot, snapshot.quota.default_qos))
             probed.append((grant, snapshot))
         usage = self.quota()
-        left = usage.files_left if usage is not None else None
+        watch = quotawatch.judge(usage, quotawatch.declared_lines())
+        # QUOTA-FULL claims nothing: a claim's tree is new files, and the line exists so the quota never fills
+        left = 0.0 if watch.full else usage.files_left if usage is not None else None
         account = SlurmAccount(read, files=math.inf if left is None else left)
         supply = Engine({self.scope: [account, account_seats(cached())]}).available(self.scope)
         snapshot, qos = read[0]
@@ -406,7 +408,7 @@ class SlurmCluster:
             'quota_cpus': snapshot.quota.cpus,
             'qos': qos,
             'partitions': {name: part.max_minutes for name, part in snapshot.partitions.items() if part.up},
-            'storage': storage_text(usage),
+            'storage': storage_text(usage) + (f' -- {watch.text}' if watch.near else ''),
             'untagged': sum(s.usage[''].tasks for s, _ in read if '' in s.usage),  # hpc.slurm.stream_of
         }
         day = hpcusage.parse(shell(hpcusage.COMMAND, None))  # the ONE sacct read: the budget's and the card's
