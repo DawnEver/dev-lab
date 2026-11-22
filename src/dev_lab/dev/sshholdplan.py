@@ -10,8 +10,9 @@ granting spends no credential, so no grant on any host is spent, and that host a
 
 A plan host whose session is ALREADY HELD is reused, never re-opened: the code goes to the issuer alone (incident
 2026-11-16: the open refused a held host, so a granted plan read as failed and a second code was asked). Before the
-code is asked the plan passes :func:`offered` (:func:`dev_lab.ops.consent.door.offer`: a green preflight and an
-issuer this client agrees with).
+code is read the door PREFLIGHTS THE PLAN ITSELF (:func:`offered`, :func:`dev_lab.dev.planrunoffer.reproved`: the
+steps file its last green preflight recorded, or ``--steps``): not green NOW refuses ``no code used`` (user ruling
+2026-11-22: the stale green was refused only after the code was given, and the code's window was lost).
 """
 
 from __future__ import annotations
@@ -23,13 +24,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
-from lab_commons.config import section
-
+from dev_lab.dev.planrunoffer import reproved
 from dev_lab.dev.sshholdstate import audit, read_session
 from dev_lab.dev.sshholdwire import HoldRefused, ping
-from dev_lab.ops.consent.client import TABLE, grant_plan
+from dev_lab.ops.consent.client import grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, offer, ssh_send
 from dev_lab.ops.consent.plan import not_registered, parsed, unregistered
 from dev_lab.ops.totp import STEP
 
@@ -98,9 +97,12 @@ def _held(dest: str) -> bool:
     return (session := read_session(dest)) is not None and ping(session)
 
 
-def offered(plan: Path, *, send: Send = ssh_send) -> None:
-    """Refuse *plan* before its code is asked (:func:`dev_lab.ops.consent.door.offer`), as :class:`HoldRefused`."""
+def offered(plan: Path, steps: Path | None = None) -> None:
+    """Run *plan*'s preflight NOW, before its code is read; not green refuses ``no code used``, as :class:`HoldRefused`.
+
+    *steps* defaults to the steps file the plan's last green preflight recorded (:func:`.planrunoffer.reproved`).
+    """
     try:
-        offer(parsed(json.loads(plan.read_text(encoding='utf-8'))), section(TABLE), send=send)
-    except ConsentRefused as refused:
+        reproved(plan, steps)
+    except (ConsentRefused, OSError, ValueError) as refused:
         raise HoldRefused(str(refused)) from refused

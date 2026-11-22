@@ -13,8 +13,9 @@ The code is sent once and never logged or kept.
 :func:`preflight` proves, with NO code, that a lone request's grant can succeed -- endpoint and key declared, the
 issuer reached over ssh (:func:`.door.reached`), the version handshake, the subject still current (:data:`SUBJECTS`),
 and any check the calling verb adds -- and writes its receipt (:func:`.door.record_receipt`). :func:`grant` refuses
-a code given in advance without a fresh receipt before any network call; a code typed at its prompt is asked only
-after the same preflight ran inline.
+a code given in advance without a receipt inside the backstop before any network call, then runs the same proof
+again ITSELF and uses the code only if it is green now; a code typed at its prompt is asked only after the same
+preflight ran inline.
 
 :func:`redeem` is the gate of an IRREVERSIBLE action (a spend, a merge, a wave): the signature and expiry verify
 offline, then the use is registered online with the issuer; an issuer that cannot be reached REFUSES, never admits.
@@ -303,15 +304,22 @@ def preflight(
 
     """
     found = _endpoint(table)
+    _proved(request, found, send, subjects)
+    for check in checks:
+        check()
+    return record_receipt(request, home=home, now=now)
+
+
+def _proved(
+    request: Mapping[str, Any], found: Mapping[str, Any], send: Send, subjects: Mapping[str, Callable[[str], str]]
+) -> None:
+    """The no-code proof every lone request shares: key, shape, a current subject, the issuer reached and agreeing."""
     public_key(found)
     requested(dict(request))
     if (current := subjects.get(str(request['action']))) and (stale := current(str(request['subject']))):
         msg = f'no code asked: {stale}'
         raise ConsentRefused(msg)
     handshake(found, send=reached(send), actions=[request['action']])
-    for check in checks:
-        check()
-    return record_receipt(request, home=home, now=now)
 
 
 def grant(
@@ -325,12 +333,17 @@ def grant(
     send: Send = ssh_send,
     home: Path | None = None,
     now: Callable[[], float] = time.time,
+    subjects: Mapping[str, Callable[[str], str]] = SUBJECTS,
 ) -> Path:
     """Ask the issuer for the credential *request_file* describes; the file it was written to.
 
+    THE DOOR PREFLIGHTS ITSELF: whichever way the code arrives, the no-code proof (:func:`_proved`) runs here, right
+    before the code is read, and a proof that is not green NOW refuses ``no code used`` (user ruling 2026-11-22: a
+    code given 5 min after its preflight was refused on the receipt's age alone, and lost).
+
     Raises:
-        ConsentRefused: a code given in advance has no fresh receipt (:func:`.door.require_receipt`), the preflight
-            fails before a prompt (:func:`preflight`), the code is not six digits, or the issuer refused.
+        ConsentRefused: a code given in advance has no receipt inside the backstop (:func:`.door.require_receipt`),
+            the proof is not green now, the code is not six digits, or the issuer refused.
 
     """
     found = _endpoint(table)
@@ -338,12 +351,16 @@ def grant(
     request = json.loads(request_file.read_text(encoding='utf-8'))
     requested(request)
     on_tty = sys.stdin.isatty() if tty is None else tty
-    if code is not None or not on_tty:  # the code was asked BEFORE this call: its preflight must have preceded it
-        given = _six_digits(given_code(code, tty=on_tty, ask=ask, read=read))
+    if code is not None or not on_tty:  # the code was asked BEFORE this call: a preflight must have preceded the ask
         require_receipt(request, home=home, now=now())  # local: refused before any network call
-        handshake(found, send=reached(send), actions=[request['action']])
+        try:
+            _proved(request, found, send, subjects)
+        except ConsentRefused as blocked:
+            msg = f'no code used -- the preflight is not green now: {str(blocked).removeprefix("no code asked: ")}'
+            raise ConsentRefused(msg) from blocked
+        given = _six_digits(given_code(code, tty=on_tty, ask=ask, read=read))
     else:  # the prompt follows a green preflight, run here
-        preflight(request, table=found, send=send, home=home, now=now())
+        preflight(request, table=found, send=send, home=home, now=now(), subjects=subjects)
         given = _six_digits(given_code(code, tty=on_tty, ask=ask, read=read))
     return _issued(found, {'verb': 'issue', 'request': request, 'code': given}, send=send, home=home, now=now())[0]
 

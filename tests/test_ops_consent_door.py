@@ -16,7 +16,7 @@ import pytest
 from _ops_fixtures import NOW, RFC_KEY
 from lab_commons.home import HOME_ENV
 
-from dev_lab.dev import planrunpreflight, sshhold
+from dev_lab.dev import planrunoffer, sshhold
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.ops.consent import __main__ as consent_main
 from dev_lab.ops.consent import serve
@@ -151,14 +151,14 @@ def test_consent_plan_shows_the_plan_and_offers_it_only_when_the_door_passes(
 
 def test_a_green_preflight_is_recorded_only_when_the_issuer_agrees(issuer: Issuer, tmp_path: Path) -> None:
     green = (True, ['step 1 ops.config: green', 'preflight: green, every door checked (ask the user for the code)'])
-    found, lines = planrunpreflight.offered(PLAN, green, table={}, send=Wire(issuer, old=True), home=tmp_path)
+    found, lines = planrunoffer.offered(PLAN, green, table={}, send=Wire(issuer, old=True), home=tmp_path)
     assert not found
     assert lines[-2].startswith('issuer: BLOCKED -- no code asked')
     assert lines[-1].startswith('preflight: BLOCKED')
     assert not (state_dir(tmp_path) / 'preflight').exists()
     blocked = (False, ['preflight: BLOCKED (fix the named blocker before asking for a code)'])
-    assert planrunpreflight.offered(PLAN, blocked, table={}, send=Wire(issuer), home=tmp_path) == blocked
-    found, lines = planrunpreflight.offered(PLAN, green, table={}, send=Wire(issuer), home=tmp_path)  # the control
+    assert planrunoffer.offered(PLAN, blocked, table={}, send=Wire(issuer), home=tmp_path) == blocked
+    found, lines = planrunoffer.offered(PLAN, green, table={}, send=Wire(issuer), home=tmp_path)  # the control
     assert found
     offer(PLAN, {}, send=Wire(issuer), home=tmp_path)  # the record offers the plan
 

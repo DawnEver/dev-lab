@@ -6,7 +6,7 @@ owning ONE ``ssh -T <dest> bash --noprofile --norc -s``. It listens on 127.0.0.1
 module is the client and the CLI::
 
     python -m dev_lab.dev.sshhold open <dest> --hours H [--code CODE]   # code on stdin when omitted
-    python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D> [--code CODE]   # every plan host
+    python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D> [--steps S] [--code CODE]
     python -m dev_lab.dev.sshhold open <dest> --hours H --jump <bastion> [...]   # through a ProxyJump
     python -m dev_lab.dev.sshhold run <dest> -- <command...>            # exits with the remote status
     python -m dev_lab.dev.sshhold credential <dest> --url <https url> --login <login>   # token on stdin
@@ -17,7 +17,8 @@ module is the client and the CLI::
   (CONSENT-CODE-FROM-THE-USER). It reaches the holder on a pipe and the ssh child through ``SSH_ASKPASS``;
   never argv, disk or a log. An empty code is allowed (a host's trusted window accepts an empty answer).
 * ONE CODE, ONE PLAN (``--plan``): :mod:`dev_lab.dev.sshholdplan` -- the code buys the plan's credentials, then
-  opens every plan host not already held.
+  opens every plan host not already held. Before the code is read the door runs the plan's preflight ITSELF (the
+  steps file its last green preflight recorded, or ``--steps``); not green now refuses ``no code used``.
 * ``--jump <bastion>``: a host reachable only through a bastion. ssh asks each hop's keyboard-interactive
   prompt through the same ``SSH_ASKPASS``, so ONE code answers both -- valid only where the hops share one TOTP
   secret (each pam_oath records the step it accepted, so the code is spent once per host, never twice on one).
@@ -195,6 +196,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     opening.add_argument('--digest', default='', help="the plan's digest, as shown to the user")
     opening.add_argument(
+        '--steps', type=Path, help="the plan's steps file, preflighted here before the code is used (default: the "
+        'one its last green preflight recorded)'
+    )  # fmt: skip
+    opening.add_argument(
         '--jump', help='a bastion (ssh -J) for every host [ssh] jump does not route; the one code answers both'
     )
     running = verbs.add_parser('run', help='run one command on the held connection')
@@ -235,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.verb == 'open':
             if args.plan is not None:
-                sshholdplan.offered(args.plan)  # before the code is asked
+                sshholdplan.offered(args.plan, args.steps)  # the preflight, run here, before the code is read
             check_hours(args.hours, ceiling())  # before the code is asked
             code, jump = given_code(args.code), args.jump
             if args.plan is not None:

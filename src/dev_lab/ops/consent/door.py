@@ -14,7 +14,13 @@ runs as it shows the plan. A refusal here spends no code: the user is never aske
   green -- never a first code to open a hold for the read).
 * :func:`record_preflight` / :func:`offer`: a plan is offered for a code only after ``planrun preflight`` was green
   for its digest -- every host door and every subject (incident 2026-11-16: a plan whose subject could not be
-  derived was granted, and its code was wasted).
+  derived was granted, and its code was wasted). The record names the steps file that was preflighted
+  (:func:`preflighted_steps`), so the code-taking door can run the same preflight again by itself.
+* THE CODE-TAKING DOOR PREFLIGHTS ITSELF (user ruling 2026-11-22: five codes were lost that day to a recorded
+  green that aged out between the ask and the code). ``sshhold open --plan`` and ``consent grant`` run the no-code
+  preflight themselves right before the code is used and refuse ``no code used`` when it is not green NOW. The two
+  lifetimes below are therefore a BACKSTOP -- how old a record may be and still say "an agent preflighted before
+  it asked" -- never what decides whether the code is spent.
 * THE RECEIPT of a lone request (:func:`record_receipt` / :func:`require_receipt`): its preflight
   (:func:`dev_lab.ops.consent.client.preflight`) was green for its action and subject within
   :data:`RECEIPT_FRESH_S`; a code given in advance (``--code``, stdin) without one is refused before any network
@@ -61,6 +67,7 @@ __all__ = [
     'hello',
     'offer',
     'plan_preflights',
+    'preflighted_steps',
     'reached',
     'read_argv',
     'receipt_path',
@@ -84,10 +91,14 @@ ISSUER_UPGRADE: Final = (
     "the consent issuer's dev-lab is older than this client: upgrade the issuer host (its `ops upgrade --follow` "
     'timer installs [ops.upgrade] follow), then ask again'
 )
-#: How long a green preflight offers its plan for a code.
-PREFLIGHT_FRESH_S: Final = 3600.0
-#: How long a lone request's green preflight admits the code the user gives for it.
-RECEIPT_FRESH_S: Final = 300.0
+#: How long a recorded green preflight offers its plan for a code: 24 h, a BACKSTOP (user ruling 2026-11-22). The
+#: code-taking door re-runs the preflight itself right before the code is used, so this window no longer decides
+#: whether a code is wasted; it bounds how old the proof "the agent preflighted before it asked" may be. It was
+#: 3600 s with no recorded reason, and a user's code met a green 31161 s old.
+PREFLIGHT_FRESH_S: Final = 24 * 3600.0
+#: How long a lone request's green preflight admits the code the user gives for it: the same backstop, for the same
+#: reason (it was 300 s: a code given five minutes after the ask was refused, and lost).
+RECEIPT_FRESH_S: Final = PREFLIGHT_FRESH_S
 #: The preflight a lone request's code waits for (a verb may expose it as its own ``--preflight``).
 PREFLIGHT_DOOR: Final = 'python -m dev_lab.ops.consent preflight <request.json>'
 #: The preflight a plan's code waits for.
@@ -241,11 +252,29 @@ def _stamp(digest: str, home: Path | None) -> Path:
     return state_dir(home) / 'preflight' / f'{digest}.json'
 
 
-def record_preflight(plan: Plan, *, home: Path | None = None, now: float | None = None) -> Path:
-    """Record that ``planrun preflight`` was green for *plan* -- every door and every subject; the record's path."""
+def record_preflight(
+    plan: Plan, *, steps: Path | None = None, home: Path | None = None, now: float | None = None
+) -> Path:
+    """Record that ``planrun preflight`` was green for *plan* -- every door and every subject; the record's path.
+
+    *steps* is the steps file that was preflighted: the code-taking door reads it back (:func:`preflighted_steps`)
+    to run the same preflight again right before the code.
+    """
     path = _stamp(plan.digest, home)
-    write_private(path, json.dumps({'green': True, 'at': time.time() if now is None else now}) + '\n')
+    stamp: dict[str, Any] = {'green': True, 'at': time.time() if now is None else now}
+    if steps is not None:
+        stamp['steps'] = str(Path(steps).resolve())
+    write_private(path, json.dumps(stamp) + '\n')
     return path
+
+
+def preflighted_steps(plan: Plan, *, home: Path | None = None) -> Path | None:
+    """The steps file *plan*'s last green preflight ran with; ``None`` when none is recorded or the file is gone."""
+    try:
+        named = json.loads(_stamp(plan.digest, home).read_text(encoding='utf-8')).get('steps')
+    except (OSError, ValueError, AttributeError):
+        return None
+    return Path(named) if isinstance(named, str) and Path(named).is_file() else None
 
 
 def plan_preflights(*, home: Path | None = None, now: float | None = None) -> list[tuple[str, float]]:
@@ -319,7 +348,8 @@ def require_receipt(request: Mapping[str, Any], *, home: Path | None = None, now
     why = 'none recorded' if age is None else f'the green one is {age:.0f} s old'
     msg = (
         f'no code asked: no fresh preflight for {action} on {subject[:40]!r} ({why}): run `{PREFLIGHT_DOOR}` (or the '
-        f"verb's --preflight) BEFORE asking the user for a code, then pass the code within {RECEIPT_FRESH_S:.0f} s"
+        f"verb's --preflight) BEFORE asking the user for a code (a green one admits the ask for {RECEIPT_FRESH_S:.0f} "
+        's; the door that takes the code re-runs it and uses the code only if it is green then)'
     )
     raise ConsentRefused(msg)
 

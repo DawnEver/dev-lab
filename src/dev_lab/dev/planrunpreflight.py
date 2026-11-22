@@ -3,7 +3,8 @@
 Split out of :mod:`dev_lab.dev.planrun` (the run and the CLI); what is checked is that module's docstring. A
 subject derivable HERE is derived here even when its door waits on an earlier config step (incident 2026-11-16: such
 a step was skipped as ``after step N``, its subject never derived, and the granted plan's code was wasted). A green
-preflight is recorded for the plan's digest (:func:`offered`): the one consent door offers a plan for a code only then.
+preflight is recorded for the plan's digest (:func:`dev_lab.dev.planrunoffer.offered`): the one consent door offers a
+plan for a code only then.
 
 A subject only an UNREACHED host can derive (no hold open, and it admits no login without a code) is read through the
 issuer's read-only ``subject`` verb (:func:`dev_lab.ops.consent.door.subject_read`) -- no code (user ruling
@@ -55,12 +56,13 @@ from dev_lab.ops import configdoor, forgeprotection
 from dev_lab.ops.consent.actions import read_answer
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import PREFLIGHT_FRESH_S, Send, handshake, record_preflight, ssh_send, subject_read
+from dev_lab.ops.consent.door import PREFLIGHT_FRESH_S, ssh_send, subject_read
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
 from dev_lab.ops.forgerequests import ACCOUNT_ACTION, REVOKE_ACTION
 from dev_lab.ops.giteaadmin import ForgeRefused
 
 __all__ = [
+    'BLOCKED',
     'HOLD_NEEDED',
     'RULE',
     'UNREAD',
@@ -72,7 +74,6 @@ __all__ = [
     'host_ready',
     'issuer_subject',
     'listed_at',
-    'offered',
     'preflight',
     'protect_target',
     'text_at',
@@ -216,7 +217,7 @@ def _local_subject(step: Step, readers: Readers) -> tuple[str, str]:
 
 
 #: The last line of a blocked preflight.
-_BLOCKED: Final = 'preflight: BLOCKED (fix the named blocker before asking for a code)'
+BLOCKED: Final = 'preflight: BLOCKED (fix the named blocker before asking for a code)'
 
 
 #: What a local derivation may refuse with; each names what it could not read.
@@ -350,14 +351,15 @@ def _asked_of_host(plan: Plan, steps: Steps, index: int, remote: Remote, after: 
 
 #: What no preflight can ask of a host it did not reach, whichever way the step's subject was checked.
 _UNREACHED: Final = "unreached: its host's readiness, its sudo door and any refusal its subject read does not report"
-_ASK: Final = (f'(ask the user for the code: this green is valid {PREFLIGHT_FRESH_S:.0f} s -- `python -m dev_lab.ops.'
-               'consent plan <plan.json>` says with no code if it is; stale, re-run preflight first)')  # fmt: skip
+_ASK: Final = ('(ask the user for the code: `sshhold open --plan` runs this preflight again itself and uses the code '
+               f'only if it is green then; this recorded green is valid {PREFLIGHT_FRESH_S:.0f} s -- `python -m '
+               'dev_lab.ops.consent plan <plan.json>` says with no code if it is)')  # fmt: skip
 
 
 def _last(unchecked: Sequence[str], *, blocked: bool) -> str:
     """The verdict line: blocked, green with every door checked, or green naming each step left to the run."""
     if blocked:
-        return _BLOCKED
+        return BLOCKED
     if not unchecked:
         return f'preflight: green, every door checked {_ASK}'
     return (f'preflight: green, but {len(unchecked)} step(s) are unchecked: {"; ".join(unchecked)} -- the code buys '
@@ -421,19 +423,3 @@ def preflight(
             unchecked.append(f'{name} on {step.dest} ({later})')
     lines.append(_last(unchecked, blocked=blocked))
     return not blocked, lines
-
-
-def offered(
-    plan: Plan, found: tuple[bool, list[str]], *, table: Mapping[str, Any] | None = None, send: Send = ssh_send,
-    home: Path | None = None,
-) -> tuple[bool, list[str]]:  # fmt: skip
-    """*found*, a preflight's verdict, completed by the issuer handshake and recorded for its digest when green."""
-    green, lines = found
-    if not green:
-        return found
-    try:
-        handshake(section(TABLE) if table is None else table, send=send, actions=[g['action'] for g in plan.grants])
-    except ConsentRefused as skewed:
-        return False, [*lines[:-1], f'issuer: BLOCKED -- {skewed}', _BLOCKED]
-    record_preflight(plan, home=home)
-    return True, [*lines, f'issuer: agrees; plan {plan.digest[:12]} offered for one code']
