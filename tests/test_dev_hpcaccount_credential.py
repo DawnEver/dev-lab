@@ -24,6 +24,7 @@ from dev_lab.dev.credstore import (
     discard_command,
     named_fill_command,
     read_forge,
+    restore_command,
     rewrite_command,
     stage_command,
     verify_prefix,
@@ -652,3 +653,54 @@ def test_a_config_reader_is_read_back_by_a_request_naming_it() -> None:
         assert got == code, said
         rewrite = rewrite_command('forge.example', _STAMP, login='server-reader', staged=True, first=False)
         assert rewrite in [cmd for cmd, _ in seen]
+
+
+def _shadowing(after: str, seen: list[tuple[str, str | None]]) -> Runner:
+    """An account whose unnamed request answers as the writer until the store is rewritten, then as *after*."""
+    honest = _account(answers='server-reader', seen=seen)
+
+    def shell(cmd: str, stdin: str | None = None) -> str:
+        if 'auth role' in cmd and not cmd.startswith(verify_prefix('forge.example', _STAMP)):
+            seen.append((cmd, stdin))
+            rewritten = any(c.startswith('umask 077 && f=') and 'grep -v' in c for c, _ in seen)
+            return json.dumps({'login': after if rewritten else 'forge-ci'})
+        return honest(cmd, stdin)
+
+    return shell
+
+
+def test_a_named_reader_that_takes_the_unnamed_request_is_refused_and_the_store_restored() -> None:
+    """Placing a named reader never changes who answers the host's unnamed request -- the one a serve posts with.
+
+    Measured 2026-11-22 on two verification accounts: the reader's own line read back right (git's fill naming it),
+    so the placement said ``verified`` while the unnamed request answered as the reader, and every tick was then
+    refused "no push permission". The unnamed request is asked before and after; a changed answer puts the store
+    back from the placement's backup and names both logins. PLANTED CONTROL: the writer still answering is verified
+    and nothing is restored.
+    """
+    restore = restore_command(_STAMP)
+    for after, code in (('forge-ci', 0), ('server-reader', 2)):
+        seen: list[tuple[str, str | None]] = []
+        said: list[str] = []
+        got = place_credential(
+            'alice@login2.example', login='server-reader', token=_MINTED, url=_REPO, forge=_FORGE, grants=_FLEET,
+            division=_WRITER_AND_READER, say=said.append, connect=lambda _g, a=after, s=seen: _shadowing(a, s),
+            stamp=_STAMP,
+        )  # fmt: skip
+        assert got == code, said
+        assert (restore in [cmd for cmd, _ in seen]) == (code == 2)
+        if code:
+            assert 'forge-ci' in said[-1]
+            assert 'server-reader' in said[-1]
+            assert 'restored' in said[-1]
+
+
+def test_the_restore_puts_the_backed_up_store_back(tmp_path: Path) -> None:
+    """The restore is the backup, whole: the shadowing line is gone and the writer answers the unnamed request."""
+    _bash(tmp_path, 'git config --global credential.helper store')
+    _place_line(tmp_path, 'forge-ci', 'writer-TOKEN', first=True)
+    _place_line(tmp_path, 'server-reader', 'reader-TOKEN', first=True)  # PLANTED: the shadow the door refuses
+    assert _unnamed_password(tmp_path) == 'reader-TOKEN'
+    _bash(tmp_path, restore_command(_STAMP))
+    assert _unnamed_password(tmp_path) == 'writer-TOKEN'
+    assert _bash(tmp_path, named_fill_command('forge.example', 'server-reader')).strip() != 'reader-TOKEN'

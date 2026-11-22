@@ -41,6 +41,7 @@ __all__ = [
     'named_fill_command',
     'place_verified',
     'read_forge',
+    'restore_command',
     'rewrite_command',
     'stage_command',
     'stamp_now',
@@ -200,6 +201,19 @@ def read_forge(host_config: Path) -> DeclaredForge:
         raise CredentialRefused(msg)
     accounts = {login: tuple(row.get('repos', ())) for login, row in forge.holdings.items()}
     return DeclaredForge(host_config, tuple(caddy.sites), accounts)
+
+
+def restore_command(stamp: str) -> str:
+    """The shell line that puts the backup ``~/.git-credentials.bak-<stamp>`` back as the store; the backup is kept.
+
+    The undo of :func:`rewrite_command`'s write of the same *stamp*: written under ``umask 077``, ``chmod 600`` and
+    moved into place atomically, as the rewrite itself is.
+    """
+    _checked('x', stamp)
+    return (
+        f'umask 077 && f="$HOME/{STORE}" && b="$f.bak-{stamp}" && t="$(mktemp "$f.XXXXXX")" '
+        '&& cp "$b" "$t" && chmod 600 "$t" && mv -f "$t" "$f"'
+    )
 
 
 def named_fill_command(host: str, login: str) -> str:

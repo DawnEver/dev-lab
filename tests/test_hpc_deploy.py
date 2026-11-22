@@ -349,6 +349,27 @@ def test_a_token_the_api_refuses_is_refused_before_anything_changes(
     assert box.run(*DECLARE) == 0
 
 
+def test_a_repo_the_family_binds_elsewhere_is_never_api_checked_even_before_its_first_clone(
+    box: Box, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Served-ness is the family's binding of the repo's URL, never whether a checkout exists yet.
+
+    Measured 2026-11-22 on two fresh verification roots: the credentials phase runs before the checkouts, so every
+    repo the family binds to hosted CI read as served and was refused "no stored credential" for a host nothing
+    serves there. PLANTED CONTROL: the same fresh root still refuses the repo this account does serve.
+    """
+    bound = {'alpha': HPC_REPO}
+    monkeypatch.setattr(
+        deploy_spec, 'roles_of_url', lambda url: bound.get(url.rsplit('/', 1)[-1].removesuffix('.git'), EVERY_CI)
+    )
+    box.refused_api['beta'] = 'no stored credential for elsewhere.example'
+    assert not (box.root / 'repos').exists(), 'a fresh root: nothing is cloned yet'
+    assert box.run(*DECLARE) == 0, capsys.readouterr().err
+    box.refused_api['alpha'] = 'GET /api/v1/user refused'
+    assert box.run() == 2
+    assert 'alpha: GET /api/v1/user refused' in capsys.readouterr().err
+
+
 def test_a_forge_api_that_does_not_answer_never_says_restore_the_token(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:

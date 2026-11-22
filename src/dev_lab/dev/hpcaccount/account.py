@@ -61,9 +61,10 @@ def _store_mode(store: Path) -> int | None:
 def credentials(step: Step, spec: Deployment, home: Path, api: ApiCheck, *, serves: bool) -> int:
     """Refuse (2) unless git can read every repo and the forge API answers what a tick needs on each served one.
 
-    Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81) -- one whose
-    checkout does not declare another producer (:func:`~dev_lab.dev.hpcaccount.spec.unserved`; one not yet cloned
-    is checked as served, so a first deploy still proves its token); any other is only cloned and fetched. Every repo
+    Only a SERVED repo posts statuses, so only it needs the stored token (ruling 2026-10-29, D81) -- one the family
+    binds to this account's role by its URL (:func:`~dev_lab.dev.hpcaccount.spec.unserved`; cloned or not, so a first
+    deploy still proves the token of what it serves and asks none for what it does not); any other is only cloned
+    and fetched. Every repo
     is read with the account's own helper: a private forge repo answers no anonymous read, served here or not
     (measured 2026-11-20: two research accounts' cloned, unserved product repos were refused at exit 128).
     An account whose role never *serves* (research) ticks nothing, so no repo there needs the tick's scopes:

@@ -9,9 +9,11 @@ from typing import Final
 import pytest
 from _hpcaccount_fakes import FAMILY, FLEET, HOST, fleet_source, home_of, tools_of
 
-from dev_lab.dev import hpcaccount
+from dev_lab.dev import devhost, hpcaccount
 from dev_lab.dev.hpcaccount import accountset, deploy, drift
 from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, load
+from dev_lab.dev.hpcaccount.steps import Step
+from dev_lab.dev.venvpointer import RETIRED_POINTER
 
 TOKEN: Final = 'ghp_' + 'Zq9' * 14  # a long encoded value under an innocent key
 HIDDEN: Final = 'hunter2-not-encoded'
@@ -244,3 +246,38 @@ def test_a_research_account_reads_no_crontab_and_agrees(
     args = ['--from', str(clone), '--host', HOST, '--config', str(machine)]
     assert drift.main(args, home=home, tools=tools_of(research)) == 0, capsys.readouterr()
     assert 'agrees' in capsys.readouterr().out
+
+
+def _rootless(tmp_path: Path, family: str) -> dict[str, drift.Drift] | str:
+    """The drift of an account whose layer states no root, under *family*."""
+    tmp_path.mkdir(exist_ok=True)
+    home, clone, machine = home_of(tmp_path, family=family)
+    layer = clone / devhost.host_file(HOST)
+    held = layer.read_text(encoding='utf-8').splitlines(keepends=True)
+    layer.write_text(''.join(line for line in held if not line.startswith('root = ')), encoding='utf-8')
+    machine.write_text(devhost.render(clone, HOST, {}), encoding='utf-8')
+    return drift.account_drift(Step(tools_of(tmp_path), dry=True), home, machine, clone, HOST)
+
+
+def test_an_account_at_its_clusters_root_is_compared_at_that_root(tmp_path: Path) -> None:
+    """A layer stating no root is the rule: the family's ``[hpc.clusters.<c>] root`` holds it, as the deploy reads it.
+
+    Measured 2026-11-22: ``drift`` (and so ``ci-pause``) refused "no root declared" on every such account, though the
+    deploy of the same account resolved the root from its grant. The root is the GRANT's cluster's: another
+    cluster's root, declared first, is never taken. PLANTED CONTROL: with no root declared anywhere it still refuses.
+    """
+    mine, other = tmp_path / 'mine' / 'root', tmp_path / 'other'
+    for root in (mine, other):
+        (root / 'repos' / 'kit').mkdir(parents=True)
+        (root / 'repos' / 'kit' / RETIRED_POINTER).write_text('x', encoding='utf-8')
+    accounts = '[hpc.clusters.c0.slurm_accounts.a]\nbilled = false\n'
+    elsewhere = f'[hpc.clusters.c0]\nhosts = ["login00"]\nroot = "{other.as_posix()}"\n{accounts}'
+    own = FAMILY.replace('hosts = ["login01"]', f'hosts = ["login01"]\nroot = "{mine.as_posix()}"')
+    head, clusters = own.split('[hpc.clusters.c1]', 1)
+    found = _rootless(tmp_path / 'mine', f'{head}{elsewhere}[hpc.clusters.c1]{clusters}')
+    assert not isinstance(found, str), found
+    (stray,) = found[drift.STRAYS].only_on_account
+    assert stray.startswith(mine.as_posix()), 'the old copies are read under the grant cluster root'
+    refused = _rootless(tmp_path / 'bare', FAMILY)
+    assert isinstance(refused, str)
+    assert 'no root declared' in refused
