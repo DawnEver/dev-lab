@@ -45,7 +45,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, Final
 
-from lab_commons.box import Refused
+from lab_commons.box import NotAdmitted, Refused
 from lab_commons.log import emit
 
 from dev_lab.supervise import notify
@@ -192,8 +192,9 @@ class Loop:
             clock: the instant to judge this cycle at. Defaults to the real one.
 
         Returns:
-            The cycle's result, or None when another cycle held the seat -- a skip is not a
-            failure, because the other cycle is the one doing the work.
+            The cycle's result, or None when the box refused it. Another cycle holding the seat is a
+            skip and not a failure, because the other cycle is the one doing the work; any other
+            refusal is logged as what it is.
 
         """
         try:
@@ -206,8 +207,13 @@ class Loop:
                 clock=clock or now(),
                 notifier=self.notifier,
             )
-        except Refused as exc:
+        except NotAdmitted as exc:
             emit(f'supervise: skipped, another cycle holds this target ({exc})', flush=True)
+            return None
+        except Refused as exc:
+            # NOT A HELD SEAT, AND SAID SO: the box refused the cycle outright (a volume under the machine's
+            # free-space floor). Nothing else is doing this cycle's work, so the line must not say something is.
+            emit(f'supervise: skipped, the box refused this cycle ({exc})', flush=True)
             return None
 
     def cycles(self, clock: Callable[[], datetime] | None = None) -> Iterator[CycleResult]:
@@ -301,7 +307,10 @@ def serve(
             emit('supervise: the manager was told this process is up', flush=True)
         else:
             emit('supervise: no notify socket -- nothing is watching this process but its own log', flush=True)
-        for result in running.cycles(tick):
+        # ONCE IS ONE ATTEMPT, NOT ONE RESULT. A skipped cycle yields nothing, so "stop after the first
+        # result" slept an interval and tried again for as long as the box kept refusing -- a timer-driven
+        # invocation that never returned (hosted Windows runner, 2026-11-22: three tests at the 600 s ceiling).
+        for result in _attempt(running, tick) if once else running.cycles(tick):
             at = tick()
             # THE CHECK-IN GOES WITH THE LOG LINE, once per cycle, so `WatchdogSec=` measures the
             # same thing the reader sees. It is sent even for a DEGRADED cycle: the question the
@@ -319,6 +328,13 @@ def serve(
                 degraded += 1
             if on_cycle is not None:
                 on_cycle(result, at)
-            if once:
-                running.stop.set()
     return degraded
+
+
+def _attempt(loop: Loop, tick: Callable[[], datetime]) -> Iterator[CycleResult]:
+    """Yield the one cycle a ``once`` run makes, or nothing when it was skipped or the stop flag is already set."""
+    if loop.stop.is_set():
+        return
+    result = loop.once(tick())
+    if result is not None:
+        yield result
