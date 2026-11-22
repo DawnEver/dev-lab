@@ -187,6 +187,10 @@ def tick_refusal(
 ) -> str:
     """What the forge API refuses the stored credential that a tick needs on *forge*'s repo; ``''`` when nothing.
 
+    A refusal leads with WHO ANSWERED (``answered as <login> -- ...``) whenever ``GET /user`` answered: the store's
+    first line for a host answers an unnamed request, so a read-only login shadowing the writer reads as "no push
+    permission" and nothing else told the two apart (measured 2026-11-22 on two verification accounts).
+
     Only an ANSWERED refusal is named: a credential refusal measured against ``GET /user`` or a final refusal of
     the call (:class:`~dev_lab.dev.forgefailure.ForgeCallFailed`). Anything else -- no answer, a 5xx, a 401/403
     the measurement did not confirm -- is no verdict on the token, and is raised after the bounded retries.
@@ -199,8 +203,8 @@ def tick_refusal(
         client = stored_client(forge, cwd=cwd, env=env, transport=transport)
     except NoCredential as none:
         return str(none)
-    refused = []
-    if not _answers(client.whoami):
+    refused, login = [], []
+    if not _answers(lambda: login.append(client.whoami())):
         refused.append('user (read): GET /user refused')
     permissions: dict[str, Any] = {}
     if not _answers(lambda: permissions.update(client.call('GET', client.repo).get('permissions') or {})):
@@ -210,7 +214,8 @@ def tick_refusal(
     query = client.backend.list_query.format(state='open', limit=1)
     if not _answers(lambda: client.call('GET', f'{client.repo}/issues?{query}')):
         refused.append('issue (read): the issues list refused')
-    return '; '.join(refused)
+    who = f'answered as {login[0]} -- ' if refused and login and login[0] else ''
+    return who + '; '.join(refused)
 
 
 def _answers(call: Callable[[], object]) -> bool:
