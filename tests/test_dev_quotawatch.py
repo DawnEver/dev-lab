@@ -96,3 +96,9 @@ def test_planted_control_a_calm_tick_raises_no_alarm(tmp_path: Path) -> None:
     assert done is not None
     assert not done.over
     assert done.watch == ''
+
+
+def test_an_unread_byte_quota_never_prints_a_negative_usage() -> None:
+    unread = Usage(0, 0, None, None)
+    assert unread.after(int(6.5 * _GB), 0) == ['usage bytes unread (no byte quota read); freeing 6.5 GB']
+    assert CALM.after(_GB, 0)[0] == 'usage bytes 43.0/1000.0 GB -> 42.0 GB', 'PLANTED CONTROL: a read quota is stated'
