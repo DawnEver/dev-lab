@@ -6,6 +6,11 @@ holds the ``[dev] client_keys`` of EVERY workstation whose ``[dev] hpc`` reach l
 (:func:`reaching`), read from ``DIR`` -- a checkout of the hosts config's ``hosts/`` -- never from this machine's
 memory.
 
+A SESSION ROLE IS ADMITTED BY STANDING REACH. A verification account is reached by a SESSION, never a host
+(:mod:`dev_lab.dev.hpcaccount.session`): the family's ``[hpc] session_reach`` maps a session role to the account roles
+it adds, and lab-commons admits it only on a machine whose reach is not empty. So an account whose role a session
+role adds holds the keys of every workstation that may hold that session role: ``[dev] hpc`` non-empty.
+
 A MANAGED BLOCK, NEVER THE FILE. The keys live between :data:`BEGIN` and :data:`END`; every line outside them (a key
 someone placed by hand, the cluster's own) is kept as it was (:func:`merged`). The write goes through the grant's
 own key-only connection (:func:`dev_lab.dev.hpcaccount.transport.grant_runner`): a backup
@@ -27,6 +32,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final
 
+from lab_commons import config
 from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 from lab_commons.log import emit
@@ -48,8 +54,14 @@ FILE: Final = '.ssh/authorized_keys'
 _DOOR: Final = 'a workstation host file in the hosts config: [dev] hpc = ["<role>"] and [dev] client_keys'
 
 
-def reaching(files: Mapping[str, str], role: str) -> tuple[str, ...]:
-    """The client keys of every development machine in *files* (name -> text) whose ``[dev] hpc`` lists *role*.
+def reaching(
+    files: Mapping[str, str], role: str, session_reach: Mapping[str, Sequence[str]] | None = None
+) -> tuple[str, ...]:
+    """The client keys of every development machine in *files* (name -> text) that reaches *role*.
+
+    A machine reaches *role* when its ``[dev] hpc`` lists it, or -- when *session_reach* (the family's
+    ``[hpc] session_reach``) lets a session role add *role* -- when its ``[dev] hpc`` is non-empty, the standing
+    reach that admits a session role.
 
     Ordered by file name, each key once.
 
@@ -57,6 +69,7 @@ def reaching(files: Mapping[str, str], role: str) -> tuple[str, ...]:
         ValueError: a file is not TOML or declares a malformed key -- naming the file.
 
     """
+    by_session = any(role in added for added in (session_reach or {}).values())
     picked: dict[str, str] = {}
     for name in sorted(files):
         try:
@@ -64,7 +77,8 @@ def reaching(files: Mapping[str, str], role: str) -> tuple[str, ...]:
         except tomllib.TOMLDecodeError as bad:
             msg = f'{name} is not TOML ({bad}): no key is derived'
             raise ValueError(msg) from bad
-        if isinstance(dev, Mapping) and role in (dev.get('hpc') or []) and clientkeys.DEV_KEY in dev:
+        reach = (dev.get('hpc') or []) if isinstance(dev, Mapping) else []
+        if (role in reach or (by_session and reach)) and clientkeys.DEV_KEY in dev:
             picked[name] = files[name]
     return clientkeys.derive(picked)
 
@@ -117,13 +131,14 @@ def place_keys(
     dry_run: bool = False,
     connect: Callable[[Grant], Runner] | None = None,
     stamp: str = '',
+    session_reach: Mapping[str, Sequence[str]] | None = None,
 ) -> int:
     """Place the derived keys on *account*'s managed block, read them back; 0 verified (or dry run), 2 refused."""
     user = account.partition('@')[0]
     grant = next((g for g in grants if g.user == user), None)
     role = division.role_of(user) if grant else ''
     try:
-        keys = reaching(files, role) if role else ()
+        keys = reaching(files, role, session_reach) if role else ()
     except ValueError as bad:
         say(f'keys: refused -- {bad}')
         return 2
@@ -187,5 +202,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     return place_keys(
         args.account, files=_host_files(args.hosts), grants=machine.grants, division=division_of(machine),
-        say=emit, dry_run=args.dry_run,
+        say=emit, dry_run=args.dry_run, session_reach=config.section('hpc').get('session_reach') or {},
     )  # fmt: skip

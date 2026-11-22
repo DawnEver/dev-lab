@@ -120,3 +120,29 @@ def test_a_broken_managed_block_is_refused_and_left_untouched() -> None:
     assert _place(home, seen, said) == 2
     assert 'broken managed block' in said[-1]
     assert home['keys'] == f'{FOREIGN}\n{keys.BEGIN}\n{A}\n'
+
+
+SESSION_REACH = {'integrator': ['verification']}
+VERIFIER = Division(grant_roles={'alice': 'verification'})
+SESSION_FILES = {
+    'a.toml': FILES['a.toml'],
+    'none.toml': f'[dev]\nos = "linux"\nhpc = []\nclient_keys = ["{C}"]\n',
+}
+
+
+def test_a_session_role_takes_the_keys_of_every_workstation_whose_reach_admits_it() -> None:
+    """PLANTED CONTROL: ``none`` (hpc = []) may hold no session role, so its key is left out."""
+    assert keys.reaching(SESSION_FILES, 'verification', SESSION_REACH) == (A,)
+    assert keys.reaching(SESSION_FILES, 'verification') == (), 'no session_reach declared: no session admission'
+    assert keys.reaching(FILES, 'research', SESSION_REACH) == (A, B), 'a standing role is unchanged'
+
+
+def test_a_verification_account_is_placed_through_the_session_rule() -> None:
+    said: list[str] = []
+    code = keys.place_keys(
+        'alice@login1.example', files=SESSION_FILES, grants=GRANTS, division=VERIFIER,
+        say=said.append, dry_run=True, session_reach=SESSION_REACH,
+    )  # fmt: skip
+    assert code == 0, said
+    assert digest(A) in said[-1]
+    assert digest(C) not in said[-1]
