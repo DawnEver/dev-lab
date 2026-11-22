@@ -605,6 +605,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.proctable` -- the process table the stop doors read and its walks: subtree, ancestors,
   whose session a pid descends from, and the pids no door may stop.
 * :mod:`dev_lab.dev.handback` -- the Stop hook: a turn handing the user a runnable command is sent back to the agent.
+* :mod:`dev_lab.dev.imagepath` -- IMAGES-BY-ABSOLUTE-PATH: that hook's second reading, a relative image path.
 * :mod:`dev_lab.dev.journaldoor` -- the journal door's judge, asked by the engine's deny row on a match: a task
   journal append citing an ignored path is refused before it is written.
 * :mod:`dev_lab.dev.pushwatch` -- PUSHED-HEAD-IS-WATCHED: the commit a shell push line publishes, and the line a
@@ -650,6 +651,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.mainsync` -- a main checkout follows its branch: byte-identical untracked files are no obstacle,
   a differing one, a tracked change or a divergence refuses by name; then its venv follows.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
+* :mod:`dev_lab.dev.worktreename` -- WORKTREE-NAMES-ITS-TASK: what a hash-like name is, and the trees that have one.
 * :mod:`dev_lab.dev.agentpolicy` -- AGENT-POLICY: the one table of agent doors; allow rows, intents, remedies derive.
 * :mod:`dev_lab.dev.forgekeyfile` -- the forge key file `auth export` writes and `auth login --from-file` reads.
 * :mod:`dev_lab.dev.forgeverdict` -- a reported credential refusal, recorded; a later success with it logs a MISREAD.

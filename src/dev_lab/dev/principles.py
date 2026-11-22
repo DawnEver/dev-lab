@@ -92,6 +92,17 @@ PRINCIPLES: Final = (
         'sibling -- no barrier-style orchestration (e.g. a dynamic workflow that joins all agents) unless a step '
         'truly needs every result. How: docs-src/dev/fanout.md.',
     ),
+    Principle(
+        'images-by-absolute-path',
+        'Deliver an image by its absolute path',
+        'An image handed to the user is named by its ABSOLUTE path, never a relative one (IMAGES-BY-ABSOLUTE-PATH).',
+    ),
+    Principle(
+        'worktree-names-its-task',
+        'A worktree is named for its task',
+        "A worktree's name has a physical meaning tied to its task; a hash-like name (`agent-<hex>`, an appended "
+        'hash) is forbidden (WORKTREE-NAMES-ITS-TASK).',
+    ),
 )
 
 #: Where each family repo carries the rendered page (always loaded by the agent).

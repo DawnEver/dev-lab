@@ -18,4 +18,24 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_hook_budget.py',),
     ),
+    (
+        'IMAGES-BY-ABSOLUTE-PATH',
+        (
+            # Why: user ruling 2026-11-22.
+            'An image a turn delivers is named by its ABSOLUTE path: a relative one resolves against a working '
+            'directory the reader is not in. The Stop hook reads the final message and sends back one that names '
+            'an image file by a relative path; a URL, a pattern and a template are not paths and pass.'
+        ),
+        ('tests/test_dev_imagepath.py',),
+    ),
+    (
+        'WORKTREE-NAMES-ITS-TASK',
+        (
+            # Why: user ruling 2026-11-22 -- an agent appending a string of hash is strictly forbidden.
+            'A worktree`s directory name has a physical meaning related to its task (its feature, as its branch '
+            'says); a hash-like name -- `agent-<hex>`, a name that is or ends in a hash -- is refused by name when '
+            'the tree is made or moved, and a tree that arrived another way is detected from git`s own list.'
+        ),
+        ('tests/test_dev_worktreename.py', 'tests/test_dev_hooks.py'),
+    ),
 )

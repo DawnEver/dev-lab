@@ -1,13 +1,15 @@
-"""The agent deny registry, WORKTREES-STAY-INSIDE row -- pure DATA, split from `_deny_rows` by the size band.
+"""The agent deny registry, the WORKTREE rows -- pure DATA, split from `_deny_rows` by the size band.
 
-Its path regex is derived from :data:`dev_lab.dev.worktreeplace.WORKTREES_REL`, the one spelling.
+The path regex is derived from :data:`dev_lab.dev.worktreeplace.WORKTREES_REL`, the one spelling, and the
+hash-like name from :data:`dev_lab.dev.worktreename.HASH_LIKE_LEAF`.
 """
 
 from __future__ import annotations
 
+from dev_lab.dev.worktreename import DOOR, HASH_LIKE_LEAF, RULE
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
-__all__ = ['BASE_IS_EXPLICIT_ALLOW', 'BASE_IS_EXPLICIT_PATTERN', 'WORKTREES_STAY_INSIDE']
+__all__ = ['BASE_IS_EXPLICIT_ALLOW', 'BASE_IS_EXPLICIT_PATTERN', 'WORKTREES_STAY_INSIDE', 'WORKTREE_NAMES_ITS_TASK']
 
 #: WORKTREES-STAY-INSIDE, built from pieces so the PATTERN and the OPENING name the same verbs.
 #: A shell TOKEN: a quoted string or a bare word that stops at a shell separator.
@@ -95,5 +97,47 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
         'git worktree list --porcelain',
         'git worktree lock .claude/worktrees/probe',
         'git commit -m "refuse git worktree add ../x"',
+    ),
+}
+
+#: WORKTREE-NAMES-ITS-TASK reads the SAME grammar, and judges only the directory the verb MAKES -- `add`'s first
+#: positional, `move`'s second: a commit-ish and a branch are hashes by nature, and a hash-named SOURCE is being
+#: renamed, which is the exit. The name is read where it follows the worktree home and ends the shell word.
+_HOME = r'[\\/]+'.join(WORKTREES_REL.replace('.', r'\.').split('/')) + r'[\\/]+'
+_NAMED = _HOME + HASH_LIKE_LEAF + r'[\\/]?'
+_HASH_NAMED = (
+    r'(?:"(?:[^"\n]*[\\/])?' + _NAMED + r'"'
+    r"|'(?:[^'\n]*[\\/])?" + _NAMED + r"'"
+    r'|(?:[^\s"\';&|()]*[\\/])?' + _NAMED + r')' + _END
+)
+
+WORKTREE_NAMES_ITS_TASK: dict[str, object] = {
+    'id': RULE,
+    'pattern': (
+        r'git(?:\.exe)?(?:\s+-[Cc]\s+' + _SHELL_WORD + r')*\s+worktree\s+'
+        r'(?:add(?:\s+' + _ADD_OPT + r')*|move(?:\s+-\S+)*\s+' + _SHELL_WORD + r')\s+' + _HASH_NAMED
+    ),
+    'matches': 'command',
+    'hazard': 'a hash-like worktree name says nothing about its task: nobody can tell what the tree is for.',
+    'remedy': DOOR,
+    'needs': None,
+    'refuses': (
+        'git worktree add --detach .claude/worktrees/agent-a1b2c3d4 4ad12b6',
+        'git worktree add -b pr/task/feature .claude/worktrees/feature-4ad12b6 origin/main',
+        'git worktree add .claude/worktrees/9ec201a0 HEAD',
+        'git -C "C:/work/lab commons" worktree add "C:/work/lab commons/.claude/worktrees/wt_0c7317f0" HEAD',
+        r'git worktree add --detach C:\work\lab-commons\.claude\worktrees\AGENT-A1B2C3D4 4ad12b6',
+        'git worktree move .claude/worktrees/lane .claude/worktrees/lane-4ad12b6',
+    ),
+    'permits': (
+        'git worktree add --detach .claude/worktrees/windows-base-green-2 4ad12b6',
+        'git worktree add -b pr/toolchain/integrate-green-1122 .claude/worktrees/integrate-green-1122 origin/main',
+        'git worktree add --detach .claude/worktrees/wave-20261122 4ad12b6f',
+        'git worktree add --detach .claude/worktrees/user-facade 4ad12b6f',
+        'git worktree add -b fix/4ad12b6f .claude/worktrees/probe 4ad12b6f',
+        'git worktree move .claude/worktrees/agent-a1b2c3d4 .claude/worktrees/render-the-page',
+        'git worktree lock .claude/worktrees/agent-a1b2c3d4',
+        'git worktree list --porcelain',
+        'git commit -m "refuse git worktree add .claude/worktrees/agent-a1b2c3d4"',
     ),
 }

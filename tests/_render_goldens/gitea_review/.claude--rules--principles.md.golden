@@ -22,3 +22,7 @@
 - **Fan out without a barrier** (`no-barrier-fan-out`): Parallel work is independent items, each landed the moment it is
   done; nothing waits for the slowest sibling -- no barrier-style orchestration (e.g. a dynamic workflow that joins all
   agents) unless a step truly needs every result. How: docs-src/dev/fanout.md.
+- **Deliver an image by its absolute path** (`images-by-absolute-path`): An image handed to the user is named by its
+  ABSOLUTE path, never a relative one (IMAGES-BY-ABSOLUTE-PATH).
+- **A worktree is named for its task** (`worktree-names-its-task`): A worktree's name has a physical meaning tied to its
+  task; a hash-like name (`agent-<hex>`, an appended hash) is forbidden (WORKTREE-NAMES-ITS-TASK).
