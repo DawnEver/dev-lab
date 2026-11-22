@@ -47,8 +47,15 @@ def auto_merge(client: Client, number: int) -> str:
     return f'#{number}: auto-merge enabled -- GitHub merges it (a merge commit) once its required checks are green'
 
 
-def merge(client: Client, number: int, *, head: str, message: str, delete_branch: bool) -> None:
+def merge(client: Client, number: int, *, head: str, message: str, delete_branch: bool, force: bool = False) -> None:
     """Ask the forge to merge PR *number* at *head* with a merge commit saying *message*.
+
+    *force* is break-glass's alone (:meth:`dev_lab.ops.breakglassforge.ClientForge.merge`): the merge is asked to
+    OVERRIDE the branch's unmet required checks. Gitea overrides them only when the request says so
+    (``force_merge``) AND its login is one the protection admits -- a repository admin, or its bypass allowlist
+    (:mod:`dev_lab.dev._protect_gitea`); unasked, it refuses a merge whose required check is pending or red even
+    from that login (measured 2026-11-22 on a repo whose one branch requires its check workflow). GitHub has no
+    such flag: the ruleset's bypass actor merges past it as itself. Every other door leaves it ``False``.
 
     Both forges refuse a *head* that is no longer the PR's (Gitea ``head_commit_id``, GitHub ``sha``). On GitHub,
     which deletes no branch with a merge, *delete_branch* deletes the PR's head branch after it: a branch already gone
@@ -67,17 +74,14 @@ def merge(client: Client, number: int, *, head: str, message: str, delete_branch
         if delete_branch:
             _delete_head(client, client.pr_view(number).head)
         return
-    client.call(
-        'POST',
-        f'{client.repo}/pulls/{number}/merge',
-        {
-            'Do': 'merge',
-            'MergeTitleField': title,
-            'MergeMessageField': body,
-            'head_commit_id': head,
-            'delete_branch_after_merge': delete_branch,
-        },
-    )
+    asked = {
+        'Do': 'merge',
+        'MergeTitleField': title,
+        'MergeMessageField': body,
+        'head_commit_id': head,
+        'delete_branch_after_merge': delete_branch,
+    }
+    client.call('POST', f'{client.repo}/pulls/{number}/merge', asked | ({'force_merge': True} if force else {}))
     sessionprs.ended(client.forge, number)
 
 
