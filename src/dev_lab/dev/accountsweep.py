@@ -38,10 +38,12 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-__all__ = ['EVENT', 'OLD_COPY', 'UV_TMP', 'VENV', 'candidates', 'crontab', 'main', 'processes', 'referenced', 'sweep']
+__all__ = [
+    'EVENT', 'LEFT_BEHIND', 'UV_TMP', 'VENV', 'candidates', 'crontab', 'main', 'processes', 'referenced', 'sweep',
+]  # fmt: skip
 
 EVENT = 'lab_commons.forge.retention'
-OLD_COPY = 'old-copy'
+LEFT_BEHIND = 'old-copy'
 VENV = 'venv-not-current'
 UV_TMP = 'uv-cache-tmp'
 _MB = 1024**2
@@ -120,7 +122,7 @@ def candidates(spec: dict, home: Path, root: Path, live: list[dict] | None) -> l
     """Every ``(path, rule, why it is kept whatever references it)`` the caller's rules judge on this account."""
     old = [home / p for p in spec['strays_in_home']] + [root / p for p in spec['strays_in_root']]
     old += [repo / spec['retired_pointer'] for repo in sorted((root / 'repos').glob('*'))]
-    found = [(path, OLD_COPY, '') for path in old]
+    found = [(path, LEFT_BEHIND, '') for path in old]
     for envs in sorted((root / 'repos').glob(f'*/{spec["envs"]}')):
         current = _real(envs.parent / spec['pointer'])
         found += [(env, VENV, '') for env in sorted(envs.iterdir()) if env.is_dir() and _real(env) != current]
