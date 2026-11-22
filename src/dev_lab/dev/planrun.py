@@ -43,7 +43,8 @@ output that carries a secret but does not parse stops the run naming the raw fil
 per host step, that its ``stdin_local`` file exists here or its ``stdin_task`` bundle is stored here (never its
 content shown), that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
 ``--subject``) equals the grant's; per local step, that the machine file names the client's endpoint. A door a host
-gains only from an earlier ``ops.config`` step ON THAT HOST (``config apply`` installs sudoers) is ``after step N``,
+gains only from an earlier step ON THAT HOST whose action the registry marks ``rederives`` (``ops.config``: ``config
+apply`` installs sudoers; ``ops.upgrade``: the installed revision changes what the host derives) is ``after step N``,
 never a failure; so is a subject that differs after such a step (the apply changes the live config the subject is
 derived from), and :func:`run_plan` checks it for real at that point. An ``ops.forge.protect`` step naming its
 public ``forge`` host (``{"argv": ["forge", "protect", "apply", "--repo", R, "--ref"?, F], "forge": "<host>"}``) has

@@ -53,7 +53,7 @@ from dev_lab.dev.planrunsteps import (
 )
 from dev_lab.dev.reviewgate import DeclarationUnread, file_at, manifest_at
 from dev_lab.ops import configdoor, forgeprotection
-from dev_lab.ops.consent.actions import read_answer
+from dev_lab.ops.consent.actions import ACTIONS, read_answer
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import PREFLIGHT_FRESH_S, ssh_send, subject_read
@@ -202,6 +202,11 @@ def config_subject(
     return configdoor.local_subject(source, devhost.host_file(host), read, ref, listed=listed)
 
 
+def _rederives(action: str) -> bool:
+    """*action* changes what its host derives or admits afterwards (the registry's ``rederives``)."""
+    return action in ACTIONS and ACTIONS[action].rederives
+
+
 def _derivable(step: Step) -> bool:
     return bool(step.forge or step.config_host)
 
@@ -310,21 +315,22 @@ def _read_unreached(plan: Plan, steps: Steps, index: int, readers: Readers) -> C
 
 
 def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote, readers: Readers) -> Checked:
-    """The verdict of host step *index*: its door, else an earlier config step on its host, then its subject."""
+    """The verdict of host step *index*: its door, else an earlier host-changing step on its host, then its subject."""
     grant, step = plan.grants[index], steps.steps[index]
     if missing := _no_stdin(step):
         return f'BLOCKED -- {missing}', True, ''
     placeholder = f'{REMOTE_DIR}/preflight.json'
     said, status = remote.run(ops_command(step, [*step.argv, '--credential', placeholder], sudo='sudo -n -l'))
     here = [i for i in range(index) if not steps.steps[i].local and steps.steps[i].dest == step.dest]
-    after = next((i + 1 for i in reversed(here) if plan.grants[i]['action'] == CONFIG_ACTION), None)
+    after = next((i + 1 for i in reversed(here) if _rederives(plan.grants[i]['action'])), None)
+    changed = plan.grants[after - 1]['action'] if after else ''
     if status:
         if after and _derivable(step):
             verdict, blocked = _derived_here(grant['subject'], step, readers)
-            return (f'{verdict}; its door after step {after} (installed by that config apply)', blocked,
+            return (f'{verdict}; its door after step {after} (installed by that {changed})', blocked,
                     f'its door, installed by step {after}')  # fmt: skip
         if after:
-            return (f'after step {after} (its door is installed by that config apply)', False,
+            return (f'after step {after} (its door is installed by that {changed})', False,
                     f'its door and subject, after step {after}')  # fmt: skip
         return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({last_line(said)})', True, ''
     if step.forge:  # derived here (it names where a mismatch was read), THEN asked of its reached host
@@ -339,9 +345,10 @@ def _asked_of_host(plan: Plan, steps: Steps, index: int, remote: Remote, after: 
     granted, step = plan.grants[index]['subject'], steps.steps[index]
     said, status = remote.run(ops_command(step, [*step.argv, '--subject']), step_stdin(step))
     derived, refusal = read_answer(said)
-    if not status and derived != granted and after:
+    if after and (status or derived != granted):  # the host as it stands is not the host this step will run on
+        now = f' (as it stands the host cannot derive it: {derived})' if status else ''
         return (f'after step {after} (subject derived once step {after} applied)', False,
-                f'its subject, derived once step {after} applied')  # fmt: skip
+                f'its subject, derived once step {after} applied{now}')  # fmt: skip
     if status or derived != granted:
         why = (f'the host could not derive the subject ({derived})' if status else
                f'the host derives subject {derived[:12]}, the plan grants {granted[:12]}')  # fmt: skip
