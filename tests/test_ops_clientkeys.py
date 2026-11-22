@@ -136,3 +136,28 @@ def test_a_machine_declares_its_keys_in_its_own_host_file_only() -> None:
 def test_the_source_table_declares_clients_as_a_boundary_key(tmp_path: Path) -> None:
     assert boundary(('ops.config.clients',)) == ('ops.config.clients',)
     assert dataclasses.replace(_source(tmp_path), clients='hosts').clients == 'hosts'
+
+
+_ACCESS = '[ops.access]\naccount = "ops"\nkeys = ["ssh-ed25519 AAAA own"]\n'
+_OPT_IN = '[ops.config]\nsource = "S"\npath = "hosts/forge.toml"\ntoken_file = "/t"\nclients = "hosts"\n'
+
+
+def _with_access(tmp_path: Path, extra: str) -> Path:
+    path = config(tmp_path, []).path
+    text = path.read_text(encoding='utf-8') + _ACCESS + extra + f'[ops.clients]\nkeys = ["{WS_KEY}"]\n'
+    path.write_text(text, encoding='utf-8')
+    return path
+
+
+def test_an_opted_in_host_adds_the_derived_keys_to_the_operator_login_keeping_its_own(tmp_path: Path) -> None:
+    """``[ops.config] clients`` set: ``[ops.access]`` keys are its own plus every derived workstation key."""
+    found = load(_with_access(tmp_path, _OPT_IN), environ={})
+    assert found.access is not None
+    assert found.access.keys == ('ssh-ed25519 AAAA own', WS_KEY)
+
+
+def test_a_host_that_does_not_opt_in_keeps_exactly_its_declared_access_keys(tmp_path: Path) -> None:
+    """PLANTED CONTROL: no ``clients`` opt-in, the operator login is not widened even with ``[ops.clients]`` present."""
+    found = load(_with_access(tmp_path, ''), environ={})
+    assert found.access is not None
+    assert found.access.keys == ('ssh-ed25519 AAAA own',)

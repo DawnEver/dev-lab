@@ -63,7 +63,7 @@ __all__ = ['main']
 _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
-    'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | '
+    'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | '
     'tick <repo>... | allocate [...]}'
 )
 
@@ -79,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         drift,
         fleet,
         forget,
+        keys,
         storage,
         tick,
     )
@@ -97,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         'drift': drift.main,
         'drift-fleet': lambda rest: accountset.main_fleet(rest, verb='drift', flags=('--dry-run', '--discard-drift')),
         'credential': credential.main,
+        'keys': keys.main,
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
         'forget': forget.main,

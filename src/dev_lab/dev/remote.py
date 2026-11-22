@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import IO, Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.config import section
 from lab_commons.temp import TEMP_PREFIX
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     'HOST_KEY_RULE',
     'HOST_KEY_UNFILLED',
     'HostKeyUndeclared',
+    'declared_known_hosts',
     'declared_piped',
     'detached',
     'host_key_line',
@@ -98,14 +100,47 @@ def _named(target: str, said: str) -> str:
     )
 
 
-def ssh_argv(target: str, command: str, *, batch: bool) -> list[str]:
+def declared_known_hosts(target: str, host_keys: Mapping[str, object]) -> str | None:
+    """The known_hosts file holding only *target*'s DECLARED host key, or None when its host declares none.
+
+    The file (one per host, under the temp root) is rewritten from the declaration on every call, so ssh never
+    checks against a key it learned elsewhere (:data:`HOST_KEY_RULE`). It outlives the call: a detached ssh reads it.
+
+    Raises:
+        HostKeyUndeclared: the host is declared but its entry is a placeholder or not a key line.
+
+    """
+    if _host(target) not in host_keys:
+        return None
+    entry = host_key_line(target, host_keys)
+    folder = Path(tempfile.gettempdir()) / f'{TEMP_PREFIX}known-hosts'
+    folder.mkdir(parents=True, exist_ok=True)
+    known = folder / _host(target)
+    known.write_text(entry + '\n', encoding='utf-8')
+    return str(known)
+
+
+def ssh_argv(target: str, command: str, *, batch: bool, host_keys: Mapping[str, object] | None = None) -> list[str]:
     """The ssh argv running *command* (a POSIX shell line) as a login shell on *target* (``user@host``).
 
     *batch* true never prompts (a key-only account: a cluster); false allocates a terminal for an account whose
     login asks a second factor (a server's ops account: key AND a one-time code typed by the user).
+
+    *host_keys* is the declared ``[ssh] host_keys`` (None: this machine's own declaration). A host declared there is
+    checked strictly against that key alone (:func:`declared_known_hosts`); an undeclared host keeps ssh's default.
+
+    Raises:
+        HostKeyUndeclared: the host's declaration is a placeholder or not a key line; nothing was started.
+
     """
+    if host_keys is None:
+        declared = section('ssh').get('host_keys')
+        host_keys = declared if isinstance(declared, dict) else {}
+    known = declared_known_hosts(target, host_keys)
+    hosts = ['-o', f'UserKnownHostsFile={known}', '-o', 'StrictHostKeyChecking=yes'] if known else []
     mode = ['-o', 'BatchMode=yes'] if batch else ['-t']
-    return ['ssh', *mode, '-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}', target, f'bash -lc {shlex.quote(command)}']
+    timeout = ['-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}']
+    return ['ssh', *mode, *timeout, *hosts, target, f'bash -lc {shlex.quote(command)}']
 
 
 def detached(argv: Sequence[str], log: IO[Any]) -> object:
