@@ -74,7 +74,7 @@ from dev_lab.dev._deny_remote_row import REMOTE_WRITE
 from dev_lab.dev._deny_report_row import REPORTS_LIVE_IN_MEMORY
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev._deny_subagent_heavy_row import HEAVY_IS_THE_MAIN_SESSIONS
-from dev_lab.dev._deny_subagent_row import SUBAGENT_NO_PUSH
+from dev_lab.dev._deny_subagent_row import MAIN_ONLY_DOOR, SUBAGENT_NO_PUSH
 from dev_lab.dev._deny_worktree_row import (
     BASE_IS_EXPLICIT_ALLOW,
     BASE_IS_EXPLICIT_PATTERN,
@@ -113,6 +113,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     BACKGROUND_BOUNDED,
     JOURNAL_CITES,
     SUBAGENT_NO_PUSH,
+    MAIN_ONLY_DOOR,
     HEAVY_IS_THE_MAIN_SESSIONS,
     CONSENT_CODE_FROM_THE_USER,
     MACHINE_FILE_IS_RENDERED,

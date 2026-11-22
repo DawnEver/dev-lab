@@ -43,6 +43,8 @@ from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
+from dev_lab.dev.hpcaccount.declaration import granted_root
+from dev_lab.dev.hpcaccount.fleet import account_host, grant_slice
 from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.venvpointer import RETIRED_POINTER
@@ -170,15 +172,22 @@ def unrenderable(found: Mapping[str, Drift]) -> list[str]:
 
 
 def account_drift(step: Step, home: Path, machine: Path, clone: Path, host: str) -> dict[str, Drift] | str:
-    """``{'machine file': ..., 'crontab': ...}`` for this account; else why it cannot be compared (nothing read)."""
+    """``{'machine file': ..., 'crontab': ...}`` for this account; else why it cannot be compared (nothing read).
+
+    A layer stating no ``[deploy] root`` is at its grant's cluster root, resolved as the deploy resolves it
+    (:func:`~dev_lab.dev.hpcaccount.declaration.granted_root` over the grant's own slice): read without it, every
+    such account was refused "no root declared" here and at ``ci-pause`` (measured 2026-11-22).
+    """
     if not (clone / devhost.host_file(host)).is_file() or not (clone / 'family.toml').is_file():
         return f'{clone.as_posix()} holds no family.toml and {devhost.host_file(host)}: deploy-fleet fetches that clone'
     try:
         rendered = tomllib.loads(devhost.render(clone, host, {}))
         live = tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {}
         whole = layered(rendered)  # a render holds no family leaf: the grants are read under it (devdeclared)
-        spec = parse(whole, clone / devhost.host_file(host))
         grants, _ = declared_grants(whole.get('hpc', {}))
+        own = next((grant for grant in grants if account_host(grant) == host), None)
+        root = granted_root(grant_slice(own)) if own else ''  # the deploy's resolver: its cluster's declared root
+        spec = parse(whole, clone / devhost.host_file(host), root=root)
     except (OSError, ValueError) as failed:  # TOMLDecodeError is a ValueError
         return f'cannot render {host} from {clone.as_posix()}: {failed}'
     if spec is None or spec.role != VERIFICATION:  # SCHEDULER-ONLY-FOR-SERVING: no crontab to compare, none read

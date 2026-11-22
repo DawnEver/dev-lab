@@ -7,6 +7,7 @@ import re
 
 import pytest
 
+from dev_lab.dev._deny_subagent_row import PUBLISHING_MODULES
 from dev_lab.dev.agentpolicy import MAIN, POLICY, SUBAGENT, USER, Door, exits_of, module_verbs
 from dev_lab.dev.autodoors import claude_rows
 from dev_lab.dev.automode import INTENTS, spelled_commands
@@ -14,6 +15,8 @@ from dev_lab.dev.doorrows import INTERPRETERS
 from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 
 _RULES = rules_by_id(DENY_RULES)
+#: The two rows derived from the MAIN doors, by subject (:mod:`dev_lab.dev._deny_subagent_row`).
+_SUBAGENT_ROWS = ('SUBAGENT-NO-PUSH', 'MAIN-ONLY-DOOR')
 
 
 def _spelled(door: Door) -> str:
@@ -42,14 +45,19 @@ def test_the_forge_write_remedy_names_every_door_it_is_the_exit_of() -> None:
 
 @pytest.mark.parametrize('door', [door for door in POLICY if door.actor == MAIN and door.argv[:1] == ('python',)])
 def test_a_main_door_is_refused_to_a_subagent(door: Door) -> None:
-    """SUBAGENT-NO-PUSH's door half is DERIVED from the MAIN rows: a door added there is refused to a subagent."""
-    assert re.match(f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})', _spelled(door)), door.argv
+    """The subagent rows are DERIVED from the MAIN rows: a door added there is refused to a subagent, by ONE row.
+
+    Which one is its SUBJECT: a publishing module's door is SUBAGENT-NO-PUSH's, every other MAIN-ONLY-DOOR's.
+    """
+    fired = [name for name in _SUBAGENT_ROWS if re.match(f'(?:{_RULES[name].pattern})', _spelled(door))]
+    assert fired == ['SUBAGENT-NO-PUSH' if door.argv[2] in PUBLISHING_MODULES else 'MAIN-ONLY-DOOR'], door.argv
 
 
 @pytest.mark.parametrize('door', [door for door in POLICY if door.actor == SUBAGENT and door.argv])
 def test_a_subagent_door_is_not_refused_to_a_subagent(door: Door) -> None:
     """PLANTED CONTROL for the derivation: it refuses the main session's doors, not every door of a module."""
-    assert not re.match(f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})', _spelled(door)), door.argv
+    for name in _SUBAGENT_ROWS:
+        assert not re.match(f'(?:{_RULES[name].pattern})', _spelled(door)), (name, door.argv)
 
 
 def test_a_user_door_renders_no_allow_row_and_no_intent() -> None:
@@ -162,7 +170,7 @@ def test_a_subagent_reads_the_held_sessions_but_never_runs_on_one() -> None:
     PLANTED CONTROL: ``sshhold run`` stays the main session's: a command on the session the user authenticated with
     their code cannot be judged read-only from its text.
     """
-    pattern = f'(?:{_RULES["SUBAGENT-NO-PUSH"].pattern})'
+    pattern = f'(?:{_RULES["MAIN-ONLY-DOOR"].pattern})'
     assert _door(('python', '-m', 'dev_lab.dev.sshhold', 'status')).actor == SUBAGENT
     assert not re.match(pattern, f'{INTERPRETERS[0]} -m dev_lab.dev.sshhold status')
     assert re.match(pattern, f'{INTERPRETERS[0]} -m dev_lab.dev.sshhold run u@h "uptime"')

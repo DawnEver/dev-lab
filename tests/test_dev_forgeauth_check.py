@@ -53,6 +53,19 @@ def test_each_missing_permission_is_named(server, tmp_path: Path, forge: dict, n
     assert named in _refusal(server, tmp_path)
 
 
+def test_a_refusal_names_the_login_that_answered(server, tmp_path: Path) -> None:
+    """A read-only identity shadowing the writer is visible in the refusal (measured 2026-11-22, a refused deploy).
+
+    PLANTED CONTROLS: a token the forge does not know names nobody, and a passing check says nothing at all.
+    """
+    _forge(push=False)
+    assert 'answered as alice' in _refusal(server, tmp_path)
+    _forge(user=403)
+    assert 'answered as' not in _refusal(server, tmp_path), 'GET /user refused: nobody answered'
+    _forge()
+    assert _refusal(server, tmp_path) == ''
+
+
 def test_no_stored_credential_is_a_refusal_not_a_crash(tmp_path: Path) -> None:
     env = {'GIT_CONFIG_GLOBAL': str(tmp_path / 'absent'), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
     assert 'no stored credential' in tick_refusal(forge_of_url(URL), cwd=tmp_path, env=env)

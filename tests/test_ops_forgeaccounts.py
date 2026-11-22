@@ -59,6 +59,9 @@ class FakeGitea:
         self.tokens.setdefault(login, {})[name] = scopes
         return f'secret-{name}'
 
+    def close(self) -> None:
+        """Nothing held: the fake mints no admin token."""
+
 
 def _role(tmp_path: Path) -> Forge:
     return Forge(api='http://127.0.0.1:3000', admin='site-admin', log=str(tmp_path / 'forge.jsonl'), accounts={
@@ -370,7 +373,8 @@ def test_the_cli_parses_a_batch_and_mirrors_mint(tmp_path: Path, capsys: pytest.
                               'host-a:read:repository', '--item', 'host-b:read:repository,read:user',
                               '--rotate', 'host-b', '--subject'])  # fmt: skip
     expected = _batch(('host-a', 'read:repository', False), ('host-b', 'read:repository,read:user', True))
-    assert forgeaccounts.run_verb(_role(tmp_path), args, lambda _a: _consent('')) == 0
+    forge = FakeGitea(users={'server-reader'})  # a forge that admits both: the read prints the subject alone
+    assert forgeaccounts.run_verb(_role(tmp_path), args, lambda _a: _consent(''), admin=lambda _r: forge) == 0
     assert capsys.readouterr().out.strip() == expected.subject()
     # PLANTED CONTROL: --rotate naming no item is refused
     bad = parser.parse_args(['forge', 'token', 'mint-batch', '--login', 'server-reader', '--item',
@@ -379,7 +383,7 @@ def test_the_cli_parses_a_batch_and_mirrors_mint(tmp_path: Path, capsys: pytest.
     assert 'host-z' in capsys.readouterr().err
     single = parser.parse_args(['forge', 'token', 'mint', '--login', 'server-reader', '--name', 'host-a',
                                 '--scope', 'read:repository', '--subject'])  # fmt: skip
-    assert forgeaccounts.run_verb(_role(tmp_path), single, lambda _a: _consent('')) == 0
+    assert forgeaccounts.run_verb(_role(tmp_path), single, lambda _a: _consent(''), admin=lambda _r: forge) == 0
     printed = capsys.readouterr().out.strip()
     assert printed == TokenRequest('server-reader', 'host-a', 'read:repository', rotate=False).subject()
 

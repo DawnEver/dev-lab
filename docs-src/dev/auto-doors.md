@@ -39,7 +39,7 @@ row's provenance and the classifier's intent, and the deny row it is the exit fr
 - `subagent`: any agent (the verdict, stoprun, netverb, the censuses, the forge's read side, issue writes).
 - `main`: the main session alone -- a PR's lifecycle, `forge sync`, `integrate promote`, `forge pr breakglass`
   (inside a wave the user opened), `forge review takeover|again`, `forge security release`, `cancel-stuck`,
-  `git merge --ff-only`, `branchprune delete`, `branchprune task`. `SUBAGENT-NO-PUSH`'s pattern is derived from these rows.
+  `git merge --ff-only`, `branchprune delete`, `branchprune task`. `SUBAGENT-NO-PUSH`'s pattern is derived from the publishing ones, `MAIN-ONLY-DOOR`'s from the rest.
 - `user`: no agent -- opening a Break-Glass wave. It renders no allow row and no intent.
 
 A deny row's remedy that lists doors is derived from the rows linked to it (`exits_of`):
@@ -74,7 +74,7 @@ with a space, glob or leading dash, an unknown key, and a prefix ending in an ac
 A row is READ-ONLY unless it says `act = true`. An act row is a writing verb the repo admits explicitly
 (DECLARATION-LIES): its one intent is `Acts (writes): <why>` in the allow row, the Codex rule and the classifier
 intent alike, and a `why` claiming read-only is refused. Every declared row is a `subagent` door; a main-only row
-cannot be declared here, since `SUBAGENT-NO-PUSH` derives only from `POLICY`. Verbs are declared, not enumerated
+cannot be declared here, since `SUBAGENT-NO-PUSH` and `MAIN-ONLY-DOOR` derive only from `POLICY`. Verbs are declared, not enumerated
 from the CLI's parser: the render never imports a consumer's code. `[tool.dev_lab.doors]` is a different table: it maps a
 deny rule's ID to the command that repo offers as its exit. Both clients are rendered from these:
 

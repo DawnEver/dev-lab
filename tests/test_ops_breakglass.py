@@ -607,6 +607,19 @@ def _deleted(sent: list[Any], prefix: str, head_ref: str) -> bool:
     return any((r['body'] or {}).get('delete_branch_after_merge') is True for r in merges)
 
 
+def test_a_break_glass_merge_overrides_a_gitea_required_check(loopback: Loopback) -> None:
+    """Gitea merges past an unmet required check only when the admitted login ASKS (``force_merge``).
+
+    Measured 2026-11-22: a one-branch repo whose branch requires its check workflow refused the wave's merge while
+    that check was pending -- the request never asked. PLANTED: GitHub has no such flag; its ruleset names the actor.
+    """
+    (gitea,) = [r for r in _merge_head(loopback, *_BACKENDS[1], head_ref='pr/x') if r['path'].endswith('/merge')]
+    assert gitea['body']['force_merge'] is True
+    Recorder.received.clear()
+    (github,) = [r for r in _merge_head(loopback, *_BACKENDS[0], head_ref='pr/x') if r['path'].endswith('/merge')]
+    assert 'force_merge' not in github['body']
+
+
 @pytest.mark.parametrize(('url', 'prefix', 'verb'), _BACKENDS)
 def test_a_break_glass_merge_deletes_its_ephemeral_head(loopback: Loopback, url: str, prefix: str, verb: str) -> None:
     """D18: every merge path deletes its pr/ head -- break-glass as the integration path does."""

@@ -275,6 +275,25 @@ def test_on_github_the_merge_door_puts_a_merge_commit_pinned_to_the_head() -> No
     assert github.deleted_refs == []
 
 
+def test_only_a_forced_merge_overrides_a_gitea_required_check() -> None:
+    """PLANTED: the ordinary door never forces -- a required check still holds every merge but break-glass's."""
+    forge = StateForge()
+    plain, forced = (forge.add_pull(name, 'integrate/main', sha='a' * 40) for name in ('pr/x', 'pr/y'))
+    merge(forge, plain, head='a' * 40, message='subject\n\nbody', delete_branch=False)
+    merge(forge, forced, head='a' * 40, message='subject\n\nbody', delete_branch=False, force=True)
+    (_, unforced), (_, overriding) = forge.merges
+    assert 'force_merge' not in unforced
+    assert overriding['force_merge'] is True
+
+
+def test_on_github_a_forced_merge_sends_no_flag_since_the_bypass_actor_is_the_ruleset_s() -> None:
+    github = StateForge(Forge('github.com', 'o', 'r'))
+    number = github.add_pull('pr/x', 'integrate/main', sha='a' * 40)
+    merge(github, number, head='a' * 40, message='subject\n\nbody', delete_branch=False, force=True)
+    ((_, body),) = github.merges
+    assert set(body) == {'commit_title', 'commit_message', 'sha', 'merge_method'}
+
+
 # --- the tick -------------------------------------------------------------------------------------
 
 

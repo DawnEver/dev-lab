@@ -150,7 +150,7 @@ def test_consent_plan_shows_the_plan_and_offers_it_only_when_the_door_passes(
 
 
 def test_a_green_preflight_is_recorded_only_when_the_issuer_agrees(issuer: Issuer, tmp_path: Path) -> None:
-    green = (True, ['step 1 ops.config: green', 'preflight: green (ask the user for the code)'])
+    green = (True, ['step 1 ops.config: green', 'preflight: green, every door checked (ask the user for the code)'])
     found, lines = planrunpreflight.offered(PLAN, green, table={}, send=Wire(issuer, old=True), home=tmp_path)
     assert not found
     assert lines[-2].startswith('issuer: BLOCKED -- no code asked')

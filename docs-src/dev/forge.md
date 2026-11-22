@@ -695,7 +695,9 @@ is refused. `ensure` makes a restricted login if absent and grants exactly the r
 so a reviewer's limit is its token's scopes; breakglass -> admin, a REPOSITORY admin on exactly its declared
 repos, because only an admin merges past branch protection), reporting drift; `mint` prints the token once to stdout, refuses a
 non-`read:*` scope for a `read` login, any scope outside `read:repository,write:repository,read:user` for a
-`breakglass` login, and an existing name without `--rotate`. Every use is
+`breakglass` login, and an existing name without `--rotate` -- each BEFORE the consent is redeemed, so a refused
+mint spends no code, and `--subject` prints that refusal (`refused as it stands: ...`) on the line before the digest,
+which `planrun preflight` reads with no code and blocks on. Every use is
 audited to `[ops.forge] log` without the token. A routine round of one login's per-host tokens costs one code, not
 one per host: `... forge token mint-batch --login <L> --item <NAME>:<SCOPE>... [--rotate <NAME>]...` redeems ONE
 single-use `ops.forge.tokens` credential whose subject is the digest of the login and every item in order (so a

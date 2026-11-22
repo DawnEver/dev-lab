@@ -526,8 +526,17 @@ function carriesDevLab(python) {
 
 /** The exit of a per-repo-door rule when `target` declares none (2026-11-17: a pytest in one repo was sent to the
  * session repo's `scripts/gate/runner.py`, absent there): the family verify door when the target's OWN
- * interpreter carries dev_lab, else the declaration to add -- never another repo's path. */
+ * interpreter carries dev_lab, else the declaration to add -- never another repo's path. A need whose family door
+ * reads no file of the target (FAMILY_DOORS; 2026-11-22: a network verb in a repo declaring no doors was told to
+ * declare one and named none) is sent to that door, printed with the session's interpreter. */
+const FAMILY_DOORS = {
+  'retry-wrapper': 'dev_lab.dev.netverb -- git <verb> (or uv <verb>)',
+  'process-tree-killer': 'dev_lab.dev.stoprun --pid <pid>',
+};
 function undeclaredDoor(rule, target, shown) {
+  if (FAMILY_DOORS[rule.needs]) {
+    return `${shown} declares no door for it; the family door runs from any directory: ${doorPython(target)} -m ${FAMILY_DOORS[rule.needs]}`;
+  }
   const python = rule.needs === 'verdict-entry-point' ? checkoutPython(target) : null;
   if (python && carriesDevLab(python)) {
     return `${shown} declares no door for it; its own interpreter carries dev_lab: ${python} -m dev_lab.dev.verify -- <paths>`;
@@ -573,7 +582,8 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   // One header line; the full wording is docs-src/dev/refusals.md#cross-repo-refusals (dev-lab).
   const details = reason.split('\n').filter((line) => line.startsWith('details: '));
   if (door) {
-    return [`${rule.name}: refused; ${shown} declares its own door for it:`, door, ...details].join('\n');
+    const said = rule.severity === 'hint' ? 'advised' : 'refused';
+    return [`${rule.name}: ${said}; ${shown} declares its own door for it:`, door, ...details].join('\n');
   }
   if (rule.needs) return [reason.split('\n')[0], undeclaredDoor(rule, target, shown), ...details].join('\n');
   const session = sessionRoot.replace(/\\/g, '/');
@@ -1022,7 +1032,9 @@ for (const rule of rules) {
     hit = liveReason !== '';
   }
   if (hit && rule.severity === 'hint') {
-    hints.push(expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)));
+    // A hint names the TARGET's door as a refusal does (2026-11-22: a network verb in a sibling repo was handed the
+    // session repo's wrapper, a file the sibling does not have).
+    hints.push(reasonFor(rule, expand(rule.reason || rule.name, remedyCheckout(rule, cmd, input.cwd)), cmd, input.cwd || '', sessionRoot));
   } else if (hit) {
     // A PROBE (run_engine) names where its refusal is logged, '' for nowhere; the tool never sends the key.
     const probed = typeof input.dev_lab_metrics_root === 'string';

@@ -251,7 +251,9 @@ def test_the_two_step_plan_for_a_new_family_passes_preflight(tmp_path: Path) -> 
     want = _host_rendered(tmp_path, REPO)
     first = configdoor.digest(HOST_TEXT)
     down = _Host(want, down=True)
-    issued = planrunpreflight.Readers(text=_reader(REPO), config_source=lambda: SOURCE, issued=lambda *_a: first)
+    issued = planrunpreflight.Readers(
+        text=_reader(REPO), config_source=lambda: SOURCE, issued=lambda *_a: (first, None)
+    )
     plan, steps = _unsettled_plan(first, want)
     green, lines = planrunpreflight.preflight(plan, steps, lambda _d: down, readers=issued)
     assert green, lines

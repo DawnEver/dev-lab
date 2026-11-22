@@ -205,7 +205,7 @@ def _cli_door(row: Mapping[str, Any], modules: Mapping[str, str], acts: set[str]
         raise TypeError(msg)
     if row.get('actor', SUBAGENT) != SUBAGENT:
         msg = (
-            f'{where}: actor {row["actor"]!r} cannot be declared here -- SUBAGENT-NO-PUSH derives its pattern from '
+            f'{where}: actor {row["actor"]!r} cannot be declared here -- SUBAGENT-NO-PUSH, MAIN-ONLY-DOOR derive from '
             f'the kit POLICY only, so a repo row is a {SUBAGENT!r} door; ask for the row in the policy table instead'
         )
         raise ValueError(msg)
