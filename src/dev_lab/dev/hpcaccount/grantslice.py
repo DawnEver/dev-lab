@@ -38,6 +38,7 @@ __all__ = [
     'login_hosts',
     'machine_table',
     'own_grant',
+    'own_grants',
     'read_machine',
     'render_grant',
     'without_hpc',
@@ -117,13 +118,25 @@ def machine_table(path: Path) -> dict[str, Any]:
     return layered(read_machine(path))
 
 
-def own_grant(hpc: Mapping[str, Any] | None, host: str = '') -> Mapping[str, Any] | None:
-    """The ``[[hpc.grant]]`` row of the account named *host* (``<cluster>-<user>``), else the table's only one.
+def own_grants(hpc: Mapping[str, Any] | None, host: str = '') -> list[Mapping[str, Any]]:
+    """Every ``[[hpc.grant]]`` row of the account named *host* (``<cluster>-<user>``), else of the table's only one.
 
-    ``None`` for no such row, or several with no *host*: another account's grant is never taken.
+    AN ACCOUNT IS A CLUSTER AND A USER, HOWEVER MANY GRANTS IT HOLDS: several rows of one cluster and user (one per
+    ``slurm_account``) are one account, one deploy, one root (measured 2026-11-22: an account holding two was
+    refused "declares no [[hpc.grant]]"). None for no such row, or rows of several accounts with no *host*:
+    another account's grant is never taken.
     """
     rows = [r for r in (hpc or {}).get('grant', []) if not host or host == f'{r.get("cluster")}-{r.get("user")}']
-    return rows[0] if len(rows) == 1 else None
+    return rows if len({(r.get('cluster'), r.get('user')) for r in rows}) == 1 else []
+
+
+def own_grant(hpc: Mapping[str, Any] | None, host: str = '') -> Mapping[str, Any] | None:
+    """The account's identity row -- its cluster and user, the same on every row of :func:`own_grants`; else ``None``.
+
+    A caller that needs a ``slurm_account`` reads every row (:func:`own_grants`), never this one's.
+    """
+    rows = own_grants(hpc, host)
+    return rows[0] if rows else None
 
 
 def granted_root(hpc: Mapping[str, Any] | None, host: str = '') -> str:
