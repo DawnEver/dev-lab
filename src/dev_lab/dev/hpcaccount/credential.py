@@ -27,6 +27,12 @@ only through a url naming it goes last (:func:`named_login`; measured 2026-11-21
 After a placement, git's ``store`` helper is set when NO global helper is configured (one already set is kept):
 a store line git never consults reads as anonymous (measured 2026-11-20 on three research accounts).
 
+A NAMED LOGIN NEVER TAKES THE UNNAMED REQUEST (2026-11-22). A role declares no writer by name: the writer is
+whoever answers the host's unnamed request, the one a serve posts with. Around a named placement that request is
+asked before and after; an answer that changed (measured: the reader shadowed the writer, the reader's own
+read-back passed, every tick was refused) puts the store back from the placement's backup
+(:func:`~dev_lab.dev.credstore.restore_command`) and exits 2 naming both logins.
+
 READ BACK BEFORE IT SAYS SO (2026-11-20). After the rewrite the forge's ``auth role`` runs again through git's own
 helper (no staged file) -- for a named login, git's fill for a request naming it must return the token -- only when
 the STORED line answers as ``--login`` does the door print ``verified: ...`` and
@@ -45,6 +51,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 from urllib.parse import urlsplit
@@ -61,6 +68,7 @@ from dev_lab.dev.credstore import (
     named_fill_command,
     place_verified,
     read_forge,
+    restore_command,
     rewrite_command,
     stamp_now,
     valid_host,
@@ -180,6 +188,8 @@ def place_credential(
             return 2
         role = in_checkout(target, ['-m', 'dev_lab.dev.forge', 'auth', 'role', '--url', repo])
         named = named_login(division, user, login)
+        before = _unnamed(shell, role) if named else ''  # who a serve posts as, before this line exists
+        stamp = stamp or stamp_now()
         refusal, backup = place_verified(
             shell, login=login, token=token, repo=repo, role=role, stamp=stamp, first=not named
         )
@@ -190,20 +200,75 @@ def place_credential(
         say(f'credential: refused -- {refusal}')
         return 2
     shell(_STORE_HELPER, None)  # a store line git never consults reads as anonymous (measured 2026-11-20)
-    try:
-        if named:  # its url names it; the forge's ``auth role`` asks for the host alone
-            host = urlsplit(repo).hostname or ''
-            stored = login if shell(named_fill_command(host, login), None).strip() == token else 'another token'
-        else:
-            stored = str(json.loads(shell(role, None) or '{}').get('login') or '')
-    except (RuntimeError, OSError, ValueError) as failed:
-        stored = f'an error ({failed})'
-    if stored != login:
-        said = stored or 'anonymous'
-        say(f'credential: not verified -- {user}: the stored line answers {repo} as {said}, not {login}')
+    asked = _Asked(user, login, repo, role)
+    if why := _stored_refusal(shell, asked, token if named else '') or (
+        _shadow_refusal(shell, asked, before, stamp, backup) if named else ''
+    ):
+        say(f'credential: {why}')
         return 2
     say(f'verified: {user}: the stored line answers {repo} as {login}; placed {digest(token)} (0600) {backup}')
     return 0
+
+
+@dataclass(frozen=True)
+class _Asked:
+    """One placement's read-back: the account *user*, the placed *login*, the *repo* and its ``auth role`` line."""
+
+    user: str
+    login: str
+    repo: str
+    role: str
+
+
+def _stored_refusal(shell: Runner, asked: _Asked, named_token: str) -> str:
+    """Why the STORED line does not answer as the placed login; ``''`` when it does.
+
+    With *named_token* (a login reached only by a url naming it) the read is git's fill naming it, which must return
+    that token: the forge's ``auth role`` asks for the host alone.
+    """
+    try:
+        if named_token:
+            fill = named_fill_command(urlsplit(asked.repo).hostname or '', asked.login)
+            stored = asked.login if shell(fill, None).strip() == named_token else 'another token'
+        else:
+            stored = _unnamed(shell, asked.role)
+    except (RuntimeError, OSError, ValueError) as failed:
+        stored = f'an error ({failed})'
+    if stored == asked.login:
+        return ''
+    said = stored or 'anonymous'
+    return f'not verified -- {asked.user}: the stored line answers {asked.repo} as {said}, not {asked.login}'
+
+
+def _shadow_refusal(shell: Runner, asked: _Asked, before: str, stamp: str, backup: str) -> str:
+    """Why a NAMED placement is undone: the host's unnamed request no longer answers as *before*; ``''`` when it does.
+
+    *before* is who answered it ahead of the placement -- the writer a serve posts as (a role names none). ``''``
+    (nothing stored) or the placed login itself shadowed nobody. A changed answer restores the store from the
+    placement's backup, so the refusal leaves the account as it was found.
+    """
+    if before in {'', asked.login}:
+        return ''
+    try:
+        after = _unnamed(shell, asked.role)
+    except (RuntimeError, OSError, ValueError) as failed:
+        after = f'an error ({failed})'
+    if after == before:
+        return ''
+    try:
+        shell(restore_command(stamp), None)
+        undone = f'~/{STORE} restored from its {backup}'.strip()
+    except (RuntimeError, OSError) as failed:
+        undone = f'~/{STORE} NOT restored ({failed}): remove the line with --login {asked.login} --drop-host <host>'
+    return (
+        f'refused -- {asked.user}: an unnamed request for {asked.repo} answered as {before} before {asked.login} '
+        f'was placed and as {after or "anonymous"} after it, so a serve would post as the wrong login; {undone}'
+    )
+
+
+def _unnamed(shell: Runner, role: str) -> str:
+    """The login the forge's ``auth role`` answers as through git's own helper: the host's UNNAMED request."""
+    return str(json.loads(shell(role, None) or '{}').get('login') or '')
 
 
 def drop_host(
