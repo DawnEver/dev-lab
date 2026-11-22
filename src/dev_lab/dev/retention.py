@@ -48,6 +48,7 @@ from lab_commons.hpc.layout import RootUndeclared, local_root
 from lab_commons.hpc.records import kept_text
 from lab_commons.log import emit
 
+from dev_lab.dev import oldcopies
 from dev_lab.dev.diskusage import Usage, files_first, measure, pressure_text, read_usage, remove_tree
 from dev_lab.dev.familyroot import main_checkout
 from dev_lab.dev.forgerunstate import directory as run_files
@@ -197,6 +198,25 @@ def _origin_tips(root: Path) -> list[str]:
     return done.stdout.split()
 
 
+def _crontab(run: Callable[..., Any] = _door.run) -> str | None:
+    """The account's ``crontab -l`` (``''``: it has none); ``None`` when it cannot be read."""
+    try:
+        done = run(['crontab', '-l'], capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
+    except OSError:
+        return None
+    if done.returncode:
+        return '' if 'no crontab' in (done.stderr or '') else None
+    return done.stdout or ''
+
+
+def _with_old_copies(plan: Plan, home: Path, account: Path, say: Callable[[str], None]) -> Plan:
+    """*plan* and the account's old copies (:mod:`dev_lab.dev.oldcopies`); a referenced one is kept and said."""
+    doomed, kept = oldcopies.plan(home, account, cwd=Path.cwd(), crontab=_crontab)
+    for line in kept:
+        say(line)
+    return dataclasses.replace(plan, doomed=(*plan.doomed, *doomed))
+
+
 def _plan_for(
     root: Path, policy: Policy, *, cluster: bool, home: Path, account: Path, now: datetime, live: set[str]
 ) -> Plan:
@@ -249,6 +269,7 @@ def serve_pass(
         if not mine:
             return None
         plan = (planner or _plan_for)(root, policy, cluster=cluster, home=home, account=account, now=now, live=live())
+        plan = _with_old_copies(plan, home, account, say) if cluster else plan
         done = apply(plan, policy, usage=measured, dry_run=False, say=say, run=run)
     if done.over:
         freed = (done.freed_bytes, done.freed_files)
@@ -279,6 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     plan = _plan_for(
         Path.cwd(), policy, cluster=args.cluster, home=home, account=account, now=now, live=_live_shas()
     )  # fmt: skip
+    plan = _with_old_copies(plan, home, account, emit) if args.cluster else plan
     usage = read_usage(home if args.cluster else Path.cwd(), cluster=args.cluster)
     done = apply(plan, policy, usage=usage, dry_run=not args.apply, say=emit)
     for line in summary(done, usage, applied=args.apply):
