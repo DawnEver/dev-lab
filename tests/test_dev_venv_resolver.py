@@ -8,6 +8,7 @@ environment yields, one from the current one does not.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ from pathlib import Path
 from _sh_native import native
 from _venv_fake import linked_env
 
-from dev_lab.dev import agent_guard, venvpointer
+from dev_lab.dev import agent_guard, agenthooks, venvpath, venvpointer
 from dev_lab.dev.jsrun import node_path
 from dev_lab.dev.venvpath import VENV_LAYOUTS
 
@@ -134,3 +135,31 @@ def test_a_launch_from_an_older_environment_takes_the_current_one(tmp_path: Path
     assert venvpointer.current_interpreter(held) == str(held), 'PLANTED CONTROL: no .venv: unchanged'
     outside = _interpreter(tmp_path / 'python-install')
     assert venvpointer.current_interpreter(outside) == str(outside), 'not a checkout env: unchanged'
+
+
+def test_a_printed_door_names_the_pointer_alike_in_python_and_in_the_hook(tmp_path: Path) -> None:
+    """The rendered ``{door}`` and the hook's agree on ``<root>/.venv/...``: the spelling the next bootstrap keeps.
+
+    PLANTED CONTROL: ``.venv`` is a LINK to ``.venvs/x`` and the interpreter is given by its resolved path, so a side
+    that resolves the pointer (the 2026-11-22 hook) prints ``.venvs/x`` and disagrees.
+    """
+    root = tmp_path / 'repo'
+    (root / '.git').mkdir(parents=True)
+    env = linked_env(root, 'x')
+    python = env.joinpath(*TAIL)
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b'')
+    rules = root / '.claude' / 'hooks' / 'rules.json'
+    rules.parent.mkdir(parents=True)
+    rules.write_text(
+        json.dumps([{'name': 'PLANTED', 'pattern': 'boom', 'reason': 'run {door} -m x'}]), encoding='utf-8'
+    )
+    engine = Path(agenthooks.__file__).with_name('deny-commands.js')
+    hook = agenthooks.run_engine(engine, 'boom', rules, cwd=root)
+    door = venvpath.door_interpreter(python)
+    assert door == root.absolute().joinpath(venvpointer.POINTER, *TAIL).as_posix()
+    assert hook is not None
+    assert f'run {door} -m x' in hook, (hook, door)
+    assert (
+        venvpath.door_interpreter(tmp_path / 'elsewhere' / 'python') == (tmp_path / 'elsewhere' / 'python').as_posix()
+    )

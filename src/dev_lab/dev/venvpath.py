@@ -69,7 +69,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from dev_lab.dev.venvpointer import current
+from dev_lab.dev.venvpointer import HOME, POINTER, current
 
 __all__ = [
     'CANDIDATE_RELATIVE_PATHS',
@@ -82,6 +82,7 @@ __all__ = [
     'UnknownPlatform',
     'checkout_interpreter',
     'current_os_name',
+    'door_interpreter',
     'expand_interpreter',
     'hardcoded_spellings',
     'portable',
@@ -279,17 +280,18 @@ def _main_checkout(root: Path) -> Path | None:
 def remedy_interpreter(root: Path, *, os_name: str) -> str:
     """The ABSOLUTE interpreter a remedy about *root* names, POSIX-separated.
 
-    The checkout's own current environment (:mod:`dev_lab.dev.venvpointer`); else, for a linked worktree with none,
+    The checkout's own pointer ``<root>/.venv``, UNRESOLVED (:func:`door_interpreter` says why);
+    else, for a linked worktree with none,
     the main checkout's (the one that can bootstrap it); else the checkout's own path spelled absolute, so the line
     runs from any cwd once the environment exists.
     """
     tail = VENV_LAYOUTS[os_name][1:]
-    own = current(Path(root).absolute()).joinpath(*tail)
+    own = Path(root).absolute().joinpath(POINTER, *tail)
     if own.is_file():
         return own.as_posix()
     main = _main_checkout(Path(root).absolute())
-    if main is not None and current(main).joinpath(*tail).is_file():
-        return current(main).joinpath(*tail).as_posix()
+    if main is not None and main.joinpath(POINTER, *tail).is_file():
+        return main.joinpath(POINTER, *tail).as_posix()
     return own.as_posix()
 
 
@@ -322,4 +324,24 @@ def running_interpreter() -> str:
     Not resolved: a POSIX venv interpreter is a symlink to the base Python, and resolving it would name an
     interpreter outside the venv.
     """
-    return Path(sys.executable).absolute().as_posix()
+    return door_interpreter(sys.executable)
+
+
+def door_interpreter(executable: str | Path) -> str:
+    """*executable* as a PRINTED door names it: through the checkout's ``.venv`` pointer, never the env it resolves to.
+
+    A launch holds the resolved ``<root>/.venvs/<id>`` (:func:`dev_lab.dev.venvpointer.current`), so ``sys.executable``
+    often IS that spelling; but a door is read and run LATER, and the next bootstrap retires ``<id>`` while
+    ``<root>/.venv`` keeps naming the current one. So an interpreter inside the env the pointer currently resolves to
+    is re-spelled under the pointer; any other is returned absolute and unresolved. The JS twin is ``doorEnv`` in
+    ``agenthooks/deny-commands.js``; ``tests/test_dev_venv_resolver.py`` holds both to one string.
+    """
+    exe = Path(executable).absolute()
+    for env in exe.parents:
+        if env.parent.name != HOME:
+            continue
+        root = env.parent.parent
+        if os.path.normcase(os.path.realpath(current(root))) == os.path.normcase(os.path.realpath(env)):
+            return root.joinpath(POINTER, exe.relative_to(env)).as_posix()
+        break
+    return exe.as_posix()
