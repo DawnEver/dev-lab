@@ -41,7 +41,9 @@ from pathlib import Path
 __all__ = ['EVENT', 'OLD_COPY', 'UV_TMP', 'VENV', 'candidates', 'crontab', 'main', 'processes', 'referenced', 'sweep']
 
 EVENT = 'lab_commons.forge.retention'
-OLD_COPY, VENV, UV_TMP = 'old-copy', 'venv-not-current', 'uv-cache-tmp'
+OLD_COPY = 'old-copy'
+VENV = 'venv-not-current'
+UV_TMP = 'uv-cache-tmp'
 _MB = 1024**2
 _OWNER = stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC
 
