@@ -212,3 +212,17 @@ def test_a_submodule_at_another_commit_names_its_checkout_door_not_discard(work:
     removed, line = remove(work, 'lane', census=_idle)
     assert not removed
     assert 'branchset --discard' in line
+
+
+def test_a_just_used_tree_is_refused_naming_the_quiet_wait(work: Path) -> None:
+    """O46 (2026-11-19): the door refused a tree used minutes before; the refusal says how long to wait.
+
+    PLANTED CONTROL: the same tree with no quiet window is removed.
+    """
+    ok, line = remove(work, 'loose', census=_idle)
+    assert not ok
+    assert 'index changed' in line, line
+    assert 're-run once it has been quiet 60 min' in line, line
+    assert _tree(work, 'loose').exists()
+    ok, line = remove(work, 'loose', census=_idle, quiet_s=0)
+    assert ok, line
