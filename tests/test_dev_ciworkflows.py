@@ -1612,12 +1612,16 @@ def test_a_part_job_keeps_its_verify_log_whatever_ends_it(tmp_path: Path) -> Non
 
     The last step of the part job attaches the run's verify log under ``always()``: a failure, a cancellation and the
     job's own timeout all still keep it. Planted control: the produce step itself uploads nothing.
+
+    With it travel the run's per-test CELLS (dev_lab.dev.test_outcomes): a session the wall cut printed no summary,
+    so the log alone names no red (tests/base@windows, run 44962572687: 138 failures, none readable).
     """
     steps = _base_ci(tmp_path)['jobs']['part']['steps']
     keep = steps[-1]
     assert keep.get('uses', '').startswith('actions/upload-artifact@'), steps
     assert keep['if'].startswith('${{ always()'), keep
     assert 'verify/verify-*.log' in keep['with']['path'], keep
+    assert 'verify/verify-*.outcomes/' in keep['with']['path'], keep
     assert '${{ matrix.part }}' in keep['with']['name'], 'one artifact per part, never overwritten by a sibling'
     produce = next(step for step in steps if step.get('name') == 'Produce and post the part')
     assert 'uses' not in produce, 'PLANTED CONTROL: the produce step is not the keeper'

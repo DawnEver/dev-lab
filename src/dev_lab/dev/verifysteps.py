@@ -44,7 +44,14 @@ from dev_lab.dev.reports import StepReport, read_ruff, read_stages
 from dev_lab.dev.selection import census_scope, is_targeted
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
 from dev_lab.dev.skipallowance import declared_skips, stale_declarations, vanished_shortfall
-from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, OutcomeReadError, RetiredOutcomes, outcomes_dir, read_cells
+from dev_lab.dev.test_outcomes import (
+    OUTCOMES_DIR_VAR,
+    OutcomeReadError,
+    RetiredOutcomes,
+    outcomes_dir,
+    read_cells,
+    recorded_failures,
+)
 from dev_lab.dev.testtemp import script_temp_env
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from dev_lab.dev.verdictenv import verdict_env
@@ -523,6 +530,8 @@ def run_verify(
         allowed=allowed,
         complete_census=complete_census,
     )
+    if report.truncated or cut:  # a run that did not settle still names what it recorded failing
+        cut = (*cut, *recorded_failures(outcomes_dir(path)))
     report = replace(report, truncated=(*report.truncated, *scope_refusal, *vanished, *cut))
     reports.append(functools.reduce(lambda done, stage: stage.annotate(done), stages, report))
     return build_verdict(

@@ -8,6 +8,10 @@ the one a cluster item uses too), written when the test's last phase reports. So
 run are one shape and post as one kind of part (:mod:`dev_lab.dev.platformparts`). Inert without the
 variable.
 
+A TEST WHOSE WORKER DIED HAS NO LAST PHASE: the scheduler files it as one report in a phase of its own
+(:data:`DEAD_WORKER_PHASE`) and that report is its cell, written at once. A run cut before its summary
+(the box wall) is then still read for what it measured: :func:`recorded_failures`.
+
 A SINGLE RUN'S CONCLUSION IS DECIDED. A node decided both ways in one run (a rerun plugin, two processes)
 is never overwritten: the Record's finality refuses the second decision, a ``flaky`` event is recorded
 instead (:data:`lab_commons.hpc.testcells.FLAKY`), and :func:`read_cells` reports the id flaky, which makes
@@ -35,12 +39,16 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    'DEAD_WORKER_KIND',
+    'DEAD_WORKER_PHASE',
+    'FAILURE_NAMES',
     'OUTCOMES_DIR_VAR',
     'CellRecorder',
     'OutcomeReadError',
     'RetiredOutcomes',
     'outcomes_dir',
     'read_cells',
+    'recorded_failures',
     'skipped_nodes',
 ]
 
@@ -48,6 +56,16 @@ __all__ = [
 OUTCOMES_DIR_VAR: Final = 'LAB_COMMONS_OUTCOMES_DIR'
 
 _STEM: Final = 'cells'
+
+#: The phase pytest-xdist files a test under when its worker died running it (``dsession.handle_crashitem``):
+#: the test's ONLY report, with no teardown to follow.
+DEAD_WORKER_PHASE: Final = '???'
+
+#: The reason kind such a test's cell carries: the phase's own spelling is no machine token.
+DEAD_WORKER_KIND: Final = 'worker_died'
+
+#: How many node ids :func:`recorded_failures` spells out; the rest are counted and stay in the cells.
+FAILURE_NAMES: Final = 20
 
 #: The file stem the retired plugin wrote its words under.
 _RETIRED_STEM: Final = 'outcomes'
@@ -110,12 +128,14 @@ class CellRecorder:
     _record: Record | None = None
 
     def pytest_runtest_logreport(self, report: CellReport) -> None:
-        """Fold one phase report; at its teardown, record the node's cell."""
+        """Fold one phase report; at its teardown -- or its worker's death -- record the node's cell."""
         plain = judged(report, self.resources)
+        if plain is not None and report.when == DEAD_WORKER_PHASE:
+            plain = {**plain, 'reason': {**plain['reason'], 'kind': DEAD_WORKER_KIND}}
         held = self._worst.get(report.nodeid)
         if plain is not None and (held is None or badness(plain) < badness(held)):
             self._worst[report.nodeid] = plain
-        if report.when == 'teardown' and report.nodeid in self._worst:
+        if report.when in {'teardown', DEAD_WORKER_PHASE} and report.nodeid in self._worst:
             self.record(report.nodeid, TestCell.from_plain(self._worst.pop(report.nodeid)))
 
     def record(self, node: str, one: TestCell) -> None:
@@ -168,6 +188,37 @@ def read_cells(directory: Path) -> tuple[dict[str, TestCell], frozenset[str]]:
     except (OSError, ValueError, KeyError, TypeError) as error:
         msg = f'{directory}: unreadable outcome Record ({type(error).__name__}: {error}); re-run the verify'
         raise OutcomeReadError(msg) from error
+
+
+def _worker_died(one: TestCell) -> bool:
+    return one.cell.reason is not None and one.cell.reason.kind == DEAD_WORKER_KIND
+
+
+def recorded_failures(directory: Path) -> tuple[str, ...]:
+    """What a run that never reached its summary had ALREADY recorded as failing, as one reason; ``()`` when nothing.
+
+    The cells are written as each test ends, so a session the wall cut still names its failures: every cell that
+    is a decided miss or gave no answer (a declared skip is neither) -- the tests whose worker died first, since
+    those are the ones that held the box. At most :data:`FAILURE_NAMES` are spelled out; every one is in
+    *directory*. Unreadable cells say nothing here: their own refusal is already a reason.
+    """
+    try:
+        cells, _ = read_cells(directory)
+    except (OutcomeReadError, RetiredOutcomes):
+        return ()
+    skipped = skipped_nodes(cells)
+    failed = sorted(
+        (not _worker_died(one), node)
+        for node, one in cells.items()
+        if one.red or (one.met is None and node not in skipped)
+    )
+    if not failed:
+        return ()
+    named = ', '.join(f'{node} (its worker died)' if not alive else node for alive, node in failed[:FAILURE_NAMES])
+    more = f' and {len(failed) - FAILURE_NAMES} more' if len(failed) > FAILURE_NAMES else ''
+    return (
+        f'{len(failed)} test(s) recorded failing before the run ended: {named}{more} -- cells: {directory.as_posix()}',
+    )
 
 
 def _flat_cells(directory: Path) -> tuple[dict[str, TestCell], frozenset[str]]:
