@@ -19,12 +19,14 @@ from typing import Any, Final
 from urllib.parse import urlsplit
 
 import lab_commons.launch as _door
+from lab_commons.config import FAMILY_TABLE
 from lab_commons.log import emit
 
 from dev_lab.dev._forgebackends import GITHUB_HOST
+from dev_lab.dev.devdeclared import OWN_TABLE
 from dev_lab.dev.forgeauth import UNREACHABLE_EXIT
 from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
-from dev_lab.dev.hpcaccount.grantslice import grant_refusal, render_grant, without_hpc
+from dev_lab.dev.hpcaccount.grantslice import grant_refusal, machine_table, own_grant, render_grant, without_hpc
 from dev_lab.dev.hpcaccount.spec import Deployment, unserved
 from dev_lab.dev.hpcaccount.steps import Step
 
@@ -178,16 +180,55 @@ def reader(spec: Deployment, home: Path, role: RoleCheck, *, semantics: Mapping[
     return 2
 
 
-def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
-    """Write this account's own ``[hpc]`` slice -- the one ``deploy-fleet`` passed -- when its file holds no grant.
+def _family_grant(step: Step, path: Path, live: Mapping[str, Any], user: str) -> int:
+    """Confirm the grant the family file of a rendered machine file declares for this account; write nothing.
 
-    The declaration is the family's (its cluster, its account, its role as this machine's reach); a hand-run deploy
-    has none to write and is refused, never a grant derived here. The declared Slurm account must be one of the
-    user's associations (``sacctmgr``).
+    ONE SOURCE: the render names its ``[family] source`` and holds no family leaf, and every reader layers that
+    file under it. Until 2026-11-22 the family's slice was written back here, and each tick's roles read
+    (``lab_commons.config.section``) then refused every leaf both files held.
+    """
+    source, host = live[FAMILY_TABLE].get('source', ''), live.get(OWN_TABLE, {}).get('host', '')
+    door = 'python -m dev_lab.dev.hpcaccount deploy-fleet (it renders the file from the config source)'
+    if restated := sorted({'clusters', 'grant'} & set(live.get('hpc', {}))):
+        keys = ', '.join(f'[hpc] {key}' for key in restated)
+        emit(f'deploy refused: {path} restates {keys}, which the family file at {source} holds: {door}', err=True)
+        return 2
+    if retired := grant_refusal(path):
+        emit(f'deploy refused: the family file at {source} declares an [hpc] this kit refuses ({retired})', err=True)
+        return 2
+    row = own_grant(machine_table(path).get('hpc', {}), host)
+    if row is None or row.get('user') != user:
+        emit(
+            f'deploy refused: the family file at {source} declares no [[hpc.grant]] of {user} for {host or path}: '
+            f'declare it there through its pull request, then {door}',
+            err=True,
+        )
+        return 2
+    sacct = step.read([*step.tools.sacctmgr, '-nP', 'show', 'assoc', f'user={user}', 'format=account,grptres'])
+    if why := association_refusal(user, sacct.stdout, row['slurm_account']):
+        emit(f'deploy refused: {why}', err=True)
+        return 2
+    emit(f'  the family file at {source} holds the grant ({user}, {row["slurm_account"]}); {path} is written none')
+    return 0
+
+
+def grant(step: Step, path: Path, table: Mapping[str, Any] | None) -> int:
+    """Confirm this account's grant; write its own ``[hpc]`` slice only into a file that names no family.
+
+    A rendered machine file names its ``[family] source``: the grant is read there and nothing is written
+    (:func:`_family_grant`). A hand-declared file naming none is written the slice ``deploy-fleet`` passed, when it
+    holds no grant; a hand-run deploy has none to write and is refused, never a grant derived here. The declared
+    Slurm account must be one of the user's associations (``sacctmgr``).
     """
     emit("[grant] this account's own [hpc] slice")
     user = step.read([*step.tools.id, '-un']).stdout.strip()
     held = path.read_text(encoding='utf-8') if path.is_file() else ''
+    live = tomllib.loads(held)
+    return _family_grant(step, path, live, user) if FAMILY_TABLE in live else _written(step, path, held, user, table)
+
+
+def _written(step: Step, path: Path, held: str, user: str, table: Mapping[str, Any] | None) -> int:
+    """Write the passed slice *table* into the hand-declared file at *path* (text *held*) when it grants no *user*."""
     hpc = tomllib.loads(held).get('hpc', {})
     holds = any(g.get('user') == user for g in hpc.get('grant', []))
     retired = grant_refusal(path) if holds else ''

@@ -242,9 +242,9 @@ def machine_layer() -> dict[str, Any]:
 
     :func:`lab_commons.config.section` reads the machine file over the family layer it declares.
 
-    A RENDERED machine file (a dev machine, an HPC account: :mod:`dev_lab.dev.devhost`) carries the family's tables
-    inline and declares no ``[family]``; an ops host points at the family file through ``[family]``. Both are read
-    here, so no tick refuses a binding its machine file holds.
+    Every machine names its family file through ``[family] source`` -- a RENDERED machine file (a dev machine, an
+    HPC account: :mod:`dev_lab.dev.devhost`) holds the host and local layers only, an ops host declares the table --
+    and a leaf both files hold is refused. A machine file naming no family is read alone.
     """
     roles = section('roles')
     return {'roles': roles, 'hpc': section('hpc')} if roles else {}
