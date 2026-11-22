@@ -256,6 +256,7 @@ def test_the_host_renders_under_the_family_file_its_config_places_not_the_logins
     """
     carried = forgeprotection.rendered(_role(tmp_path), _gitea(), 'owner/alpha', REF).subject()
     monkeypatch.delenv(ROLES_ENV)  # root under sudo: an empty machine file, no render's kinds
+    monkeypatch.delenv('CI', raising=False)  # sudo is no CI job; under a runner's CI the stale-workflow door speaks
     with pytest.raises(ForgeRefused, match='no family layer on this machine'):
         forgeprotection.rendered(_role(tmp_path), _gitea(), 'owner/alpha', REF)
     layer = forgeprotection.family_layer(_placed(tmp_path))
