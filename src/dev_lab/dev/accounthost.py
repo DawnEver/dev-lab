@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from dev_lab.dev.devschema import app_tables
+from dev_lab.dev.hpcaccount.grantslice import granted_root
 from dev_lab.dev.hpcaccount.spec import parse
 
 __all__ = ['TABLES', 'check', 'derived', 'grant_of', 'is_account']
@@ -99,9 +100,8 @@ def check(path: Path, host: Mapping[str, Any], family: Mapping[str, Any]) -> lis
     ]
     opened = {**TABLES, **{app: {} for app in app_tables(family)}}
     found += [f'{key} is not an account table' for key in _undeclared(host, opened)]
-    cluster = family.get('hpc', {}).get('clusters', {}).get((grant or {}).get('cluster', ''), {})
     try:  # an unstated root is the grant's cluster root (dev-lab #878): the family declaration is the source
-        parse(host, path, root=str(cluster.get('root', '')).replace('{user}', (grant or {}).get('user', '')))
+        parse(host, path, root=granted_root(family.get('hpc'), name))
     except ValueError as bad:
         found.append(str(bad))
     return found

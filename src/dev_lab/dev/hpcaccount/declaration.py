@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 from lab_commons.log import emit
 
+from dev_lab.dev.hpcaccount.grantslice import granted_root
 from dev_lab.dev.hpcaccount.spec import (
     DEFAULT_PYTHON,
     KIT,
@@ -52,17 +51,6 @@ def parser(deploy_doc: str = '') -> argparse.ArgumentParser:
     parser.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     parser.add_argument('--remove', action='store_true', help='delete the marked crontab lines only')
     return parser
-
-
-def granted_root(table: Mapping[str, Any] | None) -> str:
-    """The cluster root deploy-fleet's ``--grant-table`` declares (:func:`~dev_lab.dev.hpcaccount.fleet.grant_slice`).
-
-    Measured 2026-11-20: every account file's rendered ``[deploy]`` names no root (the family's cluster holds it), so
-    a deploy reading only the machine file refused "no root declared" on every account; the root it was handed is
-    the family's own. ``''`` when the table names none.
-    """
-    clusters = (table or {}).get('clusters', {})
-    return next((str(c['root']) for c in clusters.values() if isinstance(c, Mapping) and c.get('root')), '')
 
 
 def declaration(args: argparse.Namespace, path: Path) -> Deployment | str:
