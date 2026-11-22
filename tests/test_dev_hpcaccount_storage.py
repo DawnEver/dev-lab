@@ -74,7 +74,8 @@ def test_a_dry_run_runs_the_accounts_own_retention_without_apply() -> None:
     assert _retentions(seen['alice']) == [_line('-m dev_lab.dev.retention --cluster')]
     assert not any('--apply' in cmd for cmd in seen['alice'] + seen['bob'])  # PLANTED: a dry run deletes nothing
     assert any('999k' in line for line in said)  # the files column of the quota is printed
-    assert 'alice: retention (dry run)' in said
+    assert "alice: retention (dry run), the caller's rules (streamed; nothing is written on the account)" in said
+    assert "alice: retention (dry run), the account kit's own rules" in said
 
 
 def test_apply_passes_apply_to_the_accounts_retention() -> None:
@@ -82,7 +83,7 @@ def test_apply_passes_apply_to_the_accounts_retention() -> None:
     assert code == 0
     assert _retentions(seen['bob']) == [_line('-m dev_lab.dev.retention --cluster --apply')]
     assert seen['alice'] == []  # only the named account is reached
-    assert 'bob: retention --apply' in said
+    assert "bob: retention --apply, the account kit's own rules" in said
 
 
 def test_an_account_whose_serve_never_ticks_is_named() -> None:
