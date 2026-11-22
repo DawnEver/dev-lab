@@ -8,11 +8,21 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import IO
 
 import pytest
-from lab_commons.outcomes import Status
+from lab_commons.outcomes import Conclusion, Status
 
-from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, RetiredOutcomes, read_cells
+from dev_lab.dev import verifysteps
+from dev_lab.dev.test_outcomes import (
+    DEAD_WORKER_KIND,
+    FAILURE_NAMES,
+    OUTCOMES_DIR_VAR,
+    CellRecorder,
+    RetiredOutcomes,
+    read_cells,
+    recorded_failures,
+)
 
 
 def _report(nodeid: str, when: str, outcome: str, longrepr: object = None, **extra: object) -> SimpleNamespace:
@@ -159,3 +169,128 @@ def test_a_real_pytest_run_maps_its_skips_by_the_declaring_marker(tmp_path: Path
     }
     cells, _ = read_cells(out)
     assert cells['test_s.py::test_undeclared'].why.startswith('XFAIL-NOT-SKIP'), 'PLANTED CONTROL: refused by name'
+
+
+def _crash(nodeid: str, worker: str = 'gw0') -> SimpleNamespace:
+    """The ONE report xdist files for a test whose worker died (``xdist/dsession.py::handle_crashitem``)."""
+    return _report(nodeid, '???', 'failed', f'worker {worker!r} crashed while running {nodeid!r}')
+
+
+def test_a_test_whose_worker_died_is_recorded_when_the_scheduler_files_it(tmp_path: Path) -> None:
+    """A test whose worker died is a cell at once: no teardown will ever come to write it.
+
+    MEASURED 2026-11-21, ci.yml run 44962572687, tests/base@windows: two tests each held a worker to the
+    600 s ceiling, the 3600 s wall then cut the session before its summary, and NOTHING named either.
+    A dead worker's test gets one report, phase ``???``, and no teardown ever follows it: a recorder that
+    writes only at teardown drops exactly the test a cut run most needs named.
+    """
+    recorder = CellRecorder(tmp_path / 'cells.jsonl')
+    recorder.pytest_runtest_logreport(_crash('a::wedged'))
+    cells, flaky = read_cells(tmp_path)
+    assert set(cells) == {'a::wedged'}
+    assert cells['a::wedged'].status is Status.ERROR, 'no answer about the test: its process is gone'
+    assert 'crashed while running' in cells['a::wedged'].why
+    assert cells['a::wedged'].cell.reason.kind == DEAD_WORKER_KIND, 'the phase spelling ??? is no reason kind'
+    assert flaky == frozenset()
+
+
+def test_planted_control_a_live_tests_failed_phase_still_waits_for_its_teardown(tmp_path: Path) -> None:
+    recorder = CellRecorder(tmp_path / 'cells.jsonl')
+    recorder.pytest_runtest_logreport(_report('a::fails', 'setup', 'passed'))
+    recorder.pytest_runtest_logreport(_report('a::fails', 'call', 'failed', 'E   assert 0'))
+    assert read_cells(tmp_path) == ({}, frozenset()), 'its teardown may yet be the worse phase'
+
+
+def test_the_failures_a_cut_run_recorded_are_named_dead_workers_first(tmp_path: Path) -> None:
+    recorder = CellRecorder(tmp_path / 'parallel' / 'cells.jsonl')
+    _test(recorder, 'a::passes')
+    for index in range(FAILURE_NAMES + 2):
+        _test(recorder, f'a::fails[{index:02}]', ('call', 'failed', 'E   assert 0'))
+    recorder.pytest_runtest_logreport(_crash('z::wedged'))
+    (said,) = recorded_failures(tmp_path)
+    assert said.index('z::wedged') < said.index('a::fails[00]'), 'the test that held the worker leads'
+    assert f'{FAILURE_NAMES + 3} test(s) recorded failing' in said
+    assert 'a::fails[00]' in said
+    assert f'a::fails[{FAILURE_NAMES + 1:02}]' not in said, 'the list is bounded'
+    assert '3 more' in said
+    assert tmp_path.as_posix() in said, 'and the rest are where the reason says'
+    assert 'a::passes' not in said
+
+
+def test_planted_control_a_run_that_recorded_no_failure_adds_no_reason(tmp_path: Path) -> None:
+    recorder = CellRecorder(tmp_path / 'parallel' / 'cells.jsonl', frozenset({'femm'}))
+    _test(recorder, 'a::passes')
+    recorder.pytest_runtest_logreport(
+        _report('a::no_femm', 'setup', 'skipped', ('a.py', 3, 'Skipped: x'), marks=('femm',))
+    )
+    recorder.pytest_runtest_logreport(_report('a::no_femm', 'teardown', 'passed'))
+    assert recorded_failures(tmp_path) == ()
+    assert recorded_failures(tmp_path / 'absent') == ()
+
+
+def test_a_cut_verify_names_what_it_recorded_failing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Through the real ``run_verify``: the wall cut the session, so its only named failures are the cells."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', 'utf-8')
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_one.py').write_text('def test_one():\n    pass\n', 'utf-8')
+
+    def cut(_command: list[str], *, handle: IO[str], extra_env: dict[str, str], **_where: object) -> int:
+        recorder = CellRecorder(Path(extra_env[OUTCOMES_DIR_VAR]) / 'cells.jsonl')
+        _test(recorder, 'tests/test_one.py::test_red', ('call', 'failed', 'E   assert 0'))
+        recorder.pytest_runtest_logreport(_crash('tests/test_one.py::test_wedged'))
+        handle.write('.F[gw0] node down: Not properly terminated\nF\nreplacing crashed worker gw0\n')
+        return 4294967295  # what the box returns for a pytest it killed at the wall, on Windows
+
+    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'boxed', lambda _root, argv, **_k: (argv, None))
+    monkeypatch.setattr(verifysteps, '_tee', cut)
+    verdict = verifysteps.run_verify(tmp_path, ('tests/test_one.py',), hooks=False)
+    assert verdict.result.outcome is Conclusion.INCONCLUSIVE, verdict.result
+    said = str(verdict.result)
+    assert 'tests/test_one.py::test_wedged' in said
+    assert 'tests/test_one.py::test_red' in said
+
+
+def test_planted_control_a_settled_verify_adds_no_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.parts]\noutput = "out/logs"\n', 'utf-8')
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_one.py').write_text('def test_one():\n    assert 0\n', 'utf-8')
+
+    def ran(_command: list[str], *, handle: IO[str], extra_env: dict[str, str], **_where: object) -> int:
+        recorder = CellRecorder(Path(extra_env[OUTCOMES_DIR_VAR]) / 'cells.jsonl')
+        _test(recorder, 'tests/test_one.py::test_one', ('call', 'failed', 'E   assert 0'))
+        handle.write('FAILED tests/test_one.py::test_one - assert 0\n1 failed in 0.1s\n')
+        return 1
+
+    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'boxed', lambda _root, argv, **_k: (argv, None))
+    monkeypatch.setattr(verifysteps, '_tee', ran)
+    verdict = verifysteps.run_verify(tmp_path, ('tests/test_one.py',), hooks=False)
+    assert verdict.result.outcome is Conclusion.FAIL, verdict.result
+    assert verdict.result.failures == ('tests/test_one.py::test_one',)
+    assert 'recorded failing' not in str(verdict.result)
+
+
+def test_a_real_worker_death_is_a_cell_and_the_session_still_ends_on_its_own(tmp_path: Path) -> None:
+    """End to end under xdist: the scheduler's own report reaches the recorder, and recording it breaks nothing."""
+    (tmp_path / 'test_d.py').write_text(
+        'import os\n\ndef test_dies():\n    os._exit(1)\n\ndef test_lives():\n    pass\n', encoding='utf-8'
+    )
+    out = tmp_path / 'out'
+    done = subprocess.run(
+        [sys.executable, '-m', 'pytest', '-q', '-n', '1', '-p', 'no:cacheprovider', '-p', 'dev_lab.dev.test_outcomes'],
+        cwd=tmp_path,
+        env={**os.environ, OUTCOMES_DIR_VAR: str(out)},
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=False,
+        timeout=300,
+    )
+    assert 'INTERNALERROR' not in done.stdout + done.stderr, done.stdout + done.stderr
+    assert done.returncode == 1, done.stdout + done.stderr
+    cells, flaky = read_cells(out)
+    assert _words(out) == {'test_d.py::test_dies': 'error', 'test_d.py::test_lives': 'ok'}
+    assert cells['test_d.py::test_dies'].cell.reason.kind == DEAD_WORKER_KIND
+    assert flaky == frozenset()
