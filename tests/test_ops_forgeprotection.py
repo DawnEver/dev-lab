@@ -11,6 +11,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from _protect_fakes import GITEA_TEXT, FakeGitea
@@ -236,7 +237,7 @@ def _source(tmp_path: Path, *, family: bool = True) -> ConfigSource:
     if not family:
         return ConfigSource('https://gitea.example/owner/hosts.git', 'hosts/h.toml', '/etc/token')
     placed = {'file': 'family.toml', 'to': str(tmp_path / 'etc' / 'family.toml')}
-    return SimpleNamespace(family=placed)  # type: ignore[return-value]
+    return cast('ConfigSource', SimpleNamespace(family=placed))
 
 
 def _placed(tmp_path: Path, text: str = FAMILY) -> ConfigSource:
