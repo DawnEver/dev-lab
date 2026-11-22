@@ -26,7 +26,7 @@ from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.devdeclared import OWN_TABLE
 from dev_lab.dev.forgeauth import UNREACHABLE_EXIT
 from dev_lab.dev.hpcaccount.checks import association_refusal, store_problem
-from dev_lab.dev.hpcaccount.grantslice import grant_refusal, machine_table, own_grant, render_grant, without_hpc
+from dev_lab.dev.hpcaccount.grantslice import grant_refusal, machine_table, own_grants, render_grant, without_hpc
 from dev_lab.dev.hpcaccount.spec import Deployment, unserved
 from dev_lab.dev.hpcaccount.steps import Step
 
@@ -196,8 +196,8 @@ def _family_grant(step: Step, path: Path, live: Mapping[str, Any], user: str) ->
     if retired := grant_refusal(path):
         emit(f'deploy refused: the family file at {source} declares an [hpc] this kit refuses ({retired})', err=True)
         return 2
-    row = own_grant(machine_table(path).get('hpc', {}), host)
-    if row is None or row.get('user') != user:
+    rows = own_grants(machine_table(path).get('hpc', {}), host)
+    if not rows or rows[0].get('user') != user:
         emit(
             f'deploy refused: the family file at {source} declares no [[hpc.grant]] of {user} for {host or path}: '
             f'declare it there through its pull request, then {door}',
@@ -205,10 +205,11 @@ def _family_grant(step: Step, path: Path, live: Mapping[str, Any], user: str) ->
         )
         return 2
     sacct = step.read([*step.tools.sacctmgr, '-nP', 'show', 'assoc', f'user={user}', 'format=account,grptres'])
-    if why := association_refusal(user, sacct.stdout, row['slurm_account']):
+    accounts = [row['slurm_account'] for row in rows]  # one account may hold several grants: each is confirmed
+    if why := next(filter(None, (association_refusal(user, sacct.stdout, one) for one in accounts)), None):
         emit(f'deploy refused: {why}', err=True)
         return 2
-    emit(f'  the family file at {source} holds the grant ({user}, {row["slurm_account"]}); {path} is written none')
+    emit(f'  the family file at {source} holds the grant ({user}, {", ".join(accounts)}); {path} is written none')
     return 0
 
 
