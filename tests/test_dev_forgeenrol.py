@@ -77,6 +77,13 @@ def test_a_wrong_helper_is_fixed_without_consent(tmp_path: Path) -> None:
     assert fixed == [_HOST]
 
 
+def test_a_wrong_helper_is_kept_while_the_store_lacks_the_login(tmp_path: Path) -> None:
+    """PLANTED CONTROL: switching before the mint cuts the host off the forge; placing switches it later."""
+    _said, plan, fixed = _prepare(tmp_path, helpers=['manager'])
+    assert plan is not None
+    assert fixed == []
+
+
 def test_the_plan_mints_each_missing_login_named_after_the_machine(tmp_path: Path) -> None:
     _said, plan, _fixed = _prepare(tmp_path)
     assert plan is not None

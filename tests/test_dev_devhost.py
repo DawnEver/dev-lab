@@ -559,7 +559,21 @@ def test_forge_credential_drift_is_part_of_drift_with_the_declared_dev(
 def test_use_store_applies_only_for_a_host_declaring_the_store_helper(tmp_path: Path) -> None:
     dev = devdeclared.declared_by(_rendered_machine(tmp_path)['devhost'])
     applied: list[str] = []
-    assert devhost.forgecredential.use_declared(dev, 'not.declared', applied.append) == 2
+    store = tmp_path / '.git-credentials'
+    store.write_text('https://dev-user:x@forge.example\n', encoding='utf-8')
+    assert devhost.forgecredential.use_declared(dev, 'not.declared', applied.append, store) == 2
     assert applied == []
-    assert devhost.forgecredential.use_declared(dev, 'forge.example', applied.append) == 0
+    assert devhost.forgecredential.use_declared(dev, 'forge.example', applied.append, store) == 0
     assert applied == ['forge.example']
+
+
+def test_use_store_refuses_by_name_while_the_store_lacks_a_declared_login(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL: an empty store read alone cuts the host off the forge (2026-11-21), so the door refuses."""
+    dev = devdeclared.declared_by(_rendered_machine(tmp_path)['devhost'])
+    applied: list[str] = []
+    assert devhost.forgecredential.use_declared(dev, 'forge.example', applied.append, tmp_path / 'absent') == 2
+    assert applied == []
+    said = capsys.readouterr()
+    assert 'dev_lab.dev.devcredential --login dev-user' in said.out + said.err
