@@ -814,6 +814,7 @@ def test_a_checkout_whose_roles_are_unbound_is_released_by_name(
     carry(monkeypatch, EVERY_CI)
     assert _tick(box, 'beta', served) == 0, 'PLANTED CONTROL: every role on CI -- refreshed, not served'
     monkeypatch.delenv(ROLES_ENV)
+    monkeypatch.delenv('CI', raising=False)  # a tick is no CI job; under a runner's CI the stale-workflow door speaks
     capsys.readouterr()
     assert _tick(box, 'beta', served) == 2
     assert served == []
