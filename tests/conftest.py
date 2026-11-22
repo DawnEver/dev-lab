@@ -4,7 +4,9 @@ A test that falls through to the default root shares the HOST's live seats (a si
 stranger's directory on a cluster node) and its result then depends on who else is on the box. A
 test that means the default root says so with ``monkeypatch.delenv``. The machine config is the
 test's own for the same reason, and so is the machine home: a finished run LEARNS into its ``state``
-(:mod:`lab_commons.compute.learned`).
+(:mod:`lab_commons.compute.learned`). That machine file declares the test box's free-space floor: the box
+refuses a hold on a volume under the machine's floor, and a host's free disk never decides a test's result
+(test_a_test_box_keeps_its_own_floor).
 """
 
 from __future__ import annotations
@@ -29,11 +31,19 @@ from dev_lab.dev.producer import OUTCOME_VAR
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
 from dev_lab.dev.storage import ROOTS_ENV
 
+#: The test machine's file: its box keeps one MiB free, never the 50 GiB default measured against the host's
+#: system-temp volume (a hosted Windows runner had 30 GiB there and every held test was refused). A test that
+#: means another floor, or another machine, writes its own file.
+TEST_MACHINE: Final = '[storage]\nfree_floor_gb = 0.001\n'
+
 
 @pytest.fixture(autouse=True)
 def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(BOX_ENV, str(tmp_path / 'lab-commons-box' / 'box.sqlite'))
-    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'lab-commons-machine' / 'config.toml'))
+    machine = tmp_path / 'lab-commons-machine' / 'config.toml'
+    machine.parent.mkdir()
+    machine.write_text(TEST_MACHINE, encoding='utf-8')
+    monkeypatch.setenv(CONFIG_ENV, str(machine))
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'lab-commons-home'))
     # The roots this machine PUBLISHED for the guard engine (storage publish): a test plants its own, never reads ours.
     monkeypatch.setenv(ROOTS_ENV, str(tmp_path / 'lab-commons-storage' / 'storage-roots.json'))
