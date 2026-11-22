@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from types import SimpleNamespace
 
@@ -10,7 +11,9 @@ from lab_commons.hpc.cluster import Runner, Unreachable
 from lab_commons.hpc.grants import AccessRefused, Grant
 
 from dev_lab.dev.agentpolicy import exits_of
+from dev_lab.dev.diskusage import MMLSQUOTA
 from dev_lab.dev.hpcaccount import storage
+from dev_lab.dev.hpcaccount.fleet import Target
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE, retention_fleet
 from dev_lab.dev.venvpointer import shell_interpreter
 
@@ -25,7 +28,7 @@ _QUOTA = 'Disk quotas for user alice\n  /home  29G  30G  30G  999k* 1000k 1000k'
 
 def _line(argv: str) -> str:
     """The remote line in the account's dev-lab checkout, run by its current environment (the one resolver)."""
-    return f'cd /r/src/repos/dev-lab && {shell_interpreter(".")} {argv}'
+    return f'export LAB_ROOT=/r/src && cd /r/src/repos/dev-lab && {shell_interpreter(".")} {argv}'
 
 
 def _account(*, ticks: str = '2', unreachable: bool = False, seen: list[str]) -> Runner:
@@ -277,3 +280,44 @@ def test_a_research_account_without_a_cron_is_as_designed_not_a_fault() -> None:
     assert 'no serve cron, by design' in line
     _, said, _ = _run(ticks='2', accounts=('bob',))
     assert any('bob' in text and 'must carry none' in text for text in said)
+
+
+def test_the_retention_line_carries_the_declared_root_never_the_login_files() -> None:
+    """A DEADLOCK, measured 2026-11-22: a full quota stopped the deploy that writes ``export LAB_ROOT``.
+
+    The remote retention then died "LAB_ROOT is unset ... run deploy-fleet": the verb that frees space needed the
+    deploy that needs space. The line exports the root this verb already read from the account's declaration.
+    """
+    line = storage.retention_command(Target('login01.example', '/shared/alice/my lab'), apply=True)
+    assert line.startswith("export LAB_ROOT='/shared/alice/my lab' && cd ")
+    assert line.endswith('-m dev_lab.dev.retention --cluster --apply')
+
+
+def _quota(functions: str) -> str:
+    """What :data:`storage.QUOTA` prints in a shell where *functions* stand for the cluster's quota tools."""
+    bash = shutil.which('bash')
+    assert bash, 'the quota line runs in bash on the account'
+    silent = 'mmlsquota() { return 1; }; quota() { return 1; }; lfs() { return 1; }; '
+    done = subprocess.run([bash, '-c', silent + functions + storage.QUOTA], capture_output=True, text=True, check=True)
+    return done.stdout
+
+
+def test_a_quota_tool_that_exits_non_zero_over_quota_is_still_the_answer() -> None:
+    """Measured 2026-11-22: "none of mmlsquota, quota, lfs answered" beside a summary reading 2019980/2000000 files.
+
+    ``quota`` exits 1 exactly when the account is over quota. PLANTED CONTROLS: a clean answer is preferred and
+    names its tool alone; tools that print nothing still say none answered.
+    """
+    over = 'quota() { echo "/home 43G 1000G 1000G 2019980* 2000000 2000000"; return 1; }; '
+    said = _quota(over)
+    assert said.startswith('quota by quota (exit 1: over quota, or the tool failed):\n')
+    assert '2019980*' in said
+    assert 'none of' not in said
+    clean = _quota(over + 'lfs() { echo "lfs says 12 of 100"; }; ')
+    assert clean == 'quota by lfs:\nlfs says 12 of 100\n'
+    assert _quota('') == 'quota: none of mmlsquota, quota, lfs answered on this host\n'
+
+
+def test_mmlsquota_is_looked_for_where_the_accounts_retention_reads_it() -> None:
+    for candidate in MMLSQUOTA:
+        assert f'"{candidate} --block-size auto"' in storage.QUOTA
