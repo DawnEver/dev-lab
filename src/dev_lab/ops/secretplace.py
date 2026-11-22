@@ -57,6 +57,7 @@ from lab_commons.storage import declared as storage_declared
 from dev_lab.dev.ask import PASTE_NOTE, AskRefused
 from dev_lab.dev.ask import value as asked_value
 from dev_lab.dev.storage import check
+from dev_lab.dev.toolrelease import resolve
 from dev_lab.ops import secretdistribute
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent.client import grant, verify_held
@@ -198,12 +199,18 @@ def _keys_of(storage: Storage, path: str) -> tuple[str, tuple[str, ...], Mapping
 def enter(
     path: str, *, storage: Storage, ask: Ask, tty: bool, grant: Grant, requests: Path, check: Check,
     redeem: Redeem | None = None, say: Callable[[str], None] = lambda _line: None,
+    tool: Callable[[], object] | None = None,
 ) -> list[str]:  # fmt: skip
     """Ask each value once (shown), check it, consent with one code, place it, list the remote; value-free output.
 
+    *tool* resolves what *check* runs with (rclone) and raises naming its install door when it is absent. It is
+    called BEFORE anything is asked (2026-11-22: the secret was asked, a code spent and the file placed, and only then
+    "rclone is not installed ... run enter again" -- when the install alone was missing).
+
     Raises:
-        SecretRefused: not a terminal, an undeclared path, a value that is empty, holds control characters or does
-            not match its declared shape (all before the consent code: nothing placed), or a refused consent.
+        SecretRefused: not a terminal, an undeclared path, the check's tool absent (nothing asked), a value that is
+            empty, holds control characters or does not match its declared shape (all before the consent code:
+            nothing placed), or a refused consent.
 
     """
     if not tty:
@@ -216,6 +223,12 @@ def enter(
         msg = f'{path} is not a secret file this machine declares; declared: {sorted(owners) or "none"}'
         raise SecretRefused(msg)
     remote, keys, hints, shapes = _keys_of(storage, key)
+    if tool is not None:
+        try:
+            tool()
+        except (StorageError, LookupError, OSError) as absent:
+            msg = f'{remote}: nothing was asked and nothing placed -- {absent}; then run enter again'
+            raise SecretRefused(msg) from absent
     say(f'[ops secret] {remote}: {PASTE_NOTE}')
     lines = []
     for name in keys:
@@ -239,8 +252,9 @@ def enter(
     try:
         said.append(check(remote))
     except (StorageError, OSError) as refused:
-        said.append(f'[ops secret] {remote}: PLACED at {key} but the check FAILED -- {refused}; '
-                    'run `secretplace enter --remote` again with the right values (it replaces the file)')  # fmt: skip
+        said.append(f'[ops secret] {remote}: the secret IS PLACED at {key}; only its check failed -- {refused}. '
+                    f'Re-run the check alone, no secret and no code: `python -m dev_lab.dev.storage check {remote}`; '
+                    'enter again only when that check says the remote refuses these values')  # fmt: skip
     return said
 
 
@@ -325,7 +339,7 @@ def _by_remote(action: str, remote: str) -> int:
     for line in enter(
         path_of(storage_declared(), remote), storage=storage_declared(), ask=input, say=emit,
         tty=sys.stdin.isatty(), grant=lambda asked: grant(asked, ask=input),
-        check=lambda name: check(name, repo=Path.cwd()),
+        check=lambda name: check(name, repo=Path.cwd()), tool=lambda: resolve('rclone'),
         requests=Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent',
     ):  # fmt: skip
         emit(line)
