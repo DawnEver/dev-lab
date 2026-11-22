@@ -50,6 +50,7 @@ from dev_lab.ops.totp import write_private
 __all__ = [
     'CLIENT_UPGRADE',
     'ISSUER_UPGRADE',
+    'PLAN_PREFLIGHT_DOOR',
     'PREFLIGHT_DOOR',
     'PREFLIGHT_FRESH_S',
     'RECEIPT_FRESH_S',
@@ -59,6 +60,7 @@ __all__ = [
     'handshake',
     'hello',
     'offer',
+    'plan_preflights',
     'reached',
     'read_argv',
     'receipt_path',
@@ -88,6 +90,8 @@ PREFLIGHT_FRESH_S: Final = 3600.0
 RECEIPT_FRESH_S: Final = 300.0
 #: The preflight a lone request's code waits for (a verb may expose it as its own ``--preflight``).
 PREFLIGHT_DOOR: Final = 'python -m dev_lab.ops.consent preflight <request.json>'
+#: The preflight a plan's code waits for.
+PLAN_PREFLIGHT_DOOR: Final = 'python -m dev_lab.dev.planrun preflight --plan <plan.json> --steps <steps.json>'
 #: ssh's own exit status: the transport failed, the remote command never ran.
 SSH_FAILED: Final = 255
 _HOST_KEY: Final = 'Host key verification failed'
@@ -244,10 +248,21 @@ def record_preflight(plan: Plan, *, home: Path | None = None, now: float | None 
     return path
 
 
+def plan_preflights(*, home: Path | None = None, now: float | None = None) -> list[tuple[str, float]]:
+    """``(plan digest, the seconds its green preflight still stands -- negative once stale)``, newest first."""
+    folder, clock = state_dir(home) / 'preflight', time.time() if now is None else now
+    found = [(path.stem, _age(path, clock)) for path in folder.glob('*.json')] if folder.is_dir() else []
+    return sorted(((digest, PREFLIGHT_FRESH_S - age) for digest, age in found if age is not None), key=lambda p: -p[1])
+
+
 def offer(
     plan: Plan, table: Mapping[str, Any], *, send: Send, home: Path | None = None, now: float | None = None
-) -> None:
-    """Refuse to offer *plan* for a code unless this client knows it, preflight was green for it, and the issuer agrees.
+) -> float:
+    """Offer *plan* for a code: the seconds its green preflight still stands (ask and spend the code within them).
+
+    Refused unless this client knows the plan, its preflight was green within :data:`PREFLIGHT_FRESH_S` and the
+    issuer agrees. No code is involved, so this is the check to run right BEFORE asking the user (incident
+    2026-11-22: a code was given on a preflight 31161 s old, and expired while the preflight re-ran).
 
     Raises:
         ConsentRefused: the named blocker; no code was asked.
@@ -256,14 +271,14 @@ def offer(
     if stale := unregistered(plan):
         msg = f'no code asked: {not_registered(stale)}'
         raise ConsentRefused(msg)
-    path, clock = _stamp(plan.digest, home), time.time() if now is None else now
-    at = json.loads(path.read_text(encoding='utf-8')).get('at', 0) if path.is_file() else None
-    if at is None or clock - at > PREFLIGHT_FRESH_S:
-        why = 'none recorded' if at is None else f'the green one is {clock - at:.0f} s old'
-        msg = (f'no code asked: plan {plan.digest[:12]} has no green preflight ({why}): run `python -m dev_lab.dev.'
-               'planrun preflight --plan <plan.json> --steps <steps.json>` and fix every blocker')  # fmt: skip
+    age = _age(_stamp(plan.digest, home), time.time() if now is None else now)
+    if age is None or age > PREFLIGHT_FRESH_S:
+        why = 'none recorded' if age is None else f'the green one is {age:.0f} s old'
+        msg = (f'no code asked: plan {plan.digest[:12]} has no green preflight ({why}; one is valid '
+               f'{PREFLIGHT_FRESH_S:.0f} s): re-run preflight -- `{PLAN_PREFLIGHT_DOOR}`')  # fmt: skip
         raise ConsentRefused(msg)
     handshake(table, send=send, actions=[grant['action'] for grant in plan.grants])
+    return PREFLIGHT_FRESH_S - age
 
 
 def receipt_path(action: str, subject: str, *, home: Path | None = None) -> Path:

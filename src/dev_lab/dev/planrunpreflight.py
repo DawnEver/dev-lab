@@ -50,7 +50,7 @@ from dev_lab.ops import configdoor, forgeprotection
 from dev_lab.ops.consent.actions import read_answer
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, handshake, record_preflight, ssh_send, subject_read
+from dev_lab.ops.consent.door import PREFLIGHT_FRESH_S, Send, handshake, record_preflight, ssh_send, subject_read
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
 from dev_lab.ops.forgerequests import ACCOUNT_ACTION, REVOKE_ACTION
 from dev_lab.ops.giteaadmin import ForgeRefused
@@ -343,7 +343,8 @@ def _asked_of_host(plan: Plan, steps: Steps, index: int, remote: Remote, after: 
 
 #: What no preflight can ask of a host it did not reach, whichever way the step's subject was checked.
 _UNREACHED: Final = "unreached: its host's readiness, its sudo door and any refusal its subject read does not report"
-_ASK: Final = '(ask the user for the code)'
+_ASK: Final = (f'(ask the user for the code: this green is valid {PREFLIGHT_FRESH_S:.0f} s -- `python -m dev_lab.ops.'
+               'consent plan <plan.json>` says with no code if it is; stale, re-run preflight first)')  # fmt: skip
 
 
 def _last(unchecked: Sequence[str], *, blocked: bool) -> str:
