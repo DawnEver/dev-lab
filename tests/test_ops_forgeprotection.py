@@ -11,6 +11,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from _protect_fakes import GITEA_TEXT, FakeGitea
@@ -236,7 +237,7 @@ def _source(tmp_path: Path, *, family: bool = True) -> ConfigSource:
     if not family:
         return ConfigSource('https://gitea.example/owner/hosts.git', 'hosts/h.toml', '/etc/token')
     placed = {'file': 'family.toml', 'to': str(tmp_path / 'etc' / 'family.toml')}
-    return SimpleNamespace(family=placed)  # type: ignore[return-value]
+    return cast('ConfigSource', SimpleNamespace(family=placed))
 
 
 def _placed(tmp_path: Path, text: str = FAMILY) -> ConfigSource:
@@ -256,6 +257,7 @@ def test_the_host_renders_under_the_family_file_its_config_places_not_the_logins
     """
     carried = forgeprotection.rendered(_role(tmp_path), _gitea(), 'owner/alpha', REF).subject()
     monkeypatch.delenv(ROLES_ENV)  # root under sudo: an empty machine file, no render's kinds
+    monkeypatch.delenv('CI', raising=False)  # sudo is no CI job; under a runner's CI the stale-workflow door speaks
     with pytest.raises(ForgeRefused, match='no family layer on this machine'):
         forgeprotection.rendered(_role(tmp_path), _gitea(), 'owner/alpha', REF)
     layer = forgeprotection.family_layer(_placed(tmp_path))

@@ -169,7 +169,7 @@ class _Authenticated(SimpleHTTPRequestHandler):
         self.send_header('Content-Length', '0')
         self.end_headers()
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 -- the base class's name
+    def log_message(self, fmt: str, *args: object) -> None:
         """Say nothing: the request line would carry no token, but a test prints nothing."""
 
 
