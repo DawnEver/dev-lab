@@ -25,7 +25,6 @@ host that cannot derive it BLOCKS; an unreached host's is listed unchecked, as i
 from __future__ import annotations
 
 import argparse
-import re
 import shlex
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -35,7 +34,7 @@ from typing import Any, Final
 
 from lab_commons.config import section
 
-from dev_lab.dev import devhost, devsource, forgesecrets, sshholdwire
+from dev_lab.dev import devhost, devsource, forgesecrets, sshholdprobe, sshholdwire
 from dev_lab.dev import remote as ssh_remote
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -97,7 +96,9 @@ _SSH_UNREACHED: Final = 255
 
 #: An ssh login the host refused without a code: key-only ssh reached no hold (2026-11-13: an agent read the bare
 #: ``Permission denied (keyboard-interactive)`` and could not tell it was a hold to open, not a host to fix).
-_NO_HOLD: Final = re.compile(r'Permission denied \((?:[\w-]+,)*(?:keyboard-interactive|password)')
+_NO_HOLD: Final = sshholdprobe.WANTS_CODE
+#: What marks a host that refused this machine's KEY: no code opens it, so its plan is not offered for one.
+_KEY_REFUSED: Final = 'its public key is refused'
 
 
 #: What a refused login means, and the exit: the plan first, then ONE code opens every host's hold.
@@ -123,6 +124,8 @@ def host_ready(step: Step, remote: Remote) -> tuple[str | None, bool]:
         return str(gone), False
     if status == _SSH_UNREACHED:
         last = last_line(said) or f'ssh exited {status}'
+        if sshholdprobe.key_refused(said):  # no code opens a host that refuses the key (2026-11-22: a code spent)
+            return f'{last} -- {_KEY_REFUSED}: {sshholdprobe.KEYS_DOOR}', False
         return (f'{last} -- {HOLD_NEEDED}' if _NO_HOLD.search(said) else last), False
     return ((last_line(said) or f'consent ready exited {status}') if status else None), True
 
@@ -393,7 +396,7 @@ def preflight(
         fault, reached = host_ready(hosts[dest], remotes(dest))
         if not reached:
             unreached.add(dest)
-            if ssh_remote.HOST_KEY_RULE in str(fault):  # no code opens a host whose key cannot be checked
+            if ssh_remote.HOST_KEY_RULE in str(fault) or _KEY_REFUSED in str(fault):  # no code opens such a host
                 blocked = True
                 lines.append(f'host {dest}: BLOCKED -- {fault}')
                 continue
