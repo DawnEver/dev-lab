@@ -16,7 +16,26 @@ from lab_commons.hpc.grants import declared_grants
 
 from dev_lab.dev._machinefile import dumps
 
-__all__ = ['grant_refusal', 'grant_setup', 'has_grant', 'login_hosts', 'render_grant', 'without_hpc']
+__all__ = ['grant_refusal', 'grant_setup', 'granted_root', 'has_grant', 'login_hosts', 'render_grant', 'without_hpc']
+
+
+def granted_root(hpc: Mapping[str, Any] | None, host: str = '') -> str:
+    """The root an account's own grant declares: its cluster's ``[hpc.clusters.<cluster>] root``; ``''`` when none.
+
+    THE ONE RESOLVER of an unstated ``[deploy] root``, over any ``[hpc]`` table: the slice deploy-fleet passes, the
+    slice the account's machine file holds, the family's whole table. The grant is the one named *host*
+    (``<cluster>-<user>``), else the table's only one; no grant, or several with no *host*, resolves nothing --
+    another cluster's root is never taken. ``{user}`` in a family root is the grant's user.
+
+    Measured 2026-11-20 (deploy), 2026-11-21 (configcheck), 2026-11-22 (drift, then the tick): each reader of a
+    ``[deploy]`` that states no root refused "no root declared" until it resolved the root its own way.
+    """
+    table = hpc or {}
+    rows = [row for row in table.get('grant', []) if not host or host == f'{row.get("cluster")}-{row.get("user")}']
+    if len(rows) != 1:
+        return ''
+    cluster = table.get('clusters', {}).get(rows[0].get('cluster'), {})
+    return str(cluster.get('root', '')).replace('{user}', str(rows[0].get('user', '')))
 
 
 def render_grant(table: Mapping[str, Any]) -> str:
