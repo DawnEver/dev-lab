@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -34,8 +35,10 @@ from typing import Final
 
 from lab_commons.hpc.cluster import Runner, Unreachable
 from lab_commons.hpc.grants import Grant
+from lab_commons.hpc.layout import ROOT_VAR
 from lab_commons.log import emit
 
+from dev_lab.dev.diskusage import MMLSQUOTA
 from dev_lab.dev.hpcaccount.division import division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
 from dev_lab.dev.hpcaccount.spec import MARK
@@ -52,11 +55,21 @@ __all__ = [
 ]
 
 #: The account's own quota report, blocks and files; a host without ``quota`` says so instead of failing.
+#: ``mmlsquota`` is tried where the account's retention reads it (:data:`~dev_lab.dev.diskusage.MMLSQUOTA`: a
+#: non-interactive shell's PATH does not name GPFS's bin). A tool that answers with a non-zero exit is still an
+#: answer -- ``quota`` exits 1 exactly when the account is OVER quota, the case this verb exists for (measured
+#: 2026-11-22: "none ... answered" beside a retention summary reading 2019980/2000000 files) -- kept and printed
+#: with its exit when no tool answers cleanly.
 QUOTA: Final = (
-    '( for tool in "mmlsquota --block-size auto" "quota -s" "lfs quota -h $HOME"; do '
+    '( kept=""; for tool in '
+    + ' '.join(f'"{tool} --block-size auto"' for tool in MMLSQUOTA)
+    + ' "quota -s" "lfs quota -h $HOME"; do '
     'command -v "${tool%% *}" >/dev/null 2>&1 || continue; '
-    'out=$($tool 2>&1) && [ -n "$out" ] && { echo "quota by ${tool%% *}:"; echo "$out"; exit 0; }; '
-    'done; echo "quota: none of mmlsquota, quota, lfs answered on this host" )'
+    'out=$($tool 2>&1); rc=$?; [ -n "$out" ] || continue; '
+    '[ "$rc" -eq 0 ] && { echo "quota by ${tool%% *}:"; echo "$out"; exit 0; }; '
+    '[ -n "$kept" ] || { kept="quota by ${tool%% *} (exit $rc: over quota, or the tool failed):"; held="$out"; }; '
+    'done; [ -n "$kept" ] && { echo "$kept"; echo "$held"; exit 0; }; '
+    'echo "quota: none of mmlsquota, quota, lfs answered on this host" )'
 )
 #: The remedy of a cluster whose login hosts do not answer: it is reached only from its own network.
 UNREACHABLE: Final = (
@@ -134,8 +147,14 @@ def ticks_command() -> str:
 
 
 def retention_command(target: Target, *, apply: bool) -> str:
-    """The shell line that runs the account's own retention over its declared root: a dry run unless *apply*."""
-    return in_checkout(target, ['-m', 'dev_lab.dev.retention', '--cluster', *(['--apply'] if apply else [])])
+    """The shell line that runs the account's own retention over its declared root: a dry run unless *apply*.
+
+    THE ROOT IS PASSED, never left to the login file (as the cron line passes it): a deploy that could not finish
+    wrote no ``export LAB_ROOT``, and an account whose quota is full cannot finish a deploy -- so the one verb that
+    frees space would need the deploy that needs space (measured 2026-11-22, a deadlock).
+    """
+    retention = in_checkout(target, ['-m', 'dev_lab.dev.retention', '--cluster', *(['--apply'] if apply else [])])
+    return f'export {ROOT_VAR}={shlex.quote(target.root)} && {retention}'
 
 
 def on_host(grant: Grant, host: str, timeout: float = TIMEOUT) -> Runner:

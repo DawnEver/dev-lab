@@ -44,7 +44,7 @@ from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.config import config_path, section
-from lab_commons.hpc.layout import local_root
+from lab_commons.hpc.layout import RootUndeclared, local_root
 from lab_commons.hpc.records import kept_text
 from lab_commons.log import emit
 
@@ -66,10 +66,17 @@ from dev_lab.dev.retentionplan import (
 )
 from dev_lab.dev.servelock import held
 
-__all__ = ['EVENT', 'Freed', 'apply', 'main', 'serve_pass', 'summary']
+__all__ = ['EVENT', 'ROOT_DOOR', 'Freed', 'apply', 'main', 'serve_pass', 'summary']
 
 #: The ``event`` of every deletion line.
 EVENT: Final = 'lab_commons.forge.retention'
+
+#: The door of a ``--cluster`` run with no declared root. Never "deploy first": an account whose quota is full
+#: cannot finish a deploy, and this is the verb that frees the space (measured 2026-11-22, a deadlock).
+ROOT_DOOR: Final = (
+    'run it from the workstation, which passes the declared root and needs no finished deploy: '
+    'python -m dev_lab.dev.hpcaccount retention --account <user> [--apply]'
+)
 
 _MB: Final = 1024**2
 _GIT: Final = shutil.which('git') or 'git'
@@ -250,11 +257,12 @@ def serve_pass(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m dev_lab.dev.retention [--cluster] [--apply]``: a DRY RUN unless ``--apply``; 0 always.
+    """``python -m dev_lab.dev.retention [--cluster] [--apply]``: a DRY RUN unless ``--apply``; 0, or 2 refused.
 
     One JSON line per path (path, bytes, files, rule), then :func:`summary` -- per rule, the total, and usage
     now -> after for bytes and files (Ada's binding ceiling is its FILE quota). Run it in the served checkout:
-    on a cluster it judges that repo's runs only.
+    on a cluster it judges that repo's runs only. ``--cluster`` with no declared root in the environment is
+    refused naming the cause and :data:`ROOT_DOOR`, never a traceback.
     """
     parser = argparse.ArgumentParser(prog='dev_lab.dev.retention', description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -263,15 +271,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--apply', action='store_true', help='delete; without it nothing is touched')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     policy, home, now = load_policy(section('retention')), Path.home(), datetime.now(UTC)
+    try:
+        account = Path(local_root().root) if args.cluster else Path.cwd()
+    except RootUndeclared as undeclared:
+        emit(f'[retention] refused: {str(undeclared).partition(" -- ")[0]} -- {ROOT_DOOR}')
+        return 2
     plan = _plan_for(
-        Path.cwd(),
-        policy,
-        cluster=args.cluster,
-        home=home,
-        account=Path(local_root().root) if args.cluster else Path.cwd(),
-        now=now,
-        live=_live_shas(),
-    )
+        Path.cwd(), policy, cluster=args.cluster, home=home, account=account, now=now, live=_live_shas()
+    )  # fmt: skip
     usage = read_usage(home if args.cluster else Path.cwd(), cluster=args.cluster)
     done = apply(plan, policy, usage=usage, dry_run=not args.apply, say=emit)
     for line in summary(done, usage, applied=args.apply):
