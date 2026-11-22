@@ -15,6 +15,9 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 | DETECT | `dev_lab.dev.famtests.worktreeplace.assert_every_worktree_stays_inside(root=...)` | any `git worktree list --porcelain` entry (main checkout excepted) not inside `<main>/.claude/worktrees/`; the red names the `git worktree move` that fixes it |
 | IGNORE | the family `.gitignore` base's Claude section: `**/.claude/**` with only the shared directories re-included | a worktree showing up as untracked content of its own repository |
 
+- The NAME is its own rule, `WORKTREE-NAMES-ITS-TASK` (user ruling 2026-11-22): `<name>` says what the tree does under
+  its task, never a hash (`dev_lab.dev.worktreename`). The deny row of that ID refuses `worktree add|move` to a
+  hash-like name; `assert_every_worktree_names_its_task(root=...)` detects one made any other way.
 - A deny pattern reads text: it cannot tell whether a `.claude` in the target belongs to this repository. The
   detector reads git's own list, so the two halves are not duplicates.
 

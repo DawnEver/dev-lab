@@ -22,7 +22,7 @@ from typing import Final, TextIO
 
 from lab_commons.log import emit
 
-from dev_lab.dev import walls
+from dev_lab.dev import imagepath, walls
 from dev_lab.dev.disclosure import details_for
 
 RULE: Final = 'AGENT-RUNS-ITS-OWN-COMMANDS'
@@ -154,7 +154,7 @@ def _final_text(payload: dict) -> str:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """The hook: read the payload, block a handed command once, else stay silent. Never exits nonzero."""
+    """The hook: read the payload, block a handed command or a relative image once, else stay silent; exits 0."""
     del argv
     try:
         payload = json.load(stdin or sys.stdin)
@@ -163,12 +163,16 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     if not isinstance(payload, dict) or payload.get('stop_hook_active'):
         return 0
     try:
-        reason = refusal(_final_text(payload))
+        text = _final_text(payload)
     except OSError:
         return 0
+    # One block per stop: a handed command first, else an image named by a relative path (IMAGES-BY-ABSOLUTE-PATH).
+    rule, reason = RULE, refusal(text)
+    if reason is None:
+        rule, reason = imagepath.RULE, imagepath.refusal(text)
     if reason is not None:
         walls.refused_text(
-            Path(payload.get('cwd') or Path.cwd()), reason, reason='stop', rule=RULE,
+            Path(payload.get('cwd') or Path.cwd()), reason, reason='stop', rule=rule,
             session=str(payload.get('session_id') or ''),
         )  # fmt: skip
         emit(json.dumps({'decision': 'block', 'reason': reason}))

@@ -92,6 +92,8 @@ UNCLASSED: Final[dict[str, str]] = {
     'progressive-disclosure': 'a property of a page, not a side; INJECTED-TEXT-IS-PROGRESSIVE budgets the pages',
     'every-wall-teaches': 'a property of the toolchain, not a side; a refusal met while merging is closed as a gap',
     'no-barrier-fan-out': 'a property of how work is scheduled, not a side; a merge resolves one lane at a time',
+    'images-by-absolute-path': 'a property of what a turn hands the user, not a side; the Stop hook refuses one',
+    'worktree-names-its-task': 'a property of where the work is done, not a side; the deny row refuses the name',
 }
 
 CLASSES: Final = frozenset(GROUNDS)

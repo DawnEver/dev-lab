@@ -309,6 +309,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # Node-free cluster verdict host (2026-10-28) made that host dependency red.
     'jsrun',
     'worktreeplace',
+    'worktreename',  # ORIGINAL: no consumer refused a hash-named worktree before the ruling of 2026-11-22
+    'imagepath',  # ORIGINAL: the Stop hook's second reading, an image named by a relative path (ruling 2026-11-22)
     'ephemeralrefs',
     'famfiles',
     # ORIGINAL: an audit (2026-10-21) found consumer pages restating registry rules, and no consumer

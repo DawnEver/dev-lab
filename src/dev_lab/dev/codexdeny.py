@@ -80,6 +80,7 @@ GAPS: Final[dict[str, str]] = {
     'WRITES-STAY-IN-THE-TREE': _TARGET,
     'RECURSIVE-DELETE': _TARGET,
     'WORKTREES-STAY-INSIDE': _TARGET,
+    'WORKTREE-NAMES-ITS-TASK': 'judged on the name of the directory it makes, not on the command word',
     'FORGE-WRITE-VIA-GH-API': 'a write is a method flag anywhere in the argv; reads share every prefix',
     'FORGE-WRITE-VIA-HTTP': 'a write is a method and a forge URL anywhere in the argv',
     'STATUS-VIA-DOORS': 'the forbidden status contexts are an argument value, not a prefix',

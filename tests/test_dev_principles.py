@@ -12,6 +12,7 @@ from dev_lab.dev.docwidth import WIDTH_CEILING
 from dev_lab.dev.famfiles import render_agent_files
 from dev_lab.dev.famtests.principlespage import assert_principles_page_is_rendered
 from dev_lab.dev.principles import PAGE_REL, PRINCIPLES, payload, render
+from dev_lab.dev.rules import RULES
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,9 +22,10 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
     assert [one.id for one in PRINCIPLES] == [
         'first-principles', 'no-historical-baggage', 'occams-razor', 'single-source-of-truth',
         'layered-decoupling', 'names-match-behaviour', 'no-backward-compatibility', 'progressive-disclosure',
-        'keep-valuable-options', 'every-wall-teaches', 'no-barrier-fan-out',
+        'keep-valuable-options', 'every-wall-teaches', 'no-barrier-fan-out', 'images-by-absolute-path',
+        'worktree-names-its-task',
     ]  # fmt: skip
-    kept = PRINCIPLES[-3]
+    kept = {one.id: one for one in PRINCIPLES}['keep-valuable-options']
     assert kept.name == 'Keep every valuable parameter and option'
     assert kept.statement.startswith('Generality is a requirement: keep every parameter and option')
 
@@ -65,6 +67,16 @@ def test_no_barrier_fan_out_lands_each_item_without_waiting() -> None:
         'docs-src/dev/fanout.md',
     ):
         assert clause in fan.statement
+
+
+def test_an_image_is_delivered_by_absolute_path_and_a_worktree_is_named_for_its_task() -> None:
+    """User ruling 2026-11-22: both statements, each citing the rule whose mechanism refuses a violation."""
+    by_id = {one.id: one.statement for one in PRINCIPLES}
+    for clause in ('ABSOLUTE path', 'never a relative one', 'IMAGES-BY-ABSOLUTE-PATH'):
+        assert clause in by_id['images-by-absolute-path']
+    for clause in ('physical meaning tied to its task', '`agent-<hex>`', 'is forbidden', 'WORKTREE-NAMES-ITS-TASK'):
+        assert clause in by_id['worktree-names-its-task']
+    assert {'IMAGES-BY-ABSOLUTE-PATH', 'WORKTREE-NAMES-ITS-TASK'} <= {rule.id for rule in RULES}
 
 
 def test_the_json_flag_prints_the_payload(capsys: pytest.CaptureFixture[str]) -> None:

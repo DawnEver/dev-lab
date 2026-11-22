@@ -85,6 +85,11 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 - **Why it is refused.** A turn that ends by handing the user a command to run moves the agent's work onto the user, and the command usually fails from the user's cwd. The Stop hook reads the final message (`dev_lab.dev.handback`).
 - **The exit.** Run the command through the shell tool with absolute paths and report the result. A guard's refusal names the door an agent uses; a permission-classifier refusal is a decision for the user, so ask for the decision, not for the command to be run. Only an interactive login, passphrase or GUI step may go to the user as `! <cmd>`, and only these (`handback.INTERACTIVE_ONLY`): `gh auth login`, `gh auth refresh`, `gcloud auth login`, `gcloud auth application-default login`, `az login`, `aws sso login`, `npm login`, `docker login`, `ssh-add`, `ssh-keygen`, `gpg --full-generate-key`, `claude login`, `codex login`, `/login`.
 
+## IMAGES-BY-ABSOLUTE-PATH
+
+- **Why it is refused.** User ruling 2026-11-22: an image delivered to the user is named by its ABSOLUTE path. A relative path resolves against a working directory the reader is not in -- the agent works in a worktree, the user reads from elsewhere -- so the figure cannot be opened from the message that announces it. The Stop hook reads the final message (`dev_lab.dev.imagepath`, called by `dev_lab.dev.handback`) and blocks the stop once.
+- **The exit.** Say it again with every image named by its absolute path, resolved against the checkout it was written in. What is read is a path token ending in an image suffix (`imagepath.IMAGE_SUFFIXES`) after a file stem, in a markdown image, a code span or prose; an absolute path, a URL, a `data:` source, a pattern or template (`*.png`, `<name>.png`, `{stem}.png`) and a path through a shell variable pass. The text cannot tell a delivered image from a discussed one, so both are read.
+
 ## GIT-STASH
 
 - **Why it is refused.** `refs/stash` is REPO-WIDE. It is one ref per repository, not per worktree, so a stash taken in one checkout is popped by whoever pops next -- in a family whose premise is a shared, possibly concurrent checkout, that is another agent losing work it never knew existed.
@@ -129,6 +134,11 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 
 - **Why it is refused.** a checkout created OUTSIDE its repository is outside every scan, ignore rule and search that repository runs over itself, and outside the place the next agent looks for it. MEASURED 2026-10-03: eight worktrees across the family had been created as siblings of their repos, and the user ruled that day that it is forbidden family-wide.
 - **The exit.** Put it inside the repository: git worktree add --detach .claude/worktrees/<name> <sha> (from the repo root; with -C, git -C <repo> worktree add --detach <repo>/.claude/worktrees/<name> <sha>). To relocate one: git worktree move <tree> <repo>/.claude/worktrees/<name>. A clone takes an explicit target <repo>/.claude/worktrees/<name> -- or is better a worktree. A FAMILY repo is the one clone that goes outside: into the siblings root, the directory holding the family's checkouts (`[repos]` in the machine file, `dev_lab.dev.family.members.siblings_root`), as `cd`s then ONE `git clone <url> <root>/<repo>` whose <repo> is new and named for the url, from a forge (scheme, host, owner) a sibling's `origin` already uses.
+
+## WORKTREE-NAMES-ITS-TASK
+
+- **Why it is refused.** User ruling 2026-11-22: a worktree's name must have a physical meaning related to its task, and an agent appending a string of hash is strictly forbidden. A tree named `agent-a1b2c3d4` or `fix-4ad12b6` tells the next reader nothing: not what it is for, not whose it is, not whether it may go. Hash-like (`dev_lab.dev.worktreename.HASH_LIKE_LEAF`) is `agent-<6+ hex>`, or a name that is, or ends after `-`/`_`/`.` in, six or more hex characters holding both a digit and a letter; a date, an issue number and a word spelled in hex letters pass. Only the directory a `git worktree add|move` makes is judged, never the commit-ish or the branch.
+- **The exit.** Name it for what it does under its task, as its branch already is: git worktree add -b pr/<task>/<feature> .claude/worktrees/<feature> <sha>. A tree that already has such a name is renamed with git worktree move <tree> .claude/worktrees/<feature>; `dev_lab.dev.famtests.worktreeplace.assert_every_worktree_names_its_task` names each one, including a tree a harness made without a shell command, which the deny engine cannot see.
 
 ## BARE-INTERPRETER
 
