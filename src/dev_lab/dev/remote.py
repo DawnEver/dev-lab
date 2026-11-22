@@ -31,6 +31,8 @@ __all__ = [
     'declared_piped',
     'detached',
     'host_key_line',
+    'host_key_options',
+    'named',
     'piped',
     'run',
     'ssh_argv',
@@ -90,7 +92,8 @@ def host_key_line(target: str, declared: Mapping[str, object]) -> str:
     raise HostKeyUndeclared(msg)
 
 
-def _named(target: str, said: str) -> str:
+def named(target: str, said: str) -> str:
+    """*said*, ssh's own words about *target*, with a host-key mismatch named: the rule, the declaration, the fill."""
     if _MISMATCH not in said:
         return said
     host = _host(target)
@@ -120,24 +123,43 @@ def declared_known_hosts(target: str, host_keys: Mapping[str, object]) -> str | 
     return str(known)
 
 
-def ssh_argv(target: str, command: str, *, batch: bool, host_keys: Mapping[str, object] | None = None) -> list[str]:
-    """The ssh argv running *command* (a POSIX shell line) as a login shell on *target* (``user@host``).
+def host_key_options(
+    target: str, host_keys: Mapping[str, object] | None = None, *, required: bool = False
+) -> list[str]:
+    """The ssh options checking *target*'s host key strictly against its DECLARED key alone: THE ONE RESOLVER.
 
-    *batch* true never prompts (a key-only account: a cluster); false allocates a terminal for an account whose
-    login asks a second factor (a server's ops account: key AND a one-time code typed by the user).
-
-    *host_keys* is the declared ``[ssh] host_keys`` (None: this machine's own declaration). A host declared there is
-    checked strictly against that key alone (:func:`declared_known_hosts`); an undeclared host keeps ssh's default.
+    *host_keys* is the declared ``[ssh] host_keys`` (None: this machine's own declaration). A host declared there
+    gets a known_hosts holding that key only (:func:`declared_known_hosts`); an undeclared host keeps ssh's default
+    (no option) unless *required* -- a door to a server, whose key must be declared -- which refuses it by name.
 
     Raises:
-        HostKeyUndeclared: the host's declaration is a placeholder or not a key line; nothing was started.
+        HostKeyUndeclared: a placeholder or malformed declaration, or none at all when *required*; ssh never ran.
 
     """
     if host_keys is None:
         declared = section('ssh').get('host_keys')
         host_keys = declared if isinstance(declared, dict) else {}
+    if required:
+        host_key_line(target, host_keys)
     known = declared_known_hosts(target, host_keys)
-    hosts = ['-o', f'UserKnownHostsFile={known}', '-o', 'StrictHostKeyChecking=yes'] if known else []
+    return ['-o', f'UserKnownHostsFile={known}', '-o', 'StrictHostKeyChecking=yes'] if known else []
+
+
+def ssh_argv(
+    target: str, command: str, *, batch: bool, host_keys: Mapping[str, object] | None = None, required: bool = False
+) -> list[str]:
+    """The ssh argv running *command* (a POSIX shell line) as a login shell on *target* (``user@host``).
+
+    *batch* true never prompts (a key-only account: a cluster); false allocates a terminal for an account whose
+    login asks a second factor (a server's ops account: key AND a one-time code typed by the user).
+
+    The host key is checked as :func:`host_key_options` says, *host_keys* and *required* passed through.
+
+    Raises:
+        HostKeyUndeclared: as :func:`host_key_options`; nothing was started.
+
+    """
+    hosts = host_key_options(target, host_keys, required=required)
     mode = ['-o', 'BatchMode=yes'] if batch else ['-t']
     timeout = ['-o', f'ConnectTimeout={CONNECT_TIMEOUT_S}']
     return ['ssh', *mode, *timeout, *hosts, target, f'bash -lc {shlex.quote(command)}']
@@ -181,7 +203,7 @@ def piped(
     done = _door.run(argv, input=line, capture_output=True, text=True, encoding='utf-8', check=False, timeout=timeout_s)
     if done.returncode == 0:
         return 0, done.stdout.strip()
-    return done.returncode, _named(target, (done.stdout + done.stderr).strip())
+    return done.returncode, named(target, (done.stdout + done.stderr).strip())
 
 
 def declared_piped(

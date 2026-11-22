@@ -24,6 +24,7 @@ from typing import Any, Final
 from lab_commons.config import section
 
 from dev_lab.dev import devhost, devsource, forgesecrets, sshholdwire
+from dev_lab.dev import remote as ssh_remote
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.planremote import Remote
@@ -315,6 +316,10 @@ def preflight(
         fault, reached = host_ready(hosts[dest], remotes(dest))
         if not reached:
             unreached.add(dest)
+            if ssh_remote.HOST_KEY_RULE in str(fault):  # no code opens a host whose key cannot be checked
+                blocked = True
+                lines.append(f'host {dest}: BLOCKED -- {fault}')
+                continue
             lines.append(f'host {dest}: UNREACHABLE ({fault}) -- derivable subjects are checked here, its doors at run')
             continue
         lines.append(f'host {dest}: {"BLOCKED -- " + fault if fault else "ready"}')
