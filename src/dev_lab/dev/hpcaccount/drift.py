@@ -43,6 +43,7 @@ from dev_lab.dev.backedup import replace_backed_up
 from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.diskusage import count_files
 from dev_lab.dev.hpcaccount import deploy
+from dev_lab.dev.hpcaccount.grantslice import Unreadable, read_machine
 from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
 from dev_lab.dev.venvpointer import RETIRED_POINTER
@@ -180,12 +181,15 @@ def account_drift(step: Step, home: Path, machine: Path, clone: Path, host: str)
         return f'{clone.as_posix()} holds no family.toml and {devhost.host_file(host)}: deploy-fleet fetches that clone'
     try:
         rendered = tomllib.loads(devhost.render(clone, host, {}))
-        live = tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {}
+        live = read_machine(machine)
         whole = layered(rendered)  # a render holds no family leaf: the grants are read under it (devdeclared)
         grants, _ = declared_grants(whole.get('hpc', {}))
         spec = parse(whole, clone / devhost.host_file(host))
     except (OSError, ValueError) as failed:  # TOMLDecodeError is a ValueError
-        return f'cannot render {host} from {clone.as_posix()}: {failed}'
+        # an unreadable file is the account's own, not the render: it names its cause and door itself
+        return (
+            str(failed) if isinstance(failed, Unreadable) else f'cannot render {host} from {clone.as_posix()}: {failed}'
+        )
     if spec is None or spec.role != VERIFICATION:  # SCHEDULER-ONLY-FOR-SERVING: no crontab to compare, none read
         return {'machine file': compare(live, rendered)}
     listed = step.read([*step.tools.crontab, '-l'])
@@ -229,7 +233,7 @@ def _discard(drift: Drift, *, home: Path, machine: Path, clone: Path, host: str,
     if dry:
         emit(f'[dry-run] would discard {len(drift.only_on_account)} item(s) only {machine} holds:{items}')
         return 1
-    live = tomllib.loads(machine.read_text(encoding='utf-8')) if machine.is_file() else {}
+    live = read_machine(machine)
     text = devhost.render(clone, host, {key: value for key, value in live.items() if key == devhost.OWN_TABLE})
     backup = replace_backed_up(machine, text, home / '.cache' / 'dev-lab' / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost')
     emit(f'discarded {len(drift.only_on_account)} item(s); re-rendered {machine}; the previous file is {backup}{items}')

@@ -7,6 +7,12 @@ ONE READER (:func:`machine_table`): an account's machine file is a render naming
 grant, its cluster and the cluster's root live in that family file alone. Every read here goes through the layered
 view (:func:`dev_lab.dev.devdeclared.layered`), so no family leaf is written back into the machine file -- a leaf
 both hold is refused by ``lab_commons.config.section``, which every tick calls (probed 2026-11-22).
+
+ONE OLD SHAPE IS REFUSED BY NAME (:func:`read_machine`, FORMATS-MIGRATE-ONCE): a file declaring ``[hpc]`` several
+times -- an older kit's grant phase appended the account's slice below the rendered table -- is not TOML, so no
+reader can keep it (measured 2026-11-22 on four research accounts). Each names the cause and :data:`REDEPLOY_DOOR`;
+that door's render (``devhost render``) is the one caller that repairs it, once, the previous file backed up. Any
+other break is refused and never rewritten.
 """
 
 from __future__ import annotations
@@ -18,25 +24,97 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.hpc.grants import declared_grants
+from lab_commons.log import emit
 
 from dev_lab.dev._machinefile import dumps
 from dev_lab.dev.devdeclared import OWN_TABLE, layered
 
 __all__ = [
+    'REDEPLOY_DOOR',
+    'Unreadable',
     'grant_refusal',
     'grant_setup',
     'granted_root',
     'login_hosts',
     'machine_table',
     'own_grant',
+    'read_machine',
     'render_grant',
     'without_hpc',
 ]
 
+#: The door that heals an account's machine file: its render rewrites the file from the config source.
+REDEPLOY_DOOR: Final = 'python -m dev_lab.dev.hpcaccount deploy-fleet --account <user>'
+
+#: A TOML table or array-of-tables header line; group 1 is the table's dotted name.
+_HEADER: Final = re.compile(r'^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
+
+
+class Unreadable(ValueError):
+    """A machine file that is not TOML; the message names the file, the cause and its door."""
+
+
+def _hpc_groups(text: str) -> list[str]:
+    """The ``[hpc]`` groups of *text*: each bare ``[hpc]`` header starts one; the ``[hpc.*]`` tables below join it."""
+    groups: list[list[str]] = []
+    inside = False
+    for line in text.splitlines():
+        if header := _HEADER.match(line):
+            name = header.group(1)
+            inside = name == 'hpc' or name.startswith('hpc.')
+            if name == 'hpc' or (inside and not groups):
+                groups.append([])
+        if inside:
+            groups[-1].append(line)
+    return ['\n'.join(group) + '\n' for group in groups]
+
+
+def _declared_twice(text: str) -> tuple[int, dict[str, Any]] | None:
+    """How many ``[hpc]`` groups *text* holds and its other tables, when that repetition is ALL that breaks it."""
+    groups = _hpc_groups(text)
+    if len(groups) <= 1:
+        return None
+    try:
+        for group in groups:
+            tomllib.loads(group)
+        return len(groups), tomllib.loads(without_hpc(text))
+    except tomllib.TOMLDecodeError:
+        return None
+
+
+def read_machine(path: Path, *, repair: bool = False) -> dict[str, Any]:
+    """The machine file at *path* as written (``{}`` when absent), its family file not layered under it.
+
+    *repair* is the render's alone: the several-``[hpc]`` old shape is then read WITHOUT its ``[hpc]`` slice -- the
+    render takes none of it, the family file holds it -- and what was dropped is said on stderr.
+
+    Raises:
+        Unreadable: the file is not TOML. Several ``[hpc]`` tables name :data:`REDEPLOY_DOOR`; any other break
+            names the parser's reason and no door that would rewrite the file.
+
+    """
+    if not path.is_file():
+        return {}
+    text = path.read_text(encoding='utf-8')
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as broken:
+        twice = _declared_twice(text)
+        if twice is None:
+            msg = f'{path} is not TOML ({broken}) and is left as it is: correct it by hand, or restore its backup'
+            raise Unreadable(msg) from None
+        count, rest = twice
+        cause = f"{path} declares [hpc] {count} times (an older kit appended the account's grant below its render)"
+        if not repair:
+            msg = f'{cause}, so nothing can read it: redeploy the account, whose render repairs it once -- '
+            raise Unreadable(msg + REDEPLOY_DOOR) from None
+        emit(f'repaired once: {cause} -- the render holds no family [hpc] leaf; its other tables are kept', err=True)
+        return rest
+
 
 def machine_table(path: Path) -> dict[str, Any]:
     """The machine file at *path* over the family file it names: the whole machine, as every reader here sees it."""
-    return layered(tomllib.loads(path.read_text(encoding='utf-8'))) if path.is_file() else {}
+    return layered(read_machine(path))
 
 
 def own_grant(hpc: Mapping[str, Any] | None, host: str = '') -> Mapping[str, Any] | None:
@@ -100,10 +178,6 @@ def grant_refusal(path: Path) -> str:
     except ValueError as refused:
         return str(refused)
     return ''
-
-
-#: A TOML table or array-of-tables header line; group 1 is the table's dotted name.
-_HEADER: Final = re.compile(r'^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')
 
 
 def without_hpc(text: str) -> str:
