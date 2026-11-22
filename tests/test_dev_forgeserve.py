@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from _box_fake import ended, quiet, record
+from _box_fake import TEST_MACHINE, ended, quiet, record
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
@@ -854,6 +854,8 @@ def test_a_box_admits_against_its_capacity_less_every_box_ledger_claim(monkeypat
     PLANTED CONTROL: no claim on the ledger, the whole capacity is admitted against.
     """
     seen: dict[str, object] = {}
+    (tmp_path / 'home').mkdir()  # the machine _serve names: this test takes a real hold, on the test box's floor
+    (tmp_path / 'home' / 'config.toml').write_text(TEST_MACHINE, encoding='utf-8')
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen)
     supply = seen['supply']
     assert isinstance(supply, Supply)

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from _box_fake import TEST_MACHINE
 from _roles_fixtures import EVERY_CI, carry
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
@@ -31,17 +32,15 @@ from dev_lab.dev.producer import OUTCOME_VAR
 from dev_lab.dev.reviewgitauth import FORGE_TOKEN_ENVS
 from dev_lab.dev.storage import ROOTS_ENV
 
-#: The test machine's file: its box keeps one MiB free, never the 50 GiB default measured against the host's
-#: system-temp volume (a hosted Windows runner had 30 GiB there and every held test was refused). A test that
-#: means another floor, or another machine, writes its own file.
-TEST_MACHINE: Final = '[storage]\nfree_floor_gb = 0.001\n'
-
 
 @pytest.fixture(autouse=True)
-def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _a_box_of_its_own(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv(BOX_ENV, str(tmp_path / 'lab-commons-box' / 'box.sqlite'))
-    machine = tmp_path / 'lab-commons-machine' / 'config.toml'
-    machine.parent.mkdir()
+    # BESIDE tmp_path, never in it: the file exists before the test runs, and a test's tmp_path starts empty
+    # (several hand it whole to a reader that refuses an entry it does not know).
+    machine = tmp_path_factory.mktemp('lab-commons-machine') / 'config.toml'
     machine.write_text(TEST_MACHINE, encoding='utf-8')
     monkeypatch.setenv(CONFIG_ENV, str(machine))
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'lab-commons-home'))

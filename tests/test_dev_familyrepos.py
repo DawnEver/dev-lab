@@ -128,7 +128,7 @@ def test_the_real_engine_refuses_a_declared_clone_and_passes_an_undeclared_one(
 ) -> None:
     """PLANTED BOTH WAYS through the locked Node and this interpreter, the machine file a tmp one."""
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
-    config_path().parent.mkdir(parents=True)
+    config_path().parent.mkdir(parents=True, exist_ok=True)
     alpha = _checkout(tmp_path / 'alpha')
     config_path().write_text(
         '[family_repos]\nalpha = { remote = "https://forge.example/o/alpha.git", branch = "main" }\n\n'

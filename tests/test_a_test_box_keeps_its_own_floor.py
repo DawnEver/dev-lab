@@ -48,6 +48,12 @@ def test_a_test_that_declares_the_machine_default_is_refused_on_that_host(monkey
     assert 'below the floor 50.0 GiB' in said
 
 
+def test_the_machine_file_is_beside_the_tests_tmp_path_which_starts_empty(tmp_path: Path) -> None:
+    """A test hands its whole ``tmp_path`` to a reader that refuses an entry it does not know (test_outcomes)."""
+    assert list(tmp_path.iterdir()) == []
+    assert tmp_path not in Path(os.environ[CONFIG_ENV]).parents
+
+
 def test_a_child_process_reads_the_same_floor() -> None:
     """The floor rides in the machine FILE, so a child that inherits the environment keeps it (no in-process patch)."""
     declared = Path(os.environ[CONFIG_ENV])
