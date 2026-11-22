@@ -151,6 +151,11 @@ def test_a_ci_job_reads_the_kinds_its_render_carried(tmp_path: Path) -> None:
 def test_no_layer_and_nothing_carried_is_refused_naming_the_family_table(tmp_path: Path) -> None:
     with pytest.raises(Unbound, match=r'no family layer on this machine and no DEV_LAB_ROLES carried'):
         roles_at(tmp_path, layer={}, env={})
+    with pytest.raises(Unbound, match=r'stale workflow.*python -m dev_lab\.dev\.ciworkflows render'):
+        roles_at(tmp_path, layer={}, env={'CI': 'true'})
+    with pytest.raises(Unbound) as off_ci:  # planted control: off a CI job the CI door is not named
+        roles_at(tmp_path, layer={}, env={})
+    assert 'ciworkflows' not in str(off_ci.value)
     with pytest.raises(Unbound, match='re-render the workflows'):
         roles_at(tmp_path, layer={}, env={ROLES_ENV: json.dumps({'tests': 'ci'})})
 

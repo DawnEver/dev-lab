@@ -134,12 +134,16 @@ def _fix_helpers(
     forge: DeclaredForge,
     helpers_for: Callable[[str], list[str]],
     store_for: Callable[[str], None],
+    store: Path | None,
 ) -> list[str]:
+    """Switch each declared host to the store once it holds every declared login -- never before (cut-off forge)."""
     said = []
+    lines = forgecredential.store_lines(forgecredential.STORE if store is None else store)
     for host in sorted(dev.get('forges', {})):
         if (
             host in forge.sites
             and dev.get('helpers', {}).get(host) == 'store'
+            and not forgecredential.unstored(dev, host, lines)
             and helpers_for(host) != (forgecredential.STORE_ONLY)
         ):
             store_for(host)
@@ -166,7 +170,7 @@ def prepare(
         EnrolRefused: a missing login the forge host does not declare (it cannot be minted), or no machine name.
 
     """
-    said = _fix_helpers(dev, forge, helpers_for, store_for)
+    said = _fix_helpers(dev, forge, helpers_for, store_for, store)
     logins = missing(dev, forge, store=store)
     if not logins:
         return [*said, 'every declared forge login of this machine is stored: nothing to mint'], None

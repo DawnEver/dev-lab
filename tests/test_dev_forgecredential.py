@@ -57,3 +57,11 @@ def test_store_lines_yield_users_by_host_only_never_secrets() -> None:
         'garbage',
     ]
     assert stored_logins('forge.example', lines) == {'dev-user', 'b%40x'}
+
+
+def test_an_empty_store_never_offers_use_store_only_the_mint(tmp_path: Path) -> None:
+    """PLANTED CONTROL (2026-11-21): use-store before any token reset the working helper and cut the forge off."""
+    found = _drift(tmp_path, helpers=['manager'])
+    assert len(found) == 1
+    assert 'forge token mint' in found[0]
+    assert 'use-store' not in found[0]

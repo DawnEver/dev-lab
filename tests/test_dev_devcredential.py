@@ -34,13 +34,14 @@ def _place(
     helpers: tuple[str, ...] = ('', 'store'),
     stored: list[str] | None = None,
     token: str = _MINTED,
+    store: Path = Path('absent-store'),
 ) -> tuple[int, list[str], list[tuple[str, str | None]]]:
     said: list[str] = []
     seen: list[tuple[str, str | None]] = []
     rc = place(
         login=login, token=token, url='', forge=_FORGE, dev=_DEV if dev is None else dev, say=said.append,
         shell=_shell(answers, seen), helpers_for=lambda _host: list(helpers),
-        store_for=(stored if stored is not None else []).append, python='py',
+        store_for=(stored if stored is not None else []).append, python='py', store=store,
     )  # fmt: skip
     return rc, said, seen
 
@@ -74,14 +75,30 @@ def test_refusals_come_before_anything_is_staged() -> None:
         assert named in said[0]
 
 
-def test_a_declared_store_helper_is_applied_before_placing_only_when_not_already_set() -> None:
+def test_a_declared_store_helper_is_applied_after_placing_only_when_not_already_set() -> None:
     stored: list[str] = []
-    rc, said, _ = _place(helpers=('manager',), stored=stored)
+    rc, said, seen = _place(helpers=('manager',), stored=stored)
     assert (rc, stored) == (0, ['forge.example'])
-    assert 'reads only the store' in said[0]
+    assert seen[-1][0].startswith('umask 077 && f=')  # the token was placed before
+    assert 'reads only the store' in said[-1]
     stored.clear()
     assert _place(stored=stored)[0] == 0
     assert stored == []
+
+
+def test_a_refused_placement_never_switches_the_helper() -> None:
+    """PLANTED CONTROL: an unverified token leaves git on its own helper (an empty store would cut the forge off)."""
+    stored: list[str] = []
+    assert _place(answers='someone-else', helpers=('manager',), stored=stored)[0] == 2
+    assert stored == []
+
+
+def test_the_helper_waits_for_every_declared_login_of_the_host() -> None:
+    stored: list[str] = []
+    dev = {'forges': {'forge.example': ['dev-user', 'second']}, 'helpers': {'forge.example': 'store'}}
+    rc, said, _ = _place(dev=dev, helpers=('manager',), stored=stored)
+    assert (rc, stored) == (0, [])
+    assert "['second']" in said[-1]
 
 
 def test_a_helper_outside_the_declared_set_is_refused() -> None:
