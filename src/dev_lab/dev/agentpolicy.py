@@ -11,8 +11,8 @@ A ROW (:class:`Door`) is a door and everything said about it:
   rendered as :data:`dev_lab.dev.doorrows.INTERPRETERS`, the checkout's own interpreter of each platform
   layout). Empty for an intent the classifier judges with no narrow door behind it.
 * ``actor`` -- who may run it: :data:`SUBAGENT` (any agent), :data:`MAIN` (the main session only: a subagent
-  is refused it by SUBAGENT-NO-PUSH, whose pattern is derived from these rows) or :data:`USER` (no agent: it
-  renders no allow row and no intent, and a remedy names it as the user's).
+  is refused it by SUBAGENT-NO-PUSH or MAIN-ONLY-DOOR, whose patterns are derived from these rows) or
+  :data:`USER` (no agent: it renders no allow row and no intent, and a remedy names it as the user's).
 * ``intent`` -- ONE string, both the allow row's provenance and the auto-mode classifier's intent. Prose, never
   a spelling (:func:`dev_lab.dev.automode.spelled_commands` refuses one).
 * ``deny`` -- the deny row whose exit this door is; that row's remedy text is DERIVED from its doors
