@@ -15,7 +15,13 @@ THE RULES THAT RUN IN THIS MODE -- the ones that matter on a full account:
 * ``old-copy``: each declared old copy of the layout before the declared root;
 * ``venv-not-current``: a ``<root>/repos/<repo>/.venvs/<name>`` the repo's ``.venv`` pointer does not name -- a
   half-built or superseded environment;
-* ``uv-cache-tmp``: a ``.tmp*`` entry of ``<root>/cache/uv``, what an interrupted install left.
+* ``uv-cache-tmp``: a ``.tmp*`` entry of ``<root>/cache/uv``, what an interrupted install left;
+* the spec's ``cargo_rule``: an extracted crate under ``~/.cargo/registry/src/<index>/`` untouched for the spec's
+  ``cargo_hours`` (the ``.crate`` download cache is never named; cargo re-extracts what a build needs).
+
+A PATH THAT CANNOT BE REMOVED IS NAMED AND KEPT (measured 2026-11-22: one directory the account could not chmod
+killed the whole pass with a traceback, nothing after it ran and no summary was printed): ``[retention] kept <path>
+-- cannot remove: <cause>``; the rest of that copy and every other rule go on, and the totals count only what went.
 
 Every other retention rule (runs, trees, builds, packs, artefacts, logs, rust) reads the forge's run state and
 needs the kit: :mod:`dev_lab.dev.retention`, on the account.
@@ -28,6 +34,7 @@ that cannot be read keeps everything; a running ``uv`` keeps every cache entry. 
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -35,6 +42,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -115,6 +123,10 @@ def candidates(spec: dict, home: Path, root: Path, live: list[dict] | None) -> l
     installing = live is None or any(Path(one['exe']).name == 'uv' for one in live)
     busy = 'a uv process is running: its cache is in use' if installing else ''
     found += [(tmp, UV_TMP, busy) for tmp in sorted((root / 'cache' / 'uv').glob('.tmp*'))]
+    if rule := spec.get('cargo_rule'):
+        stale = time.time() - float(spec['cargo_hours']) * 3600
+        crates = sorted((home / '.cargo' / 'registry' / 'src').glob('*/*'))
+        found += [(crate, rule, '') for crate in crates if crate.lstat().st_mtime <= stale]
     return [(path, rule, why) for path, rule, why in found if path.exists() or path.is_symlink()]
 
 
@@ -132,17 +144,29 @@ def _measure(path: Path) -> tuple[int, int]:
     return size, files
 
 
-def _writable(func: object, path: str, _exc: object) -> None:
-    os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)  # noqa: PTH101 -- rmtree hands a string
-    func(path)  # type: ignore[operator]
+def _remove(path: Path, say: Callable[[str], None]) -> tuple[int, int]:
+    """Remove *path*, each entry that cannot go NAMED and kept; the (bytes, files) left behind."""
+    kept: list[tuple[str, OSError]] = []
 
+    def writable(func: Callable[[str], object], name: str, _exc: object) -> None:
+        try:
+            os.chmod(name, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)  # noqa: PTH101 -- rmtree hands a string
+            func(name)
+        except OSError as why:
+            if why.errno != errno.ENOTEMPTY:  # a parent of a kept entry: the entry itself is the one named
+                kept.append((name, why))
 
-def _remove(path: Path) -> None:
-    if path.is_dir() and not path.is_symlink():
-        retry = {'onexc': _writable} if sys.version_info >= (3, 12) else {'onerror': _writable}
-        shutil.rmtree(path, **retry)  # type: ignore[arg-type]
-    else:
-        path.unlink()
+    try:
+        if path.is_dir() and not path.is_symlink():
+            retry = {'onexc': writable} if sys.version_info >= (3, 12) else {'onerror': writable}
+            shutil.rmtree(path, **retry)  # type: ignore[arg-type]
+        else:
+            path.unlink()
+    except OSError as why:
+        kept.append((str(path), why))
+    for name, why in kept:
+        say(f'[retention] kept {Path(name).as_posix()} -- cannot remove: {why.strerror or why}')
+    return _measure(path) if path.exists() or path.is_symlink() else (0, 0)
 
 
 def sweep(
@@ -156,7 +180,8 @@ def sweep(
             continue
         size, files = _measure(path)
         if apply:
-            _remove(path)
+            left = _remove(path, say)
+            size, files = size - left[0], files - left[1]
         paths, total, count = by_rule.get(rule, (0, 0, 0))
         by_rule[rule] = (paths + 1, total + size, count + files)
         row = {'path': str(path), 'bytes': size, 'files': files, 'rule': rule, 'dry_run': not apply}

@@ -50,6 +50,7 @@ from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout, r
 from dev_lab.dev.hpcaccount.spec import KIT, MARK
 from dev_lab.dev.hpcaccount.transport import grant_runner, host_runner
 from dev_lab.dev.oldcopies import STRAYS_IN_HOME, STRAYS_IN_ROOT
+from dev_lab.dev.retentionrust import RULE_REGISTRY
 from dev_lab.dev.venvpointer import HOME as ENVS_HOME
 from dev_lab.dev.venvpointer import POINTER, RETIRED_POINTER, shell_interpreter
 
@@ -191,6 +192,7 @@ def sweep_spec(target: Target, *, apply: bool) -> dict[str, object]:
         'root': target.root, 'apply': apply,
         'strays_in_home': list(STRAYS_IN_HOME), 'strays_in_root': list(STRAYS_IN_ROOT),
         'retired_pointer': RETIRED_POINTER, 'pointer': POINTER, 'envs': ENVS_HOME,
+        'cargo_rule': RULE_REGISTRY, 'cargo_hours': quotawatch.declared_lines().min_age_hours,
     }  # fmt: skip
 
 

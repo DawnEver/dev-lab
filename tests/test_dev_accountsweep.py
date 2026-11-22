@@ -10,11 +10,14 @@ of a running ``uv`` are kept.
 from __future__ import annotations
 
 import ast
+import errno
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from dev_lab.dev import accountsweep
 from dev_lab.dev.hpcaccount.fleet import Target
@@ -122,3 +125,51 @@ def test_an_unreadable_crontab_or_process_table_keeps_everything(tmp_path: Path)
         said = _sweep(home, root, spec | {'apply': True}, **unread)
         assert said[-1] == '[retention] deleted 0 paths, 0.0 MB, 0 files'
         assert sum('cannot be read' in line or 'a uv process is running' in line for line in said) == 5
+
+
+def test_an_unremovable_entry_is_named_and_kept_and_the_pass_ends_with_its_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MEASURED 2026-11-22: one entry the account could not chmod killed the pass with a traceback, no summary."""
+    home, root, spec = _account(tmp_path)
+    old = home / 'ci' / 'trees' / 'abc'
+    for name in ('a.log', 'locked.log', 'b.log'):
+        (old / name).write_text('x', encoding='utf-8')
+    real = os.unlink
+
+    def refuse(path: object, *args: object, **kwargs: object) -> None:
+        if str(path).endswith('locked.log'):
+            raise PermissionError(errno.EPERM, 'Operation not permitted', str(path))
+        real(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, 'unlink', refuse)
+    said = _sweep(home, root, spec | {'apply': True})
+    assert f'[retention] kept {(old / "locked.log").as_posix()} -- cannot remove: Operation not permitted' in said
+    assert sorted(p.name for p in old.iterdir()) == ['locked.log'], 'the rest of the copy went'
+    assert not (root / 'repos' / 'r' / '.venvs' / 'half-built').exists(), 'every other rule ran after it'
+    assert said[-1].startswith('[retention] deleted '), 'the pass ends with its summary'
+    rows = [json.loads(line) for line in said if line.startswith('{')]
+    copy = next(row for row in rows if row['path'] == str(home / 'ci'))
+    assert copy['files'] >= 1
+    assert (home / 'ci').exists(), 'counted only what went: the kept file and its parents stay'
+
+
+def test_planted_control_a_removable_copy_is_removed_whole(tmp_path: Path) -> None:
+    home, root, spec = _account(tmp_path)
+    (home / 'ci' / 'trees' / 'abc' / 'a.log').write_text('x', encoding='utf-8')
+    said = _sweep(home, root, spec | {'apply': True})
+    assert not (home / 'ci').exists()
+    assert not any('cannot remove' in line for line in said)
+
+
+def test_stale_cargo_registry_sources_go_and_a_fresh_crate_stays(tmp_path: Path) -> None:
+    home, root, spec = _account(tmp_path)
+    src = home / '.cargo' / 'registry' / 'src' / 'index-1'
+    (src / 'old-1.0').mkdir(parents=True)
+    (src / 'fresh-2.0').mkdir()  # PLANTED CONTROL: touched now
+    os.utime(src / 'old-1.0', (0, 0))
+    (home / '.cargo' / 'registry' / 'cache').mkdir()  # PLANTED CONTROL: the .crate cache is never named
+    assert spec['cargo_rule'] == 'cargo-registry-src'
+    _sweep(home, root, spec | {'apply': True})
+    assert sorted(p.name for p in src.iterdir()) == ['fresh-2.0']
+    assert (home / '.cargo' / 'registry' / 'cache').is_dir()
