@@ -11,8 +11,9 @@ useless, everything worth keeping is in the config source). Two renders are comp
 
 Each yields three lists: ONLY ON THE ACCOUNT (drift: fold it into the config source or discard it), ONLY IN THE
 RENDER (what the next render adds) and DIFFERING values. A third report, ``old copies`` (:func:`strays`), lists
-what the layout before the declared root left behind, with its file count: the dry-run list for the user's ruling
-(migration is a reclone; nothing removes them by hand), never config the account would lose.
+what the layout before the declared root left behind, with its file count -- never config the account would lose.
+ONE LIST, :mod:`dev_lab.dev.oldcopies`: the account's retention removes them (user ruling 2026-11-22: deleting is
+the default), and the report names that door (:data:`~dev_lab.dev.oldcopies.DOOR`).
 A value whose key names a token, key, password or secret,
 or that looks encoded (long hex or base64), is printed only as ``<redacted, sha256:xxxx>``. Nothing is written: no
 render, no fetch of the clone, no crontab. Exit 0 agrees, 1 drift, 2 refused.
@@ -46,13 +47,12 @@ from dev_lab.dev.hpcaccount import deploy
 from dev_lab.dev.hpcaccount.grantslice import Unreadable, read_machine
 from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
-from dev_lab.dev.venvpointer import RETIRED_POINTER
+from dev_lab.dev.oldcopies import DOOR, old_copies
 
 __all__ = [
     'DISCARD',
+    'REMOVED_BY',
     'STRAYS',
-    'STRAYS_IN_HOME',
-    'STRAYS_IN_ROOT',
     'Drift',
     'account_drift',
     'compare',
@@ -71,9 +71,8 @@ _ENCODED: Final = re.compile(r'[0-9a-fA-F]{32,}|[A-Za-z0-9+/_-]{40,}={0,2}')
 _ENCODED_WORD: Final = re.compile(r'[0-9a-fA-F]{32,}|[A-Za-z0-9+_-]{40,}={0,2}')  # a path's '/' is no secret
 #: The report of old copies (:func:`strays`).
 STRAYS: Final = 'old copies'
-#: Where the layout before the declared root kept the forge, home-relative and root-relative.
-STRAYS_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
-STRAYS_IN_ROOT: Final = ('dev-lab', 'src')
+#: What removes them (user ruling 2026-11-22: deleting is the default).
+REMOVED_BY: Final = f"the account's retention removes them, ruling 2026-11-22: {DOOR}"
 _SECRET_ASSIGN: Final = re.compile(r'(token|key|password|secret)\w*\s*=', re.IGNORECASE)
 
 
@@ -158,11 +157,9 @@ def compare_lines(held: Sequence[str], wanted: Sequence[str]) -> Drift:
 def strays(home: Path, root: Path) -> tuple[str, ...]:
     """Each old copy on the account with its file count; read only.
 
-    :data:`STRAYS_IN_HOME`, :data:`STRAYS_IN_ROOT`, and a retired ``repos/<repo>/.venv-current`` file.
+    The list is :func:`dev_lab.dev.oldcopies.old_copies`'s -- the one the account's retention deletes.
     """
-    old = [home / p for p in STRAYS_IN_HOME] + [root / p for p in STRAYS_IN_ROOT]
-    old += [repo / RETIRED_POINTER for repo in sorted((root / 'repos').glob('*'))]
-    return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in old if p.exists() or p.is_symlink())
+    return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in old_copies(home, root))
 
 
 def unrenderable(found: Mapping[str, Drift]) -> list[str]:
@@ -211,7 +208,7 @@ def report(found: Mapping[str, Drift]) -> list[str]:
     lines: list[str] = []
     for what, drift in found.items():
         if what == STRAYS:
-            lines += [f'{what} (nothing removes them; the dry-run list for a ruling):'] if drift.only_on_account else []
+            lines += [f'{what} ({REMOVED_BY}):'] if drift.only_on_account else []
             lines += [f'  {item}' for item in drift.only_on_account]
             continue
         for title, items in (
