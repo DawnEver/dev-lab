@@ -51,6 +51,7 @@ __all__ = [
     'Unrecorded',
     'directory',
     'drop',
+    'held',
     'held_names',
     'live',
     'name_of',
@@ -295,6 +296,11 @@ def touch(run: Run) -> None:
 def drop(run: Run) -> None:
     """Release *run*: its file goes; nothing about it is kept here."""
     _path(run).unlink(missing_ok=True)
+
+
+def held(run: Run) -> bool:
+    """Whether *run* is still in flight here: its file stands. A settled or released run's is gone (:func:`drop`)."""
+    return _path(run).exists()
 
 
 def _read(path: Path) -> Run:
