@@ -79,6 +79,7 @@ import time
 from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
+from typing import Final
 
 from lab_commons.log import emit
 
@@ -107,6 +108,15 @@ from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.totp import write_private
 
 __all__ = ['main', 'run_plan']
+
+_REAUTHORED: Final = 'a re-authored plan is a new digest: a new preflight and a new code'
+#: What a stopped step leaves of the code's grant (incident 2026-11-22: a refusal did not say the code was spent).
+_GRANT_KEPT: Final = (
+    f'the grant is NOT spent: fix what refused and `planrun run` again resumes here, same code; {_REAUTHORED}'
+)
+_GRANT_SPENT: Final = (
+    f'the grant IS spent on this step, which cannot run again on this code (later steps keep theirs); {_REAUTHORED}'
+)
 
 #: Which of these credential ids the issuer's ledger records a use of; raises when it cannot say.
 type Spent = Callable[[list[str]], set[str]]
@@ -227,11 +237,9 @@ def run_plan(
             held.unlink()
         kept = 'spent, deleted' if used else f'NOT spent, kept: {held}'
         shown, handled = shown_output(step, said, status, home)
-        if status:
-            lines.append(f'{name}: STOPPED -- refused (exit {status}): {shown}; credential {kept}')
-            return False, lines
-        if not handled:
-            lines.append(f'{name}: STOPPED -- ran, but {shown}; credential {kept}')
+        if status or not handled:
+            how = f'refused (exit {status}): {shown}' if status else f'ran, but {shown}'
+            lines.append(f'{name}: STOPPED -- {how}; credential {kept} -- {_GRANT_SPENT if used else _GRANT_KEPT}')
             return False, lines
         done.add(index)
         write_private(record, json.dumps({'done': sorted(done)}) + '\n')

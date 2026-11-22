@@ -8,6 +8,12 @@ preflight is recorded for the plan's digest (:func:`offered`): the one consent d
 A subject only an UNREACHED host can derive (no hold open, and it admits no login without a code) is read through the
 issuer's read-only ``subject`` verb (:func:`dev_lab.ops.consent.door.subject_read`) -- no code (user ruling
 2026-11-16: a plan takes exactly ONE code, spent once preflight is green; never a first code to open a hold).
+
+GREEN SAYS WHAT IT CHECKED (incident 2026-11-22: ``green`` over an UNREACHABLE host, then the run stopped on a
+refusal a reached preflight would have shown, and the code was spent). The last line is ``green, every door
+checked`` or ``green, but N step(s) are unchecked: <what>`` -- the code buys the hold first and those are checked at
+run. A refusal the host can name with no code (its read form's :data:`~dev_lab.ops.consent.actions.STANDING` line:
+a token name already held) BLOCKS, unless an earlier step of the plan on that host may clear it (:func:`_stands`).
 """
 
 from __future__ import annotations
@@ -41,10 +47,12 @@ from dev_lab.dev.planrunsteps import (
 )
 from dev_lab.dev.reviewgate import DeclarationUnread, file_at, manifest_at
 from dev_lab.ops import configdoor, forgeprotection
+from dev_lab.ops.consent.actions import read_answer
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, handshake, record_preflight, ssh_send, subject_read
+from dev_lab.ops.consent.door import PREFLIGHT_FRESH_S, Send, handshake, record_preflight, ssh_send, subject_read
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
+from dev_lab.ops.forgerequests import ACCOUNT_ACTION, REVOKE_ACTION
 from dev_lab.ops.giteaadmin import ForgeRefused
 
 __all__ = [
@@ -158,12 +166,12 @@ def protect_target(argv: Sequence[str]) -> tuple[str, str]:
     return found.repo, found.ref
 
 
-#: ``(dest, action, argv)`` -> the subject *dest* derives for that step, read without a code.
-type IssuerSubject = Callable[[str, str, list[str]], str]
+#: ``(dest, action, argv)`` -> ``(subject, standing refusal)`` *dest* answers for that step, read without a code.
+type IssuerSubject = Callable[[str, str, list[str]], tuple[str, str | None]]
 
 
-def issuer_subject(dest: str, action: str, argv: list[str]) -> str:
-    """*dest*'s subject for *action* as *argv*, through the ``[consent]`` issuer's read-only ``subject`` verb."""
+def issuer_subject(dest: str, action: str, argv: list[str]) -> tuple[str, str | None]:
+    """*dest*'s subject (and standing refusal) for *action* as *argv*, through the issuer's read-only ``subject``."""
     return subject_read(section(TABLE), dest, action, argv, send=ssh_send)
 
 
@@ -250,24 +258,56 @@ def _unsettled(plan: Plan, steps: Steps, index: int, readers: Readers) -> str | 
     )
 
 
-def _read_unreached(granted: str, step: Step, action: str, readers: Readers) -> tuple[str, bool]:
-    """``(verdict, blocked)`` of a step on an unreached host whose subject only that host derives: read, no code."""
+#: The actions whose earlier step on a host may clear a later step's standing refusal: a login made, a name revoked.
+_CLEARING: Final = frozenset({ACCOUNT_ACTION, REVOKE_ACTION})
+
+
+#: ``(verdict, blocked, what stays unchecked until the run -- '' when nothing)`` of one host step.
+type Checked = tuple[str, bool, str]
+
+
+def _stands(refusal: str | None, plan: Plan, steps: Steps, index: int) -> Checked | None:
+    """The verdict of step *index* when its host would refuse it AS IT STANDS (*refusal*); ``None`` when it would not.
+
+    Blocked -- the code would be spent on it -- unless an earlier step of the plan on that host may clear it.
+    """
+    if refusal is None:
+        return None
+    dest = steps.steps[index].dest
+    clears = next(
+        (i + 1 for i in reversed(range(index))
+         if steps.steps[i].dest == dest and not steps.steps[i].local and plan.grants[i]['action'] in _CLEARING),
+        None,
+    )  # fmt: skip
+    if clears is None:
+        return f'BLOCKED -- its host would refuse it as it stands ({refusal}): re-author the plan', True, ''
+    return (
+        f'green; as it stands its host would refuse it ({refusal})',
+        False,
+        f'whether step {clears} clears "{refusal}"',
+    )
+
+
+def _read_unreached(plan: Plan, steps: Steps, index: int, readers: Readers) -> Checked:
+    """The verdict of a step on an unreached host whose subject only that host derives: read, no code."""
+    grant, step = plan.grants[index], steps.steps[index]
     if step.stdin_local is not None or step.stdin_task is not None:
-        return 'BLOCKED -- its host is unreachable and its subject hashes stdin that never leaves here', True
+        return 'BLOCKED -- its host is unreachable and its subject hashes stdin that never leaves here', True, ''
     try:
-        derived = readers.issued(step.dest, action, list(step.argv))
+        derived, refusal = readers.issued(step.dest, grant['action'], list(step.argv))
     except (ConsentRefused, OSError) as unread:
-        return f"BLOCKED -- its host is unreachable and its subject is the host's to derive ({unread})", True
-    if derived != granted:
-        return f'BLOCKED -- the host derives subject {derived[:12]}, the plan grants {granted[:12]} (read)', True
-    return 'green (subject read from the host, no code)', False
+        return f"BLOCKED -- its host is unreachable and its subject is the host's to derive ({unread})", True, ''
+    if derived != grant['subject']:
+        why = f'the host derives subject {derived[:12]}, the plan grants {grant["subject"][:12]} (read)'
+        return f'BLOCKED -- {why}', True, ''
+    return _stands(refusal, plan, steps, index) or ('green (subject read from the host, no code)', False, '')
 
 
-def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote, readers: Readers) -> tuple[str, bool]:
-    """``(verdict, blocked)`` of host step *index*: its door, else an earlier config step on its host, then subject."""
+def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote, readers: Readers) -> Checked:
+    """The verdict of host step *index*: its door, else an earlier config step on its host, then its subject."""
     grant, step = plan.grants[index], steps.steps[index]
     if missing := _no_stdin(step):
-        return f'BLOCKED -- {missing}', True
+        return f'BLOCKED -- {missing}', True, ''
     placeholder = f'{REMOTE_DIR}/preflight.json'
     said, status = remote.run(ops_command(step, [*step.argv, '--credential', placeholder], sudo='sudo -n -l'))
     here = [i for i in range(index) if not steps.steps[i].local and steps.steps[i].dest == step.dest]
@@ -275,26 +315,46 @@ def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote, readers: R
     if status:
         if after and _derivable(step):
             verdict, blocked = _derived_here(grant['subject'], step, readers)
-            return f'{verdict}; its door after step {after} (installed by that config apply)', blocked
+            return (f'{verdict}; its door after step {after} (installed by that config apply)', blocked,
+                    f'its door, installed by step {after}')  # fmt: skip
         if after:
-            return f'after step {after} (its door is installed by that config apply)', False
-        return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({last_line(said)})', True
+            return (f'after step {after} (its door is installed by that config apply)', False,
+                    f'its door and subject, after step {after}')  # fmt: skip
+        return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({last_line(said)})', True, ''
     if step.forge:
-        return _derived_here(grant['subject'], step, readers)
-    return _asked_of_host(grant['subject'], step, remote, after)
+        return (*_derived_here(grant['subject'], step, readers), '')
+    return _asked_of_host(plan, steps, index, remote, after)
 
 
-def _asked_of_host(granted: str, step: Step, remote: Remote, after: int | None) -> tuple[str, bool]:
-    """``(verdict, blocked)`` of the subject *step*'s host derives (its verb's ``--subject``) against *granted*."""
+def _asked_of_host(plan: Plan, steps: Steps, index: int, remote: Remote, after: int | None) -> Checked:
+    """The verdict of the subject step *index*'s host derives (its verb's ``--subject``) against the grant's."""
+    granted, step = plan.grants[index]['subject'], steps.steps[index]
     said, status = remote.run(ops_command(step, [*step.argv, '--subject']), step_stdin(step))
-    derived = last_line(said)
+    derived, refusal = read_answer(said)
     if not status and derived != granted and after:
-        return f'after step {after} (subject derived once step {after} applied)', False
+        return (f'after step {after} (subject derived once step {after} applied)', False,
+                f'its subject, derived once step {after} applied')  # fmt: skip
     if status or derived != granted:
         why = (f'the host could not derive the subject ({derived})' if status else
                f'the host derives subject {derived[:12]}, the plan grants {granted[:12]}')  # fmt: skip
-        return f'BLOCKED -- {why}', True
-    return 'green', False
+        return f'BLOCKED -- {why}', True, ''
+    return _stands(refusal, plan, steps, index) or ('green', False, '')
+
+
+#: What no preflight can ask of a host it did not reach, whichever way the step's subject was checked.
+_UNREACHED: Final = "unreached: its host's readiness, its sudo door and any refusal its subject read does not report"
+_ASK: Final = (f'(ask the user for the code: this green is valid {PREFLIGHT_FRESH_S:.0f} s -- `python -m dev_lab.ops.'
+               'consent plan <plan.json>` says with no code if it is; stale, re-run preflight first)')  # fmt: skip
+
+
+def _last(unchecked: Sequence[str], *, blocked: bool) -> str:
+    """The verdict line: blocked, green with every door checked, or green naming each step left to the run."""
+    if blocked:
+        return _BLOCKED
+    if not unchecked:
+        return f'preflight: green, every door checked {_ASK}'
+    return (f'preflight: green, but {len(unchecked)} step(s) are unchecked: {"; ".join(unchecked)} -- the code buys '
+            f'the hold first and these are checked at run, where a refusal stops the plan {_ASK}')  # fmt: skip
 
 
 def preflight(
@@ -312,6 +372,7 @@ def preflight(
     blocked = bool(stale)
     hosts = {step.dest: step for step in reversed(steps.steps) if not step.local}
     unreached: set[str] = set()
+    unchecked: list[str] = []
     for dest in dict.fromkeys(step.dest for step in steps.steps if not step.local):  # each host once, in order
         fault, reached = host_ready(hosts[dest], remotes(dest))
         if not reached:
@@ -330,26 +391,28 @@ def preflight(
         if step.local:
             table = LOCAL_VERBS[grant['action']].table
             endpoint = machine(table).get('endpoint')
-            fault = not endpoint
+            fault, later = not endpoint, ''
             verdict = (f'BLOCKED -- the machine file has no [{table}] endpoint' if fault else
                        f'green (here: python -m {shlex.join(step.argv)} via {endpoint})')  # fmt: skip
         elif step.dest in unreached:
-            verdict, fault = (
-                _derived_here(grant['subject'], step, readers) if _derivable(step) else
-                _read_unreached(grant['subject'], step, grant['action'], readers)
+            verdict, fault, later = (
+                (*_derived_here(grant['subject'], step, readers), '') if _derivable(step) else
+                _read_unreached(plan, steps, index, readers)
             )  # fmt: skip
             if not fault and step.config_host and (unsettled := _unsettled(plan, steps, index, readers)):
                 verdict, fault = unsettled, True
             verdict = f'{verdict} on {step.dest} (unreachable: its door is checked at run)'
+            later = f'{_UNREACHED}; {later}' if later else _UNREACHED
         else:
-            verdict, fault = _host_check(plan, steps, index, remotes(step.dest), readers)
+            verdict, fault, later = _host_check(plan, steps, index, remotes(step.dest), readers)
             verdict = f'{verdict} on {step.dest}'
         if grant['action'] in stale:
             verdict, fault = f'BLOCKED -- {not_registered([grant["action"]])}', True
         lines.append(f'{name}: {verdict}')
         blocked = blocked or fault
-    lines.append(_BLOCKED if blocked else
-                 'preflight: green (ask the user for the code)')  # fmt: skip
+        if later and not fault:
+            unchecked.append(f'{name} on {step.dest} ({later})')
+    lines.append(_last(unchecked, blocked=blocked))
     return not blocked, lines
 
 

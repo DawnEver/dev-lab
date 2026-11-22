@@ -8,7 +8,9 @@ act on a host or forge (a config, an account, a token, a protection, a secret, a
 a shown plan names it in its summary (:func:`dev_lab.ops.consent.plan.show`). A ``campaign`` credential carries
 a ``cap`` the issuer debits; a ``single`` one is spent by its one use. ``reads`` are the ops verb words whose
 ``--subject`` derives the action's subject on its host, read-only: what the issuer's ``subject`` verb may run
-(:func:`dev_lab.ops.consent.door.read_argv`); empty when no host-side read is admitted.
+(:func:`dev_lab.ops.consent.door.read_argv`); empty when no host-side read is admitted. A read form whose host
+would REFUSE the request as it stands (a token name already held, a login absent) prints that on the line before
+the subject (:data:`STANDING`, :func:`read_answer`), so a preflight shows the refusal before a code is spent on it.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
 
-__all__ = ['ACTIONS', 'CAMPAIGN', 'SCOPES', 'SINGLE', 'Action']
+__all__ = ['ACTIONS', 'CAMPAIGN', 'SCOPES', 'SINGLE', 'STANDING', 'Action', 'read_answer']
 
 SINGLE: Final = 'single'
 CAMPAIGN: Final = 'campaign'
@@ -27,6 +29,18 @@ SCOPES: Final = (SINGLE, CAMPAIGN)
 _MINUTE: Final = 60.0
 _HOUR: Final = 3600.0
 _DAY: Final = 24 * _HOUR
+#: What a read form prints on the line BEFORE its subject when its host would refuse the request as it stands.
+STANDING: Final = 'refused as it stands: '
+
+
+def read_answer(said: str) -> tuple[str, str | None]:
+    """``(subject, standing refusal)`` of a read form's output: its last line, and a :data:`STANDING` line before it.
+
+    The subject is ``''`` when *said* has no line; the refusal ``None`` when the host named none.
+    """
+    lines = [line.strip() for line in said.splitlines() if line.strip()]
+    before = lines[-2] if len(lines) > 1 else ''
+    return (lines[-1] if lines else ''), (before[len(STANDING) :] if before.startswith(STANDING) else None)
 
 
 @dataclass(frozen=True)

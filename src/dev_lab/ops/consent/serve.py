@@ -6,7 +6,8 @@ A line is ``{"verb": "issue", "request": {...}, "code": "..."}``, ``{"verb": "is
 "argv": [...]}``.
 ``subject`` is a READ, no code: this host derives *A*'s subject by running its ops verb with ``--subject``
 (:func:`~dev_lab.ops.consent.door.read_argv` admits only the registry's read form; an acting flag is refused) and
-answers the digest.
+answers the digest -- after a line naming what the host would refuse the request with as it stands, when it would
+(:data:`~dev_lab.ops.consent.actions.STANDING`), so a preflight shows that refusal before any code.
 ``hello`` answers the field set and registry actions this issuer speaks (:func:`~dev_lab.ops.consent.door.hello`):
 the version handshake a client runs before it asks the user for a code.
 ``issue`` answers the credential's JSON, ``issue-plan`` the JSON list of one credential per grant; ``register`` the
@@ -21,6 +22,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 
+from dev_lab.ops.consent.actions import STANDING, read_answer
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import hello, read_argv
 from dev_lab.ops.consent.issuer import Issuer
@@ -37,11 +39,11 @@ def _subject(data: dict, derive: Derive | None) -> str:
         msg = 'this issuer derives no subjects'
         raise ConsentRefused(msg)
     status, said = derive(argv)
-    lines = [line.strip() for line in said.splitlines() if line.strip()]
-    if status or not lines:
-        msg = f'the subject could not be derived here ({status}): {lines[-1] if lines else "no output"}'
+    subject, refusal = read_answer(said)
+    if status or not subject:
+        msg = f'the subject could not be derived here ({status}): {subject or "no output"}'
         raise ConsentRefused(msg)
-    return lines[-1]
+    return subject if refusal is None else f'{STANDING}{refusal}\n{subject}'
 
 
 def handle(issuer: Issuer, line: str, *, derive: Derive | None = None) -> str:
