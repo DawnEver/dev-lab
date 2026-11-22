@@ -28,7 +28,8 @@ runs as it shows the plan. A refusal here spends no code: the user is never aske
   enrolled, a task identity changed after the request was written). :func:`fresh_receipts` is the read a Stop
   hook takes through ``python -m dev_lab.ops.consent receipts``.
 * :func:`reached` wraps a :data:`Send` so an ssh transport failure (255) is named by its cause and door -- an unknown
-  host key is ``devhost enrol`` -- never read as an old issuer.
+  host key is ``devhost enrol`` -- never read as an old issuer. :func:`handshake` applies it itself, so every door
+  that shakes hands (a lone preflight, a plan's offer, the bring-up wall) tells ssh from a version.
 
 :func:`ssh_send` is the one JSON-line transport to an endpoint table (consent issuer, break-glass server); it
 lives here so the consent client imports no ``dev_lab.dev`` client module (the former
@@ -108,6 +109,7 @@ PLAN_PREFLIGHT_DOOR: Final = 'python -m dev_lab.dev.planrun preflight --plan <pl
 #: ssh's own exit status: the transport failed, the remote command never ran.
 SSH_FAILED: Final = 255
 _HOST_KEY: Final = 'Host key verification failed'
+_KEY_REFUSED: Final = 'Permission denied'
 _RECEIPTS: Final = 'receipts'
 
 
@@ -135,7 +137,8 @@ def reached(send: Send, what: str = 'the consent issuer') -> Send:
     """*send*, refusing an ssh transport failure by its cause and door before any answer is read as the issuer's.
 
     Raises:
-        ConsentRefused: ssh exited 255 -- an unknown host key names ``devhost enrol``, anything else the endpoint.
+        ConsentRefused: ssh exited 255 -- named as SSH with its last line: an unknown host key names ``devhost
+            enrol``, a refused key the bring-up check, anything else the endpoint and the network.
 
     """
 
@@ -148,9 +151,13 @@ def reached(send: Send, what: str = 'the consent issuer') -> Send:
         if _HOST_KEY in said:
             door = ("this machine does not know the host's key (never enrolled): run `python -m dev_lab.dev.devhost "
                     'enrol` here, then preflight again')  # fmt: skip
+        elif _KEY_REFUSED in said:
+            door = ("that account does not admit this machine's ssh key: `python -m dev_lab.dev.devhost bringup "
+                    '--check` names the wall (client-key, issuer) and its door, then preflight again')  # fmt: skip
         else:
             door = 'it is unreachable over ssh: check the endpoint, its identity and the network, then preflight again'
-        msg = f'no code asked: {what} {endpoint} -- {door} ({last})'
+        msg = (f'no code asked: ssh to {what} {endpoint} failed (exit {SSH_FAILED}: the transport, not a version '
+               f'mismatch) -- {door} (ssh said: {last})')  # fmt: skip
         raise ConsentRefused(msg)
 
     return wrapped
@@ -246,10 +253,11 @@ def handshake(table: Mapping[str, Any], *, send: Send, actions: Iterable[str] = 
 
     Raises:
         ConsentRefused: the issuer predates ``hello``, its field set differs, or it lacks an asked action -- each
-            naming the side to upgrade and its door.
+            naming the side to upgrade and its door; or ssh itself failed (exit 255), named as ssh (:func:`reached`:
+            2026-11-22, a host-key and a publickey failure each read "the issuer's dev-lab is older than this client").
 
     """
-    status, said = send(table, {'verb': 'hello'})
+    status, said = reached(send)(table, {'verb': 'hello'})  # a 255 is ssh's, named there: never read as a version
     answer = _answer(said) if status == 0 else None
     if not isinstance(answer, dict) or not isinstance(answer.get('fields'), list):
         msg = f'no code asked: the issuer answered no version handshake ({status}): {ISSUER_UPGRADE}'

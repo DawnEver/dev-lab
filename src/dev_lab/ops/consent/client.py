@@ -42,7 +42,7 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.native_session import session_of
 from dev_lab.dev.taskbinding import task_id
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
-from dev_lab.ops.consent.door import Send, handshake, offer, reached, record_receipt, require_receipt, ssh_send
+from dev_lab.ops.consent.door import Send, handshake, offer, record_receipt, require_receipt, ssh_send
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.consent.plan import request as plan_request
@@ -319,7 +319,7 @@ def _proved(
     if (current := subjects.get(str(request['action']))) and (stale := current(str(request['subject']))):
         msg = f'no code asked: {stale}'
         raise ConsentRefused(msg)
-    handshake(found, send=reached(send), actions=[request['action']])
+    handshake(found, send=send, actions=[request['action']])
 
 
 def grant(

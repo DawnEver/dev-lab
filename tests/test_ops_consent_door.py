@@ -27,6 +27,7 @@ from dev_lab.ops.consent.door import (
     CLIENT_UPGRADE,
     ISSUER_UPGRADE,
     PREFLIGHT_FRESH_S,
+    Send,
     handshake,
     offer,
     record_preflight,
@@ -194,3 +195,41 @@ def test_the_consent_package_imports_no_client_of_the_forge_wave() -> None:
     package, former = Path(serve.__file__).parent, 'dev_lab.dev.forgebreakglass'
     offenders = {path.name for path in package.glob('*.py') if former in _imports(path.read_text(encoding='utf-8'))}
     assert offenders == set()
+
+
+@pytest.mark.parametrize(
+    ('said', 'names'),
+    [
+        ('Host key verification failed.', 'devhost enrol'),
+        ('consent@forge: Permission denied (publickey).', "does not admit this machine's ssh key"),
+        ('ssh: connect to host forge port 22: Connection timed out', 'unreachable over ssh'),
+    ],
+)
+def test_a_255_is_ssh_named_with_its_last_line_never_an_old_issuer(
+    issuer: Issuer, tmp_path: Path, said: str, names: str
+) -> None:
+    """Measured 2026-11-22: every non-zero ``hello`` read "the issuer's dev-lab is older than this client".
+
+    Exit 255 is the transport's: the plan door and the bare handshake name ssh, its last line and the door.
+    PLANTED CONTROL: a real version mismatch (an issuer answering 2 to ``hello``) keeps the upgrade message.
+    """
+    for shake in (
+        lambda send: handshake({'endpoint': 'consent@forge'}, send=send),
+        lambda send: offer_recorded(send, tmp_path),
+    ):
+        with pytest.raises(ConsentRefused, match='no code asked: ssh to the consent issuer consent@forge failed') as no:
+            shake(lambda _table, _request: (255, f'banner line\n{said}\n'))
+        refused = str(no.value)
+        assert names in refused
+        assert f'ssh said: {said}' in refused
+        assert 'older than this client' not in refused
+        assert 'version handshake' not in refused
+    with pytest.raises(ConsentRefused, match='no version handshake') as old:
+        handshake({'endpoint': 'consent@forge'}, send=Wire(issuer, old=True))
+    assert ISSUER_UPGRADE in str(old.value)
+
+
+def offer_recorded(send: Send, home: Path) -> None:
+    """A plan's offer over *send*, its green preflight recorded a moment ago."""
+    record_preflight(PLAN, home=home, now=NOW)
+    offer(PLAN, {'endpoint': 'consent@forge'}, send=send, home=home, now=NOW + 1)
