@@ -414,6 +414,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``report --json``, every declared grant's day, quota and budget for a reader outside dev-lab.
 * :mod:`dev_lab.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
   store cleanup its host owns.
+* :mod:`dev_lab.dev.oldcopies` -- the copies an account's old layout left behind, and the retention rule removing them.
 * :mod:`dev_lab.dev.retention` -- the storage retention pass serve runs every tick, and its quota alarm.
 * :mod:`dev_lab.dev.retentionplan` -- what retention deletes: a tree or env once nothing in flight needs it.
 * :mod:`dev_lab.dev.retentionrust` -- the rust rules of retention: unpinned toolchains and stale extracted crates.

@@ -160,7 +160,7 @@ def test_a_fleet_verb_with_no_forwarded_flag_parses(monkeypatch: pytest.MonkeyPa
 def test_old_copies_are_listed_with_their_files_and_never_touched(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The pre-layout copies and a retired ``.venv-current`` are the dry-run list; drift removes nothing.
+    """The pre-layout copies and a retired ``.venv-current`` are listed with the door that removes them; drift does not.
 
     PLANTED CONTROL: the declared layout's own ``repos/<repo>`` and ``envs`` are no old copy.
     """
@@ -174,7 +174,9 @@ def test_old_copies_are_listed_with_their_files_and_never_touched(
     code, before, after = _run(tmp_path)
     out = capsys.readouterr().out
     assert code == 1
-    assert 'old copies (nothing removes them; the dry-run list for a ruling):' in out
+    assert f'old copies ({drift.REMOVED_BY}):' in out
+    assert 'hpcaccount retention --account <user> [--apply]' in drift.REMOVED_BY
+    assert '2026-11-22' in drift.REMOVED_BY
     assert f'  {(home / "ci").as_posix()}: 3 files' in out
     assert f'  {(home / ".local/share/lab-forge").as_posix()}: 1 files' in out
     assert f'  {(root / "src").as_posix()}: 1 files' in out
