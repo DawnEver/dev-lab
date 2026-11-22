@@ -9,13 +9,16 @@ from __future__ import annotations
 import json
 import re
 import socket
+import time
 from typing import Any, Final
 
-from dev_lab.dev.sshholdstate import Session, read_session
+from dev_lab.dev.sshholdstate import Session, forget, read_session, state_path
 
-__all__ = ['HoldRefused', 'frame', 'live', 'ping', 'request', 'split_marker']
+__all__ = ['HoldRefused', 'frame', 'held', 'live', 'ping', 'request', 'split_marker']
 
 CONNECT_S: Final = 5.0
+#: How many 0.1 s ticks :func:`held` waits for an ending holder to remove its own state file.
+_GONE_TICKS: Final = 30
 
 
 class HoldRefused(RuntimeError):
@@ -70,8 +73,28 @@ def live(dest: str) -> Session:
 
 
 def ping(session: Session) -> bool:
-    """Whether *session*'s holder answers."""
+    """Whether *session*'s holder answers AND its ssh connection still runs (the holder ends itself when not)."""
     try:
         return request(session, {'verb': 'ping'}, CONNECT_S).get('ok') is True
     except (OSError, ValueError):
         return False
+
+
+def held(dest: str) -> bool:
+    """Whether *dest* has a LIVE hold; a recorded session that is not live is removed, so the next open is clean.
+
+    Incident 2026-11-22: a plan's open printed ``held session reused (no code sent)`` for a holder whose ssh
+    connection had ended; the code went to the grants alone and nothing opened the host. The record of a dead hold
+    goes here -- the holder removes its own file as it ends; a holder already gone leaves it to us.
+    """
+    session = read_session(dest)
+    if session is None:
+        return False
+    if ping(session):
+        return True
+    for _ in range(_GONE_TICKS):
+        if not state_path(dest).exists():
+            break
+        time.sleep(0.1)
+    forget(dest)
+    return False

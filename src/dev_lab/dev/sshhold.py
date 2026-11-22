@@ -55,7 +55,7 @@ from lab_commons.log import emit
 from dev_lab.dev import remote, sshholdplan
 from dev_lab.dev.sshholdrun import DEFAULT_TIMEOUT_S, run_command, store_credential
 from dev_lab.dev.sshholdstate import audit, forget, read_session, state_dir, state_path
-from dev_lab.dev.sshholdwire import HoldRefused, live, ping, request
+from dev_lab.dev.sshholdwire import HoldRefused, held, live, ping, request
 from dev_lab.ops.consent.client import given_code
 
 __all__ = [
@@ -128,7 +128,7 @@ def check_hours(hours: float, limit: float) -> None:
 def open_session(dest: str, hours: float, code: str, *, ssh: tuple[str, ...] = ('ssh',)) -> str:
     """Start the holder for *dest*, answer the prompt with *code*, and return once it authenticated."""
     check_hours(hours, ceiling())
-    if (held := read_session(dest)) is not None and ping(held):
+    if held(dest):  # a dead hold's record is removed here, so the open below is clean
         msg = f'{dest} already has a held session; close it first'
         raise HoldRefused(msg)
     argv = [sys.executable, '-m', 'dev_lab.dev._sshholder', dest, '--hours', str(hours), '--ssh', json.dumps(ssh)]

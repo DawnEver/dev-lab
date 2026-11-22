@@ -25,8 +25,9 @@ from pathlib import Path
 from typing import Final
 
 from dev_lab.dev.planrunoffer import reproved
-from dev_lab.dev.sshholdstate import audit, read_session
-from dev_lab.dev.sshholdwire import HoldRefused, ping
+from dev_lab.dev.sshholdstate import audit
+from dev_lab.dev.sshholdwire import HoldRefused
+from dev_lab.dev.sshholdwire import held as live_hold
 from dev_lab.ops.consent.client import grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.plan import not_registered, parsed, unregistered
@@ -52,14 +53,15 @@ def open_planned(
 
     The issuer grant comes first; then each host opens concurrently, started only inside :data:`OPEN_WINDOW_S` of
     the code, each on its own *routes* (:func:`.sshhold.route`). A host that fails is a line naming it and how to
-    re-open it -- the code is never sent twice. A host *held* already (default: a live session) is reused, never
-    re-opened.
+    re-open it -- the code is never sent twice. A host *held* already is reused, never re-opened -- held means LIVE
+    (:func:`.sshholdwire.held`: its holder answers and its ssh connection still runs); a dead hold's record is
+    removed and the host is opened with this code like any other.
     """
     found = parsed(json.loads(plan.read_text(encoding='utf-8')))
     if stale := unregistered(found):
         msg = f'the plan was not granted, no code sent: {not_registered(stale)}'
         raise HoldRefused(msg)
-    reused = [dest for dest in found.hosts if (held or _held)(dest)]
+    reused = [dest for dest in found.hosts if (held or live_hold)(dest)]
     given = clock()
     try:
         written = grant(plan, shown, code, found.hosts[0])
@@ -93,16 +95,16 @@ def open_planned(
     return all('NOT opened' not in said[dest] for dest in found.hosts), lines
 
 
-def _held(dest: str) -> bool:
-    return (session := read_session(dest)) is not None and ping(session)
-
-
 def offered(plan: Path, steps: Path | None = None) -> None:
     """Run *plan*'s preflight NOW, before its code is read; not green refuses ``no code used``, as :class:`HoldRefused`.
 
     *steps* defaults to the steps file the plan's last green preflight recorded (:func:`.planrunoffer.reproved`).
+    Every plan host is first proven LIVE-held or cleared (:func:`.sshholdwire.held`), so green means each host is
+    reached through a live hold or is one the code will open -- never a dead hold read as reused.
     """
     try:
+        for dest in parsed(json.loads(plan.read_text(encoding='utf-8'))).hosts:
+            live_hold(dest)  # a dead hold goes BEFORE the preflight: its host is then one the code opens
         reproved(plan, steps)
     except (ConsentRefused, OSError, ValueError) as refused:
         raise HoldRefused(str(refused)) from refused
