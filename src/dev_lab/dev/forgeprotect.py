@@ -218,8 +218,11 @@ def required_contexts(
     return {INTEGRATION: integration, TRUNK: trunk}
 
 
-def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
+def targets(text: str, origin: str, forge: Forge, *, layer: Mapping[str, Any] | None = None) -> tuple[Target, ...]:
     """The integration branch's and the trunk's :class:`Target` on *forge*, from pyproject *text* alone.
+
+    The required contexts render under the roles the family *layer* binds (:func:`required_contexts`; default: this
+    machine's) -- an ops host hands in the family file its own config places.
 
     A ONE-BRANCH repo (``trunk`` IS ``integration``) takes every change by a merged pull request, so its one branch
     holds the integration rule alone: a trunk rule on the same branch would forbid the very merge it takes.
@@ -230,7 +233,7 @@ def targets(text: str, origin: str, forge: Forge) -> tuple[Target, ...]:
     if ours is None:
         msg = f'[tool.dev_lab.{_TABLE}.forges] in {origin} names no "{forge.host}": its bypass identity is undecided'
         raise ValueError(msg)
-    contexts = required_contexts(text, origin, forge)
+    contexts = required_contexts(text, origin, forge, layer=layer)
     review = review_from(text, origin)
     approver = review.judge_login if declared.approvals else ''
     integration = Target(INTEGRATION, policy.integration, contexts[INTEGRATION], ours.breakglass, (),

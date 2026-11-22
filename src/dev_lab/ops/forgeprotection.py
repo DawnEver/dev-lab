@@ -22,6 +22,12 @@ spent on another repo, ref or protection; ``--subject`` prints it, and nothing i
 THE SUBJECT IS ALSO COMPUTED OFF THE HOST (:func:`local_subject`): it is a pure function of the repo, the ref, the
 public forge host and the declaration's text, so a workstation that reads the same ``pyproject.toml`` at the same ref
 derives the same subject through the same :func:`protection_of` -- a plan is built with no session on the host.
+
+THE ROLES IT RENDERS UNDER ARE THE FAMILY FILE'S THAT THIS HOST'S OWN CONFIG PLACES (:func:`family_layer`:
+``[ops.config] family``'s ``to``), never the invoking login's machine file. Measured 2026-11-22: the verb ran under
+``sudo`` as root, which holds no machine file, and refused a granted step with "no family layer on this machine"
+while the family file lay at its declared path. A host declaring no ``[ops.config] family`` is refused naming that
+declaration -- on ``--subject`` too, so a preflight that asks the host is told before a code is spent.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import tomllib
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -51,6 +58,7 @@ if TYPE_CHECKING:
     import argparse
 
     from dev_lab.dev._protect_steps import Step
+    from dev_lab.ops.config import ConfigSource
     from dev_lab.ops.giteaadmin import Forge
 
 __all__ = [
@@ -60,6 +68,7 @@ __all__ = [
     'add_parser',
     'apply',
     'declared_repos',
+    'family_layer',
     'local_subject',
     'plan',
     'protection_of',
@@ -142,8 +151,36 @@ def public_host(role: Forge) -> str:
     return host
 
 
-def rendered(role: Forge, api: forgeprotect.Api, repo: str, ref: str) -> Protection:
+def family_layer(source: ConfigSource | None) -> dict[str, Any]:
+    """The family layer this host renders under: the file ``[ops.config] family`` places at its ``to``, parsed.
+
+    The ONE family file on an ops host (``config apply`` places it), whichever login runs the verb.
+
+    Raises:
+        ForgeRefused: the host declares no ``[ops.config] family``, or the placed file cannot be read or parsed.
+
+    """
+    if source is None or not source.family:
+        msg = (
+            'this host declares no [ops.config] family: the roles a protection renders under are bound in the family '
+            'file -- declare `family = { file = "family.toml", to = "/<absolute>" }` under [ops.config] in the '
+            "host's reviewed file; `config apply` then places it"
+        )
+        raise ForgeRefused(msg)
+    placed = Path(source.family['to'])
+    try:
+        return tomllib.loads(placed.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as unread:
+        msg = f'{placed} ([ops.config] family.to) cannot be read: {unread} -- `config apply` places the family file'
+        raise ForgeRefused(msg) from unread
+
+
+def rendered(
+    role: Forge, api: forgeprotect.Api, repo: str, ref: str, *, layer: Mapping[str, Any] | None = None
+) -> Protection:
     """*repo*'s :class:`Protection` from its ``pyproject.toml`` at *ref*, read through *api*.
+
+    *layer* is the family layer its roles are bound in (:func:`family_layer` on a host; default: this machine's).
 
     Raises:
         ForgeRefused: *repo* is not declared (refused before *api* is asked), its declaration cannot be read at
@@ -158,10 +195,10 @@ def rendered(role: Forge, api: forgeprotect.Api, repo: str, ref: str) -> Protect
     except (DeclarationUnread, ForgeRefused) as unread:
         msg = f'{repo}: pyproject.toml at {ref} cannot be read: {unread}'
         raise ForgeRefused(msg) from unread
-    return protection_of(repo, ref, public_host(role), text)
+    return protection_of(repo, ref, public_host(role), text, layer=layer)
 
 
-def protection_of(repo: str, ref: str, host: str, text: str) -> Protection:
+def protection_of(repo: str, ref: str, host: str, text: str, *, layer: Mapping[str, Any] | None = None) -> Protection:
     """*repo*'s :class:`Protection` on the public forge *host*, rendered from its ``pyproject.toml`` *text* at *ref*.
 
     The ONE place a protection is rendered, on the host (:func:`rendered`) and off it (:func:`local_subject`).
@@ -173,7 +210,7 @@ def protection_of(repo: str, ref: str, host: str, text: str) -> Protection:
     owner, _, name = repo.partition('/')
     remote = Remote(host, owner, name)
     try:
-        wanted = forgeprotect.targets(text, f'{repo}@{ref}:pyproject.toml', remote)
+        wanted = forgeprotect.targets(text, f'{repo}@{ref}:pyproject.toml', remote, layer=layer)
     except ValueError as refused:
         raise ForgeRefused(str(refused)) from refused
     return Protection(repo, ref, remote, wanted)
@@ -230,26 +267,31 @@ def run(
     redeem_for: Callable[[], Callable[[str], Redeem]],
     *,
     api_for: Callable[[str], forgeprotect.Api] | None = None,
+    layer: Mapping[str, Any] | None = None,
 ) -> int:
     """Run the parsed ``forge protect`` verb; exit 0 as declared, 1 a difference left, 2 refused.
 
     *redeem_for* is called only when ``apply`` spends a credential; *api_for* builds the repo's API (default: the
-    local API as the site admin, its token deleted after).
+    local API as the site admin, its token deleted after); *layer* is :func:`rendered`'s.
     """
     if api_for is not None:
-        return _run(role, args, redeem_for, api_for(args.repo))
+        return _run(role, args, redeem_for, api_for(args.repo), layer)
     gitea = GiteaCli(role, run=run_argv, http=local_api)
     try:
-        return _run(role, args, redeem_for, LocalRepo(args.repo, gitea.api))
+        return _run(role, args, redeem_for, LocalRepo(args.repo, gitea.api), layer)
     finally:
         gitea.close()
 
 
 def _run(
-    role: Forge, args: argparse.Namespace, redeem_for: Callable[[], Callable[[str], Redeem]], api: forgeprotect.Api
+    role: Forge,
+    args: argparse.Namespace,
+    redeem_for: Callable[[], Callable[[str], Redeem]],
+    api: forgeprotect.Api,
+    layer: Mapping[str, Any] | None,
 ) -> int:
     try:
-        found = rendered(role, api, args.repo, args.ref)
+        found = rendered(role, api, args.repo, args.ref, layer=layer)
         if args.action == 'apply' and args.subject:
             emit(found.subject())
             return 0

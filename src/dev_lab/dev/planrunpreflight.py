@@ -14,6 +14,11 @@ refusal a reached preflight would have shown, and the code was spent). The last 
 checked`` or ``green, but N step(s) are unchecked: <what>`` -- the code buys the hold first and those are checked at
 run. A refusal the host can name with no code (its read form's :data:`~dev_lab.ops.consent.actions.STANDING` line:
 a token name already held) BLOCKS, unless an earlier step of the plan on that host may clear it (:func:`_stands`).
+
+A SUBJECT DERIVED HERE IS STILL ASKED OF A REACHED HOST (incident 2026-11-22: a ``forge protect apply`` step was
+``green (subject derived here)`` while its host could not render the protection at all -- no family layer for its
+roles -- and the granted step was refused at run). The host's ``--subject`` runs the rendering its apply runs, so a
+host that cannot derive it BLOCKS; an unreached host's is listed unchecked, as its door is.
 """
 
 from __future__ import annotations
@@ -321,8 +326,10 @@ def _host_check(plan: Plan, steps: Steps, index: int, remote: Remote, readers: R
             return (f'after step {after} (its door is installed by that config apply)', False,
                     f'its door and subject, after step {after}')  # fmt: skip
         return f'BLOCKED -- no sudo door for `{shlex.join(step.argv)}` ({last_line(said)})', True, ''
-    if step.forge:
-        return (*_derived_here(grant['subject'], step, readers), '')
+    if step.forge:  # derived here (it names where a mismatch was read), THEN asked of its reached host
+        verdict, blocked = _derived_here(grant['subject'], step, readers)
+        if blocked:
+            return verdict, True, ''
     return _asked_of_host(plan, steps, index, remote, after)
 
 
