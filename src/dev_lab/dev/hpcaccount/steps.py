@@ -22,7 +22,7 @@ from dev_lab.dev.hpcaccount import selfclean
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
 
-__all__ = ['Step', 'Tools', 'build', 'crontab', 'declared', 'login', 'update']
+__all__ = ['Step', 'Tools', 'build', 'crontab', 'declared', 'login', 'prune_uv', 'update']
 
 
 @dataclass(frozen=True)
@@ -139,6 +139,8 @@ def build(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
         (beside / '.lab-deploy-env').write_text(env_key, encoding='utf-8')
         try:
             emit(f'  {repo.name}: {venvcurrent.publish(checkout, beside)}')
+            for line in venvcurrent.reclaim(checkout):  # superseded envs go at the switch; a held one is kept
+                emit(f'  {repo.name}: {line}')
         except venvcurrent.PublishRefused as refused:
             emit(f'  {repo.name}: REFUSED: {refused}')
             return 1
@@ -168,6 +170,13 @@ def _beside(step: Step, name: str, checkout: Path, install: str, env: dict[str, 
         if not damaged:
             return rc
     return rc
+
+
+def prune_uv(step: Step, spec: Deployment) -> int:
+    """``uv cache prune`` of the account's ONE cache after the venvs: what no env links any more goes now."""
+    cache = str(uv_cache(spec.root))
+    step.change(f'uv cache prune --cache-dir {cache}', [*step.tools.uv, 'cache', 'prune', '--cache-dir', cache])
+    return 0  # a prune that failed frees nothing; retention prunes again
 
 
 def _native(step: Step, root: str, checkout: Path, builds: Builds, env: dict[str, str]) -> int:

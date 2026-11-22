@@ -91,8 +91,9 @@ from dev_lab.dev.hpcaccount.spec import (
     tick_dirs,
     tick_environment,
     ticked,
+    uv_cache,
 )
-from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, update
+from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, prune_uv, update
 
 __all__ = ['deploy', 'main', 'slurm_dirs']
 
@@ -203,7 +204,8 @@ def _tools(
         emit(f'[tools] {lagging}', err=True)
     installs, failed = tool_plan(wanted, found=lambda tool: _runs(step.tools.sh, environment, tool))
     for tool, script in installs:
-        if step.change(f'install {tool}: {script}', [*step.tools.sh, script]):
+        cache = {'UV_CACHE_DIR': str(uv_cache(spec.root))}  # `uv tool install` writes the ONE cache, never ~/.cache/uv
+        if step.change(f'install {tool}: {script}', [*step.tools.sh, script], env=cache):
             failed.append(tool)
     remedy = (
         f'does not run (`--version`) in the tick environment (`{environment}`) and is not installable here; '
@@ -368,7 +370,10 @@ def deploy(
         'checkouts': lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
         'tools': lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
         'login': lambda: login(step, home, spec.root),
-        'venvs': lambda: _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused),
+        'venvs': lambda: (
+            _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused)
+            or prune_uv(step, spec)
+        ),
         'artefacts': lambda: _each(step, spec, home, artefacts, _artefacts, refused=refused),
         'cron': lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
         'tick': lambda: _each(
