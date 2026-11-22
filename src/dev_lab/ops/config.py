@@ -418,6 +418,9 @@ def load(
 def _with_clients(found: OpsConfig, table: object) -> OpsConfig:
     """*found* with the derived ``[ops.clients] keys`` (:mod:`.clientkeys`) added to the break-glass and consent keys.
 
+    The operator login (``[ops.access]``) takes them too on a host that opts in through ``[ops.config] clients``:
+    every workstation declared in hosts-config can then do what any other can (user ruling 2026-11-22).
+
     Raises:
         ValueError: the table is not exactly ``{keys}`` of public key lines.
 
@@ -436,7 +439,9 @@ def _with_clients(found: OpsConfig, table: object) -> OpsConfig:
 
     breakglass = replace(found.breakglass, keys=joined(found.breakglass.keys)) if found.breakglass else None
     consent = replace(found.consent, keys=joined(found.consent.keys)) if found.consent else None
-    return replace(found, breakglass=breakglass, consent=consent)
+    opted = found.config_source is not None and bool(found.config_source.clients)
+    access = replace(found.access, keys=joined(found.access.keys)) if found.access and opted else found.access
+    return replace(found, breakglass=breakglass, consent=consent, access=access)
 
 
 def _backup(table: object) -> Backup | None:
