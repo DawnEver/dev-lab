@@ -69,7 +69,10 @@ def pages(client: Client, path: str, query: Mapping[str, str], *, bound: int | N
 
     ``bound=None`` reads on to the first short page: a listing that grows without a forge cap (a gitea records home,
     O20) has no honest bound. A forge that ignores ``page`` would then answer the same full page forever, so a page
-    repeating the one before it is refused rather than read again.
+    repeating the one before it is never read again -- and what it means is DECIDED BY THE FORGE'S ANSWER, never
+    assumed (:func:`_unpaged`): an endpoint that pages nothing answered its whole listing both times, a complete
+    read (gitea's issue assets, measured 2026-11-22: a records home past one page killed every tick); one that
+    honours the page size and ignores ``page`` answered a truncated first page, and is refused.
     """
     found: list[Any] = []
     previous: list[Any] | None = None
@@ -79,6 +82,8 @@ def pages(client: Client, path: str, query: Mapping[str, str], *, bound: int | N
         params = dict(query) | {client.backend.page_param: str(_PAGE), 'page': str(page)}
         listed = client.call('GET', f'{path}?{urllib.parse.urlencode(params)}')
         if bound is None and listed and listed == previous:
+            if _unpaged(client, path, query, listed):
+                return found
             msg = f'{path} answered page {page} with page {page - 1}: the forge ignores paging; refusing a partial read'
             raise ListingIncomplete(msg)
         found += listed
@@ -87,6 +92,17 @@ def pages(client: Client, path: str, query: Mapping[str, str], *, bound: int | N
         previous = listed
     msg = f'{path} still lists past {bound} pages of {_PAGE}; refusing a partial read'
     raise ListingIncomplete(msg)
+
+
+def _unpaged(client: Client, path: str, query: Mapping[str, str], whole: list[Any]) -> bool:
+    """Whether the listing at *path* pages nothing, so *whole* -- its answer to page 1 and to page 2 -- is all of it.
+
+    Asked for ONE item, a forge that pages answers one; the same *whole* again is a forge applying neither the page
+    size nor the page number to this listing: there is no page to be missing. The count answered against the count
+    asked decides -- the door's JSON read carries no ``Link`` or ``X-Total-Count`` header to ask instead.
+    """
+    params = dict(query) | {client.backend.page_param: '1', 'page': '1'}
+    return client.call('GET', f'{path}?{urllib.parse.urlencode(params)}') == whole
 
 
 def issues(client: Client, *, state: str = 'all') -> tuple[Mapping[str, Any], ...]:
