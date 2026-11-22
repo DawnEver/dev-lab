@@ -69,14 +69,21 @@ class HeldRemote:
 
 @dataclass(frozen=True)
 class SshRemote:
-    """Plain key-only ssh to *dest* (never prompts): for a host whose account needs no second factor."""
+    """Plain key-only ssh to *dest* (never prompts): for a host whose account needs no second factor.
+
+    A plan host is a server: its host key is checked against the DECLARED one alone (``remote.HOST_KEY_RULE``). An
+    undeclared key refuses before ssh runs, and a presented key that is not the declared one is named with its door.
+    """
 
     dest: str
 
     def _ssh(self, command: str, data: bytes | None) -> tuple[str, int]:
-        argv = ssh_remote.ssh_argv(self.dest, command, batch=True)
+        try:
+            argv = ssh_remote.ssh_argv(self.dest, command, batch=True, required=True)
+        except ssh_remote.HostKeyUndeclared as undeclared:
+            raise sshholdwire.HoldRefused(str(undeclared)) from undeclared
         done = _door.run(argv, input=data, capture_output=True, check=False, timeout=_TIMEOUT_S)
-        return (done.stdout + done.stderr).decode('utf-8', 'replace'), done.returncode
+        return ssh_remote.named(self.dest, (done.stdout + done.stderr).decode('utf-8', 'replace')), done.returncode
 
     def run(self, command: str, stdin: bytes | None = None) -> tuple[str, int]:
         """Run *command* over a fresh key-only connection, *stdin* on ssh's stdin."""

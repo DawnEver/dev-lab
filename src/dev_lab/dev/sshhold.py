@@ -51,7 +51,7 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import sshholdplan
+from dev_lab.dev import remote, sshholdplan
 from dev_lab.dev.sshholdrun import DEFAULT_TIMEOUT_S, run_command, store_credential
 from dev_lab.dev.sshholdstate import audit, forget, read_session, state_dir, state_path
 from dev_lab.dev.sshholdwire import HoldRefused, live, ping, request
@@ -83,10 +83,19 @@ def _table(table: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def route(dest: str, jump: str | None = None, table: dict[str, Any] | None = None) -> tuple[str, ...]:
-    """The ssh words opening *dest*: through its declared bastion (``[ssh] jump``, *table* overrides), else *jump*."""
-    declared = (section('ssh') if table is None else table).get('jump', {})
+    """The ssh words opening *dest*: through its declared bastion (``[ssh] jump``, *table* overrides), else *jump*.
+
+    A *dest* whose host key is declared (``[ssh] host_keys``) is checked strictly against that key alone, through
+    the one resolver (:func:`dev_lab.dev.remote.host_key_options`); a placeholder is refused BEFORE the code is read.
+    """
+    ssh = section('ssh') if table is None else table
+    declared, keys = ssh.get('jump', {}), ssh.get('host_keys', {})
     bastion = (declared.get(dest) if isinstance(declared, dict) else None) or jump
-    return ('ssh', '-J', bastion) if bastion else ('ssh',)
+    try:
+        checked = remote.host_key_options(dest, keys if isinstance(keys, dict) else {})
+    except remote.HostKeyUndeclared as undeclared:
+        raise HoldRefused(str(undeclared)) from undeclared
+    return ('ssh', *(('-J', bastion) if bastion else ()), *checked)
 
 
 def ceiling(table: dict[str, Any] | None = None) -> float:
@@ -138,7 +147,7 @@ def open_session(dest: str, hours: float, code: str, *, ssh: tuple[str, ...] = (
     if 'error' in word:
         if reader.is_alive():
             child.kill()
-        msg = f'{dest} did not authenticate: {word["error"]}'
+        msg = remote.named(dest, f'{dest} did not authenticate: {word["error"]}')
         raise HoldRefused(msg)
     audit('open', dest, command=f'--hours {hours:g}', status=0, duration_s=time.monotonic() - started)
     return f'{dest}: session open for {hours:g} h (holder pid {word["pid"]})'
