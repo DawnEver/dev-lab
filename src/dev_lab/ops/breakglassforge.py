@@ -161,11 +161,14 @@ class ClientForge:
         Its head branch is deleted exactly when the integration path would delete it (D18): when the branch set
         the repo declares AT THE PR'S BASE (:func:`dev_lab.dev.branchset.branchset_from`, the one parser) puts the
         head name in an ephemeral namespace. A long-lived branch (the trunk, a declared session) is never deleted.
-        The forge refuses a *head* that moved, so a moved head is neither merged nor deleted.
+        The forge refuses a *head* that moved, so a moved head is neither merged nor deleted. The merge is FORCED:
+        a wave waives the tests, so the branch's unmet required checks are overridden, which Gitea does only when
+        asked (:func:`~dev_lab.dev.forgemergecall.merge`).
         """
         found = self._client.pr_view(number)
         declared = branchset_from(manifest_at(self._client, found.base), f'pyproject.toml at {found.base}')
-        merge(self._client, number, head=head, message=message, delete_branch=declared.is_ephemeral(found.head))
+        ephemeral = declared.is_ephemeral(found.head)
+        merge(self._client, number, head=head, message=message, delete_branch=ephemeral, force=True)
 
 
 def _installation_token(url: str, app_id: int, key_file: Path) -> str:

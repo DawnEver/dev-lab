@@ -6,12 +6,15 @@ planted control is a declaration or a live rule that must NOT read as clean.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, INTEGRATOR, FakeGitea, FakeGitHub, refused
+from lab_commons.config import CONFIG_ENV
 
 from dev_lab.dev import _protect_gitea, forgeprotect
 from dev_lab.dev.forge import Forge
@@ -35,6 +38,9 @@ JUDGED = '[tool.dev_lab.review]\njudge_login = "review-bot"\n'
     [
         (INTEGRATOR, 'declares no forges'),
         (GITEA_TEXT.replace(_TABLE, _TABLE + 'extra = 1\n'), 'unknown key'),
+        # a RETIRED key names its migration, never "unknown key": measured 2026-11-22, four repos still declared
+        # `producer` and the refusal named no door, so none of them could be planned or applied
+        (GITEA_TEXT.replace(_TABLE, _TABLE + 'producer = "hpc"\n'), r'producer is retired .* \[roles\.<forge>\]'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\npromote = ["p"]\n', 'names no breakglass'),
         (INTEGRATOR + '[tool.dev_lab.protection.forges."gitea.example"]\nbreakglass = "b"\nwho = 1\n', 'unknown'),
         (GITEA_TEXT.replace(_TABLE, _TABLE + 'approvals = 1\n'), 'the judge is advisory'),
@@ -478,3 +484,37 @@ def test_a_family_of_n_repos_renders_n_trunk_protections_each_from_its_own_decla
             }
         else:
             assert 'breakglass-bot' in _protect_gitea.body(trunk)['push_whitelist_usernames']
+
+
+def _family_layer(tmp_path: Path, repos: str) -> None:
+    """Make the machine file name a family file that holds *repos* (the ``[family_repos]`` table's text, or none)."""
+    (tmp_path / 'family.toml').write_text(repos, encoding='utf-8')
+    machine = Path(os.environ[CONFIG_ENV])
+    machine.write_text(f'[family]\nsource = "{tmp_path.as_posix()}"\n', encoding='utf-8')
+
+
+def test_the_family_verb_reads_its_repos_from_the_family_layer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The machine file only POINTS at the family file (``[family] source``): the repos are read through that layer.
+
+    Measured 2026-11-22: ``protect plan --family`` answered "the machine file holds no [family_repos]" on a machine
+    whose file agreed with its render -- it read the raw file, which never holds that table, so the family was
+    never planned, checked or applied by this verb. PLANTED: a family layer with no table is still refused.
+    """
+    row = 'gamma = { remote = "https://gitea.example/owner/gamma.git", branch = "integrate/main" }'
+    _family_layer(tmp_path, f'[family_repos]\n{row}\n')
+    planned: list[tuple[str, str, tuple[str, ...]]] = []
+
+    def one(verb: str, client: str, wanted: tuple[forgeprotect.Target, ...]) -> int:
+        planned.append((verb, client, tuple(target.branch for target in wanted)))
+        return 0
+
+    monkeypatch.setattr(forgeprotect, 'client_for', lambda _root, url='': url)
+    monkeypatch.setattr(forgeprotect, 'manifest_at', lambda _client, _branch: GITEA_TEXT)
+    monkeypatch.setattr(forgeprotect, '_one', one)
+    assert forgeprotect.main(['plan', '--family', '--root', str(tmp_path)]) == 0
+    assert planned == [('plan', 'https://gitea.example/owner/gamma.git', ('integrate/main', 'main'))]
+    _family_layer(tmp_path, '')
+    assert forgeprotect.main(['plan', '--family', '--root', str(tmp_path)]) == 2
+    assert 'declares no [family_repos]' in capsys.readouterr().err

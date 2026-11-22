@@ -162,6 +162,9 @@ class Target:
 
 def declaration_from(text: str, origin: str) -> Declaration:
     """The table *text* declares; refused naming *origin* when absent, unknown-keyed or approving with no judge."""
+    # FIRST, so a retired key is refused with its migration and never as an "unknown key" naming no door
+    if retired := retired_placement(text, origin):  # a repo declares no placement (dev_lab.dev.roles, D73)
+        raise ValueError('; '.join(retired))
     table = declared_table(tomllib.loads(text), _TABLE, None)
     if not isinstance(table, dict) or not table.get('forges'):
         msg = f'[tool.dev_lab.{_TABLE}] in {origin} declares no forges: whose identity bypasses is undecided'
@@ -190,8 +193,6 @@ def declaration_from(text: str, origin: str) -> Declaration:
     if approvals < 0:
         msg = f'[tool.dev_lab.{_TABLE}] in {origin}: approvals = {approvals} is below zero'
         raise ValueError(msg)
-    if retired := retired_placement(text, origin):  # a repo declares no placement (dev_lab.dev.roles, D73)
-        raise ValueError('; '.join(retired))
     return Declaration(approvals, forges)
 
 
@@ -314,11 +315,15 @@ def _one(verb: str, client: Client, wanted: Sequence[Target]) -> int:
 
 
 def _family_main(verb: str, root: Path) -> int:
-    live = machineconfig.config_path()
-    rows = (tomllib.loads(live.read_text(encoding='utf-8')) if live.is_file() else {}).get(FAMILY_TABLE, {})
+    # the FAMILY LAYER's table (the file the machine file's [family] names), never the raw machine file: that one
+    # only points at the layer, so reading it found no repo on a machine whose file agrees with its render
+    rows = machineconfig.section(FAMILY_TABLE)
     if not rows:
         emit(
-            f'[protect] the machine file holds no [{FAMILY_TABLE}]: render it (python -m dev_lab.dev.devhost)', err=True
+            f'[protect] the family layer declares no [{FAMILY_TABLE}] ({machineconfig.config_path()} [family] names '
+            'its file): render the machine file (python -m dev_lab.dev.devhost render), or declare the repos in '
+            'the family file through a pull request to the config source',
+            err=True,
         )
         return 2
 
