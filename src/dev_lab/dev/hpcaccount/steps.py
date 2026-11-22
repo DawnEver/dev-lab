@@ -17,6 +17,8 @@ from lab_commons.hpc.builds import Builds, cargo_target, key_of, read_builds
 from lab_commons.log import emit
 
 from dev_lab.dev import boxmigrate, venvcurrent, venvpointer
+from dev_lab.dev.diskusage import remove_tree
+from dev_lab.dev.hpcaccount import selfclean
 from dev_lab.dev.hpcaccount.checks import LOGIN_MARK, login_files, login_line
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, Repo, checkout_of, merge_crontab, uv_cache
 
@@ -42,6 +44,7 @@ class Step:
     def __init__(self, tools: Tools, *, dry: bool, path: str = '') -> None:
         """Run through *tools*; *dry* prints each changing action instead; *path*, when set, is every change's PATH."""
         self.tools, self.dry, self.path = tools, dry, path
+        self.output = ''  # the last change's stdout and stderr: what a failed step reads to clean after itself
 
     def read(self, argv: Sequence[str], stdin: str | None = None) -> subprocess.CompletedProcess[str]:
         """Run a READ-ONLY *argv*, also under ``--dry-run``."""
@@ -72,7 +75,8 @@ class Step:
             cwd=cwd,
             env={**os.environ, **({'PATH': self.path} if self.path else {}), **(env or {})},
         )
-        for line in (done.stdout + done.stderr).strip().splitlines()[-20:]:
+        self.output = done.stdout + done.stderr
+        for line in self.output.strip().splitlines()[-20:]:
             emit(f'    | {line}')
         return done.returncode
 
@@ -128,11 +132,9 @@ def build(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     if _stamped(live / '.lab-deploy-env', env_key):
         emit(f'  {repo.name}: {live.name} current (key {env_key[:12]})')
     else:
-        beside = venvcurrent.fresh(checkout)
-        env['UV_PROJECT_ENVIRONMENT'] = str(beside)
-        if rc := step.change(f'{repo.name}: {builds.install}', [*step.tools.sh, builds.install], cwd=checkout, env=env):
-            venvcurrent.abandon(beside)
-            return rc
+        beside = _beside(step, repo.name, checkout, builds.install, env)
+        if isinstance(beside, int):
+            return beside
         beside.mkdir(parents=True, exist_ok=True)
         (beside / '.lab-deploy-env').write_text(env_key, encoding='utf-8')
         try:
@@ -144,6 +146,28 @@ def build(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     if rc := boxmigrate.migrate(str(venvpointer.current(checkout) / 'bin' / 'python')):
         return rc
     return _native(step, spec.root, checkout, builds, {**env, 'ENV_KEY': env_key}) if builds.native_build else 0
+
+
+def _beside(step: Step, name: str, checkout: Path, install: str, env: dict[str, str]) -> Path | int:
+    """Build a fresh env beside the live one; a failure removes its own output (:mod:`.selfclean`), its rc returned.
+
+    A failure on the uv git cache removes the damaged checkout of the failing commit and builds once more.
+    """
+    cache = Path(env['UV_CACHE_DIR'])
+    for attempt in range(2):
+        beside = venvcurrent.fresh(checkout)
+        env['UV_PROJECT_ENVIRONMENT'] = str(beside)
+        if not (rc := step.change(f'{name}: {install}', [*step.tools.sh, install], cwd=checkout, env=env)):
+            return beside
+        venvcurrent.abandon(beside)
+        for path in selfclean.uv_temporaries(cache):
+            emit(f'  {name}: removed the failed build -- its uv temporary {path}')
+        damaged = selfclean.damaged_git(cache, step.output) if attempt == 0 else []
+        for path in damaged:
+            emit(f'  {name}: removed the damaged uv git checkout {path}; building once more')
+        if not damaged:
+            return rc
+    return rc
 
 
 def _native(step: Step, root: str, checkout: Path, builds: Builds, env: dict[str, str]) -> int:
@@ -174,7 +198,9 @@ def update(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     checkout, git = checkout_of(spec, repo), step.tools.git
     if not (checkout / '.git').exists():
         argv = [*git, 'clone', '-q', '-b', repo.ref, repo.url, str(checkout)]
-        rc = step.change(f'git clone -b {repo.ref} {repo.url} {checkout}', argv)
+        if rc := step.change(f'git clone -b {repo.ref} {repo.url} {checkout}', argv):
+            remove_tree(checkout)  # a failed fresh clone leaves nothing half-checked-out
+            return rc
     else:
         remote = f'refs/remotes/origin/{repo.ref}'
         rc = step.change(
