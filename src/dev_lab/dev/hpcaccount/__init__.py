@@ -31,7 +31,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   run, or the deletion with ``--apply``).
 * ``credential <user@host> --login <forge login> [--url <repo url>]`` < token
   (:mod:`~dev_lab.dev.hpcaccount.credential`) places one minted forge token in the account's ``~/.git-credentials``
-  and confirms the forge answers as that login.
+  (a role's named ``config_reader``: in its own ``~/.git-credentials.reader``) and confirms the forge answers as
+  that login.
 * Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
   session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
   naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.

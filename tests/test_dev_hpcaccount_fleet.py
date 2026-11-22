@@ -15,6 +15,7 @@ from lab_commons.home import HOME_ENV
 from lab_commons.hpc.grants import Grant, Machine
 
 from dev_lab.dev import devhost
+from dev_lab.dev.credstore import READER_STORE, move_reader_command, reader_git
 from dev_lab.dev.hpcaccount import declaration
 from dev_lab.dev.hpcaccount.division import Division, division_of
 from dev_lab.dev.hpcaccount.fleet import (
@@ -337,9 +338,44 @@ def test_a_declared_config_reader_reads_the_config_source_by_its_own_line() -> N
     assert 'remote set-url origin https://server-reader@forge.example/team/config-source.git' in command
     assert "grep -qs '://server-reader:[^@/]*@forge.example' ~/.git-credentials ||" in command
     assert '--login server-reader' in command
+    assert READER_STORE not in command, 'a reader that IS the unnamed login stays in the shared store'
     plain = render_command(_FLEET[1], Target('login01.example', '/r/work'), _SRC)
     assert 'server-reader' not in plain
     assert 'git clone -q https://forge.example/team/config-source.git' in plain
+
+
+def test_a_named_config_reader_fetches_from_its_own_file_and_never_through_the_store() -> None:
+    """A reader beside a writer: its line is moved out of the store, then read get-only from its own file.
+
+    Measured 2026-11-22: the reader's pull made git approve it and the ``store`` helper moved its line first, so
+    the deploy's unnamed check answered as the read-only login. Every authenticating git call of the render carries
+    the get-only helper; the move runs before the presence check, which reads the reader file. PLANTED CONTROL: a
+    role whose ``config_reader`` is its ``reader`` (the unnamed login) renders through the shared store.
+    """
+    target, url = Target('login01.example', '/r/work'), 'https://server-reader@forge.example/team/config-source.git'
+    command = render_command(_FLEET[1], target, _SRC, reader='server-reader', named=True)
+    git = f'git {reader_git("forge.example")}'
+    assert f'{git} clone -q {url} /r/work/repos/config-source' in command
+    assert f'{git} -C /r/work/repos/config-source pull -q --ff-only' in command
+    assert 'git clone' not in command.replace(f'{git} clone', '')
+    assert 'git -C /r/work/repos/config-source pull' not in command
+    move = move_reader_command('forge.example', 'server-reader')
+    check = f"grep -qs '://server-reader:[^@/]*@forge.example' ~/{READER_STORE} ||"
+    assert command.index(move) < command.index(check) < command.index(f'{git} clone')
+    assert f'no stored reader credential for forge.example in ~/{READER_STORE}' in command
+    bash = shutil.which('bash')
+    assert bash, 'the render line runs in bash on the account'
+    subprocess.run([bash, '-n', '-c', command], check=True)  # the composed line parses
+
+    roles = {'verification': {'serves': True, 'read_only': False, 'config_reader': 'server-reader'}}
+    hpc = {'grant': [{'user': 'bob', 'role': 'verification'}], 'roles': roles}
+    assert move in deploy_command(_FLEET[1], target, _SRC, _division(hpc))
+    roles = {'research': {'serves': False, 'read_only': True, 'reader': 'server-reader'}}
+    shared = deploy_command(
+        _FLEET[1], target, _SRC, _division({'grant': [{'user': 'bob', 'role': 'research'}], 'roles': roles})
+    )
+    assert f'git clone -q {url}' in shared
+    assert READER_STORE not in shared
 
 
 def test_the_grants_setup_wraps_the_render() -> None:
