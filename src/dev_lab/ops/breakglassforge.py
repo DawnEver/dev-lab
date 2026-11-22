@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Final, Protocol
 
 import lab_commons.launch as _door
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.branchset import branchset_from
 from dev_lab.dev.failprint import Fingerprints
@@ -56,7 +57,7 @@ def fast_forward(url: str, header: str, trunk: str, integration: str, sha: str) 
     env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
     if header:
         env |= {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'http.extraHeader', 'GIT_CONFIG_VALUE_0': header}
-    with tempfile.TemporaryDirectory(prefix='breakglass-promote-') as held:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}breakglass-promote-') as held:
         where = Path(held)
         _git(where, env, 'init', '-q', '--bare')
         wanted = (f'+refs/heads/{integration}:refs/i', f'+refs/heads/{trunk}:refs/t')
