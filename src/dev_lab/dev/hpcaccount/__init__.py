@@ -121,7 +121,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def _tick(argv: list[str]) -> int:
     """``tick <repo>... [--lock <path> --wall-minutes <m>]``: unlocked and unbounded without ``--lock``."""
-    from dev_lab.dev.hpcaccount import tick, tickwall  # noqa: PLC0415 -- the package imports no verb
+    from dev_lab.dev import tickholder  # noqa: PLC0415 -- the package imports no verb
+    from dev_lab.dev.hpcaccount import tick, tickwall  # noqa: PLC0415
     from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount tick')
@@ -136,4 +137,9 @@ def _tick(argv: list[str]) -> int:
 
     if args.lock is None:
         return body(None)
-    return tickwall.locked(args.lock, ' '.join(args.repos), args.wall_minutes * 60.0, body)
+
+    def held(holder: tickholder.Holder) -> None:
+        for name in args.repos:
+            emit(tick.announce_held(name, holder), err=True)
+
+    return tickwall.locked(args.lock, ' '.join(args.repos), args.wall_minutes * 60.0, body, on_held=held)

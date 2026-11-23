@@ -143,6 +143,7 @@ class HostCard:
     verify: tuple[str, ...] = ()  # [deploy] repos verify: the contexts it produces first (dev_lab.dev.forgeaffinity)
     size: Mapping[str, float] = field(default_factory=dict)  # a box's cpu and mem_gb after its reserve; {}: unstated
     role: str = ''  # a cluster account's [deploy] role (dev_lab.dev.hpcaccount.spec); '' on a box
+    held: Mapping[str, Any] = field(default_factory=dict)  # a cron tick found its lock held: the holder (mark_held)
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -189,6 +190,8 @@ class HostCard:
         head += f'\n\nserves: {rule.text()}' if self.serves != EVERY or self.withholds else ''
         head += f'\n\nverify first: {", ".join(self.verify)}' if self.verify else ''
         head += f'\n\nrole: {self.role}' if self.role else ''
+        held = self.held
+        head += f'\n\ntick held: pid {held["pid"]} since {held["since"]} in {held["phase"]}' if held else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
             **asdict(self),
@@ -308,6 +311,18 @@ def _delete_card(client: Client, number: int, host: str) -> bool:
     if found is not None:
         client.call('DELETE', f'{client.repo}/issues/comments/{found.id}')
     return found is not None
+
+
+def mark_held(client: Client, host: str, held: Mapping[str, Any]) -> str:
+    """Republish *host*'s card carrying *held* (``pid``, ``since``, ``phase``), its ``ticked`` unchanged.
+
+    A cron tick that finds its lock held calls this, so ``forge queue`` says what holds the host instead of guessing
+    STALE (measured 2026-11-23); the next card the serve publishes carries none. ``absent`` when the host has no card.
+    """
+    card = next((one for one in read_cards(client) if one.host in {host, host_id(host)}), None)
+    if card is None:
+        return 'absent'
+    return publish(client, dataclasses.replace(card, host=host, held=dict(held)))
 
 
 def read_cards(client: Client) -> tuple[HostCard, ...]:
