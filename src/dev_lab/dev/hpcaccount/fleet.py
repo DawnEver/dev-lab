@@ -70,7 +70,7 @@ from dev_lab.dev.devsource import config_source
 from dev_lab.dev.hpcaccount.cimark import paused_guard
 from dev_lab.dev.hpcaccount.division import Division, division_of, reached_machine
 from dev_lab.dev.hpcaccount.fleetguard import deploy_root, serving_twice_refusal, stale_render
-from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root
+from dev_lab.dev.hpcaccount.spec import KIT, paths_of_root, uv_cache
 from dev_lab.dev.hpcaccount.transport import describe, start
 from dev_lab.dev.machinehome import default_layout
 from dev_lab.dev.venvpointer import shell_interpreter
@@ -331,7 +331,7 @@ def first_install(grant: Grant, target: Target) -> str:
     ]
     steps = [
         f'echo "[first-install] {grant.user}: no kit venv in {kit}"',
-        'export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0',
+        f'export PATH="$HOME/.local/bin:$PATH" GIT_TERMINAL_PROMPT=0 UV_CACHE_DIR={_cache(target)}',
         f'{{ command -v uv >/dev/null || curl -LsSf {UV_INSTALLER} | env UV_NO_MODIFY_PATH=1 sh; }}',
         f'mkdir -p {root}', *clones, f'( cd {kit} && uv sync --frozen )',
     ]  # fmt: skip
@@ -349,12 +349,18 @@ def refresh_kit(grant: Grant, target: Target) -> str:
     research kit refreshes, then refuses to serve.
     """
     kit = repo_dir(target, KIT)
+    cache = f'export UV_CACHE_DIR={_cache(target)}'  # the tick's uv: the ONE cache
     recorded = f'echo "[deploy-fleet] kit at $(git -C {kit} rev-parse HEAD)"'
     ref = next((ref for name, _url, ref in target.repos if name == KIT), '')
-    tick = f'{in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
+    tick = f'{cache} ; {in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
     if ref:
-        tick = f'{_move_kit(kit, ref)} ; {recorded}'
+        tick = f'{cache} ; {_move_kit(kit, ref)} ; {recorded}'
     return f'bash -lc {shlex.quote("; ".join([*grant.setup, tick]))}' if grant.setup else tick
+
+
+def _cache(target: Target) -> str:
+    """The account's ONE uv cache (:func:`dev_lab.dev.hpcaccount.spec.uv_cache`), quoted for a POSIX shell."""
+    return shlex.quote(PurePosixPath(uv_cache(target.root).as_posix()).as_posix())
 
 
 def _move_kit(kit: PurePosixPath, ref: str) -> str:

@@ -24,6 +24,7 @@ DOOR = 'src/lab_commons/launch.py'
 #: Modules that spawn WITHOUT the door, each with the reason: none reaches a console-less Windows parent.
 STANDALONE: dict[str, str] = {
     'src/lab_commons/hpc/pytest_item.py': 'shipped as TEXT to a cluster node and run there; imports no lab_commons',
+    'src/dev_lab/dev/accountsweep.py': 'streamed as TEXT to a cluster account interpreter on stdin; stdlib only',
 }
 #: The kit's source-module floor; MEASURED 2026-10-16 well above it.
 SOURCE_FLOOR = 100

@@ -12,9 +12,12 @@ grant's own login hosts (never an agent's own ssh -- HPC-THROUGH-THE-DOOR):
   first -- ONE read-only walk (``du --inodes -x``). Files are what binds a cluster home, so bytes, a second walk
   of the same tree, are not taken. ``du`` counts a hard-linked file once: uv links envs from its cache, so an env
   costs few files of its own;
-* otherwise the account's OWN ``python -m dev_lab.dev.retention --cluster`` report, run in its declared
-  checkout -- a dry run, or the deletion itself with ``--apply`` -- so what is deleted is decided by the code
-  that serves there.
+* otherwise, a dry run or the deletion itself with ``--apply``, in two parts. FIRST THE CALLER'S RULES, STREAMED
+  (:func:`streamed_rules_command`, :mod:`dev_lab.dev.accountsweep`): old copies, environments no pointer names, uv's
+  interrupted-install leftovers -- this workstation's version, run by the account's interpreter from stdin, nothing
+  written there, so an account too full to update its kit is still reclaimed. THEN the account's OWN ``python -m
+  dev_lab.dev.retention --cluster`` in its declared checkout: the in-flight-aware rules (runs, trees, builds, logs)
+  need the forge's run state and the kit, so they are decided by the code that serves there.
 
 A verification account needs this session's integrator role, exactly as every verb (HPC-ACCESS-BY-ROLE, through
 :func:`~dev_lab.dev.hpcaccount.division.reached_machine`). An account whose login hosts do not answer is refused in
@@ -26,11 +29,13 @@ from __future__ import annotations
 
 import argparse
 import functools
+import json
 import shlex
 import subprocess
 import sys
 import tomllib
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Final
 
 from lab_commons.hpc.cluster import Runner, Unreachable
@@ -38,19 +43,27 @@ from lab_commons.hpc.grants import Grant
 from lab_commons.hpc.layout import ROOT_VAR
 from lab_commons.log import emit
 
-from dev_lab.dev.diskusage import MMLSQUOTA
+from dev_lab.dev import accountsweep, quotawatch
+from dev_lab.dev.diskusage import MMLSQUOTA, parse_mmlsquota, parse_quota
 from dev_lab.dev.hpcaccount.division import division_of, reached_machine
-from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout
-from dev_lab.dev.hpcaccount.spec import MARK
+from dev_lab.dev.hpcaccount.fleet import Target, declared_target, in_checkout, repo_dir
+from dev_lab.dev.hpcaccount.spec import KIT, MARK
 from dev_lab.dev.hpcaccount.transport import grant_runner, host_runner
+from dev_lab.dev.oldcopies import STRAYS_IN_HOME, STRAYS_IN_ROOT
+from dev_lab.dev.retentionrust import RULE_REGISTRY
+from dev_lab.dev.venvpointer import HOME as ENVS_HOME
+from dev_lab.dev.venvpointer import POINTER, RETIRED_POINTER, shell_interpreter
 
 __all__ = [
     'CENSUS_DEEP',
     'QUOTA',
+    'SWEEP_SOURCE',
     'UNREACHABLE',
     'census_rows',
     'retention_command',
     'retention_fleet',
+    'streamed_rules_command',
+    'sweep_spec',
     'ticks_command',
 ]
 
@@ -70,6 +83,12 @@ QUOTA: Final = (
     '[ -n "$kept" ] || { kept="quota by ${tool%% *} (exit $rc: over quota, or the tool failed):"; held="$out"; }; '
     'done; [ -n "$kept" ] && { echo "$kept"; echo "$held"; exit 0; }; '
     'echo "quota: none of mmlsquota, quota, lfs answered on this host" )'
+)
+#: The quota in KB, for :func:`usage_of`: ``mmlsquota`` (each of :data:`MMLSQUOTA`), else ``quota -w``; an over-quota
+#: exit is still the answer, so no exit status is read.
+USAGE: Final = (
+    '( for tool in ' + ' '.join(MMLSQUOTA) + '; do command -v "$tool" >/dev/null 2>&1 && '
+    '{ "$tool" 2>/dev/null; exit 0; }; done; quota -w 2>/dev/null; true )'
 )
 #: The remedy of a cluster whose login hosts do not answer: it is reached only from its own network.
 UNREACHABLE: Final = (
@@ -141,6 +160,12 @@ def _too_slow(slow: subprocess.TimeoutExpired) -> str:
     )
 
 
+def usage_of(user: str, text: str) -> list[str]:
+    """*user*'s ONE usage-vs-quota line (files and bytes with headroom) and its named warning, from :data:`USAGE`."""
+    usage = parse_mmlsquota(text) or parse_quota(text)
+    return quotawatch.lines(usage, quotawatch.declared_lines(), who=user)
+
+
 def ticks_command() -> str:
     """The shell line that counts the deploy's tick lines in the account's crontab (0: serve does not tick)."""
     return f"crontab -l 2>/dev/null | grep -c -F '{MARK}' || true"
@@ -155,6 +180,42 @@ def retention_command(target: Target, *, apply: bool) -> str:
     """
     retention = in_checkout(target, ['-m', 'dev_lab.dev.retention', '--cluster', *(['--apply'] if apply else [])])
     return f'export {ROOT_VAR}={shlex.quote(target.root)} && {retention}'
+
+
+#: The oldest interpreter the streamed rules run on (``from __future__ import annotations``, ``:=``).
+_SWEEP_PYTHON: Final = (3, 8)
+
+
+def sweep_spec(target: Target, *, apply: bool) -> dict[str, object]:
+    """What the streamed rules judge on *target*'s account: its root and the declared names, each from its source."""
+    return {
+        'root': target.root, 'apply': apply,
+        'strays_in_home': list(STRAYS_IN_HOME), 'strays_in_root': list(STRAYS_IN_ROOT),
+        'retired_pointer': RETIRED_POINTER, 'pointer': POINTER, 'envs': ENVS_HOME,
+        'cargo_rule': RULE_REGISTRY, 'cargo_hours': quotawatch.declared_lines().min_age_hours,
+    }  # fmt: skip
+
+
+def streamed_rules_command(target: Target, *, apply: bool) -> str:
+    """The shell line that runs THE CALLER'S rules on the account, their source on stdin (:data:`SWEEP_SOURCE`).
+
+    The interpreter is the account's own: its kit's current environment where that runs, else ``python3`` -- an
+    account whose kit cannot be updated, or is half-built, is exactly the one this must reach. Nothing is written
+    there (:mod:`dev_lab.dev.accountsweep`). An interpreter older than the rules need is refused by name.
+    """
+    old = f'sys.exit(sys.version_info < {_SWEEP_PYTHON})'
+    major, minor = _SWEEP_PYTHON
+    return (
+        f'export {ROOT_VAR}={shlex.quote(target.root)}; cd {repo_dir(target, KIT)} 2>/dev/null; '
+        f'py={shell_interpreter(".")}; "$py" -c "import sys; {old}" 2>/dev/null || py=python3; '
+        f'"$py" -c "import sys; {old}" || {{ echo "retention: refused -- neither the kit environment nor python3 is '
+        f'a python >= {major}.{minor} on this account: the streamed rules cannot run"; exit 2; }}; '
+        f'"$py" - {shlex.quote(json.dumps(sweep_spec(target, apply=apply)))}'
+    )
+
+
+#: The source the streamed rules are: this workstation's own :mod:`dev_lab.dev.accountsweep`, whole.
+SWEEP_SOURCE: Final = Path(accountsweep.__file__).read_text(encoding='utf-8')
 
 
 def on_host(grant: Grant, host: str, timeout: float = TIMEOUT) -> Runner:
@@ -179,14 +240,25 @@ def _one(grant: Grant, shell: Runner, pin: Pin, *, apply: bool, census: bool, se
     # the deploy writes the crontab on its declared host; another login host's crontab says nothing about it
     ticks = pin(grant, target.host)(ticks_command(), None).strip().splitlines()
     count = ticks[-1] if ticks else '0'
-    lines = [f'{grant.user}: quota', *shell(QUOTA, None).rstrip().splitlines()]
+    lines = [
+        f'{grant.user}: quota',
+        *shell(QUOTA, None).rstrip().splitlines(),
+        *usage_of(grant.user, shell(USAGE, None)),
+    ]
     lines.append(tick_line(grant.user, target.host, count, serves=serves))
     if census:
         lines.append(f'{grant.user}: census (files, path; most files first)')
         lines.extend(census_rows(shell(CENSUS, None)))
         return True, lines
-    lines.append(f'{grant.user}: retention {"--apply" if apply else "(dry run)"}')
-    lines.extend(shell(retention_command(target, apply=apply), None).rstrip().splitlines())
+    mode = '--apply' if apply else '(dry run)'
+    # the caller's rules first, streamed: they need nothing of the account's kit, which may be the thing that is full
+    lines.append(f"{grant.user}: retention {mode}, the caller's rules (streamed; nothing is written on the account)")
+    lines.extend(shell(streamed_rules_command(target, apply=apply), SWEEP_SOURCE).rstrip().splitlines())
+    lines.append(f"{grant.user}: retention {mode}, the account kit's own rules")
+    try:
+        lines.extend(shell(retention_command(target, apply=apply), None).rstrip().splitlines())
+    except RuntimeError as broken:  # a kit that cannot run is named; the caller's rules above already ran
+        return False, [*lines, f"{grant.user}: refused -- the kit's own retention did not run: {broken}"]
     return True, lines
 
 

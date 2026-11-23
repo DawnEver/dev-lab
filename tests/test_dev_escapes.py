@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from lab_commons.home import HOME_ENV
+from lab_commons.hpc.layout import ROOT_VAR
 
 from dev_lab.dev import escapes
 from dev_lab.dev.forgealarm import ESCAPE, Alarm
@@ -52,7 +53,7 @@ def test_a_tick_alarms_each_escape_once_and_remembers_where_it_stopped(tmp_path:
     raised: list[Alarm] = []
     escapes.step('o/r', alarm=raised.append, roots=(watched,), home=tmp_path / 'home', allowed=(), state=state)
     assert raised == [], 'the first scan is a baseline: what already sits there is not news'
-    state.write_text(json.dumps({'scanned': time.time() - 30}), encoding='utf-8')  # the baseline, 30 s ago
+    state.write_text(json.dumps({'scanned': time.time() - 30, 'home': []}), encoding='utf-8')  # the baseline, 30 s ago
     _touch(watched / 'probe.py', age_s=10)
     for _tick in range(2):
         escapes.step('o/r', alarm=raised.append, roots=(watched,), home=tmp_path / 'home', allowed=(), state=state)
@@ -79,3 +80,60 @@ def test_the_home_judges_its_entries_through_the_machine_home(tmp_path: Path, mo
     stray = _touch(home / '.foo')
     found = escapes.scan((), home=home, allowed=escapes.allowed_roots(), since=time.time() - 60)
     assert found == [stray], "git's credential store, Claude's homes and the machine home are not escapes; .foo is"
+
+
+def _tick(home: Path, state: Path, raised: list[Alarm]) -> None:
+    escapes.step('o/r', alarm=raised.append, roots=(), home=home, state=state)
+
+
+def _rewind(state: Path, by_s: float = 30.0) -> None:
+    """Move the recorded scan time *by_s* back, the home's names kept: the next tick sees what changed since."""
+    record = json.loads(state.read_text(encoding='utf-8'))
+    state.write_text(json.dumps(record | {'scanned': time.time() - by_s}), encoding='utf-8')
+
+
+def test_a_served_account_alarms_neither_its_declared_root_nor_its_login_dotfiles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MEASURED 2026-11-22: every tick alarmed ``~/.bashrc``, ``~/.cache``, ``~/.config`` and ``~/lab`` itself.
+
+    PLANTED CONTROL, both ways: beside them a file a run writes into the home, and a NEW dotfile, still alarm.
+    """
+    home = tmp_path / 'home'
+    _machine(monkeypatch, home)
+    monkeypatch.setenv(ROOT_VAR, str(home / 'lab'))
+    state = tmp_path / 'escapes.json'
+    raised: list[Alarm] = []
+    for name in ('.bashrc', '.bash_profile', '.cache/uv/x', '.config/git/ignore', '.cargo/env', 'lab/runs/x'):
+        _touch(home / name, age_s=3600)
+    _tick(home, state, raised)  # the baseline: it records which entries the home already held
+    _rewind(state)
+    for name in ('.bashrc', '.cache/new', '.config/new', '.cargo/new', 'lab/serve', '.git-credentials.reader'):
+        _touch(home / name)  # the login profile's export line, a cache, the credential door, the run tree
+    _touch(home / '.git-credentials.bak-20261122T000000Z')
+    stray, hidden = _touch(home / 'run.log'), _touch(home / '.probe')
+    _tick(home, state, raised)
+    assert sorted(Path(a.about).name for a in raised) == sorted([stray.name, hidden.name])
+    _tick(home, state, raised)
+    assert len(raised) == 2, 'an escape is sounded once: the scan time moved past it'
+
+
+def test_the_declared_root_is_allowed_only_where_one_is_declared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / 'home'
+    _machine(monkeypatch, home)
+    monkeypatch.delenv(ROOT_VAR, raising=False)
+    assert home / 'lab' not in escapes.allowed_roots()
+    monkeypatch.setenv(ROOT_VAR, str(home / 'lab'))
+    assert home / 'lab' in escapes.allowed_roots()
+
+
+def test_a_state_that_names_no_home_entries_is_a_baseline_again(tmp_path: Path) -> None:
+    home, state = tmp_path / 'home', tmp_path / 'escapes.json'
+    _touch(home / '.bashrc')
+    state.write_text(json.dumps({'scanned': time.time() - 30}), encoding='utf-8')
+    raised: list[Alarm] = []
+    escapes.step('o/r', alarm=raised.append, roots=(), home=home, allowed=(), state=state)
+    assert raised == []
+    assert json.loads(state.read_text(encoding='utf-8'))['home'] == ['.bashrc']

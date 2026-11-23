@@ -289,13 +289,15 @@ def test_the_venv_is_built_once_per_declaration(box: Box) -> None:
     assert box.run(*DECLARE) == 0
     assert box.run() == 0
     assert box.logged().count('uv sync --frozen --extra dev') == 3  # one per repo, not per run
+    assert box.logged().count('uv cache prune --cache-dir') == 2, 'the ONE cache is pruned after every deploy'
 
 
 def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(box: Box) -> None:
     """W2: a build goes into a FRESH ``.venvs/<name>`` and only then becomes current; the live one is never touched.
 
     PLANTED: alpha's install recipe (part of the env key) moves after the first deploy -- the second deploy must name
-    a different environment and leave the first one in place (a tick running from it keeps its files).
+    a different environment; the first, which nothing runs from, is reclaimed at the switch (venvcurrent.reclaim
+    spares one a process runs from).
     """
     assert box.run(*DECLARE) == 0
     alpha = box.root / 'repos' / 'alpha'
@@ -310,7 +312,8 @@ def test_a_changed_key_builds_beside_and_publishes_never_syncing_the_live_venv(b
     second = venvpointer.named(alpha)
     assert second is not None
     assert second != first, 'a moved key never syncs into the live environment'
-    assert (first / '.lab-deploy-env').is_file(), 'the passed-over environment is left for reclaim, not rewritten'
+    assert not first.exists(), 'the superseded environment nothing runs from goes at the switch (2026-11-22)'
+    assert (second / '.lab-deploy-env').is_file(), 'PLANTED CONTROL: the current environment stays'
 
 
 def _overlays(box: Box) -> list[str]:
@@ -676,7 +679,7 @@ def test_a_tick_refreshes_its_repo_before_the_repos_own_forge_serve(box: Box) ->
     assert cwd == src / 'alpha'
     assert argv == deploy_spec.host_serve_argv(), 'the HOST kit serves; the repo venv only runs its producers'
     before = logged[start:]
-    assert f'git -C {src / "alpha"} checkout -q -B trunk' in before
+    assert f'git -C {src / "alpha"} checkout -q -f -B trunk' in before
     assert '--reinstall-package' not in before, 'a served venv is exactly its lock'
 
 
@@ -701,7 +704,7 @@ def test_only_the_lab_commons_tick_writes_the_shared_kit_checkout(box: Box) -> N
     lock.unlink()
     start = len(box.logged())
     assert _tick(box, deploy_spec.KIT, served) == 0
-    assert f'git -C {kit} checkout -q -B trunk' in box.logged()[start:], "the kit's own tick refreshes it"
+    assert f'git -C {kit} checkout -q -f -B trunk' in box.logged()[start:], "the kit's own tick refreshes it"
 
 
 def test_a_repo_whose_refresh_fails_is_released_by_name_and_its_forge_never_runs(

@@ -21,7 +21,7 @@ from dev_lab.dev import devhost, forgeslurm
 from dev_lab.dev.devdeclared import layered
 from dev_lab.dev.hpcaccount import account, cimark, cipause, deploy, drift, tick
 from dev_lab.dev.hpcaccount.fleet import account_host, grant_slice
-from dev_lab.dev.hpcaccount.grantslice import grant_setup, render_grant, without_hpc
+from dev_lab.dev.hpcaccount.grantslice import REDEPLOY_DOOR, grant_setup, render_grant, without_hpc
 from dev_lab.dev.hpcaccount.spec import MARK, cron_lines, load
 from dev_lab.dev.hpcaccount.steps import Step
 from dev_lab.dev.roles import machine_layer
@@ -252,3 +252,25 @@ def test_the_grant_stays_in_the_family_file_and_the_tick_serves_through_it(
     assert 'deploy-fleet' in err
     healed = tomllib.loads(devhost.render(Path(held['family']['source']), HOST, held))
     assert healed['hpc'] == {'reach': ['verification']}, 'the next render drops the stale slice'
+
+
+def test_an_unreadable_declaration_refuses_pause_and_resume_by_name_never_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``ci-pause`` / ``ci-resume`` name the cause and the door of a declaration no reader can take, exit 2.
+
+    Measured 2026-11-22: ``_serving`` -> ``load`` raised an uncaught ValueError where the tick already printed
+    ``[tick] refused: <cause>``. PLANTED CONTROL: the readable declaration beside it still reaches past the guard.
+    """
+    mine, other = (tmp_path / 'mine-root').as_posix(), (tmp_path / 'other-root').as_posix()
+    assert not isinstance(cipause._serving(_deployed(tmp_path / 'a', mine, other)), str)
+    unread = _deployed(tmp_path / 'b', '', other)
+    with pytest.raises(ValueError, match='no root declared'):
+        load(unread)
+    args = ['--config', str(unread)]
+    assert cipause.ci_pause([*args, '--from', str(tmp_path), '--host', HOST], home=tmp_path) == 2
+    assert cipause.ci_resume(args, home=tmp_path) == 2
+    for line in capsys.readouterr().err.splitlines()[-2:]:
+        assert 'refused: ' in line
+        assert 'no root declared' in line
+        assert REDEPLOY_DOOR in line

@@ -80,6 +80,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgerounds',
     'forgecoalesce',
     'forgeservesteps',
+    'forgeservedeclared',  # the declaration a serve reads, refused by name, split from forgeserve (2026-11-22)
     'forgeunit',
     'forgeorigin',
     'forgerequest',

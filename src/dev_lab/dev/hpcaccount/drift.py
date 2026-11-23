@@ -47,7 +47,7 @@ from dev_lab.dev.hpcaccount import deploy
 from dev_lab.dev.hpcaccount.grantslice import Unreadable, read_machine
 from dev_lab.dev.hpcaccount.spec import MARK, VERIFICATION, cron_lines, parse
 from dev_lab.dev.hpcaccount.steps import Step, Tools
-from dev_lab.dev.oldcopies import DOOR, old_copies
+from dev_lab.dev.oldcopies import DOOR, left_behind
 
 __all__ = [
     'DISCARD',
@@ -157,9 +157,9 @@ def compare_lines(held: Sequence[str], wanted: Sequence[str]) -> Drift:
 def strays(home: Path, root: Path) -> tuple[str, ...]:
     """Each old copy on the account with its file count; read only.
 
-    The list is :func:`dev_lab.dev.oldcopies.old_copies`'s -- the one the account's retention deletes.
+    The list is :func:`dev_lab.dev.oldcopies.left_behind`'s -- the one the account's retention deletes.
     """
-    return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in old_copies(home, root))
+    return tuple(f'{p.as_posix()}: {count_files(p)} files' for p in left_behind(home, root))
 
 
 def unrenderable(found: Mapping[str, Drift]) -> list[str]:
