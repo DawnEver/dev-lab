@@ -23,6 +23,7 @@ IMPORTS ONLY THE STANDARD LIBRARY, so it loads against any lab-commons.
 
 from __future__ import annotations
 
+import os
 import sys
 import tomllib
 from collections.abc import Iterator
@@ -95,6 +96,7 @@ def importing(root: Path | None = None, *, entry: bool = False) -> Iterator[None
         what = name if isinstance(missing, ModuleNotFoundError) else f'{name} ({missing})'
         msg = _refusal(what, root)
         if entry:
-            sys.stderr.write(f'{msg}\n')
+            # lab_commons (and so its emit) is what is below the floor here: the bytes go to fd 2 in UTF-8, chosen here
+            os.write(2, f'{msg}\n'.encode())
             raise SystemExit(2) from missing
         raise CommonsBelowFloor(msg, name=name) from missing
