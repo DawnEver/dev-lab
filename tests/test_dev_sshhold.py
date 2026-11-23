@@ -192,7 +192,7 @@ def test_the_cli_jump_rides_both_the_plain_and_the_planned_open(monkeypatch: pyt
     seen: list[tuple[str, ...]] = []
     monkeypatch.setattr(sshhold, 'section', lambda _name: {})  # no declared route: the flag alone decides
     monkeypatch.setattr(sshhold, 'open_session', lambda *_a, ssh: seen.append(ssh) or 'opened')
-    monkeypatch.setattr(sshholdplan, 'offered', lambda _plan, _steps: None)
+    monkeypatch.setattr(sshholdplan, 'offered', lambda _plan, _steps, **_k: 'preflight: green')
     monkeypatch.setattr(sshholdprobe, 'probe', lambda _dest, _ssh: None)  # its own test: test_dev_sshhold_probe
     monkeypatch.setattr(
         sshholdplan,

@@ -235,17 +235,18 @@ def _unopenable(dest: str | None, plan: Path | None) -> str:
 
 def _open(args: argparse.Namespace) -> int:
     """``open``: everything that can refuse does so BEFORE the code is read; then one host, or a plan's hosts."""
-    jump = args.jump
-    if args.plan is not None:
-        sshholdplan.offered(args.plan, args.steps)  # the preflight, run here (it probes the plan's hosts)
+    jump, started = args.jump, time.monotonic()  # a code given in advance is already counting down
+    if args.plan is not None:  # the preflight (it probes the plan's hosts); a fresh recorded green stands in for it
+        emit(sshholdplan.offered(args.plan, args.steps, code_given=args.code is not None))
     check_hours(args.hours, ceiling())
     if args.plan is None:
         sshholdprobe.probe(args.dest, route(args.dest, jump))  # the key, asked with no code
         emit(open_session(args.dest, args.hours, given_code(args.code), ssh=route(args.dest, jump)))
         return 0
+    code = given_code(args.code)
     opened, lines = sshholdplan.open_planned(
-        args.hours, given_code(args.code), args.plan, args.digest, routes=lambda dest: route(dest, jump),
-        opener=open_session,
+        args.hours, code, args.plan, args.digest, routes=lambda dest: route(dest, jump), opener=open_session,
+        received=started if args.code is not None else time.monotonic(),
     )  # fmt: skip
     emit('\n'.join(lines))
     return 0 if opened else 2
