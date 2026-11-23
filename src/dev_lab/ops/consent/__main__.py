@@ -2,7 +2,9 @@
 
 ``preflight <request.json>`` proves, with no code, that the request's grant can succeed and writes its receipt
 (:func:`dev_lab.ops.consent.client.preflight`); exit 0 green -- only then is the user asked for the code -- 2 naming
-the blocker. ``grant --code`` (or a code on stdin) without a fresh receipt is refused before any network call.
+the blocker. ``grant --code`` (or a code on stdin) without a receipt is refused before any network call; with one it
+runs the preflight again itself and refuses ``no code used`` unless it is green NOW (the receipt's lifetime is a
+24 h backstop, :data:`dev_lab.ops.consent.door.RECEIPT_FRESH_S`).
 ``receipts`` lists the fresh receipts -- a lone request's and a plan's green preflight, with the seconds it still
 stands: exit 0 when one exists, 1 naming the preflight door when none, and the newest STALE plan preflight with its
 re-run (the read a Stop hook takes before an assistant may ask the user for a code).
@@ -74,15 +76,17 @@ def main(argv: Sequence[str] | None = None, *, table: Mapping[str, Any] | None =
         if args.verb == 'preflight':
             request = json.loads(args.request.read_text(encoding='utf-8'))
             written = preflight(request, table=table, send=send)
-            emit(f'[consent] preflight green ({written}): ask the user for the code now; it admits '
+            emit(f'[consent] preflight green ({written}): ask the user for the code now. `grant --code` re-runs this '
+                 f'preflight itself and uses the code only if it is green then; this receipt admits the ask of '
                  f'{request["action"]} for {RECEIPT_FRESH_S:.0f} s')  # fmt: skip
             return 0
         if args.verb == 'plan':
             emit(show(args.plan))
             plan = parsed(json.loads(args.plan.read_text(encoding='utf-8')))
             left = offer(plan, section(TABLE) if table is None else table, send=send)
-            emit(f'[consent] offered: ask the user for the one code now -- this green preflight is valid {left:.0f} s '
-                 'more; past that, re-run preflight BEFORE asking')  # fmt: skip
+            emit(f'[consent] offered: ask the user for the one code now -- `sshhold open --plan` re-runs the preflight '
+                 f'itself and uses the code only if it is green then; this recorded green is valid {left:.0f} s more, '
+                 'and past that, re-run preflight BEFORE asking')  # fmt: skip
             return 0
         if args.verb == 'recover':
             written = recover(args.plan, args.digest)

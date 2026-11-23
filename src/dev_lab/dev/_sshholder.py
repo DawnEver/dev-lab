@@ -125,8 +125,9 @@ def _answer(conn: socket.socket, token: str, holder: Holder, one_run: threading.
     if not hmac.compare_digest(str(asked.get('token', '')), token):
         return {'error': 'refused: wrong token'}, False
     verb = asked.get('verb')
-    if verb == 'ping':
-        return {'ok': True}, False
+    if verb == 'ping':  # live means the ssh child still runs: a holder outliving its connection is a dead hold
+        alive = holder.child.poll() is None
+        return {'ok': alive}, not alive
     if verb == 'close':
         return {'ok': True}, True
     if verb == 'run':

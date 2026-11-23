@@ -27,6 +27,9 @@ from dev_lab.ops.consent.issuer import Issuer
 
 __all__ = ['issuer', 'secret_here']
 
+#: Past the backstop: the incident's 31161 s met a 3600 s lifetime; the lifetime is 24 h now, so this is a day more.
+OLD = int(PREFLIGHT_FRESH_S) + 31161
+
 
 def test_the_green_line_names_how_long_it_stands_and_the_no_code_check() -> None:
     green, lines = planrunpreflight.preflight(STEPPED, STEPS, lambda _dest: FakeHost())
@@ -38,15 +41,15 @@ def test_the_green_line_names_how_long_it_stands_and_the_no_code_check() -> None
 def test_an_offer_answers_how_long_the_preflight_still_stands(issuer: Issuer, tmp_path: Path) -> None:
     record_preflight(PLAN, home=tmp_path, now=NOW)
     assert offer(PLAN, {}, send=Wire(issuer), home=tmp_path, now=NOW + 600) == PREFLIGHT_FRESH_S - 600
-    with pytest.raises(ConsentRefused, match=r'31161 s old; one is valid 3600 s\): re-run preflight'):
-        offer(PLAN, {}, send=Wire(issuer), home=tmp_path, now=NOW + 31161)
+    with pytest.raises(ConsentRefused, match=rf'{OLD} s old; one is valid 86400 s\): re-run preflight'):
+        offer(PLAN, {}, send=Wire(issuer), home=tmp_path, now=NOW + OLD)
 
 
 def test_plan_preflights_lists_each_plan_with_the_seconds_it_has_left(tmp_path: Path) -> None:
     assert plan_preflights(home=tmp_path, now=NOW) == []
     record_preflight(PLAN, home=tmp_path, now=NOW)
     assert plan_preflights(home=tmp_path, now=NOW + 100) == [(PLAN.digest, PREFLIGHT_FRESH_S - 100)]
-    assert plan_preflights(home=tmp_path, now=NOW + 31161) == [(PLAN.digest, PREFLIGHT_FRESH_S - 31161)]
+    assert plan_preflights(home=tmp_path, now=NOW + OLD) == [(PLAN.digest, PREFLIGHT_FRESH_S - OLD)]
 
 
 def test_the_plan_verb_says_the_seconds_left_and_a_stale_one_names_the_rerun(
@@ -73,13 +76,13 @@ def test_receipts_knows_a_plans_preflight_fresh_and_stale(
 ) -> None:
     """The Stop hook's read: a fresh plan preflight admits the ask; a stale one is NAMED with its re-run door."""
     monkeypatch.setenv(HOME_ENV, str(tmp_path))
-    monkeypatch.setattr('time.time', lambda: NOW + 31161)
+    monkeypatch.setattr('time.time', lambda: NOW + OLD)
     record_preflight(PLAN, now=NOW)
     assert consent_main.main(['receipts']) == 1
     said = capsys.readouterr().err
     assert f'plan {PLAN.digest[:12]}' in said
-    assert '31161 s old' in said
+    assert f'{OLD} s old' in said
     assert 're-run preflight' in said
-    record_preflight(PLAN, now=NOW + 31161 - 60)  # PLANTED: the same plan, preflighted a minute ago
+    record_preflight(PLAN, now=NOW + OLD - 60)  # PLANTED: the same plan, preflighted a minute ago
     assert consent_main.main(['receipts']) == 0
-    assert f'plan {PLAN.digest[:12]} valid 3540 s more' in capsys.readouterr().out
+    assert f'plan {PLAN.digest[:12]} valid {PREFLIGHT_FRESH_S - 60:.0f} s more' in capsys.readouterr().out

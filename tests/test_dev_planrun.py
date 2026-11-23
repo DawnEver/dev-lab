@@ -805,7 +805,7 @@ def test_a_blocked_preflight_is_this_sessions_wall_and_a_green_one_is_not(
     monkeypatch.setattr(planrun, 'load_steps', lambda _path, _plan: STEPS)
     said = ['host h: BLOCKED -- no consent key', 'preflight: BLOCKED (fix the named blocker before asking for a code)']
     monkeypatch.setattr(planrun, 'preflight', lambda *_a, **_k: (green, said))
-    monkeypatch.setattr(planrun, 'offered', lambda _plan, found: found)  # the issuer half: test_ops_consent_door
+    monkeypatch.setattr(planrun, 'offered', lambda _plan, found, **_k: found)  # the issuer half: test_ops_consent_door
     assert planrun.main(['preflight', '--plan', str(plan), '--steps', str(plan)]) == (0 if green else 2)
     if green:
         assert not walls.ledger(tmp_path).exists()

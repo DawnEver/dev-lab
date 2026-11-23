@@ -43,7 +43,8 @@ output that carries a secret but does not parse stops the run naming the raw fil
 per host step, that its ``stdin_local`` file exists here or its ``stdin_task`` bundle is stored here (never its
 content shown), that the ops verb is a sudo door (``sudo -n -l``) and that the subject the host derives (the verb's
 ``--subject``) equals the grant's; per local step, that the machine file names the client's endpoint. A door a host
-gains only from an earlier ``ops.config`` step ON THAT HOST (``config apply`` installs sudoers) is ``after step N``,
+gains only from an earlier step ON THAT HOST whose action the registry marks ``rederives`` (``ops.config``: ``config
+apply`` installs sudoers; ``ops.upgrade``: the installed revision changes what the host derives) is ``after step N``,
 never a failure; so is a subject that differs after such a step (the apply changes the live config the subject is
 derived from), and :func:`run_plan` checks it for real at that point. An ``ops.forge.protect`` step naming its
 public ``forge`` host (``{"argv": ["forge", "protect", "apply", "--repo", R, "--ref"?, F], "forge": "<host>"}``) has
@@ -86,7 +87,8 @@ from lab_commons.log import emit
 from dev_lab.dev import sshholdwire, walls
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.planremote import remote_for
-from dev_lab.dev.planrunpreflight import RULE, UNREAD, Readers, config_subject, offered, preflight
+from dev_lab.dev.planrunoffer import offered
+from dev_lab.dev.planrunpreflight import RULE, UNREAD, Readers, config_subject, preflight
 from dev_lab.dev.planrunsteps import (
     CONFIG_ACTION,
     REMOTE_DIR,
@@ -297,7 +299,7 @@ def main(argv: Sequence[str] | None = None, *, readers: Readers | None = None) -
         if args.verb == 'run':
             green, lines = run_plan(plan, steps, remote_for, spent=spent_ids)
         else:
-            green, lines = offered(plan, preflight(plan, steps, remote_for))
+            green, lines = offered(plan, preflight(plan, steps, remote_for), steps=args.steps)
             if not green:
                 walls.refused_text(Path.cwd(), '\n'.join(lines), reason='preflight', rule=RULE)
     except (ConsentRefused, sshholdwire.HoldRefused, OSError, ValueError) as refused:

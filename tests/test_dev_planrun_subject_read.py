@@ -20,7 +20,7 @@ import pytest
 from _ops_fixtures import NOW, RFC_KEY, code
 from lab_commons.home import HOME_ENV
 
-from dev_lab.dev import planrunpreflight, planrunsteps, sshholdplan
+from dev_lab.dev import planrunoffer, planrunpreflight, planrunsteps, sshholdplan
 from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops.consent import serve
 from dev_lab.ops.consent.actions import ACTIONS
@@ -204,7 +204,7 @@ def test_once_the_read_preflight_is_green_the_plan_takes_exactly_one_code(
     found = planrunpreflight.preflight(
         plan, planrunsteps.Steps((UPGRADE,)), lambda _d: Unreached(), readers=_readers(wire)
     )
-    green, lines = planrunpreflight.offered(plan, found, table=TABLE, send=wire, home=tmp_path)
+    green, lines = planrunoffer.offered(plan, found, table=TABLE, send=wire, home=tmp_path)
     assert green, lines
     offer(plan, TABLE, send=wire, home=tmp_path)  # the door the code is asked behind: open
     assert not any('code' in request for request in wire.sent)

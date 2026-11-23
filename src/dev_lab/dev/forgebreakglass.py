@@ -103,9 +103,10 @@ def _preflight(args: argparse.Namespace, config: Mapping[str, Any], send: Send, 
     except (ConsentRefused, OSError, ValueError) as refused:
         emit(f'[breakglass] preflight refused, ask the user for no code: {refused}', err=True)
         return 2
-    emit(f'[breakglass] preflight green: ask the user for the code now, then within {RECEIPT_FRESH_S:.0f} s run '
+    emit(f'[breakglass] preflight green: ask the user for the code now, then run '
          f'python -m dev_lab.dev.forge breakglass open --code <code> --hours {args.hours:g} '
-         f'--max-merges {args.max_merges}')  # fmt: skip
+         f'--max-merges {args.max_merges} (it re-runs the issuer preflight itself and uses the code only if green '
+         f'then; this receipt admits the ask for {RECEIPT_FRESH_S:.0f} s)')  # fmt: skip
     return 0
 
 

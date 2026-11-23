@@ -11,6 +11,9 @@ a ``cap`` the issuer debits; a ``single`` one is spent by its one use. ``reads``
 (:func:`dev_lab.ops.consent.door.read_argv`); empty when no host-side read is admitted. A read form whose host
 would REFUSE the request as it stands (a token name already held, a login absent) prints that on the line before
 the subject (:data:`STANDING`, :func:`read_answer`), so a preflight shows the refusal before a code is spent on it.
+``rederives`` says the action changes WHAT ITS HOST DERIVES OR ADMITS afterwards -- its live config (sudo doors, the
+placed family file), its installed revision (the verbs and subjects that revision knows) -- so a later step of a
+plan on that host can only be checked once this one ran (:mod:`dev_lab.dev.planrunpreflight`: ``after step N``).
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ class Action:
     max_ttl: float
     boundary: bool
     reads: tuple[str, ...] = ()
+    rederives: bool = False
 
     def __post_init__(self) -> None:
         """Refuse a row that lies: an unknown scope, or a default above its ceiling."""
@@ -76,7 +80,7 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         Action('breakglass.wave', {'max_merges': int, 'hours': float}, SINGLE, 15 * _MINUTE, 24 * _HOUR, boundary=True),
         # One change of a host's security boundary through `ops config apply`; subject = the candidate's SHA-256.
         Action('ops.config', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True,
-               reads=('config', 'apply')),
+               reads=('config', 'apply'), rederives=True),
         # One `ops forge account ensure` (a machine account and its Read grants); subject = the request's digest.
         Action('ops.forge.account', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True,
                reads=('forge', 'account', 'ensure')),
@@ -91,7 +95,7 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
                reads=('forge', 'token', 'revoke')),
         # One `ops upgrade --sha S` (dev-lab installed at S, the declared upgrade ref's tip); subject = S.
         Action('ops.upgrade', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True,
-               reads=('upgrade',)),
+               reads=('upgrade',), rederives=True),
         # One `ops forge protect apply` (one repo's declared branch protection at a ref); subject = the repo, the ref
         # and the rendered protection's digest.
         Action('ops.forge.protect', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=True,

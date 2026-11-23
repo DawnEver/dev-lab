@@ -297,3 +297,35 @@ def test_the_ops_door_hands_the_verb_the_placed_family_and_refuses_the_subject_r
     host = SimpleNamespace(forge=_role(tmp_path), config_source=_placed(tmp_path), path='h.toml')
     assert redeemverbs.forge_verb(host, args) == 0  # the control
     assert seen == [forgeprotection.family_layer(host.config_source)]
+
+
+def test_a_placed_family_file_binding_no_role_for_the_forge_names_itself_and_config_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A host ALREADY running the fix but holding stale placed data says so, by the placed path and its door.
+
+    Measured 2026-11-22: it still said the workstation's "no family layer on this machine and no DEV_LAB_ROLES
+    carried". Empty, role-less or bound for another forge, the placed file is named -- never a machine file.
+
+    PLANTED CONTROL: the placed file that binds the forge's roles is handed to the verb.
+    """
+    monkeypatch.delenv(ROLES_ENV)
+    monkeypatch.delenv('CI', raising=False)
+    role = _role(tmp_path)
+    for stale in ('', '[storage]\nkind = "x"\n', FAMILY.replace('[roles.gitea]', '[roles.github]')):
+        source = _placed(tmp_path / str(len(stale)), stale)
+        with pytest.raises(ForgeRefused) as refused:
+            forgeprotection.bound_layer(source, role, 'owner/alpha')
+        said = str(refused.value)
+        assert 'binds no role for gitea/owner/alpha' in said
+        assert source.family['to'] in said
+        assert '`ops config apply`' in said
+        assert 'on this machine' not in said
+        assert ROLES_ENV not in said
+    host = SimpleNamespace(forge=role, config_source=_placed(tmp_path / 'empty', ''), path='h.toml')
+    assert redeemverbs.forge_verb(host, _args('apply', subject=True)) == 2  # what a preflight asks: told with no code
+    assert 'binds no role for gitea/owner/alpha' in capsys.readouterr().err
+    bound = forgeprotection.bound_layer(_placed(tmp_path / 'good'), role, 'owner/alpha')  # the control
+    assert set(bound['roles']['gitea']) == set(ROLES)
+    by_repo = '[roles.repos."owner/alpha"]\n' + ''.join(f'{name} = "ci"\n' for name in ROLES)
+    assert forgeprotection.bound_layer(_placed(tmp_path / 'repo', by_repo), role, 'owner/alpha')
