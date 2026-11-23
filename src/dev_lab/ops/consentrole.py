@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from dev_lab.ops.httpsdoor import HttpsDoor
+
 __all__ = ['Access', 'Consent', 'ConsentClient']
 
 
 @dataclass(frozen=True)
-class Consent:
+class Consent(HttpsDoor):
     """The consent ISSUER (:mod:`dev_lab.ops.consent.issuer`): the cluster's TOTP seed, its signing key, its ledger.
 
     ``account`` is the restricted ssh account whose ForceCommand is ``consent serve``, ``keys`` its ssh keys; ``totp``
@@ -21,6 +23,8 @@ class Consent:
     credential and labels the Authenticator entry; ``lockout_after`` consecutive wrong codes refuse every code for
     ``lockout_minutes`` (:mod:`dev_lab.ops.lockout`). ``max_grants`` is the most grants one plan's code may buy: the
     user approves a plan by the digest of ALL of it, so its length is a declared host value, not a safety constant.
+    The ``https_*`` keys declare its HTTPS door (:class:`~dev_lab.ops.httpsdoor.HttpsDoor`): the same serve, signed by
+    the same ``keys``.
     """
 
     account: str

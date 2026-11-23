@@ -46,7 +46,7 @@ from dev_lab.dev.relock import RelockFailed
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops.clientkeys import DEV_KEY
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import Send, handshake, ssh_send
+from dev_lab.ops.consent.door import Send, endpoint_send, handshake
 
 __all__ = ['ADMIT_DOOR', 'HOST_KEY_DOOR', 'Wall', 'checkout_lag', 'kit', 'main', 'stale_kit', 'walls']
 
@@ -190,7 +190,7 @@ def _client_key(host: str, host_file: Path, ssh_dir: Path) -> Wall:
 
 
 def walls(
-    live: Mapping[str, Any], *, ssh_dir: Path | None = None, send: Send = ssh_send,
+    live: Mapping[str, Any], *, ssh_dir: Path | None = None, send: Send = endpoint_send,
     exists: Callable[[str], bool] = lambda path: Path(path).is_file(),
     credential: Callable[[Mapping[str, Any]], list[str]] = forgecredential.drift, measure: Measure = checkout_lag,
 ) -> list[Wall]:  # fmt: skip

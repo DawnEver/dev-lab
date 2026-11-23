@@ -151,6 +151,7 @@ def render(clone: Path, host: str, live: Mapping[str, Any]) -> str:
         dev = declared(host_file, family_file)
         layered = merge(layered, devprofile.bridge_tables(dev, live))
         layered = merge(layered, {OWN_TABLE: {'hooks': dev['hooks']}} if 'hooks' in dev else {})
+        layered = merge(layered, {OWN_TABLE: {'forge_reach': dev['forge_reach']}} if 'forge_reach' in dev else {})
     if channels := parsed.get('dev', {}).get('channels'):
         layered = merge(layered, {CHANNELS_TABLE: {'channels': channels}})
     shared = {k: v for k, v in family.items() if k != 'dev'}

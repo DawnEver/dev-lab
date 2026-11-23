@@ -11,6 +11,12 @@ file root's web server parses, so it is checked by :mod:`ipaddress`, not by shap
 card (:mod:`dev_lab.supervise.card`) at ``path``, served read-only from the card's own directory to the same
 ``[ops.caddy] allow`` list, matched before every other handler of the site (:func:`status_routed`). Undeclared, the
 route is removed.
+
+THE HTTPS DOORS (:mod:`dev_lab.ops.httpsdoor`, user ruling 2026-11-21) are managed routes too (:func:`doors_routed`):
+each declared door's path in its site, proxied to its relay on 127.0.0.1. FAIL CLOSED: the route carries its own
+``not remote_ip <allow>`` -> 403 BEFORE the proxy (a site's own ``respond`` runs after every ``handle`` in Caddy's
+directive order, so the site's matcher alone would not guard it), a site holding no ``remote_ip`` matcher -- one the
+allowlist does not govern -- is refused, and the header naming the peer is set from Caddy's own ``{remote_host}``.
 """
 
 from __future__ import annotations
@@ -23,7 +29,17 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-__all__ = ['Caddy', 'Status', 'allowlisted', 'install_caddy', 'metrics_rendered', 'status_routed', 'status_unrouted']
+__all__ = [
+    'Caddy',
+    'Door',
+    'Status',
+    'allowlisted',
+    'doors_routed',
+    'install_caddy',
+    'metrics_rendered',
+    'status_routed',
+    'status_unrouted',
+]
 
 
 @dataclass(frozen=True)
@@ -234,7 +250,97 @@ def metrics_rendered(text: str, *, on: bool) -> str:
     return ''.join([*lines[: opened + 1], block, *lines[opened + 1 :]])
 
 
-def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str], status: Status | None = None) -> list[str]:
+@dataclass(frozen=True)
+class Door:
+    """One HTTPS door's route: served at *path* of *site*, proxied to ``127.0.0.1:port``."""
+
+    site: str
+    path: str
+    port: int
+
+
+_DOOR_BEGIN: Final = '\t# dev-lab https door -- rendered by dev_lab.ops (https_port); edits are overwritten\n'
+_TAB: Final = '\t'
+_NL: Final = '\n'
+_DOOR_END: Final = '\t# end dev-lab https door\n'
+
+
+def _doors_unrouted(text: str) -> str:
+    while (start := text.find(_DOOR_BEGIN)) >= 0 and (end := text.find(_DOOR_END, start)) >= 0:
+        text = text[:start] + text[end + len(_DOOR_END) :]
+    return text
+
+
+def _site_matchers(text: str) -> dict[str, int]:
+    """How many ``remote_ip`` matchers each site of *text* holds (the ones :func:`allowlisted` rewrites)."""
+    found: dict[str, int] = {}
+    depth, site = 0, ()
+    for line in text.splitlines():
+        if depth == 0 and (top := _SITE.match(line)):
+            site = tuple(top['names'].replace(',', ' ').split())
+            for name in site:
+                found.setdefault(name, 0)
+        elif depth > 0 and _MATCHER.match(line):
+            for name in site:
+                found[name] += 1
+        depth += line.count('{') - line.count('}')
+    return found
+
+
+def _door_route(door: Door, listed: str) -> str:
+    """One door's managed route: 403 outside *listed* first, then a bounded body to its relay, peer from Caddy."""
+    lines = [
+        f'handle {door.path} {{',
+        f'{_TAB}@dev_lab_door_outside not remote_ip {listed}',
+        f'{_TAB}respond @dev_lab_door_outside 403',
+        f'{_TAB}request_body {{',
+        f'{_TAB}{_TAB}max_size 256KB',
+        f'{_TAB}}}',
+        f'{_TAB}reverse_proxy 127.0.0.1:{door.port} {{',
+        f'{_TAB}{_TAB}header_up X-Dev-Lab-Peer {{remote_host}}',
+        f'{_TAB}}}',
+        '}',
+    ]
+    return _DOOR_BEGIN + ''.join(f'{_TAB}{line}{_NL}' for line in lines) + _DOOR_END
+
+
+def doors_routed(text: str, doors: Sequence[Door], *, allow: Sequence[str]) -> str:
+    """*text* with exactly *doors* routed (each first in its site), every older door route dropped.
+
+    Raises:
+        ValueError: a door's site is absent or holds no ``remote_ip`` matcher (the allowlist would not govern it),
+            its path is not plain, or *allow* is empty or holds a non-address.
+
+    """
+    listed = _checked(allow)
+    base = _doors_unrouted(text)
+    matchers = _site_matchers(base)
+    for door in doors:
+        if not _PLAIN.fullmatch(door.path) or '..' in door.path:
+            msg = f'https door path {door.path!r} is not a plain absolute path'
+            raise ValueError(msg)
+        if door.site not in matchers:
+            msg = f'https_site {door.site!r} is not a site of the Caddyfile'
+            raise ValueError(msg)
+        if not matchers[door.site]:
+            msg = (f'https_site {door.site!r} holds no `@<name> remote_ip ...` matcher: it is not an allowlisted site, '
+                   'so a door there would be served outside [ops.caddy] allow')  # fmt: skip
+            raise ValueError(msg)
+    out: list[str] = []
+    depth = 0
+    for line in base.splitlines(keepends=True):
+        out.append(line)
+        top = _SITE.match(line.rstrip('\n')) if depth == 0 else None
+        if top:
+            names = top['names'].replace(',', ' ').split()
+            out.extend(_door_route(door, listed) for door in doors if door.site in names)
+        depth += line.count('{') - line.count('}')
+    return ''.join(out)
+
+
+def install_caddy(
+    caddy: Caddy | None, root: Path, rendered: dict[str, str], status: Status | None = None, doors: Sequence[Door] = ()
+) -> list[str]:
     """The install step: add the allowlisted Caddyfile to *rendered*, its old text kept beside it when it changes.
 
     Returns the reload step whenever the file Caddy would load is not the one it last loaded; nothing when
@@ -259,6 +365,7 @@ def install_caddy(caddy: Caddy | None, root: Path, rendered: dict[str, str], sta
     else:
         new = status_routed(new, site=status.site, path=status.path, file=status.file, allow=caddy.allow)
     new = metrics_rendered(new, on=caddy.metrics)
+    new = doors_routed(new, doors, allow=caddy.allow)
     rendered[live.relative_to(root).as_posix()] = new
     if new != old:
         live.with_name(f'{live.name}.bak-dev-lab').write_text(old, encoding='utf-8', newline='\n')

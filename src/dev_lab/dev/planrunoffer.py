@@ -24,7 +24,14 @@ from dev_lab.dev.planrunpreflight import BLOCKED, Readers, preflight
 from dev_lab.dev.planrunsteps import Remotes, load_steps
 from dev_lab.ops.consent.client import TABLE
 from dev_lab.ops.consent.credential import ConsentRefused
-from dev_lab.ops.consent.door import PLAN_PREFLIGHT_DOOR, Send, handshake, preflighted_steps, record_preflight, ssh_send
+from dev_lab.ops.consent.door import (
+    PLAN_PREFLIGHT_DOOR,
+    Send,
+    endpoint_send,
+    handshake,
+    preflighted_steps,
+    record_preflight,
+)
 from dev_lab.ops.consent.plan import Plan, parsed
 
 __all__ = ['offered', 'reproved']
@@ -32,7 +39,7 @@ __all__ = ['offered', 'reproved']
 
 def offered(
     plan: Plan, found: tuple[bool, list[str]], *, steps: Path | None = None, table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send, home: Path | None = None,
+    send: Send = endpoint_send, home: Path | None = None,
 ) -> tuple[bool, list[str]]:  # fmt: skip
     """*found*, a preflight's verdict, completed by the issuer handshake and recorded for its digest when green.
 
@@ -53,7 +60,7 @@ def offered(
 
 def reproved(
     plan_file: Path, steps_file: Path | None = None, *, remotes: Remotes = remote_for, readers: Readers | None = None,
-    table: Mapping[str, Any] | None = None, send: Send = ssh_send, home: Path | None = None,
+    table: Mapping[str, Any] | None = None, send: Send = endpoint_send, home: Path | None = None,
 ) -> list[str]:  # fmt: skip
     """Run the plan's preflight NOW, for the door about to use a code; its lines when green.
 
