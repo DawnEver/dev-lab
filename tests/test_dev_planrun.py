@@ -215,7 +215,11 @@ def test_config_apply_subject_prints_the_candidates_digest_and_applies_nothing(
     host = config(tmp_path, [])
     before = host.path.read_text(encoding='utf-8')
     candidate = tmp_path / 'candidate.toml'
-    candidate.write_text(f'# a reviewed change the current code loads (#555)\n{before}', encoding='utf-8')
+    # A reviewed change the current code loads (#555). It moves a key: a comment-only candidate is the live file
+    # already, which the door answers with a standing UNCHANGED (test_ops_config_subject_loads), not a bare subject.
+    changed = before.replace('04:30:00', '05:30:00')
+    assert changed != before
+    candidate.write_text(changed, encoding='utf-8')
     argv = ['--config', str(host.path), 'config', 'apply', '--from', str(candidate), '--subject']
     assert ops_main.main(argv) == 0
     assert capsys.readouterr().out.strip() == configdoor.digest(candidate.read_text(encoding='utf-8'))

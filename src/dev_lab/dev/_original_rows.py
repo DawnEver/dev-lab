@@ -433,4 +433,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'commonsfloor',
     # ORIGINAL: 2026-11-20, the uv that writes a lock is the pinned release installed beside any other.
     'uvrelease',
+    # ORIGINAL: 2026-11-23, the holder record beside a cluster tick's lock: who holds it and in which phase.
+    'tickholder',
 )
