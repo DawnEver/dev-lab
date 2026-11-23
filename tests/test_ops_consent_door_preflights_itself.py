@@ -27,6 +27,7 @@ from dev_lab.dev import planrunoffer, sshhold, sshholdplan
 from dev_lab.ops.consent.client import grant, preflight
 from dev_lab.ops.consent.credential import ConsentRefused, public_text
 from dev_lab.ops.consent.door import (
+    CODE_PREFLIGHT_FRESH_S,
     PREFLIGHT_FRESH_S,
     RECEIPT_FRESH_S,
     preflighted_steps,
@@ -39,6 +40,9 @@ __all__ = ['issuer', 'secret_here']
 DAY_S = 24 * 3600.0
 #: The lifetimes the incident met: a plan's green was valid 3600 s, a lone request's receipt 300 s.
 WAS_PLAN_S, WAS_RECEIPT_S = 3600.0, 300.0
+#: A recorded green just past the window in which it stands in for the door's own re-run (ruling 2026-11-23,
+#: tests/test_dev_sshhold_code_freshness.py): the door re-runs the preflight, which is what these tests are about.
+RERUN_AGE_S = CODE_PREFLIGHT_FRESH_S + 1.0
 
 
 def test_both_lifetimes_are_the_24_h_backstop() -> None:
@@ -74,13 +78,13 @@ def _open(plan: Path, *more: str) -> int:
 def test_a_plan_whose_host_blocks_now_refuses_before_the_code_is_used(
     issuer: Issuer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The recorded green is seconds old and the host has since lost its consent key: the door sees it, no code used.
+    """The recorded green is past the code window and the host has since lost its consent key: no code used.
 
     PLANTED CONTROL: the same open against the green host hands the code to the grant.
     """
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
     plan, steps = _files(tmp_path)
-    record_preflight(STEPPED, steps=steps)
+    record_preflight(STEPPED, steps=steps, now=time.time() - RERUN_AGE_S)
     host = FakeHost()
     host.ready = (1, '[ops consent] not ready: no consent key')
     spent = _door(monkeypatch, issuer, host)
@@ -112,7 +116,7 @@ def test_a_green_older_than_the_old_hour_still_takes_the_code_when_the_host_is_g
     assert spent == [code(0)]
     assert host.commands
     assert preflighted_steps(STEPPED) == steps.resolve()  # re-recorded by the door's own green
-    record_preflight(STEPPED)  # a record that names no steps file: nothing to run
+    record_preflight(STEPPED, now=time.time() - RERUN_AGE_S)  # a record naming no steps file: nothing to run
     spent = _door(monkeypatch, issuer, FakeHost())
     assert _open(plan) == 2
     said = capsys.readouterr().err
