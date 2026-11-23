@@ -204,7 +204,7 @@ def _tools(
         emit(f'[tools] {lagging}', err=True)
     installs, failed = tool_plan(wanted, found=lambda tool: _runs(step.tools.sh, environment, tool))
     for tool, script in installs:
-        cache = {'UV_CACHE_DIR': str(uv_cache(spec.root))}  # `uv tool install` writes the ONE cache, never ~/.cache/uv
+        cache = {'UV_CACHE_DIR': str(uv_cache(spec.root))}  # `uv tool install`: the ONE cache, not the user default
         if step.change(f'install {tool}: {script}', [*step.tools.sh, script], env=cache):
             failed.append(tool)
     remedy = (

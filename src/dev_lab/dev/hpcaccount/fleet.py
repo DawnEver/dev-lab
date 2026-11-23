@@ -349,7 +349,7 @@ def refresh_kit(grant: Grant, target: Target) -> str:
     research kit refreshes, then refuses to serve.
     """
     kit = repo_dir(target, KIT)
-    cache = f'export UV_CACHE_DIR={_cache(target)}'  # the kit's tick syncs with uv: the ONE cache, never ~/.cache/uv
+    cache = f'export UV_CACHE_DIR={_cache(target)}'  # the tick's uv: the ONE cache
     recorded = f'echo "[deploy-fleet] kit at $(git -C {kit} rev-parse HEAD)"'
     ref = next((ref for name, _url, ref in target.repos if name == KIT), '')
     tick = f'{cache} ; {in_checkout(target, ["-m", "dev_lab.dev.hpcaccount", "tick", KIT])} ; {recorded}'
