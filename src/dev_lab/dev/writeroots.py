@@ -69,7 +69,7 @@ RULE_ID: Final = 'WRITES-STAY-IN-THE-TREE'
 HAZARD: Final = 'outside every checkout nothing scans, ignores or cleans a file, so it outlives the session.'
 REMEDY: Final = (
     "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/, an "
-    'experiment to scratch/ of the checkout you work in, a throwaway temp file to $CLAUDE_JOB_DIR/tmp.'
+    'experiment to scratch/ of the checkout you work in (user ruling 2026-11-23: no job temp dir either).'
 )
 #: The environment variables naming a synced folder (OneDrive's client sets all three on Windows).
 SYNCED_VARS: Final = ('OneDrive', 'OneDriveCommercial', 'OneDriveConsumer')
@@ -200,8 +200,6 @@ def excluded_paths(
     names = [name for name in EXCLUDED_IN_TEMP if name not in EXCLUDED_GLOBS_IN_TEMP]  # a glob is matched by name
     found = [root.path / name for root in roots if root.kind == 'temp' for name in names]
     found += [Path(env[var]) for var in _CACHE_VARS if env.get(var)]
-    if env.get('CLAUDE_JOB_DIR'):
-        found.append(Path(env['CLAUDE_JOB_DIR']) / 'tmp')  # the job's own temp: the door the remedy names
     found += _paths(machine, 'excluded')
     found += storage_roots(storages.declared() if storage is None else storage)
     return tuple(dict.fromkeys(found))

@@ -57,6 +57,7 @@ from dev_lab.dev.forgestatus import head_sha, verdict_commit
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
+from dev_lab.dev.layout import scan_refusal
 from dev_lab.dev.localpart import part_selection, post_cited, post_part
 from dev_lab.dev.lockpins import lock_freshness
 from dev_lab.dev.lockwait import lock_wait_arg
@@ -194,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as why:
         refused = refused or f'verify: refused -- {why}'
     refused = refused or _needs_refusal(root, parsed.part)
+    refused = refused or scan_refusal(root)  # DECLARED-LAYOUT / NO-BACKUP-COPIES: the incremental scan, every run
     if (early := _early(root, refused, producer=outside is None)) is not None:
         return early
     wait_s = parsed.lock_wait if parsed.lock_wait is not None else (MEASURE_WAIT_S if targeted else WAIT_S)

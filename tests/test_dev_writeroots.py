@@ -242,7 +242,8 @@ def test_a_directory_beside_a_checkout_is_refused_and_the_checkout_itself_is_not
     assert refuse_beside_checkout(tmp_path / 'repo-copy' / 'x.py', excluded=[tmp_path / 'repo-copy']) is None
 
 
-def test_the_job_temp_is_excluded_so_it_is_the_temp_door(tmp_path: Path) -> None:
+def test_the_job_temp_is_no_door(tmp_path: Path) -> None:
+    # User ruling 2026-11-23: $CLAUDE_JOB_DIR/tmp is forbidden too; planted, it must not be excluded.
     job = tmp_path / 'jobs' / 'abc'
     found = excluded_paths((), machine={}, env={'CLAUDE_JOB_DIR': str(job)})
-    assert job / 'tmp' in found
+    assert job / 'tmp' not in found

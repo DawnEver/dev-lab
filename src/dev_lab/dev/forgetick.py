@@ -119,6 +119,7 @@ from dev_lab.dev.forgeunit import ForgeResults, pending_dir
 from dev_lab.dev.forgewait import Box, nowhere, tell
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.layout import scan_refusal
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import derived, origin_url, parts_of
 from dev_lab.dev.unproduced import unproduced_waived
@@ -438,4 +439,8 @@ def main(
     else:
         for line in report.lines:
             emit(line)
+    # The per-workstation tick is the layout scan's heartbeat (DECLARED-LAYOUT / NO-BACKUP-COPIES): the live
+    # checkout, not the forge's fresh per-sha tree, is where an ignored copy accumulates. Said, never claimed on.
+    if (layout_refusal := scan_refusal(root)) is not None:
+        emit(f'[tick] {layout_refusal}', err=True)
     return 0

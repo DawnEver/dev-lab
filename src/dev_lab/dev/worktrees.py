@@ -61,9 +61,38 @@ from dev_lab.dev.checkout import authority_for, git_out, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
 from dev_lab.dev.reclaim import QUIET_S, blockers, reclaim, removed_approved, unlanded_work
 from dev_lab.dev.scratchtree import discard, scratch
-from dev_lab.dev.worktree_outputs import linked, unheld_head, worktrees_door
+from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = ['HOOK_READ_S', 'RETIRED_ARCHIVE', 'blockers', 'hook_payload', 'main', 'prune', 'remove']
+
+
+def worktrees_door(main: Path, flags: str) -> str:
+    """The runnable ``worktrees`` door of checkout *main* with *flags*: what a printed line hands out."""
+    where = main.as_posix()
+    where = f'"{where}"' if any(c.isspace() for c in where) else where
+    return f'{running_interpreter()} -m dev_lab.dev.worktrees --root {where} {flags}'
+
+
+def unheld_head(tree: Path) -> str:
+    """The detached HEAD sha no ref contains, or ``''`` -- a branch's commits survive the tree in its ref."""
+    if (git_out(tree, 'branch', '--show-current') or '').strip():
+        return ''
+    head = (git_out(tree, 'rev-parse', 'HEAD') or '').strip()
+    holders = git_out(tree, 'for-each-ref', '--contains', head, '--format=%(refname)')
+    if holders is None:
+        msg = f'git could not say which refs contain {head} in {tree}'
+        raise RuntimeError(msg)
+    return '' if holders.strip() else head
+
+
+def linked(main: Path, name: str) -> Path | str:
+    """The one LINKED worktree of *main* named *name* (never the main checkout), resolved; else why not."""
+    registered = worktrees(main)
+    if registered is None:
+        return f'git could not list the worktrees of {main}'
+    found = [path.resolve() for path, _ in registered[1:] if path.name == name]
+    return found[0] if len(found) == 1 else f'{len(found)} linked worktrees of {main} are named {name!r}'
+
 
 #: RETIRED-NAMES-REGISTERED: the flag D31 retired, refused by name with its doors, never parsed as unknown.
 RETIRED_ARCHIVE: Final = (

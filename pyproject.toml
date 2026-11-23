@@ -114,11 +114,32 @@ retired = [
   { path = '.claude/rules/MEMORY.md', what = "rem's generated memory index; nothing rebuilds it", door = "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs <checkout> -- which removes every copy outside attic/" },
 ]
 
-# DECLARED-LAYOUT: every top-level directory beyond the family homes (src tests scripts scratch .claude docs-src
-# output), each with the suffixes forbidden anywhere beneath it; output/ forbids code by the family's own row.
+# DECLARED-LAYOUT (dev_lab.dev.layout): the WHOLE tree as an allow-list -- each directory pattern (one glob per
+# segment; the deepest matching row judges) and the formats a file there may be ('.suffix', an exact name, "" for
+# none, "*" for anything). Undeclared is refused. NO-BACKUP-COPIES: nothing under output/ or scratch/ is ever a
+# clone, worktree, exported tree, bundle or patch, whatever a row says.
 [tool.dev_lab.placement.layout]
+'.' = ['.md', '.toml', '.lock', '.gitattributes', '.gitignore', '.rgignore', 'license', 'makefile']
+'.claude' = ['.json']
+'.claude/memory' = ['.md']
+'.claude/rules' = ['.md']
+'.claude/tasks' = ['.md']
 '.codex' = []
+'.codex/rules' = ['.rules']
 '.github' = []
+'.github/workflows' = ['.yml']
+'docs-src' = ['.md']
+src = ['.py', '.sh', '.js', '.toml', '.json', '.typed']
+tests = ['.py', '.json', '.toml', '.txt', '.golden', '.gitattributes']
+scripts = ['.py', '.sh']
+scratch = ['*']
+output = []
+'output/forge' = []
+'output/forge/*' = ['.json', '.tmp']
+'output/runcache' = ['.jsonl']
+'output/logs' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.log', '.jsonl', '.json', '.gz', '.coverage', '.txt', '.csv']
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/coverage' = ['.md', '.coverage']  # verify's coverage table
 
 # The cluster builds this repo's env from [tool.dev_lab.dep] (lab_commons.extras, one reader), installing the
 # project itself: the venv must import lab_commons.envkey to report its env key.

@@ -47,7 +47,6 @@ from dev_lab.dev.disposable import disposable_base, unheld_head
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.forgereview_runtimes import host_runtimes
 from dev_lab.dev.liverun import Census, removal_holders
-from dev_lab.dev.worktree_outputs import home_outputs
 
 __all__ = [
     'QUIET_S',
@@ -385,14 +384,12 @@ def _kind(reason: str) -> str:
     """The stable head of a kept *reason*: the key the summary line counts it under."""
     if reason.startswith('index changed'):
         return 'live session'
-    if reason.startswith('outputs not'):
-        return 'outputs not moved home'
     return reason.split(' -- ', 1)[0].split(' (', 1)[0].split(':', 1)[0].split(';', 1)[0].strip()
 
 
 def _taken(root: Path, tree: Path, label: str) -> tuple[str, str]:
-    """Move a reclaimable *tree*'s outputs home, verified, THEN delete it; its line and verdict (or kept kind)."""
-    if unmoved := repository_at(root, tree) or home_outputs(root, tree):
+    """Delete a reclaimable *tree*, its ``output/`` with it (NO-BACKUP-COPIES: nothing moves home); line, verdict."""
+    if unmoved := repository_at(root, tree):
         return f'kept     {label}  ({unmoved}; nothing was deleted)', _kind(unmoved)
     if refused := _removed(tree):
         line = refused.replace('{label}', label)
@@ -404,15 +401,13 @@ def removed_approved(root: Path, tree: Path, *, quiet_s: float = QUIET_S) -> str
     """Remove ONE linked worktree a user approved discarding, unlanded work included; ``''`` when gone, else why not.
 
     The approval replaces only the landed-and-clean judgement: the main checkout or a repository, a live session
-    (an index changed within *quiet_s*), and outputs that cannot move home verified still refuse, and the delete is
+    (an index changed within *quiet_s*) still refuse, and the delete is
     the same all-or-nothing :func:`_removed`.
     """
     if refused := repository_at(root, tree):
         return refused
     if (age := index_age_s(tree)) is not None and age < quiet_s:
         return f'index changed {age / 60:.0f} min ago -- a live session'
-    if unmoved := home_outputs(root, tree):
-        return unmoved
     if refused := _removed(tree):
         return refused.replace('{label}', str(tree))
     git_out(root, 'worktree', 'prune')
@@ -438,10 +433,9 @@ def reclaim(
 ) -> tuple[str, ...] | None:
     """Remove every reclaimable lease; one line per lease, then a summary line. ``None``: unreadable.
 
-    A reclaimable lease's run outputs are moved HOME first (:func:`dev_lab.dev.worktree_outputs.home_outputs`)
-    and verified, CHAINED: only a verified move (or none to make) lets :func:`remove_tree` delete it -- its
-    ignored content is regenerable -- and git's registration is pruned; a failed move keeps the
-    tree, with the failure. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``, which
+    A reclaimable lease is deleted WHOLE, its ``output/`` included -- regenerable logs and cache; nothing moves
+    into the main checkout (NO-BACKUP-COPIES, user 2026-11-23: moving outputs home was a backup) -- and git's
+    registration is pruned. A removed tree's branch stays for ``dev_lab.dev.branchset.apply_local``, which
     deletes it pinned to its sha. *runtimes* is :func:`reclaimable`'s. Without *apply* nothing is touched;
     past *limit* removals the rest are ``deferred`` to a later run. The last line counts the verdicts and every
     kept tree BY REASON, so what stays is visible at a glance.

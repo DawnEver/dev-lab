@@ -62,8 +62,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'one declared set the machine file may extend; the write hook and the shell guard refuse, the Stop hook '
             'names what a session left, the sweep ages old temp entries out. A checkout under such a root is no '
             'exemption (user ruling 2026-11-06: one there is an abandoned old version). A synced folder (OneDrive) and '
-            'a directory beside a checkout are refused the same way (2026-11-23); the job temp `$CLAUDE_JOB_DIR/tmp` '
-            'is the temp door.'
+            'a directory beside a checkout are refused the same way (2026-11-23); the job '
+            'temp `$CLAUDE_JOB_DIR/tmp` is no door either (user ruling 2026-11-23).'
         ),
         ('tests/test_dev_writeroots.py', 'tests/test_dev_tmpsweep.py'),
     ),

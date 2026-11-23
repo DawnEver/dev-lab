@@ -590,7 +590,6 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.backgroundrun` -- the shared detached-run and per-repo lock helpers every background hook uses.
 * :mod:`dev_lab.dev.reclaimrun` -- reclaim as a SessionStart step: detached, locked, a bounded batch, never blocks.
 * :mod:`dev_lab.dev.venvprune` -- superseded ``.venvs/`` across checkouts: listed with bytes, removed on ``--apply``.
-* :mod:`dev_lab.dev.worktree_outputs` -- a removed tree's run outputs move home, verified; never its work.
 * :mod:`dev_lab.dev.sshhold` -- ONE authenticated ssh connection per work session, held by a detached holder.
 * :mod:`dev_lab.dev.sshholdstate` -- a held session's state file and the append-only audit of every verb.
 * :mod:`dev_lab.dev.sshholdwire` -- the client's half of the holder's protocol: the request and the marker frame.
@@ -630,8 +629,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.devsource` -- the config source's forge URL: the ``origin`` of the ``[devhost]`` clone.
 * :mod:`dev_lab.dev.bringup` -- ``devhost bringup --check``: every wall a new workstation hits, with its door.
 * :mod:`dev_lab.dev.ask` -- the one intake of a typed value: shown as typed, checked against its shape first.
-* :mod:`dev_lab.dev.layout` -- DECLARED-LAYOUT: every top-level directory declared, with the suffixes forbidden
-  beneath it; the scan and the write hook's refusal over one table.
+* :mod:`dev_lab.dev.layout` -- DECLARED-LAYOUT and NO-BACKUP-COPIES: the whole tree an allow-list of formats per
+  directory, no copy or backup under output/ or scratch/; the incremental scan and the write hook over one table.
 * :mod:`dev_lab.dev.outputcode` -- OUTPUT-HOLDS-NO-CODE: the Write/Edit refusal of code under ``output/``, and the
   source scan for a door writing it there.
 * :mod:`dev_lab.dev.backedup` -- a file replaced whole and atomically, its previous content kept in a dated backup.
