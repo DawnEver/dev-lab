@@ -51,7 +51,7 @@ import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S
 from lab_commons.log import emit
 
-from dev_lab.dev import forgeverdict
+from dev_lab.dev import devdeclared, forgecredential, forgeverdict
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.ask import AskRefused
 from dev_lab.dev.ask import value as asked_value
@@ -87,6 +87,7 @@ __all__ = [
     'repo_role',
     'status',
     'tick_refusal',
+    'unstored_forges',
 ]
 
 #: The exit status for a usage error, as argparse uses it.
@@ -278,9 +279,25 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _forge(root: Path, host: str | None) -> Forge:
-    """The forge to authenticate against: *host* alone when given, else this checkout's origin."""
-    return Forge(host, '', '') if host else forge_from_remote(root)
+def unstored_forges() -> list[str]:
+    """The forges this machine's ``[dev] forges`` declares with a login the credential store lacks, sorted."""
+    dev = devdeclared.this_machine()
+    lines = forgecredential.store_lines(forgecredential.STORE)
+    return sorted(host for host in dev.get('forges', {}) if forgecredential.unstored(dev, host, lines))
+
+
+def _forge(root: Path, host: str | None, lacking: Callable[[], list[str]] = list) -> Forge:
+    """*host* when given; else the ONE declared forge with no stored login; else this checkout's origin.
+
+    Never silently the checkout's forge while a declared one lacks its credential (2026-11-23: a Gitea token was
+    asked for, and sent to, github.com). Several such forges: refused, naming them and ``--host``.
+    """
+    if host:
+        return Forge(host, '', '')
+    if len(missing := lacking()) > 1:
+        msg = f'several declared forges have no stored credential: {missing} -- name one: auth login --host <forge>'
+        raise NoCredential(msg)
+    return Forge(missing[0], '', '') if missing else forge_from_remote(root)
 
 
 def main(
@@ -292,6 +309,7 @@ def main(
     read_secret: Callable[[str], str] = input,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
+    lacking: Callable[[], list[str]] = unstored_forges,
 ) -> int:
     """``auth login|status|check|export`` (module docstring); nonzero when not authenticated."""
     args = _parser().parse_args(list(sys.argv[2:] if argv is None else argv))
@@ -300,7 +318,7 @@ def main(
     if args.verb != 'login' or args.from_file:
         return _without_prompt(args, root, env, transport, stdin=stdin, stdout=stdout or sys.stdout)
     try:
-        forge = _forge(root, args.host)
+        forge = _forge(root, args.host, lacking)
         kind = kind_of(forge.host)
         if args.token_stdin:
             token, line = checked(forge.host, stdin.read().strip())
@@ -310,6 +328,9 @@ def main(
                                 say=lambda line: emit(line, err=True))  # fmt: skip
             token, _line = checked(forge.host, asked)
     except AskRefused as refused:
+        emit(f'[forge] {refused}', err=True)
+        return _USAGE
+    except NoCredential as refused:
         emit(f'[forge] {refused}', err=True)
         return _USAGE
     try:

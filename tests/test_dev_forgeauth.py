@@ -258,3 +258,51 @@ def test_a_token_not_of_its_forge_kind_shape_is_refused_before_any_request(
     err = capsys.readouterr().err
     assert 'does not match the declared shape' in err
     assert wrong not in err
+
+
+def test_no_host_asks_for_the_one_declared_forge_lacking_a_credential(server, tmp_path: Path) -> None:
+    """Measured 2026-11-23: no --host took the checkout's github.com while the bringup wall named a Gitea forge.
+
+    PLANTED CONTROL: with nothing lacking, the checkout's own forge is asked (the tests above).
+    """
+    repo = _repo(tmp_path, 'https://github.com/o/r.git')
+    env, _ = _isolated_store(tmp_path)
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    prompts: list[str] = []
+    transport = _Loopback(server)
+
+    def secret(prompt: str) -> str:
+        prompts.append(prompt)
+        return _PAT
+
+    assert main(['login'], cwd=repo, env=env, transport=transport, read_secret=secret,
+                lacking=lambda: ['f.example']) == 0  # fmt: skip
+    assert 'f.example Gitea personal access token' in prompts[0]
+    assert transport.asked == ['f.example']
+
+
+def test_several_forges_lacking_a_credential_are_named_and_none_is_asked(
+    server, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, 'https://github.com/o/r.git')
+    env, _ = _isolated_store(tmp_path)
+    code = main(['login'], cwd=repo, env=env, transport=_Loopback(server), read_secret=_no_prompt,
+                lacking=lambda: ['a.example', 'b.example'])  # fmt: skip
+    assert code == 2
+    assert _Recorder.received == []
+    err = capsys.readouterr().err
+    assert "['a.example', 'b.example']" in err
+    assert '--host <forge>' in err
+
+
+def test_a_gitea_token_offered_to_github_is_refused_naming_the_mix_up(
+    server, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL: a GitHub-shaped token for github.com is stored (test_host_flag_overrides_origin...)."""
+    env, store = _isolated_store(tmp_path)
+    argv = ['login', '--host', 'github.com', '--token-stdin']
+    code = main(argv, cwd=tmp_path, env=env, transport=_Loopback(server), stdin=io.StringIO(_PAT))
+    assert code == 2
+    assert _Recorder.received == []
+    assert not store.exists()
+    assert 'shape of a Gitea token' in capsys.readouterr().err
