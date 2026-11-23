@@ -144,10 +144,11 @@ def test_an_unremovable_entry_is_named_and_kept_and_the_pass_ends_with_its_summa
 
     monkeypatch.setattr(os, 'unlink', refuse)
     said = _sweep(home, root, spec | {'apply': True})
-    assert f'[retention] kept {(old / "locked.log").as_posix()} -- cannot remove: Operation not permitted' in said
+    assert f'[retention] kept {old.as_posix()} -- cannot remove 1 entries: Operation not permitted' in said
     assert sorted(p.name for p in old.iterdir()) == ['locked.log'], 'the rest of the copy went'
     assert not (root / 'repos' / 'r' / '.venvs' / 'half-built').exists(), 'every other rule ran after it'
     assert said[-1].startswith('[retention] deleted '), 'the pass ends with its summary'
+    assert said[-1].endswith('; kept 1 entries that cannot be removed')
     rows = [json.loads(line) for line in said if line.startswith('{')]
     copy = next(row for row in rows if row['path'] == str(home / 'ci'))
     assert copy['files'] >= 1
@@ -173,3 +174,47 @@ def test_stale_cargo_registry_sources_go_and_a_fresh_crate_stays(tmp_path: Path)
     _sweep(home, root, spec | {'apply': True})
     assert sorted(p.name for p in src.iterdir()) == ['fresh-2.0']
     assert (home / '.cargo' / 'registry' / 'cache').is_dir()
+
+
+def _locked(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = os.unlink
+
+    def refuse(path: object, *args: object, **kwargs: object) -> None:
+        if Path(str(path)).name.startswith('locked'):
+            raise PermissionError(errno.EPERM, 'Operation not permitted', str(path))
+        real(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, 'unlink', refuse)
+
+
+def test_many_unremovable_entries_under_one_directory_are_one_line_with_their_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MEASURED 2026-11-23: 206,412 kept lines, all under ONE directory, drowned the output."""
+    home, root, spec = _account(tmp_path)
+    run = home / 'ci' / 'trees' / 'abc' / 'out'
+    (run / 'deep').mkdir(parents=True)
+    for n in range(40):
+        (run / f'locked-{n}.log').write_text('x', encoding='utf-8')
+        (run / 'deep' / f'locked-{n}.log').write_text('x', encoding='utf-8')
+    _locked(monkeypatch)
+    said = [line for line in _sweep(home, root, spec | {'apply': True}) if 'cannot remove' in line]
+    assert said == [f'[retention] kept {run.as_posix()} -- cannot remove 80 entries: Operation not permitted']
+
+
+def test_planted_control_two_separate_directories_are_two_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home, root, spec = _account(tmp_path)
+    first, second = home / 'ci' / 'trees' / 'abc' / 'one', home / 'ci' / 'trees' / 'abc' / 'two'
+    for where in (first, second):
+        where.mkdir(parents=True)
+        for n in range(3):
+            (where / f'locked-{n}.log').write_text('x', encoding='utf-8')
+    _locked(monkeypatch)
+    said = _sweep(home, root, spec | {'apply': True})
+    assert [line for line in said if 'cannot remove' in line] == [
+        f'[retention] kept {first.as_posix()} -- cannot remove 3 entries: Operation not permitted',
+        f'[retention] kept {second.as_posix()} -- cannot remove 3 entries: Operation not permitted',
+    ]
+    assert said[-1].endswith('; kept 6 entries that cannot be removed')

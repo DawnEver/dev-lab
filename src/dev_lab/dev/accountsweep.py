@@ -20,8 +20,10 @@ THE RULES THAT RUN IN THIS MODE -- the ones that matter on a full account:
   ``cargo_hours`` (the ``.crate`` download cache is never named; cargo re-extracts what a build needs).
 
 A PATH THAT CANNOT BE REMOVED IS NAMED AND KEPT (measured 2026-11-22: one directory the account could not chmod
-killed the whole pass with a traceback, nothing after it ran and no summary was printed): ``[retention] kept <path>
--- cannot remove: <cause>``; the rest of that copy and every other rule go on, and the totals count only what went.
+killed the whole pass with a traceback, nothing after it ran and no summary was printed). Entries that cannot go are
+NAMED PER TOP-MOST DIRECTORY holding them (measured next: 206,412 such entries sat under ONE directory, one line each
+drowned the output): ``[retention] kept <dir> -- cannot remove N entries: <cause>``; the total line counts them.
+The rest of that copy and every other rule go on, and the totals count only what went.
 
 Every other retention rule (runs, trees, builds, packs, artefacts, logs, rust) reads the forge's run state and
 needs the kit: :mod:`dev_lab.dev.retention`, on the account.
@@ -144,8 +146,23 @@ def _measure(path: Path) -> tuple[int, int]:
     return size, files
 
 
-def _remove(path: Path, say: Callable[[str], None]) -> tuple[int, int]:
-    """Remove *path*, each entry that cannot go NAMED and kept; the (bytes, files) left behind."""
+def _grouped(kept: list[tuple[str, OSError]]) -> dict[str, tuple[int, str]]:
+    """*kept* per top-most directory holding an entry that could not go: ``{dir: (entries, first cause)}``."""
+    groups: dict[str, tuple[int, str]] = {}
+    for name, why in kept:
+        parent = Path(name).parent.as_posix()
+        count, cause = groups.get(parent, (0, why.strerror or str(why)))
+        groups[parent] = (count + 1, cause)
+    tops: dict[str, tuple[int, str]] = {}
+    for parent in sorted(groups, key=len):
+        top = next((t for t in tops if parent == t or parent.startswith(t + '/')), parent)
+        count, cause = tops.get(top, (0, groups[parent][1]))
+        tops[top] = (count + groups[parent][0], cause)
+    return tops
+
+
+def _remove(path: Path, say: Callable[[str], None]) -> tuple[int, int, int]:
+    """Remove *path*; what cannot go is named per top-most directory. The (bytes, files, entries) left behind."""
     kept: list[tuple[str, OSError]] = []
 
     def writable(func: Callable[[str], object], name: str, _exc: object) -> None:
@@ -164,16 +181,17 @@ def _remove(path: Path, say: Callable[[str], None]) -> tuple[int, int]:
             path.unlink()
     except OSError as why:
         kept.append((str(path), why))
-    for name, why in kept:
-        say(f'[retention] kept {Path(name).as_posix()} -- cannot remove: {why.strerror or why}')
-    return _measure(path) if path.exists() or path.is_symlink() else (0, 0)
+    for top, (count, cause) in _grouped(kept).items():
+        say(f'[retention] kept {top} -- cannot remove {count} entries: {cause}')
+    left = _measure(path) if path.exists() or path.is_symlink() else (0, 0)
+    return (*left, len(kept))
 
 
 def sweep(
     spec: dict, *, home: Path, root: Path, cron: str | None, live: list[dict] | None, say: Callable[[str], None] = print
 ) -> dict[str, tuple[int, int, int]]:
     """Judge every candidate, delete the unreferenced when the spec says ``apply``; per rule (paths, bytes, files)."""
-    apply, by_rule = bool(spec.get('apply')), {}
+    apply, by_rule, unremovable = bool(spec.get('apply')), {}, 0
     for path, rule, busy in candidates(spec, home, root, live):
         if why := busy or referenced(path, home=home, root=root, cron=cron, live=live):
             say(f'[retention] kept ({rule}): {path.as_posix()} -- {why}')
@@ -181,7 +199,7 @@ def sweep(
         size, files = _measure(path)
         if apply:
             left = _remove(path, say)
-            size, files = size - left[0], files - left[1]
+            size, files, unremovable = size - left[0], files - left[1], unremovable + left[2]
         paths, total, count = by_rule.get(rule, (0, 0, 0))
         by_rule[rule] = (paths + 1, total + size, count + files)
         row = {'path': str(path), 'bytes': size, 'files': files, 'rule': rule, 'dry_run': not apply}
@@ -190,7 +208,8 @@ def sweep(
     for rule, (paths, size, files) in sorted(by_rule.items()):
         say(f'[retention] {verb} {rule}: {paths} paths, {size / _MB:.1f} MB, {files} files')
     paths, size, files = (sum(row[at] for row in by_rule.values()) for at in range(3))
-    say(f'[retention] {verb} {paths} paths, {size / _MB:.1f} MB, {files} files')
+    held = f'; kept {unremovable} entries that cannot be removed' if unremovable else ''
+    say(f'[retention] {verb} {paths} paths, {size / _MB:.1f} MB, {files} files{held}')
     return by_rule
 
 
