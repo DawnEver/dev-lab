@@ -38,17 +38,37 @@ from dev_lab.dev import devdeclared, devprofile
 from dev_lab.dev.credstore import CredentialRefused, DeclaredForge, Shell, digest, place_verified, read_forge
 from dev_lab.dev.forgecredential import STORE, STORE_ONLY, helpers, store_lines, unstored, use_store
 
-__all__ = ['local_shell', 'main', 'place']
+__all__ = ['local_shell', 'main', 'place', 'posix_shell']
+
+
+def posix_shell(which: Callable[[str], str | None] = shutil.which) -> str:
+    """The POSIX ``sh`` of this machine: the one on PATH, else Git for Windows' own beside its ``git``.
+
+    Windows PowerShell puts Git's ``cmd/`` on PATH but not its ``bin/``, so ``sh`` alone is not found there.
+
+    Raises:
+        RuntimeError: neither exists.
+
+    """
+    if found := which('sh'):
+        return found
+    if git := which('git'):
+        root = Path(git).resolve().parent.parent
+        for candidate in (root / 'bin' / 'sh.exe', root / 'usr' / 'bin' / 'sh.exe'):
+            if candidate.is_file():
+                return str(candidate)
+    msg = 'no POSIX sh on PATH and none beside git (Git for Windows bin/sh.exe): install Git for Windows'
+    raise RuntimeError(msg)
 
 
 def local_shell(cmd: str, stdin: str | None) -> str:
-    """Run *cmd* in this machine's POSIX shell (Git's ``sh`` on Windows); raise on a non-zero exit.
+    """Run *cmd* in this machine's POSIX shell (:func:`posix_shell`); raise on a non-zero exit.
 
     *stdin* goes in as UTF-8 BYTES: a text-mode pipe on Windows writes CR LF for LF, and a staged credential line
     ending in CR matches no host in git's store, so the forge answers anonymous.
     """
     done = _door.run(
-        [shutil.which('sh') or 'sh', '-c', cmd],
+        [posix_shell(), '-c', cmd],
         input=None if stdin is None else stdin.encode('utf-8'), capture_output=True, check=False,
     )  # fmt: skip
     if done.returncode:

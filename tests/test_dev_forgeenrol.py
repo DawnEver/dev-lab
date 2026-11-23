@@ -161,11 +161,18 @@ def test_the_code_opens_the_plan_mints_and_places_then_deletes_the_minted_file(t
     assert not any(_PLANTED in line for line in said)
 
 
-def test_a_refused_placement_still_deletes_the_minted_file_and_fails(tmp_path: Path) -> None:
+def test_a_refused_placement_keeps_the_minted_file_and_names_the_retry(tmp_path: Path) -> None:
+    """A minted token is spent consent: deleting it on a failed placement threw away a code (2026-11-23).
+
+    PLANTED CONTROL: the placed case above still deletes it.
+    """
     run = _Run(tmp_path / 'home')
-    status, _said, _places = _complete(tmp_path, run, placed=2)
+    status, said, _places = _complete(tmp_path, run, placed=2)
+    kept = stdout_path('dev-user-WS9.token', run.home)
     assert status == 2
-    assert not stdout_path('dev-user-WS9.token', run.home).exists()
+    assert kept.read_text(encoding='utf-8').strip() == _PLANTED
+    assert any(str(kept) in line and 'dev_lab.dev.devcredential' in line for line in said)
+    assert not any(_PLANTED in line for line in said)
 
 
 def test_a_code_the_plan_refuses_mints_nothing(tmp_path: Path) -> None:
