@@ -31,6 +31,7 @@ from dev_lab.dev.devdeclared import OWN_TABLE, layered
 
 __all__ = [
     'REDEPLOY_DOOR',
+    'RERENDER',
     'Unreadable',
     'grant_refusal',
     'grant_setup',
@@ -40,12 +41,26 @@ __all__ = [
     'own_grant',
     'own_grants',
     'read_machine',
+    'refused_with_door',
     'render_grant',
     'without_hpc',
 ]
 
 #: The door that heals an account's machine file: its render rewrites the file from the config source.
 REDEPLOY_DOOR: Final = 'python -m dev_lab.dev.hpcaccount deploy-fleet --account <user>'
+
+#: The door of a machine file its layered reader refuses: the file is a render, so it is rendered again.
+RERENDER: Final = (
+    "this account's machine file is a render of the config source: re-render it from the workstation with "
+    + REDEPLOY_DOOR
+)
+
+
+def refused_with_door(refused: ValueError) -> str:
+    """*refused* -- a declaration no reader on the account could take -- as its cause and its door, said once."""
+    cause = str(refused)
+    return cause if REDEPLOY_DOOR in cause else f'{cause} -- {RERENDER}'
+
 
 #: A TOML table or array-of-tables header line; group 1 is the table's dotted name.
 _HEADER: Final = re.compile(r'^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$')

@@ -347,10 +347,28 @@ def test_a_records_home_past_the_page_bound_is_listed_whole(server) -> None:
 
 
 def test_a_forge_that_ignores_paging_is_refused_not_read_forever(server) -> None:
-    """PLANTED CONTROL: a full page answered again for the next page is a forge ignoring ``page``, not more records."""
+    """PLANTED CONTROL: a full page answered again for the next page is a forge ignoring ``page``, not more records.
+
+    The forge HONOURS the page size (asked for one item it answers one), so the page it repeats is a truncated one.
+    """
     answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
     same = [_asset(i, f'run-{i:040x}-linux-r1.json.gz') for i in range(1, 51)]
     answer('GET', '/repos/o/r/releases/9/assets', (200, same))
+    answer('GET', '/repos/o/r/releases/9/assets?per_page=1&page=1', (200, same[:1]))
     built = client(Forge('github.com', 'o', 'r'), Loopback(server))
     with pytest.raises(ListingIncomplete, match='answered page 2 with page 1'):
         listing(built)
+
+
+@pytest.mark.parametrize('count', [50, 73])
+def test_a_listing_the_forge_pages_nothing_of_is_read_whole_once(server, count: int) -> None:
+    """MEASURED 2026-11-22: ``issues/<n>/assets answered page 2 with page 1 ... refusing a partial read`` on a tick.
+
+    That endpoint pages nothing: it answers the WHOLE listing whatever page and page size are asked. Asked for one
+    item it answers them all again, so nothing is missing -- a complete read, each asset once.
+    """
+    answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
+    whole = [_asset(i, f'run-{i:040x}-linux-r1.json.gz') for i in range(1, count + 1)]
+    answer('GET', '/repos/o/r/releases/9/assets', (200, whole))
+    built = client(Forge('github.com', 'o', 'r'), Loopback(server))
+    assert [a.id for a in listing(built)] == [item['id'] for item in whole]

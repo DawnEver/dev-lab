@@ -36,6 +36,7 @@ from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.forgealarm import NEEDS, Alarm, sound
 from dev_lab.dev.forgefleet import serve_off
 from dev_lab.dev.hpcaccount.checks import runs
+from dev_lab.dev.hpcaccount.grantslice import RERENDER
 from dev_lab.dev.hpcaccount.spec import (
     KIT,
     VERIFICATION,
@@ -54,12 +55,6 @@ from dev_lab.dev.roles import Unbound
 __all__ = ['account', 'follow_uv', 'tick']
 
 _runs = runs
-
-#: The door of a machine file its layered reader refuses: the file is a render, so it is rendered again.
-RERENDER = (
-    "this account's machine file is a render of the config source: re-render it from the workstation with "
-    'python -m dev_lab.dev.hpcaccount deploy-fleet --account <user>'
-)
 
 
 def account() -> str:

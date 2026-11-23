@@ -74,7 +74,8 @@ def test_a_dry_run_runs_the_accounts_own_retention_without_apply() -> None:
     assert _retentions(seen['alice']) == [_line('-m dev_lab.dev.retention --cluster')]
     assert not any('--apply' in cmd for cmd in seen['alice'] + seen['bob'])  # PLANTED: a dry run deletes nothing
     assert any('999k' in line for line in said)  # the files column of the quota is printed
-    assert 'alice: retention (dry run)' in said
+    assert "alice: retention (dry run), the caller's rules (streamed; nothing is written on the account)" in said
+    assert "alice: retention (dry run), the account kit's own rules" in said
 
 
 def test_apply_passes_apply_to_the_accounts_retention() -> None:
@@ -82,7 +83,7 @@ def test_apply_passes_apply_to_the_accounts_retention() -> None:
     assert code == 0
     assert _retentions(seen['bob']) == [_line('-m dev_lab.dev.retention --cluster --apply')]
     assert seen['alice'] == []  # only the named account is reached
-    assert 'bob: retention --apply' in said
+    assert "bob: retention --apply, the account kit's own rules" in said
 
 
 def test_an_account_whose_serve_never_ticks_is_named() -> None:
@@ -298,7 +299,9 @@ def _quota(functions: str) -> str:
     bash = shutil.which('bash')
     assert bash, 'the quota line runs in bash on the account'
     silent = 'mmlsquota() { return 1; }; quota() { return 1; }; lfs() { return 1; }; '
-    done = subprocess.run([bash, '-c', silent + functions + storage.QUOTA], capture_output=True, text=True, check=True)
+    done = subprocess.run(
+        [bash, '-c', silent + functions + storage.QUOTA], capture_output=True, text=True, encoding='utf-8', check=True
+    )
     return done.stdout
 
 
@@ -321,3 +324,25 @@ def test_a_quota_tool_that_exits_non_zero_over_quota_is_still_the_answer() -> No
 def test_mmlsquota_is_looked_for_where_the_accounts_retention_reads_it() -> None:
     for candidate in MMLSQUOTA:
         assert f'"{candidate} --block-size auto"' in storage.QUOTA
+
+
+#: ``quota -w`` in KB: files past 95% of their soft quota, bytes far from theirs.
+_QUOTA_W = 'Disk quotas for user alice\n  /home  1000  1000000  1100000  1990000*  2000000  2020000'
+
+
+def test_every_account_gets_one_usage_vs_quota_line_naming_the_line_it_reached() -> None:
+    said = storage.usage_of('alice', _QUOTA_W)
+    assert said[0].startswith('alice: usage files 1990000/2000000 (99.5%), headroom 10000 files; bytes ')
+    assert said[1].startswith('alice: QUOTA-FULL: files at 99.5%')
+
+
+def test_planted_control_an_account_well_under_is_one_line_and_unread_says_so() -> None:
+    calm = _QUOTA_W.replace('1990000*', '200000')
+    assert len(storage.usage_of('bob', calm)) == 1
+    assert storage.usage_of('bob', 'no tool') == [f'bob: {storage.quotawatch.UNREAD}']
+
+
+def test_the_fleet_read_prints_the_usage_line_per_account() -> None:
+    _code, said, _seen = _run()
+    assert any(line.startswith('alice: usage') for line in said)
+    assert any(line.startswith('bob: usage') for line in said)

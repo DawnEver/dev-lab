@@ -357,6 +357,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
     'forgewaves',  # ORIGINAL: an unacknowledged break-glass wave reaches each session once (ruling 2026-11-19)
     'venvfollow',
+    'oldcopies',  # ORIGINAL: the old layout's copies, one list drift reports and retention deletes (2026-11-22)
+    'quotawatch',  # ORIGINAL: an account's quota judged against the two declared lines, before it fills (2026-11-22)
+    'headroom',  # ORIGINAL: a deploy refuses by name what the file quota cannot fit (2026-11-22)
+    'selfclean',  # ORIGINAL: a failed deploy step removes its own half-built output (2026-11-22)
+    'accountsweep',  # ORIGINAL: the caller's retention rules streamed to an account too full to update (2026-11-22)
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',

@@ -5,7 +5,7 @@ dry-run list nothing removed, and an account's FILE quota filled with them (meas
 account at its 2.0 M limit), with no door to remove them and raw ssh forbidden.
 
 ONE LIST (:data:`STRAYS_IN_HOME`, :data:`STRAYS_IN_ROOT`, a retired ``repos/<repo>/.venv-current``): ``drift``
-reports it (:func:`old_copies`) and the account's retention deletes it (:func:`plan`, rule :data:`RULE`) -- a dry
+reports it (:func:`left_behind`) and the account's retention deletes it (:func:`plan`, rule :data:`RULE`) -- a dry
 run unless ``--apply``, like every rule. Nothing outside the list is ever an old copy: a research directory in the
 home is the user's.
 
@@ -27,7 +27,7 @@ from dev_lab.dev.liverun import label, removal_holders
 from dev_lab.dev.retentionplan import Doomed
 from dev_lab.dev.venvpointer import RETIRED_POINTER
 
-__all__ = ['DOOR', 'RULE', 'STRAYS_IN_HOME', 'STRAYS_IN_ROOT', 'old_copies', 'plan']
+__all__ = ['DOOR', 'RULE', 'STRAYS_IN_HOME', 'STRAYS_IN_ROOT', 'left_behind', 'plan']
 
 #: Where the layout before the declared root kept the forge, home-relative and root-relative.
 STRAYS_IN_HOME: Final = ('.local/share/lab-forge', 'ci', 'src/dev-lab')
@@ -38,7 +38,7 @@ RULE: Final = 'old-copy'
 DOOR: Final = 'python -m dev_lab.dev.hpcaccount retention --account <user> [--apply]'
 
 
-def old_copies(home: Path, root: Path) -> list[Path]:
+def left_behind(home: Path, root: Path) -> list[Path]:
     """Every old copy the account at *root* (login home *home*) still holds; read only."""
     old = [home / p for p in STRAYS_IN_HOME] + [root / p for p in STRAYS_IN_ROOT]
     old += [repo / RETIRED_POINTER for repo in sorted((root / 'repos').glob('*'))]
@@ -88,7 +88,7 @@ def plan(
 
     *crontab* reads the account's crontab (``None``: unreadable) -- only when there is an old copy to judge.
     """
-    found = old_copies(home, root)
+    found = left_behind(home, root)
     listed = crontab() if found else ''
     doomed: list[Doomed] = []
     kept: list[str] = []
