@@ -111,7 +111,7 @@ from dev_lab.dev.family import declared_in
 from dev_lab.dev.famtests.alwayson import resource_nodes
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgecontexts import CONTEXT_PREFIX, HOLD_CONTEXT, NOT_PARTS, REVIEW_CONTEXT
-from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
+from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush, run_attempt
 from dev_lab.dev.partfacts import Part, facts_of, latest, parsed
 from dev_lab.dev.partrows import is_row, needs_of_row, row_part
 from dev_lab.dev.producer import AUTHORS_RED, Owner, unreachable, whose
@@ -521,10 +521,10 @@ def post(root: Path, path: Path, onto: str = '') -> str:
     part = part_of(record)
     if not part.policy:  # a record its producer did not stamp: the policy the judged commit declares
         part = dataclasses.replace(part, policy=verdict_policy_at(root, str(record['sha'])))
-    if onto:
-        part = dataclasses.replace(part, carried=str(record['sha'])[:12])
+    part = dataclasses.replace(part, carried=str(record['sha'])[:12]) if onto else part
     sha = onto or str(record['sha'])
-    enqueue(root, Post(sha, part_context(part.platform), part.state, part.description()), record=path)
+    held = Post(sha, part_context(part.platform), part.state, part.description(), attempt=run_attempt())
+    enqueue(root, held, record=path)
     lines = flush(root)
     return '\n'.join([f'[platformparts] {part.platform} part {part.result.name}: {part.description()}', *lines])
 

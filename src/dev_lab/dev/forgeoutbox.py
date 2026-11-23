@@ -86,11 +86,22 @@ __all__ = [
     'outbox_dir',
     'queued',
     'replay',
+    'run_attempt',
     'unprompted_client',
 ]
 
 #: The states that are a RESULT -- a verdict; ``error`` releases a claim and ``pending`` is one.
 RESULTS: Final = frozenset({'success', 'failure'})
+
+#: The environment variable an Actions job carries its run ATTEMPT in: 1 for the first run, N for the N-th re-run.
+RUN_ATTEMPT_VAR: Final = 'GITHUB_RUN_ATTEMPT'
+
+
+def run_attempt(env: Mapping[str, str] | None = None) -> int:
+    """The run attempt *env* (default: this process's) declares (:data:`RUN_ATTEMPT_VAR`); 1 for none or junk."""
+    raw = (os.environ if env is None else env).get(RUN_ATTEMPT_VAR, '')
+    return int(raw) if raw.isdigit() and int(raw) > 0 else 1
+
 
 #: The length of a full sha-1 commit id, the only commit name the forge's status endpoint takes.
 SHA_LENGTH: Final = 40
@@ -117,6 +128,9 @@ class Post:
     #: The repository the status lands on when it is not this checkout's ``origin`` -- a data PR's consumer run
     #: (:mod:`dev_lab.dev.forgedataruns`) posts on the DATA repo; empty is ``origin``.
     repo: str = ''
+    #: The producing run's attempt (:func:`run_attempt`): above 1 the result is a person's deliberate RE-RUN, which
+    #: supersedes an earlier result for the same commit and context instead of alarming as a duplicate.
+    attempt: int = 1
 
     def __post_init__(self) -> None:
         """A state the forge does not take, or a sha that is not a full commit id, is refused at queueing."""
@@ -165,7 +179,7 @@ def queued(root: Path) -> tuple[Post, ...]:
             raw = json.loads(path.read_text(encoding='utf-8'))
             found.append(
                 Post(raw['sha'], raw['context'], raw['state'], raw['description'], raw.get('record', ''),
-                     raw.get('repo', ''))
+                     raw.get('repo', ''), int(raw.get('attempt', 1)))
             )  # fmt: skip
         except (ValueError, KeyError, TypeError):
             continue
@@ -238,6 +252,11 @@ def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], obj
     duplicate run (a lost lease, a partition): an identical one is dropped; a DIFFERING one is never posted
     and sounds :data:`~dev_lab.dev.forgealarm.NONDETERMINISM` -- the unit is not deterministic.
 
+    A RE-RUN IS NOT A DUPLICATE (2026-11-23). A person re-running a failed part job (``gh run rerun --failed``)
+    asks for a new verdict; under the first-wins rule its pass was alarmed and never posted, so the first attempt's
+    failure stood and merge-ready read the part FAIL for good. A post whose :attr:`Post.attempt` is above 1
+    supersedes a differing first result: it is posted, and the latest per context is what every reader reads.
+
     ONE OWNER PER WRITE. A held entry is already durable and is retried every flush until delivered, so its
     upload and status go through the door WITHOUT the write journal; journaling them too gave a failed post
     two owners, and after an outage both delivered it (a duplicate ``error`` status).
@@ -245,12 +264,14 @@ def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], obj
     directory = outbox_dir(root)
     built = dataclasses.replace(built, journal=None)  # the held entry owns this write, not the journal
     first = _decided(built, post)
-    if first is None:
+    if first is None or (first.state != post.state and post.attempt > 1):
         url = attach(built, directory / post.record, root=root).url if post.record else ''
         status_post(
             built, post.sha, context=post.context, state=post.state, description=post.description, target_url=url
         )
         line = f'status: {post.context}={post.state} on {post.sha[:12]}' + (f' -> {url}' if url else '')
+        if first is not None:
+            line += f' (re-run attempt {post.attempt} supersedes the first {first.state})'
     elif first.state == post.state:
         line = f'status: {post.context} on {post.sha[:12]} already holds {first.state} -- the identical result dropped'
     else:
