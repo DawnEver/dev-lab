@@ -96,3 +96,15 @@ def test_the_holder_replay_takes_a_post_with_no_forge_date_at_now() -> None:
     posts = [CommitStatus(CONTEXT, 'pending', one.description(), '', index) for index, one in enumerate((owner, taker))]
     assert holder(posts, now=NOW).login == 'alice'
     assert holder(posts, now=NOW + LEASE).login == 'bob', 'PLANTED CONTROL: lapsed at now, the next claim takes'
+
+
+def test_progress_too_long_for_a_description_is_cut_at_a_word_never_mid_word() -> None:
+    """Seen: ``lost 4649: forge run s`` -- the forge's 140 characters cut the progress inside a word."""
+    words = 'running 1/1 done 0/1; 4649 ids lost over 3 rounds; ' + 'word ' * 20
+    said = Claim('login2', 'alice', NOW, 'ada/alice', words.strip()).description()
+    assert len(said) <= forgeclaim.DESCRIPTION_LIMIT
+    assert said.split(' -- ', 1)[1] in words, 'every word kept is whole'
+    assert words.startswith(said.split(' -- ', 1)[1] + ' ')
+    assert Claim.parse(said) is not None
+    short = Claim('login2', 'alice', NOW, 'ada/alice', 'running 1/1').description()  # PLANTED: a fit is untouched
+    assert short.endswith(' -- running 1/1')

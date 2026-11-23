@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
 def _tick(argv: list[str]) -> int:
     """``tick <repo>... [--lock <path> --wall-minutes <m>]``: unlocked and unbounded without ``--lock``."""
     from dev_lab.dev.hpcaccount import tick, tickwall  # noqa: PLC0415 -- the package imports no verb
-    from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES  # noqa: PLC0415
+    from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES  # noqa: PLC0415 -- the tick verb's default
 
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount tick')
     parser.add_argument('repos', nargs='+')

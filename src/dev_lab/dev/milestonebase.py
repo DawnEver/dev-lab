@@ -22,6 +22,10 @@ version tag is added only on promotion to the trunk or at the user's request. Tw
   ``.dev0`` is refused even approved: hatch-vcs chooses the ``.devN`` distance itself and refuses a
   custom one, so a milestone is ``vX.Y.Z.dev0`` and the next bumps the patch or minor. A human
   push and an existing remote tag are not judged.
+* ``ONLY-VERSION-TAGS`` -- a push CREATING a tag that is no family version (the grammar above) is refused for
+  every pusher, human or agent (user ruling 2026-11-23): origin holds only ``v*`` releases and milestones. An
+  ``archive/*``, ``hold/*`` or ``pin/*`` tag parks unlanded work nobody reads; that work is merged or discarded
+  (``MERGE-OR-DELETE``). Deleting such a tag is the cleanup, never judged.
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ __all__ = [
     'APPROVED_ENV',
     'BASE_RULE',
     'HOOK_ID',
+    'ONLY_VERSIONS_RULE',
     'TAG_RULE',
     'main',
     'milestone_version',
@@ -54,6 +59,8 @@ __all__ = [
 
 BASE_RULE: Final = 'BASE-HOLDS-THE-MILESTONE'
 TAG_RULE: Final = 'VERSION-TAG-NEEDS-APPROVAL'
+ONLY_VERSIONS_RULE: Final = 'ONLY-VERSION-TAGS'
+_TAGS: Final = 'refs/tags/'
 #: The id this guard runs under in ``githooks/base.toml``.
 HOOK_ID: Final = 'milestone-base'
 #: The user's own approval words for a version tag pushed from an agent session.
@@ -123,6 +130,13 @@ def _not_dev0(tag: str) -> str:
     )
 
 
+def _no_version(tag: str) -> str:
+    return (
+        f'{ONLY_VERSIONS_RULE}: {tag} is no family version (vX.Y.Z or a vX.Y.Z.dev0 milestone); origin holds only '
+        f'those. Unlanded work is merged or discarded (MERGE-OR-DELETE), never parked in a tag: drop the tag'
+    )
+
+
 def refusals(root: Path, lines: str, *, env: Mapping[str, str] | None = None) -> list[str]:
     """Every refusal for the push *lines* describe; *env* defaults to the process environment."""
     env = os.environ if env is None else env
@@ -137,8 +151,13 @@ def refusals(root: Path, lines: str, *, env: Mapping[str, str] | None = None) ->
             code, _ = _git(root, 'merge-base', '--is-ancestor', f'{milestone}^{{commit}}', ref.local_sha)
             if code != 0:
                 found.append(_behind(milestone, ref.branch, ref.local_sha))
+        elif (
+            ref.created
+            and ref.remote_ref.startswith(_TAGS)
+            and milestone_version(tag := ref.remote_ref.removeprefix(_TAGS)) is None
+        ):
+            found.append(_no_version(tag))
         elif ref.created and ref.remote_ref.startswith(_VERSIONS) and session_of(env):
-            tag = ref.remote_ref.removeprefix('refs/tags/')
             if (match := _GRAMMAR.fullmatch(tag)) is not None and match.group(4) not in {None, '0'}:
                 found.append(_not_dev0(tag))
             elif not env.get(APPROVED_ENV, '').strip():
