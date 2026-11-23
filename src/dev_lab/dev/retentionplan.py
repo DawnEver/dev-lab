@@ -119,7 +119,8 @@ class Policy:
     log_max_mb: float = 20.0
     slurm_out_days: float = 7.0
     uv_prune: bool = True
-    pressure: float = 0.85
+    pressure: float = 0.85  # the WARNING line too (dev_lab.dev.quotawatch): warned and trying harder are one fact
+    refuse: float = 0.95  # the refuse-new-work line: no deploy build, tick refresh or claim at or past it
     target: float = 0.70
     collect_files: int = 16
     unit_results: int = 256

@@ -86,7 +86,10 @@ class Usage:
     def after(self, freed: int, freed_files: int) -> list[str]:
         """``usage bytes ... -> ...`` and, with a file quota, ``usage files ... -> ...``: now, then once freed."""
         gb, left = 1024**3, self.used - freed
-        lines = [f'usage bytes {self.used / gb:.1f}/{self.limit / gb:.1f} GB -> {left / gb:.1f} GB']
+        if self.limit:
+            lines = [f'usage bytes {self.used / gb:.1f}/{self.limit / gb:.1f} GB -> {left / gb:.1f} GB']
+        else:  # no byte quota was read: used-minus-freed would print a negative, never a reading
+            lines = [f'usage bytes unread (no byte quota read); freeing {freed / gb:.1f} GB']
         if self.files is not None and self.files_limit:
             now, rest, cap = self.files, self.files - freed_files, self.files_limit
             lines.append(f'usage files {now}/{cap} ({now / cap:.1%}) -> {rest} ({rest / cap:.1%})')

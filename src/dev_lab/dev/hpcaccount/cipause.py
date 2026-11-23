@@ -35,7 +35,7 @@ from lab_commons.log import emit
 from dev_lab.dev.hpcaccount import cicron, deploy
 from dev_lab.dev.hpcaccount.cimark import RESUME_DOOR, marker
 from dev_lab.dev.hpcaccount.drift import DISCARD, account_drift, unrenderable
-from dev_lab.dev.hpcaccount.grantslice import grant_setup
+from dev_lab.dev.hpcaccount.grantslice import grant_setup, refused_with_door
 from dev_lab.dev.hpcaccount.spec import MARK, Deployment, cron_lines, load, ticked
 from dev_lab.dev.hpcaccount.steps import Step, Tools, crontab
 
@@ -65,7 +65,11 @@ def _consented(verb: str, step: Step, args: argparse.Namespace, redeem_with: cic
 
 
 def _serving(machine: Path) -> Deployment | str:
-    spec = load(machine) if machine.is_file() else None
+    """The serving deployment *machine* declares; else why there is none -- its cause and door, never a traceback."""
+    try:
+        spec = load(machine) if machine.is_file() else None
+    except ValueError as refused:  # an unreadable declaration: the layered reader's or the loader's own refusal
+        return refused_with_door(refused)
     if spec is None:
         return f'no [deploy] in {machine}: deploy it with python -m dev_lab.dev.hpcaccount deploy-fleet'
     if not ticked(spec):

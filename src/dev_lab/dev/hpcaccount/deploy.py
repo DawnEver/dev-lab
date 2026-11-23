@@ -28,7 +28,8 @@ credential that may push or administer a forge-hosted repo, or is not the role's
 ``read_only`` (else reported; :mod:`dev_lab.dev.hpcaccount.division`, user rulings 2026-11-09); write this account's own
 ``[[hpc.grant]]`` when it has none; prove the serve's git (``git merge-tree --write-tree``, git >= 2.38) on a toy
 repository -- IN the tick's environment (cron's PATH, then this account's grant ``setup``, which every cron line runs
-before its tick) -- or refuse naming that environment; clone or update each checkout; install ``uv`` and
+before its tick) -- or refuse naming that environment; state the quota and refuse what cannot fit
+(:mod:`dev_lab.dev.hpcaccount.headroom`); clone or update each checkout; install ``uv`` and
 every declared ``needs`` whose ``--version`` does not run in the tick's environment, or refuse naming it;
 make the login shell's PATH name the tick's user installs (one marked line in the files bash reads, written
 once, the file backed up first); build each ``.venv`` with the repo's own ``[tool.lab_commons.hpc] install``
@@ -73,6 +74,7 @@ from lab_commons.hpc.rclone import declared_remote, probe
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev.hpcaccount import headroom
 from dev_lab.dev.hpcaccount.account import ApiCheck, RoleCheck, auth_check, credentials, grant, reader, role_of
 from dev_lab.dev.hpcaccount.checks import MERGE_TREE_GIT, follow_uv, merge_tree_refusal, runs, tool_plan
 from dev_lab.dev.hpcaccount.cimark import paused_refusal
@@ -89,8 +91,9 @@ from dev_lab.dev.hpcaccount.spec import (
     tick_dirs,
     tick_environment,
     ticked,
+    uv_cache,
 )
-from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, update
+from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, prune_uv, update
 
 __all__ = ['deploy', 'main', 'slurm_dirs']
 
@@ -201,7 +204,8 @@ def _tools(
         emit(f'[tools] {lagging}', err=True)
     installs, failed = tool_plan(wanted, found=lambda tool: _runs(step.tools.sh, environment, tool))
     for tool, script in installs:
-        if step.change(f'install {tool}: {script}', [*step.tools.sh, script]):
+        cache = {'UV_CACHE_DIR': str(uv_cache(spec.root))}  # `uv tool install`: the ONE cache, not the user default
+        if step.change(f'install {tool}: {script}', [*step.tools.sh, script], env=cache):
             failed.append(tool)
     remedy = (
         f'does not run (`--version`) in the tick environment (`{environment}`) and is not installable here; '
@@ -219,8 +223,8 @@ def _tools(
 #: Every deploy phase, in order. The SERVING phases exist only to tick a verification account's queue: the scheduler
 #: (cron) and what it alone needs -- the serve tick's git, a tick now. Rule ``SCHEDULER-ONLY-FOR-SERVING``.
 PHASES: Final = (
-    'credentials', 'reader', 'grant', 'store', 'serve-git', 'checkouts', 'tools', 'login', 'venvs', 'artefacts',
-    'cron', 'tick',
+    'credentials', 'reader', 'grant', 'store', 'serve-git', 'headroom', 'checkouts', 'tools', 'login', 'venvs',
+    'artefacts', 'cron', 'tick',
 )  # fmt: skip
 SERVING_PHASES: Final = frozenset({'serve-git', 'cron', 'tick'})
 
@@ -362,10 +366,14 @@ def deploy(
         'grant': lambda: grant(step, path, args.grant_table),
         'store': lambda: store(step, spec, path),
         'serve-git': lambda: _serve_git(step, home, path, slurm, setup, root=spec.root, env=spec.env),
+        'headroom': lambda: headroom.check(step, spec, home),
         'checkouts': lambda: _each(step, spec, home, f'[checkouts] under {spec.root}', update, refused=refused),
         'tools': lambda: _tools(step, spec, home, refused, slurm=slurm, setup=setup),
         'login': lambda: login(step, home, spec.root),
-        'venvs': lambda: _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused),
+        'venvs': lambda: (
+            _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused)
+            or prune_uv(step, spec)
+        ),
         'artefacts': lambda: _each(step, spec, home, artefacts, _artefacts, refused=refused),
         'cron': lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
         'tick': lambda: _each(

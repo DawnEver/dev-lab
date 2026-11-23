@@ -42,6 +42,8 @@ EXEMPT: Final[dict[str, str]] = {
     'src/dev_lab/ops/upgrade.py': 'command returns the uv pip argv _install routes through run_network_verb',
     'src/dev_lab/dev/hpcaccount/steps.py': 'runs on the cluster host through its own run-or-print Step, whose '
     'refusal the deploy reports per repo',
+    'src/dev_lab/dev/hpcaccount/checkout.py': 'the checkouts step of steps.py, split out: runs on the cluster host '
+    'through the same run-or-print Step, whose refusal the deploy reports per repo',
     'src/dev_lab/dev/hpcaccount/account.py': 'runs on the cluster host; its ls-remote is a read-access probe whose '
     'exit code IS the answer',
     'src/dev_lab/dev/codexdeny.py': 'its argv tuples are Codex prefixes it FORBIDS, rendered as data, never run',

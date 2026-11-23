@@ -440,6 +440,12 @@ ALLOWED: Final[dict[Site, str]] = {
         "['git', '-C', str(root), *arguments],",
     ): 'git through PATH building the scratch checkouts the local-name reader is then asked to read',
     (
+        'src/dev_lab/dev/accountsweep.py',
+        'S607',
+        "['crontab', '-l'],",
+    ): "the account's own crontab through its PATH: this file is streamed, stdlib only, to a cluster account whose "
+    'crontab lives at no path the workstation can know',
+    (
         'src/dev_lab/dev/githooks/inprocess.py',
         'BLE001',
         'except Exception:',
