@@ -8,8 +8,9 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   :mod:`~dev_lab.dev.hpcaccount.account` and :mod:`~dev_lab.dev.hpcaccount.checks`, its steps
   :mod:`~dev_lab.dev.hpcaccount.steps`, its host check :mod:`~dev_lab.dev.hpcaccount.deployhost`, its declaration
   :mod:`~dev_lab.dev.hpcaccount.declaration`.
-* ``tick <repo>...`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is one cron tick: the host refreshes the kit (this
-  package's checkout) and the repo, then the kit's ``forge serve`` runs in the repo's checkout.
+* ``tick <repo>... [--lock <path> --wall-minutes <m>]`` (:mod:`~dev_lab.dev.hpcaccount.tick`) is one cron tick: the
+  host refreshes the kit (this package's checkout) and the repo, then the kit's ``forge serve`` runs in the repo's
+  checkout -- under the lock and within the wall the cron line names (:mod:`~dev_lab.dev.hpcaccount.tickwall`).
 * ``allocate --until <iso> [name=cpus/mem_gb ...] [--borrow <direction>] | --show | --clear``
   (:mod:`~dev_lab.dev.hpcaccount.allocate`) writes, prints or deletes the ONE expiring allocation record on the forge
   (:mod:`lab_commons.hpc.allocation`); the forge's own submits read it (:mod:`dev_lab.dev.forgeslurm`).
@@ -53,6 +54,7 @@ Everything else about the cluster -- plan, submit, run, gather, clean -- stays `
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -65,7 +67,7 @@ _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | '
-    'tick <repo>... | allocate [...]}'
+    'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
 )
 
 
@@ -82,7 +84,6 @@ def main(argv: list[str] | None = None) -> int:
         forget,
         keys,
         storage,
-        tick,
     )
 
     argv = sys.argv[1:] if argv is None else argv
@@ -109,7 +110,26 @@ def main(argv: list[str] | None = None) -> int:
     if verb in verbs:
         return verbs[verb](rest)
     if verb == 'tick' and rest:
-        probed: dict[str, bool] = {}  # one probe per tool per tick, however many repos it serves
-        return max(tick.tick(name, home=Path.home(), probed=probed) for name in rest)
+        return _tick(rest)
     emit(retired_refusal('dev_lab.dev.hpcaccount', verb) or _USAGE, err=True)
     return 2
+
+
+def _tick(argv: list[str]) -> int:
+    """``tick <repo>... [--lock <path> --wall-minutes <m>]``: unlocked and unbounded without ``--lock``."""
+    from dev_lab.dev.hpcaccount import tick, tickwall  # noqa: PLC0415 -- the package imports no verb
+    from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES  # noqa: PLC0415
+
+    parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount tick')
+    parser.add_argument('repos', nargs='+')
+    parser.add_argument('--lock', type=Path, help="this tick's lock; its holder record is written beside it")
+    parser.add_argument('--wall-minutes', type=int, default=DEFAULT_TICK_WALL_MINUTES)
+    args = parser.parse_args(argv)
+    probed: dict[str, bool] = {}  # one probe per tool per tick, however many repos it serves
+
+    def body(wall: tickwall.Wall | None) -> int:
+        return max(tick.tick(name, home=Path.home(), probed=probed, wall=wall) for name in args.repos)
+
+    if args.lock is None:
+        return body(None)
+    return tickwall.locked(args.lock, ' '.join(args.repos), args.wall_minutes * 60.0, body)

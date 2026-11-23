@@ -107,9 +107,11 @@ and per integration head, a condition every forge merge waits on.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import functools
 import json
 import os
+import signal
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -164,6 +166,7 @@ from dev_lab.dev.forgewait import Box
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.producer import ProducerExit
+from dev_lab.dev.tickholder import phase
 from dev_lab.dev.worktreeplace import work_root
 from dev_lab.supervise.notice import Context
 
@@ -262,6 +265,7 @@ def serve(
         ),
         room=(lambda _held: None) if seat is not None else boxed, cards=cards,
     )  # fmt: skip
+    phase('claiming and producing')
     rounds, produced = host_rounds.serve(beat_s)
     demote_unreachable(produced)
     runs, card, ticked = host_rounds.runs, host_rounds.card, rounds[-1]
@@ -271,12 +275,14 @@ def serve(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm,
         beat=lambda: card(claimed), spent=lambda: clock() >= runs_from + timedelta(seconds=beat_s), submit=submit,
     )  # fmt: skip
+    phase('tidying runs and storage')
     tidy_runs(root, client, repo, seat=seat, say=say, alarm=alarm)
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     pressed(root, repo, who=name, say=say, alarm=alarm)
     if ticked.pending and not claimed and not left:
         alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', ticked.idle()))
     card(claimed)
+    phase('the poller sweep')
     if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
         repo_wide(root, repo, remembering(client), name, cards, clock=clock, say=say, alarm=alarm)
     every_host(root, repo, client(root), say=say, alarm=alarm, host=name)  # never only on the poller
@@ -343,6 +349,7 @@ def _advance(
             say(f'[serve] the tick ran past its period: {" ".join(sha[:12] for sha in waiting)} wait for the next')
             return left + waiting
         beat()
+        phase(f'advancing the cluster run of {run.sha[:12]} ({run.phase})')
         try:
             after = forgerun.advance(
                 root, run, client=built, me=me, lease=lease, cluster=slurm, say=say, alarm=alarm,
@@ -363,6 +370,18 @@ def _advance(
             forgerunstate.touch(after)
             left.append(after.sha)
     return left
+
+
+def _terminated(signum: int, _frame: object) -> None:
+    """SIGTERM (a tick at its wall, or ``tick-stop``) runs every ``finally``: producers joined, claims let go."""
+    raise SystemExit(128 + signum)
+
+
+def _exit_on_sigterm() -> None:
+    """Install :func:`_terminated` (POSIX; only the main thread sets a handler, a thread's serve keeps none)."""
+    if os.name != 'nt':
+        with contextlib.suppress(ValueError):
+            signal.signal(signal.SIGTERM, _terminated)
 
 
 def _host_failure(root: Path, failure: BaseException) -> None:
@@ -395,6 +414,7 @@ def main(
         require_producer(built.backend, FORGE_SERVE, f'forge serve of {here}')  # GitHub: Actions alone (2026-11-11)
         return built
 
+    _exit_on_sigterm()
     seat = seat_of()
     machine = this_machine()
     if args.submit:
