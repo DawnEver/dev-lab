@@ -24,12 +24,10 @@ collection and is not checked.
 from __future__ import annotations
 
 import argparse
-import os
 import re
-import subprocess
 import sys
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from importlib import metadata
 from pathlib import Path
 from typing import Final
@@ -38,10 +36,10 @@ from lab_commons import extras
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 
-from dev_lab.dev import taskbinding
+from dev_lab.dev import taskledger
 from dev_lab.dev.partrows import needs_of_row
 
-__all__ = ['bound_task_extras', 'declared_needs', 'extras_for', 'flags', 'main', 'missing_for_part', 'task_needs']
+__all__ = ['declared_needs', 'extras_for', 'flags', 'main', 'missing_for_part', 'task_extras', 'task_needs']
 
 #: A requirement's distribution name: the leading identifier, before extras, versions, URLs or markers.
 _NAME: Final = re.compile(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
@@ -144,19 +142,20 @@ def _names(requirements: list[str]) -> list[str]:
     return [m.group(1) for req in requirements if ';' not in req and (m := _NAME.match(req))]
 
 
-def bound_task_extras(root: Path, env: Mapping[str, str] | None = None) -> tuple[str, ...] | None:
-    """The extras the session's bound task asks for through its declared needs (D79), else ``None`` (the default).
+def task_extras(root: Path) -> tuple[str, ...] | None:
+    """The extras the task *root*'s branch works on asks for through its declared needs (D79), else ``None``.
 
-    An explicit ``--extra`` still overrides. No bound session, or a task declaring no needs, keeps the repo's
-    declared extras (``None`` lets :func:`~dev_lab.dev._dep_project.read_project` read them).
+    An explicit ``--extra`` still overrides. No task branch (:func:`dev_lab.dev.taskledger.task_of`), or a task
+    declaring no needs, keeps the repo's declared extras (``None`` lets
+    :func:`~dev_lab.dev._dep_project.read_project` read them).
     """
     try:
-        bound = taskbinding.session_binding(os.environ if env is None else env, start=root)
-    except (OSError, ValueError, subprocess.CalledProcessError):
+        task = taskledger.task_of(root)
+        if task is None:
+            return None
+        needs = task_needs(taskledger.ledger(), task)
+    except (OSError, ValueError, LookupError):
         return None
-    if bound is None:
-        return None
-    needs = task_needs(bound.ledger, bound.task)
     return extras_for(root, needs) if needs else None
 
 

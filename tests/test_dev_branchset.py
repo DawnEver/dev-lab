@@ -155,11 +155,11 @@ def test_an_ephemeral_glob_is_declared_and_a_malformed_one_refused(tmp_path: Pat
 
 
 def test_a_subdirectory_root_resolves_to_its_checkout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Run from .claude/tasks/x of a checkout, the declaration is the checkout's, not the subdirectory's."""
+    """Run from a subdirectory of a checkout, the declaration is the checkout's, not the subdirectory's."""
     work = plant_checkout(tmp_path, trunk='main').work
     _manifest(work, "[tool.dev_lab.branchset]\ntrunk = 'main'\nsessions = []\n")
     _run(work, 'branch', 'landed')
-    sub = work / '.claude' / 'tasks' / 'x'
+    sub = work / '.claude' / 'notes' / 'x'
     sub.mkdir(parents=True)
     assert main(['--root', str(sub)]) == 0
     assert 'delete  local   landed' in capsys.readouterr().out

@@ -157,7 +157,6 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
             'workflows',
             'rules',
             'memory',
-            'tasks',
             'output-styles',
             'docs',
         )

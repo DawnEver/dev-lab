@@ -3,10 +3,9 @@
 THE RULE (user rulings 2026-10-31, the four-layer plan). A memory entry is immutable once written: a
 correction is a NEW entry naming the old one in ``corrects:``, and a consolidation is a NEW entry naming
 its sources in ``merged_from:``. So a change touching ``**/.claude/memory/**`` may only ADD a file.
-Four shapes are not narrative edits:
+Three shapes are not narrative edits (nothing is ever renamed INTO memory: a closed task is archived in the
+global tasks repo by rem, :func:`dev_lab.dev.taskledger.ledger`, user ruling 2026-11-23):
 
-* a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is how a
-  closed task becomes history, and it is the one rename into memory;
 * the one-shot four-layer migration, which removes only the volatile frontmatter fields
   (:data:`dev_lab.dev.memoryentry.VOLATILE_FIELDS`) a reader used to rewrite on every read. A change
   whose ONLY difference is those lines is that migration and nothing else;
@@ -42,7 +41,6 @@ need no frontmatter of their own.
 
 from __future__ import annotations
 
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -80,8 +78,6 @@ _GIT_TIMEOUT_S = 120
 _ZERO = '0' * 40
 _EMPTY_TREE: Final = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: the base before a first push
 _REF_LINE_FIELDS: Final = 4  # git pre-push: <local ref> <local sha> <remote ref> <remote sha>
-_TASK = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/')
-_KIND_TASK = re.compile(r'\A---\r?\n(?:.*\r?\n)*?kind:[ \t]*task[ \t]*\r?\n(?:.*\r?\n)*?---')
 
 
 class MemoryAddsError(RuntimeError):
@@ -149,11 +145,12 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
     for status, old, new in rows:
         if status in 'AC' and is_memory(new):
             text = _git(root, 'show', f'{new_rev}:{new}')
-            shape = () if _in_archived_task(root, new_rev, new) else shape_problems(new, text)
-            out.extend((*shape, *merged_entry_problems(new, text, exists)))
+            out.extend((*shape_problems(new, text), *merged_entry_problems(new, text, exists)))
         elif status == 'R' and is_memory(new) and not is_memory(old):
-            if not _TASK.search(old):
-                out.append(f'{new}: only a task (.claude/tasks/<slug>/) moves into memory, not {old}')
+            out.append(
+                f'{new}: nothing moves into memory, not {old}; write a new entry instead (a closed task is '
+                "archived in the global tasks repo by rem's /rem:task close, never in a checkout)"
+            )
         elif status == 'M' and is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
             if not (
@@ -188,18 +185,6 @@ def problems_between(root: Path, base: str, head: str) -> tuple[str, ...]:
     rows = _changes(root, f'{since}...{head}')
     published = _published(root, head, rows)
     return _judge(root, since, head, [row for row in rows if row[0] not in 'ACM' or row[2] not in published])
-
-
-def _in_archived_task(root: Path, rev: str, path: str) -> bool:
-    """*path* sits beside a ``TASK.md`` declaring ``kind: task``: one archived task is ONE entry (rem's model).
-
-    That TASK.md carries the name and description; the journal and other files beside it need none of their own.
-    """
-    folder, _, name = path.rpartition('/')
-    if name == 'TASK.md' or not folder:
-        return False
-    code, text, _ = _run(root, 'show', f'{rev}:{folder}/TASK.md')
-    return code == 0 and _KIND_TASK.search(text) is not None
 
 
 def _published(root: Path, head: str, rows: list[tuple[str, str, str]]) -> set[str]:

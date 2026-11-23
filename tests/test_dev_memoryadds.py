@@ -191,14 +191,17 @@ def test_a_lane_that_edits_deletes_or_moves_an_entry_is_refused(repo: Path, chan
     assert ENTRY in found[0]
 
 
-def test_a_task_moved_into_memory_is_the_one_allowed_move(repo: Path) -> None:
-    _write(repo, '.claude/tasks/integrator/JOURNAL.md', 'D1 a decision\n')
-    _commit(repo, 'task', '.claude/tasks/integrator/JOURNAL.md')
+def test_nothing_moves_into_memory_not_even_a_task(repo: Path) -> None:
+    """A closed task is archived in the global tasks repo by rem (2026-11-23), never moved into a checkout's memory."""
+    _write(repo, 'notes/integrator/JOURNAL.md', 'D1 a decision\n')
+    _commit(repo, 'task', 'notes/integrator/JOURNAL.md')
     base = _lane(repo)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == (), 'planted control: nothing moved yet'
     (repo / '.claude/memory/2026/10/31').mkdir(parents=True)
-    _git(repo, 'mv', '.claude/tasks/integrator', '.claude/memory/2026/10/31/task-integrator')
+    _git(repo, 'mv', 'notes/integrator', '.claude/memory/2026/10/31/task-integrator')
     _git(repo, 'commit', '-q', '-m', 'archive the task')
-    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+    [found] = memoryadds.problems_between(repo, base, 'HEAD')
+    assert 'tasks repo' in found
 
 
 def test_the_migration_strip_of_volatile_frontmatter_is_not_an_edit(repo: Path) -> None:
@@ -830,22 +833,14 @@ def test_planted_a_published_path_whose_blob_differs_is_still_judged(repo: Path)
     assert rel in found[0], found
 
 
-def test_an_archived_task_journal_needs_no_frontmatter_of_its_own(repo: Path) -> None:
-    """rem: an archived task is ONE entry; TASK.md carries name, description, kind: task."""
-    _lane(repo)
-    _write(repo, _TASK_MD, _TASK_TEXT)
-    _write(repo, _JOURNAL, '# Journal\n\n- step\n')
-    assert _push(repo, _commit(repo, 'archive a task', _TASK_MD, _JOURNAL)) == ()
-
-
 def test_the_issue_6602_journal_published_by_a_merge_commit_passes(repo: Path) -> None:
     head = _published_elsewhere(repo, (_TASK_MD, _TASK_TEXT), (_JOURNAL, '# J\n'))
     assert _push(repo, head) == ()
 
 
-@pytest.mark.parametrize('task', ['---\nname: t\ndescription: d\n---\n\nT.\n', None])
-def test_planted_a_journal_beside_no_task_md_of_kind_task_is_still_refused(repo: Path, task: str | None) -> None:
-    """PLANTED CONTROL: without a TASK.md declaring ``kind: task`` the directory is no task; each file is an entry."""
+@pytest.mark.parametrize('task', [_TASK_TEXT, '---\nname: t\ndescription: d\n---\n\nT.\n', None])
+def test_a_journal_added_to_memory_is_an_entry_of_its_own_even_beside_a_task_md(repo: Path, task: str | None) -> None:
+    """No archived-task exemption survives the global ledger (2026-11-23): each added file is an entry."""
     _lane(repo)
     paths = [_JOURNAL]
     _write(repo, _JOURNAL, '# Journal\n')

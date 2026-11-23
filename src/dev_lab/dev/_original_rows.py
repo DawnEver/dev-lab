@@ -32,7 +32,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'bringup',  # ORIGINAL: devhost bringup --check, a new workstation's walls with their doors (2026-11-20)
     'ask',  # ORIGINAL: the one visible intake of a typed value, checked before it is spent (D94, 2026-11-20)
     'outputcode',  # ORIGINAL: OUTPUT-HOLDS-NO-CODE's Write/Edit half and source scan (user ruling 2026-11-20)
-    'taskcarry',  # ORIGINAL: a rem task's ledger carried between hosts as refs/tasks/<slug> (hosts-config #78)
     'rolecheck',  # the guard refusing what contradicts the family's roles binding (D73)
     'requeue',  # one retry policy per owner class, split from producer (W5, dev-lab#644)
     'envseat',
@@ -205,10 +204,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hostrefresh',
     # ORIGINAL: no gate read a task ledger; the opt-in task-bound row (user ruling 2026-11-14) is new.
     'taskgate',
-    # ORIGINAL: the one reader of rem's session-to-task binding (user ruling 2026-11-15); none existed.
-    'taskbinding',
-    # ORIGINAL: which rem the session's harness runs, read from its plugin registry, so an unbound push names it.
-    'remplugin',
+    # ORIGINAL: the one reader of the global task ledger and of the task a branch names (user ruling 2026-11-23).
+    'taskledger',
     'remhome',  # the machine home handed to rem as LAB_COMMONS_HOME (D34)
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',

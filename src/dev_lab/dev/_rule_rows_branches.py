@@ -239,10 +239,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Branch names follow the task (user ruling D25, 2026-11-17): an agent session creates or updates a '
             'head in the task namespace (`[tool.dev_lab.branchset] task_heads`, default `pr/<task>/<feature>`) '
-            'only under the task its user bound it to (`dev_lab.dev.taskbinding`), one feature per PR. Another '
-            'task`s head, a flat `pr/<feature>` and the bare `pr/<task>` (which git cannot hold beside its heads) '
-            'are refused at pre-push in the `session-branch` row naming `pr/<task>/`; with no bound task the '
-            'refusal names how a task is bound. A human push and the forge are not judged.'
+            'only as `<task>/<feature>` of a task open in the machine`s one task ledger (`dev_lab.dev.taskledger`; '
+            'user ruling 2026-11-23: the branch IS the task, no binding store), one feature per PR. A flat '
+            '`pr/<feature>`, the bare `pr/<task>` (which git cannot hold beside its heads) and a head naming a task '
+            'the ledger does not hold open are refused at pre-push in the `session-branch` row, naming the door. '
+            'A human push and the forge are not judged.'
         ),
         ('tests/test_dev_sessionbranch.py',),
     ),

@@ -284,7 +284,7 @@ RETIRED_SPELLINGS: Final = {
     **dict.fromkeys(
         ('taskbinding bind', 'taskbinding status', 'binding_gap', 'BIND_PROMPT'),
         (
-            "rem's UserPromptSubmit task hook binds (rem's task.js status shows it); dev_lab.dev.taskbinding reads",
+            "rem's UserPromptSubmit task hook binds (rem's task.js status shows it); dev_lab.dev.taskledger reads",
             'H4 2026-11-16: a stale venv failed the binder and blocked every prompt; rem owns binding, the gate reads',
         ),
     ),
@@ -343,6 +343,27 @@ RETIRED_SPELLINGS: Final = {
         (
             'dev_lab.dev.oldcopies (STRAYS_IN_HOME, STRAYS_IN_ROOT, left_behind): one list, reported and deleted',
             '2026-11-22, user ruling "deleting is the DEFAULT": the old copies became a retention rule',
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            'taskbinding',
+            'session_binding',
+            'bound_sessions',
+            'take_task_pending',
+            'bound_task_extras',
+            'UnmigratedBindingError',
+            'RETIRED_BINDINGS',
+            'remplugin',
+            'binder_door',
+            'taskcarry',
+        ),
+        (
+            (
+                'dev_lab.dev.taskledger: ledger() (the global tasks repo) and task_of(cwd) (the task its branch '
+                'pr/<slug>/<feature> names); forgefeed.take_task_unread; depneeds.task_extras'
+            ),
+            'user ruling 2026-11-23: the task ledger is one global repo and the binding store is cancelled',
         ),
     ),
     'tick.RERENDER': (

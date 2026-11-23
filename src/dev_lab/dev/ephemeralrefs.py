@@ -76,7 +76,6 @@ __all__ = [
     'judge',
     'load_escapes',
     'main',
-    'remedy_for',
     'scan',
 ]
 
@@ -87,16 +86,8 @@ RULE: Final = 'TRACKED-CITES-NO-EPHEMERAL'
 #: statement about the past. THIS scan alone skips it, beside archived code; the memory index files and
 #: ``.claude/rules`` stay judged, and no other family scan inherits the exemption.
 DATED_MEMORY: Final = re.compile(r'(?:^|/)\.claude/memory/\d{4}/\d{2}/\d{2}/')
-#: The remedy every refusal prints, save a task journal's.
+#: The remedy every refusal prints.
 REMEDY: Final = 'cite a tracked source or a <placeholder> shape, or declare an escape in [tool.dev_lab.ephemeral_refs]'
-#: A rem task journal (``.claude/tasks/<slug>/JOURNAL.md``) is append-only behind rem's task guard, so the agent
-#: cannot apply :data:`REMEDY` to a line already written (dev-lab#419). Its refusal names the one reachable repair.
-JOURNAL: Final = re.compile(r'(?:^|/)\.claude/tasks/[^/]+/JOURNAL\.md:')
-JOURNAL_REMEDY: Final = (
-    'a task journal line is append-only (rem task-guard), so ask the user to edit that line in an editor, '
-    'replacing the path with a memory name or a <placeholder> shape, then commit; the door '
-    '(dev_lab.dev.journaldoor) refuses such a line before task.js appends it'
-)
 
 #: Paths no ignore file can judge because they are not in the repo: a drive letter, a home or
 #: cluster root, a temp dir, the agent job tree. Matched at the START of a token.
@@ -364,11 +355,6 @@ def cited_in_text(root: Path, text: str) -> dict[str, str]:
     return judge(root, set(_candidates(text)))
 
 
-def remedy_for(problems: Iterable[str]) -> str:
-    """The refusal's remedy: :data:`JOURNAL_REMEDY` when a problem is a task journal's, else :data:`REMEDY`."""
-    return JOURNAL_REMEDY if any(JOURNAL.search(p) for p in problems) else REMEDY
-
-
 def _candidates_of(piece: str, *, is_input: bool) -> Iterable[str]:
     return (
         [piece.strip()]
@@ -428,7 +414,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for problem in problems:
         emit(f'[{RULE}] {problem}')
     if problems:
-        emit(f'[{RULE}] {remedy_for(problems)}\n')
+        emit(f'[{RULE}] {REMEDY}\n')
     return 1 if problems else 0
 
 

@@ -4,8 +4,8 @@ THE USER DIRECTIVE, 2026-09-16, translated rather than quoted: across every repo
 no content that git tracks may contain CJK (Chinese/Japanese/Korean) characters -- only English
 letters, digits and symbols. Exempt: ``attic/`` and ``archived/`` (the last at the repo root only,
 since 2026-09-23), and a ``<stem>.zh.md`` / ``.zh.toml`` / ``.zh.json`` translation beside its English
-``<stem>.md`` / ``.toml`` / ``.json`` (:data:`TRANSLATION_SUFFIXES`). ``.claude/memory/`` and
-``.claude/tasks/`` are NOT exempt (D26, user, 2026-11-17): they are English only. It is not kept
+``<stem>.md`` / ``.toml`` / ``.json`` (:data:`TRANSLATION_SUFFIXES`). ``.claude/memory/`` is NOT
+exempt (D26, user, 2026-11-17): it is English only, as is the global task ledger. It is not kept
 here in the source language on purpose: this module is itself tracked, and a literal quotation would
 be the one violation its own guard could never let through.
 
@@ -139,8 +139,8 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 #: ``attic/`` holds one subtree per migrated repo, and its trees are SCOPED per module, where a
 #: root-prefix-only match once reported 47,521 phantom CJK characters under ``src/consumer_a/**``.
 #:
-#: ``.claude/memory/`` AND ``.claude/tasks/`` ARE NOT HERE (D26, user, 2026-11-17). They were exempt
-#: until then; now they are English only, and a user's words quoted in them are translated and marked
+#: ``.claude/memory/`` IS NOT HERE (D26, user, 2026-11-17). It was exempt
+#: until then; now it is English only, and a user's words quoted in them are translated and marked
 #: ``(user, translated)``. A repo migrates its remaining files through its declared named set
 #: (``[tool.dev_lab.cjk] declared``, read by :mod:`dev_lab.dev.famtests.alwayson`), which may only shrink.
 #:

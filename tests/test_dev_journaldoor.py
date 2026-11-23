@@ -123,13 +123,6 @@ def test_the_judge_answers_the_payload_by_exit_code(tmp_path: Path) -> None:
     assert admit(f'{_TASK_JS} log "output/x.log"', tool='Edit') == (0, '')
 
 
-def test_the_commit_time_refusal_names_the_door_and_a_human_remedy_for_a_journal() -> None:
-    remedy = ephemeralrefs.remedy_for([".claude/tasks/t/JOURNAL.md:3: cites ignored path 'output/x'"])
-    assert journaldoor.__name__ in remedy, 'the commit-time refusal names the door-time one'
-    assert 'editor' in remedy, 'an append-only journal line is repaired by the user in an editor'
-    assert ephemeralrefs.remedy_for(["doc.md:1: cites ignored path 'output/x'"]) == ephemeralrefs.REMEDY
-
-
 def test_the_door_is_an_engine_row_asking_the_judge_and_no_dispatcher_handler() -> None:
     """One interpreter per shell call: the row asks the judge; no WIRING row runs it as a handler."""
     assert _ROW.asks == journaldoor.__name__

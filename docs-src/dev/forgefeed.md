@@ -16,9 +16,10 @@ A task hears what it subscribes to without anyone relaying it (`TASK-HEARS-ITS-F
 - **A break-glass wave awaiting review is news, never an issue.** Where the machine file declares a `[breakglass]`
   endpoint, the hearer asks its status at most every 30 minutes and each session is told each wave in `audit`
   once, with its door (`forge breakglass status`, then `forge breakglass ack <wave>`): `dev_lab.dev.forgewaves`.
-- **Heard at the next prompt.** Each change lands in the inbox of every session bound to the task on that machine.
-  A task with no bound session keeps it: `python -m dev_lab.dev.forgefeed task-pending <slug>` lists it, and the
-  next session that binds the task hears it. A comment this machine posted is not news.
+- **Heard at the next prompt.** Each change lands in its task's queue (`python -m dev_lab.dev.forgefeed
+  task-pending <slug>` lists it); every session whose checkout is on a head `pr/<slug>/<feature>` of the task reads
+  it once, through its own cursor. A PR a session pushed belongs to the task its branch names. A comment this
+  machine posted is not news.
 
-Detail: the module doc of `dev_lab.dev.forgefeed`; the PR record is `dev_lab.dev.sessionprs`; the binding store is
-`dev_lab.dev.taskbinding`.
+Detail: the module doc of `dev_lab.dev.forgefeed`; the PR record is `dev_lab.dev.sessionprs`; the task of a checkout
+is `dev_lab.dev.taskledger.task_of`.

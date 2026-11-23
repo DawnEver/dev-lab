@@ -18,7 +18,7 @@ measured property of one suite -- it is the set of paths NO TEST READS, and the 
 empty declaration is the correct, FAIL-CLOSED starting point for a repo that has not measured, and
 it is spelled by passing an empty tuple rather than by omitting the argument, so "we measured and
 found none" and "we never asked" are different acts. The measurement that produced consumer-a'
-one-entry set is worth quoting for whoever repeats it there: ``.claude/tasks/`` was the only
+one-entry set is worth quoting for whoever repeats it there: the then in-checkout task ledger was the only
 candidate at ZERO, while ``.claude/memory/`` (168 test files), ``output/`` (126), ``.claude/rules/``
 (136) and ``docs-src/`` (31) are live test INPUTS. "It is only markdown" is false wherever a
 prose-drift ratchet reads markdown as its input.

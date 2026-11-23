@@ -431,7 +431,7 @@ def _run(
     census: Census,
 ) -> int:
     """One ``dep`` run on *root*; a building one runs under :func:`venvcurrent.exclusive_build`."""
-    base, selected, paths = _dep_project.read_project(root, args.extra or depneeds.bound_task_extras(root))
+    base, selected, paths = _dep_project.read_project(root, args.extra or depneeds.task_extras(root))
     live = Path(base).parent.parent
     if Path(base).is_file() and Path(_snapshot(base)[0]).resolve() != live.resolve():
         msg = f'{base} does not execute in its own environment {live}'

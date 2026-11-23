@@ -95,7 +95,6 @@ _TRACKED: Final = (
     '.claude/rules/MEMORY.md',
     '.claude/sharp-review.json',
     '.claude/rem.json',
-    '.claude/tasks/integrator/JOURNAL.md',
     'attic/old/.claude/rules/MEMORY.md',
     'attic/old/.claude/meta/MEMORY.full.md',
     'attic/old/.claude/memory/2026/06/01/_meta.json',

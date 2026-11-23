@@ -70,7 +70,6 @@ __all__ = [
     'FAMILY_STRAY_ROOTS',
     'PRUNED_NAMES',
     'SCRATCH_MAX_AGE_DAYS',
-    'TASK_ROOT',
     'Placement',
     'PlacementNotDeclared',
     'admits',
@@ -123,10 +122,6 @@ FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
 
 #: Where an untracked file may sit in every repo: the family's scratch home, nothing else.
 FAMILY_STRAY_ROOTS: tuple[str, ...] = (FAMILY_HOMES['one-off experiment, probe or verification'],)
-
-#: Where the user's task command (``/rem:task open``) writes ``<slug>/TASK.md`` and ``JOURNAL.md``: its folder,
-#: not a stray. It is the repository's ledger (:func:`dev_lab.dev.taskbinding.ledger`), never committed on a branch.
-TASK_ROOT = '.claude/tasks/'
 
 #: The family default for ``max_age_days`` (:mod:`dev_lab.dev.scratch` reads it off the placement).
 SCRATCH_MAX_AGE_DAYS = 3.0

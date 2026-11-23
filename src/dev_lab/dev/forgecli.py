@@ -325,7 +325,7 @@ def issue_and_pr(
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            said := forgetask.head_advice(args.head, env)
+            said := forgetask.head_advice(args.head, root)
             + pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]

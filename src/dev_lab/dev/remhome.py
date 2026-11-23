@@ -1,7 +1,7 @@
 """THE MACHINE HOME, HANDED TO rem: ``LAB_COMMONS_HOME`` in the user's Claude settings, set from lab_commons.home.
 
 rem (node, a public plugin) writes each session's task binding into ``<machine home>/state/sessions/`` (D34,
-:mod:`dev_lab.dev.taskbinding`). It cannot import Python and must not spell the private home, so it reads ONE neutral
+:mod:`dev_lab.dev.taskledger`). It cannot import Python and must not spell the private home, so it reads ONE neutral
 variable, :data:`VARIABLE`, and nothing else; unset, it binds nothing and names this command. The value is never
 authored by hand: :func:`wire` copies :func:`lab_commons.home.home` into the ``env`` table of the user-level Claude
 settings (never a committed repo file), so lab_commons stays the one source of the path.

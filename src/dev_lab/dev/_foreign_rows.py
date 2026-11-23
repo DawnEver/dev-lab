@@ -151,10 +151,6 @@ SYNTHETIC: Final[dict[str, str]] = {
         'the machine file (`lab_commons.config.config_path()`), a per-machine file the deny row names by its '
         'home-relative tail; it lives outside every checkout and names no tracked file.'
     ),
-    'src/dev_lab/dev/remplugin.py::path': (
-        'each agent host`s plugin registry and settings under the user`s home (Claude Code, Antigravity, Codex), '
-        'read to find the installed rem plugin; machine-local, outside every checkout, naming no tracked file.'
-    ),
     'src/dev_lab/dev/automode.py::path': (
         '`.claude/automode.json`, the machine-local file this module WRITES into a consumer checkout; '
         'it is gitignored, so it resolves only where it was rendered and names no tracked file.'

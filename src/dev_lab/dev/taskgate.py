@@ -1,28 +1,22 @@
-"""A SESSION COMMITS UNDER ITS TASK: a repo declaring it refuses an agent push off its bound task.
+"""A SESSION COMMITS UNDER ITS TASK: a repo declaring it refuses an agent push from a branch naming no open task.
 
 User ruling 2026-11-14 (a pilot in one very large repo; opt-in, never a family default): in a repo declaring
-``[tool.dev_lab.task] required = true``, a native agent session publishes work only while it is bound to an OPEN
-rem task. A human push is not judged.
+``[tool.dev_lab.task] required = true``, a native agent session publishes work only from a branch
+``pr/<slug>/<feature>`` of a task OPEN in the machine's one task ledger. A human push is not judged.
 
-ONE SOURCE, TWO SIDES (2026-11-16). rem owns the ledger and the binding: its ``UserPromptSubmit`` hook binds a
-session on the user's ``task: <slug>`` prompt, and its ``PreToolUse`` task guard covers the work inside the session.
-This gate is the GIT side -- a pure reader of rem's files (:mod:`dev_lab.dev.taskbinding`, rem's documented
-contract), run at commit-msg AND pre-push: rem's PreToolUse guard exists only under Claude Code, so the git side is
-the backstop that holds for Codex, Antigravity or any agent (2026-11-20; sessions read by
-:mod:`dev_lab.dev.native_session`).
-
-THE BINDING IS THE USER'S WORD (decision D5, 2026-11-15): the task a session works on is the one its user bound it
-to, never a guess from a worktree directory or a branch name. An unbound session is refused naming rem's door: the
-user's ``task: <slug>`` prompt, which rem's hook binds. WHICH heads a bound session pushes is judged in every repo,
-not only a required one: ``PUSHED-HEAD-CARRIES-ITS-TASK`` in the ``session-branch`` row (D25, 2026-11-17;
-:mod:`dev_lab.dev.sessionbranch`), so this gate never judges a branch name.
+THE BRANCH IS THE TASK (user ruling 2026-11-23): there is no binding store; the checkout's HEAD names the task
+(:func:`dev_lab.dev.taskledger.task_of`) and the ledger (:func:`dev_lab.dev.taskledger.ledger`) judges it open. This
+gate is the GIT side, run at commit-msg AND pre-push: rem's PreToolUse guard exists only under Claude Code, so the
+git side is the backstop that holds for Codex, Antigravity or any agent (2026-11-20; sessions read by
+:mod:`dev_lab.dev.native_session`). WHICH heads an agent session pushes is judged in every repo, not only a required
+one: ``PUSHED-HEAD-CARRIES-ITS-TASK`` in the ``session-branch`` row (:mod:`dev_lab.dev.sessionbranch`).
 
 rem's journal (JOURNAL.md) is appended to and read only through rem's own CLI, found at :data:`REM_ENV` (a path to
 ``task.js``), else in Claude Code's installed-plugins record.
 
 * :func:`refusal` -- the ``task-bound-commit`` commit-msg and ``task-bound`` pre-push rows (``githooks/base.toml``);
   it reads files only, no rem CLI.
-* :func:`record` -- ``forge pr create`` / ``forge issue create`` append the opened URL to the bound task's journal
+* :func:`record` -- ``forge pr create`` / ``forge issue create`` append the opened URL to the branch's task journal
   (``task.js log``), so the task names its own PRs and issues.
 * :func:`task_prs` -- the PR numbers a task's journal names: what ``forge watch --task <slug>`` watches.
 """
@@ -42,10 +36,10 @@ from typing import Final, Protocol
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import remplugin, taskbinding
+from dev_lab.dev import taskledger
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.native_session import session_of
-from dev_lab.dev.taskbinding import slug_of
+from dev_lab.dev.taskledger import slug_of
 
 __all__ = [
     'COMMIT_HOOK_ID',
@@ -129,69 +123,47 @@ def reader_for(env: Mapping[str, str], home: Path) -> Reader:
     return read
 
 
-def _unbound(root: Path, env: Mapping[str, str], home: Path) -> tuple[str | None, str | None]:
-    """``(open bound task id, None)``, or ``(None, why)`` -- no session, an unreadable one, none bound, or closed.
-
-    With none bound, the door names the session's binder when its registry shows why it bound nothing (rem absent,
-    disabled or older than the binding release, :func:`dev_lab.dev.remplugin.binder_door`), else the user's prompt.
-    """
+def _off_task(root: Path) -> str | None:
+    """Why the checkout at *root* works on no open task: its branch names none, or one the ledger holds not open."""
+    branch = taskledger.branch_of(root)
     try:
-        bound = taskbinding.session_binding(env, start=root)
-    except ValueError as unread:
+        task = taskledger.task_of(root)
+    except taskledger.LedgerUnresolvedError as unresolved:
+        return f'{RULE}: {branch} names a task, and the task ledger cannot be read: {unresolved}'
+    except ValueError as closed:
+        return f'{RULE}: {branch} names a task the task ledger does not hold open: {closed}.\nDoor: {taskledger.DOOR}.'
+    if task is None:
         return (
-            None,
-            f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}',
+            f'{RULE}: this repo requires every agent session to work on a task branch, and '
+            f'{branch or "a detached HEAD"} is none.\nDoor: {taskledger.DOOR}.'
         )
-    if bound is None:
-        # The binder's own text is a cause line and a door line; the user's prompt is a door line alone.
-        session = session_of(env)
-        binder = remplugin.binder_door(env, home, root)
-        door = f' {binder}' if binder else f'\nDoor: {taskbinding.DOOR}'
-        return None, (
-            f'{RULE}: this repo requires every agent session to work under the task its user bound it to, '
-            f'and none is bound: session {session} has no binding at {taskbinding.binding_path(session).as_posix()}.'
-            f'{door}.'
-        )
-    task = bound.task
-    try:
-        still = taskbinding.task_in(bound.ledger, slug_of(task))
-    except ValueError:
-        still = None
-    if still != task:
-        closed = (
-            f'{RULE}: this session is bound to task {task} ({bound.path.as_posix()}), which is no longer open '
-            f'in its ledger {bound.ledger.as_posix()}.'
-        )
-        return None, f'{closed}\nDoor: {taskbinding.DOOR}.'
-    return task, None
+    return None
 
 
-def refusal(root: Path, *, env: Mapping[str, str], home: Path | None = None) -> str | None:
+def refusal(root: Path, *, env: Mapping[str, str]) -> str | None:
     """Why an agent's push (or ``forge sync`` commit) in *root* is refused, or ``None``.
 
-    Judged only in a required repo, for a native agent session: no open task bound to the session in rem's ledger.
+    Judged only in a required repo, for a native agent session: *root*'s branch names no task open in the ledger.
     """
     try:
         judged = required(root) and bool(session_of(env))
     except ValueError as unread:
-        return f'{RULE}: this repo requires a session bound to an open task, and the session cannot be read: {unread}'
-    if not judged:
-        return None
-    return _unbound(root, env, Path.home() if home is None else home)[1]
+        return f'{RULE}: this repo requires an agent session on a task branch, and the session cannot be read: {unread}'
+    return _off_task(root) if judged else None
 
 
-def _bound_slug(root: Path, env: Mapping[str, str]) -> str | None:
-    task = taskbinding.session_task(env, start=root)
+def _task_slug(root: Path) -> str | None:
+    task = taskledger.task_of(root)
     return None if task is None else slug_of(task)
 
 
-def record(root: Path, kind: str, url: str, *, env: Mapping[str, str], read: Reader) -> str | None:
-    """Append ``<kind> opened: <url>`` to the bound task's journal through rem; the line said, or ``None``."""
+def record(root: Path, kind: str, url: str, *, read: Reader) -> str | None:
+    """Append ``<kind> opened: <url>`` to the journal of *root*'s task through rem; the line said, or ``None``."""
     try:
-        if not required(root) or (task := _bound_slug(root, env)) is None:
+        if not required(root) or (task := _task_slug(root)) is None:
             return None
         status, said = read(root, ['log', f'{kind} opened: {url}', '--task', task])
-    except (TaskUnreadable, ValueError) as unread:
+    except (TaskUnreadable, ValueError, LookupError) as unread:
         return f'{RULE}: not recorded in the task journal: {unread}'
     return said if status == 0 else f'{RULE}: task.js log exited {status}: {said}'
 
