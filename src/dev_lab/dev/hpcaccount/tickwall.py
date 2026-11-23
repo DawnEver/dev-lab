@@ -153,13 +153,22 @@ def locked(
     *,
     say: Callable[[str], None] = emit,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    on_held: Callable[[tickholder.Holder], object] = lambda _holder: None,
 ) -> int:
-    """``body(wall)`` holding *lock* with a holder record; :data:`HELD` when another tick has it."""
+    """``body(wall)`` holding *lock* with a holder record; :data:`HELD`, NAMING the holder, when another has it.
+
+    *on_held* is handed a live recorded holder (the cron tick publishes it on the host card). A record beside a FREE
+    lock is a tick that died holding it: its lock is taken over, by name.
+    """
     record = tickholder.record_of(lock)
     with held(lock) as mine:
         if not mine:
-            say(f'[tick] {repo}: another tick holds {lock} -- this tick does nothing (exit {HELD})')
+            say(f'[tick] {repo}: {_holder_of(record, now())} -- this tick does nothing (exit {HELD})')
+            if (holder := tickholder.read(record)) is not None and tickholder.alive(holder):
+                on_held(holder)
             return HELD
+        if (dead := tickholder.read(record)) is not None:
+            say(f'[tick] {repo}: took over the lock of dead tick pid {dead.pid} (since {dead.since}, in {dead.phase})')
         pid = os.getpid()
         holder = tickholder.Holder(pid, creation_stamp(pid), now().isoformat(timespec='seconds'), wall_s, repo)
         tickholder.write(record, holder)
@@ -172,3 +181,13 @@ def locked(
             return STOPPED
         finally:
             tickholder.forget(record)
+
+
+def _holder_of(record: Path, now: datetime) -> str:
+    """Who holds a lock whose holder *record* this is, as one clause."""
+    holder = tickholder.read(record)
+    if holder is None:
+        return 'held by a process that wrote no holder record (a deploy refreshing the kit, or a tick of an older kit)'
+    if not tickholder.alive(holder):
+        return f'held, though its recorded tick pid {holder.pid} is dead (a process it started still holds the lock)'
+    return tickholder.describe(holder, now)

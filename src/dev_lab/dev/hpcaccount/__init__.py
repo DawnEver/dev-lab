@@ -36,6 +36,9 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   that login.
 * ``look --account <user> {processes|ticks|log <repo>|crontab}`` (:mod:`~dev_lab.dev.hpcaccount.look`) is a
   READ-ONLY look at one account through its rate-limited key ssh: a closed set of reads, no free-form command.
+* ``tick-status --account <user>`` / ``tick-stop --account <user> [--repo R]``
+  (:mod:`~dev_lab.dev.hpcaccount.tickstop`) read every tick lock's holder, and stop a tick older than its wall --
+  verified a tick of that repo, this user's, before it is signalled; a younger one is refused by name.
 * Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
   session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
   naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.
@@ -69,6 +72,7 @@ _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | look [...] | '
+    'tick-status [...] | tick-stop [...] | '
     'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
 )
 
@@ -87,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         keys,
         look,
         storage,
+        tickstop,
     )
 
     argv = sys.argv[1:] if argv is None else argv
@@ -105,6 +110,9 @@ def main(argv: list[str] | None = None) -> int:
         'credential': credential.main,
         'keys': keys.main,
         'look': look.main,
+        'tick-status': tickstop.main_status,
+        'tick-stop': tickstop.main_stop,
+        'tick-stop-here': tickstop.main_here,
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
         'forget': forget.main,
@@ -121,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _tick(argv: list[str]) -> int:
     """``tick <repo>... [--lock <path> --wall-minutes <m>]``: unlocked and unbounded without ``--lock``."""
+    from dev_lab.dev import tickholder  # noqa: PLC0415 -- the package imports no verb
     from dev_lab.dev.hpcaccount import tick, tickwall  # noqa: PLC0415 -- the package imports no verb
     from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES  # noqa: PLC0415 -- the tick verb's default
 
@@ -136,4 +145,9 @@ def _tick(argv: list[str]) -> int:
 
     if args.lock is None:
         return body(None)
-    return tickwall.locked(args.lock, ' '.join(args.repos), args.wall_minutes * 60.0, body)
+
+    def held(holder: tickholder.Holder) -> None:
+        for name in args.repos:
+            emit(tick.announce_held(name, holder), err=True)
+
+    return tickwall.locked(args.lock, ' '.join(args.repos), args.wall_minutes * 60.0, body, on_held=held)

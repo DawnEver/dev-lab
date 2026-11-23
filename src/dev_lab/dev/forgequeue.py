@@ -65,6 +65,7 @@ from dev_lab.dev.forgework import Client
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import derived, origin_url, part_context
+from dev_lab.dev.tickholder import span
 from dev_lab.dev.unproduced import unproduced_waived
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
@@ -74,6 +75,16 @@ _STALE = '  STALE (no tick published: host down, cron line gone, or its forge cr
 QUEUE_BUDGET_S = 90.0
 
 __all__ = ['QUEUE_BUDGET_S', 'forge_queue', 'main', 'render', 'unadmitted', 'view']
+
+
+def _stale(host: Mapping[str, Any], now: str) -> str:
+    """Why a card is stale: the tick its cron line found holding the host when one said so, else :data:`_STALE`."""
+    if not host['stale']:
+        return ''
+    if not (held := host.get('held')):
+        return _STALE
+    age = span((datetime.fromisoformat(now) - datetime.fromisoformat(held['since'])).total_seconds())
+    return f'  tick held {age} in {held["phase"]} (pid {held["pid"]} since {held["since"]})'
 
 
 def _row(item: Ranked, favoured: Sequence[str] = ()) -> dict[str, Any]:
@@ -296,7 +307,7 @@ def render(view_: Mapping[str, Any]) -> list[str]:
         for h in view_['hosts']
         for line in (
             (
-                f'  {h["host"]:<20} {h["platform"]:<8} ticked {h["ticked"]}{_STALE if h["stale"] else ""}  '
+                f'  {h["host"]:<20} {h["platform"]:<8} ticked {h["ticked"]}{_stale(h, view_["now"])}  '
                 f'supply {"none (stale)" if h["stale"] else _amounts(h["supply"])}  holds {_holds(h)}'
             ),
             *([f'    running {", ".join(h["running"])}'] if h.get('running') else []),

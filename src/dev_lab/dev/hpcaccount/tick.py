@@ -33,7 +33,10 @@ from lab_commons.log import emit
 
 from dev_lab.dev._dep_project import follow_pin
 from dev_lab.dev.forgealarm import NEEDS, Alarm, sound
+from dev_lab.dev.forgeclaim import this_machine, this_seat
 from dev_lab.dev.forgefleet import serve_off
+from dev_lab.dev.forgehosts import card_host, mark_held
+from dev_lab.dev.forgeoutbox import unprompted_client
 from dev_lab.dev.hpcaccount.checks import runs
 from dev_lab.dev.hpcaccount.grantslice import RERENDER
 from dev_lab.dev.hpcaccount.spec import (
@@ -51,8 +54,9 @@ from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, update
 from dev_lab.dev.hpcaccount.tickwall import WALL, Wall, within
 from dev_lab.dev.lockcheck import uv_version
 from dev_lab.dev.roles import Unbound
+from dev_lab.dev.tickholder import Holder
 
-__all__ = ['account', 'follow_uv', 'tick']
+__all__ = ['account', 'announce_held', 'follow_uv', 'tick']
 
 _runs = runs
 
@@ -182,3 +186,29 @@ def _serve(name: str, checkout: Path, run: Callable[..., Any], wall: Wall | None
             return WALL
         wall.phase(f'serving {name}')
     return run(host_serve_argv(), cwd=checkout, check=False, wall=wall).returncode
+
+
+def announce_held(
+    name: str,
+    holder: Holder,
+    *,
+    config: Path | None = None,
+    mark: Callable[[Path, str, dict[str, Any]], str] = lambda checkout, host, held: mark_held(
+        unprompted_client(checkout), host, held
+    ),
+) -> str:
+    """Publish on *name*'s host card that its tick is held by *holder*; what happened, as one line.
+
+    The card's ``ticked`` stays the holder's last, so ``forge queue`` reads ``tick held <age> in <phase>`` where it
+    guessed STALE (measured 2026-11-23). A forge that cannot be reached is said, never fatal: the cron log has the line.
+    """
+    found = _declared(name, config or config_path())
+    if isinstance(found, str):
+        return f'[tick] {name}: the held card was not published: {found}'
+    spec, repo = found
+    held = {'pid': holder.pid, 'since': holder.since, 'phase': holder.phase}
+    try:
+        done = mark(checkout_of(spec, repo), card_host(this_machine(), this_seat()), held)
+    except (OSError, RuntimeError, ValueError) as failed:  # ForgeCallFailed and NoCredential among them
+        return f'[tick] {name}: the held card was not published: {failed}'
+    return f'[tick] {name}: host card marked held ({done})'

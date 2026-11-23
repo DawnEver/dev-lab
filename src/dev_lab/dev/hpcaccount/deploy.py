@@ -96,6 +96,7 @@ from dev_lab.dev.hpcaccount.spec import (
     uv_cache,
 )
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, crontab, declared, login, prune_uv, update
+from dev_lab.dev.hpcaccount.tickwall import HELD
 
 __all__ = ['deploy', 'main', 'slurm_dirs']
 
@@ -278,7 +279,7 @@ def _tick(
     command = tick_command(spec, home, repo, log=False, slurm=slurm, setup=setup)
     rc = step.change(f'tick {repo.name}: {command}', [*step.tools.sh, command])
     if not step.dry:
-        busy = ' (1 also means a tick of this host is still running)' if rc == 1 else ''
+        busy = ' (held: another tick of this host runs -- the line above names it)' if rc == HELD else ''
         emit(f'  tick {repo.name} exited {rc}{busy}')
     return 0  # a red tick is reported, never a reason to undo the deployment
 
