@@ -109,7 +109,9 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-11-19 AT 617 (the L3 refs: artefactfolder, artefactindex, artefactrestore, artefactstores): floor 592.
 #: RE-TAKEN 2026-11-20 AT 631 (the 11-19 wave: roles, branch policy, storage roots, door doors): floor 606.
 #: RE-TAKEN 2026-11-21 AT 656 (the 11-20 wave: ask, bringup, outputcode, taskcarry, the size-band splits): floor 631.
-FILE_FLOOR = 631
+#: RE-TAKEN 2026-11-23 AT 675 (the 11-21..23 wave: tickholder, tickwall, tickstop, look, largeobjects, msyspath):
+#: floor 650 (was 631; 675 - 631 = 44 outgrew the 40 margin).
+FILE_FLOOR = 650
 
 
 def _tree() -> dict[str, str]:
