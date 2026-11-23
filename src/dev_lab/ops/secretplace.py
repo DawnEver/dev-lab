@@ -50,13 +50,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons import config as machineconfig
 from lab_commons.log import emit
 from lab_commons.storage import Storage, StorageError
 from lab_commons.storage import declared as storage_declared
 
 from dev_lab.dev.ask import PASTE_NOTE, AskRefused
 from dev_lab.dev.ask import value as asked_value
+from dev_lab.dev.devdeclared import OWN_TABLE
 from dev_lab.dev.storage import check
+from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops import secretdistribute
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent.client import grant, verify_held
@@ -74,6 +77,7 @@ __all__ = [
     'place',
     'request',
     'subject',
+    'unreached',
     'workstation_declared',
 ]
 
@@ -256,8 +260,7 @@ def migrate(remote: str, *, storage: Storage) -> str:
     """
     found = next((r for r in storage.reach if r.name == remote), None)
     if found is None or found.credentials_file is None:
-        msg = f'this machine declares no [storage.reach.{remote}] credentials_file'
-        raise SecretRefused(msg)
+        raise SecretRefused(unreached(remote))
     target = Path(found.credentials_file).expanduser()
     held = tomllib.loads(target.read_text(encoding='utf-8'))
     extra = {k: v for k, v in held.items() if k not in found.secret_keys}
@@ -304,8 +307,38 @@ def path_of(storage: Storage, remote: str) -> str:
     for found in storage.reach:
         if found.name == remote and found.credentials_file is not None:
             return str(found.credentials_file)
-    msg = f'this machine declares no [storage.reach.{remote}] credentials_file: declare it in its host file first'
-    raise SecretRefused(msg)
+    raise SecretRefused(unreached(remote))
+
+
+def unreached(remote: str, *, machine: Mapping[str, Any] | None = None, family: Mapping[str, Any] | None = None) -> str:
+    """Why this machine reaches no *remote*, and the door: what the family layer it READ says, then the re-render.
+
+    Measured 2026-11-22: a machine file rendered from a config-source clone older than the family-wide
+    ``[storage.remotes.<r>.reach]`` declares no reach, though the family now gives every machine one. So the
+    refusal says whether the family layer this machine read declares *remote* at all, and names the clone to pull
+    and the render to rerun. *machine* / *family* default to the layers :mod:`lab_commons.config` reads.
+    """
+    live = machineconfig.machine() if machine is None else machine
+    own = live.get(OWN_TABLE, {})
+    host, clone = own.get('host') or '<this machine>', own.get('source') or '<the config-source clone>'
+    try:
+        layer = machineconfig.family() if family is None else family
+    except (OSError, ValueError) as unreadable:
+        said = f'the family layer this machine declares is unreadable ({unreadable})'
+    else:
+        where = layer or live  # no family layer: the machine file is a render carrying the family's tables inline
+        remotes = where.get('storage', {}).get('remotes', {})
+        if remote not in remotes:
+            said = f'the family layer this machine read declares no remote {remote!r} at all'
+        elif not isinstance(remotes[remote].get('reach'), Mapping):
+            said = f'the family layer this machine read declares {remote!r} but no [storage.remotes.{remote}.reach]'
+        else:
+            said = f'the family layer this machine read gives every machine {remote!r}, but this render predates it'
+    return (
+        f'this machine declares no [storage.reach.{remote}] credentials_file: {said}. If the family now reaches it, '
+        f'pull the config-source clone ({clone}), run `{running_interpreter()} -m dev_lab.dev.devhost render '
+        f'--host {host} --write`, then run this again; else declare [storage.reach.{remote}] in its host file'
+    )
 
 
 def _distribute(remote: str) -> int:

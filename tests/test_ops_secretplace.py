@@ -352,3 +352,29 @@ def test_migrate_refuses_a_restated_fact_that_disagrees(tmp_path: Path) -> None:
     with pytest.raises(SecretRefused, match='differs from the declared one'):
         secretplace.migrate('results', storage=_reaching(tmp_path))
     assert placed.read_text(encoding='utf-8') == before
+
+
+_RENDERED = {'devhost': {'host': 'example-ws', 'source': '/clones/hosts-config'}}
+
+
+def test_an_unreached_remote_the_family_gives_everyone_names_the_rerender() -> None:
+    """The 2026-11-22 wall: a render older than the family-wide reach names the clone to pull and the render."""
+    family = {'storage': {'remotes': {'results': {'type': 's3', 'reach': {'credentials_file': '~/.secrets/results'}}}}}
+    said = secretplace.unreached('results', machine=_RENDERED, family=family)
+    assert "gives every machine 'results', but this render predates it" in said
+    assert 'pull the config-source clone (/clones/hosts-config)' in said
+    assert '-m dev_lab.dev.devhost render --host example-ws --write`, then run this again' in said
+
+
+def test_an_unreached_remote_says_whether_the_family_layer_declares_it() -> None:
+    """Planted control: the three family answers differ -- none, declared without reach, reached by all."""
+    none = secretplace.unreached('results', machine=_RENDERED, family={'storage': {'remotes': {}}})
+    bare = secretplace.unreached('results', machine=_RENDERED, family={'storage': {'remotes': {'results': {}}}})
+    assert "declares no remote 'results' at all" in none
+    assert "declares 'results' but no [storage.remotes.results.reach]" in bare
+    assert 'predates' not in none + bare
+
+
+def test_with_no_family_layer_the_render_s_inline_remotes_are_read() -> None:
+    inline = {**_RENDERED, 'storage': {'remotes': {'results': {'reach': {'credentials_file': '~/r'}}}}}
+    assert 'predates it' in secretplace.unreached('results', machine=inline, family={})
