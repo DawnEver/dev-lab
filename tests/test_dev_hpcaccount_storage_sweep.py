@@ -44,7 +44,7 @@ def test_the_callers_rules_are_streamed_first_and_a_kit_that_cannot_run_is_named
     streamed = [(cmd, stdin) for cmd, stdin in sent if stdin]
     assert [stdin for _cmd, stdin in streamed] == [storage.SWEEP_SOURCE], 'the source travels on stdin, once'
     (line,) = [cmd for cmd, _stdin in streamed]
-    assert line == storage.sweep_command(_TARGET, apply=True)
+    assert line == storage.streamed_rules_command(_TARGET, apply=True)
     assert 'dev_lab' not in line, 'the line imports nothing of the kit'
     assert _FREED in said, "the caller's rules ran"
     assert code == 2
@@ -54,7 +54,7 @@ def test_the_callers_rules_are_streamed_first_and_a_kit_that_cannot_run_is_named
 
 
 def test_the_streamed_line_falls_back_to_python3_and_carries_the_spec() -> None:
-    line = storage.sweep_command(_TARGET, apply=False)
+    line = storage.streamed_rules_command(_TARGET, apply=False)
     assert line.startswith('export LAB_ROOT=/r/src; cd /r/src/repos/dev-lab 2>/dev/null; py=')
     assert '|| py=python3;' in line
     assert 'retention: refused -- neither the kit environment nor python3 is a python >= 3.8' in line

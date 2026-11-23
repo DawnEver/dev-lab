@@ -5,7 +5,7 @@ A DEADLOCK, measured 2026-11-22: an account at its FILE quota (2,019,981 of 2,02
 there -- no rule for what filled it -- and freed ten files. The cleanup must not depend on the account's kit.
 
 So the workstation STREAMS THIS FILE to the account's interpreter on stdin (``python - <spec>``,
-:func:`dev_lab.dev.hpcaccount.storage.sweep_command`): the rules are always the caller's version and NOTHING IS
+:func:`dev_lab.dev.hpcaccount.storage.streamed_rules_command`): the rules are always the caller's version and NOTHING IS
 WRITTEN on the account -- no temp file, no checkout, no import of the kit. It therefore imports nothing but the
 standard library and holds NO LIST of its own: what an old copy is, and the names of the environment pointer,
 arrive in the spec from their one source (:mod:`dev_lab.dev.oldcopies`, :mod:`dev_lab.dev.venvpointer`).
@@ -48,9 +48,16 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+__all__ = [
+    'EVENT', 'LEFT_BEHIND', 'UV_TMP', 'VENV', 'candidates', 'crontab', 'main', 'processes', 'referenced', 'sweep',
+]  # fmt: skip
+
 EVENT = 'lab_commons.forge.retention'
-OLD_COPY, VENV, UV_TMP = 'old-copy', 'venv-not-current', 'uv-cache-tmp'
+LEFT_BEHIND = 'old-copy'
+VENV = 'venv-not-current'
+UV_TMP = 'uv-cache-tmp'
 _MB = 1024**2
+_OWNER = stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC
 
 
 def _real(path: object) -> str:
@@ -82,7 +89,14 @@ def processes(proc: Path = Path('/proc')) -> list[dict] | None:
 def crontab() -> str | None:
     """The account's ``crontab -l`` (``''``: it has none); ``None`` when it cannot be read."""
     try:
-        done = subprocess.run(['crontab', '-l'], capture_output=True, text=True, errors='replace', check=False)  # noqa: S607
+        done = subprocess.run(
+            ['crontab', '-l'],  # noqa: S607
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+        )
     except OSError:
         return None
     if done.returncode:
@@ -118,7 +132,7 @@ def candidates(spec: dict, home: Path, root: Path, live: list[dict] | None) -> l
     """Every ``(path, rule, why it is kept whatever references it)`` the caller's rules judge on this account."""
     old = [home / p for p in spec['strays_in_home']] + [root / p for p in spec['strays_in_root']]
     old += [repo / spec['retired_pointer'] for repo in sorted((root / 'repos').glob('*'))]
-    found = [(path, OLD_COPY, '') for path in old]
+    found = [(path, LEFT_BEHIND, '') for path in old]
     for envs in sorted((root / 'repos').glob(f'*/{spec["envs"]}')):
         current = _real(envs.parent / spec['pointer'])
         found += [(env, VENV, '') for env in sorted(envs.iterdir()) if env.is_dir() and _real(env) != current]
@@ -139,7 +153,7 @@ def _measure(path: Path) -> tuple[int, int]:
     for here, dirs, names in os.walk(path):
         for name in (*names, *dirs):
             try:
-                size += os.lstat(os.path.join(here, name)).st_size  # noqa: PTH118 -- one string join per entry
+                size += Path(here, name).lstat().st_size
             except OSError:
                 continue
             files += 1
@@ -167,7 +181,7 @@ def _remove(path: Path, say: Callable[[str], None]) -> tuple[int, int, int]:
 
     def writable(func: Callable[[str], object], name: str, _exc: object) -> None:
         try:
-            os.chmod(name, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)  # noqa: PTH101 -- rmtree hands a string
+            os.chmod(name, _OWNER)  # noqa: PTH101 -- rmtree hands a string
             func(name)
         except OSError as why:
             if why.errno != errno.ENOTEMPTY:  # a parent of a kept entry: the entry itself is the one named

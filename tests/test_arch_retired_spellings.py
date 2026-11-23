@@ -338,6 +338,17 @@ RETIRED_SPELLINGS: Final = {
         'dev_lab.dev.venvcurrent.publish sets a plain .venv aside; migrate removes .venv-current once',
         '2026-11-17: a held legacy .venv never drained; the follow retries the drain from the current environment',
     ),
+    **dict.fromkeys(
+        ('drift.STRAYS_IN_HOME', 'drift.STRAYS_IN_ROOT', 'old_copies'),
+        (
+            'dev_lab.dev.oldcopies (STRAYS_IN_HOME, STRAYS_IN_ROOT, left_behind): one list, reported and deleted',
+            '2026-11-22, user ruling "deleting is the DEFAULT": the old copies became a retention rule',
+        ),
+    ),
+    'tick.RERENDER': (
+        'dev_lab.dev.hpcaccount.grantslice.RERENDER, beside the grant refusal it completes',
+        '2026-11-22: the grant slice owns its refusal and its remedy',
+    ),
 }
 
 #: Floor on the files read, set under the 2026-10-25 measurement (several hundred): an unread tree is a

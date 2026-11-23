@@ -23,13 +23,14 @@ from dev_lab.dev import accountsweep
 from dev_lab.dev.hpcaccount.fleet import Target
 from dev_lab.dev.hpcaccount.storage import SWEEP_SOURCE, sweep_spec
 
+if os.name == 'nt':
+    import _winapi
+
 
 def _link(link: Path, target: Path) -> None:
     try:
         link.symlink_to(target, target_is_directory=True)
     except OSError:  # Windows without the symlink privilege: a junction, as the pointer is there
-        import _winapi  # noqa: PLC0415
-
         _winapi.CreateJunction(str(target), str(link))
 
 
@@ -48,10 +49,15 @@ def _account(tmp_path: Path) -> tuple[Path, Path, dict]:
     return home, root, sweep_spec(Target('login01.example', root.as_posix()), apply=False)
 
 
-def _sweep(home: Path, root: Path, spec: dict, **given: object) -> list[str]:
+#: A process table that reads, and lists nothing that references a candidate.
+_NOBODY: list[dict] = []
+
+
+def _sweep(
+    home: Path, root: Path, spec: dict, *, cron: str | None = '', live: list[dict] | None = _NOBODY
+) -> list[str]:
     said: list[str] = []
-    wanted = {'cron': '', 'live': []} | given
-    accountsweep.sweep(spec, home=home, root=root, say=said.append, **wanted)  # type: ignore[arg-type]
+    accountsweep.sweep(spec, home=home, root=root, say=said.append, cron=cron, live=live)
     return said
 
 
@@ -70,7 +76,7 @@ def test_an_interpreter_that_cannot_import_the_kit_still_runs_the_callers_rules(
     env = {**os.environ, 'HOME': str(home), 'USERPROFILE': str(home)}
     done = subprocess.run(
         [sys.executable, '-I', '-', json.dumps(spec)], input=SWEEP_SOURCE, capture_output=True, text=True,
-        cwd=tmp_path / 'empty', env=env, check=False,
+        encoding='utf-8', cwd=tmp_path / 'empty', env=env, check=False,
     )  # fmt: skip
     assert done.returncode == 0, done.stderr
     assert (home / 'ci').as_posix() in done.stdout, 'the old copy was judged by the streamed rules'

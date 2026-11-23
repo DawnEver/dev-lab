@@ -299,7 +299,9 @@ def _quota(functions: str) -> str:
     bash = shutil.which('bash')
     assert bash, 'the quota line runs in bash on the account'
     silent = 'mmlsquota() { return 1; }; quota() { return 1; }; lfs() { return 1; }; '
-    done = subprocess.run([bash, '-c', silent + functions + storage.QUOTA], capture_output=True, text=True, check=True)
+    done = subprocess.run(
+        [bash, '-c', silent + functions + storage.QUOTA], capture_output=True, text=True, encoding='utf-8', check=True
+    )
     return done.stdout
 
 

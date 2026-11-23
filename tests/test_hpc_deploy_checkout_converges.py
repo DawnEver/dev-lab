@@ -9,12 +9,12 @@ have, and a modified tracked file, are the account's own -- kept, and refused by
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from _forge_fake import git_out, run_git
 
 from dev_lab.dev.hpcaccount import steps
+from dev_lab.dev.hpcaccount.spec import Deployment, Repo
 from dev_lab.dev.hpcaccount.steps import Step, Tools
 
 _WHO = ('-c', 'user.name=Example', '-c', 'user.email=example@example.org')
@@ -37,8 +37,9 @@ def origin(tmp_path: Path) -> Path:
 def _update(tmp_path: Path, origin: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[int, Path]:
     checkout = tmp_path / 'root' / 'repos' / 'example'
     monkeypatch.setattr(steps, 'checkout_of', lambda _spec, _repo: checkout)
-    repo = SimpleNamespace(name='example', url=origin.as_uri(), ref=REF)
-    return steps.update(Step(Tools(), dry=False), None, tmp_path, repo), checkout  # type: ignore[arg-type]
+    repo = Repo('example', origin.as_uri(), REF)
+    spec = Deployment('login01.example', (tmp_path / 'root').as_posix(), '3.13', (repo,))
+    return steps.update(Step(Tools(), dry=False), spec, tmp_path, repo), checkout
 
 
 def _cloned(tmp_path: Path, origin: Path, *flags: str) -> Path:
