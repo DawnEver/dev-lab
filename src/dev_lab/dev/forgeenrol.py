@@ -63,8 +63,8 @@ __all__ = [
 SCOPE: Final = 'write:repository,write:issue,read:user'
 #: The consent action of one minted token.
 _ACTION: Final = 'ops.forge.token'
-#: ``<python> -m dev_lab.ops --config <file> forge *``: the words of the forge host's ops sudo line.
-_SUDO_WORDS: Final = 7
+#: ``<python> -m dev_lab.ops --config <file>``: the words of a host's ops sudo line before its verb.
+_SUDO_HEAD: Final = 5
 
 
 class EnrolRefused(ValueError):
@@ -90,8 +90,8 @@ class Enrolment:
     mints: tuple[tuple[str, str], ...]
 
 
-def ops_door(forge_config: Path) -> OpsDoor:
-    """The forge host's ``[ops.access]`` account and the python/config of its ``forge *`` sudo line.
+def ops_door(forge_config: Path, verb: tuple[str, ...] = ('forge',)) -> OpsDoor:
+    """The host's ``[ops.access]`` account and the python/config of its ``<verb...> *`` sudo line (``forge *``).
 
     Raises:
         EnrolRefused: no ``[ops.access]`` account, or no command line ending ``dev_lab.ops --config C forge *``.
@@ -107,13 +107,14 @@ def ops_door(forge_config: Path) -> OpsDoor:
         words = shlex.split(str(line))
         if (
             account
-            and len(words) == _SUDO_WORDS
+            and len(words) == _SUDO_HEAD + len(verb) + 1
             and words[1:4] == ['-m', 'dev_lab.ops', '--config']
-            and words[5:] == ['forge', '*']
+            and words[_SUDO_HEAD:] == [*verb, '*']
         ):
             return OpsDoor(account, words[0], words[4])
-    msg = (f'{forge_config} declares no [ops.access] account with a "<python> -m dev_lab.ops --config <file> forge *" '
-           'command: the forge host cannot mint for this machine')  # fmt: skip
+    wanted = ' '.join(verb)
+    msg = (f'{forge_config} declares no [ops.access] account with a "<python> -m dev_lab.ops --config <file> {wanted} '
+           f'*" command: that host cannot run `{wanted}` for this machine')  # fmt: skip
     raise EnrolRefused(msg)
 
 

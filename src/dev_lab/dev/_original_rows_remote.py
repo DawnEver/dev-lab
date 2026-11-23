@@ -35,6 +35,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgecredential',
     # ORIGINAL: 2026-11-20, user (translated): 'you must be able to do it yourself' -- one code enrols a machine.
     'forgeenrol',
+    # ORIGINAL: user ruling 2026-11-23, a declared key is admitted by one code from any machine the issuer admits.
+    'devhostadmit',
     # ORIGINAL: 2026-11-20, the effective [dev] split from devhost at the module-size band for the credential doors.
     'devdeclared',
     # The hpcaccount verbs, which deploy and run on a remote cluster account (moved here from `_original_rows.py`

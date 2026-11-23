@@ -23,6 +23,7 @@ from lab_commons.log import emit
 
 from dev_lab.ops import configdoor, upgrade
 from dev_lab.ops.config import OpsConfig, load
+from dev_lab.ops.consent.actions import STANDING
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.forgeaccounts import Redeem
 
@@ -65,6 +66,8 @@ def apply(
             configdoor.loadable(  # a host that cannot load it has no subject; loading needs no alert environment
                 fetched.host, config.path.name, lambda path: load(path, alerts=False)
             )
+            if config.path.is_file() and not configdoor.pending(config.path, fetched.host, fetched.family):
+                emit(f'{STANDING}{configdoor.UNCHANGED}')  # a code spent on it would apply nothing
             emit(configdoor.digest(fetched.host, fetched.family))
             return 0
         fetched = source_text(config, candidate)

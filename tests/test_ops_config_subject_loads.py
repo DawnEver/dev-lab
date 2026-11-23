@@ -14,6 +14,7 @@ from typing import Any, cast
 import pytest
 
 from dev_lab.ops import configdoor, configverbs
+from dev_lab.ops.consent.actions import read_answer
 
 
 def _subject(tmp_path: Path, *, loads_ok: bool, monkeypatch: pytest.MonkeyPatch) -> int:
@@ -45,3 +46,20 @@ def test_a_candidate_the_host_loads_prints_its_subject(tmp_path: Path, monkeypat
                                                        capsys: pytest.CaptureFixture[str]) -> None:  # fmt: skip
     assert _subject(tmp_path, loads_ok=True, monkeypatch=monkeypatch) == 0
     assert configdoor.digest('[ops]\nstatus = {}\n') in capsys.readouterr().out
+
+
+def test_a_candidate_the_live_file_already_is_stands_refused_as_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / 'supervise.toml').write_text('[ops]\nstatus = {}\n', encoding='utf-8')
+    assert _subject(tmp_path, loads_ok=True, monkeypatch=monkeypatch) == 0
+    said = capsys.readouterr().out
+    assert read_answer(said) == (configdoor.digest('[ops]\nstatus = {}\n'), configdoor.UNCHANGED)
+
+
+def test_a_candidate_that_changes_the_live_file_stands_unrefused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / 'supervise.toml').write_text('[cycle]\ninterval_s = 60\n', encoding='utf-8')
+    assert _subject(tmp_path, loads_ok=True, monkeypatch=monkeypatch) == 0
+    assert read_answer(capsys.readouterr().out)[1] is None

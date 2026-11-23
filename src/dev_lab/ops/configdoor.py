@@ -57,9 +57,9 @@ if TYPE_CHECKING:
     from dev_lab.ops.config import ConfigSource
 
 __all__ = [
-    'ACTION', 'ANCHOR', 'FAMILY_KEY', 'ROUTINE', 'Applied', 'ConfigRefused', 'Family', 'Fetched', 'anchor', 'apply',
-    'boundary', 'changes', 'digest', 'fetch', 'git_with_env', 'loadable', 'local_subject', 'tick', 'unsettled_subject',
-    'with_clients',
+    'ACTION', 'ANCHOR', 'FAMILY_KEY', 'ROUTINE', 'UNCHANGED', 'Applied', 'ConfigRefused', 'Family', 'Fetched', 'anchor',
+    'apply', 'boundary', 'changes', 'digest', 'fetch', 'git_with_env', 'loadable', 'local_subject', 'pending',
+    'same_source', 'tick', 'unsettled_subject', 'with_clients',
 ]  # fmt: skip
 
 #: The consent action a boundary change needs (:mod:`dev_lab.ops.consent.actions`).
@@ -89,6 +89,10 @@ ROUTINE: Final[tuple[str, ...]] = (
     'ops.backup.keep*',
     'ops.backup.retention*',
 )
+
+#: The standing refusal ``config apply --subject`` names when the live file already IS the candidate: a code spent on
+#: it would apply nothing (and ``devhost admit`` reads it as "every declared key is already admitted").
+UNCHANGED: Final = 'nothing to apply: the live file already is this candidate'
 
 #: The name a family-file change is reported under among the changed (and boundary) keys.
 FAMILY_KEY: Final = 'ops.config.family:file'
@@ -272,7 +276,7 @@ def local_subject(
         if not isinstance(table, Mapping) or not table.get('source') or not table.get('path'):
             msg = f"{path}@{ref} declares no [ops.config] source and path: its subject is the host's to derive"
             raise ConfigRefused(msg)
-        if table['source'] != source:
+        if not same_source(str(table['source']), source):
             msg = f'{path}@{ref} names config source {table["source"]}, not {source}: derive it there'
             raise ConfigRefused(msg)
         declared = (str(table['path']), str(table.get('ref', 'main')))
@@ -285,6 +289,18 @@ def local_subject(
         path, ref = declared
     msg = f'{source}: [ops.config] does not settle on one path and ref (last {path}@{ref})'
     raise ConfigRefused(msg)
+
+
+def same_source(one: str, other: str) -> bool:
+    """Whether two clone URLs name one repository: a trailing ``/`` or ``.git`` is spelling, not another source.
+
+    Measured 2026-11-23: a clone's ``origin`` without the ``.git`` its host file declares refused ``planrun subject``.
+    """
+    return _bare_url(one) == _bare_url(other)
+
+
+def _bare_url(url: str) -> str:
+    return url.strip().rstrip('/').removesuffix('.git').rstrip('/')
 
 
 def unsettled_subject(source: str, path: str, read: SourceReader, ref: str = 'main') -> str | None:
@@ -424,6 +440,11 @@ def anchor(
         raise ConfigRefused(msg)
     loadable(candidate, live.name, loads)
     return taken, _land(live, candidate, checks=checks, run=run, now=now)
+
+
+def pending(live: Path, candidate: str, family: Family | None = None) -> tuple[str, ...]:
+    """The keys (and :data:`FAMILY_KEY`) applying *candidate* over *live* would change; empty: nothing to apply."""
+    return _changed(live, tomllib.loads(candidate), family)[0]
 
 
 def _changed(live: Path, new: Mapping[str, Any], family: Family | None) -> tuple[tuple[str, ...], tuple[str, ...]]:
