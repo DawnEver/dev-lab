@@ -127,8 +127,8 @@ def test_the_derived_keys_join_break_glass_and_consent_keeping_their_own(tmp_pat
 
 def test_a_machine_declares_its_keys_in_its_own_host_file_only() -> None:
     """PLANTED CONTROL: the family declaring client_keys is refused as one machine's fact; a good host passes."""
-    family = {'dev': {'ref': 'integrate/main'}}
-    assert devschema.check({'dev': {'client_keys': [WS_KEY]}}, family) == []
+    family = {'dev': {'ref': 'integrate/main', 'key_account': 'dev'}}
+    assert devschema.check({'dev': {'client_keys': [WS_KEY], 'hostname': 'ws'}}, family) == []
     assert any('client_keys' in line for line in devschema.check({'dev': {'client_keys': ['nope']}}, family))
     assert any('client_keys' in line for line in devschema.check_family({'dev': {'client_keys': [WS_KEY]}}))
 
