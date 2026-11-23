@@ -15,7 +15,7 @@ requires-python = ">=3.12"
 # One bare git URL graph-wide, as the
 # consumers spell it, so uv.lock pins its tip -- never a machine-local path.
 dependencies = [
-    "lab-commons[units,paths,io,structured]>=0.3.1.dev1579",
+    "lab-commons[units,paths,io,structured]>=0.3.1.dev1715",
     "pytest",
     # The verify door runs a selection on every core its claim admits (verifybox.selection_workers); without the
     # plugin xdist_installed() answers False and every part ran serially -- this repo's hosted part measured 483 s
