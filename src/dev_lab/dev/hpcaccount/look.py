@@ -40,7 +40,7 @@ from dev_lab.dev.hpcaccount.fleet import declared_target
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE, Pin, on_host
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
-__all__ = ['LOG_LINES', 'READS', 'REPO_NAME', 'command_of', 'look', 'main']
+__all__ = ['LOG_LINES', 'READS', 'REPO_NAME', 'command_of', 'home_path', 'look', 'main']
 
 #: How many lines of a tick log ``log`` reads.
 LOG_LINES: Final = 200
@@ -59,6 +59,19 @@ _TAKES = {'log': 'repo', 'stuck': 'path'}
 _TIMEOUT_S: Final = 120.0
 
 
+def home_path(path: str, what: str = 'path') -> str:
+    """*path* when it is a home-relative path of :data:`REPO_NAME` names joined by ``/`` (never ``..``, never absolute).
+
+    Raises:
+        ValueError: anything else -- named, nothing run.
+
+    """
+    if not path or not all(REPO_NAME.fullmatch(part) and part != '..' for part in path.split('/')):
+        msg = f'look: {path!r} is not a {what} of names ({REPO_NAME.pattern}, joined by /, no ..)'
+        raise ValueError(msg)
+    return path
+
+
 def command_of(what: str, repo: str, root: str) -> str:
     """The fixed shell line of read *what* (*repo* for ``log``) under *root*.
 
@@ -72,9 +85,8 @@ def command_of(what: str, repo: str, root: str) -> str:
     if (what in _TAKES) != bool(repo):
         msg = 'look: log takes exactly one repo, stuck one home-relative path; no other read takes one'
         raise ValueError(msg)
-    if repo and not all(REPO_NAME.fullmatch(part) and part != '..' for part in repo.split('/')):
-        msg = f'look: {repo!r} is not a {_TAKES[what]} of names ({REPO_NAME.pattern}, joined by /, no ..)'
-        raise ValueError(msg)
+    if repo:
+        home_path(repo, _TAKES[what])
     serve = shlex.quote(f'{root}/serve')
     return {
         'processes': 'ps -u "$(id -un)" -o pid=,ppid=,etimes=,args= | cut -c1-300',
