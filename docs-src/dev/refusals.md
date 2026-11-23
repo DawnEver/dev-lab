@@ -90,6 +90,13 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 - **Why it is refused.** User ruling 2026-11-22: an image delivered to the user is named by its ABSOLUTE path. A relative path resolves against a working directory the reader is not in -- the agent works in a worktree, the user reads from elsewhere -- so the figure cannot be opened from the message that announces it. The Stop hook reads the final message (`dev_lab.dev.imagepath`, called by `dev_lab.dev.handback`) and blocks the stop once.
 - **The exit.** Say it again with every image named by its absolute path, resolved against the checkout it was written in. What is read is a path token ending in an image suffix (`imagepath.IMAGE_SUFFIXES`) after a file stem, in a markdown image, a code span or prose; an absolute path, a URL, a `data:` source, a pattern or template (`*.png`, `<name>.png`, `{stem}.png`) and a path through a shell variable pass. The text cannot tell a delivered image from a discussed one, so both are read.
 
+## ARCHIVE-IS-NO-STORE
+
+`git bundle create` is refused: a bundle (or an `archive/*` tag, or a copy under `output/`) parks unlanded work
+where nobody reads it again. Unlanded work is merged or discarded (`MERGE-OR-DELETE`): merge it through a PR, or
+land its discard with a declared `git merge -s ours` PR, then `branchprune delete <branch>`. Origin's tags are
+versions only (`ONLY-VERSION-TAGS`, `dev_lab.dev.milestonebase`).
+
 ## GIT-STASH
 
 - **Why it is refused.** `refs/stash` is REPO-WIDE. It is one ref per repository, not per worktree, so a stash taken in one checkout is popped by whoever pops next -- in a family whose premise is a shared, possibly concurrent checkout, that is another agent losing work it never knew existed.

@@ -157,6 +157,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_milestonebase.py',),
     ),
     (
+        'ONLY-VERSION-TAGS',
+        (
+            'Origin holds only family version tags -- releases `vX.Y.Z` and `vX.Y.Z.dev0` milestones (user ruling '
+            '2026-11-23); a push creating any other tag (`archive/*`, `hold/*`, `pin/*`, ...) is refused at pre-push '
+            'for every pusher. Unlanded work is merged or discarded (MERGE-OR-DELETE), never parked in a tag, a '
+            'bundle or an `output/` copy; `git bundle create` is refused by the agent guard (ARCHIVE-IS-NO-STORE).'
+        ),
+        ('tests/test_dev_milestonebase.py',),
+    ),
+    (
         'NO-PUSH-ONTO-A-CLOSED-PR',
         (
             'A push that creates or updates `refs/heads/<X>` (the integration branch and the trunk aside) is refused '

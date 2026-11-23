@@ -40,6 +40,7 @@ FORBIDDEN: Final[dict[str, tuple[Prefix, ...]]] = {
         ('tea', 'comment'),
     ),
     'GIT-COMMIT-AMEND': (('git', 'commit', '--amend'),),
+    'ARCHIVE-IS-NO-STORE': (('git', 'bundle', ('create',)),),
     'GIT-STASH': (('git', 'stash', ('push', 'pop', 'apply', 'drop', 'clear', 'save')),),
     'GIT-RESET': (('git', 'reset'),),
     'GIT-STAGE-EVERYTHING': (

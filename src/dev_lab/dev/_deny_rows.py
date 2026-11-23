@@ -202,6 +202,19 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'permits': ('git commit -m "wip: scratch"', 'git diff --stat', 'git stash list', 'git stash show -p'),
     },
     {
+        'id': 'ARCHIVE-IS-NO-STORE',
+        'pattern': r'\bgit(?:\s+-C\s+\S+)*\s+bundle\s+create\b',
+        'matches': 'command',
+        'hazard': 'a bundle parks unlanded work where nobody reads it again (ONLY-VERSION-TAGS).',
+        'remedy': (
+            'Unlanded work is merged or discarded (MERGE-OR-DELETE): merge it through a PR, or LAND its discard with '
+            'a declared `git merge -s ours` PR, then `branchprune delete <branch>`'
+        ),
+        'needs': None,
+        'refuses': ('git bundle create ../x.bundle origin/pr/a', 'git -C ../lab bundle create out.bundle --all'),
+        'permits': ('git bundle verify x.bundle', 'git commit -m "bundle create notes"'),
+    },
+    {
         'id': 'GIT-RESET',
         'pattern': r'\bgit(?:\s+-C\s+\S+)*\s+reset(?:\s|$)',
         'matches': 'command',
