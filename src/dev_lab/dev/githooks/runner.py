@@ -37,6 +37,7 @@ hook's own output is replayed, then one summary line. ``LAB_HOOKS_VERBOSE=1`` al
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -50,7 +51,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import metrics, venvpointer, walls
-from dev_lab.dev.githooks import inprocess
+from dev_lab.dev.githooks import fitting, inprocess
 from dev_lab.dev.githooks.gitfailure import git_failed
 from dev_lab.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 
@@ -302,7 +303,16 @@ def _selected(
     chosen = tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
     if not borrowed:
         return chosen
-    door = f'{Path(sys.executable).as_posix()} -m dev_lab.dev.dep --bootstrap {root.as_posix()}'
+    python = fitting.bootstrap_interpreter(root)
+    door = (
+        f'{python} -m dev_lab.dev.dep --bootstrap {root.as_posix()}'
+        if python is not None
+        else (
+            f'no interpreter that imports dev_lab satisfies its requires-python {fitting.requires_python(root)!r} '
+            f'(this one is {platform.python_version()}): create a venv on a fitting Python with dev_lab, then run '
+            f'<that python> -m dev_lab.dev.dep --bootstrap {root.as_posix()}'
+        )
+    )
     if stage not in ADVISORY:
         emit(
             f'[githooks] {stage}: refused -- {root.as_posix()} has no venv of its own that imports dev_lab '
