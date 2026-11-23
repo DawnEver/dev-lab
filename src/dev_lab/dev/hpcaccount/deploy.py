@@ -15,6 +15,7 @@ a tracked file, since the forge, its repos and the login host are private to the
 
     [schedule]
     tick_minutes = 15              # the cron period (divides 60; default 5) -- also what the host card is judged by
+    tick_wall_minutes = 40         # how long one tick may hold its lock before it ends itself (default 40)
 
 The first run DECLARES it with ``--host <host> --repo <name>=<url>@<ref> ... --partition <p> ... --role <r>`` (written
 once; a later run with flags that disagree is refused, naming the file); every later run reads it.
@@ -37,7 +38,8 @@ once, the file backed up first); build each ``.venv`` with the repo's own ``[too
 the key of its inputs (the lock's hash among them) is unchanged; warn, naming the recipe, when a repo declares an rclone
 artefact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone.probe`; parts with outputs
 are then not claimed here); replace this tool's marked crontab lines (one per served repo and the kit, every
-``[schedule] tick_minutes`` at a minute offset derived per account, under ``flock -n``)
+``[schedule] tick_minutes`` at a minute offset derived per account, each tick under its own lock and wall,
+:mod:`dev_lab.dev.hpcaccount.tickwall`)
 and touch no other line; run one tick of each and print it. ``--dry-run`` reads but changes nothing;
 ``--remove`` deletes the marked lines only. A ``research`` account gets every step but the serve: its marked
 lines are removed (each printed) and none is written (:func:`dev_lab.dev.hpcaccount.spec.ticked`). No credential is
