@@ -37,6 +37,8 @@ from pathlib import Path
 from typing import Final
 from urllib.parse import quote, urlsplit
 
+from dev_lab.dev.ask import AskRefused
+from dev_lab.dev.forgetoken import checked
 from dev_lab.ops.config import load as load_host_config
 
 __all__ = [
@@ -312,10 +314,15 @@ def place_verified(
     *named* (a login reached only by a url naming it) places the line in :data:`READER_STORE` and removes any line
     the shared store still holds for it, after that store's own backup.
 
-    Returns ``(refusal, '')`` when the forge answered as anyone but *login* (the store untouched), else
+    Returns ``(refusal, '')`` when *token* is not its forge kind's declared shape (:func:`.forgetoken.checked`,
+    nothing staged) or the forge answered as anyone but *login* (the store untouched), else
     ``('', backup lines)``.
     """
     stamp, host = stamp or stamp_now(), urlsplit(repo).hostname or ''
+    try:
+        token, _line = checked(host, token)  # the declared shape, before a byte is staged anywhere
+    except AskRefused as refused:
+        return str(refused), ''
     shell(stage_command(stamp), f'https://{quote(login, safe="")}:{quote(token, safe="")}@{host}\n')
     try:
         answered = str(json.loads(shell(verify_prefix(host, stamp) + role, None)).get('login') or '')

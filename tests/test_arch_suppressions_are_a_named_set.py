@@ -551,6 +551,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev import devhost',
     ): 'devhost imports bringup to wire its verb, so a module-scope import back is a cycle; walls() reads its door',
     (
+        'src/dev_lab/dev/devhostadmit.py',
+        'PLC0415',
+        'from dev_lab.dev.planrunoffer import offered',
+    ): 'planrunpreflight reads devhost, which wires this verb, and planrunoffer imports planrunpreflight names: a '
+    'module-scope import is a cycle whenever planrunpreflight is imported first; only the live admit reads it',
+    (
         'src/dev_lab/dev/testtemp.py',
         'PLC0415',
         'import pytest',

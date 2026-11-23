@@ -29,6 +29,7 @@ def test_a_missing_login_is_drift_naming_the_place_door_and_never_the_secret(tmp
     assert len(found) == 1
     assert "'dev-user'" in found[0]
     assert 'dev_lab.dev.devcredential --login dev-user' in found[0]
+    assert '-m dev_lab.dev.forge auth login --host forge.example' in found[0], 'the exact login line for THAT forge'
     assert _MINTED not in found[0]
 
 

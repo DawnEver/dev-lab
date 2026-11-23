@@ -11,7 +11,7 @@ from dev_lab.dev.devschema import check_family
 
 _FORGE = DeclaredForge(Path('forge-a.toml'), ('forge.example',), {'dev-user': ('org/repo',)})
 _DEV = {'forges': {'forge.example': ['dev-user']}, 'helpers': {'forge.example': 'store'}}
-_MINTED = 'tok3n-SECRET-value'
+_MINTED = 'f00d' * 10  # a Gitea-shaped token (forgetoken.GITEA)
 
 
 def _shell(answers: str, seen: list[tuple[str, str | None]]) -> Shell:
@@ -106,3 +106,13 @@ def test_a_helper_outside_the_declared_set_is_refused() -> None:
         'helpers.forge.example' in line for line in check_family({'dev': {'helpers': {'forge.example': 'manager'}}})
     )
     assert check_family({'dev': {'helpers': {'forge.example': 'store'}}}) == []
+
+
+def test_a_token_not_of_its_forge_kind_shape_is_refused_before_anything_is_staged() -> None:
+    """PLANTED CONTROL: the shaped token is staged and placed (above); a wrong-shaped one touches nothing."""
+    wrong = 'tok3n-SECRET-value'
+    rc, said, seen = _place(token=wrong)
+    assert rc == 2
+    assert seen == []
+    assert 'does not match the declared shape' in said[-1]
+    assert 'tok3n-SECRET-value' not in ' '.join(said)

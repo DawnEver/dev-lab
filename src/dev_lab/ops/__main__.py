@@ -100,6 +100,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return install_verb(config, args.root)
     if args.verb == 'promote':
         return promote_verb(config)
+
+    def rendered() -> int:  # the applied file, re-read: what install renders is what was just consented
+        return install_verb(load(args.config, alerts=True), Path('/'))
+
     verbs_of: dict[str, Callable[[], int]] = {
         'backup': lambda: backup_verb(config, args.action),
         'access': lambda: access_verb(
@@ -117,7 +121,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         'judge': lambda: judge_verb(config),
         'upgrade': lambda: upgrade_verb(config, args),
         'config': lambda: (
-            configverbs.tick(config, alert=lambda title, detail: alert(config, title, detail))
+            configverbs.tick(config, alert=lambda title, detail: alert(config, title, detail), render=rendered)
             if args.action == 'tick'
             else configverbs.apply(
                 config,
@@ -125,6 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.credential,
                 alert=lambda title, detail: alert(config, title, detail),
                 redeemer=lambda: redeemer(config),
+                render=rendered,
                 subject=args.subject,
             )
         ),

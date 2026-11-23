@@ -54,7 +54,7 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import remote, sshholdplan, sshholdprobe
+from dev_lab.dev import msyspath, remote, sshholdplan, sshholdprobe
 from dev_lab.dev.sshholdrun import DEFAULT_TIMEOUT_S, run_command, store_credential
 from dev_lab.dev.sshholdstate import audit, forget, read_session, state_dir, state_path
 from dev_lab.dev.sshholdwire import HoldRefused, held, live, ping, request
@@ -236,17 +236,18 @@ def _unopenable(dest: str | None, plan: Path | None) -> str:
 
 def _open(args: argparse.Namespace) -> int:
     """``open``: everything that can refuse does so BEFORE the code is read; then one host, or a plan's hosts."""
-    jump = args.jump
-    if args.plan is not None:
-        sshholdplan.offered(args.plan, args.steps)  # the preflight, run here (it probes the plan's hosts)
+    jump, started = args.jump, time.monotonic()  # a code given in advance is already counting down
+    if args.plan is not None:  # the preflight (it probes the plan's hosts); a fresh recorded green stands in for it
+        emit(sshholdplan.offered(args.plan, args.steps, code_given=args.code is not None))
     check_hours(args.hours, ceiling())
     if args.plan is None:
         sshholdprobe.probe(args.dest, route(args.dest, jump))  # the key, asked with no code
         emit(open_session(args.dest, args.hours, given_code(args.code), ssh=route(args.dest, jump)))
         return 0
+    code = given_code(args.code)
     opened, lines = sshholdplan.open_planned(
-        args.hours, given_code(args.code), args.plan, args.digest, routes=lambda dest: route(dest, jump),
-        opener=open_session,
+        args.hours, code, args.plan, args.digest, routes=lambda dest: route(dest, jump), opener=open_session,
+        received=started if args.code is not None else time.monotonic(),
     )  # fmt: skip
     emit('\n'.join(lines))
     return 0 if opened else 2
@@ -263,6 +264,9 @@ def main(argv: list[str] | None = None) -> int:
             return _open(args)
         if args.verb == 'run':
             words = args.command[1:] if args.command[:1] == ['--'] else args.command
+            if why := msyspath.refusal(words):
+                emit(f'sshhold: {why}', err=True)
+                return 2
             output, status = run_command(args.dest, ' '.join(words), args.timeout)
             if output:
                 emit(output.removesuffix('\n'))  # emit ends the line itself

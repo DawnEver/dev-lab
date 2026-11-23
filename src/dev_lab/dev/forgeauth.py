@@ -51,7 +51,7 @@ import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S
 from lab_commons.log import emit
 
-from dev_lab.dev import forgeverdict
+from dev_lab.dev import devdeclared, forgecredential, forgeverdict
 from dev_lab.dev._forgebackends import GITHUB_HOST
 from dev_lab.dev.ask import AskRefused
 from dev_lab.dev.ask import value as asked_value
@@ -71,12 +71,12 @@ from dev_lab.dev.forge import (
 from dev_lab.dev.forgeclient import stored_client
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgekeyfile import USAGE, digest, export_keys, import_keys
+from dev_lab.dev.forgetoken import TICK_SCOPES, checked, kind_of
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.netverb import Diagnosis
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'TICK_SCOPES',
     'UNREACHABLE',
     'UNREACHABLE_EXIT',
     'RepoRole',
@@ -87,13 +87,11 @@ __all__ = [
     'repo_role',
     'status',
     'tick_refusal',
+    'unstored_forges',
 ]
 
 #: The exit status for a usage error, as argparse uses it.
 _USAGE = USAGE
-
-#: The token scopes a tick needs, as the forge's token page names them.
-TICK_SCOPES: Final = 'repository (read and write), issue (read and write), user (read)'
 
 
 def family_hosts(root: Path) -> tuple[str, ...]:
@@ -175,8 +173,6 @@ def repo_role(
 #: The exit of ``auth check|status`` when the forge could not be asked: no answer, a 5xx, an unmeasured 401/403.
 #: EX_TEMPFAIL, so a caller tells it from a refusal (exit 1) by the code, never by reading the message.
 UNREACHABLE_EXIT: Final = 75
-#: Said with the token prompt: what the value is and where the person finds it.
-TOKEN_HINT: Final = f'the forge user settings -> Applications -> Generate token, scopes {TICK_SCOPES}'
 
 #: The lead of the message ``auth check|status`` give with :data:`UNREACHABLE_EXIT`.
 UNREACHABLE: Final = 'the forge did not answer -- NOT a token fault, do not re-store it; re-run the same command'
@@ -283,9 +279,25 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _forge(root: Path, host: str | None) -> Forge:
-    """The forge to authenticate against: *host* alone when given, else this checkout's origin."""
-    return Forge(host, '', '') if host else forge_from_remote(root)
+def unstored_forges() -> list[str]:
+    """The forges this machine's ``[dev] forges`` declares with a login the credential store lacks, sorted."""
+    dev = devdeclared.this_machine()
+    lines = forgecredential.store_lines(forgecredential.STORE)
+    return sorted(host for host in dev.get('forges', {}) if forgecredential.unstored(dev, host, lines))
+
+
+def _forge(root: Path, host: str | None, lacking: Callable[[], list[str]] = list) -> Forge:
+    """*host* when given; else the ONE declared forge with no stored login; else this checkout's origin.
+
+    Never silently the checkout's forge while a declared one lacks its credential (2026-11-23: a Gitea token was
+    asked for, and sent to, github.com). Several such forges: refused, naming them and ``--host``.
+    """
+    if host:
+        return Forge(host, '', '')
+    if len(missing := lacking()) > 1:
+        msg = f'several declared forges have no stored credential: {missing} -- name one: auth login --host <forge>'
+        raise NoCredential(msg)
+    return Forge(missing[0], '', '') if missing else forge_from_remote(root)
 
 
 def main(
@@ -297,6 +309,7 @@ def main(
     read_secret: Callable[[str], str] = input,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
+    lacking: Callable[[], list[str]] = unstored_forges,
 ) -> int:
     """``auth login|status|check|export`` (module docstring); nonzero when not authenticated."""
     args = _parser().parse_args(list(sys.argv[2:] if argv is None else argv))
@@ -304,18 +317,21 @@ def main(
     stdin = sys.stdin if stdin is None else stdin
     if args.verb != 'login' or args.from_file:
         return _without_prompt(args, root, env, transport, stdin=stdin, stdout=stdout or sys.stdout)
-    forge = _forge(root, args.host)
-    if args.token_stdin:
-        token = stdin.read().strip()
-    else:
-        try:
-            token = asked_value(f'{forge.host} personal access token', hint=TOKEN_HINT, ask=read_secret,
+    try:
+        forge = _forge(root, args.host, lacking)
+        kind = kind_of(forge.host)
+        if args.token_stdin:
+            token, line = checked(forge.host, stdin.read().strip())
+            emit(line, err=True)
+        else:
+            asked = asked_value(f'{forge.host} {kind.name} personal access token', hint=kind.hint, ask=read_secret,
                                 say=lambda line: emit(line, err=True))  # fmt: skip
-        except AskRefused as refused:
-            emit(f'[forge] {refused}; nothing was stored', err=True)
-            return _USAGE
-    if not token:
-        emit('[forge] no token given; nothing was stored', err=True)
+            token, _line = checked(forge.host, asked)
+    except AskRefused as refused:
+        emit(f'[forge] {refused}', err=True)
+        return _USAGE
+    except NoCredential as refused:
+        emit(f'[forge] {refused}', err=True)
         return _USAGE
     try:
         who = login(forge, token, cwd=root, env=env, transport=transport)
