@@ -59,6 +59,7 @@ from dev_lab.dev.sshholdrun import DEFAULT_TIMEOUT_S, run_command, store_credent
 from dev_lab.dev.sshholdstate import audit, forget, read_session, state_dir, state_path
 from dev_lab.dev.sshholdwire import HoldRefused, held, live, ping, request
 from dev_lab.ops.consent.client import given_code
+from dev_lab.ops.consent.credential import ConsentRefused
 
 __all__ = [
     'DEFAULT_MAX_HOURS',
@@ -272,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
             emit(close_session(args.dest))
         else:
             emit('\n'.join(status_lines()))
-    except HoldRefused as exc:
+    except (HoldRefused, ConsentRefused) as exc:  # a refused or unreadable code is named, never a traceback
         emit(f'sshhold: {exc}', err=True)
         return 255 if args.verb == 'run' and 'ssh connection ended' in str(exc) else 2
     return 0

@@ -34,6 +34,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.credential`) places one minted forge token in the account's ``~/.git-credentials``
   (a role's named ``config_reader``: in its own ``~/.git-credentials.reader``) and confirms the forge answers as
   that login.
+* ``look --account <user> {processes|ticks|log <repo>|crontab}`` (:mod:`~dev_lab.dev.hpcaccount.look`) is a
+  READ-ONLY look at one account through its rate-limited key ssh: a closed set of reads, no free-form command.
 * Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
   session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
   naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.
@@ -66,7 +68,7 @@ __all__ = ['main']
 _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
-    'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | '
+    'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | look [...] | '
     'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
 )
 
@@ -83,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         fleet,
         forget,
         keys,
+        look,
         storage,
     )
 
@@ -101,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
         'drift-fleet': lambda rest: accountset.main_fleet(rest, verb='drift', flags=('--dry-run', '--discard-drift')),
         'credential': credential.main,
         'keys': keys.main,
+        'look': look.main,
         'deploy': deploy.main,
         'deploy-fleet': fleet.main,
         'forget': forget.main,
