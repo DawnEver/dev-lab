@@ -9,9 +9,9 @@ write account (``forges = {}``), no HPC roles (``hpc = []``), no vendor seats, h
 the machine file's ``[bridge.hpc]``: the HPC usage read door the session bridge runs for the agents dashboard
 (``command``, an argv) and its cadence (``cadence_hours``). The command's interpreter is DERIVED, never declared or
 invented (#782, D96): the ``.venv`` pointer of the machine's dev-lab checkout (``[repos] dev-lab``, the local fact
-``devhost local set repos.dev-lab`` sets), spelled by the declared ``[dev] os`` (:func:`bridge_python`). That
-pointer is the checkout's single current environment, outside every worktree and kept on the lock by the venv
-follow, so the path never moves and two renders from different envs agree byte for byte.
+``devhost local set repos.dev-lab`` sets), spelled by the declared ``[dev] os``, else this platform
+(:func:`bridge_python`). That pointer is the checkout's single current environment, outside every worktree and
+kept on the lock by the venv follow, so the path never moves and two renders from different envs agree byte for byte.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
-from dev_lab.dev.venvpath import VENV_LAYOUTS, running_interpreter
+from dev_lab.dev.venvpath import current_os_name, running_interpreter, venv_interpreter
 
 __all__ = [
     'BRIDGE_CHECKOUT', 'DEFAULT_TABLE', 'HPC_READ_DOOR', 'UNMANAGED', 'bridge_python', 'bridge_tables', 'enrolment',
@@ -102,7 +102,10 @@ def refusal(live: Mapping[str, Any], action: str) -> str | None:
 def bridge_python(live: Mapping[str, Any], os: str) -> str:
     """The interpreter the bridge runs: ``<[repos] dev-lab>/.venv/<layout of *os*>``, the pointer, never resolved.
 
-    *os* is the host's declared ``[dev] os``; ``windows`` spells the ``nt`` layout, every other the ``posix`` one.
+    *os* is the host's declared ``[dev] os``; ``windows`` (any case) spells the ``nt`` layout, every other declared
+    value the ``posix`` one. An UNDECLARED os (the family default an unmanaged machine renders, or a host file
+    without it) is the platform of the machine rendering its own file (:func:`current_os_name`) -- never a guessed
+    ``posix``, which wrote ``.venv/bin/python`` into a Windows machine's ``[bridge.hpc]`` (2026-11-22).
 
     Raises:
         ValueError: the *live* machine file names no ``[repos] dev-lab`` checkout -- the one local fact it derives from.
@@ -115,7 +118,8 @@ def bridge_python(live: Mapping[str, Any], os: str) -> str:
                f'machine names no [repos] {BRIDGE_CHECKOUT}: {running_interpreter()} -m dev_lab.dev.devhost local set '
                f'repos.{BRIDGE_CHECKOUT} <absolute path of the dev-lab main checkout>')  # fmt: skip
         raise ValueError(msg)
-    return Path(checkout).joinpath(*VENV_LAYOUTS['nt' if os == 'windows' else 'posix']).as_posix()
+    os_name = ('nt' if os.lower() == 'windows' else 'posix') if os else current_os_name()
+    return Path(checkout, venv_interpreter(os_name=os_name)).as_posix()
 
 
 def bridge_tables(dev: Mapping[str, Any], live: Mapping[str, Any]) -> dict[str, Any]:
