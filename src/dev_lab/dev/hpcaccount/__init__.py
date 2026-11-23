@@ -36,6 +36,8 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   that login.
 * ``look --account <user> {processes|ticks|log <repo>|crontab}`` (:mod:`~dev_lab.dev.hpcaccount.look`) is a
   READ-ONLY look at one account through its rate-limited key ssh: a closed set of reads, no free-form command.
+* ``storage-check --account <user> <remote>`` (:mod:`~dev_lab.dev.hpcaccount.storagecheck`) runs ``storage check``
+  in the account's kit: a placed secret re-proved with no secret and no consent code.
 * Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
   session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
   naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.
@@ -69,6 +71,7 @@ _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | look [...] | '
+    'storage-check [...] | '
     'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
 )
 
@@ -87,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         keys,
         look,
         storage,
+        storagecheck,
     )
 
     argv = sys.argv[1:] if argv is None else argv
@@ -109,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         'deploy-fleet': fleet.main,
         'forget': forget.main,
         'retention': storage.main,
+        'storage-check': storagecheck.main,
         'allocate': allocate.allocate,
     }
     if verb in verbs:
