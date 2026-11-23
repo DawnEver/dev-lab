@@ -14,6 +14,8 @@ import time
 from typing import Any, Final
 from urllib.parse import urlsplit
 
+from dev_lab.dev.ask import AskRefused
+from dev_lab.dev.forgetoken import checked
 from dev_lab.dev.sshholdstate import audit, forget
 from dev_lab.dev.sshholdwire import HoldRefused, live, request
 
@@ -91,7 +93,16 @@ def credential_script(url: str, login: str, token: str, nonce: str) -> str:
 
 
 def store_credential(dest: str, url: str, login: str, token: str, timeout_s: float = 60) -> str:
-    """Store *token* on *dest* for *url* through the held channel; audited as host, login and a sha256 prefix."""
+    """Store *token* on *dest* for *url* through the held channel; audited as host, login and a sha256 prefix.
+
+    Raises:
+        HoldRefused: *token* is not its forge kind's declared shape (nothing sent), or the remote store refused.
+
+    """
+    try:
+        token, _line = checked(urlsplit(url).hostname or '', token)
+    except AskRefused as refused:
+        raise HoldRefused(str(refused)) from refused
     started = time.monotonic()
     script = credential_script(url, login, token, secrets.token_hex(8))
     reply = _exchange(dest, script, timeout_s)

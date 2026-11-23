@@ -20,7 +20,7 @@ from dev_lab.dev import sshhold, sshholdrun, sshholdstate
 from dev_lab.dev.sshholdwire import HoldRefused
 
 FAKE = (sys.executable, str(Path(__file__).with_name('_sshhold_fake.py')))
-PLANTED = 'gt-planted-5e7d1a'
+PLANTED = '5e7d1a' + '0' * 34  # a Gitea-shaped token (forgetoken.GITEA)
 URL = 'https://forge.example/team/repo.git'
 
 
@@ -86,3 +86,10 @@ def test_the_cli_reads_the_token_from_stdin(held: dict[str, Path], monkeypatch, 
     said = capsys.readouterr()
     assert PLANTED not in said.out + said.err
     assert held['cred'].read_text(encoding='utf-8').endswith(f'password={PLANTED}\n')
+
+
+def test_a_token_not_of_its_forge_kind_shape_is_refused_before_anything_is_sent(held: dict[str, Path]) -> None:
+    """PLANTED CONTROL: the shaped token reaches the remote (above); a wrong-shaped one stores nothing."""
+    with pytest.raises(HoldRefused, match='nothing was stored or sent'):
+        sshholdrun.store_credential('ops@fake', URL, 'ro-login', 'gt-planted-5e7d1a')
+    assert not held['cred'].exists()
