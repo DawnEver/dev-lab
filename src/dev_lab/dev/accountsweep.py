@@ -25,6 +25,12 @@ NAMED PER TOP-MOST DIRECTORY holding them (measured next: 206,412 such entries s
 drowned the output): ``[retention] kept <dir> -- cannot remove N entries: <cause>``; the total line counts them.
 The rest of that copy and every other rule go on, and the totals count only what went.
 
+AN ENTRY ANOTHER ACCOUNT OWNS IS NAMED BY ITS OWNER, never chmodded (measured 2026-11-23 through ``hpcaccount look
+stuck``: all 206,412 kept entries belonged to five OTHER fleet accounts, in their ``drwxr-s---`` directories under
+this account's ``drwx------`` home). Only the owner may chmod them and only a writer of their directory may unlink
+them, so this account cannot; the owner cannot reach them through a ``drwx------`` home either. The line says so:
+``owned by <user>, not this account -- only <user> (through a traverse grant on this home) or an admin ...``.
+
 Every other retention rule (runs, trees, builds, packs, artefacts, logs, rust) reads the forge's run state and
 needs the kit: :mod:`dev_lab.dev.retention`, on the account.
 
@@ -48,7 +54,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 __all__ = [
-    'EVENT', 'LEFT_BEHIND', 'UV_TMP', 'VENV', 'candidates', 'crontab', 'main', 'processes', 'referenced', 'sweep',
+    'EVENT', 'LEFT_BEHIND', 'UV_TMP', 'VENV', 'candidates', 'crontab', 'main', 'owner', 'processes', 'referenced',
+    'sweep',
 ]  # fmt: skip
 
 EVENT = 'lab_commons.forge.retention'
@@ -159,46 +166,75 @@ def _measure(path: Path) -> tuple[int, int]:
     return size, files
 
 
-def _grouped(kept: list[tuple[str, OSError]]) -> dict[str, tuple[int, str]]:
-    """*kept* per top-most directory holding an entry that could not go: ``{dir: (entries, first cause)}``."""
-    groups: dict[str, tuple[int, str]] = {}
-    for name, why in kept:
-        parent = Path(name).parent.as_posix()
-        count, cause = groups.get(parent, (0, why.strerror or str(why)))
-        groups[parent] = (count + 1, cause)
-    tops: dict[str, tuple[int, str]] = {}
-    for parent in sorted(groups, key=len):
-        top = next((t for t in tops if parent == t or parent.startswith(t + '/')), parent)
-        count, cause = tops.get(top, (0, groups[parent][1]))
-        tops[top] = (count + groups[parent][0], cause)
+def owner(path: Path) -> str:
+    """The account owning *path* when it is NOT this one (``''``: this account's, or it cannot be told)."""
+    try:
+        uid = path.lstat().st_uid
+    except OSError:
+        return ''
+    if not hasattr(os, 'getuid') or uid == os.getuid():
+        return ''
+    try:
+        import pwd  # noqa: PLC0415 -- POSIX only; getuid above already ruled Windows out
+
+        return pwd.getpwuid(uid).pw_name
+    except (ImportError, KeyError):
+        return f'uid {uid}'
+
+
+def _foreign(name: str) -> str:
+    return (
+        f'owned by {name}, not this account -- only {name} (through a traverse grant on this home) '
+        'or an admin can remove them'
+    )
+
+
+def _grouped(kept: list[tuple[str, str]]) -> dict[tuple[str, str], int]:
+    """*kept* ``(entry, cause)`` per top-most directory holding entries of one cause: ``{(dir, cause): entries}``."""
+    groups: dict[tuple[str, str], int] = {}
+    for name, cause in kept:
+        key = (Path(name).parent.as_posix(), cause)
+        groups[key] = groups.get(key, 0) + 1
+    tops: dict[tuple[str, str], int] = {}
+    for parent, cause in sorted(groups, key=lambda key: len(key[0])):
+        top = next((t for t, c in tops if c == cause and (parent == t or parent.startswith(t + '/'))), parent)
+        tops[top, cause] = tops.get((top, cause), 0) + groups[parent, cause]
     return tops
+
+
+def _gone(entry: Path, kept: list[tuple[str, str]]) -> None:
+    """Remove one *entry*; refused, its owner bits are set and it is tried once more, else it is kept.
+
+    An entry or directory another account owns is never chmodded (it cannot be): it is kept naming that owner.
+    """
+    remove = entry.rmdir if entry.is_dir() and not entry.is_symlink() else entry.unlink
+    try:
+        remove()
+    except OSError as first:
+        if theirs := owner(entry.parent) or owner(entry):
+            if first.errno != errno.ENOTEMPTY:
+                kept.append((str(entry), _foreign(theirs)))
+            return
+        try:
+            for one in (entry.parent, entry) if not entry.is_symlink() else (entry.parent,):
+                one.chmod(_OWNER)
+            remove()
+        except OSError as why:
+            if why.errno != errno.ENOTEMPTY:  # a parent of a kept entry: the entry itself is the one counted
+                kept.append((str(entry), why.strerror or str(why)))
 
 
 def _remove(path: Path, say: Callable[[str], None]) -> tuple[int, int, int]:
     """Remove *path*; what cannot go is named per top-most directory. The (bytes, files, entries) left behind."""
-    kept: list[tuple[str, OSError]] = []
-
-    def gone(entry: Path) -> None:
-        """Remove one *entry*; refused, its owner bits are set and it is tried once more, else it is kept."""
-        remove = entry.rmdir if entry.is_dir() and not entry.is_symlink() else entry.unlink
-        try:
-            remove()
-        except OSError:
-            try:
-                for one in (entry.parent, entry) if not entry.is_symlink() else (entry.parent,):
-                    one.chmod(_OWNER)
-                remove()
-            except OSError as why:
-                if why.errno != errno.ENOTEMPTY:  # a parent of a kept entry: the entry itself is the one counted
-                    kept.append((str(entry), why))
+    kept: list[tuple[str, str]] = []
 
     # bottom-up by hand, never shutil.rmtree: its error hook is ``onerror`` before 3.12 and ``onexc`` after
     if path.is_dir() and not path.is_symlink():
         for here, dirs, names in os.walk(path, topdown=False):
             for name in (*names, *dirs):
-                gone(Path(here, name))
-    gone(path)
-    for top, (count, cause) in sorted(_grouped(kept).items()):  # os.walk order is the filesystem's, not stable
+                _gone(Path(here, name), kept)
+    _gone(path, kept)
+    for (top, cause), count in sorted(_grouped(kept).items()):  # os.walk order is the filesystem's, not stable
         say(f'[retention] kept {top} -- cannot remove {count} entries: {cause}')
     left = _measure(path) if path.exists() or path.is_symlink() else (0, 0)
     return (*left, len(kept))

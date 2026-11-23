@@ -10,10 +10,15 @@ login host (where its crontab and its ticks live), ONE of a CLOSED set of reads 
 * ``ticks`` -- every tick lock under ``<root>/serve`` and its holder record (pid, start, phase;
   :mod:`dev_lab.dev.tickholder`);
 * ``log <repo>`` -- the last :data:`LOG_LINES` lines of that repo's tick/cron log, ``<root>/serve/<repo>.log``;
-* ``crontab`` -- ``crontab -l``.
+* ``crontab`` -- ``crontab -l``;
+* ``stuck <path>`` -- why entries under ``~/<path>`` cannot be removed (measured 2026-11-23: 206,412 entries kept
+  with "Operation not permitted" and no read could say why): ``id``, the filesystem type, ``ls -ld`` and
+  ``lsattr -d`` of every ancestor (GPFS keeps no such flags: ``lsattr`` says so), the owners and modes counted,
+  the directories lacking ``u+wx``, and ``stat``/``lsattr``/``getfacl`` of one sample file.
 
-There is no free-form command: each read is a fixed shell line whose only inputs are the declared root and a repo
-name of :data:`REPO_NAME`'s shape, so the door cannot write. Anything else is refused naming the set. A verification
+There is no free-form command: each read is a fixed shell line whose only inputs are the declared root, a repo
+name of :data:`REPO_NAME`'s shape and a home-relative path of such names
+(``stuck``), so the door cannot write. Anything else is refused naming the set. A verification
 account needs this session's integrator role, as every verb (:func:`~dev_lab.dev.hpcaccount.division.reached_machine`).
 """
 
@@ -47,7 +52,10 @@ READS: Final = {
     'ticks': 'every tick lock under <root>/serve and who holds it',
     'log': "the tail of one repo's tick/cron log (log <repo>)",
     'crontab': 'crontab -l',
+    'stuck': 'why entries under ~/<path> cannot be removed (stuck <path>)',
 }
+#: The reads that take an argument: ``log`` a repo name, ``stuck`` a home-relative path of such names.
+_TAKES = {'log': 'repo', 'stuck': 'path'}
 _TIMEOUT_S: Final = 120.0
 
 
@@ -61,11 +69,11 @@ def command_of(what: str, repo: str, root: str) -> str:
     if what not in READS:
         msg = f'look: {what!r} is not a read -- the reads are {", ".join(READS)}; there is no free-form command'
         raise ValueError(msg)
-    if (what == 'log') != bool(repo):
-        msg = 'look: log takes exactly one repo (look log <repo>); no other read takes one'
+    if (what in _TAKES) != bool(repo):
+        msg = 'look: log takes exactly one repo, stuck one home-relative path; no other read takes one'
         raise ValueError(msg)
-    if repo and not REPO_NAME.fullmatch(repo):
-        msg = f'look: {repo!r} is not a repo name ({REPO_NAME.pattern})'
+    if repo and not all(REPO_NAME.fullmatch(part) and part != '..' for part in repo.split('/')):
+        msg = f'look: {repo!r} is not a {_TAKES[what]} of names ({REPO_NAME.pattern}, joined by /, no ..)'
         raise ValueError(msg)
     serve = shlex.quote(f'{root}/serve')
     return {
@@ -77,6 +85,17 @@ def command_of(what: str, repo: str, root: str) -> str:
         ),
         'log': f'tail -n {LOG_LINES} {shlex.quote(f"{root}/serve/{repo}.log")}',
         'crontab': 'crontab -l 2>&1',
+        'stuck': (
+            f'p="$HOME"/{shlex.quote(repo)}; echo "== id"; id; echo "== fs"; stat -f -c "%T" "$p" 2>&1; '
+            'echo "== ancestors"; d="$p"; while [ "$d" != / ]; do ls -ld "$d" 2>&1; lsattr -d "$d" 2>&1; '
+            'd=$(dirname "$d"); done; '
+            'echo "== owners"; find "$p" -printf "%u:%g\\n" 2>/dev/null | sort | uniq -c | sort -rn | head; '
+            'echo "== modes"; find "$p" -printf "%y %M\\n" 2>/dev/null | sort | uniq -c | sort -rn | head; '
+            'echo "== dirs lacking u+wx"; find "$p" -type d ! -perm -u+w -o -type d ! -perm -u+x 2>/dev/null '
+            '| head -5; '
+            'echo "== sample"; f=$(find "$p" ! -type d 2>/dev/null | head -1); stat -c "%U %a %n" "$f" 2>&1; '
+            'lsattr "$f" 2>&1; getfacl -p "$f" 2>&1 | head -12'
+        ),
     }[what]
 
 
@@ -118,6 +137,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.hpcaccount look', description=__doc__.splitlines()[0])
     parser.add_argument('--account', required=True, help='one account of the fleet')
     parser.add_argument('what', help=f'one of: {", ".join(READS)}')
-    parser.add_argument('repo', nargs='?', default='', help='the repo of `log`')
+    parser.add_argument('repo', nargs='?', default='', help='the repo of `log`, the home-relative path of `stuck`')
     args = parser.parse_args(list(argv or ()))
     return look(args.account, args.what, args.repo, connect=functools.partial(grant_runner, timeout=_TIMEOUT_S))

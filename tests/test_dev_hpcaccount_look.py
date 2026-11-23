@@ -5,6 +5,7 @@ Measured 2026-11-23: a hung tick on a key-only account could not be seen at all.
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +21,7 @@ ROOT = '/scratch/u1/lab'
     ('ticks', '', f'cd {ROOT}/serve'),
     ('log', 'alpha', f'tail -n {look.LOG_LINES} {ROOT}/serve/alpha.log'),
     ('crontab', '', 'crontab -l'),
+    ('stuck', 'ci/experiments/x', 'p="$HOME"/ci/experiments/x'),
 ])  # fmt: skip
 def test_each_read_is_a_fixed_line(what: str, repo: str, wanted: str) -> None:
     assert wanted in look.command_of(what, repo, ROOT)
@@ -27,7 +29,8 @@ def test_each_read_is_a_fixed_line(what: str, repo: str, wanted: str) -> None:
 
 @pytest.mark.parametrize(('what', 'repo'), [
     ('rm', ''), ('run', ''), ('kill', ''), ('crontab -r', ''), ('log', '../../.ssh/authorized_keys'),
-    ('log', 'a;rm -rf ~'), ('log', ''), ('ticks', 'alpha'),
+    ('log', 'a;rm -rf ~'), ('log', ''), ('ticks', 'alpha'), ('stuck', ''), ('stuck', '../etc'),
+    ('stuck', 'ci/../../x'), ('stuck', '/etc'), ('stuck', 'ci/$(rm -rf ~)'), ('stuck', 'a b'),
 ])  # fmt: skip
 def test_a_write_shaped_request_is_refused_naming_the_reads(what: str, repo: str) -> None:
     with pytest.raises(ValueError, match=r'^look: '):
@@ -60,3 +63,10 @@ def test_planted_control_a_refused_read_reaches_no_account(monkeypatch: pytest.M
     assert look.look('u1', 'rm', say=said.append, **_fleet(monkeypatch, ran)) == 2
     assert ran == []
     assert 'there is no free-form command' in said[0]
+
+
+def test_stuck_reads_owner_mode_attrs_acls_and_every_ancestor() -> None:
+    line = look.command_of('stuck', 'ci/experiments/x', ROOT)
+    for read in ('id', 'stat -f', 'ls -ld "$d"', 'lsattr -d "$d"', '%u', '! -perm -u+w', 'getfacl'):
+        assert read in line
+    assert not re.search(r'(?<![\w-])(rm|chmod|chown|mv|setfacl|truncate)\b| > |>>', line)
