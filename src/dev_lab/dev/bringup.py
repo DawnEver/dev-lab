@@ -8,14 +8,17 @@ green. Measured on a workstation 2026-11-20 (the walls, in the order they were h
    family default and is refused every write and HPC door, :mod:`dev_lab.dev.devprofile`);
 3. ``bridge-interpreter`` -- the session bridge's interpreter is DERIVED from ``[repos] dev-lab``
    (:func:`dev_lab.dev.devprofile.bridge_python`) and exists; never a hand-set or invented path;
-4. ``machine-file`` -- the machine file is its render (:func:`dev_lab.dev.devhost.drift`);
-5. ``client-key`` -- one of this machine's ssh public keys (``~/.ssh/*.pub``) is declared in its host file's
+4. ``dev-lab-kit`` -- the ``[repos] dev-lab`` checkout lags the family's ``[dev] ref`` by no more than
+   :data:`~dev_lab.dev.locklag.LAG_WINDOW`, THE one "current enough" (:func:`kit`): a stale kit is a wall, never a
+   silent older behaviour (2026-11-23);
+5. ``machine-file`` -- the machine file is its render (:func:`dev_lab.dev.devhost.drift`);
+6. ``client-key`` -- one of this machine's ssh public keys (``~/.ssh/*.pub``) is declared in its host file's
    ``[dev] client_keys``: the ONE place the approval servers derive their authorised keys from
    (:mod:`dev_lab.ops.clientkeys`);
-6. ``issuer`` -- the consent issuer (``[consent] endpoint``) is reached with a known host key, admits this key, and
+7. ``issuer`` -- the consent issuer (``[consent] endpoint``) is reached with a known host key, admits this key, and
    speaks this client's version (:func:`dev_lab.ops.consent.door.handshake`): the break-glass account takes the
    same derived key set, so this one probe stands for both;
-7. ``forge-credential`` -- every declared forge login has a stored credential (:func:`.forgecredential.drift`).
+8. ``forge-credential`` -- every declared forge login has a stored credential (:func:`.forgecredential.drift`).
 
 A wall whose door SPENDS A CODE says which (``code:``): the ``ops.config`` consent that applies a new client key on
 the issuer, the consent that mints a forge token. Those are asked only once every no-code wall is green (the rule a
@@ -24,22 +27,28 @@ code is asked only after its preflight passes) -- so the output lists them last,
 
 from __future__ import annotations
 
+import subprocess
 import tomllib
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import devprofile, familyrepos, forgecredential
-from dev_lab.dev.devdeclared import OWN_TABLE, declared
+from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
+from dev_lab.dev.gitenv import unlocated
+from dev_lab.dev.locklag import LAG_WINDOW, LOCAL_ONLY, Lag, hours, lag_of
+from dev_lab.dev.relock import RelockFailed
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops.clientkeys import DEV_KEY
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import Send, handshake, ssh_send
 
-__all__ = ['ADMIT_DOOR', 'HOST_KEY_DOOR', 'Wall', 'main', 'walls']
+__all__ = ['ADMIT_DOOR', 'HOST_KEY_DOOR', 'Wall', 'checkout_lag', 'kit', 'main', 'stale_kit', 'walls']
 
 #: Where the issuer's ssh HOST key is declared and checked strictly (a sibling change: pr/toolchain/ssh-host-key).
 HOST_KEY_DOOR: Final = (
@@ -48,6 +57,46 @@ HOST_KEY_DOOR: Final = (
 )
 #: The door that admits a declared key (:mod:`dev_lab.dev.devhostadmit`), run by ANOTHER machine's agent.
 ADMIT_DOOR: Final = 'python -m dev_lab.dev.devhost admit --host {host}'
+
+
+#: ``(checkout, ref)`` -> how far the checkout's HEAD lags ``origin/<ref>`` (:func:`.locklag.lag_of`); None: unread.
+type Measure = Callable[[str, str], Lag | None]
+
+
+def checkout_lag(checkout: str, ref: str) -> Lag | None:
+    """:func:`~dev_lab.dev.locklag.lag_of` HEAD against ``origin/<ref>`` as last fetched, in *checkout*; None unread."""
+
+    def git(*argv: str) -> subprocess.CompletedProcess[str]:
+        return _door.run(
+            [_GIT, '-C', checkout, *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
+            check=False, timeout=_GIT_TIMEOUT_S, env={**unlocated(), **LOCAL_ONLY},
+        )  # fmt: skip
+
+    try:
+        return lag_of(git, 'HEAD', f'origin/{ref}')
+    except (RelockFailed, OSError):
+        return None
+
+
+def kit(checkout: str, ref: str, *, measure: Measure = checkout_lag) -> Wall:
+    """The ``dev-lab-kit`` wall: red when the checkout lags *ref* past :data:`~dev_lab.dev.locklag.LAG_WINDOW`."""
+    lag = measure(checkout, ref)
+    if lag is None:
+        return Wall('dev-lab-kit', green=False, said=f'{checkout} cannot be read as a git checkout of {ref}')
+    said = f'{lag} behind origin/{ref} (window {hours(LAG_WINDOW)})'
+    if not lag.past(LAG_WINDOW):
+        return Wall('dev-lab-kit', green=True, said=said)
+    pull = f'{running_interpreter()} -m dev_lab.dev.netverb -- git pull --ff-only'
+    return Wall('dev-lab-kit', green=False, said=f'{said}: in {checkout}, {pull}, then uv sync --frozen')
+
+
+def stale_kit(live: Mapping[str, Any], *, measure: Measure = checkout_lag) -> list[str]:
+    """The SessionStart line of a ``dev-lab-kit`` wall on the machine whose *live* file is given; ``[]`` when none."""
+    checkout = live.get(familyrepos.LOCAL_TABLE, {}).get(devprofile.BRIDGE_CHECKOUT)
+    ref = declared_by(live.get(OWN_TABLE, {})).get('ref')
+    lag = measure(str(checkout), str(ref)) if checkout and ref else None  # unread: bringup says so, not every session
+    wall = kit(str(checkout), str(ref), measure=lambda _c, _r: lag) if lag is not None else None
+    return [f'DEV-LAB-KIT STALE: {wall.said}'] if wall is not None and not wall.green else []
 
 
 #: ssh's exit status when it could not reach the host at all (no route, timeout, refused authentication).
@@ -143,7 +192,7 @@ def _client_key(host: str, host_file: Path, ssh_dir: Path) -> Wall:
 def walls(
     live: Mapping[str, Any], *, ssh_dir: Path | None = None, send: Send = ssh_send,
     exists: Callable[[str], bool] = lambda path: Path(path).is_file(),
-    credential: Callable[[Mapping[str, Any]], list[str]] = forgecredential.drift,
+    credential: Callable[[Mapping[str, Any]], list[str]] = forgecredential.drift, measure: Measure = checkout_lag,
 ) -> list[Wall]:  # fmt: skip
     """Every bring-up wall of the machine whose *live* file is given, in order; each later wall needs the earlier."""
     from dev_lab.dev import devhost  # noqa: PLC0415 -- devhost wires this verb, so the import is at call time
@@ -161,6 +210,8 @@ def walls(
     found.append(Wall('enrolment', green=True, said=f'{host} is declared'))
     dev = declared(host_file, clone / 'family.toml')
     found.append(_interpreter(live, dev, exists))
+    if (checkout := live.get(familyrepos.LOCAL_TABLE, {}).get(devprofile.BRIDGE_CHECKOUT)) and dev.get('ref'):
+        found.append(kit(str(checkout), str(dev['ref']), measure=measure))
     drifted = devhost.drift(live, clone)
     found.append(Wall('machine-file', green=not drifted, said='; '.join(drifted) or 'is its render'))
     found.append(keyed := _client_key(host, host_file, ssh_dir or Path.home() / '.ssh'))

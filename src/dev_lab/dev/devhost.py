@@ -242,7 +242,7 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
         return None
     first = [line for line in found if line.startswith('install home not filled')]
     rest = [line for line in found if line not in first]
-    lines = [f'HOST-CONFIG FIRST: {line}' for line in first]
+    lines = [f'HOST-CONFIG FIRST: {line}' for line in first] + bringup.stale_kit(live or machineconfig.machine())
     if host := devprofile.unmanaged(machineconfig.machine() if live is None else live):
         lines.insert(0, f'HOST-CONFIG FIRST: {devprofile.enrolment(host)}')
     if rest:

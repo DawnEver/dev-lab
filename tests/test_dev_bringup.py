@@ -9,12 +9,14 @@ from __future__ import annotations
 import json
 import tomllib
 from collections.abc import Mapping
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from dev_lab.dev import bringup, devhost
+from dev_lab.dev.locklag import LAG_WINDOW, Lag
 from dev_lab.ops.consent.door import hello
 
 KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA1dtjiBuQjg+mT4+rUmSfSrdgiwtUSw9TlircWVvVC0'
@@ -45,6 +47,7 @@ def _walls(tmp_path: Path, live: Mapping[str, Any], **kw: object) -> dict[str, b
     kw.setdefault('send', _speaks)
     kw.setdefault('exists', lambda _path: True)
     kw.setdefault('credential', lambda _dev: [])
+    kw.setdefault('measure', lambda _checkout, _ref: Lag(0, timedelta(0)))
     return {wall.name: wall for wall in bringup.walls(live, ssh_dir=tmp_path / 'ssh', **kw)}
 
 
@@ -52,7 +55,8 @@ def test_a_ready_workstation_is_green_on_every_wall(tmp_path: Path, capsys: pyte
     found = _walls(tmp_path, _machine(tmp_path))
     assert [name for name, wall in found.items() if not wall.green] == []
     assert list(found) == [
-        'config-source', 'enrolment', 'bridge-interpreter', 'machine-file', 'client-key', 'issuer', 'forge-credential',
+        'config-source', 'enrolment', 'bridge-interpreter', 'dev-lab-kit', 'machine-file', 'client-key', 'issuer',
+        'forge-credential',
     ]  # fmt: skip
     assert bringup.report(found.values()) == 0
     assert 'bringup: GREEN' in capsys.readouterr().out
@@ -137,3 +141,36 @@ def test_the_verb_is_wired_read_only(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert devhost.main(['--machine', str(machine), 'bringup', '--check']) == 0
     assert seen == [{'devhost': {'host': 'ws'}}]
     assert machine.read_text(encoding='utf-8') == '[devhost]\nhost = "ws"\n'
+
+
+@pytest.mark.parametrize(
+    ('lag', 'verdict'),
+    [(Lag(0, timedelta(0)), 'green'), (Lag(3, LAG_WINDOW), 'green'), (Lag(46, LAG_WINDOW * 7), 'wall')],
+)
+def test_a_stale_kit_is_a_wall_naming_pull_and_sync(lag: Lag, verdict: str) -> None:
+    """Measured 2026-11-23: a workstation ran a dev-lab older than D94 and saw a hidden prompt; nothing said so.
+
+    PLANTED CONTROL: a checkout at its ref, and one inside the one window, have no wall.
+    """
+    found = bringup.kit('D:/x/dev-lab', 'integrate/main', measure=lambda _checkout, _ref: lag)
+    assert found.green is (verdict == 'green')
+    assert f'{lag} behind origin/integrate/main' in found.said
+    if verdict == 'wall':
+        assert '-m dev_lab.dev.netverb -- git pull --ff-only' in found.said
+        assert 'uv sync --frozen' in found.said
+
+
+def test_an_unreadable_checkout_is_not_read_as_current() -> None:
+    found = bringup.kit('D:/x/dev-lab', 'integrate/main', measure=lambda _c, _r: None)
+    assert not found.green
+    assert 'cannot be read' in found.said
+
+
+def test_the_session_start_notice_names_a_stale_kit(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same machine inside the window says nothing."""
+    live = _machine(tmp_path)
+    stale = bringup.stale_kit(live, measure=lambda _c, _r: Lag(46, LAG_WINDOW * 7))
+    assert len(stale) == 1
+    assert stale[0].startswith('DEV-LAB-KIT STALE: 46 landings')
+    assert 'git pull --ff-only' in stale[0]
+    assert bringup.stale_kit(live, measure=lambda _c, _r: Lag(1, timedelta(hours=1))) == []
