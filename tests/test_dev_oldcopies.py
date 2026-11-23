@@ -8,10 +8,11 @@ is kept and named; an unreadable crontab keeps them all.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+from lab_commons.census import Process
 from lab_commons.hpc.layout import ROOT_VAR
 
 from dev_lab.dev import oldcopies, retention
@@ -32,9 +33,19 @@ def _account(tmp_path: Path) -> tuple[Path, Path]:
     return home, root
 
 
-def _plan(home: Path, root: Path, **given: object) -> tuple[list[str], list[str]]:
-    wanted = {'cwd': root / 'repos' / 'r', 'crontab': lambda: '', 'holders': lambda _copy: ()} | given
-    doomed, kept = oldcopies.plan(home, root, **wanted)  # type: ignore[arg-type]
+def _nobody(_copy: Path) -> tuple[Process, ...]:
+    return ()
+
+
+def _plan(
+    home: Path,
+    root: Path,
+    *,
+    cwd: Path | None = None,
+    crontab: Callable[[], str | None] = str,
+    holders: Callable[[Path], Sequence[Process]] = _nobody,
+) -> tuple[list[str], list[str]]:
+    doomed, kept = oldcopies.plan(home, root, cwd=cwd or root / 'repos' / 'r', crontab=crontab, holders=holders)
     return [d.path.relative_to(home).as_posix() for d in doomed], kept
 
 
@@ -58,7 +69,7 @@ def test_a_referenced_old_copy_is_kept_by_name(tmp_path: Path) -> None:
     home, root = _account(tmp_path)
     commented = f'# cd {home.as_posix()}/src/dev-lab (a comment names nothing)'
     cron = f'*/5 * * * * cd ~/ci && ./tick\n{commented}\n@daily ~/ci-notes/x\n'
-    live = SimpleNamespace(pid=7, executable='/usr/bin/python', command_line='python -m app')
+    live = Process(pid=7, ppid=1, executable='/usr/bin/python', command_line='python -m app', age_s=None)
     going, kept = _plan(
         home, root, cwd=root / 'dev-lab' / 'sub', crontab=lambda: cron,
         holders=lambda copy: (live,) if copy == root / 'src' else (),

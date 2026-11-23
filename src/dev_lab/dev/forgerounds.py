@@ -124,13 +124,18 @@ class Rounds:
         return ticked
 
     def card(self, claimed: Sequence[Work], progress: Mapping[tuple[str, str], str] | None = None) -> None:
-        """Publish this host's card: *claimed* with their *progress*, and the last round's queue and supply."""
+        """Publish this host's card: *claimed* with their *progress*, and the last round's queue and supply.
+
+        ``running`` names the cluster runs the run store STILL holds: one settled or released while this tick
+        advanced it has dropped its file and is not running (measured 2026-11-22: four runs settled "no job of
+        this part was ever submitted; superseded by ..." were published as running by the tick that settled them).
+        """
         ticked = self.latest['ticked']
         publish_card(
             self.root, ticked.queue, claimed, **self.carding, artefacts=ticked.artefacts,
             supply=self.latest['supply'], progress=progress,
             size=self.latest['box'].size() if self.latest.get('box') else {},
-            running=(*(f'{run.sha[:12]} {run.platform}' for run in self.runs),
+            running=(*(f'{run.sha[:12]} {run.platform}' for run in self.runs if forgerunstate.held(run)),
                      *(f'{one.what} (pid {one.pid})' for one in self.latest['held'])),
         )  # fmt: skip
 

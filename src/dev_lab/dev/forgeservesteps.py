@@ -213,7 +213,8 @@ def retain_storage(
         return
     if done is not None and done.over:
         body = done.alarm or f'freed {done.freed_bytes} bytes and {done.freed_files} files; still over pressure'
-        alarm(Alarm(STORAGE, repo, f'{who} storage is still near its quota', body))
+        named = f': {done.watch}' if done.watch else ''
+        alarm(Alarm(STORAGE, repo, f'{who} storage is still near its quota{named}', body))
 
 
 def pressed(root: Path, repo: str, *, who: str, say: Callable[[str], None], alarm: Callable[[Alarm], object]) -> None:
