@@ -92,10 +92,8 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 
 ## ARCHIVE-IS-NO-STORE
 
-`git bundle create` is refused: a bundle (or an `archive/*` tag, or a copy under `output/`) parks unlanded work
-where nobody reads it again. Unlanded work is merged or discarded (`MERGE-OR-DELETE`): merge it through a PR, or
-land its discard with a declared `git merge -s ours` PR, then `branchprune delete <branch>`. Origin's tags are
-versions only (`ONLY-VERSION-TAGS`, `dev_lab.dev.milestonebase`).
+- **Why it is refused.** A bundle (like an `archive/*` tag or a copy under `output/`) parks unlanded work where nobody reads it again; origin's tags are versions only (`ONLY-VERSION-TAGS`, `dev_lab.dev.milestonebase`, user ruling 2026-11-23).
+- **The exit.** Unlanded work is merged or discarded (`MERGE-OR-DELETE`): merge it through a PR, or land its discard with a declared `git merge -s ours` PR, then `branchprune delete <branch>` (a tag: `branchprune tag <tag>`).
 
 ## GIT-STASH
 
