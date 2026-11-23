@@ -79,7 +79,7 @@ def _run() -> forgerunstate.Run:
     return forgerunstate.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', '/out', 'owner', platform='base')
 
 
-def _publish(home: _Home, monkeypatch: pytest.MonkeyPatch, rounds: list[dict[str, Any]]) -> tuple[Any, int]:
+def _publish(home: _Home, monkeypatch: pytest.MonkeyPatch, rounds: list[dict[str, Any]]) -> tuple[Any, int, int]:
     monkeypatch.setattr(forgerunpost, 'step', dataclasses.replace)
     return forgerun._publish_rounds(home.client(), _run(), _Cluster(rounds), lambda _l: None, 'tag')
 
@@ -89,8 +89,10 @@ def test_a_round_with_an_oom_a_timeout_and_a_failure_publishes_all_three(
     home: _Home, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     rounds = [{'job_ids': ['11'], 'lost': [OOM, SLOW, BAD]}, {'job_ids': ['12']}]  # round 1 still running
-    run, lost = _publish(home, monkeypatch, rounds)
-    assert (run.rounds_posted, lost) == (1, 3)
+    run, lost, folded = _publish(home, monkeypatch, rounds)
+    assert (run.rounds_posted, lost, folded) == (1, 3, 1)
+    assert forgerunshow.lost_words(lost, folded) == '3 ids lost over 1 round'
+    assert forgerunshow.LOST.search(f'running 1/2; {forgerunshow.lost_words(lost, folded)}')
     shown = '\n'.join(forgerunshow.show(home.client(), SHA))
     assert 'base: in flight' in shown
     assert 'round 0: 3 lost' in shown
@@ -103,16 +105,17 @@ def test_a_round_with_an_oom_a_timeout_and_a_failure_publishes_all_three(
 @pytest.mark.usefixtures('no_shell')
 def test_a_clean_round_publishes_no_failure(home: _Home, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL: the same path over a clean round names no id."""
-    run, lost = _publish(home, monkeypatch, [{'job_ids': ['11'], 'lost': []}])
+    run, lost, _ = _publish(home, monkeypatch, [{'job_ids': ['11'], 'lost': []}])
     assert (run.rounds_posted, lost) == (1, 0)
+    assert not forgerunshow.LOST.search('running 1/1 done 0/1')
     assert forgerunshow.show(home.client(), SHA) == [f'{SHA[:12]}:', 'base: in flight', '  round 0: clean']
 
 
 def test_a_round_is_published_once(home: _Home, monkeypatch: pytest.MonkeyPatch) -> None:
     rounds = [{'job_ids': ['11'], 'lost': [OOM]}]
-    run, _ = _publish(home, monkeypatch, rounds)
+    run, _, _ = _publish(home, monkeypatch, rounds)
     home.files.clear()
-    again, _ = forgerun._publish_rounds(home.client(), run, _Cluster(rounds), lambda _l: None, 'tag')
+    again, _, _ = forgerun._publish_rounds(home.client(), run, _Cluster(rounds), lambda _l: None, 'tag')
     assert (again.rounds_posted, home.files) == (1, {}), 'an unchanged round count posts nothing'
 
 

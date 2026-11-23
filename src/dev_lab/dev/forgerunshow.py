@@ -35,7 +35,18 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerecords import listing, replace_named
 from dev_lab.dev.forgework import Client
 
-__all__ = ['LEDGER', 'failing', 'ledger', 'ledger_name', 'main', 'posted_rounds', 'show']
+__all__ = [
+    'LEDGER',
+    'LOST',
+    'failing',
+    'ledger',
+    'ledger_name',
+    'lost_words',
+    'main',
+    'posted_rounds',
+    'show',
+    'show_command',
+]
 
 #: The ``<req>`` slot of the in-flight ledger's name: a record name, so it is pruned with its sha.
 LEDGER: Final = 'rounds'
@@ -47,6 +58,20 @@ _AS_DECLARED: Final = 2
 
 #: A resource skip is an answer as declared for this host, never a failure of the run.
 _NOT_FAILING: Final = frozenset({('unavailable', 'resource')})
+
+
+#: The in-flight progress phrase :func:`lost_words` writes, as a reader finds it (``forge queue``).
+LOST: Final = re.compile(r'\b\d+ ids? lost over \d+ rounds?\b')
+
+
+def lost_words(lost: int, rounds: int) -> str:
+    """``N ids lost over R rounds``: what a run in flight lost so far, short enough for a status description."""
+    return f'{lost} id{"s" * (lost != 1)} lost over {rounds} round{"s" * (rounds != 1)}'
+
+
+def show_command(sha: str) -> str:
+    """The whole command that reads what *sha*'s runs published."""
+    return f'python -m dev_lab.dev.forge run show {sha}'
 
 
 def ledger_name(sha: str, part: str) -> str:

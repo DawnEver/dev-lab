@@ -247,11 +247,10 @@ def _gather(
         # 2026-10-12: the submit's r0 id was still shown while r2 ran).
         run = forgerunpost.step(run, job_ids=tuple(cluster.submitted(run)) or ids or run.job_ids)
         say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
-        run, lost = _publish_rounds(client, run, cluster, say, tag)
+        run, lost, rounds = _publish_rounds(client, run, cluster, say, tag)
         progress = cluster.progress(run)
-        return forgerunpost.report(
-            client, run, f'{progress}; lost {lost}: forge run show' if lost else progress, lease, say
-        )
+        said = f'{progress}; {forgerunshow.lost_words(lost, rounds)}' if lost else progress  # the queue names the door
+        return forgerunpost.report(client, run, said, lease, say)
     forgerunpost.killed(client, run, cluster.killed(run, record), say, tag)
     if spent := budget_alarm(run.repo_url, run.sha, budget_spent(record)):
         alarm(spent)
@@ -261,23 +260,24 @@ def _gather(
 
 def _publish_rounds(
     client: Client, run: Run, cluster: Cluster, say: Callable[[str], None], tag: str
-) -> tuple[Run, int]:
+) -> tuple[Run, int, int]:
     """Post the run's folded rounds as its ledger once a new one folds (user ruling 2026-10-31: readable without ssh).
 
-    Returns the run and how many ids its rounds lost so far. A failed post is retried next tick, never fatal.
+    Returns the run, how many ids its rounds lost so far and over how many folded rounds. A failed post is retried
+    next tick, never fatal.
     """
     rounds = cluster.rounds(run)
     folded = forgerunshow.posted_rounds(rounds)
     lost = sum(len(one['lost']) for one in folded)
     if len(folded) <= run.rounds_posted:
-        return run, lost
+        return run, lost, len(folded)
     try:
         forgerunshow.ledger(client, run.sha, run.platform, rounds)
     except ForgeCallFailed as failed:
         say(f'{tag}: could not publish round {len(folded) - 1}: {failed}')
-        return run, lost
+        return run, lost, len(folded)
     say(f'{tag}: published round {len(folded) - 1} ({lost} id(s) lost so far)')
-    return forgerunpost.step(run, rounds_posted=len(folded)), lost
+    return forgerunpost.step(run, rounds_posted=len(folded)), lost, len(folded)
 
 
 def _settle(
