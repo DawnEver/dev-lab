@@ -105,7 +105,9 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.usefixtures('offline')
 def test_a_bare_apply_bootstraps_from_the_fetched_main(tmp_path: Path) -> None:
     live = _live(tmp_path)
-    said = configverbs.apply(_config(live), None, '', alert=lambda *_: None, redeemer=lambda: lambda _a: None)
+    said = configverbs.apply(
+        _config(live), None, '', alert=lambda *_: None, redeemer=lambda: lambda _a: None, render=lambda: 0
+    )
     assert said == 0
     assert _client(live) == tomllib.loads(MAIN)['ops']['consent_client']
 
@@ -115,6 +117,8 @@ def test_a_local_candidate_is_never_a_bootstrap_source(tmp_path: Path) -> None:
     live = _live(tmp_path)
     local = tmp_path / 'candidate.toml'
     local.write_text(MAIN, encoding='utf-8')  # the same table main holds: refused only because it is local
-    said = configverbs.apply(_config(live), local, '', alert=lambda *_: None, redeemer=lambda: lambda _a: None)
+    said = configverbs.apply(
+        _config(live), local, '', alert=lambda *_: None, redeemer=lambda: lambda _a: None, render=lambda: 0
+    )
     assert said == 2
     assert _client(live) is None

@@ -29,7 +29,7 @@ def _subject(tmp_path: Path, *, loads_ok: bool, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(configverbs, 'load', load)
     config = SimpleNamespace(path=tmp_path / 'supervise.toml', config_source=None)
     return configverbs.apply(
-        cast('Any', config), candidate, '', alert=lambda *_: None, redeemer=lambda: None, subject=True
+        cast('Any', config), candidate, '', alert=lambda *_: None, redeemer=lambda: None, render=lambda: 0, subject=True
     )
 
 
