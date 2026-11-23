@@ -84,7 +84,11 @@ def code(
 
     """
     if given is None:
-        given = ask(f'cluster code -- the six-digit code your authenticator shows now, for {what}\ncode: ')
+        try:
+            given = ask(f'cluster code -- the six-digit code your authenticator shows now, for {what}\ncode: ')
+        except EOFError:  # measured 2026-11-23: a headless agent's stdin ended and the door died in a traceback
+            msg = 'could not be read: stdin ended with no terminal to ask on -- pass the code the user gave as --code'
+            raise AskRefused(msg) from None
     stripped = given.strip()
     line, _why = judged('code', stripped, CODE_SHAPE)
     say(line)

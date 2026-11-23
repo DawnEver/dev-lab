@@ -44,6 +44,17 @@ def test_a_code_is_six_digits_given_or_asked() -> None:
         ask.code('12\x163456', what='w')
 
 
+def test_a_code_asked_with_no_stdin_left_is_refused_by_name_never_a_traceback() -> None:
+    """Measured 2026-11-23: a headless agent's ``sshhold open`` died in ``EOFError``. PLANTED CONTROL: one typed."""
+
+    def ended(_prompt: str) -> str:
+        raise EOFError
+
+    with pytest.raises(ask.AskRefused, match=r'stdin ended .* pass the code the user gave as --code'):
+        ask.code(None, what='w', ask=ended)
+    assert ask.code(None, what='w', ask=lambda _p: '123456') == '123456'
+
+
 _CLAIMS_HIDDEN = re.compile(r'not echoed|without echo|no-echo|input hidden|\(hidden\)', re.IGNORECASE)
 _SOURCES = sorted(Path(dev_lab.__file__).parent.rglob('*.py'))
 
