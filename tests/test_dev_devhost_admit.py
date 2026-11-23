@@ -10,8 +10,10 @@ already-admitted one ("nothing to apply" from the issuer's own read) yields "not
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
+import lab_commons.launch as _door
 import pytest
 
 from dev_lab.dev import devhostadmit
@@ -92,3 +94,13 @@ def test_another_source_is_still_refused() -> None:
     text = f'[ops.config]\nsource = "{_SOURCE}"\npath = "hosts/h.toml"\n'
     with pytest.raises(configdoor.ConfigRefused, match='derive it there'):
         configdoor.local_subject('https://forge.example/other/config', 'hosts/h.toml', lambda *_: text)
+
+
+@pytest.mark.parametrize('first', ['dev_lab.dev.sshhold', 'dev_lab.dev.planrunpreflight', 'dev_lab.dev.devhost'])
+def test_each_module_of_the_cycle_imports_first(first: str) -> None:
+    """The admit door sits inside devhost -> planrunpreflight -> devhost; any of them imported first must load."""
+    done = _door.run(
+        [sys.executable, '-c', f'import {first}'], capture_output=True, text=True, encoding='utf-8', errors='replace',
+        check=False, timeout=120,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr[-600:]

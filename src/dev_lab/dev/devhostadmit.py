@@ -31,12 +31,9 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import devhost
+# Modules, not names: planrunpreflight reads devhost, which wires this verb, so it may be mid-import here.
+from dev_lab.dev import devhost, planremote, planrunpreflight, planrunsteps
 from dev_lab.dev.forgeenrol import EnrolRefused, ops_door
-from dev_lab.dev.planremote import remote_for
-from dev_lab.dev.planrunoffer import offered
-from dev_lab.dev.planrunpreflight import UNREAD, Readers, config_subject, preflight
-from dev_lab.dev.planrunsteps import load_steps
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops import configdoor
 from dev_lab.ops.clientkeys import DEV_KEY
@@ -66,7 +63,7 @@ def _issuer_file(clone: Path) -> Path:
     return found[0]
 
 
-def _keys(machine: str, source: str, readers: Readers) -> list[str]:
+def _keys(machine: str, source: str, readers: planrunpreflight.Readers) -> list[str]:
     where = devhost.host_file(machine)
     declared = tomllib.loads(readers.text(source, where, 'main')).get('dev', {}).get(DEV_KEY, [])
     if not declared:
@@ -77,7 +74,7 @@ def _keys(machine: str, source: str, readers: Readers) -> list[str]:
 
 
 def offer(
-    *, machine: str, clone: Path, endpoint: str, readers: Readers, out: Path, check: Check,
+    *, machine: str, clone: Path, endpoint: str, readers: planrunpreflight.Readers, out: Path, check: Check,
     say: Callable[[str], None] = emit,
 ) -> int:  # fmt: skip
     """The door of the module docstring; 0 when a green plan is offered or nothing is owed, 2 when refused."""
@@ -96,8 +93,8 @@ def offer(
         if standing is not None:
             say(f'admit: refused, no code asked -- {dest} would refuse the apply as it stands: {standing}')
             return 2
-        derived = config_subject(issuer.stem, readers.text, source, listed=readers.listed)
-    except (EnrolRefused, configdoor.ConfigRefused, *UNREAD) as refused:
+        derived = planrunpreflight.config_subject(issuer.stem, readers.text, source, listed=readers.listed)
+    except (EnrolRefused, configdoor.ConfigRefused, *planrunpreflight.UNREAD) as refused:
         say(f'admit: refused, no code asked -- {refused}')
         return 2
     if asked != derived:
@@ -132,6 +129,8 @@ def add_admit(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
 
 def run(args: argparse.Namespace, live: Mapping[str, Any], own: Mapping[str, Any]) -> int:
     """``devhost admit``: :func:`offer` with this machine's clone, issuer and the real preflight."""
+    from dev_lab.dev.planrunoffer import offered  # noqa: PLC0415 -- it imports planrunpreflight's names: a cycle
+
     if not own.get('source'):
         emit('admit: refused, no code asked -- the machine file names no config-source clone: devhost render --write')
         return 2
@@ -142,7 +141,10 @@ def run(args: argparse.Namespace, live: Mapping[str, Any], own: Mapping[str, Any
     def check(plan_path: Path, steps_path: Path) -> tuple[bool, list[str]]:
         shown = digest(json.loads(plan_path.read_text(encoding='utf-8')))
         plan = load_plan(plan_path, shown)
-        return offered(plan, preflight(plan, load_steps(steps_path, plan), remote_for), steps=steps_path)
+        steps = planrunsteps.load_steps(steps_path, plan)
+        return offered(plan, planrunpreflight.preflight(plan, steps, planremote.remote_for), steps=steps_path)
 
     out = Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent'
-    return offer(machine=args.host, clone=clone, endpoint=endpoint, readers=Readers(), out=out, check=check)
+    return offer(
+        machine=args.host, clone=clone, endpoint=endpoint, readers=planrunpreflight.Readers(), out=out, check=check
+    )
