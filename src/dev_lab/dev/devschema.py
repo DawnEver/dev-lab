@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Final
@@ -43,6 +44,7 @@ __all__ = [
     'fill_remedy',
     'home_of',
     'hpc_reach',
+    'key_comment_defects',
     'ssh_defects',
     'unfilled',
     'usable',
@@ -62,7 +64,7 @@ VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': st
 SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
     'helpers': dict, 'channels': dict, 'bridge': dict, 'hooks': str, 'default': dict, 'apps': list,
-    'client_keys': list,
+    'client_keys': list, 'hostname': str, 'key_account': str,
 }  # fmt: skip
 #: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
 #: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
@@ -79,12 +81,14 @@ FAMILY_ONLY: Final = ('default', 'apps')
 #: ``[dev]`` keys that are one machine's facts and never the family's: ``channels`` -- session channel source ->
 #: the user whose messages through it ARE the machine's user (an undeclared channel or user carries no authority);
 #: ``client_keys`` -- the machine's ssh client public keys, from which a server derives who may reach its approval
-#: accounts (:mod:`dev_lab.ops.clientkeys`).
-HOST_ONLY: Final = ('channels', 'client_keys')
+#: accounts (:mod:`dev_lab.ops.clientkeys`); ``hostname`` -- the machine's own host name, the part after ``@`` in
+#: every one of its key comments (:func:`key_comment_defects`).
+HOST_ONLY: Final = ('channels', 'client_keys', 'hostname')
 #: ``[dev]`` keys the family declares for every machine and a host may OVERRIDE with a different value: ``forges`` --
-#: the workstation login is one person's, so another person's machine names its own. A host restating the family's
-#: value is still refused: one fact, one place.
-OVERRIDABLE: Final = ('forges',)
+#: the workstation login is one person's, so another person's machine names its own; ``key_account`` -- the account
+#: named before ``@`` in every client key comment, likewise one person's. A host restating the family's value is still
+#: refused: one fact, one place.
+OVERRIDABLE: Final = ('forges', 'key_account')
 #: The machine-file table ``[dev] channels`` renders into, as ``[agent] channels``: its consumer is the agent session
 #: (the harness and its channel plugins), not the dev tooling, so the table is named for who reads it.
 CHANNELS_TABLE: Final = 'agent'
@@ -229,6 +233,8 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
         found += channel_defects(table['channels'], f'{where}.channels')
     if 'client_keys' in table:
         found += clientkeys.defects(table['client_keys'], f'{where}.client_keys')
+    found += [f'{where}.{key} must be a non-empty name with no "@" or space' for key in ('hostname', 'key_account')
+              if isinstance(table.get(key), str) and not _NAME.fullmatch(table[key])]  # fmt: skip
     found += _named_lists(table, 'detect', where, 'glob patterns')
     found += _resources(table, where)
     vendors = table.get('vendors') if isinstance(table.get('vendors'), dict) else {}
@@ -238,6 +244,32 @@ def _shape(table: Mapping[str, Any], where: str) -> list[str]:
         else:
             found.append(f'{where}.vendors.{name} must be a table')
     return found
+
+
+_NAME: Final = re.compile(r'[^@\s]+')
+
+
+def key_comment_defects(dev: Mapping[str, Any], where: str = '[dev]') -> list[str]:
+    """Why a client key's comment is not ``<key_account>@<hostname>`` of *dev* (a host's merged ``[dev]``).
+
+    A machine's key names who holds it and where: the comment is DERIVED from the declared account and host name,
+    so a key copied from another machine, or labelled by hand, is refused by name.
+    """
+    keys, host, account = dev.get('client_keys'), dev.get('hostname'), dev.get('key_account')
+    if not isinstance(keys, list) or clientkeys.defects(keys, f'{where}.client_keys'):
+        return []  # absent, or already refused by its shape
+    door = ('declare [dev] hostname (the machine host name, in this host file) and [dev] key_account (the key '
+            "holder's account, in the family file or this host file)")  # fmt: skip
+    if not (isinstance(host, str) and isinstance(account, str)):
+        return [f'{where}.client_keys needs a declared <key_account>@<hostname> to check its comments against: {door}']
+    expected = f'{account}@{host}'
+    return [
+        f'{where}.client_keys[{index}] comment is {actual!r}, expected {expected!r} (<key_account>@<hostname>): '
+        f'relabel the key (ssh-keygen -c -C {expected} -f <its private key>) and its line in this host file, '
+        f'or correct [dev] hostname / key_account'
+        for index, key in enumerate(keys)
+        if (actual := ' '.join(key.split()[2:])) != expected
+    ]
 
 
 def _leaves(table: Mapping[str, Any], prefix: str = '') -> Iterator[tuple[str, Any]]:
@@ -252,8 +284,9 @@ def _restated(host: Mapping[str, Any], family: Mapping[str, Any]) -> list[str]:
     """Leaves *host* shares with *family*: any of them, but an :data:`OVERRIDABLE` one only when its value is equal."""
     ours, theirs = dict(_leaves(host)), dict(_leaves(family))
     overridable = tuple(f'dev.{key}.' for key in OVERRIDABLE)
+    scalars = {f'dev.{key}' for key in OVERRIDABLE}
     return sorted(key for key in ours.keys() & theirs.keys()
-                  if not key.startswith(overridable) or ours[key] == theirs[key])  # fmt: skip
+                  if not (key.startswith(overridable) or key in scalars) or ours[key] == theirs[key])  # fmt: skip
 
 
 def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> list[str]:
@@ -265,6 +298,7 @@ def check(host: Mapping[str, Any], family: Mapping[str, Any] | None = None) -> l
     restated = _restated(host, shared)
     found += [f'{key} restates the family file; it lives there once' for key in restated]
     merged = {**shared.get('dev', {}), **host.get('dev', {})}
+    found += key_comment_defects(merged)
     found += [f'[dev].{key} is required (host or family file)' for key in REQUIRED if key not in merged]
     return found
 

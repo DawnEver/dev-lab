@@ -35,7 +35,18 @@ from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgerecords import listing, replace_named
 from dev_lab.dev.forgework import Client
 
-__all__ = ['LEDGER', 'failing', 'ledger', 'ledger_name', 'main', 'posted_rounds', 'show']
+__all__ = [
+    'LEDGER',
+    'LOST',
+    'failing',
+    'ledger',
+    'ledger_name',
+    'lost_words',
+    'main',
+    'posted_rounds',
+    'show',
+    'show_command',
+]
 
 #: The ``<req>`` slot of the in-flight ledger's name: a record name, so it is pruned with its sha.
 LEDGER: Final = 'rounds'
@@ -47,6 +58,20 @@ _AS_DECLARED: Final = 2
 
 #: A resource skip is an answer as declared for this host, never a failure of the run.
 _NOT_FAILING: Final = frozenset({('unavailable', 'resource')})
+
+
+#: The in-flight progress phrase :func:`lost_words` writes, as a reader finds it (``forge queue``).
+LOST: Final = re.compile(r'\b\d+ ids? lost over \d+ rounds?\b')
+
+
+def lost_words(lost: int, rounds: int) -> str:
+    """``N ids lost over R rounds``: what a run in flight lost so far, short enough for a status description."""
+    return f'{lost} id{"s" * (lost != 1)} lost over {rounds} round{"s" * (rounds != 1)}'
+
+
+def show_command(sha: str) -> str:
+    """The whole command that reads what *sha*'s runs published."""
+    return f'python -m dev_lab.dev.forge run show {sha}'
 
 
 def ledger_name(sha: str, part: str) -> str:
@@ -103,18 +128,35 @@ def _part_lines(part: str, body: Mapping[str, Any], *, final: bool) -> list[str]
 def show(client: Client, sha: str) -> list[str]:
     """What *sha*'s cluster runs published, per part: each round's losses, and once finished the failing ids.
 
-    A part's newest record is final and wins over its ledger; a part with only a ledger is in flight.
+    *sha* may be short: it is resolved against the records this client's home holds, and an ambiguous one is
+    refused naming each match. A part's newest record is final and wins over its ledger; a part with only a
+    ledger is in flight. Finding nothing names the records home read and how to read another repository's.
+
+    Raises:
+        ValueError: *sha* is a prefix of more than one published sha.
+
     """
+    named = [(found, item.url) for item in listing(client) if (found := _NAME.match(item.name))]
+    shas = sorted({found['sha'] for found, _ in named if found['sha'].startswith(sha)})
+    if len(shas) > 1:
+        msg = (
+            f'{sha} is ambiguous on the records home: it starts {", ".join(one[:12] for one in shas)}; give more of it'
+        )
+        raise ValueError(msg)
+    if not shas:
+        said = (
+            f'{sha[:12]}: nothing published on the records home of {client.forge.identity}; a run of another '
+            'repository is read with --repo <its checkout>, or from that checkout'
+        )
+        return [said]
+    sha = shas[0]
     newest: dict[str, tuple[bool, str]] = {}
-    for item in listing(client):  # oldest first, so the last of a kind is the newest
-        found = _NAME.match(item.name)
-        if not found or found['sha'] != sha:
+    for found, url in named:  # oldest first, so the last of a kind is the newest
+        if found['sha'] != sha:
             continue
         final = found['req'] != LEDGER
         if final or not newest.get(found['part'], (False, ''))[0]:
-            newest[found['part']] = (final, item.url)
-    if not newest:
-        return [f'{sha[:12]}: nothing published on the forge yet']
+            newest[found['part']] = (final, url)
     lines = [f'{sha[:12]}:']
     for part, (final, url) in sorted(newest.items()):
         body = json.loads(gzip.decompress(client.download(url)).decode('utf-8'))
@@ -137,18 +179,19 @@ def main(
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge run', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     shown = verbs.add_parser('show', help="each round's lost ids and the final failing ids, from the forge only")
-    shown.add_argument('sha', help='the 40-hex commit')
+    shown.add_argument('sha', type=str.lower, help='the commit, full or an unambiguous prefix')
+    shown.add_argument('--repo', type=Path, help="the checkout whose forge's records home is read (default: here)")
     gone = verbs.add_parser('supersede', help="settle every claim on a ref's earlier heads superseded by its tip")
     gone.add_argument('--ref', required=True, help='the branch whose earlier heads are superseded (origin, as fetched)')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    root = Path.cwd() if cwd is None else cwd
+    root = getattr(args, 'repo', None) or (Path.cwd() if cwd is None else cwd)
     try:
         client = client_for(root, env=env, transport=transport)
         if args.verb == 'supersede':
             for sha, context, by in forgesupersede.settle_superseded(root, client, args.ref):
                 emit(f'{sha[:12]} {context}: superseded by {by[:12]}')
             return 0
-        for line in show(client, args.sha.lower()):
+        for line in show(client, args.sha):
             emit(line)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)

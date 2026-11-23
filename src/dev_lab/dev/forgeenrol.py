@@ -10,7 +10,9 @@ Two calls, one plan (user ruling 2026-11-20, "you must be able to do it yourself
 2. ``devhost enrol --forge-config F --plan <plan> --code <the user's code>`` opens the plan with that code
    (``sshhold open --plan``), runs its steps (``planrun run``), places each minted token through
    :func:`dev_lab.dev.devcredential.place` (verified by the forge answering as the login), DELETES the minted file
-   whether the placement passed or not, and re-reads the drift.
+   once it is placed, and re-reads the drift. A refused placement KEEPS it (owner-only, in the private consent
+   state) and names the door that places it: the mint spent the user's code, and deleting it threw that code away
+   (2026-11-23).
 
 Every fact is read, none restated: the logins from ``[dev] forges`` of the machine file, the mintable logins and
 sites from the forge host file (:func:`.credstore.read_forge`), the remote python and config from that file's
@@ -224,7 +226,7 @@ def complete(
     home: Path | None = None,
     place: Callable[..., int] = devcredential.place,
 ) -> int:
-    """Open the plan with *code*, mint, place each token, delete each minted file; 0 only when all were placed."""
+    """Open the plan with *code*, mint, place each token, delete each placed one; 0 only when all were placed."""
     plan, steps, shown = str(enrolment.plan), str(enrolment.steps), enrolment.digest
     hold = [python, '-m', 'dev_lab.dev.sshhold', 'open', '--hours', '1', '--plan', plan, '--digest', shown]
     if run([*hold, '--code', code]):
@@ -238,13 +240,16 @@ def complete(
             say(f'enrol: {login}: no minted token at {minted} (planrun exit {status}) -- nothing placed')
             failed += 1
             continue
+        token = minted.read_text(encoding='utf-8').strip()
+        refused = bool(place(login=login, token=token, url='', forge=forge, dev=dev, say=say))
         token = ''
-        try:
-            token = minted.read_text(encoding='utf-8').strip()
-            failed += bool(place(login=login, token=token, url='', forge=forge, dev=dev, say=say))
-        finally:
-            minted.unlink(missing_ok=True)
-            token = ''
+        if refused:
+            failed += 1
+            say(f'enrol: {login}: the minted token is KEPT at {minted} (owner-only); fix the refusal above, then '
+                f'{python} -m dev_lab.dev.devcredential --login {login} --forge-config {forge.path} < {minted} '
+                'and delete that file')  # fmt: skip
+            continue
+        minted.unlink(missing_ok=True)
     return 2 if failed or status else 0
 
 

@@ -60,6 +60,11 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   within `[schedule] tick_wall_minutes` (default 40) and past it ends its serve, releases the lock and prints
   `tick: ended at its wall after <s> s doing <phase>` -- the next tick resumes every run from its saved step
   (`dev_lab.dev.hpcaccount.tickwall`).
+  A tick that finds the lock held names its holder (pid, start, age, phase) and marks the host card, so
+  `forge queue` reads `tick held <age> in <phase>`. From the workstation: `python -m dev_lab.dev.hpcaccount
+  tick-status --account <user>` reads every lock's holder; `tick-stop --account <user> [--repo R]` stops a tick
+  older than its wall (verified a tick of that repo, this user's) and refuses a younger one by name;
+  `look --account <user> {processes|ticks|log <repo>|crontab}` is the closed set of read-only looks.
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across

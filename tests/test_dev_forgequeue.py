@@ -103,6 +103,26 @@ def test_a_stale_hosts_supply_reads_as_none_and_its_holds_as_lapsing() -> None:
     assert g.endswith('holds def tests/jmag')
 
 
+def test_a_stale_card_whose_tick_is_held_names_the_holder_instead_of_guessing(server) -> None:
+    """Measured 2026-11-23: a held tick read STALE for three wrong reasons. PLANTED CONTROL: no held, STALE."""
+    built = client(FORGE, Loopback(server))
+    since = (NOW - timedelta(minutes=63)).isoformat()
+    held = dataclasses.replace(
+        _card('ada/alice', 'linux', NOW - timedelta(hours=1)), held={'pid': 4242, 'since': since, 'phase': 'serving a'}
+    )
+    gone = _card('ada/bob', 'linux', NOW - timedelta(hours=1))
+    answer('GET', f'{API}/issues', (200, [_issue(3, HOSTS_TITLE)]))
+    answer('GET', f'{API}/issues/3/comments', (200, [_comment(1, held), _comment(2, gone)]))
+    cards = read_cards(built)
+    assert cards[0].held == held.held, 'the holder round-trips through the comment'
+    hosts = [{**asdict(c), 'holds': [], 'alarms': [], 'stale': c.stale(NOW)} for c in cards]
+    lines = forgequeue.render({'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': hosts, 'starved': []})
+    alice, bob = (next(line for line in lines if line.startswith(f'  {h}')) for h in ('ada/alice', 'ada/bob'))
+    assert f'tick held 1 h 03 min in serving a (pid 4242 since {since})' in alice
+    assert 'STALE' not in alice
+    assert 'STALE' in bob
+
+
 def test_a_cards_alarms_and_a_stale_cards_silence_are_shown_by_the_queue(server) -> None:
     """PLANTED CONTROL: a fresh card with no alarm shows no ALARM line and no STALE remedy."""
     built = client(FORGE, Loopback(server))
@@ -169,6 +189,7 @@ def test_the_queue_shows_progress_hosts_and_why_work_waits(server, tmp_path: Pat
     assert seen['in_flight'] == [
         {
             'candidate': f'integrate/main@{tips["integrate/main"][:12]}:base',
+            'sha': tips['integrate/main'],
             'owner': 'ada/alice',
             'login': 'alice',
             'progress': 'running 40/93 done 12/93',
@@ -448,3 +469,19 @@ def test_a_request_is_declared_once_per_queue_read(server, tmp_path: Path, monke
     assert asked == [(tips['feat/a'], 'tests', ('tests/test_x.py',))]
     blocked = next(row['blocked'] for row in seen['queue'] if row['candidate'].startswith('issue/9'))
     assert blocked == 'planted: no such producer'
+
+
+def test_an_in_flight_run_that_lost_ids_names_the_whole_command_that_reads_them() -> None:
+    """Seen: ``lost 4649: forge run s`` -- the command cut mid-word by the description limit.
+
+    PLANTED CONTROL: a run that lost nothing names no command.
+    """
+    sha = 'c' * 40
+    row = {'candidate': f'integrate/main@{sha[:12]}:base', 'sha': sha, 'owner': 'ada/alice', 'login': 'alice'}
+    lost = row | {'progress': 'running 1/1 done 0/1; 4649 ids lost over 3 rounds'}
+    clean = row | {'progress': 'running 1/1 done 0/1'}
+    view_ = {'now': NOW.isoformat(), 'queue': [], 'in_flight': [lost, clean], 'hosts': [], 'starved': []}
+    lines = forgequeue.render(view_)
+    flying = lines[lines.index('in flight:') + 1 :][:2]
+    assert flying[0].endswith(f'4649 ids lost over 3 rounds -- read them: python -m dev_lab.dev.forge run show {sha}')
+    assert flying[1].endswith('running 1/1 done 0/1')

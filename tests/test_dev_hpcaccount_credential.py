@@ -36,7 +36,7 @@ from dev_lab.dev.credstore import (
     stage_command,
     verify_prefix,
 )
-from dev_lab.dev.devcredential import local_shell
+from dev_lab.dev.devcredential import local_shell, posix_shell
 from dev_lab.dev.hpcaccount import credential
 from dev_lab.dev.hpcaccount.account import _READER_REMEDY
 from dev_lab.dev.hpcaccount.credential import declared_logins, drop_host, named_login, place_credential, usage
@@ -406,6 +406,22 @@ def test_the_local_shell_writes_a_staged_line_with_lf_only(tmp_path: Path) -> No
     target = tmp_path / 'staged'
     local_shell(f'IFS= read -r line && printf "%s\\n" "$line" > "{target.as_posix()}"', 'a-line\n')
     assert target.read_bytes() == b'a-line\n'
+
+
+def test_the_posix_shell_is_found_beside_git_when_path_has_no_sh(tmp_path: Path) -> None:
+    """Windows PowerShell puts Git's ``cmd/`` on PATH but not its ``bin/``: ``sh`` was not found (2026-11-23)."""
+    sh = tmp_path / 'Git' / 'bin' / 'sh.exe'
+    sh.parent.mkdir(parents=True)
+    sh.write_bytes(b'')
+    found = {'git': str(tmp_path / 'Git' / 'cmd' / 'git.exe')}
+    assert posix_shell(found.get) == str(sh)
+    assert posix_shell({'sh': '/usr/bin/sh', **found}.get) == '/usr/bin/sh'  # PLANTED CONTROL: PATH wins
+
+
+def test_no_posix_shell_is_a_named_refusal(tmp_path: Path) -> None:
+    found = {'git': str(tmp_path / 'Git' / 'cmd' / 'git.exe')}
+    with pytest.raises(RuntimeError, match='no POSIX sh'):
+        posix_shell(found.get)
 
 
 def test_a_research_account_deployed_behind_its_login_alias_takes_its_credential() -> None:

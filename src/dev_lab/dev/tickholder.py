@@ -19,11 +19,13 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
-__all__ = ['ENV', 'Holder', 'forget', 'phase', 'read', 'record_of', 'write']
+from lab_commons.liveness import still_the_same_process
+
+__all__ = ['ENV', 'Holder', 'age', 'alive', 'describe', 'forget', 'phase', 'read', 'record_of', 'span', 'write']
 
 #: The environment variable a tick hands its serve: the path of its holder record.
 ENV: Final = 'LAB_TICK_HOLDER'
@@ -82,3 +84,24 @@ def phase(text: str, *, env: Mapping[str, str] | None = None) -> None:
         return
     with contextlib.suppress(OSError):  # a phase that cannot be written never stops the work it names
         write(Path(path), replace(holder, phase=text))
+
+
+def alive(holder: Holder) -> bool:
+    """Whether *holder*'s process still runs (a recycled pid does not)."""
+    return still_the_same_process(holder.pid, holder.created)
+
+
+def age(holder: Holder, now: datetime | None = None) -> float:
+    """Seconds since *holder* took the lock."""
+    return ((now or datetime.now(UTC)) - holder.started()).total_seconds()
+
+
+def span(seconds: float) -> str:
+    """*seconds* as a person reads an age: ``7 min``, ``2 h 05 min``."""
+    hours, minutes = divmod(int(seconds // 60), 60)
+    return f'{hours} h {minutes:02d} min' if hours else f'{minutes} min'
+
+
+def describe(holder: Holder, now: datetime | None = None) -> str:
+    """``held by tick pid <p> since <t> (<age>) in <phase>``."""
+    return f'held by tick pid {holder.pid} since {holder.since} ({span(age(holder, now))}) in {holder.phase}'
