@@ -72,7 +72,7 @@ from dev_lab.dev.forgerecords import attach, listing
 from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgework import Client
-from dev_lab.dev.largeobjects import RcloneObjects
+from dev_lab.dev.largeobjects import StoreUnreached, run_objects
 
 __all__ = [
     'GRAVE',
@@ -85,14 +85,13 @@ __all__ = [
     'offering_for',
     'pending_dir',
     'result_name',
+    'shared_tier',
     'unit_request',
 ]
 
 _HASH: Final = r'[0-9a-f]{64}'
 #: The bundle's manifest, beside ``files/``.
 MANIFEST: Final = 'unit.json'
-#: The durable key prefix a result's large files take under the large-object remote (never ``scratch/``).
-OBJECTS_PREFIX: Final = 'results'
 
 #: The largest result archive the shared tier uploads: the forge's attachment limit, declared once there.
 MAX_UPLOAD_BYTES: Final = ATTACHMENT_LIMIT_MB * MB
@@ -381,9 +380,13 @@ def offering_for(repo: Path, sha: str) -> Offer:
     return offering(repo, client_for(repo), sha)
 
 
-def large_objects(remote: str | None, prefix: str = OBJECTS_PREFIX) -> RcloneObjects | None:
-    """The large-object store on *remote* under *prefix*; ``None`` without a remote (an oversize result stays local)."""
-    return RcloneObjects(remote, prefix) if remote else None
+def shared_tier(repo: Path) -> ForgeResults:
+    """The shared tier a run of *repo* reads and posts to: its forge's results, a post held offline under *repo*.
+
+    A downstream repo reaches it through an entry point and never builds a forge client; it pairs it with
+    :func:`dev_lab.dev.largeobjects.run_objects` (``ResultStore(root, shared_tier(repo), objects=run_objects(repo))``).
+    """
+    return ForgeResults(client_for(repo), pending=pending_dir(repo))
 
 
 def main(
@@ -396,14 +399,13 @@ def main(
     """Run one offered unit here; exit 0 it has a result, 1 it failed, 2 the Job is refused (nothing ran)."""
     parser = argparse.ArgumentParser(prog=f'python -m {__name__}', description=__doc__.splitlines()[0])
     parser.add_argument('paths', nargs='+', help='the Job request paths: unit=, bundle=, size=, needs=')
-    parser.add_argument(
-        '--objects-remote',
-        help='an rclone remote (name:bucket) holding files too large for the forge; none: such a result stays local',
-    )
-    parser.add_argument('--objects-prefix', default=OBJECTS_PREFIX, help='the durable key prefix under that remote')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    objects = large_objects(args.objects_remote, args.objects_prefix)
     root = Path.cwd() if cwd is None else cwd
+    try:
+        objects = run_objects(root)  # the family's [storage] runs; undeclared: an oversize result stays local
+    except StoreUnreached as refused:
+        emit(f'[unit] refused: {refused}', err=True)
+        return 2
     built = client_for(root) if client is None else client
     units = config_path().parent / 'units' if store is None else store
     try:
