@@ -64,6 +64,7 @@ WHAT IS HERE, one module per shared body:
   engine through :mod:`dev_lab.dev.jsrun`, so the lock declares it and every host has it.
 * :mod:`dev_lab.dev.famtests.onboarding` -- a repo is onboarded when its manifest carries every
   declaration the family flow needs, and every missing piece is named at once.
+* :mod:`dev_lab.dev.famtests.layout` -- every top-level directory is declared and holds no forbidden suffix.
 * :mod:`dev_lab.dev.famtests.worktreeplace` -- no checkout of the repo lives outside
   ``<toplevel>/.claude/worktrees/``.
 * :mod:`dev_lab.dev.famtests.tempprefix` -- every ``tempfile`` entry in the shared temp dir carries

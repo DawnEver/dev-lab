@@ -49,6 +49,7 @@ _IDS = frozenset(
         'ALL-EXTRAS-REFUSED',
         'BAR-IS-A-CONSTANT',
         'CODE-IN-CODE-ROOTS',
+        'DECLARED-LAYOUT',
         'DECLARATION-LIES',
         'DOCS-SPLIT',
         'ENV-MUTATION-THROUGH-THE-DOOR',

@@ -114,6 +114,12 @@ retired = [
   { path = '.claude/rules/MEMORY.md', what = "rem's generated memory index; nothing rebuilds it", door = "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs <checkout> -- which removes every copy outside attic/" },
 ]
 
+# DECLARED-LAYOUT: every top-level directory beyond the family homes (src tests scripts scratch .claude docs-src
+# output), each with the suffixes forbidden anywhere beneath it; output/ forbids code by the family's own row.
+[tool.dev_lab.placement.layout]
+'.codex' = []
+'.github' = []
+
 # The cluster builds this repo's env from [tool.dev_lab.dep] (lab_commons.extras, one reader), installing the
 # project itself: the venv must import lab_commons.envkey to report its env key.
 [tool.lab_commons.hpc]

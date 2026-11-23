@@ -41,12 +41,20 @@ _HOME = (
     rf'|[A-Za-z]:[\\/]+{_ci("Users")}[\\/]+{_SEG}+|/[A-Za-z]/{_ci("Users")}/{_SEG}+|/home/{_SEG}+)'
 )
 _SEP = r'[\\/]'
+#: A synced folder (:func:`dev_lab.dev.writeroots.refuse_synced`): a segment starting ``OneDrive``, or the
+#: variable its client sets. Its usual name holds spaces (``OneDrive - <org>``), so a QUOTED target is read whole.
+_SYNCED = (
+    rf'(?:(?:{_PATHCHAR}*[\\/])?{_ci("OneDrive")}{_SEG}*'
+    r'|\$\{?OneDrive\w*\}?|%OneDrive\w*%|\$env:OneDrive\w*)'
+)
+_SYNCED_QUOTED = rf'"(?:[^"\n]*[\\/])?{_ci("OneDrive")}[^"\n]*"|\'(?:[^\'\n]*[\\/])?{_ci("OneDrive")}[^\'\n]*\''
 #: A target path, closing quote included: a root and anything beneath it, or one loose non-dot home entry.
 _TARGET = (
+    rf'(?:(?:{_SYNCED_QUOTED})|'
     r"""["']?(?:"""
-    rf'(?:{_TEMP}|{_DRIVE}{_NAMES}|{_HOME}{_SEP}+{_NAMES})(?:{_SEP}{_PATHCHAR}*)?'
+    rf'(?:{_TEMP}|{_DRIVE}{_NAMES}|{_HOME}{_SEP}+{_NAMES}|{_SYNCED})(?:{_SEP}{_PATHCHAR}*)?'
     rf'|{_HOME}{_SEP}+[^\s"\';&|()<>.\\/]{_SEG}*'
-    rf'){_END}["\']?'
+    rf'){_END}["\']?)'
 )
 _WRITERS = (
     rf'>>?\s*{_TARGET}'
@@ -76,6 +84,9 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'New-Item -ItemType File D:\\var\\x.txt',
         'Copy-Item a.py %TEMP%\\a.py',
         'echo x > ~/loose.txt',
+        'echo x > "D:/Sync/OneDrive - <org>/meeting/fig.png"',
+        'cp fig.png $OneDriveCommercial/share/',
+        'Set-Content -Path $env:OneDrive\notes.txt x',
     ),
     'permits': (
         'cat /tmp/probe.py',
@@ -86,5 +97,7 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'echo x > ~/.bashrc',
         'rm /tmp/probe.py',
         'echo x 2>/dev/null',
+        'cat "D:/Sync/OneDrive - <org>/meeting/data.csv"',
+        'echo onedrive > output/logs/26/11/23/sync/note.txt',
     ),
 }

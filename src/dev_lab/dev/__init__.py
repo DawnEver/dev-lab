@@ -629,6 +629,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.devsource` -- the config source's forge URL: the ``origin`` of the ``[devhost]`` clone.
 * :mod:`dev_lab.dev.bringup` -- ``devhost bringup --check``: every wall a new workstation hits, with its door.
 * :mod:`dev_lab.dev.ask` -- the one intake of a typed value: shown as typed, checked against its shape first.
+* :mod:`dev_lab.dev.layout` -- DECLARED-LAYOUT: every top-level directory declared, with the suffixes forbidden
+  beneath it; the scan and the write hook's refusal over one table.
 * :mod:`dev_lab.dev.outputcode` -- OUTPUT-HOLDS-NO-CODE: the Write/Edit refusal of code under ``output/``, and the
   source scan for a door writing it there.
 * :mod:`dev_lab.dev.backedup` -- a file replaced whole and atomically, its previous content kept in a dated backup.

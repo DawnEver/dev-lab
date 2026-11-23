@@ -23,7 +23,9 @@ from dev_lab.dev.writeroots import (
     Root,
     excluded_paths,
     owned_globs,
+    refuse_beside_checkout,
     refuse_outside_tree,
+    refuse_synced,
     write_prone_roots,
 )
 
@@ -215,3 +217,32 @@ def test_owned_globs_are_the_prefix_plus_the_declared_ones() -> None:
     assert owned_globs({'owned': ['pytest-of-*']}) == (f'{TEMP_PREFIX}*', 'pytest-of-*')
     with pytest.raises(ValueError, match='owned'):
         owned_globs({'owned': 'pytest-of-*'})
+
+
+def test_a_synced_folder_is_refused_by_its_variable_and_by_its_segment(tmp_path: Path) -> None:
+    """User requirement 2026-11-23: OneDrive is never written, checkout or not; the planted controls stay admitted."""
+    synced = tmp_path / 'Corp Sync'
+    env = {'OneDriveCommercial': str(synced)}
+    assert 'synced folder' in refuse_synced(synced / 'meeting' / 'fig.png', env=env)
+    assert refuse_synced(tmp_path / 'OneDrive-Org' / 'repo' / 'x.py', env={}) is not None
+    assert refuse_synced(tmp_path / 'repo' / 'onedrive_notes.md', env={}) is None  # a FILE named so is no folder
+    assert refuse_synced(tmp_path / 'repo' / 'src' / 'x.py', env=env) is None
+
+
+def test_a_directory_beside_a_checkout_is_refused_and_the_checkout_itself_is_not(tmp_path: Path) -> None:
+    (tmp_path / 'repo' / '.git').mkdir(parents=True)
+    (tmp_path / 'other-repo' / '.git').mkdir(parents=True)
+    reason = refuse_beside_checkout(tmp_path / 'repo-copy' / 'x.py', excluded=[])
+    assert reason is not None
+    assert 'beside the checkout' in reason
+    assert '.claude/worktrees/' in reason
+    assert refuse_beside_checkout(tmp_path / 'repo' / 'src' / 'x.py', excluded=[]) is None
+    assert refuse_beside_checkout(tmp_path / 'other-repo' / 'x.py', excluded=[]) is None
+    assert refuse_beside_checkout(tmp_path / '.cache' / 'x', excluded=[]) is None
+    assert refuse_beside_checkout(tmp_path / 'repo-copy' / 'x.py', excluded=[tmp_path / 'repo-copy']) is None
+
+
+def test_the_job_temp_is_excluded_so_it_is_the_temp_door(tmp_path: Path) -> None:
+    job = tmp_path / 'jobs' / 'abc'
+    found = excluded_paths((), machine={}, env={'CLAUDE_JOB_DIR': str(job)})
+    assert job / 'tmp' in found

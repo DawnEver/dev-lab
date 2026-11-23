@@ -58,15 +58,37 @@ __all__ = [
     'excluded_paths',
     'fixed_drives',
     'owned_globs',
+    'refuse_beside_checkout',
     'refuse_outside_tree',
+    'refuse_synced',
+    'synced_roots',
     'write_prone_roots',
 ]
 
 RULE_ID: Final = 'WRITES-STAY-IN-THE-TREE'
 HAZARD: Final = 'outside every checkout nothing scans, ignores or cleans a file, so it outlives the session.'
 REMEDY: Final = (
-    "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/ and an "
-    'experiment to scratch/ of the checkout you work in.'
+    "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/, an "
+    'experiment to scratch/ of the checkout you work in, a throwaway temp file to $CLAUDE_JOB_DIR/tmp.'
+)
+#: The environment variables naming a synced folder (OneDrive's client sets all three on Windows).
+SYNCED_VARS: Final = ('OneDrive', 'OneDriveCommercial', 'OneDriveConsumer')
+#: A synced folder by its segment name, for one no variable names (a second account, another machine's path).
+_SYNCED_SEGMENT: Final = 'onedrive'
+SYNCED_HAZARD: Final = (
+    'a synced folder is shared mutable state with a live human session on the other end: your write races their '
+    'save, their client decides who wins, and a rollback can vanish with it.'
+)
+SYNCED_REMEDY: Final = (
+    'No agent door: read it freely; a write there is the user`s own -- hand them the path and content.'
+)
+BESIDE_HAZARD: Final = (
+    'a directory beside a checkout is in no checkout: nothing scans, ignores or cleans it, and it reads as one more '
+    'repository to whoever lists the parent.'
+)
+BESIDE_REMEDY: Final = (
+    'No door: write in a checkout. Another tree of this repo is <repo>/.claude/worktrees/<name-for-the-task>; a '
+    'family repo is cloned beside its siblings by git clone, never made by a write.'
 )
 
 #: Directory names that are write-prone at a drive root and in the home, and the KIND each is.
@@ -178,6 +200,8 @@ def excluded_paths(
     names = [name for name in EXCLUDED_IN_TEMP if name not in EXCLUDED_GLOBS_IN_TEMP]  # a glob is matched by name
     found = [root.path / name for root in roots if root.kind == 'temp' for name in names]
     found += [Path(env[var]) for var in _CACHE_VARS if env.get(var)]
+    if env.get('CLAUDE_JOB_DIR'):
+        found.append(Path(env['CLAUDE_JOB_DIR']) / 'tmp')  # the job's own temp: the door the remedy names
     found += _paths(machine, 'excluded')
     found += storage_roots(storages.declared() if storage is None else storage)
     return tuple(dict.fromkeys(found))
@@ -216,4 +240,58 @@ def refuse_outside_tree(
         if loose if root.kind == 'home' else base in target.parents:
             where = f'{Path(path).as_posix()} is under {root.path.as_posix()}'
             return f'{RULE_ID}: {where} -- {HAZARD} {REMEDY}\n{details_for(RULE_ID)}'
+    return None
+
+
+def synced_roots(env: Mapping[str, str] | None = None) -> tuple[Path, ...]:
+    """The synced folders this machine names: every :data:`SYNCED_VARS` that is set."""
+    env = os.environ if env is None else env
+    return tuple(dict.fromkeys(Path(env[var]) for var in SYNCED_VARS if env.get(var)))
+
+
+def refuse_synced(path: Path, *, env: Mapping[str, str] | None = None) -> str | None:
+    """The refusal for writing *path* into a synced folder (OneDrive), checkout or not; ``None`` otherwise.
+
+    A synced folder is named by its variable, or by a segment starting ``OneDrive`` for one no variable names.
+    """
+    target = _norm(Path(path))
+    named = any(_within(target, _norm(one)) for one in synced_roots(env))
+    if named or any(part.lower().startswith(_SYNCED_SEGMENT) for part in target.parts[:-1]):
+        where = f'{Path(path).as_posix()} is in a synced folder'
+        return f'{RULE_ID}: {where} -- {SYNCED_HAZARD} {SYNCED_REMEDY}\n{details_for(RULE_ID)}'
+    return None
+
+
+def _is_checkout(folder: Path) -> bool:
+    try:
+        return (folder / '.git').exists()
+    except OSError:
+        return False
+
+
+def refuse_beside_checkout(path: Path, *, excluded: Iterable[Path] | None = None) -> str | None:
+    """The refusal for writing *path* into a directory BESIDE a checkout; ``None`` otherwise.
+
+    Beside means: *path* lies in no checkout, and one of its non-dot ancestors sits in a directory that directly
+    holds a checkout -- the ``../<repo>-copy`` an agent makes next to the repo it works in. A path in a checkout
+    (a sibling repo's included) is that checkout's to judge; :func:`excluded_paths` (the job temp, bound storage)
+    is never refused.
+    """
+    target = Path(path).resolve()
+    if any(_is_checkout(folder) for folder in target.parents):
+        return None
+    excluded = excluded_paths(write_prone_roots()) if excluded is None else excluded
+    if any(_within(_norm(target), _norm(one)) for one in excluded):
+        return None
+    above = target.parents[:-1]  # the drive root excluded
+    if any(folder.name.startswith('.') for folder in above):
+        return None  # a dot directory is tool state (a home's .claude, .cache), never a place an agent makes
+    for folder in reversed(above):  # outermost first
+        try:
+            beside = [one for one in folder.parent.iterdir() if one != folder and one.is_dir() and _is_checkout(one)]
+        except OSError:
+            continue
+        if beside:
+            where = f'{target.as_posix()} is under {folder.as_posix()}, beside the checkout {beside[0].as_posix()}'
+            return f'{RULE_ID}: {where} -- {BESIDE_HAZARD} {BESIDE_REMEDY}\n{details_for(RULE_ID)}'
     return None
