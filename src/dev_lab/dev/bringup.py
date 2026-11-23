@@ -95,7 +95,7 @@ def _issuer(table: Mapping[str, Any], send: Send) -> Wall:
         return answers[0]
 
     try:
-        handshake(table, send=once)
+        runs = handshake(table, send=once)
     except ConsentRefused as refused:
         status, said = answers[0] if answers else (0, '')
         if 'Host key verification failed' in said or 'REMOTE HOST IDENTIFICATION HAS CHANGED' in said:
@@ -106,7 +106,8 @@ def _issuer(table: Mapping[str, Any], send: Send) -> Wall:
         if status == _SSH_UNREACHED:
             return Wall('issuer', green=False, said=f'{endpoint} is not reached ({said[-200:]}): fix the network path')
         return Wall('issuer', green=False, said=str(refused))
-    return Wall('issuer', green=True, said=f'{endpoint} admits this key and speaks this version')
+    said = f'its dev-lab is {runs[:12]}' if runs else 'it reports no dev-lab commit (older than that report)'
+    return Wall('issuer', green=True, said=f'{endpoint} admits this key and speaks this version; {said}')
 
 
 def _interpreter(live: Mapping[str, Any], dev: Mapping[str, Any], exists: Callable[[str], bool]) -> Wall:

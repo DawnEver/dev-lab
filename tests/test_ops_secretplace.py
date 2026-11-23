@@ -12,8 +12,10 @@ from typing import Any
 
 import pytest
 from _ops_fixtures import config
+from lab_commons.storage import StorageError
 from lab_commons.storage import declared as storage_declared
 
+from dev_lab.dev.toolrelease import ToolAbsent
 from dev_lab.ops import __main__ as ops_main
 from dev_lab.ops import redeemverbs, secretplace
 from dev_lab.ops.config import OpsConfig
@@ -352,3 +354,59 @@ def test_migrate_refuses_a_restated_fact_that_disagrees(tmp_path: Path) -> None:
     with pytest.raises(SecretRefused, match='differs from the declared one'):
         secretplace.migrate('results', storage=_reaching(tmp_path))
     assert placed.read_text(encoding='utf-8') == before
+
+
+def _absent() -> None:
+    msg = 'rclone is not installed (not in bin, not on PATH): run `python -m dev_lab.dev.toolrelease install rclone`'
+    raise ToolAbsent(msg)
+
+
+def test_enter_checks_its_tool_before_it_asks_for_the_secret(tmp_path: Path) -> None:
+    """Measured 2026-11-22: the secret was asked and placed, a code spent, and only then "rclone is not installed".
+
+    PLANTED CONTROL: with the tool present the same enter asks, consents and places.
+    """
+    asked: list[str] = []
+    granted: list[Path] = []
+
+    def enter(tool: Callable[[], object]) -> list[str]:
+        return secretplace.enter(
+            str(tmp_path / 'secrets' / 'results'), storage=_reaching(tmp_path),
+            ask=lambda prompt: asked.append(prompt) or 'planted-secret-value', tty=True,
+            grant=lambda p: granted.append(p) or p, requests=tmp_path / 'requests',
+            check=lambda remote: f'{remote}: reached', redeem=lambda _c, _s: None, tool=tool,
+        )  # fmt: skip
+
+    with pytest.raises(SecretRefused, match='nothing was asked and nothing placed') as refused:
+        enter(_absent)
+    assert 'python -m dev_lab.dev.toolrelease install rclone' in str(refused.value)
+    assert (asked, granted) == ([], [])
+    assert not (tmp_path / 'secrets' / 'results').exists()
+    assert enter(lambda: 'rclone')[-1] == 'results: reached'
+    assert len(asked) == len(granted) == 1
+
+
+def test_a_placed_secret_whose_check_failed_says_it_is_placed_and_names_the_check_alone(tmp_path: Path) -> None:
+    """The old line said "run enter again": a second secret and a second code for a file already right.
+
+    PLANTED CONTROL: the check that passes ends on its own answer, with no such line.
+    """
+
+    def failing(_remote: str) -> str:
+        msg = 'rclone could not list results: (exit 1) connection reset'
+        raise StorageError(msg)
+
+    def enter(check: Callable[[str], str]) -> list[str]:
+        return secretplace.enter(
+            str(tmp_path / 'secrets' / 'results'), storage=_reaching(tmp_path), ask=lambda _p: 'planted-secret-value',
+            tty=True, grant=lambda p: p, requests=tmp_path / 'requests', check=check, redeem=lambda _c, _s: None,
+        )  # fmt: skip
+
+    last = enter(failing)[-1]
+    assert (tmp_path / 'secrets' / 'results').is_file()
+    assert 'the secret IS PLACED' in last
+    assert 'python -m dev_lab.dev.storage check results' in last
+    assert 'no secret and no code' in last
+    assert 'enter --remote` again' not in last
+    assert 'planted-secret-value' not in last
+    assert enter(lambda remote: f'{remote}: reached')[-1] == 'results: reached'

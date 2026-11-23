@@ -595,9 +595,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.sshholdwire` -- the client's half of the holder's protocol: the request and the marker frame.
 * :mod:`dev_lab.dev.sshholdrun` -- a command, or a forge credential, sent through a held session, and its audit.
 * :mod:`dev_lab.dev.sshholdplan` -- ``sshhold open --plan``: one code buys a plan's credentials and opens its hosts.
+* :mod:`dev_lab.dev.sshholdprobe` -- is this machine's key admitted, asked with no code before a code is read.
 * :mod:`dev_lab.dev.planrun` -- A CODE IS NEVER WASTED: preflight a consent plan's doors on its hosts, then run it.
 * :mod:`dev_lab.dev.planrunsteps` -- a plan's steps file: one step per grant, and how each is invoked.
 * :mod:`dev_lab.dev.planrunpreflight` -- every door of a plan checked on its hosts before the code is spent.
+* :mod:`dev_lab.dev.planrunoffer` -- a recorded green preflight, run again by the door that takes the code.
 * :mod:`dev_lab.dev.planremote` -- the hosts a plan runs on: the held session, else key-only ssh.
 * :mod:`dev_lab.dev.shellreaper` -- the agent background-shell sweep: a shell past its bound is stopped, children first.
 * :mod:`dev_lab.dev.shelllife` -- a background shell's bound: the default, or the user's grant, judged at launch.

@@ -347,6 +347,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'planrunpreflight',  # ORIGINAL: split from planrun: every door checked before the code is spent (2026-11-13)
     'planrunsteps',  # ORIGINAL: split from planrun: the steps file a plan runs (2026-11-13)
     'sshholdrun',  # ORIGINAL: split from sshhold: a command or credential sent through a held session (2026-11-13)
+    'planrunoffer',  # ORIGINAL: split from planrunpreflight: the green recorded, reproved by the code door (2026-11-22)
+    'sshholdprobe',  # ORIGINAL: the key asked with no code before a key + code host reads one (2026-11-22)
     'sshholdplan',  # ORIGINAL: split from sshhold: one code opens a plan's hosts, a held one reused (2026-11-16)
     'sshholdwire',  # ORIGINAL: split from sshhold: the client half of the holder's protocol (2026-11-13)
     'walls',  # ORIGINAL: every refusal is one ledger line (2026-11-13)

@@ -6,7 +6,7 @@ owning ONE ``ssh -T <dest> bash --noprofile --norc -s``. It listens on 127.0.0.1
 module is the client and the CLI::
 
     python -m dev_lab.dev.sshhold open <dest> --hours H [--code CODE]   # code on stdin when omitted
-    python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D> [--code CODE]   # every plan host
+    python -m dev_lab.dev.sshhold open --hours H --plan <plan.json> --digest <D> [--steps S] [--code CODE]
     python -m dev_lab.dev.sshhold open <dest> --hours H --jump <bastion> [...]   # through a ProxyJump
     python -m dev_lab.dev.sshhold run <dest> -- <command...>            # exits with the remote status
     python -m dev_lab.dev.sshhold credential <dest> --url <https url> --login <login>   # token on stdin
@@ -17,7 +17,10 @@ module is the client and the CLI::
   (CONSENT-CODE-FROM-THE-USER). It reaches the holder on a pipe and the ssh child through ``SSH_ASKPASS``;
   never argv, disk or a log. An empty code is allowed (a host's trusted window accepts an empty answer).
 * ONE CODE, ONE PLAN (``--plan``): :mod:`dev_lab.dev.sshholdplan` -- the code buys the plan's credentials, then
-  opens every plan host not already held.
+  opens every plan host not already held. Before the code is read the door runs the plan's preflight ITSELF (the
+  steps file its last green preflight recorded, or ``--steps``); not green now refuses ``no code used``.
+* THE KEY IS ASKED FIRST, with no code (:mod:`dev_lab.dev.sshholdprobe`): a host that refuses this machine's public
+  key refuses the open before the code is read, naming where the account's keys are managed.
 * ``--jump <bastion>``: a host reachable only through a bastion. ssh asks each hop's keyboard-interactive
   prompt through the same ``SSH_ASKPASS``, so ONE code answers both -- valid only where the hops share one TOTP
   secret (each pam_oath records the step it accepted, so the code is spent once per host, never twice on one).
@@ -51,10 +54,10 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import remote, sshholdplan
+from dev_lab.dev import remote, sshholdplan, sshholdprobe
 from dev_lab.dev.sshholdrun import DEFAULT_TIMEOUT_S, run_command, store_credential
 from dev_lab.dev.sshholdstate import audit, forget, read_session, state_dir, state_path
-from dev_lab.dev.sshholdwire import HoldRefused, live, ping, request
+from dev_lab.dev.sshholdwire import HoldRefused, held, live, ping, request
 from dev_lab.ops.consent.client import given_code
 
 __all__ = [
@@ -127,7 +130,7 @@ def check_hours(hours: float, limit: float) -> None:
 def open_session(dest: str, hours: float, code: str, *, ssh: tuple[str, ...] = ('ssh',)) -> str:
     """Start the holder for *dest*, answer the prompt with *code*, and return once it authenticated."""
     check_hours(hours, ceiling())
-    if (held := read_session(dest)) is not None and ping(held):
+    if held(dest):  # a dead hold's record is removed here, so the open below is clean
         msg = f'{dest} already has a held session; close it first'
         raise HoldRefused(msg)
     argv = [sys.executable, '-m', 'dev_lab.dev._sshholder', dest, '--hours', str(hours), '--ssh', json.dumps(ssh)]
@@ -195,6 +198,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     opening.add_argument('--digest', default='', help="the plan's digest, as shown to the user")
     opening.add_argument(
+        '--steps', type=Path, help="the plan's steps file, preflighted here before the code is used (default: the "
+        'one its last green preflight recorded)'
+    )  # fmt: skip
+    opening.add_argument(
         '--jump', help='a bastion (ssh -J) for every host [ssh] jump does not route; the one code answers both'
     )
     running = verbs.add_parser('run', help='run one command on the held connection')
@@ -226,6 +233,24 @@ def _unopenable(dest: str | None, plan: Path | None) -> str:
     )
 
 
+def _open(args: argparse.Namespace) -> int:
+    """``open``: everything that can refuse does so BEFORE the code is read; then one host, or a plan's hosts."""
+    jump = args.jump
+    if args.plan is not None:
+        sshholdplan.offered(args.plan, args.steps)  # the preflight, run here (it probes the plan's hosts)
+    check_hours(args.hours, ceiling())
+    if args.plan is None:
+        sshholdprobe.probe(args.dest, route(args.dest, jump))  # the key, asked with no code
+        emit(open_session(args.dest, args.hours, given_code(args.code), ssh=route(args.dest, jump)))
+        return 0
+    opened, lines = sshholdplan.open_planned(
+        args.hours, given_code(args.code), args.plan, args.digest, routes=lambda dest: route(dest, jump),
+        opener=open_session,
+    )  # fmt: skip
+    emit('\n'.join(lines))
+    return 0 if opened else 2
+
+
 def main(argv: list[str] | None = None) -> int:
     """The CLI; ``run`` exits with the remote status, a refusal with 2, a lost session with 255."""
     args = _parser().parse_args(argv)
@@ -234,24 +259,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.verb == 'open':
-            if args.plan is not None:
-                sshholdplan.offered(args.plan)  # before the code is asked
-            check_hours(args.hours, ceiling())  # before the code is asked
-            code, jump = given_code(args.code), args.jump
-            if args.plan is not None:
-                opened, lines = sshholdplan.open_planned(
-                    args.hours, code, args.plan, args.digest, routes=lambda dest: route(dest, jump), opener=open_session
-                )
-                emit('\n'.join(lines))
-                return 0 if opened else 2
-            emit(open_session(args.dest, args.hours, code, ssh=route(args.dest, jump)))
-        elif args.verb == 'run':
+            return _open(args)
+        if args.verb == 'run':
             words = args.command[1:] if args.command[:1] == ['--'] else args.command
             output, status = run_command(args.dest, ' '.join(words), args.timeout)
             if output:
                 emit(output.removesuffix('\n'))  # emit ends the line itself
             return status
-        elif args.verb == 'credential':
+        if args.verb == 'credential':
             emit(store_credential(args.dest, args.url, args.login, sys.stdin.readline().strip()))
         elif args.verb == 'close':
             emit(close_session(args.dest))

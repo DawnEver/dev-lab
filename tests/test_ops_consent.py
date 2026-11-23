@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _ops_fixtures import NOW, RFC_KEY, code, speaks
+from _ops_fixtures import NOW, RFC_KEY, code
 from lab_commons.home import HOME_ENV
 
 from dev_lab.dev.consentguard import refuse_write, state_dir
@@ -233,19 +233,21 @@ def test_the_code_the_user_gave_is_passed_by_the_agent(host: Host, tmp_path: Pat
 def test_a_code_that_is_not_six_digits_is_refused_before_it_is_sent(host: Host, tmp_path: Path) -> None:
     request = tmp_path / 'request.json'
     request.write_text(json.dumps(WAVE), encoding='utf-8')
-    sent: list[object] = []
+    verbs: list[object] = []
 
-    @speaks
     def send(_table: object, line: dict[str, Any]) -> tuple[int, str]:
-        sent.append(line)
-        return 1, 'unreached'
+        verbs.append(line.get('verb'))
+        return 0, serve.handle(host.issuer, json.dumps(line))
 
     table = {'endpoint': 'consent@forge', 'public_key': public_text(host.issuer.public())}
+    now = host.clock[0]
+    preflight(WAVE, table=table, send=send, home=tmp_path, now=now)  # the door's own order: a green proof first
     with pytest.raises(ConsentRefused, match='six digits'):
-        grant(request, table=table, code='12345', tty=False, send=send, home=tmp_path)
+        grant(request, table=table, code='12345', tty=False, send=send, home=tmp_path, now=lambda: now)
     with pytest.raises(ConsentRefused, match='six digits'):
-        grant(request, table=table, tty=False, read=lambda: '', send=send, home=tmp_path)
-    assert not sent
+        grant(request, table=table, tty=False, read=lambda: '', send=send, home=tmp_path, now=lambda: now)
+    assert verbs, 'PLANTED CONTROL: the no-code proof did reach the issuer'
+    assert 'issue' not in verbs, 'a malformed code is never sent'
 
 
 def test_the_public_key_comes_from_the_machine_file_else_refuses(host: Host) -> None:
