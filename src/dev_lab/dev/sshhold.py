@@ -54,7 +54,7 @@ import lab_commons.launch as _door
 from lab_commons.config import section
 from lab_commons.log import emit
 
-from dev_lab.dev import remote, sshholdplan, sshholdprobe
+from dev_lab.dev import msyspath, remote, sshholdplan, sshholdprobe
 from dev_lab.dev.sshholdrun import DEFAULT_TIMEOUT_S, run_command, store_credential
 from dev_lab.dev.sshholdstate import audit, forget, read_session, state_dir, state_path
 from dev_lab.dev.sshholdwire import HoldRefused, held, live, ping, request
@@ -263,6 +263,9 @@ def main(argv: list[str] | None = None) -> int:
             return _open(args)
         if args.verb == 'run':
             words = args.command[1:] if args.command[:1] == ['--'] else args.command
+            if why := msyspath.refusal(words):
+                emit(f'sshhold: {why}', err=True)
+                return 2
             output, status = run_command(args.dest, ' '.join(words), args.timeout)
             if output:
                 emit(output.removesuffix('\n'))  # emit ends the line itself

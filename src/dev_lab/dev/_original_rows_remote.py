@@ -15,6 +15,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sshhold',
     # ORIGINAL: sshhold's state file and audit split from its client (MODULE-SIZE-ALARM, 2026-11-11).
     'sshholdstate',
+    # ORIGINAL: 2026-11-23, a remote command Git Bash rewrote is refused before sshhold sends it.
+    'msyspath',
     # ORIGINAL: split out of `hpcaccount.fleet` inside the kit (2026-11-10); the judge's machine file reads it too.
     'machinehome',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
