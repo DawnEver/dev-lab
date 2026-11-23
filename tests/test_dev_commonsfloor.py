@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -89,3 +90,44 @@ def test_the_named_heal_runs_from_a_foreign_kit_against_a_skewed_checkout(
     assert lock[2:4] == ('--upgrade-package', 'lab-commons')
     assert lock[lock.index('--python') + 1] == str(own)
     assert all(str(healthy) not in call for call in calls if call[1:2] in {('lock',), ('sync',)})
+
+
+def _older_commons(tmp_path: Path) -> Path:
+    """A fake lab-commons 0.0.1 shadowing the real one: a package without ``extras`` (or any submodule)."""
+    site = tmp_path / 'site'
+    (site / 'lab_commons').mkdir(parents=True)
+    (site / 'lab_commons' / '__init__.py').write_text('', encoding='utf-8')
+    info = site / 'lab_commons-0.0.1.dist-info'
+    info.mkdir()
+    (info / 'METADATA').write_text('Metadata-Version: 2.1\nName: lab-commons\nVersion: 0.0.1\n', encoding='utf-8')
+    return site
+
+
+def _dep_entry(site: Path | None) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, 'PYTHONPATH': os.pathsep.join(filter(None, [str(site) if site else '', str(ROOT / 'src')]))}
+    command = [sys.executable, '-m', 'dev_lab.dev.dep', '--help']
+    return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', env=env, cwd=ROOT, check=False)
+
+
+def test_a_venv_behind_its_checkout_is_refused_with_the_sync_door(tmp_path: Path) -> None:
+    """The 2026-11-22 wall: an older installed lab-commons makes the dep entry exit 2 naming `uv sync --frozen`."""
+    ran = _dep_entry(_older_commons(tmp_path))
+    assert ran.returncode == 2, ran.stderr
+    assert 'Traceback' not in ran.stderr
+    assert 'holds lab_commons 0.0.1, older than its code needs' in ran.stderr
+    assert f'run `uv sync --frozen` in {ROOT}, then this again' in ran.stderr
+
+
+def test_the_sync_door_stays_shut_on_a_current_venv() -> None:
+    """Planted control: the same entry against the venv's own lab-commons is not refused."""
+    ran = _dep_entry(None)
+    assert ran.returncode == 0, ran.stderr
+    assert RULE not in ran.stderr
+
+
+def test_a_missing_name_in_lab_commons_is_walled_like_a_missing_module(tmp_path: Path) -> None:
+    """``from lab_commons import extras`` fails as ImportError (not ModuleNotFoundError); the wall still speaks."""
+    said = "cannot import name 'extras' from 'lab_commons'"
+    with pytest.raises(CommonsBelowFloor) as refused, importing(tmp_path):
+        raise ImportError(said, name='lab_commons')
+    assert "cannot import name 'extras'" in str(refused.value)
