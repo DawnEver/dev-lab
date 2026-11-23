@@ -249,3 +249,25 @@ def test_a_job_delivers_its_own_held_result_though_no_origin_ref_holds_the_commi
     lines = forgeoutbox.deliver_unit(repo, built(repo), sha, 'tests/linux')
     assert lines == [f'status: tests/linux=success on {sha[:12]}'], lines
     assert [post.context for post in queued(repo)] == ['tests/windows'], 'PLANTED CONTROL: only its own unit'
+
+
+def test_a_re_run_attempt_supersedes_the_first_result(server, tmp_path: Path) -> None:
+    """2026-11-23 (a PR whose re-run part passed kept FAIL): attempt 1 failed, attempt 2 passes -> pass is posted."""
+    repo, sha = _committed(tmp_path)
+    _pushed(repo, sha)
+    enqueue(repo, Post(sha, 'tests/base@windows', 'success', 'scope=full ran=9', attempt=2))
+    answer('GET', f'{API}/statuses/{sha}', (200, [{'id': 1, 'context': 'tests/base@windows', 'status': 'failure'}]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/base@windows', 'status': 'success'}))
+    alarms: list[Alarm] = []
+    lines = flush(repo, client=lambda _root: client(FORGE, Loopback(server)), alarm=alarms.append)
+    [posted] = [r for r in Recorder.received if r['method'] == 'POST']
+    assert posted['body']['state'] == 'success'
+    assert 're-run attempt 2 supersedes the first failure' in lines[0]
+    assert alarms == []
+    assert queued(repo) == ()
+
+
+def test_the_run_attempt_is_read_from_the_job_environment() -> None:
+    assert forgeoutbox.run_attempt({'GITHUB_RUN_ATTEMPT': '2'}) == 2
+    assert forgeoutbox.run_attempt({}) == 1
+    assert forgeoutbox.run_attempt({'GITHUB_RUN_ATTEMPT': 'x'}) == 1

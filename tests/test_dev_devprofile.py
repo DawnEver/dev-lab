@@ -68,8 +68,11 @@ def test_a_declared_host_is_unaffected(tmp_path: Path) -> None:
     ), 'the session start names the enrolment door first on an unmanaged machine'
 
 
-def test_bridge_hpc_renders_on_every_dev_machine_from_the_family(tmp_path: Path) -> None:
+def test_bridge_hpc_renders_on_every_dev_machine_from_the_family(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     clone = _clone(tmp_path)
+    monkeypatch.setattr(devprofile, 'current_os_name', lambda: 'posix')  # 'stranger' declares no os: its renderer's
     for host in ('ws', 'stranger'):
         hpc = tomllib.loads(devhost.render(clone, host, LIVE))['bridge']['hpc']
         assert hpc['command'] == [BRIDGE[host], *devprofile.HPC_READ_DOOR]
@@ -231,3 +234,24 @@ def test_a_host_value_for_a_family_leaf_is_refused_by_name(tmp_path: Path) -> No
     )
     with pytest.raises(ValueError, match=r'\[breakglass\]\.endpoint.*family file'):
         devhost.render(clone, 'ws', LIVE)
+
+
+@pytest.mark.parametrize(
+    ('declared', 'renderer', 'spelled'),
+    [
+        ('windows', 'posix', '/opt/dev-lab/.venv/Scripts/python.exe'),
+        ('Windows', 'posix', '/opt/dev-lab/.venv/Scripts/python.exe'),
+        ('linux', 'nt', '/opt/dev-lab/.venv/bin/python'),
+        ('', 'nt', '/opt/dev-lab/.venv/Scripts/python.exe'),
+        ('', 'posix', '/opt/dev-lab/.venv/bin/python'),
+    ],
+)
+def test_the_bridge_interpreter_is_spelled_for_the_host_s_platform(
+    declared: str, renderer: str, spelled: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-11-22: an unmanaged Windows machine rendered ``.venv/bin/python``; an undeclared os is the renderer's.
+
+    PLANTED CONTROL: the same render for a Windows and a POSIX host gives the two spellings, either way round.
+    """
+    monkeypatch.setattr(devprofile, 'current_os_name', lambda: renderer)
+    assert devprofile.bridge_python(LIVE, declared) == spelled

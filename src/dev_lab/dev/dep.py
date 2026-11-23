@@ -69,16 +69,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
-import lab_commons.launch as _door
-from lab_commons import envkey as envkey_module
-from lab_commons.box import Refused
-from lab_commons.census import processes
-from lab_commons.envkey import env_key, env_manifest
-from lab_commons.log import emit
-
 from dev_lab.dev.commonsfloor import importing
 
-with importing():
+with importing(entry=__name__ == '__main__'):
+    import lab_commons.launch as _door
+    from lab_commons import envkey as envkey_module
+    from lab_commons.box import Refused
+    from lab_commons.census import processes
+    from lab_commons.envkey import env_key, env_manifest
+    from lab_commons.log import emit
+
     from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
     from dev_lab.dev._dep_aftersync import after_sync, retire_anchors
     from dev_lab.dev._dep_components import changed
