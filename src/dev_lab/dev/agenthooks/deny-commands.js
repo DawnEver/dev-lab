@@ -468,14 +468,21 @@ const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toL
  * when a remedy names an interpreter, so a missing copy never stops a decision: the remedy names its door. */
 const MISSING_RESOLVER = 'venv_resolver.js is missing beside deny-commands.js -- run: python -m dev_lab.dev.agent_guard --install';
 let resolver;
-function currentEnv(root) {
+function theResolver() {
   if (resolver === undefined) {
     const file = [__dirname, path.dirname(__dirname)].map((dir) => path.join(dir, 'venv_resolver.js')).find(fs.existsSync);
     resolver = file ? require(file) : null;
   }
   if (!resolver) throw new Error(MISSING_RESOLVER);
-  return resolver.currentEnv(root);
+  return resolver;
 }
+/** The environment a LAUNCH from `root` runs: the pointer resolved, so a later swap leaves the launch running. */
+const currentEnv = (root) => theResolver().currentEnv(root);
+/** The environment a PRINTED door names: the pointer itself, `<root>/.venv` UNRESOLVED -- it survives the next
+ * bootstrap, where a resolved `.venvs/<id>` goes stale (2026-11-22: the hook printed the resolved spelling while the
+ * rendered rows held the pointer, and a consumer's guard read its own refusals as another rule's). The Python twin
+ * is dev_lab.dev.venvpath.door_interpreter. */
+const doorEnv = (root) => path.join(root, theResolver().POINTER);
 
 const VENV_TAIL = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
 const posix = (p) => p.replace(/\\/g, '/');
@@ -486,21 +493,21 @@ const posix = (p) => p.replace(/\\/g, '/');
 function remedyPython(root) {
   const checkout = checkoutPython(root);
   if (checkout) return checkout;
-  const own = path.join(currentEnv(path.resolve(root)), ...VENV_TAIL);
-  const session = sessionRoot && path.join(currentEnv(sessionRoot), ...VENV_TAIL);
+  const own = path.join(doorEnv(path.resolve(root)), ...VENV_TAIL);
+  const session = sessionRoot && path.join(doorEnv(sessionRoot), ...VENV_TAIL);
   if (session && fs.existsSync(session)) return posix(session);
   return posix(own);
 }
 
 /** `root`'s own venv interpreter, else its main checkout's (a linked worktree), else null: never another repo's. */
 function checkoutPython(root) {
-  const own = path.join(currentEnv(path.resolve(root)), ...VENV_TAIL);
+  const own = path.join(doorEnv(path.resolve(root)), ...VENV_TAIL);
   if (fs.existsSync(own)) return posix(own);
   try {
     const named = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(path.join(root, '.git'), 'utf8'));
     const gitdir = named ? path.resolve(root, named[1]) : '';
     if (gitdir && path.basename(path.dirname(gitdir)) === 'worktrees') {
-      const main = path.join(currentEnv(path.dirname(path.dirname(path.dirname(gitdir)))), ...VENV_TAIL);
+      const main = path.join(doorEnv(path.dirname(path.dirname(path.dirname(gitdir)))), ...VENV_TAIL);
       if (fs.existsSync(main)) return posix(main);
     }
   } catch {
