@@ -32,13 +32,13 @@ def _store(tmp_path: Path, *lines: str) -> Path:
 
 
 def _prepare(
-    tmp_path: Path, *lines: str, helpers: list[str] = STORE_ONLY, forge: DeclaredForge = _FORGE
+    tmp_path: Path, *lines: str, helpers: list[str] = STORE_ONLY, forge: DeclaredForge = _FORGE, rotate: bool = False
 ) -> tuple[list[str], Enrolment | None, list[str]]:
     fixed: list[str] = []
     said, plan = prepare(
         dev=_DEV, machine='WS9', forge=forge, door=ops_door(_forge_file(tmp_path)), dest_host='forgehost.example',
         out=tmp_path / 'consent', store=_store(tmp_path, *lines), helpers_for=lambda _h: list(helpers),
-        store_for=fixed.append,
+        store_for=fixed.append, rotate=rotate,
     )  # fmt: skip
     return said, plan, fixed
 
@@ -97,6 +97,19 @@ def test_the_plan_mints_each_missing_login_named_after_the_machine(tmp_path: Pat
     assert steps['steps'][0]['argv'] == ['forge', 'token', 'mint', '--login', 'dev-user', '--name', 'WS9',
                                          '--scope', SCOPE]  # fmt: skip
     assert load_enrolment(plan.plan, plan.steps) == plan
+
+
+def test_rotate_replaces_the_machines_token_the_forge_already_holds(tmp_path: Path) -> None:
+    """A machine that lost its stored token: the forge still holds one by its name, so a plain mint is refused."""
+    _said, plan, _fixed = _prepare(tmp_path, rotate=True)
+    assert plan is not None
+    body = json.loads(plan.plan.read_text(encoding='utf-8'))
+    rotated = TokenRequest('dev-user', 'WS9', SCOPE, rotate=True).subject()
+    assert rotated != TokenRequest('dev-user', 'WS9', SCOPE, rotate=False).subject()  # control: rotate is consented
+    assert [grant['subject'] for grant in body['grants']] == [rotated]
+    steps = json.loads(plan.steps.read_text(encoding='utf-8'))
+    assert steps['steps'][0]['argv'] == ['forge', 'token', 'mint', '--login', 'dev-user', '--name', 'WS9',
+                                         '--scope', SCOPE, '--rotate']  # fmt: skip
 
 
 def test_a_login_the_forge_cannot_mint_is_refused_before_any_plan(tmp_path: Path) -> None:
