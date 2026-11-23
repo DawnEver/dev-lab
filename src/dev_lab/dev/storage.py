@@ -40,8 +40,10 @@ from dev_lab.dev.gitdirs import common_dir
 from dev_lab.dev.hpcaccount.grantslice import read_machine
 
 __all__ = [
+    'DEFAULT_RCLONE',
     'MARKER',
     'ROOTS_ENV',
+    'Run',
     'StaleTree',
     'check',
     'checkout_output_path',
@@ -50,6 +52,7 @@ __all__ = [
     'migrate',
     'output_path',
     'publish',
+    'rclone_exe',
     'refuse_stale',
     'render',
     'rendered',
@@ -233,7 +236,7 @@ def render(to: Path, *, repo: Path, declared: _storage.Storage | None = None) ->
     return to
 
 
-def _rclone_exe() -> str:
+def rclone_exe() -> str:
     """The pinned rclone (:mod:`dev_lab.dev.toolrelease`); absent raises naming its install door."""
     from dev_lab.dev.toolrelease import ToolAbsent, resolve  # noqa: PLC0415 -- only render needs the tool table
 
@@ -246,7 +249,7 @@ def _rclone_exe() -> str:
 def _rclone() -> str:
     """The rclone the rendered config serves, or why not (its install door)."""
     try:
-        return _rclone_exe()
+        return rclone_exe()
     except _storage.StorageError as absent:
         return f'not installed -- {absent}'
 
@@ -257,7 +260,7 @@ type Run = Callable[..., subprocess.CompletedProcess[str]]
 
 def check(
     remote: str, *, repo: Path, to: Path = DEFAULT_RCLONE, declared: _storage.Storage | None = None,
-    run: Run = _door.run, rclone: str | None = None,
+    run: Run = _door.run, rclone: Sequence[str] = (),
 ) -> str:  # fmt: skip
     """Render, then list *remote*'s top level through rclone; what was reached, value-free.
 
@@ -271,8 +274,8 @@ def check(
         msg = f'{remote!r} is not a remote this machine reaches; reached: {[each.name for each in declared.reach]}'
         raise _storage.StorageError(msg)
     written = render(to, repo=repo, declared=declared)
-    exe = rclone or _rclone_exe()
-    done = run([exe, '--config', str(written), *CHECK_BOUNDS, 'lsd', f'{remote}:'], capture_output=True, text=True,
+    exe = list(rclone) or [rclone_exe()]
+    done = run([*exe, '--config', str(written), *CHECK_BOUNDS, 'lsd', f'{remote}:'], capture_output=True, text=True,
                encoding='utf-8', errors='replace', timeout=120, check=False)  # fmt: skip
     if done.returncode != 0:
         said = [line for line in (done.stderr or done.stdout).strip().splitlines() if 'ERROR' in line][-1:] or (

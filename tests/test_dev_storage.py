@@ -144,7 +144,7 @@ def test_check_lists_the_remote_through_the_rendered_config(tmp_path: Path) -> N
         return subprocess.CompletedProcess(argv, 0, 'dir-a\ndir-b\n', '')
 
     said = storage.check('results', repo=tree, to=tmp_path / 'conf' / 'rclone.conf', declared=reach, run=run,
-                         rclone='rclone')  # fmt: skip
+                         rclone=('rclone',))  # fmt: skip
     assert ran == [
         ['rclone', '--config', str(tmp_path / 'conf' / 'rclone.conf'), *storage.CHECK_BOUNDS, 'lsd', 'results:']
     ]
@@ -159,8 +159,8 @@ def test_check_refuses_an_unreached_remote_and_a_failed_listing(tmp_path: Path) 
     (tmp_path / 'secrets').mkdir()
     (tmp_path / 'secrets' / 'results').write_text('secret_access_key = "s3cr3t"\n', encoding='utf-8')
     with pytest.raises(StorageError, match='not a remote this machine reaches'):
-        storage.check('other', repo=tree, to=tmp_path / 'c.conf', declared=reach, rclone='rclone')
+        storage.check('other', repo=tree, to=tmp_path / 'c.conf', declared=reach, rclone=('rclone',))
     refused = subprocess.CompletedProcess([], 1, '', 'AccessDenied: bad key\n')
     with pytest.raises(StorageError, match=r'could not list results: \(exit 1\) AccessDenied'):
-        storage.check('results', repo=tree, to=tmp_path / 'c.conf', declared=reach, rclone='rclone',
+        storage.check('results', repo=tree, to=tmp_path / 'c.conf', declared=reach, rclone=('rclone',),
                       run=lambda *_a, **_k: refused)  # fmt: skip
