@@ -37,6 +37,7 @@ from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.issuer import Issuer
 from dev_lab.ops.consentrole import Consent
+from dev_lab.ops.giteaadmin import ForgeRefused
 from dev_lab.supervise.alert import Notifier
 from dev_lab.supervise.notice import Context, Notice, host_label
 
@@ -220,10 +221,15 @@ def probe_verb(config: OpsConfig) -> int:
     if role is None:
         emit(f'[ops] {config.path} enables no [ops.probe]', err=True)
         return 2
-    for line in probe.run(
-        config,
-        lambda url: Client(forge_of_url(url), _secret(role.token_file(url))),
-        lambda title, detail: alert(config, title, detail),
-    ):
+    try:
+        said = probe.run(
+            config,
+            lambda url: Client(forge_of_url(url), _secret(role.token_file(url))),
+            lambda title, detail: alert(config, title, detail),
+        )
+    except ForgeRefused as refused:  # its roles are the placed family file's: none placed, nothing renders
+        emit(f'refused: {refused}', err=True)
+        return 2
+    for line in said:
         emit(f'[ops probe] {line}')
     return 0

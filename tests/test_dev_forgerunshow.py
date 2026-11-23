@@ -18,6 +18,7 @@ from typing import Any, NoReturn
 import pytest
 
 from dev_lab.dev import forgerun, forgerunpost, forgerunshow, forgerunstate
+from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgerecordkeep import sha_of
 from dev_lab.dev.forgerecords import Attachment
@@ -43,7 +44,7 @@ class _Home:
         return tuple(Attachment(n, name, name) for n, name in enumerate(self.files))
 
     def client(self) -> SimpleNamespace:  # a duck-typed forge client
-        return SimpleNamespace(download=self.files.__getitem__)
+        return SimpleNamespace(download=self.files.__getitem__, forge=Forge('forge.example', 'o', 'r'))
 
 
 @pytest.fixture
@@ -78,7 +79,7 @@ def _run() -> forgerunstate.Run:
     return forgerunstate.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', '/out', 'owner', platform='base')
 
 
-def _publish(home: _Home, monkeypatch: pytest.MonkeyPatch, rounds: list[dict[str, Any]]) -> tuple[Any, int]:
+def _publish(home: _Home, monkeypatch: pytest.MonkeyPatch, rounds: list[dict[str, Any]]) -> tuple[Any, int, int]:
     monkeypatch.setattr(forgerunpost, 'step', dataclasses.replace)
     return forgerun._publish_rounds(home.client(), _run(), _Cluster(rounds), lambda _l: None, 'tag')
 
@@ -88,8 +89,10 @@ def test_a_round_with_an_oom_a_timeout_and_a_failure_publishes_all_three(
     home: _Home, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     rounds = [{'job_ids': ['11'], 'lost': [OOM, SLOW, BAD]}, {'job_ids': ['12']}]  # round 1 still running
-    run, lost = _publish(home, monkeypatch, rounds)
-    assert (run.rounds_posted, lost) == (1, 3)
+    run, lost, folded = _publish(home, monkeypatch, rounds)
+    assert (run.rounds_posted, lost, folded) == (1, 3, 1)
+    assert forgerunshow.lost_words(lost, folded) == '3 ids lost over 1 round'
+    assert forgerunshow.LOST.search(f'running 1/2; {forgerunshow.lost_words(lost, folded)}')
     shown = '\n'.join(forgerunshow.show(home.client(), SHA))
     assert 'base: in flight' in shown
     assert 'round 0: 3 lost' in shown
@@ -102,16 +105,17 @@ def test_a_round_with_an_oom_a_timeout_and_a_failure_publishes_all_three(
 @pytest.mark.usefixtures('no_shell')
 def test_a_clean_round_publishes_no_failure(home: _Home, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL: the same path over a clean round names no id."""
-    run, lost = _publish(home, monkeypatch, [{'job_ids': ['11'], 'lost': []}])
+    run, lost, _ = _publish(home, monkeypatch, [{'job_ids': ['11'], 'lost': []}])
     assert (run.rounds_posted, lost) == (1, 0)
+    assert not forgerunshow.LOST.search('running 1/1 done 0/1')
     assert forgerunshow.show(home.client(), SHA) == [f'{SHA[:12]}:', 'base: in flight', '  round 0: clean']
 
 
 def test_a_round_is_published_once(home: _Home, monkeypatch: pytest.MonkeyPatch) -> None:
     rounds = [{'job_ids': ['11'], 'lost': [OOM]}]
-    run, _ = _publish(home, monkeypatch, rounds)
+    run, _, _ = _publish(home, monkeypatch, rounds)
     home.files.clear()
-    again, _ = forgerun._publish_rounds(home.client(), run, _Cluster(rounds), lambda _l: None, 'tag')
+    again, _, _ = forgerun._publish_rounds(home.client(), run, _Cluster(rounds), lambda _l: None, 'tag')
     assert (again.rounds_posted, home.files) == (1, {}), 'an unchanged round count posts nothing'
 
 
@@ -140,9 +144,30 @@ def test_the_final_record_wins_over_the_ledger_and_names_the_failing_ids(home: _
 
 
 @pytest.mark.usefixtures('no_shell')
-def test_a_sha_with_nothing_published_says_so(home: _Home) -> None:
+def test_a_sha_with_nothing_published_names_the_home_it_read_and_the_door(home: _Home) -> None:
     home.files[f'run-{"f" * 40}-base-1.json.gz'] = b''
-    assert forgerunshow.show(home.client(), SHA) == [f'{SHA[:12]}: nothing published on the forge yet']
+    (said,) = forgerunshow.show(home.client(), SHA)
+    assert said.startswith(f'{SHA[:12]}: nothing published on the records home of forge.example/o/r')
+    assert '--repo <its checkout>' in said, 'a run of another repository names how to read it'
+
+
+@pytest.mark.usefixtures('no_shell')
+def test_a_short_sha_reads_the_run_it_names(home: _Home) -> None:
+    forgerunshow.ledger(home.client(), SHA, 'base', [{'job_ids': ['11'], 'lost': [OOM]}])
+    home.files[f'run-{"f" * 40}-base-rounds.json.gz'] = b''  # PLANTED: another sha, never read
+    shown = forgerunshow.show(home.client(), SHA[:7])
+    assert shown[:2] == [f'{SHA[:12]}:', 'base: in flight']
+    assert OOM['id'] in '\n'.join(shown)
+
+
+def test_an_ambiguous_short_sha_is_refused_naming_each_match(home: _Home) -> None:
+    other = 'e' * 7 + 'a' * 33
+    for sha in (SHA, other):
+        forgerunshow.ledger(home.client(), sha, 'base', [{'job_ids': ['11'], 'lost': []}])
+    with pytest.raises(ValueError, match='ambiguous') as refused:
+        forgerunshow.show(home.client(), 'eeeeeee')
+    assert SHA[:12] in str(refused.value)
+    assert other[:12] in str(refused.value)
 
 
 def test_the_ledger_is_pruned_with_its_sha() -> None:

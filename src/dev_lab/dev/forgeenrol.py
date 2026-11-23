@@ -16,7 +16,8 @@ Every fact is read, none restated: the logins from ``[dev] forges`` of the machi
 sites from the forge host file (:func:`.credstore.read_forge`), the remote python and config from that file's
 ``[ops.access]`` sudo line for ``forge *``, the ssh destination from its ``[ops.access] account`` at the host of the
 family's ``[consent] endpoint`` (override with ``--dest``). The token's scope defaults to :data:`SCOPE` (what a
-workstation agent needs to push and open pull requests); ``--scope`` keeps every other choice.
+workstation agent needs to push and open pull requests); ``--scope`` keeps every other choice. ``--rotate`` mints
+over a token the forge already holds under this machine's name (a store that lost it; a plain mint is refused).
 
 The token is never printed, logged or hashed here: planrun keeps it owner-only under the consent state
 (``outputs/<login>-<name>.token``), this door reads it once into :func:`~dev_lab.dev.devcredential.place` and
@@ -63,8 +64,8 @@ __all__ = [
 SCOPE: Final = 'write:repository,write:issue,read:user'
 #: The consent action of one minted token.
 _ACTION: Final = 'ops.forge.token'
-#: ``<python> -m dev_lab.ops --config <file> forge *``: the words of the forge host's ops sudo line.
-_SUDO_WORDS: Final = 7
+#: ``<python> -m dev_lab.ops --config <file>``: the words of a host's ops sudo line before its verb.
+_SUDO_HEAD: Final = 5
 
 
 class EnrolRefused(ValueError):
@@ -90,8 +91,8 @@ class Enrolment:
     mints: tuple[tuple[str, str], ...]
 
 
-def ops_door(forge_config: Path) -> OpsDoor:
-    """The forge host's ``[ops.access]`` account and the python/config of its ``forge *`` sudo line.
+def ops_door(forge_config: Path, verb: tuple[str, ...] = ('forge',)) -> OpsDoor:
+    """The host's ``[ops.access]`` account and the python/config of its ``<verb...> *`` sudo line (``forge *``).
 
     Raises:
         EnrolRefused: no ``[ops.access]`` account, or no command line ending ``dev_lab.ops --config C forge *``.
@@ -107,13 +108,14 @@ def ops_door(forge_config: Path) -> OpsDoor:
         words = shlex.split(str(line))
         if (
             account
-            and len(words) == _SUDO_WORDS
+            and len(words) == _SUDO_HEAD + len(verb) + 1
             and words[1:4] == ['-m', 'dev_lab.ops', '--config']
-            and words[5:] == ['forge', '*']
+            and words[_SUDO_HEAD:] == [*verb, '*']
         ):
             return OpsDoor(account, words[0], words[4])
-    msg = (f'{forge_config} declares no [ops.access] account with a "<python> -m dev_lab.ops --config <file> forge *" '
-           'command: the forge host cannot mint for this machine')  # fmt: skip
+    wanted = ' '.join(verb)
+    msg = (f'{forge_config} declares no [ops.access] account with a "<python> -m dev_lab.ops --config <file> {wanted} '
+           f'*" command: that host cannot run `{wanted}` for this machine')  # fmt: skip
     raise EnrolRefused(msg)
 
 
@@ -160,6 +162,7 @@ def prepare(
     dest_host: str,
     out: Path,
     scope: str = SCOPE,
+    rotate: bool = False,
     store: Path | None = None,
     helpers_for: Callable[[str], list[str]] = forgecredential.helpers,
     store_for: Callable[[str], None] = forgecredential.use_store,
@@ -181,11 +184,12 @@ def prepare(
         msg = f'{undeclared} not in {forge.path} [ops.forge.accounts]: cannot be minted -- declare it there first'
         raise EnrolRefused(msg)
     dest = f'{door.account}@{dest_host}'
+    rotating = ['--rotate'] if rotate else []
     mints = tuple((login, machine) for login in logins)
     plan = {
         'hosts': [dest],
         'grants': [
-            {'host': dest, 'action': _ACTION, 'subject': TokenRequest(login, name, scope, rotate=False).subject()}
+            {'host': dest, 'action': _ACTION, 'subject': TokenRequest(login, name, scope, rotate=rotate).subject()}
             for login, name in mints
         ],
     }
@@ -193,7 +197,7 @@ def prepare(
         'config': door.config,
         'python': door.python,
         'steps': [
-            {'argv': ['forge', 'token', 'mint', '--login', login, '--name', name, '--scope', scope]}
+            {'argv': ['forge', 'token', 'mint', '--login', login, '--name', name, '--scope', scope, *rotating]}
             for login, name in mints
         ],
     }
@@ -259,6 +263,10 @@ def add_enrol(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
     enrolling = verbs.add_parser('enrol', help='mint and place every forge login this machine declares and lacks')
     enrolling.add_argument('--forge-config', type=Path, default=None, help='the forge host file (default: found)')
     enrolling.add_argument('--scope', default=SCOPE, help=f'the token scope (default {SCOPE})')
+    enrolling.add_argument(
+        '--rotate', action='store_true',
+        help="replace the token the forge already holds under this machine's name (the store lost it)",
+    )  # fmt: skip
     enrolling.add_argument('--dest', default='', help='the forge host address (default: the [consent] endpoint host)')
     enrolling.add_argument('--plan', type=Path, default=None, help='the plan the first call wrote, to redeem')
     enrolling.add_argument('--code', default='', help='the one code the user gave for --plan')
@@ -312,6 +320,7 @@ def _enrol_run(args: argparse.Namespace, own: Mapping[str, Any], dev: Mapping[st
     said, enrolment = prepare(
         dev=dev, machine=str(own.get('host') or ''), forge=forge, door=ops_door(forge_file),
         dest_host=dest, out=Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent', scope=args.scope,
+        rotate=args.rotate,
     )  # fmt: skip
     for line in said:
         emit(line)

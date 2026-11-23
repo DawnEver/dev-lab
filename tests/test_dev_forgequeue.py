@@ -189,6 +189,7 @@ def test_the_queue_shows_progress_hosts_and_why_work_waits(server, tmp_path: Pat
     assert seen['in_flight'] == [
         {
             'candidate': f'integrate/main@{tips["integrate/main"][:12]}:base',
+            'sha': tips['integrate/main'],
             'owner': 'ada/alice',
             'login': 'alice',
             'progress': 'running 40/93 done 12/93',
@@ -468,3 +469,19 @@ def test_a_request_is_declared_once_per_queue_read(server, tmp_path: Path, monke
     assert asked == [(tips['feat/a'], 'tests', ('tests/test_x.py',))]
     blocked = next(row['blocked'] for row in seen['queue'] if row['candidate'].startswith('issue/9'))
     assert blocked == 'planted: no such producer'
+
+
+def test_an_in_flight_run_that_lost_ids_names_the_whole_command_that_reads_them() -> None:
+    """Seen: ``lost 4649: forge run s`` -- the command cut mid-word by the description limit.
+
+    PLANTED CONTROL: a run that lost nothing names no command.
+    """
+    sha = 'c' * 40
+    row = {'candidate': f'integrate/main@{sha[:12]}:base', 'sha': sha, 'owner': 'ada/alice', 'login': 'alice'}
+    lost = row | {'progress': 'running 1/1 done 0/1; 4649 ids lost over 3 rounds'}
+    clean = row | {'progress': 'running 1/1 done 0/1'}
+    view_ = {'now': NOW.isoformat(), 'queue': [], 'in_flight': [lost, clean], 'hosts': [], 'starved': []}
+    lines = forgequeue.render(view_)
+    flying = lines[lines.index('in flight:') + 1 :][:2]
+    assert flying[0].endswith(f'4649 ids lost over 3 rounds -- read them: python -m dev_lab.dev.forge run show {sha}')
+    assert flying[1].endswith('running 1/1 done 0/1')

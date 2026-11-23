@@ -14,7 +14,14 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev.milestonebase import APPROVED_ENV, BASE_RULE, TAG_RULE, milestone_version, refusals
+from dev_lab.dev.milestonebase import (
+    APPROVED_ENV,
+    BASE_RULE,
+    ONLY_VERSIONS_RULE,
+    TAG_RULE,
+    milestone_version,
+    refusals,
+)
 
 SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
@@ -169,10 +176,34 @@ def test_a_dev_tag_not_ending_in_dev0_is_refused_even_approved(repo: Path) -> No
     assert len(found[0]) <= _WIDTH
 
 
-def test_a_human_push_and_other_tags_are_not_judged(repo: Path) -> None:
+def test_a_human_push_of_a_version_tag_is_not_judged(repo: Path) -> None:
     assert refusals(repo, _tag(repo, 'v0.2.13.dev1'), env={}) == []
-    _git(repo, 'tag', 'build-7')
-    assert refusals(repo, _tag(repo, 'build-7'), env={SESSION_ENV: 's1'}) == []
+
+
+@pytest.mark.parametrize('name', ['archive/capture', 'hold/opt-combined-1116', 'pin/consumer-9bc960c', 'build-7'])
+@pytest.mark.parametrize('env', [{}, {SESSION_ENV: 's1'}], ids=['human', 'agent'])
+def test_a_tag_that_is_no_family_version_is_refused_for_every_pusher(
+    repo: Path, name: str, env: dict[str, str]
+) -> None:
+    """ONLY-VERSION-TAGS (user ruling 2026-11-23): origin holds only ``v*`` versions; work is merged or discarded."""
+    _git(repo, 'tag', name)
+    found = refusals(repo, _tag(repo, name), env=env)
+    assert len(found) == 1
+    assert found[0].startswith(f'{ONLY_VERSIONS_RULE}: {name}')
+    assert 'MERGE-OR-DELETE' in found[0], 'the refusal names where unlanded work goes instead'
+    assert len(found[0]) <= _WIDTH
+
+
+@pytest.mark.parametrize('name', ['v0.2.13rc1', 'vendor-drop', 'v1'])
+def test_a_v_prefixed_name_outside_the_grammar_is_no_version(repo: Path, name: str) -> None:
+    """PLANTED CONTROL for the prefix: a ``v`` start is not enough -- the name must parse as a family version."""
+    _git(repo, 'tag', name)
+    assert refusals(repo, _tag(repo, name), env={})[0].startswith(f'{ONLY_VERSIONS_RULE}:')
+
+
+def test_deleting_a_stray_tag_is_not_judged(repo: Path) -> None:
+    """Retiring an ``archive/*`` tag is the cleanup this rule asks for, never refused by it."""
+    assert refusals(repo, f'(delete) {_ZERO} refs/tags/archive/capture {"a" * 40}\n', env={}) == []
 
 
 def test_an_existing_tag_on_origin_is_not_a_new_one(repo: Path) -> None:

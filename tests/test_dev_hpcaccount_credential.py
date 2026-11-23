@@ -47,7 +47,7 @@ _HOSTS = ('login1.example', 'login2.example')
 _FLEET = (Grant(user='alice', hosts=_HOSTS, slurm_account='acct'),)
 _DIVISION = Division(grant_roles={'alice': 'verification'})
 _FORGE = DeclaredForge(Path('forge-a.toml'), ('forge.example',), {'forge-ci': ('org/dev-lab',)})
-_MINTED = 'tok3n-SECRET-value'
+_MINTED = 'f00d' * 10  # a Gitea-shaped token (forgetoken.GITEA)
 _REPO = 'https://forge.example/org/dev-lab.git'
 _DEPLOY = '[deploy]\nhost = "login1.example"\nroot = "/r/src"\n'
 _STAMP = '20261112T120000Z'
@@ -613,7 +613,7 @@ def test_two_logins_on_one_host_each_answer_their_own_request(tmp_path: Path, or
     unnamed request.
     """
     _bash(tmp_path, 'git config --global credential.helper store')
-    tokens = {'forge-ci': 'writer-TOKEN', 'server-reader': 'reader-TOKEN'}
+    tokens = {'forge-ci': 'a1' * 20, 'server-reader': 'b2' * 20}
     (tmp_path / STORE).write_text(_stored('server-reader', 'forge.example') + '\n', encoding='utf-8', newline='\n')
     for login in order:
         refusal, _backup = place_verified(
@@ -763,3 +763,17 @@ def test_drop_host_removes_the_logins_line_from_the_reader_file_too(tmp_path: Pa
         _stored('forge-ci', 'forge.example', 'writer-TOKEN')
     ]
     assert f'{READER_STORE}.bak-{_STAMP}' in said[-1]
+
+
+def test_a_token_not_of_its_forge_kind_shape_stages_nothing_on_the_account() -> None:
+    """PLANTED CONTROL: ``_MINTED`` (Gitea-shaped) is staged and verified above; a wrong-shaped token never is."""
+    seen: list[str] = []
+
+    def shell(command: str, _stdin: str | None) -> str:
+        seen.append(command)
+        return ''
+
+    wrong = 'tok3n-SECRET-value'
+    refusal, backup = place_verified(shell, login='forge-ci', token=wrong, repo=_REPO, role='true')
+    assert 'does not match the declared shape' in refusal
+    assert (seen, backup) == ([], '')

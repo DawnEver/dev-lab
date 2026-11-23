@@ -63,6 +63,7 @@ from lab_commons.log import emit
 from dev_lab.dev import (
     accounthost,
     bringup,
+    devhostadmit,
     devprofile,
     devschema,
     familyrepos,
@@ -241,7 +242,7 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
         return None
     first = [line for line in found if line.startswith('install home not filled')]
     rest = [line for line in found if line not in first]
-    lines = [f'HOST-CONFIG FIRST: {line}' for line in first]
+    lines = [f'HOST-CONFIG FIRST: {line}' for line in first] + bringup.stale_kit(live or machineconfig.machine())
     if host := devprofile.unmanaged(machineconfig.machine() if live is None else live):
         lines.insert(0, f'HOST-CONFIG FIRST: {devprofile.enrolment(host)}')
     if rest:
@@ -365,7 +366,7 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    """The verbs: drift, render, detect, session-start, channels, use-store, enrol, bringup (each its help)."""
+    """The verbs: drift, render, detect, session-start, channels, use-store, enrol, admit, bringup (each its help)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -383,9 +384,8 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
     forgecredential.add_use_store(verbs)
     forgeenrol.add_enrol(verbs)
-    checking = verbs.add_parser(
-        'bringup', help='list every wall a new or migrated workstation hits, each with its door'
-    )
+    devhostadmit.add_admit(verbs)
+    checking = verbs.add_parser('bringup', help='list every wall a new workstation hits, each with its door')
     checking.add_argument('--check', action='store_true', required=True, help='read only; exit 1 while a wall stands')
     setting = verbs.add_parser('local', help='set or unset ONE local-layer key ([repos], [user]) and re-render')
     local_verbs = setting.add_subparsers(dest='local_verb', required=True)
@@ -414,6 +414,7 @@ def main(argv: list[str] | None = None) -> int:
         'drift': lambda: _drift(path, live, args.clone),
         'use-store': lambda: forgecredential.use_declared(declared_by(live.get(OWN_TABLE, {})), args.host),
         'bringup': lambda: bringup.main(live),
+        'admit': lambda: devhostadmit.run(args, live, live.get(OWN_TABLE, {})),
         'enrol': lambda: forgeenrol.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
     }
     if args.verb in plain:

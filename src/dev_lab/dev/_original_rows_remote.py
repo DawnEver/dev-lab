@@ -15,6 +15,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sshhold',
     # ORIGINAL: sshhold's state file and audit split from its client (MODULE-SIZE-ALARM, 2026-11-11).
     'sshholdstate',
+    # ORIGINAL: 2026-11-23, a remote command Git Bash rewrote is refused before sshhold sends it.
+    'msyspath',
     # ORIGINAL: split out of `hpcaccount.fleet` inside the kit (2026-11-10); the judge's machine file reads it too.
     'machinehome',
     # ORIGINAL: user ruling 2026-11-07, the two remote doors over one ssh transport; no consumer held either.
@@ -35,8 +37,12 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'forgecredential',
     # ORIGINAL: 2026-11-20, user (translated): 'you must be able to do it yourself' -- one code enrols a machine.
     'forgeenrol',
+    # ORIGINAL: user ruling 2026-11-23, a declared key is admitted by one code from any machine the issuer admits.
+    'devhostadmit',
     # ORIGINAL: 2026-11-20, the effective [dev] split from devhost at the module-size band for the credential doors.
     'devdeclared',
+    # ORIGINAL: 2026-11-23, a forge token's declared shape per forge kind, checked at every intake before a store.
+    'forgetoken',
     # The hpcaccount verbs, which deploy and run on a remote cluster account (moved here from `_original_rows.py`
     # at the module-size band, 2026-11-13). No consumer guard is superseded: these forge-launching verbs moved from
     # the lab-commons owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
@@ -66,6 +72,10 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'spec',
     'steps',
     'tick',
+    # ORIGINAL: 2026-11-23, a cron tick bounded by its lock, holder record and wall.
+    'tickwall',
+    # ORIGINAL: 2026-11-23, a read-only look at one key-only account (its tick, its serve).
+    'look',
     # ORIGINAL: 2026-11-15, every remote hpcaccount step rides the dest's held session when live, else key-only ssh.
     'transport',
     # ORIGINAL: the integrator as a session role, verified offline from its consent credential (2026-11-12).

@@ -30,13 +30,15 @@ from dev_lab.dev.checkout import git_out
 from dev_lab.dev.venvpath import running_interpreter
 
 __all__ = [
-    'PLACE_DOOR', 'STORE_ONLY', 'USE_STORE_DOOR', 'add_use_store', 'drift', 'helpers', 'store_lines', 'stored_logins',
-    'unstored', 'use_declared', 'use_store',
+    'LOGIN_DOOR', 'PLACE_DOOR', 'STORE_ONLY', 'USE_STORE_DOOR', 'add_use_store', 'drift', 'helpers', 'store_lines',
+    'stored_logins', 'unstored', 'use_declared', 'use_store',
 ]  # fmt: skip
 
 #: The host-scoped helper list that reads only the store.
 STORE_ONLY: Final = ['', 'store']
 #: The door placing one minted token for a declared login.
+#: The door that stores a token already in hand for one forge, named by host (never the checkout's forge by default).
+LOGIN_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.forge auth login --host {{host}}'
 PLACE_DOOR: Final = (
     f'{running_interpreter()} -m dev_lab.dev.devcredential --login {{login}} '
     '--forge-config <forge host file> < <minted token file>'
@@ -135,7 +137,8 @@ def drift(
         if absent := unstored(dev, host, lines):
             found += [
                 f'forge {host}: no stored credential for declared login {login!r} -- mint one (forge token mint, a '
-                f'one-code consent plan), then {PLACE_DOOR.format(login=login)} (placing switches git to the store)'
+                f'one-code consent plan), then {PLACE_DOOR.format(login=login)} (placing switches git to the store); '
+                f'a token in hand: {LOGIN_DOOR.format(host=host)}'
                 for login in absent
             ]
         elif (have := helpers_for(host)) != STORE_ONLY:

@@ -30,7 +30,7 @@ import urllib.parse
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev import forgeprotect
 from dev_lab.dev._forgebackends import backend_for
@@ -38,8 +38,12 @@ from dev_lab.dev.forge import Forge, forge_of_url
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.lanepolicy import policy_from
 from dev_lab.dev.reviewgate import DeclarationUnread, manifest_at
+from dev_lab.ops import forgeprotection
 from dev_lab.ops.config import OpsConfig
 from dev_lab.ops.statelock import exclusive
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 __all__ = ['FAILED', 'Finding', 'findings', 'run']
 
@@ -90,12 +94,12 @@ def _runs(api: forgeprotect.Api, forge: Forge, integration: str) -> list[Finding
     ]  # fmt: skip
 
 
-def findings(url: str, api: forgeprotect.Api) -> list[Finding]:
-    """Every standing finding of the repository at *url*, read through *api*."""
+def findings(url: str, api: forgeprotect.Api, layer: Mapping[str, Any]) -> list[Finding]:
+    """Every standing finding of the repository at *url*, read through *api*, its roles bound in the family *layer*."""
     forge = forge_of_url(url)
     try:
         integration, text = _declaration(api)
-        wanted = forgeprotect.targets(text, f'{integration}:pyproject.toml', forge)
+        wanted = forgeprotect.targets(text, f'{integration}:pyproject.toml', forge, layer=layer)
         steps = forgeprotect.plan(api, forge, wanted)
         out = _runs(api, forge, integration)
     except (ForgeCallFailed, DeclarationUnread, ValueError, KeyError, TypeError) as unread:
@@ -122,18 +126,27 @@ def _save(path: Path, state: dict[str, str]) -> None:
 
 
 def run(config: OpsConfig, api_for: Callable[[str], forgeprotect.Api], alert: Callable[[str, str], bool]) -> list[str]:
-    """Probe every declared repository; alert each NEW finding once (see the module docstring); the lines said."""
+    """Probe every declared repository; alert each NEW finding once (see the module docstring); the lines said.
+
+    Protection renders under the family file this host's ``[ops.config] family`` places, never the probe login's
+    machine file (the defect #912 fixed for ``forge protect``).
+
+    Raises:
+        ForgeRefused: the host places no family file (:func:`dev_lab.ops.forgeprotection.family_layer`), by name.
+
+    """
     role = config.probe
     if role is None:
         msg = f'{config.path} enables no [ops.probe]'
         raise ValueError(msg)
+    layer = forgeprotection.family_layer(config.config_source)
     state_dir = Path(role.state)
     with exclusive(state_dir):
         before = _load(state_dir / _STATE)
         after: dict[str, str] = {}
         said = []
         for url in role.repos:
-            for found in findings(url, api_for(url)):
+            for found in findings(url, api_for(url), layer):
                 if before.get(found.key) == found.mark:
                     after[found.key] = found.mark
                     continue

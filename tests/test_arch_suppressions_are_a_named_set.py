@@ -212,6 +212,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev.hpcaccount import (',
     ): 'the package imports no verb: each verb imports the package, so a top-level import would be a cycle',
     (
+        'src/dev_lab/dev/hpcaccount/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev.hpcaccount import tick, tickwall',
+    ): 'the package imports no verb: tick and tickwall import the package, so a top-level import would be a cycle',
+    (
+        'src/dev_lab/dev/hpcaccount/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev.hpcaccount.spec import DEFAULT_TICK_WALL_MINUTES',
+    ): 'spec imports the package (division, grantslice) and the roles table; only the tick verb needs its default',
+    (
         'src/dev_lab/dev/servelock.py',
         'PLC0415',
         'import msvcrt',
@@ -550,6 +560,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev import devhost',
     ): 'devhost imports bringup to wire its verb, so a module-scope import back is a cycle; walls() reads its door',
+    (
+        'src/dev_lab/dev/devhostadmit.py',
+        'PLC0415',
+        'from dev_lab.dev.planrunoffer import offered',
+    ): 'planrunpreflight reads devhost, which wires this verb, and planrunoffer imports planrunpreflight names: a '
+    'module-scope import is a cycle whenever planrunpreflight is imported first; only the live admit reads it',
     (
         'src/dev_lab/dev/testtemp.py',
         'PLC0415',

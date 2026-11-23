@@ -90,6 +90,11 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 - **Why it is refused.** User ruling 2026-11-22: an image delivered to the user is named by its ABSOLUTE path. A relative path resolves against a working directory the reader is not in -- the agent works in a worktree, the user reads from elsewhere -- so the figure cannot be opened from the message that announces it. The Stop hook reads the final message (`dev_lab.dev.imagepath`, called by `dev_lab.dev.handback`) and blocks the stop once.
 - **The exit.** Say it again with every image named by its absolute path, resolved against the checkout it was written in. What is read is a path token ending in an image suffix (`imagepath.IMAGE_SUFFIXES`) after a file stem, in a markdown image, a code span or prose; an absolute path, a URL, a `data:` source, a pattern or template (`*.png`, `<name>.png`, `{stem}.png`) and a path through a shell variable pass. The text cannot tell a delivered image from a discussed one, so both are read.
 
+## ARCHIVE-IS-NO-STORE
+
+- **Why it is refused.** A bundle (like an `archive/*` tag or a copy under `output/`) parks unlanded work where nobody reads it again; origin's tags are versions only (`ONLY-VERSION-TAGS`, `dev_lab.dev.milestonebase`, user ruling 2026-11-23).
+- **The exit.** Unlanded work is merged or discarded (`MERGE-OR-DELETE`): merge it through a PR, or land its discard with a declared `git merge -s ours` PR, then `branchprune delete <branch>` (a tag: `branchprune tag <tag>`).
+
 ## GIT-STASH
 
 - **Why it is refused.** `refs/stash` is REPO-WIDE. It is one ref per repository, not per worktree, so a stash taken in one checkout is popped by whoever pops next -- in a family whose premise is a shared, possibly concurrent checkout, that is another agent losing work it never knew existed.
@@ -286,3 +291,8 @@ HINT: the hazard is minutes, not harm.
 ## Cross-repo refusals
 
 When a refused command targets a repo other than the session's (its cwd, `cd X &&`, `git -C X`), the engine in `dev_lab.dev.agenthooks` adds one header line. If the target repo declares a door for the rule in its pyproject `[tool.dev_lab.doors]`, the header names that door and the target repo's exit replaces the session's. If it declares none and the rule's exit is a per-repo door (its row carries `needs`), the session's exit is never shown: a need whose family door reads no file of the target is sent to that door, printed with the session's interpreter (a network verb: `python -m dev_lab.dev.netverb -- git <verb>`; a raw kill: `python -m dev_lab.dev.stoprun --pid <pid>`); a bare test line names the target's own `<venv python> -m dev_lab.dev.verify -- <paths>` when that interpreter carries dev_lab, else the `[tool.dev_lab.doors]` row to declare. For any other rule the header says the target declares no door, and the refusal below it is the session repo's: any repo file it names belongs to the session repo and may not exist in the target.
+
+## MSYS-PATH-REWRITE
+
+- **Why it is refused.** Git Bash (MSYS) rewrites every POSIX-absolute argument into its own install root before any program sees it: `/opt/x/bin/python` arrives as `<git-install-root>/opt/x/bin/python`. A remote command carrying such a word cannot match the host's sudo rows or find its files (measured 2026-11-23: `sshhold run ops@<host> sudo -n /opt/... install` asked for a password). `dev_lab.dev.msyspath` names the rewritten words, Windows inside an MSYS shell only (`MSYSTEM` set), before `sshhold run` sends anything.
+- **The exit.** Prefix the line with `MSYS_NO_PATHCONV=1`, or run the command as a planrun step: `python -m dev_lab.dev.planrun run --plan <plan.json> --digest <D> --steps <steps.json>` carries its argv as JSON data, which no shell rewrites.

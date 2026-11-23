@@ -57,6 +57,7 @@ from dev_lab.ops.totp import write_private
 
 __all__ = [
     'CLIENT_UPGRADE',
+    'CODE_PREFLIGHT_FRESH_S',
     'ISSUER_UPGRADE',
     'PLAN_PREFLIGHT_DOOR',
     'PREFLIGHT_DOOR',
@@ -65,6 +66,7 @@ __all__ = [
     'SSH_FAILED',
     'Send',
     'fresh_receipts',
+    'green_age',
     'handshake',
     'hello',
     'installed_commit',
@@ -99,6 +101,10 @@ ISSUER_UPGRADE: Final = (
 #: whether a code is wasted; it bounds how old the proof "the agent preflighted before it asked" may be. It was
 #: 3600 s with no recorded reason, and a user's code met a green 31161 s old.
 PREFLIGHT_FRESH_S: Final = 24 * 3600.0
+#: How long a recorded green of the SAME plan digest stands in for the code-taking door's own re-run when the code is
+#: given IN ADVANCE (ruling 2026-11-23): the ~11 s re-run spent a chat-delivered code's 30 s window. Short, so the
+#: green is still the plan's state; older, the door re-runs it.
+CODE_PREFLIGHT_FRESH_S: Final = 300.0
 #: How long a lone request's green preflight admits the code the user gives for it: the same backstop, for the same
 #: reason (it was 300 s: a code given five minutes after the ask was refused, and lost).
 RECEIPT_FRESH_S: Final = PREFLIGHT_FRESH_S
@@ -301,6 +307,11 @@ def preflighted_steps(plan: Plan, *, home: Path | None = None) -> Path | None:
     except (OSError, ValueError, AttributeError):
         return None
     return Path(named) if isinstance(named, str) and Path(named).is_file() else None
+
+
+def green_age(plan: Plan, *, home: Path | None = None, now: float | None = None) -> float | None:
+    """Seconds since *plan*'s last recorded green preflight; None when none is recorded."""
+    return _age(_stamp(plan.digest, home), time.time() if now is None else now)
 
 
 def plan_preflights(*, home: Path | None = None, now: float | None = None) -> list[tuple[str, float]]:

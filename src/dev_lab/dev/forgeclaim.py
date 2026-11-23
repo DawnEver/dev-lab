@@ -131,12 +131,16 @@ class Claim:
     progress: str = ''
 
     def description(self) -> str:
-        """The pending status's description (module docstring), progress cut to :data:`DESCRIPTION_LIMIT`."""
+        """The pending status's description (module docstring), progress cut at a word to :data:`DESCRIPTION_LIMIT`."""
         until = self.until.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
         head = f'claim machine={self.machine or _NOBODY} login={self.login} until={until} hpc={self.hpc or _NOBODY}'
+        said = f'{head} -- {self.progress}'
         if not self.progress:
             return head
-        return f'{head} -- {self.progress}'[:DESCRIPTION_LIMIT]
+        if len(said) <= DESCRIPTION_LIMIT:
+            return said
+        cut = said[: DESCRIPTION_LIMIT + 1].rsplit(' ', 1)[0]  # whole words only: a cut word misleads its reader
+        return cut if len(cut) > len(head) + len(' -- ') else said[:DESCRIPTION_LIMIT]  # one word too long: cut it
 
     @classmethod
     def parse(cls, description: str) -> Claim | None:

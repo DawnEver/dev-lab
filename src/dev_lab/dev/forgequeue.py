@@ -37,6 +37,7 @@ from lab_commons.hpc.declared import OutdatedKit
 from lab_commons.hpc.needsets import declared_at
 from lab_commons.log import emit
 
+from dev_lab.dev import forgerunshow
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared
 from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, forge_transport
@@ -239,7 +240,8 @@ def _standing(
         if state == CLAIMED and holder is not None:
             owner = holder.hpc or holder.machine or '-'
             in_flight.append(
-                {'candidate': one.key, 'owner': owner, 'login': holder.login, 'progress': holder.progress}
+                {'candidate': one.key, 'sha': one.sha, 'owner': owner, 'login': holder.login}
+                | {'progress': holder.progress}
                 | {'until': holder.until.isoformat()}
             )
             continue
@@ -280,6 +282,13 @@ def _holds(host: Mapping[str, Any]) -> str:
     return f'{held} (unrenewed: retaken once its lease lapses)' if host['stale'] and host['holds'] else held
 
 
+def _flying(row: Mapping[str, Any]) -> str:
+    """One in-flight line; a run that lost ids names the whole command that reads them."""
+    progress = row['progress'] or 'no progress posted'
+    door = f' -- read them: {forgerunshow.show_command(row["sha"])}' if forgerunshow.LOST.search(progress) else ''
+    return f'  {row["candidate"]}  {row["owner"]} ({row["login"]})  {progress}{door}'
+
+
 def render(view_: Mapping[str, Any]) -> list[str]:
     """The view as the lines a human reads."""
     lines = [f'forge time {view_["now"]}', '', 'queue (highest score first; * = a host orders it first):']
@@ -291,10 +300,7 @@ def render(view_: Mapping[str, Any]) -> list[str]:
         for r in view_['queue']
     ] or ['  (empty)']
     lines += ['', 'in flight:']
-    lines += [
-        f'  {r["candidate"]}  {r["owner"]} ({r["login"]})  {r["progress"] or "no progress posted"}'
-        for r in view_['in_flight']
-    ] or ['  (none)']
+    lines += [_flying(r) for r in view_['in_flight']] or ['  (none)']
     lines += ['', 'hosts:']
     lines += [
         line

@@ -36,6 +36,17 @@ def test_the_plan_takes_only_accounts_that_declare_the_reach(tmp_path: Path) -> 
     assert work.by_hand == ('desk',)  # this machine is not listed; a workstation is named for its own enter
 
 
+def test_two_grants_of_one_account_plan_it_once(tmp_path: Path) -> None:
+    """An account is a cluster and a user: two Slurm accounts of it are one write (grantslice.own_grants)."""
+    clone = _clone(tmp_path, {'clus-one': REACH, 'other-one': REACH})
+    second = Grant(user='one', cluster_name='clus', hosts=('login.test',), slurm_account='acct2', role='research')
+    work = plan('results', clone=clone, grants=[_grant('one'), second], this_host='here')
+    assert [(t.grant.cluster_name, t.grant.user) for t in work.accounts] == [('clus', 'one')]
+    # PLANTED CONTROL: the same user on another cluster is another account, planned on its own line
+    both = plan('results', clone=clone, grants=[_grant('one'), _grant('one', 'other')], this_host='here')
+    assert [(t.grant.cluster_name, t.grant.user) for t in both.accounts] == [('clus', 'one'), ('other', 'one')]
+
+
 def test_the_subject_binds_every_target_and_the_content() -> None:
     one = Plan('results', (Target(_grant('one'), '~/s'),), ())
     two = Plan('results', (Target(_grant('one'), '~/s'), Target(_grant('two'), '~/s')), ())

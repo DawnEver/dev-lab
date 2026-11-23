@@ -516,6 +516,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.remplugin` -- which rem the session's harness runs: an unbound push names an absent or old one.
 * :mod:`dev_lab.dev.remhome` -- the machine home handed to rem: ``LAB_COMMONS_HOME`` in the user Claude settings.
 * :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent push off its bound task's pr/<task>/ heads.
+* :mod:`dev_lab.dev.tickholder` -- the holder record beside a cluster tick's lock: its pid, wall and phase.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
 * :mod:`dev_lab.dev.uvfollow` -- uv follows the version its pin needs, through WinGet or `uv self update`.
 * :mod:`dev_lab.dev.commitmsg` -- the commit-msg and push-range check: `type(scope)!: subject`, owned once.
@@ -641,6 +642,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.devdeclared` -- the effective ``[dev]`` of a host: the family's table under the host file's.
 * :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.
 * :mod:`dev_lab.dev.forgecredential` -- this machine's forge helper and stored logins against its declaration.
+* :mod:`dev_lab.dev.devhostadmit` -- ``devhost admit``: one code admits a declared key, from any admitted machine.
+* :mod:`dev_lab.dev.msyspath` -- MSYS-PATH-REWRITE: a remote argv Git Bash rewrote is refused before it is sent.
+* :mod:`dev_lab.dev.forgetoken` -- a forge token's declared shape per kind (Gitea, GitHub), judged at every intake.
 * :mod:`dev_lab.dev.forgeenrol` -- ``devhost enrol``: one consent plan mints every declared login a machine lacks.
 * :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,

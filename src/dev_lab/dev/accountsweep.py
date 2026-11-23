@@ -198,7 +198,7 @@ def _remove(path: Path, say: Callable[[str], None]) -> tuple[int, int, int]:
             for name in (*names, *dirs):
                 gone(Path(here, name))
     gone(path)
-    for top, (count, cause) in _grouped(kept).items():
+    for top, (count, cause) in sorted(_grouped(kept).items()):  # os.walk order is the filesystem's, not stable
         say(f'[retention] kept {top} -- cannot remove {count} entries: {cause}')
     left = _measure(path) if path.exists() or path.is_symlink() else (0, 0)
     return (*left, len(kept))

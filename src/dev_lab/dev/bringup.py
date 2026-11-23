@@ -8,14 +8,17 @@ green. Measured on a workstation 2026-11-20 (the walls, in the order they were h
    family default and is refused every write and HPC door, :mod:`dev_lab.dev.devprofile`);
 3. ``bridge-interpreter`` -- the session bridge's interpreter is DERIVED from ``[repos] dev-lab``
    (:func:`dev_lab.dev.devprofile.bridge_python`) and exists; never a hand-set or invented path;
-4. ``machine-file`` -- the machine file is its render (:func:`dev_lab.dev.devhost.drift`);
-5. ``client-key`` -- one of this machine's ssh public keys (``~/.ssh/*.pub``) is declared in its host file's
+4. ``dev-lab-kit`` -- the ``[repos] dev-lab`` checkout lags the family's ``[dev] ref`` by no more than
+   :data:`~dev_lab.dev.locklag.LAG_WINDOW`, THE one "current enough" (:func:`kit`): a stale kit is a wall, never a
+   silent older behaviour (2026-11-23);
+5. ``machine-file`` -- the machine file is its render (:func:`dev_lab.dev.devhost.drift`);
+6. ``client-key`` -- one of this machine's ssh public keys (``~/.ssh/*.pub``) is declared in its host file's
    ``[dev] client_keys``: the ONE place the approval servers derive their authorised keys from
    (:mod:`dev_lab.ops.clientkeys`);
-6. ``issuer`` -- the consent issuer (``[consent] endpoint``) is reached with a known host key, admits this key, and
+7. ``issuer`` -- the consent issuer (``[consent] endpoint``) is reached with a known host key, admits this key, and
    speaks this client's version (:func:`dev_lab.ops.consent.door.handshake`): the break-glass account takes the
    same derived key set, so this one probe stands for both;
-7. ``forge-credential`` -- every declared forge login has a stored credential (:func:`.forgecredential.drift`).
+8. ``forge-credential`` -- every declared forge login has a stored credential (:func:`.forgecredential.drift`).
 
 A wall whose door SPENDS A CODE says which (``code:``): the ``ops.config`` consent that applies a new client key on
 the issuer, the consent that mints a forge token. Those are asked only once every no-code wall is green (the rule a
@@ -24,34 +27,76 @@ code is asked only after its preflight passes) -- so the output lists them last,
 
 from __future__ import annotations
 
+import subprocess
 import tomllib
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import devprofile, familyrepos, forgecredential
-from dev_lab.dev.devdeclared import OWN_TABLE, declared
+from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
+from dev_lab.dev.gitenv import unlocated
+from dev_lab.dev.locklag import LAG_WINDOW, LOCAL_ONLY, Lag, hours, lag_of
+from dev_lab.dev.relock import RelockFailed
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops.clientkeys import DEV_KEY
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import Send, handshake, ssh_send
 
-__all__ = ['HOST_KEY_DOOR', 'ISSUER_DEPLOY', 'Wall', 'main', 'walls']
+__all__ = ['ADMIT_DOOR', 'HOST_KEY_DOOR', 'Wall', 'checkout_lag', 'kit', 'main', 'stale_kit', 'walls']
 
 #: Where the issuer's ssh HOST key is declared and checked strictly (a sibling change: pr/toolchain/ssh-host-key).
 HOST_KEY_DOOR: Final = (
     "the issuer's ssh host key is not known here: take it from the config source's declaration of the issuer's host "
     'key (never a trust-on-first-use prompt), then re-run'
 )
-#: The deploy step on the issuer host that installs the derived client keys (:mod:`dev_lab.ops.clientkeys`).
-ISSUER_DEPLOY: Final = (
-    'on the issuer host, through its ops login: `ops --config /etc/dev-lab/supervise.toml config apply --credential '
-    '<file>` (an ops.config consent for the subject `planrun subject --config <issuer host>` derives), then '
-    '`ops --config /etc/dev-lab/supervise.toml install` writes the break-glass and consent key files'
-)
+#: The door that admits a declared key (:mod:`dev_lab.dev.devhostadmit`), run by ANOTHER machine's agent.
+ADMIT_DOOR: Final = 'python -m dev_lab.dev.devhost admit --host {host}'
+
+
+#: ``(checkout, ref)`` -> how far the checkout's HEAD lags ``origin/<ref>`` (:func:`.locklag.lag_of`); None: unread.
+type Measure = Callable[[str, str], Lag | None]
+
+
+def checkout_lag(checkout: str, ref: str) -> Lag | None:
+    """:func:`~dev_lab.dev.locklag.lag_of` HEAD against ``origin/<ref>`` as last fetched, in *checkout*; None unread."""
+
+    def git(*argv: str) -> subprocess.CompletedProcess[str]:
+        return _door.run(
+            [_GIT, '-C', checkout, *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
+            check=False, timeout=_GIT_TIMEOUT_S, env={**unlocated(), **LOCAL_ONLY},
+        )  # fmt: skip
+
+    try:
+        return lag_of(git, 'HEAD', f'origin/{ref}')
+    except (RelockFailed, OSError):
+        return None
+
+
+def kit(checkout: str, ref: str, *, measure: Measure = checkout_lag) -> Wall:
+    """The ``dev-lab-kit`` wall: red when the checkout lags *ref* past :data:`~dev_lab.dev.locklag.LAG_WINDOW`."""
+    lag = measure(checkout, ref)
+    if lag is None:
+        return Wall('dev-lab-kit', green=False, said=f'{checkout} cannot be read as a git checkout of {ref}')
+    said = f'{lag} behind origin/{ref} (window {hours(LAG_WINDOW)})'
+    if not lag.past(LAG_WINDOW):
+        return Wall('dev-lab-kit', green=True, said=said)
+    pull = f'{running_interpreter()} -m dev_lab.dev.netverb -- git pull --ff-only'
+    return Wall('dev-lab-kit', green=False, said=f'{said}: in {checkout}, {pull}, then uv sync --frozen')
+
+
+def stale_kit(live: Mapping[str, Any], *, measure: Measure = checkout_lag) -> list[str]:
+    """The SessionStart line of a ``dev-lab-kit`` wall on the machine whose *live* file is given; ``[]`` when none."""
+    checkout = live.get(familyrepos.LOCAL_TABLE, {}).get(devprofile.BRIDGE_CHECKOUT)
+    ref = declared_by(live.get(OWN_TABLE, {})).get('ref')
+    lag = measure(str(checkout), str(ref)) if checkout and ref else None  # unread: bringup says so, not every session
+    wall = kit(str(checkout), str(ref), measure=lambda _c, _r: lag) if lag is not None else None
+    return [f'DEV-LAB-KIT STALE: {wall.said}'] if wall is not None and not wall.green else []
 
 
 #: ssh's exit status when it could not reach the host at all (no route, timeout, refused authentication).
@@ -82,7 +127,17 @@ def _bare(key: str) -> str:
     return ' '.join(key.split()[:2])
 
 
-def _issuer(table: Mapping[str, Any], send: Send) -> Wall:
+def _not_admitted(endpoint: str, host: str, *, declared: bool) -> str:
+    """The door when the issuer refuses this key: declare it, or have it admitted from any admitted machine."""
+    if not declared:
+        return f"{endpoint} does not admit this machine's key: make client-key green and merged first, then admit it"
+    door = ADMIT_DOOR.format(host=host)
+    return (f"{endpoint} does not admit this machine's key: declared but not yet admitted. The door: the agent of ANY "
+            f'machine the issuer already admits runs `{door}` (one ops.config code; it prints when to ask); then the '
+            f'forge-credential mint here (`python -m dev_lab.dev.devhost enrol`) waits on it')  # fmt: skip
+
+
+def _issuer(table: Mapping[str, Any], send: Send, host: str = '', *, declared: bool = False) -> Wall:
     """Reach, host key, authorisation and version of the consent issuer, from ONE ``hello``."""
     endpoint = table.get('endpoint')
     if not endpoint:
@@ -101,7 +156,7 @@ def _issuer(table: Mapping[str, Any], send: Send) -> Wall:
         if 'Host key verification failed' in said or 'REMOTE HOST IDENTIFICATION HAS CHANGED' in said:
             return Wall('issuer', green=False, said=HOST_KEY_DOOR)
         if 'Permission denied' in said:
-            door = f"{endpoint} does not admit this machine's key: once client-key is green and merged, {ISSUER_DEPLOY}"
+            door = _not_admitted(str(endpoint), host, declared=declared)
             return Wall('issuer', green=False, said=door, code='ops.config')
         if status == _SSH_UNREACHED:
             return Wall('issuer', green=False, said=f'{endpoint} is not reached ({said[-200:]}): fix the network path')
@@ -137,7 +192,7 @@ def _client_key(host: str, host_file: Path, ssh_dir: Path) -> Wall:
 def walls(
     live: Mapping[str, Any], *, ssh_dir: Path | None = None, send: Send = ssh_send,
     exists: Callable[[str], bool] = lambda path: Path(path).is_file(),
-    credential: Callable[[Mapping[str, Any]], list[str]] = forgecredential.drift,
+    credential: Callable[[Mapping[str, Any]], list[str]] = forgecredential.drift, measure: Measure = checkout_lag,
 ) -> list[Wall]:  # fmt: skip
     """Every bring-up wall of the machine whose *live* file is given, in order; each later wall needs the earlier."""
     from dev_lab.dev import devhost  # noqa: PLC0415 -- devhost wires this verb, so the import is at call time
@@ -155,11 +210,14 @@ def walls(
     found.append(Wall('enrolment', green=True, said=f'{host} is declared'))
     dev = declared(host_file, clone / 'family.toml')
     found.append(_interpreter(live, dev, exists))
+    if (checkout := live.get(familyrepos.LOCAL_TABLE, {}).get(devprofile.BRIDGE_CHECKOUT)) and dev.get('ref'):
+        found.append(kit(str(checkout), str(dev['ref']), measure=measure))
     drifted = devhost.drift(live, clone)
     found.append(Wall('machine-file', green=not drifted, said='; '.join(drifted) or 'is its render'))
-    found.append(_client_key(host, host_file, ssh_dir or Path.home() / '.ssh'))
+    found.append(keyed := _client_key(host, host_file, ssh_dir or Path.home() / '.ssh'))
     family = tomllib.loads((clone / 'family.toml').read_text(encoding='utf-8'))
-    found.append(_issuer({**family.get('consent', {}), **live.get('consent', {})}, send))  # a family fact stays home
+    consent = {**family.get('consent', {}), **live.get('consent', {})}  # a family fact stays home
+    found.append(_issuer(consent, send, host, declared=keyed.green))
     missing = credential(dev)
     said = '; '.join(missing) or 'every declared login is stored'
     found.append(Wall('forge-credential', green=not missing, said=said, code='forge.token' if missing else ''))

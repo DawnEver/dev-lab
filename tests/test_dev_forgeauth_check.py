@@ -12,7 +12,8 @@ from _forge_fake import Loopback, Recorder, answer, credential_env, serve
 
 from dev_lab.dev import forgefailure, forgeverdict
 from dev_lab.dev.forge import forge_of_url
-from dev_lab.dev.forgeauth import TICK_SCOPES, UNREACHABLE, UNREACHABLE_EXIT, main, tick_refusal
+from dev_lab.dev.forgeauth import UNREACHABLE, UNREACHABLE_EXIT, main, tick_refusal
+from dev_lab.dev.forgetoken import TICK_SCOPES
 
 URL: Final = 'https://forge.example.org/o/r.git'
 API: Final = '/api/v1/repos/o/r'

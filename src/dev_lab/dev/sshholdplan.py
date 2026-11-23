@@ -30,6 +30,7 @@ from dev_lab.dev.sshholdwire import HoldRefused
 from dev_lab.dev.sshholdwire import held as live_hold
 from dev_lab.ops.consent.client import grant_plan
 from dev_lab.ops.consent.credential import ConsentRefused
+from dev_lab.ops.consent.door import CODE_PREFLIGHT_FRESH_S, green_age
 from dev_lab.ops.consent.plan import not_registered, parsed, unregistered
 from dev_lab.ops.totp import STEP
 
@@ -46,6 +47,7 @@ def open_planned(
     opener: Callable[..., str],
     clock: Callable[[], float] = time.monotonic,
     held: Callable[[str], bool] | None = None,
+    received: float | None = None,
 ) -> tuple[bool, list[str]]:  # fmt: skip
     """Spend ONE *code* on *plan* (the one *shown*), then on every plan host's session: ``(all open, lines)``.
 
@@ -63,13 +65,14 @@ def open_planned(
         raise HoldRefused(msg)
     reused = [dest for dest in found.hosts if (held or live_hold)(dest)]
     given = clock()
+    sent = f'code sent to the issuer {given - (given if received is None else received):.1f} s after it was given'
     try:
         written = grant(plan, shown, code, found.hosts[0])
     except ConsentRefused as refused:
         msg = f'the plan was not granted: {refused}'
         raise HoldRefused(msg) from refused
     audit('plan', ','.join(found.hosts), command=shown, status=0, grants=len(written))
-    lines = [f'consent granted: {path}' for path in written]
+    lines = [sent, *(f'consent granted: {path}' for path in written)]
     said = {dest: f'{dest}: held session reused (no code sent)' for dest in reused}
 
     def one(dest: str) -> None:
@@ -95,16 +98,29 @@ def open_planned(
     return all('NOT opened' not in said[dest] for dest in found.hosts), lines
 
 
-def offered(plan: Path, steps: Path | None = None) -> None:
+def offered(
+    plan: Path, steps: Path | None = None, *, code_given: bool = False,
+    rerun: Callable[[Path, Path | None], list[str]] | None = None, held: Callable[[str], bool] | None = None,
+    home: Path | None = None, now: float | None = None,
+) -> str:  # fmt: skip
     """Run *plan*'s preflight NOW, before its code is read; not green refuses ``no code used``, as :class:`HoldRefused`.
 
     *steps* defaults to the steps file the plan's last green preflight recorded (:func:`.planrunoffer.reproved`).
     Every plan host is first proven LIVE-held or cleared (:func:`.sshholdwire.held`), so green means each host is
     reached through a live hold or is one the code will open -- never a dead hold read as reused.
+
+    A code GIVEN IN ADVANCE (*code_given*) already runs against its 30 s window, so a green recorded for the SAME
+    digest within :data:`~dev_lab.ops.consent.door.CODE_PREFLIGHT_FRESH_S` stands in for the re-run; older, or a
+    code asked at the prompt (asked only after this returns), runs it. Returns the line saying which.
     """
     try:
-        for dest in parsed(json.loads(plan.read_text(encoding='utf-8'))).hosts:
-            live_hold(dest)  # a dead hold goes BEFORE the preflight: its host is then one the code opens
-        reproved(plan, steps)
+        found = parsed(json.loads(plan.read_text(encoding='utf-8')))
+        for dest in found.hosts:
+            (held or live_hold)(dest)  # a dead hold goes BEFORE the preflight: its host is then one the code opens
+        age = green_age(found, home=home, now=now) if code_given else None
+        if age is not None and age <= CODE_PREFLIGHT_FRESH_S:
+            return f'preflight: recorded green {age:.0f} s ago (within {CODE_PREFLIGHT_FRESH_S:.0f} s): not re-run'
+        (rerun or reproved)(plan, steps)
     except (ConsentRefused, OSError, ValueError) as refused:
         raise HoldRefused(str(refused)) from refused
+    return 'preflight: re-run here, green'
