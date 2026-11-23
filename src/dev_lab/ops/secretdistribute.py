@@ -81,10 +81,15 @@ def _everyone(clone: Path, remote: str) -> str:
 
 
 def plan(remote: str, *, clone: Path, grants: Sequence[Grant], this_host: str) -> Plan:
-    """Every machine reaching *remote* in the config-source *clone* (its own reach, or the family's for all)."""
+    """Every machine reaching *remote* in the config-source *clone* (its own reach, or the family's for all).
+
+    An account is a cluster and a user however many grants it holds (one per Slurm account): planned once.
+    """
     accounts, names, everyone = [], set(), _everyone(clone, remote)
     for reached in grants:
         name = account_host(reached)
+        if name in names:
+            continue
         names.add(name)
         if path := _reach(clone / 'hosts' / f'{name}.toml', remote, everyone):
             accounts.append(Target(reached, path))
