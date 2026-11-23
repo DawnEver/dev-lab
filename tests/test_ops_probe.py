@@ -5,20 +5,38 @@ The forges are in-memory fakes (:mod:`_protect_fakes`); the evidence is the aler
 
 from __future__ import annotations
 
+import dataclasses
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from _protect_fakes import GITEA_TEXT, GITHUB_TEXT, FakeGitea, FakeGitHub
 
 from dev_lab.dev.forge import forge_of_url
 from dev_lab.dev.forgeprotect import apply, targets
-from dev_lab.ops import install
+from dev_lab.dev.roles import ROLES, ROLES_ENV
+from dev_lab.ops import hostverbs, install
 from dev_lab.ops.config import OpsConfig, load
+from dev_lab.ops.giteaadmin import ForgeRefused
 from dev_lab.ops.probe import run
 
 HUB = 'https://github.com/owner/alpha.git'
 TEA = 'https://gitea.example/owner/alpha.git'
+
+#: The family file the host's ``[ops.config] family`` places: every role of either forge bound to its CI.
+FAMILY = ''.join(f'[roles.{forge}]\n' + ''.join(f'{role} = "ci"\n' for role in ROLES) for forge in ('github', 'gitea'))
+
+
+def _placing(config: OpsConfig, tmp: Path, *, placed: bool = True) -> OpsConfig:
+    """*config* whose ``[ops.config] family`` places the family file (a stand-in: this box's path has a drive)."""
+    to = tmp / 'etc' / 'family.toml'
+    if placed:
+        to.parent.mkdir(parents=True, exist_ok=True)
+        to.write_text(FAMILY, encoding='utf-8')
+    return dataclasses.replace(config, config_source=SimpleNamespace(family={'file': 'family.toml', 'to': str(to)}))
 
 
 def _config(tmp: Path, repos: tuple[str, ...] = (HUB, TEA), tokens: str = '') -> OpsConfig:
@@ -35,10 +53,11 @@ def _config(tmp: Path, repos: tuple[str, ...] = (HUB, TEA), tokens: str = '') ->
 
 
 def _declared(fake: FakeGitHub | FakeGitea, text: str, url: str) -> None:
-    """*fake* holds *text* on both branches and its protection exactly as declared."""
+    """*fake* holds *text* on both branches and its protection exactly as declared, under the family's roles."""
     fake.manifest = {'main': text, 'integrate/main': text}
     forge = forge_of_url(url)
-    apply(fake, forge, targets(text, 'p', forge))
+    layer: dict[str, Any] = tomllib.loads(FAMILY)
+    apply(fake, forge, targets(text, 'p', forge, layer=layer))
     fake.writes.clear()
 
 
@@ -67,8 +86,9 @@ class Host:
 
 
 @pytest.fixture
-def host(tmp_path: Path) -> Host:
-    made = Host(_config(tmp_path))
+def host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Host:
+    monkeypatch.delenv(ROLES_ENV)  # the probe's roles are the placed family file's, never a login's carried ones
+    made = Host(_placing(_config(tmp_path), tmp_path))
     _declared(made.hub, GITHUB_TEXT, HUB)
     _declared(made.tea, GITEA_TEXT, TEA)
     return made
@@ -140,6 +160,23 @@ def test_a_forge_the_probe_cannot_read_is_a_finding_alerted_once(host: Host) -> 
     assert sorted(host.titles()) == ['probe cannot read gitea.example/owner/alpha',
                                      'probe cannot read github.com/owner/alpha']  # fmt: skip
     assert host.tick() == []
+
+
+def test_a_host_placing_no_family_file_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The defect #912 fixed for ``forge protect``: the probe rendered under the login's machine file.
+
+    PLANTED CONTROL: the same host with the file placed probes clean (the ``host`` fixture's every test).
+    """
+    monkeypatch.delenv(ROLES_ENV)
+    for config in (_config(tmp_path), _placing(_config(tmp_path), tmp_path / 'unplaced', placed=False)):
+        bare = Host(config)
+        with pytest.raises(ForgeRefused, match=r'\[ops.config\] family'):
+            bare.tick()
+        assert bare.alerts == []
+    assert hostverbs.probe_verb(_config(tmp_path)) == 2
+    assert 'refused: this host declares no [ops.config] family' in capsys.readouterr().err
 
 
 def test_a_probe_with_a_forge_and_no_token_is_refused_at_load(tmp_path: Path) -> None:
