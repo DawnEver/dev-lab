@@ -141,14 +141,7 @@ def test_an_unremovable_entry_is_named_and_kept_and_the_pass_ends_with_its_summa
     old = home / 'ci' / 'trees' / 'abc'
     for name in ('a.log', 'locked.log', 'b.log'):
         (old / name).write_text('x', encoding='utf-8')
-    real = os.unlink
-
-    def refuse(path: object, *args: object, **kwargs: object) -> None:
-        if str(path).endswith('locked.log'):
-            raise PermissionError(errno.EPERM, 'Operation not permitted', str(path))
-        real(path, *args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(os, 'unlink', refuse)
+    _locked(monkeypatch)
     said = _sweep(home, root, spec | {'apply': True})
     assert f'[retention] kept {old.as_posix()} -- cannot remove 1 entries: Operation not permitted' in said
     assert sorted(p.name for p in old.iterdir()) == ['locked.log'], 'the rest of the copy went'
@@ -185,10 +178,10 @@ def test_stale_cargo_registry_sources_go_and_a_fresh_crate_stays(tmp_path: Path)
 def _locked(monkeypatch: pytest.MonkeyPatch) -> None:
     real = os.unlink
 
-    def refuse(path: object, *args: object, **kwargs: object) -> None:
-        if Path(str(path)).name.startswith('locked'):
-            raise PermissionError(errno.EPERM, 'Operation not permitted', str(path))
-        real(path, *args, **kwargs)  # type: ignore[arg-type]
+    def refuse(path: str, *, dir_fd: int | None = None) -> None:
+        if Path(path).name.startswith('locked'):
+            raise PermissionError(errno.EPERM, 'Operation not permitted', path)
+        real(path, dir_fd=dir_fd)
 
     monkeypatch.setattr(os, 'unlink', refuse)
 

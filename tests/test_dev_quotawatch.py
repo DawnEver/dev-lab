@@ -102,3 +102,11 @@ def test_an_unread_byte_quota_never_prints_a_negative_usage() -> None:
     unread = Usage(0, 0, None, None)
     assert unread.after(int(6.5 * _GB), 0) == ['usage bytes unread (no byte quota read); freeing 6.5 GB']
     assert CALM.after(_GB, 0)[0] == 'usage bytes 43.0/1000.0 GB -> 42.0 GB', 'PLANTED CONTROL: a read quota is stated'
+
+
+def test_a_full_quota_admits_no_claim_and_the_card_names_it() -> None:
+    assert quotawatch.admitted_files(FULL_FILES, Policy()) == 0.0
+    assert 'QUOTA-FULL: files' in quotawatch.card(FULL_FILES, Policy())
+    assert quotawatch.admitted_files(CALM, Policy()) == 1_600_000.0, 'PLANTED CONTROL: room is admitted'
+    assert 'QUOTA-' not in quotawatch.card(CALM, Policy())
+    assert quotawatch.admitted_files(None, Policy()) is None

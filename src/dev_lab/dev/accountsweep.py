@@ -40,7 +40,6 @@ import errno
 import json
 import os
 import re
-import shutil
 import stat
 import subprocess
 import sys
@@ -179,22 +178,26 @@ def _remove(path: Path, say: Callable[[str], None]) -> tuple[int, int, int]:
     """Remove *path*; what cannot go is named per top-most directory. The (bytes, files, entries) left behind."""
     kept: list[tuple[str, OSError]] = []
 
-    def writable(func: Callable[[str], object], name: str, _exc: object) -> None:
+    def gone(entry: Path) -> None:
+        """Remove one *entry*; refused, its owner bits are set and it is tried once more, else it is kept."""
+        remove = entry.rmdir if entry.is_dir() and not entry.is_symlink() else entry.unlink
         try:
-            os.chmod(name, _OWNER)  # noqa: PTH101 -- rmtree hands a string
-            func(name)
-        except OSError as why:
-            if why.errno != errno.ENOTEMPTY:  # a parent of a kept entry: the entry itself is the one named
-                kept.append((name, why))
+            remove()
+        except OSError:
+            try:
+                for one in (entry.parent, entry) if not entry.is_symlink() else (entry.parent,):
+                    one.chmod(_OWNER)
+                remove()
+            except OSError as why:
+                if why.errno != errno.ENOTEMPTY:  # a parent of a kept entry: the entry itself is the one counted
+                    kept.append((str(entry), why))
 
-    try:
-        if path.is_dir() and not path.is_symlink():
-            retry = {'onexc': writable} if sys.version_info >= (3, 12) else {'onerror': writable}
-            shutil.rmtree(path, **retry)  # type: ignore[arg-type]
-        else:
-            path.unlink()
-    except OSError as why:
-        kept.append((str(path), why))
+    # bottom-up by hand, never shutil.rmtree: its error hook is ``onerror`` before 3.12 and ``onexc`` after
+    if path.is_dir() and not path.is_symlink():
+        for here, dirs, names in os.walk(path, topdown=False):
+            for name in (*names, *dirs):
+                gone(Path(here, name))
+    gone(path)
     for top, (count, cause) in _grouped(kept).items():
         say(f'[retention] kept {top} -- cannot remove {count} entries: {cause}')
     left = _measure(path) if path.exists() or path.is_symlink() else (0, 0)

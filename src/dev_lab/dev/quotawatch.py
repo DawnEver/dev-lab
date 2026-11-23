@@ -27,11 +27,12 @@ from typing import Any, Final, Protocol
 
 from lab_commons.config import section
 
-from dev_lab.dev.diskusage import Usage
+from dev_lab.dev.diskusage import Usage, storage_text
 from dev_lab.dev.retentionplan import Policy, load_policy
 
 __all__ = [
-    'DOOR', 'FULL', 'NEAR', 'UNREAD', 'Lines', 'Watch', 'declared_lines', 'freed', 'judge', 'lines', 'usage_line',
+    'DOOR', 'FULL', 'NEAR', 'UNREAD', 'Lines', 'Watch', 'admitted_files', 'card', 'declared_lines', 'freed', 'judge',
+    'lines', 'usage_line',
 ]  # fmt: skip
 
 #: The warning: usage is at the ``[retention] pressure`` line.
@@ -114,6 +115,17 @@ def lines(usage: Usage | None, policy: Lines, *, who: str = '') -> list[str]:
         return [f'{head}{UNREAD}']
     watch = judge(usage, policy)
     return [f'{head}{usage_line(usage)}', *([f'{head}{watch.text}'] if watch.near else [])]
+
+
+def admitted_files(usage: Usage | None, policy: Lines) -> float | None:
+    """Files a claim may still write: none at :data:`FULL` (a claim's tree is new files); ``None`` unread."""
+    return 0.0 if judge(usage, policy).full else usage.files_left if usage is not None else None
+
+
+def card(usage: Usage | None, policy: Lines) -> str:
+    """The host card's storage text, the named warning after it once a line is reached."""
+    watch = judge(usage, policy)
+    return storage_text(usage) + (f' -- {watch.text}' if watch.near else '')
 
 
 def declared_lines(table: Mapping[str, Any] | None = None) -> Policy:
