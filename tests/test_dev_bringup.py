@@ -100,6 +100,21 @@ def test_each_issuer_wall_is_told_apart_and_names_its_door(
     assert found.code == code
 
 
+def test_a_declared_unadmitted_key_names_the_admit_door_runnable_from_any_admitted_machine(tmp_path: Path) -> None:
+    """Measured 2026-11-22: the wall sent the agent to "someone on the forge host"; it names the one door instead."""
+    denied = (255, 'c@i: Permission denied (publickey).')
+    found = _walls(tmp_path, _machine(tmp_path), send=lambda _t, _r: denied)['issuer']
+    assert 'declared but not yet admitted' in found.said
+    assert 'devhost admit --host ws' in found.said
+    assert 'ANY machine the issuer already admits' in found.said
+    assert found.said.index('devhost admit') < found.said.index('devhost enrol')
+    assert 'forge host' not in found.said
+    assert 'install' not in found.said
+    undeclared = _walls(tmp_path / 'b', _machine(tmp_path / 'b', keyed=False), send=lambda _t, _r: denied)['issuer']
+    assert 'declared but not yet admitted' not in undeclared.said
+    assert 'client-key' in undeclared.said
+
+
 def test_codes_are_listed_last_and_only_after_the_no_code_walls(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

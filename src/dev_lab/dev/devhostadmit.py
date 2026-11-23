@@ -43,10 +43,8 @@ from dev_lab.ops.clientkeys import DEV_KEY
 from dev_lab.ops.consent.plan import DIGEST_SHOWN, digest
 from dev_lab.ops.consent.plan import load as load_plan
 
-__all__ = ['DOOR', 'add_admit', 'offer', 'run']
+__all__ = ['add_admit', 'offer', 'run']
 
-#: The door, as a wall names it: run by the agent of any machine the issuer already admits.
-DOOR: Final = 'python -m dev_lab.dev.devhost admit --host {machine}'
 _ACTION: Final = configdoor.ACTION
 _APPLY: Final = ('config', 'apply')
 

@@ -39,19 +39,15 @@ from dev_lab.ops.clientkeys import DEV_KEY
 from dev_lab.ops.consent.credential import ConsentRefused
 from dev_lab.ops.consent.door import Send, handshake, ssh_send
 
-__all__ = ['HOST_KEY_DOOR', 'ISSUER_DEPLOY', 'Wall', 'main', 'walls']
+__all__ = ['ADMIT_DOOR', 'HOST_KEY_DOOR', 'Wall', 'main', 'walls']
 
 #: Where the issuer's ssh HOST key is declared and checked strictly (a sibling change: pr/toolchain/ssh-host-key).
 HOST_KEY_DOOR: Final = (
     "the issuer's ssh host key is not known here: take it from the config source's declaration of the issuer's host "
     'key (never a trust-on-first-use prompt), then re-run'
 )
-#: The deploy step on the issuer host that installs the derived client keys (:mod:`dev_lab.ops.clientkeys`).
-ISSUER_DEPLOY: Final = (
-    'on the issuer host, through its ops login: `ops --config /etc/dev-lab/supervise.toml config apply --credential '
-    '<file>` (an ops.config consent for the subject `planrun subject --config <issuer host>` derives), then '
-    '`ops --config /etc/dev-lab/supervise.toml install` writes the break-glass and consent key files'
-)
+#: The door that admits a declared key (:mod:`dev_lab.dev.devhostadmit`), run by ANOTHER machine's agent.
+ADMIT_DOOR: Final = 'python -m dev_lab.dev.devhost admit --host {host}'
 
 
 #: ssh's exit status when it could not reach the host at all (no route, timeout, refused authentication).
@@ -82,7 +78,17 @@ def _bare(key: str) -> str:
     return ' '.join(key.split()[:2])
 
 
-def _issuer(table: Mapping[str, Any], send: Send) -> Wall:
+def _not_admitted(endpoint: str, host: str, *, declared: bool) -> str:
+    """The door when the issuer refuses this key: declare it, or have it admitted from any admitted machine."""
+    if not declared:
+        return f"{endpoint} does not admit this machine's key: make client-key green and merged first, then admit it"
+    door = ADMIT_DOOR.format(host=host)
+    return (f"{endpoint} does not admit this machine's key: declared but not yet admitted. The door: the agent of ANY "
+            f'machine the issuer already admits runs `{door}` (one ops.config code; it prints when to ask); then the '
+            f'forge-credential mint here (`python -m dev_lab.dev.devhost enrol`) waits on it')  # fmt: skip
+
+
+def _issuer(table: Mapping[str, Any], send: Send, host: str = '', *, declared: bool = False) -> Wall:
     """Reach, host key, authorisation and version of the consent issuer, from ONE ``hello``."""
     endpoint = table.get('endpoint')
     if not endpoint:
@@ -101,7 +107,7 @@ def _issuer(table: Mapping[str, Any], send: Send) -> Wall:
         if 'Host key verification failed' in said or 'REMOTE HOST IDENTIFICATION HAS CHANGED' in said:
             return Wall('issuer', green=False, said=HOST_KEY_DOOR)
         if 'Permission denied' in said:
-            door = f"{endpoint} does not admit this machine's key: once client-key is green and merged, {ISSUER_DEPLOY}"
+            door = _not_admitted(str(endpoint), host, declared=declared)
             return Wall('issuer', green=False, said=door, code='ops.config')
         if status == _SSH_UNREACHED:
             return Wall('issuer', green=False, said=f'{endpoint} is not reached ({said[-200:]}): fix the network path')
@@ -157,9 +163,10 @@ def walls(
     found.append(_interpreter(live, dev, exists))
     drifted = devhost.drift(live, clone)
     found.append(Wall('machine-file', green=not drifted, said='; '.join(drifted) or 'is its render'))
-    found.append(_client_key(host, host_file, ssh_dir or Path.home() / '.ssh'))
+    found.append(keyed := _client_key(host, host_file, ssh_dir or Path.home() / '.ssh'))
     family = tomllib.loads((clone / 'family.toml').read_text(encoding='utf-8'))
-    found.append(_issuer({**family.get('consent', {}), **live.get('consent', {})}, send))  # a family fact stays home
+    consent = {**family.get('consent', {}), **live.get('consent', {})}  # a family fact stays home
+    found.append(_issuer(consent, send, host, declared=keyed.green))
     missing = credential(dev)
     said = '; '.join(missing) or 'every declared login is stored'
     found.append(Wall('forge-credential', green=not missing, said=said, code='forge.token' if missing else ''))
