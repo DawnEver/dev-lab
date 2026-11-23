@@ -55,7 +55,11 @@ places a minted token of a declared login: `python -m dev_lab.dev.hpcaccount cre
   account's home, so accounts never tick in lockstep. Each tick refreshes its repo and serves its queue only
   where the family binds a role of the repo to the account's grant (`[roles.<forge>]`, `dev_lab.dev.roles`, D73;
   ruling 2026-11-16); a repo with no role bound there is checked out, installed and never served. The line:
-  `<offset>-59/<minutes> * * * * PATH=...; cd ~/src/dev-lab && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo> >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
+  `<offset>-59/<minutes> * * * * PATH=...; cd <root>/repos/dev-lab && .venv/bin/python -m dev_lab.dev.hpcaccount tick <repo> --lock <root>/serve/<repo>.lock --wall-minutes <wall> >> <root>/serve/<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
+  The tick takes its own lock and writes who holds it beside it (`<lock>.holder`: pid, start, phase); it runs
+  within `[schedule] tick_wall_minutes` (default 40) and past it ends its serve, releases the lock and prints
+  `tick: ended at its wall after <s> s doing <phase>` -- the next tick resumes every run from its saved step
+  (`dev_lab.dev.hpcaccount.tickwall`).
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across

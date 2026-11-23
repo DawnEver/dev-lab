@@ -27,7 +27,6 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
-import lab_commons.launch as _door
 from lab_commons.config import config_path
 from lab_commons.hpc.declared import REFUSALS
 from lab_commons.log import emit
@@ -49,6 +48,7 @@ from dev_lab.dev.hpcaccount.spec import (
     serves_here,
 )
 from dev_lab.dev.hpcaccount.steps import Step, Tools, build, declared, update
+from dev_lab.dev.hpcaccount.tickwall import WALL, Wall, within
 from dev_lab.dev.lockcheck import uv_version
 from dev_lab.dev.roles import Unbound
 
@@ -119,9 +119,10 @@ def tick(
     home: Path,
     config: Path | None = None,
     tools: Tools | None = None,
-    run: Callable[..., Any] = _door.run,
+    run: Callable[..., Any] = within,
     alarm: Callable[[Alarm], object] = sound,
     probed: dict[str, bool] | None = None,
+    wall: Wall | None = None,
 ) -> int:
     """One cron tick of served repo *name*: THE HOST refreshes, then serves it with its own kit.
 
@@ -132,6 +133,9 @@ def tick(
     exit 2, and is not served. A repo whose checkout declares no ``hpc`` producer is refreshed and not served.
     One lacking a declared need also sounds a ``needs`` *alarm*; *probed* is the
     tick's probe cache, shared by every repo one tick serves.
+
+    With a *wall* (:mod:`dev_lab.dev.hpcaccount.tickwall`) each phase is named in the tick's holder record and the
+    serve runs within what is left of it; a refresh that spent the whole wall serves nothing this tick.
 
     THE SHARED KIT HAS ONE WRITER: dev-lab always has a line, served or not, so ITS OWN tick (under its own
     ``flock``) is the only one that moves the host checkout; every other tick reads it. Measured 2026-10-19
@@ -145,6 +149,8 @@ def tick(
         return 2
     spec, repo = found
     step = Step(tools or Tools(), dry=False)
+    if wall is not None:
+        wall.phase(f'refreshing {name}')
     if lagging := follow_uv(name):
         alarm(Alarm(NEEDS, repo.url, f'{account()} runs a uv that is not the pin', lagging, about='uv'))
     why, lacking = _refresh(step, spec, home, repo, {} if probed is None else probed)
@@ -165,5 +171,14 @@ def tick(
     serve_off({one.name: one.name in here for one in spec.repos}, account(), alarm=alarm, repo=repo.url)
     if not ours:
         return 0  # checked out and fresh; its producer is not the HPC, so this account never serves its queue
-    checkout = checkout_of(spec, repo)
-    return run(host_serve_argv(), cwd=checkout, check=False).returncode
+    return _serve(name, checkout_of(spec, repo), run, wall)
+
+
+def _serve(name: str, checkout: Path, run: Callable[..., Any], wall: Wall | None) -> int:
+    """The host kit's ``forge serve`` in *checkout*, within what is left of *wall*; nothing when it is spent."""
+    if wall is not None:
+        if not wall.left():
+            emit(wall.ended('ended at its wall'), err=True)
+            return WALL
+        wall.phase(f'serving {name}')
+    return run(host_serve_argv(), cwd=checkout, check=False, wall=wall).returncode

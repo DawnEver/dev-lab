@@ -7,6 +7,7 @@ box: it logs its argv to ``calls.log`` and keeps its state in files under the te
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import sys
 import tomllib
@@ -20,9 +21,9 @@ from _roles_fixtures import EVERY_CI, HPC_REPO, carry
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.retired import RETIRED
 
-from dev_lab.dev import venvpointer
+from dev_lab.dev import tickholder, venvpointer
 from dev_lab.dev._machinefile import dumps
-from dev_lab.dev.hpcaccount import deploy, tick
+from dev_lab.dev.hpcaccount import deploy, tick, tickwall
 from dev_lab.dev.hpcaccount import spec as deploy_spec
 from dev_lab.dev.hpcaccount import steps as deploy_steps
 from dev_lab.dev.hpcaccount.account import UNREACHED
@@ -175,8 +176,11 @@ def test_twice_gives_one_marked_line_per_repo_and_keeps_the_users_own(box: Box) 
     assert len(marked) == 3
     alpha = next(line for line in marked if line.endswith('alpha'))
     assert alpha.split(' ', 1)[0].endswith('-59/5'), 'the schedule default period'
-    assert 'flock -n' in alpha
-    assert alpha.split(' >> ')[0].endswith('dev_lab.dev.hpcaccount tick alpha'), 'the host ticks the repo'
+    assert 'flock -n' not in alpha, 'the tick takes its own lock, which names its holder'
+    lock = shlex.quote(str(box.root / 'serve' / 'alpha.lock'))
+    assert alpha.split(' >> ')[0].endswith(f'dev_lab.dev.hpcaccount tick alpha --lock {lock} --wall-minutes 40'), (
+        'the host ticks the repo under its lock and the default wall'
+    )
     assert f'cd {shlex.quote(str(box.root / "repos" / "dev-lab"))} &&' in alpha, (
         "from the host's kit, never the repo's venv"
     )
@@ -718,6 +722,41 @@ def test_a_repo_whose_refresh_fails_is_released_by_name_and_its_forge_never_runs
     assert served == []
     assert 'alpha released, not served this tick' in capsys.readouterr().err
     assert _tick(box, 'beta', served) == 0, 'one repo released never stops another'
+
+
+def test_a_tick_whose_refresh_spent_its_wall_serves_nothing_and_says_so(
+    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL beside it: the same tick with time left serves, handing the serve its wall."""
+    assert box.run(*DECLARE) == 0
+    record = tmp_path / 'alpha.lock.holder'
+    tickholder.write(record, tickholder.Holder(1, None, '2026-11-23T09:57:00+00:00', 0.0, 'alpha'))
+    served: list[object] = []
+
+    def run(_argv: list[str], **kw: object) -> _Done:
+        served.append(kw['wall'])
+        return _Done(0)
+
+    spent = tickwall.Wall(record, 0.0)
+    capsys.readouterr()
+    assert tick.tick('alpha', home=box.home, config=box.machine, tools=box.tools, run=run, wall=spent) == tickwall.WALL
+    assert served == []
+    assert re.search(r'tick: ended at its wall after \d+ s doing refreshing alpha', capsys.readouterr().err)
+    left = tickwall.Wall(record, 3600.0)
+    assert tick.tick('alpha', home=box.home, config=box.machine, tools=box.tools, run=run, wall=left) == 0
+    assert served == [left]
+    assert tickholder.read(record).phase == 'serving alpha'
+
+
+def test_the_tick_wall_is_the_schedule_tick_wall_minutes_default_40(tmp_path: Path) -> None:
+    assert _cron_spec('', tmp_path).tick_wall_minutes == deploy_spec.DEFAULT_TICK_WALL_MINUTES == 40
+    assert _cron_spec('\n[schedule]\ntick_wall_minutes = 25\n', tmp_path).tick_wall_minutes == 25
+
+
+@pytest.mark.parametrize('minutes', ['0', '-5', '"40"', '2.5'])
+def test_a_tick_wall_that_is_no_positive_whole_minute_count_is_refused(tmp_path: Path, minutes: str) -> None:
+    with pytest.raises(ValueError, match='tick_wall_minutes'):
+        _cron_spec(f'\n[schedule]\ntick_wall_minutes = {minutes}\n', tmp_path)
 
 
 def test_a_tick_of_an_undeclared_repo_is_refused(box: Box, capsys: pytest.CaptureFixture[str]) -> None:

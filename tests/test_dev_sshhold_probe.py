@@ -57,8 +57,15 @@ def test_the_probe_rides_the_opens_own_ssh_words_in_batch_mode_and_refuses_a_ref
     assert 'Permission denied (publickey)' in said
     assert 'python -m dev_lab.dev.hpcaccount keys' in said
     assert 'portal' in said
-    for status, answer in ((255, WANTS_CODE), (255, NO_ROUTE), (0, ''), (1, KEY_REFUSED)):  # the controls
+    for status, answer in ((255, WANTS_CODE), (255, NO_ROUTE), (1, KEY_REFUSED)):  # the controls
         sshholdprobe.probe(DEST, route, run=_ssh(status, answer))
+
+
+def test_a_key_only_host_is_refused_before_any_code_naming_its_read_door() -> None:
+    """Measured 2026-11-23: an open on a KEY-ONLY account asked a code and died reading it (EOFError)."""
+    with pytest.raises(HoldRefused, match='KEY-ONLY host needs no code') as refused:
+        sshholdprobe.probe(DEST, ('ssh',), run=_ssh(0, ''))
+    assert 'python -m dev_lab.dev.hpcaccount look --account' in str(refused.value)
 
 
 def test_a_probe_that_cannot_run_leaves_the_open_to_say_what_ssh_says() -> None:

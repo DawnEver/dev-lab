@@ -68,6 +68,14 @@ DEFAULT_PYTHON: Final = '3.13'
 #: ``[schedule] tick_minutes`` when undeclared -- the same default the host card is judged stale against.
 DEFAULT_TICK_MINUTES: Final = 5
 
+#: ``[schedule] tick_wall_minutes`` when undeclared: how long one tick may hold its lock before it ends itself
+#: (:mod:`dev_lab.dev.hpcaccount.tickwall`). WHY 40: a verification account ticks every 15 minutes and its card reads
+#: STALE after three periods (:data:`dev_lab.dev.forgehosts.STALE_TICKS`), 45 minutes -- a tick ending by 40 lets the
+#: next one publish before the queue calls the host down, and 40 minutes still holds a whole gather and post of a
+#: large run (a submit's hour-long collection runs detached, :func:`dev_lab.dev.forgesubmit.detach`). Measured
+#: 2026-11-23: unbounded, one tick in a gather's tenth retry round held the lock for hours.
+DEFAULT_TICK_WALL_MINUTES: Final = 40
+
 #: The served repo every tick RUNS -- the kit, whose ``forge serve`` serves every other served repo.
 KIT: Final = 'dev-lab'
 
@@ -118,6 +126,7 @@ class Deployment:
     partitions: tuple[str, ...] = ()
     role: str = ''
     tick_minutes: int = DEFAULT_TICK_MINUTES  # from [schedule], never [deploy]: one period per host
+    tick_wall_minutes: int = DEFAULT_TICK_WALL_MINUTES  # from [schedule]: how long one tick may hold its lock
     env: tuple[tuple[str, str], ...] = ()  # from [env]: this account's own tool paths, exported in every tick
 
 
@@ -155,6 +164,7 @@ def parse(table: Mapping[str, Any], path: Path, *, root: str = '') -> Deployment
             partitions=tuple(raw.get('partitions', ())),
             role=_role(path, raw.get('role', '')),
             tick_minutes=_tick_minutes(path, table.get('schedule', {})),
+            tick_wall_minutes=_tick_wall_minutes(path, table.get('schedule', {})),
             env=_env(path, table.get('env', {})),
         )
     except KeyError as missing:
@@ -206,6 +216,15 @@ def _tick_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
     minutes = schedule.get('tick_minutes', DEFAULT_TICK_MINUTES)
     if type(minutes) is not int or minutes < 1 or 60 % minutes:
         msg = f'[schedule] tick_minutes in {path} is {minutes!r}: cron needs a whole number of minutes dividing 60'
+        raise ValueError(msg)
+    return minutes
+
+
+def _tick_wall_minutes(path: Path, schedule: Mapping[str, Any]) -> int:
+    """``[schedule] tick_wall_minutes``: a positive whole number of minutes, else refused naming the key."""
+    minutes = schedule.get('tick_wall_minutes', DEFAULT_TICK_WALL_MINUTES)
+    if type(minutes) is not int or minutes < 1:
+        msg = f'[schedule] tick_wall_minutes in {path} is {minutes!r}: declare a positive whole number of minutes'
         raise ValueError(msg)
     return minutes
 
@@ -276,7 +295,7 @@ def cron_lines(
     slurm: Sequence[str] = (),
     setup: Sequence[str] = (),
 ) -> list[str]:
-    """One marked line per served repo and the kit, every ``tick_minutes``, under ``flock -n``.
+    """One marked line per served repo and the kit, every ``tick_minutes``, each tick under its own lock.
 
     The minute offset is derived from *home* (one per account), so accounts sharing a forge tick staggered
     rather than in lockstep; an unserved repo other than the kit gets no line (:class:`Repo`).
@@ -362,7 +381,10 @@ def merge_crontab(current: str, lines: Sequence[str]) -> str:
 def tick_command(
     spec: Deployment, home: Path, repo: Repo, *, log: bool, slurm: Sequence[str] = (), setup: Sequence[str] = ()
 ) -> str:
-    """The shell command of one tick of *repo*: :func:`tick_environment`, ``flock -n``, the HOST's ``hpc tick``.
+    """The shell command of one tick of *repo*: :func:`tick_environment`, then the HOST's ``hpcaccount tick``.
+
+    The tick takes its own lock, ``<serve>/<repo>.lock``, and runs within ``tick_wall_minutes``
+    (:mod:`dev_lab.dev.hpcaccount.tickwall`): the lock names its holder, which ``flock -n`` could not.
 
     It runs from the kit (dev-lab) checkout's venv, never the repo's: the host refreshes the repo (and
     itself), then serves it with its own kit (:func:`host_serve_argv`), so a stale repo venv blocks nothing.
@@ -375,8 +397,8 @@ def tick_command(
     command = (
         f'{tick_environment(home, spec.root, slurm, setup, spec.env)}; '
         f'cd {shlex.quote(str(checkout_of(spec, lab)))} && '
-        f'flock -n {shlex.quote(str(serve / f"{repo.name}.lock"))} '
-        f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)}'
+        f'{shell_interpreter(".")} -m dev_lab.dev.hpcaccount tick {shlex.quote(repo.name)} '
+        f'--lock {shlex.quote(str(serve / f"{repo.name}.lock"))} --wall-minutes {spec.tick_wall_minutes}'
     )
     command = f'bash -lc {shlex.quote(command)}' if setup else command
     return command + (f' >> {shlex.quote(str(serve / f"{repo.name}.log"))} 2>&1' if log else '')

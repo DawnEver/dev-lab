@@ -23,7 +23,7 @@ import lab_commons.launch as _door
 
 from dev_lab.dev.sshholdwire import HoldRefused
 
-__all__ = ['KEYS_DOOR', 'WANTS_CODE', 'key_refused', 'probe']
+__all__ = ['KEYS_DOOR', 'KEY_ONLY_DOOR', 'WANTS_CODE', 'key_refused', 'probe']
 
 #: An ssh login the host refused for want of a code: the key (when one is needed) was accepted.
 WANTS_CODE: Final = re.compile(r'Permission denied \((?:[\w-]+,)*(?:keyboard-interactive|password)')
@@ -36,6 +36,12 @@ KEYS_DOOR: Final = (
     "the account's login keys are derived from the hosts config: add this machine's [dev] client_keys there, then "
     '`python -m dev_lab.dev.hpcaccount keys <user@host> --hosts <hosts-config>/hosts` from a machine that already '
     'reaches the account; on a cluster whose keys are managed in its portal, add the key in the portal'
+)
+
+#: The doors of a key-only account (measured 2026-11-23: an open there asked a code and died reading it).
+KEY_ONLY_DOOR: Final = (
+    'reach it through the hpcaccount doors, which ride the rate-limited key ssh: read it with '
+    '`python -m dev_lab.dev.hpcaccount look --account <user> <what>`'
 )
 
 #: Runs one argv captured (``subprocess.run``'s shape).
@@ -65,6 +71,10 @@ def probe(dest: str, ssh: Sequence[str], *, run: Run | None = None) -> None:
         )  # fmt: skip
     except (OSError, subprocess.TimeoutExpired):
         return  # not judged here: the open says what ssh says
+    if done.returncode == 0:
+        msg = (f'{dest} logged in with the key alone: a KEY-ONLY host needs no code and no held session; no code was '
+               f'read -- {KEY_ONLY_DOOR}')  # fmt: skip
+        raise HoldRefused(msg)
     denied = key_refused(f'{done.stdout}{done.stderr}') if done.returncode == _SSH_FAILED else ''
     if denied:
         msg = (f"{dest} does not admit this machine's public key (ssh, with no code: {denied}); no code was read "
