@@ -347,9 +347,11 @@ def test_a_workflow_is_kept_only_where_the_ci_declaration_places_it(repo: Path) 
         (workflows / name).write_text('x\n', encoding='utf-8')
     (repo / '.gitea' / 'workflows').mkdir(parents=True)
     (repo / '.gitea' / 'workflows' / 'merge.yml').write_text('x\n', encoding='utf-8')
+    forge = '[project]\nname = "x"\n\n[tool.dev_lab.ci.ci]\nforge = "github"\n'
+    (repo / 'pyproject.toml').write_text(forge, encoding='utf-8')
     _git('add', '.', cwd=repo)
     assert unplaced_workflows(repo) == ('.gitea/workflows/merge.yml', '.github/workflows/hand.yml')
     with pytest.raises(AssertionError, match=r'hand\.yml: a workflow no \[tool\.dev_lab\.ci\] table places'):
         assert_every_project_file_is_accounted_for(root=repo, owned_here={})
-    (repo / 'pyproject.toml').write_text('[project]\nname = "x"\n\n[tool.dev_lab.ci.hand]\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text(f'{forge}\n[tool.dev_lab.ci.hand]\n', encoding='utf-8')
     assert unplaced_workflows(repo) == ('.gitea/workflows/merge.yml',)

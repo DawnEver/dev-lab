@@ -22,7 +22,7 @@ _FLOOR = 300
         "emit(f'login with {token}')",
         "print(f'key={self.api_key}')",
         'log.info(f\'fp {row["fingerprint"]}\')',
-        "handle.write(f'{password}\n')",
+        "handle.write(f'{password}')",
     ],
 )
 def test_a_planted_secret_in_a_sink_is_convicted(line: str) -> None:

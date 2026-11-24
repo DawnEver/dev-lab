@@ -576,6 +576,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   its branch left to the prune; every serve tick, and ``forge pr close-landed``.
 * :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr|sha>``
   closes salvaged PRs with an evidence comment; it never deletes a branch.
+* :mod:`dev_lab.dev.claudelayout` -- the CLOSED ``.claude/`` inventory: every entry declared by name in one
+  constant, ``.claude/`` at the repo root only (user ruling 2026-11-24).
+* :mod:`dev_lab.dev.secretlog` -- NEVER-LOG-SECRETS: an output sink never interpolates a credential value.
 * :mod:`dev_lab.dev.claudesettings` -- the RENDERED ``.claude/settings.json``: hooks, the door allow rows and
   ``MPLBACKEND=Agg``, plus the repo's ``[tool.dev_lab.claude]`` delta (user ruling 2026-11-24).
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a scarce part runs on a PR only where its diff reaches it.

@@ -7,6 +7,8 @@ and the delta lands where it is declared and nowhere else.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,7 @@ from dev_lab.dev.claudesettings import BASE_ENV, document, drift, main, render, 
 
 
 def _repo(tmp_path: Path, delta: str = '') -> Path:
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(tmp_path)], check=True, timeout=60)
     (tmp_path / 'pyproject.toml').write_text(f'[project]\nname = "x"\n{delta}', encoding='utf-8')
     return tmp_path
 
