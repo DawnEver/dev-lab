@@ -58,6 +58,8 @@ fifth conditions, which a serve host posts):
   ``--merge-decision`` mode -- commits the base already holds are history, the PR's own are all judged, none
   exempt (:func:`message_wait`). A worktree with no venv skips that row at commit and push, so the
   merge is the one place no client can skip it; a repo declaring no such row is not judged on messages;
+* a head that adds a crate (a ``Cargo.toml``) carries a measured ``Port-Measured:`` trailer
+  (:func:`dev_lab.dev.portmeasure.unmeasured`, MEASURE-BEFORE-PORTING);
 * every merge commit its head adds over integration declares each file its parents conflict on
   (:func:`dev_lab.dev.mergeresolution.unresolved`, MERGE-RESOLUTION-DECLARED) -- the one place no client and no
   web-UI merge can skip it.
@@ -88,6 +90,7 @@ from dev_lab.dev.forgereview_gate import review_gate
 from dev_lab.dev.forgestatus import fingerprints_at, status_list
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.mergeresolution import unresolved
+from dev_lab.dev.portmeasure import unmeasured
 from dev_lab.dev.reviewcap import unreviewed_waiver
 from dev_lab.dev.roles import REVIEW, TESTS, Unbound, roles_at
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
@@ -196,6 +199,12 @@ def decide(
         missing += [f'a merge the audit passes: {problem}' for problem in problems]
     if (off := message_wait(root, base, head)) is not None:
         missing.append(f'conventional commit messages: {off}')
+    try:
+        port = unmeasured(root, base, head)
+    except ValueError as unread:
+        port = f'its port record cannot be read: {unread}'
+    if port is not None:
+        missing.append(f'a measured port: {port}')
     try:
         undeclared = unresolved(root, base, head)
     except MergeAuditError as error:

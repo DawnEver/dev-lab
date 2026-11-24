@@ -141,6 +141,7 @@ _IDS = frozenset(
         'DOWNSTREAM-SYNCS-INTEGRATION',
         'RED-INTEGRATION-MERGES',
         'PRIOR-ART-FIRST',
+        'MEASURE-BEFORE-PORTING',
     }
 )
 

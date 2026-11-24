@@ -102,4 +102,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_forgemerge.py', 'tests/test_ops_breakglass.py', 'tests/test_dev_integrate.py'),
     ),
+    (
+        'MEASURE-BEFORE-PORTING',
+        (
+            # Why: a port priced at 10x measured 2x -- numpy/scipy hot paths are already compiled code.
+            'A port is priced on a MEASUREMENT, never an assumed speedup: a head that adds a crate (a `Cargo.toml`) '
+            'carries, in one of its commits, a `Port-Measured:` trailer naming the measured numbers (both paths on '
+            'one input, or the other measured grounds the port stands on); the merge decision refuses it otherwise '
+            '(`portmeasure`, `forgemerge`).'
+        ),
+        ('tests/test_dev_portmeasure.py', 'tests/test_dev_forgemerge.py'),
+    ),
 )
