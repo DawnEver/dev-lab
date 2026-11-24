@@ -33,7 +33,8 @@ def test_the_base_is_the_hooks_the_door_rows_and_the_agg_backend(tmp_path: Path)
     ]
     assert wired == [(row.event, row.command) for row in rows(tmp_path)]
     assert set(autodoors.claude_rows()) <= set(doc['permissions']['allow'])
-    assert 'enabledPlugins' not in doc, 'the sharp-review switch retired with the plugin'
+    assert doc['enabledPlugins'] == {'rem@cc-market': False}, 'rem is retired: off in every repo until its uninstall'
+    assert 'sharp-review@cc-market' not in doc['enabledPlugins'], 'the sharp-review switch retired with the plugin'
 
 
 def test_the_delta_lands_where_declared(tmp_path: Path) -> None:

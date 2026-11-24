@@ -359,6 +359,9 @@ declared = []
 # Every tool cache and report under output/ (user ruling 2026-11-24): never htmlcov/ at the root.
 directory = "output/cache/coverage/html"
 
-# The mechanism's own tests read the system temp dir to prove where an entry lands; liverun fakes a process cwd.
+# The mechanism's own tests read the system temp dir to prove where an entry lands; liverun fakes a process cwd;
+# writeroots names host roots (/tmp, C:/) only as the paths its guard must refuse.
 [tool.dev_lab.testleaks]
-declared = ["tests/test_dev_commandpart.py", "tests/test_dev_liverun.py", "tests/test_dev_testtemp.py"]
+declared = [
+  "tests/test_dev_commandpart.py", "tests/test_dev_liverun.py", "tests/test_dev_testtemp.py", "tests/test_dev_writeroots.py",
+]
