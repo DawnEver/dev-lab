@@ -3,6 +3,7 @@
 A red here names each moved render. If the move is intended, re-render the goldens and commit them in the same
 change -- that diff is the reviewed edit:
 ``python -m dev_lab.dev.rendergoldens update --fixtures tests/_render_fixtures --goldens tests/_render_goldens``.
+Each fixture is one in-code module, ``tests/_render_fixtures/<name>/fixture.py``.
 """
 
 from __future__ import annotations
