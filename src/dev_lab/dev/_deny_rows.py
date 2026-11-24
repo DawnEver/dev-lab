@@ -66,6 +66,7 @@ from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
 from dev_lab.dev._deny_journal_row import JOURNAL_CITES
+from dev_lab.dev._deny_ledger_row import LEDGER_WRITTEN_BY_ITS_DOOR
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev._deny_machinefile_row import MACHINE_FILE_IS_RENDERED
 from dev_lab.dev._deny_outputcode_row import OUTPUT_HOLDS_NO_CODE
@@ -112,6 +113,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     LIVE_RUN,
     BACKGROUND_BOUNDED,
     JOURNAL_CITES,
+    LEDGER_WRITTEN_BY_ITS_DOOR,
     SUBAGENT_NO_PUSH,
     MAIN_ONLY_DOOR,
     HEAVY_IS_THE_MAIN_SESSIONS,

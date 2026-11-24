@@ -77,6 +77,7 @@ GAPS: Final[dict[str, str]] = {
     'MAIN-ONLY-DOOR': 'scoped to subagents; Codex execpolicy has no agent scope',
     'HEAVY-IS-THE-MAIN-SESSIONS': 'scoped to subagents; Codex execpolicy has no agent scope',
     'CONSENT-CODE-FROM-THE-USER': _TARGET,
+    'LEDGER-WRITTEN-BY-ITS-DOOR': _TARGET,
     'REPORTS-LIVE-IN-MEMORY': _TARGET,
     'OUTPUT-HOLDS-NO-CODE': _TARGET,
     'WRITES-STAY-IN-THE-TREE': _TARGET,

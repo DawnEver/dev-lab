@@ -1,17 +1,22 @@
-"""THE ONE READER of rem's task ledger, and of which task a checkout works on: its branch's (user ruling 2026-11-23).
+"""THE ONE READER of the task ledger, and of which task a checkout works on: its branch's (user ruling 2026-11-23).
 
 * the ledger, :func:`ledger` -- ONE per machine, for every repo, at ONE family default derived on every host: the
   machine home's ``repos`` part, ``<machine home>/repos/tasks`` (:data:`LEDGER_DIR`; inside the declared write roots,
   never a checkout's sibling, never temp). It is a clone of the family layer's ``[tasks] remote`` (the one place the
   remote is stated, rendered into the machine file). A task lives at ``<ledger>/<slug>/`` and a closed one under
-  ``<ledger>/archive/<YYYY-MM-DD>/<slug>/`` (rem moves it); its identity on the forge is the issue labelled
-  ``task:<slug>``. No checkout holds a ledger;
+  ``<ledger>/archive/<YYYY-MM-DD>/<slug>/`` (:mod:`dev_lab.dev.task` close moves it); its identity on the forge is
+  the issue labelled ``task:<slug>``. No checkout holds a ledger;
 * a task, :func:`task_in` -- ``<slug>/TASK.md`` there, frontmatter ``status: open`` and the ``authority`` the user's
   task-open minted. Its id is ``<slug>@<authority>``, so a task closed and reopened under the same slug is a new id;
 * the task a checkout works on, :func:`task_of` -- DERIVED FROM ITS BRANCH and nothing else: the current HEAD of
   the checkout at a cwd, ``pr/<slug>/<feature>`` (:func:`head_for`), names task ``<slug>``, which must be open in the
   ledger. There is NO binding store: the retired per-session records under ``<machine home>/state/sessions/`` are
-  never read (rem's one-shot ``node <rem plugin>/migrations/migrate.mjs`` deletes them).
+  never read (the one-time ``python -m dev_lab.dev.task migrate <checkout>`` deletes them).
+
+THE RETIRED STORE, a checkout's own ``.claude`` ``tasks`` directory (:data:`RETIRED_STORE`), is never read as a
+ledger: while one with content is left in the checkout at a cwd (or its main checkout), :func:`task_of` refuses by
+name with the one-time migration (:func:`refuse_retired_store`). The path is built from its parts at runtime, the
+one registration ``tests/test_arch_no_checkout_task_ledger.py`` admits.
 
 A landed PR ends a feature, never the task, so the next feature is ``pr/<slug>/<next>``. A task never publishes a bare
 ``pr/<slug>``: git keeps a ref and the refs below it apart (``refs/heads/pr/<slug>`` is a file,
@@ -34,11 +39,15 @@ __all__ = [
     'LEDGER_DIR',
     'LEDGER_TABLE',
     'PREFIX',
+    'RETIRED_STORE',
     'LedgerUnresolvedError',
     'branch_of',
     'head_advice',
     'head_for',
     'ledger',
+    'migrate_door',
+    'refuse_retired_store',
+    'retired_stores',
     'slug_of',
     'slug_on',
     'task_in',
@@ -56,9 +65,11 @@ PREFIX: Final = 'pr/'
 #: The one door to working on a task, named by every refusal that finds none.
 DOOR: Final = (
     'work on a branch pr/<slug>/<feature> of a task open in the task ledger (`git switch -c pr/<slug>/<feature>`, '
-    'or a worktree on one); a new task is opened by the user (/rem:task open <slug> "<goal>" until the dev-lab '
-    'task door replaces it)'
+    'or a worktree on one); a new task is opened by the user: `/task open <slug>` in their prompt, then '
+    '`python -m dev_lab.dev.task open <slug> "<goal>"`'
 )
+#: The retired per-checkout task store's parts below a checkout -- refused by name, never read.
+RETIRED_STORE: Final = ('.claude', 'tasks')
 
 
 class LedgerUnresolvedError(LookupError):
@@ -80,6 +91,51 @@ def ledger() -> Path:
     source = remote if isinstance(remote, str) and remote else f'<the family [{LEDGER_TABLE}] remote>'
     msg = f'the task ledger {found.as_posix()} is not a git clone.\nDoor: git clone {source} {found.as_posix()}'
     raise LedgerUnresolvedError(msg)
+
+
+def _checkouts(cwd: Path) -> list[Path]:
+    """The checkout holding *cwd* (nearest ancestor with ``.git``) and, for a linked worktree, its main checkout."""
+    start = Path(cwd).resolve()
+    root = next((p for p in (start, *start.parents) if (p / '.git').exists()), None)
+    if root is None:
+        return []
+    found = [root]
+    dot = root / '.git'
+    if dot.is_file():
+        try:
+            gitdir = (root / dot.read_text(encoding='utf-8').split('gitdir:', 1)[1].strip()).resolve()
+            common = (gitdir / (gitdir / 'commondir').read_text(encoding='utf-8').strip()).resolve()
+        except (OSError, IndexError):
+            return found
+        if common.name == '.git' and common.parent != root:
+            found.append(common.parent)
+    return found
+
+
+def retired_stores(cwd: Path) -> list[Path]:
+    """Each retired per-checkout store with content at *cwd*'s checkout or its main checkout."""
+    stores = [c.joinpath(*RETIRED_STORE) for c in _checkouts(cwd)]
+    return [s for s in stores if s.is_dir() and any(p.is_file() for p in s.rglob('*'))]
+
+
+def migrate_door(checkout: Path) -> str:
+    """The one-time migration of *checkout*'s retired store into the ledger."""
+    return (
+        f'python -m dev_lab.dev.task migrate {checkout.as_posix()} (--dry-run lists it first; it copies every task '
+        f'into the ledger and commits there), then the checkout owner runs '
+        f'`git -C {checkout.as_posix()} rm -r {"/".join(RETIRED_STORE)}`'
+    )
+
+
+def refuse_retired_store(cwd: Path) -> None:
+    """Raise :class:`LedgerUnresolvedError` naming the migration while a retired store is left at *cwd*."""
+    if stores := retired_stores(cwd):
+        old = stores[0]
+        msg = (
+            f'{old.as_posix()} is the retired per-checkout task store; the one ledger is {LEDGER_DIR} under the '
+            f'machine home.\nDoor: {migrate_door(old.parent.parent)}'
+        )
+        raise LedgerUnresolvedError(msg)
 
 
 def task_in(tasks: Path, slug: str) -> str:
@@ -130,11 +186,15 @@ def task_of(cwd: Path) -> str | None:
 
     Raises:
         ValueError: the branch names a task that is not open in the ledger.
-        LedgerUnresolvedError: the branch names a task and no ledger resolves (:func:`ledger`).
+        LedgerUnresolvedError: the branch names a task and no ledger resolves (:func:`ledger`), or a retired
+            per-checkout store is left (:func:`refuse_retired_store`).
 
     """
     slug = slug_on(branch_of(cwd))
-    return None if slug is None else task_in(ledger(), slug)
+    if slug is None:
+        return None
+    refuse_retired_store(cwd)
+    return task_in(ledger(), slug)
 
 
 def head_for(slug: str, feature: str) -> str:

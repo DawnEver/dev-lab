@@ -149,7 +149,7 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
         elif status == 'R' and is_memory(new) and not is_memory(old):
             out.append(
                 f'{new}: nothing moves into memory, not {old}; write a new entry instead (a closed task is '
-                "archived in the global tasks repo by rem's /rem:task close, never in a checkout)"
+                'archived in the global tasks repo by `python -m dev_lab.dev.task close`, never in a checkout)'
             )
         elif status == 'M' and is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')

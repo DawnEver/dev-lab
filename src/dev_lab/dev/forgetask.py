@@ -15,7 +15,6 @@ from dev_lab.dev.forgework import Issue, PullRequest
 
 if TYPE_CHECKING:
     import argparse
-    from collections.abc import Mapping
 
 __all__ = ['head_advice', 'record']
 
@@ -30,13 +29,13 @@ def head_advice(head: str, root: Path) -> tuple[str, ...]:
     return () if said is None else (said,)
 
 
-def record(args: argparse.Namespace, result: object, root: Path, env: Mapping[str, str]) -> None:
+def record(args: argparse.Namespace, result: object, root: Path) -> None:
     """An opened PR or issue is appended to the journal of *root*'s task (:func:`taskgate.record`)."""
     if (args.noun, args.verb) not in {('pr', 'create'), ('issue', 'create')}:
         return
     if (
         isinstance(result, (PullRequest, Issue))
         and (url := result.url)
-        and (said := taskgate.record(root, args.noun, url, read=taskgate.reader_for(env, Path.home())))
+        and (said := taskgate.record(root, args.noun, url))
     ):
         emit(f'[forge] {said}', err=True)  # the task names its own PRs and issues

@@ -11,29 +11,25 @@ git side is the backstop that holds for Codex, Antigravity or any agent (2026-11
 :mod:`dev_lab.dev.native_session`). WHICH heads an agent session pushes is judged in every repo, not only a required
 one: ``PUSHED-HEAD-CARRIES-ITS-TASK`` in the ``session-branch`` row (:mod:`dev_lab.dev.sessionbranch`).
 
-rem's journal (JOURNAL.md) is appended to and read only through rem's own CLI, found at :data:`REM_ENV` (a path to
-``task.js``), else in Claude Code's installed-plugins record.
+The journal (JOURNAL.md) is appended to only through the task door, :mod:`dev_lab.dev.task`.
 
 * :func:`refusal` -- the ``task-bound-commit`` commit-msg and ``task-bound`` pre-push rows (``githooks/base.toml``);
   it reads files only, no rem CLI.
 * :func:`record` -- ``forge pr create`` / ``forge issue create`` append the opened URL to the branch's task journal
-  (``task.js log``), so the task names its own PRs and issues.
+  (:func:`dev_lab.dev.task.append`, a ``log`` line), so the task names its own PRs and issues.
 * :func:`task_prs` -- the PR numbers a task's journal names: what ``forge watch --task <slug>`` watches.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
-import shutil
 import sys
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final, Protocol
 
-import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import taskledger
@@ -44,12 +40,9 @@ from dev_lab.dev.taskledger import slug_of
 __all__ = [
     'COMMIT_HOOK_ID',
     'HOOK_ID',
-    'REM_ENV',
     'RULE',
-    'Reader',
     'TaskUnreadable',
     'main',
-    'reader_for',
     'record',
     'refusal',
     'required',
@@ -61,20 +54,13 @@ RULE: Final = 'SESSION-COMMITS-UNDER-ITS-TASK'
 #: The id this guard runs under in ``githooks/base.toml``.
 HOOK_ID: Final = 'task-bound'
 COMMIT_HOOK_ID: Final = 'task-bound-commit'
-#: A path to rem's ``task.js``; overrides the installed-plugin lookup.
-REM_ENV: Final = 'DEV_LAB_REM_TASK'
 _TABLE: Final = 'task'
-_REM_PLUGIN: Final = 'rem@'
 _OPENED: Final = re.compile(r'(?:pr|issue) opened: (\S+)')
 _PULL: Final = re.compile(r'/pulls?/(\d+)\b')
-_NODE: Final = shutil.which('node') or 'node'
-
-#: ``read(root, args) -> (exit status, stdout)``: one call of rem's task CLI in *root*.
-Reader = Callable[[Path, Sequence[str]], tuple[int, str]]
 
 
 class TaskUnreadable(RuntimeError):
-    """rem's task ledger cannot be read here: no CLI found, or the CLI failed."""
+    """A task's journal cannot be read here."""
 
 
 def required(root: Path) -> bool:
@@ -85,42 +71,6 @@ def required(root: Path) -> bool:
         return False
     table = declared_table(data, _TABLE, {})
     return isinstance(table, dict) and table.get('required') is True
-
-
-def _rem_cli(env: Mapping[str, str], home: Path) -> Path | None:
-    if declared := env.get(REM_ENV):
-        return Path(declared)
-    try:
-        plugins = json.loads((home / '.claude' / 'plugins' / 'installed_plugins.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    for name, installs in (plugins.get('plugins') or {}).items():
-        if name.startswith(_REM_PLUGIN) and installs:
-            return Path(installs[-1]['installPath']) / 'scripts' / 'task.js'
-    return None
-
-
-def reader_for(env: Mapping[str, str], home: Path) -> Reader:
-    """Rem's own task CLI as a :data:`Reader`; it raises :class:`TaskUnreadable` when no CLI is found."""
-    cli = _rem_cli(env, home)
-
-    def read(root: Path, args: Sequence[str]) -> tuple[int, str]:
-        if cli is None or not cli.is_file():
-            msg = f"rem's task CLI is not found (set {REM_ENV} to its task.js, or install the rem plugin)"
-            raise TaskUnreadable(msg)
-        done = _door.run(
-            [_NODE, str(cli), *args],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            check=False,
-            timeout=60,
-            env={**os.environ, 'CLAUDE_PROJECT_DIR': str(root)},
-        )
-        return done.returncode, (done.stdout.strip() or done.stderr.strip())
-
-    return read
 
 
 def _off_task(root: Path) -> str | None:
@@ -157,27 +107,30 @@ def _task_slug(root: Path) -> str | None:
     return None if task is None else slug_of(task)
 
 
-def record(root: Path, kind: str, url: str, *, read: Reader) -> str | None:
-    """Append ``<kind> opened: <url>`` to the journal of *root*'s task through rem; the line said, or ``None``."""
+def record(root: Path, kind: str, url: str) -> str | None:
+    """Append ``<kind> opened: <url>`` to the journal of *root*'s task through the task door; the line, or ``None``."""
+    from dev_lab.dev import task as door  # noqa: PLC0415 -- the door's imports only when a PR or issue opened
+
     try:
-        if not required(root) or (task := _task_slug(root)) is None:
+        if not required(root) or (slug := _task_slug(root)) is None:
             return None
-        status, said = read(root, ['log', f'{kind} opened: {url}', '--task', task])
-    except (TaskUnreadable, ValueError, LookupError) as unread:
+        return door.append(slug, 'log', f'{kind} opened: {url}')
+    except (ValueError, LookupError) as unread:
         return f'{RULE}: not recorded in the task journal: {unread}'
-    return said if status == 0 else f'{RULE}: task.js log exited {status}: {said}'
 
 
-def task_prs(root: Path, task: str, read: Reader) -> tuple[int, ...]:
+def task_prs(task: str) -> tuple[int, ...]:
     """The PR numbers *task*'s journal records as opened (:func:`record`), in order, each once.
 
     Raises:
-        TaskUnreadable: rem's CLI failed.
+        TaskUnreadable: the task has no journal in the ledger.
 
     """
-    status, shown = read(root, ['show', task])
-    if status != 0:
-        raise TaskUnreadable(shown or f'task.js show exited {status}')
+    try:
+        shown = (taskledger.ledger() / task / 'JOURNAL.md').read_text(encoding='utf-8')
+    except (OSError, LookupError) as unread:
+        msg = f'task {task} has no journal in the ledger ({unread}).\nDoor: python -m dev_lab.dev.task list'
+        raise TaskUnreadable(msg) from None
     numbers: list[int] = []
     for url in _OPENED.findall(shown):
         if (pull := _PULL.search(url)) is not None and int(pull.group(1)) not in numbers:
@@ -194,7 +147,7 @@ class _PrHeads(Protocol):
     def pr_view(self, number: int) -> _Pr: ...
 
 
-def watch_argv(words: Sequence[str], client: Callable[[], _PrHeads], *, read: Reader | None = None) -> list[str]:
+def watch_argv(words: Sequence[str], client: Callable[[], _PrHeads]) -> list[str]:
     """``forge watch`` argv with ``--task <slug>`` replaced by the head shas of every PR the task records.
 
     Raises:
@@ -205,9 +158,8 @@ def watch_argv(words: Sequence[str], client: Callable[[], _PrHeads], *, read: Re
     if at + 1 >= len(words):
         msg = '--task needs a task slug'
         raise TaskUnreadable(msg)
-    task, root = words[at + 1], Path.cwd()
-    reader = read or reader_for(os.environ, Path.home())
-    prs = task_prs(root, task, reader)
+    task = words[at + 1]
+    prs = task_prs(task)
     forge = client() if prs else None
     heads = [head for n in prs if forge is not None and (head := forge.pr_view(n).head_sha)]
     if not heads:

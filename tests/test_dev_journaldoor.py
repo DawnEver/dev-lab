@@ -25,7 +25,7 @@ from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 if os.name == 'nt':
     import _winapi
 
-_TASK_JS = 'node "C:/x/rem/scripts/task.js"'
+_TASK_JS = 'python -m dev_lab.dev.task'
 _ROW = rules_by_id(DENY_RULES)[ephemeralrefs.RULE]
 
 

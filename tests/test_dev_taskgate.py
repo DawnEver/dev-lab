@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -55,21 +54,6 @@ def _close(ledger: Path, slug: str = 'toolchain') -> None:
     open_task(ledger, slug, status='closed')
 
 
-class _Rem:
-    """A fake rem task CLI: answers ``log`` and ``show``; records every call."""
-
-    def __init__(self, journal: str = '', status: int = 0) -> None:
-        self.journal, self.status = journal, status
-        self.calls: list[list[str]] = []
-
-    def __call__(self, root: Path, args: Sequence[str]) -> tuple[int, str]:
-        del root
-        self.calls.append(list(args))
-        if self.status:
-            return self.status, 'boom'
-        return 0, {'show': self.journal}.get(args[0], 'logged')
-
-
 def test_an_agent_on_no_task_branch_is_refused_naming_the_branch_door(tmp_path: Path, ledger: Path) -> None:
     del ledger
     said = taskgate.refusal(_repo(tmp_path, required=True), env=AGENT)
@@ -77,7 +61,7 @@ def test_an_agent_on_no_task_branch_is_refused_naming_the_branch_door(tmp_path: 
     assert taskgate.RULE in said
     assert 'main is none' in said, 'the refusal names the branch it judged'
     assert 'pr/<slug>/<feature>' in said
-    assert '/rem:task open' in said
+    assert '/task open' in said
 
 
 def test_the_gate_judges_every_commit_and_every_push_for_any_agent() -> None:
@@ -183,45 +167,46 @@ def test_every_refusal_puts_its_door_on_a_line_of_its_own(tmp_path: Path, ledger
     assert {name for name, text in said.items() if walls.has_remedy(' '.join((text or '').splitlines()))} == set()
 
 
-def test_a_missing_rem_cli_is_an_unreadable_ledger(tmp_path: Path) -> None:
-    read = taskgate.reader_for({taskgate.REM_ENV: str(tmp_path / 'absent.js')}, tmp_path)
-    with pytest.raises(taskgate.TaskUnreadable, match=taskgate.REM_ENV):
-        read(tmp_path, ['show', 'toolchain'])
-
-
-def test_an_opened_pr_is_appended_through_rems_log_verb_to_the_branchs_task(tmp_path: Path, ledger: Path) -> None:
-    del ledger
-    rem = _Rem()
+def test_an_opened_pr_is_appended_through_the_task_door_to_the_branchs_task(
+    tmp_path: Path, ledger: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for key in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL'):
+        monkeypatch.setenv(key, 't')
+    _git(ledger, 'commit', '-q', '--allow-empty', '-m', 'chore: seed')
     url = 'https://forge.example/o/r/pulls/12'
     root = _repo(tmp_path, required=True)
-    assert taskgate.record(root, 'pr', url, read=rem) is None, 'planted control: no task branch, nothing logged'
-    assert rem.calls == []
+    journal = ledger / 'toolchain' / 'JOURNAL.md'
+    assert taskgate.record(root, 'pr', url) is None, 'planted control: no task branch, nothing logged'
+    assert not journal.exists()
     _git(root, 'checkout', '-q', '-b', 'pr/toolchain/a')
-    taskgate.record(root, 'pr', url, read=rem)
-    assert rem.calls[-1] == ['log', f'pr opened: {url}', '--task', 'toolchain']
+    said = taskgate.record(root, 'pr', url) or ''
+    assert said.endswith(f'progress: pr opened: {url}'), said
+    assert f'pr opened: {url}' in journal.read_text(encoding='utf-8')
 
 
 def test_nothing_is_recorded_when_the_repo_does_not_require_a_task(tmp_path: Path, ledger: Path) -> None:
-    del ledger
-    rem = _Rem()
     root = _repo(tmp_path, required=False, branch='pr/toolchain/a')
-    assert taskgate.record(root, 'pr', 'u', read=rem) is None
-    assert rem.calls == []
+    assert taskgate.record(root, 'pr', 'u') is None
+    assert not (ledger / 'toolchain' / 'JOURNAL.md').exists()
 
 
-def test_the_task_watches_every_pr_its_journal_records_once(tmp_path: Path) -> None:
-    journal = (
-        '- 2026-11-14 progress: pr opened: https://forge.example/o/r/pulls/12\n'
-        '- 2026-11-14 progress: issue opened: https://forge.example/o/r/issues/7\n'
-        '- 2026-11-14 progress: pr opened: https://forge.example/o/r/pulls/13\n'
-        '- 2026-11-14 progress: pr opened: https://forge.example/o/r/pulls/12\n'
-    )
-    assert taskgate.task_prs(tmp_path, 'toolchain', _Rem(journal=journal)) == (12, 13)
+_JOURNAL = (
+    '- 2026-11-14 progress: pr opened: https://forge.example/o/r/pulls/12\n'
+    '- 2026-11-14 progress: issue opened: https://forge.example/o/r/issues/7\n'
+    '- 2026-11-14 progress: pr opened: https://forge.example/o/r/pulls/13\n'
+    '- 2026-11-14 progress: pr opened: https://forge.example/o/r/pulls/12\n'
+)
 
 
-def test_an_unreadable_journal_raises(tmp_path: Path) -> None:
-    with pytest.raises(taskgate.TaskUnreadable):
-        taskgate.task_prs(tmp_path, 'toolchain', _Rem(status=1))
+def test_the_task_watches_every_pr_its_journal_records_once(ledger: Path) -> None:
+    (ledger / 'toolchain' / 'JOURNAL.md').write_text(_JOURNAL, encoding='utf-8')
+    assert taskgate.task_prs('toolchain') == (12, 13)
+
+
+def test_an_unreadable_journal_raises_naming_its_door(ledger: Path) -> None:
+    del ledger
+    with pytest.raises(taskgate.TaskUnreadable, match=r'Door: python -m dev_lab\.dev\.task list'):
+        taskgate.task_prs('nosuch')
 
 
 class _Forge:
@@ -229,16 +214,17 @@ class _Forge:
         return type('Pr', (), {'head_sha': f'sha{number}'})()
 
 
-def test_watch_by_task_watches_the_head_of_every_recorded_pr() -> None:
-    journal = 'pr opened: https://forge.example/o/r/pulls/12\npr opened: https://forge.example/o/r/pulls/13\n'
-    argv = taskgate.watch_argv(['--task', 'toolchain', '--stream'], _Forge, read=_Rem(journal=journal))
+def test_watch_by_task_watches_the_head_of_every_recorded_pr(ledger: Path) -> None:
+    (ledger / 'toolchain' / 'JOURNAL.md').write_text(_JOURNAL, encoding='utf-8')
+    argv = taskgate.watch_argv(['--task', 'toolchain', '--stream'], _Forge)
     assert argv == ['sha12', 'sha13', '--stream']
 
 
-def test_watch_by_a_task_with_no_recorded_pr_refuses() -> None:
+def test_watch_by_a_task_with_no_recorded_pr_refuses(ledger: Path) -> None:
     """The control: an empty journal is a named refusal, never a watch of nothing."""
+    (ledger / 'toolchain' / 'JOURNAL.md').write_text('', encoding='utf-8')
     with pytest.raises(taskgate.TaskUnreadable, match='no open PR head'):
-        taskgate.watch_argv(['--task', 'toolchain'], _Forge, read=_Rem())
+        taskgate.watch_argv(['--task', 'toolchain'], _Forge)
 
 
 def test_every_worktree_on_a_tasks_head_works_on_that_task(tmp_path: Path, ledger: Path) -> None:

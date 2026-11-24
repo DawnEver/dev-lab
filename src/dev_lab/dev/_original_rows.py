@@ -206,6 +206,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'taskgate',
     # ORIGINAL: the one reader of the global task ledger and of the task a branch names (user ruling 2026-11-23).
     'taskledger',
+    'task',  # the task door, the ledger's one writer (rem's task CLI retired, 2026-11-23), new here
+    'taskjournal',  # a task's record read: the journal grammar and the union-duplicate reader, new here
+    'taskauthority',  # the user's grant to open/close a task, from their own prompt only, new here
+    'taskmigrate',  # the one-time move of a checkout's retired task store into the ledger, new here
+    'taskguard',  # LEDGER-WRITTEN-BY-ITS-DOOR: the ledger written only through the task door, new here
     'remhome',  # the machine home handed to rem as LAB_COMMONS_HOME (D34)
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
