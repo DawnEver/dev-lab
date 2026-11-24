@@ -711,9 +711,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.venvpointer` -- which environment a new launch takes: the twin of ``venv_resolver.js``.
 * :mod:`dev_lab.dev.venvcurrent` -- an environment is built beside, published by pointer, reclaimed when unheld.
 * :mod:`dev_lab.dev.durations` -- what every test COST, as a ledger the runner merges rather than
-  overwrites, and the two readings a ``slow`` marker set is judged by. The wall's own kills arrive
-  at ~0.0s, so they are filed at the WALL: a naive reading acquits exactly what the wall caught.
-  NOT RE-EXPORTED -- ``read``, ``write`` and ``over`` say nothing once flattened.
+  overwrites. A kill is filed at the test's deadline (else the wall): a naive reading acquits what the wall
+  caught. NOT RE-EXPORTED -- ``read`` and ``write`` say nothing once flattened.
+* :mod:`dev_lab.dev.testcost` -- cost is DERIVED: the ledger against the host's ``[test_budget]`` runs what
+  fits here (each with a deadline) and hands the rest; a hand-kept ``slow``/``heavy`` marker is refused.
 * :mod:`dev_lab.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.
 * :mod:`dev_lab.dev.jsrun` -- the family's one JS test runtime: a program on stdin under the locked Node.
 * :mod:`dev_lab.dev.supersede` -- has the family ALREADY expressed this roster row; overlap GRADES, never detects.

@@ -1,37 +1,14 @@
-"""THE LEDGER THE WALL WRITES, and the two readings a ``slow`` marker set is judged by.
+"""THE LEDGER THE WALL WRITES -- every test's measured cost, the ONE source test cost is derived from.
 
-WHY THIS IS FAMILY. ``pytest.mark.slow`` is a hand-maintained set and, until this module, nothing in
-any of the four repos checked it was COMPLETE. On 2026-09-19 that cost consumer-b a full day: three
-runs wedged and produced no verdict at all, two of the three carried the marker and were selected
-anyway, and THE THIRD CARRIED NO MARKER, ran for twenty-nine minutes inside a narrowed
-``-m 'not slow'`` tier, and was killed by hand. A declaration asserting a property the code does not
-enforce is this family's named dominant defect, and a marker set nobody verifies is exactly one.
+WHY THIS IS FAMILY. ``pytest.mark.slow`` was a hand-maintained set and on 2026-09-19 it cost consumer-b a
+full day: an UNMARKED test ran twenty-nine minutes inside a narrowed tier and was killed by hand. The
+marker set and the two readings that ratcheted it (``unmarked_but_slow``, ``marked_but_fast``) are RETIRED
+(user ruling 2026-11-24, T3/H1): cost is no longer declared at all. The runner records every test's
+wall-clock cost ONCE, from the report it already has, and :mod:`dev_lab.dev.testcost` derives what is
+heavy -- and each test's deadline -- from these rows against the host's declared budget.
 
-THE MECHANISM, AND THE THREE IT WAS CHOSEN OVER. The runner records every test's wall-clock cost
-ONCE, from the report it already has, as a machine-readable LEDGER; the consuming repo then convicts
-any module the ledger clocks at or above ITS bar that carries no marker. The marker set therefore
-grows from a MEASUREMENT OF THE BOX rather than from somebody's memory of which test felt slow.
-
-* ``pytest-timeout``'s own red NAMES the test and is the hard stop, but it is a ONE-OFF rather than
-  a ratchet: a killed test is fixed by making it faster, by raising the wall, or by marking it,
-  nothing records which, and nothing ever reds when a MARKED test stops being slow.
-* ``--durations=N`` is a REPORT, not data -- a truncated top-N printed to a terminal that a verdict
-  log then has to be parsed back out of as TEXT. That reading has already been retired once here.
-* A duration recorded by a per-test fixture hands the bookkeeping back to every test author, which
-  is the hand-maintenance the guard exists to delete.
-
-WHAT THE KIT KEEPS AND WHAT THE REPO RULES ON. This module records a FACT and CLASSIFIES it; it
-never decides. ``SLOW_BAR``, ``FAST_CEILING``, ``WALL_SECONDS``, the ledger floor and the marked-set
-NAMES stay in the consuming repo, which is the same seam ``configrender`` and ``datedmemory`` run on
--- a change to the bar cannot then be smuggled in as a change to the measurement. Every number here
-arrives as a KEYWORD ARGUMENT WITH NO DEFAULT, for the reason :mod:`dev_lab.dev.floors` gives:
-one repo's answer handed silently to another is a bar nothing measured.
-
-THE UNIT IS THE MODULE, NOT THE TEST, and that is forced rather than chosen. ``pytest.mark.slow`` is
-applied at module or function level and no reading of the source can attribute a module-level
-``pytestmark`` to one nodeid, so a per-nodeid claim would convict every test in a marked module of
-being unmarked. :func:`module_of` folds a nodeid to its file and both sides compare modules. The
-cost is real and is stated rather than hidden: one slow test marks its whole module slow.
+THE UNIT IS THE NODEID: a row is one test's summed setup, call and teardown seconds; :func:`module_of`
+folds a nodeid to its file for a reader that reports per module.
 
 THE DEFECT THE MECHANISM'S FIRST RUN FOUND, AND IT REFUTES THE MECHANISM IN ITS OWN DATA. When the
 wall fires under ``-n``, the worker is GONE, so the controller files the crash against the nodeid
@@ -61,11 +38,9 @@ preference for a consumer of this module; it is the condition under which the le
 all, and a reader who assumes otherwise is surprised exactly once, at the worst moment.
 
 WHAT A LEDGER CANNOT SEE, stated rather than left to be discovered. It holds the tests that RAN, so
-a run selecting ``-m 'not slow'`` records nothing about a marked module and the waiver-side arm has
-no evidence for it -- which is why :func:`write` records the SELECTOR beside the rows and why
-:func:`marked_but_fast` convicts over the INTERSECTION only. A duration measured on a loaded box is
-also not a property of the test, which is why a consumer's two bars should be an order of magnitude
-apart rather than a tight band that reds on the box's mood.
+a narrowed selection records nothing about the tests it deselected -- which is why :func:`write` records
+the SELECTOR beside the rows. A duration measured on a loaded box is also not a property of the test,
+which is why :mod:`dev_lab.dev.testcost` keeps the newest reading per test rather than a band.
 """
 
 from __future__ import annotations
@@ -85,16 +60,33 @@ from dev_lab.dev.datedlog import declared_output, output_dir
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+#: RETIRED-NAMES-REGISTERED (user ruling 2026-11-24, T3/H1): the hand-kept ``slow`` marker ratchet, refused
+#: by name with what replaced it -- no alias survives.
+_RETIRED_NAMES: Final = (
+    'SLOW', 'FAST', 'NO_DATA', 'Finding', 'over', 'unmarked_but_slow', 'marked_but_fast', 'unmeasured',
+    'assert_the_readings_still_convict',
+)  # fmt: skip
+RETIRED: Final = dict.fromkeys(
+    _RETIRED_NAMES, 'retired 2026-11-24 (T3/H1): cost is derived from the ledger -- dev_lab.dev.testcost'
+)
+
+
+def __getattr__(name: str) -> object:
+    """A retired name is refused BY NAME with its replacement (:data:`RETIRED`)."""
+    if name in RETIRED:
+        msg = f'dev_lab.dev.durations.{name} is {RETIRED[name]}'
+        raise AttributeError(msg)
+    msg = f'module {__name__!r} has no attribute {name!r}'
+    raise AttributeError(msg)
+
+
 __all__ = [
     'CRASH_MARKER',
-    'FAST',
     'LEDGER_ENV_VAR',
     'LEDGER_KIND',
     'LEDGER_TREE_VAR',
     'MEASURE_DOOR',
-    'NO_DATA',
-    'SLOW',
-    'Finding',
+    'RETIRED',
     'Ledger',
     'LedgerInconclusive',
     'PhaseReport',
@@ -106,16 +98,11 @@ __all__ = [
     'RunSession',
     'assert_the_crash_marker_is_what_the_scheduler_writes',
     'assert_the_ledger_is_evidence',
-    'assert_the_readings_still_convict',
     'ledger_path',
-    'marked_but_fast',
     'module_of',
-    'over',
     'phase_seconds',
     'pytest_configure',
     'read',
-    'unmarked_but_slow',
-    'unmeasured',
     'write',
 ]
 
@@ -136,13 +123,6 @@ _LAST_NS = [0]
 #: silently restoring the acquit-what-the-wall-caught defect.
 CRASH_MARKER: Final = 'crashed while running'
 
-#: The two things a :class:`Finding` can be, and they carry OPPOSITE remedies -- mark the module, or
-#: drop the marker. A caller asserts on the classification rather than on a bare count.
-SLOW: Final = 'unmarked-but-slow'
-FAST: Final = 'marked-but-fast'
-#: A third classification that is NOT a conviction: the ledger holds no reading for the module. A
-#: fresh worktree has no ledger at all, so absence is reported with the door and never failed.
-NO_DATA: Final = 'no-data'
 
 #: The door that takes a reading -- every verify run records the tests it executes.
 MEASURE_DOOR: Final = 'python -m dev_lab.dev.verify --'
@@ -222,26 +202,6 @@ class Ledger(NamedTuple):
 
     selector: str
     seconds: dict[str, float]
-
-
-@dataclass(frozen=True, slots=True)
-class Finding:
-    """ONE convicted module, WITH THE READING THAT CONVICTED IT and which of the two it is.
-
-    A bare name set says a module is wrong and not WHY, so a consumer's test can only assert on a
-    count -- and a count is blind to a swap. *verdict* is :data:`SLOW` or :data:`FAST`, whose
-    remedies are opposite, and *seconds* is the number the ledger actually held for it.
-    """
-
-    module: str
-    seconds: float
-    verdict: str
-
-    def __str__(self) -> str:
-        """The finding as one repair-shaped line, module first so a reader can sort by file."""
-        if self.verdict == NO_DATA:
-            return f'{self.module}: no data -- run `{MEASURE_DOOR} -m slow {self.module}` to measure'
-        return f'{self.module}: {self.seconds:.3f}s -- {self.verdict}'
 
 
 def ledger_path(root: Path, *, worker: str | None = None) -> Path:
@@ -358,94 +318,6 @@ def read(root: Path) -> Ledger:
     return Ledger(selector=' | '.join(sorted(set(selectors))), seconds=merged)
 
 
-def over(seconds: Mapping[str, float], *, bar: float) -> frozenset[str]:
-    """The modules holding at least one test at or above *bar* seconds."""
-    return frozenset(module_of(nodeid) for nodeid, value in seconds.items() if float(value) >= bar)
-
-
-def _worst(seconds: Mapping[str, float]) -> dict[str, float]:
-    """The longest row the ledger holds per module -- the reading both arms below classify on."""
-    observed: dict[str, float] = {}
-    for nodeid, value in seconds.items():
-        module = module_of(nodeid)
-        observed[module] = max(float(value), observed.get(module, 0.0))
-    return observed
-
-
-def unmarked_but_slow(
-    seconds: Mapping[str, float],
-    marked: frozenset[str],
-    *,
-    bar: float,
-) -> tuple[Finding, ...]:
-    """THE CONVICTION: modules the ledger clocks at or above *bar* that carry no marker.
-
-    Args:
-        seconds: the ledger's rows, nodeid to seconds.
-        marked: the modules that DO declare the marker, read from the parsed tree by the consumer.
-        bar: the seconds at which a module must be marked. NO DEFAULT -- it is the repo's number,
-            and it should sit BELOW that repo's wall with stated headroom, or the only way to
-            discover a missing marker is to be killed by the wall.
-
-    Returns:
-        One :class:`Finding` per convicted module, sorted, each carrying the reading and
-        :data:`SLOW`.
-
-    """
-    worst = _worst(seconds)
-    return tuple(
-        Finding(module=name, seconds=worst[name], verdict=SLOW) for name in sorted(over(seconds, bar=bar) - marked)
-    )
-
-
-def marked_but_fast(
-    seconds: Mapping[str, float],
-    marked: frozenset[str],
-    *,
-    ceiling: float,
-) -> tuple[Finding, ...]:
-    """THE MIRROR, over the INTERSECTION ONLY -- a module with no row was never measured.
-
-    A ratchet has two sides. A module over the bar and unmarked is the defect that cost a day; a
-    module MARKED slow that the ledger clocks under *ceiling* is a waiver nobody uses, and it
-    deselects real coverage from the narrowed tier for nothing.
-
-    A module is convicted here only when EVERY row the ledger holds for it is under *ceiling*, so a
-    single expensive test keeps the marker earned, and ABSENCE OF EVIDENCE CONVICTS NOBODY -- a run
-    selecting ``-m 'not slow'`` records no row for a marked module, and reading that as fast would
-    make the narrowed tier delete its own waivers.
-
-    Args:
-        seconds: the ledger's rows.
-        marked: the modules declaring the marker.
-        ceiling: the seconds under which a marker buys nothing. NO DEFAULT, and it should sit an
-            order of magnitude below the bar rather than just under it: a duration measured on a
-            loaded box is not a property of the test, and a tight two-sided band reds on the box's
-            mood rather than on the suite.
-
-    Returns:
-        One :class:`Finding` per convicted module, sorted, each carrying :data:`FAST`.
-
-    """
-    worst = _worst(seconds)
-    return tuple(
-        Finding(module=name, seconds=worst[name], verdict=FAST)
-        for name in sorted(marked & frozenset(worst))
-        if worst[name] < ceiling
-    )
-
-
-def unmeasured(seconds: Mapping[str, float], marked: frozenset[str]) -> tuple[Finding, ...]:
-    """The marked modules the ledger holds NO reading for: :data:`NO_DATA`, reported and never failed.
-
-    A fresh worktree has no ledger, and a default tier that deselects the marker never measures the
-    marked modules, so absence is the common case there. Each finding names the door that takes the
-    reading; none of them convicts.
-    """
-    measured = frozenset(_worst(seconds))
-    return tuple(Finding(module=name, seconds=0.0, verdict=NO_DATA) for name in sorted(marked - measured))
-
-
 def assert_the_ledger_is_evidence(*, ledger: Ledger, floor: int, headroom: int, what: str) -> str:
     """THE FLOOR, BOTH SIDES -- and a ledger UNDER the floor is NO DATA, reported rather than failed.
 
@@ -543,113 +415,6 @@ def assert_the_crash_marker_is_what_the_scheduler_writes(*, scheduler_source: st
         raise AssertionError(msg)
 
 
-def assert_the_readings_still_convict(*, bar: float, ceiling: float) -> None:
-    """THE PLANTED CONTROL. Plant a ledger built to be convicted and drive the REAL readings.
-
-    The thing under test is NOT replaced -- :func:`unmarked_but_slow`, :func:`marked_but_fast` and
-    :func:`phase_seconds` are the same functions a live arm calls, handed the same SHAPE of data. It
-    is the EVIDENCE that is planted, and that is the point: the alternative is a control that waits
-    for a real test to become slow.
-
-    EQUALITY, NOT MEMBERSHIP, on every arm. A grader that names everything passes a membership
-    control, and the declared-subset-of-live shape has already hidden wrong constants in this family.
-
-    Five claims, because the readings make five and a control driving one leaves four asserted by
-    prose:
-
-    * a module over the bar with no marker is convicted, and a fast one beside it is not;
-    * the MARKER is what makes the difference, not the duration;
-    * the mirror convicts a marked module the ledger clocks as fast, and ACQUITS a marked module the
-      ledger never measured -- absence convicts nobody;
-    * a mixed module keeps its marker on the strength of its one expensive test;
-    * A CRASH REPORT AT ~0.0s IS FILED AT THE WALL, which is the defect that refutes the whole
-      mechanism in its own data, and an ordinary failure at ~0.0s is NOT.
-
-    Args:
-        bar: the seconds at or above which a module must be marked.
-        ceiling: the seconds under which a marker buys nothing.
-
-    Raises:
-        AssertionError: any of the five, or the two bars do not admit a plantable case between them.
-
-    """
-    if not 0 < ceiling < bar:
-        msg = (
-            f'a ceiling of {ceiling} and a bar of {bar} leave no room to plant a case: the control '
-            f'needs a duration BETWEEN them to prove the two arms convict different things. A '
-            f'ceiling at or above the bar makes every module both slow and fast at once.'
-        )
-        raise AssertionError(msg)
-
-    slow_nodeid = 'tests/integration/test_planted_wedge.py::test_a'
-    fast_nodeid = 'tests/unit/test_planted_fast.py::test_b'
-    seconds = {slow_nodeid: bar + 1.0, fast_nodeid: ceiling / 2}
-    convicted = unmarked_but_slow(seconds, frozenset(), bar=bar)
-    if tuple(item.module for item in convicted) != ('tests/integration/test_planted_wedge.py',):
-        msg = (
-            f'the conviction answered {[str(item) for item in convicted]} on a planted ledger holding '
-            f'one module over the bar and one under it. A reading that names everything or nothing '
-            f'reports a clean tree for the defect it was written against.'
-        )
-        raise AssertionError(msg)
-    if convicted[0].verdict != SLOW:
-        msg = f'the conviction classified its finding as {convicted[0].verdict!r}, not {SLOW!r}'
-        raise AssertionError(msg)
-
-    marked = frozenset({'tests/integration/test_planted_wedge.py'})
-    if unmarked_but_slow(seconds, marked, bar=bar):
-        msg = (
-            'a module the ledger clocks far over the bar was convicted WITH its marker present, so '
-            'the marker is not what makes the difference and every marked module in the tree is a '
-            'standing red.'
-        )
-        raise AssertionError(msg)
-
-    mirror_marked = frozenset({'tests/a/test_fast.py', 'tests/a/test_mixed.py', 'tests/a/test_unmeasured.py'})
-    mirror_seconds = {
-        'tests/a/test_fast.py::test_a': ceiling / 2,
-        'tests/a/test_mixed.py::test_a': ceiling / 2,
-        'tests/a/test_mixed.py::test_b': bar + 1.0,
-    }
-    mirror = marked_but_fast(mirror_seconds, mirror_marked, ceiling=ceiling)
-    if tuple(item.module for item in mirror) != ('tests/a/test_fast.py',):
-        msg = (
-            f'the mirror answered {[str(item) for item in mirror]}. It must convict the module every '
-            f'row of which is under the ceiling, keep the marker on the module with ONE expensive '
-            f'test, and say NOTHING about the module the ledger never measured -- a run selecting '
-            f'`-m "not slow"` measures no marked module at all, and reading that as fast would make '
-            f'the narrowed tier delete its own waivers.'
-        )
-        raise AssertionError(msg)
-    if mirror[0].verdict != FAST:
-        msg = f'the mirror classified its finding as {mirror[0].verdict!r}, not {FAST!r}'
-        raise AssertionError(msg)
-
-    wall = bar * 2
-    killed = phase_seconds(
-        duration=0.0,
-        failed=True,
-        longrepr=f"worker 'gw1' {CRASH_MARKER} '{slow_nodeid}'",
-        wall=wall,
-    )
-    if killed != wall:
-        msg = (
-            f'a crash report filed at 0.0s was recorded as {killed}s rather than at the {wall}s wall. '
-            f'THIS IS THE DEFECT THAT REFUTES THE MECHANISM IN ITS OWN DATA: the tests the wall just '
-            f'convicted enter the ledger as the fastest in the suite, and the guard then acquits '
-            f'exactly what the wall caught.'
-        )
-        raise AssertionError(msg)
-    ordinary = phase_seconds(duration=0.0, failed=True, longrepr='assert 1 == 2', wall=wall)
-    if ordinary != 0.0:
-        msg = (
-            f'an ordinary assertion failure at 0.0s was recorded as {ordinary}s. The arm must key on '
-            f'the scheduler sentence and nothing else; filing every fast failure at the wall would '
-            f'mark the whole suite slow and is the same fabrication pointing the other way.'
-        )
-        raise AssertionError(msg)
-
-
 @dataclass(eq=False)
 class Recorder:
     """The runner's half: accumulate every PHASE of every test, then write the ledger ONCE.
@@ -675,6 +440,8 @@ class Recorder:
     #: at, and inventing one here would be the fabricated measurement this module refuses.
     wall: float = 0.0
     seconds: dict[str, float] = field(default_factory=dict)
+    #: Each test's own deadline (:func:`dev_lab.dev.testcost.schedule`): a kill there is filed AT it, not at the wall.
+    deadlines: dict[str, float] = field(default_factory=dict)
     #: What verify is measuring, handed over through the environment; ``''`` outside verify.
     tree: str = field(default_factory=lambda: os.environ.get(LEDGER_TREE_VAR, ''))
     env: str = field(default_factory=lambda: os.environ.get(LEDGER_ENV_VAR, ''))
@@ -704,7 +471,7 @@ class Recorder:
             duration=float(report.duration),
             failed=bool(report.failed),
             longrepr=str(report.longrepr),
-            wall=self.wall,
+            wall=self.deadlines.get(report.nodeid, self.wall),
         )
         self.seconds[report.nodeid] = self.seconds.get(report.nodeid, 0.0) + seconds
 

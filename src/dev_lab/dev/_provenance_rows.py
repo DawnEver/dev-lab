@@ -79,10 +79,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # SUPERSEDES consumer-b's `scripts/durations.py`, which is the LEDGER half and nothing else -- the
     # verdict taken on it stays in that repo's `test_slow_is_discovered_by_the_wall.py`, which is
     # therefore NOT named here: it holds `WALL_SECONDS`, `SLOW_BAR`, `FAST_CEILING`, the ledger floor
-    # and the marked NAME set, all five of them repo facts. The two readings that file wrote --
-    # `unmarked_but_slow` and `marked_but_fast` -- DO move, which is why this is a supersession of one
-    # file and an adoption of nothing: the consumer deletes its `scripts/durations.py` and keeps its
-    # own bars. Checked before writing: that path is live in consumer-b today.
+    # and the marked NAME set, all five of them repo facts -- and all five retired by T3 (2026-11-24): cost
+    # is derived from the ledger against the host budget (dev_lab.dev.testcost). The consumer deletes its
+    # `scripts/durations.py`. Checked before writing: that path is live in consumer-b today.
     'durations': ('supersedes', 'scripts/durations.py'),
     # The floor refusal was written EIGHT times across this family and no two copies agreed -- four
     # standalone bodies raising four different exception types, three of them here in `src/`; three

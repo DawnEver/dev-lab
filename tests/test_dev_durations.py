@@ -31,35 +31,21 @@ from dev_lab.dev import durations, floors
 from dev_lab.dev.datedlog import UndeclaredOutput, date_parts
 from dev_lab.dev.durations import (
     CRASH_MARKER,
-    FAST,
     LEDGER_ENV_VAR,
     LEDGER_TREE_VAR,
     MEASURE_DOOR,
-    NO_DATA,
-    SLOW,
-    Finding,
     Ledger,
     LedgerInconclusive,
     Recorder,
     Row,
     assert_the_crash_marker_is_what_the_scheduler_writes,
     assert_the_ledger_is_evidence,
-    assert_the_readings_still_convict,
     ledger_path,
-    marked_but_fast,
     module_of,
-    over,
     phase_seconds,
     read,
-    unmarked_but_slow,
-    unmeasured,
     write,
 )
-
-#: A bar and a ceiling an order of magnitude apart, as the module's own docstring asks a consumer to
-#: choose them. Arguments here, never constants the kit closes over.
-_BAR = 60.0
-_CEILING = 5.0
 
 _WEDGE = 'tests/integration/test_planted_wedge.py'
 
@@ -73,63 +59,7 @@ def _declared_output(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(_DECLARED, encoding='utf-8')
 
 
-_QUICK = 'tests/unit/test_planted_fast.py'
-
-
 # -- the readings ----------------------------------------------------------------------------------
-
-
-def test_the_shipped_control_passes() -> None:
-    """The kit's own five-claim control, on this repo's chosen pair of bars."""
-    assert_the_readings_still_convict(bar=_BAR, ceiling=_CEILING)
-
-
-def test_the_control_refuses_bars_that_leave_nothing_to_plant() -> None:
-    """A ceiling at or above the bar makes every module slow and fast at once -- and plants nothing."""
-    with pytest.raises(AssertionError, match='no room to plant'):
-        assert_the_readings_still_convict(bar=_BAR, ceiling=_BAR)
-    with pytest.raises(AssertionError, match='no room to plant'):
-        assert_the_readings_still_convict(bar=_BAR, ceiling=0.0)
-
-
-def test_a_module_over_the_bar_with_no_marker_is_convicted_with_its_reading() -> None:
-    """EQUALITY on the finding, not membership, and the finding carries the number that convicted."""
-    seconds = {f'{_WEDGE}::test_a': _BAR + 1.0, f'{_QUICK}::test_b': 0.01}
-    assert unmarked_but_slow(seconds, frozenset(), bar=_BAR) == (
-        Finding(module=_WEDGE, seconds=_BAR + 1.0, verdict=SLOW),
-    )
-
-
-def test_the_marker_and_not_the_duration_is_what_acquits() -> None:
-    """A module the ledger clocks far over the bar is clean once it declares the marker."""
-    seconds = {f'{_WEDGE}::test_a': _BAR * 100}
-    assert unmarked_but_slow(seconds, frozenset({_WEDGE}), bar=_BAR) == ()
-
-
-def test_the_mirror_convicts_a_waiver_nobody_uses_and_acquits_the_unmeasured() -> None:
-    """The ratchet's other side. ABSENCE OF EVIDENCE CONVICTS NOBODY, which is the subtle half."""
-    marked = frozenset({'tests/a/test_fast.py', 'tests/a/test_mixed.py', 'tests/a/test_unmeasured.py'})
-    seconds = {
-        'tests/a/test_fast.py::test_a': 0.2,
-        'tests/a/test_mixed.py::test_a': 0.2,
-        'tests/a/test_mixed.py::test_b': _CEILING + 1.0,
-    }
-    found = marked_but_fast(seconds, marked, ceiling=_CEILING)
-    assert found == (Finding(module='tests/a/test_fast.py', seconds=0.2, verdict=FAST),)
-    assert found[0].verdict == FAST
-
-
-def test_a_module_keeps_its_marker_on_the_strength_of_one_expensive_test() -> None:
-    """The mirror reads the WORST row per module; a mean would delete the marker a module earned."""
-    marked = frozenset({'tests/a/test_mixed.py'})
-    seconds = {'tests/a/test_mixed.py::test_a': 0.01, 'tests/a/test_mixed.py::test_b': _BAR}
-    assert marked_but_fast(seconds, marked, ceiling=_CEILING) == ()
-
-
-def test_over_folds_a_nodeid_to_its_module() -> None:
-    """The unit is the MODULE, because a module-level ``pytestmark`` cannot be attributed to a nodeid."""
-    assert over({f'{_WEDGE}::TestC::test_a': _BAR}, bar=_BAR) == frozenset({_WEDGE})
-    assert over({f'{_WEDGE}::test_a': _BAR - 0.001}, bar=_BAR) == frozenset()
 
 
 def test_module_of_spells_a_path_the_way_a_corpus_does() -> None:
@@ -137,11 +67,6 @@ def test_module_of_spells_a_path_the_way_a_corpus_does() -> None:
     assert module_of('tests\\unit\\test_a.py::test_x') == 'tests/unit/test_a.py'
     assert module_of('tests/unit/test_a.py::test_x') == 'tests/unit/test_a.py'
     assert module_of('tests/unit/test_a.py') == 'tests/unit/test_a.py'
-
-
-def test_a_finding_prints_as_one_repair_shaped_line() -> None:
-    """A refusal a reader can sort and act on without re-running the scan."""
-    assert str(Finding(module=_WEDGE, seconds=61.5, verdict=SLOW)) == f'{_WEDGE}: 61.500s -- unmarked-but-slow'
 
 
 # -- THE DEFECT THAT REFUTES THE MECHANISM IN ITS OWN DATA ------------------------------------------
@@ -302,24 +227,6 @@ def test_a_recorder_is_hashable_so_any_pytest_can_register_it(tmp_path: Path) ->
 
 
 # -- no reading is no data, never a conviction --------------------------------------------------------
-
-
-def test_a_marked_module_with_no_reading_is_no_data_and_not_a_failure() -> None:
-    """THE PLANTED CASE: a fresh worktree has no ledger, and that convicts nobody."""
-    marked = frozenset({_WEDGE})
-    assert unmarked_but_slow({}, marked, bar=_BAR) == ()
-    assert marked_but_fast({}, marked, ceiling=_CEILING) == ()
-    (finding,) = unmeasured({}, marked)
-    assert finding.verdict == NO_DATA
-    assert str(finding) == f'{_WEDGE}: no data -- run `{MEASURE_DOOR} -m slow {_WEDGE}` to measure'
-
-
-def test_a_real_fast_reading_of_a_slow_marked_module_still_convicts() -> None:
-    """The other half of the control: a READING still convicts, and a read module is not no-data."""
-    seconds = {f'{_WEDGE}::t': 0.2}
-    marked = frozenset({_WEDGE})
-    assert marked_but_fast(seconds, marked, ceiling=_CEILING) == (Finding(_WEDGE, 0.2, FAST),)
-    assert unmeasured(seconds, marked) == ()
 
 
 def test_each_worker_writes_its_own_file_and_read_merges_them(tmp_path: Path) -> None:
@@ -499,3 +406,16 @@ def test_two_readings_in_one_clock_tick_still_order_newest_last(
     write(tmp_path / 'two', [Row('a::t', 90.0)], selector='all', worker='gw0')
     assert read(tmp_path / 'one').seconds == {'a::t': 0.1}
     assert read(tmp_path / 'two').seconds == {'a::t': 90.0}
+
+
+@pytest.mark.parametrize('name', sorted(durations.RETIRED))
+def test_a_retired_slow_marker_reading_is_refused_by_name(name: str) -> None:
+    """RETIRED-NAMES-REGISTERED: the hand-kept marker ratchet is gone, and its names say where cost lives now."""
+    with pytest.raises(AttributeError, match=rf'{name} is retired 2026-11-24.*dev_lab\.dev\.testcost'):
+        getattr(durations, name)
+
+
+def test_an_unknown_name_is_still_an_ordinary_attribute_error() -> None:
+    """PLANTED CONTROL: the refusal is for the registered names only."""
+    with pytest.raises(AttributeError, match="has no attribute 'never_was'"):
+        getattr(durations, 'never_was')  # noqa: B009 -- the attribute is the subject

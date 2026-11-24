@@ -57,8 +57,11 @@ def pytest_fixture_setup(fixturedef: pytest.FixtureDef[object]) -> object:
 
 @pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Refuse an unregistered need (:mod:`dev_lab.dev.needs`), then append the always-on rows."""
+    """Refuse an unregistered need and a hand-kept cost marker, plan by the ledger, then append the always-on rows."""
     importlib.import_module('dev_lab.dev.needs').refuse_unregistered(items, root=config.rootpath)
+    cost = importlib.import_module('dev_lab.dev.testcost')
+    cost.refuse_cost_markers(items)
+    cost.schedule(config, items, budget=cost.read_budget())
     importlib.import_module('dev_lab.dev.famtests.alwayson').append_rows(session, config, items)
 
 
