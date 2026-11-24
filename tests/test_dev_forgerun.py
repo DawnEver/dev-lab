@@ -431,12 +431,13 @@ def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Pat
     assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] == OPEN, 'claimable by any host again'
 
 
-SCHEMA_1 = Path(__file__).parent / '_hpc_fixtures' / 'forge-run-schema1-2026-10-17.json'
+SCHEMA_1 = Path(__file__).parent / '_hpc_fixtures' / 'forge-run-schema1-2026-10-17.jsonl'
 
 
 def _plant_schema_1() -> dict[str, Any]:
     """A live schema-1 run as Ada held it (2026-10-17, account sanitised), planted in this home's forge-runs/."""
-    raw = json.loads(SCHEMA_1.read_text(encoding='utf-8'))
+    [line] = SCHEMA_1.read_text(encoding='utf-8').splitlines()
+    raw = json.loads(line)
     forgerunstate.directory().mkdir(parents=True, exist_ok=True)
     repo = hashlib.sha256(raw['repo_url'].encode('utf-8')).hexdigest()[:12]
     name = f'{repo}-{raw["sha"]}-{raw["platform"]}-{raw["scope"]}.json'
