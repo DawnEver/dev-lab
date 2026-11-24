@@ -862,3 +862,73 @@ def test_planted_an_approval_note_never_admits_deleting_an_entry(repo: Path) -> 
 )
 def test_an_attachment_is_a_memory_file_that_is_not_an_entry(path: str, *, attachment: bool) -> None:
     assert memoryentry.is_attachment(path) is attachment
+
+
+# ROOT-MOVE (user ruling R7 2026-11-23): a nested scope's entry moves into the root dated tree, text byte-identical,
+# approved by an amendment note the same range adds naming old -> new. Each admit below has its planted refusal.
+SCOPED = 'pkg/.claude/memory/2026/10/01/scoped.md'
+ROOTED = '.claude/memory/2026/10/01/scoped.md'
+_SCOPED_TEXT = '---\nname: scoped\ndescription: d\n---\n\nScoped body.\n'
+_NOTE_ENTRY = '.claude/memory/2026/11/23/scoped-memory-moves-to-the-root.md'
+
+
+def _move_note(
+    pair: str = f'{SCOPED} -> {ROOTED}', reason: str = 'moved', approved: str = 'user ruling R7 2026-11-23'
+) -> str:
+    return '> ' + memoryentry.AMENDMENT_NOTE.format(day='2026-11-23', reason=f'{reason} {pair}', approved=approved)
+
+
+def _moved(repo: Path, *, new: str = ROOTED, text: str = _SCOPED_TEXT, note: str | None = None) -> tuple[str, ...]:
+    _write(repo, SCOPED, _SCOPED_TEXT)
+    _commit(repo, 'scoped entry', SCOPED)
+    _publish(repo)
+    _lane(repo)
+    _git(repo, 'rm', '-q', SCOPED)
+    _write(repo, new, text)
+    paths = [new]
+    if note is not None:
+        _write(repo, _NOTE_ENTRY, f'---\nname: r7\ndescription: d\n---\n\n{note}\n')
+        paths.append(_NOTE_ENTRY)
+    _commit(repo, 'move', *paths)
+    return _push(repo, _git(repo, 'rev-parse', 'HEAD'))
+
+
+def test_an_approved_byte_identical_move_into_the_root_passes(repo: Path) -> None:
+    assert _moved(repo, note=_move_note()) == ()
+
+
+def test_one_note_naming_both_memory_directories_carries_a_whole_scope(repo: Path) -> None:
+    assert _moved(repo, note=_move_note('pkg/.claude/memory/ -> .claude/memory/')) == ()
+
+
+def test_planted_a_move_without_its_note_is_refused_and_names_the_door(repo: Path) -> None:
+    found = _moved(repo)
+    assert len(found) == 1, found
+    assert SCOPED in found[0]
+    assert 'ROOT-MOVE' in found[0]
+
+
+@pytest.mark.parametrize(
+    ('change', 'kwargs'),
+    [
+        ('text changed', {'text': _SCOPED_TEXT.replace('Scoped body', 'Rewritten'), 'note': _move_note()}),
+        (
+            'another dated dir',
+            {
+                'new': '.claude/memory/2026/10/02/scoped.md',
+                'note': _move_note(f'{SCOPED} -> .claude/memory/2026/10/02/scoped.md'),
+            },
+        ),
+        ('note names other paths', {'note': _move_note(f'{SCOPED} -> .claude/memory/2026/10/01/other.md')}),
+        ('reason does not say moved', {'note': _move_note(reason='relocated')}),
+        ('no user words', {'note': _move_note(approved=' ')}),
+    ],
+)
+def test_planted_a_move_breaking_one_condition_is_refused(repo: Path, change: str, kwargs: dict) -> None:
+    assert _moved(repo, **kwargs), change
+
+
+def test_planted_a_move_between_two_nested_scopes_is_refused() -> None:
+    other = 'other/.claude/memory/2026/10/01/scoped.md'
+    assert not memoryentry.move_approved(SCOPED, other, [_move_note(f'{SCOPED} -> {other}')])
+    assert memoryentry.move_approved(SCOPED, ROOTED, [_move_note()])  # control: the root admits it
