@@ -249,9 +249,14 @@ def test_newpack_archive_refuses_identity_before_reading(tmp_path: Path, fault: 
     if fault == 'directory':
         path = tmp_path
     if fault in ('leaf_alias', 'parent_alias'):
+        # The parent alias names a SIBLING holding the archive, never tmp_path itself: an alias inside the dir it
+        # names is a cycle (alias/alias/...) that every walker of the leftover temp tree then descends forever.
+        real = tmp_path / 'real'
+        real.mkdir()
+        (real / 'archive').write_bytes(b'archive')
         alias = tmp_path / 'alias'
         try:
-            alias.symlink_to(tmp_path if fault == 'parent_alias' else path, target_is_directory=fault == 'parent_alias')
+            alias.symlink_to(real if fault == 'parent_alias' else path, target_is_directory=fault == 'parent_alias')
         except (OSError, NotImplementedError) as error:
             pytest.xfail(f'symlinks unavailable: {error}')
         path = alias / 'archive' if fault == 'parent_alias' else alias
