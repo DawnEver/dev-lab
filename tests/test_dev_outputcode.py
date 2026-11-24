@@ -131,4 +131,5 @@ def test_an_unset_test_temp_root_is_chosen_outside_every_output_tree(checkout: P
     config = SimpleNamespace(option=SimpleNamespace(basetemp=None), rootpath=checkout)
     testtemp.configure(config)
     assert 'output' not in Path(config.option.basetemp).resolve().parts
-    assert 'output' not in Path(testtemp.script_temp_env({})['TMPDIR']).resolve().parts
+    with testtemp.script_temp_env({}) as env:
+        assert 'output' not in Path(env['TMPDIR']).resolve().parts
