@@ -15,11 +15,20 @@ regenerates -- ``pr/components-bump``, one gitlink commit read off the integrati
 declared in ``[tool.dev_lab.integrator] derived`` with the producer that regenerates it
 (:class:`~dev_lab.dev.lanepolicy.Derived`). Declared, never a branch name in code: an undeclared branch that merely
 looks machine-made is judged like any other, and holds nothing for another branch either, since it may go any time.
+
+A USER'S ORDER TO DROP A BRANCH is the one delete this judgement does not decide (2026-11-24: a branch carrying a
+private pre-GitHub history -- a second root -- that no merge may publish). ``branchprune discard <branch> --approved
+"<the user's words>"`` (:func:`dev_lab.dev.branchdelete.discard`) writes a :func:`grant` for that branch at that sha in
+the clone's git dir, pushes, and spends it; the pre-push row passes a lossy delete only when a grant names exactly its
+branch and sha (:func:`granted`). A verdict names the roots the branch's own commits carry (:attr:`Verdict.roots`), so
+a refusal of a second root can name that door.
 """
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+import urllib.parse
+from collections.abc import Collection, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -28,7 +37,7 @@ from dev_lab.dev.checkout import git_out
 from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['LOSSY', 'ORIGIN', 'PROTECTED', 'Verdict', 'judge', 'unlanded']
+__all__ = ['LOSSY', 'ORIGIN', 'PROTECTED', 'Verdict', 'grant', 'granted', 'judge', 'unlanded']
 
 #: Where the fetched origin branches live.
 ORIGIN: Final = 'refs/remotes/origin/'
@@ -48,6 +57,7 @@ class Verdict:
     container: str = ''
     lost: tuple[str, ...] = ()
     refused: str = ''
+    roots: tuple[str, ...] = ()
 
 
 def judge(
@@ -83,7 +93,32 @@ def judge(
         return Verdict(branch, sha, container=by_content if lost else 'the union of the other origin branches')
     shown = ', '.join(one[:12] for one in lost[:_FIRST]) + (' ...' if len(lost) > _FIRST else '')
     refused = LOSSY.format(branch=branch, count=len(lost), commits=shown, files=', '.join(files))
-    return Verdict(branch, sha, lost=tuple(lost), refused=refused)
+    others_refs = (f'{ORIGIN}{name}' for name in others)
+    roots = (git_out(root, 'rev-list', '--max-parents=0', sha, '--not', *others_refs) or '').split()
+    return Verdict(branch, sha, lost=tuple(lost), refused=refused, roots=tuple(roots))
+
+
+def _grant_path(root: Path, branch: str) -> Path:
+    common = (git_out(root, 'rev-parse', '--path-format=absolute', '--git-common-dir') or '').strip()
+    return Path(common) / 'dev_lab' / 'discard' / f'{urllib.parse.quote(branch, safe="")}.grant'
+
+
+@contextmanager
+def grant(root: Path, branch: str, sha: str) -> Iterator[None]:
+    """While open, the pre-push row passes the delete of *branch* at *sha* (:func:`granted`); spent on exit."""
+    path = _grant_path(root, branch)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(sha, encoding='utf-8')
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def granted(root: Path, branch: str, sha: str) -> bool:
+    """An open :func:`grant` names exactly *branch* at *sha*."""
+    path = _grant_path(root, branch)
+    return bool(sha) and path.is_file() and path.read_text(encoding='utf-8').strip() == sha
 
 
 def _protected(policy: Policy, branch: str, open_heads: dict[str, int]) -> str:

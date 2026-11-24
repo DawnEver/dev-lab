@@ -23,6 +23,14 @@ with its reason. ``--local`` then reclaims the clean landed worktrees and delete
 (:func:`dev_lab.dev.branchset.apply_local`, then the content judge for those checked out nowhere). It runs
 wherever integration moves: the forge's repo-wide serve pass (:func:`serve_sweep`) and the GitHub job a push to
 integration runs (``ci_base.toml``); on a workstation, :mod:`dev_lab.dev.reclaimrun` reclaims the local half.
+
+THE USER'S ORDER TO DROP A BRANCH is :func:`discard` (``branchprune discard <branch> --approved "<the user's
+words>"``, 2026-11-24): a branch whose history must not be published -- a private second root a ``-s ours`` landing
+would put into the mainline -- is deleted WITHOUT landing, only with the user's words, never integration, the trunk
+or an open PR head. Its push passes the pre-push row by a grant naming that branch at that sha
+(:func:`dev_lab.dev.deletejudge.grant`); it is recorded as one :data:`DISCARDED_EVENT` line and a ``pruned`` alarm
+naming the sha and the words. No bundle or backup is kept (R2). A lossy refusal whose own commits carry a root of
+their own names this door (:func:`second_root`).
 """
 
 from __future__ import annotations
@@ -35,7 +43,7 @@ from typing import TYPE_CHECKING, Final
 from dev_lab.dev.backgroundrun import held
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, checked_out, declared_branchset
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.deletejudge import ORIGIN, Verdict, judge, unlanded
+from dev_lab.dev.deletejudge import ORIGIN, Verdict, grant, judge, unlanded
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.forgealarm import PRUNED, Alarm, sound
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -50,13 +58,18 @@ if TYPE_CHECKING:
 __all__ = [
     'CONTAINED_TAG_DOOR',
     'DELETED_EVENT',
+    'DISCARDED_EVENT',
+    'DISCARD_DOOR',
     'DOOR',
     'MERGE_OR_LAND',
     'TAG_EVENT',
+    'UNAPPROVED',
     'delete',
     'delete_contained_tags',
     'delete_task',
+    'discard',
     'landed',
+    'second_root',
     'serve_sweep',
     'sweep',
 ]
@@ -65,6 +78,15 @@ __all__ = [
 DELETED_EVENT: Final = 'lab_commons.forge.branch-delete'
 #: The door an agent deletes a remote branch through (PUSH-REMOTE-DELETE's remedy names it).
 DOOR: Final = 'python -m dev_lab.dev.branchprune delete <branch>...'
+#: The ``event`` of the one structured line each approved discard writes (ref, sha, the user's words).
+DISCARDED_EVENT: Final = 'lab_commons.forge.branch-discard'
+#: The door for the user's order to drop a branch unlanded.
+DISCARD_DOOR: Final = 'python -m dev_lab.dev.branchprune discard {branch} --approved "<the user\'s words>"'
+#: The refusal of a discard without the user's words.
+UNAPPROVED: Final = (
+    '[branchprune] discard: --approved "<the user words>" is required: it drops commits held nowhere else, '
+    'so only the user orders it'
+)
 #: The door an agent deletes a remote TAG through: only one whose commit integration or the trunk contains.
 CONTAINED_TAG_DOOR: Final = 'python -m dev_lab.dev.branchprune tag <tag>'
 #: The ``event`` of the record each tag deletion writes BEFORE its push (name, ref sha, commit).
@@ -76,6 +98,17 @@ MERGE_OR_LAND: Final = (
     'with `git merge -s ours`, declare each conflicted file `<path>: <class> -- <why>` and each dropped test '
     '`Merge-Audit: ...`, land the PR, then re-run `branchprune delete {branch}`'
 )
+
+
+def second_root(verdict: Verdict) -> str:
+    """The discard door, when *verdict*'s own commits carry a root of their own; else ``''``."""
+    if not verdict.roots:
+        return ''
+    shown = ', '.join(one[:12] for one in verdict.roots)
+    return (
+        f'; it carries a root of its own ({shown}): a `-s ours` landing would publish that history into the '
+        f"mainline, so on the user's order to drop it: {DISCARD_DOOR.format(branch=verdict.branch)}"
+    )
 
 
 def _push_delete(root: Path, branch: str, sha: str) -> str:
@@ -115,7 +148,7 @@ def delete(
         found = judge(root, policy, branch, tip, open_heads=heads)
         why = found.refused or push(root, branch, found.sha)
         if why:
-            doors = f'. {MERGE_OR_LAND.format(branch=branch)}' if found.lost else ''
+            doors = f'. {MERGE_OR_LAND.format(branch=branch)}{second_root(found)}' if found.lost else ''
             say(why + doors if found.refused else f'{branch}: the delete failed: {why}')
             failed += 1
             continue
@@ -124,6 +157,53 @@ def delete(
         body = f'{branch} at {found.sha[:12]}, held by {found.container}; by session {session or "none"}'
         alarm(Alarm(PRUNED, client.forge.repo, f'{branch} deleted (lossless)', body))
         say(f'{branch}: deleted at {found.sha[:12]} -- held by {found.container}')
+    return 1 if failed else 0
+
+
+def discard(
+    root: Path,
+    branches: Sequence[str],
+    *,
+    approved: str,
+    client: Client,
+    session: str,
+    fetch: Callable[[Path], None],
+    say: Callable[[str], None],
+    push: Callable[[Path, str, str], str] = _push_delete,
+    alarm: Callable[[Alarm], object] = sound,
+) -> int:
+    """Delete each of *branches* from origin WITHOUT landing it, on the user's *approved* words.
+
+    0 when every one went, 1 when one was kept, 2 with no words. Integration, the trunk and an open PR head are
+    never discarded (the judgement's own refusal). The push is a lease on the fetched tip, passing the pre-push row
+    by a one-shot grant for that branch at that sha.
+    """
+    words = ' '.join(approved.split())
+    if not words:
+        say(UNAPPROVED)
+        return 2
+    fetch(root)
+    policy = load_policy(root)
+    heads = {pr.head: pr.number for pr in pr_list(client)}
+    failed = 0
+    for branch in branches:
+        tip = (git_out(root, 'rev-parse', '--verify', '--quiet', f'{ORIGIN}{branch}^{{commit}}') or '').strip()
+        found = judge(root, policy, branch, tip, open_heads=heads)
+        if found.refused and not found.lost:
+            say(found.refused)
+            failed += 1
+            continue
+        with grant(root, branch, found.sha):
+            why = push(root, branch, found.sha)
+        if why:
+            say(f'{branch}: the discard failed: {why}')
+            failed += 1
+            continue
+        record = {'event': DISCARDED_EVENT, 'ref': branch, 'sha': found.sha, 'approved': words}
+        say(json.dumps(record | {'session': session or None}))
+        body = f'{branch} at {found.sha}, discarded unlanded; approved: "{words}"; by session {session or "none"}'
+        alarm(Alarm(PRUNED, client.forge.repo, f'{branch} discarded (approved)', body))
+        say(f'{branch}: discarded at {found.sha[:12]} -- approved: "{words}"')
     return 1 if failed else 0
 
 
