@@ -63,6 +63,6 @@ MACHINE_FILE_IS_RENDERED: dict[str, object] = {
         f'sed -n "/repos/,/^$/p" ~/{{home}}/{_SHOWN}',
         f'cp ~/{{home}}/{_SHOWN} scratch/machine-copy.toml',
         'python -m dev_lab.dev.devhost local set repos.x C:/src/x',
-        f'echo x > output/{_SHOWN}.bak',
+        f'echo x > output/logs/26/11/20/machine/{_PARTS[-1]}.bak',
     ),
 }

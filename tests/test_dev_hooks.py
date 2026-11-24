@@ -310,3 +310,19 @@ def test_an_asks_naming_no_dev_lab_module_raises(asks: str) -> None:
     """
     with pytest.raises(ValueError, match='names no dev_lab module'):
         replace(rules_by_id(DENY_RULES)['PUSH-FORCE'], asks=asks)
+
+
+#: A consumer's OUTPUT-REDIRECT-IS-DATED row (its own ``deny-rules.json``) refuses a
+#: redirection into ``output/`` that is not ``output/logs/<yy>/<mm>/<dd>/<kind>/<name>``. That row lives
+#: in the consumer, so the whole-registry near-miss test above cannot see it; a permit this kit renders
+#: into the consumer must still be one the consumer's own row lets through.
+_UNDATED_OUTPUT_REDIRECT = re.compile(r'>>?\s*["\']?output[/\\](?!logs[/\\]\d\d[/\\]\d\d[/\\]\d\d[/\\][^/\\\s]+[/\\])')
+
+
+@pytest.mark.parametrize('rule', DENY_RULES, ids=lambda rule: rule.id)
+def test_no_permit_redirects_into_undated_output(rule: DenyRule) -> None:
+    """A planted control: ``echo x > output/a.bak`` is the shape this test exists to refuse."""
+    assert _UNDATED_OUTPUT_REDIRECT.search('echo x > output/a.bak')
+    assert not _UNDATED_OUTPUT_REDIRECT.search('git log > output/logs/26/11/20/merge/log.txt')
+    undated = [text for text in rule.permits if _UNDATED_OUTPUT_REDIRECT.search(text)]
+    assert undated == [], f'{rule.id} permits a redirection a consumer refuses as OUTPUT-REDIRECT-IS-DATED: {undated}'
