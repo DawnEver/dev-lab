@@ -17,7 +17,6 @@ import pytest
 from _famconfig_delta import DELTAS, REPO
 
 from dev_lab.dev.agentsection import AGENTS_REL, BEGIN, END, render_section
-from dev_lab.dev.devdocs import INDEX_REL, pointer_table, write_pointer_table
 from dev_lab.dev.famconfig import BASES, RENDERED
 from dev_lab.dev.famfiles import (
     MANAGED,
@@ -184,7 +183,7 @@ def test_the_renderers_are_derived_from_the_generated_rows() -> None:
     those rows and from nowhere else.
     """
     assert {renderer.name for renderer in RENDERERS} == {
-        'agent_guard', 'autodoors', 'ciworkflows', 'famfiles', 'hook_adoption',
+        'agent_guard', 'autodoors', 'ciworkflows', 'famfiles', 'hook_adoption', 'vscodesettings',
     }  # fmt: skip
     unrendered = {row.path for row in PROJECT_FILES.values() if row.generated and row.renderer is None}
     assert unrendered == {'uv.lock'}, 'the lock is the door`s, every other generated file names its renderer'
@@ -241,18 +240,8 @@ def test_a_due_renderer_missing_its_declared_input_is_refused_by_name(tmp_path: 
 # ------------------------------------------------------------------- the one door: every declared artefact
 
 
-_BASE: Final = '../../../lab-commons/docs-src/dev'
-
-
 def _declare(root: Path, table: str) -> None:
     (root / 'pyproject.toml').write_text(f'[tool.dev_lab.render]\n{table}', encoding='utf-8')
-
-
-def _index(root: Path, text: str) -> Path:
-    index = root / INDEX_REL
-    index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text(text, encoding='utf-8')
-    return index
 
 
 def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path: Path) -> None:
@@ -265,34 +254,20 @@ def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path:
     hooks.mkdir(parents=True)
     (hooks / 'deny-rules.json').write_text('{}\n', encoding='utf-8')
     (tmp_path / '.gitignore').write_text('x\n', encoding='utf-8')
-    _declare(tmp_path, f'deltas = "d.py"\nadoption = "scripts/deny_rules.py"\ndocs_base = "{_BASE}"\n')
+    _declare(tmp_path, 'deltas = "d.py"\nadoption = "scripts/deny_rules.py"\n')
     ran: list[list[str]] = []
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert [line.split(':')[0] for line in lines if line.endswith(': rendered')] == [
-        'famfiles', 'agent_guard', 'hook_adoption', 'autodoors', 'ciworkflows',
+        'famfiles', 'agent_guard', 'hook_adoption', 'autodoors', 'ciworkflows', 'vscodesettings',
     ]  # fmt: skip
     assert ran[2][-2:] == ['--adoption', 'scripts/deny_rules.py']
     (hooks / 'deny-rules.json').unlink()
-    _declare(tmp_path, f'deltas = "d.py"\ndocs_base = "{_BASE}"\n')
+    _declare(tmp_path, 'deltas = "d.py"\n')
     assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in render_repo(
         tmp_path, 'py', lambda _argv, _root: 0
     )
     with pytest.raises(ValueError, match='the renderer famfiles exited 3'):
         render_repo(tmp_path, 'py', lambda _argv, _root: 3)
-
-
-def test_the_pointer_table_replaces_the_family_one_and_keeps_the_repos_own(tmp_path: Path) -> None:
-    own = '| page | what it covers |\n|---|---|\n| [Gate](gate.md) | this repo`s gate |'
-    stale = f'| page | what it covers |\n|---|---|\n| [Old]({_BASE}/old.md) | retired |'
-    index = _index(tmp_path, f'# Dev\n\n{stale}\n\nprose\n\n{own}\n')
-    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: rendered'
-    assert index.read_text(encoding='utf-8') == f'# Dev\n\n{pointer_table(_BASE)}\n\nprose\n\n{own}\n'
-    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: current'
-
-
-def test_an_index_without_a_family_table_gets_one_appended(tmp_path: Path) -> None:
-    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: rendered'
-    assert (tmp_path / INDEX_REL).read_text(encoding='utf-8').endswith(f'{pointer_table(_BASE)}\n')
 
 
 def test_a_family_repo_with_no_render_table_gets_its_workflows(tmp_path: Path) -> None:

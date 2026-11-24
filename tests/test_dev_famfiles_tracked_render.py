@@ -40,7 +40,7 @@ def _main(tmp_path: Path, *, pin: str) -> Path:
     _git(root, 'init', '-q')
     for name, value in (('user.email', 'a@b.invalid'), ('user.name', 'Test')):
         _git(root, 'config', name, value)
-    (root / 'pyproject.toml').write_text('[tool.dev_lab.render]\ndocs_base = "x"\n', encoding='utf-8')
+    (root / 'pyproject.toml').write_text('[tool.dev_lab.render]\ndeltas = "x"\n', encoding='utf-8')
     (root / '.gitignore').write_text(f'{_UNTRACKED}\n', encoding='utf-8')
     (root / _TRACKED).write_text('old render\n', encoding='utf-8')
     _pin(root, pin)
@@ -92,7 +92,7 @@ def test_control_a_relocked_lane_under_the_pinned_kit_receives_the_render(tmp_pa
     _pin(lane, 'c' * 40)
     _git(lane, 'commit', '-q', '-am', 'relock dev-lab')
     lines = famfiles.render_repo(lane, 'py', _writes('new render\n'), kit=_kit(tmp_path, 'c' * 40))
-    assert 'devdocs: rendered' in lines
+    assert 'vscodesettings: rendered' in lines
     assert (lane / _TRACKED).read_text(encoding='utf-8') == 'new render\n'
 
 
@@ -100,7 +100,7 @@ def test_control_an_unchanged_render_is_silent_even_on_main_under_a_foreign_kit(
     """PLANTED CONTROL: the render writes the committed bytes -- nothing tracked moves, nothing is refused."""
     main = _main(tmp_path, pin='b' * 40)
     lines = famfiles.render_repo(main, str(tmp_path / 'no-such-python'), _writes('old render\n'))
-    assert 'devdocs: rendered' in lines
+    assert 'vscodesettings: rendered' in lines
     assert _git(main, 'status', '--porcelain') == ''
 
 

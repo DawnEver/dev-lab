@@ -104,7 +104,6 @@ class Renderer:
     repo_flag: str = '--repo'
     inputs: tuple[tuple[str, str], ...] = ()
     required: frozenset[str] = frozenset()
-    declared_by: str = ''  # set: due where the repo DECLARES this input, not where a file it writes is present
     needs: str = ''  # set: in a family repo with no file it writes, due only where the renderer named here is
 
 
@@ -117,6 +116,8 @@ HOOK_ADOPTION: Final = Renderer(
     required=frozenset({'adoption'}),
 )  # fmt: skip
 CIWORKFLOWS: Final = Renderer('ciworkflows', ('dev_lab.dev.ciworkflows', 'render'), repo_flag='--root')
+#: The editor's managed keys; every other key of the file stays the user's (dev_lab.dev.vscodesettings).
+VSCODE: Final = Renderer('vscodesettings', ('dev_lab.dev.vscodesettings', 'render'))
 AUTODOORS: Final = Renderer(
     'autodoors', ('dev_lab.dev.autodoors', '--write'), inputs=(('shell_doors', '--shell-door'),)
 )
@@ -168,6 +169,12 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/continue.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
+        ProjectFile(
+            '.vscode/settings.json',
+            MANAGED,
+            'vscodesettings renders the editor excludes; every other key is the user`s',
+            renderer=VSCODE,
+        ),
         _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
@@ -214,18 +221,16 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
     """Every renderer of :data:`RENDERERS` with ``None`` when it is due in *root*, else why it is skipped.
 
     Due: a file it writes is present, or -- in a family repo (:func:`is_member`) -- its required inputs are all
-    declared. A ``declared_by`` renderer writes part of a repo-owned file and is due only where that is declared.
+    declared.
     """
     text = _manifest(root)
     declared = _render_table(text)
     member = is_member(text)
-    present = set(_due(lambda path: (root / path).is_file(), declared))
+    present = set(_due(lambda path: (root / path).is_file()))
 
     def why(renderer: Renderer) -> str | None:
         if renderer in present:
             return None
-        if renderer.declared_by:
-            return f'[{RENDER_TABLE}] {renderer.declared_by} is not declared'
         if not member:
             return 'not a family repo (no dev-lab dependency, no [tool.dev_lab.*] table) and no file it writes exists'
         if missing := sorted(renderer.required - set(declared)):
@@ -237,11 +242,11 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
     return tuple((renderer, why(renderer)) for renderer in RENDERERS)
 
 
-def _due(has: Callable[[str], bool], declared: Mapping[str, object]) -> tuple[Renderer, ...]:
+def _due(has: Callable[[str], bool]) -> tuple[Renderer, ...]:
     def due(row: ProjectFile) -> bool:
         if row.renderer is None:
             return False
-        return row.renderer.declared_by in declared if row.renderer.declared_by else has(row.path)
+        return has(row.path)
 
     present = {row.renderer for row in PROJECT_FILES.values() if due(row)}
     return tuple(renderer for renderer in RENDERERS if renderer in present)
@@ -280,7 +285,7 @@ def undeclared_inputs(text: str, has: Callable[[str], bool]) -> list[str]:
     re-render that tree's family files, and they go stale.
     """
     declared = _render_table(text)
-    return [f'{r.name} {key}' for r in _due(has, declared) for key in sorted(r.required - set(declared))]
+    return [f'{r.name} {key}' for r in _due(has) for key in sorted(r.required - set(declared))]
 
 
 def render_argv(renderer: Renderer, root: Path, python: str) -> list[str]:
