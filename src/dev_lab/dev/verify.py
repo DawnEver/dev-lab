@@ -50,6 +50,7 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import depneeds, verifiedby
+from dev_lab.dev.changeselect import changed_paths, select, select_data
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgerequest import offer_line
@@ -174,6 +175,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument('--part', default='', help='produce this part (tests/<part>): exactly its need-set')
+    parser.add_argument(
+        '--changed',
+        nargs='?',
+        const='',
+        default=None,
+        metavar='RANGE',
+        help='select only the tests a change reaches (dev_lab.dev.changeselect): the working tree, or a git RANGE',
+    )
     parser.add_argument('--rerun', action='store_true', help='run even when the run cache already judged this key')
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
     if retired := _retired(sys.argv[1:] if argv is None else argv):
@@ -181,7 +190,8 @@ def main(argv: list[str] | None = None) -> int:
         return ProducerExit.USAGE
     parsed = parser.parse_args(argv)
     root = project_root()
-    arguments = tuple(parsed.pytest_args)
+    chosen = () if parsed.changed is None else _changed_selection(root, parsed.changed)
+    arguments = (*(() if isinstance(chosen, int) else chosen), *parsed.pytest_args)
     targeted = is_targeted(root, arguments)
     outside, workstation = _outside(root, parsed.part, arguments, targeted=targeted)
     missing = missing_paths(root, arguments)
@@ -194,7 +204,8 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as why:
         refused = refused or f'verify: refused -- {why}'
     refused = refused or _needs_refusal(root, parsed.part)
-    if (early := _early(root, refused, producer=outside is None)) is not None:
+    early = chosen if isinstance(chosen, int) else _early(root, refused, producer=outside is None)
+    if early is not None:
         return early
     wait_s = parsed.lock_wait if parsed.lock_wait is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
     stale = lock_freshness(root)
@@ -311,6 +322,27 @@ def _early(root: Path, refused: str | None, *, producer: bool) -> int | None:
     except verifiedby.VerifyByRefused:
         consumers = None
     return None if consumers == () else verifiedby.main(root, producer=producer)
+
+
+def _changed_selection(root: Path, range_spec: str) -> tuple[str, ...] | int:
+    """The paths ``--changed`` selects, or the exit code when it selects nothing to run."""
+    try:
+        changed = changed_paths(root, range_spec)
+    except ValueError as why:
+        emit(f'verify: refused -- --changed: {why}', err=True)
+        return ProducerExit.USAGE
+    picked = select(root, changed, select_data(root))
+    if picked.full:
+        emit(f'verify: --changed selects the whole suite: {"; ".join(picked.reasons)}', err=True)
+        return ()
+    if not picked.paths:
+        emit(
+            f'verify: --changed selects no test -- {len(changed)} changed path(s) reach none and '
+            '[tool.dev_lab.verify.select] always is empty; nothing ran.'
+        )
+        return EXIT_CODES[Conclusion.PASS]
+    emit(f'verify: --changed selects {len(picked.paths)} path(s) from {len(changed)} change(s)')
+    return picked.paths
 
 
 def _retired(argv: list[str]) -> str | None:

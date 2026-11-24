@@ -41,6 +41,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
   reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.
 * :mod:`dev_lab.dev.verifysteps` — the steps verify runs under one root into one log, and the verdict they fold into.
+* :mod:`dev_lab.dev.changeselect` — which tests a change reaches (import, path-literal, conftest edges);
+  ``verify --changed [RANGE]`` runs them; ``[tool.dev_lab.verify.select]`` declares the always/full remainder.
+* :mod:`dev_lab.dev.importedges` — the family's one static import-edge reader (every depth, both spellings).
 * :mod:`dev_lab.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
   one measured caveat recorded in its docstring: ``resolve_home``'s auto-detection anchors on its
   own file, so a profile carries an ``anchor`` for the checkout it describes.
