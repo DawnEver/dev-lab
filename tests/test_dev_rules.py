@@ -142,6 +142,7 @@ _IDS = frozenset(
         'RED-INTEGRATION-MERGES',
         'PRIOR-ART-FIRST',
         'MEASURE-BEFORE-PORTING',
+        'ONE-FORMAT-PER-NEED',
     }
 )
 
