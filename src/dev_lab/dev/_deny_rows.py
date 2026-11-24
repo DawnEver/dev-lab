@@ -62,6 +62,7 @@ from dev_lab.dev._deny_consent_row import CONSENT_CODE_FROM_THE_USER
 from dev_lab.dev._deny_delete_row import RECURSIVE_DELETE
 from dev_lab.dev._deny_familyrepo_row import FAMILY_REPO_IS_CHECKED_OUT
 from dev_lab.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
+from dev_lab.dev._deny_frozen_row import USER_FROZEN_FILES
 from dev_lab.dev._deny_grep_row import RECURSIVE_GREP
 from dev_lab.dev._deny_hpc_row import HPC_THROUGH_THE_DOOR
 from dev_lab.dev._deny_interpreter_row import BARE_INTERPRETER, BARE_PYTHON
@@ -119,6 +120,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     MAIN_ONLY_DOOR,
     HEAVY_IS_THE_MAIN_SESSIONS,
     CONSENT_CODE_FROM_THE_USER,
+    USER_FROZEN_FILES,
     MACHINE_FILE_IS_RENDERED,
     COMMIT_HOOKS_RUN,
     {

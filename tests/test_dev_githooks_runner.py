@@ -95,6 +95,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     }
     assert {hook.id for hook in table['pre-commit']} == {
         'filechecks',
+        'frozen-files',  # USER-FROZEN-FILES (user ruling 2026-11-24): a frozen file's change is refused before it lands
     }, 'the tracked-tree scans (ephemeral refs, scratch) are forge bodies, never a commit-time refusal'
 
 

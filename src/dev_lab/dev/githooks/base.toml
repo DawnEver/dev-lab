@@ -51,6 +51,14 @@ id = "filechecks"
 run = ["python", "-m", "dev_lab.dev.filechecks", "all"]
 pass_files = true
 
+# USER-FROZEN-FILES (dev_lab.dev.frozen, user ruling 2026-11-24): in a repo declaring [tool.dev_lab.freeze], a
+# commit changing a frozen file's bytes, deleting it, or adding a path outside freeze.toml's `tracked` is refused.
+# Opt-in; a repo that does not declare it is never judged. The always-on family check is the CI half.
+[[pre-commit]]
+id = "frozen-files"
+run = ["python", "-m", "dev_lab.dev.frozen", "commit"]
+always_run = true
+
 # The conventional-commit shape, owned once in dev_lab.dev.commitmsg (an empty message is an abort, not a refusal).
 [[commit-msg]]
 id = "conventional-commit"

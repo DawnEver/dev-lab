@@ -397,6 +397,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'drift',  # a lock pin left behind its dependency, or a host off its lock, alarms; new here
     'escapes',  # the tick's census of writes that escaped every allowed root, new here
     'consentguard',  # CONSENT-CODE-FROM-THE-USER: the consent state dir and the planted-credential refusal, new here
+    'frozen',  # USER-FROZEN-FILES: the user's frozen files and closed tracked inventory (2026-11-24), new here
     'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here

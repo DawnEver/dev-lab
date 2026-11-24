@@ -39,7 +39,7 @@ from lab_commons.hpc.testcells import TestCell
 from lab_commons.launch import run
 from lab_commons.outcomes import Cell, Reason, Status
 
-from dev_lab.dev import cjk, remretired
+from dev_lab.dev import cjk, frozen, remretired
 from dev_lab.dev.family import declared_table, is_member
 from dev_lab.dev.famtests import hiddenintake, modulealarm, treechecks
 from dev_lab.dev.rules import ALWAYS_ON, tracked_files
@@ -175,6 +175,8 @@ def _applicable(root: Path) -> dict[str, Callable[[Path], None]]:
     if _declared_checkout(root):
         if _declares_layout(root):
             checks[_LAYOUT_RULE] = _CHECKS[_LAYOUT_RULE]
+        if frozen.declared(root):
+            checks[frozen.RULE_ID] = frozen.check
         checks.update(treechecks.applicable(root))
     return checks
 
