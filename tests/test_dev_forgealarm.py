@@ -9,7 +9,18 @@ from pathlib import Path
 import pytest
 from lab_commons.config import CONFIG_ENV
 
-from dev_lab.dev.forgealarm import AUTH, EVENT, INTEGRATION, Alarm, linked, main, repeat_window, sound
+from dev_lab.dev import forgealarm as forgealarm_module
+from dev_lab.dev.forgealarm import (
+    AUTH,
+    EVENT,
+    INTEGRATION,
+    Alarm,
+    linked,
+    main,
+    repeat_window,
+    running_checkout,
+    sound,
+)
 from dev_lab.dev.metrics import HOST_FAILURE, read
 from dev_lab.supervise.alert import Delivery
 from dev_lab.supervise.notice import Context, Notice
@@ -101,9 +112,9 @@ def test_a_failure_alarm_is_a_host_failure_once_per_window_and_a_prompt_is_not(
 ) -> None:
     """P0 metrics: a failure that reached a person by alarm, not as a PR status; a repeat is the same failure."""
     monkeypatch.chdir(tmp_path)
-    sound(ALARM, alerts={}, now=NOW)
-    sound(ALARM, alerts={}, now=NOW + timedelta(minutes=1))
-    sound(Alarm(INTEGRATION, 'https://f/o/r.git', 'lane ready', ''), alerts={}, now=NOW)
+    sound(ALARM, alerts={}, now=NOW, root=tmp_path)
+    sound(ALARM, alerts={}, now=NOW + timedelta(minutes=1), root=tmp_path)
+    sound(Alarm(INTEGRATION, 'https://f/o/r.git', 'lane ready', ''), alerts={}, now=NOW, root=tmp_path)
     assert [(line['lab.rule.id'], line['vcs.repository.url.full']) for line in read(HOST_FAILURE, root=tmp_path)] == [
         (AUTH, 'https://f/o/r.git')
     ]
@@ -125,3 +136,24 @@ def test_a_forge_alarm_is_sent_with_its_pr_and_commit_linked() -> None:
         sha_url='https://git.example.org/org-x/acme-consumer/commit/3f2a9c81d7e4',
     )
     assert linked(Context(pr=1), 'owner/name') == Context(repo='owner/name', pr=1)  # control: no URL, no link
+
+
+def test_an_alarm_started_in_the_home_dir_writes_nothing_there(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The hpc deploy starts the CLI in ``~``: its metrics line lands under --root, the cwd stays empty.
+
+    PLANTED CONTROL: the same alarm read back from --root proves the line was written at all.
+    """
+    home, checkout = tmp_path / 'home', tmp_path / 'checkout'
+    home.mkdir()
+    monkeypatch.chdir(home)
+    monkeypatch.setattr('dev_lab.dev.forgealarm.section', lambda _name: {})
+    assert main(['--root', str(checkout), AUTH, 'https://f/o/r.git', 'subject', 'body']) == 0
+    assert list(home.iterdir()) == []
+    assert [line['lab.rule.id'] for line in read(HOST_FAILURE, root=checkout)] == [AUTH]
+
+
+def test_the_default_metrics_root_is_the_running_checkout_never_the_cwd() -> None:
+    """The default root holds ``.git`` and contains this very module: the checkout running the code."""
+    root = running_checkout()
+    assert (root / '.git').exists()
+    assert Path(forgealarm_module.__file__).resolve().is_relative_to(root)

@@ -52,6 +52,7 @@ def _rules_json(reason: str) -> str:
     [
         ('platformskips', {'tests/test_y.py': _SKIP}),
         ('hostnode', {'tests/test_y.py': _NODE}),
+        ('testleaks', {'tests/test_y.py': 'import tempfile\n\ndef test_y():\n    tempfile.mkdtemp()\n'}),
         ('restatedrules', {'AGENTS.md': f'# R\n\n{RULES[0].statement}\n'}),
         ('remedypaths', {RULES_REL: _rules_json('stop it: python -m dev_lab.dev.stoprun --pid 1')}),
     ],
@@ -83,7 +84,7 @@ def test_a_clean_checkout_runs_every_row_green(pytester: pytest.Pytester, monkey
 def test_a_row_runs_only_where_its_population_exists(tmp_path: Path) -> None:
     assert treechecks.applicable(tmp_path) == {}
     _checkout(tmp_path, {'tests/test_x.py': _TEST})
-    assert set(treechecks.applicable(tmp_path)) == {'platformskips', 'hostnode'}
+    assert set(treechecks.applicable(tmp_path)) == {'platformskips', 'hostnode', 'testleaks'}
 
 
 def test_the_declared_ledger_admits_a_finding_and_refuses_a_stale_key(tmp_path: Path) -> None:

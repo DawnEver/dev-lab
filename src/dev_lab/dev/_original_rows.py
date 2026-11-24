@@ -278,6 +278,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no consumer file refused a host Node; the need arose when the cluster verdict host was ruled
     # Node-free (2026-10-28) and a downstream repo's review JS tests were found to call shutil.which('node').
     'hostnode',
+    # ORIGINAL: no consumer file refused a test's unowned temp entry or host-root literal; the need arose when
+    # one workstation held 8.9 GB of suite leftovers in %TEMP% and trees at C:/var/tmp, C:/results (2026-11-24).
+    'testleaks',
     # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
     # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was
     # driven on an absent tier word and passed in all three repos on 2026-09-18.
@@ -403,6 +406,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
     'purge',  # one door deletes one git-ignored, untracked named path (rulings 2026-11-23), new here
+    'strayleaks',  # the leak families the suites left outside temp, removed only by proof, new here
     'uvfollow',  # uv follows the version its pin needs, through the route it was installed by, new here
     'hpcusage',  # an HPC account's last day read from sacct, new here
     'security',

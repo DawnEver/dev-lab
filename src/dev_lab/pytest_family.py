@@ -16,13 +16,27 @@ import importlib
 
 import pytest
 
-__all__ = ['pytest_collection_modifyitems', 'pytest_configure', 'pytest_fixture_setup']
+__all__ = ['pytest_collection_modifyitems', 'pytest_configure', 'pytest_fixture_setup', 'pytest_sessionfinish']
+
+#: The base temp entry this session made, which :func:`pytest_sessionfinish` reclaims.
+_MADE: pytest.StashKey[object] = pytest.StashKey()
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """Put pytest's base temp in a swept system-temp entry (:func:`dev_lab.dev.testtemp.configure`) first."""
-    importlib.import_module('dev_lab.dev.testtemp').configure(config)
+    config.stash[_MADE] = importlib.import_module('dev_lab.dev.testtemp').configure(config)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Reclaim the base temp entry this session made (:func:`dev_lab.dev.testtemp.release`)."""
+    config = session.config
+    importlib.import_module('dev_lab.dev.testtemp').release(
+        config.stash.get(_MADE, None),
+        passed=exitstatus in {pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED},
+        policy=str(config.getini('tmp_path_retention_policy')),
+    )
 
 
 @pytest.hookimpl(wrapper=True)

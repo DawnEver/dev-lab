@@ -434,7 +434,9 @@ def main(
             submit=functools.partial(forgesubmit.detach, root),
         )
     except NoCredential as missing:
-        sound(Alarm(AUTH, str(root), f'no stored forge credential on {card_host(machine, seat)}', str(missing)))
+        sound(
+            Alarm(AUTH, str(root), f'no stored forge credential on {card_host(machine, seat)}', str(missing)), root=root
+        )
         emit(f'[serve] {missing}', err=True)
         return 1
     except (DeclarationRefused, ForgeCallFailed, PostFailed, NotWired, forgerunstate.ForeignSchema, OSError) as failed:

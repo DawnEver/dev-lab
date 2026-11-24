@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -42,7 +43,10 @@ with open(base / 'calls.jsonl', 'a') as log:
     log.write(json.dumps(sys.argv[1:]) + '\\n')
 def local(spec):
     remote, _, path = spec.partition(':')
-    return base / remote / path
+    target = (base / remote / path).resolve()
+    if not target.is_relative_to(base.resolve()):  # 'bucket:/results' joins to C:/results: never off the fake disk
+        sys.stderr.write(f'fake rclone: {spec} resolves outside the fake remote root'); sys.exit(5)
+    return target
 verb = args[0]
 if verb == 'lsd':
     if not (base / args[1].rstrip(':')).is_dir():
@@ -77,6 +81,22 @@ def cloud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[tuple[str, .
     script.write_text(textwrap.dedent(_FAKE_RCLONE), encoding='utf-8')
     monkeypatch.setenv('FAKE_RCLONE_ROOT', str(root))
     return (sys.executable, str(script)), root
+
+
+@pytest.mark.parametrize(('spec', 'refused'), [('bucket:/results/d6/x', True), ('bucket:results/d6/x', False)])
+def test_the_fake_remote_never_writes_off_its_root(
+    tmp_path: Path, cloud: tuple[tuple[str, ...], Path], spec: str, *, refused: bool
+) -> None:
+    """A rooted remote path joined onto the fake's dir is C:/results/...: refused, so no test leaks to the drive root.
+
+    PLANTED CONTROL: the relative spelling of the same object lands under the fake root.
+    """
+    rclone, root = cloud
+    source = tmp_path / 'one.bin'
+    source.write_bytes(b'1')
+    run = subprocess.run([*rclone, 'copyto', str(source), spec], capture_output=True, text=True, check=False)
+    assert (run.returncode == 5) is refused, run.stderr
+    assert (root / 'bucket' / 'results' / 'd6' / 'x').is_file() is not refused
 
 
 def _uploads(root: Path) -> int:

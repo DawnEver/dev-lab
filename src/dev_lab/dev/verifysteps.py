@@ -54,7 +54,7 @@ from dev_lab.dev.test_outcomes import (
     read_cells,
     recorded_failures,
 )
-from dev_lab.dev.testtemp import script_temp_env
+from dev_lab.dev.testtemp import reclaim, script_temp_env
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from dev_lab.dev.verdictenv import verdict_env
 from dev_lab.dev.verifybox import (
@@ -361,7 +361,8 @@ def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepR
         # `node` is the LOCKED engine (:mod:`dev_lab.dev.jsrun`), never the host's; any other program is resolved
         # on PATH (Windows: `npm` is `npm.cmd`, which a bare name cannot start).
         program = str(node_path()) if command[0] == 'node' else shutil.which(command[0]) or command[0]
-        code = _tee([program, *command[1:]], cwd=root, handle=handle, extra_env=script_temp_env({}))
+        with script_temp_env({}) as temp:
+            code = _tee([program, *command[1:]], cwd=root, handle=handle, extra_env=temp)
     except (OSError, NoEngine) as cannot:
         return StepReport(name=name, truncated=(f'{name}: cannot start {command[0]!r} here: {cannot}',))
     return StepReport(name=name, reported=(name, *paths), failures=() if code == 0 else paths)
@@ -422,6 +423,12 @@ def _recorded_pytest_report(
         complete_skip_census=complete_census,
         stage_cells=stage_cells,
     )
+
+
+def _land(live: Path, dest: Path) -> None:
+    """Move the cells *live* to *dest*; a cross-drive move copies then deletes, so what it left is reclaimed."""
+    shutil.move(live, dest)
+    reclaim(live)
 
 
 def run_verify(
@@ -541,7 +548,7 @@ def run_verify(
                     )
                     cut += ended_in_the_box(record)
     finally:
-        shutil.move(live, outcomes_dir(path))
+        _land(live, outcomes_dir(path))
     if only_scripts:
         return build_verdict(
             tuple(reports),

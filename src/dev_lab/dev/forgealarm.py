@@ -200,6 +200,7 @@ def sound(
     alerts: Mapping[str, Any] | None = None,
     send: Callable[[Notice], list[Any]] | None = None,
     now: datetime | None = None,
+    root: Path | None = None,
 ) -> tuple[str, ...]:
     """Write the alarm's line; deliver it through the configured channels unless delivered within the window.
 
@@ -217,7 +218,8 @@ def sound(
     due = key not in last or now - datetime.fromisoformat(last[key]) >= repeat_window(table)
     delivered: tuple[str, ...] = ()
     if due and alarm.kind not in PROMPTS:
-        metrics.record(metrics.HOST_FAILURE, root=Path.cwd(), repo=alarm.repo, rule=alarm.kind, reason=alarm.kind)
+        where = running_checkout() if root is None else root
+        metrics.record(metrics.HOST_FAILURE, root=where, repo=alarm.repo, rule=alarm.kind, reason=alarm.kind)
     if due:
         results = deliver(alarm.as_notice())
         delivered = tuple(d.channel for d in results if d.ok)
@@ -228,14 +230,37 @@ def sound(
     return delivered
 
 
+def running_checkout() -> Path:
+    """The checkout holding the code that runs: the first ancestor of this file with a ``.git``.
+
+    THE METRICS ROOT IS NEVER THE CWD: the hpc deploy and a scheduled tick start this in the home directory, and a
+    cwd root wrote ``~/output/logs/...`` there (user report 2026-11-24). An editable install sits in its checkout's
+    ``src/``; an installed one in its checkout's ``.venv``; either way an ancestor holds ``.git``.
+
+    Raises:
+        FileNotFoundError: no ancestor is a checkout, naming the ``root`` argument that supplies one.
+
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / '.git').exists():
+            return parent
+    msg = f'{here} lies in no checkout, so a metrics line has no home: pass sound(..., root=<checkout>) or --root'
+    raise FileNotFoundError(msg)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """``<kind> <repo> <subject> <body>``: sound one alarm from another process (the hpc deploy)."""
+    """``[--root R] <kind> <repo> <subject> <body>``: sound one alarm from another process (the hpc deploy)."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    root = None
+    if args[:1] == ['--root'] and len(args) > 1:
+        root, args = Path(args[1]), args[2:]
     try:
-        kind, repo, subject, body = sys.argv[1:] if argv is None else argv
+        kind, repo, subject, body = args
     except ValueError:
-        emit('usage: python -m dev_lab.dev.forgealarm <kind> <repo> <subject> <body>', err=True)
+        emit('usage: python -m dev_lab.dev.forgealarm [--root <checkout>] <kind> <repo> <subject> <body>', err=True)
         return 2
-    sound(Alarm(kind, repo, subject, body))
+    sound(Alarm(kind, repo, subject, body), root=root)
     return 0
 
 

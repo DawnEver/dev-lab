@@ -13,7 +13,7 @@ from dev_lab.supervise import deploy as deploy_module
 from dev_lab.supervise.alert import Transport
 from dev_lab.supervise.component import ActionContext, CheckContext, Registry
 from dev_lab.supervise.components.deploy import Deploy, _settle
-from dev_lab.supervise.deploy import PhaseResult, Plan, activate, fetch, preflight, probe, verify
+from dev_lab.supervise.deploy import CANDIDATE, PhaseResult, Plan, activate, fetch, preflight, probe, verify
 from dev_lab.supervise.deploy import deploy as run_deploy
 from dev_lab.supervise.process.base import Ran
 from dev_lab.supervise.release import Snapshot, failure_streak, history, record_success
@@ -135,9 +135,26 @@ def _plan(**overrides: object) -> Plan:
         'ceiling': '600M',
         'keep': 3,
         'tolerance': 3,
+        'candidate': str(_CANDIDATE[0]),
     }
     base.update(overrides)
     return Plan.from_config(base, _PROJECT)
+
+
+#: The candidate root of the running test: its own tmp_path, never the host's /var/tmp (C:\var\tmp on Windows).
+_CANDIDATE: list[Path] = [Path()]
+
+
+@pytest.fixture(autouse=True)
+def _candidate_in_tmp(tmp_path: Path) -> None:
+    _CANDIDATE[0] = tmp_path / 'candidate'
+
+
+def test_a_preflight_writes_only_under_the_plans_candidate(tmp_path: Path) -> None:
+    """WRITES-STAY-IN-THE-TREE: the candidate home lands under the plan's root, nothing under the default."""
+    preflight(_plan(install='true', probe=[]), _ctx(_Scripted()), {'main': 'abc123'}, transport=_transport(), port=7002)
+    assert (tmp_path / 'candidate' / 'home').is_dir()
+    assert Plan.from_config({}, _PROJECT).candidate == CANDIDATE, 'PLANTED CONTROL: the host default is unchanged'
 
 
 def _plan_config(**overrides: object) -> dict[str, Any]:

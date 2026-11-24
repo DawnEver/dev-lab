@@ -187,3 +187,4 @@ def test_the_command_s_temp_is_a_swept_system_temp_entry_never_output(tmp_path: 
     assert env['TEMP'] == env['TMP'] == env['TMPDIR']
     assert temp.name.startswith(f'{TEMP_PREFIX}{SCRIPT_KIND}-')
     assert temp.parent == Path(tempfile.gettempdir())
+    assert not temp.exists(), 'the suite ended, so its temp entry is reclaimed'
