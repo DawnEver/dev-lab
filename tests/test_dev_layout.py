@@ -61,6 +61,32 @@ def test_the_family_homes_are_required() -> None:
     assert {'src', 'tests', 'scripts', 'scratch', '.claude', 'docs-src', 'output'} == layout.REQUIRED
 
 
+@pytest.mark.parametrize('name', ['!x', '#x', '(x'])
+def test_an_explicit_name_beats_a_glob_at_equal_depth_whatever_it_sorts_as(tmp_path, name) -> None:
+    """THE PLANTED CONTROL: each name sorts below '*' in ASCII, so a max() over the pattern text would pick the glob."""
+    body = f"[tool.dev_lab.placement.layout]\n{_HOMES}rust = []\n'rust/*' = ['.rs']\n'rust/{name}' = ['.md']\n"
+    root = _checkout(tmp_path, body)
+    _plant(root, f'rust/{name}/a.md')
+    _plant(root, 'rust/other/a.rs')
+    assert layout_violations(root)[1] == []
+    _plant(root, f'rust/{name}/b.rs')
+    assert layout_violations(root)[1] == [f"rust/{name}/b.rs: .rs is not allowed under rust/{name} (allowed: ['.md'])"]
+
+
+def test_fewer_wildcards_win_and_an_equal_tie_is_refused_as_ambiguous(tmp_path) -> None:
+    body = (
+        f"[tool.dev_lab.placement.layout]\n{_HOMES}rust = []\n'rust/a?' = ['.rs']\n'rust/??' = ['.md']\n"
+        "'rust/b?' = ['.rs']\n'rust/?c' = ['.md']\n"
+    )
+    root = _checkout(tmp_path, body)
+    _plant(root, 'rust/ab/x.rs')
+    _plant(root, 'rust/bc/x.rs')
+    found = layout_violations(root)[1]
+    assert len(found) == 1, found
+    assert found[0].startswith("rust/bc/x.rs: rows ['rust/?c', 'rust/b?'] judge rust/bc equally"), found
+    assert 'ambiguous' in found[0], found
+
+
 def test_a_clean_tree_reads_no_violation(tmp_path) -> None:
     root = _checkout(tmp_path)
     for rel in (

@@ -18,9 +18,11 @@ for a file with no suffix, or ``*`` for anything::
     output = []                               # nothing loose at the top of output/
     'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.json', '.csv', '.log']
 
-A file is judged by the DEEPEST pattern matching a prefix of its directory; a file no pattern reaches is
-undeclared. So every subdirectory inherits its nearest declared ancestor, and a subtree that matters declares its
-own row. Nothing is allowed by default: a new directory or format is refused until it is declared on purpose.
+A file is judged by the DEEPEST pattern matching a prefix of its directory; at equal depth a row with no glob
+character beats a globbed one, then the row with fewer wildcards wins, and rows still tied are refused by name as
+ambiguous. A file no pattern reaches is undeclared. So every subdirectory inherits its nearest declared ancestor,
+and a subtree that matters declares its own row. Nothing is allowed by default: a new directory or format is
+refused until it is declared on purpose.
 
 THE FAMILY HOLDS THREE THINGS, NOT THE TREE (a repo's formats are its own): every family home
 (:data:`dev_lab.dev.codeplace.FAMILY_HOMES`) must be declared; ``output`` may never allow a
@@ -99,6 +101,8 @@ NO_COPY_ROOTS: Final = ('output', 'scratch')
 BACKUP_SUFFIXES: Final = frozenset({'.bundle', '.patch', '.diff'})
 #: The family homes' top-level directories: every adopter declares each of them.
 REQUIRED: Final = frozenset(home.split('/', 1)[0] for home in FAMILY_HOMES.values())
+#: What makes a pattern segment a glob (:func:`fnmatch.fnmatchcase`): each match is one wildcard.
+_GLOB: Final = re.compile(r'[*?]|\[[^]]*\]')
 _ANY: Final = '*'
 #: Where a named tool's cache lives: ``output/cache/<tool>/`` (user ruling 2026-11-24).
 TOOL_CACHE_ROOT: Final = 'output/cache'
@@ -217,19 +221,44 @@ def _skipped(rel_dir: str, layout: Layout) -> bool:
     )
 
 
+class _AmbiguousRowError(ValueError):
+    """Two or more rows judge one directory with equal precedence: the table must say which."""
+
+
+def _precedence(pattern: str) -> tuple[int, bool, int]:
+    """Deeper wins; at equal depth an explicit (unglobbed) row wins; then fewer wildcards win."""
+    wildcards = len(_GLOB.findall(pattern))
+    return (pattern.count('/') + 1, wildcards == 0, -wildcards)
+
+
 def _row_for(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | None:
-    """The deepest declared pattern matching a prefix of *rel_dir* (``.`` is the root), with what it allows."""
+    """The row judging *rel_dir* (``.`` is the root) by :func:`_precedence`, with what it allows.
+
+    Raises:
+        _AmbiguousRowError: rows tied on precedence, named.
+
+    """
     if rel_dir == '.':
         return ('.', layout.rows['.']) if '.' in layout.rows else None
     parts = rel_dir.split('/')
-    best: tuple[int, str] | None = None
-    for pattern in layout.rows:
-        segs = pattern.split('/')
-        if pattern == '.' or len(segs) > len(parts):
-            continue
-        if all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False)):
-            best = max(best or (0, ''), (len(segs), pattern))
-    return None if best is None else (best[1], layout.rows[best[1]])
+    matching = [
+        pattern
+        for pattern in layout.rows
+        if pattern != '.'
+        and len(segs := pattern.split('/')) <= len(parts)
+        and all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False))
+    ]
+    if not matching:
+        return None
+    top = max(map(_precedence, matching))
+    best = sorted(p for p in matching if _precedence(p) == top)
+    if len(best) > 1:
+        msg = (
+            f'rows {best} judge {rel_dir} equally (same depth, same wildcard count): ambiguous; declare an explicit '
+            f'row for it or make one pattern narrower'
+        )
+        raise _AmbiguousRowError(msg)
+    return best[0], layout.rows[best[0]]
 
 
 def allowed(name: str, allows: frozenset[str]) -> bool:
@@ -261,13 +290,23 @@ def judge(rel: str, layout: Layout) -> str | None:
         return f'{_SCOPED_CAUSE} ({rel_dir.split(f"/{_SCOPED}", 1)[0]}/{_SCOPED}/)'
     if top in NO_COPY_ROOTS and suffix in BACKUP_SUFFIXES:
         return f'{COPY_RULE_ID}: a {suffix} under {top}/ is a parked backup'
-    row = _row_for(rel_dir, layout)
+    return _row_verdict(rel_dir, name, layout)
+
+
+def _row_verdict(rel_dir: str, name: str, layout: Layout) -> str | None:
+    """Why the row judging *rel_dir* refuses file *name*: undeclared, ambiguous, or a format it does not allow."""
+    try:
+        row = _row_for(rel_dir, layout)
+    except _AmbiguousRowError as exc:
+        return str(exc)
     if row is None:
         return f'{rel_dir}/ is not declared (no row of {_TABLE} reaches it)'
     pattern, allows = row
-    if not allowed(name, allows):
-        return f'{suffix or name} is not allowed under {pattern} (allowed: {sorted(allows) or "nothing"})'
-    return None
+    if allowed(name, allows):
+        return None
+    return (
+        f'{Path(name.lower()).suffix or name} is not allowed under {pattern} (allowed: {sorted(allows) or "nothing"})'
+    )
 
 
 def _dir_verdicts(rel_dir: str, files: list[str], layout: Layout) -> list[str]:
@@ -339,7 +378,10 @@ def _descends(child: str, layout: Layout) -> bool:
     """Whether the walk enters *child*: never a pruned one, nor a ``*`` row outside the no-copy roots."""
     if _skipped(child, layout):
         return False
-    row = _row_for(child, layout)
+    try:
+        row = _row_for(child, layout)
+    except _AmbiguousRowError:
+        return True  # its files are each named ambiguous
     return row is None or _ANY not in row[1] or child.split('/', 1)[0] in NO_COPY_ROOTS
 
 
