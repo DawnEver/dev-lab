@@ -89,6 +89,50 @@ def test_a_subdirectory_with_no_row_of_its_own_is_refused_by_name(tmp_path) -> N
     assert 'src/pkg/sub/ is not declared' in (refuse_layout(root / 'src' / 'pkg' / 'sub' / 'z.py') or '')
 
 
+_MIRRORED = f"""[layout]
+{_HOMES}rust = []
+apps = []
+'apps/motor' = ['.py']
+'apps/motor/sim' = ['.py']
+'tests/unit' = {{ mirror = 'apps', allow = ['.py'], extra = ['verification'] }}
+'tests/baselines' = {{ mirror = 'tests/unit', allow = ['.json'] }}
+"""
+
+
+def test_a_mirror_row_declares_exactly_the_twins_of_its_mirrored_root(tmp_path) -> None:
+    """MIRROR rows (ruling D43/T9): a directory under the row is declared iff its twin under the mirror is.
+
+    PLANTED CONTROL: tests/unit/ghost has no twin under apps/ and is refused by name; the explicit extra name and a
+    mirror of a mirror pass, and each mirrored directory is judged by the mirror row's own allow list.
+    """
+    root = _checkout(tmp_path, _MIRRORED)
+    for rel in (
+        'apps/motor/sim/m.py',
+        'tests/unit/motor/test_m.py',
+        'tests/unit/motor/sim/test_s.py',
+        'tests/unit/verification/test_v.py',
+        'tests/baselines/motor/sim/s.json',
+        'tests/baselines/verification/v.json',
+    ):
+        _plant(root, rel)
+    assert layout_violations(root)[1] == []
+    _plant(root, 'tests/unit/ghost/test_g.py')
+    _plant(root, 'tests/baselines/motor/m.py')
+    assert layout_violations(root)[1] == [
+        "tests/baselines/motor/m.py: .py is not allowed under tests/baselines (allowed: ['.json'])",
+        f'tests/unit/ghost/: {layout._undeclared("tests/unit/ghost")}',
+    ]
+
+
+@pytest.mark.parametrize(
+    'row', ["{ mirror = 'apps' }", "{ mirror = 'apps', allow = ['.py'], extras = [] }", "{ allow = ['.py'] }"]
+)
+def test_a_malformed_mirror_row_is_REFUSED(tmp_path, row) -> None:
+    root = _checkout(tmp_path, f"[layout]\n{_HOMES}'tests/unit' = {row}\n")
+    with pytest.raises(LayoutNotDeclared, match='mirror'):
+        declared_layout(root)
+
+
 def test_the_retired_pyproject_table_is_refused_by_name_with_its_migration(tmp_path) -> None:
     """FORMATS-MIGRATE-ONCE: layout.toml is the one place; a leftover [tool.dev_lab.placement] is never read."""
     root = _checkout(tmp_path)

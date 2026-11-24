@@ -22,9 +22,11 @@ the root's own files), each value the list of what a file there may be -- a ``.s
 
 NO INHERITANCE (user ruling 2026-11-24): EVERY directory matches a row of its own depth, exact or globbed; a
 directory no row matches is refused by name (and not descended), and a file is judged only by its own directory's
-row. Among the rows matching one directory, a row with no glob character beats a globbed one, then the row with
-fewer wildcards wins, and rows still tied are refused by name as ambiguous. Nothing is allowed by default: a new
-directory or format is refused until it is declared on purpose.
+row. A MIRROR row ``'tests/unit' = { mirror = 'src/pkg', allow = ['.py'], extra = ['verification'] }`` declares
+a directory below it iff its twin under the mirrored root is declared (a mirror of a mirror follows the chain;
+``extra`` names directories with no twin). Among the rows matching one directory, a row with no glob character
+beats a globbed one, then the row with fewer wildcards wins, and rows still tied are refused by name as ambiguous.
+Nothing is allowed by default: a new directory or format is refused until it is declared on purpose.
 
 THE FAMILY HOLDS THREE THINGS, NOT THE TREE (a repo's formats are its own): every family home
 (:data:`dev_lab.dev.codeplace.FAMILY_HOMES`) must be declared; ``output`` may never allow a
@@ -104,6 +106,8 @@ REQUIRED: Final = frozenset(home.split('/', 1)[0] for home in FAMILY_HOMES.value
 #: What makes a pattern segment a glob (:func:`fnmatch.fnmatchcase`): each match is one wildcard.
 _GLOB: Final = re.compile(r'[*?]|\[[^]]*\]')
 _ANY: Final = '*'
+#: How many mirror hops a twin lookup follows (a mirror of a mirror is two); a cycle stops here, undeclared.
+_MIRROR_HOPS: Final = 8
 #: Where a named tool's cache lives: ``output/cache/<tool>/`` (user ruling 2026-11-24).
 TOOL_CACHE_ROOT: Final = 'output/cache'
 #: One tool's name: a plain word, so an entry can never widen into a glob or a path.
@@ -140,12 +144,15 @@ class Layout:
     pruned_paths: tuple[str, ...] = ()
     read_only: tuple[str, ...] = ()
     tool_caches: tuple[str, ...] = ()
+    #: MIRROR rows: pattern -> (the mirrored root, the explicit extra names below the row).
+    mirrors: dict[str, tuple[str, tuple[str, ...]]] = dataclasses.field(default_factory=dict)
 
     @property
     def digest(self) -> str:
         """The declaration's fingerprint: a changed table invalidates every journalled verdict."""
         rows = sorted((k, sorted(v)) for k, v in self.rows.items())
-        text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches])
+        mirrors = sorted((k, v[0], list(v[1])) for k, v in self.mirrors.items())
+        text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches, mirrors])
         return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
@@ -173,11 +180,7 @@ def declared_layout(root: Path) -> Layout:
     if not isinstance(table, dict):
         msg = f'{root} declares no {_TABLE}; declare the whole tree there ({RULE_ID})'
         raise LayoutNotDeclared(msg)
-    rows: dict[str, frozenset[str]] = {}
-    for pattern, allows in table.items():
-        if not isinstance(allows, list) or not all(isinstance(s, str) for s in allows):
-            raise _refuse(manifest, f'{pattern} = {allows!r} is not a list of ".suffix", file-name or "*" strings')
-        rows[pattern.strip('/') or '.'] = frozenset(s.lower() for s in allows)
+    rows, mirrors = _declared_rows(manifest, table)
     missing = sorted(REQUIRED - set(rows))
     if missing:
         raise _refuse(manifest, f'the family home(s) {missing} are not declared')
@@ -195,7 +198,34 @@ def declared_layout(root: Path) -> Layout:
     tools = placement.get('tool_caches', [])
     if not isinstance(tools, list) or not all(isinstance(t, str) and _TOOL.fullmatch(t) for t in tools):
         raise _refuse(manifest, f'tool_caches = {tools!r} must name tools one by one (no glob, path or empty name)')
-    return Layout(rows, pruned, read_only, tuple(tools))
+    return Layout(rows, pruned, read_only, tuple(tools), mirrors)
+
+
+def _declared_rows(
+    manifest: Path, table: dict
+) -> tuple[dict[str, frozenset[str]], dict[str, tuple[str, tuple[str, ...]]]]:
+    """``(pattern -> allowed formats, pattern -> mirror)`` of the ``[layout]`` table."""
+    rows: dict[str, frozenset[str]] = {}
+    mirrors: dict[str, tuple[str, tuple[str, ...]]] = {}
+    for pattern, value in table.items():
+        key = pattern.strip('/') or '.'
+        allows = value
+        if isinstance(value, dict):
+            allows, mirrors[key] = _mirror_row(manifest, pattern, value)
+        if not isinstance(allows, list) or not all(isinstance(s, str) for s in allows):
+            raise _refuse(manifest, f'{pattern} = {allows!r} is not a list of ".suffix", file-name or "*" strings')
+        rows[key] = frozenset(s.lower() for s in allows)
+    return rows, mirrors
+
+
+def _mirror_row(manifest: Path, pattern: str, value: dict) -> tuple[object, tuple[str, tuple[str, ...]]]:
+    """``(allow, (mirror, extra))`` of a MIRROR row ``{ mirror = '<root>', allow = [...], extra = [...] }``."""
+    target, extra = value.get('mirror'), value.get('extra', [])
+    if set(value) - {'mirror', 'allow', 'extra'} or 'allow' not in value or not isinstance(target, str) or not target:
+        raise _refuse(manifest, f'{pattern} = {value!r} is not a mirror row {{ mirror, allow[, extra] }}')
+    if not isinstance(extra, list) or not all(isinstance(e, str) and e.strip('/') for e in extra):
+        raise _refuse(manifest, f'{pattern} mirror extra = {extra!r} must list relative directory names')
+    return value['allow'], (target.strip('/'), tuple(e.strip('/') for e in extra))
 
 
 def _within(rel: str, prefixes: tuple[str, ...]) -> bool:
@@ -230,8 +260,27 @@ def _precedence(pattern: str) -> tuple[bool, int]:
     return (wildcards == 0, -wildcards)
 
 
-def _row_for(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | None:
+def _mirrored(parts: list[str], pattern: str, layout: Layout, hops: int) -> bool:
+    """Whether MIRROR row *pattern* declares the directory *parts*: an extra name, or a declared twin."""
+    segs = pattern.split('/')
+    if len(segs) >= len(parts) or not all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False)):
+        return False
+    target, extra = layout.mirrors[pattern]
+    rel = '/'.join(parts[len(segs) :])
+    if rel in extra:
+        return True
+    if hops >= _MIRROR_HOPS:
+        return False
+    try:
+        return _row_for(f'{target}/{rel}', layout, hops + 1) is not None
+    except _AmbiguousRowError:
+        return True  # the twin is declared; its own files are named ambiguous
+
+
+def _row_for(rel_dir: str, layout: Layout, hops: int = 0) -> tuple[str, frozenset[str]] | None:
     """The row of *rel_dir* ITSELF (``.`` is the root) by :func:`_precedence`, with what it allows; no inheritance.
+
+    A directory no row of its own depth matches is declared by a MIRROR row above it whose twin is declared.
 
     Raises:
         _AmbiguousRowError: rows tied on precedence, named.
@@ -246,7 +295,7 @@ def _row_for(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | None:
         if pattern != '.'
         and len(segs := pattern.split('/')) == len(parts)
         and all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False))
-    ]
+    ] or [pattern for pattern in layout.mirrors if _mirrored(parts, pattern, layout, hops)]
     if not matching:
         return None
     top = max(map(_precedence, matching))
