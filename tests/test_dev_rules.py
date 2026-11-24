@@ -139,6 +139,7 @@ _IDS = frozenset(
         'TRUNK-MOVES-BY-FAST-FORWARD',
         'PRS-TARGET-INTEGRATION',
         'DOWNSTREAM-SYNCS-INTEGRATION',
+        'RED-INTEGRATION-MERGES',
     }
 )
 

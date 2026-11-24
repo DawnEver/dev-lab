@@ -90,4 +90,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_sessionwatch.py',),
     ),
+    (
+        'RED-INTEGRATION-MERGES',
+        (
+            # Why: user rulings 2026-11-06/11-12/11-17 (D18) -- integration may be red; only the trunk must be green.
+            'Integration MAY be red and the trunk may not. The forge merges a PR once every hosted part it needs RAN '
+            'and stands PASS (absent or pending waits, FAIL refuses; `forgemerge`); a red head merges only as a '
+            'break-glass merge, whose test state and every failure subject its base does not carry go ON RECORD in '
+            'its comment, audit line and wave summary (`ops.breakglass`, D18). `integrate promote` is the one '
+            'gate to the trunk: a part not posted or not PASS refuses it, naming the break-glass door.'
+        ),
+        ('tests/test_dev_forgemerge.py', 'tests/test_ops_breakglass.py', 'tests/test_dev_integrate.py'),
+    ),
 )
