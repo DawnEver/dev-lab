@@ -10,6 +10,12 @@ person's work unless every checkout in it was cloned from a ``file://`` url, as 
 family whose origin was never traced is NAMED and never removed. A link or junction is never followed or removed.
 A removed family's parents are removed too while they are left empty, up to the drive or home it was found under.
 
+A family may instead be an AGED SET (:attr:`Family.glob`): the entries matching a glob inside a directory a tool
+fills and never empties (JMAG Designer's ``~/JMAGDesignerTemp/ProjectTemp_*``, user ruling 2026-11-24). An entry
+is removed when every file in it is older than the family's age AND no running holder process (:attr:`Family.holders`,
+name prefixes) has its cwd or an open file inside it AND the entry can be renamed (Windows refuses that while any
+handle inside is open): the lock probe runs at removal, the process check at the listing.
+
 The door is ``python -m dev_lab.dev.tmpsweep --leaks`` (a listing) and ``--leaks --apply`` (the removal).
 """
 
@@ -17,6 +23,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal
@@ -80,6 +87,59 @@ def _pytest_cache(path: Path) -> str | None:
     return 'no pytest cache README: not a pytest cache'
 
 
+def _newest(path: Path) -> float:
+    """The newest mtime in *path*'s tree; a link is neither entered nor counted."""
+    newest = path.lstat().st_mtime
+    stack = [path] if path.is_dir() else []
+    while stack:
+        for child in stack.pop().iterdir():
+            if _linked(child):
+                continue
+            newest = max(newest, child.lstat().st_mtime)
+            if child.is_dir():
+                stack.append(child)
+    return newest
+
+
+def held_paths(prefixes: Sequence[str]) -> list[Path] | str:
+    """The cwd and open files of every running process whose name starts with one of *prefixes*.
+
+    A string instead names why that cannot be told (psutil absent, a holder's files unreadable): the caller keeps.
+    """
+    try:
+        import psutil  # noqa: PLC0415 -- a transitive dependency; its absence keeps every aged entry
+    except ImportError:
+        return 'psutil is not installed, so a running holder cannot be ruled out'
+    paths: list[Path] = []
+    for proc in psutil.process_iter(['name']):
+        name = (proc.info.get('name') or '').lower()
+        if not name.startswith(tuple(prefixes)):
+            continue
+        try:
+            paths.append(Path(proc.cwd()))
+            paths.extend(Path(one.path) for one in proc.open_files())
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.Error as exc:
+            return f'{name} (pid {proc.pid}) runs and its files cannot be read: {exc}'
+    return paths
+
+
+def _aged_unheld(max_age_days: float, holders: Sequence[str]) -> Callable[[Path], str | None]:
+    def judge(path: Path) -> str | None:
+        age = (time.time() - _newest(path)) / 86400.0
+        if age < max_age_days:
+            return f'written {age:.1f} day(s) ago, inside the {max_age_days:g}-day age: in use'
+        held = held_paths(holders)
+        if isinstance(held, str):
+            return held
+        if any(one == path or path in one.parents for one in held):
+            return 'a running holder process has its cwd or an open file inside'
+        return None
+
+    return judge
+
+
 def _named(_path: Path) -> str | None:
     return None
 
@@ -97,6 +157,7 @@ class Family:
     relative: str
     ours: Callable[[Path], str | None]  # None: ours, removable; else why it is kept
     cause: str
+    glob: str = ''  # set: an aged set, each match inside *relative* is one instance
 
 
 FAMILIES: Final[tuple[Family, ...]] = (
@@ -125,6 +186,14 @@ FAMILIES: Final[tuple[Family, ...]] = (
         'forgealarm recorded metrics at the cwd of a process started in the home dir',
     ),
     Family('home-pytest-cache', 'home', '.pytest_cache', _pytest_cache, 'a pytest session rooted at the home dir'),
+    Family(
+        'jmag-designer-temp',
+        'home',
+        'JMAGDesignerTemp',
+        _aged_unheld(7.0, ('designer', 'jcwrap', 'jmag')),
+        'JMAG Designer leaves a ProjectTemp_* per project session and never removes it',
+        glob='ProjectTemp_*',
+    ),
 )
 
 
@@ -144,14 +213,32 @@ def find(drives: Sequence[Path], home: Path, families: Sequence[Family] = FAMILI
     for family in families:
         for base in drives if family.anchor == 'drive' else (home,):
             path = base / family.relative
+            if family.glob:
+                found.extend(_judged(family, entry, path) for entry in sorted(path.glob(family.glob)))
+                continue
             if not path.exists() and not _linked(path):
                 continue
-            try:
-                kept = 'a link or junction is never followed' if _linked(path) else family.ours(path)
-            except OSError as exc:
-                kept = f'unreadable: {exc.strerror or exc}'
-            found.append(Found(family, path, kept, base))
+            found.append(_judged(family, path, base))
     return found
+
+
+def _judged(family: Family, path: Path, base: Path) -> Found:
+    try:
+        kept = 'a link or junction is never followed' if _linked(path) else family.ours(path)
+    except OSError as exc:
+        kept = f'unreadable: {exc.strerror or exc}'
+    return Found(family, path, kept, base)
+
+
+def _unlocked(path: Path) -> bool:
+    """Whether *path* can be renamed and back: Windows refuses while any handle inside it is open."""
+    probe = path.with_name(f'{path.name}.sweeping')
+    try:
+        path.rename(probe)
+    except OSError:
+        return False
+    probe.rename(path)
+    return True
 
 
 def _prune(path: Path, stop: Path) -> None:
@@ -172,6 +259,9 @@ def remove(found: Sequence[Found]) -> tuple[list[Path], list[tuple[Path, str]]]:
     for one in found:
         if one.kept is not None:
             kept.append((one.path, one.kept))
+            continue
+        if one.family.glob and not _unlocked(one.path):
+            kept.append((one.path, 'locked: a handle inside it is open'))
             continue
         try:
             shutil.rmtree(one.path, onexc=writable_retry)  # a clone's git objects are read-only on Windows
