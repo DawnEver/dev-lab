@@ -32,7 +32,8 @@ from lab_commons.hpc.cluster import Runner
 from lab_commons.hpc.grants import Grant
 
 from dev_lab.dev.hpcaccount.division import reached_machine
-from dev_lab.dev.hpcaccount.fleet import account_host, config_source_of, declared_target, in_checkout
+from dev_lab.dev.hpcaccount.fleet import account_host, config_source_of
+from dev_lab.dev.hpcaccount.storagecheck import check_in_kit
 from dev_lab.dev.hpcaccount.transport import grant_runner
 from dev_lab.ops.consent.client import grant, verify_held
 
@@ -136,7 +137,7 @@ def distribute(
             say(f'{user}: refused -- the written {target.path} does not hash to the entered secret')
             failed += 1
             continue
-        said = _check(shell, target.grant, work.remote)
+        _, said = check_in_kit(shell, target.grant, work.remote)
         say(f'{user}: placed {target.path} (sha256 {digest[:12]}, 0600); {said}')
     for host in work.by_hand:
         say(f'{host}: a workstation, no push channel -- its person runs there: '
@@ -145,17 +146,6 @@ def distribute(
         say(f'{account}: an account this session does not reach (its role: hpcaccount.session status) -- run '
             f'distribute again from a session that reaches it')  # fmt: skip
     return 2 if failed else 0
-
-
-def _check(shell: Runner, grant: Grant, remote: str) -> str:
-    """``storage check`` in the account's kit; its answer, or why it could not run (never fatal to the placement)."""
-    target = declared_target(grant, shell)
-    if isinstance(target, str):
-        return f'check skipped: {target}'
-    try:
-        return shell(in_checkout(target, ['-m', 'dev_lab.dev.storage', 'check', remote]), None).strip().splitlines()[-1]
-    except (RuntimeError, OSError, IndexError) as failed:
-        return f'check refused: {failed} (the account kit needs dev_lab.dev.storage check: redeploy it)'
 
 
 def run(remote: str, content: bytes, *, requests: Path, say: Callable[[str], None]) -> int:
