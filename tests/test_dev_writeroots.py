@@ -97,7 +97,7 @@ def family(tmp_path: Path) -> dict[str, Path]:
         'sibling': base / 'not-a-checkout',
         'temp': tmp_path / 'temp',
         'home': tmp_path / 'home',
-        'onedrive': tmp_path / 'home' / 'OneDrive - <org>',
+        'onedrive': tmp_path / 'home' / 'OneDrive',  # a created dir: '<org>' is no legal Windows name
     }
     for one in found.values():
         one.mkdir(parents=True, exist_ok=True)
