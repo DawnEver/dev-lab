@@ -1,56 +1,28 @@
-"""THE FAMILY'S ONE STATIC IMPORT-EDGE READER: which module imports which, read off the source by ``ast``.
+"""THE FAMILY'S ONE STATIC IMPORT-EDGE READER for architecture tests: what a module imports, read off its source.
 
-Architecture tests (layering, door ownership) and change-based test selection
-(:mod:`dev_lab.dev.changeselect`) both need the same relation, so it is read once, here.
+A layering test, a door-ownership test and a "who imports X" census all ask the same question, and each repo
+had grown its own ``ast`` walk with its own blind spots. Read once, here, never executing the inspected code:
 
-* EVERY NESTING DEPTH: ``ast.walk`` collects a function-body import as an edge. "Lazy imports are banned,
-  so the module-level graph is the dependency relation" was measured false in a consumer repo (over a
-  thousand function-body imports under a file-level waiver).
-* BOTH SPELLINGS: ``from .b import f`` carries its package in ``node.level``; dropping relative imports
-  cut every shared test double off from its importers.
-* SRC LAYOUT: a file under ``src/`` is named without the prefix; any other file is named from the root.
+* EVERY NESTING DEPTH: ``ast.walk`` collects a function-body import. "Lazy imports are banned, so the
+  module-level graph is the dependency relation" was measured false in a consumer repo (over a thousand
+  function-body imports under a file-level waiver).
+* BOTH SPELLINGS: ``from .b import f`` carries its package in ``node.level``; a reader dropping relative
+  imports cut every shared test double off from its importers.
+* SRC LAYOUT (:func:`module_name`): a file under ``src/`` is named without the prefix.
 
-Names are STRINGS and resolve to a module only when that module is in the tree (:func:`edges`): a name
-the tree lacks (a third-party import) is no edge.
+Which tests a CHANGE reaches is a different, path-level question -- :mod:`dev_lab.dev.footprint`.
 """
 
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING, Final
+from importlib.util import resolve_name
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
     from pathlib import Path
 
-__all__ = ['closure', 'edges', 'imports_of', 'module_name', 'python_files']
-
-#: Trees never read for edges: environments, caches and build outputs, not the project's source.
-_SKIPPED: Final[frozenset[str]] = frozenset(
-    {
-        '.git',
-        '.venv',
-        'venv',
-        'node_modules',
-        'target',
-        'output',
-        'build',
-        'dist',
-        '__pycache__',
-        '.claude',
-    }
-)
-
-
-def python_files(root: Path) -> tuple[Path, ...]:
-    """Every ``*.py`` under *root* outside :data:`_SKIPPED` and hidden directories, sorted."""
-    return tuple(
-        sorted(
-            path
-            for path in root.rglob('*.py')
-            if not any(part in _SKIPPED or part.startswith('.') for part in path.relative_to(root).parts[:-1])
-        )
-    )
+__all__ = ['import_edges', 'imports_of', 'module_name']
 
 
 def module_name(root: Path, path: Path) -> str:
@@ -63,60 +35,33 @@ def module_name(root: Path, path: Path) -> str:
     return '.'.join(parts)
 
 
-def _package(root: Path, path: Path) -> str:
-    name = module_name(root, path)
-    return name if path.name == '__init__.py' else name.rpartition('.')[0]
+def import_edges(source: str, module: str, *, is_package: bool = False) -> frozenset[str]:
+    """Every absolute name *source* (the module *module*) imports, at any depth, never executing it.
 
+    ``from X import y`` yields ``X`` and ``X.y``; a relative import is resolved against *module*'s package
+    (*is_package*: *module* is itself a package's ``__init__``). Local aliases do not change an edge; assignments,
+    dynamic imports and re-exports are not followed.
 
-def imports_of(root: Path, path: Path) -> frozenset[str]:
-    """Every dotted name *path* imports, at any depth; ``from X import y`` yields ``X`` and ``X.y``."""
-    try:
-        tree = ast.parse(path.read_text(encoding='utf-8', errors='replace'))
-    except SyntaxError:
-        return frozenset()
+    Raises:
+        SyntaxError: *source* does not parse -- a hidden edge is never reported as no edge.
+        ImportError: a relative import climbs above the top-level package.
+
+    """
+    package = module if is_package else module.rpartition('.')[0]
     names: set[str] = set()
-    for node in ast.walk(tree):
+    for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             names.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
-            base = node.module or ''
-            if node.level:
-                package = _package(root, path).split('.')
-                anchor = '.'.join(package[: len(package) - node.level + 1])
-                base = f'{anchor}.{base}' if base else anchor
+            base = resolve_name('.' * node.level + (node.module or ''), package) if node.level else node.module or ''
             if base:
                 names.add(base)
                 names.update(f'{base}.{alias.name}' for alias in node.names if alias.name != '*')
     return frozenset(names)
 
 
-def _resolve(name: str, index: frozenset[str]) -> str | None:
-    while name:
-        if name in index:
-            return name
-        name = name.rpartition('.')[0]
-    return None
-
-
-def edges(root: Path, files: Iterable[Path] | None = None) -> dict[str, frozenset[str]]:
-    """``{module: the in-tree modules it imports}`` over *files* (default :func:`python_files`)."""
-    chosen = python_files(root) if files is None else tuple(files)
-    index = frozenset(module_name(root, path) for path in chosen)
-    graph: dict[str, frozenset[str]] = {}
-    for path in chosen:
-        name = module_name(root, path)
-        resolved = {_resolve(imported, index) for imported in imports_of(root, path)}
-        graph[name] = frozenset(found for found in resolved if found is not None and found != name)
-    return graph
-
-
-def closure(graph: dict[str, frozenset[str]], seeds: Iterable[str]) -> set[str]:
-    """*seeds* and everything they reach through *graph*."""
-    seen: set[str] = set()
-    stack = list(seeds)
-    while stack:
-        name = stack.pop()
-        if name not in seen:
-            seen.add(name)
-            stack.extend(graph.get(name, ()))
-    return seen
+def imports_of(root: Path, path: Path) -> frozenset[str]:
+    """:func:`import_edges` of the file *path* under *root*, named by :func:`module_name`."""
+    return import_edges(
+        path.read_text(encoding='utf-8'), module_name(root, path), is_package=path.name == '__init__.py'
+    )

@@ -50,7 +50,8 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import depneeds, verifiedby
-from dev_lab.dev.changeselect import changed_paths, select, select_data
+from dev_lab.dev.changeselect import changed_paths, select
+from dev_lab.dev.footprint import Footprints
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgerequest import offer_line
@@ -350,18 +351,20 @@ def _changed_selection(root: Path, range_spec: str) -> tuple[str, ...] | int:
     except ValueError as why:
         emit(f'verify: refused -- --changed: {why}', err=True)
         return ProducerExit.USAGE
-    picked = select(root, changed, select_data(root))
-    if picked.full:
-        emit(f'verify: --changed selects the whole suite: {"; ".join(picked.reasons)}', err=True)
-        return ()
-    if not picked.paths:
-        emit(
-            f'verify: --changed selects no test -- {len(changed)} changed path(s) reach none and '
-            '[tool.dev_lab.verify.select] always is empty; nothing ran.'
-        )
+    try:
+        footprints = Footprints.working(root)
+        picked = select(footprints, changed)
+    except ValueError as why:
+        emit(f'verify: refused -- --changed: {why}', err=True)
+        return ProducerExit.USAGE
+    if not picked:
+        emit(f'verify: --changed selects no test -- {len(changed)} changed path(s) reach none; nothing ran.')
         return EXIT_CODES[Conclusion.PASS]
-    emit(f'verify: --changed selects {len(picked.paths)} path(s) from {len(changed)} change(s)')
-    return picked.paths
+    if len(picked) == len(footprints.tests()):
+        emit('verify: --changed reaches every test file: this is the whole suite, not a selection', err=True)
+        return ()
+    emit(f'verify: --changed selects {len(picked)} test file(s) from {len(changed)} change(s)')
+    return picked
 
 
 def _retired(argv: list[str]) -> str | None:
