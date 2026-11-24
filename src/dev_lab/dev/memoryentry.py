@@ -16,7 +16,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
 __all__ = [
     'AMENDMENT_NOTE',
@@ -29,6 +29,9 @@ __all__ = [
     'RENAME_PLACEHOLDER',
     'REQUIRED_KEYS',
     'VOLATILE_FIELDS',
+    'amendment_notes',
+    'deletion_approved',
+    'is_attachment',
     'is_memory',
     'lf',
     'merged_entry_problems',
@@ -256,6 +259,42 @@ def only_manual_tasks_updated(path: str, old: str, new: str) -> bool:
 def is_memory(path: str) -> bool:
     """*path* (repo-relative) lies under some scope's ``.claude/memory/``."""
     return MEMORY_DIR in f'/{path}'
+
+
+def is_attachment(path: str) -> bool:
+    """*path* is a memory file that is not an entry: any non-``.md`` file, or anything under an ``attachments/``."""
+    if not is_memory(path):
+        return False
+    inside = f'/{path}'.split(f'/{MEMORY_DIR}', 1)[1]
+    return not inside.endswith('.md') or '/attachments/' in f'/{inside}'
+
+
+_DELETED = re.compile(r'\bdeleted\b', re.IGNORECASE)
+
+
+def deletion_approved(path: str, notes: Iterable[str]) -> bool:
+    """ATTACHMENT-DELETE (user ruling 2026-11-24): a NEW amendment note approves deleting the attachment *path*.
+
+    *notes* are the note lines the change added to memory entries. One approves *path* when it is a full
+    :data:`AMENDMENT_NOTE` (its user's words non-empty) whose reason says ``deleted`` and names *path* as
+    written under ``.claude/memory/`` (``<yyyy>/<mm>/<dd>/attachments/<file>``). An entry is never an attachment.
+    """
+    if not is_attachment(path):
+        return False
+    inside = f'/{path}'.split(f'/{MEMORY_DIR}', 1)[1]
+    named = re.compile(rf'(?<![\w./-]){re.escape(inside)}(?![\w/-])')
+    for note in notes:
+        if not _AMEND_LINE.fullmatch(note):
+            continue
+        reason = note[_NOTE_HEAD : note.rindex(' -- approved: "')]
+        if _DELETED.search(reason) and named.search(reason):
+            return True
+    return False
+
+
+def amendment_notes(text: str) -> set[str]:
+    """The amendment note lines *text* holds."""
+    return {line for line in lf(text).splitlines() if _AMEND_LINE.fullmatch(line)}
 
 
 def scope_of(path: str) -> str:

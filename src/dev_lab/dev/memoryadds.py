@@ -16,7 +16,12 @@ Four shapes are not narrative edits:
   account-like token leaves a published entry's file name, in the same directory, one run of the name's
   ``-`` tokens replaced by ``user`` or dropped, and the entry gains an amendment note whose reason says
   ``renamed`` (:func:`dev_lab.dev.memoryentry.only_renamed_redacting`). Git reads it as ``R`` or, when the
-  text changed too, as ``D`` + ``A``; both are judged as the rename (:func:`_without_redacting_renames`).
+  text changed too, as ``D`` + ``A``; both are judged as the rename (:func:`_without_redacting_renames`);
+* an approved attachment deletion (ATTACHMENT-DELETE, user ruling 2026-11-24) -- an ATTACHMENT (a memory file
+  that is not an entry, :func:`dev_lab.dev.memoryentry.is_attachment`) leaves memory when the same pushed range
+  adds an amendment note to an entry whose reason says ``deleted`` and names it under ``.claude/memory/``, with
+  the user's words (:func:`dev_lab.dev.memoryentry.deletion_approved`); without one the deletion is refused by
+  name. An entry is never deleted.
 
 The task-list protocol is authored by rem 2.2.0, ``scripts/task-engine.js`` functions ``handleAdd``
 and ``handleMark``. This classifier recognizes that version's complete output, not arbitrary Markdown.
@@ -55,6 +60,10 @@ from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.memoryentry import (
     AMENDMENT_NOTE,
     MANUAL_PATH,
+    MEMORY_DIR,
+    amendment_notes,
+    deletion_approved,
+    is_attachment,
     is_memory,
     merged_entry_problems,
     only_amended,
@@ -145,7 +154,7 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
         """A source is at the base, or ADDED by the same change -- a merge and its sources may land together."""
         return path in added or _run(root, 'cat-file', '-e', f'{old_rev}:{path}')[0] == 0
 
-    out: list[str] = []
+    out = list(_unapproved_deletions(root, old_rev, new_rev, rows))
     for status, old, new in rows:
         if status in 'AC' and is_memory(new):
             text = _git(root, 'show', f'{new_rev}:{new}')
@@ -174,9 +183,35 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                         'without changing existing task text, module or order'
                     )
                 out.append(f'{old}: {remedy}')
-        elif status in 'DRT' and is_memory(old):
+        elif status in 'DRT' and is_memory(old) and not (status == 'D' and is_attachment(old)):
             out.append(f'{old}: a memory entry is never deleted or moved ({status})')
     return tuple(out)
+
+
+def _unapproved_deletions(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
+    """ATTACHMENT-DELETE: each deleted attachment no amendment note the range adds approves, refused by name."""
+    deleted = [old for status, old, _ in rows if status == 'D' and is_attachment(old)]
+    if not deleted:
+        return ()
+    notes = _added_notes(root, old_rev, new_rev, rows)
+    return tuple(
+        f'{old}: a memory attachment is deleted only with approval (ATTACHMENT-DELETE) -- amend an entry with the '
+        'user-approved note `> '
+        + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='deleted <attachment> <why>', approved="<the user's words>")
+        + f'` naming {old.split(MEMORY_DIR, 1)[1]} in the same push'
+        for old in deleted
+        if not deletion_approved(old, notes)
+    )
+
+
+def _added_notes(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> set[str]:
+    """The amendment note lines the range ADDS to memory entries: a note the base already held approves nothing."""
+    out: set[str] = set()
+    for status, old, new in rows:
+        if status in 'ACM' and is_memory(new) and new.endswith('.md'):
+            before = _git(root, 'show', f'{old_rev}:{old}') if status == 'M' else ''
+            out |= amendment_notes(_git(root, 'show', f'{new_rev}:{new}')) - amendment_notes(before)
+    return out
 
 
 def problems_between(root: Path, base: str, head: str) -> tuple[str, ...]:
