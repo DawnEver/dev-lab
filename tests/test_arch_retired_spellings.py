@@ -387,7 +387,7 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     'taskguard': (
-        'dev_lab.dev.ledgerguard (LEDGER-WRITES-THROUGH-ITS-DOOR): one guard of the task files, both halves',
+        'dev_lab.dev.ledgerguard (LEDGER-WRITES-THROUGH-ITS-DOOR): one guard of the task files and ledger dir',
         '2026-11-24 fold: two guards of one ledger became one',
     ),
     'tick.RERENDER': (
