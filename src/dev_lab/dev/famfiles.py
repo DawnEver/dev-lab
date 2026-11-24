@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import principles, remconfig
+from dev_lab.dev import principles
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
@@ -60,6 +60,7 @@ __all__ = [
     'RENDERERS',
     'RENDER_COMMAND',
     'RENDER_TABLE',
+    'RETIRED_PROJECT_FILES',
     'ProjectFile',
     'Renderer',
     'due_renderers',
@@ -160,15 +161,11 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
             'famconfig RENDERED: repo-wide LF, CRLF cmd scripts, declared binaries, plus the repo Delta',
             FAMFILES,
         ),
-        _g('.rgignore', 'famconfig RENDERED: what ripgrep and Grep skip (attic/), plus the repo Delta', FAMFILES),
-        _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
-        _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
         _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte', AGENT_GUARD),
         _g('.claude/hooks/venv_resolver.js', 'agent_guard install: the one environment resolver', AGENT_GUARD),
         _g('.claude/rules/principles.md', 'principles.render via famfiles: the family principles', FAMFILES),
-        _g('.claude/rem.json', 'remconfig.render via famfiles: the backlog is the issue tracker', FAMFILES),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
         _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
         _g('.codex/rules/family-denies.rules', 'autodoors --write: the deny registry as Codex rules', AUTODOORS),
@@ -185,6 +182,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         ),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
+        _o('Makefile', 'its targets and recipes are the repo`s; the family contract retired 2026-11-24'),
         _o(
             'AGENTS.md',
             'its subject is the repo`s architecture; shared rules are cited by ID from dev_lab.dev.rules',
@@ -192,6 +190,15 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _o('CLAUDE.md', 'a pointer to AGENTS.md; the shared rule pages arrive through famtests.rulespages'),
         _o('CHANGELOG.md', 'the repo`s release history'),
     )
+}
+
+#: RETIRED-NAMES-REGISTERED (user ruling 2026-11-24): a project file the family no longer renders or requires,
+#: with why. Tracked again in any repo, it is refused by name (:mod:`dev_lab.dev.famtests.famfiles`).
+RETIRED_PROJECT_FILES: Final[dict[str, str]] = {
+    '.claude/rem.json': 'the backlog is the Gitea tasks repo plus the issue tracker; no per-repo rem config',
+    '.claude/sharp-review.json': 'the forge review is the one review (2026-11-05); no sharp-review ledger',
+    '.rgignore': 'no family search-skip file (user ruling 2026-11-24)',
+    'ruff.toml': 'ruff config lives only under [tool.ruff] in pyproject.toml',
 }
 
 #: Every family file a mechanism writes whole: what a PR review never reads (:mod:`dev_lab.dev.forgereview_scope`).
@@ -350,7 +357,7 @@ def _git_lines(root: Path, *args: str) -> tuple[str, ...]:
 def project_files_on_disk(root: Path) -> tuple[str, ...]:
     """The tracked project-level files of *root*: every top-level FILE, plus the registry's nested paths."""
     tracked = _git_lines(root, 'ls-files')
-    nested = {path for path in PROJECT_FILES if '/' in path}
+    nested = {path for path in (*PROJECT_FILES, *RETIRED_PROJECT_FILES) if '/' in path}
     return tuple(sorted(path for path in tracked if '/' not in path or path in nested or _is_workflow(path)))
 
 
@@ -363,7 +370,8 @@ def _is_workflow(path: str) -> bool:
 
 def unaccounted(root: Path, owned_here: Mapping[str, str]) -> tuple[str, ...]:
     """Project-level files in *root* that neither the family list nor the repo's own *owned_here* names."""
-    return tuple(path for path in project_files_on_disk(root) if path not in PROJECT_FILES and path not in owned_here)
+    known = {*PROJECT_FILES, *RETIRED_PROJECT_FILES, *owned_here}
+    return tuple(path for path in project_files_on_disk(root) if path not in known)
 
 
 def load_deltas(path: Path) -> Mapping[str, Delta]:
@@ -381,8 +389,6 @@ def load_deltas(path: Path) -> Mapping[str, Delta]:
 def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple[str, ...]:
     """Every RENDERED base this repo declares, re-rendered into *root*; one line per artefact, what happened.
 
-    A REQUIRED base (the Makefile) is NOT written -- it is presence-only, and rendering it would clobber
-    the recipes that are the repo's own. Its status is reported, so one command still answers for all.
     With *write* false nothing is written and the lines say what WOULD change: the check mode.
     """
     out: list[str] = []
@@ -406,22 +412,17 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
 
 def whole_files() -> tuple[tuple[str, str], ...]:
     """The family files every repo carries whole, with no delta: (repo-relative path, its text)."""
-    return ((principles.PAGE_REL, principles.render()), (remconfig.REL, remconfig.render()))
+    return ((principles.PAGE_REL, principles.render()),)
 
 
 def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
-    """The family files with no delta, re-rendered into *root*; one line per file. *write* false: the check mode.
-
-    ``.claude/rem.json`` that differs is the repo's own choice and is reported, never overwritten.
-    """
+    """The family files with no delta, re-rendered into *root*; one line per file. *write* false: the check mode."""
     out: list[str] = []
     for rel, text in whole_files():
         path = root / rel
         held = path.read_text(encoding='utf-8') if path.is_file() else None
         if held == text:
             out.append(f'{rel}: current')
-        elif rel == remconfig.REL and held is not None:
-            out.append(f'{rel}: the repo`s own choice, not written -- reconcile it with {text.strip()} by hand')
         elif write:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding='utf-8', newline='\n')

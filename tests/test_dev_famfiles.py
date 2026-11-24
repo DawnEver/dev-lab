@@ -6,6 +6,7 @@ a throwaway repository in ``tmp_path`` so a green here is a measurement and not 
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from dev_lab.dev.famfiles import (
     OWNED,
     PROJECT_FILES,
     RENDERERS,
+    RETIRED_PROJECT_FILES,
     _run,
     due_renderers,
     is_member,
@@ -39,7 +41,6 @@ from dev_lab.dev.famtests.famfiles import (
 )
 from dev_lab.dev.principles import PAGE_REL
 from dev_lab.dev.principles import render as render_principles
-from dev_lab.dev.remconfig import REL
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 DELTAS_FILE: Final = ROOT / 'tests' / '_famconfig_delta.py'
@@ -133,34 +134,42 @@ def test_a_rendered_file_is_lf_on_every_os(tmp_path: Path) -> None:
         assert b'\r\n' not in (tmp_path / name).read_bytes(), name
 
 
-def test_famfiles_writes_the_principles_page_and_the_rem_config(tmp_path: Path) -> None:
-    """The project files hook_install used to write are famfiles' now: a name matches what the code does.
-
-    PLANTED CONTROL: a drifted page reads stale in check mode and current after one render.
-    """
+def test_famfiles_writes_the_principles_page(tmp_path: Path) -> None:
+    """The whole family files are famfiles'. PLANTED CONTROL: a drifted page reads stale, then current."""
     root = tmp_path / 'repo'
     root.mkdir()
     _git('init', '-q', cwd=root)
-    assert render_agent_files(root, write=False) == (
-        f'{PAGE_REL}: would render (absent)',
-        f'{REL}: would render (absent)',
-    )
-    assert render_agent_files(root, write=True) == (f'{PAGE_REL}: rendered', f'{REL}: rendered')
+    assert render_agent_files(root, write=False) == (f'{PAGE_REL}: would render (absent)',)
+    assert render_agent_files(root, write=True) == (f'{PAGE_REL}: rendered',)
     assert (root / PAGE_REL).read_text(encoding='utf-8') == render_principles()
     (root / PAGE_REL).write_text('hand edit\n', encoding='utf-8')
     assert render_agent_files(root, write=False)[0] == f'{PAGE_REL}: would render (drifted)'
     render_agent_files(root, write=True)
-    assert render_agent_files(root, write=False) == (f'{PAGE_REL}: current', f'{REL}: current')
+    assert render_agent_files(root, write=False) == (f'{PAGE_REL}: current',)
 
 
-def test_a_repos_own_rem_config_is_reported_and_kept(tmp_path: Path) -> None:
-    """A differing ``.claude/rem.json`` is the repo's deliberate choice: never overwritten, and not current."""
-    (tmp_path / '.claude').mkdir()
-    own = '{"backlog": "files"}\n'
-    (tmp_path / REL).write_text(own, encoding='utf-8')
-    line = render_agent_files(tmp_path, write=True)[1]
-    assert line.startswith(f'{REL}: the repo`s own choice, not written'), line
-    assert (tmp_path / REL).read_text(encoding='utf-8') == own
+#: Retired 2026-11-24 (user ruling): no family row, no renderer, no requirement -- each refused by name.
+_RETIRED: Final = ('.claude/rem.json', '.rgignore', 'ruff.toml')
+
+
+def test_the_retired_project_files_are_registered_and_have_no_row() -> None:
+    """RETIRED-NAMES-REGISTERED: a retired file is named with its reason, and no row or base still writes it."""
+    assert set(_RETIRED) <= set(RETIRED_PROJECT_FILES)
+    assert all(why.strip() for why in RETIRED_PROJECT_FILES.values())
+    assert not set(RETIRED_PROJECT_FILES) & set(PROJECT_FILES)
+    assert not set(RETIRED_PROJECT_FILES) & set(BASES)
+    assert PROJECT_FILES['Makefile'].kind == OWNED, 'the Makefile is the repo`s: no family contract any more'
+
+
+@pytest.mark.parametrize('path', _RETIRED)
+def test_a_tracked_retired_file_is_refused_by_name(repo: Path, path: str) -> None:
+    """PLANTED CONTROL: the retired file committed again reds with its reason, owned or not."""
+    assert_every_project_file_is_accounted_for(root=repo, owned_here={})
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text('{}\n', encoding='utf-8')
+    _git('add', '-f', path, cwd=repo)
+    with pytest.raises(AssertionError, match=f'{re.escape(path)}: RETIRED'):
+        assert_every_project_file_is_accounted_for(root=repo, owned_here={})
 
 
 # ------------------------------------------------------------------- the renderers, derived from the one list

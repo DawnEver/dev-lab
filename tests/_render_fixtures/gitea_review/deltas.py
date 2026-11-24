@@ -6,5 +6,4 @@ from dev_lab.dev.famconfig import Delta
 
 DELTAS = {
     '.gitignore': Delta(repo='gitea', added=('/data/',), dropped={}, ceiling=1),
-    '.rgignore': Delta(repo='gitea', added=(), dropped={}, ceiling=0),
 }

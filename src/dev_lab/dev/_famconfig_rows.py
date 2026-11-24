@@ -52,10 +52,6 @@ __all__ = [
     'GITIGNORE_CONSUMER_CORE',
     'GITIGNORE_FAMILY_LINES',
     'GITIGNORE_FLOOR',
-    'MAKEFILE_BASE',
-    'MAKEFILE_RESIDUAL_SIGNALS',
-    'MAKE_TARGET_CONSUMER_CORE',
-    'MAKE_TARGET_CORE',
     'ORDERED_SECTIONS',
     'ORDER_SENSITIVE_ARTEFACTS',
     'REPO_FLOOR',
@@ -205,98 +201,9 @@ ORDER_SENSITIVE_ARTEFACTS: Final[dict[str, int]] = {'.gitignore': 2}
 GITIGNORE_FLOOR: Final = 10
 
 # ---------------------------------------------------------------------------------- Makefile
-
-#: The three targets present in ALL FOUR repos, MEASURED over 6 / 18 / 14 / 15 declared targets.
-#: `verify` is NOT among them -- it is in three of four and consumer-a is the exception, which the
-#: census records as that repo's own gap rather than as a family absence.
-MAKE_TARGET_CORE: Final[tuple[str, ...]] = ('fmt', 'lint', 'test')
-
-#: The NINE targets present in ALL THREE CONSUMERS, MEASURED over 18 / 14 / 16. It read EIGHT until
-#: 2026-09-18, and both halves of that number have since moved:
-#:
-#: - `verify` joined, because consumer-a grew one. The old comment for the eight said `clean`,
-#:   `install`, `install-dev` and `test-parallel` were "absent from lab-commons alone -- the kit held
-#:   to less than what it ships". Re-measured, lab-commons carries all four, so that gap closed too.
-#: - The consequence is worth stating rather than leaving for a reader to notice: this tuple is now
-#:   EQUAL to `MAKE_TARGET_CORE`, the all-four set. They are kept as two names because they answer two
-#:   QUESTIONS -- what the consumers share, and what the whole family shares -- and today's answer is
-#:   that the kit adopted its own base with an empty delta. That is the same shape the hook core
-#:   reached on 2026-09-17, and it is what a base looks like once it has actually landed.
-#:
-#: THE ANTI-FORK ARM ARGUED FOR THIS SET AND THE FIRST CUT OF THIS FILE DID NOT HAVE IT. Run over the
-#: three measured deltas, `fork_signals` named `clean:`, `install:` and `test-parallel:` as lines every
-#: consumer adds; they are here now because it did.
-MAKE_TARGET_CONSUMER_CORE: Final[tuple[str, ...]] = (
-    'all',
-    'clean',
-    'fmt',
-    'install',
-    'install-dev',
-    'lint',
-    'test',
-    'test-parallel',
-    'verify',
-)
-
-#: The Makefile base, and it is a CONTRACT rather than a rendering -- see this module's docstring for
-#: the measurement that forces the difference. Each line is a target header that must be PRESENT in
-#: the repo's own Makefile; the recipe under it is the repo's, because every measured recipe names a
-#: tree (`src tests examples scripts`), a toolchain (`cargo clippy`) or a mark (`-m "not femm"`).
-#:
-#: `verify` carries its recipe because that recipe is portable by construction: `dev_lab.dev.verify`
-#: runs ruff, ruff format and pytest, tees them into a log and prints a stamped verdict, and it takes
-#: no argument naming a tree. It is the one line here that is the family's answer rather than the
-#: family's question. This paragraph used to end "and consumer-a -- the only repo with no `verify` at
-#: all"; that is no longer true, all four declare one, and the sentence is corrected rather than left
-#: standing, because a base's own prose asserting an absence the tree has filled is the declaration
-#: that lies.
-#:
-#: REQUIRED IS THIS ARTEFACT'S TERMINAL MODE, re-opened and re-closed 2026-09-18 on the ground that
-#: the reason had expired -- that the base only read REQUIRED because consumer-a had no `verify:`, and
-#: that gap closed. It never was that reason, and re-measuring all four live Makefiles says the
-#: recorded one still holds: SEVEN of the nine shared targets carry a different recipe in more than
-#: one repo (`install:` and `install-dev:` four distinct ones apiece), and the two whose bodies DO
-#: agree disagree on the HEADER -- `all:` is spelled three ways and `verify:` two, because a
-#: prerequisite list is each repo's own dependency graph. RENDERED compares BYTES and has no
-#: match-by-target-name affordance, so adopting it would mean fixing one repo's prerequisites on the
-#: other three. The measurement is PINNED both ways by
-#: `tests/test_the_kit_meets_its_own_makefile_contract.py::TestRequiredIsTheTerminalModeForThisArtefact`:
-#: it reds if the recipes ever converge -- the day to re-open this -- and it reds if the mode moves
-#: while they have not. The separate complaint, that REQUIRED cannot see a recipe DIVERGE, was closed
-#: the same day by `unbound_recipes` wired into `famconfig._required_report` -- a mechanism rather
-#: than a mode change, and it catches the state a mode change would not have made legible: a target
-#: present with the base's recipe sitting under something else, so `make verify` does nothing.
-MAKEFILE_BASE: Final[tuple[str, ...]] = (
-    'all:',
-    'clean:',
-    'fmt:',
-    'install:',
-    'install-dev:',
-    'lint:',
-    'test:',
-    'test-parallel:',
-    'verify:',
-    '\tpython -m dev_lab.dev.verify',
-)
-
-#: WHAT THE ANTI-FORK ARM ALSO NAMED AND THIS BASE DELIBERATELY DOES NOT TAKE. The same run flagged
-#: `.DEFAULT_GOAL := all` and seven `.PHONY: <target>` lines as present in every consumer delta. They
-#: are NOT promoted, and the reason is the RENDERED/REQUIRED distinction one level down: a target
-#: header is a CONTRACT a repo can satisfy however it likes, while `.PHONY: fmt` is one SPELLING of a
-#: declaration a Makefile may equally make as a single `.PHONY: a b c` line. Requiring the spelling
-#: would force a restructure on any repo that chose the other one, which is a base legislating style
-#: rather than sharing a decision. Named here so the residual signal is accounted for rather than
-#: rotting into noise the next reader learns to scroll past.
-MAKEFILE_RESIDUAL_SIGNALS: Final[tuple[str, ...]] = (
-    '.DEFAULT_GOAL := all',
-    '.PHONY: all',
-    '.PHONY: clean',
-    '.PHONY: fmt',
-    '.PHONY: install-dev',
-    '.PHONY: lint',
-    '.PHONY: test',
-    '.PHONY: test-parallel',
-)
+# RETIRED 2026-11-24 (user ruling): the Makefile carries no family contract; it is the repo's own file
+# (dev_lab.dev.famfiles row OWNED). `make verify` was the one shared recipe and `python -m dev_lab.dev.verify`
+# is the door it wrapped.
 
 # ---------------------------------------------------------------------------- .gitattributes
 
@@ -325,18 +232,9 @@ GITATTRIBUTES_BASE: Final[tuple[str, ...]] = (
     '*.zip binary',
 )
 
-# ---------------------------------------------------------------------------- .rgignore
-
-#: What ripgrep -- and every agent's built-in Grep tool on top of it -- skips beyond .gitignore. ONE
-#: LINE (added 2026-10-05): `attic/` is tracked, read-only archived code, and a search hit in it is a
-#: hit on code nothing runs. `.claude/memory` is deliberately NOT here: it stays searchable.
-RGIGNORE_BASE: Final[tuple[str, ...]] = ('attic/',)
-
 #: Every base, by artefact. The render MODE is the machinery's word and is attached there; what this
 #: table owns is WHICH lines, and nothing else.
 BASES: Final[dict[str, tuple[str, ...]]] = {
     '.gitignore': GITIGNORE_BASE,
-    'Makefile': MAKEFILE_BASE,
     '.gitattributes': GITATTRIBUTES_BASE,
-    '.rgignore': RGIGNORE_BASE,
 }

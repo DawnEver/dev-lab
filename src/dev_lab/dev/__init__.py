@@ -487,7 +487,6 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.memoryadds` -- MEMORY-SHAPE's change half: memory is added to, never edited, deleted or moved
   but by the shapes it names (an approved redacting rename among them).
 * :mod:`dev_lab.dev.memoryentry` -- one memory entry's text: its shape, a merge's citations, non-narrative edits.
-* :mod:`dev_lab.dev.remconfig` -- the family's ``.claude/rem.json``: each repo's backlog is its issue tracker.
 * :mod:`dev_lab.dev.rendergoldens` -- every family render of the declaration fixtures, pinned byte for byte as goldens.
 * :mod:`dev_lab.dev.forgetakeover` -- ``forge review again|takeover|cap|run``: the review's doors (takeover is advice).
 * :mod:`dev_lab.dev.forgereview_job` -- the forge's review job: ``review run --pr N`` on its one PR, and its exit.

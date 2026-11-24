@@ -167,7 +167,7 @@ HINT: a bare interpreter mutates nothing; the hazard is a wrong interpreter, not
 HINT: the hazard is minutes, not harm.
 
 - **Why it is said.** `grep -r` walks the filesystem, so it descends into every git-ignored tree a checkout carries: `.venv`, `output/`, `target/`, nested worktrees. MEASURED 2026-10-05 in one consumer repo: `grep -r` over the repo did not finish in 4 min, `git grep -l` took 0.28 s, and about 66k git-ignored files were walked. A grep on a named file, a grep reading a pipe and `git grep` never walk, so they are permitted; the row keys on the recursion flag (`-r`, `-R`, a cluster such as `-rn`, `--recursive`).
-- **The exit.** Search the tracked files: git grep -n <pattern> [-- <paths>] (add `--untracked` for new files), or the agent's built-in Grep tool, which honours `.gitignore` and the family `.rgignore`.
+- **The exit.** Search the tracked files: git grep -n <pattern> [-- <paths>] (add `--untracked` for new files), or the agent's built-in Grep tool, which honours `.gitignore`.
 
 ## RECURSIVE-DELETE
 

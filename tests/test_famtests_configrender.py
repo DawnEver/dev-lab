@@ -20,7 +20,6 @@ import pytest
 from dev_lab.dev.famconfig import (
     BASES,
     RENDERED,
-    REQUIRED,
     Base,
     Delta,
     artefact_base,
@@ -122,13 +121,6 @@ def test_the_remedy_is_the_one_the_caller_declared_and_the_mode_decides_which(tm
             root=tmp_path, artefact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='the-declared-remedy'
         )
 
-    makefile = next(name for name, base in BASES.items() if base.mode == REQUIRED)
-    (tmp_path / makefile).write_text('nothing:\n\t@true\n', encoding='utf-8')
-    with pytest.raises(AssertionError, match=re.escape('declare each as a Delta.dropped')):
-        assert_artefact_is_rendered(
-            root=tmp_path, artefact=makefile, deltas=deltas, repo=_REPO, rerender_hint='the-declared-remedy'
-        )
-
 
 def test_a_missing_artefact_is_refused_rather_than_read_as_clean(tmp_path: Path) -> None:
     """An unwritten artefact guarantees nothing, which is not the same as passing."""
@@ -217,9 +209,8 @@ def test_the_mode_each_artefact_is_judged_under_is_the_one_the_repo_agreed_to() 
     assert_modes_are_as_agreed(modes=agreed)
 
     flipped = dict(agreed)
-    required = next(name for name, mode in agreed.items() if mode == REQUIRED)
-    flipped[required] = RENDERED
-    with pytest.raises(AssertionError, match=re.escape(required)):
+    flipped['.gitignore'] = 'PRESENCE-ONLY'
+    with pytest.raises(AssertionError, match=re.escape('.gitignore')):
         assert_modes_are_as_agreed(modes=flipped)
 
 

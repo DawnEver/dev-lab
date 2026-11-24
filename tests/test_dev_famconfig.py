@@ -37,9 +37,6 @@ from dev_lab.dev._famconfig_rows import (
     GITIGNORE_CLAUDE_SECTION,
     GITIGNORE_CONSUMER_CORE,
     GITIGNORE_FAMILY_LINES,
-    MAKE_TARGET_CONSUMER_CORE,
-    MAKEFILE_BASE,
-    MAKEFILE_RESIDUAL_SIGNALS,
 )
 from dev_lab.dev.famconfig import (
     ABSENT,
@@ -48,11 +45,9 @@ from dev_lab.dev.famconfig import (
     FOREIGN,
     GITIGNORE_FLOOR,
     INSTALLED,
-    MAKE_TARGET_CORE,
     ORDER_SENSITIVE_ARTEFACTS,
     RENDERED,
     REPO_FLOOR,
-    REQUIRED,
     STAMP,
     Base,
     Delta,
@@ -66,15 +61,11 @@ from dev_lab.dev.famconfig import (
     floating_subject,
     fork_signals,
     inspect_file,
-    meaningful_lines,
     measured_delta,
     negated_base_lines,
     positional_base_lines,
-    recipe_blocks,
     render,
     rendered_lines,
-    satisfies,
-    unbound_recipes,
 )
 
 #: The measured three-way intersection, 2026-09-17. Pinned as a COUNT beside the named lines below
@@ -110,37 +101,12 @@ def test_the_gitignore_base_is_the_measured_core_plus_the_mandated_lines() -> No
     assert sorted(_SORTED) == list(_SORTED), 'sorted, so the measurement is re-derivable'
 
 
-def test_every_shared_make_target_survives_into_the_makefile_base() -> None:
-    """Same property, other artefact -- and over BOTH readings, the all-four core and the wider one.
-
-    The consumer core is what the base actually takes; the all-four core is checked too because it is
-    a subset of it, so a base that lost `fmt` would red on both and a base that lost `clean` on one.
-    """
-    assert len(MAKE_TARGET_CORE) >= ARTEFACT_FLOOR
-    assert set(MAKE_TARGET_CORE) <= set(MAKE_TARGET_CONSUMER_CORE)
-    missing = [
-        target for target in (*MAKE_TARGET_CORE, *MAKE_TARGET_CONSUMER_CORE) if f'{target}:' not in MAKEFILE_BASE
-    ]
-    assert missing == [], f'the Makefile base no longer requires {missing}'
-
-
-def test_the_residual_fork_signals_are_named_and_stay_out_of_the_base() -> None:
-    """A signal the base declines has to be accounted for, or it rots into noise nobody reads.
-
-    Two-sided: each residual is recorded, and none of them has quietly been promoted into the base
-    without the reason for declining it being deleted in the same edit.
-    """
-    assert len(MAKEFILE_RESIDUAL_SIGNALS) >= ARTEFACT_FLOOR
-    promoted = [line for line in MAKEFILE_RESIDUAL_SIGNALS if line in MAKEFILE_BASE]
-    assert promoted == [], f'{promoted} is both declined and taken -- delete the residual row with the decision'
-
-
-def test_every_declared_artefact_has_a_mode_and_a_non_empty_base() -> None:
-    """A base that read empty renders a file everything passes against."""
-    assert len(BASES) >= ARTEFACT_FLOOR
+def test_every_declared_artefact_is_rendered_from_a_non_empty_base() -> None:
+    """A base that read empty renders a file everything passes against; RENDERED is the one mode left."""
+    assert len(BASES) >= 2
     for name, base in BASES.items():
         assert base.artefact == name
-        assert base.mode in {RENDERED, REQUIRED}, f'{name} declares mode {base.mode!r}'
+        assert base.mode == RENDERED, f'{name} declares mode {base.mode!r}'
         assert_base_floor(len(base.lines), 1, name)
 
 
@@ -255,62 +221,6 @@ def test_a_delta_past_its_ceiling_is_refused() -> None:
     delta = Delta(repo='planted-repo', added=('a/', 'b/', 'c/'), dropped={}, ceiling=2)
     with pytest.raises(ForkedDelta, match='past its ceiling'):
         render(_base(), delta)
-
-
-# ------------------------------------------------------------------------ the REQUIRED mode
-
-
-def _makefile(targets: tuple[str, ...]) -> str:
-    recipes = {'lint:': '\truff check .', 'fmt:': '\truff format .', 'test:': '\tpytest'}
-    body = [line for target in targets for line in (target, recipes.get(target, '\tpython -m dev_lab.dev.verify'))]
-    return '\n'.join(body) + '\n'
-
-
-def test_a_target_header_is_satisfied_by_its_prerequisites_and_nothing_looser() -> None:
-    """THE FALSE POSITIVE THIS CLOSES, and the arm that stops the fix from becoming a substring test.
-
-    Measured on the live consumers, a literal comparison called `all:` absent from all three, because
-    a Makefile target carries its prerequisites on the same line. So a header matches by prefix. The
-    second half is what keeps that honest: `alligator:` does not satisfy `all:`, and a recipe line is
-    still compared byte for byte, because a recipe is the half that is genuinely portable or not.
-    """
-    assert satisfies('all:', ('all: install-dev lint test',))
-    assert satisfies('all:', ('all:',))
-    assert not satisfies('all:', ('alligator: x',))
-    assert not satisfies('all:', ('install: all',))
-    assert satisfies('	python -m dev_lab.dev.verify', ('	python -m dev_lab.dev.verify',))
-    assert not satisfies('	python -m dev_lab.dev.verify', ('	python -m dev_lab.dev.verify --fast',))
-
-
-def test_a_makefile_holding_every_base_target_installs(tmp_path: Path) -> None:
-    """THE CONTROL for the weaker mode: recipes differ per repo and the contract still holds."""
-    base = artefact_base('Makefile')
-    assert base.mode == REQUIRED
-    path = tmp_path / 'Makefile'
-    path.write_text(_makefile(tuple(base.lines)), encoding='utf-8')
-    report = inspect_file(path, base, Delta(repo='planted-repo', added=(), dropped={}, ceiling=0))
-    assert report.status == INSTALLED, report.detail
-
-
-def test_planted_a_missing_required_target_reds(tmp_path: Path) -> None:
-    """PLANTED: `verify` dropped from the Makefile -- the exact state consumer-a is in today."""
-    base = artefact_base('Makefile')
-    path = tmp_path / 'Makefile'
-    path.write_text(_makefile(('lint:', 'fmt:', 'test:')), encoding='utf-8')
-    report = inspect_file(path, base, Delta(repo='planted-repo', added=(), dropped={}, ceiling=0))
-    assert report.status == DRIFTED, report.detail
-    assert 'verify:' in report.offending
-
-
-def test_planted_a_declared_drop_that_the_file_contradicts_reds(tmp_path: Path) -> None:
-    """A declaration that lies, in its cheapest form: the drop says gone and the file says here."""
-    base = artefact_base('Makefile')
-    delta = Delta(repo='planted-repo', added=(), dropped={'verify:': 'this repo has its own gate'}, ceiling=0)
-    path = tmp_path / 'Makefile'
-    path.write_text(_makefile(tuple(base.lines)), encoding='utf-8')
-    report = inspect_file(path, base, delta)
-    assert report.status == DRIFTED, report.detail
-    assert 'verify:' in report.offending
 
 
 # --------------------------------------------------------------------- survey and anti-fork
@@ -670,94 +580,6 @@ def test_the_order_sensitive_set_is_named_rather_than_counted() -> None:
     assert set(ORDER_SENSITIVE_ARTEFACTS) == {'.gitignore'}, ORDER_SENSITIVE_ARTEFACTS
     assert set(ORDER_SENSITIVE_ARTEFACTS) <= set(BASES), 'a declaration that outlived its subject'
     assert all(floor >= 1 for floor in ORDER_SENSITIVE_ARTEFACTS.values()), 'a floor of zero is no floor'
-
-
-# -- THE ASSOCIATION `satisfies` CANNOT SEE: a target that is present and does nothing. -------------
-
-
-#: The real Makefile base's one recipe line and the target it belongs under. Read from the LIVE base
-#: rather than retyped, so a base that moves its recipe moves these arms with it instead of leaving
-#: them asserting about a file nobody ships.
-_VERIFY_TARGET: Final = 'verify:'
-_VERIFY_RECIPE: Final = '\tpython -m dev_lab.dev.verify'
-
-
-def test_the_live_makefile_base_still_carries_the_pair_these_arms_are_about() -> None:
-    """A FLOOR ON THE ARMS BELOW. If the base loses either line they pass while testing nothing."""
-    lines = BASES['Makefile'].content_lines
-    assert _VERIFY_TARGET in lines, lines
-    assert _VERIFY_RECIPE in lines, lines
-    assert recipe_blocks(lines)[_VERIFY_TARGET] == (_VERIFY_RECIPE,), recipe_blocks(lines)
-
-
-def test_a_gutted_target_whose_recipe_moved_elsewhere_is_refused() -> None:
-    """THE DEFECT, MEASURED: this exact file reported INSTALLED before 2026-09-18.
-
-    `verify:` is followed by nothing and the recipe sits under `all:`. `satisfies` matches the target
-    by NAME and the recipe ANYWHERE, so both base lines are present and `make verify` does nothing.
-    """
-    # BUILT FROM THE LIVE BASE rather than typed out, so this stays the "every base line is present"
-    # file it claims to be when the base gains a target -- a hand-written copy would drift into being
-    # refused by the OLDER mechanism and the arm would then prove nothing while still passing.
-    rest = [line for line in BASES['Makefile'].content_lines if line not in {_VERIFY_RECIPE, 'all:'}]
-    gutted = ('all:', _VERIFY_RECIPE, *rest)
-    assert not [line for line in BASES['Makefile'].content_lines if not satisfies(line, gutted)], (
-        'the premise of this arm is that every base line IS satisfied; if that stops being true the '
-        'defect is being caught by the older mechanism and this arm proves nothing'
-    )
-    problems = unbound_recipes(BASES['Makefile'].content_lines, gutted)
-    assert len(problems) == 1, problems
-    assert _VERIFY_TARGET in problems[0]
-    assert 'runs and does nothing' in problems[0]
-
-
-def test_an_honest_target_with_its_recipe_under_it_is_left_alone() -> None:
-    """The green direction: a guard that refuses a correct file is deleted rather than obeyed."""
-    honest = meaningful_lines('all: install-dev lint test\nverify:\n' + _VERIFY_RECIPE + '\nclean:\n', '#')
-    assert unbound_recipes(BASES['Makefile'].content_lines, honest) == ()
-
-
-def test_a_target_carrying_prerequisites_still_owns_its_recipe() -> None:
-    """The prefix match `satisfies` exists for must survive into the association, not be lost by it."""
-    live = meaningful_lines('verify: install-dev\n' + _VERIFY_RECIPE + '\n', '#')
-    assert unbound_recipes(BASES['Makefile'].content_lines, live) == ()
-
-
-def test_a_target_that_is_absent_entirely_is_not_named_twice() -> None:
-    """A missing header is already a missing base line; reporting it here would double one defect."""
-    live = meaningful_lines('all:\nclean:\n', '#')
-    assert unbound_recipes(BASES['Makefile'].content_lines, live) == ()
-
-
-def test_the_blocks_are_derived_from_order_and_an_unindented_artefact_has_none() -> None:
-    """`.gitignore` has no indentation, so this reader has nothing to say about it and says nothing."""
-    assert recipe_blocks(('a:', '\tone', '\ttwo', 'b:', 'c:', '\tthree')) == {
-        'a:': ('\tone', '\ttwo'),
-        'b:': (),
-        'c:': ('\tthree',),
-    }
-    assert unbound_recipes(('*.log', 'build/'), ('*.log', 'build/')) == ()
-
-
-def test_the_required_report_carries_the_orphan_into_its_verdict(tmp_path: Path) -> None:
-    """THE WIRING, end to end: the reading is worthless if the verdict does not consult it."""
-    path = tmp_path / 'Makefile'
-    body = '\n'.join(
-        [line for line in BASES['Makefile'].content_lines if line != _VERIFY_RECIPE] + ['all:', _VERIFY_RECIPE]
-    )
-    path.write_text(body + '\n', encoding='utf-8')
-    report = inspect_file(path, BASES['Makefile'], Delta(repo='x', added=(), dropped={}, ceiling=0))
-    assert report.status == DRIFTED, report
-    assert any('runs and does nothing' in line for line in report.offending), report.offending
-
-
-def test_a_declared_drop_of_the_recipe_is_not_also_reported_as_an_orphan(tmp_path: Path) -> None:
-    """A line the delta declares GONE cannot also be required to sit somewhere -- one fact, one voice."""
-    path = tmp_path / 'Makefile'
-    body = '\n'.join(line for line in BASES['Makefile'].content_lines if line != _VERIFY_RECIPE)
-    path.write_text(body + '\n', encoding='utf-8')
-    delta = Delta(repo='x', added=(), dropped={_VERIFY_RECIPE: 'this repo verifies through its own runner'}, ceiling=0)
-    assert inspect_file(path, BASES['Makefile'], delta).status == INSTALLED
 
 
 @pytest.mark.parametrize(

@@ -15,5 +15,4 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'journaldoor',
     'memoryadds',  # memory is added to, never edited, new here
     'memoryentry',  # one memory entry's text judged, split from memoryadds (module-size band)
-    'remconfig',  # the family's rem.json, new here
 )
