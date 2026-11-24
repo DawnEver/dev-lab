@@ -249,7 +249,6 @@ WIRING: Final = (
     Wire(('SessionStart',), 'dev_lab.dev.scratch', ('snapshot',), once=True),
     Wire(('SessionStart',), 'dev_lab.dev.automode', ('session-start',), detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.forgefeed', ('session-start',), detached=True),
-    Wire(('SessionStart',), 'dev_lab.dev.rulesinject'),
     Wire(('SessionStart',), 'dev_lab.dev.remretired', ('session-start',), once=True, detached=True),
 )
 

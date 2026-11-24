@@ -31,6 +31,10 @@ MOVED_TABLES: Final = (
 
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
+    'rulesinject': (
+        'AGENTS.md, the one always-loaded page every harness reads natively (dev_lab.dev.agentsection)',
+        '2026-11-24: .claude/rules/ retired, so the SessionStart injection of it had nothing left to inject',
+    ),
     **dict.fromkeys(
         ('remhome', 'remconfig', 'only_manual_tasks_updated'),
         (

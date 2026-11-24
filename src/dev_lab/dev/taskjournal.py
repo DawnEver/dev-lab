@@ -117,10 +117,14 @@ def parse(text: str) -> Journal:
     return journal
 
 
+#: A text split on ``---`` holds a frontmatter when it has three parts: before, inside and after it.
+_FRONTMATTER_PARTS = 3
+
+
 def frontmatter(text: str) -> dict[str, str]:
     """The ``key: value`` fields between the first two ``---`` lines of *text*; ``{}`` when there is none."""
     parts = text.split('---', 2)
-    if len(parts) < 3:  # noqa: PLR2004 -- before, inside and after the frontmatter
+    if len(parts) < _FRONTMATTER_PARTS:
         return {}
     return {k.strip(): v.strip() for k, _, v in (ln.partition(':') for ln in parts[1].splitlines()) if _}
 

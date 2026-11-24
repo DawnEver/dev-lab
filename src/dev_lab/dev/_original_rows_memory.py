@@ -17,6 +17,5 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'memoryentry',  # one memory entry's text judged, split from memoryadds (module-size band)
     'memory',  # memory written and searched by one door, rem's kept duty (user ruling 2026-11-23)
     'remretired',  # rem's leftovers refused, its repo migration and machine uninstall (2026-11-23)
-    'rulesinject',  # the rules context rem gave a harness that does not load .claude/rules (2026-11-23)
     'ledgerguard',  # rem's task guard, kept as dev-lab's ledger guard (2026-11-23)
 )

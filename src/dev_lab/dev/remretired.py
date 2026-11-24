@@ -3,7 +3,7 @@
 User rulings 2026-11-23: memory stays in each repo's root, and rem is retired whole -- doc freshness, scope config,
 the derived memory index, per-turn recall, crystallized rules, the forced end-of-session pass, investigate, todo,
 session bindings and rem's state file. Its kept duties are dev-lab's (rendered into ``.claude/settings.json``):
-hard rules at SessionStart (:mod:`dev_lab.dev.rulesinject`), the ledger guard (:mod:`dev_lab.dev.ledgerguard`),
+the ledger guard (:mod:`dev_lab.dev.ledgerguard`),
 the task derived from the branch, the task's forge events, and memory write and search (:mod:`dev_lab.dev.memory`).
 
 WHAT IS REFUSED, AND ITS DOOR:

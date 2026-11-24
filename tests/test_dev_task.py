@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,7 +18,8 @@ import pytest
 from _task_ledger import on_branch, plant_ledger
 from lab_commons.home import part
 
-from dev_lab.dev import task, taskauthority, taskjournal, taskledger
+from dev_lab.dev import ledgerguard, task, taskauthority, taskjournal, taskledger
+from dev_lab.dev._deny_ledger_row import LEDGER_WRITES_THROUGH_ITS_DOOR as ROW
 from dev_lab.dev.taskmigrate import RETIRED_AUTHORITY, migrate
 
 _DAY = '2026-11-23'
@@ -261,8 +263,6 @@ def test_migrate_union_merges_journals_across_checkouts(ledger: Path, tmp_path: 
 
 
 def test_the_ledger_is_written_only_through_its_door(ledger: Path, tmp_path: Path) -> None:
-    from dev_lab.dev import ledgerguard  # noqa: PLC0415
-
     refused = ledgerguard.refuse_write(ledger / 't' / 'JOURNAL.md')
     assert refused is not None
     assert refused.startswith(f'{ledgerguard.RULE_ID}:')
@@ -271,10 +271,9 @@ def test_the_ledger_is_written_only_through_its_door(ledger: Path, tmp_path: Pat
 
 
 def test_the_shell_row_refuses_writes_and_permits_reads() -> None:
-    import re  # noqa: PLC0415
-
-    from dev_lab.dev._deny_ledger_row import LEDGER_WRITES_THROUGH_ITS_DOOR as ROW  # noqa: PLC0415
-
     pattern = re.compile(str(ROW['pattern']))
-    assert all(pattern.search(c) for c in ROW['refuses'])  # type: ignore[attr-defined]
-    assert not any(pattern.search(c) for c in ROW['permits'])  # type: ignore[attr-defined]
+    refuses, permits = ROW['refuses'], ROW['permits']
+    assert isinstance(refuses, tuple | list)
+    assert isinstance(permits, tuple | list)
+    assert all(pattern.search(c) for c in refuses)
+    assert not any(pattern.search(c) for c in permits)

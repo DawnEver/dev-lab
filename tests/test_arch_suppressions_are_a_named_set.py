@@ -621,6 +621,156 @@ ALLOWED: Final[dict[Site, str]] = {
         'attr-defined',
         "seen.append(req.get_header('User-agent'))",
     ): 'the fake opener receives the Request the code built; typeshed types it as str | Request',
+    (
+        'src/dev_lab/dev/accountsweep.py',
+        'PLC0415',
+        'import pwd',
+    ): 'POSIX-only module: getuid above already ruled Windows out, so a top-level import would break Windows',
+    (
+        'src/dev_lab/dev/ask.py',
+        'PLC0415',
+        'from dev_lab.dev import secretkit',
+    ): 'secretkit reads git and the lock; only paid when a person is actually asked',
+    (
+        'src/dev_lab/dev/docrows.py',
+        'PLC0415',
+        'from markdown_it import MarkdownIt',
+    ): "markdown_it is an optional docs dependency, gated by Module('markdown_it')",
+    (
+        'src/dev_lab/dev/frozen.py',
+        'PLC0415',
+        'from dev_lab.dev.gitdirs import checkout_of',
+    ): "frozen runs in the write hook's hot path; only the hook entry pays for gitdirs",
+    (
+        'src/dev_lab/dev/frozen.py',
+        'PLC0415',
+        'from dev_lab.dev.venvpath import running_interpreter',
+    ): "the remedy's interpreter is resolved only when a refusal is written",
+    (
+        'src/dev_lab/dev/frozen.py',
+        'PLC0415',
+        'from dev_lab.ops.consent.client import public_key',
+    ): 'dev -> ops consent client: only a repo that declares frozen files pays for the client',
+    (
+        'src/dev_lab/dev/frozen.py',
+        'PLC0415',
+        'from dev_lab.ops.consent.credential import ConsentRefused, verify',
+    ): 'same: the credential verifier loads only when a receipt is judged',
+    (
+        'src/dev_lab/dev/hpcaccount/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev import tickholder',
+    ): 'the hpcaccount package imports no verb at import time; the tick verb loads its own',
+    (
+        'src/dev_lab/dev/hpcaccount/tickstop.py',
+        'attr-defined',
+        'me = os.getuid() if uid is None else uid',
+    ): 'os.getuid is POSIX-only: mypy on Windows lacks it, on POSIX the ignore is unused',
+    (
+        'src/dev_lab/dev/hpcaccount/tickstop.py',
+        'unused-ignore',
+        'me = os.getuid() if uid is None else uid',
+    ): 'the other half of the same platform split (see attr-defined above)',
+    (
+        'src/dev_lab/dev/task.py',
+        'C901',
+        'def _run(args: argparse.Namespace, cwd: Path) -> str:',
+    ): "the task CLI's dispatch: one branch per verb, each a few lines",
+    (
+        'src/dev_lab/dev/task.py',
+        'PLR0911',
+        'def _run(args: argparse.Namespace, cwd: Path) -> str:',
+    ): 'same dispatch: one return per verb',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLR0912',
+        'def _run(args: argparse.Namespace, cwd: Path) -> str:',
+    ): 'same dispatch: one branch per verb',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLC0415',
+        'from dev_lab.dev.forgeclient import client_for',
+    ): 'the network client loads only for open/close, never for a read verb',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLC0415',
+        'from dev_lab.dev.issuekind import create',
+    ): 'same: the issue client loads only when an issue is opened',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLC0415',
+        'from dev_lab.dev.servelock import held',
+    ): 'the serve lock is read only on the verb that needs it',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLC0415',
+        'from dev_lab.dev.taskmigrate import migrate',
+    ): 'taskmigrate imports task at its use: a top-level import here is a cycle',
+    (
+        'src/dev_lab/dev/task.py',
+        'arg-type',
+        'return _status(taskjournal.record(folder))',
+    ): 'record() returns Record | None and the branch above already proved the folder holds one',
+    (
+        'src/dev_lab/dev/taskauthority.py',
+        'PLC0415',
+        'from dev_lab.dev.servelock import held',
+    ): 'the prompt hook runs on every prompt and imports nothing it does not use',
+    (
+        'src/dev_lab/dev/taskauthority.py',
+        'PLC0415',
+        'from dev_lab.dev.taskledger import LedgerUnresolvedError, ledger',
+    ): 'same prompt hook: the ledger loads only for a prompt that is a task command',
+    (
+        'src/dev_lab/dev/taskauthority.py',
+        'arg-type',
+        'payload = json.load(stdin or sys.stdin)',
+    ): 'sys.stdin is TextIO | None in typeshed; a hook always has one',
+    (
+        'src/dev_lab/dev/taskgate.py',
+        'PLC0415',
+        'from dev_lab.dev import task as door',
+    ): 'task imports taskgate: the door loads only when a PR or issue opened, and a top-level import is a cycle',
+    (
+        'src/dev_lab/dev/taskmigrate.py',
+        'PLC0415',
+        'from dev_lab.dev.task import TaskRefused',
+    ): 'task imports this module lazily; a top-level import back is a cycle',
+    (
+        'src/dev_lab/dev/taskmigrate.py',
+        'PLC0415',
+        'from dev_lab.dev.task import _commit',
+    ): 'same cycle with task',
+    (
+        'src/dev_lab/dev/writeroots.py',
+        'S108',
+        "if text == '/tmp' or text.startswith('/tmp/'):",
+    ): "Git Bash's /tmp spelling is recognised to translate it, never written to",
+    (
+        'tests/test_dev_frozen.py',
+        'S607',
+        "subprocess.run(['git', *args], cwd=root, check=True, capture_output=True)",
+    ): "a fixture repo's git on PATH, as every git-initialised fixture here",
+    (
+        'tests/test_dev_frozen.py',
+        'arg-type',
+        '(root / frozen.RECEIPT_FILE).write_bytes(_credential(want, **kwargs))',
+    ): 'the fixture forwards loose kwargs to the credential builder to plant malformed receipts',
+    (
+        'tests/test_dev_frozen.py',
+        'index',
+        'rows = {path: frozen.index_object(root, path)[1] for path in (_SETTINGS, _DOCS)}',
+    ): 'index_object returns None for an untracked path; the fixture tracked both',
+    (
+        'tests/test_dev_large_objects.py',
+        'arg-type',
+        "assert forgeunit.main(['unit=x'], cwd=_checkout(tmp_path), client=object()) == 2",
+    ): 'planted control: a client that is not one, to prove the refusal happens before any call',
+    (
+        'tests/test_dev_strayleaks.py',
+        'operator',
+        'plant(drive, home)',
+    ): 'the planter comes from a parametrize list of lambdas mypy does not unify with its declared Callable',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

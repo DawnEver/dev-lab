@@ -47,7 +47,7 @@ def test_planted_control_nothing_fitting_names_nothing(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ('version', 'spec', 'ok'), [('3.12.4', '>=3.13', False), ('3.13.1', '>=3.13', True), ('3.12.4', None, True)]
 )
-def test_fits_reads_the_specifier(version: str, spec: str | None, ok: bool) -> None:  # noqa: FBT001 -- a parametrized case
+def test_fits_reads_the_specifier(version: str, spec: str | None, *, ok: bool) -> None:
     assert fitting.fits(version, spec) is ok
 
 

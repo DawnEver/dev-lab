@@ -60,6 +60,8 @@ __all__ = [
 ]
 
 #: The reserved directory closed tasks move under: ``archive/<YYYY-MM-DD>/<slug>/``.
+#: ``open <slug> <goal>`` and ``request open|close <slug>`` both need at least two words.
+_SLUG_AND_GOAL: Final = 2
 ARCHIVE: Final = 'archive'
 #: The append verbs and the tag each writes.
 JOURNAL_VERBS: Final = {
@@ -367,21 +369,24 @@ def _archived(slug: str) -> Path | None:
     return days[0].parent if days else None
 
 
+def _clip(text: str, n: int) -> str:
+    return text if len(text) <= n else f'{text[: n - 3]}...'
+
+
 def _status(found: Record) -> str:
     journal = found.journal
     handoffs = [ln for ln in (found.dir / 'JOURNAL.md').read_text(encoding='utf-8').splitlines() if ' handoff: ' in ln]
-    clip = lambda text, n: text if len(text) <= n else f'{text[: n - 3]}...'  # noqa: E731
-    head = [f'task {found.slug} ({found.status}, authority {found.authority or "none"}): {clip(found.goal, 300)}']
+    head = [f'task {found.slug} ({found.status}, authority {found.authority or "none"}): {_clip(found.goal, 300)}']
     if issue := found.fields.get('issue'):
         head.append(f'identity: {issue}')
     if found.authority and (said := taskauthority.problem(ledger(), found.slug, found.authority)):
         head.append(f'authority {said[0]}: {said[1]}')
-    items = [f'  O{i.n} {clip(i.text, 100)}' for i in found.open_items]
+    items = [f'  O{i.n} {_clip(i.text, 100)}' for i in found.open_items]
     tail = [
         f'decisions: {len(journal.decisions)}',
-        *(f'  D{n} ({d}) {clip(t, 100)}' for n, d, t in journal.decisions[-3:]),
+        *(f'  D{n} ({d}) {_clip(t, 100)}' for n, d, t in journal.decisions[-3:]),
     ]
-    tail += [f'last handoff: {clip(handoffs[-1], 160)}'] if handoffs else []
+    tail += [f'last handoff: {_clip(handoffs[-1], 160)}'] if handoffs else []
     tail.append(f'whole record: python -m dev_lab.dev.task show {found.slug}')
     shown = len(items)
     while True:
@@ -429,7 +434,7 @@ def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PL
             raise _usage(verb)
         return amend(_bound(cwd, args.task), args.line, words[0], reason=args.reason)
     if verb == 'open':
-        if len(words) < 2:  # noqa: PLR2004
+        if len(words) < _SLUG_AND_GOAL:
             raise _usage(verb)
         where = open_task(words[0], ' '.join(words[1:]))
         return f'[task] opened {words[0]} at {where.as_posix()}; work on it on a branch pr/{words[0]}/<feature>'
@@ -440,7 +445,7 @@ def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PL
         where = close(words[0], ' '.join(words[1:]), cwd=cwd, journal_only=only)
         return f'[task] closed {words[0]}; archived to {where.as_posix()}'
     if verb == 'request':
-        if len(words) < 2 or words[0] not in {'open', 'close'}:  # noqa: PLR2004
+        if len(words) < _SLUG_AND_GOAL or words[0] not in {'open', 'close'}:
             raise _usage(verb)
         code = taskauthority.request(ledger(), words[0], _slug(words[1]), ' '.join(words[2:]))
         return (
