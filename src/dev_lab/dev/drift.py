@@ -301,7 +301,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for finding in found:
         emit(f'[drift] {finding.subject} -- {finding.action}')
         if args.alarm:
-            sound(alarm_of(repo, finding))
+            sound(alarm_of(repo, finding), root=args.root)
     return 1 if found or failed else 0
 
 
