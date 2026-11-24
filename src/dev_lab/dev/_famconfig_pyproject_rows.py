@@ -73,7 +73,8 @@ README_NAME: Final = 'README.md'
 #: distinct; ``filterwarnings``, ``minversion`` and the rest are recorded in `PYPROJECT_DECLINED`.
 PYPROJECT_SECTION_ROWS: Final[dict[str, tuple[tuple[str, ...], dict[str, object], dict[str, tuple[str, ...]]]]] = {
     PROJECT: (('project',), {'readme': README_NAME}, {'dynamic': ('version',)}),
-    PYTEST_INI: (('tool', 'pytest', 'ini_options'), {}, {'testpaths': ('tests',)}),
+    # cache_dir (user ruling 2026-11-24): every tool cache lives under output/cache/<tool>/, never at the root.
+    PYTEST_INI: (('tool', 'pytest', 'ini_options'), {'cache_dir': 'output/cache/pytest'}, {'testpaths': ('tests',)}),
 }
 
 #: The floor under how many tables this file DECIDES. A registry of declines is only evidence that

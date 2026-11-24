@@ -35,7 +35,6 @@ import pytest
 from dev_lab.dev._famconfig_rows import (
     GITIGNORE_BASE,
     GITIGNORE_CLAUDE_SECTION,
-    GITIGNORE_CONSUMER_CORE,
     GITIGNORE_FAMILY_LINES,
 )
 from dev_lab.dev.famconfig import (
@@ -68,13 +67,9 @@ from dev_lab.dev.famconfig import (
     rendered_lines,
 )
 
-#: The measured three-way intersection, 2026-09-17. Pinned as a COUNT beside the named lines below
-#: rather than instead of them: the count says the table was not quietly halved, the names say which.
-GITIGNORE_LINES = 8  # trimmed 2026-11-24: the retired lines are named in _famconfig_rows
-
 #: How many artefacts the family declares. A floor -- a `BASES` that read empty would make every
 #: parametrized arm below pass over nothing at all.
-ARTEFACT_FLOOR = 3
+ARTEFACT_FLOOR = 2
 
 
 def _base() -> Base:
@@ -88,16 +83,15 @@ def _delta(added: tuple[str, ...] = ('target/', 'coverage-html/'), ceiling: int 
 # ----------------------------------------------------------------- the base is what was measured
 
 
-def test_the_gitignore_base_is_the_measured_core_plus_the_mandated_lines() -> None:
-    """The consumers' 14 measured patterns plus the family-mandated set, by NAME -- and nothing else."""
-    assert len(GITIGNORE_CONSUMER_CORE) == GITIGNORE_LINES
+def test_the_gitignore_base_is_the_family_lines_then_the_closed_section() -> None:
+    """User ruling 2026-11-24: only paths that legitimately exist untracked, each named with its writer."""
     assert (*_SORTED, *GITIGNORE_CLAUDE_SECTION) == GITIGNORE_BASE, 'the sorted part, then the ordered section'
-    assert set(_SORTED) == set(GITIGNORE_CONSUMER_CORE) | set(GITIGNORE_FAMILY_LINES)
+    assert set(_SORTED) == set(GITIGNORE_FAMILY_LINES)
     assert all(why.strip() for why in GITIGNORE_FAMILY_LINES.values()), 'a mandated line carries its reason'
-    assert '**/.claude/**' in GITIGNORE_CLAUDE_SECTION, 'the Claude section ignores .claude/worktrees/ too'
+    assert '/.claude/*' in GITIGNORE_CLAUDE_SECTION, 'the closed section ignores .claude/worktrees/ too'
     assert_base_floor(len(GITIGNORE_BASE), GITIGNORE_FLOOR, '.gitignore')
     assert 'uv.lock' not in GITIGNORE_BASE, 'PIN + FRESHNESS: every repo commits its lock'
-    assert '.venv*' in GITIGNORE_BASE
+    assert '/.venv/' in GITIGNORE_BASE
     assert sorted(_SORTED) == list(_SORTED), 'sorted, so the measurement is re-derivable'
 
 

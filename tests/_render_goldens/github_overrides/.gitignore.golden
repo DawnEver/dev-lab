@@ -3,28 +3,38 @@
 # this repo's own lines are its declared delta. Change one, re-render, commit.
 
 **/.DS_Store
-**/.env
 **/__pycache__/
-**/__version__.py
-*.egg-info/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-.venv*
+/.venv/
+/.venvs/
 /build/
 /config/
 /dist/
 /output/
+/src/**/__version__.py
 /temp/
-**/.claude/**
-!**/.claude/settings.json
-!**/.claude/hooks/
-!**/.claude/hooks/**
-!**/.claude/rules/
-!**/.claude/rules/**
-!**/.claude/memory/
-!**/.claude/memory/**
-**/.claude/automode.json
+*/**/.claude/
+/.claude/*
+!/.claude/settings.json
+!/.claude/hooks/
+/.claude/hooks/*
+!/.claude/hooks/deny-commands.js
+!/.claude/hooks/venv_resolver.js
+!/.claude/hooks/py.js
+!/.claude/hooks/deny-rules.json
+!/.claude/hooks/native_session.json
+!/.claude/memory/
+/.claude/memory/**
+!/.claude/memory/*/
+!/.claude/memory/*/*/
+!/.claude/memory/*/*/*/
+!/.claude/memory/*/*/*/*.md
+/.codex/*
+!/.codex/rules/
+/.codex/rules/*
+!/.codex/rules/family-doors.rules
+!/.codex/rules/family-denies.rules
+/.vscode/*
+!/.vscode/settings.json
 
 # --- overrides delta, 2 of 2 allowed ---
 /data/

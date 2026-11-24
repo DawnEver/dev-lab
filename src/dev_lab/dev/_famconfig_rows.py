@@ -49,7 +49,6 @@ __all__ = [
     'GITIGNORE_BANNED',
     'GITIGNORE_BASE',
     'GITIGNORE_CLAUDE_SECTION',
-    'GITIGNORE_CONSUMER_CORE',
     'GITIGNORE_FAMILY_LINES',
     'GITIGNORE_FLOOR',
     'ORDERED_SECTIONS',
@@ -71,83 +70,59 @@ REPO_FLOOR: Final = 3
 
 # ------------------------------------------------------------------------------- .gitignore
 
-#: The 14 patterns, MEASURED as the three-way intersection of the consumers' live `.gitignore`
-#: files and then CANONICALISED on the one axis they disagree about.
-#:
-#: THE LITERAL INTERSECTION IS 12, NOT 14, and the two-line gap is worth the sentence. consumer-b and
-#: consumer-c write `**/__pycache__` and `*.egg-info`; consumer-a writes `**/__pycache__/` and
-#: `*.egg-info/`. Strip the trailing slash and the intersection is 14 and the pairwise overlaps are
-#: 27 / 33 / 16; keep it and they are 12 and 27 / 31 / 14. The two spellings are NOT equivalent to
-#: git -- a trailing slash matches a directory only -- so this is a real disagreement and not
-#: whitespace, and a base has to pick one. It picks the SLASHED spelling, because every one of the
-#: five patterns in question names a directory and the unslashed form would also match a FILE of
-#: that name. That is a change of behaviour for two repos and it belongs in their adoption commit,
-#: stated, rather than in a normaliser that hides it.
-#:
-#: Sorted, because the order is then re-derivable by anybody who repeats the measurement. A
-#: `.gitignore` is order-insensitive apart from negations, and the base declares none -- a clause
-#: `negated_base_lines` now ENFORCES rather than asserts, since `!` sorts above every rule here.
-#:
-#: THAT PARENTHETICAL WAS THE WHOLE RISK SURFACE AND IT WAS PROSE UNTIL 2026-09-18. Sorting is only
-#: safe while no line here needs to sit AFTER another, and nothing checked it. The shape that breaks
-#: it is on record in a sibling repo's own file: `**/.claude/**/__pycache__/` exists there for no
-#: reason except POSITION -- `**/__pycache__/` already excludes everything it excludes -- and it works
-#: only because it is written BELOW the `!**/.claude/memory/**` negation that re-included the cache.
-#: Promoted into this table it would render ABOVE every delta line, re-tracking the `.pyc` the sibling
-#: repo measured as TRACKED in 2026-08, and `fork_signals` would have argued FOR the promotion. See
-#: :data:`ORDER_SENSITIVE_ARTEFACTS` for the mechanism that now refuses it.
-GITIGNORE_CONSUMER_CORE: Final[tuple[str, ...]] = (
-    '**/.env',
-    '**/__pycache__/',
-    '*.egg-info/',
-    '.mypy_cache/',
-    '.pytest_cache/',
-    '.ruff_cache/',
-    '.venv*',
-    # Root-anchored 2026-11-24: a source package named `temp` is source, not scratch.
-    '/temp/',
-)
-
-#: RETIRED 2026-11-24 (user ruling): `**/log/*.log(.error)`, `/dumps/`, `/report/`, `htmlcov/` and `.coverage*`
-#: (coverage data and reports go to output/ via verifysteps' COVERAGE_FILE), `**/ignore/`, `*.spec`, `*.c`,
-#: `**/_meta.json` and the `.claude` cache lines -- no family mechanism writes them in every checkout.
-
-#: THE LINES THE FAMILY MANDATES rather than measured, each with the mechanism that writes the path.
-#: Added 2026-10-03 on the user's ruling that every repo's `.gitignore` has ONE source here: a line
-#: enters when a FAMILY mechanism (this package, the build backend every repo runs, the agent tooling
-#: every repo uses) writes that path in every checkout -- not because three files happen to spell it.
-#: A consumer delta that restates one of these is refused at render time like any other restatement.
+#: THE PRINCIPLE (user ruling 2026-11-24, superseding the measured three-way intersection of 2026-09-17):
+#: a `.gitignore` lists ONLY paths that legitimately exist untracked in every checkout. A misplaced
+#: artefact is NOT ignored: it shows in `git status` and the closed inventory refuses it. So every line
+#: is root-anchored unless the artefact genuinely appears at any depth, and each names what writes it.
+#: Tool caches (pytest, ruff, mypy, coverage, hypothesis) are not here: the family pyproject rows send
+#: them under `output/cache/<tool>/`. Retired with the old base, each for having no writer in every
+#: checkout: `**/.env`, the cache directories, `.coverage*`, `htmlcov/`, `*.egg-info/`, `*.spec`, `*.c`,
+#: `**/log/*.log(.error)`, `/dumps/`, `/report/`, `**/ignore/`, `**/_meta.json`, `!**/attic/**` and the
+#: rem/tasks/sharp-review/agents/skills/commands/workflows/output-styles/docs re-inclusions.
 GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
-    '**/__version__.py': 'the version file hatch-vcs / setuptools-scm write at build time, in every repo.',
+    '/.venv/': 'the checkout`s environment, written by the bootstrap door (dev_lab.dev.dep --bootstrap).',
+    '/.venvs/': 'the per-run verify environments dev_lab.dev.verify seats beside the checkout`s own.',
+    '**/__pycache__/': 'the interpreter`s bytecode cache, beside every imported module at any depth.',
     '/build/': 'the build backend`s staging directory, at the root of every repo that builds a wheel.',
     '/dist/': 'the built wheels and sdists, at the root of every repo that builds one.',
-    '/output/': 'the dated artefact tree (dev_lab.dev.datedlog) every repo writes under output/.',
-    '**/.DS_Store': 'macOS Finder state; a platform artefact with no repo to belong to.',
-    '/config/': 'the dev-mode in-repo config root two consumers generate from packaged defaults.',
+    '/src/**/__version__.py': 'the version file hatch-vcs / setuptools-scm write into the package at build time.',
+    '/output/': 'the dated artefact tree (dev_lab.dev.datedlog) and every redirected tool cache.',
+    '/config/': 'the dev-mode in-repo config root a consumer generates from packaged defaults.',
+    '/temp/': 'the root temporary directory a run may create; a source package named `temp` is not it.',
+    '**/.DS_Store': 'macOS Finder state; a platform artefact at any depth.',
 }
 
-#: THE CLAUDE PROJECT STATE SECTION -- ONE ORDERED BLOCK, identical in every repo (user ruling
-#: 2026-10-03, taken from the two reference repos' `# Claude project state` sections). Ignore all of
-#: `.claude/`, re-include the shared, checked-in directories, then re-ignore the generated files the
-#: re-inclusion would otherwise track. ORDER IS THE RULE here (last match wins), so this block is
-#: declared in :data:`ORDERED_SECTIONS`, rendered verbatim AFTER the sorted lines, and exempt from the
-#: order-free refusal that binds the sorted part. It covers `.claude/worktrees/` (WORKTREES-STAY-INSIDE)
-#: and `<checkout>/.claude/.rem-state.json` because `**/.claude/**` does and nothing re-includes them.
+#: THE CLOSED AGENT/EDITOR SECTION -- ONE ORDERED BLOCK (last match wins), identical in every repo,
+#: declared in :data:`ORDERED_SECTIONS` and rendered verbatim after the sorted lines. It mirrors the
+#: closed `.claude/` inventory (dev_lab.dev.claudelayout): a nested `.claude/` is ignored, everything
+#: under the root one is ignored except the declared files, and memory re-includes only
+#: `<yyyy>/<mm>/<dd>/*.md` -- so `settings.local.json`, `automode.json` and `worktrees/` stay ignored by
+#: construction. Codex keeps only the two rendered rule files, the editor only its shared settings.
 GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
-    '**/.claude/**',
-    '!**/.claude/settings.json',
-    *(
-        line
-        for directory in ('hooks', 'rules', 'memory')
-        for line in (f'!**/.claude/{directory}/', f'!**/.claude/{directory}/**')
-    ),
-    # The auto-mode prose is MACHINE-LOCAL, derived from the synced fleet sources (dev_lab.dev.automode, user
-    # ruling 2026-10-23): a committed copy would put fleet facts in history. Named so no re-inclusion tracks it.
-    '**/.claude/automode.json',
+    '*/**/.claude/',
+    '/.claude/*',
+    '!/.claude/settings.json',
+    '!/.claude/hooks/',
+    '/.claude/hooks/*',
+    '!/.claude/hooks/deny-commands.js',
+    '!/.claude/hooks/venv_resolver.js',
+    '!/.claude/hooks/py.js',
+    '!/.claude/hooks/deny-rules.json',
+    '!/.claude/hooks/native_session.json',
+    '!/.claude/memory/',
+    '/.claude/memory/**',
+    '!/.claude/memory/*/',
+    '!/.claude/memory/*/*/',
+    '!/.claude/memory/*/*/*/',
+    '!/.claude/memory/*/*/*/*.md',
+    '/.codex/*',
+    '!/.codex/rules/',
+    '/.codex/rules/*',
+    '!/.codex/rules/family-doors.rules',
+    '!/.codex/rules/family-denies.rules',
+    '/.vscode/*',
+    '!/.vscode/settings.json',
 )
-# The re-inclusions are exactly the tracked directories of the closed `.claude/` inventory
-# (dev_lab.dev.claudelayout.CLAUDE_ENTRIES). `!**/attic/**` left the base 2026-11-24: a repo holding an
-# archive declares it in its own delta.
 
 #: Lines NO `.gitignore` in the family may carry, base or delta -- as patterns, with the ruling. A
 #: scratch-like directory under any name but `scratch/` is a second place for temporary scripts, and
@@ -161,9 +136,9 @@ GITIGNORE_BANNED: Final[dict[str, str]] = {
     r'(?:^|/)uv\.lock$': 'every repo commits its uv.lock at the newest resolution (PIN + FRESHNESS, 2026-10-17)',
 }
 
-#: THE BASE: the sorted measured core plus the mandated lines, then the ordered Claude section.
+#: THE BASE: the sorted family lines, then the ordered closed agent/editor section.
 GITIGNORE_BASE: Final[tuple[str, ...]] = (
-    *sorted({*GITIGNORE_CONSUMER_CORE, *GITIGNORE_FAMILY_LINES}),
+    *sorted(GITIGNORE_FAMILY_LINES),
     *GITIGNORE_CLAUDE_SECTION,
 )
 
