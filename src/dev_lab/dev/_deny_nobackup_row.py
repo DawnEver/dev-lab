@@ -38,8 +38,8 @@ NO_BACKUP_COPIES: dict[str, object] = {
     'pattern': '|'.join(f'(?:{one})' for one in _MAKERS),
     'matches': 'argument',
     'hazard': (
-        'output/ and scratch/ never hold a copy or backup of work: a parked checkout, tree, bundle, patch or archive '
-        'is unlanded work nothing merges, and it grew one repo`s output/ to 3.4 M copied source files.'
+        'output/ and scratch/ never hold a copy or backup of work: a parked tree, bundle, patch or archive is '
+        'unlanded work nothing merges.'
     ),
     'remedy': (
         'MERGE-OR-DELETE: commit the work on its branch and land it through a PR, or delete it '

@@ -85,7 +85,7 @@ _OID: Final = re.compile(r'[0-9a-f]{40}|[0-9a-f]{64}')
 HAZARD: Final = 'a file or directory the user finalized is frozen: its content changes only with their consent.'
 REMEDY: Final = (
     f'Only the USER approves: edit {FREEZE_FILE} (`[frozen]` `"<path>" = "<object id>"`), run '
-    '`{python} -m dev_lab.dev.frozen request`, ask the user for the code, run the grant it names, then '
+    '`{python} -m dev_lab.dev.frozen request`, ask the user for the code, run its grant, then '
     f'`{{python}} -m dev_lab.dev.frozen receipt <credential.json>`; commit {FREEZE_FILE} with {RECEIPT_FILE}.'
 )
 
