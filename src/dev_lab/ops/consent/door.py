@@ -34,7 +34,7 @@ runs as it shows the plan. A refusal here spends no code: the user is never aske
 :func:`endpoint_send` is the one JSON-line transport to an endpoint table (consent issuer, break-glass server):
 ONE protocol over the transport this machine declares it can reach the forge by (``[dev] forge_reach``, rendered as
 ``[devhost] forge_reach``; undeclared is ssh) -- :func:`ssh_send` to the table's ``endpoint``, or
-:func:`dev_lab.ops.httpsdoor.https_send` to its ``https`` URL, signed by the same client key. It lives here so the
+:func:`dev_lab.ops.httpsclient.https_send` to its ``https`` URL, signed by the same client key. It lives here so the
 consent client imports no ``dev_lab.dev`` client module (the former ``ops.consent -> dev.forgebreakglass`` cycle).
 """
 
@@ -57,7 +57,7 @@ from dev_lab.dev.devschema import FORGE_REACH
 from dev_lab.ops.consent.actions import ACTIONS, read_answer
 from dev_lab.ops.consent.credential import FIELDS, ConsentRefused
 from dev_lab.ops.consent.plan import Plan, not_registered, unregistered
-from dev_lab.ops.httpsdoor import https_send
+from dev_lab.ops.httpsclient import https_send
 from dev_lab.ops.totp import write_private
 
 __all__ = [

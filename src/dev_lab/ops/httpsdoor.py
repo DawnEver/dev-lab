@@ -15,8 +15,8 @@ A workstation whose network lets it out only on 443 (port 22 blocked, 2026-11-23
 * :func:`relay` is the unit (``python -m dev_lab.ops.httpsdoor``), run as the role's restricted account on
   ``127.0.0.1:<https_port>`` only; Caddy routes the role's :data:`PATHS` entry of an allowlisted site to it
   (:func:`dev_lab.ops.caddy.doors_routed`). Failed admissions are throttled per peer and logged (no bodies).
-* :func:`https_send` is the client (system trust store; ``https_pin`` optionally pins the server's SPKI).
-  :func:`dev_lab.ops.consent.door.endpoint_send` picks it or ssh from the machine's declared ``forge_reach``.
+* :func:`dev_lab.ops.httpsclient.https_send` is the client (system trust store; ``https_pin`` optionally pins the
+  server's SPKI). :func:`dev_lab.ops.consent.door.endpoint_send` picks it or ssh by the machine's ``forge_reach``.
 """
 
 from __future__ import annotations
@@ -24,25 +24,21 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
-import http.client
 import json
 import os
 import secrets
 import shutil
-import ssl
 import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Final
-from urllib.parse import urlsplit
 
-from cryptography import x509
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.ops.sshkey import ENV as AUTH_ENV
@@ -55,12 +51,11 @@ __all__ = [
     'Gate',
     'HttpsDoor',
     'Refused',
+    'behind_allowlist',
     'envelope',
-    'https_send',
     'main',
     'relay',
     'signed_message',
-    'spki_pin',
     'ssh_sign',
     'ssh_verify',
 ]
@@ -81,6 +76,8 @@ UNREACHABLE: Final = 255
 REFUSED: Final = 2
 _PORT_MAX: Final = 65535
 _NONCE_BYTES: Final = 16
+#: A public key line's leading words: its type and its base64 blob.
+_KEY_WORDS: Final = 2
 #: OpenSSH's key tool (>= 8.1 for ``-Y``), resolved once: the signer and the verifier.
 _KEYGEN: Final = shutil.which('ssh-keygen') or 'ssh-keygen'
 
@@ -142,7 +139,7 @@ def ssh_sign(identity: str) -> Sign:
     """A :data:`Sign` by ``ssh-keygen -Y sign`` with the private key *identity* (an agent holding it also works)."""
 
     def sign(message: bytes, ns: str) -> str:
-        done = subprocess.run([_KEYGEN, '-q', '-Y', 'sign', '-f', identity, '-n', ns], input=message,
+        done = _door.run([_KEYGEN, '-q', '-Y', 'sign', '-f', identity, '-n', ns], input=message,
                               capture_output=True, check=False, timeout=60)  # fmt: skip
         if done.returncode or b'BEGIN SSH SIGNATURE' not in done.stdout:
             said = done.stderr.decode('utf-8', 'replace').strip()
@@ -155,7 +152,7 @@ def ssh_sign(identity: str) -> Sign:
 
 def _key_words(line: str) -> tuple[str, str]:
     parts = line.split()
-    return (parts[0], parts[1]) if len(parts) >= 2 else ('', '')  # noqa: PLR2004 -- type, blob
+    return (parts[0], parts[1]) if len(parts) >= _KEY_WORDS else ('', '')
 
 
 def ssh_verify(key: str, message: bytes, sig: str, ns: str) -> bool:
@@ -168,7 +165,7 @@ def ssh_verify(key: str, message: bytes, sig: str, ns: str) -> bool:
         allowed.write_text(f'door namespaces="{ns}" {kind} {blob}\n', encoding='utf-8')
         signature.write_text(sig, encoding='utf-8')
         argv = [_KEYGEN, '-Y', 'verify', '-f', str(allowed), '-I', 'door', '-n', ns, '-s', str(signature)]
-        done = subprocess.run(argv, input=message, capture_output=True, check=False, timeout=60)
+        done = _door.run(argv, input=message, capture_output=True, check=False, timeout=60)
     return done.returncode == 0
 
 
@@ -219,8 +216,8 @@ class Gate:
         """Start the clock the replay window is bounded by."""
         self.started = self.started or self.now()
 
-    def admit(self, body: object, peer: str) -> str:
-        """The verified key line of *body* from *peer*; a failure strikes the peer and raises :class:`Refused`."""
+    def verified(self, body: object, peer: str) -> tuple[str, str]:
+        """``(key line, serve line)`` of *body* from *peer*; a failure strikes the peer and raises :class:`Refused`."""
         with self._lock:
             now = self.now()
             if now < self._locked.get(peer, 0.0):
@@ -241,7 +238,7 @@ class Gate:
             emit(f'[httpsdoor] {self.role}: locked peer {peer}', err=True)
         self._fails[peer] = seen
 
-    def _admitted(self, body: object, now: float) -> str:
+    def _admitted(self, body: object, now: float) -> tuple[str, str]:
         if not isinstance(body, dict) or set(body) != set(ENVELOPE):
             msg = f'a request is one JSON envelope of exactly {list(ENVELOPE)}: update dev-lab on the client'
             raise Refused(msg)
@@ -275,7 +272,7 @@ class Gate:
             msg = 'this nonce was already used: a replay is refused; every send signs a fresh request'
             raise Refused(msg)
         self._seen[nonce] = now
-        return key
+        return key, line
 
 
 def keys_file(path: Path) -> Callable[[], list[str]]:
@@ -313,7 +310,7 @@ def sudo_run(serve: Sequence[str]) -> Run:
             Path(scratch).chmod(0o711)
             env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), AUTH_ENV: str(record)}
             try:
-                done = subprocess.run(list(serve), input=line.encode(), capture_output=True, check=False,
+                done = _door.run(list(serve), input=line.encode(), capture_output=True, check=False,
                                       timeout=TIMEOUT_S, env=env)  # fmt: skip
             except subprocess.TimeoutExpired:
                 return 1, f'the serve verb ran past {TIMEOUT_S:.0f} s'
@@ -355,12 +352,11 @@ def _handler(path: str, gate: Gate, run: Run) -> type[BaseHTTPRequestHandler]:
                     body = json.loads(raw)
                 except ValueError:
                     body = None
-                key = gate.admit(body, who)
+                key, line = gate.verified(body, who)
             except Refused as refused:
                 emit(f'[httpsdoor] {gate.role}: refused {who}: {refused}', err=True)
                 self._answer(403, REFUSED, f'refused: {refused}')
                 return
-            line = str(body['line'])  # type: ignore[index] -- admitted, so an envelope
             if '\n' in line.rstrip('\n'):
                 self._answer(400, REFUSED, 'a request carries ONE serve line')
                 return
@@ -372,6 +368,30 @@ def _handler(path: str, gate: Gate, run: Run) -> type[BaseHTTPRequestHandler]:
             return  # the role audits every request itself; the relay logs no bodies (codes, credentials)
 
     return Door
+
+
+def behind_allowlist(doors: dict[str, HttpsDoor], sites: Sequence[str] | None) -> None:
+    """Refuse a door that could be routed outside ``[ops.caddy] allow`` (fail closed).
+
+    *doors* are the roles that declare an ``https_port``; *sites* the allowlisted ``[ops.caddy] sites`` (``None``:
+    no ``[ops.caddy]``; empty: any site -- install then still refuses one holding no ``remote_ip`` matcher). Two
+    doors never share a port.
+
+    Raises:
+        ValueError: naming the role and the table that would fix it.
+
+    """
+    for name, role in doors.items():
+        if sites is None:
+            msg = f'[ops.{name}] https_port needs [ops.caddy]: the door is served only behind its remote_ip allowlist'
+            raise ValueError(msg)
+        if sites and role.https_site not in sites:
+            msg = (f'[ops.{name}] https_site {role.https_site!r} is not an allowlisted [ops.caddy] site '
+                   f'{list(sites)}: the door would be served outside the allowlist')  # fmt: skip
+            raise ValueError(msg)
+    if len({role.https_port for role in doors.values()}) < len(doors):
+        msg = '[ops.consent] and [ops.breakglass] declare one https_port: each door has its own relay'
+        raise ValueError(msg)
 
 
 def relay(port: int, gate: Gate, run: Run, *, serve_forever: bool = True) -> ThreadingHTTPServer:
@@ -400,88 +420,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                      https_window_minutes=args.window_minutes, https_lock_minutes=args.lock_minutes)  # fmt: skip
     relay(args.port, Gate(args.role, keys_file(Path(args.keys)), door), sudo_run(serve))
     return 0
-
-
-# --- the client -----------------------------------------------------------------------------------------------------
-
-
-def spki_pin(der: bytes) -> str:
-    """``sha256/<base64>`` of a DER certificate's SubjectPublicKeyInfo: what ``https_pin`` declares."""
-    spki = (
-        x509.load_der_x509_certificate(der).public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
-    )
-    return 'sha256/' + base64.b64encode(hashlib.sha256(spki).digest()).decode()
-
-
-#: Opens a TLS connection to ``(host, port)`` with the system trust store.
-type Connect = Callable[[str, int], http.client.HTTPSConnection]
-
-
-def _connect(host: str, port: int) -> http.client.HTTPSConnection:
-    return http.client.HTTPSConnection(host, port, timeout=TIMEOUT_S, context=ssl.create_default_context())
-
-
-def identity_of(table: Mapping[str, Any]) -> Path:
-    """The private client key a request is signed with: *table*'s ``identity``, else ``~/.ssh/id_ed25519``."""
-    return Path(str(table.get('identity') or Path.home() / '.ssh' / 'id_ed25519')).expanduser()
-
-
-def _role_of(url: str) -> str:
-    path = urlsplit(url).path.rstrip('/')
-    return next((role for role, served in PATHS.items() if path == served), '')
-
-
-def https_send(  # noqa: PLR0911 -- each refusal answers with its own cause and door
-    table: Mapping[str, Any], request: dict[str, Any], *, connect: Connect = _connect, sign: Sign | None = None,
-    now: Callable[[], float] = time.time,
-) -> tuple[int, str]:  # fmt: skip
-    """POST *request*, signed by this machine's client key, to *table*'s ``https`` URL; answers as the ssh door does.
-
-    A transport failure is :data:`UNREACHABLE` with its cause and door; a pin mismatch refuses before anything is sent.
-    """
-    url = str(table['https'])
-    parts, role = urlsplit(url), _role_of(url)
-    if parts.scheme != 'https' or not parts.hostname or not role:
-        return REFUSED, (f'the endpoint https = {url!r} is not https://<forge>{PATHS["consent"]} or '
-                         f'{PATHS["breakglass"]}: fix the family [consent]/[breakglass] table')  # fmt: skip
-    identity = identity_of(table)
-    public = identity.with_name(identity.name + '.pub')
-    try:
-        key = public.read_text(encoding='utf-8').strip()
-        body = json.dumps(envelope(role, json.dumps(request), key, sign or ssh_sign(str(identity)), now=now()))
-    except OSError:
-        return REFUSED, (
-            f'no ssh client key at {identity} (+ .pub) to sign with: run `python -m dev_lab.dev.devhost bringup '
-            '--check` (its client-key wall names the door), or set [consent] identity'
-        )
-    except Refused as refused:
-        return REFUSED, str(refused)
-    try:
-        conn = connect(parts.hostname, parts.port or 443)
-        conn.connect()
-        if pin := str(table.get('https_pin') or ''):
-            der = conn.sock.getpeercert(binary_form=True) if conn.sock is not None else None
-            if not der or spki_pin(der) != pin:
-                conn.close()
-                return UNREACHABLE, (
-                    f'{parts.hostname} presented a key whose pin is not https_pin {pin}: refusing to send; if the '
-                    'server key was rotated, update https_pin in the family table'
-                )
-        conn.request('POST', parts.path, body=body.encode(), headers={'Content-Type': 'application/json'})
-        answer = conn.getresponse()
-        raw = answer.read()
-    except (OSError, http.client.HTTPException) as failed:
-        return UNREACHABLE, (f'{url} could not be reached ({type(failed).__name__}: {failed}); check the network, or '
-                             'that this address is inside the forge allowlist ([ops.caddy] allow)')  # fmt: skip
-    try:
-        said = json.loads(raw)
-    except ValueError:
-        said = None
-    if isinstance(said, dict) and isinstance(said.get('status'), int):
-        return said['status'], str(said.get('output', ''))
-    if answer.status == 403:  # noqa: PLR2004 -- Caddy's own allowlist refusal carries no door answer
-        return REFUSED, f'{url} refused this address (HTTP 403): it is outside the forge allowlist [ops.caddy] allow'
-    return UNREACHABLE, f'{url} answered HTTP {answer.status} without a door answer: {raw[:200]!r}'
 
 
 if __name__ == '__main__':
