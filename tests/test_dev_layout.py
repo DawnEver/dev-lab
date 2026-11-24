@@ -179,6 +179,20 @@ def test_an_absent_malformed_or_code_admitting_table_is_REFUSED(tmp_path, body) 
         declared_layout(root)
 
 
+@pytest.mark.parametrize('row', ["'src/pkg' = ['.py', '.yaml']", "config = ['.ini']", "'docs-src/x' = ['.cfg']"])
+def test_a_second_configuration_format_is_REFUSED_by_name(tmp_path, row) -> None:
+    """ONE-FORMAT-PER-NEED: configuration is TOML; a row allowing another config format refuses the declaration."""
+    root = _checkout(tmp_path, f'[tool.dev_lab.placement.layout]\n{_HOMES}{row}\n')
+    with pytest.raises(LayoutNotDeclared, match='ONE-FORMAT-PER-NEED'):
+        declared_layout(root)
+
+
+def test_a_forge_workflow_directory_and_output_may_hold_their_own_formats(tmp_path) -> None:
+    """PLANTED CONTROL for the refusal above: the forge dictates its workflows' format; output holds what is written."""
+    body = f"[tool.dev_lab.placement.layout]\n{_HOMES}'.github/workflows' = ['.yml']\n'output/run' = ['.yaml']\n"
+    assert declared_layout(_checkout(tmp_path, body)).rows['.github/workflows'] == frozenset({'.yml'})
+
+
 def test_the_famtest_floor_refuses_a_walk_that_read_nothing(tmp_path) -> None:
     root = tmp_path / 'empty'
     root.mkdir()

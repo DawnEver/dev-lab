@@ -46,4 +46,27 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_corechange.py',),
     ),
+    (
+        'ONE-FORMAT-PER-NEED',
+        (
+            # Why: user ruling R3 -- one format per need, so no reader ever parses a second shape of one fact.
+            'Each need has ONE format: configuration is TOML (one `--set section.key=value` overrides it), structured '
+            'logs are JSONL lines with OpenTelemetry field names, reports are Markdown in memory. The layout '
+            'allow-list (DECLARED-LAYOUT) refuses any format a directory does not declare, and refuses a declaration '
+            'that admits a second configuration format (`.yaml`, `.yml`, `.ini`, `.cfg`) outside a forge`s own '
+            'workflow directories and `output/`; the record writer emits one OTel-named JSONL line (`metrics`); '
+            'a Markdown report under `output/` is refused (REPORTS-LIVE-IN-MEMORY).'
+        ),
+        ('tests/test_dev_layout.py', 'tests/test_dev_metrics.py', 'tests/test_dev_reportplace.py'),
+    ),
+    (
+        'PRIOR-ART-FIRST',
+        (
+            # Why: two sessions writing one concept twice under one name, neither having searched the tree first.
+            'Before new code, search the tree and memory for the capability. A NEW product-source module named like '
+            'a tracked one is refused at the write (`priorart`, the `codeplace` hook) until its own text cites each '
+            'such module by path or dotted name, saying how it differs; same concept, extend the existing one.'
+        ),
+        ('tests/test_dev_priorart.py',),
+    ),
 )

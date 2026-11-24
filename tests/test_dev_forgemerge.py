@@ -636,3 +636,38 @@ def test_an_environment_or_scheduling_result_never_holds_the_merge(tmp_path: Pat
 def _hpc_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     """These repos are served by an HPC executor: the family binds tests, merge and prune there (planted)."""
     carry(monkeypatch, HPC_REPO)
+
+
+def test_a_head_adding_a_crate_waits_for_its_measured_port_record(tmp_path: Path) -> None:
+    """MEASURE-BEFORE-PORTING: a new ``Cargo.toml`` with no measured ``Port-Measured:`` trailer holds the merge.
+
+    PLANTED CONTROL: the same crate whose commit carries the measured trailer is ready.
+    """
+    work = _tested(tmp_path)
+    (work / 'rust' / 'fast').mkdir(parents=True)
+    head = advance(work, 'pr/x', 'rust/fast/Cargo.toml', '[package]\nname = "fast"\n', 'feat: fast')
+    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
+    found = decide(
+        work,
+        POLICY,
+        branch='pr/x',
+        number=4,
+        head=head,
+        statuses=_statuses(_green()),
+        reviewed=status_gate(github_posted),
+    )
+    assert any('MEASURE-BEFORE-PORTING' in one and 'rust/fast/Cargo.toml' in one for one in found.missing), (
+        found.missing
+    )
+    head = advance(work, 'pr/x', 'n.txt', 'n\n', 'perf: fast\n\nPort-Measured: python 18.7 us -> rust 9.08 us, 2.1x')
+    (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
+    found = decide(
+        work,
+        POLICY,
+        branch='pr/x',
+        number=4,
+        head=head,
+        statuses=_statuses(_green()),
+        reviewed=status_gate(github_posted),
+    )
+    assert found.ready, found.missing

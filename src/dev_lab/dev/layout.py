@@ -75,6 +75,7 @@ __all__ = [
     'COPY_DOOR',
     'COPY_RULE_ID',
     'NO_COPY_ROOTS',
+    'OTHER_CONFIG_SUFFIXES',
     'REQUIRED',
     'RULE_ID',
     'Layout',
@@ -103,6 +104,11 @@ _ANY: Final = '*'
 TOOL_CACHE_ROOT: Final = 'output/cache'
 #: One tool's name: a plain word, so an entry can never widen into a glob or a path.
 _TOOL: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
+#: ONE-FORMAT-PER-NEED: configuration is TOML, so a second configuration format is never declared -- except where a
+#: forge dictates its own (its workflow directories) and in ``output/``, which holds what a program writes.
+OTHER_CONFIG_SUFFIXES: Final = frozenset({'.yaml', '.yml', '.ini', '.cfg'})
+_FORMAT_RULE: Final = 'ONE-FORMAT-PER-NEED'
+_FORGE_DIRS: Final = frozenset({'.github', '.gitea', 'output'})
 #: Agent state lives once, at the checkout root (user ruling 2026-11-23): a scoped ``.claude/`` below it is refused.
 _SCOPED: Final = '.claude'
 _SCOPED_CAUSE: Final = (
@@ -148,7 +154,9 @@ def declared_layout(root: Path) -> Layout:
 
     Raises:
         LayoutNotDeclared: no readable manifest or table, a row that is not a list of strings, a family home left
-            undeclared, or ``output`` allowing code or anything -- an adopter's test calls this, so it reds.
+            undeclared, ``output`` allowing code or anything, or a second configuration format
+            (:data:`OTHER_CONFIG_SUFFIXES`) outside a forge's own directories -- an adopter's test calls this, so it
+            reds.
 
     """
     manifest = root / 'pyproject.toml'
@@ -173,6 +181,12 @@ def declared_layout(root: Path) -> Layout:
     for key, allows in rows.items():
         if key.split('/', 1)[0] == 'output' and (bad := sorted(allows & {*CODE_SUFFIXES, _ANY})):
             raise _refuse(manifest, f'{key} allows {bad}, which output/ never holds')
+        if key.split('/', 1)[0] not in _FORGE_DIRS and (bad := sorted(allows & OTHER_CONFIG_SUFFIXES)):
+            raise _refuse(
+                manifest,
+                f'{key} allows {bad}: configuration is TOML ({_FORMAT_RULE}), so a second config format is declared '
+                f'only where a forge dictates it (.github/, .gitea/); move that config into pyproject.toml or a .toml',
+            )
     pruned = tuple(p.strip('/') for p in placement.get('pruned_paths', []) if isinstance(p, str))
     read_only = tuple(p.strip('/') for p in placement.get('read_only', []) if isinstance(p, str))
     tools = placement.get('tool_caches', [])

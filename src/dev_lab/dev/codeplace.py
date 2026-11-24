@@ -61,6 +61,7 @@ from dev_lab.dev.frozen import refuse_write as refuse_frozen_write
 from dev_lab.dev.ledgerguard import refuse_write as refuse_ledger_write
 from dev_lab.dev.machineguard import refuse_write as refuse_machine_file_write
 from dev_lab.dev.outputcode import refuse_code_in_output
+from dev_lab.dev.priorart import refuse_new_module
 from dev_lab.dev.reportplace import refuse_report
 from dev_lab.dev.retiredfiles import RetiredFile, declared_retired
 from dev_lab.dev.writeroots import refuse_outside_tree
@@ -308,8 +309,9 @@ def _layout() -> ModuleType:
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """The ``PreToolUse`` agent hook on Write/Edit/MultiEdit/NotebookEdit; the payload is *stdin*.
 
-    It refuses a report under ``output/``, a write into a write-prone root and a direct write onto a task ledger
-    file (:mod:`dev_lab.dev.ledgerguard`), and hints a misplaced code file.
+    It refuses a report under ``output/``, a write into a write-prone root, a direct write onto a task ledger
+    file (:mod:`dev_lab.dev.ledgerguard`) and a new module that cites none of its prior art
+    (:mod:`dev_lab.dev.priorart`), and hints a misplaced code file.
     A payload naming no path is allowed: the hook judges a PATH, and such a payload names none. The stray
     census is :mod:`dev_lab.dev.strays`.
     """
@@ -332,6 +334,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     refused = refused or refuse_ledger_write(path) or refuse_outside_tree(path) or refuse_consent_write(path)
     refused = refused or _layout().refuse_layout(path)
     refused = refused or refuse_frozen_write(path)
+    content = tool_input.get('content') if isinstance(tool_input.get('content'), str) else ''
+    refused = refused or refuse_new_module(path, content, FAMILY_HOMES['product source'])
     hint = refuse_write(path)
     if refused is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': refused}

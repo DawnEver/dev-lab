@@ -30,4 +30,15 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_remote_host_keys.py', 'tests/test_ops_configcheck.py'),
     ),
+    (
+        'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
+        (
+            # Why: a user ruling after a session probed other development machines over ssh to hand them work.
+            'Development machines meet only through origin and the forge (push; a producer verifies; the forge '
+            'merges); no machine is a channel to another. A development machine`s host file declaring a route to '
+            'another -- an `[ssh] jump` destination or bastion, an `[ssh] host_keys` endpoint, a table`s '
+            '`endpoint` -- is refused by `configcheck` (`machineroutes`), naming both machines.'
+        ),
+        ('tests/test_dev_machineroutes.py',),
+    ),
 )
