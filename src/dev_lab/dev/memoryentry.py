@@ -3,8 +3,8 @@
 :mod:`dev_lab.dev.memoryadds` refuses every edit under ``.claude/memory/`` but these, each recognized
 whole by the predicates here (the rulings and the formats are stated in that module's docstring):
 the volatile-field migration (:func:`only_volatile_stripped`), a privacy redaction (:func:`only_redacted`), an approved
-amendment (:func:`only_amended`) and an approved redacting rename
-(:func:`only_renamed_redacting`). An added entry must carry :data:`REQUIRED_KEYS`
+amendment (:func:`only_amended`), an approved redacting rename (:func:`only_renamed_redacting`) and an
+approved move into the root (:func:`move_approved`). An added entry must carry :data:`REQUIRED_KEYS`
 (:func:`shape_problems`) and a merged one must cite (:func:`merged_entry_problems`). Pure text: no git, no files.
 """
 
@@ -32,6 +32,7 @@ __all__ = [
     'lf',
     'merged_entry_problems',
     'missing_keys',
+    'move_approved',
     'only_amended',
     'only_redacted',
     'only_renamed_redacting',
@@ -240,6 +241,41 @@ def deletion_approved(path: str, notes: Iterable[str]) -> bool:
         reason = note[_NOTE_HEAD : note.rindex(' -- approved: "')]
         if _DELETED.search(reason) and named.search(reason):
             return True
+    return False
+
+
+_MOVED = re.compile(r'\bmoved\b', re.IGNORECASE)
+_MOVE_PAIR = re.compile(r'(?<!\S)(\S+) -> (\S+)(?!\S)')
+
+
+def move_approved(old: str, new: str, notes: Iterable[str]) -> bool:
+    """ROOT-MOVE (user ruling R7 2026-11-23): a NEW amendment note approves moving a scoped entry to the root.
+
+    *old* lies in a nested scope's ``.claude/memory/``, *new* in the ROOT ``.claude/memory/`` in the same dated
+    directory (``<yyyy>/<mm>/<dd>/``; the file name may differ, e.g. to avoid a collision). *notes* are the note
+    lines the change added to memory entries. One approves the move when it is a full :data:`AMENDMENT_NOTE` (its
+    user's words non-empty) whose reason says ``moved`` and names the pair ``<from> -> <to>``: the two exact paths,
+    or two directories ending ``/`` that *old* and *new* extend by the same rest (one note can carry a whole scope).
+    The text staying byte-identical is the caller's check (it reads blobs; this reads names).
+    """
+    if not (is_memory(old) and is_memory(new)) or scope_of(old) == '' or scope_of(new) != '':
+        return False
+    inside_old = f'/{old}'.split(f'/{MEMORY_DIR}', 1)[1]
+    inside_new = f'/{new}'.split(f'/{MEMORY_DIR}', 1)[1]
+    if inside_old.rpartition('/')[0] != inside_new.rpartition('/')[0]:
+        return False
+    for note in notes:
+        if not _AMEND_LINE.fullmatch(note):
+            continue
+        reason = note[_NOTE_HEAD : note.rindex(' -- approved: "')]
+        if not _MOVED.search(reason):
+            continue
+        for src, dst in _MOVE_PAIR.findall(reason):
+            if (src, dst) == (old, new):
+                return True
+            dirs = src.endswith('/') and dst.endswith('/')
+            if dirs and old.startswith(src) and new.startswith(dst) and old[len(src) :] == new[len(dst) :]:
+                return True
     return False
 
 

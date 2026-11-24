@@ -18,7 +18,12 @@ global tasks repo by the task door, :func:`dev_lab.dev.taskledger.ledger`, user 
   that is not an entry, :func:`dev_lab.dev.memoryentry.is_attachment`) leaves memory when the same pushed range
   adds an amendment note to an entry whose reason says ``deleted`` and names it under ``.claude/memory/``, with
   the user's words (:func:`dev_lab.dev.memoryentry.deletion_approved`); without one the deletion is refused by
-  name. An entry is never deleted.
+  name. An entry is never deleted;
+* an approved root move (ROOT-MOVE, user ruling R7 2026-11-23) -- a nested scope's entry moves into the ROOT
+  ``.claude/memory/`` in the same dated directory, its text byte-identical, when the same pushed range adds an
+  amendment note whose reason says ``moved`` and names ``<old> -> <new>`` (the paths, or two directories ending
+  ``/`` that carry a whole scope), with the user's words (:func:`dev_lab.dev.memoryentry.move_approved`). Git
+  reads it as ``R`` or as ``D`` + ``A``; both are judged as the move (:func:`_without_approved_moves`).
 
 A MERGED ENTRY CITES. An added entry with ``merged_from:`` names sources that are memory files of its
 OWN scope existing at the base the change is judged against or added by that same change, and every
@@ -56,6 +61,7 @@ from dev_lab.dev.memoryentry import (
     is_attachment,
     is_memory,
     merged_entry_problems,
+    move_approved,
     only_amended,
     only_redacted,
     only_renamed_redacting,
@@ -133,8 +139,37 @@ def _without_redacting_renames(
     ]
 
 
+def _without_approved_moves(
+    root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
+    """*rows* without the ROOT-MOVE pairs: byte-identical text, approved by a note the range adds."""
+    notes = _added_notes(root, old_rev, new_rev, rows)
+    if not notes:
+        return rows
+
+    def blob(rev: str, path: str) -> str:
+        return _git(root, 'rev-parse', f'{rev}:{path}').strip()
+
+    def admitted(old: str, new: str) -> bool:
+        return move_approved(old, new, notes) and blob(old_rev, old) == blob(new_rev, new)
+
+    moved = {(old, new) for status, old, new in rows if status == 'R' and is_memory(old) and admitted(old, new)}
+    gone = [old for status, old, _ in rows if status == 'D' and is_memory(old)]
+    for new in (new for status, _, new in rows if status == 'A' and is_memory(new)):
+        old = next((old for old in gone if admitted(old, new)), None)
+        if old is not None:
+            gone.remove(old)
+            moved.add((old, new))
+    olds, news = {old for old, _ in moved}, {new for _, new in moved}
+    return [
+        (status, old, new)
+        for status, old, new in rows
+        if not ((status in 'RD' and old in olds) or (status in 'RA' and new in news))
+    ]
+
+
 def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
-    rows = _without_redacting_renames(root, old_rev, new_rev, rows)
+    rows = _without_approved_moves(root, old_rev, new_rev, _without_redacting_renames(root, old_rev, new_rev, rows))
     added = {new for status, _, new in rows if status in 'AC'}
 
     def exists(path: str) -> bool:
@@ -164,8 +199,20 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                 )
                 out.append(f'{old}: {remedy}')
         elif status in 'DRT' and is_memory(old) and not (status == 'D' and is_attachment(old)):
-            out.append(f'{old}: a memory entry is never deleted or moved ({status})')
+            out.append(f'{old}: a memory entry is never deleted or moved ({status}){_move_door(old, new, status)}')
     return tuple(out)
+
+
+def _move_door(old: str, new: str, status: str) -> str:
+    """The ROOT-MOVE door a refused move into the root could take, named; empty for any other refusal."""
+    note = '> ' + AMENDMENT_NOTE.format(day='{day}', reason=f'moved {old} -> {new}', approved="<the user's words>")
+    if status != 'R' or not move_approved(old, new, [note.format(day='2000-01-01')]):
+        return ''
+    return (
+        ' -- a move into the root is admitted (ROOT-MOVE) with its text byte-identical and the user-approved note `'
+        + note.format(day='<yyyy-mm-dd>')
+        + '` (or one naming both memory directories) added to a memory entry in the same push'
+    )
 
 
 def _unapproved_deletions(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
