@@ -715,6 +715,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   caught. NOT RE-EXPORTED -- ``read`` and ``write`` say nothing once flattened.
 * :mod:`dev_lab.dev.baselines` -- baselines live in the run store; the repo keeps ``tests/baselines.lock``; a
   rewrite quotes old and new numbers; tracked data under ``tests/`` is refused (``get|put|verify``).
+* :mod:`dev_lab.dev.cargostep` -- each cargo workspace's ``cargo test`` is its own verify step and result, run
+  natively beside pytest -- never wrapped in a pytest test.
 * :mod:`dev_lab.dev.testcost` -- cost is DERIVED: the ledger against the host's ``[test_budget]`` runs what
   fits here (each with a deadline) and hands the rest; a hand-kept ``slow``/``heavy`` marker is refused.
 * :mod:`dev_lab.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.

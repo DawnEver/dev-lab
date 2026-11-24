@@ -31,7 +31,7 @@ from lab_commons.box import POLL_S
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import durations
+from dev_lab.dev import cargostep, durations
 from dev_lab.dev._logdistil import distil_log
 from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
 from dev_lab.dev.content import ABSENT, content_address, file_digest
@@ -368,6 +368,23 @@ def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepR
     return StepReport(name=name, reported=(name, *paths), failures=() if code == 0 else paths)
 
 
+def _native_steps(
+    root: Path, pytest_args: tuple[str, ...], scripts: tuple[str, ...], *, handle: IO[str]
+) -> list[StepReport]:
+    """The steps beside pytest: the selected script tests, then each cargo workspace's own step.
+
+    Cargo runs on an untargeted run only (:mod:`dev_lab.dev.cargostep`, T8: never wrapped in a pytest test).
+    """
+    steps = [script_step(root, scripts, handle=handle)] if scripts else []
+    if is_targeted(root, pytest_args):
+        return steps
+    tracked = _git_z(root, 'ls-files', '-z') or ()
+    return [
+        *steps,
+        *(cargostep.step(root, one, handle=handle, tee=_tee) for one in cargostep.workspaces(root, tracked)),
+    ]
+
+
 def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
     """Fold the step reports into ONE verdict over the whole verify run.
 
@@ -496,8 +513,7 @@ def run_verify(
                 reports.append(read_hooks(root, handle=handle))
             for name, arguments in RUFF_STEPS:
                 reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-            if scripts:
-                reports.append(script_step(root, scripts, handle=handle))
+            reports.extend(_native_steps(root, pytest_args, scripts, handle=handle))
             if not only_scripts:
                 handle.write(_PYTEST_BANNER)
                 stamp = {
