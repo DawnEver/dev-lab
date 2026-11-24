@@ -7,6 +7,8 @@ https, a ``results`` dir holding a person's file, a cache without pytest's READM
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import time
 from typing import TYPE_CHECKING
 
@@ -18,13 +20,24 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+_GIT = shutil.which('git') or 'git'
 _SHA = 'ab' + 'c' * 62
 
 
-def _clone(path: Path, url: str) -> None:
-    (path / '.git').mkdir(parents=True)
-    (path / '.git' / 'config').write_text(f'[remote "origin"]\n\turl = {url}\n', encoding='utf-8')
+def _git(path: Path, *args: str) -> None:
+    subprocess.run([_GIT, '-C', str(path), '-c', 'user.name=t', '-c', 'user.email=t@t', *args], check=True)
+
+
+def _clone(path: Path, url: str, *, pushed: bool = True) -> None:
+    """A real checkout naming *url* as origin; its one commit is on origin unless *pushed* is False."""
     (path / 'components' / 'numerics-lab').mkdir(parents=True)
+    _git(path, 'init', '-q', '-b', 'main')
+    (path / 'core.py').write_text('X = 1\n', encoding='utf-8')
+    _git(path, 'add', 'core.py')
+    _git(path, 'commit', '-q', '-m', 'one')
+    _git(path, 'remote', 'add', 'origin', url)
+    if pushed:
+        _git(path, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
 
 
 @pytest.fixture
@@ -50,7 +63,54 @@ def test_every_family_of_the_report_is_found_and_judged(roots: tuple[Path, Path]
     (home / '.pytest_cache' / 'README.md').write_text('# pytest cache directory #\n', encoding='utf-8')
     verdicts = {one.family.name: one.kept for one in strayleaks.find([drive], home)}
     assert set(verdicts) == {family.name for family in strayleaks.FAMILIES if not family.glob}
-    assert {name for name, why in verdicts.items() if why is not None} == {'tmp-diag'}, verdicts
+    assert {name for name, why in verdicts.items() if why is not None} == set(), verdicts
+    _removed, kept = strayleaks.remove(strayleaks.find([drive], home))
+    assert kept == []
+    assert list(drive.iterdir()) == [], 'every family and its emptied parents are gone'
+    assert list(home.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ('spoil', 'why'),
+    [
+        (lambda p: (p / 'notes.txt').write_text('x', encoding='utf-8'), 'uncommitted'),
+        (lambda p: _git(p, 'commit', '-q', '--allow-empty', '-m', 'mine'), 'on no remote'),
+        (lambda p: _git(p, 'remote', 'remove', 'origin'), 'names no remote'),
+    ],
+)
+def test_planted_a_suspect_checkout_with_work_of_its_own_is_named_and_kept(
+    roots: tuple[Path, Path], spoil: Callable[[Path], object], why: str
+) -> None:
+    """PLANTED CONTROL for SUSPECT: a change, an unpushed commit, or no remote at all keeps the checkout."""
+    drive, home = roots
+    product = drive / strayleaks.SUSPECT[0]
+    _clone(product, 'file:///fixtures/product')
+    spoil(product)
+    found = strayleaks.find([drive], home)
+    assert {one.family.name for one in found if one.kept is not None} >= {f'suspect:{strayleaks.SUSPECT[0]}'}
+    assert any(why in (one.kept or '') for one in found)
+    strayleaks.remove(found)
+    assert (product / 'core.py').is_file()
+
+
+def test_a_pushed_clean_suspect_checkout_and_its_parents_go(roots: tuple[Path, Path]) -> None:
+    drive, home = roots
+    _clone(drive / strayleaks.SUSPECT[0], 'https://forge.example/o/product.git')
+    removed, kept = strayleaks.remove(strayleaks.find([drive], home))
+    assert removed == [drive / strayleaks.SUSPECT[0]]
+    assert [k for k, _ in kept] == [drive / 'src' / 'repos'], 'the https family keeps; it is empty and pruned'
+    assert list(drive.iterdir()) == []
+
+
+def test_tmp_diag_goes_empty_and_stays_holding_a_file(roots: tuple[Path, Path]) -> None:
+    drive, home = roots
+    (drive / 'tmp_diag' / 'sub').mkdir(parents=True)
+    strayleaks.remove(strayleaks.find([drive], home))
+    assert not (drive / 'tmp_diag').exists()
+    (drive / 'tmp_diag').mkdir()
+    (drive / 'tmp_diag' / 'trace.txt').write_text('x', encoding='utf-8')  # PLANTED CONTROL
+    strayleaks.remove(strayleaks.find([drive], home))
+    assert (drive / 'tmp_diag' / 'trace.txt').is_file()
 
 
 def _https_clone(drive: Path, _home: Path) -> None:
@@ -64,6 +124,7 @@ def _results_note(drive: Path, _home: Path) -> None:
 
 def _bare_cache(_drive: Path, home: Path) -> None:
     (home / '.pytest_cache').mkdir()
+    (home / '.pytest_cache' / 'notes.md').write_text('x', encoding='utf-8')  # not pytest's
 
 
 def _home_output(_drive: Path, home: Path) -> None:
