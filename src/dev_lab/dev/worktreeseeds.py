@@ -50,11 +50,14 @@ def declared_seeds(root: Path) -> tuple[str, ...]:
 
 def seed(root: Path, *, main: Path | None = None) -> list[str]:
     """Copy each declared seed from the main checkout into *root* where absent; one line per seed acted on."""
+    seeds = declared_seeds(root)
+    if not seeds:
+        return []
     source = main_checkout(root) if main is None else main
     if source.resolve() == root.resolve():
         return []
     lines = []
-    for rel in declared_seeds(root):
+    for rel in seeds:
         target, origin = root / rel, source / rel
         if target.exists():
             continue
