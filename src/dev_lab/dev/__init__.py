@@ -54,6 +54,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   crates.io's newest release.
 * :mod:`dev_lab.dev.toolchain` — what a checkout needs on this host before its environment builds (git, uv, a
   Python fitting its ``requires-python``, cargo, a linker), each gap with its remedy; ``dep --bootstrap`` prints it.
+* :mod:`dev_lab.dev.docrows` — a repo's documentation site as ``[tool.dev_lab.docsite]`` rows (pdoc, cargo, markdown,
+  notices) built through :mod:`dev_lab.dev.docsite`; no per-repo Python.
 * :mod:`dev_lab.dev.importedges` — the family's one static import-edge reader for architecture tests (every depth,
   both spellings, never executing the module).
 * :mod:`dev_lab.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
