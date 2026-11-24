@@ -345,6 +345,16 @@ ALLOWED: Final[dict[Site, str]] = {
     ): 'posting the error status of a PR that could not be judged may itself fail for any reason; the cause '
     'is already said on stderr, so the tick moves on to the next PR',
     (
+        'src/dev_lab/dev/famtests/testleaks.py',
+        'S108',
+        "WORDS: Final = ('mkdtemp', 'mkstemp', 'gettempdir', 'delete=False', '/tmp', ':\\\\', ':/')",
+    ): "the reader's own pre-filter words: '/tmp' is the text it searches for, never a path it opens",
+    (
+        'tests/test_dev_tmpsweep.py',
+        'PLC0415',
+        'import _winapi',
+    ): '_winapi exists only on Windows; the junction helper imports it on the branch that runs there',
+    (
         'src/dev_lab/supervise/components/resources.py',
         'PLC0415',
         'import psutil',

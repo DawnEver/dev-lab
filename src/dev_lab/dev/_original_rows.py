@@ -399,6 +399,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
     'tmpsweep',  # the census, Stop report and age sweep over those roots, new here
+    'strayleaks',  # the leak families the suites left outside temp, removed only by proof, new here
     'uvfollow',  # uv follows the version its pin needs, through the route it was installed by, new here
     'hpcusage',  # an HPC account's last day read from sacct, new here
     'security',

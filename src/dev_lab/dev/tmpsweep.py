@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
-import os
 import re
 import shutil
 import sys
@@ -36,6 +35,7 @@ from typing import Final
 
 from lab_commons.log import emit
 
+from dev_lab.dev import strayleaks
 from dev_lab.dev.disclosure import details_for
 from dev_lab.dev.writeroots import (
     EXCLUDED_GLOBS_IN_TEMP,
@@ -43,6 +43,7 @@ from dev_lab.dev.writeroots import (
     RULE_ID,
     Root,
     excluded_paths,
+    fixed_drives,
     owned_globs,
     write_prone_roots,
 )
@@ -130,12 +131,20 @@ def named(roots: Iterable[Root], excluded: Iterable[Path], names: Iterable[str])
 
 
 def _newest(path: Path) -> float:
-    """The newest mtime in *path*'s tree, links not followed."""
+    """The newest mtime in *path*'s tree; a link or JUNCTION is read, never entered.
+
+    ``os.walk(followlinks=False)`` still enters a Windows junction, and a test once planted one naming its own
+    parent (``alias/alias/...``): the walk then never ends.
+    """
     newest = path.lstat().st_mtime
-    if path.is_dir() and not _linked(path):
-        for current, dirs, files in os.walk(path, followlinks=False):
-            for name in (*dirs, *files):
-                newest = max(newest, (Path(current) / name).lstat().st_mtime)
+    stack = [path] if path.is_dir() and not _linked(path) else []
+    while stack:
+        for child in stack.pop().iterdir():
+            if _linked(child):
+                continue  # a link's own mtime is when it was made, not a writer's
+            newest = max(newest, child.lstat().st_mtime)
+            if child.is_dir():
+                stack.append(child)
     return newest
 
 
@@ -249,18 +258,50 @@ def declared() -> tuple[tuple[Root, ...], tuple[Path, ...]]:
     return roots, excluded_paths(roots)
 
 
+def _families(entries: Iterable[Entry]) -> dict[str, int]:
+    """Our temp entries counted by family: the name less its ``mkdtemp`` suffix (``dev-lab-pytest``)."""
+    owned = owned_globs()
+    counts: dict[str, int] = {}
+    for entry in entries:
+        if entry.root.kind == 'temp' and _ours(entry.path.name, owned):
+            family = entry.path.name.rsplit('-', 1)[0] if entry.path.is_dir() else entry.path.name
+            counts[family] = counts.get(family, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _leaks(*, apply: bool) -> int:
+    """List the :mod:`dev_lab.dev.strayleaks` families on this host; with *apply*, remove those proven ours."""
+    found = strayleaks.find(fixed_drives(), Path.home())
+    if not apply:
+        for one in found:
+            emit(f'{one.family.name:20} {one.path.as_posix()} -- {one.kept or "ours: --apply removes it"}')
+        emit(f'{len(found)} leak famil(y/ies) found; cause of each: dev_lab.dev.strayleaks.FAMILIES')
+        return 0
+    removed, kept = strayleaks.remove(found)
+    for path in removed:
+        emit(f'removed {path.as_posix()}')
+    for path, why in kept:
+        emit(f'kept    {path.as_posix()} -- {why}')
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """The census, read-only unless ``--apply``."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.tmpsweep', description=__doc__.splitlines()[0])
     parser.add_argument('--apply', action='store_true', help='remove what the sweep admits (default: list only)')
     parser.add_argument('--max-age-days', type=float, default=MAX_AGE_DAYS, help='sweep entries older than this')
+    parser.add_argument('--leaks', action='store_true', help='the leak families outside temp (strayleaks) instead')
     opts = parser.parse_args(argv)
+    if opts.leaks:
+        return _leaks(apply=opts.apply)
     roots, excluded = declared()
     entries = census(roots, excluded)
     if not opts.apply:
         for entry in entries:
             day = time.strftime('%Y-%m-%d', time.localtime(entry.mtime))
             emit(f'{entry.root.kind:6} {day} {entry.path.as_posix()}')
+        for family, count in _families(entries).items():
+            emit(f'family {family}: {count} entr(y/ies)')
         emit(f'{len(entries)} entr(y/ies) in {len(roots)} write-prone root(s); --apply sweeps the temp roots')
         return 0
     removed, kept = sweep(entries, max_age_days=opts.max_age_days)

@@ -200,3 +200,59 @@ def test_the_command_is_read_only_without_apply(planted: dict[str, Path], monkey
     assert (planted['temp'] / 'dev-lab-old.py').exists()
     assert main(['--apply', '--max-age-days', '7']) == 0
     assert not (planted['temp'] / 'dev-lab-old.py').exists()
+
+
+def _junction(link: Path, target: Path) -> None:
+    """A directory junction on Windows (no privilege needed), else a symlink; xfail where neither exists."""
+    try:
+        if os.name == 'nt':
+            import _winapi  # noqa: PLC0415 -- a Windows-only module, imported only there
+
+            _winapi.CreateJunction(str(target), str(link))
+        else:
+            link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.xfail(f'no junction or symlink here: {error}')
+
+
+def test_an_old_entry_holding_a_link_to_itself_is_swept_and_the_walk_ends(tmp_path: Path) -> None:
+    """The jmag-stall leftover: an ``alias`` naming its own parent is a cycle a walk entering links never leaves."""
+    temp = tmp_path / 'temp'
+    entry = temp / 'dev-lab-jmag-stall-abc'
+    entry.mkdir(parents=True)
+    (entry / 'verdict.json').write_text('{}', encoding='utf-8')
+    _junction(entry / 'alias', entry)
+    _age(entry / 'verdict.json', 30)
+    _age(entry, 30)
+    removed, kept = sweep(census([Root(temp, 'temp')], ()), owned=('dev-lab-*',))
+    assert (removed, kept) == ([entry], [])
+    assert temp.is_dir(), 'PLANTED CONTROL: the root itself stays'
+
+
+def test_the_listing_counts_our_entries_by_family(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    temp = tmp_path / 'temp'
+    for name in ('dev-lab-pytest-a1', 'dev-lab-pytest-b2', 'dev-lab-jmag-stall-c3', 'other-x'):
+        (temp / name).mkdir(parents=True)
+    monkeypatch.setattr('dev_lab.dev.tmpsweep.declared', lambda: ((Root(temp, 'temp'),), ()))
+    monkeypatch.setattr('dev_lab.dev.tmpsweep.owned_globs', lambda: ('dev-lab-*',))
+    assert main([]) == 0
+    out = capsys.readouterr().out
+    assert 'family dev-lab-pytest: 2 entr(y/ies)' in out
+    assert 'family dev-lab-jmag-stall: 1 entr(y/ies)' in out
+    assert 'family other' not in out, 'PLANTED CONTROL: another program is no family of ours'
+
+
+def test_the_leaks_door_lists_first_and_removes_only_with_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    drive, home = tmp_path / 'drive', tmp_path / 'home'
+    (drive / 'var' / 'tmp' / 'lab-supervise-candidate' / 'home').mkdir(parents=True)
+    home.mkdir()
+    monkeypatch.setattr('dev_lab.dev.tmpsweep.fixed_drives', lambda: [drive])
+    monkeypatch.setattr('dev_lab.dev.tmpsweep.Path.home', lambda: home)
+    assert main(['--leaks']) == 0
+    assert (drive / 'var').is_dir(), 'the listing changes nothing'
+    assert main(['--leaks', '--apply']) == 0
+    assert list(drive.iterdir()) == [], 'the family and its emptied parents are gone, the drive stays'

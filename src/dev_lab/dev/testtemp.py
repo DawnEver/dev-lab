@@ -40,7 +40,17 @@ from dev_lab.dev.datedlog import UndeclaredOutput, declared_output
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
 
-__all__ = ['KIND', 'SCRIPT_KIND', 'bound_sandbox', 'configure', 'fresh_temp', 'reclaim', 'release', 'script_temp_env']
+__all__ = [
+    'KIND',
+    'SCRIPT_KIND',
+    'bound_sandbox',
+    'configure',
+    'fresh_temp',
+    'reclaim',
+    'release',
+    'script_temp_env',
+    'writable_retry',
+]
 
 #: The kind in a pytest session's base temp entry name.
 KIND: Final = 'pytest'
@@ -66,7 +76,7 @@ def fresh_temp(kind: str) -> Path:
     return Path(tempfile.mkdtemp(prefix=f'{TEMP_PREFIX}{kind}-'))
 
 
-def _writable(function: Callable[[str], object], path: str, _error: BaseException) -> None:
+def writable_retry(function: Callable[[str], object], path: str, _error: BaseException) -> None:
     """``rmtree``'s retry for a read-only file (a git object on Windows): clear the bit, run the removal again."""
     Path(path).chmod(stat.S_IWRITE)
     function(path)
@@ -78,7 +88,7 @@ def reclaim(path: Path) -> None:
     A held leftover is the age sweep's (:mod:`dev_lab.dev.tmpsweep`): a removal never fails the run it ends.
     """
     try:
-        shutil.rmtree(path, onexc=_writable)
+        shutil.rmtree(path, onexc=writable_retry)
     except OSError:
         shutil.rmtree(path, ignore_errors=True)
 

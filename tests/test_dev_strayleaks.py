@@ -1,0 +1,109 @@
+"""``dev_lab.dev.strayleaks``: each leak family found where it lands, removed only when its content proves it ours.
+
+Planted under a fake drive and home, never the real ones. Controls beside every removal: a checkout cloned from
+https, a ``results`` dir holding a person's file, a cache without pytest's README and an untraced family all stay.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import pytest
+
+from dev_lab.dev import strayleaks
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+_SHA = 'ab' + 'c' * 62
+
+
+def _clone(path: Path, url: str) -> None:
+    (path / '.git').mkdir(parents=True)
+    (path / '.git' / 'config').write_text(f'[remote "origin"]\n\turl = {url}\n', encoding='utf-8')
+    (path / 'components' / 'numerics-lab').mkdir(parents=True)
+
+
+@pytest.fixture
+def roots(tmp_path: Path) -> tuple[Path, Path]:
+    drive, home = tmp_path / 'drive', tmp_path / 'home'
+    drive.mkdir()
+    home.mkdir()
+    return drive, home
+
+
+def test_every_family_of_the_report_is_found_and_judged(roots: tuple[Path, Path]) -> None:
+    drive, home = roots
+    (drive / 'var' / 'tmp' / 'lab-supervise-candidate' / 'home').mkdir(parents=True)
+    (drive / 'results' / 'ab').mkdir(parents=True)
+    (drive / 'results' / 'ab' / _SHA).write_bytes(b'x')
+    _clone(drive / 'src' / 'repos' / 'product', 'file:///fixtures/product')
+    _clone(drive / 'r' / 'repos' / 'dev-lab', 'file:///x/dev-lab')
+    (drive / 'tmp_diag').mkdir()
+    metrics = home / 'output' / 'logs' / '26' / '11' / '24' / 'metrics'
+    metrics.mkdir(parents=True)
+    (metrics / 'host_failure.jsonl').write_text('{}\n', encoding='utf-8')
+    (home / '.pytest_cache').mkdir()
+    (home / '.pytest_cache' / 'README.md').write_text('# pytest cache directory #\n', encoding='utf-8')
+    verdicts = {one.family.name: one.kept for one in strayleaks.find([drive], home)}
+    assert set(verdicts) == {family.name for family in strayleaks.FAMILIES}
+    assert {name for name, why in verdicts.items() if why is not None} == {'tmp-diag'}, verdicts
+
+
+def _https_clone(drive: Path, _home: Path) -> None:
+    _clone(drive / 'src' / 'repos' / 'mine', 'https://forge.example/o/mine.git')
+
+
+def _results_note(drive: Path, _home: Path) -> None:
+    (drive / 'results').mkdir()
+    (drive / 'results' / 'notes.txt').write_text('x', encoding='utf-8')
+
+
+def _bare_cache(_drive: Path, home: Path) -> None:
+    (home / '.pytest_cache').mkdir()
+
+
+def _home_output(_drive: Path, home: Path) -> None:
+    (home / 'output').mkdir()
+    (home / 'output' / 'thesis.pdf').write_bytes(b'x')
+
+
+@pytest.mark.parametrize(
+    ('plant', 'family'),
+    [
+        (_https_clone, 'deploy-src-clones'),
+        (_results_note, 'fake-remote-objects'),
+        (_bare_cache, 'home-pytest-cache'),
+        (_home_output, 'home-metrics'),
+    ],
+)
+def test_planted_a_persons_tree_at_a_family_path_is_kept_by_name(
+    roots: tuple[Path, Path], plant: object, family: str
+) -> None:
+    """PLANTED CONTROL: the same path holding content no suite wrote is somebody's, so it stays."""
+    drive, home = roots
+    plant(drive, home)  # type: ignore[operator]
+    (found,) = strayleaks.find([drive], home)
+    assert found.family.name == family
+    assert found.kept is not None
+    removed, kept = strayleaks.remove([found])
+    assert (removed, [path for path, _ in kept]) == ([], [found.path])
+    assert found.path.exists()
+
+
+def test_a_removal_takes_the_emptied_parents_and_stops_at_a_held_one(roots: tuple[Path, Path]) -> None:
+    drive, home = roots
+    (drive / 'var' / 'tmp' / 'lab-supervise-candidate').mkdir(parents=True)
+    (drive / 'var' / 'log').mkdir()  # PLANTED CONTROL: a sibling keeps var/
+    _clone(drive / 'src' / 'repos' / 'product', 'file:///x/product')
+    (drive / 'src' / 'repos' / 'product' / '.git' / 'config').chmod(0o444)  # a git object's bits
+    removed, kept = strayleaks.remove(strayleaks.find([drive], home))
+    assert kept == []
+    assert len(removed) == 2
+    assert sorted(p.name for p in drive.iterdir()) == ['var']
+    assert sorted(p.name for p in (drive / 'var').iterdir()) == ['log']
+
+
+def test_nothing_is_found_on_a_clean_host(roots: tuple[Path, Path]) -> None:
+    drive, home = roots
+    assert strayleaks.find([drive], home) == []
