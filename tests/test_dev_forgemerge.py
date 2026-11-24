@@ -644,6 +644,7 @@ def test_a_head_adding_a_crate_waits_for_its_measured_port_record(tmp_path: Path
     PLANTED CONTROL: the same crate whose commit carries the measured trailer is ready.
     """
     work = _tested(tmp_path)
+    (work / 'rust' / 'fast').mkdir(parents=True)
     head = advance(work, 'pr/x', 'rust/fast/Cargo.toml', '[package]\nname = "fast"\n', 'feat: fast')
     (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
     found = decide(
