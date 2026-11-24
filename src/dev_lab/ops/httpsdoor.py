@@ -40,6 +40,7 @@ from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.ops.sshkey import ENV as AUTH_ENV
 
@@ -160,7 +161,7 @@ def ssh_verify(key: str, message: bytes, sig: str, ns: str) -> bool:
     kind, blob = _key_words(key)
     if not kind:
         return False
-    with tempfile.TemporaryDirectory(prefix='dev-lab-door-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}door-') as scratch:
         allowed, signature = Path(scratch) / 'allowed', Path(scratch) / 'sig'
         allowed.write_text(f'door namespaces="{ns}" {kind} {blob}\n', encoding='utf-8')
         signature.write_text(sig, encoding='utf-8')
@@ -303,7 +304,7 @@ def sudo_run(serve: Sequence[str]) -> Run:
 
     def run(line: str, key: str) -> tuple[int, str]:
         kind, blob = _key_words(key)
-        with tempfile.TemporaryDirectory(prefix='dev-lab-door-') as scratch:
+        with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}door-') as scratch:
             record = Path(scratch) / 'auth'
             record.write_text(f'publickey {kind} {blob}\n', encoding='utf-8')
             record.chmod(0o644)  # root reads it through sudo; the directory is the account's own

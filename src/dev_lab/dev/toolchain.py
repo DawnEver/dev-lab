@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 from lab_commons.log import emit
+from lab_commons.temp import TEMP_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -128,7 +129,7 @@ def probe_linker(
         done = _door.run(argv, capture_output=True, text=True, encoding='utf-8', check=False, timeout=_PROBE_TIMEOUT_S)
         return done.returncode, done.stderr
 
-    with tempfile.TemporaryDirectory(prefix='dev-lab-linker-') as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}linker-') as scratch:
         probe = (work or Path(scratch)) / 'linker_probe'
         (probe / 'src').mkdir(parents=True, exist_ok=True)
         (probe / 'Cargo.toml').write_text(
