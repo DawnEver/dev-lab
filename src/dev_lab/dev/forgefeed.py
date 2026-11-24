@@ -8,7 +8,7 @@ How a task hears the forge (docs-src/dev/forgefeed.md):
   for its issues and PRs updated since that repository's persisted cursor
   (``/repos/<o>/<r>/issues?state=all&since=<cursor>``, the same on GitHub and Gitea; further pages only while full) --
   never a request per issue or per PR. Labels come inline, so routing costs no further read; adding a label moves the
-  thread's ``updated_at`` (measured on Gitea 2026-11-18), so a labelled thread is heard on the next tick. A reply of
+  thread's ``updated_at`` (measured on Gitea 2026-11-18), so a labeled thread is heard on the next tick. A reply of
   304 to the stored ETag costs nothing.
 * ROUTED TO THE TASK. Each changed thread goes to every task it belongs to -- a PR a session opened belongs to the
   task its branch ``pr/<slug>/<feature>`` names (:func:`dev_lab.dev.taskledger.slug_on`) -- into that task's queue

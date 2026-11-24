@@ -7,7 +7,7 @@ that refuse a violation, repo-relative to the adopting tree, in the same shape
 ``tests/architecture/docs/test_enforced_registry.py`` already uses: a path string, or a
 ``('ruff', CODE)`` pair.
 
-WHICH RULES ARE HERE, and the test is mechanical rather than a judgement call: **delete every domain
+WHICH RULES ARE HERE, and the test is mechanical rather than a judgment call: **delete every domain
 noun from the rule -- if it still constrains anything, it is universal.** The rows below survived
 that test. What did not stay home: the reference ladder (one vendor first, a second vendor second),
 the cross-solver declaration rule, the resource-search-path rule, the adapter's clean-full-model
@@ -301,8 +301,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PRODUCTION-ENTRY-POINT',
         (
-            'Reproduce a behaviour through the PRODUCTION entry point, never an ad-hoc script handed out beside '
-            'it, and treat a behaviour not reachable from there as a gap to FIX, the boundary being the SUBJECT, '
+            'Reproduce a behavior through the PRODUCTION entry point, never an ad-hoc script handed out beside '
+            'it, and treat a behavior not reachable from there as a gap to FIX, the boundary being the SUBJECT, '
             'not the tree the code happens to live in.'
         ),
         (
@@ -360,7 +360,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'TOLERANCE-CARRIES-A-UNIT',
         (
             'A relative tolerance is free and an absolute one is not (`epsilon = 1e-10 * L` is a statement about '
-            'the unit its inputs are in, so the same call in metres tightens a test by 1000x): sweep for absolute '
+            'the unit its inputs are in, so the same call in meters tightens a test by 1000x): sweep for absolute '
             'tolerances BEFORE a rewrite, state the unit a golden was generated in, and never write a `rel=` '
             'without the `abs=` floor it is combined with.'
         ),

@@ -1,9 +1,9 @@
 r"""`pyproject.toml` HAS A SECTION BASE, and until this module nothing owned a key of it.
 
-WHAT WAS WRONG, MEASURED 2026-09-19. The family config census scored six artefacts. Five of them had
+WHAT WAS WRONG, MEASURED 2026-09-19. The family config census scored six artifacts. Five of them had
 a base; ``pyproject.toml`` -- the BIGGEST file in the family at 169/377/223/293 lines -- had none at
 all, and neither did ``docs-src/dev/``. The instrument for exactly this had existed since 2026-09-18
-(`SectionBase`, `SectionDelta`, `inspect_section`) and was wired to one artefact.
+(`SectionBase`, `SectionDelta`, `inspect_section`) and was wired to one artifact.
 
 WHAT THIS MODULE IS. It is the consumer of `PYPROJECT_SECTIONS`: the declarations are data in
 `dev_lab.dev._famconfig_pyproject_rows` and `_famconfig_pyproject_section_delta`, and every arm
@@ -60,7 +60,7 @@ from dev_lab.dev.famconfig import (
 
 #: Every owned table, read off the live registry rather than restated, so a row added there arrives
 #: here and cannot be judged by a list that stayed behind.
-ARTEFACTS: Final = tuple(sorted(PYPROJECT_SECTIONS))
+ARTIFACTS: Final = tuple(sorted(PYPROJECT_SECTIONS))
 
 #: The repo whose delta this suite holds. Every consumer holds its own, with its own name.
 HERE: Final = 'lab-commons'
@@ -70,7 +70,7 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 
 #: The scan's floor, stated as the PRODUCT rather than as an integer: a run that lost a table is a
 #: different failure from a run that lost the repo, and a bare count cannot tell them apart.
-CELL_FLOOR: Final = len(ARTEFACTS)
+CELL_FLOOR: Final = len(ARTIFACTS)
 
 #: The SET entry the ADD control plants. No repo collects it, so planting it is a widening that
 #: would really be new -- planting one a repo already has makes the control green against a file
@@ -89,10 +89,10 @@ def live_tables(root: Path) -> dict[str, dict[str, object]]:
     having. The controls bend THIS, which is why each asserts the unedited round trip is OWNED first.
     """
     document = tomllib.loads((root / PYPROJECT_FILE).read_text(encoding='utf-8'))
-    found = {artefact: locate_section(document, base) or {} for artefact, base in PYPROJECT_SECTIONS.items()}
+    found = {artifact: locate_section(document, base) or {} for artifact, base in PYPROJECT_SECTIONS.items()}
     return {
-        artefact: {key: table[key] for key in PYPROJECT_SECTIONS[artefact].owned_keys if key in table}
-        for artefact, table in found.items()
+        artifact: {key: table[key] for key in PYPROJECT_SECTIONS[artifact].owned_keys if key in table}
+        for artifact, table in found.items()
     }
 
 
@@ -103,11 +103,11 @@ def plant(path: Path, tables: Mapping[str, Mapping[str, object]]) -> Path:
     text is a control that depends on how somebody wrapped a list. Tables go out parent-first by
     dotted-path length, because TOML refuses a parent re-opened after its child.
     """
-    ordered = sorted(tables, key=lambda artefact: (len(PYPROJECT_SECTIONS[artefact].table), artefact))
+    ordered = sorted(tables, key=lambda artifact: (len(PYPROJECT_SECTIONS[artifact].table), artifact))
     lines: list[str] = []
-    for artefact in ordered:
-        lines.append(artefact)
-        lines += [f'{key} = {json.dumps(value)}' for key, value in sorted(tables[artefact].items())]
+    for artifact in ordered:
+        lines.append(artifact)
+        lines += [f'{key} = {json.dumps(value)}' for key, value in sorted(tables[artifact].items())]
         lines.append('')
     path.write_text('\n'.join(lines), encoding='utf-8')
     return path
@@ -118,9 +118,9 @@ def plant(path: Path, tables: Mapping[str, Mapping[str, object]]) -> Path:
 
 def test_every_repo_and_table_has_a_declaration_and_none_invents_one() -> None:
     """COMPLETENESS, BOTH SIDES. A missing delta leaves a table unjudged; an extra one names nothing."""
-    expected = {f'{HERE}::{artefact}' for artefact in ARTEFACTS}
-    live = {f'{repo}::{artefact}' for repo, table in PYPROJECT_SECTION_DELTAS.items() for artefact in table}
-    assert len(expected) == CELL_FLOOR, f'{len(expected)} cells against {len(ARTEFACTS)} tables'
+    expected = {f'{HERE}::{artifact}' for artifact in ARTIFACTS}
+    live = {f'{repo}::{artifact}' for repo, table in PYPROJECT_SECTION_DELTAS.items() for artifact in table}
+    assert len(expected) == CELL_FLOOR, f'{len(expected)} cells against {len(ARTIFACTS)} tables'
     assert live == expected, (
         f'undeclared: {sorted(expected - live)}; invented: {sorted(live - expected)}. A table with no '
         f'declaration is not judged, and a declaration for a table the base does not own judges nothing.'
@@ -130,10 +130,10 @@ def test_every_repo_and_table_has_a_declaration_and_none_invents_one() -> None:
 def test_no_declared_delta_is_a_fork_of_the_base_it_declares_against() -> None:
     """Driven on the DECLARATION alone, so a malformed delta is a different answer from a diverged file."""
     for repo, table in sorted(PYPROJECT_SECTION_DELTAS.items()):
-        for artefact, delta in sorted(table.items()):
-            base = section_base(artefact)
-            assert len(base.owned_keys) >= SECTION_KEY_FLOOR, f'{artefact} owns no key; every arm below went thin'
-            assert delta.repo == repo, f'{repo}::{artefact} declares itself as {delta.repo!r}'
+        for artifact, delta in sorted(table.items()):
+            base = section_base(artifact)
+            assert len(base.owned_keys) >= SECTION_KEY_FLOOR, f'{artifact} owns no key; every arm below went thin'
+            assert delta.repo == repo, f'{repo}::{artifact} declares itself as {delta.repo!r}'
             assert section_problems(base, delta) == (), section_problems(base, delta)
 
 
@@ -141,10 +141,10 @@ def test_every_ceiling_is_its_measurement_and_no_delta_carries_headroom() -> Non
     """THE RATCHET'S OTHER SIDE. Headroom nobody chose is how a waiver list stops being a delta."""
     measured = {HERE: 0}
     for repo, table in sorted(PYPROJECT_SECTION_DELTAS.items()):
-        for artefact, delta in sorted(table.items()):
+        for artifact, delta in sorted(table.items()):
             added = sum(len(entries) for entries in delta.added.values())
             assert added == delta.ceiling, (
-                f'{repo}::{artefact} adds {added} entries against a ceiling of {delta.ceiling}. The '
+                f'{repo}::{artifact} adds {added} entries against a ceiling of {delta.ceiling}. The '
                 f'ceiling was set AT the measurement, so an entry added here raises it in the same '
                 f'edit and says what it is for, and an entry removed lowers it.'
             )
@@ -164,13 +164,13 @@ def test_this_repo_owns_every_table_the_base_declares() -> None:
     here would be judged against a delta this repo cannot know.
     """
     verdicts = {
-        artefact: inspect_section(
-            ROOT / PYPROJECT_FILE, section_base(artefact), PYPROJECT_SECTION_DELTAS[HERE][artefact]
+        artifact: inspect_section(
+            ROOT / PYPROJECT_FILE, section_base(artifact), PYPROJECT_SECTION_DELTAS[HERE][artifact]
         )
-        for artefact in ARTEFACTS
+        for artifact in ARTIFACTS
     }
-    for artefact, report in verdicts.items():
-        assert report.ok, f'{HERE}::{artefact} is {report.status}: {report.detail} {report.offending}'
+    for artifact, report in verdicts.items():
+        assert report.ok, f'{HERE}::{artifact} is {report.status}: {report.detail} {report.offending}'
     assert len(verdicts) == CELL_FLOOR
     assert {report.status for report in verdicts.values()} == {OWNED}
 

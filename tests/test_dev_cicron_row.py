@@ -87,7 +87,7 @@ def test_a_verb_carrying_its_credential_is_admitted_for_the_verb_to_check(rules:
 
 
 def test_a_credential_in_a_chained_command_admits_nothing(rules: Path) -> None:
-    """PLANTED CONTROL: ``--credential`` must ride the verb's own invocation, not a neighbour's."""
+    """PLANTED CONTROL: ``--credential`` must ride the verb's own invocation, not a neighbor's."""
     reason = agenthooks.decide(f'{_PY} -m {_MODULE} ci-pause-fleet --cluster c1; echo --credential x', rules)
     assert reason is not None
     assert RULE_ID in reason

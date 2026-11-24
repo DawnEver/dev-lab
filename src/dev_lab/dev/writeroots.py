@@ -1,7 +1,7 @@
 """WRITES-STAY-IN-THE-TREE: an agent writes only into the roots its machine ALLOWS; everything else is refused.
 
 User requirement 2026-11-05: an agent session left scripts in the OS temp dir (Git Bash ``/tmp`` is the same directory
-on Windows). A program's artefact goes to ``output/logs/<yy>/<mm>/<dd>/<kind>/``, an experiment to ``scratch/``;
+on Windows). A program's artifact goes to ``output/logs/<yy>/<mm>/<dd>/<kind>/``, an experiment to ``scratch/``;
 outside a checkout nothing scans, ignores or cleans it.
 
 THE ALLOWLIST (ruling R8, 2026-11-24): the writable roots are a per-machine allowlist, declared in the config source
@@ -80,7 +80,7 @@ __all__ = [
 RULE_ID: Final = 'WRITES-STAY-IN-THE-TREE'
 HAZARD: Final = 'outside every checkout nothing scans, ignores or cleans a file, so it outlives the session.'
 REMEDY: Final = (
-    "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/, an "
+    "No door: write in the checkout. A program's artifact goes to output/logs/<yy>/<mm>/<dd>/<kind>/, an "
     'experiment to scratch/ of the checkout you work in (user ruling 2026-11-23: no job temp dir either).'
 )
 

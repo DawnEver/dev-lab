@@ -26,7 +26,7 @@ these three measured differences are:
 * THEY DO NOT READ THE SAME THING AND SHARE NO NAME. ``bounded``'s nine public functions take a
   command, a ``Popen``, a pid, a worker count; they import ``os`` and ``subprocess`` and touch a LIVE
   process. This takes a ``Path`` and imports ``ast``. Measured 2026-09-18, the overlap between the
-  two surfaces is EMPTY -- a module bolted onto a neighbour it shares no argument type with is
+  two surfaces is EMPTY -- a module bolted onto a neighbor it shares no argument type with is
   adjacency, not cohesion.
 * THE REFUSALS ARE OPPOSITE IN KIND AND IN TIME. ``bounded`` refuses at RUNTIME, on ONE call, by
   TERMINATING a live process tree -- a gate. This refuses BEFORE anything runs, over a whole tree,
@@ -263,7 +263,7 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, roots: Collection[tup
 
     A lint that has never been shown to fire proves nothing when it is green, and the opposite error
     is just as fatal: one that refuses every subprocess it sees gets deleted rather than obeyed. So
-    every distinction the scanner draws is planted at once, each offender beside an honest neighbour
+    every distinction the scanner draws is planted at once, each offender beside an honest neighbor
     that must NOT be named -- an unbounded ``run`` beside a bounded one, a bare ``Popen().wait()``
     beside the ``Popen`` itself (which never blocks), and a positional ``wait(5)``, which is bounded
     and which a rule copied from the blocking calls would have convicted.

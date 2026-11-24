@@ -64,7 +64,7 @@
  * (anthropics/claude-code#79321) where the rewrite is silently dropped; a denied call with an
  * exact rewrite hint in the reason is the reliable shape.
  *
- * Fail-open by construction: unparseable stdin, a missing/invalid rules file, or a bad regex in
+ * Fail-open by construction: unparsable stdin, a missing/invalid rules file, or a bad regex in
  * one rule never blocks a tool call -- an engine that can error closed would turn a typo in the
  * data file into a locked session.
  */
@@ -118,7 +118,7 @@ const SHELLS = /(?:^|[/\\])(?:sh|bash|zsh|dash|ksh)(?:\.exe)?$/i;
  *
  * AN OPERATOR INSIDE QUOTES IS TEXT, and so is a backslash-escaped one. MEASURED 2026-10-03: a
  * naive split read `grep -rn "a\|uv run --no-sync" f` as a pipe into a `uv run` command and refused
- * a grep. `"..."` honours backslash escapes, `'...'` honours none -- the shell's own rules.
+ * a grep. `"..."` honors backslash escapes, `'...'` honors none -- the shell's own rules.
  */
 function segments(line) {
   const out = [];

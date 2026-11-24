@@ -1,7 +1,7 @@
 """The controls for :mod:`dev_lab.dev.famtests.datedmemory` -- every reader and arm, both ways.
 
 WHAT IS PROVED HERE. Not "the walk works": what this file owns is that each reader FIRES on a
-planted offender and STAYS SILENT on the honest neighbour beside it. A reader that names everything
+planted offender and STAYS SILENT on the honest neighbor beside it. A reader that names everything
 and a reader that names nothing both pass a one-sided test, and the second of those is
 indistinguishable from a clean tree -- which is how a six-module import gap survived two repos until
 somebody drove it rather than read it.
@@ -52,7 +52,7 @@ def plant(root: Path, relative: str, body: str) -> Path:
 
 
 def a_tree(root: Path) -> Path:
-    """The four-shape fixture every reader below is driven over: one of each, plus honest neighbours."""
+    """The four-shape fixture every reader below is driven over: one of each, plus honest neighbors."""
     plant(root, '2026/09/18/agrees.md', '---\nname: a\ncreated: 2026-09-18\n---\n# a\n')
     plant(root, '2026/09/18/stale.md', '---\nname: b\ncreated: 2026-09-04\n---\n# b\n')
     plant(root, '2026/09/18/quiet.md', '# c\n')

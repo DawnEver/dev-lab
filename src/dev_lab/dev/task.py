@@ -3,7 +3,7 @@
 ``python -m dev_lab.dev.task <verb>`` -- ``help`` prints the verbs (:data:`VERBS`). The ledger is
 :func:`dev_lab.dev.taskledger.ledger`, ``<machine home>/repos/tasks``, a git clone; EVERY write commits there (local
 only; publishing the clone is ``git -C <ledger> push``). A task is ``<ledger>/<slug>/{TASK.md,JOURNAL.md}`` and its
-identity the forge issue labelled ``task:<slug>`` in the clone's origin. The task a checkout works on is its branch's,
+identity the forge issue labeled ``task:<slug>`` in the clone's origin. The task a checkout works on is its branch's,
 ``pr/<slug>/<feature>`` (``--task <slug>`` names another). The journal grammar is :mod:`dev_lab.dev.taskjournal`;
 opening and closing spend the user's authority (:mod:`dev_lab.dev.taskauthority`). Writing the ledger any other way
 is refused by ``LEDGER-WRITES-THROUGH-ITS-DOOR`` (:mod:`dev_lab.dev.ledgerguard`).
@@ -108,7 +108,7 @@ class TaskRefused(ValueError):
 
 
 class Forge(Protocol):
-    """A task's identity on the forge: one issue labelled ``task:<slug>`` in the ledger's origin."""
+    """A task's identity on the forge: one issue labeled ``task:<slug>`` in the ledger's origin."""
 
     def open(self, slug: str, goal: str) -> str:
         """Open the issue; its URL."""

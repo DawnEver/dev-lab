@@ -104,7 +104,7 @@ def test_a_prompt_at_a_terminal_follows_an_inline_preflight(
 @pytest.mark.parametrize(
     ('said', 'door'),
     [
-        ('Host key verification failed.', 'devhost enrol'),  # incident (b): the workstation was never enrolled
+        ('Host key verification failed.', 'devhost enroll'),  # incident (b): the workstation was never enrolled
         ('ssh: connect to host forge port 22: Connection timed out', 'unreachable over ssh'),
     ],
 )
@@ -176,7 +176,7 @@ def test_breakglass_open_preflight_checks_the_server_too(
         )
 
     assert run(unknown_host) == 2
-    assert 'devhost enrol' in capsys.readouterr().err
+    assert 'devhost enroll' in capsys.readouterr().err
     assert fresh_receipts(home=tmp_path) == []
     assert run(lambda _t, _r: (0, 'no wave open')) == 0
     assert 'ask the user for the code' in capsys.readouterr().out

@@ -327,7 +327,7 @@ def pushed(root: Path, ref_lines: str) -> tuple[str, ...]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m dev_lab.dev.memoryadds``: git's pre-push ref lines on stdin; ``1`` refuses the push."""
-    del argv  # git's remote name and url; the judgement reads origin/<integration>
+    del argv  # git's remote name and url; the judgment reads origin/<integration>
     root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').strip())
     try:
         problems = pushed(root, '' if sys.stdin.isatty() else sys.stdin.read())

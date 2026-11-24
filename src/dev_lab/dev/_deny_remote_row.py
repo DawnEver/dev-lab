@@ -6,7 +6,7 @@ deploys -- both over the one transport :mod:`dev_lab.dev.remote`. A hand-written
 upload by ``scp``/``rsync``, are refused here; read-only ssh (``uptime``, ``systemctl status``, ``journalctl``,
 ``cat``, ``ls``, ``df``) stays open. HPC login hosts are refused whole by HPC-THROUGH-THE-DOOR, which fires first.
 
-HOW A WRITE IS RECOGNISED: by the remote command's verb, from a closed list of the shapes that change a host
+HOW A WRITE IS RECOGNIZED: by the remote command's verb, from a closed list of the shapes that change a host
 (:data:`_WRITERS`), and for a copy by its LAST argument being remote (``host:path``). A list rather than an
 allowlist of readers because a refusal must name its exit, and a read the list misses is merely prompted.
 

@@ -244,7 +244,7 @@ def test_a_definition_that_has_not_moved_does_not_end_the_loop(tmp_path: Path) -
     """The other side: an unchanged signature must never be a reason to stop.
 
     Driven one step and then closed rather than drained -- draining would sit in the loop's own
-    interval wait, which is the behaviour this test is NOT about.
+    interval wait, which is the behavior this test is NOT about.
     """
     loop = _loop(tmp_path, _Probe())
     loop.definition = lambda: 'unchanged'

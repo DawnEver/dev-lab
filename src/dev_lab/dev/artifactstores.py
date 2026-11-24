@@ -1,6 +1,6 @@
-"""THE ARTEFACT STORES -- the run-id and key rules, the :class:`Ref`, and the remote backends.
+"""THE ARTIFACT STORES -- the run-id and key rules, the :class:`Ref`, and the remote backends.
 
-The policy that picks a backend, and the local ``folder`` one, live in :mod:`dev_lab.dev.artefacts`;
+The policy that picks a backend, and the local ``folder`` one, live in :mod:`dev_lab.dev.artifacts`;
 this module is what a remote backend DOES: ``forge`` (:class:`ForgeStore`) and ``rclone``
 (:class:`RcloneStore`), each write-once under a key :func:`check_key` admits.
 """
@@ -37,8 +37,10 @@ __all__ = [
     'MANIFEST',
     'MB',
     'RCLONE',
-    'ArtefactRefused',
-    'ArtefactStore',
+    'RECORD_ARCHIVES',
+    'RECORD_INDEXES',
+    'ArtifactRefused',
+    'ArtifactStore',
     'ForgeStore',
     'MissingOutput',
     'OutputBudgetRefused',
@@ -74,6 +76,12 @@ MANIFEST: Final = '.manifest.json'
 
 #: The forge's attachment limit: nothing larger is ever attached.
 ATTACHMENT_LIMIT_MB: Final = 100
+# spelling-off -- STORED run-record keys: the records already on the forge carry these spellings, so they move only
+# with a migration of those records (FORMATS-MIGRATE-ONCE), never by a reader that accepts two spellings.
+#: The run-record key naming a run's stored archives (:func:`manifest_of` each), and the key of their member indexes.
+RECORD_ARCHIVES: Final = 'artefacts'
+RECORD_INDEXES: Final = 'artefact_indexes'
+# spelling-on
 
 #: OneDrive's whole-path limit, and the characters no name may hold there.
 _PATH_LIMIT: Final = 400
@@ -89,19 +97,19 @@ MB: Final = 1024 * 1024
 _RCLONE_TIMEOUT_S: Final = 3600
 
 
-class ArtefactRefused(ValueError):
-    """An artefact operation refused: a bad name, an overwrite, a mismatching sha256, a bad config."""
+class ArtifactRefused(ValueError):
+    """An artifact operation refused: a bad name, an overwrite, a mismatching sha256, a bad config."""
 
 
-class MissingOutput(ArtefactRefused):
+class MissingOutput(ArtifactRefused):
     """A declared output matched nothing: the run fails loudly, naming every missing declaration."""
 
 
-class OutputBudgetRefused(ArtefactRefused):
+class OutputBudgetRefused(ArtifactRefused):
     """A required output budget is missing or invalid, or the selected outputs or their index exceed it."""
 
 
-class OutputIntegrityRefused(ArtefactRefused):
+class OutputIntegrityRefused(ArtifactRefused):
     """Packed or stored archive bytes no longer match the member identities sealed when they were packed."""
 
 
@@ -112,10 +120,10 @@ def run_id(sha: str, platform: str, account: str, when: datetime) -> str:
     """``<sha12>-<platform>-<account>-<utcstamp>`` -- one run of one writer, short and ASCII."""
     if re.fullmatch(_ACCOUNT, account) is None:
         msg = (
-            f'account {account!r} cannot name an artefact on a cloud drive: lowercase ASCII letters, '
+            f'account {account!r} cannot name an artifact on a cloud drive: lowercase ASCII letters, '
             'digits and "._-", at most 32, starting and ending in a letter or digit'
         )
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     return f'{sha[:12]}-{platform}-{account}-{when.astimezone(UTC).strftime(_STAMP)}'
 
 
@@ -124,7 +132,7 @@ def parsed_run_id(ident: str) -> re.Match[str]:
     found = _RUN_ID.match(ident)
     if found is None:
         msg = f'{ident!r} is not a run id (<sha12>-<platform>-<account>-<yyyymmddTHHMMSSZ>)'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     return found
 
 
@@ -156,8 +164,8 @@ def check_key(key: str) -> None:
         elif part[-1] in '. ':
             problems.append(f'{part!r} ends in a dot or space')
     if problems:
-        msg = f'artefact key {key!r} refused: {"; ".join(problems)}'
-        raise ArtefactRefused(msg)
+        msg = f'artifact key {key!r} refused: {"; ".join(problems)}'
+        raise ArtifactRefused(msg)
 
 
 # --- declared outputs -------------------------------------------------------------------------
@@ -181,7 +189,7 @@ def ref_of_entry(entry: dict[str, Any]) -> Ref:
     return Ref(entry['backend'], entry['ref'], int(entry['bytes']), entry['sha256'])
 
 
-class ArtefactStore(Protocol):
+class ArtifactStore(Protocol):
     """Where archives live; every backend answers the same four calls."""
 
     backend: str
@@ -219,7 +227,7 @@ def verified_copy(ref: Ref, fetched: Path, dest: Path) -> Path:
     if actual != ref.sha256:
         fetched.unlink()
         msg = f"{ref.ref}: sha256 {actual} is not the manifest's {ref.sha256}; download discarded"
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     dest.mkdir(parents=True, exist_ok=True)
     target = dest / PurePosixPath(ref.ref).name
     shutil.move(fetched, target)
@@ -232,7 +240,7 @@ def landed_already(existing: Ref | None, new: Ref) -> Ref | None:
         return None
     if existing.sha256 != new.sha256:
         msg = f'{new.ref} already exists with other content: write-once, a correction is a new run id'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     return existing
 
 
@@ -251,7 +259,7 @@ def sorted_refs(refs: Sequence[Ref], older_than: datetime | None) -> tuple[Ref, 
 
 def scratch_dir(near: Path | None = None) -> Path:
     """A fresh private scratch directory, beside *near* when given."""
-    return Path(tempfile.mkdtemp(prefix=f'{TEMP_PREFIX}artefact-', dir=near))
+    return Path(tempfile.mkdtemp(prefix=f'{TEMP_PREFIX}artifact-', dir=near))
 
 
 # --- folder ---------------------------------------------------------------------------------------
@@ -268,10 +276,10 @@ def check_rclone_config(
     resolved, top = path.resolve(), repo.resolve()
     if resolved == top or top in resolved.parents:
         msg = f'the rclone config is never in a repo: move it out of {repo} (e.g. ~/.config/rclone/rclone.conf)'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     if mode_of is not None and mode_of(resolved) & 0o077:
         msg = f'the rclone config {path} must be mode 600 (it holds the drive token): chmod 600 {path}'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
 
 
 def _installed_rclone() -> tuple[str, ...]:
@@ -383,7 +391,7 @@ class ForgeStore:
         new = ref_of(self.backend, ident + ARCHIVE, path)
         if path.stat().st_size > ATTACHMENT_LIMIT_MB * MB:
             msg = f'{new.ref} is {new.bytes} bytes, over the forge attachment limit of {ATTACHMENT_LIMIT_MB} MB'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         assets = self._assets()
         found = assets.get(ident + MANIFEST)
         landed = landed_already(self._manifest(found) if found else None, new)
@@ -405,7 +413,7 @@ class ForgeStore:
         item = self._assets().get(ref.ref)
         if item is None:
             msg = f'{ref.ref} is not attached on the forge (pruned, or never stored)'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         scratch = scratch_dir()
         try:
             fetched = scratch / 'fetched'
@@ -415,7 +423,7 @@ class ForgeStore:
             shutil.rmtree(scratch, ignore_errors=True)
 
     def list(self, older_than: datetime | None) -> tuple[Ref, ...]:
-        """Every artefact manifest attached."""
+        """Every artifact manifest attached."""
         return sorted_refs([self._manifest(i) for n, i in self._assets().items() if n.endswith(MANIFEST)], older_than)
 
     def delete(self, ref: Ref) -> None:

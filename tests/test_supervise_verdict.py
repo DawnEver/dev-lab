@@ -36,7 +36,7 @@ def test_a_check_that_found_nothing_is_an_empty_result_not_none() -> None:
 
 
 def test_a_completion_is_not_an_anomaly() -> None:
-    """A finished task is an outcome; modelling it as a warning would read as degraded forever."""
+    """A finished task is an outcome; modeling it as a warning would read as degraded forever."""
     result = CheckResult(completions=[Completion(kind='done', message='all ops complete')])
     assert result.anomalies == []
     assert result.completions[0].kind == 'done'
@@ -107,7 +107,7 @@ def test_a_metric_a_check_did_not_report_reads_as_zero() -> None:
 def test_an_operator_outside_the_table_is_refused() -> None:
     """An unreadable comparison is refused rather than silently run.
 
-    The predecessor's string conditions fell back to True for anything unparseable, so a typo
+    The predecessor's string conditions fell back to True for anything unparsable, so a typo
     RAN the step instead of holding it.
     """
     with pytest.raises(ValueError, match='not a comparison'):

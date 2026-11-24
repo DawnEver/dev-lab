@@ -244,7 +244,7 @@ def assert_the_declaration_is_the_shape_the_ratchet_keys_on(declared: Collection
 def assert_the_scanner_still_convicts(plant_root: Path, *, ceiling: int) -> None:
     """THE PLANTED CONTROL, in BOTH directions, driving the REAL scanner over a REAL tree.
 
-    The distinctions are planted together because each is only meaningful beside its neighbour: a line
+    The distinctions are planted together because each is only meaningful beside its neighbor: a line
     ONE column over the ceiling must be named with its measured width, a line exactly AT the ceiling
     must not be, and a second over-width line in the same file must appear as its OWN site rather than
     folding into a per-file verdict -- that last one is what makes the ledger a set of sites at all.

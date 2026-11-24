@@ -173,7 +173,7 @@ def unfloored(tree: ast.AST, *, bar: str) -> tuple[int, ...]:
 
     Returns:
         The offending line numbers, sorted and without duplicates removed -- two offending calls on one
-        line are two offences.
+        line are two offenses.
 
     Raises:
         ValueError: *bar* is not a member of :data:`BARS`. A misspelling must not silently select a
@@ -286,7 +286,7 @@ def assert_every_tolerance_states_its_floor(
 def assert_the_scanner_still_convicts(plant_root: Path, *, bar: str) -> None:
     """THE PLANTED CONTROL, in BOTH directions, driving the REAL scanner over a REAL file.
 
-    Every distinction the scanner draws is planted at once, each offender beside an honest neighbour
+    Every distinction the scanner draws is planted at once, each offender beside an honest neighbor
     that must NOT be named: both import spellings, the keyword pair, the POSITIONAL pair no consumer
     reads today, the defaulted call the two bars disagree about, and a call that is not ``approx`` at
     all. A lint convicting everything is deleted rather than obeyed, so the second direction carries as

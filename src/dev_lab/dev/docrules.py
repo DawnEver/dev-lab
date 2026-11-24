@@ -34,7 +34,7 @@ __all__ = ['DOC_PRINCIPLES', 'DOC_RULES', 'is_doc', 'main', 'render']
 DOC_RULES: Final[tuple[str, ...]] = ('DOCS-SPLIT', 'NAMED-SETS-NOT-COUNTS', 'RETIRED-NAMES-REGISTERED')
 
 #: The principles a document is held to, by id.
-DOC_PRINCIPLES: Final[tuple[str, ...]] = ('single-source-of-truth', 'progressive-disclosure', 'names-match-behaviour')
+DOC_PRINCIPLES: Final[tuple[str, ...]] = ('single-source-of-truth', 'progressive-disclosure', 'names-match-behavior')
 
 _DOC_PREFIXES: Final = ('.claude/rules/', 'docs-src/')
 _DOC_NAMES: Final = frozenset({'AGENTS.md', 'README.md', 'CLAUDE.md'})
@@ -58,9 +58,9 @@ def is_doc(file_path: str) -> bool:
     """Whether *file_path* is a document held to the prose rules."""
     if not file_path:
         return False
-    normalised = '/' + file_path.replace('\\', '/')
-    name = normalised.rsplit('/', 1)[-1]
-    return any(f'/{prefix}' in normalised for prefix in _DOC_PREFIXES) or name in _DOC_NAMES or name.endswith('.md')
+    normalized = '/' + file_path.replace('\\', '/')
+    name = normalized.rsplit('/', 1)[-1]
+    return any(f'/{prefix}' in normalized for prefix in _DOC_PREFIXES) or name in _DOC_NAMES or name.endswith('.md')
 
 
 def render() -> str:

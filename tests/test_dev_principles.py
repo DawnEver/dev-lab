@@ -19,7 +19,7 @@ def test_the_set_is_the_named_set_and_keeps_valuable_options() -> None:
     """A NAMED SET, not a count: a dropped or renamed id names itself."""
     assert [one.id for one in PRINCIPLES] == [
         'first-principles', 'no-historical-baggage', 'occams-razor', 'single-source-of-truth',
-        'layered-decoupling', 'names-match-behaviour', 'no-backward-compatibility', 'progressive-disclosure',
+        'layered-decoupling', 'names-match-behavior', 'no-backward-compatibility', 'progressive-disclosure',
         'keep-valuable-options', 'every-wall-teaches', 'no-barrier-fan-out', 'images-by-absolute-path',
         'worktree-names-its-task',
     ]  # fmt: skip

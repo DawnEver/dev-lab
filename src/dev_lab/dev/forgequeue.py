@@ -87,9 +87,9 @@ def _stale(host: Mapping[str, Any], now: str) -> str:
     return f'  tick held {age} in {held["phase"]} (pid {held["pid"]} since {held["since"]})'
 
 
-def _row(item: Ranked, favoured: Sequence[str] = ()) -> dict[str, Any]:
+def _row(item: Ranked, favored: Sequence[str] = ()) -> dict[str, Any]:
     return {
-        'priority': list(favoured),
+        'priority': list(favored),
         'candidate': item.candidate.key,
         'class': item.candidate.kind,
         'value': round(item.value, 2),
@@ -111,7 +111,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     live = [card for card in cards if not card.stale(now)]
 
     def row(item: Ranked) -> dict[str, Any]:
-        return _row(item, [card.host for card in live if card.favours(item.candidate)])
+        return _row(item, [card.host for card in live if card.favors(item.candidate)])
 
     try:
         branches = [dataclasses.asdict(row) for row in listing(root, client, now=now)]

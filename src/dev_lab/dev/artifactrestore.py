@@ -1,7 +1,7 @@
 """MATERIALIZING A SELECTION -- chosen members of a verified archive into a fresh owned directory.
 
 :func:`materialize_newpack_archive` needs an existing, trusted, non-alias parent and returns a newly
-claimed unique directory under it. It runs the one verifier (:func:`dev_lab.dev.artefactscan.verified_archive`),
+claimed unique directory under it. It runs the one verifier (:func:`dev_lab.dev.artifactscan.verified_archive`),
 not a second extractor: every payload is verified, the unselected ones too, and only selected regular
 files are opened create-new and written in bounded chunks.
 
@@ -33,10 +33,10 @@ from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from typing import IO, TYPE_CHECKING, Final, cast
 
-from dev_lab.dev.artefactindex import MemberFact, require_positive, select_members, validate_ref
-from dev_lab.dev.artefactpack import file_identity
-from dev_lab.dev.artefactscan import check_compressed_budget, validated_facts, verified_archive, write_all
-from dev_lab.dev.artefactstores import ArtefactRefused, OutputBudgetRefused, Ref, manifest_of
+from dev_lab.dev.artifactindex import MemberFact, require_positive, select_members, validate_ref
+from dev_lab.dev.artifactpack import file_identity
+from dev_lab.dev.artifactscan import check_compressed_budget, validated_facts, verified_archive, write_all
+from dev_lab.dev.artifactstores import ArtifactRefused, OutputBudgetRefused, Ref, manifest_of
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -71,10 +71,10 @@ def _portable(selected: tuple[MemberFact, ...]) -> None:
                 or _SUPERSCRIPT_DEVICE.fullmatch(stem)
             ):
                 msg = f'materialization target component is not portable: {component!r}'
-                raise ArtefactRefused(msg)
+                raise ArtifactRefused(msg)
         if member.path.split('/', 1)[0].casefold() == RECEIPT.casefold():
             msg = 'materialization selection collides with completion receipt'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
 
 
 def _kind(metadata: os.stat_result) -> tuple[int, int, int]:
@@ -110,12 +110,12 @@ class _Owned:
             if parent not in self.created:
                 if not self._owned(parent.parent):
                     msg = 'materialization parent identity changed'
-                    raise ArtefactRefused(msg)
+                    raise ArtifactRefused(msg)
                 parent.mkdir()
                 self.created[parent] = _kind(parent.lstat())
             elif not self._owned(parent):
                 msg = 'materialization directory identity changed'
-                raise ArtefactRefused(msg)
+                raise ArtifactRefused(msg)
 
     @contextmanager
     def member(self, fact: MemberFact) -> Iterator[IO[bytes] | None]:
@@ -132,14 +132,14 @@ class _Owned:
             self.seals[path] = file_identity(os.fstat(stream.fileno()))
         if not self._owned(path):
             msg = 'materialization output identity changed'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
 
     def finish(self, receipt: bytes) -> None:
         """Re-check every output, then write the receipt -- last."""
         for path in self.created:
             if not self._owned(path) or (path in self.seals and file_identity(path.lstat()) != self.seals[path]):
                 msg = 'materialization output changed before completion'
-                raise ArtefactRefused(msg)
+                raise ArtifactRefused(msg)
         self.selected.add(RECEIPT)
         with self.member(MemberFact(RECEIPT, len(receipt), hashlib.sha256(receipt).hexdigest())) as stream:
             write_all(cast('IO[bytes]', stream), receipt)
@@ -209,7 +209,7 @@ def materialize_newpack_archive(
     parent = destination_parent.absolute()
     if parent.resolve(strict=True) != parent or not parent.is_dir():
         msg = 'materialization requires an existing trusted nonalias destination parent'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     root = Path(tempfile.mkdtemp(prefix='materialized-', dir=parent))
     output = _Owned(root, selected)
     try:
@@ -226,6 +226,6 @@ def materialize_newpack_archive(
     except BaseException as error:
         if not output.cleanup():
             msg = f'materialization failed; cleanup incomplete for owned root {root}'
-            raise ArtefactRefused(msg) from error
+            raise ArtifactRefused(msg) from error
         raise
     return root

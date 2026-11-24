@@ -14,7 +14,7 @@ What IS universal is the partition -- a date taken once, a kind beneath it, and 
 escape either.
 
 THE REPO'S ANSWER IS ``[tool.dev_lab.parts] output`` (every family repo declares ``"output/logs"``), read by
-:func:`declared_output`; :func:`output_dir` is the dated directory under it, for every artefact a program
+:func:`declared_output`; :func:`output_dir` is the dated directory under it, for every artifact a program
 produces and can regenerate (verify's run log and records, its coverage, the durations ledger, part records).
 An undeclared output is REFUSED naming the key, never defaulted, for the reason above.
 
@@ -25,7 +25,7 @@ A NAME, NEVER A PATH, AND THERE IS NO EXEMPTION. The version this was migrated f
 escape hatches and had them removed on 2026-09-08 after neither checked the thing it excused: an
 ``is_absolute()`` branch excused every path merely spelled in full, and a ``'logs' in parts`` branch
 matched the segment anywhere, so ``logs/x.log`` passed while being no more dated than a bare name.
-They are not reinstated here. An undated artefact cannot be told from one an abandoned lane left
+They are not reinstated here. An undated artifact cannot be told from one an abandoned lane left
 behind, and a sweeper cannot age out a file with no age.
 """
 
@@ -64,9 +64,9 @@ class UndeclaredOutput(ValueError):
 def _escapes(text: str) -> bool:
     """Whether *text* can leave the root it is joined to, under EITHER platform's spelling.
 
-    ``Path`` is the running platform's flavour, and that is not enough here. MEASURED 2026-09-17:
+    ``Path`` is the running platform's flavor, and that is not enough here. MEASURED 2026-09-17:
     ``WindowsPath('/var/log').is_absolute()`` is ``False`` -- a POSIX-absolute base sails through a
-    Windows guard and then escapes on the machine where it means something. So both flavours are
+    Windows guard and then escapes on the machine where it means something. So both flavors are
     asked, and an upward ``..`` segment is refused too: it escapes without being absolute at all.
     """
     return (
@@ -94,7 +94,7 @@ def dated_log(root: Path, name: str, *, base: str, kind: str) -> Path:
     Args:
         root: the checkout whose tree receives the log.
         name: a bare FILENAME. A separator, a drive or a dot-segment is REFUSED rather than
-            normalised away: silently taking ``Path(name).name`` would put the file somewhere the
+            normalized away: silently taking ``Path(name).name`` would put the file somewhere the
             caller did not ask for and report success.
         base: the repo's own root for dated output, relative to *root*, e.g. ``'output/logs'``.
             NO DEFAULT -- see the module docstring; the four repos in this family give four answers
@@ -128,7 +128,7 @@ def dated_log(root: Path, name: str, *, base: str, kind: str) -> Path:
         msg = (
             f'this takes a NAME, not a path, and got {name!r}. Everything a dated harness writes '
             f'goes under <base>/<yy>/<mm>/<dd>/<kind>/ and there is no exemption: an undated '
-            f'artefact cannot be told from one an abandoned lane left behind, and a sweeper cannot '
+            f'artifact cannot be told from one an abandoned lane left behind, and a sweeper cannot '
             f'age out a file with no age. Pass just the filename.'
         )
         raise ValueError(msg)

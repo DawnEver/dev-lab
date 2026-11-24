@@ -1,8 +1,8 @@
 """The BACKGROUND-SHELL-IS-BOUNDED deny row -- pure DATA, judged only on a Bash call run in the background.
 
 ``when: 'background'``: the engine binds the row only when the call carries ``run_in_background``, and then asks
-:mod:`dev_lab.dev.shelllife` (``--admit``) for the judgement -- a line starts with ``timeout <n>``, and above
-:data:`DEFAULT_LIFETIME_S` carries the USER's grant (user ruling 2026-11-15). This pattern is the judgement only
+:mod:`dev_lab.dev.shelllife` (``--admit``) for the judgment -- a line starts with ``timeout <n>``, and above
+:data:`DEFAULT_LIFETIME_S` carries the USER's grant (user ruling 2026-11-15). This pattern is the judgment only
 where no interpreter can be asked. The default is declared HERE: the deny registry may not import the sweep,
 which imports the registry through ``stoprun``. Refused rather than rewritten: the hook API's ``updatedInput`` is
 dropped for Bash (the engine's own note, ``DENY, NOT REWRITE``).

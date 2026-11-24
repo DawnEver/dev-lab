@@ -18,9 +18,9 @@ THE FOUR PROPERTIES THIS HOLDS, each of which is a way a benchmark has actually 
   the arm is left without a sample for that round -- while :meth:`ArmSamples.median_s` reports
   ``None`` rather than a median over the rounds that happened to succeed, because a candidate timed
   only on the inputs it likes is not a candidate that was measured.
-* SETUP IS AMORTISED OVER A MEASURED COUNT, NEVER OVER 1 AND NEVER OVER NOTHING. A cached
-  factorisation, a compiled plan, a warmed connection: quoting the per-call half without its setup
-  is the declaration-that-lies defect wearing a stopwatch. :func:`amortised` demands the recurrence
+* SETUP IS AMORTIZED OVER A MEASURED COUNT, NEVER OVER 1 AND NEVER OVER NOTHING. A cached
+  factorization, a compiled plan, a warmed connection: quoting the per-call half without its setup
+  is the declaration-that-lies defect wearing a stopwatch. :func:`amortized` demands the recurrence
   count the caller MEASURED, and refuses a count of zero.
 * A FASTER ANSWER IS NOT THE SAME ANSWER. Two arms that disagree numerically are a correctness
   decision, not a speed one, so :meth:`Trials.disagreement` puts the size of the disagreement in the
@@ -52,7 +52,7 @@ __all__ = [
     'ArmSamples',
     'Crossover',
     'Trials',
-    'amortised',
+    'amortized',
     'crossover',
     'interleave',
     'ratio',
@@ -207,7 +207,7 @@ def interleave(
     )
 
 
-def amortised(per_call_s: float, setup_s: float, *, over: int) -> float:
+def amortized(per_call_s: float, setup_s: float, *, over: int) -> float:
     """*per_call_s* plus *setup_s* spread across *over* calls: what the cached arm actually costs.
 
     THE COUNT IS MEASURED BY THE CALLER, never defaulted to 1 and never assumed large. How often a
@@ -216,12 +216,12 @@ def amortised(per_call_s: float, setup_s: float, *, over: int) -> float:
 
     Raises:
         ValueError: *over* is not positive. Zero reuses make the setup free by arithmetic, which is
-            the most favourable number in the table arriving from a division nobody chose.
+            the most favorable number in the table arriving from a division nobody chose.
 
     """
     if over <= 0:
         msg = (
-            f'over={over} amortises a one-time cost across no call at all. A setup reused zero '
+            f'over={over} amortizes a one-time cost across no call at all. A setup reused zero '
             f'times is not free: it is paid in full by the one call that took it.'
         )
         raise ValueError(msg)
@@ -232,7 +232,7 @@ def ratio(baseline_s: float | None, candidate_s: float | None) -> float | None:
     """*baseline_s* over *candidate_s*, or ``None`` when either is missing or the candidate is zero.
 
     The free-function form of :meth:`Trials.speedup`, for rows measured elsewhere -- a stored table
-    of past results, or an arm assembled by :func:`amortised`.
+    of past results, or an arm assembled by :func:`amortized`.
     """
     if baseline_s is None or not candidate_s:
         return None

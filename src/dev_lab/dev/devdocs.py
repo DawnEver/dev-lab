@@ -4,7 +4,7 @@ THE DEFECT THIS CLOSES, MEASURED 2026-09-16. The universal rule STATEMENTS were 
 :mod:`dev_lab.dev.rules` on 2026-09-15, each row carrying its ID, its statement and the
 mechanism that refuses a violation. **The MECHANISM DOCS were not.** So the four repos cited rules
 by ID and had nothing that explained how the mechanism works: ``consumer-a`` held 14 dev
-documents totalling roughly 1300 lines, of which ten were not about motors at all; ``consumer-b`` held
+documents totaling roughly 1300 lines, of which ten were not about motors at all; ``consumer-b`` held
 one document and it was its own architecture; ``consumer-c`` and this repo held none. Three of four
 repos had no written mechanism, while one held all of it under a name that made it look local.
 
@@ -161,7 +161,7 @@ PAGES: Final[tuple[Page, ...]] = (
         'Components',
         'A product mounts its engines as submodules: the table, the derived-file check, the bump loop',
     ),
-    Page('artefacts', 'Artefacts', "A run's declared outputs: the store, its layout and its retention"),
+    Page('artifacts', 'Artifacts', "A run's declared outputs: the store, its layout and its retention"),
     Page('retirement', 'Retirement', 'The archive keeps old code, the registry keeps a dead spelling dead'),
     Page(
         'docs-pipeline',

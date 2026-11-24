@@ -10,7 +10,7 @@ one place that says, for each file, which mechanism owns it -- or that the repo 
 :data:`PROJECT_FILES` IS THAT LIST. A tracked project-level file in any repo of the family is either a
 row here, or a row in the repo's own ``owned_here`` mapping with a reason; anything else is a file
 drifting with nobody saying so, and :mod:`dev_lab.dev.famtests.famfiles` refuses it. ONE command,
-:func:`render_all` (``python -m dev_lab.dev.famfiles``), writes every RENDERED artefact a repo
+:func:`render_all` (``python -m dev_lab.dev.famfiles``), writes every RENDERED artifact a repo
 declares a delta for, so a base edit here reaches a repo by one re-render rather than one per file.
 
 THE ONE DOOR (2026-11-13). ``python -m dev_lab.dev.famfiles`` WITHOUT ``--files`` runs every renderer due in
@@ -24,7 +24,7 @@ is due only where its input is declared. The door prints one line per renderer: 
 
 THE TWO KINDS, and the line between them is the noun test the rules registry uses: a file whose
 CONTENT is about the family's toolchain is managed; a file whose content is about the repo (its
-licence, its architecture, its release history) is owned, and the row says which noun made it so.
+license, its architecture, its release history) is owned, and the row says which noun made it so.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import agentsection, ciworkflows
-from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
+from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artifact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
 if TYPE_CHECKING:
@@ -189,7 +189,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
             RUST_TOOLCHAIN,
         ),
         _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
-        _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
+        _o('LICENSE', 'the license is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
         _o('Makefile', 'its targets and recipes are the repo`s; the family contract retired 2026-11-24'),
         ProjectFile(
@@ -420,26 +420,26 @@ def load_deltas(path: Path) -> Mapping[str, Delta]:
 
 
 def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple[str, ...]:
-    """Every RENDERED base this repo declares, re-rendered into *root*; one line per artefact, what happened.
+    """Every RENDERED base this repo declares, re-rendered into *root*; one line per artifact, what happened.
 
     With *write* false nothing is written and the lines say what WOULD change: the check mode.
     """
     out: list[str] = []
-    for artefact in sorted(deltas):
-        base = artefact_base(artefact)
-        path = root / artefact
-        report = inspect_file(path, base, deltas[artefact])
+    for artifact in sorted(deltas):
+        base = artifact_base(artifact)
+        path = root / artifact
+        report = inspect_file(path, base, deltas[artifact])
         if report.status == INSTALLED:
-            out.append(f'{artefact}: current')
+            out.append(f'{artifact}: current')
         elif base.mode != RENDERED:
-            out.append(f'{artefact}: {report.status} ({base.mode}, not written) -- {report.detail}')
+            out.append(f'{artifact}: {report.status} ({base.mode}, not written) -- {report.detail}')
         elif write:
-            path.write_bytes(render(base, deltas[artefact]).encode('utf-8'))
-            out.append(f'{artefact}: rendered (was {report.status})')
+            path.write_bytes(render(base, deltas[artifact]).encode('utf-8'))
+            out.append(f'{artifact}: rendered (was {report.status})')
         else:
-            out.append(f'{artefact}: would render (is {report.status})')
+            out.append(f'{artifact}: would render (is {report.status})')
     undeclared = sorted(set(BASES) - set(deltas))
-    out += [f'{artefact}: NO DELTA DECLARED -- this repo has not adopted the family base' for artefact in undeclared]
+    out += [f'{artifact}: NO DELTA DECLARED -- this repo has not adopted the family base' for artifact in undeclared]
     return tuple(out)
 
 
@@ -460,7 +460,7 @@ def main(argv: list[str] | None = None) -> int:
     names the repo's module (no deltas: no per-file overrides, no base written); exit 0 when every one is current
     (after writing, unless --check), else 1. ``--deltas`` implies ``--files``.
     """
-    parser = argparse.ArgumentParser(description='Render every family artefact a repo declares (the one door).')
+    parser = argparse.ArgumentParser(description='Render every family artifact a repo declares (the one door).')
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--files', action='store_true', help='only the famfiles renderer: whole + base/delta files')
     parser.add_argument('--deltas', type=Path, help='the repo DELTAS module; implies --files')

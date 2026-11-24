@@ -133,7 +133,7 @@ def test_a_repo_row_merges_over_a_base_row_by_id_and_appends_a_new_one() -> None
         ('pre-commit', {'id': 'x', 'run': ['a'], 'files': '('}, 'invalid `files` regex'),
     ],
 )
-def test_a_declaration_the_runner_cannot_honour_raises(stage: str, row: dict, needle: str) -> None:
+def test_a_declaration_the_runner_cannot_honor_raises(stage: str, row: dict, needle: str) -> None:
     assert stage in STAGES
     with pytest.raises(HookTableError, match=needle):
         merge({}, {stage: (row,)})
@@ -275,7 +275,7 @@ def test_the_pre_push_stage_selects_among_the_paths_the_push_changes(repo: Path)
     assert seen.calls[0][1] == stdin, "the hook reads git's own ref lines"
 
 
-def test_push_lines_are_git_s_four_fields_and_a_deletion_is_recognised() -> None:
+def test_push_lines_are_git_s_four_fields_and_a_deletion_is_recognized() -> None:
     lines = parse_push_lines(f'(delete) {ZERO_SHA} refs/heads/x {"a" * 40}\nnoise\n')
     assert len(lines) == 1
     assert lines[0].deleted

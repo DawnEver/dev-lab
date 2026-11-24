@@ -35,7 +35,7 @@ from dev_lab.dev.forgerequest import (
     unserved,
 )
 from dev_lab.dev.forgerequesthost import DONE_LABEL, UNADMITTED
-from dev_lab.dev.forgeschedule import NOT_ADMITTED, labelled_issues
+from dev_lab.dev.forgeschedule import NOT_ADMITTED, labeled_issues
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.producer import Owner, owned
 
@@ -250,13 +250,13 @@ DIGEST = 'ab' * 32
 def test_a_finished_request_says_where_its_record_is_and_closes(monkeypatch, tmp_path: Path) -> None:
     """O1-O3: the requester learns the host, the record path and each file's sha256.
 
-    A success is labelled done and CLOSED (user ruling 2026-11-19: issues never pile up as event records); the
+    A success is labeled done and CLOSED (user ruling 2026-11-19: issues never pile up as event records); the
     result stays on the closed issue and on the sha's status.
     """
     forge, comments = _produce(monkeypatch, tmp_path, 0)
     assert forge.posts[-1][:2] == ('request/9', 'success')
-    (kind, number, body), labelled, closed = comments
-    assert (kind, number, labelled, closed) == ('comment', 9, ('label', 9, DONE_LABEL), ('close', 9))
+    (kind, number, body), labeled, closed = comments
+    assert (kind, number, labeled, closed) == ('comment', 9, ('label', 9, DONE_LABEL), ('close', 9))
     assert 'regenerated 45 goldens' in body, 'the log travels with the result'
     assert f'record: `{KEPT}` on {ME.machine}' in body
     assert f'`{DIGEST}`  goldens.csv' in body
@@ -500,7 +500,7 @@ def test_a_request_is_published_only_when_a_host_could_reproduce_it(tmp_path: Pa
     assert forge.calls[-1] == ('POST', '/r/issues/9/labels', {'labels': [1]})
 
 
-def test_every_page_of_labelled_issues_is_read() -> None:
+def test_every_page_of_labeled_issues_is_read() -> None:
     """P1: only the first 50 open issues were read, so request #51 was invisible."""
     pages = {
         1: [{'number': n, 'labels': [{'name': 'forge:request'}]} for n in range(50)],
@@ -511,7 +511,7 @@ def test_every_page_of_labelled_issues_is_read() -> None:
         return pages.get(int(path.rsplit('page=', 1)[1]), [])
 
     client = SimpleNamespace(backend=GITEA, repo='/r', call=call)
-    assert [raw['number'] for raw in labelled_issues(client, 'forge:request')] == list(range(51))
+    assert [raw['number'] for raw in labeled_issues(client, 'forge:request')] == list(range(51))
 
 
 def test_a_host_pin_its_author_does_not_publish_is_refused_by_name(server, tmp_path: Path) -> None:

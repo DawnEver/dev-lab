@@ -31,7 +31,7 @@ this account's ``drwx------`` home). Only the owner may chmod them and only a wr
 them, so this account cannot; the owner cannot reach them through a ``drwx------`` home either. The line says so:
 ``owned by <user>, not this account -- only <user> (through a traverse grant on this home) or an admin ...``.
 
-Every other retention rule (runs, trees, builds, packs, artefacts, logs, rust) reads the forge's run state and
+Every other retention rule (runs, trees, builds, packs, artifacts, logs, rust) reads the forge's run state and
 needs the kit: :mod:`dev_lab.dev.retention`, on the account.
 
 A REFERENCED PATH IS KEPT, BY NAME (:func:`referenced`): one a live process works in, executes from or names, one a

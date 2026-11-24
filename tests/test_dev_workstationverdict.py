@@ -203,7 +203,7 @@ def test_a_stored_fail_makes_the_producer_run(monkeypatch: pytest.MonkeyPatch, t
     assert status_list(store.client, SHA) == ()
 
 
-def test_a_revoked_boxs_earlier_records_are_never_cited(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_a_revoked_box_earlier_records_are_never_cited(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """F-dc7c4109926e: revocation reaches every record the box already posted."""
     store = Store(monkeypatch)
     store.record(f'run-{OLD}-base@windows-r1.json.gz', _record(OLD, workstation='BOXALPHA'))

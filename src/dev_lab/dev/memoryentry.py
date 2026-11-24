@@ -61,7 +61,7 @@ REDACTION_ROLES: Final = (
     'the private consumer',
     "the second private consumer's",
     'the second private consumer',
-    'an optimisation consumer',
+    'an optimization consumer',
     "the integrator workstation's",
     'the integrator workstation',
 )

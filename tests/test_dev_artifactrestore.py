@@ -1,6 +1,6 @@
 """MATERIALIZING A SELECTION: a fresh owned root, its receipt last, and only what it owns cleaned up.
 
-Ported from the 2026-10-15 artefact-member-index work; the archive is real stdlib gzip, so the old
+Ported from the 2026-10-15 artifact-member-index work; the archive is real stdlib gzip, so the old
 decompressor-exit fault is a gzip CRC fault here.
 """
 
@@ -15,9 +15,9 @@ from typing import IO, Self, TypedDict, cast
 
 import pytest
 
-from dev_lab.dev import artefactpack, artefactrestore, artefactscan
-from dev_lab.dev.artefactindex import MemberFact
-from dev_lab.dev.artefactstores import ARCHIVE, ArtefactRefused, OutputBudgetRefused, Ref, manifest_of
+from dev_lab.dev import artifactpack, artifactrestore, artifactscan
+from dev_lab.dev.artifactindex import MemberFact
+from dev_lab.dev.artifactstores import ARCHIVE, ArtifactRefused, OutputBudgetRefused, Ref, manifest_of
 
 PACK_LIMITS = {'max_members': 100, 'max_index_bytes': 65536, 'max_path_bytes': 4096}
 
@@ -36,7 +36,7 @@ def _fixture(
         (tree / 'selected').rename(tree / 'a' / 'b' / 'x')
         (tree / 'zero').rename(tree / 'a' / 'y')
         names = ('a/b/x', 'a/y', 'unselected')
-    packed = artefactpack.pack(tree, [tree / name for name in names], tmp_path / 'packed', **PACK_LIMITS)
+    packed = artifactpack.pack(tree, [tree / name for name in names], tmp_path / 'packed', **PACK_LIMITS)
     data = packed.path.read_bytes()
     if fault == 'unselected':
         data = gzip.compress(gzip.decompress(data).replace(b'not selected', b'bad selected'))
@@ -46,21 +46,21 @@ def _fixture(
     archive.write_bytes(data)
     ref = Ref('folder', f'archive{ARCHIVE}', archive.stat().st_size, hashlib.sha256(data).hexdigest())
     if fault == 'changed':
-        real = artefactscan._scan
+        real = artifactscan._scan
 
         def and_the_source_moves(
             stream: IO[bytes],
             facts: tuple[MemberFact, ...],
             max_metadata_bytes: int,
             max_uncompressed_bytes: int,
-            output: artefactscan.MemberSink | None,
+            output: artifactscan.MemberSink | None,
         ) -> tuple[MemberFact, ...]:
             verified = real(stream, facts, max_metadata_bytes, max_uncompressed_bytes, output)
             with archive.open('ab') as tail:
                 tail.write(b'changed')
             return verified
 
-        monkeypatch.setattr(artefactscan, '_scan', and_the_source_moves)
+        monkeypatch.setattr(artifactscan, '_scan', and_the_source_moves)
     parent = tmp_path / 'restored'
     parent.mkdir()
     return archive, ref, packed.members, parent
@@ -107,11 +107,11 @@ def test_materialize_newpack_receipt_last_and_exact_budget(
     size = (100000 if paths else 0) + len(receipt)
     options = _options(ref, max_entries=entries - (fault == 'entries'), max_bytes=size - (fault == 'bytes'))
     if fault in ('unselected', 'crc', 'changed', 'entries', 'bytes'):
-        with pytest.raises(ArtefactRefused):
-            artefactrestore.materialize_newpack_archive(archive, ref, facts, paths, parent, **options)
+        with pytest.raises(ArtifactRefused):
+            artifactrestore.materialize_newpack_archive(archive, ref, facts, paths, parent, **options)
         assert list(parent.iterdir()) == []
     else:
-        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, paths, parent, **options)
+        root = artifactrestore.materialize_newpack_archive(archive, ref, facts, paths, parent, **options)
         assert root.parent == parent
         assert (root / 'materialization-complete.json').read_bytes() == receipt
         assert sorted(path.name for path in root.iterdir()) == sorted([*paths, 'materialization-complete.json'])
@@ -136,8 +136,8 @@ def test_materialize_newpack_receipt_last_and_exact_budget(
 )
 def test_materialization_refuses_target_names_before_root(tmp_path: Path, name: str) -> None:
     fact = MemberFact(name, 0, hashlib.sha256(b'').hexdigest())
-    with pytest.raises(ArtefactRefused):
-        artefactrestore.materialize_newpack_archive(
+    with pytest.raises(ArtifactRefused):
+        artifactrestore.materialize_newpack_archive(
             tmp_path / 'absent',
             Ref('folder', 'x', 1, '0' * 64),
             (fact,),
@@ -196,18 +196,18 @@ def test_materialization_real_output_boundary_failure(
     monkeypatch.setattr(Path, 'open', output_open)
     options = _options(ref)
     if fault == 'short':  # PLANTED CONTROL: short writes are completed, not lost
-        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected', 'zero'], parent, **options)
+        root = artifactrestore.materialize_newpack_archive(archive, ref, facts, ['selected', 'zero'], parent, **options)
         assert (root / 'selected').read_bytes() == b'x' * 100000
         assert (root / 'materialization-complete.json').is_file()
     elif fault == 'foreign':
-        with pytest.raises(ArtefactRefused, match='cleanup incomplete'):
-            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected'], parent, **options)
+        with pytest.raises(ArtifactRefused, match='cleanup incomplete'):
+            artifactrestore.materialize_newpack_archive(archive, ref, facts, ['selected'], parent, **options)
         (root,) = parent.iterdir()
         assert (root / 'selected').read_bytes() == b'foreign replacement', 'a foreign file is never deleted'
         assert not (root / 'materialization-complete.json').exists()
     else:
         with pytest.raises(OSError, match='boundary failed'):
-            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['selected'], parent, **options)
+            artifactrestore.materialize_newpack_archive(archive, ref, facts, ['selected'], parent, **options)
         assert list(parent.iterdir()) == []
 
 
@@ -219,10 +219,10 @@ def test_materialization_nested_parents_exact_entry_boundary(
     options = _options(ref, max_entries=max_entries)
     if max_entries == 5:
         with pytest.raises(OutputBudgetRefused):
-            artefactrestore.materialize_newpack_archive(archive, ref, facts, ['a/b/x', 'a/y'], parent, **options)
+            artifactrestore.materialize_newpack_archive(archive, ref, facts, ['a/b/x', 'a/y'], parent, **options)
         assert list(parent.iterdir()) == []
     else:
-        root = artefactrestore.materialize_newpack_archive(archive, ref, facts, ['a/b/x', 'a/y'], parent, **options)
+        root = artifactrestore.materialize_newpack_archive(archive, ref, facts, ['a/b/x', 'a/y'], parent, **options)
         assert (root / 'a' / 'b' / 'x').read_bytes() == b'x' * 100000
         assert (root / 'a' / 'y').read_bytes() == b''
         assert len(list(root.rglob('*'))) + 1 == 6
@@ -230,7 +230,7 @@ def test_materialization_nested_parents_exact_entry_boundary(
 
 def test_materialization_compressed_budget_precedes_destination_access(tmp_path: Path) -> None:
     with pytest.raises(OutputBudgetRefused, match='compressed'):
-        artefactrestore.materialize_newpack_archive(
+        artifactrestore.materialize_newpack_archive(
             tmp_path / 'absent',
             Ref('folder', 'x', 2, '0' * 64),
             (),

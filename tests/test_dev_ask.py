@@ -60,7 +60,7 @@ _SOURCES = sorted(Path(dev_lab.__file__).parent.rglob('*.py'))
 
 
 def test_no_intake_claims_its_input_is_hidden() -> None:
-    """Names match behaviour: every intake shows what is typed, so none may say it does not.
+    """Names match behavior: every intake shows what is typed, so none may say it does not.
 
     PLANTED CONTROL: the pattern catches the wording the intakes used to carry.
     """

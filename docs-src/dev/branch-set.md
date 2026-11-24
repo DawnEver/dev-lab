@@ -109,7 +109,7 @@ after its `git fetch --prune`; a deletion is pinned to the judged sha, so a race
   `python -m dev_lab.dev.branchprune delete <branch>...`, which refuses unless every commit lives elsewhere
   or, by content, every non-generated file its own commits wrote is identical on integration (fails closed).
   The deny row reads text only; the guarantee is the base pre-push row `lossless-delete` (`dev_lab.dev.pushdelete`),
-  which judges EVERY branch a push deletes, however spelled, with that same judgement -- the door's push included.
+  which judges EVERY branch a push deletes, however spelled, with that same judgment -- the door's push included.
 - **Each deletion is pinned to the sha the survey judged.** The live tip is read from the forge first. A branch
   that moved is kept, because its new tip is somebody's new work.
 - **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The

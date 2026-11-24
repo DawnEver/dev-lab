@@ -24,7 +24,7 @@ only what differs, every entry with its reason::
 
     [tool.dev_lab.security]
     exclude = { attic = "read-only migrated archive, never imported" }   # trees kept out of ruff S
-    ignore = { S311 = "plot colours and seeded study samples" }           # ruff S rules waived
+    ignore = { S311 = "plot colors and seeded study samples" }           # ruff S rules waived
     allowed = { "sha256:1175475b7402" = "a fake test credential" }       # credential digests allowed
     accepted = { "GHSA-xxxx-xxxx-xxxx" = "the vulnerable path is unused" }  # advisories accepted
 
@@ -93,7 +93,7 @@ __all__ = [
     'KEYS',
     'RELEASE_DOOR',
     'Declaration',
-    'Judgement',
+    'Judgment',
     'ReleaseRefused',
     'declared',
     'delta',
@@ -148,7 +148,7 @@ FIRST_ADOPTION: Final = "base declares nothing; first adoption -- judged under t
 
 
 @dataclass(frozen=True)
-class Judgement:
+class Judgment:
     """The status one head earns: its state and description."""
 
     state: str
@@ -201,7 +201,7 @@ def judge(
     declaration: Declaration,
     *,
     lookup: Callable[[Mapping[str, str]], Mapping[str, tuple[str, ...]]] = advisories,
-) -> Judgement:
+) -> Judgment:
     """The status the tree at *tree* (its tracked paths *tracked*) earns under *declaration*."""
     try:
         found = code_findings(tree, exclude=declaration.exclude, ignore=declaration.ignore, tracked=tracked)
@@ -211,15 +211,15 @@ def judge(
         pinned = locked_packages(lock) if 'uv.lock' in tracked else {}
         advisories_found = vulnerable(lookup(pinned), accepted=declaration.accepted) if pinned else []
     except (ScanFailed, AdvisoriesUnreachable, OSError, tomllib.TOMLDecodeError) as unanswered:
-        return Judgement('error', f'no answer, judged again next tick: {unanswered}'[:DESCRIPTION_LIMIT])
+        return Judgment('error', f'no answer, judged again next tick: {unanswered}'[:DESCRIPTION_LIMIT])
     parts = [
         _named(kind, found)
         for kind, found in (('ruff S', code), ('credential(s)', secrets), ('advisory(ies)', advisories_found))
         if found
     ]
     if not parts:
-        return Judgement('success', f'ruff S, credentials and {len(pinned)} locked pin(s): nothing found')
-    return Judgement('failure', ' | '.join(parts)[:DESCRIPTION_LIMIT])
+        return Judgment('success', f'ruff S, credentials and {len(pinned)} locked pin(s): nothing found')
+    return Judgment('failure', ' | '.join(parts)[:DESCRIPTION_LIMIT])
 
 
 def security_wait(statuses: Sequence[CommitStatus]) -> str | None:
@@ -235,7 +235,7 @@ def _git(root: Path, *argv: str) -> bytes:
     return _door.run(['git', *argv], cwd=root, capture_output=True, check=True).stdout
 
 
-def _judge_head(root: Path, head: str, declaration: Declaration) -> Judgement:
+def _judge_head(root: Path, head: str, declaration: Declaration) -> Judgment:
     """Export *head*'s tracked tree and judge it; a head git cannot read is an ``error``."""
     try:
         if _door.run(['git', 'cat-file', '-e', f'{head}^{{commit}}'], cwd=root, check=False).returncode:
@@ -243,7 +243,7 @@ def _judge_head(root: Path, head: str, declaration: Declaration) -> Judgement:
         tracked = [name for name in _git(root, 'ls-tree', '-r', '-z', '--name-only', head).decode().split('\0') if name]
         archive = _git(root, 'archive', '--format=tar', head)
     except (OSError, subprocess.CalledProcessError) as unread:
-        return Judgement('error', f'no answer, judged again next tick: git could not read {head[:12]}: {unread}')
+        return Judgment('error', f'no answer, judged again next tick: git could not read {head[:12]}: {unread}')
     with (
         tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}security-') as scratch,
         tarfile.open(fileobj=io.BytesIO(archive)) as tar,
@@ -279,23 +279,23 @@ def _base_declared(root: Path, into: str) -> Declaration | None:
 
 
 def _under(
-    root: Path, head: str, base: Declaration | None, judged: Callable[[Path, str, Declaration], Judgement]
-) -> tuple[Declaration, Callable[[Path, str, Declaration], Judgement]]:
+    root: Path, head: str, base: Declaration | None, judged: Callable[[Path, str, Declaration], Judgment]
+) -> tuple[Declaration, Callable[[Path, str, Declaration], Judgment]]:
     """The table *head* is judged under and the judge: *base*'s, else the head's own, said (:data:`FIRST_ADOPTION`)."""
     if base is not None:
         return base, judged
 
-    def first(at: Path, sha: str, declaration: Declaration) -> Judgement:
+    def first(at: Path, sha: str, declaration: Declaration) -> Judgment:
         found = judged(at, sha, declaration)
-        return Judgement(found.state, f'{FIRST_ADOPTION} | {found.description}'[:DESCRIPTION_LIMIT])
+        return Judgment(found.state, f'{FIRST_ADOPTION} | {found.description}'[:DESCRIPTION_LIMIT])
 
     return _declared_at(root, head), first
 
 
 def _covered(
-    root: Path, number: int, head: str, base: Declaration, found: Judgement, *,
-    judged: Callable[[Path, str, Declaration], Judgement],
-) -> Judgement:  # fmt: skip
+    root: Path, number: int, head: str, base: Declaration, found: Judgment, *,
+    judged: Callable[[Path, str, Declaration], Judgment],
+) -> Judgment:  # fmt: skip
     """*found*, saying so and naming the door when the head's OWN changed table leaves no finding.
 
     Best effort: a head whose own table cannot be read or judged keeps *found* -- an invalid table named in it --
@@ -307,11 +307,11 @@ def _covered(
             return found
     except DeclarationInvalid as invalid:
         said = f"{found.description} | the head's own table is DeclarationInvalid: {invalid}"
-        return Judgement('failure', said[:DESCRIPTION_LIMIT])
+        return Judgment('failure', said[:DESCRIPTION_LIMIT])
     except (ValueError, OSError, subprocess.CalledProcessError):
         return found
     said = f"all covered by the head's new exemptions: {RELEASE_DOOR.format(pr=number)} | {found.description}"
-    return Judgement('failure', said[:DESCRIPTION_LIMIT])
+    return Judgment('failure', said[:DESCRIPTION_LIMIT])
 
 
 def step(
@@ -319,7 +319,7 @@ def step(
     client: Client,
     *,
     say: Callable[[str], None],
-    judged: Callable[[Path, str, Declaration], Judgement] = _judge_head,
+    judged: Callable[[Path, str, Declaration], Judgment] = _judge_head,
 ) -> None:
     """Post ``tests/security`` on every unjudged open PR head into integration and on the integration head.
 
@@ -345,11 +345,11 @@ def step(
 
 def judge_one(
     root: Path, client: Client, number: int | None, head: str, declaration: Declaration, *,
-    judged: Callable[[Path, str, Declaration], Judgement] = _judge_head,
+    judged: Callable[[Path, str, Declaration], Judgment] = _judge_head,
 ) -> str | None:  # fmt: skip
     """Post ``tests/security`` on *head* (PR *number*'s, or the base's for ``None``) unless settled; the line, if any.
 
-    The one judgement both triggers share: the serve tick's :func:`step` over every head, and a GitHub workflow
+    The one judgment both triggers share: the serve tick's :func:`step` over every head, and a GitHub workflow
     job's ``forge security run --pr <N>`` over its event's PR (:func:`run_pull`).
     """
     if any(one.context == SECURITY_CONTEXT and one.state in _SETTLED for one in status_list(client, head)):
@@ -362,7 +362,7 @@ def judge_one(
 
 
 def run_pull(
-    root: Path, client: Client, number: int, *, judged: Callable[[Path, str, Declaration], Judgement] = _judge_head
+    root: Path, client: Client, number: int, *, judged: Callable[[Path, str, Declaration], Judgment] = _judge_head
 ) -> str:
     """:func:`judge_one` on PR *number*'s head, under the table ``origin/<PR base>`` declares; the line said."""
     into = load_policy(root).integration
@@ -376,7 +376,7 @@ def run_pull(
 
 def release(
     root: Path, client: Client, number: int, why: str, *, host: str,
-    judged: Callable[[Path, str, Declaration], Judgement] | None = None,
+    judged: Callable[[Path, str, Declaration], Judgment] | None = None,
 ) -> str:  # fmt: skip
     """Release PR *number*'s head, judged clean under its OWN changed table, with *why*; the line said.
 

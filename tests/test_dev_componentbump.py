@@ -2,7 +2,7 @@
 
 The pure half drives :func:`tick` with an in-memory product and engines; the git half drives
 :class:`GitProduct` over a REAL local bare origin, so the lane commit, its lease-guarded creation
-and its deletion are git's own behaviour rather than a fake's.
+and its deletion are git's own behavior rather than a fake's.
 """
 
 from __future__ import annotations
@@ -249,7 +249,7 @@ def test_a_red_bump_keeps_the_last_green_pointer_and_opens_exactly_one_issue() -
     assert tick((NUM,), product, engines).action == OPENED, "the engine's next green commit is a new candidate"
 
 
-def test_concurrent_bumps_are_serialised_through_the_one_lane() -> None:
+def test_concurrent_bumps_are_serialized_through_the_one_lane() -> None:
     """Two engines green at once: one lane; the second opens only after the first has landed."""
     product = FakeProduct({NUM.path: OLD, OPT.path: OLD})
     engines = FakeEngines({'numerics-lab': NEW, 'solver-lab': NEW}, {'numerics-lab': GREEN, 'solver-lab': GREEN})
@@ -269,7 +269,7 @@ def test_concurrent_bumps_are_serialised_through_the_one_lane() -> None:
 
 
 def test_the_planted_second_host_loses_the_race_for_the_lane() -> None:
-    """THE CONTROL for the serialisation: a second host whose read missed the lane is refused by its creation."""
+    """THE CONTROL for the serialization: a second host whose read missed the lane is refused by its creation."""
     product = FakeProduct({NUM.path: OLD, OPT.path: OLD})
     engines = FakeEngines({'numerics-lab': NEW, 'solver-lab': NEW}, {'numerics-lab': GREEN, 'solver-lab': GREEN})
     assert tick((NUM,), product, engines).action == OPENED

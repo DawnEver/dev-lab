@@ -133,7 +133,7 @@ def settle(
 ) -> None:
     """Comment the outcome, where its record is kept, each file's sha256 and the log's tail on issue *number*.
 
-    A success is labelled :data:`DONE_LABEL` and CLOSED (user ruling 2026-11-19: issues never pile up as event
+    A success is labeled :data:`DONE_LABEL` and CLOSED (user ruling 2026-11-19: issues never pile up as event
     records); the result stays readable on the closed issue and on the sha's status. A failure stays OPEN: it is
     a need the requester still holds.
     """

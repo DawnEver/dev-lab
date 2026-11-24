@@ -1,13 +1,13 @@
-"""``devhost enrol``: give THIS machine every forge credential it declares; the user's one code is the only input.
+"""``devhost enroll``: give THIS machine every forge credential it declares; the user's one code is the only input.
 
 Two calls, one plan (user ruling 2026-11-20, "you must be able to do it yourself"):
 
-1. ``devhost enrol --forge-config <forge host file>`` applies the declared store helper wherever git reads another
+1. ``devhost enroll --forge-config <forge host file>`` applies the declared store helper wherever git reads another
    (no consent: it is the machine's own declaration), then, for each declared login missing from the store, writes
    ONE consent plan whose grants are one ``ops.forge.token`` mint per login -- the token named after this machine --
    and its steps file (:mod:`dev_lab.dev.planrun`), and prints the digest to ask the user's code for. Nothing missing:
    nothing is written and it says so.
-2. ``devhost enrol --forge-config F --plan <plan> --code <the user's code>`` opens the plan with that code
+2. ``devhost enroll --forge-config F --plan <plan> --code <the user's code>`` opens the plan with that code
    (``sshhold open --plan``), runs its steps (``planrun run``), places each minted token through
    :func:`dev_lab.dev.devcredential.place` (verified by the forge answering as the login), DELETES the minted file
    once it is placed, and re-reads the drift. A refused placement KEEPS it (owner-only, in the private consent
@@ -50,12 +50,12 @@ from dev_lab.ops.forgerequests import TokenRequest
 
 __all__ = [
     'SCOPE',
-    'EnrolRefused',
-    'Enrolment',
+    'EnrollRefused',
+    'Enrollment',
     'OpsDoor',
-    'add_enrol',
+    'add_enroll',
     'complete',
-    'load_enrolment',
+    'load_enrollment',
     'missing',
     'ops_door',
     'prepare',
@@ -70,7 +70,7 @@ _ACTION: Final = 'ops.forge.token'
 _SUDO_HEAD: Final = 5
 
 
-class EnrolRefused(ValueError):
+class EnrollRefused(ValueError):
     """A declaration this door needs is absent or contradicts another: what, never a token."""
 
 
@@ -84,7 +84,7 @@ class OpsDoor:
 
 
 @dataclass(frozen=True)
-class Enrolment:
+class Enrollment:
     """One machine's plan: where it was written, its digest, and the (login, token name) pairs it mints."""
 
     plan: Path
@@ -97,14 +97,14 @@ def ops_door(forge_config: Path, verb: tuple[str, ...] = ('forge',)) -> OpsDoor:
     """The host's ``[ops.access]`` account and the python/config of its ``<verb...> *`` sudo line (``forge *``).
 
     Raises:
-        EnrolRefused: no ``[ops.access]`` account, or no command line ending ``dev_lab.ops --config C forge *``.
+        EnrollRefused: no ``[ops.access]`` account, or no command line ending ``dev_lab.ops --config C forge *``.
 
     """
     try:
         access = tomllib.loads(forge_config.read_text(encoding='utf-8')).get('ops', {}).get('access', {})
     except (OSError, tomllib.TOMLDecodeError) as failed:
         msg = f'the forge host file {forge_config} could not be read: {failed}'
-        raise EnrolRefused(msg) from failed
+        raise EnrollRefused(msg) from failed
     account = str(access.get('account') or '')
     for line in access.get('commands', []):
         words = shlex.split(str(line))
@@ -118,7 +118,7 @@ def ops_door(forge_config: Path, verb: tuple[str, ...] = ('forge',)) -> OpsDoor:
     wanted = ' '.join(verb)
     msg = (f'{forge_config} declares no [ops.access] account with a "<python> -m dev_lab.ops --config <file> {wanted} '
            f'*" command: that host cannot run `{wanted}` for this machine')  # fmt: skip
-    raise EnrolRefused(msg)
+    raise EnrollRefused(msg)
 
 
 def missing(dev: Mapping[str, Any], forge: DeclaredForge, *, store: Path | None = None) -> list[str]:
@@ -168,11 +168,11 @@ def prepare(
     store: Path | None = None,
     helpers_for: Callable[[str], list[str]] = forgecredential.helpers,
     store_for: Callable[[str], None] = forgecredential.use_store,
-) -> tuple[list[str], Enrolment | None]:
+) -> tuple[list[str], Enrollment | None]:
     """Fix the declared helpers, then write the plan minting every missing login; ``(what it did, the plan)``.
 
     Raises:
-        EnrolRefused: a missing login the forge host does not declare (it cannot be minted), or no machine name.
+        EnrollRefused: a missing login the forge host does not declare (it cannot be minted), or no machine name.
 
     """
     said = _fix_helpers(dev, forge, helpers_for, store_for, store)
@@ -181,10 +181,10 @@ def prepare(
         return [*said, 'every declared forge login of this machine is stored: nothing to mint'], None
     if not machine:
         msg = 'the machine file names no [devhost] host: render it first (devhost render --host NAME --write)'
-        raise EnrolRefused(msg)
+        raise EnrollRefused(msg)
     if undeclared := [login for login in logins if login not in forge.accounts]:
         msg = f'{undeclared} not in {forge.path} [ops.forge.accounts]: cannot be minted -- declare it there first'
-        raise EnrolRefused(msg)
+        raise EnrollRefused(msg)
     dest = f'{door.account}@{dest_host}'
     rotating = ['--rotate'] if rotate else []
     mints = tuple((login, machine) for login in logins)
@@ -204,10 +204,10 @@ def prepare(
         ],
     }
     out.mkdir(parents=True, exist_ok=True)
-    plan_path, steps_path = out / f'enrol-{machine}.plan.json', out / f'enrol-{machine}.steps.json'
+    plan_path, steps_path = out / f'enroll-{machine}.plan.json', out / f'enroll-{machine}.steps.json'
     plan_path.write_text(json.dumps(plan, indent=1) + '\n', encoding='utf-8')
     steps_path.write_text(json.dumps(steps, indent=1) + '\n', encoding='utf-8')
-    return said, Enrolment(plan_path, steps_path, digest(plan), mints)
+    return said, Enrollment(plan_path, steps_path, digest(plan), mints)
 
 
 #: Runs one argv here; returns its exit status (output goes to the terminal; it never carries a token).
@@ -215,7 +215,7 @@ type Runner = Callable[[Sequence[str]], int]
 
 
 def complete(
-    enrolment: Enrolment,
+    enrollment: Enrollment,
     *,
     code: str,
     dev: Mapping[str, Any],
@@ -227,17 +227,17 @@ def complete(
     place: Callable[..., int] = devcredential.place,
 ) -> int:
     """Open the plan with *code*, mint, place each token, delete each placed one; 0 only when all were placed."""
-    plan, steps, shown = str(enrolment.plan), str(enrolment.steps), enrolment.digest
+    plan, steps, shown = str(enrollment.plan), str(enrollment.steps), enrollment.digest
     hold = [python, '-m', 'dev_lab.dev.sshhold', 'open', '--hours', '1', '--plan', plan, '--digest', shown]
     if run([*hold, '--code', code]):
-        say('enrol: refused -- the plan did not open with that code (sshhold open); no token was minted')
+        say('enroll: refused -- the plan did not open with that code (sshhold open); no token was minted')
         return 2
     status = run([python, '-m', 'dev_lab.dev.planrun', 'run', '--plan', plan, '--digest', shown, '--steps', steps])
     failed = 0
-    for login, name in enrolment.mints:
+    for login, name in enrollment.mints:
         minted = stdout_path(f'{login}-{name}.token', home)
         if not minted.is_file():
-            say(f'enrol: {login}: no minted token at {minted} (planrun exit {status}) -- nothing placed')
+            say(f'enroll: {login}: no minted token at {minted} (planrun exit {status}) -- nothing placed')
             failed += 1
             continue
         token = minted.read_text(encoding='utf-8').strip()
@@ -245,7 +245,7 @@ def complete(
         token = ''
         if refused:
             failed += 1
-            say(f'enrol: {login}: the minted token is KEPT at {minted} (owner-only); fix the refusal above, then '
+            say(f'enroll: {login}: the minted token is KEPT at {minted} (owner-only); fix the refusal above, then '
                 f'{python} -m dev_lab.dev.devcredential --login {login} --forge-config {forge.path} < {minted} '
                 'and delete that file')  # fmt: skip
             continue
@@ -253,19 +253,19 @@ def complete(
     return 2 if failed or status else 0
 
 
-def load_enrolment(plan: Path, steps: Path) -> Enrolment:
-    """The enrolment a written plan and steps file describe (the mints read back from the steps)."""
+def load_enrollment(plan: Path, steps: Path) -> Enrollment:
+    """The enrollment a written plan and steps file describe (the mints read back from the steps)."""
     body = json.loads(plan.read_text(encoding='utf-8'))
     mints = []
     for step in json.loads(steps.read_text(encoding='utf-8')).get('steps', []):
         argv = step.get('argv', [])
         mints.append((argv[argv.index('--login') + 1], argv[argv.index('--name') + 1]))
-    return Enrolment(plan, steps, digest(body), tuple(mints))
+    return Enrollment(plan, steps, digest(body), tuple(mints))
 
 
-def add_enrol(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``enrol`` verb on *verbs* (the ``devhost`` subparsers)."""
-    enrolling = verbs.add_parser('enrol', help='mint and place every forge login this machine declares and lacks')
+def add_enroll(verbs: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``enroll`` verb on *verbs* (the ``devhost`` subparsers)."""
+    enrolling = verbs.add_parser('enroll', help='mint and place every forge login this machine declares and lacks')
     enrolling.add_argument('--forge-config', type=Path, default=None, help='the forge host file (default: found)')
     enrolling.add_argument('--scope', default=SCOPE, help=f'the token scope (default {SCOPE})')
     enrolling.add_argument(
@@ -292,15 +292,15 @@ def _forge_file(source: Path, given: Path | None, dev: Mapping[str, Any]) -> Pat
             found.append(path)
     if len(found) != 1:
         msg = f'{len(found)} host files under {source} serve the forges {sorted(wanted)}: give --forge-config'
-        raise EnrolRefused(msg)
+        raise EnrollRefused(msg)
     return found[0]
 
 
 def _refuse(msg: str) -> None:
-    raise EnrolRefused(msg)
+    raise EnrollRefused(msg)
 
 
-def _enrol_run(args: argparse.Namespace, own: Mapping[str, Any], dev: Mapping[str, Any]) -> int:
+def _enroll_run(args: argparse.Namespace, own: Mapping[str, Any], dev: Mapping[str, Any]) -> int:
     """The body of :func:`run`; every refusal raises."""
     if not dev:
         _refuse('the machine file is not a render (it records no host and source): devhost render --write')
@@ -312,7 +312,7 @@ def _enrol_run(args: argparse.Namespace, own: Mapping[str, Any], dev: Mapping[st
             _refuse('--plan needs --code: the one code the user gave for that plan')
         steps = args.plan.with_name(args.plan.name.replace('.plan.json', '.steps.json'))
         status = complete(
-            load_enrolment(args.plan, steps), code=args.code, dev=dev, forge=forge,
+            load_enrollment(args.plan, steps), code=args.code, dev=dev, forge=forge,
             python=running_interpreter(), run=lambda argv: _door.run(list(argv), check=False).returncode, say=emit,
         )  # fmt: skip
         for line in forgecredential.drift(dev):
@@ -322,28 +322,28 @@ def _enrol_run(args: argparse.Namespace, own: Mapping[str, Any], dev: Mapping[st
     dest = args.dest or str(family.get('consent', {}).get('endpoint') or '').rpartition('@')[2]
     if not dest:
         _refuse('the family declares no [consent] endpoint to reach the forge host by: give --dest HOST')
-    said, enrolment = prepare(
+    said, enrollment = prepare(
         dev=dev, machine=str(own.get('host') or ''), forge=forge, door=ops_door(forge_file),
         dest_host=dest, out=Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'consent', scope=args.scope,
         rotate=args.rotate,
     )  # fmt: skip
     for line in said:
         emit(line)
-    if enrolment is not None:
+    if enrollment is not None:
         python = running_interpreter()
-        emit(f'enrol: plan {enrolment.plan} (digest {enrolment.digest}) mints {[m[0] for m in enrolment.mints]}; '
-             f'show it with {python} -m dev_lab.ops.consent plan {enrolment.plan}, ask the user for the one code, '
-             f'then: {python} -m dev_lab.dev.devhost enrol --plan {enrolment.plan} --code <the code>')  # fmt: skip
+        emit(f'enroll: plan {enrollment.plan} (digest {enrollment.digest}) mints {[m[0] for m in enrollment.mints]}; '
+             f'show it with {python} -m dev_lab.ops.consent plan {enrollment.plan}, ask the user for the one code, '
+             f'then: {python} -m dev_lab.dev.devhost enroll --plan {enrollment.plan} --code <the code>')  # fmt: skip
     return 0
 
 
 def run(args: argparse.Namespace, own: Mapping[str, Any], dev: Mapping[str, Any]) -> int:
-    """``devhost enrol``: fix the declared helper, write the mint plan (no ``--plan``), or redeem it with the code.
+    """``devhost enroll``: fix the declared helper, write the mint plan (no ``--plan``), or redeem it with the code.
 
     *own* is the render's record of this machine (its ``host`` and ``source``); *dev* its effective ``[dev]``.
     """
     try:
-        return _enrol_run(args, own, dev)
-    except (EnrolRefused, CredentialRefused, OSError, ValueError, tomllib.TOMLDecodeError) as refused:
-        emit(f'enrol: refused -- {refused}')
+        return _enroll_run(args, own, dev)
+    except (EnrollRefused, CredentialRefused, OSError, ValueError, tomllib.TOMLDecodeError) as refused:
+        emit(f'enroll: refused -- {refused}')
         return 2

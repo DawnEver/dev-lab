@@ -47,7 +47,7 @@ reused rather than re-implemented): an untracked scratch file is not the subject
 and a mechanism keyed on the working tree would refuse content nobody will ever push.
 
 BINARY FILES ARE SKIPPED, NAMED. A file is read as bytes and decoded as UTF-8; a
-:class:`UnicodeDecodeError` means it is not text this guard can read at all (a compiled artefact, an
+:class:`UnicodeDecodeError` means it is not text this guard can read at all (a compiled artifact, an
 image checked in by accident) and it is recorded in :attr:`Scan.undecodable` rather than silently
 treated as clean -- "not decodable" and "decodable and free of CJK" are different facts and the
 first one is not evidence of the second.
@@ -129,7 +129,7 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 )
 
 #: Where CJK is permitted without a declaration. DATA, not a literal scattered through the scan, so
-#: an adopting repo can read what it inherited rather than re-deriving it from behaviour.
+#: an adopting repo can read what it inherited rather than re-deriving it from behavior.
 #:
 #: TWO SHAPES, AND THE LEADING ``/`` IS WHAT TELLS THEM APART. A bare prefix matches as a path
 #: SEGMENT ANYWHERE in the path; a prefix spelled with a leading ``/`` is ANCHORED AT THE REPO ROOT
@@ -432,7 +432,7 @@ _CATEGORY_NAMES: Final[dict[str, str]] = {
     'Mn': 'mark',
     'Mc': 'mark',
     'Me': 'mark',
-    'Nd': 'digit',
+    'And': 'digit',
     'Nl': 'number',
     'No': 'number (other)',
     'Pc': 'punctuation (connector)',

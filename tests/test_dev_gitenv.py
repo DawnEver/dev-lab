@@ -1,7 +1,7 @@
 """A git call against a throwaway repository never reaches the caller's (2026-11-10 core.bare flip).
 
 Planted control: ``GIT_DIR`` names a live NON-bare repository, as it does inside a git hook. Each throwaway
-``init`` must leave that repository's ``core.bare`` false and initialise the throwaway instead.
+``init`` must leave that repository's ``core.bare`` false and initialize the throwaway instead.
 """
 
 from __future__ import annotations

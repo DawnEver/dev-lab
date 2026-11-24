@@ -16,7 +16,7 @@ explanation. A guard that scanned no docstring would have missed the only site t
 shipped the defect. What is scanned is therefore:
 
 * every string literal in executable position, because that is what runs and what gets rendered
-  into a tracked artefact; and
+  into a tracked artifact; and
 * every ``::`` LITERAL BLOCK inside a docstring, because reStructuredText literal blocks are how
   this kit writes a recipe, and a recipe is source with an indent in front of it.
 
@@ -26,10 +26,10 @@ recorded, and :mod:`dev_lab.dev.venvpath` itself is where the replacement is nam
 BOTH SIDES, because a ratchet has two. The hardcoding side is
 :func:`assert_only_the_resolver_spells_a_venv_interpreter`. The other side is
 :func:`assert_the_resolver_is_still_consulted`: a resolver nothing calls is exactly as wrong as a
-hardcoded path, and it FAILS SILENTLY -- if ``glob_for`` stopped normalising, every derived row
+hardcoded path, and it FAILS SILENTLY -- if ``glob_for`` stopped normalizing, every derived row
 would go back to naming one platform and no scan above would notice, because the offending spelling
 would be in a consuming repo's ``Remedy`` rather than in this tree. That arm is expressed as a
-BEHAVIOUR rather than as an import check: the two concrete spellings must derive the SAME row. An
+BEHAVIOR rather than as an import check: the two concrete spellings must derive the SAME row. An
 import can be present and unused; two inputs that converge cannot be faked.
 
 THE CONTROL IS NOT OPTIONAL AND TAKES NO ARGUMENT.
@@ -144,7 +144,7 @@ def scannable_text(source: str) -> tuple[tuple[int, str, str], ...]:
     nothing and one that looked at nothing.
 
     A file that does not parse yields NOTHING rather than raising: this walks a tree that may hold
-    a fixture, and an unparseable file is the caller's other guard, not a reason this one cannot
+    a fixture, and an unparsable file is the caller's other guard, not a reason this one cannot
     report on the files it could read.
     """
     try:
@@ -225,7 +225,7 @@ def assert_only_the_resolver_spells_a_venv_interpreter(
     msg = (
         f'{what}: {len(found)} site(s) spell a venv interpreter instead of resolving it:\n  '
         + '\n  '.join(str(item) for item in found)
-        + f'\n{nt!r} is a file macOS does not have, so a tracked artefact carrying it is wrong on half the '
+        + f'\n{nt!r} is a file macOS does not have, so a tracked artifact carrying it is wrong on half the '
         f'fleet -- silently, because a permission row that matches no command reads like one nobody needed. '
         f'Call dev_lab.dev.venvpath.venv_interpreter(os_name=...) for a command a human runs, or let '
         f'allow_adoption.glob_for render {VENV_INTERPRETER_GLOB!r} for a row that is tracked in git. A '
@@ -237,9 +237,9 @@ def assert_only_the_resolver_spells_a_venv_interpreter(
 def assert_the_resolver_is_still_consulted() -> None:
     """THE OTHER SIDE: a resolver nothing calls is as wrong as a hardcoded path, and is SILENT.
 
-    Expressed as a BEHAVIOUR and not as an import check: an import can be present and unused, and
+    Expressed as a BEHAVIOR and not as an import check: an import can be present and unused, and
     ``glob_for`` could go back to passing the command through with the line still at the top of the
-    file. Two concrete spellings that CONVERGE cannot be faked -- if the normalisation stops, the
+    file. Two concrete spellings that CONVERGE cannot be faked -- if the normalization stops, the
     Windows input renders a Windows row and the POSIX input renders a POSIX one, and they differ.
 
     Raises:

@@ -59,7 +59,7 @@ PRINCIPLES: Final = (
         'Layered decoupling',
         'Depend one way through narrow interfaces; never into internals or upward.',
     ),
-    Principle('names-match-behaviour', 'Names match what they do', 'A name says what the thing does now.'),
+    Principle('names-match-behavior', 'Names match what they do', 'A name says what the thing does now.'),
     Principle(
         'no-backward-compatibility',
         'No backward compatibility',

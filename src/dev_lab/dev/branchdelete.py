@@ -7,7 +7,7 @@ AN AGENT'S DELETION IS LOSSLESS-DELETE (user ruling 2026-10-21): never a raw pus
 another live origin branch or open PR head (:func:`dev_lab.dev.deletejudge.judge` names that container) or, by
 CONTENT, when no file its own commits wrote differs on integration, generated files aside -- a branch of forge sync
 merges holds no work -- and otherwise refuses naming the commits and the files carrying unlanded content. The SAME
-judgement runs at pre-push on every delete a push carries, however it was spelled (:mod:`dev_lab.dev.pushdelete`),
+judgment runs at pre-push on every delete a push carries, however it was spelled (:mod:`dev_lab.dev.pushdelete`),
 and this door's own push passes it there. A refused branch is told the two doors MERGE-OR-DELETE leaves (user
 ruling D22, 2026-11-17: "no tags -- either merge or delete"): MERGE what is still wanted, or LAND the branch with a
 declared content-neutral merge (``git merge -s ours``) and re-run the delete, now lossless. No tag holds a branch.
@@ -178,7 +178,7 @@ def discard(
     """Delete each of *branches* from origin WITHOUT landing it, on the user's *approved* words.
 
     0 when every one went, 1 when one was kept, 2 with no words. Integration, the trunk and an open PR head are
-    never discarded (the judgement's own refusal). The push is a lease on the fetched tip, passing the pre-push row
+    never discarded (the judgment's own refusal). The push is a lease on the fetched tip, passing the pre-push row
     by a one-shot grant for that branch at that sha.
     """
     words = ' '.join(approved.split())
@@ -238,7 +238,7 @@ def delete_contained_tags(
 ) -> int:
     """Delete each origin tag whose commit origin's trunk or integration contains; 0 when every one went, else 1.
 
-    A tag holds nothing of its own only when its commit is in declared history, so that is the whole judgement
+    A tag holds nothing of its own only when its commit is in declared history, so that is the whole judgment
     (by ancestry; a tag is never judged by content). Each deletion is RECORDED -- name, ref sha, commit -- before
     its push, so the tag can be recreated from the record; a tag naming uncontained work is kept and named.
     """

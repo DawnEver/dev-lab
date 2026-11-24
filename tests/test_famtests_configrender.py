@@ -1,8 +1,8 @@
-"""``dev_lab.dev.famtests.configrender`` -- driven over REAL artefacts on disk.
+"""``dev_lab.dev.famtests.configrender`` -- driven over REAL artifacts on disk.
 
 WHY REAL FILES. Every assertion this body makes is about what is ON DISK against what the live base
 and a declared delta RENDER, and a fixture that hands the comparison two in-memory strings has
-deleted the only half that can drift. So each case writes a real artefact into ``tmp_path`` through
+deleted the only half that can drift. So each case writes a real artifact into ``tmp_path`` through
 the kit's own renderer, then bends exactly one thing about it.
 
 EVERY REFUSAL IS PLANTED IN BOTH DIRECTIONS. A guard that only ever reds is as useless as one that
@@ -22,11 +22,11 @@ from dev_lab.dev.famconfig import (
     RENDERED,
     Base,
     Delta,
-    artefact_base,
+    artifact_base,
     render,
 )
 from dev_lab.dev.famtests.configrender import (
-    assert_artefact_is_rendered,
+    assert_artifact_is_rendered,
     assert_delta_is_not_a_fork,
     assert_every_base_is_accounted_for,
     assert_modes_are_as_agreed,
@@ -44,10 +44,10 @@ def _gitignore_delta(**over: object) -> Delta:
     return Delta(**(fields | over))
 
 
-def _write(root: Path, artefact: str, delta: Delta) -> Path:
-    """Render the artefact into *root* exactly as a consumer's re-render would."""
-    path = root / artefact
-    path.write_text(render(artefact_base(artefact), delta), encoding='utf-8')
+def _write(root: Path, artifact: str, delta: Delta) -> Path:
+    """Render the artifact into *root* exactly as a consumer's re-render would."""
+    path = root / artifact
+    path.write_text(render(artifact_base(artifact), delta), encoding='utf-8')
     return path
 
 
@@ -55,8 +55,8 @@ def _deltas(root: Path) -> dict[str, Delta]:
     """A complete declaration over the kit's bases, rendered into *root*."""
     out = {name: Delta(repo=_REPO, added=(), dropped={}, ceiling=4) for name in BASES}
     out['.gitignore'] = _gitignore_delta()
-    for artefact, delta in out.items():
-        _write(root, artefact, delta)
+    for artifact, delta in out.items():
+        _write(root, artifact, delta)
     return out
 
 
@@ -64,7 +64,7 @@ def _deltas(root: Path) -> dict[str, Delta]:
 
 
 def test_a_declaration_covering_every_base_passes_and_a_gap_is_named(tmp_path: Path) -> None:
-    """BOTH SIDES. A base nobody adopted or refused is an artefact drifting with nobody saying so."""
+    """BOTH SIDES. A base nobody adopted or refused is an artifact drifting with nobody saying so."""
     complete = _deltas(tmp_path)
     assert_every_base_is_accounted_for(deltas=complete, repo=_REPO)
 
@@ -75,7 +75,7 @@ def test_a_declaration_covering_every_base_passes_and_a_gap_is_named(tmp_path: P
         assert_every_base_is_accounted_for(deltas=partial, repo=_REPO)
 
 
-def test_a_declaration_naming_an_artefact_the_kit_does_not_publish_is_named(tmp_path: Path) -> None:
+def test_a_declaration_naming_an_artifact_the_kit_does_not_publish_is_named(tmp_path: Path) -> None:
     """The other side: a declaration outliving its subject reads as a live adoption."""
     deltas = dict(_deltas(tmp_path))
     deltas['pyproject.toml'] = Delta(repo=_REPO, added=(), dropped={}, ceiling=1)
@@ -85,7 +85,7 @@ def test_a_declaration_naming_an_artefact_the_kit_does_not_publish_is_named(tmp_
 
 def test_an_empty_declaration_is_refused_rather_than_reported_clean() -> None:
     """THE FLOOR. ``set() == set()`` would be green over a repo that adopted nothing at all."""
-    with pytest.raises(AssertionError, match='declares no artefact'):
+    with pytest.raises(AssertionError, match='declares no artifact'):
         assert_every_base_is_accounted_for(deltas={}, repo=_REPO)
 
 
@@ -95,40 +95,40 @@ def test_an_empty_declaration_is_refused_rather_than_reported_clean() -> None:
 def test_a_freshly_rendered_tree_installs_and_one_hand_edit_reds(tmp_path: Path) -> None:
     """THE PROPERTY, BOTH WAYS, through the function a consumer calls rather than through a copy."""
     deltas = _deltas(tmp_path)
-    for artefact in sorted(deltas):
-        assert_artefact_is_rendered(
-            root=tmp_path, artefact=artefact, deltas=deltas, repo=_REPO, rerender_hint='make render'
+    for artifact in sorted(deltas):
+        assert_artifact_is_rendered(
+            root=tmp_path, artifact=artifact, deltas=deltas, repo=_REPO, rerender_hint='make render'
         )
 
     path = tmp_path / '.gitignore'
     path.write_text(path.read_text(encoding='utf-8').replace('/dist/', '/dist.bak/'), encoding='utf-8')
     with pytest.raises(AssertionError, match=re.escape('/dist/')):
-        assert_artefact_is_rendered(
-            root=tmp_path, artefact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='make render'
+        assert_artifact_is_rendered(
+            root=tmp_path, artifact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='make render'
         )
 
 
 def test_the_remedy_is_the_one_the_caller_declared_and_the_mode_decides_which(tmp_path: Path) -> None:
-    """A rendered artefact's remedy is a RE-RENDER; a required one's is adding the missing line.
+    """A rendered artifact's remedy is a RE-RENDER; a required one's is adding the missing line.
 
-    The hint has no default because the command that re-renders a repo's artefacts is that repo's --
+    The hint has no default because the command that re-renders a repo's artifacts is that repo's --
     one lab runs a Makefile target and the other an inline interpreter line, measured today.
     """
     deltas = _deltas(tmp_path)
     (tmp_path / '.gitignore').write_text('nothing like the base\n', encoding='utf-8')
     with pytest.raises(AssertionError, match='the-declared-remedy'):
-        assert_artefact_is_rendered(
-            root=tmp_path, artefact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='the-declared-remedy'
+        assert_artifact_is_rendered(
+            root=tmp_path, artifact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='the-declared-remedy'
         )
 
 
-def test_a_missing_artefact_is_refused_rather_than_read_as_clean(tmp_path: Path) -> None:
-    """An unwritten artefact guarantees nothing, which is not the same as passing."""
+def test_a_missing_artifact_is_refused_rather_than_read_as_clean(tmp_path: Path) -> None:
+    """An unwritten artifact guarantees nothing, which is not the same as passing."""
     deltas = _deltas(tmp_path)
     (tmp_path / '.gitignore').unlink()
     with pytest.raises(AssertionError, match=re.escape('.gitignore')):
-        assert_artefact_is_rendered(
-            root=tmp_path, artefact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='make render'
+        assert_artifact_is_rendered(
+            root=tmp_path, artifact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='make render'
         )
 
 
@@ -138,13 +138,13 @@ def test_a_delta_is_checked_as_a_declaration_separately_from_the_file(tmp_path: 
     "The file drifted" and "the declaration is broken" are two answers rather than one opaque failure.
     """
     deltas = _deltas(tmp_path)
-    assert_delta_is_not_a_fork(artefact='.gitignore', deltas=deltas, repo=_REPO)
+    assert_delta_is_not_a_fork(artifact='.gitignore', deltas=deltas, repo=_REPO)
 
     forked = dict(deltas)
-    restated = artefact_base('.gitignore').content_lines[0]
+    restated = artifact_base('.gitignore').content_lines[0]
     forked['.gitignore'] = _gitignore_delta(added=(restated,))
     with pytest.raises(AssertionError, match='not a delta of the base'):
-        assert_delta_is_not_a_fork(artefact='.gitignore', deltas=forked, repo=_REPO)
+        assert_delta_is_not_a_fork(artifact='.gitignore', deltas=forked, repo=_REPO)
 
 
 # ---------------------------------------------------------------- last-match-wins on .gitignore
@@ -157,7 +157,7 @@ def test_a_bare_spelling_of_a_slashed_base_rule_is_named() -> None:
     re-statement silently reverts the slashed base rule while every byte comparison stays green --
     the one regression the rendered-bytes property cannot see.
     """
-    base = artefact_base('.gitignore')
+    base = artifact_base('.gitignore')
     slashed = next(line for line in base.content_lines if line.endswith('/'))
     bare = slashed.rstrip('/')
 
@@ -176,7 +176,7 @@ def test_a_negation_reopening_a_base_directory_is_named_unless_the_delta_closes_
     ``__pycache__/``. The PROPERTY is the same in both and the count is not, so the count is not
     what is asserted.
     """
-    base = artefact_base('.gitignore')
+    base = artifact_base('.gitignore')
     slashed = next(line for line in base.content_lines if line.endswith('/'))
     reopened = f'!{slashed}'
 
@@ -190,7 +190,7 @@ def test_a_negation_reopening_a_base_directory_is_named_unless_the_delta_closes_
 
 def test_the_reopening_scan_refuses_a_base_it_could_not_read() -> None:
     """THE FLOOR. Finding no reopened rule over a base holding no directory rule is vacuous."""
-    empty = Base(artefact='.gitignore', lines=('*.log',), mode=RENDERED)
+    empty = Base(artifact='.gitignore', lines=('*.log',), mode=RENDERED)
     assert reopenings(empty, _gitignore_delta()).base_directories == ()
     with pytest.raises(AssertionError, match='directory rule'):
         assert_no_rule_is_reopened(base=empty, delta=_gitignore_delta(), repo=_REPO, directory_floor=1)
@@ -199,7 +199,7 @@ def test_the_reopening_scan_refuses_a_base_it_could_not_read() -> None:
 # ---------------------------------------------------------------- the modes, and the survey
 
 
-def test_the_mode_each_artefact_is_judged_under_is_the_one_the_repo_agreed_to() -> None:
+def test_the_mode_each_artifact_is_judged_under_is_the_one_the_repo_agreed_to() -> None:
     """The weaker mode is NAMED so applying it stays a decision somebody typed.
 
     A ``Makefile`` arriving as RENDERED would turn every repo-local recipe into a diff against a
@@ -223,14 +223,14 @@ def test_an_empty_mode_declaration_is_refused() -> None:
 def test_the_survey_finds_no_undeclared_drop_and_a_deleted_line_is_named(tmp_path: Path) -> None:
     """A second route to the same ratchet, and it does NOT go through the rendered bytes."""
     deltas = _deltas(tmp_path)
-    assert_no_base_line_left_undeclared(root=tmp_path, artefact='.gitignore', repo=_REPO)
+    assert_no_base_line_left_undeclared(root=tmp_path, artifact='.gitignore', repo=_REPO)
 
     path = tmp_path / '.gitignore'
-    gone = artefact_base('.gitignore').content_lines[0]
+    gone = artifact_base('.gitignore').content_lines[0]
     kept = [line for line in path.read_text(encoding='utf-8').splitlines() if line != gone]
     path.write_text('\n'.join(kept) + '\n', encoding='utf-8')
     with pytest.raises(AssertionError, match='left this file'):
-        assert_no_base_line_left_undeclared(root=tmp_path, artefact='.gitignore', repo=_REPO)
+        assert_no_base_line_left_undeclared(root=tmp_path, artifact='.gitignore', repo=_REPO)
     assert deltas['.gitignore'].repo == _REPO
 
 
@@ -239,11 +239,11 @@ def test_the_round_trip_control_passes_then_reds_on_one_edited_line(tmp_path: Pa
     deltas = _deltas(tmp_path)
     scratch = tmp_path / 'scratch'
     scratch.mkdir()
-    assert_render_round_trips(artefact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('/dist/', 'x'))
+    assert_render_round_trips(artifact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('/dist/', 'x'))
 
     with pytest.raises(AssertionError, match='no such line'):
         assert_render_round_trips(
-            artefact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('not-in-the-base', 'x')
+            artifact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('not-in-the-base', 'x')
         )
 
 
@@ -269,7 +269,7 @@ def test_a_closure_only_closes_the_reinclusions_ABOVE_it() -> None:
     a sibling repo's `.gitignore` records, where a `.pyc` under `.claude/memory/` ended up TRACKED.
     A reading that reduced `added` to a set would pass both, which is why both are driven here.
     """
-    base = artefact_base('.gitignore')
+    base = artifact_base('.gitignore')
     assert any(line.rstrip('/').lstrip('*/') == _CLOSURE.rstrip('/') for line in base.content_lines), (
         'the premise: the base must actually exclude this directory, or the case proves nothing'
     )
@@ -291,7 +291,7 @@ def test_a_negation_naming_one_file_does_not_reopen_a_directory_rule() -> None:
     and nothing under it, so no directory rule is reopened and no closure is owed -- a reading that
     reported it would have to be waived somewhere, and a waiver is how this guard would be lost.
     """
-    base = artefact_base('.gitignore')
+    base = artifact_base('.gitignore')
     shallow = _gitignore_delta(added=(_CLOSURE, '!example.log'))
     assert reopenings(base, shallow).unsealed == ()
     assert_no_rule_is_reopened(base=base, delta=shallow, repo=_REPO, directory_floor=1)
@@ -303,7 +303,7 @@ def test_a_closure_that_comes_first_does_not_close_the_negation_it_precedes() ->
     The negation and its closure name the same base rule here, so the older membership reading
     reported the rule closed whichever order they were written in.
     """
-    base = artefact_base('.gitignore')
+    base = artifact_base('.gitignore')
     slashed = next(line for line in base.content_lines if line.endswith('/'))
     negation = f'!{slashed}'
     closure = slashed.lstrip('*/')

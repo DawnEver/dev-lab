@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.run import NoRoom
 
-from dev_lab.dev.artefacts import MissingOutput, OutputBudgetRefused
-from dev_lab.dev.artefactstores import OutputIntegrityRefused
+from dev_lab.dev.artifacts import MissingOutput, OutputBudgetRefused
+from dev_lab.dev.artifactstores import OutputIntegrityRefused
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgeclaim import Claim, forge_now
 from dev_lab.dev.forgefailure import ForgeCallFailed

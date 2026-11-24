@@ -113,7 +113,7 @@ def test_uninstall_names_then_removes_only_rem(tmp_path: Path) -> None:
     assert registry == {'version': 2, 'plugins': {'fabric@cc-market': [{}]}}
     settings = json.loads((claude / 'settings.json').read_text(encoding='utf-8'))
     assert settings == {'enabledPlugins': {'fabric@cc-market': True}, 'env': {'OTHER': '1'}}
-    assert (claude / 'plugins/cache/cc-market/fabric/1.0.0').is_dir(), 'planted control: a neighbour plugin stays'
+    assert (claude / 'plugins/cache/cc-market/fabric/1.0.0').is_dir(), 'planted control: a neighbor plugin stays'
     config = (codex / 'config.toml').read_text(encoding='utf-8')
     assert 'rem@' not in config
     assert '[plugins."fabric@cc-market"]\nenabled = true\n' in config

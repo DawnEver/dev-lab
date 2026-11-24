@@ -7,9 +7,9 @@ root) and ``max_bytes`` (logical file bytes) -- is checked BEFORE any archive ex
 snapshot, not live peak usage, archive size or a runtime quota.
 
 :func:`pack` writes ONE stdlib gzip tar (PAX format, no binary needed) and returns
-:class:`~dev_lab.dev.artefactindex.PackedOutputs`: each member's sha256 is hashed on the very stream fed
+:class:`~dev_lab.dev.artifactindex.PackedOutputs`: each member's sha256 is hashed on the very stream fed
 to ``tar.addfile``, a hard link becomes its own regular member, and a source whose identity changes
-while it is read is :class:`~dev_lab.dev.artefactstores.OutputIntegrityRefused`. Index limits, when
+while it is read is :class:`~dev_lab.dev.artifactstores.OutputIntegrityRefused`. Index limits, when
 given, are all three positive integers and refuse before the archive is published; the archive is
 written to an owned temporary and linked into place no-replace, so an existing destination is never
 touched. :func:`unpack` is the inverse.
@@ -26,7 +26,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from typing import IO, TYPE_CHECKING
 
-from dev_lab.dev.artefactindex import (
+from dev_lab.dev.artifactindex import (
     MemberFact,
     PackedOutputs,
     check_index_bytes,
@@ -34,8 +34,8 @@ from dev_lab.dev.artefactindex import (
     member_name,
     require_positive,
 )
-from dev_lab.dev.artefactstores import (
-    ArtefactRefused,
+from dev_lab.dev.artifactstores import (
+    ArtifactRefused,
     MissingOutput,
     OutputBudgetRefused,
     OutputIntegrityRefused,
@@ -62,11 +62,11 @@ def _footprint(tree: Path, files: set[Path]) -> tuple[int, int]:
         resolved = path.resolve(strict=True)
         if not resolved.is_relative_to(root) or resolved != root / path.relative_to(tree):
             msg = f'declared output {path} is outside the work tree or traverses a symlink/alias'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         metadata = path.lstat()
         if not stat.S_ISREG(metadata.st_mode):
             msg = f'declared output {path} is not a regular file'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         size += metadata.st_size
         parent = resolved.parent
         while parent != root:
@@ -86,14 +86,14 @@ def collect(
     for name, value in (('max_entries', max_entries), ('max_bytes', max_bytes)):
         if value is not None and (type(value) is not int or value < 0):
             msg = f'{name} must be a nonnegative integer or None'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
     found: set[Path] = set()
     missing = []
     for pattern in outputs:
         pure = PurePosixPath(pattern)
         if pure.is_absolute() or '..' in pure.parts or ':' in pattern or '\\' in pattern:
             msg = f'declared output {pattern!r} must be a relative path or glob inside the work tree'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         matched = [path for path in tree.glob(pattern) if path.is_file()]
         if not matched:
             missing.append(pattern)

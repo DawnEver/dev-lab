@@ -255,7 +255,7 @@ def _not_ok(status: CommitStatus, client: Client) -> tuple[dict[str, TestCell], 
 def _red_lines(status: CommitStatus, client: Client, known: Mapping[str, frozenset[str]] | None) -> tuple[str, ...]:
     """Every test the record behind *status* does not call ``ok``, with its own word, or why it cannot say.
 
-    With *known* (the base's not-ok nodes per part), each is labelled ``inherited`` (red on the base too) or ``NEW``.
+    With *known* (the base's not-ok nodes per part), each is labeled ``inherited`` (red on the base too) or ``NEW``.
     """
     read = _not_ok(status, client)
     if isinstance(read, str):

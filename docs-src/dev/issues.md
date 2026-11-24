@@ -93,6 +93,6 @@ work_max_idle_days = 14      # close a WORK issue not updated for longer than th
 | `priority:<n>` | the scheduler | adds `n` |
 | `forge:request` | the scheduler | makes the issue a queued request (`producer = "<declared name>"` and `sha = "<40-hex>"` in its body) |
 | `request:done` | serve | a request whose producer exited 0; the host closes it as it labels it |
-| `keep` | the artefact store | pins its sha's artefacts past retention ([artefacts](artefacts.md)) |
+| `keep` | the artifact store | pins its sha's artifacts past retention ([artifacts](artifacts.md)) |
 
 No other label carries state.

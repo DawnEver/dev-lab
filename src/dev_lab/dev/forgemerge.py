@@ -51,7 +51,7 @@ fifth conditions, which a serve host posts):
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
-  (:func:`dev_lab.dev.mergeaudit.judge`, the same judgement the commit-msg hook makes) -- its message
+  (:func:`dev_lab.dev.mergeaudit.judge`, the same judgment the commit-msg hook makes) -- its message
   names the branch (``Merged-Branch:``), so INTEGRATION-IS-MERGES-ONLY holds of it too;
 * every commit its head adds over integration passes the repo's OWN declared message row -- the pre-push row
   running ``cz-push-range``, run here on the range ``origin/<integration>..<head>`` with that row's env in its

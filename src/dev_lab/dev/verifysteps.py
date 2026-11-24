@@ -1,6 +1,7 @@
 """THE VERIFY STEPS, run under one root into one log and folded into one verdict.
 
-:func:`run_verify` runs ruff check, ruff format --check and pytest (in the box, :mod:`dev_lab.dev.verifybox`),
+:func:`run_verify` runs ruff check, ruff format --check, typos (:mod:`dev_lab.dev.spelling`) and pytest (in
+the box, :mod:`dev_lab.dev.verifybox`),
 each streamed through :func:`_tee` into a fresh log, and :func:`build_verdict` folds their reports. The command
 around it -- the run cache, the box-wide single run, the producer's post -- is :mod:`dev_lab.dev.verify`.
 
@@ -41,7 +42,7 @@ from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.jsrun import NoEngine, node_path
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
-from dev_lab.dev.reports import StepReport, read_ruff, read_stages
+from dev_lab.dev.reports import StepReport, read_lint, read_stages
 from dev_lab.dev.selection import census_scope, is_targeted
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
 from dev_lab.dev.skipallowance import declared_skips, stale_declarations, vanished_shortfall
@@ -69,11 +70,11 @@ __all__ = [
     'CACHE_VARS',
     'COVERAGE_KIND',
     'LEDGER_PLUGIN',
+    'LINT_STEPS',
     'LOG_KIND',
     'MEASURED_TARGETS',
     'OUTCOME_PLUGIN',
     'PYTEST_ARGS',
-    'RUFF_STEPS',
     'build_verdict',
     'cache_env',
     'coverage_args',
@@ -126,13 +127,15 @@ def tree_address(root: Path) -> str:
 #: checkout rather than a platform cache dir, because the log IS the evidence a verdict cites.
 LOG_KIND: Final = 'verify'
 
-#: The two lint steps, in order, as ``(name, module args)``. Both run through ``sys.executable -m``
-#: so the ruff that judges is the ruff installed in the interpreter that will run the suite -- a
-#: bare ``ruff`` on ``PATH`` can be a different version from the one the ``dev`` extra resolved,
-#: and a verdict carrying an env key must have been earned under that env.
-RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+#: The lint steps, in order, as ``(name, module args)``. Each runs through ``sys.executable -m``
+#: so the checker that judges is the one installed in the interpreter that will run the suite -- a
+#: bare ``ruff`` on ``PATH`` can be a different version from the one the ``test`` extra resolved,
+#: and a verdict carrying an env key must have been earned under that env. ``typos`` is the
+#: US-SPELLING-IS-CHECKED step (user ruling 2026-11-24).
+LINT_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ('ruff check .', ('ruff', 'check', '.')),
     ('ruff format --check .', ('ruff', 'format', '--check', '.')),
+    ('typos', ('dev_lab.dev.spelling',)),
 )
 
 #: What pytest is always given, before anything the caller forwards. None of these three letters is
@@ -270,14 +273,14 @@ def _tee(
     INTERLEAVED -- a separated stderr puts every ruff diagnostic after every line of pytest output,
     in an order that never occurred.
 
-    ANSI COLOUR IS STRIPPED HERE, AT THE ONE POINT WHERE THE THREE READERS HAVE NOT YET DIVERGED,
+    ANSI COLOR IS STRIPPED HERE, AT THE ONE POINT WHERE THE THREE READERS HAVE NOT YET DIVERGED,
     and that placement is the decision rather than the regex. MEASURED 2026-09-18: pytest under
     ``--color=yes`` (or ``FORCE_COLOR`` in a repo's ``addopts``) prints
     ``'\x1b[31mFAILED\x1b[0m test_c.py::\x1b[1mtest_a\x1b[0m - assert 0'``, and
     :data:`~dev_lab.dev.reports._FAILED_NODE` is anchored at ``^(?:FAILED|ERROR)`` -- so a
     genuine red came back ``the summary names 1 failure(s) and the output names 0 node id(s)``, an
     INCONCLUSIVE nobody can act on. The direction was safe, which is exactly why it went unnoticed;
-    the cost is that no red is diagnosable in any repo that colours its output.
+    the cost is that no red is diagnosable in any repo that colors its output.
 
     LOOSENING THE ANCHOR WOULD NOT HAVE FIXED IT. The node id in that line is itself wrapped
     (``test_c.py::\x1b[1mtest_a\x1b[0m``), so ``(\S+)`` would have captured a node id with escapes
@@ -457,7 +460,7 @@ def run_verify(
     is the one side of the ratchet a selected invocation can still judge.
 
     THE SEAT IS TAKEN AFTER :func:`~dev_lab.dev.skipallowance.declared_skips` AND NOT BEFORE: an
-    unparseable declaration is refused against a tree that has not yet queued for anything.
+    unparsable declaration is refused against a tree that has not yet queued for anything.
 
     THE LOG IS READ BACK STREAMED AND IS NEVER RESIDENT, which is why the last two lines go through
     :mod:`dev_lab.dev._logdistil` rather than ``path.read_text()``. MEASURED 2026-09-18: a
@@ -494,8 +497,8 @@ def run_verify(
         with seat.held(), path.open('w', encoding='utf-8') as handle:
             if hooks:
                 reports.append(read_hooks(root, handle=handle))
-            for name, arguments in RUFF_STEPS:
-                reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
+            for name, arguments in LINT_STEPS:
+                reports.append(read_lint(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
             if scripts:
                 reports.append(script_step(root, scripts, handle=handle))
             if not only_scripts:

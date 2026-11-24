@@ -1,6 +1,6 @@
 """A git hook runs with GIT_DIR naming the repository pushing; a cache it creates must not inherit it.
 
-MEASURED 2026-11-10 (a consumer repository): `git -C <tmp> init --bare` under the pre-push hook's GIT_DIR re-initialised
+MEASURED 2026-11-10 (a consumer repository): `git -C <tmp> init --bare` under the pre-push hook's GIT_DIR re-initialized
 the REAL repository as bare (`core.bare = true`), and every worktree and the main checkout then failed "must be
 run in a work tree". Each cache-making reader below runs with GIT_DIR pointing at a real repository; that
 repository must stay non-bare and untouched.

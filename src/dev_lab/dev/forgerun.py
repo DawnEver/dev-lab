@@ -9,8 +9,8 @@ So each ``forge serve`` invocation ADVANCES ON-DISK STATE and returns:
 
 DECLARED OUTPUTS SHIP WITH THE RECORD. The outputs a part declares (``[tool.lab_commons.hpc] outputs``,
 captured in the run when it is claimed -- declared at REQUEST time) are packed from the run's work
-tree and put in the artefact store (:mod:`dev_lab.dev.artefacts`) after the record is gathered and
-before it is posted; the record's ``artefacts`` manifest names them. A declared output that is missing
+tree and put in the artifact store (:mod:`dev_lab.dev.artifacts`) after the record is gathered and
+before it is posted; the record's ``artifacts`` manifest names them. A declared output that is missing
 releases the part as an error and alarms. Each serve tick on a cluster also cleans the stores
 (:func:`dev_lab.dev.forgeship.tidy`) of this host's own account's runs: one of several writers.
 
@@ -101,8 +101,8 @@ from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.tree import NotSubmitted
 
 from dev_lab.dev import forgerunpost, forgerunshow, forgeship
-from dev_lab.dev.artefacts import MissingOutput, OutputBudgetRefused, run_id
-from dev_lab.dev.artefactstores import OutputIntegrityRefused, manifest_of
+from dev_lab.dev.artifacts import MissingOutput, OutputBudgetRefused, run_id
+from dev_lab.dev.artifactstores import RECORD_ARCHIVES, RECORD_INDEXES, OutputIntegrityRefused, manifest_of
 from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
 from dev_lab.dev.forgecarry import publish
 from dev_lab.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
@@ -351,16 +351,16 @@ def _submit(
 def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callable[[str], None], tag: str) -> Run:
     """Store the declared outputs and name them, with their member index, in the record; idempotent per run."""
     record = read_record(Path(run.record))
-    if not run.outputs or 'artefacts' in record:
+    if not run.outputs or RECORD_ARCHIVES in record:
         return run
-    if not run.artefact:
+    if not run.artifact:
         account = run.claim.hpc.rpartition('/')[2]  # the claim owner's cluster account names the writer
-        run = forgerunpost.step(run, artefact=run_id(run.sha, run.platform, account, forge_now(client)))
+        run = forgerunpost.step(run, artifact=run_id(run.sha, run.platform, account, forge_now(client)))
     stored = forgeship.store_outputs(
-        root, client, cluster.tree(run), run.outputs, ident=run.artefact, workdir=Path(run.output)
+        root, client, cluster.tree(run), run.outputs, ident=run.artifact, workdir=Path(run.output)
     )
     ref = stored.ref
-    shipped = {**record, 'artefacts': [manifest_of(ref)], 'artefact_indexes': stored.index()}
+    shipped = {**record, RECORD_ARCHIVES: [manifest_of(ref)], RECORD_INDEXES: stored.index()}
     run = forgerunpost.step(run, record=str(write_record(shipped, Path(run.record).parent)))
     say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.ref} ({ref.bytes} bytes)')
     return run

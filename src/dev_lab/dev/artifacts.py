@@ -1,22 +1,22 @@
-"""THE ARTEFACT STORE -- a run's DECLARED outputs, packed once and kept behind the record's manifest.
+"""THE ARTIFACT STORE -- a run's DECLARED outputs, packed once and kept behind the record's manifest.
 
 NOTHING TRAVELS BY DEFAULT (user rulings 2026-10-11). A request declares ``outputs = [...]`` -- globs or
-named files relative to the run's work tree; only those are packed (:mod:`dev_lab.dev.artefactpack`), a
+named files relative to the run's work tree; only those are packed (:mod:`dev_lab.dev.artifactpack`), a
 declared output that matched nothing fails the run loudly (:class:`MissingOutput`), and an undeclared
 file is never uploaded. The verdict itself still travels as the run record, with each archive's member
-index beside its Ref (:mod:`dev_lab.dev.artefactindex`).
+index beside its Ref (:mod:`dev_lab.dev.artifactindex`).
 
-ONE INTERFACE, THREE BACKENDS (:class:`ArtefactStore`): ``put(run_id, path) -> Ref``, ``get(ref, dest)``,
+ONE INTERFACE, THREE BACKENDS (:class:`ArtifactStore`): ``put(run_id, path) -> Ref``, ``get(ref, dest)``,
 ``list(older_than)``, ``delete(ref)``. ``forge`` keeps an archive as a records-home attachment
 (<= :data:`ATTACHMENT_LIMIT_MB`); ``rclone`` any rclone remote, by shelling out with argv lists;
-``folder`` a local path (:mod:`dev_lab.dev.artefactfolder`). A :class:`Ref` IS the manifest entry the record carries --
+``folder`` a local path (:mod:`dev_lab.dev.artifactfolder`). A :class:`Ref` IS the manifest entry the record carries --
 ``{backend, ref, bytes, sha256}`` -- and :meth:`get` refuses bytes whose sha256 differs.
 
 CONFIG IS DATA. The writer side is the repo's ``[tool.lab_commons.artefacts]`` (:class:`Config`): an
 archive at or under ``threshold_mb`` goes to the forge, a larger one to ``backend``/``remote``; the
 output and member-index budgets are declared there too, never defaulted. :func:`query_members` reads a
 record's index under that policy without touching an archive. The reader side maps the same store to
-a local path in the MACHINE config (``[artefacts] folder``, :func:`reader`) -- a synced mirror of the
+a local path in the MACHINE config (``folder`` under :data:`_SECTION`, :func:`reader`) -- a synced mirror of the
 remote, read, never written.
 
 CLOUD-DRIVE-SHAPED LAYOUT. ``<repo>/<yyyy>/<mm>/<dd>/<run-id>.tar.gz`` plus ``<run-id>.manifest.json``,
@@ -52,9 +52,9 @@ from lab_commons.config import config_path, section
 from lab_commons.hpc.rclone import probe
 from lab_commons.hpc.records import read_record
 
-from dev_lab.dev.artefactfolder import FolderStore
-from dev_lab.dev.artefactindex import MemberFact, catalogue, select_members
-from dev_lab.dev.artefactstores import (
+from dev_lab.dev.artifactfolder import FolderStore
+from dev_lab.dev.artifactindex import MemberFact, catalogue, select_members
+from dev_lab.dev.artifactstores import (
     ARCHIVE,
     ATTACHMENT_LIMIT_MB,
     FOLDER,
@@ -62,8 +62,8 @@ from dev_lab.dev.artefactstores import (
     MANIFEST,
     MB,
     RCLONE,
-    ArtefactRefused,
-    ArtefactStore,
+    ArtifactRefused,
+    ArtifactStore,
     ForgeStore,
     MissingOutput,
     OutputBudgetRefused,
@@ -91,8 +91,8 @@ __all__ = [
     'FORGE',
     'MANIFEST',
     'RCLONE',
-    'ArtefactRefused',
-    'ArtefactStore',
+    'ArtifactRefused',
+    'ArtifactStore',
     'Config',
     'ForgeStore',
     'MissingOutput',
@@ -117,7 +117,10 @@ __all__ = [
 
 _BACKENDS: Final = (FORGE, RCLONE, FOLDER)
 _SHA_TOKEN: Final = re.compile(r'\b[0-9a-f]{12,40}\b')
-_TABLE: Final = 'tool.lab_commons.artefacts'
+#: lab-commons owns this name (its ``[tool.lab_commons.<section>]`` table and machine-config section); it moves when
+#: lab-commons migrates its spelling.
+_SECTION: Final = 'artefacts'  # spelling-ignore-line
+_TABLE: Final = f'tool.lab_commons.{_SECTION}'
 
 
 # --- config, selection, reading -------------------------------------------------------------------
@@ -155,7 +158,7 @@ def load_config(root: Path) -> Config:
 def config_from(text: str, where: str) -> Config:
     """The table of the manifest *text* (read from *where*, named in a refusal), validated; none is forge only."""
     raw = tomllib.loads(text)
-    table = raw.get('tool', {}).get('lab_commons', {}).get('artefacts', {})
+    table = raw.get('tool', {}).get('lab_commons', {}).get(_SECTION, {})
     known = {field.name for field in dataclasses.fields(Config)}
     problems = [f'unknown key {key!r}' for key in sorted(set(table) - known)]
     try:
@@ -173,7 +176,7 @@ def config_from(text: str, where: str) -> Config:
         problems.append('retain_days must be >= 1 and cap_gb >= 0')
     if problems:
         msg = f'{where} [{_TABLE}]: {"; ".join(problems)}'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     budgets = _budget_problems(config)
     if budgets:
         msg = f'{where} [{_TABLE}]: {"; ".join(budgets)}'
@@ -252,7 +255,7 @@ def query_members(
     )
 
 
-def large_store(config: Config, repo: str) -> ArtefactStore | None:
+def large_store(config: Config, repo: str) -> ArtifactStore | None:
     """The configured backend for archives over the threshold; ``None`` when the forge is the only one."""
     if config.backend == RCLONE:
         return RcloneStore(config.remote, repo)
@@ -268,7 +271,7 @@ def remote_problem(root: Path, *, rclone: Sequence[str] = ()) -> str:
     """
     try:
         config = load_config(root)
-    except ArtefactRefused as bad:
+    except ArtifactRefused as bad:
         return str(bad)
     if config.backend != RCLONE:
         return ''
@@ -280,7 +283,7 @@ def remote_problem(root: Path, *, rclone: Sequence[str] = ()) -> str:
     return probe(config.remote, rclone=rclone)
 
 
-def store_for(config: Config, client: Client, repo: str, *, size: int) -> ArtefactStore:
+def store_for(config: Config, client: Client, repo: str, *, size: int) -> ArtifactStore:
     """The forge for an archive of *size* at or under the threshold, else the configured large backend."""
     if size <= config.threshold_mb * MB:
         return ForgeStore(client)
@@ -290,23 +293,23 @@ def store_for(config: Config, client: Client, repo: str, *, size: int) -> Artefa
             f'an archive of {size} bytes is over the forge threshold of {config.threshold_mb} MB and '
             f'[{_TABLE}] names no backend for it: set backend = "rclone" and remote = "<remote:path>"'
         )
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     return large
 
 
 def reader(repo: str) -> FolderStore:
-    """The local mirror of the large store on this machine (``[artefacts] folder`` in its config); read-only use."""
-    folder = section('artefacts').get('folder')
+    """The local mirror of the large store on this machine (its config's ``folder``); read-only use."""
+    folder = section(_SECTION).get('folder')
     if not isinstance(folder, str) or not folder:
-        msg = f'{config_path()}: set [artefacts] folder = "<local mirror of the artefact remote>" to read artefacts'
-        raise ArtefactRefused(msg)
+        msg = f'{config_path()}: set [{_SECTION}] folder = "<local mirror of the artifact remote>" to read artifacts'
+        raise ArtifactRefused(msg)
     return FolderStore(Path(folder).expanduser(), repo)
 
 
 def resolve(entry: dict[str, Any], dest: Path, *, client: Client, repo: str) -> Path:
     """Fetch the archive a record's manifest *entry* names, through the store -- never a hard-coded path."""
     ref = ref_of_entry(entry)
-    store: ArtefactStore = ForgeStore(client) if ref.backend == FORGE else reader(repo)
+    store: ArtifactStore = ForgeStore(client) if ref.backend == FORGE else reader(repo)
     return store.get(ref, dest)
 
 
@@ -317,9 +320,9 @@ _NOT_FOUND: Final = 404
 
 
 def pinned(client: Client, *, say: Callable[[str], None]) -> frozenset[str]:
-    """The sha12s a ``keep``-labelled issue or pull request names: shas in its body, and a PR's head.
+    """The sha12s a ``keep``-labeled issue or pull request names: shas in its body, and a PR's head.
 
-    The labelled set is read through the one paged listing and told apart by the one
+    The labeled set is read through the one paged listing and told apart by the one
     :func:`~dev_lab.dev.forgework.is_pull` -- gitea's ``"pull_request": null`` marks a plain issue.
     A ``/pulls/N`` read answered 404 (pull requests switched off, or no such pull) skips that number
     with a named reason -- its body still pins; any other refusal (401, 403, 5xx) raises.
@@ -336,14 +339,14 @@ def pinned(client: Client, *, say: Callable[[str], None]) -> frozenset[str]:
             if status != _NOT_FOUND:  # an auth or server refusal is not about this number: it stays an alarm
                 raise
             why = 'HTTP 404, pull requests are off' if pulls_off(client, failed) else f'HTTP 404: {failed}'
-            say(f'[artefacts] keep #{item["number"]} pins by its body only: its pull read was refused ({why})')
+            say(f'[artifacts] keep #{item["number"]} pins by its body only: its pull read was refused ({why})')
             continue
         found.update([head[:12]] if head else [])
     return frozenset(found)
 
 
 def clean(
-    store: ArtefactStore, *, account: str, now: datetime, retain_days: int, cap_bytes: int, pinned: frozenset[str]
+    store: ArtifactStore, *, account: str, now: datetime, retain_days: int, cap_bytes: int, pinned: frozenset[str]
 ) -> tuple[Ref, ...]:
     """Delete *account*'s old runs, then its oldest until its share is under *cap_bytes*; nobody else's.
 

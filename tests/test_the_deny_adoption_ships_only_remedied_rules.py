@@ -86,7 +86,7 @@ def test_the_adoption_accounts_for_every_rule_that_needs_this_repo() -> None:
 
 
 def test_the_two_sets_account_for_the_needing_rules_exactly() -> None:
-    """A new rule that needs a repo artefact must be typed into one of the sets, or this reds."""
+    """A new rule that needs a repo artifact must be typed into one of the sets, or this reds."""
     accounted = set(_REMEDIES) | _ABSENT
     assert accounted == needing(DENY_RULES), (
         f'deny rules neither remedied nor declared absent here: {sorted(needing(DENY_RULES) - accounted)}; '

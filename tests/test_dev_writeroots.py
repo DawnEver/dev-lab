@@ -1,7 +1,7 @@
 """WRITES-STAY-IN-THE-TREE: an agent writes only into the writable roots its machine ALLOWS (ruling R8, 2026-11-24).
 
 The allowlist is ``[writeroots] allow`` (undeclared: the family checkouts of ``[repos]``), injected here so no test
-reads the real machine file or touches the real temp dir. Planted controls on every judgement: a checkout, its
+reads the real machine file or touches the real temp dir. Planted controls on every judgment: a checkout, its
 worktree and a declared place are admitted; its sibling, a drive root, the temp dir, OneDrive and the harness's
 temp subtree are refused. The census half (:func:`dev_lab.dev.writeroots.write_prone_roots`) is tested first.
 """
@@ -298,7 +298,7 @@ _SRC_FLOOR = 400
 
 
 def test_every_temp_entry_the_family_creates_carries_the_one_prefix() -> None:
-    """ONLY OUR OWN IS SWEPT, so every temp entry we make must be recognisable as ours."""
+    """ONLY OUR OWN IS SWEPT, so every temp entry we make must be recognizable as ours."""
     root = Path(__file__).resolve().parents[1]
     tempprefix.assert_every_temp_entry_carries_the_prefix(base=root, roots=[root / 'src'], floor=_SRC_FLOOR)
 

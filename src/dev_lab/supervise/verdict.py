@@ -3,7 +3,7 @@
 A check measures something and reports a :class:`CheckResult`: the numbers it read, the
 :class:`Anomaly` objects it convicts, and the :class:`Completion` signals it celebrates. A
 completion is deliberately NOT an anomaly -- a finished task is a first-class outcome, and
-modelling it as a warning-severity anomaly makes a run that succeeded read as `degraded`
+modeling it as a warning-severity anomaly makes a run that succeeded read as `degraded`
 forever.
 
 Nothing here knows what is being measured. A probe of an HTTP endpoint, a disk, a log tail and

@@ -16,6 +16,7 @@ __all__ = ['LEDGER_WRITES_THROUGH_ITS_DOOR']
 
 _PATH = r"""["']?[^\s"';&|()<>]*?"""
 _TARGET = rf"""{_PATH}{LEDGER_FILE}["']?(?=[\s;&|)]|$)"""
+# spelling-off -- the regexes below spell character classes ([Ii]tem), not words
 #: What creates, removes or moves a directory entry, in either shell.
 _MUTATORS = r'(?:mkdir|md|rm|rmdir|rd|del|mv|[Nn]ew-[Ii]tem|ni|[Rr]emove-[Ii]tem|ri|[Mm]ove-[Ii]tem|[Rr]ename-[Ii]tem)'
 _WRITERS = (
@@ -26,6 +27,7 @@ _WRITERS = (
     rf'|\b(?:cp|mv|[Cc]opy-[Ii]tem|[Mm]ove-[Ii]tem)\b[^;&|\n]*\s{_TARGET}\s*(?=[;&|)]|$)'
     rf'|\b{_MUTATORS}\b[^;&|\n]*?{LEDGER_DIR_TAIL}'
 )
+# spelling-on
 
 LEDGER_WRITES_THROUGH_ITS_DOOR: dict[str, object] = {
     'id': RULE_ID,

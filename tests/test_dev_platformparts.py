@@ -457,11 +457,11 @@ def test_an_environment_error_is_not_the_authors_red_and_never_a_pass() -> None:
     assert any("not the author's (class=environment)" in one for one in read.problems), read.problems
 
 
-def test_a_licence_outage_reads_as_vendor_licence_not_a_fail() -> None:
-    outage = release_reason(ProducerExit.UNREACHABLE, outage=Owner.VENDOR_LICENCE)
+def test_a_license_outage_reads_as_vendor_license_not_a_fail() -> None:
+    outage = release_reason(ProducerExit.UNREACHABLE, outage=Owner.VENDOR_LICENSE)
     read = platformparts.standing([_passing_base(), CommitStatus('tests/jmag', 'error', outage, '')], head='h')
     assert read.result is Conclusion.INCONCLUSIVE
-    assert any('class=vendor-licence' in one for one in read.problems), read.problems
+    assert any('class=vendor-license' in one for one in read.problems), read.problems
 
 
 def test_a_code_failure_is_the_authors_red() -> None:

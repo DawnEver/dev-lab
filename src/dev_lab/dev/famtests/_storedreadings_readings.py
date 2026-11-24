@@ -14,7 +14,7 @@ refusal it makes at all is the vacuous one, an empty vocabulary that would repor
 the family clean.
 
 THE SPELLINGS ARE DERIVED FROM THE CORPUS, NOT GUESSED. Measured 2026-09-19 over the two labs' and
-consumer-a' four rosters: a labelled reading is written ``key=value`` in exactly four keys
+consumer-a' four rosters: a labeled reading is written ``key=value`` in exactly four keys
 (``own``, ``repo``, ``project``, ``hits``), a derived percentage as ``-> 7.46%``, and a change as
 either ``down from``/``up from`` or as the arrow delta ``own=86 -> 39``. A regex invented in the
 abstract finds none of that, and a scan that finds nothing reports a clean tree.
@@ -40,13 +40,13 @@ __all__ = [
 ]
 
 #: The spelling a DERIVED PERCENTAGE takes in every roster in the family -- ``-> 7.46%`` -- written as
-#: an arrow rather than as ``key=value`` because it is not a labelled reading but the quotient of the
+#: an arrow rather than as ``key=value`` because it is not a labeled reading but the quotient of the
 #: two beside it. A member of the ``spellings`` set like any other, so a repo that does not write
 #: percentages simply omits it and no arm silently looks for one.
 PERCENT: Final = '%'
 
 #: The words the corpus actually uses to mark a number as a FORMER reading, measured 2026-09-19 by
-#: reading the 70 characters in front of all 168 labelled claims in the two labs' rosters: 25 of them
+#: reading the 70 characters in front of all 168 labeled claims in the two labs' rosters: 25 of them
 #: are ``down from``/``up from`` and one is ``THE OLD ROW READ``. Matched case-insensitively. A NAMED
 #: SET rather than a heuristic, because the alternative -- "any sentence that sounds retrospective" --
 #: is an amnesty whose width nobody can state.
@@ -162,7 +162,7 @@ def claims_in(why: str, *, spellings: frozenset[str]) -> tuple[Claim, ...]:
 
     Args:
         why: one row's prose.
-        spellings: the labelled readings this repo writes, plus :data:`PERCENT` if it writes
+        spellings: the labeled readings this repo writes, plus :data:`PERCENT` if it writes
             percentages. NO DEFAULT: which keys a roster uses is a fact about that roster -- the two
             labs write ``own``, ``repo``, ``project`` and ``hits`` and do not agree on which -- and a
             guessed set does not raise, it finds nothing and reports the roster clean.

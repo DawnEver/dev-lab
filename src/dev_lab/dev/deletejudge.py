@@ -1,9 +1,9 @@
-"""LOSSLESS-DELETE's one judgement: whether deleting an origin branch at a given sha loses nothing.
+"""LOSSLESS-DELETE's one judgment: whether deleting an origin branch at a given sha loses nothing.
 
 Two callers ask it the same question. The door, ``branchprune delete`` (:func:`dev_lab.dev.branchdelete.delete`),
 asks before it pushes a delete, of the tip its fresh fetch reads; the pre-push row ``lossless-delete``
 (:mod:`dev_lab.dev.pushdelete`) asks of EVERY delete a push carries, of the sha git's own ref line names as the
-remote's -- so a delete spelled any way (a ``$refs`` variable, ``xargs``, a script) meets the same judgement, and the
+remote's -- so a delete spelled any way (a ``$refs`` variable, ``xargs``, a script) meets the same judgment, and the
 door's own push passes it with no exemption. Split from :mod:`dev_lab.dev.branchdelete` (2026-11-17), whose
 docstring states the ruling: a branch goes only when every commit on it is on integration or on another live origin
 branch or open PR head, or, by CONTENT, when no file its own commits wrote differs from integration, generated files
@@ -16,7 +16,7 @@ declared in ``[tool.dev_lab.integrator] derived`` with the producer that regener
 (:class:`~dev_lab.dev.lanepolicy.Derived`). Declared, never a branch name in code: an undeclared branch that merely
 looks machine-made is judged like any other, and holds nothing for another branch either, since it may go any time.
 
-A USER'S ORDER TO DROP A BRANCH is the one delete this judgement does not decide (2026-11-24: a branch carrying a
+A USER'S ORDER TO DROP A BRANCH is the one delete this judgment does not decide (2026-11-24: a branch carrying a
 private pre-GitHub history -- a second root -- that no merge may publish). ``branchprune discard <branch> --approved
 "<the user's words>"`` (:func:`dev_lab.dev.branchdelete.discard`) writes a :func:`grant` for that branch at that sha in
 the clone's git dir, pushes, and spends it; the pre-push row passes a lossy delete only when a grant names exactly its

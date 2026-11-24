@@ -100,7 +100,7 @@ NON_PRUNING_FLAGS: Final = frozenset({'--inexact', '--no-sync'})
 RUNNER: Final = 'pytest'
 
 #: A pytest CONFIGURATION token and the distribution it silently requires. This is the half a reader
-#: forgets: pytest exits 4 -- USAGE ERROR, no verdict -- on an unrecognised option, so an ``addopts``
+#: forgets: pytest exits 4 -- USAGE ERROR, no verdict -- on an unrecognized option, so an ``addopts``
 #: naming ``-n auto`` makes ``pytest-xdist`` as load-bearing as pytest itself. Keyed by the token as
 #: it appears in the manifest, because that is where the requirement is DECLARED.
 PLUGIN_TRIGGERS: Final[dict[str, str]] = {
@@ -179,7 +179,7 @@ class Selection:
 
 
 def canon(name: str) -> str:
-    """The PEP 503 normalised distribution name: case-folded, with runs of ``-_.`` as one ``-``.
+    """The PEP 503 normalized distribution name: case-folded, with runs of ``-_.`` as one ``-``.
 
     ``img-to-cad`` and ``img_to_cad`` are one extra and ``consumer_a_native`` and
     ``consumer-a-native`` are one distribution; a reader comparing raw spellings scores either pair
@@ -203,7 +203,7 @@ def _manifest(text: str) -> dict:
 
 
 def extras(text: str) -> dict[str, frozenset[str]]:
-    """Every declared extra of this manifest, as normalised distribution names, SELF-REFERENCES EXPANDED.
+    """Every declared extra of this manifest, as normalized distribution names, SELF-REFERENCES EXPANDED.
 
     ``all = ["consumer-a[euclid,maxwell,pareto,femm,gui,native]"]`` is the shape that hid the
     incident: read literally the extra contains one distribution -- the project -- and what it
@@ -339,7 +339,7 @@ def verdict_set(text: str) -> frozenset[str]:
 
     * :data:`RUNNER` -- no pytest, no verdict of any kind.
     * every plugin this repo's own ``[tool.pytest.ini_options]`` NAMES. pytest exits 4 on an
-      unrecognised option, so consumer-a' ``-n auto`` and ``timeout = 300`` make xdist and timeout
+      unrecognized option, so consumer-a' ``-n auto`` and ``timeout = 300`` make xdist and timeout
       load-bearing, and the two repos whose ``addopts`` carry ``--cov`` require pytest-cov.
     * ``ruff`` -- ``verify`` runs ``ruff format --check`` tree-wide before it promotes anything.
     * ``lab-commons`` when the manifest declares it, because the family's one verify entry point

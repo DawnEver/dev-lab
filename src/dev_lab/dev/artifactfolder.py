@@ -1,7 +1,7 @@
 """THE FOLDER BACKEND -- a local directory holding ``<repo>/...`` exactly as the remote does.
 
 A writer's ``folder`` store, and a reader's synced mirror of the large store
-(:func:`dev_lab.dev.artefacts.reader`).
+(:func:`dev_lab.dev.artifacts.reader`).
 
 IDEMPOTENT, ARCHIVE BEFORE MANIFEST. :meth:`FolderStore.put` publishes the archive first, then its
 manifest, each through a unique fsynced temporary linked no-replace. A put interrupted between the two
@@ -25,12 +25,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev.artefactpack import file_identity
-from dev_lab.dev.artefactstores import (
+from dev_lab.dev.artifactpack import file_identity
+from dev_lab.dev.artifactstores import (
     ARCHIVE,
     FOLDER,
     MANIFEST,
-    ArtefactRefused,
+    ArtifactRefused,
     Ref,
     check_key,
     manifest_of,
@@ -73,7 +73,7 @@ class FolderStore:
             aliased_leaf = False
         if aliased_parent or aliased_leaf:
             msg = f'{path}: archive/manifest alias refused'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
 
     def _verify_archive(self, path: Path, expected: Ref) -> None:
         self._guard(path)
@@ -81,15 +81,15 @@ class FolderStore:
             before = path.lstat()
             if not stat.S_ISREG(before.st_mode) or ref_of(expected.backend, expected.ref, path) != expected:
                 msg = f'{path}: archive has other content or identity'
-                raise ArtefactRefused(msg)
+                raise ArtifactRefused(msg)
             after = path.lstat()
         except FileNotFoundError as error:
             msg = f'{path}: committed archive is missing'
-            raise ArtefactRefused(msg) from error
+            raise ArtifactRefused(msg) from error
         self._guard(path)
         if file_identity(before) != file_identity(after):
             msg = f'{path}: archive identity changed during verification'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
 
     def _publish(self, name: Path, write: Callable[[Path], None]) -> None:
         """*write* a unique temporary and link it to *name* unless one is there; the caller verifies the winner."""
@@ -115,12 +115,12 @@ class FolderStore:
             return None
         if not path.is_file():
             msg = f'{path}: manifest is not a regular file'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         with path.open('rb') as stream:
             data = stream.read(_MANIFEST_MAX + 1)
         if len(data) > _MANIFEST_MAX:
             msg = f'{path}: oversized manifest identity'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         value = json.loads(data)
         if (
             not isinstance(value, dict)
@@ -129,7 +129,7 @@ class FolderStore:
             or value['bytes'] < 0
         ):
             msg = f'{path}: invalid manifest identity'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         return ref_of_entry(value)
 
     def put(self, ident: str, path: Path) -> Ref:
@@ -142,7 +142,7 @@ class FolderStore:
         if landed is not None:
             if landed != new:
                 msg = f'{new.ref} already exists with other content or manifest identity: write-once'
-                raise ArtefactRefused(msg)
+                raise ArtifactRefused(msg)
             self._verify_archive(target, new)
             return new
         self._guard(target)
@@ -152,7 +152,7 @@ class FolderStore:
             shutil.copyfile(path, destination)
             if ref_of(new.backend, new.ref, destination) != new:
                 msg = f'{new.ref}: copied archive has other content'
-                raise ArtefactRefused(msg)
+                raise ArtifactRefused(msg)
 
         if not os.path.lexists(target):
             self._publish(target, copy_archive)
@@ -161,7 +161,7 @@ class FolderStore:
         self._publish(manifest, lambda dst: dst.write_text(json.dumps(manifest_of(new)), encoding='utf-8'))
         if self._stored(new.ref) != new:
             msg = f'{new.ref}: conflicting committed manifest identity'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         self._verify_archive(target, new)
         return new
 

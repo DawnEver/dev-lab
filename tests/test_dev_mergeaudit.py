@@ -86,7 +86,7 @@ def test_a_method_on_a_test_class_is_a_test() -> None:
     assert set(tree) == {'TestC::test_m'}
 
 
-def test_an_unparseable_file_refuses_rather_than_reading_as_empty() -> None:
+def test_an_unparsable_file_refuses_rather_than_reading_as_empty() -> None:
     with pytest.raises(mergeaudit.MergeAuditError, match=r'tests/test_bad[.]py'):
         mergeaudit.read_tests({'tests/test_bad.py': b'def test_a(:\n'})
 

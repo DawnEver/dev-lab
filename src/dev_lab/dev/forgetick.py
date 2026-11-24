@@ -17,7 +17,7 @@ and give each claimed part what produces it: the ONE producer the claimed commit
 (:func:`dev_lab.dev.platformparts.producer_argv`, ``{part}`` filled; the producer runs it in a tree at
 that commit) or a cluster part (:func:`dev_lab.dev.platformparts.cluster_part`). A part
 whose producer the repo does not declare is not claimed; its refusal names the pyproject key to add. A
-cluster host whose rclone remote is unusable (:func:`dev_lab.dev.artefacts.remote_problem`) claims
+cluster host whose rclone remote is unusable (:func:`dev_lab.dev.artifacts.remote_problem`) claims
 no part with declared outputs -- they could exceed ``threshold_mb`` -- and says why; a part with none is
 still claimed. It runs nothing itself.
 
@@ -83,7 +83,7 @@ from lab_commons.config import config_path, section
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
-from dev_lab.dev.artefacts import remote_problem
+from dev_lab.dev.artifacts import remote_problem
 from dev_lab.dev.forge import (
     NoCredential,
     Transport,
@@ -147,8 +147,8 @@ class TickReport:
     lines: tuple[str, ...]
     refused: tuple[str, ...] = ()
     queue: tuple[Ranked, ...] = ()
-    #: Why this host cannot write the large artefact store, ``''`` when it can (stated on its host card).
-    artefacts: str = ''
+    #: Why this host cannot write the large artifact store, ``''`` when it can (stated on its host card).
+    artifacts: str = ''
     #: The open parts this host could serve -- its needs all present here -- and did not claim: what makes it idle.
     pending: tuple[Work, ...] = ()
 
@@ -214,7 +214,7 @@ def tick(
     in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
     (default: :func:`lab_commons.compute.learned.learned`). *probe* says why a cluster host cannot write the
-    repo's large artefact store (default: :func:`dev_lab.dev.artefacts.remote_problem`). Which resources
+    repo's large artifact store (default: :func:`dev_lab.dev.artifacts.remote_problem`). Which resources
     this host has is *supply*'s ``present`` (:mod:`lab_commons.compute.probe`): a part whose need-set is not
     all present waits ``not admitted: lacking <resource>``. *owners* is who may vouch
     for each host card (host -> the login that publishes it): a job's ORIGIN host stands only where its
@@ -277,10 +277,10 @@ def tick(
         store_why=probe(root) if serve.hpc else '', history=history,
         serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve, box=box,
     )  # fmt: skip
-    favoured = (priority or Priority.of(section(PRIORITY_TABLE))).matches
+    favored = (priority or Priority.of(section(PRIORITY_TABLE))).matches
     mine = (declared(config_path(), origin_url(root)) if verify is None else tuple(verify)) if serve.hpc else ()
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights,
-        priority=lambda one: favoured(one) or covers(mine, context_of(one)),
+        priority=lambda one: favored(one) or covers(mine, context_of(one)),
     )  # fmt: skip
     ranked = tip_first(ranked, policy.integration)
     if serve.hpc:  # A RETURNING VERIFY SEAT OPENS STEP BY STEP, THEN HPC ACCOUNT AFFINITY: a workstation is never gated
@@ -314,7 +314,7 @@ def tick(
         lines.append(f'produce {item.context}: {how}')
     lines += [f'refused {reason}' for reason in refused]
     lines += [f'waiting {item.candidate.key}: {item.blocked}' for item in queue if item.blocked]
-    lines += [f'artefacts {taken.store_why}'] if taken.store_why else []
+    lines += [f'artifacts {taken.store_why}'] if taken.store_why else []
     return TickReport(
         tuple(work),
         tuple(claimed),

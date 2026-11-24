@@ -219,7 +219,7 @@ def _consent_steps(config: OpsConfig, root: Path) -> list[str]:
     if not under(root, issuer.key).is_file():
         steps.append(door(config, 'consent', 'keygen'))
     if not under(root, issuer.totp).is_file():
-        steps.append(door(config, 'consent', 'enrol'))
+        steps.append(door(config, 'consent', 'enroll'))
     return steps
 
 
@@ -252,7 +252,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                   'sshd -t && systemctl reload ssh']  # fmt: skip
         if access is not None and access.needs_secret:
             steps.append(
-                f'{door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
+                f'{door(config, "access", "enroll")}  (first-ever; a phone already holding the host '
                 f'secret: {door(config, "access", "adopt", "--secret-file", "-")})'
             )
     if (role := config.supervise) is not None:

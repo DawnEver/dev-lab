@@ -64,7 +64,7 @@ def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, *, declare
     (tmp_path / 't' / 'one.test.mjs').write_text(body, 'utf-8')
     command = ('node', '--test', 't/*.test.mjs') if declared else None
     (tmp_path / 'pyproject.toml').write_text(_pyproject(command), 'utf-8')
-    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     return 't/one.test.mjs'
 
 

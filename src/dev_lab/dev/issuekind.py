@@ -9,7 +9,7 @@ leaves it by itself. Two copies of that fact -- the card and an issue -- was the
 refused by the parser, naming the three. ``python -m dev_lab.dev.issuekind retire-notices [--apply]``
 (:func:`main`) is the ONE migration of the issues written before the ruling: each open issue titled as a
 retired alarm kind (:data:`RETIRED_PREFIXES`) is closed with one comment naming where the event lives now, and
-each open request a host already settled (labelled :data:`~dev_lab.dev.forgerequesthost.DONE_LABEL`, user ruling
+each open request a host already settled (labeled :data:`~dev_lab.dev.forgerequesthost.DONE_LABEL`, user ruling
 2026-11-19: a settled request closes) with :data:`SETTLED`. An unsettled request is a live need and stays open.
 Without ``--apply`` it prints the plan and writes nothing.
 """
@@ -27,7 +27,7 @@ from lab_commons.log import emit
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgelabels import add_label, ensure_labels
 from dev_lab.dev.forgerequesthost import DONE_LABEL
-from dev_lab.dev.forgeschedule import labelled_issues
+from dev_lab.dev.forgeschedule import labeled_issues
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, Issue
@@ -53,7 +53,7 @@ SETTLED: Final = (
 
 
 def create(client: Client, title: str, body: str, kind: str, labels: Sequence[str] = ()) -> Issue:
-    """Open issue *title* labelled ``kind:<kind>`` and each of *labels*, a missing one created first.
+    """Open issue *title* labeled ``kind:<kind>`` and each of *labels*, a missing one created first.
 
     A *kind* outside :data:`KINDS` is refused before any write.
     """
@@ -72,7 +72,7 @@ def retire_notices(client: Client, *, apply: bool) -> list[Issue]:
     """The open issues titled as a retired alarm kind; with *apply*, each is commented and closed."""
     listed = client.issue_list(state='open', limit=1000)
     notices = [one for one in listed if one.title.startswith(RETIRED_PREFIXES)]
-    settled_numbers = {int(raw['number']) for raw in labelled_issues(client, DONE_LABEL)}
+    settled_numbers = {int(raw['number']) for raw in labeled_issues(client, DONE_LABEL)}
     settled = [one for one in listed if one.number in settled_numbers and one not in notices]
     if apply:
         for one, comment in [*((n, MOVED) for n in notices), *((n, SETTLED) for n in settled)]:

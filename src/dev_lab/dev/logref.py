@@ -175,7 +175,7 @@ def verify_log(path: Path) -> Citation:
     and stops has believed a line a text editor could have written.
 
     Raises:
-        UnverifiableLog: no stamp, an unparseable one, or a digest that disagrees with the log.
+        UnverifiableLog: no stamp, an unparsable one, or a digest that disagrees with the log.
 
     """
     raw = _read(path)

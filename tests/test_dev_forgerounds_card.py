@@ -33,7 +33,7 @@ def _rounds(tmp_path: Path, runs: list[forgerunstate.Run]) -> forgerounds.Rounds
         sized=lambda _needs: pytest.fail('no round runs here'), supplied=lambda _held: pytest.fail('no round'),
         holding=lambda: (), ticking={}, carding={}, produce=lambda *_a, **_k: pytest.fail('nothing is produced'),
     )  # fmt: skip
-    built.latest.update(ticked=SimpleNamespace(queue=(), artefacts=''), supply=None, held=(), box=None)
+    built.latest.update(ticked=SimpleNamespace(queue=(), artifacts=''), supply=None, held=(), box=None)
     return built
 
 

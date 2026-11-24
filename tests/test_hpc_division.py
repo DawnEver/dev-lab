@@ -67,7 +67,7 @@ def test_the_division_is_read_off_the_grants_the_machine_reaches() -> None:
 
 def test_an_unknown_role_key_is_refused() -> None:
     with pytest.raises(ValueError, match='roles'):
-        _division(_hpc(roles={'research': {'serves': False, 'colour': 'red'}}))
+        _division(_hpc(roles={'research': {'serves': False, 'color': 'red'}}))
 
 
 def test_the_account_role_must_equal_the_workstations() -> None:

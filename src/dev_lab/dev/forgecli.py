@@ -240,7 +240,7 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
         ('issue', 'create'): lambda: issuekind.create(client, args.title, args.body, args.kind, args.label),
         ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
         ('issue', 'close'): lambda: client.issue_close(args.number),
-        ('issue', 'label'): lambda: _relabelled(client, args),
+        ('issue', 'label'): lambda: _relabeled(client, args),
         ('pr', 'create'): lambda: client.pr_create(
             args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
@@ -250,7 +250,7 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
     return verbs[args.noun, args.verb]()
 
 
-def _relabelled(client: Client, args: argparse.Namespace) -> Issue:
+def _relabeled(client: Client, args: argparse.Namespace) -> Issue:
     """Relabel issue *args.number* (:func:`~dev_lab.dev.forgelabels.relabel`) and show it as it now stands."""
     relabel(client, args.number, add=args.add, remove=args.remove)
     return client.issue_view(args.number)

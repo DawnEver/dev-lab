@@ -1,6 +1,6 @@
 """``dev_lab.dev.liverun`` -- a checkout whose run is live refuses edits, merges and re-syncs; an idle one does not.
 
-TWO KINDS OF CONTROL. The judgement (which process is a run of which tree, what is the tree) is driven over a
+TWO KINDS OF CONTROL. The judgment (which process is a run of which tree, what is the tree) is driven over a
 PLANTED census, both directions, at full speed. Then the whole chain is driven for real once: a real venv in
 a throwaway checkout, a real sleeper executing from it, the real census, the real JS engine and the real
 Edit hook -- refusing while the sleeper lives and naming its pid, silent for an idle checkout.
@@ -410,7 +410,7 @@ def test_the_real_engine_refuses_a_merge_into_a_live_tree_and_allows_an_idle_one
     assert agenthooks.decide(f'git -C {root.as_posix()} status', rules, cwd=session) is None
 
 
-#: Every row needing a repo artefact, declared absent so the planted adoption renders without remedies.
+#: Every row needing a repo artifact, declared absent so the planted adoption renders without remedies.
 _NEEDING = {rule.id for rule in DENY_RULES if rule.needs is not None}
 
 

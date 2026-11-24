@@ -1,6 +1,6 @@
 r"""`docs-src/dev/` DECLINES A FAMILY-CONFIG BASE, because it is shared by REFERENCE and not by COPY.
 
-WHY THIS MODULE EXISTS. `docs-src/dev/` is the last artefact of the config census with no base at
+WHY THIS MODULE EXISTS. `docs-src/dev/` is the last artifact of the config census with no base at
 all, and its raw line counts -- 13 / 1 / 1 / 14 across kit, consumer-b, consumer-c and the consumer-a
 lane -- read like the largest fork in the family. R6 of
 `.claude/memory/2026/09/17/plan-one-source-of-truth-for-the-family-config-layer.md` dissolved that
@@ -52,7 +52,7 @@ from _config_census_rows import REPO_PATHS
 from _famconfig_delta import DELTAS
 
 from dev_lab.dev.devdocs import CANONICAL_TREE, PAGES, pointer_table, slugs
-from dev_lab.dev.famconfig import BASES, ForkedDelta, artefact_base
+from dev_lab.dev.famconfig import BASES, ForkedDelta, artifact_base
 from dev_lab.dev.famtests.devdocs import COPY_CEILING, copied_fraction
 
 #: The dev index, spelled once. Every repo in the family keeps one and only this one is generated.
@@ -183,24 +183,24 @@ class TestEveryDevIndexIsOneRenderOfOneRegistry:
 class TestNobodyDeclaresABaseWhileTheMeasurementHolds:
     """THE OTHER SIDE. Without it the decline could be made moot instead of re-decided."""
 
-    def test_famconfig_declares_no_artefact_for_this_tree(self) -> None:
-        """Through the kit's OWN lookup, so this cannot disagree with what `artefact_base` would say."""
+    def test_famconfig_declares_no_artifact_for_this_tree(self) -> None:
+        """Through the kit's OWN lookup, so this cannot disagree with what `artifact_base` would say."""
         assert BASES, 'the base table is empty, so this arm would pass against a kit declaring nothing'
-        for artefact in (f'{CANONICAL_TREE}/', INDEX, INDEX_PATH):
-            assert artefact not in BASES, (
-                f'a famconfig Base arrived for {artefact!r}. A base RENDERS a file into every repo, '
+        for artifact in (f'{CANONICAL_TREE}/', INDEX, INDEX_PATH):
+            assert artifact not in BASES, (
+                f'a famconfig Base arrived for {artifact!r}. A base RENDERS a file into every repo, '
                 f'which for this tree means four copies of a document that exists once -- flip '
                 f'`TestTheFamilyPagesExistExactlyOnce` first, with numbers.'
             )
             try:
-                artefact_base(artefact)
+                artifact_base(artifact)
             except ForkedDelta:
                 continue
-            msg = f'artefact_base({artefact!r}) returned a base for a tree nothing declares'
+            msg = f'artifact_base({artifact!r}) returned a base for a tree nothing declares'
             raise AssertionError(msg)
 
     def test_the_kit_declares_no_delta_for_a_dev_doc(self) -> None:
         """A Delta is how adoption is declared here; one appearing without a base is the same claim."""
         assert DELTAS, 'the delta table is empty, so this arm would pass against a repo declaring nothing'
-        for artefact in (f'{CANONICAL_TREE}/', INDEX, INDEX_PATH):
-            assert artefact not in DELTAS, f'a Delta arrived for {artefact!r} while the tree is shared by reference'
+        for artifact in (f'{CANONICAL_TREE}/', INDEX, INDEX_PATH):
+            assert artifact not in DELTAS, f'a Delta arrived for {artifact!r} while the tree is shared by reference'

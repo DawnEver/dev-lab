@@ -45,7 +45,9 @@ from dev_lab.supervise.hostalarms import state_path
 __all__ = ['ESCAPE_ROOTS', 'allowed_roots', 'scan', 'step']
 
 #: Where escaped writes were found (2026-11-03 sweep): the system-drive temp dirs and JMAG's own temp.
+# spelling-off -- a vendor's own directory name
 ESCAPE_ROOTS: Final = ('C:/tmp', 'C:/temp', 'C:/jmtmp', '~/JMAGDesignerTemp', '~/ModellerTemp')
+# spelling-on
 #: The state file beside the host's alarm state: when the census last looked.
 STATE_NAME: Final = 'escapes.json'
 

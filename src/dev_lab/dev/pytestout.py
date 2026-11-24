@@ -4,9 +4,9 @@ WHY THIS IS NOT :mod:`dev_lab.dev.reports`. That module's docstring says it hold
 verify step REPORTED", and its one public entry for this subject,
 :func:`~dev_lab.dev.reports.read_pytest`, answers a
 :class:`~dev_lab.dev.reports.StepReport` whose ``truncated`` set is already a VERDICT-facing
-judgement: a skip ceiling, a shortfall, an exit-code table. A caller that wants a NUMBER -- how many
+judgment: a skip ceiling, a shortfall, an exit-code table. A caller that wants a NUMBER -- how many
 items were collected, what the last summary line said -- had to import an underscore, and importing
-an underscore is not an adoption. So ``reports`` keeps the JUDGEMENT and this module publishes the
+an underscore is not an adoption. So ``reports`` keeps the JUDGMENT and this module publishes the
 READINGS it judges.
 
 MEASURED 2026-09-19 BEFORE IT WAS BUILT, because a kit module with one consumer is a fork wearing a
@@ -82,7 +82,7 @@ _KINDS: Final = 'passed|failed|errors|error|skipped|xfailed|xpassed|deselected'
 _SUMMARY: Final = re.compile(rf'^=*\s*(?P<body>\d+ (?:{_KINDS})[^=\n]*?)\s*=*$', re.MULTILINE)
 
 #: The ``<count> <word>`` pairs INSIDE one summary body. ``errors`` precedes ``error`` in
-#: :data:`_KINDS` so the longer word wins the alternation; both normalise to ``error`` below.
+#: :data:`_KINDS` so the longer word wins the alternation; both normalize to ``error`` below.
 _COUNT: Final = re.compile(rf'(?P<n>\d+) (?P<kind>{_KINDS})')
 
 #: ``collected 307 items``, at the start of its line. xdist never prints it, which is why the reader
@@ -94,7 +94,7 @@ _COLLECTED: Final = re.compile(r'^collected (?P<n>\d+) items?', re.MULTILINE)
 #: its tests with it and xdist reports ``node down``; an ``INTERNALERROR`` aborts collection; a
 #: Windows process-start failure (``0xC0000142``) means the box refused to fork a worker at all; and
 #: a conftest that cannot import makes the suite exit having collected nothing, so the reader cannot
-#: tell "the summary was never printed" from "there was nothing to summarise".
+#: tell "the summary was never printed" from "there was nothing to summarize".
 TRUNCATION_MARKERS: Final[tuple[str, ...]] = (
     'node down',
     'INTERNALERROR',
@@ -197,7 +197,7 @@ def markers_in(text: str) -> tuple[str, ...]:
     """The truncation markers this RUN reported, in :data:`TRUNCATION_MARKERS` order.
 
     The caller gets NAMES -- the thing a reader reports -- and never a pattern to re-apply. An empty
-    tuple means no marker was found and says nothing about whether the run completed; that judgement
+    tuple means no marker was found and says nothing about whether the run completed; that judgment
     needs the summary and the exit code too, and it is not this module's.
     """
     return tuple(marker for marker in TRUNCATION_MARKERS if _marker_is_the_runs_own(marker, text))

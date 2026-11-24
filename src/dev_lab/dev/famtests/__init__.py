@@ -9,7 +9,7 @@ today: one repo's copy of the hook-installation guard asserts a SUPERSET where t
 exact set, which is the count-pin failure in set form, and it has been green in that weaker shape for
 as long as it has existed.
 
-A 98% TWIN WITH A REPO NOUN WELDED INTO ITS CODE IS A SEAM, NOT A MOVE. That judgement is not this
+A 98% TWIN WITH A REPO NOUN WELDED INTO ITS CODE IS A SEAM, NOT A MOVE. That judgment is not this
 package's invention -- it is how the consumers' own rosters judged their copies -- and it decides the
 shape here: every repo-shaped fact arrives as a KEYWORD ARGUMENT WITH NO DEFAULT. ``LAB_CZ_BASE_REF``
 is the worked example the family already paid for: a guessed ``origin/main`` in a repo whose trunk is
@@ -53,12 +53,12 @@ WHAT IS HERE, one module per shared body:
 * :mod:`dev_lab.dev.famtests.visibility` -- what exists only on this box exists for nobody.
 * :mod:`dev_lab.dev.famtests.agentguard` -- the guard is live, and the rule that fires is the
   rule that was meant to.
-* :mod:`dev_lab.dev.famtests.configrender` -- the rendered family artefacts equal base + delta.
+* :mod:`dev_lab.dev.famtests.configrender` -- the rendered family artifacts equal base + delta.
 * :mod:`dev_lab.dev.famtests.famfiles` -- every project-level file is family-managed or owned
   with a reason, and every managed one is rendered; the configrender bodies, composed.
 * :mod:`dev_lab.dev.famtests.boxneeds` -- a body that judges the live checkout or runs ``node``
   declares that need once, and a consumer test calling it must carry the resource marker, so a host
-  lacking it hands the test to the part that has it instead of reding on the host.
+  lacking it hands the test to the part that has it instead of reading on the host.
 * :mod:`dev_lab.dev.famtests.platformskips` -- no test skips on the platform: an OS is a resource
   every host supplies by itself, so the OS marker is the one spelling and a platform skip runs on no host.
 * :mod:`dev_lab.dev.famtests.hostnode` -- no test launches the host's ``node``: JS runs on the locked

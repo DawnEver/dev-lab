@@ -186,8 +186,8 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/storage.py',
         'PLC0415',
-        'from dev_lab.dev.artefactstores import ArtefactRefused, check_rclone_config',
-    ): 'the forge journal and intent writers import storage.output_path, and artefactstores reaches them '
+        'from dev_lab.dev.artifactstores import ArtifactRefused, check_rclone_config',
+    ): 'the forge journal and intent writers import storage.output_path, and artifactstores reaches them '
     'through the forge layer, so a module-scope import here is a cycle; render() is a rare door',
     (
         'src/dev_lab/dev/storage.py',
@@ -336,7 +336,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'src/dev_lab/dev/forgemergeready.py',
         'BLE001',
         'except Exception as error:',
-    ): 'the merge tick judges every open PR in turn; one PR whose judgement raises (a git timeout, a forge '
+    ): 'the merge tick judges every open PR in turn; one PR whose judgment raises (a git timeout, a forge '
     'call, a corrupt tree) is an error status on that PR and must not end the tick for the PRs after it',
     (
         'src/dev_lab/dev/forgemergeready.py',
@@ -745,12 +745,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'src/dev_lab/dev/writeroots.py',
         'S108',
         "if text == '/tmp' or text.startswith('/tmp/'):",
-    ): "Git Bash's /tmp spelling is recognised to translate it, never written to",
+    ): "Git Bash's /tmp spelling is recognized to translate it, never written to",
     (
         'tests/test_dev_frozen.py',
         'S607',
         "subprocess.run(['git', *args], cwd=root, check=True, capture_output=True)",
-    ): "a fixture repo's git on PATH, as every git-initialised fixture here",
+    ): "a fixture repo's git on PATH, as every git-initialized fixture here",
     (
         'tests/test_dev_frozen.py',
         'arg-type',

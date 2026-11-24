@@ -180,7 +180,7 @@ def test_an_exemption_that_names_nothing_is_the_waiver_side_of_the_ratchet(tmp_p
         assert_no_constant_is_a_count_pin(scan, floor=1, headroom=10)
 
 
-def test_an_unparseable_module_raises_rather_than_being_skipped(tmp_path: Path) -> None:
+def test_an_unparsable_module_raises_rather_than_being_skipped(tmp_path: Path) -> None:
     """A skipped file is a corpus silently lost; the floor cannot see one file going missing."""
     directory = tmp_path / 'tests'
     directory.mkdir()

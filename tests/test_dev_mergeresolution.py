@@ -148,7 +148,7 @@ def test_every_merge_a_head_adds_is_judged_and_only_the_undeclared_ones_are_name
     assert mergeresolution.unresolved(conflicting, 'HEAD', 'HEAD') == ()
 
 
-def test_a_retired_branchs_own_merge_is_its_history_and_the_retire_is_still_judged(conflicting: Path) -> None:
+def test_a_retired_branches_own_merge_is_its_history_and_the_retire_is_still_judged(conflicting: Path) -> None:
     """A retired branch's own undeclared merge is exempt; the retire merge and a normal head are still judged.
 
     A retire (``-s ours``) must keep the retired head's sha, so a merge INSIDE that branch cannot be redone. The

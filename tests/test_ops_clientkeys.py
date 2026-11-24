@@ -1,6 +1,6 @@
 """Client keys are DERIVED: a server's approval accounts accept every development machine's declared key, no hand list.
 
-Measured 2026-11-20: a workstation's key was not authorised for breakglass@/consent@ because the server file listed
+Measured 2026-11-20: a workstation's key was not authorized for breakglass@/consent@ because the server file listed
 the keys by hand and nobody added it. Now each machine declares ``[dev] client_keys`` once in its own host file, and
 the server's fetch derives ``[ops.clients]`` from the same reviewed clone.
 """
@@ -42,11 +42,11 @@ def test_every_development_machines_declared_key_is_derived_once_in_name_order()
     assert clientkeys.derive({name: FILES[name] for name in ('nokey.toml', 'ada-user.toml', 'forge.toml')}) == ()
 
 
-#: A private-key ARMOUR line, joined at runtime so the source holds no secret-shaped literal for a scanner to flag.
-PRIVATE_ARMOUR = '-----BEGIN OPENSSH ' + 'PRIVATE KEY-----'
+#: A private-key ARMOR line, joined at runtime so the source holds no secret-shaped literal for a scanner to flag.
+PRIVATE_ARMOR = '-----BEGIN OPENSSH ' + 'PRIVATE KEY-----'
 
 
-@pytest.mark.parametrize('bad', [PRIVATE_ARMOUR, '', 'ssh-ed25519', 'AAAA dev@x'])
+@pytest.mark.parametrize('bad', [PRIVATE_ARMOR, '', 'ssh-ed25519', 'AAAA dev@x'])
 def test_a_malformed_key_is_refused_naming_its_file(bad: str) -> None:
     with pytest.raises(ValueError, match=r'ws\.toml \[dev\] client_keys\[0\]'):
         clientkeys.derive({'ws.toml': f'[dev]\nclient_keys = ["{bad}"]\n'})

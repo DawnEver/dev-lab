@@ -13,7 +13,7 @@ THREE PARTS, AND ALL THREE MUST BE LIVE. Any one of them missing makes the other
 each fails in its own way, so each is reported by name rather than collapsed into one boolean:
 
 ``engine``   ``.claude/hooks/deny-commands.js`` -- installed from :mod:`dev_lab.dev.agenthooks`
-             and recognised by its stamp, so a drifted copy is a finding rather than a fork.
+             and recognized by its stamp, so a drifted copy is a finding rather than a fork.
 ``rules``    ``.claude/hooks/deny-rules.json`` -- the repo's OWN rendered declaration. This module
              never writes it: which rules a repo can honestly ship is
              :mod:`dev_lab.dev.hook_adoption`'s question, answered from that repo's remedies, and
@@ -192,7 +192,7 @@ def _stamp_block(text: str) -> tuple[str, ...]:
 def _without_stamp(text: str) -> str:
     """*text* with its provenance block removed.
 
-    How an UNSTAMPED copy is recognised as the same engine. It is the difference between "somebody
+    How an UNSTAMPED copy is recognized as the same engine. It is the difference between "somebody
     wrote their own engine here" and "this copy predates the shipped payload", and those two need
     different remedies.
     """

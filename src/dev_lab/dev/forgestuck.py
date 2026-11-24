@@ -205,7 +205,7 @@ def read_tasks(
 
 
 def _still_silent(shell: Runner, task: Task) -> bool:
-    """Re-read *task*'s stream clock just before a cancel: a line written since the judgement spares it."""
+    """Re-read *task*'s stream clock just before a cancel: a line written since the judgment spares it."""
     lines = shell(f'date +%s; stat -c %Y {task.streams} 2>/dev/null || true', None).split()
     now, newest = float(lines[0]), _newest(' '.join(lines[1:]))
     return not newest or now - newest > task.limit.seconds

@@ -8,7 +8,7 @@ source in this package. The base grew the family-mandated lines (`_famconfig_row
 that made it cover this tree: `**/__version__.py` (which reaches the hatch-vcs file
 `src/lab_commons/__version__.py`), `/build/`, `/dist/` and the ordered Claude project-state section, which
 covers `.claude/worktrees/`. What stays is ONE line, `*.py[cod]` -- a compiled file OUTSIDE a `__pycache__/`,
-which no consumer ignores and this repo always has. :data:`DELTAS` now holds all three artefacts, so
+which no consumer ignores and this repo always has. :data:`DELTAS` now holds all three artifacts, so
 the completeness arm runs here too.
 """
 
@@ -35,12 +35,12 @@ REPO: Final = 'lab-commons'
 GITIGNORE: Final = '.gitignore'
 GITIGNORE_DELTA: Final = Delta(repo=REPO, added=('*.py[cod]',), dropped={}, ceiling=1)
 
-#: `.gitattributes` is the base and nothing else: since 2026-11-24 the base normalises the
+#: `.gitattributes` is the base and nothing else: since 2026-11-24 the base normalizes the
 #: whole repo, so nothing is left for a delta.
 GITATTRIBUTES: Final = '.gitattributes'
 GITATTRIBUTES_DELTA: Final = Delta(repo=REPO, added=(), dropped={}, ceiling=0)
 
-#: Every artefact this repo declares a delta against -- every one of the kit's bases.
+#: Every artifact this repo declares a delta against -- every one of the kit's bases.
 DELTAS: Final[dict[str, Delta]] = {
     GITIGNORE: GITIGNORE_DELTA,
     GITATTRIBUTES: GITATTRIBUTES_DELTA,

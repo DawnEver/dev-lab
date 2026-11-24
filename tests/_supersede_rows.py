@@ -62,7 +62,7 @@ NAMED_ONLY -> PARTIAL against `density`, and `tests/architecture/gate/test_an_em
 not_win_the_interpreter.py` UNTOUCHED -> CONSULTS against the githooks venv resolver (since retired), the
 same defect in the OTHER sub-package. NO ROW HELD HERE MOVES: these fifteen were captured from `scripts/`
 and from one consumer-c test, none of which adopts a sub-package module in the deep form. That is the
-re-measurement, not a re-labelling, and a row that did not move is not thereby certified fresh.
+re-measurement, not a re-labeling, and a row that did not move is not thereby certified fresh.
 
 WHY THE ROW WENT STALE THE DAY IT WAS WRITTEN, which is the half worth more than the row. Its
 `public` field recorded a MOMENT in another repo, and nothing here can see that repo, so the drift

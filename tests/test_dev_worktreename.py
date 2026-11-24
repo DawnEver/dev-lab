@@ -44,7 +44,7 @@ def test_a_name_with_a_meaning_is_not(name: str) -> None:
 
 @pytest.fixture(scope='module')
 def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """The universal rows only -- this row needs no repo artefact, so an empty adoption ships it."""
+    """The universal rows only -- this row needs no repo artifact, so an empty adoption ships it."""
     path = tmp_path_factory.mktemp('rules') / 'deny-rules.json'
     path.write_text(render(HookAdoption(app_name='suite', remedies={})), encoding='utf-8')
     return path

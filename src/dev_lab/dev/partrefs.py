@@ -1,6 +1,6 @@
 """The REFS a part is produced under: ``[tool.dev_lab.parts.refs.<resource>]``, per resource and scope.
 
-A scarce resource (a vendor licence, a lab box) may limit the refs its parts are produced for: under each
+A scarce resource (a vendor license, a lab box) may limit the refs its parts are produced for: under each
 resource the part's need-set holds, a scope key lists the fnmatch patterns a ref must match, e.g.::
 
     [tool.dev_lab.parts.refs.jmag]

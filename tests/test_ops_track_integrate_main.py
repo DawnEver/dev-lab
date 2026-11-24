@@ -17,6 +17,6 @@ def test_a_release_is_fetched_from_the_integration_branch_by_default() -> None:
     assert inspect.signature(fetch).parameters['branch'].default == INTEGRATION_REF
 
 
-def test_a_declared_ref_is_still_honoured() -> None:
+def test_a_declared_ref_is_still_honored() -> None:
     """PLANTED CONTROL: a host that names another ref gets it."""
     assert Upgrade(source='https://example.invalid/dev-lab.git', ref='release').ref == 'release'

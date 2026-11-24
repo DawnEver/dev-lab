@@ -1,4 +1,4 @@
-"""AN EXPLICITLY USER-APPROVED CONTROLLER, STOPPED BY EXACT IDENTITY -- not by a recognised signature.
+"""AN EXPLICITLY USER-APPROVED CONTROLLER, STOPPED BY EXACT IDENTITY -- not by a recognized signature.
 
 Split from :mod:`dev_lab.dev.stoprun` (2026-11-15, module-size band); reached through its
 ``--approved-created --approved-command-sha256 --approved-user-words`` arguments. It stops the verified

@@ -119,7 +119,7 @@ def test_a_positional_tolerance_is_read_as_the_keyword_it_is(source: str, *, nam
 # -- THE POPULATIONS: the two floors refuse two different silences. ---------------------------------
 
 
-def test_an_unparseable_file_is_refused_rather_than_counted_as_read(tmp_path: Path) -> None:
+def test_an_unparsable_file_is_refused_rather_than_counted_as_read(tmp_path: Path) -> None:
     """Keep the valid-member count controls, but refuse an incomplete declared corpus instead of skipping."""
     _plant(tmp_path, 'test_broken.py', 'def (\n')
     good = _plant(tmp_path, 'test_ok.py', 'from pytest import approx; a = v == approx(1.0, rel=1e-9, abs=0.0)\n')

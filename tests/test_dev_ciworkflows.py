@@ -1079,7 +1079,7 @@ def test_the_gitea_review_checks_out_only_the_root_files(tmp_path: Path) -> None
 
     Measured 2026-11-01, consumer #5397: in the blobless clone a full ``git checkout`` lazily fetched every blob of
     the head tree -- a ``pack-objects`` on the 1.6 GB forge host running 10+ minutes at 314 MiB. A cone sparse
-    checkout with no directories materialises the root files alone.
+    checkout with no directories materializes the root files alone.
     """
     steps = _gitea_review(tmp_path)['jobs']['review']['steps']
     run = next(s for s in steps if s.get('name') == 'Fetch the head')['run']

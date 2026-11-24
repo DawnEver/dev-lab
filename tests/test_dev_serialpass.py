@@ -59,7 +59,7 @@ def _ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, marked: bool) ->
         encoding='utf-8',
     )
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
-    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     verdict = verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
     return sorted(ledger.read_text(encoding='utf-8').splitlines()), verdict.result.outcome
 
@@ -119,7 +119,7 @@ def test_real_serial_and_parallel_failures_keep_their_whole_legal_parameter_iden
         encoding='utf-8',
     )
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
-    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     verdict = verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
     assert verdict.result.outcome is Conclusion.FAIL, verdict.result
     assert set(verdict.result.failures) == {
@@ -140,7 +140,7 @@ def test_real_nonstrict_xpass_is_a_recorded_failure_even_when_pytest_exits_zero(
         '[tool.dev_lab.parts]\noutput = "out/logs"\n[tool.pytest.ini_options]\n', encoding='utf-8'
     )
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
-    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     verdict = verifysteps.run_verify(tmp_path, ('test_planted.py',), hooks=False)
     assert verdict.result.outcome is Conclusion.FAIL, verdict.result
     assert verdict.result.failures == ('test_planted.py::test_expected_to_reject',)
@@ -171,7 +171,7 @@ def test_real_whitespace_skip_identity_keeps_the_exact_allowance_and_semantic_ce
         encoding='utf-8',
     )
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
-    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     verdict = verifysteps.run_verify(tmp_path, hooks=False)
     expected = Conclusion.PASS if case == 'allowed-not-applicable' else Conclusion.INCONCLUSIVE
     assert verdict.result.outcome is expected, verdict.result

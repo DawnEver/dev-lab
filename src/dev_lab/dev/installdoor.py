@@ -397,7 +397,7 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
             f'read {len(doors)} installer commands from {len(paths)} declared door files, below the '
             f'floor of {floor}. Finding no reverting door in a set that was not read is vacuous. '
             f'Either a door file was renamed -- repoint the declared paths -- or the scan stopped '
-            f'recognising a command, which is a defect in this scan and not a clean tree.'
+            f'recognizing a command, which is a defect in this scan and not a clean tree.'
         )
         raise VacuousDoorScanError(msg)
     stale = unlocked(doors)

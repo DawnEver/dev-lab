@@ -2,7 +2,7 @@
 
 Migrated 2026-09-17 from a consumer's ``scripts/repo/_symbol_coverage.py``. It moves whole: every
 sentence below is about ``ast``, ``pathlib`` and arithmetic, and not one of them is about any
-repository. What stays behind is the JUDGEMENT -- which two trees, which subpath of a checkout is
+repository. What stays behind is the JUDGMENT -- which two trees, which subpath of a checkout is
 the library, how a tree divides into modules, and which absent names were never going to migrate.
 Those are facts about one migration; walking two trees and counting which public definitions of the
 first also exist in the second is true of any pair of Python trees.
@@ -43,7 +43,7 @@ the original that floor lived in the CALLER, as an ``if not coverage.counted`` g
 happened to write, which means any second caller reports ``0 of 0 = 100%`` over a tree that moved.
 The floor is a REQUIRED KEYWORD with no default, because how many public symbols a tree ought to
 hold is a fact about that tree and a default would hand every tree one tree's answer. A floor of
-``0`` is REFUSED rather than honoured: it is the vacuity written down, not a decision to permit it.
+``0`` is REFUSED rather than honored: it is the vacuity written down, not a decision to permit it.
 
 An EMPTY TARGET is refused too, and it is a structural refusal rather than a threshold: every name
 is absent against an empty universe, and that result says nothing about either tree.

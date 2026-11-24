@@ -106,7 +106,7 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-11-16 AT 580 (the toolchain wave: hookdispatch, backgroundrun, venv_resolver, codexdeny,
 #: hpcaccount drift/declaration, the cicron and subagent-heavy rows): floor 555.
 #: RE-TAKEN 2026-11-17 AT 596 (the 11-17 wave: repostate, hostedparts, deletejudge, pushdelete): floor 571.
-#: RE-TAKEN 2026-11-19 AT 617 (the L3 refs: artefactfolder, artefactindex, artefactrestore, artefactstores): floor 592.
+#: RE-TAKEN 2026-11-19 AT 617 (the L3 refs: artifactfolder, artifactindex, artifactrestore, artifactstores): floor 592.
 #: RE-TAKEN 2026-11-20 AT 631 (the 11-19 wave: roles, branch policy, storage roots, door doors): floor 606.
 #: RE-TAKEN 2026-11-21 AT 656 (the 11-20 wave: ask, bringup, outputcode, a ledger carrier, size bands): floor 631.
 #: RE-TAKEN 2026-11-23 AT 675 (the 11-21..23 wave: tickholder, tickwall, tickstop, look, largeobjects, msyspath):
@@ -172,7 +172,7 @@ def test_both_platform_branches_resolve_on_whichever_box_runs_this(os_name: str)
     """
     resolved = venv_interpreter(os_name=os_name)
     assert resolved == '/'.join(VENV_LAYOUTS[os_name])
-    assert '\\' not in resolved, 'a tracked artefact carries POSIX separators on both platforms'
+    assert '\\' not in resolved, 'a tracked artifact carries POSIX separators on both platforms'
     assert tuple(resolved.split('/')) in CANDIDATE_RELATIVE_PATHS
 
 
@@ -251,7 +251,7 @@ def test_the_resolved_interpreter_is_a_file_that_exists_on_this_box() -> None:
         ('git push --force', 'git push --force'),
     ],
 )
-def test_portable_normalises_every_spelling_and_leaves_the_rest_alone(command: str, expected: str) -> None:
+def test_portable_normalizes_every_spelling_and_leaves_the_rest_alone(command: str, expected: str) -> None:
     """Both layouts and both separators converge; a command naming no interpreter is untouched."""
     assert portable(command) == expected
 
@@ -283,7 +283,7 @@ def test_a_code_site_and_a_recipe_site_are_told_apart() -> None:
     assert isinstance(code[0], Spelling)
 
 
-def test_an_unparseable_file_yields_nothing_rather_than_stopping_the_walk() -> None:
+def test_an_unparsable_file_yields_nothing_rather_than_stopping_the_walk() -> None:
     """A fixture that does not parse is another guard's business, not a reason this one cannot read."""
     assert scannable_text('def (:\n') == ()
 

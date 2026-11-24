@@ -1,7 +1,7 @@
 """``devhost bringup --check``: every wall a new or migrated workstation hits, each with its door, before any code.
 
 Measured on a workstation 2026-11-20, in order: no bridge interpreter (drift crashed), no issuer host key, the
-machine's key not authorised on the issuer, an issuer too old to handshake. Each wall here is planted red and green.
+machine's key not authorized on the issuer, an issuer too old to handshake. Each wall here is planted red and green.
 """
 
 from __future__ import annotations
@@ -55,17 +55,17 @@ def test_a_ready_workstation_is_green_on_every_wall(tmp_path: Path, capsys: pyte
     found = _walls(tmp_path, _machine(tmp_path))
     assert [name for name, wall in found.items() if not wall.green] == []
     assert list(found) == [
-        'config-source', 'enrolment', 'bridge-interpreter', 'dev-lab-kit', 'machine-file', 'client-key', 'issuer',
+        'config-source', 'enrollment', 'bridge-interpreter', 'dev-lab-kit', 'machine-file', 'client-key', 'issuer',
         'forge-credential',
     ]  # fmt: skip
     assert bringup.report(found.values()) == 0
     assert 'bringup: GREEN' in capsys.readouterr().out
 
 
-def test_an_undeclared_machine_stops_at_enrolment_naming_its_door(tmp_path: Path) -> None:
+def test_an_undeclared_machine_stops_at_enrollment_naming_its_door(tmp_path: Path) -> None:
     found = _walls(tmp_path, _machine(tmp_path, declared=False))
-    assert not found['enrolment'].green
-    assert 'declare hosts/ws.toml' in found['enrolment'].said
+    assert not found['enrollment'].green
+    assert 'declare hosts/ws.toml' in found['enrollment'].said
 
 
 def test_the_bridge_interpreter_is_derived_and_must_exist(tmp_path: Path) -> None:
@@ -97,7 +97,7 @@ def test_an_undeclared_client_key_names_the_host_file_line(tmp_path: Path) -> No
 def test_each_issuer_wall_is_told_apart_and_names_its_door(
     tmp_path: Path, answer: tuple[int, str], said: str, code: str
 ) -> None:
-    """One ``hello`` tells host key, authorisation, reach and version apart; only authorisation spends a code."""
+    """One ``hello`` tells host key, authorization, reach and version apart; only authorization spends a code."""
     found = _walls(tmp_path, _machine(tmp_path), send=lambda _t, _r: answer)['issuer']
     assert not found.green
     assert said in found.said
@@ -111,7 +111,7 @@ def test_a_declared_unadmitted_key_names_the_admit_door_runnable_from_any_admitt
     assert 'declared but not yet admitted' in found.said
     assert 'devhost admit --host ws' in found.said
     assert 'ANY machine the issuer already admits' in found.said
-    assert found.said.index('devhost admit') < found.said.index('devhost enrol')
+    assert found.said.index('devhost admit') < found.said.index('devhost enroll')
     assert 'forge host' not in found.said
     assert 'install' not in found.said
     undeclared = _walls(tmp_path / 'b', _machine(tmp_path / 'b', keyed=False), send=lambda _t, _r: denied)['issuer']

@@ -34,7 +34,7 @@ REVIEW_DUE_SAID: Final = '; review due'
 #: no workflow for an event its Actions user raised, so the decision run by a serve (its own login) applies it.
 REVIEW_LABEL: Final = 'review-due'
 
-#: The label's colour when the decision creates it on a repo that lacks it.
+#: The label's color when the decision creates it on a repo that lacks it.
 _LABEL_COLOR: Final = '#0e8a16'
 
 

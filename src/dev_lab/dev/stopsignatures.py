@@ -1,9 +1,9 @@
-"""WHAT THE STOP DOOR RECOGNISES: the built-in run signatures, a repo's declared ones, and proven orphans.
+"""WHAT THE STOP DOOR RECOGNIZES: the built-in run signatures, a repo's declared ones, and proven orphans.
 
 Split from :mod:`dev_lab.dev.stoprun` (2026-11-15, module-size band). The declarations are DATA in the
 repo's ``pyproject.toml`` (``[tool.dev_lab.stoprun] signatures`` / ``orphans``); a value that is not a
 list of valid regex strings raises :class:`SignaturesNotDeclared`. An orphaned multiprocessing worker
-is PROVEN from the table (:func:`orphaned_worker`), never recognised from its command line's shape.
+is PROVEN from the table (:func:`orphaned_worker`), never recognized from its command line's shape.
 """
 
 from __future__ import annotations

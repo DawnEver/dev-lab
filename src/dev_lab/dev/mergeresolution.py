@@ -82,7 +82,7 @@ GROUNDS: Final[dict[str, tuple[str, ...]]] = {
     'simpler-side': ('occams-razor',),
     'one-source': ('single-source-of-truth',),
     'deleted-as-baggage': ('no-historical-baggage', 'no-backward-compatibility'),
-    'renamed-to-reality': ('names-match-behaviour',),
+    'renamed-to-reality': ('names-match-behavior',),
     'both-needed': ('first-principles',),
     'kept-capability': ('keep-valuable-options',),
 }
@@ -224,7 +224,7 @@ def _retired_history(root: Path, base: str, merges: Sequence[tuple[str, Sequence
 
     A retire (``-s ours``) keeps its first parent's tree whole, so its second parent's commits reach the head as
     the retired branch's own past -- including any merge that branch made, whose message this PR cannot redo
-    without dropping the very sha the retire exists to contain. Recognised by CONTENT (tree equal to the first
+    without dropping the very sha the retire exists to contain. Recognized by CONTENT (tree equal to the first
     parent's), never by message; the retire merge itself is still judged like any other.
     """
     exempt: set[str] = set()

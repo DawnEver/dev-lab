@@ -17,7 +17,7 @@ WHY IT IS A SEPARATE MODULE FROM `test_the_config_census_is_measured.py`, which 
 four files. The census asks WHAT IS TRUE of the family today and records numbers; this asks whether
 each repo's table is what the live base and that repo's DECLARATION produce, and its remedy is an
 edit to a declaration rather than a re-measurement. The two answer different questions about one
-artefact, which is the same reason the Makefile contract and the pre-commit rendering are two files.
+artifact, which is the same reason the Makefile contract and the pre-commit rendering are two files.
 
 THE CONSUMER_A ROW IS THE ONE THAT MAKES THE `prefix` RULE NON-VACUOUS. Three repos keep these tables
 in ``pyproject.toml`` and that repo keeps them in ``ruff.toml``, where they lose the ``tool.ruff``
@@ -59,11 +59,11 @@ SELECT: Final = 'select'
 
 #: Every owned table, in the spelling a reader writes it in. Read off the live registry rather than
 #: restated, so a row added there arrives here and cannot be judged by a list that stayed behind.
-ARTEFACTS = tuple(sorted(RUFF_SECTIONS))
+ARTIFACTS = tuple(sorted(RUFF_SECTIONS))
 
 #: The scan's floor, stated as the PRODUCT rather than as an integer: a run that lost a repo and a
 #: run that lost a table are different failures, and a bare count cannot tell them apart.
-CELL_FLOOR = len(REPOS) * len(ARTEFACTS)
+CELL_FLOOR = len(REPOS) * len(ARTIFACTS)
 
 #: The one selector the DROP controls bend. It is a whole group every repo takes and no repo waives,
 #: so removing it is a real capability loss rather than a code that was already dead.
@@ -82,10 +82,10 @@ def kit_tables(root: Path) -> dict[str, dict[str, object]]:
     having. The controls below bend THIS, which is why the unedited round trip has to be OWNED first.
     """
     document = tomllib.loads(ruff_config_path(root).read_text(encoding='utf-8'))
-    found = {artefact: locate_section(document, base) or {} for artefact, base in RUFF_SECTIONS.items()}
+    found = {artifact: locate_section(document, base) or {} for artifact, base in RUFF_SECTIONS.items()}
     return {
-        artefact: {key: table[key] for key in RUFF_SECTIONS[artefact].owned_keys if key in table}
-        for artefact, table in found.items()
+        artifact: {key: table[key] for key in RUFF_SECTIONS[artifact].owned_keys if key in table}
+        for artifact, table in found.items()
     }
 
 
@@ -99,16 +99,16 @@ def plant(path: Path, tables: Mapping[str, Mapping[str, object]]) -> Path:
     emitter cannot fail that way, and the floor each control asserts first -- the UNEDITED emission
     is OWNED -- is what proves the emission is faithful for every key the base owns.
 
-    TABLES GO OUT PARENT FIRST, which is the second thing that bit: sorting the artefact SPELLINGS
+    TABLES GO OUT PARENT FIRST, which is the second thing that bit: sorting the artifact SPELLINGS
     puts ``[tool.ruff.lint]`` before ``[tool.ruff]`` (a dot sorts under a bracket), and TOML refuses a
     parent re-opened after its child. The order is taken from the base's dotted path length, so it is
     a property of the table rather than of how a reader writes its name.
     """
-    ordered = sorted(tables, key=lambda artefact: (len(RUFF_SECTIONS[artefact].table), artefact))
+    ordered = sorted(tables, key=lambda artifact: (len(RUFF_SECTIONS[artifact].table), artifact))
     lines: list[str] = []
-    for artefact in ordered:
-        lines.append(artefact)
-        lines += [f'{key} = {json.dumps(value)}' for key, value in sorted(tables[artefact].items())]
+    for artifact in ordered:
+        lines.append(artifact)
+        lines += [f'{key} = {json.dumps(value)}' for key, value in sorted(tables[artifact].items())]
         lines.append('')
     path.write_text('\n'.join(lines), encoding='utf-8')
     return path
@@ -119,9 +119,9 @@ def plant(path: Path, tables: Mapping[str, Mapping[str, object]]) -> Path:
 
 def test_every_repo_and_table_has_a_declaration_and_none_invents_one() -> None:
     """COMPLETENESS, BOTH SIDES. A missing delta leaves a table unjudged; an extra one names nothing."""
-    expected = {f'{repo}::{artefact}' for repo in REPOS for artefact in ARTEFACTS}
-    live = {f'{repo}::{artefact}' for repo, table in SECTION_DELTAS.items() for artefact in table}
-    assert len(expected) == CELL_FLOOR, f'{len(expected)} cells against {len(REPOS)} repos x {len(ARTEFACTS)} tables'
+    expected = {f'{repo}::{artifact}' for repo in REPOS for artifact in ARTIFACTS}
+    live = {f'{repo}::{artifact}' for repo, table in SECTION_DELTAS.items() for artifact in table}
+    assert len(expected) == CELL_FLOOR, f'{len(expected)} cells against {len(REPOS)} repos x {len(ARTIFACTS)} tables'
     assert live == expected, (
         f'undeclared: {sorted(expected - live)}; invented: {sorted(live - expected)}. A table with no '
         f'declaration is not judged, and a declaration for a table the base does not own judges nothing.'
@@ -134,10 +134,10 @@ def test_no_declared_delta_is_a_fork_of_the_base_it_declares_against() -> None:
     `section_problems` binds the base's key floor itself, so an empty base cannot make this pass.
     """
     for repo, table in sorted(SECTION_DELTAS.items()):
-        for artefact, delta in sorted(table.items()):
-            base = section_base(artefact)
-            assert len(base.owned_keys) >= SECTION_KEY_FLOOR, f'{artefact} owns no key; every arm below just went thin'
-            assert delta.repo == repo, f'{repo}::{artefact} declares itself as {delta.repo!r}'
+        for artifact, delta in sorted(table.items()):
+            base = section_base(artifact)
+            assert len(base.owned_keys) >= SECTION_KEY_FLOOR, f'{artifact} owns no key; every arm below just went thin'
+            assert delta.repo == repo, f'{repo}::{artifact} declares itself as {delta.repo!r}'
             assert section_problems(base, delta) == (), section_problems(base, delta)
 
 
@@ -145,10 +145,10 @@ def test_every_ceiling_is_its_measurement_and_no_delta_carries_headroom() -> Non
     """THE RATCHET'S OTHER SIDE. Headroom nobody chose is how a waiver list stops being a delta."""
     measured = {'lab-commons': 0, 'consumer-b': 53, 'consumer-c': 52, 'consumer-a': 56}
     for repo, table in sorted(SECTION_DELTAS.items()):
-        for artefact, delta in sorted(table.items()):
+        for artifact, delta in sorted(table.items()):
             added = sum(len(entries) for entries in delta.added.values())
             assert added == delta.ceiling, (
-                f'{repo}::{artefact} adds {added} entries against a ceiling of {delta.ceiling}. The '
+                f'{repo}::{artifact} adds {added} entries against a ceiling of {delta.ceiling}. The '
                 f'ceiling was set AT the measurement, so an entry added here raises it in the same '
                 f'edit and says what it is for, and an entry removed lowers it.'
             )
@@ -169,14 +169,14 @@ def test_every_reached_repo_owns_every_table_the_base_declares() -> None:
     verdicts: dict[str, str] = {}
     for repo, root in sorted(reached.items()):
         config = ruff_config_path(root)
-        for artefact in ARTEFACTS:
-            report = inspect_section(config, section_base(artefact), SECTION_DELTAS[repo][artefact])
-            verdicts[f'{repo}::{artefact}'] = report.status
+        for artifact in ARTIFACTS:
+            report = inspect_section(config, section_base(artifact), SECTION_DELTAS[repo][artifact])
+            verdicts[f'{repo}::{artifact}'] = report.status
             assert report.ok, (
-                f'{repo}::{artefact} in {config.name} is {report.status}: {report.detail} {report.offending}'
+                f'{repo}::{artifact} in {config.name} is {report.status}: {report.detail} {report.offending}'
             )
-    assert len(verdicts) == len(reached) * len(ARTEFACTS), (
-        f'{len(verdicts)} cells judged over {len(reached)} reached repo(s) x {len(ARTEFACTS)} '
+    assert len(verdicts) == len(reached) * len(ARTIFACTS), (
+        f'{len(verdicts)} cells judged over {len(reached)} reached repo(s) x {len(ARTIFACTS)} '
         f'table(s); not checked out here and therefore unjudged: {absent}'
     )
     assert set(verdicts.values()) == {OWNED}, sorted(verdicts.items())

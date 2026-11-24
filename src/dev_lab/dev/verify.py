@@ -13,7 +13,7 @@ declares is not installed.
 
 THE POLARITY IS INHERITED, NOT RE-DECIDED. A run starts INCONCLUSIVE and is PROMOTED only on
 proof. The measured case that motivates it is in that module's own docstring, and the parser that
-catches it lives in :mod:`dev_lab.dev.reports` -- which is where every judgement about what a
+catches it lives in :mod:`dev_lab.dev.reports` -- which is where every judgment about what a
 step's output MEANS lives, so that this module can be about processes, logs and exit codes and
 nothing else.
 
@@ -164,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog='python -m dev_lab.dev.verify',
-        description='Run ruff check, ruff format --check and pytest, and print a citable verdict.',
+        description='Run ruff check, ruff format --check, typos and pytest, and print a citable verdict.',
         epilog='Exit codes: 0 pass, 1 fail (failures named), 2 refused argv, 3 inconclusive (the run cannot say).',
     )
     parser.add_argument(
@@ -395,6 +395,7 @@ STEP_REMEDIES: Final = {
     HOOKS_STEP: f'no live hook shim in this checkout -- run: {INSTALL_COMMAND}',
     'ruff check .': 'lint findings -- run: ruff check --fix . (then fix what it cannot)',
     'ruff format --check .': 'unformatted files -- run: ruff format .',
+    'typos': 'non-US or misspelled words -- run: python -m dev_lab.dev.spelling --write (then fix what it cannot)',
 }
 
 

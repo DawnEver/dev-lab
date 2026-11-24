@@ -33,7 +33,7 @@ A DRAFT NEVER STALLS SILENTLY -- a session that has not read this rule would not
 
 READY IS EARNED (user ruling 2026-11-07): :func:`mark_ready` refuses, naming which condition failed, unless the
 PR head is CURRENT -- it contains integration's tip and its lock is fresh against the floated siblings' heads
-(:func:`dev_lab.dev.prcurrent.ready_refusals`, the one judgement the pre-push row reads too). There is no override.
+(:func:`dev_lab.dev.prcurrent.ready_refusals`, the one judgment the pre-push row reads too). There is no override.
 The head's test statuses are NOT a condition: a draft runs nothing (D53), so ready is what starts the tests, and the
 merge gate already requires them to pass.
 
@@ -44,7 +44,7 @@ and exits 1 on any refusal or forge/git failure; nothing is swallowed.
 
 READY AT THE RIGHT TIME (user ruling 2026-11-13): ``forge pr create --ready-when-current`` opens the draft with the
 :data:`READY_WHEN` line in its body. The serve's integration step (:func:`ready_when_current`) marks such a draft
-ready on the first tick its head judges current -- the same judgement as the door, so automation never readies
+ready on the first tick its head judges current -- the same judgment as the door, so automation never readies
 what the door would refuse. Deleting the line from the body withdraws the declaration.
 """
 

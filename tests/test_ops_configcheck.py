@@ -72,7 +72,7 @@ def test_check_host_refuses_an_undeclared_table_or_key_by_name(tmp_path: Path, e
 
 def test_a_misspelt_ops_scalar_is_refused_at_load(tmp_path: Path) -> None:
     host = _write(tmp_path, 'h.toml', HOST.replace('[ops]\n', '[ops]\npyhton = "x"\n', 1))
-    with pytest.raises(ValueError, match='pyhton'):
+    with pytest.raises(ValueError, match='python'):
         opsconfig.load(host, environ={}, as_root=False, structure_only=True)
 
 

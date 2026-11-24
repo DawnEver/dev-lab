@@ -159,7 +159,7 @@ def test_forge_watch_with_session_routes_to_the_session_watch(monkeypatch: pytes
 
 @pytest.mark.parametrize('named', ['url', 'key'])
 def test_a_red_is_acknowledged_by_its_pr_url_or_its_key(capsys: pytest.CaptureFixture[str], named: str) -> None:
-    """The URL a red line prints is normalised to the ``<host>/<owner>/<repo>#<number>`` key."""
+    """The URL a red line prints is normalized to the ``<host>/<owner>/<repo>#<number>`` key."""
     forge = StateForge()
     number = _opened(forge, capsys)
     _post(forge, SHA, 'tests/base', 'failure')

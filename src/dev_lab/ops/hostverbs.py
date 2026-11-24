@@ -75,7 +75,7 @@ def _secret(path: str) -> str:
 
 
 def show(link: str, *, uri_only: bool) -> None:
-    """The enrolment to the enrolling terminal only (stdout, never a log): a QR to scan, or the bare URI."""
+    """The enrollment to the enrolling terminal only (stdout, never a log): a QR to scan, or the bare URI."""
     if uri_only:
         emit(link)
         return
@@ -143,7 +143,7 @@ def _read_input(source: str) -> str:
 
 
 def access_verb(config: OpsConfig, action: str, *, force: bool, uri_only: bool, secret_from: str) -> int:
-    """``access enrol|adopt``: the access second factor, shown only to the enrolling terminal."""
+    """``access enroll|adopt``: the access second factor, shown only to the enrolling terminal."""
     if config.access is None:
         emit(f'[ops] {config.path} enables no [ops.access]', err=True)
         return 2
@@ -151,7 +151,7 @@ def access_verb(config: OpsConfig, action: str, *, force: bool, uri_only: bool, 
         if action == 'adopt':
             emit(access.adopt(config, _read_input(secret_from)))
         else:
-            show(access.enrol(config, force=force), uri_only=uri_only)
+            show(access.enroll(config, force=force), uri_only=uri_only)
     except (totp.TotpRefused, ValueError, OSError) as refused:
         emit(f'[ops access] refused: {refused}', err=True)
         return 2

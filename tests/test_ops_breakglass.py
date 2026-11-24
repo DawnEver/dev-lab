@@ -61,7 +61,7 @@ class FakeForge:
     #: (``main``) declares nothing, as a member's old data commit did: only the PR's base may be read.
     manifests: dict[str, str] = field(default_factory=lambda: {'integrate/main': DECLARED})
     #: Each PR's labels (none by default); a PR in ``unreadable`` plants a forge that cannot answer for them.
-    labelled: dict[int, tuple[str, ...]] = field(default_factory=dict)
+    labeled: dict[int, tuple[str, ...]] = field(default_factory=dict)
     unreadable: frozenset[int] = frozenset()
     #: Each ref's failure fingerprints (none by default: a green head reads no record).
     prints: dict[str, Fingerprints] = field(default_factory=dict)
@@ -71,7 +71,7 @@ class FakeForge:
     def labels(self, number: int) -> tuple[str, ...]:
         if number in self.unreadable:
             raise ForgeCallFailed(Report(f'GET /pulls/{number}', (), 1))
-        return self.labelled.get(number, ())
+        return self.labeled.get(number, ())
 
     def declaration(self, ref: str) -> str:
         if ref not in self.manifests:
@@ -233,22 +233,22 @@ def test_a_merge_outside_a_wave_is_refused(host: Host) -> None:
 
 def test_a_manual_merge_of_a_needs_consent_pr_is_refused(host: Host) -> None:
     host.open()
-    host.forge.labelled[7] = (LABEL,)
-    with pytest.raises(BreakglassRefused, match=f'labelled {LABEL}: .* lands only by its own consent'):
+    host.forge.labeled[7] = (LABEL,)
+    with pytest.raises(BreakglassRefused, match=f'labeled {LABEL}: .* lands only by its own consent'):
         host.merge()
     assert host.forge.calls == []
-    host.forge.labelled[7] = ()  # PLANTED CONTROL: the same PR without the label merges
+    host.forge.labeled[7] = ()  # PLANTED CONTROL: the same PR without the label merges
     assert 'merged' in host.merge()
 
 
 def test_a_held_pr_is_refused_naming_the_release_door_and_merges_after_release(host: Host) -> None:
-    """User ruling D48 (2026-11-17): break-glass honours the hold label too."""
+    """User ruling D48 (2026-11-17): break-glass honors the hold label too."""
     host.open()
-    host.forge.labelled[7] = (HOLD_LABEL,)
+    host.forge.labeled[7] = (HOLD_LABEL,)
     with pytest.raises(BreakglassRefused, match=re.escape(RELEASE_DOOR.format(n=7))):
         host.merge()
     assert host.forge.calls == []
-    host.forge.labelled[7] = ()  # PLANTED CONTROL: released, the same PR merges
+    host.forge.labeled[7] = ()  # PLANTED CONTROL: released, the same PR merges
     assert 'merged' in host.merge()
 
 
@@ -445,7 +445,7 @@ def test_a_malformed_merge_is_refused_by_the_parser(host: Host, fields: dict[str
     assert host.forge.calls == []
 
 
-def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
+def test_an_internal_failure_is_not_relabeled_malformed(host: Host) -> None:
     host.open()
 
     def boom(_root: Path) -> FakeForge:

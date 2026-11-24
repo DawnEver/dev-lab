@@ -1,6 +1,6 @@
 """THE MEMBER INDEX: a record's catalogue is validated for the one queried archive; a selection is bounded.
 
-Ported from the 2026-10-15 artefact-member-index work.
+Ported from the 2026-10-15 artifact-member-index work.
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-from dev_lab.dev import artefactindex
-from dev_lab.dev.artefactindex import MemberFact, StoredOutputs
-from dev_lab.dev.artefactstores import ArtefactRefused, Ref, manifest_of
+from dev_lab.dev import artifactindex
+from dev_lab.dev.artifactindex import MemberFact, StoredOutputs
+from dev_lab.dev.artifactstores import RECORD_ARCHIVES, RECORD_INDEXES, ArtifactRefused, Ref, manifest_of
 
 PACK_LIMITS = {'max_members': 100, 'max_index_bytes': 65536, 'max_path_bytes': 4096}
 
@@ -21,7 +21,7 @@ PACK_LIMITS = {'max_members': 100, 'max_index_bytes': 65536, 'max_path_bytes': 4
 def _catalogue_record() -> tuple[dict[str, Any], Ref]:
     ref = Ref('folder', 'lab/archive.tar.gz', 42, 'a' * 64)
     member = MemberFact('dir/é.bin', 0, hashlib.sha256(b'').hexdigest())
-    return {'artefacts': [manifest_of(ref)], 'artefact_indexes': StoredOutputs(ref, (member,)).index()}, ref
+    return {RECORD_ARCHIVES: [manifest_of(ref)], RECORD_INDEXES: StoredOutputs(ref, (member,)).index()}, ref
 
 
 @pytest.mark.parametrize(
@@ -44,19 +44,19 @@ def _catalogue_record() -> tuple[dict[str, Any], Ref]:
 )
 def test_catalogue_refuses_mutated_record_index(fault: str) -> None:
     record, ref = _catalogue_record()
-    index = record['artefact_indexes'][ref.sha256]
+    index = record[RECORD_INDEXES][ref.sha256]
     member = index['members'][0]
     if fault == 'unindexed':
-        record.pop('artefact_indexes')
+        record.pop(RECORD_INDEXES)
     if fault == 'duplicate_ref':
-        record['artefacts'].append(manifest_of(ref))
+        record[RECORD_ARCHIVES].append(manifest_of(ref))
     if fault == 'foreign_sha':
-        record['artefact_indexes'] = {'b' * 64: index}
+        record[RECORD_INDEXES] = {'b' * 64: index}
     if fault == 'duplicate':
         index['members'].append(dict(member))
     changes = {
-        'ref_bytes': (record['artefacts'][0], 'bytes', 43),
-        'bool_ref': (record['artefacts'][0], 'bytes', True),
+        'ref_bytes': (record[RECORD_ARCHIVES][0], 'bytes', 43),
+        'bool_ref': (record[RECORD_ARCHIVES][0], 'bytes', True),
         'schema': (index, 'schema', 'other'),
         'type': (member, 'type', 'symlink'),
         'bool_bytes': (member, 'logical_bytes', False),
@@ -68,32 +68,32 @@ def test_catalogue_refuses_mutated_record_index(fault: str) -> None:
     if fault in changes:
         target, key, value = changes[fault]
         target[key] = value
-    with pytest.raises(ArtefactRefused, match='catalogue'):
-        artefactindex.catalogue(record, ref, **PACK_LIMITS)
+    with pytest.raises(ArtifactRefused, match='catalogue'):
+        artifactindex.catalogue(record, ref, **PACK_LIMITS)
 
 
 def test_catalogue_budget_and_selection_boundaries() -> None:
     record, ref = _catalogue_record()
-    members = artefactindex.catalogue(record, ref, **PACK_LIMITS)  # PLANTED CONTROL: the unmutated record reads
-    size = len(json.dumps(record['artefact_indexes'], sort_keys=True, ensure_ascii=True).encode())
-    assert artefactindex.catalogue(record, ref, **dict(PACK_LIMITS, max_index_bytes=size)) == members
-    with pytest.raises(ArtefactRefused, match='catalogue'):
-        artefactindex.catalogue(record, ref, **dict(PACK_LIMITS, max_index_bytes=size - 1))
+    members = artifactindex.catalogue(record, ref, **PACK_LIMITS)  # PLANTED CONTROL: the unmutated record reads
+    size = len(json.dumps(record[RECORD_INDEXES], sort_keys=True, ensure_ascii=True).encode())
+    assert artifactindex.catalogue(record, ref, **dict(PACK_LIMITS, max_index_bytes=size)) == members
+    with pytest.raises(ArtifactRefused, match='catalogue'):
+        artifactindex.catalogue(record, ref, **dict(PACK_LIMITS, max_index_bytes=size - 1))
     limits = {'max_path_bytes': 4096, 'case_sensitive': True}
-    assert artefactindex.select_members(members, [], max_entries=0, max_bytes=0, **limits) == ()
-    assert artefactindex.select_members(members, ['dir/é.bin'], max_entries=3, max_bytes=0, **limits) == members
+    assert artifactindex.select_members(members, [], max_entries=0, max_bytes=0, **limits) == ()
+    assert artifactindex.select_members(members, ['dir/é.bin'], max_entries=3, max_bytes=0, **limits) == members
     for requested in (['absent'], ['dir/é.bin', 'dir/é.bin']):
-        with pytest.raises(ArtefactRefused, match='selection'):
-            artefactindex.select_members(members, requested, max_entries=3, max_bytes=0, **limits)
-    with pytest.raises(ArtefactRefused, match='selection'):
-        artefactindex.select_members(members, ['dir/é.bin'], max_entries=2, max_bytes=0, **limits)
+        with pytest.raises(ArtifactRefused, match='selection'):
+            artifactindex.select_members(members, requested, max_entries=3, max_bytes=0, **limits)
+    with pytest.raises(ArtifactRefused, match='selection'):
+        artifactindex.select_members(members, ['dir/é.bin'], max_entries=2, max_bytes=0, **limits)
 
 
 @pytest.mark.parametrize(('paths', 'sensitive'), [(['A/x', 'a/y'], False), (['a', 'a/b'], True), (['A', 'a/b'], False)])
 def test_selection_rejects_case_and_file_directory_collisions(paths: list[str], *, sensitive: bool) -> None:
     members = tuple(MemberFact(path, 0, 'a' * 64) for path in paths)
-    with pytest.raises(ArtefactRefused, match='selection'):
-        artefactindex.select_members(
+    with pytest.raises(ArtifactRefused, match='selection'):
+        artifactindex.select_members(
             members, paths, max_entries=10, max_bytes=0, max_path_bytes=4096, case_sensitive=sensitive
         )
 
@@ -105,8 +105,8 @@ def test_selection_rejects_case_and_file_directory_collisions(paths: list[str], 
 def test_selection_requires_exact_budget_and_case_types(key: str, value: object) -> None:
     limits: dict[str, Any] = {'max_entries': 0, 'max_bytes': 0, 'case_sensitive': True, 'max_path_bytes': 4096}
     limits[key] = value
-    with pytest.raises(ArtefactRefused, match='selection'):
-        artefactindex.select_members((), [], **limits)
+    with pytest.raises(ArtifactRefused, match='selection'):
+        artifactindex.select_members((), [], **limits)
 
 
 @pytest.mark.parametrize(
@@ -119,19 +119,19 @@ def test_selection_requires_exact_budget_and_case_types(key: str, value: object)
     ],
 )
 def test_selection_refuses_constructed_invalid_member_facts(member: MemberFact) -> None:
-    with pytest.raises(ArtefactRefused, match='selection'):
-        artefactindex.select_members(
+    with pytest.raises(ArtifactRefused, match='selection'):
+        artifactindex.select_members(
             (member,), [member.path], max_entries=10, max_bytes=0, max_path_bytes=4096, case_sensitive=True
         )
 
 
 def test_catalogue_does_not_validate_other_archives_or_claim_materialization() -> None:
     record, ref = _catalogue_record()
-    record['artefacts'].append({'unrelated': 'not validated'})
-    record['artefact_indexes']['b' * 64] = {'foreign': 'not queried'}
-    assert len(artefactindex.catalogue(record, ref, **PACK_LIMITS)) == 1
+    record[RECORD_ARCHIVES].append({'unrelated': 'not validated'})
+    record[RECORD_INDEXES]['b' * 64] = {'foreign': 'not queried'}
+    assert len(artifactindex.catalogue(record, ref, **PACK_LIMITS)) == 1
     separate = tuple(MemberFact(path, 0, 'a' * 64) for path in ('A/x', 'a/y'))
-    selected = artefactindex.select_members(
+    selected = artifactindex.select_members(
         separate, ['A/x', 'a/y'], max_entries=5, max_bytes=0, max_path_bytes=4096, case_sensitive=True
     )
     assert selected == separate
@@ -139,6 +139,6 @@ def test_catalogue_does_not_validate_other_archives_or_claim_materialization() -
 
 def test_catalogue_refuses_lone_surrogate_member_path() -> None:
     record, ref = _catalogue_record()
-    record['artefact_indexes'][ref.sha256]['members'][0]['path'] = '\ud800'
-    with pytest.raises(ArtefactRefused, match='catalogue'):
-        artefactindex.catalogue(record, ref, **PACK_LIMITS)
+    record[RECORD_INDEXES][ref.sha256]['members'][0]['path'] = '\ud800'
+    with pytest.raises(ArtifactRefused, match='catalogue'):
+        artifactindex.catalogue(record, ref, **PACK_LIMITS)

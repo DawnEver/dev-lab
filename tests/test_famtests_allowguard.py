@@ -52,7 +52,7 @@ from dev_lab.dev.hooks import Remedy
 
 # THE ENGINE RUNS ON THE LOCKED NODE (dev.jsrun), so this file needs no host resource and runs on every part.
 
-#: An adoption remedying every rule that needs a repo artefact, so the rendered file carries the whole
+#: An adoption remedying every rule that needs a repo artifact, so the rendered file carries the whole
 #: registry and a probe drawn from it is judged against all of it rather than against a subset.
 ADOPTION = HookAdoption(
     app_name='lab-commons (famtests suite)',

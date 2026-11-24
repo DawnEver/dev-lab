@@ -1,6 +1,6 @@
 """The controls for :mod:`dev_lab.dev.depversions` -- every reading, on files, in both directions.
 
-WHY THIS FILE'S CENTRE OF GRAVITY IS THE READERS RATHER THAN THE PROBLEM FUNCTIONS. A problem
+WHY THIS FILE'S CENTER OF GRAVITY IS THE READERS RATHER THAN THE PROBLEM FUNCTIONS. A problem
 function that returned a sentence unconditionally would make every consumer red and be deleted; one
 that returned ``None`` unconditionally would make every consumer green and be worthless. So each is
 driven on BOTH sides of its boundary, and the boundaries are chosen where the arithmetic could go

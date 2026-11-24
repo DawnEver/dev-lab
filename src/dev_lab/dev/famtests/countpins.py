@@ -169,7 +169,7 @@ def take_scan(
 ) -> PinScan:
     """Walk *roots* under *root*, grade every module, and report BOTH what was read and what failed.
 
-    A file that does not parse RAISES rather than being skipped: an unparseable module in the tree a
+    A file that does not parse RAISES rather than being skipped: an unparsable module in the tree a
     guard reports on is a louder finding than anything this guard could report, and skipping it is
     how a walk quietly loses its corpus.
 

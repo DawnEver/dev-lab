@@ -30,7 +30,7 @@ FORMS: Final = (
     r'\bmsvcrt\.getw?ch\b',
     r'\bread\s+-[A-Za-z]*s',
     r'\bstty\s+-echo\b',
-    r'-AsSecure[S]tring\b',
+    r'-AsSecure[S]tring\b',  # spelling-ignore-line
     r'ReadKey\(\s*\$true',
     r'\bhideEchoBack\b',
 )

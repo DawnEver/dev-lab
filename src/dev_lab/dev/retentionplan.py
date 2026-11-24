@@ -1,6 +1,6 @@
 """WHAT RETENTION DELETES -- the policy, the one definition of IN FLIGHT, and the plan built from them.
 
-A FILE IS AN HPC RESOURCE (user ruling 2026-10-15: control the NUMBER of files intermediate artefacts make).
+A FILE IS AN HPC RESOURCE (user ruling 2026-10-15: control the NUMBER of files intermediate artifacts make).
 Measured 2026-10-15 on the cluster accounts the forge serves (GPFS file quota 2 M or 4 M each):
 ``trees`` held 0.85-2.05 M files per account (40-81 per-sha trees, ~22 k files each) and ``envs``
 0.54-1.32 M; everything else under 60 k. Trees and envs are the whole problem, so the rules for them are

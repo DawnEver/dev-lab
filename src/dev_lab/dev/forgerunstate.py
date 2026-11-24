@@ -212,7 +212,7 @@ class Run:
     platform: str = BASE  # the part (its need-set) this run produces
     scope: str = FULL
     outputs: tuple[str, ...] = ()  # declared at request time; only these are packed
-    artefact: str = ''  # the artefact run id, fixed before the first put so a resumed tick re-puts the same key
+    artifact: str = ''  # the artifact run id, fixed before the first put so a resumed tick re-puts the same key
     schema: int = SCHEMA
     #: The progress last posted on the claim; a change is posted, a repeat is not.
     progress: str = ''

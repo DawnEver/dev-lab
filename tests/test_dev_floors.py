@@ -39,7 +39,7 @@ def test_the_slack_reading_is_signed_so_a_caller_sees_which_side_it_is_on() -> N
 
 
 def test_a_scan_below_its_floor_is_refused_and_the_one_above_it_is_not() -> None:
-    """THE CHECK, both directions: the collapsed walk reds and the honest neighbour is left alone."""
+    """THE CHECK, both directions: the collapsed walk reds and the honest neighbor is left alone."""
     assert_floor(180, floor=180, what=WHAT)
     assert_floor(208, floor=180, what=WHAT)
     with pytest.raises(FloorUnmet, match='read 3, below its measured floor of 180'):

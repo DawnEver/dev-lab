@@ -6,7 +6,7 @@ its checkout's ``uv.lock`` pinned -- but the checkout lagged its integration bra
 from before the intake. A fixed intake does not reach a kit that never installed it, and an old kit cannot be
 patched after the fact; the guard can only make every kit from here on refuse before it asks.
 
-THE JUDGEMENT, local and read only, on the checkout that holds THIS interpreter (:func:`checkout_of`):
+THE JUDGMENT, local and read only, on the checkout that holds THIS interpreter (:func:`checkout_of`):
 
 * the venv holds what the checkout's ``uv.lock`` pins (:func:`dev_lab.dev.lockpins.lock_freshness`);
 * the checkout's ``HEAD`` lags its last-fetched ``origin/<integration>`` by no more than

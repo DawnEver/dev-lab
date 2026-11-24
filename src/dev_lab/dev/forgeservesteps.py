@@ -177,13 +177,13 @@ def tidy_runs(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """On a cluster -- one artefact writer -- clean its own account's runs each tick; a failure only alarms."""
+    """On a cluster -- one artifact writer -- clean its own account's runs each tick; a failure only alarms."""
     if seat is None:
         return
     try:
         forgeship.tidy(root, client(root), account=seat.account, say=say)
     except (OSError, ValueError) as why:
-        alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
+        alarm(Alarm(RUN, repo, 'the artifact cleanup failed', str(why)))
 
 
 def hygiene(root: Path, built: Client, *, say: Callable[[str], None]) -> None:

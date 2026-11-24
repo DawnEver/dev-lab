@@ -40,7 +40,7 @@ _NOW = datetime(2026, 11, 1, 12, tzinfo=UTC)
 
 
 def _current(_root: object, _client: object, _pull: object) -> tuple[str, ...]:
-    """A head the ready judgement finds nothing against (the judgement itself: ``test_dev_prcurrent``)."""
+    """A head the ready judgment finds nothing against (the judgment itself: ``test_dev_prcurrent``)."""
     return ()
 
 
@@ -179,7 +179,7 @@ def test_a_multi_line_refusal_is_one_stdout_line_naming_the_outcome_never_only_i
     assert line == f'#{number} stays a DRAFT: pr ready refused: the head is stale: M uv.lock'
 
 
-def test_a_git_failure_in_the_judgement_exits_one_and_never_raises(capsys) -> None:
+def test_a_git_failure_in_the_judgment_exits_one_and_never_raises(capsys) -> None:
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', title='WIP: add x', sha='a' * 40)
 

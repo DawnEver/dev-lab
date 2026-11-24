@@ -43,7 +43,7 @@ Seven grades, and the three that exist to REFUSE a verdict matter most:
 
 EVERY REPO-SHAPED FACT ARRIVES AS AN ARGUMENT WITH NO DEFAULT -- which paths, which kit modules,
 which floor -- since a default hands four repos one repo's answer (``LAB_CZ_BASE_REF``).
-A LEADING UNDERSCORE IS NORMALISED AWAY ON BOTH SIDES: on ``_box.py`` -> ``bounded._available_gb``
+A LEADING UNDERSCORE IS NORMALIZED AWAY ON BOTH SIDES: on ``_box.py`` -> ``bounded._available_gb``
 that one character was a false remainder. It widens the RULER, never a detector. THE FLOOR IS
 REQUIRED AND ZERO IS REFUSED: no rows, or no kit modules, reports what a finished migration reports.
 So does a *package* that resolves onto nothing, and that is refused too.

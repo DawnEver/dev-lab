@@ -112,10 +112,10 @@ FAMILY_HOMES: dict[str, str] = {
     'one-off experiment, probe or verification': 'scratch/',
     'memory, and one-offs archived before 2026-10-22': '.claude/memory/',
     'docs': 'docs-src/',
-    'artefacts': 'output/logs/',
+    'artifacts': 'output/logs/',
 }
 
-#: The family homes that hold CODE; docs and artefacts are homes, but never for a source file.
+#: The family homes that hold CODE; docs and artifacts are homes, but never for a source file.
 FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
     FAMILY_HOMES[kind]
     for kind in (

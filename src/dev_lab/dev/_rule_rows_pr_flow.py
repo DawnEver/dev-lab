@@ -80,7 +80,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'TASK-HEARS-ITS-FORGE-EVENTS',
         (
-            'A task hears what it subscribes to without the user relaying it (D79, D81): an issue or PR labelled '
+            'A task hears what it subscribes to without the user relaying it (D79, D81): an issue or PR labeled '
             '`task:<slug>`, and every PR a session of the task opened or pushed. ONE machine hearer (`forgefeed`) '
             'reads each declared repository`s issues and PRs updated since a saved cursor ONCE per tick -- never a '
             'request per thread -- and routes each change to its task`s queue, which each session whose checkout is on '
