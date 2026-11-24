@@ -44,6 +44,7 @@ need no frontmatter of their own.
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -168,7 +169,29 @@ def _without_approved_moves(
     ]
 
 
+#: SUMMARY-RETIRED (user ruling 2026-11-24): the month summary ``<yyyy>/<mm>/SUMMARY-*.md`` is a retired format, no
+#: entry -- it may leave memory, deleted or moved into a dated entry (judged as that entry's add).
+_RETIRED_SUMMARY: Final = re.compile(r'(?:^|/)\.claude/memory/\d{4}/\d{2}/SUMMARY-[^/]*\.md$')
+_SUMMARY_DOOR: Final = (
+    '; the one file that leaves memory is a retired month summary `<yyyy>/<mm>/SUMMARY-*.md` (deleted, or moved '
+    'into a dated entry)'
+)
+
+
+def _without_retired_summaries(rows: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """*rows* with each retired month summary's deletion dropped and its move read as the add of its new entry."""
+    out = []
+    for status, old, new in rows:
+        if status in 'DR' and _RETIRED_SUMMARY.search(old):
+            if status == 'R':
+                out.append(('A', new, new))
+            continue
+        out.append((status, old, new))
+    return out
+
+
 def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, str]]) -> tuple[str, ...]:
+    rows = _without_retired_summaries(rows)
     rows = _without_approved_moves(root, old_rev, new_rev, _without_redacting_renames(root, old_rev, new_rev, rows))
     added = {new for status, _, new in rows if status in 'AC'}
 
@@ -199,7 +222,10 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                 )
                 out.append(f'{old}: {remedy}')
         elif status in 'DRT' and is_memory(old) and not (status == 'D' and is_attachment(old)):
-            out.append(f'{old}: a memory entry is never deleted or moved ({status}){_move_door(old, new, status)}')
+            out.append(
+                f'{old}: a memory entry is never deleted or moved ({status})'
+                f'{_move_door(old, new, status)}{_SUMMARY_DOOR}'
+            )
     return tuple(out)
 
 

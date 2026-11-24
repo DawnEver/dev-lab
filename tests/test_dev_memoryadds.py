@@ -116,6 +116,36 @@ def test_a_lane_that_edits_deletes_or_moves_an_entry_is_refused(repo: Path, chan
     assert ENTRY in found[0]
 
 
+SUMMARY = '.claude/memory/2026/10/SUMMARY-2026-10.md'
+
+
+@pytest.mark.parametrize('change', ['delete', 'move'])
+def test_a_retired_month_summary_may_leave_memory(repo: Path, change: str) -> None:
+    """User ruling 2026-11-24: SUMMARY-*.md retires -- its deletion, or its move into a dated entry, is admitted.
+
+    PLANTED CONTROL: the same deletion of a dated entry in that change is still refused, naming the summary door.
+    """
+    _write(repo, SUMMARY, '# October\n\nWhat happened.\n')
+    _commit(repo, 'summary', SUMMARY)
+    base = _lane(repo)
+    if change == 'delete':
+        _git(repo, 'rm', '-q', SUMMARY)
+    else:
+        moved = '.claude/memory/2026/10/31/october-summary.md'
+        (repo / moved).parent.mkdir(parents=True, exist_ok=True)
+        _git(repo, 'mv', SUMMARY, moved)
+        _write(repo, moved, '---\nname: october-summary\ndescription: d\n---\n\nWhat happened.\n')
+        _git(repo, 'add', moved)
+    _git(repo, 'commit', '-q', '-m', 'retire the month summary')
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+    _git(repo, 'rm', '-q', ENTRY)
+    _git(repo, 'commit', '-q', '-m', 'and an entry')
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert len(found) == 1, found
+    assert ENTRY in found[0]
+    assert 'SUMMARY-' in found[0], 'the refusal names the one deletion memory admits'
+
+
 def test_nothing_moves_into_memory_not_even_a_task(repo: Path) -> None:
     """A closed task is archived in the global tasks repo by rem (2026-11-23), never moved into a checkout's memory."""
     _write(repo, 'notes/integrator/JOURNAL.md', 'D1 a decision\n')
