@@ -19,6 +19,7 @@ outcomes, kept beside its log: the cache already holds the evidence, so nothing 
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +33,7 @@ from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.hpc.testcells import TestCell
 
+from dev_lab.dev import cargostep
 from dev_lab.dev.famtests.alwayson import resource_nodes
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import verdict_commit
@@ -143,6 +145,15 @@ def post_cited(
     return post_part(root, log, verdict_commit(head, head, dirt, dirt), arguments, settled=True, part=part)
 
 
+def tracked_files(root: Path) -> list[str]:
+    """The checkout's tracked paths (``git ls-files``); none outside a work tree."""
+    import subprocess  # noqa: PLC0415
+
+    git = shutil.which('git') or 'git'
+    done = subprocess.run([git, '-C', str(root), 'ls-files', '-z'], capture_output=True, text=True, check=False)
+    return [one for one in done.stdout.split('\0') if one] if done.returncode == 0 else []
+
+
 def post_part(
     root: Path,
     log: Path,
@@ -173,6 +184,8 @@ def post_part(
     judged = outcomes_dir(log)
     cells, flaky = read_cells(judged)
     owned = owners(root, commit, list(cells), collect)
+    if part != cargostep.PART:  # T8: a pytest part hands the Rust suite to its own part, tests/cargo
+        owned = {**cargostep.handed(root, tracked_files(root)), **owned}
     if part:
         chosen = [part]
     else:

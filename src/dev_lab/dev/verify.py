@@ -49,7 +49,7 @@ from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import depneeds, verifiedby
+from dev_lab.dev import cargostep, depneeds, verifiedby
 from dev_lab.dev.changeselect import changed_paths, select
 from dev_lab.dev.footprint import Footprints
 from dev_lab.dev.forgeclaim import this_machine
@@ -211,12 +211,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     refused = refused or (None if targeted else outside)
     try:
-        posted, arguments = arguments, (*part_selection(root, parsed.part), *arguments)
+        posted, arguments = (
+            arguments,
+            (*part_selection(root, '' if parsed.part == cargostep.PART else parsed.part), *arguments),
+        )
     except ValueError as why:
         refused = refused or f'verify: refused -- {why}'
     refused = refused or _needs_refusal(root, parsed.part)
     refused = refused or scan_refusal(root)  # DECLARED-LAYOUT / NO-BACKUP-COPIES: the incremental scan, every run
-    early = chosen if isinstance(chosen, int) else _early(root, refused, producer=outside is None)
+    if parsed.part == cargostep.PART:  # T8: the Rust suite is its own part, produced natively beside pytest
+        early: int | None = cargostep.produce(root)
+    else:
+        early = chosen if isinstance(chosen, int) else _early(root, refused, producer=outside is None)
     if early is not None:
         return early
     wait_s = parsed.lock_wait if parsed.lock_wait is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
@@ -415,7 +421,7 @@ def _judge(
     """
     head, start = head_sha(root), status_paths(root)
     try:
-        verdict = run_verify(root, arguments, wait_s=wait_s, hooks=post is None)
+        verdict = run_verify(root, arguments, wait_s=wait_s, hooks=post is None, cargo=post is None)
     except MalformedAllowance as exc:
         return _inconclusive(f'verify refuses to run: {exc}')
     except Refused as exc:  # CAPACITY, never a verdict: a producer's claim goes back to claimable (UNREACHABLE)

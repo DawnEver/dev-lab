@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import io
+import shutil
+import subprocess
 from pathlib import Path
+from typing import Any
 
-from dev_lab.dev import cargostep
+import pytest
+
+from dev_lab.dev import cargostep, localpart, platformparts
+from dev_lab.dev.platformparts import part_context
+from dev_lab.dev.producer import PRODUCING_VAR, ProducerExit, producing
 
 
 def _plant(root: Path, files: dict[str, str]) -> list[str]:
@@ -58,3 +65,44 @@ def test_no_cargo_on_the_host_is_inconclusive_naming_the_door(tmp_path: Path) ->
     report = cargostep.step(tmp_path, 'rust/Cargo.toml', handle=io.StringIO(), tee=None, cargo=None)
     assert report.reported == ()
     assert any('cargo' in line and 'rust-toolchain' in line for line in report.truncated)
+
+
+def _repo(tmp_path: Path) -> Path:
+    git = shutil.which('git') or 'git'
+    _plant(tmp_path, {'rust/Cargo.toml': '[workspace]\nmembers = []\n', 'pyproject.toml': ''})
+    for args in (['init', '-q'], ['add', '-A'], ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x']):
+        subprocess.run([git, '-C', str(tmp_path), *args], check=True, capture_output=True, timeout=60)
+    return tmp_path
+
+
+def _producing(monkeypatch: pytest.MonkeyPatch, posted: list[dict[str, Any]]) -> None:
+    monkeypatch.setenv(PRODUCING_VAR, producing(part_context(cargostep.PART), 'a' * 40)[PRODUCING_VAR])
+    monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _dir: posted.append(record) or 'posted')
+    monkeypatch.setattr(platformparts, 'record_directory', lambda root, _sha: root)
+
+
+@pytest.mark.parametrize(
+    ('code', 'status', 'exit_code'), [(0, 'ok', ProducerExit.PASS), (101, 'rejected', ProducerExit.FAIL)]
+)
+def test_the_cargo_part_posts_one_cell_per_workspace_as_tests_cargo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int, status: str, exit_code: int
+) -> None:
+    """PLANTED CONTROL, both sides: the part is red exactly when cargo is, and it is tests/cargo's own record."""
+    posted: list[dict[str, Any]] = []
+    _producing(monkeypatch, posted)
+    assert cargostep.produce(_repo(tmp_path), run=lambda _argv: code, cargo='cargo') == exit_code
+    (record,) = posted
+    assert record['platform'] == 'cargo'
+    assert record['cells']['cargo test rust/Cargo.toml']['status'] == status
+
+
+def test_the_cargo_part_is_refused_outside_its_producer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(PRODUCING_VAR, raising=False)
+    assert cargostep.produce(_repo(tmp_path), run=lambda _argv: 0, cargo='cargo') == ProducerExit.USAGE
+
+
+def test_a_pytest_part_hands_each_workspace_to_the_cargo_part(tmp_path: Path) -> None:
+    """How the forge DISCOVERS tests/cargo: the base part's record hands it the workspace cells."""
+    tracked = _plant(tmp_path, {'rust/Cargo.toml': '[workspace]\n'})
+    assert cargostep.handed(tmp_path, tracked) == {'cargo test rust/Cargo.toml': 'cargo'}
+    assert cargostep.handed(tmp_path, []) == {}

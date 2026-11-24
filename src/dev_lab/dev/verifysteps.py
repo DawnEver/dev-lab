@@ -369,14 +369,14 @@ def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepR
 
 
 def _native_steps(
-    root: Path, pytest_args: tuple[str, ...], scripts: tuple[str, ...], *, handle: IO[str]
+    root: Path, pytest_args: tuple[str, ...], scripts: tuple[str, ...], *, handle: IO[str], cargo: bool
 ) -> list[StepReport]:
     """The steps beside pytest: the selected script tests, then each cargo workspace's own step.
 
     Cargo runs on an untargeted run only (:mod:`dev_lab.dev.cargostep`, T8: never wrapped in a pytest test).
     """
     steps = [script_step(root, scripts, handle=handle)] if scripts else []
-    if is_targeted(root, pytest_args):
+    if not cargo or is_targeted(root, pytest_args):  # a producer's part hands cargo to tests/cargo
         return steps
     tracked = _git_z(root, 'ls-files', '-z') or ()
     return [
@@ -455,6 +455,7 @@ def run_verify(
     wait_s: float = WAIT_S,
     poll_s: float = POLL_S,
     hooks: bool = True,
+    cargo: bool = True,
 ) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
@@ -513,7 +514,7 @@ def run_verify(
                 reports.append(read_hooks(root, handle=handle))
             for name, arguments in RUFF_STEPS:
                 reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
-            reports.extend(_native_steps(root, pytest_args, scripts, handle=handle))
+            reports.extend(_native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo))
             if not only_scripts:
                 handle.write(_PYTEST_BANNER)
                 stamp = {
