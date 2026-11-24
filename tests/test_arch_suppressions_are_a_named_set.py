@@ -767,10 +767,13 @@ ALLOWED: Final[dict[Site, str]] = {
         "assert forgeunit.main(['unit=x'], cwd=_checkout(tmp_path), client=object()) == 2",
     ): 'planted control: a client that is not one, to prove the refusal happens before any call',
     (
-        'tests/test_dev_strayleaks.py',
-        'operator',
-        'plant(drive, home)',
-    ): 'the planter comes from a parametrize list of lambdas mypy does not unify with its declared Callable',
+        'tests/test_dev_writeroots.py',
+        'S108',
+        (
+            '# ruff: noqa: S108 -- /tmp and its kin are the SUBJECT: '
+            'spelled paths a write must be refused into, never used'
+        ),
+    ): 'the guard under test refuses host temp roots, so the module spells them as inputs; nothing writes there',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

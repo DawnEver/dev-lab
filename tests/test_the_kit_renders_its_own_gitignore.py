@@ -21,6 +21,7 @@ from typing import Final
 
 from _famconfig_delta import DELTAS, GITIGNORE, REPO
 
+from dev_lab.dev._famconfig_rows import GITATTRIBUTES_BASE
 from dev_lab.dev.famconfig import RENDERED
 from dev_lab.dev.famtests.configrender import (
     assert_artefact_is_rendered,
@@ -149,8 +150,6 @@ _VISIBLE: Final = (
 
 def test_the_gitattributes_base_is_the_one_normalisation_line() -> None:
     """User ruling 2026-11-24: the base is `* text=auto eol=lf` alone; per-type lines are a repo's delta."""
-    from dev_lab.dev._famconfig_rows import GITATTRIBUTES_BASE  # noqa: PLC0415
-
     assert GITATTRIBUTES_BASE == ('* text=auto eol=lf',)
 
 
