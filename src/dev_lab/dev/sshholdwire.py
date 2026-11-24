@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import socket
 import time
 from typing import Any, Final
 
 from dev_lab.dev.sshholdstate import Session, forget, read_session, state_path
 
-__all__ = ['HoldRefused', 'frame', 'held', 'live', 'ping', 'request', 'split_marker']
+__all__ = ['HoldRefused', 'frame', 'held', 'live', 'ping', 'request', 'resolved', 'split_marker']
 
 CONNECT_S: Final = 5.0
 #: How many 0.1 s ticks :func:`held` waits for an ending holder to remove its own state file.
@@ -23,6 +24,27 @@ _GONE_TICKS: Final = 30
 
 class HoldRefused(RuntimeError):
     """A session verb that cannot proceed; the message says why and what to do."""
+
+
+def resolved(argv: list[str]) -> list[str]:
+    """*argv* with a bare ``ssh`` resolved to PATH's absolute program: THE SSH THE USER'S SHELL RUNS.
+
+    On Windows ``subprocess.Popen(['ssh', ...])`` searches System32 BEFORE PATH (CreateProcess's own order), so a
+    bare word ran ``System32/OpenSSH`` 9.5 while the user's terminal -- whose key + code login to Cirrus succeeds --
+    ran PATH's Git OpenSSH 10.6 (measured 2026-11-24; three codes refused ``Permission denied ()`` through the
+    hold). The holder and its no-code probe spawn through this, so all three run one binary.
+
+    Raises:
+        HoldRefused: no ssh on PATH; no code has been read.
+
+    """
+    if argv[:1] != ['ssh']:
+        return argv
+    program = shutil.which('ssh')
+    if program is None:
+        msg = 'no ssh on PATH: install OpenSSH (Git for Windows ships one) so the hold runs the ssh a shell runs'
+        raise HoldRefused(msg)
+    return [program, *argv[1:]]
 
 
 def frame(command: str, nonce: str) -> str:
