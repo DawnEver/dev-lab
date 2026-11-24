@@ -73,7 +73,12 @@ JOURNAL_VERBS: Final = {
 #: Every verb: ``(verb, who, arguments, what it does)``; ``help`` prints it.
 VERBS: Final = (
     ('open', 'user', '<slug> "<goal>"', "open a task and its task:<slug> issue (spends the user's /task open grant)"),
-    ('close', 'user', '<slug> ["<reason>"] [--journal-only D<n>,...]', 'close its issue, archive it, commit'),
+    (
+        'close',
+        'user',
+        '<slug> ["<reason>"] [--journal-only D<n>,...]',
+        'refused while a pr/<slug>/* head is unmerged; close its issue, archive, commit, prune its merged heads',
+    ),
     ('request', 'agent', '<open|close> <slug> ["<goal>"]', 'ask the user: they reply `approve <code>`'),
     ('log', 'branch', '"<progress>"', 'a progress line'),
     ('decide', 'branch', '"<decision>"', 'a decision, numbered D<n>'),
