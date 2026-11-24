@@ -24,11 +24,17 @@ class _Fleet:
     """Every account's runner records its commands; *fail* names an account whose delete fails."""
 
     def __init__(
-        self, monkeypatch: pytest.MonkeyPatch, *, census: str = _CENSUS, fail: str = '', acl: str = ''
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        census: str = _CENSUS,
+        fail: str = '',
+        acl: str = '',
+        cluster: str = 'ada',
     ) -> None:
         self.ran: list[tuple[str, str]] = []
         self.fail, self.acl, self.census = fail, acl, census
-        grants = {user: SimpleNamespace(user=user) for user in ('u1', 'o1', 'o2')}
+        grants = {user: SimpleNamespace(user=user, cluster=cluster) for user in ('u1', 'o1', 'o2')}
 
         def grant(user: str) -> SimpleNamespace:
             if user == 'other-role':
@@ -158,9 +164,16 @@ _MODES = {HOME: '700', f'{HOME}/ci': '700', f'{HOME}/ci/experiments': '700', f'{
 class _Gpfs(_Fleet):
     """MEASURED 2026-11-24: GPFS refuses ``setfacl`` -- ``Operation not supported``; modes are what it honours."""
 
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, owner_groups: str = '60200513', **kwargs: object) -> None:
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        owner_groups: str = '60200513',
+        group: str = 'lab-team',
+        **kwargs: object,
+    ) -> None:
         super().__init__(monkeypatch, **kwargs)
-        self.owner_groups, self.modes, self.stdin = owner_groups, dict(_MODES), {}
+        self.owner_groups, self.group, self.modes, self.stdin = owner_groups, group, dict(_MODES), {}
         self.restored: dict[str, str] | None = None
 
     def connect(self, grant: SimpleNamespace) -> object:
@@ -173,7 +186,7 @@ class _Gpfs(_Fleet):
                 raise RuntimeError(unsupported)
             if command.startswith(reclaim.RECORD_MARK):
                 self.ran.append((grant.user, command))
-                rows = [f'{mode} 60200513 {path}' for path, mode in self.modes.items()]
+                rows = [f'{mode} 60200513 {self.group}|{path}' for path, mode in self.modes.items()]
                 return '\n'.join([*rows, f'groups o1 {self.owner_groups}', f'groups o2 {self.owner_groups} 7'])
             if command.startswith('chmod '):
                 self.ran.append((grant.user, command))
@@ -205,15 +218,38 @@ def test_gpfs_falls_back_to_group_bits_when_every_owner_shares_the_group(monkeyp
     assert any(line.startswith('reclaim-foreign: modes restored and verified') for line in said)
 
 
-def test_planted_control_other_bits_only_when_no_group_is_shared(monkeypatch: pytest.MonkeyPatch) -> None:
+def _refused_before_any_write(fleet: _Gpfs, said: list[str], why: str) -> None:
+    assert not any(c.startswith(('chmod ', reclaim.RESTORE_MARK)) for _, c in fleet.ran), 'nothing was written'
+    assert fleet.modes == _MODES
+    assert not any(' -delete' in c for _, c in fleet.ran)
+    assert any(why in line for line in said), said
+    assert any("only the owners' admin or a site admin can remove" in line for line in said)
+    assert f'  request: rm -rf {HOME}/{TARGET}' in said
+    assert '  o1: 56 entries' in said
+    assert '  o2: 25 entries' in said
+    assert not any('o+' in c for _, c in fleet.ran), 'never an other-bits widening (user ruling 2026-11-24)'
+
+
+def test_planted_control_a_site_wide_shared_group_is_refused_before_any_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MEASURED 2026-11-24: on Ada the one group every owner shares is ``domain users`` -- the whole university."""
+    fleet = _Gpfs(monkeypatch, group='domain users')
+    code, said = _run(fleet)
+    assert code == 2
+    _refused_before_any_write(fleet, said, "the shared group 'domain users' is site-wide on ada")
+
+
+def test_planted_control_no_shared_group_is_refused_before_any_write(monkeypatch: pytest.MonkeyPatch) -> None:
     fleet = _Gpfs(monkeypatch, owner_groups='99')
     code, said = _run(fleet)
-    assert code == 0, said
-    chmod = next(c for c in fleet.of('u1') if c.startswith('chmod '))
-    assert chmod.startswith(f'chmod o+x {HOME} ')
-    assert '-exec chmod o+wx' in chmod
-    assert 'g+' not in chmod
-    assert any('no group every owner shares' in line for line in said)
+    assert code == 2
+    _refused_before_any_write(fleet, said, 'no group every owner shares')
+
+
+def test_a_cluster_with_no_declared_site_wide_groups_widens_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    fleet = _Gpfs(monkeypatch, cluster='elsewhere')
+    code, said = _run(fleet)
+    assert code == 2
+    _refused_before_any_write(fleet, said, "cluster 'elsewhere' declares no site-wide groups")
 
 
 def test_planted_control_modes_are_restored_exactly_when_an_owner_delete_fails(monkeypatch: pytest.MonkeyPatch) -> None:

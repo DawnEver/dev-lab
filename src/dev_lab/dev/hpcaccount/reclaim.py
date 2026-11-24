@@ -18,11 +18,14 @@ retention kept them, naming each owner (:mod:`dev_lab.dev.accountsweep`). This d
 
 GPFS REFUSES POSIX ACLS (measured 2026-11-24: ``setfacl: /gpfs01/home/alyyw103: Operation not supported``), so on that
 refusal the grant falls back to MODE BITS: every path it will touch (the ancestor chain, *user*'s directories under
-the target) has its exact mode and group recorded FIRST (``stat -c '%a %g %n'``), with each owner's groups
-(``id -G``). When every touched path's group is one every owner is in (the trees are ``drwxr-s---``, setgid), the
-GROUP bits open it (``g+x`` on the ancestors, ``g+rwx`` on the target's directories); only when no group is shared,
-the OTHER bits (``o+x``, ``o+wx``). The ``finally`` restores each recorded mode exactly and verifies it by re-reading
-``stat -c %a``; a mode left changed fails the door, named with what it was.
+the target) has its exact mode and group recorded FIRST (``stat -c '%a %g %G|%n'``), with each owner's groups
+(``id -G``). Only the GROUP bits ever widen (``g+x`` on the ancestors, ``g+rwx`` on the target's directories), and
+only when every touched path's group is one every owner is in AND that group is narrower than the site: a group the
+cluster declares site-wide (:data:`SITE_WIDE_GROUPS`; on Ada ``domain users``, the whole university) is refused, as
+is a cluster that declares none. The OTHER bits never widen (user ruling 2026-11-24). Refused, NOTHING is written:
+the door names why, that only the owners' admin or a site admin can remove the path, the exact ``rm -rf`` for that
+request, and the census per owner. The ``finally`` restores each recorded mode exactly and verifies it by
+re-reading ``stat -c %a``; a mode left changed fails the door, named with what it was.
 
 Without ``--apply`` it prints the plan with each owner's count and writes nothing. Every step's output is said.
 """
@@ -46,14 +49,20 @@ from dev_lab.dev.hpcaccount.look import home_path
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
-__all__ = ['CENSUS_MARK', 'MODES_MARK', 'RECORD_MARK', 'RESTORE_MARK', 'VERIFY_MARK', 'main', 'reclaim']
+__all__ = [
+    'CENSUS_MARK', 'MODES_MARK', 'RECORD_MARK', 'RESTORE_MARK', 'SITE_WIDE_GROUPS', 'VERIFY_MARK', 'main', 'reclaim',
+]  # fmt: skip
 
 #: How the census line begins (the account's ``$HOME``, then the owner counts).
 CENSUS_MARK: Final = 'printf "home %s\\n" "$HOME"'
 #: How the ACL re-read after the revoke begins.
 VERIFY_MARK: Final = 'getfacl -p'
-#: How the mode record begins: ``<octal mode> <gid> <path>`` per touched path, then ``groups <owner> <gids>``.
-RECORD_MARK: Final = 'stat -c "%a %g %n"'
+#: Per cluster, the groups that span the whole site: a widening to one is refused. Declared here because the family
+#: layer's ``[hpc.clusters.<name>]`` is lab-commons' closed schema (an unknown key there refuses every load). A
+#: cluster absent here widens nothing. Ada: measured 2026-11-24 (``look stuck``), every account's primary group.
+SITE_WIDE_GROUPS: Final = {'ada': frozenset({'domain users'})}
+#: How the mode record begins: ``<octal mode> <gid> <group>|<path>`` per touched path, then ``groups <owner> <gids>``.
+RECORD_MARK: Final = 'stat -c "%a %g %G|%n"'
 #: How the restore begins: ``<mode> <path>`` lines on stdin, each chmodded back.
 RESTORE_MARK: Final = 'while read -r mode path; do [ -e "$path" ] && chmod'
 #: How the re-read of the restored modes begins: ``<mode> <path>`` per recorded path that still exists.
@@ -78,14 +87,26 @@ def _ancestors(home: str, path: str) -> list[str]:
     return [home] + [f'{home}/{"/".join(parts[:n])}' for n in range(1, len(parts))]
 
 
+class _Refused(Exception):
+    """No acceptable group: nothing may be widened, nothing was written."""
+
+
 def _apply(
-    user: str, *, run: dict[str, Runner], home: str, path: str, owners: list[str], say: Callable[[str], None]
+    user: str,
+    *,
+    run: dict[str, Runner],
+    home: str,
+    path: str,
+    counts: dict[str, int],
+    cluster: str,
+    say: Callable[[str], None],
 ) -> int:
+    owners = sorted(owner for owner in counts if owner != user)
     target, mine = shlex.quote(f'{home}/{path}'), run[user]
     chain = [shlex.quote(one) for one in _ancestors(home, path)]
     code, step, undo = 0, user, []
     try:
-        _grant(user, mine, target=target, chain=chain, owners=owners, undo=undo, say=say)
+        _grant(user, mine, target=target, chain=chain, owners=owners, cluster=cluster, undo=undo, say=say)
         left = dict.fromkeys(owners, -1)
         for round_ in range(1, len(owners) + 2):
             before = dict(left)
@@ -112,6 +133,15 @@ def _apply(
         say(f'reclaim-foreign: {user}: the rest -- ' + ' | '.join(out.strip().splitlines()))
         if not re.search(r'left 0\b', out):
             code = 2
+    except _Refused as why:
+        say(
+            f"reclaim-foreign: refused, nothing was written -- {why}: only the owners' admin or a site admin can "
+            f'remove {home}/{path}'
+        )
+        say(f'  request: rm -rf {home}/{path}')
+        for owner in owners + [user] * (user in counts):
+            say(f'  {owner}: {counts[owner]} entries')
+        code = 2
     except _FAILED as failed:
         say(f'reclaim-foreign: {step}: failed mid-way -- {failed}; undoing every grant')
         code = 2
@@ -128,6 +158,7 @@ def _grant(
     target: str,
     chain: list[str],
     owners: list[str],
+    cluster: str,
     undo: list[Callable[[], int]],
     say: Callable[[str], None],
 ) -> None:
@@ -156,22 +187,33 @@ def _grant(
         if line.startswith('groups '):
             _, owner, *gids = line.split()
             member[owner] = set(gids)
-        elif found := re.fullmatch(r'(\d+) (\d+) (.+)', line.strip()):
-            recorded.append((found[1], found[2], found[3]))
-    shared = all(gid in member.get(o, set()) for _, gid, _ in recorded for o in owners)
-    bits, inner = ('g', 'rwx') if shared else ('o', 'wx')
-    say(
-        f'reclaim-foreign: {user}: recorded {len(recorded)} modes -- '
-        + ('every owner shares the group: group bits' if shared else 'no group every owner shares: other bits')
-    )
-    record = ''.join(f'{mode} {path}\n' for mode, _, path in recorded)
+        elif found := re.fullmatch(r'(\d+) (\d+) ([^|]*)\|(.+)', line.strip()):
+            recorded.append((found[1], found[2], found[3], found[4]))
+    say(f'reclaim-foreign: {user}: recorded {len(recorded)} modes')
+    if why := _unacceptable(recorded, member, owners, cluster):
+        raise _Refused(why)
+    names = sorted({name for _, _, name, _ in recorded})
+    say(f'reclaim-foreign: {user}: every owner shares the group {", ".join(map(repr, names))}: group bits')
+    record = ''.join(f'{mode} {path}\n' for mode, _, _, path in recorded)
     undo.append(functools.partial(_restore, mine, record=record, user=user, say=say))
     out = mine(
-        f'chmod {bits}+x {" ".join(chain)} && find {target} -type d -user {user} -exec chmod {bits}+{inner} {{}} + '
-        '&& echo opened',
+        f'chmod g+x {" ".join(chain)} && find {target} -type d -user {user} -exec chmod g+rwx {{}} + && echo opened',
         None,
     )
-    say(f'reclaim-foreign: {user}: chmod {bits}+x ancestors, {bits}+{inner} target dirs -- {out.strip()}')
+    say(f'reclaim-foreign: {user}: chmod g+x ancestors, g+rwx target dirs -- {out.strip()}')
+
+
+def _unacceptable(
+    recorded: list[tuple[str, str, str, str]], member: dict[str, set[str]], owners: list[str], cluster: str
+) -> str:
+    """Why no group may widen (``''``: every touched path's group is every owner's, and narrower than the site)."""
+    if (site := SITE_WIDE_GROUPS.get(cluster)) is None:
+        return f'cluster {cluster!r} declares no site-wide groups (SITE_WIDE_GROUPS), so no group is known narrow'
+    if not all(gid in member.get(o, set()) for _, gid, _, _ in recorded for o in owners):
+        return 'no group every owner shares, and the other bits never widen (user ruling 2026-11-24)'
+    if wide := sorted({name for _, _, name, _ in recorded if name in site}):
+        return f'the shared group {", ".join(map(repr, wide))} is site-wide on {cluster}'
+    return ''
 
 
 def _restore(mine: Runner, *, record: str, user: str, say: Callable[[str], None]) -> int:
@@ -300,7 +342,8 @@ def reclaim(
     except (*_FAILED, PermissionError, LookupError) as refused:
         say(f'reclaim-foreign: refused before any grant -- {refused}')
         return 2
-    return _apply(user, run=run, home=home, path=path, owners=owners, say=say)
+    cluster = machine.grant(user).cluster
+    return _apply(user, run=run, home=home, path=path, counts=counts, cluster=cluster, say=say)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
