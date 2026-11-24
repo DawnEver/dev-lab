@@ -143,6 +143,7 @@ _IDS = frozenset(
         'PRIOR-ART-FIRST',
         'MEASURE-BEFORE-PORTING',
         'ONE-FORMAT-PER-NEED',
+        'MACHINES-MEET-ONLY-THROUGH-THE-FORGE',
     }
 )
 

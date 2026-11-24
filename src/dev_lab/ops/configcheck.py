@@ -1,6 +1,6 @@
 """Check a config-source repository OFF its hosts: the CI of the repository ``[ops.config] source`` names.
 
-Four checks, each generic (the repository's own facts arrive as the files it holds):
+Five checks, each generic (the repository's own facts arrive as the files it holds):
 
 - a HOST file is a server's (``[ops]``), a development machine's (``[dev]``, :mod:`dev_lab.dev.devhost`,
   checked with the family file: a restated family key is refused; the machine tables it renders are open, but
@@ -18,6 +18,8 @@ Four checks, each generic (the repository's own facts arrive as the files it hol
   host file carrying the role's ``[ops.<duty>]`` (:func:`dev_lab.dev.roles.host_refusals`), and every repo a judge's
   ``[ops.judge] repos`` or a promoter's ``[ops] repos`` lists is bound to THAT host for that role -- the host's list
   and the binding are one fact, the binding its source;
+- no development machine's host file declares a route (ssh jump, host key, endpoint) to another one
+  (:func:`check_routes`, MACHINES-MEET-ONLY-THROUGH-THE-FORGE): they meet only through the forge;
 - a change NEEDS CONSENT when it touches a boundary key (:func:`dev_lab.ops.configdoor.boundary`): merging it
   grants nothing, applying it still needs the user's ``ops.config`` consent, so the PR is labelled :data:`LABEL`.
 
@@ -37,12 +39,13 @@ from urllib.parse import urlsplit
 from lab_commons.log import emit
 
 from dev_lab.dev import accounthost, devschema, rolecheck, roles, writeroots
+from dev_lab.dev.machineroutes import route_defects
 from dev_lab.ops import clientkeys
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
 from dev_lab.supervise.config import DEFAULTS
 
-__all__ = ['LABEL', 'LOCAL_ONLY', 'check_family', 'check_host', 'check_roles', 'main', 'needs_consent']
+__all__ = ['LABEL', 'LOCAL_ONLY', 'check_family', 'check_host', 'check_roles', 'check_routes', 'main', 'needs_consent']
 
 #: Tables a machine holds for itself; the family layer never carries them.
 LOCAL_ONLY: Final = ('repos', 'writeroots', 'sync')
@@ -202,6 +205,17 @@ def check_roles(family: Path, hosts: Sequence[Path]) -> list[str]:
     return found
 
 
+def check_routes(hosts: Sequence[Path]) -> list[str]:
+    """Every route one development machine's host file declares to another (:mod:`dev_lab.dev.machineroutes`)."""
+    cards = {}
+    for path in hosts:
+        try:
+            cards[path.stem] = tomllib.loads(path.read_text(encoding='utf-8'))
+        except tomllib.TOMLDecodeError:
+            continue  # check_host names it
+    return route_defects(cards)
+
+
 def needs_consent(old: str, new: str) -> tuple[str, ...]:
     """The boundary keys a change from *old* to *new* touches (empty: it applies on the operator's word)."""
     return boundary(changes(tomllib.loads(old) if old else {}, tomllib.loads(new)))
@@ -215,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--against', type=Path, default=None, help="a directory holding the base's host files")
     args = parser.parse_args(argv)
     defects = [line for host in args.hosts for line in check_host(host, args.family)]
+    defects += check_routes(args.hosts)
     if args.family is not None:
         defects += check_family(args.family) + check_roles(args.family, args.hosts)
     for line in defects:
