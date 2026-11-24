@@ -231,6 +231,8 @@ _ENFORCED = {
     'OUTPUT-HOLDS-NO-CODE': (guard('tests/test_dev_outputcode.py'),),
     # 2026-11-24 (user ruling, ruling C): a credential value never reaches an output sink; hashes only.
     'NEVER-LOG-SECRETS': (guard('tests/test_dev_secretlog.py'),),
+    # 2026-11-23 (user ruling): origin holds only family version tags; pre-push refuses any other tag.
+    'ONLY-VERSION-TAGS': (guard('tests/test_dev_milestonebase.py'),),
     # User 2026-11-20: a research deploy called crontab on a cluster forbidding it; steps derive from `serves`.
     'SCHEDULER-ONLY-FOR-SERVING': (guard('tests/test_hpc_scheduler_only_for_serving.py'),),
     # 2026-11-20: a new workstation's doors died on a bare host-key failure; remote refuses an undeclared key.
