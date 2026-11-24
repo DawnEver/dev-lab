@@ -84,10 +84,9 @@ _TABLE: Final = 'freeze'
 _OID: Final = re.compile(r'[0-9a-f]{40}|[0-9a-f]{64}')
 HAZARD: Final = 'a file or directory the user finalized is frozen: its content changes only with their consent.'
 REMEDY: Final = (
-    f'Only the USER approves: draft {FREEZE_FILE} (a `[frozen]` row `"<path>" = "<blob or tree id>"` freezes a file '
-    'or directory, removing it unfreezes), run `{python} -m dev_lab.dev.frozen request`, '
-    'ask the user for the cluster code, run the grant it names with their code, then '
-    f'`{{python}} -m dev_lab.dev.frozen receipt <credential.json>` and commit {FREEZE_FILE} with {RECEIPT_FILE}.'
+    f'Only the USER approves: edit {FREEZE_FILE} (`[frozen]` `"<path>" = "<object id>"`), run '
+    '`{python} -m dev_lab.dev.frozen request`, ask the user for the code, run the grant it names, then '
+    f'`{{python}} -m dev_lab.dev.frozen receipt <credential.json>`; commit {FREEZE_FILE} with {RECEIPT_FILE}.'
 )
 
 
