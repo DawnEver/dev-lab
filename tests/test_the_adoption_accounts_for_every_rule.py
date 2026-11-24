@@ -208,7 +208,6 @@ _ENFORCED = {
     'HEAVY-IS-THE-MAIN-SESSIONS': (guard('tests/test_dev_hooks.py'),),
     'TOLERANCE-CARRIES-A-UNIT': (guard('tests/test_arch_every_approx_states_its_floor.py'),),
     'TRACKED-CITES-NO-EPHEMERAL': (guard('tests/test_famtests_ephemeralrefs.py'),),
-    'MONTHLY-PLANS-CARRIED': (guard('tests/test_famtests_monthsummary.py'),),
     'RATCHET-TWO-SIDES': (
         guard('tests/test_arch_module_size_alarm.py'),
         guard('tests/test_arch_dependencies.py'),

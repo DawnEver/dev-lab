@@ -375,7 +375,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'retiredfiles',  # ORIGINAL: split from codeplace: a checkout's own declared retired-file rows (2026-11-17)
     'strays',  # ORIGINAL: split from codeplace: the STRAY-FILE-REFUSED census and its hooks (2026-11-17)
     'metrics',
-    'monthsummary',
     'prsuperseded',
     'metrics_compute',
     'metrics_report',

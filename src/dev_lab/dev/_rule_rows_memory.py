@@ -46,13 +46,4 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_ledgerguard.py',),
     ),
-    (
-        'MONTHLY-PLANS-CARRIED',
-        (
-            'Every month holding a memory entry carries `YYYY/MM/SUMMARY-YYYY-MM.md`, whose `## Plans` section '
-            'lists every plan the previous summary left open or partial, and an entry closes only by naming its '
-            'evidence.'
-        ),
-        ('tests/test_famtests_monthsummary.py',),
-    ),
 )
