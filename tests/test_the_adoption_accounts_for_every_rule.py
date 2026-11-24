@@ -70,6 +70,7 @@ _ENFORCED = {
     'SCRATCH-IS-NEVER-COMMITTED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_scratch.py')),
     'STRAY-FILE-REFUSED': (guard('tests/test_arch_code_placement.py'), guard('tests/test_dev_strays.py')),
     'WRITES-STAY-IN-THE-TREE': (guard('tests/test_dev_writeroots.py'), guard('tests/test_dev_tmpsweep.py')),
+    'LEDGER-WRITES-THROUGH-ITS-DOOR': (guard('tests/test_dev_ledgerguard.py'),),
     'DECLARATION-LIES': (
         guard('tests/test_arch_public_surface.py'),
         guard('tests/test_arch_rules_pages.py'),
