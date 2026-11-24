@@ -26,7 +26,10 @@ widgets = "ir/widgets.toml"          # -> sample_pkg/_ir_widgets.py, Rust mod ir
 samples = "ir/samples.toml"
 
 [tool.dev_lab.ir_schema.external]    # another repo's IR: alias -> its generated Python module
-base = "other_pkg._ir_base"
+base = "other_pkg._ir_base"          # which embeds its schema as SCHEMA_TOML
+
+[tool.dev_lab.ir_schema.external_rust]   # the same alias -> its Rust module path
+base = "other_crate::ir::ir_base"
 ```
 
 A repo with no `[tool.dev_lab.ir_schema]` has no IR, and every IR check is silent for it.
@@ -100,13 +103,14 @@ flow = "<quantity>"                   # effort x flow must be a power ("1 2 -3 0
 
 ## Units cross once, at the boundary
 
-- **The input codec** (generated `from_boundary`) takes a number or a string with a unit (`"250 g"`,
+- **The input codec** (`_ir_codec.from_boundary(Record, mapping)`) takes a number or a string with a unit (`"250 g"`,
   `"85 degC"`, `"94 dB"`).
 - It converts once, through Pint, to the catalogue unit. A dimension mismatch is refused.
 - Affine temperatures convert as absolute. A `gauge_reference` field converts the gauge value and adds the
   named field's absolute value.
 - `dB` uses the quantity's `db_reference` and `db_scale`. A quantity without them refuses dB.
-- **Output rendering** (`to_boundary`) converts back to a requested display unit, gauge and dB included.
+- **Output rendering** (`_ir_codec.to_boundary(record, {"field.path": "unit"})`) converts back to a requested
+  display unit, gauge and dB included. Its output reads back through `from_boundary` unchanged.
 - Generated types, canonical bytes and content hashes hold SI only. Pint is imported by the codec, never by
   the types.
 
@@ -123,7 +127,10 @@ diffing every schema file and the catalogue against the last commit.
 
 - A declared bump below the computed class is refused, and so is a change with no bump.
 - A consumer of a record is a module that imports it from the generated module.
-- `irschema affected` maps changed records to consumers to their tests: `verify --changed` selects them.
+- `python -m dev_lab.dev.irschema affected` names the class and the consuming modules.
+- `verify --changed` reads an IR change by its class. PATCH adds nothing, MINOR adds the consumers, and MAJOR
+  adds `pyproject.toml`, which every test's footprint reaches. A `pyproject.toml` edit that only moves the IR
+  version reaches nothing.
 - A new enum value is MINOR. Rust's `match` stays exhaustive, so a Rust consumer fails to compile until it
   handles the value. That compile error is the retest.
 
@@ -166,8 +173,8 @@ One byte sequence per value; `content_hash = sha256(canonical bytes)`, hex.
 
 ## Python output
 
-`python -m dev_lab.dev.irschema generate` writes `<package_dir>/_ir_<module>.py` for each module. The
-files are git-ignored and regenerated at package build. No Pydantic; the runtime needs `numpy` only, and
+`python -m dev_lab.dev.irschema generate` refuses a bump below the change's class, then writes `<package_dir>/_ir_<module>.py` for each module. The
+files are git-ignored; `generate` regenerates them (a package-build hook is not wired yet). No Pydantic; the runtime needs `numpy` only, and
 the codec needs `pint`.
 
 - Records are `@dataclass(frozen=True, slots=True, kw_only=True)`; `__post_init__` validates and
@@ -175,8 +182,10 @@ the codec needs `pint`.
   `unique_by`.
 - `IRValidationError(ValueError)` messages read `<path>: expected <x>, got <y>`, with a dotted path from the
   top record (`Batch.samples[2].position.shape[1]: expected 3, got 2`).
-- Each record has `to_json() -> bytes`, `content_hash() -> str`, `from_json(bytes)`, `dump(path)`,
-  `load(path)`, `from_boundary(mapping)` and `to_boundary(units)`.
+- Each record has `to_json() -> bytes`, `content_hash() -> str`, `from_json(bytes)`, `dump(path)` and
+  `load(path)`. Equality is equality of canonical bytes.
+- Beside the modules sit `_ir_runtime.py` (validation, canonical JSON, envelope, freshness; numpy only) and
+  `_ir_codec.py` (the boundary; Pint), copied verbatim from `dev_lab.dev._ir_runtime` / `_ir_codec`.
 
 ### Freshness
 
@@ -184,6 +193,7 @@ the codec needs `pint`.
   half is the sha256 of this module's schema file, the catalogue and the declared version. The second is
   the generator's version.
 - `python -m dev_lab.dev.irschema check` refuses a missing or stale module by name (`IR-STALE-GENERATED`).
+  `verify` runs the same check on every run of a repo that declares an IR.
 - At import, the module re-hashes its sources when they are present (an editable checkout) and raises
   `IR-STALE-GENERATED` on a mismatch. A wheel ships no sources: its module was generated in the same
   build.
@@ -214,8 +224,10 @@ fn main() {
   `Option<T>` with `skip_serializing_if`.
 - `validate()` gives the same path messages as Python. `to_json()` writes the canonical bytes with a
   generated writer, because serde_json's float format and key order are not canonical.
-- Behind the crate feature `pyo3`, each record converts to and from its Python dataclass through the
-  canonical bytes.
+- Behind the crate feature `pyo3` (pyo3 0.23 or later), `Record::from_py(&obj)` and `record.to_py(py)` convert
+  to and from the Python dataclass through the canonical bytes.
+- `tests/test_dev_irrust.py` builds the generated Rust offline and checks it against the Python: the same
+  bytes for every fixture value, and the same error for a refused one.
 
 ## Refusals
 
