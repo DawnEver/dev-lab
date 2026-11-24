@@ -31,6 +31,8 @@ from dev_lab.dev.famtests.hostnode import host_node_uses
 from dev_lab.dev.famtests.platformskips import platform_skips
 from dev_lab.dev.famtests.remedypaths import relative_interpreters
 from dev_lab.dev.famtests.restatedrules import restated
+from dev_lab.dev.famtests.testleaks import WORDS as LEAK_WORDS
+from dev_lab.dev.famtests.testleaks import leaks
 from dev_lab.dev.rules import tracked_files
 
 if TYPE_CHECKING:
@@ -103,6 +105,13 @@ TREE_CHECKS: Final[dict[str, TreeCheck]] = {
         partial(_tracked, prefix=_TESTS, suffix='.py'),
         partial(_parsed, words=('node',), reader=host_node_uses),
         'run JS with dev_lab.dev.jsrun.run_js, the locked engine, never the host node (dev_lab.dev.famtests.hostnode)',
+    ),
+    'testleaks': TreeCheck(
+        _has_python_tests,
+        partial(_tracked, prefix=_TESTS, suffix='.py'),
+        partial(_parsed, words=LEAK_WORDS, reader=leaks),
+        'write under tmp_path (TemporaryDirectory at most), never mkdtemp/mkstemp/gettempdir, '
+        'NamedTemporaryFile(delete=False) or a host root like /tmp, /var/tmp, C:/ (dev_lab.dev.famtests.testleaks)',
     ),
     'restatedrules': TreeCheck(
         _has(_RULES),

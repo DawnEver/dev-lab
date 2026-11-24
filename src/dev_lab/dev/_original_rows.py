@@ -272,6 +272,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no consumer file refused a host Node; the need arose when the cluster verdict host was ruled
     # Node-free (2026-10-28) and a downstream repo's review JS tests were found to call shutil.which('node').
     'hostnode',
+    # ORIGINAL: no consumer file refused a test's unowned temp entry or host-root literal; the need arose when
+    # one workstation held 8.9 GB of suite leftovers in %TEMP% and trees at C:/var/tmp, C:/results (2026-11-24).
+    'testleaks',
     # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
     # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was
     # driven on an absent tier word and passed in all three repos on 2026-09-18.

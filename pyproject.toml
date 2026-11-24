@@ -321,3 +321,7 @@ judge_app = 5619495
 # NO-CJK-IN-TRACKED-SOURCE (D26): files still carrying CJK, a set that may only shrink.
 [tool.dev_lab.cjk]
 declared = []
+
+# The mechanism's own tests read the system temp dir to prove where an entry lands; liverun fakes a process cwd.
+[tool.dev_lab.testleaks]
+declared = ["tests/test_dev_commandpart.py", "tests/test_dev_liverun.py", "tests/test_dev_testtemp.py"]
