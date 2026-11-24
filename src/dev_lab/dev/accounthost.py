@@ -35,6 +35,7 @@ TABLES: Final[Mapping[str, Any]] = {
     'priority': {},
     'storage': {'reach': {}},  # which storage remotes this account reaches (lab_commons.storage)
     'hpc': {'paging': {}},
+    'writeroots': {},  # the account's writable-root allowlist (dev_lab.dev.writeroots, ruling R8)
 }
 #: ``[deploy]`` keys the family grant owns: stated in an account file they would be a second copy.
 _DERIVED: Final = ('role', 'slurm_account', 'partitions')

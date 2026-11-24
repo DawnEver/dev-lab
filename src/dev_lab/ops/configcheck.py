@@ -36,7 +36,7 @@ from urllib.parse import urlsplit
 
 from lab_commons.log import emit
 
-from dev_lab.dev import accounthost, devschema, rolecheck, roles
+from dev_lab.dev import accounthost, devschema, rolecheck, roles, writeroots
 from dev_lab.ops import clientkeys
 from dev_lab.ops import config as opsconfig
 from dev_lab.ops.configdoor import boundary, changes
@@ -72,9 +72,11 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
     except tomllib.TOMLDecodeError as bad:
         return [f'{path.name}: {bad}']
     shared = tomllib.loads(family.read_text(encoding='utf-8')) if family is not None else {}
+    table = parsed.get('writeroots', {})
+    allow = [f'{path.name}: {line}' for line in writeroots.allow_defects(table.get('allow', []))] if table else []
     if accounthost.is_account(parsed):
-        return [f'{path.name}: {line}' for line in accounthost.check(path, parsed, shared)]
-    found = rolecheck.host_refusals(path.name, parsed)
+        return allow + [f'{path.name}: {line}' for line in accounthost.check(path, parsed, shared)]
+    found = allow + rolecheck.host_refusals(path.name, parsed)
     if clientkeys.TABLE in parsed.get('ops', {}):
         found.append(f'{path.name}: [ops.{clientkeys.TABLE}] is derived by config fetch ([ops.config] clients); '
                      f'declare a machine key as [dev] {clientkeys.DEV_KEY} in its own host file')  # fmt: skip
@@ -92,6 +94,7 @@ def check_host(path: Path, family: Path | None = None) -> list[str]:
         **DEFAULTS,
         'ops': {},
         'dev': {},
+        'writeroots': {},  # every host's writable-root allowlist (WRITES-STAY-IN-THE-TREE, ruling R8)
         **({key: {} for key in devschema.MACHINE_TABLES} if 'dev' in parsed else {}),
         **({'ssh': {}} if 'dev' in parsed else {}),
         **({app: {} for app in devschema.app_tables(shared)} if 'dev' in parsed else {}),
