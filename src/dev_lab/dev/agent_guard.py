@@ -45,7 +45,6 @@ from typing import Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev import native_session
 from dev_lab.dev.agent_wiring import (
     ENGINE_REL,
     HOOK_COMMAND,
@@ -389,7 +388,7 @@ def _planned(repo: Path, *, force: bool) -> tuple[dict[Path, bytes], list[str]]:
     actions.append(action)
 
     catalog = launcher.with_name('native_session.json')
-    catalog_bytes = native_session.catalog_json()
+    catalog_bytes = _LAUNCHER_SHIPPED.with_name('native_session.json').read_bytes()
     if catalog.exists() and catalog.read_bytes() == catalog_bytes:
         actions.append(f'native session catalog already present: {catalog}')
     else:
