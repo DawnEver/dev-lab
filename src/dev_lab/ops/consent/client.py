@@ -42,7 +42,7 @@ from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.native_session import session_of
 from dev_lab.dev.taskbinding import task_id
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
-from dev_lab.ops.consent.door import Send, handshake, offer, record_receipt, require_receipt, ssh_send
+from dev_lab.ops.consent.door import Send, endpoint_send, handshake, offer, record_receipt, require_receipt
 from dev_lab.ops.consent.issuer import requested
 from dev_lab.ops.consent.plan import load as load_plan
 from dev_lab.ops.consent.plan import request as plan_request
@@ -180,7 +180,7 @@ def verify_held(
     )  # fmt: skip
 
 
-def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> Register:
+def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = endpoint_send) -> Register:
     """A :data:`Register` over ssh to ``[consent] endpoint``; exit 2 is the issuer's refusal, anything else raises."""
     found = _endpoint(table)
 
@@ -196,7 +196,7 @@ def remote_register(table: Mapping[str, Any] | None = None, *, send: Send = ssh_
     return register
 
 
-def spent_ids(ids: list[str], table: Mapping[str, Any] | None = None, *, send: Send = ssh_send) -> set[str]:
+def spent_ids(ids: list[str], table: Mapping[str, Any] | None = None, *, send: Send = endpoint_send) -> set[str]:
     """Which of *ids* the issuer's ledger says were used; raises when it cannot say (the caller then keeps them)."""
     status, said = send(_endpoint(table), {'verb': 'spent', 'ids': list(ids)})
     answers = [found for line in said.splitlines() if isinstance(found := _json_line(line), list)]
@@ -290,7 +290,7 @@ def preflight(
     request: Mapping[str, Any],
     *,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     checks: Iterable[Check] = (),
     subjects: Mapping[str, Callable[[str], str]] = SUBJECTS,
     home: Path | None = None,
@@ -330,7 +330,7 @@ def grant(
     tty: bool | None = None,
     ask: Callable[[str], str] = input,
     read: Callable[[], str] = sys.stdin.readline,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     home: Path | None = None,
     now: Callable[[], float] = time.time,
     subjects: Mapping[str, Callable[[str], str]] = SUBJECTS,
@@ -372,7 +372,7 @@ def grant_plan(
     host: str,
     *,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     home: Path | None = None,
     now: Callable[[], float] = time.time,
 ) -> list[Path]:
@@ -406,7 +406,7 @@ def recover(
     shown: str,
     *,
     table: Mapping[str, Any] | None = None,
-    send: Send = ssh_send,
+    send: Send = endpoint_send,
     home: Path | None = None,
     now: Callable[[], float] = time.time,
 ) -> list[Path]:
