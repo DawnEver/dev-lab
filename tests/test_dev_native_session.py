@@ -126,7 +126,7 @@ def test_the_required_task_gate_applies_to_codex_too(tmp_path: Path) -> None:
     refusal = taskgate.refusal(_required_on(tmp_path / 'repo', 'main'), env={_CODEX: _ID})
     assert refusal is not None
     assert taskgate.RULE in refusal
-    assert '/rem:task open' in refusal
+    assert '/task open' in refusal
 
 
 def test_a_task_branch_admits_the_native_codex_session(tmp_path: Path) -> None:
@@ -152,5 +152,5 @@ def test_the_required_task_gate_applies_to_antigravity_too(tmp_path: Path) -> No
     refusal = taskgate.refusal(_required_on(tmp_path / 'repo', 'main'), env=env)
     assert refusal is not None
     assert taskgate.RULE in refusal
-    assert '/rem:task open' in refusal
+    assert '/task open' in refusal
     assert taskgate.refusal(_required_on(tmp_path / 'repo', 'pr/native-task/x'), env=env) is None

@@ -2,7 +2,7 @@
 
 The ledger is ONE per machine at a derived path, ``<machine home>/repos/tasks`` (user ruling 2026-11-23), a clone of
 the family ``[tasks] remote``; conftest gives each test its own machine home. :func:`plant_ledger` makes that path a
-git clone; :func:`open_task` writes a task the way the user's ``/rem:task open`` does; :func:`on_branch` puts a
+git clone; :func:`open_task` writes a task as the task door's open does; :func:`on_branch` puts a
 checkout on a branch, which is the only thing that says which task it works on.
 """
 

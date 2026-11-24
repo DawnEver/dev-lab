@@ -284,7 +284,7 @@ RETIRED_SPELLINGS: Final = {
     **dict.fromkeys(
         ('taskbinding bind', 'taskbinding status', 'binding_gap', 'BIND_PROMPT'),
         (
-            "rem's UserPromptSubmit task hook binds (rem's task.js status shows it); dev_lab.dev.taskledger reads",
+            'the branch pr/<slug>/<feature> names the task (taskledger.task_of); python -m dev_lab.dev.task status',
             'H4 2026-11-16: a stale venv failed the binder and blocked every prompt; rem owns binding, the gate reads',
         ),
     ),
