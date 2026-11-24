@@ -33,6 +33,7 @@ re-render command.
 
 from __future__ import annotations
 
+import tomllib
 from typing import TYPE_CHECKING
 
 from dev_lab.dev.famconfig import (
@@ -42,6 +43,7 @@ from dev_lab.dev.famconfig import (
     RENDERED,
     RUFF_SECTIONS,
     SECTION_BASES,
+    SectionDelta,
     artefact_base,
     delta_problems,
     inspect_file,
@@ -50,6 +52,7 @@ from dev_lab.dev.famconfig import (
     render,
     ruff_config_path,
 )
+from dev_lab.dev.family import declared_table
 from dev_lab.dev.famtests._configrender_readings import (
     Reopening,
     assert_floor,
@@ -60,7 +63,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-    from dev_lab.dev.famconfig import Base, Delta, SectionDelta
+    from dev_lab.dev.famconfig import Base, Delta
 
 __all__ = [
     'Reopening',
@@ -250,12 +253,24 @@ def assert_every_section_is_owned(*, root: Path, deltas: Mapping[str, SectionDel
 
     The consumer's verdict on its OWN tables. Moved here 2026-10-03 from kit tests that read every
     consumer's pyproject/ruff config from the kit's suite: a test judges the repo it lives in.
+
+    ADOPTION IN WAVES (user ruling 2026-11-24): a section the family newly owns is adopted by each repo in its own
+    wave. Until then the repo NAMES it in ``[tool.dev_lab.pyproject] pending`` and it is not judged -- a list that
+    only shrinks: a pending name that is no family section, or a pending section the file already holds as base
+    plus delta, reds until the entry is deleted. Never a blanket waiver.
     """
-    missing = sorted(set(SECTION_BASES) - set(deltas))
+    pending = _pending(root)
+    unknown_pending = sorted(pending - set(SECTION_BASES))
+    problems = [f'{name}: pending, and the kit publishes no such section' for name in unknown_pending]
+    for name in sorted(pending & set(SECTION_BASES)):
+        path = ruff_config_path(root) if name in RUFF_SECTIONS else root / 'pyproject.toml'
+        if inspect_section(path, SECTION_BASES[name], deltas.get(name) or _empty(repo)).ok:
+            problems.append(f'{name}: adopted, and still pending -- delete it from [tool.dev_lab.pyproject] pending')
+    missing = sorted(set(SECTION_BASES) - set(deltas) - pending)
     unknown = sorted(set(deltas) - set(SECTION_BASES))
-    problems = [f'{name}: no SectionDelta declared' for name in missing]
+    problems += [f'{name}: no SectionDelta declared' for name in missing]
     problems += [f'{name}: declared, and the kit publishes no such section' for name in unknown]
-    for name in sorted(set(SECTION_BASES) & set(deltas)):
+    for name in sorted(set(SECTION_BASES) & set(deltas) - pending):
         base = SECTION_BASES[name]
         path = ruff_config_path(root) if name in RUFF_SECTIONS else root / 'pyproject.toml'
         report = inspect_section(path, base, deltas[name])
@@ -264,3 +279,18 @@ def assert_every_section_is_owned(*, root: Path, deltas: Mapping[str, SectionDel
     if problems:
         msg = f'{repo}: config tables that are not base + delta:\n  ' + '\n  '.join(problems)
         raise AssertionError(msg)
+
+
+def _pending(root: Path) -> frozenset[str]:
+    """``[tool.dev_lab.pyproject] pending`` of *root*: family sections this repo has not adopted yet."""
+    path = root / 'pyproject.toml'
+    data = tomllib.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    entries = declared_table(data, 'pyproject', {}).get('pending', [])
+    if not isinstance(entries, list) or not all(isinstance(entry, str) for entry in entries):
+        msg = f'[tool.dev_lab.pyproject] pending must be a list of section names, not {entries!r}'
+        raise AssertionError(msg)
+    return frozenset(entries)
+
+
+def _empty(repo: str) -> SectionDelta:
+    return SectionDelta(repo=repo, added={}, dropped={}, ceiling=0)

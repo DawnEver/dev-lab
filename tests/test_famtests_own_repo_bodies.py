@@ -41,3 +41,31 @@ def test_the_kit_owns_every_family_table_and_an_undeclared_one_reds() -> None:
     short = dict(list(deltas.items())[1:])
     with pytest.raises(AssertionError, match='no SectionDelta declared'):
         assert_every_section_is_owned(root=ROOT, deltas=short, repo='lab-commons')
+
+
+def test_a_pending_section_is_skipped_by_name_and_reds_once_adopted_or_unknown(tmp_path: Path) -> None:
+    """THE ADOPTION WAVE, TWO-SIDED (user ruling 2026-11-24): only a NAMED pending section goes unjudged.
+
+    PLANTED CONTROLS: a consumer still on setuptools passes with [build-system] pending and reds without it; the
+    same repo after adopting reds until the entry is deleted; a pending name the kit does not publish reds.
+    """
+    kit = (ROOT / 'pyproject.toml').read_text(encoding='utf-8')
+    deltas = {**SECTION_DELTAS['lab-commons'], **PYPROJECT_SECTION_DELTAS['lab-commons']}
+    other = kit.replace('requires = ["hatchling", "hatch-vcs"]', 'requires = ["setuptools", "setuptools-scm"]')
+    assert other != kit, 'the control plants nothing: the kit spells its build-system differently'
+    repo = tmp_path / 'consumer'
+    repo.mkdir()
+    (repo / 'pyproject.toml').write_text(other, encoding='utf-8')
+    with pytest.raises(AssertionError, match=r'\[build-system\]'):
+        assert_every_section_is_owned(root=repo, deltas=deltas, repo='consumer')
+    pending = '\n[tool.dev_lab.pyproject]\npending = ["[build-system]"]\n'
+    (repo / 'pyproject.toml').write_text(other + pending, encoding='utf-8')
+    assert_every_section_is_owned(root=repo, deltas=deltas, repo='consumer')
+    (repo / 'pyproject.toml').write_text(kit + pending, encoding='utf-8')
+    with pytest.raises(AssertionError, match='adopted, and still pending'):
+        assert_every_section_is_owned(root=repo, deltas=deltas, repo='consumer')
+    (repo / 'pyproject.toml').write_text(
+        kit + '\n[tool.dev_lab.pyproject]\npending = ["[tool.nobody]"]\n', encoding='utf-8'
+    )
+    with pytest.raises(AssertionError, match='kit publishes no such section'):
+        assert_every_section_is_owned(root=repo, deltas=deltas, repo='consumer')
