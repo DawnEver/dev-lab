@@ -1,0 +1,46 @@
+# Illustrative IR schema: the worked example of docs-src/dev/ir-schema.md.
+schema_version = 3
+
+[enum.Finish]
+values = ["raw", "painted", "anodized"]
+
+[record.Widget]
+doc = "One manufactured widget."
+[record.Widget.field.id]
+type = "id:Widget"
+doc = "Stable identity of this widget."
+[record.Widget.field.finish]
+type = "enum:Finish"
+[record.Widget.field.mass]
+type = "float"
+quantity = "mass"
+[record.Widget.field.operating_temperature]
+type = "float"
+quantity = "temperature"
+optional = true
+doc = "Absent when the widget has no rated temperature."
+
+[record.Sample]
+doc = "A measured trace taken from one widget."
+[record.Sample.field.widget]
+type = "id:Widget"
+[record.Sample.field.label]
+type = "str"
+[record.Sample.field.calibrated]
+type = "bool"
+[record.Sample.field.count]
+type = "int"
+[record.Sample.field.time]
+type = "array"
+dtype = "float64"
+shape = ["n"]
+quantity = "time"
+[record.Sample.field.position]
+type = "array"
+dtype = "float64"
+shape = ["n", 3]
+quantity = "length"
+doc = "Cartesian position at each time step."
+[record.Sample.field.source]
+type = "record:Widget"
+optional = true

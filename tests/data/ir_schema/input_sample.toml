@@ -1,0 +1,6 @@
+# Illustrative boundary input: units here, SI after the codec.
+[widget]
+id = "w-001"
+finish = "painted"
+mass = "250 g"
+operating_temperature = "85 degC"
