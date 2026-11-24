@@ -22,6 +22,7 @@ output = "output/logs"
 [tool.dev_lab.placement]
 read_only = ["temp", "attic"]
 stores = ["output/cas"]
+scratch = "scratch/"
 """
 
 
@@ -149,6 +150,14 @@ def test_a_junction_or_link_inside_is_unlinked_never_followed(repo: Path, tmp_pa
     assert link in plan.leaves
     assert purge.apply(plan) == []
     assert keep.exists()
+
+
+def test_the_declared_scratch_is_purgeable_though_not_ignored(repo: Path) -> None:
+    """Scratch is declared never-tracked (SCRATCH-IS-NEVER-COMMITTED); unignored ``wip/`` stays refused above."""
+    _write(repo / 'scratch' / 'mirror.git' / 'HEAD')
+    assert len(purge.plan(repo, 'scratch/mirror.git').leaves) == 1
+    with pytest.raises(purge.PurgeRefused, match='outside the checkout'):
+        purge.plan(repo, 'scratch/../..')
 
 
 def test_the_cli_dry_run_prints_counts_and_deletes_nothing(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:

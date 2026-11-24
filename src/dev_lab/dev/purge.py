@@ -10,7 +10,8 @@ go (files, directories, bytes); ``--apply`` removes it. EVERY REFUSAL NAMES ITS 
 * lies outside the checkout, or IS the checkout (a link is judged where it points, never followed);
 * does not exist;
 * holds a TRACKED file (``git ls-files``) -- tracked work leaves through a commit, never a purge;
-* is not git-IGNORED (``git check-ignore``) -- untracked, unignored work is work in progress;
+* is not git-IGNORED (``git check-ignore``) -- untracked, unignored work is work in progress -- unless it lies in
+  the declared scratch (``[tool.dev_lab.placement] scratch``), which holds nothing tracked by declaration;
 * is, holds or lies under a ``read_only`` path the repo declares (``[tool.dev_lab.placement] read_only``,
   user-maintained input such as ``temp``, ``attic``);
 * is, holds or lies under a declared STORE (``[tool.dev_lab.placement] stores``: a content store, a cache a
@@ -156,6 +157,14 @@ def _walk(top: Path, limit: int) -> Iterator[tuple[Path, bool]]:
                     yield child, False
 
 
+def _in_scratch(root: Path, rel: str) -> bool:
+    """*rel* lies strictly below *root*'s declared scratch directory."""
+    manifest = root / 'pyproject.toml'
+    data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
+    scratch = declared_table(data, 'placement', {}).get('scratch')
+    return isinstance(scratch, str) and bool(scratch.strip('/')) and rel.startswith(scratch.strip('/') + '/')
+
+
 def _refuse_scope(root: Path, rel: str, target: Path) -> None:
     if target == root or root not in target.parents:
         msg = f'{rel} is outside the checkout {root} (or is the checkout). Door: purge a path inside it, from its root.'
@@ -170,7 +179,7 @@ def _refuse_scope(root: Path, rel: str, target: Path) -> None:
             'Door: tracked work leaves through a commit (git rm on a branch, landed by a PR), never a purge.'
         )
         raise PurgeRefused(msg)
-    if _git(root, 'check-ignore', '-q', '--', rel).returncode != 0:
+    if _git(root, 'check-ignore', '-q', '--', rel).returncode != 0 and not _in_scratch(root, rel):
         msg = (
             f'{rel} is untracked but not git-ignored: that is work in progress. Door: commit it on its branch, or '
             'ignore its location in .gitignore through a reviewed commit, then purge.'
