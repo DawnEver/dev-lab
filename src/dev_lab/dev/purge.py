@@ -44,6 +44,7 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import datedlog
@@ -91,7 +92,7 @@ class Plan:
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(['git', '-C', str(root), *args], capture_output=True, check=False)  # noqa: S607
+    return _door.run(['git', '-C', str(root), *args], capture_output=True, check=False)
 
 
 def _is_link(path: Path) -> bool:

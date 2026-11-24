@@ -450,6 +450,16 @@ ALLOWED: Final[dict[Site, str]] = {
         "['git', '-C', str(root), *arguments],",
     ): 'git through PATH building the scratch checkouts the local-name reader is then asked to read',
     (
+        'tests/test_dev_purge.py',
+        'S607',
+        "subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)",
+    ): 'git through PATH building the scratch checkout the purge door is then asked to delete from',
+    (
+        'tests/test_dev_purge.py',
+        'S607',
+        "subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(keep.parent)], check=True, capture_output=True)",
+    ): "Windows' own cmd through PATH planting the junction the purge door must refuse to follow",
+    (
         'src/dev_lab/dev/accountsweep.py',
         'S607',
         "['crontab', '-l'],",
