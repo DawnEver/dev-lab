@@ -31,7 +31,7 @@ edition = "2021"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ndarray = "0.16"
+ndarray = "0.17"
 """
 _MAIN = """include!(concat!(env!("CARGO_MANIFEST_DIR"), "/ir.rs"));
 

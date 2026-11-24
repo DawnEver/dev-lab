@@ -238,8 +238,16 @@ fn main() {
   `Option<T>` with `skip_serializing_if`.
 - `validate()` gives the same path messages as Python. `to_json()` writes the canonical bytes with a
   generated writer, because serde_json's float format and key order are not canonical.
-- Behind the crate feature `pyo3` (pyo3 0.23 or later), `Record::from_py(&obj)` and `record.to_py(py)` convert
-  to and from the Python dataclass through the canonical bytes.
+- Behind the crate feature `pyo3` (pyo3 0.29, numpy 0.29, ndarray 0.17), records convert FIELD BY FIELD and
+  never through the canonical bytes (D49). Those bytes are only for hashing, persistence and the
+  byte-equality test.
+  - `<Record>View<'py>` reads a Python record with its arrays as `numpy::PyReadonlyArrayDyn`: zero-copy.
+  - `view.into_owned()` and `FromPyObject` for the record copy each array at most once.
+  - `IntoPyObject` builds the dataclass by keyword and moves each array into numpy without a copy.
+  - Enums convert by value; ids convert as `str`.
+  - `tests/test_dev_irrustpy.py` checks two things. A record round-tripped through pyo3 equals the original
+    while `to_json`/`from_json` raise. A view's buffer pointer is numpy's own, with a planted control: the
+    owned record's pointer differs.
 - `tests/test_dev_irrust.py` builds the generated Rust offline and checks it against the Python: the same
   bytes for every fixture value, and the same error for a refused one.
 

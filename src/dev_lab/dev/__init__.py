@@ -57,6 +57,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.irhatch` — the IR build hook (hatch entry point ``ir-schema``): a wheel build generates and
   ships the IR modules. Imports hatchling; loaded only by a build.
 * :mod:`dev_lab.dev.irrust` — the IR's generated Rust: one ``ir.rs`` a ``build.rs`` writes into ``OUT_DIR``.
+* :mod:`dev_lab.dev.irrustpy` — the generated Rust's pyo3 conversion: field by field, arrays zero-copy on read.
 * :mod:`dev_lab.dev.irversion` — the class of an IR change (PATCH/MINOR/MAJOR) against a git revision, and the
   refusal of a declared bump below it.
 * :mod:`dev_lab.dev.irmigrate` — the one migrate door: stored records rewritten once through the repo's steps.
