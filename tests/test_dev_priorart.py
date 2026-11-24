@@ -57,7 +57,7 @@ def test_the_write_hook_denies_the_uncited_duplicate(tmp_path: Path, capsys, mon
     # tmp_path lies under the OS temp dir, which WRITES-STAY-IN-THE-TREE refuses first; this test is about prior art.
     monkeypatch.setattr(codeplace, 'refuse_outside_tree', lambda _path: None)
     _repo(tmp_path)
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.placement]\ncode_roots = []\n', encoding='utf-8')
+    (tmp_path / 'layout.toml').write_text('code_roots = []\n', encoding='utf-8')
     new = str(tmp_path / 'src' / 'pkg' / 'beta' / 'assembly.py')
     payload = {'tool_name': 'Write', 'tool_input': {'file_path': new, 'content': '"""Beta."""\n'}}
     assert main(stdin=io.StringIO(json.dumps(payload))) == 0

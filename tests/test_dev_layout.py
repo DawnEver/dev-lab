@@ -23,21 +23,30 @@ from dev_lab.dev.layout import LayoutNotDeclared, declared_layout, layout_violat
 
 _HOMES = """'.' = ['.toml', '.md']
 src = ['.py']
+'src/*' = ['.py']
 tests = ['.py']
-scripts = ['.py']
 scratch = ['*']
+'scratch/*' = ['*']
+'scratch/*/*' = ['*']
+'scratch/*/*/*' = ['*']
 '.claude' = ['.json']
 '.claude/memory' = ['.md']
 'docs-src' = ['.md']
 output = []
 'output/logs' = []
+'output/logs/[0-9][0-9]' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]' = []
 'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.csv', '.json']
 """
-_TABLE = f"""[tool.dev_lab.placement]
-pruned_paths = ['.claude/worktrees']
+_TABLE = f"""pruned_paths = ['.claude/worktrees']
 read_only = ['temp']
-[tool.dev_lab.placement.layout]
+[layout]
 {_HOMES}rust = ['.rs', '.toml']
+'rust/crates' = []
+'rust/crates/*' = []
+'rust/crates/*/src' = ['.rs']
+'rust/crates/*/tests' = []
 'rust/crates/*/tests/goldens' = ['.bundle']
 temp = ['*']
 """
@@ -45,7 +54,7 @@ temp = ['*']
 
 def _checkout(root: Path, body: str = _TABLE) -> Path:
     (root / '.git').mkdir(parents=True)
-    (root / 'pyproject.toml').write_text(body, encoding='utf-8')
+    (root / 'layout.toml').write_text(body, encoding='utf-8')
     for top in ('src', 'rust', 'output/logs/26/11/23/run'):
         (root / top).mkdir(parents=True)
     return root
@@ -58,13 +67,43 @@ def _plant(root: Path, rel: str) -> Path:
 
 
 def test_the_family_homes_are_required() -> None:
-    assert {'src', 'tests', 'scripts', 'scratch', '.claude', 'docs-src', 'output'} == layout.REQUIRED
+    assert {'src', 'tests', 'scratch', '.claude', 'docs-src', 'output'} == layout.REQUIRED
+
+
+def test_a_scripts_dir_is_no_family_home_and_undeclared_is_refused(tmp_path) -> None:
+    """User ruling 2026-11-24: dev mechanisms live in dev-lab, so scripts/ is just an undeclared directory."""
+    assert 'scripts/' not in codeplace.FAMILY_HOMES.values()
+    root = _checkout(tmp_path)
+    assert layout_violations(root)[1] == []
+    _plant(root, 'scripts/tool.py')
+    assert layout_violations(root)[1] == [f'scripts/: {layout._undeclared("scripts")}']
+
+
+def test_a_subdirectory_with_no_row_of_its_own_is_refused_by_name(tmp_path) -> None:
+    """NO INHERITANCE (ruling 2026-11-24): `src/*` declares src/pkg, never src/pkg/sub below it."""
+    root = _checkout(tmp_path)
+    _plant(root, 'src/pkg/x.py')
+    assert layout_violations(root)[1] == []
+    _plant(root, 'src/pkg/sub/y.py')
+    assert layout_violations(root)[1] == [f'src/pkg/sub/: {layout._undeclared("src/pkg/sub")}']
+    assert 'src/pkg/sub/ is not declared' in (refuse_layout(root / 'src' / 'pkg' / 'sub' / 'z.py') or '')
+
+
+def test_the_retired_pyproject_table_is_refused_by_name_with_its_migration(tmp_path) -> None:
+    """FORMATS-MIGRATE-ONCE: layout.toml is the one place; a leftover [tool.dev_lab.placement] is never read."""
+    root = _checkout(tmp_path)
+    assert declared_layout(root).rows
+    (root / 'pyproject.toml').write_text("[tool.dev_lab.placement.layout]\nsrc = ['.py']\n", encoding='utf-8')
+    with pytest.raises(LayoutNotDeclared, match=r'(?s)still holds \[tool\.dev_lab\.placement\].*FORMATS-MIGRATE-ONCE'):
+        declared_layout(root)
+    with pytest.raises(codeplace.PlacementNotDeclared, match=r'layout\.toml'):
+        codeplace.declared_placement(root)
 
 
 @pytest.mark.parametrize('name', ['!x', '#x', '(x'])
 def test_an_explicit_name_beats_a_glob_at_equal_depth_whatever_it_sorts_as(tmp_path, name) -> None:
     """THE PLANTED CONTROL: each name sorts below '*' in ASCII, so a max() over the pattern text would pick the glob."""
-    body = f"[tool.dev_lab.placement.layout]\n{_HOMES}rust = []\n'rust/*' = ['.rs']\n'rust/{name}' = ['.md']\n"
+    body = f"[layout]\n{_HOMES}rust = []\n'rust/*' = ['.rs']\n'rust/{name}' = ['.md']\n"
     root = _checkout(tmp_path, body)
     _plant(root, f'rust/{name}/a.md')
     _plant(root, 'rust/other/a.rs')
@@ -75,7 +114,7 @@ def test_an_explicit_name_beats_a_glob_at_equal_depth_whatever_it_sorts_as(tmp_p
 
 def test_fewer_wildcards_win_and_an_equal_tie_is_refused_as_ambiguous(tmp_path) -> None:
     body = (
-        f"[tool.dev_lab.placement.layout]\n{_HOMES}rust = []\n'rust/a?' = ['.rs']\n'rust/??' = ['.md']\n"
+        f"[layout]\n{_HOMES}rust = []\n'rust/a?' = ['.rs']\n'rust/??' = ['.md']\n"
         "'rust/b?' = ['.rs']\n'rust/?c' = ['.md']\n"
     )
     root = _checkout(tmp_path, body)
@@ -91,7 +130,6 @@ def test_a_clean_tree_reads_no_violation(tmp_path) -> None:
     root = _checkout(tmp_path)
     for rel in (
         'output/logs/26/11/23/run/data.csv',
-        'output/logs/26/11/23/run/deep/er/r.json',
         'rust/crates/x/tests/goldens/g.bundle',
         'src/pkg/x.py',
         'README.md',
@@ -110,17 +148,17 @@ def test_a_clean_tree_reads_no_violation(tmp_path) -> None:
             'output/logs/26/11/23/run/probe.py: .py is not allowed under output/logs/',
         ),
         ('output/logs/26/11/23/run/notes.md', 'output/logs/26/11/23/run/notes.md: .md is not allowed'),
-        ('output/logs/legacy/a/b/c/x.csv', 'output/logs/legacy/a/b/c/x.csv: .csv is not allowed under output/logs '),
+        ('output/logs/legacy/a/b/c/x.csv', 'output/logs/legacy/: output/logs/legacy/ is not declared'),
         ('output/stray.csv', 'output/stray.csv: .csv is not allowed under output '),
-        ('rust/crates/x/src/x.bundle', 'rust/crates/x/src/x.bundle: .bundle is not allowed under rust '),
-        ('tmp/a.txt', 'tmp/a.txt: tmp/ is not declared'),
+        ('rust/crates/x/src/x.bundle', 'rust/crates/x/src/x.bundle: .bundle is not allowed under rust/crates/*/src '),
+        ('tmp/a.txt', 'tmp/: tmp/ is not declared'),
         ('run.ps1', 'run.ps1: .ps1 is not allowed under .'),
         ('output/logs/26/11/23/lane/lane.bundle', 'output/logs/26/11/23/lane/lane.bundle: NO-BACKUP-COPIES'),
         ('scratch/uncommitted.patch', 'scratch/uncommitted.patch: NO-BACKUP-COPIES'),
         ('output/logs/26/11/23/wt/.git', 'output/logs/26/11/23/wt/: NO-BACKUP-COPIES: holds .git'),
         ('scratch/clone/.git/HEAD', 'scratch/clone/: NO-BACKUP-COPIES: holds .git'),
         ('src/pkg/.claude/memory/note.md', 'src/pkg/.claude/: a .claude/ below the repo root'),
-        ('output/lane-copy/x/src/a.py', 'output/lane-copy/x/src/a.py: .py is not allowed'),
+        ('output/lane-copy/x/src/a.py', 'output/lane-copy/: output/lane-copy/ is not declared'),
     ],
 )
 def test_a_planted_violation_is_NAMED(tmp_path, rel, named) -> None:
@@ -184,7 +222,7 @@ def test_an_unchanged_directory_is_read_from_the_journal(tmp_path, monkeypatch) 
     monkeypatch.setattr(layout, '_listing', lambda folder: listed.append(folder) or real(folder))
     layout_violations(root, incremental=True)
     assert listed == [], 'no directory changed, so none is listed again'
-    (root / 'pyproject.toml').write_text(_TABLE + "docs = ['.md']\n", encoding='utf-8')
+    (root / 'layout.toml').write_text(_TABLE + "docs = ['.md']\n", encoding='utf-8')
     layout_violations(root, incremental=True)
     assert listed, 'PLANTED CONTROL: a changed declaration rescans every directory'
 
@@ -192,11 +230,11 @@ def test_an_unchanged_directory_is_read_from_the_journal(tmp_path, monkeypatch) 
 @pytest.mark.parametrize(
     'body',
     [
-        '[tool.dev_lab.placement]\n',
-        f"[tool.dev_lab.placement.layout]\n{_HOMES}rust = 'x'\n",
-        "[tool.dev_lab.placement.layout]\nsrc = ['.py']\n",
-        f"[tool.dev_lab.placement.layout]\n{_HOMES}'output/cache' = ['.py']\n",
-        f"[tool.dev_lab.placement.layout]\n{_HOMES}'output/cache' = ['*']\n",
+        'read_only = []\n',
+        f"[layout]\n{_HOMES}rust = 'x'\n",
+        "[layout]\nsrc = ['.py']\n",
+        f"[layout]\n{_HOMES}'output/cache' = ['.py']\n",
+        f"[layout]\n{_HOMES}'output/cache' = ['*']\n",
     ],
 )
 def test_an_absent_malformed_or_code_admitting_table_is_REFUSED(tmp_path, body) -> None:
@@ -208,21 +246,21 @@ def test_an_absent_malformed_or_code_admitting_table_is_REFUSED(tmp_path, body) 
 @pytest.mark.parametrize('row', ["'src/pkg' = ['.py', '.yaml']", "config = ['.ini']", "'docs-src/x' = ['.cfg']"])
 def test_a_second_configuration_format_is_REFUSED_by_name(tmp_path, row) -> None:
     """ONE-FORMAT-PER-NEED: configuration is TOML; a row allowing another config format refuses the declaration."""
-    root = _checkout(tmp_path, f'[tool.dev_lab.placement.layout]\n{_HOMES}{row}\n')
+    root = _checkout(tmp_path, f'[layout]\n{_HOMES}{row}\n')
     with pytest.raises(LayoutNotDeclared, match='ONE-FORMAT-PER-NEED'):
         declared_layout(root)
 
 
 def test_a_forge_workflow_directory_and_output_may_hold_their_own_formats(tmp_path) -> None:
     """PLANTED CONTROL for the refusal above: the forge dictates its workflows' format; output holds what is written."""
-    body = f"[tool.dev_lab.placement.layout]\n{_HOMES}'.github/workflows' = ['.yml']\n'output/run' = ['.yaml']\n"
+    body = f"[layout]\n{_HOMES}'.github/workflows' = ['.yml']\n'output/run' = ['.yaml']\n"
     assert declared_layout(_checkout(tmp_path, body)).rows['.github/workflows'] == frozenset({'.yml'})
 
 
 def test_the_famtest_floor_refuses_a_walk_that_read_nothing(tmp_path) -> None:
     root = tmp_path / 'empty'
     root.mkdir()
-    (root / 'pyproject.toml').write_text(_TABLE, encoding='utf-8')
+    (root / 'layout.toml').write_text(_TABLE, encoding='utf-8')
     with pytest.raises(floors.FloorUnmet):
         assert_layout_holds(root=root, floor=3, headroom=5)
 
@@ -251,7 +289,7 @@ def test_the_cli_exits_one_on_a_violation_and_two_when_undeclared(tmp_path) -> N
     assert layout.main(['--root', str(root), '--full']) == 0
     _plant(root, 'tmp/x.txt')
     assert layout.main(['--root', str(root), '--full']) == 1
-    (root / 'pyproject.toml').write_text('[tool.dev_lab.placement]\n', encoding='utf-8')
+    (root / 'layout.toml').write_text('', encoding='utf-8')
     assert layout.main(['--root', str(root)]) == 2
 
 
@@ -280,7 +318,7 @@ def test_the_write_hook_refuses_exactly_what_the_scan_refuses(tmp_path, rel, ref
 
 
 def test_a_checkout_without_a_layout_table_is_not_judged_by_the_hook(tmp_path) -> None:
-    root = _checkout(tmp_path, '[tool.dev_lab.placement]\n')
+    root = _checkout(tmp_path, '')
     assert refuse_layout(root / 'tmp' / 'x.txt') is None
     assert scan_refusal(root) is None
 
@@ -298,11 +336,11 @@ def test_the_hook_entry_denies_a_write_into_an_undeclared_directory(tmp_path, ca
 
 # ---------------------------------------------------- read-only inputs and named tool caches (rulings 2026-11-24)
 
-_BARE = f"""[tool.dev_lab.placement]
-read_only = ['temp']
+_BARE = f"""read_only = ['temp']
 tool_caches = ['pytest', 'ruff']
-[tool.dev_lab.placement.layout]
+[layout]
 {_HOMES}rust = ['.rs', '.toml']
+'output/cache' = []
 """
 
 

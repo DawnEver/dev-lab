@@ -199,6 +199,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
             renderer=FAMFILES,
         ),
         _o('CLAUDE.md', 'a pointer to AGENTS.md; the shared rule pages arrive through famtests.rulespages'),
+        _o('layout.toml', 'its placement and DECLARED-LAYOUT tables (dev_lab.dev.layout): the tree is the repo`s'),
         _o('CHANGELOG.md', 'the repo`s release history'),
     )
 }

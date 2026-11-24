@@ -1,7 +1,7 @@
 """USER-FROZEN-FILES: a file or directory the user finalized keeps its content.
 
 User rulings 2026-11-24: once the user finalizes a file it is FROZEN -- no modification. Freeze judges frozen CONTENT
-only: which paths may exist at all is the layout allowlist's (``[tool.dev_lab.placement.layout]``), and memory's
+only: which paths may exist at all is the layout allowlist's (``[layout]`` of ``layout.toml``), and memory's
 append-only rule is :mod:`dev_lab.dev.memoryadds`'s -- neither is restated here. A repo opts in with
 ``[tool.dev_lab.freeze] repo = "<name>"`` in its ``pyproject.toml``; the facts are DATA in ONE file the table makes
 mandatory, :data:`FREEZE_FILE` at the root, mapping a file to its git BLOB id and a directory to its git TREE id::

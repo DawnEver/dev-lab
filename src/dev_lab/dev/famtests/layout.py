@@ -22,7 +22,7 @@ def assert_layout_holds(*, root: Path, floor: int, headroom: int) -> None:
     """Every top-level directory of *root* is declared, and no file sits under a directory forbidding its suffix.
 
     Raises:
-        dev_lab.dev.layout.LayoutNotDeclared: *root* declares no ``[tool.dev_lab.placement.layout]``.
+        dev_lab.dev.layout.LayoutNotDeclared: *root* declares no ``[layout]`` in ``layout.toml``.
         dev_lab.dev.floors.FloorUnmet: the walk read fewer top-level directories than *floor*.
         dev_lab.dev.floors.SlackFloor: the floor has been outgrown past *headroom*.
         AssertionError: a violation, every one named.
@@ -36,6 +36,6 @@ def assert_layout_holds(*, root: Path, floor: int, headroom: int) -> None:
         listed = '\n'.join(f'  {one}' for one in found)
         msg = (
             f'{len(found)} {RULE_ID} violation(s) in {root.as_posix()}. Move each file to its home, or declare '
-            f'the directory in [tool.dev_lab.placement.layout] of pyproject.toml in a reviewed commit:\n{listed}'
+            f'its own row in [layout] of layout.toml in a reviewed commit:\n{listed}'
         )
         raise AssertionError(msg)

@@ -11,7 +11,7 @@ so an untracked one-off shows in ``git status``; it is anchored by one tracked :
 stating the two exits, and nothing else under it is ever committed. It is the stray census's declared
 sink (:func:`dev_lab.dev.strays.stray_files`), so a one-off there is never a stray.
 
-ONE DECLARATION, read off the repo's ``[tool.dev_lab.placement]`` by
+ONE DECLARATION, read off the repo's ``layout.toml`` by
 :func:`dev_lab.dev.codeplace.declared_placement`: ``scratch`` (the directory, the family's
 ``scratch/`` when omitted), ``max_age_days`` (when the notice starts naming a one-off) and
 ``scratch_anchor`` (default true: the tracked README anchors it; false, user ruling 2026-11-17 "scratch
@@ -156,9 +156,9 @@ def assert_scratch_never_committed(root: Path) -> None:
         return
     door = (
         f'git rm --cached each one-off (then {_EXITS}); a missing README: commit {readme}, or declare '
-        f'scratch_anchor = false in [tool.dev_lab.placement] so scratch holds nothing tracked'
+        f'scratch_anchor = false in layout.toml so scratch holds nothing tracked'
         if placement.scratch_anchor
-        else f'scratch_anchor = false in [tool.dev_lab.placement] declares no README: git rm --cached each '
+        else f'scratch_anchor = false in layout.toml declares no README: git rm --cached each '
         f'(a README too), then {_EXITS}'
     )
     msg = (

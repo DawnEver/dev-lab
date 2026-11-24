@@ -3,7 +3,7 @@
 EPHEMERAL MEANS UNTRACKED CONTENT IN A PLACE GIT NEVER KEEPS (user ruling 2026-10-28). Two places,
 both derived, neither listed here: what the repo's own ignore rules ignore (``git check-ignore
 --no-index --stdin``, so a repo that ignores a new cache directory is covered the moment it says so),
-and the declared stray roots (``[tool.dev_lab.placement]``, the family's ``scratch/``), which are
+and the declared stray roots (``layout.toml``, the family's ``scratch/``), which are
 NEVER ignored -- a one-off there must show in ``git status`` -- and never committed beyond their
 README, so ``git check-ignore`` alone let every ``scratch/`` probe through. A path in either place
 passes only when it is TRACKED (a re-included lock file, the scratch README). What git cannot judge

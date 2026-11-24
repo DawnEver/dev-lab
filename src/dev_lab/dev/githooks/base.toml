@@ -209,7 +209,7 @@ refs = '^refs/heads/'
 # post-commit is ADVISORY (githooks.table.ADVISORY): the commit is made, and no row can change its exit status.
 
 # STRAY-FILE-REFUSED as a HINT: an untracked, non-ignored file outside the declared stray roots
-# ([tool.dev_lab.placement] stray_roots, plus scratch/) is named with its remedy after the commit
+# (layout.toml stray_roots, plus scratch/) is named with its remedy after the commit
 # (dev_lab.dev.strays). Untracked files are invisible to the forge, so this is the one place it is said.
 [[post-commit]]
 id = "stray-files"
