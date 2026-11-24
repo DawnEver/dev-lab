@@ -514,10 +514,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
-* :mod:`dev_lab.dev.taskcarry` -- carries a rem task's ledger to another host as origin's refs/tasks/<slug>.
-* :mod:`dev_lab.dev.taskbinding` -- the ONE reader of rem's task ledger and session binding (rem writes both).
-* :mod:`dev_lab.dev.remplugin` -- which rem the session's harness runs: an unbound push names an absent or old one.
-* :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent push off its bound task's pr/<task>/ heads.
+* :mod:`dev_lab.dev.taskledger` -- the ONE reader of the global task ledger and of the task a branch pr/<task>/ names.
+* :mod:`dev_lab.dev.task` -- the task door: ``python -m dev_lab.dev.task``, the one writer of the task ledger.
+* :mod:`dev_lab.dev.taskjournal` -- a task's record read: TASK.md fields and the journal grammar, union repeats named.
+* :mod:`dev_lab.dev.taskauthority` -- the user's grant to open or close a task, from their own prompt, spent once.
+* :mod:`dev_lab.dev.taskmigrate` -- the one-time move of a checkout's retired task store into the ledger.
+* :mod:`dev_lab.dev.taskgate` -- an opt-in repo refuses an agent push from a branch naming no open task.
 * :mod:`dev_lab.dev.tickholder` -- the holder record beside a cluster tick's lock: its pid, wall and phase.
 * :mod:`dev_lab.dev.tmpsweep` -- the census, Stop report and age sweep over those write-prone roots.
 * :mod:`dev_lab.dev.purge` -- one door deletes one git-ignored, untracked named path, refusing work and stores.

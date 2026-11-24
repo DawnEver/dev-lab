@@ -24,7 +24,6 @@ offline, then the use is registered online with the issuer; an issuer that canno
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import time
 from collections import Counter
@@ -40,7 +39,7 @@ from dev_lab.dev.ask import AskRefused
 from dev_lab.dev.ask import code as asked_code
 from dev_lab.dev.consentguard import state_dir
 from dev_lab.dev.native_session import session_of
-from dev_lab.dev.taskbinding import task_id
+from dev_lab.dev.taskledger import ledger, task_in
 from dev_lab.ops.consent.credential import ConsentRefused, Credential, public_key_from, verify
 from dev_lab.ops.consent.door import Send, endpoint_send, handshake, offer, record_receipt, require_receipt
 from dev_lab.ops.consent.issuer import requested
@@ -87,8 +86,8 @@ def _session_current(subject: str) -> str:
 def _task_current(subject: str) -> str:
     slug = subject.split('@', 1)[0]
     try:
-        current = task_id(Path.cwd(), slug)
-    except (ValueError, OSError, subprocess.CalledProcessError) as gone:
+        current = task_in(ledger(), slug)
+    except (ValueError, LookupError) as gone:
         return f'the request names task {subject}, which is not open here ({gone}): open it, then write the request'
     if current == subject:
         return ''

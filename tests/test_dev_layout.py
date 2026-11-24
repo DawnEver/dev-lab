@@ -94,7 +94,7 @@ def test_a_clean_tree_reads_no_violation(tmp_path) -> None:
         ('output/logs/26/11/23/wt/.git', 'output/logs/26/11/23/wt/: NO-BACKUP-COPIES: holds .git'),
         ('scratch/clone/.git/HEAD', 'scratch/clone/: NO-BACKUP-COPIES: holds .git'),
         ('src/pkg/.claude/memory/note.md', 'src/pkg/.claude/: a .claude/ below the repo root'),
-        ('output/worktree-archive/x/src/a.py', 'output/worktree-archive/x/src/a.py: .py is not allowed'),
+        ('output/lane-copy/x/src/a.py', 'output/lane-copy/x/src/a.py: .py is not allowed'),
     ],
 )
 def test_a_planted_violation_is_NAMED(tmp_path, rel, named) -> None:

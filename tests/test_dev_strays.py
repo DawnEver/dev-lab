@@ -9,12 +9,13 @@ import io
 import json
 import os
 import time
+from pathlib import PurePosixPath
 
 import _arch_corpus
 import pytest
 from lab_commons import launch
 
-from dev_lab.dev.codeplace import FAMILY_STRAY_ROOTS, TASK_ROOT
+from dev_lab.dev.codeplace import FAMILY_STRAY_ROOTS
 from dev_lab.dev.disclosure import problems
 from dev_lab.dev.retiredfiles import RetiredFile
 from dev_lab.dev.strays import (
@@ -227,7 +228,7 @@ def test_no_source_module_holds_the_retired_index_as_a_literal_or_a_glob() -> No
     assert found == []
 
 
-# -- the task ledger is repo state: never a stray, never a demand to commit it (W4) -------------------------------
+# -- no checkout holds a task ledger any more (user ruling 2026-11-23): a leftover one is a stray ------------------
 
 
 def _stop(root) -> str:
@@ -237,16 +238,13 @@ def _stop(root) -> str:
     return out.getvalue()
 
 
-def test_the_untracked_ledger_is_silent_at_stop_while_a_root_stray_still_blocks(tmp_path, monkeypatch) -> None:
-    """The Stop nag that told a session to commit its task on its branch is gone: the ledger is never committed."""
+def test_a_ledger_left_inside_a_checkout_is_a_stray_like_any_other(tmp_path) -> None:
+    """The ledger is the global tasks repo (taskledger.ledger); the in-checkout exemption is gone with it."""
     _repo(tmp_path)
-    for rel in ('plecs-alignment/TASK.md', 'plecs-alignment/JOURNAL.md', '.bindings/s1.json'):
-        _plant(tmp_path, f'{TASK_ROOT}{rel}')
-    assert declared_strays(tmp_path) == []
-    assert _stop(tmp_path) == ''
-    monkeypatch.chdir(tmp_path)
-    assert main(['check']) == 0
-    _plant(tmp_path, 'status.txt')  # the planted control: a genuine stray still blocks
+    assert _stop(tmp_path) == '', 'planted control: a clean tree is silent'
+    leftover = PurePosixPath('.claude', 'tasks', 'plecs-alignment', 'TASK.md').as_posix()  # the retired place
+    _plant(tmp_path, leftover)
+    assert declared_strays(tmp_path) == [leftover]
     assert json.loads(_stop(tmp_path))['decision'] == 'block'
 
 

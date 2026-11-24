@@ -52,7 +52,7 @@ NO_BACKUP_COPIES: dict[str, object] = {
         'git clone . scratch/base_tree',
         'git -C ../repo worktree add D:/repo/output/logs/26/11/23/cleanup6 main',
         'cp -r src output/logs/26/11/23/si_sizes2',
-        'Copy-Item -Recurse .claude/worktrees/lane D:\\repo\\output\\worktree-archive\\lane',
+        'Copy-Item -Recurse .claude/worktrees/lane D:\\repo\\output\\lane-copy\\lane',
         'robocopy src output\\logs\\26\\11\\23\\copy /E',
         'git diff HEAD > scratch/uncommitted.patch',
         'git format-patch -o output/moved main..lane',

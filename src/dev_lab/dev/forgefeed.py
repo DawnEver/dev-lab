@@ -1,4 +1,4 @@
-"""TASK-HEARS-ITS-FORGE-EVENTS, the machine hearer: ONE process per machine hears the forge for every bound task.
+"""TASK-HEARS-ITS-FORGE-EVENTS, the machine hearer: ONE process per machine hears the forge for every task.
 
 How a task hears the forge (docs-src/dev/forgefeed.md):
 
@@ -10,11 +10,12 @@ How a task hears the forge (docs-src/dev/forgefeed.md):
   never a request per issue or per PR. Labels come inline, so routing costs no further read; adding a label moves the
   thread's ``updated_at`` (measured on Gitea 2026-11-18), so a labelled thread is heard on the next tick. A reply of
   304 to the stored ETag costs nothing.
-* ROUTED TO THE TASK'S SESSIONS. Each changed thread goes to every task it belongs to, then to every session bound to
-  that task on this machine (:func:`dev_lab.dev.taskbinding.binding`), into that session's INBOX; a task with no bound
-  session keeps its events (:func:`task_pending`) for the next session that binds it. A thread whose newest change
-  is this machine's own comment (:func:`record_own`, called by the one comment door, within :data:`OWN_WINDOW_S`) is
-  not news.
+* ROUTED TO THE TASK. Each changed thread goes to every task it belongs to -- a PR a session opened belongs to the
+  task its branch ``pr/<slug>/<feature>`` names (:func:`dev_lab.dev.taskledger.slug_on`) -- into that task's queue
+  (:func:`task_pending`). Every session whose checkout works on the task (its branch,
+  :func:`dev_lab.dev.taskledger.task_of`) reads the queue through its own cursor, so each hears every event once.
+  A thread whose newest change is this machine's own comment (:func:`record_own`, called by the one comment door,
+  within :data:`OWN_WINDOW_S`) is not news.
 * COMMIT STATUSES ARE NOT IN ANY FEED: neither forge notifies a status change, so a session's OPEN PRs keep their
   status read (:func:`dev_lab.dev.sessionpoll.poll_session`) -- the only per-PR read left.
 * THE TICK IS A SETTING: ``[forgefeed] tick_s`` in the machine file (:func:`tick_s`), default :data:`DEFAULT_TICK_S`;
@@ -43,7 +44,7 @@ from lab_commons.config import section
 from lab_commons.liveness import creation_stamp, still_the_same_process
 from lab_commons.log import emit
 
-from dev_lab.dev import branchpolicy, forgewaves, native_session, sessionprs, taskbinding
+from dev_lab.dev import branchpolicy, forgewaves, native_session, sessionprs, taskledger
 from dev_lab.dev.backgroundrun import detach_argv
 from dev_lab.dev.forge import Forge, forge_from_remote
 from dev_lab.dev.forgethreads import (
@@ -71,7 +72,6 @@ __all__ = [
     'POLL_S',
     'RULE',
     'YIELDED',
-    'bound_sessions',
     'deliver',
     'ensure',
     'hear_feed',
@@ -82,7 +82,7 @@ __all__ = [
     'run',
     'running',
     'sessions',
-    'take_task_pending',
+    'take_task_unread',
     'take_unread',
     'task_pending',
     'tick_s',
@@ -202,24 +202,12 @@ def take_unread(session: str) -> list[str]:
     return fresh
 
 
-def bound_sessions() -> dict[str, tuple[str, ...]]:
-    """Task slug -> the sessions bound to it on this machine (the one binding store, :mod:`taskbinding`)."""
-    found: dict[str, list[str]] = {}
-    store = taskbinding.binding_path('x').parent
-    for path in sorted(store.glob('*.json')) if store.is_dir() else ():
-        with contextlib.suppress(OSError, ValueError, taskbinding.UnmigratedBindingError):
-            bound = taskbinding.binding(path.stem, start=store)
-            if bound is not None:
-                found.setdefault(taskbinding.slug_of(bound.task), []).append(path.stem)
-    return {slug: tuple(names) for slug, names in found.items()}
-
-
-def _pr_tasks(sessions_of: dict[str, tuple[str, ...]]) -> dict[str, set[str]]:
-    """PR key -> the tasks whose sessions opened or pushed it."""
+def _pr_tasks() -> dict[str, set[str]]:
+    """PR key -> the task its branch ``pr/<slug>/<feature>`` names, for every open PR a session here pushed."""
     tasks: dict[str, set[str]] = {}
-    for slug, names in sessions_of.items():
-        for session in names:
-            for row in sessionprs.open_rows(session):
+    for session in sessions():
+        for row in sessionprs.open_rows(session):
+            if slug := taskledger.slug_on(row.branch):
                 tasks.setdefault(row.key, set()).add(slug)
     return tasks
 
@@ -229,7 +217,7 @@ def _queue(slug: str) -> Path:
 
 
 def task_pending(slug: str) -> list[str]:
-    """Events kept for task *slug* while no session was bound to it; read, not consumed (``task status``)."""
+    """Every event kept for task *slug*, oldest first; read, not consumed (``task status``)."""
     try:
         raws = _queue(slug).read_text(encoding='utf-8').splitlines()
     except OSError:
@@ -241,11 +229,19 @@ def task_pending(slug: str) -> list[str]:
     return found
 
 
-def take_task_pending(slug: str) -> list[str]:
-    """Task *slug*'s kept events, consumed: the first session bound to it hears them."""
+def take_task_unread(session: str, slug: str) -> list[str]:
+    """Task *slug*'s events *session* has not read yet, oldest first; marked read for *session* only."""
+    if not native_session.valid(session):
+        return []
     found = task_pending(slug)
-    _queue(slug).unlink(missing_ok=True)
-    return found
+    cursor = _home.home() / sessionprs.SESSIONS / f'{session}.{slug}.read'
+    try:
+        done = int(cursor.read_text(encoding='utf-8').strip() or 0)
+    except (OSError, ValueError):
+        done = 0
+    cursor.parent.mkdir(parents=True, exist_ok=True)
+    cursor.write_text(str(len(found)), encoding='utf-8')
+    return found[done:]
 
 
 def _keep(slug: str, line: str) -> None:
@@ -259,26 +255,22 @@ def _say(thread: Thread) -> str:
 
 
 def hear_feed(clients: Callable[[Forge], Client], forges: Iterable[Forge]) -> tuple[str, ...]:
-    """One read per declared repository; each changed thread to its tasks' sessions; the repositories heard."""
-    sessions_of = bound_sessions()
-    pr_tasks, mine, heard_repos = _pr_tasks(sessions_of), own(), []
+    """One read per declared repository; each changed thread to its tasks' queues; the repositories heard."""
+    pr_tasks, mine, heard_repos = _pr_tasks(), own(), []
     for forge in sorted(set(forges), key=lambda f: f.identity):
         threads = read_feed(clients(forge))
         heard_repos.append(forge.identity)
         for thread in threads:
             if not is_own(thread, mine):
-                _deliver_thread(thread, route(thread, thread.labels, pr_tasks), sessions_of)
+                _deliver_thread(thread, route(thread, thread.labels, pr_tasks))
     return tuple(heard_repos)
 
 
-def _deliver_thread(thread: Thread, tasks: set[str], sessions_of: dict[str, tuple[str, ...]]) -> None:
-    """*thread* to every session bound to each of *tasks*; a task with none keeps it for the next binding."""
+def _deliver_thread(thread: Thread, tasks: set[str]) -> None:
+    """*thread* into the queue of each of *tasks*."""
     line = _say(thread)
     for slug in sorted(tasks):
-        for session in sessions_of.get(slug, ()):
-            deliver(session, line)
-        if not sessions_of.get(slug):
-            _keep(slug, line)
+        _keep(slug, line)
 
 
 def _checkouts() -> list[Path]:
@@ -389,14 +381,15 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
                 ensure(Path(_payload(stdin or sys.stdin).get('cwd') or Path.cwd()))
             return 0
         case ['inbox']:
-            session = str(_payload(stdin or sys.stdin).get('session_id') or '')
+            payload = _payload(stdin or sys.stdin)
+            session = str(payload.get('session_id') or '')
             lines = take_unread(session)
             if native_session.valid(session):
                 lines += forgewaves.news(session)
-            with contextlib.suppress(OSError, ValueError, taskbinding.UnmigratedBindingError):
-                bound = taskbinding.binding(session) if native_session.valid(session) else None
-                if bound is not None:
-                    lines += take_task_pending(taskbinding.slug_of(bound.task))
+            with contextlib.suppress(OSError, ValueError, LookupError):
+                task = taskledger.task_of(Path(payload.get('cwd') or Path.cwd()))
+                if task is not None:
+                    lines += take_task_unread(session, taskledger.slug_of(task))
             if lines:
                 said = f"{RULE}: news on this session's task:\n" + '\n'.join(lines)
                 emit(

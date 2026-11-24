@@ -8,7 +8,7 @@ The English file is the source of truth.
 ## The rule
 
 - Exempt everywhere: `attic/` at any depth, and `archived/` at the repo root only.
-- `.claude/memory/` and `.claude/tasks/` are English only (D26, user, 2026-11-17). A user's words quoted there are
+- `.claude/memory/` and the task ledger are English only (D26, user, 2026-11-17). A user's words quoted there are
   translated and marked `(user, translated)`.
 - A `<stem>.zh.<ext>` is exempt **only while `<stem>.<ext>` is tracked beside it**. An orphaned translation is
   scanned like any other file, and the `TRANSLATION-HAS-ITS-SOURCE` refusal names the English file to add.

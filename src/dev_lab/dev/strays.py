@@ -36,7 +36,6 @@ from dev_lab.dev import tmpsweep
 from dev_lab.dev.codeplace import (
     CODE_SUFFIXES,
     PRUNED_NAMES,
-    TASK_ROOT,
     PlacementNotDeclared,
     checkout_root,
     declared_placement,
@@ -95,7 +94,7 @@ def stray_files(root: Path, *, stray_roots: Iterable[str], pruned_paths: Iterabl
         StrayCensusUnreadable: git could not list the untracked files of *root*.
 
     """
-    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths, TASK_ROOT))
+    allowed = tuple(f'{r.strip("/")}/' for r in (*stray_roots, *pruned_paths))
     return sorted(
         rel
         for rel in _untracked(root)

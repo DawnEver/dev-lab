@@ -73,7 +73,6 @@ __all__ = [
     'FAMILY_STRAY_ROOTS',
     'PRUNED_NAMES',
     'SCRATCH_MAX_AGE_DAYS',
-    'TASK_ROOT',
     'Placement',
     'PlacementNotDeclared',
     'admits',
@@ -126,10 +125,6 @@ FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
 
 #: Where an untracked file may sit in every repo: the family's scratch home, nothing else.
 FAMILY_STRAY_ROOTS: tuple[str, ...] = (FAMILY_HOMES['one-off experiment, probe or verification'],)
-
-#: Where the user's task command (``/rem:task open``) writes ``<slug>/TASK.md`` and ``JOURNAL.md``: its folder,
-#: not a stray. It is the repository's ledger (:func:`dev_lab.dev.taskbinding.ledger`), never committed on a branch.
-TASK_ROOT = '.claude/tasks/'
 
 #: The family default for ``max_age_days`` (:mod:`dev_lab.dev.scratch` reads it off the placement).
 SCRATCH_MAX_AGE_DAYS = 3.0
@@ -333,8 +328,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     # (WRITES-STAY-IN-THE-TREE), so both are refused; a misplaced code file is a style
     # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3).
     refused = refuse_report(path) or refuse_machine_file_write(path) or refuse_code_in_output(path)
-    refused = refused or refuse_outside_tree(path) or refuse_consent_write(path)
-    refused = refused or refuse_ledger_write(path) or _layout().refuse_layout(path)
+    refused = refused or refuse_ledger_write(path) or refuse_outside_tree(path) or refuse_consent_write(path)
+    refused = refused or _layout().refuse_layout(path)
     hint = refuse_write(path)
     if refused is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': refused}

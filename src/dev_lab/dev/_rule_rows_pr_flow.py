@@ -83,8 +83,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A task hears what it subscribes to without the user relaying it (D79, D81): an issue or PR labelled '
             '`task:<slug>`, and every PR a session of the task opened or pushed. ONE machine hearer (`forgefeed`) '
             'reads each declared repository`s issues and PRs updated since a saved cursor ONCE per tick -- never a '
-            'request per thread -- and routes each change to the sessions bound to its task (none bound: kept for '
-            'the next binding); open PRs` commit statuses are still read per PR. Each is said at the next prompt. '
+            'request per thread -- and routes each change to its task`s queue, which each session whose checkout is on '
+            'a head of the task (`pr/<task>/<feature>`) reads once through its own cursor; open PRs` commit '
+            'statuses are still read per PR. Each is said at the next prompt. '
             'Detail: docs-src/dev/forgefeed.md.'
         ),
         ('tests/test_dev_sessionwatch.py',),

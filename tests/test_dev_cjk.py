@@ -71,9 +71,8 @@ def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
 
 
 def test_memory_and_tasks_are_english_only_d26(tmp_path: Path) -> None:
-    """D26 (user, 2026-11-17): `.claude/memory/` and `.claude/tasks/` lost their exemption, at any depth."""
+    """D26 (user, 2026-11-17): `.claude/memory/` lost its exemption, at any depth."""
     assert not exempted('.claude/memory/2026/09/16/x.md')
-    assert not exempted('.claude/tasks/some-task/JOURNAL.md')
     assert not exempted('src/pkg/.claude/memory/x.md')
     memory = tmp_path / '.claude' / 'memory' / 'note.md'
     memory.parent.mkdir(parents=True)

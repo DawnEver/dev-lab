@@ -325,7 +325,7 @@ def issue_and_pr(
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            said := forgetask.head_advice(args.head, env)
+            said := forgetask.head_advice(args.head, root)
             + pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
             lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
@@ -340,7 +340,7 @@ def issue_and_pr(
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
-    forgetask.record(args, result, root, os.environ if env is None else env)
+    forgetask.record(args, result, root)
     items = result if isinstance(result, tuple) else (result,)
     if args.json:
         data = [dataclasses.asdict(item) for item in items]

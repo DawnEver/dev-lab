@@ -42,8 +42,6 @@ output/
 !**/.claude/rules/**
 !**/.claude/memory/
 !**/.claude/memory/**
-!**/.claude/tasks/
-!**/.claude/tasks/**
 !**/.claude/output-styles/
 !**/.claude/output-styles/**
 !**/.claude/docs/

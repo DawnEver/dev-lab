@@ -10,11 +10,12 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'MEMORY-SHAPE',
         (
             'Knowledge has four layers: rules, docs, memory (dated entries) and tasks '
-            '(`.claude/tasks/<slug>/`, user-opened). A memory entry sits under a YYYY/MM/DD path with '
+            '(user-opened, in the global tasks repo, `dev_lab.dev.taskledger`). A memory entry sits under a '
+            'YYYY/MM/DD path with '
             'frontmatter (`name`, `description`) and is never edited, deleted or moved once written -- a '
             'correction is a new entry naming it in `corrects:`, a consolidation one naming its sources in '
-            '`merged_from:` -- so a change under `**/.claude/memory/**` may only ADD a file; the two moves are '
-            'a task archived into memory and an approved redacting rename (`dev_lab.dev.memoryentry`). No '
+            '`merged_from:` -- so a change under `**/.claude/memory/**` may only ADD a file; the one move is '
+            'an approved redacting rename (`dev_lab.dev.memoryentry`), and nothing moves into memory. No '
             '`accessed` field and no derived index: memory stays in each repo root, read and written through '
             '`python -m dev_lab.dev.memory` (`search`, `add`, `amend`, `redact`, `rename`).'
         ),
