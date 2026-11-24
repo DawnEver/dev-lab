@@ -16,6 +16,14 @@ retention kept them, naming each owner (:mod:`dev_lab.dev.accountsweep`). This d
 6. in a ``finally``: every grant revoked (``setfacl -x``), then VERIFIED by re-reading the ACLs (``getfacl``); a grant
    still there fails the door, named.
 
+GPFS REFUSES POSIX ACLS (measured 2026-11-24: ``setfacl: /gpfs01/home/alyyw103: Operation not supported``), so on that
+refusal the grant falls back to MODE BITS: every path it will touch (the ancestor chain, *user*'s directories under
+the target) has its exact mode and group recorded FIRST (``stat -c '%a %g %n'``), with each owner's groups
+(``id -G``). When every touched path's group is one every owner is in (the trees are ``drwxr-s---``, setgid), the
+GROUP bits open it (``g+x`` on the ancestors, ``g+rwx`` on the target's directories); only when no group is shared,
+the OTHER bits (``o+x``, ``o+wx``). The ``finally`` restores each recorded mode exactly and verifies it by re-reading
+``stat -c %a``; a mode left changed fails the door, named with what it was.
+
 Without ``--apply`` it prints the plan with each owner's count and writes nothing. Every step's output is said.
 """
 
@@ -38,12 +46,19 @@ from dev_lab.dev.hpcaccount.look import home_path
 from dev_lab.dev.hpcaccount.storage import UNREACHABLE
 from dev_lab.dev.hpcaccount.transport import grant_runner
 
-__all__ = ['CENSUS_MARK', 'VERIFY_MARK', 'main', 'reclaim']
+__all__ = ['CENSUS_MARK', 'MODES_MARK', 'RECORD_MARK', 'RESTORE_MARK', 'VERIFY_MARK', 'main', 'reclaim']
 
 #: How the census line begins (the account's ``$HOME``, then the owner counts).
 CENSUS_MARK: Final = 'printf "home %s\\n" "$HOME"'
 #: How the ACL re-read after the revoke begins.
 VERIFY_MARK: Final = 'getfacl -p'
+#: How the mode record begins: ``<octal mode> <gid> <path>`` per touched path, then ``groups <owner> <gids>``.
+RECORD_MARK: Final = 'stat -c "%a %g %n"'
+#: How the restore begins: ``<mode> <path>`` lines on stdin, each chmodded back.
+RESTORE_MARK: Final = 'while read -r mode path; do [ -e "$path" ] && chmod'
+#: How the re-read of the restored modes begins: ``<mode> <path>`` per recorded path that still exists.
+MODES_MARK: Final = 'while read -r mode path; do [ -e "$path" ] && stat'
+_UNSUPPORTED: Final = 'Operation not supported'
 _TIMEOUT_S: Final = 3600.0
 _FAILED = (RuntimeError, OSError, subprocess.SubprocessError, Unreachable)
 
@@ -68,11 +83,9 @@ def _apply(
 ) -> int:
     target, mine = shlex.quote(f'{home}/{path}'), run[user]
     chain = [shlex.quote(one) for one in _ancestors(home, path)]
-    code, step = 0, user
+    code, step, undo = 0, user, []
     try:
-        grants = [f'setfacl -m u:{o}:x {one}' for o in owners for one in chain]
-        grants += [f'find {target} -type d -user {user} -exec setfacl -m u:{o}:rwx {{}} +' for o in owners]
-        say(f'reclaim-foreign: {user}: grant -- ' + mine(' && '.join(grants) + ' && echo granted', None).strip())
+        _grant(user, mine, target=target, chain=chain, owners=owners, undo=undo, say=say)
         left = dict.fromkeys(owners, -1)
         for round_ in range(1, len(owners) + 2):
             before = dict(left)
@@ -100,11 +113,86 @@ def _apply(
         if not re.search(r'left 0\b', out):
             code = 2
     except _FAILED as failed:
-        say(f'reclaim-foreign: {step}: failed mid-way -- {failed}; revoking every grant')
+        say(f'reclaim-foreign: {step}: failed mid-way -- {failed}; undoing every grant')
         code = 2
     finally:
-        code = max(code, _revoke(mine, target=target, chain=chain, user=user, owners=owners, say=say))
+        for one in undo:
+            code = max(code, one())
     return code
+
+
+def _grant(
+    user: str,
+    mine: Runner,
+    *,
+    target: str,
+    chain: list[str],
+    owners: list[str],
+    undo: list[Callable[[], int]],
+    say: Callable[[str], None],
+) -> None:
+    """Open the chain to every owner -- ACLs, else (GPFS) mode bits; each undo lands in *undo* BEFORE its write."""
+    acls = [f'setfacl -m u:{o}:x {one}' for o in owners for one in chain]
+    acls += [f'find {target} -type d -user {user} -exec setfacl -m u:{o}:rwx {{}} +' for o in owners]
+    undo.append(functools.partial(_revoke, mine, target=target, chain=chain, user=user, owners=owners, say=say))
+    try:
+        granted = mine(' && '.join(acls) + ' && echo granted', None)
+    except _FAILED as failed:
+        if _UNSUPPORTED not in str(failed):
+            raise
+        undo.pop()  # the first setfacl was refused: nothing was granted
+        say(f'reclaim-foreign: {user}: setfacl -- {_UNSUPPORTED} (GPFS): falling back to mode bits')
+    else:
+        say(f'reclaim-foreign: {user}: grant -- {granted.strip()}')
+        return
+    groups = ''.join(f'; echo "groups {o} $(id -G {o})"' for o in owners)
+    out = mine(
+        f'{RECORD_MARK} {" ".join(chain)} && {{ [ ! -d {target} ] || '
+        f'find {target} -type d -user {user} -exec {RECORD_MARK} {{}} +; }}{groups}',
+        None,
+    )
+    recorded, member = [], {}
+    for line in out.splitlines():
+        if line.startswith('groups '):
+            _, owner, *gids = line.split()
+            member[owner] = set(gids)
+        elif found := re.fullmatch(r'(\d+) (\d+) (.+)', line.strip()):
+            recorded.append((found[1], found[2], found[3]))
+    shared = all(gid in member.get(o, set()) for _, gid, _ in recorded for o in owners)
+    bits, inner = ('g', 'rwx') if shared else ('o', 'wx')
+    say(
+        f'reclaim-foreign: {user}: recorded {len(recorded)} modes -- '
+        + ('every owner shares the group: group bits' if shared else 'no group every owner shares: other bits')
+    )
+    record = ''.join(f'{mode} {path}\n' for mode, _, path in recorded)
+    undo.append(functools.partial(_restore, mine, record=record, user=user, say=say))
+    out = mine(
+        f'chmod {bits}+x {" ".join(chain)} && find {target} -type d -user {user} -exec chmod {bits}+{inner} {{}} + '
+        '&& echo opened',
+        None,
+    )
+    say(f'reclaim-foreign: {user}: chmod {bits}+x ancestors, {bits}+{inner} target dirs -- {out.strip()}')
+
+
+def _restore(mine: Runner, *, record: str, user: str, say: Callable[[str], None]) -> int:
+    """Put every recorded mode back, then re-read it: 0 when each matches, 2 named otherwise."""
+    try:
+        out = mine(f'{RESTORE_MARK} "$mode" "$path"; done; echo restored', record)
+        say(f'reclaim-foreign: {user}: restore -- {out.strip()}')
+    except _FAILED as failed:
+        say(f'reclaim-foreign: the restore failed -- {failed}')
+    try:
+        now = mine(f'{MODES_MARK} -c "%a $path" "$path"; done', record)
+    except _FAILED as failed:
+        say(f'reclaim-foreign: modes NOT verified -- the re-read failed: {failed}')
+        return 2
+    was = dict(line.split(' ', 1)[::-1] for line in record.splitlines())
+    seen = dict(line.split(' ', 1)[::-1] for line in now.splitlines() if ' ' in line)
+    if wrong := [f'{path}: {mode}, was {was[path]}' for path, mode in seen.items() if was.get(path) != mode]:
+        say(f'reclaim-foreign: modes NOT restored: {"; ".join(wrong)} -- chmod them back by hand')
+        return 2
+    say(f'reclaim-foreign: modes restored and verified (stat: {len(seen)} paths as recorded)')
+    return 0
 
 
 def _revoke(

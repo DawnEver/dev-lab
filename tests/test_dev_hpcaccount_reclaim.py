@@ -149,3 +149,97 @@ def test_an_owner_this_session_cannot_reach_is_refused_naming_its_door(monkeypat
     assert code == 2
     assert any('other-role' in line and 'integrator session role' in line for line in said)
     assert all(c.startswith(reclaim.CENSUS_MARK) for _, c in fleet.ran)
+
+
+#: The account's modes before any chmod: two ancestors, the target (setgid), one account-owned directory under it.
+_MODES = {HOME: '700', f'{HOME}/ci': '700', f'{HOME}/ci/experiments': '700', f'{HOME}/{TARGET}': '2750'}
+
+
+class _Gpfs(_Fleet):
+    """MEASURED 2026-11-24: GPFS refuses ``setfacl`` -- ``Operation not supported``; modes are what it honours."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, owner_groups: str = '60200513', **kwargs: object) -> None:
+        super().__init__(monkeypatch, **kwargs)
+        self.owner_groups, self.modes, self.stdin = owner_groups, dict(_MODES), {}
+        self.restored: dict[str, str] | None = None
+
+    def connect(self, grant: SimpleNamespace) -> object:
+        inner = super().connect(grant)
+
+        def run(command: str, stdin: str | None) -> str:
+            if command.startswith('setfacl -m'):
+                self.ran.append((grant.user, command))
+                unsupported = f'setfacl: {HOME}: Operation not supported'
+                raise RuntimeError(unsupported)
+            if command.startswith(reclaim.RECORD_MARK):
+                self.ran.append((grant.user, command))
+                rows = [f'{mode} 60200513 {path}' for path, mode in self.modes.items()]
+                return '\n'.join([*rows, f'groups o1 {self.owner_groups}', f'groups o2 {self.owner_groups} 7'])
+            if command.startswith('chmod '):
+                self.ran.append((grant.user, command))
+                self.modes = dict.fromkeys(self.modes, '777')
+                return 'ok\n'
+            if command.startswith(reclaim.RESTORE_MARK):
+                self.ran.append((grant.user, command))
+                self.stdin['restore'] = stdin or ''
+                self.modes |= dict(line.split(' ', 1)[::-1] for line in (stdin or '').splitlines())
+                return 'restored\n'
+            if command.startswith(reclaim.MODES_MARK):
+                self.ran.append((grant.user, command))
+                return ''.join(f'{self.modes[p]} {p}\n' for p in (line.split(' ', 1)[1] for line in stdin.splitlines()))
+            return inner(command, stdin)
+
+        return run
+
+
+def test_gpfs_falls_back_to_group_bits_when_every_owner_shares_the_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    fleet = _Gpfs(monkeypatch)
+    code, said = _run(fleet)
+    assert code == 0, said
+    chmod = next(c for c in fleet.of('u1') if c.startswith('chmod '))
+    assert chmod.startswith(f'chmod g+x {HOME} {HOME}/ci {HOME}/ci/experiments')
+    assert '-exec chmod g+rwx' in chmod
+    assert 'o+' not in chmod
+    assert fleet.stdin['restore'] == ''.join(f'{mode} {path}\n' for path, mode in _MODES.items())
+    assert fleet.modes == _MODES
+    assert any(line.startswith('reclaim-foreign: modes restored and verified') for line in said)
+
+
+def test_planted_control_other_bits_only_when_no_group_is_shared(monkeypatch: pytest.MonkeyPatch) -> None:
+    fleet = _Gpfs(monkeypatch, owner_groups='99')
+    code, said = _run(fleet)
+    assert code == 0, said
+    chmod = next(c for c in fleet.of('u1') if c.startswith('chmod '))
+    assert chmod.startswith(f'chmod o+x {HOME} ')
+    assert '-exec chmod o+wx' in chmod
+    assert 'g+' not in chmod
+    assert any('no group every owner shares' in line for line in said)
+
+
+def test_planted_control_modes_are_restored_exactly_when_an_owner_delete_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    fleet = _Gpfs(monkeypatch, fail='o1')
+    code, said = _run(fleet)
+    assert code == 2
+    assert fleet.modes == _MODES
+    assert fleet.stdin['restore'] == ''.join(f'{mode} {path}\n' for path, mode in _MODES.items())
+    assert any(line.startswith('reclaim-foreign: modes restored and verified') for line in said)
+
+
+def test_a_mode_left_changed_after_the_restore_is_named_and_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    fleet = _Gpfs(monkeypatch)
+    real = fleet.connect
+
+    def stuck(grant: SimpleNamespace) -> object:
+        run = real(grant)
+
+        def once(command: str, stdin: str | None) -> str:
+            out = run(command, stdin)
+            if command.startswith(reclaim.RESTORE_MARK):
+                fleet.modes[HOME] = '710'  # PLANTED: the restore missed one
+            return out
+
+        return once
+
+    said: list[str] = []
+    assert reclaim.reclaim('u1', TARGET, apply=True, connect=stuck, say=said.append) == 2
+    assert any('modes NOT restored' in line and f'{HOME}: 710, was 700' in line for line in said)
