@@ -122,6 +122,10 @@ VSCODE: Final = Renderer('vscodesettings', ('dev_lab.dev.vscodesettings', 'rende
 AUTODOORS: Final = Renderer(
     'autodoors', ('dev_lab.dev.autodoors', '--write'), inputs=(('shell_doors', '--shell-door'),)
 )
+#: The whole .claude/settings.json: hooks, the door allow rows (autodoors' source) and the env, plus the delta.
+CLAUDE_SETTINGS: Final = Renderer(
+    'claudesettings', ('dev_lab.dev.claudesettings', 'render'), inputs=(('shell_doors', '--shell-door'),)
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +164,11 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
             FAMFILES,
         ),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
-        _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
+        _g(
+            '.claude/settings.json',
+            'claudesettings RENDERED: hooks, door allow rows, MPLBACKEND=Agg, plus [tool.dev_lab.claude]',
+            CLAUDE_SETTINGS,
+        ),
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte', AGENT_GUARD),
         _g('.claude/hooks/venv_resolver.js', 'agent_guard install: the one environment resolver', AGENT_GUARD),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
