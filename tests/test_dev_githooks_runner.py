@@ -75,6 +75,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     assert {hook.id for hook in table['pre-push']} == {
         'task-bound',
         'memory-adds',
+        'zero-core-change',
         'session-branch',
         'milestone-base',
         'closed-pr',
@@ -161,6 +162,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
     assert pre_push == [
         'task-bound',
         'memory-adds',
+        'zero-core-change',
         'session-branch',
         'milestone-base',
         'closed-pr',

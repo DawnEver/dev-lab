@@ -561,6 +561,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgebreakglass` -- ``breakglass open|close|ack|status`` and ``pr breakglass N``: the client of
   the forge host's break-glass WAVES (:mod:`dev_lab.ops.breakglass`); a consent credential the user granted opens one.
 * :mod:`dev_lab.dev.frozen` -- USER-FROZEN-FILES: the frozen files and closed tracked inventory a repo declares.
+* :mod:`dev_lab.dev.corechange` -- ZERO-CORE-CHANGE: a change set touching an application and the core needs a
+  recorded architecture decision; the core never imports an application, and the applications are acyclic.
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.

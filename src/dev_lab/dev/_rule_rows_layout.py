@@ -31,4 +31,19 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_layout.py', 'tests/test_dev_nobackup.py'),
     ),
+    (
+        'ZERO-CORE-CHANGE',
+        (
+            # Why: user ruling 2026-11-24 -- application work never changes the core without an architecture decision.
+            'In a repo declaring `[tool.dev_lab.layers] core = [...]` and `applications = "<glob>"` (opt-in; an '
+            'undeclared repo is said to be not judged), a change set touching an application root AND the core is '
+            'refused unless a commit of it carries `Architecture-Decision: <task>#D<n>` naming a decision RECORDED '
+            'in the task ledger (a made-up id is refused); the door is `python -m dev_lab.dev.task decide`, then the '
+            'trailer. The set is judged net since its merge-base (the `zero-core-change` pre-push row; '
+            '`corechange range <base> <head>` for a PR diff). Always on where declared: the core never imports an '
+            'application, and the applications form an acyclic import graph, the cycle named '
+            '(`dev_lab.dev.corechange`).'
+        ),
+        ('tests/test_dev_corechange.py',),
+    ),
 )
