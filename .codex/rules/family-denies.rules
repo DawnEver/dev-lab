@@ -153,6 +153,7 @@ prefix_rule(
 # REPORTS-LIVE-IN-MEMORY: judged on the path it writes or removes, not on the command word
 # OUTPUT-HOLDS-NO-CODE: judged on the path it writes or removes, not on the command word
 # WRITES-STAY-IN-THE-TREE: judged on the path it writes or removes, not on the command word
+# LEDGER-WRITES-THROUGH-ITS-DOOR: judged on the path it writes or removes, not on the command word
 # RECURSIVE-DELETE: judged on the path it writes or removes, not on the command word
 # WORKTREES-STAY-INSIDE: judged on the path it writes or removes, not on the command word
 # WORKTREE-NAMES-ITS-TASK: judged on the name of the directory it makes, not on the command word

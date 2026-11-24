@@ -28,7 +28,6 @@ output/
 **/.claude/**
 !**/.claude/settings.json
 !**/.claude/sharp-review.json
-!**/.claude/rem.json
 !**/.claude/hooks/
 !**/.claude/hooks/**
 !**/.claude/agents/

@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import principles, remconfig
+from dev_lab.dev import principles
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
@@ -164,7 +164,6 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte', AGENT_GUARD),
         _g('.claude/hooks/venv_resolver.js', 'agent_guard install: the one environment resolver', AGENT_GUARD),
         _g('.claude/rules/principles.md', 'principles.render via famfiles: the family principles', FAMFILES),
-        _g('.claude/rem.json', 'remconfig.render via famfiles: the backlog is the issue tracker', FAMFILES),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
         _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
         _g('.codex/rules/family-denies.rules', 'autodoors --write: the deny registry as Codex rules', AUTODOORS),
@@ -402,22 +401,17 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
 
 def whole_files() -> tuple[tuple[str, str], ...]:
     """The family files every repo carries whole, with no delta: (repo-relative path, its text)."""
-    return ((principles.PAGE_REL, principles.render()), (remconfig.REL, remconfig.render()))
+    return ((principles.PAGE_REL, principles.render()),)
 
 
 def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
-    """The family files with no delta, re-rendered into *root*; one line per file. *write* false: the check mode.
-
-    ``.claude/rem.json`` that differs is the repo's own choice and is reported, never overwritten.
-    """
+    """The family files with no delta, re-rendered into *root*; one line per file. *write* false: the check mode."""
     out: list[str] = []
     for rel, text in whole_files():
         path = root / rel
         held = path.read_text(encoding='utf-8') if path.is_file() else None
         if held == text:
             out.append(f'{rel}: current')
-        elif rel == remconfig.REL and held is not None:
-            out.append(f'{rel}: the repo`s own choice, not written -- reconcile it with {text.strip()} by hand')
         elif write:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding='utf-8', newline='\n')

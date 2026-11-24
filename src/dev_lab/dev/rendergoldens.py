@@ -52,7 +52,7 @@ DELTAS_FILE: Final = 'deltas.py'
 #: The suffix of a golden file: a rendered ``.gitignore`` stored bare would be read by git as an ignore rule.
 SUFFIX: Final = '.golden'
 #: What a golden's file name spells a repo-relative ``/`` as. Goldens are FLAT under their fixture: a nested
-#: ``.claude/rem.json`` golden sat under the family's ``**/.claude/**`` ignore, was never committed, and every
+#: ``.claude/<file>`` golden sat under the family's ``**/.claude/**`` ignore, was never committed, and every
 #: other checkout read it as missing.
 SEP: Final = '--'
 

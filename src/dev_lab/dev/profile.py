@@ -33,7 +33,7 @@ reason is indistinguishable from a hole somebody widened during a red suite, and
 repair when a ratchet disagrees is to widen the exemption. ``{'path': 'why'}'`` makes that repair a
 sentence somebody has to write.
 
-EVERY PIN IS A NAMED SET, never a count. ``.claude/rules/rem/integration.md`` records the measured
+EVERY PIN IS A NAMED SET, never a count. ``.claude/rules/integration.md`` records the measured
 consequence of the alternative: an integer pin read "mec transient: 2", a merge silently dropped a
 restriction, the table delivered one, and the pin was lowered to one with a note explaining why.
 The pin was right and the table was wrong, and an integer could not say so.

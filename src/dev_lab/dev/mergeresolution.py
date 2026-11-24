@@ -1,7 +1,7 @@
 """MERGE-RESOLUTION-DECLARED: a conflicted merge says, per conflicted file, how it was resolved and why.
 
 THE DEFECT. A conflict resolution is the one edit in a merge nobody reviews: the diff against either parent
-shows the other side's work, not the choice made between them. ``.claude/rules/rem/integration.md``
+shows the other side's work, not the choice made between them. ``.claude/rules/integration.md``
 (downstream, 2026-09-04/05) records the result -- every conflicted file resolved by reinstating the lane's
 OLDER shape, invisible until a later pin red. MERGE-DEVIATIONS-NAMED (:mod:`dev_lab.dev.mergeaudit`) sees the
 TESTS such a resolution drops; this rule makes the resolution of every conflicted FILE a stated choice.

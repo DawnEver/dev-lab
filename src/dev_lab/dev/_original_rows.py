@@ -209,7 +209,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'taskbinding',
     # ORIGINAL: which rem the session's harness runs, read from its plugin registry, so an unbound push names it.
     'remplugin',
-    'remhome',  # the machine home handed to rem as LAB_COMMONS_HOME (D34)
     # ORIGINAL: no door brought a main checkout to its branch tip losslessly; agents did it by hand.
     'mainsync',
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.

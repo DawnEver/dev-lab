@@ -140,13 +140,11 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
 #: re-inclusion would otherwise track. ORDER IS THE RULE here (last match wins), so this block is
 #: declared in :data:`ORDERED_SECTIONS`, rendered verbatim AFTER the sorted lines, and exempt from the
 #: order-free refusal that binds the sorted part. It covers `.claude/worktrees/` (WORKTREES-STAY-INSIDE)
-#: and `<checkout>/.claude/.rem-state.json` because `**/.claude/**` does and nothing re-includes them.
+#: because `**/.claude/**` does and nothing re-includes it.
 GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     '**/.claude/**',
     '!**/.claude/settings.json',
     '!**/.claude/sharp-review.json',
-    # rem's committed config (dev_lab.dev.remconfig); the tasks layer is committed state like memory.
-    '!**/.claude/rem.json',
     *(
         line
         for directory in (
@@ -171,7 +169,7 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     '**/.claude/**/*.py[cod]',
     # The auto-mode prose is MACHINE-LOCAL, derived from the synced fleet sources (dev_lab.dev.automode, user
     # ruling 2026-10-23): a committed copy would put fleet facts in history. Named so no re-inclusion tracks it.
-    # (`.claude/rules/MEMORY.md` is NOT here: rem retired it, so a stale one must show in `git status` -- see
+    # (A retired rem file is NOT here: REM-RETIRED refuses it, so a stale one must show in `git status` -- see
     # tests/test_the_kit_renders_its_own_gitignore.py. Nor is a session's task binding: it lives in the machine
     # home, `state/sessions/`, outside every checkout -- D34.)
     '**/.claude/automode.json',

@@ -39,7 +39,7 @@ A gap found late is closed at the earliest layer that could have caught it.
    hand the user a command (`AGENT-RUNS-ITS-OWN-COMMANDS`).
 3. Close it before the task: a deny row or a remedy (`dev_lab.dev._deny_*`, a section here in
    [refusals.md](refusals.md)), a door's message naming its cause and door, or a test pinning either. Commit it.
-   If it cannot be closed now, record it where the repo keeps tasks (`.claude/rem.json` names the store).
+   If it cannot be closed now, record it in the repo's issue tracker.
 4. Record the closure: `python -m dev_lab.dev.walls close --rule <rule> --by <sha|issue|path>`.
 5. Otherwise the `Stop` hook (`walls stop`) refuses the turn once, naming the open walls and this loop.
 

@@ -39,7 +39,7 @@ from lab_commons.hpc.testcells import TestCell
 from lab_commons.launch import run
 from lab_commons.outcomes import Cell, Reason, Status
 
-from dev_lab.dev import cjk
+from dev_lab.dev import cjk, remretired
 from dev_lab.dev.family import declared_table, is_member
 from dev_lab.dev.famtests import modulealarm, treechecks
 from dev_lab.dev.rules import ALWAYS_ON, tracked_files
@@ -135,6 +135,7 @@ def check_no_cjk(root: Path) -> None:
 _LAYOUT_RULE: Final = 'MODULE-SIZE-ALARM'
 _CHECKS: Final[dict[str, Callable[[Path], None]]] = {
     'NO-CJK-IN-TRACKED-SOURCE': check_no_cjk,
+    remretired.RULE_ID: remretired.check,
     _LAYOUT_RULE: modulealarm.check,
 }
 

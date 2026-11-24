@@ -31,6 +31,16 @@ MOVED_TABLES: Final = (
 
 #: Retired spelling -> (its replacement, the decision that retired it).
 RETIRED_SPELLINGS: Final = {
+    **dict.fromkeys(
+        ('remhome', 'remconfig', 'only_manual_tasks_updated'),
+        (
+            (
+                'dev_lab.dev.remretired (the leftovers refused, `migrate` per repo, `uninstall` per machine) and '
+                'dev_lab.dev.memory (memory write and search); rem`s todo list is an entry like any other'
+            ),
+            'user rulings 2026-11-23: memory stays in each repo root; the rem plugin is archived and not installed',
+        ),
+    ),
     'forgeroute.reconcile': (
         'alarms on the host card (forge queue); the audit of a break-glass wave in the wave ledger',
         'user ruling 2026-11-19: issues never record events (break-glass, starved, integration rows)',

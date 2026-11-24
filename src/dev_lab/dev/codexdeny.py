@@ -80,6 +80,7 @@ GAPS: Final[dict[str, str]] = {
     'REPORTS-LIVE-IN-MEMORY': _TARGET,
     'OUTPUT-HOLDS-NO-CODE': _TARGET,
     'WRITES-STAY-IN-THE-TREE': _TARGET,
+    'LEDGER-WRITES-THROUGH-ITS-DOOR': _TARGET,
     'RECURSIVE-DELETE': _TARGET,
     'WORKTREES-STAY-INSIDE': _TARGET,
     'WORKTREE-NAMES-ITS-TASK': 'judged on the name of the directory it makes, not on the command word',
