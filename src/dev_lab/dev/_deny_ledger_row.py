@@ -16,7 +16,7 @@ from dev_lab.dev.taskledger import LEDGER_DIR
 
 __all__ = ['LEDGER_WRITTEN_BY_ITS_DOOR']
 
-_LEDGER = r'[\/]+repos[\/]+' + re.escape(LEDGER_DIR) + r'(?![^\s\/"\';&|])'
+_LEDGER = r'[\\/]+repos[\\/]+' + re.escape(LEDGER_DIR) + r'(?![^\s\\/"\';&|])'
 _ANY = r'[^\n;&|]*'
 _LAST = r'[^\s;&|]*["\']?\s*(?:$|[;&|)\n])'
 

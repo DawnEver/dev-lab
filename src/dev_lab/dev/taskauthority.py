@@ -52,7 +52,10 @@ __all__ = [
 #: How long a grant or request lives, in seconds.
 TTL_S: Final = 30 * 60
 _COMMAND: Final = re.compile(r'^\s*/task\s+(open|close)\s+([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s|$)')
-_APPROVE: Final = re.compile(r'^\s*(?:/task\s+)?(?:approve|批准|同意)\s+([0-9a-f]{6})\s*$', re.IGNORECASE)
+_APPROVE: Final = re.compile(
+    r'^\s*(?:/task\s+)?(?:approve|\u6279\u51c6|\u540c\u610f)\s+([0-9a-f]{6})\s*$',
+    re.IGNORECASE,
+)
 _LOCK_WAIT_S: Final = 30.0
 
 

@@ -119,7 +119,7 @@ def test_appends_mint_the_next_id_and_commit(ledger: Path, tmp_path: Path) -> No
     assert task.append('toolchain', 'close-item', 'done', item=1, date=_DAY) == f'- {_DAY} O1 closed: done'
     with pytest.raises(task.TaskRefused, match='not an open item'):
         task.append('toolchain', 'close-item', 'again', item=1)
-    for bad in ('two\nlines', '中文'):
+    for bad in ('two\nlines', '\u4e2d\u6587'):
         with pytest.raises(task.TaskRefused):
             task.append('toolchain', 'log', bad)
     assert len(_log(ledger)) == 5
@@ -236,12 +236,28 @@ def test_migrate_moves_a_retired_store_once(ledger: Path, tmp_path: Path) -> Non
     assert 'rm -r .claude' in said
     assert old.exists(), 'the checkout tree is never deleted'
     assert 'skipped a' in migrate(checkout, user_home=home), 'byte-identical: skipped'
-    (old / 'a' / 'JOURNAL.md').write_text('- x\n', encoding='utf-8')
+    (old / 'a' / 'TASK.md').write_text('---\nstatus: closed\n---\n', encoding='utf-8')
     (old / 'c').mkdir()
     (old / 'c' / 'TASK.md').write_text('---\n---\n', encoding='utf-8')
-    with pytest.raises(task.TaskRefused, match='a already in the ledger'):
+    with pytest.raises(task.TaskRefused, match=r'a/TASK\.md \(from .*already in the ledger'):
         migrate(checkout, user_home=home)
-    assert not (ledger / 'c').exists(), 'a differing unit refuses the WHOLE run before any write'
+    assert not (ledger / 'c').exists(), 'a differing non-journal file refuses the WHOLE run before any write'
+
+
+def test_migrate_union_merges_journals_across_checkouts(ledger: Path, tmp_path: Path) -> None:
+    one, two = on_branch(tmp_path / 'one', 'pr/a/x'), on_branch(tmp_path / 'two', 'pr/a/y')
+    for checkout, lines in ((one, '- D1 shared\n- O1 one\n'), (two, '- D1 shared\n- O2 two\n')):
+        (_store(checkout) / 'a').mkdir(parents=True)
+        (_store(checkout) / 'a' / 'TASK.md').write_text('---\nstatus: open\n---\n', encoding='utf-8')
+        (_store(checkout) / 'a' / 'JOURNAL.md').write_text(lines, encoding='utf-8')
+    home = tmp_path / 'user'
+    plan = migrate(one, two, dry_run=True, user_home=home)
+    assert 'would copy a' in plan
+    assert 'would merge a/JOURNAL.md (+1 line)' in plan, 'the second checkout is planned against the first'
+    assert not (ledger / 'a').exists()
+    migrate(one, two, user_home=home)
+    assert (ledger / 'a' / 'JOURNAL.md').read_text(encoding='utf-8') == '- D1 shared\n- O1 one\n- O2 two\n'
+    assert 'skipped a' in migrate(one, two, user_home=home), 'a merged journal is a fixed point'
 
 
 def test_the_ledger_is_written_only_through_its_door(ledger: Path, tmp_path: Path) -> None:

@@ -1,25 +1,25 @@
-"""THE ONE-TIME MIGRATION of a checkout's retired task store into the machine's task ledger (FORMATS-MIGRATE-ONCE).
+"""THE ONE-TIME MIGRATION of checkouts' retired task stores into the machine's task ledger (FORMATS-MIGRATE-ONCE).
 
-``python -m dev_lab.dev.task migrate <checkout> [--dry-run]`` (:func:`migrate`):
+``python -m dev_lab.dev.task migrate <checkout>... [--dry-run]`` (:func:`migrate`):
 
-1. every task directory of ``<checkout>``'s retired store (:data:`~dev_lab.dev.taskledger.RETIRED_STORE`) -- a
+1. every task directory of each ``<checkout>``'s retired store (:data:`~dev_lab.dev.taskledger.RETIRED_STORE`) -- a
    ``<slug>/`` and each ``archive/<date>/<slug>/`` -- is a UNIT, read from the working tree (tracked and untracked
-   files alike; the retired ``.bindings`` and every dot entry skipped). A unit byte-identical in the ledger is
-   skipped; one that DIFFERS refuses the WHOLE run, by name, before any write;
-2. the rest are copied into :func:`~dev_lab.dev.taskledger.ledger` and committed there (local only);
-3. the checkout's retired rem authority history (``~/.claude/rem/authority/<key>.jsonl``, keyed by the checkout's
+   files alike; the retired ``.bindings`` and every dot entry skipped). The checkouts are planned in order against
+   the ledger AS IT WILL BE: a file it lacks is added; a ``JOURNAL.md`` that differs is UNION-merged (the ledger's
+   ``.gitattributes`` ``merge=union``: its lines, then each line it lacks); any other differing file refuses the
+   WHOLE run, by name, before any write. A unit with nothing new is skipped;
+2. the planned files are written into :func:`~dev_lab.dev.taskledger.ledger` and committed there (local only);
+3. each checkout's retired rem authority history (``~/.claude/rem/authority/<key>.jsonl``, keyed by the checkout's
    path or its store's) is folded into the one store (:func:`dev_lab.dev.taskauthority.fold`);
 4. the retired per-session binding records, ``<machine home>/state/sessions/*.json``, are deleted.
 
-It never deletes the checkout's tree: it prints the ``git rm`` its owner runs. ``--dry-run`` writes nothing and
+It never deletes a checkout's tree: it prints the ``git rm`` its owner runs. ``--dry-run`` writes nothing and
 lists everything it would do.
 """
 
 from __future__ import annotations
 
-import filecmp
 import hashlib
-import shutil
 from pathlib import Path
 from typing import Final
 
@@ -33,6 +33,7 @@ __all__ = ['RETIRED_AUTHORITY', 'migrate', 'units']
 #: Where rem kept its authority history, below the user's home.
 RETIRED_AUTHORITY: Final = ('.claude', 'rem', 'authority')
 _SKIPPED: Final = '.bindings'
+_JOURNAL: Final = 'JOURNAL.md'
 
 
 def _files(folder: Path) -> dict[str, Path]:
@@ -53,9 +54,12 @@ def units(store: Path) -> list[str]:
     return found
 
 
-def _same(old: Path, new: Path) -> bool:
-    a, b = _files(old), _files(new)
-    return a.keys() == b.keys() and all(filecmp.cmp(a[k], b[k], shallow=False) for k in a)
+def _union(held: str, incoming: str) -> str:
+    """*held*, then each line of *incoming* it lacks -- git's ``merge=union`` for a journal."""
+    have = set(held.splitlines())
+    added = [line for line in incoming.splitlines() if line not in have]
+    base = held if not held or held.endswith('\n') else held + '\n'
+    return base + ''.join(f'{line}\n' for line in added)
 
 
 def _history(checkout: Path, home: Path) -> list[Path]:
@@ -66,42 +70,90 @@ def _history(checkout: Path, home: Path) -> list[Path]:
     return [folder / f'{k}.jsonl' for k in sorted(keys) if (folder / f'{k}.jsonl').is_file()]
 
 
-def migrate(checkout: Path, *, dry_run: bool = False, user_home: Path | None = None) -> str:
-    """Move *checkout*'s retired store into the ledger, once; the report (also the dry run's plan)."""
-    from dev_lab.dev.task import TaskRefused, _commit  # noqa: PLC0415 -- task imports this module lazily
+def _read(path: Path) -> str | None:
+    return path.read_bytes().decode('utf-8') if path.is_file() else None
 
-    checkout = Path(checkout).resolve()
-    store, root = checkout.joinpath(*RETIRED_STORE), ledger()
-    rel_store = '/'.join(RETIRED_STORE)
-    if not store.is_dir():
-        msg = f'{checkout.as_posix()} holds no retired task store ({rel_store}): nothing to migrate'
-        raise TaskRefused(msg)
-    todo = units(store)
-    differ = [u for u in todo if (root / u).exists() and not _same(store / u, root / u)]
+
+class _Plan:
+    """The ledger AS IT WILL BE: each file's planned text, the report lines, and the conflicts that refuse the run."""
+
+    def __init__(self, root: Path, *, dry_run: bool) -> None:
+        self.root, self.would = root, 'would ' if dry_run else ''
+        self.files: dict[str, str] = {}  # ledger-relative file -> the text it will hold
+        self.units: set[str] = set()
+        self.lines: list[str] = []
+        self.differ: list[str] = []
+
+    def unit(self, store: Path, unit: str, origin: str) -> None:
+        """Plan one *unit* of *store* (from the checkout *origin*) against everything planned so far."""
+        new = unit not in self.units and not (self.root / unit).exists()
+        changed = False
+        for name, src in _files(store / unit).items():
+            rel, text = f'{unit}/{name}', src.read_bytes().decode('utf-8')
+            held = self.files.get(rel, _read(self.root / rel))
+            if held == text:
+                continue
+            if held is None:
+                self.files[rel], changed = text, True
+                if not new:
+                    self.lines.append(f'{self.would}add {rel}')
+            elif name != _JOURNAL:
+                self.differ.append(f'{rel} (from {origin})')
+            elif (merged := _union(held, text)) != held:
+                self.files[rel], changed = merged, True
+                self.lines.append(f'{self.would}merge {rel} (+{merged.count(chr(10)) - held.count(chr(10))} line)')
+        self.units.add(unit)
+        if new:
+            self.lines.append(f'{"would copy" if self.would else "copied"} {unit}')
+        elif not changed:
+            self.lines.append(f'skipped {unit} (byte-identical in the ledger)')
+
+
+def _write(root: Path, planned: dict[str, str], message: str) -> None:
+    """Write each planned file that differs from the ledger's, and commit them there."""
+    from dev_lab.dev.task import _commit  # noqa: PLC0415 -- task imports this module lazily
+
+    written = sorted(rel for rel, text in planned.items() if _read(root / rel) != text)
+    for rel in written:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(planned[rel].encode('utf-8'))
+    if written:
+        _commit(root, message, *written)
+
+
+def migrate(*checkouts: Path, dry_run: bool = False, user_home: Path | None = None) -> str:
+    """Move each of *checkouts*' retired stores into the ledger, once; the report (also the dry run's plan)."""
+    from dev_lab.dev.task import TaskRefused  # noqa: PLC0415 -- task imports this module lazily
+
+    root, rel_store = ledger(), '/'.join(RETIRED_STORE)
+    resolved = [Path(c).resolve() for c in checkouts]
+    plan = _Plan(root, dry_run=dry_run)
+    for checkout in resolved:
+        store = checkout.joinpath(*RETIRED_STORE)
+        if not store.is_dir():
+            msg = f'{checkout.as_posix()} holds no retired task store ({rel_store}): nothing to migrate'
+            raise TaskRefused(msg)
+        for unit in units(store):
+            plan.unit(store, unit, checkout.as_posix())
+    lines, differ, planned = plan.lines, plan.differ, plan.files
     if differ:
         msg = (
             f'{", ".join(differ)} already in the ledger {root.as_posix()} with different content: nothing migrated.\n'
             f'Door: reconcile each by hand in the ledger through python -m dev_lab.dev.task, then re-run the migration'
         )
         raise TaskRefused(msg)
-    copy = [u for u in todo if not (root / u).exists()]
-    skip = [u for u in todo if u not in copy]
-    histories = _history(checkout, user_home or Path.home())
+    home = user_home or Path.home()
+    histories = [h for c in resolved for h in _history(c, home)]
     sessions = sorted(part('state').joinpath('sessions').glob('*.json'))
-    lines = [f'{"would copy" if dry_run else "copied"} {u}' for u in copy]
-    lines += [f'skipped {u} (byte-identical in the ledger)' for u in skip]
     lines += [f'{"would fold" if dry_run else "folded"} authority history {h.as_posix()}' for h in histories]
     lines += [f'{"would delete" if dry_run else "deleted"} binding record {s.as_posix()}' for s in sessions]
     if not dry_run:
-        for unit in copy:
-            shutil.copytree(store / unit, root / unit)
-        if copy:
-            _commit(root, f'chore(tasks): migrate {len(copy)} task(s) from {checkout.name}', *copy)
+        _write(root, planned, f'chore(tasks): migrate the task stores of {", ".join(c.name for c in resolved)}')
         for history in histories:
             taskauthority.fold(root, history.read_text(encoding='utf-8').splitlines())
         for record in sessions:
             record.unlink()
-    lines.append(f'the checkout owner removes the retired store: git -C {checkout.as_posix()} rm -r {rel_store}')
+    lines += [f'the owner removes the retired store: git -C {c.as_posix()} rm -r {rel_store}' for c in resolved]
     if dry_run:
         lines.append('dry run: nothing was written')
     return '\n'.join(lines)

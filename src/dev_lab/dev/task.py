@@ -83,7 +83,7 @@ VERBS: Final = (
     ('status', 'agent', '[<slug>]', 'the task in <= 2 KB'),
     ('list', 'agent', '', 'every open task: slug, open items, decisions, goal'),
     ('show', 'agent', '[<slug>]', 'TASK.md and the whole journal (an archived task too)'),
-    ('migrate', 'owner', '<checkout> [--dry-run]', "the one-time move of a checkout's retired store"),
+    ('migrate', 'owner', '<checkout>... [--dry-run]', "the one-time move of checkouts' retired stores"),
 )
 _SLUG: Final = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 _GIT: Final = shutil.which('git') or 'git'
@@ -138,7 +138,9 @@ def _git(root: Path, *args: str) -> tuple[int, str]:
 
 
 def _commit(root: Path, message: str, *paths: str) -> None:
-    status, said = _git(root, 'add', '-A', '--', *paths)
+    # A path already moved by `git mv` is on neither disk nor index: `add` would refuse it; `commit` records it.
+    present = [p for p in paths if (root / p).exists()]
+    status, said = _git(root, 'add', '-A', '--', *present) if present else (0, '')
     if status == 0:
         status, said = _git(root, 'commit', '-q', '-m', message, '--', *paths)
     if status != 0:
@@ -470,9 +472,9 @@ def _run(args: argparse.Namespace, cwd: Path) -> str:  # noqa: C901, PLR0911, PL
     if verb == 'migrate':
         from dev_lab.dev.taskmigrate import migrate  # noqa: PLC0415
 
-        if len(words) != 1:
+        if not words:
             raise _usage(verb)
-        return migrate(Path(words[0]), dry_run=args.dry_run)
+        return migrate(*map(Path, words), dry_run=args.dry_run)
     return _help()
 
 
