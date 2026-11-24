@@ -90,7 +90,7 @@ def test_dev_lab_binds_nothing_so_its_venv_cannot_block_a_prompt() -> None:
     assert "rem's UserPromptSubmit hook" in taskbinding.DOOR
 
 
-_FIXTURE = Path(__file__).parent / '_rem_fixtures' / 'session-binding.json'
+_FIXTURE = Path(__file__).parent / '_rem_fixtures' / 'session-binding.jsonl'
 
 
 def test_the_cross_language_fixture_is_the_path_and_record_rem_writes(
@@ -101,7 +101,8 @@ def test_the_cross_language_fixture_is_the_path_and_record_rem_writes(
     The path is the machine home's (lab_commons.home) ``state/sessions/<session>.json``; the record
     names its task and the ledger that task lives in; the repo key is lab_commons.repostate's rule.
     """
-    fixture = json.loads(_FIXTURE.read_text(encoding='utf-8'))
+    [line] = _FIXTURE.read_text(encoding='utf-8').splitlines()
+    fixture = json.loads(line)
     session = fixture['session']
     monkeypatch.setenv(HOME_ENV, str(tmp_path / 'home'))
     assert taskbinding.binding_path(session) == tmp_path / 'home' / fixture['relative_path']

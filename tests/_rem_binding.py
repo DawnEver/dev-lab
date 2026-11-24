@@ -3,7 +3,7 @@
 rem owns the binding and is its only writer (its ``hooks/task-authority.js``, on the user's ``task: <slug>`` prompt);
 dev-lab only reads it (:mod:`dev_lab.dev.taskbinding`). The contract is rem's ``skills/rem/reference/tasks.md``
 section "The binding file", pinned on rem's side by ``tests/task-bind.test.mjs`` and the shared fixture
-``_rem_fixtures/session-binding.json``. This helper writes that shape --
+``_rem_fixtures/session-binding.jsonl``. This helper writes that shape --
 ``<machine home>/state/sessions/<session>.json``
 = ``{"session": <id>, "task": "<slug>@<authority>", "ledger": {"repo_key": ..., "path": <ledger>}}`` (D34) -- and
 nothing else; :func:`bind_in_retired_store` plants the retired per-repo record a reader must refuse.

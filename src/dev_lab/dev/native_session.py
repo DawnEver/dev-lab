@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import json
 import os
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['harness_keys', 'primary_of', 'session_of', 'valid']
+__all__ = ['catalog_json', 'harness_keys', 'primary_of', 'session_of', 'valid']
+
+
+def catalog_json() -> bytes:
+    """The catalog rendered as the JSON the installed JS launcher reads; the TOML beside this module is its source."""
+    return (json.dumps(_catalog(), separators=(',', ':')) + '\n').encode('utf-8')
 
 
 def _catalog() -> dict:
     try:
-        catalog = json.loads(Path(__file__).with_suffix('.json').read_text(encoding='utf-8'))
+        catalog = tomllib.loads(Path(__file__).with_suffix('.toml').read_text(encoding='utf-8'))
         readable = type(catalog['max_length']) is int and catalog['max_length'] > 0
         readable = readable and isinstance(catalog['punctuation'], str)
         readable = (

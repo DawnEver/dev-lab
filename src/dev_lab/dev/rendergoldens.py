@@ -1,7 +1,7 @@
 """Every family file the generators render for a set of declaration fixtures, pinned byte for byte as goldens.
 
 THE CONTRACT IT CLOSES: a generator change is shown not to change unrelated repos. A fixture is a directory holding a
-``pyproject.toml`` (its ``[tool.dev_lab.ci]`` declarations), a ``roles.json`` (the executor kinds its family binds,
+``pyproject.toml`` (its ``[tool.dev_lab.ci]`` declarations), a ``roles.jsonl`` (the executor kinds its family binds,
 as :data:`~dev_lab.dev.roles.ROLES_ENV` carries them) and a ``deltas.py`` (its ``DELTAS``); its render is
 every RENDERED famconfig base it declares a delta for, every whole family file (:func:`famfiles.render_agent_files`'s
 set) and every workflow :mod:`dev_lab.dev.ciworkflows` places. :func:`compare` names each render that moved against
@@ -46,7 +46,7 @@ __all__ = [
 #: The declaration file of a fixture: its ``[tool.dev_lab.ci]`` tables.
 MANIFEST: Final = 'pyproject.toml'
 #: The file of a fixture naming the executor kind of each role, as a rendered workflow carries them.
-ROLES_FILE: Final = 'roles.json'
+ROLES_FILE: Final = 'roles.jsonl'
 #: The module file of a fixture holding its ``DELTAS``.
 DELTAS_FILE: Final = 'deltas.py'
 #: The suffix of a golden file: a rendered ``.gitignore`` stored bare would be read by git as an ignore rule.
@@ -87,7 +87,8 @@ def render_fixtures(fixtures: Path) -> dict[str, str]:
     for fixture in sorted(path for path in fixtures.iterdir() if (path / MANIFEST).is_file()):
         manifest = fixture / MANIFEST
         deltas = famfiles.load_deltas(fixture / DELTAS_FILE)
-        roles = Roles.of_kinds(**json.loads((fixture / ROLES_FILE).read_text(encoding='utf-8')))
+        [record] = (fixture / ROLES_FILE).read_text(encoding='utf-8').splitlines()
+        roles = Roles.of_kinds(**json.loads(record))
         rendered = render_fixture(manifest.read_text(encoding='utf-8'), deltas, str(manifest), roles)
         out.update({f'{fixture.name}/{rel}': text for rel, text in rendered.items()})
     return out

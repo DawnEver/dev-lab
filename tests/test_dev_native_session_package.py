@@ -26,10 +26,11 @@ def test_the_built_wheel_installs_the_same_identity_catalog_beside_its_launcher(
     )
     assert built.returncode == 0, built.stderr
     [wheel] = (tmp_path / 'wheel').glob('*.whl')
-    expected = Path(native_session.__file__).with_suffix('.json').read_bytes()
+    expected = Path(native_session.__file__).with_suffix('.toml').read_bytes()
     unpacked = tmp_path / 'installed'
     with zipfile.ZipFile(wheel) as archive:
-        assert archive.read('dev_lab/dev/native_session.json') == expected
+        assert archive.read('dev_lab/dev/native_session.toml') == expected
+        assert 'dev_lab/dev/native_session.json' not in archive.namelist(), 'the JSON is rendered, never shipped'
         assert 'dev_lab/dev/native_session.py' in archive.namelist()
         assert 'dev_lab/dev/agent_launcher.js' in archive.namelist()
         archive.extractall(unpacked)
@@ -42,7 +43,10 @@ def test_the_built_wheel_installs_the_same_identity_catalog_beside_its_launcher(
         "assert native_session.session_of({'ANTIGRAVITY_CONVERSATION_ID': 'wheel-agy'}) == 'wheel-agy'\n"
         'agent_guard.install_guard(checkout)\n'
         "catalog = (checkout / agent_wiring.LAUNCHER_REL).with_name('native_session.json')\n"
-        "assert catalog.read_bytes() == pathlib.Path(native_session.__file__).with_suffix('.json').read_bytes()\n"
+        'assert catalog.read_bytes() == native_session.catalog_json()\n'
+        'import json, tomllib\n'
+        "source = tomllib.loads(pathlib.Path(native_session.__file__).with_suffix('.toml').read_text('utf-8'))\n"
+        'assert json.loads(catalog.read_bytes()) == source\n'
     )
     done = subprocess.run(
         [sys.executable, '-c', code, str(unpacked), str(tmp_path / 'consumer')],

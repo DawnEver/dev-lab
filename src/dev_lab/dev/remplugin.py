@@ -139,7 +139,7 @@ def _agy(env: Mapping[str, str], home: Path, root: Path) -> Binder:
     return Binder('Antigravity', _PLUGIN, version, enabled)
 
 
-#: The registry reader of each harness, by the primary session key it declares (``native_session.json``).
+#: The registry reader of each harness, by the primary session key it declares (``native_session.toml``).
 _READERS: Final[dict[str, Callable[[Mapping[str, str], Path, Path], Binder]]] = {
     'CLAUDE_CODE_SESSION_ID': _claude,
     'CODEX_THREAD_ID': _codex,

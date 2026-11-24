@@ -92,14 +92,14 @@ def test_auxiliary_metadata_cannot_hide_a_second_harness() -> None:
     assert _native().session_of({_AGY: _ID, 'ANTIGRAVITY_TRAJECTORY_ID': 'auxiliary'}) == _ID
 
 
-@pytest.mark.parametrize('contents', [None, '{', '{}', '[]'])
+@pytest.mark.parametrize('contents', [None, '[', '', 'harnesses = []\nmax_length = 128\npunctuation = "_"'])
 def test_a_missing_or_corrupt_identity_catalog_never_turns_into_a_human_bypass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contents: str | None
 ) -> None:
     native = _native()
     monkeypatch.setattr(native, '__file__', str(tmp_path / 'native_session.py'))
     if contents is not None:
-        (tmp_path / 'native_session.json').write_text(contents, encoding='utf-8')
+        (tmp_path / 'native_session.toml').write_text(contents, encoding='utf-8')
     with pytest.raises(ValueError, match=r'native session catalog[^\n]*\nDoor:'):
         native.session_of({})
 
