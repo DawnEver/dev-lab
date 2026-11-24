@@ -71,6 +71,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'claudesettings',
     # ORIGINAL: nothing refused a credential value reaching a log line (ruling C, 2026-11-24).
     'secretlog',
+    # ORIGINAL: each Rust repo pinned its own toolchain; the family fact had no source (2026-11-24).
+    'rusttoolchain',
     'cjk',
     'content',
     # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism

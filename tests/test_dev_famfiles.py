@@ -184,7 +184,8 @@ def test_the_renderers_are_derived_from_the_generated_rows() -> None:
     those rows and from nowhere else.
     """
     assert {renderer.name for renderer in RENDERERS} == {
-        'agent_guard', 'autodoors', 'ciworkflows', 'claudesettings', 'famfiles', 'hook_adoption', 'vscodesettings',
+        'agent_guard', 'autodoors', 'ciworkflows', 'claudesettings', 'famfiles', 'hook_adoption', 'rusttoolchain',
+        'vscodesettings',
     }  # fmt: skip
     unrendered = {row.path for row in PROJECT_FILES.values() if row.generated and row.renderer is None}
     assert unrendered == {'uv.lock'}, 'the lock is the door`s, every other generated file names its renderer'
@@ -280,7 +281,8 @@ def test_a_family_repo_with_no_render_table_gets_its_workflows(tmp_path: Path) -
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert ran == []
     assert len(lines) == len(RENDERERS)
-    assert all(': skipped -- not a family repo' in line or 'is not declared' in line for line in lines)
+    skipped = (': skipped -- not a family repo', 'is not declared', 'no file it writes is present')
+    assert all(any(why in line for why in skipped) for line in lines)
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nintegration = "main"\n', encoding='utf-8')
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert 'ciworkflows: rendered' in lines
@@ -355,3 +357,11 @@ def test_a_workflow_is_kept_only_where_the_ci_declaration_places_it(repo: Path) 
         assert_every_project_file_is_accounted_for(root=repo, owned_here={})
     (repo / 'pyproject.toml').write_text(f'{forge}\n[tool.dev_lab.ci."hand.yml"]\nforge = "github"\n', encoding='utf-8')
     assert unplaced_workflows(repo) == ('.gitea/workflows/merge.yml',)
+
+
+def test_the_toolchain_renders_only_where_the_repo_carries_one(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a family repo without Rust gets no rust-toolchain.toml; one carrying it is re-rendered."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.render]\ndeltas = "d.py"\n', encoding='utf-8')
+    assert 'rusttoolchain' not in {renderer.name for renderer in due_renderers(tmp_path)}
+    (tmp_path / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.0.0"\n', encoding='utf-8')
+    assert 'rusttoolchain' in {renderer.name for renderer in due_renderers(tmp_path)}

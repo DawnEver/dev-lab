@@ -578,6 +578,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   closes salvaged PRs with an evidence comment; it never deletes a branch.
 * :mod:`dev_lab.dev.claudelayout` -- the CLOSED ``.claude/`` inventory: every entry declared by name in one
   constant, ``.claude/`` at the repo root only (user ruling 2026-11-24).
+* :mod:`dev_lab.dev.rusttoolchain` -- the FAMILY RUST TOOLCHAIN, one exact channel rendered into every repo
+  that commits Rust, plus its ``[tool.dev_lab.rust]`` delta (user ruling 2026-11-24).
 * :mod:`dev_lab.dev.secretlog` -- NEVER-LOG-SECRETS: an output sink never interpolates a credential value.
 * :mod:`dev_lab.dev.claudesettings` -- the RENDERED ``.claude/settings.json``: hooks, the door allow rows and
   ``MPLBACKEND=Agg``, plus the repo's ``[tool.dev_lab.claude]`` delta (user ruling 2026-11-24).

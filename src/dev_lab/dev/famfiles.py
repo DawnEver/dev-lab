@@ -105,6 +105,7 @@ class Renderer:
     repo_flag: str = '--repo'
     inputs: tuple[tuple[str, str], ...] = ()
     required: frozenset[str] = frozenset()
+    present_only: bool = False  # set: due only where a file it writes is present, member or not
     needs: str = ''  # set: in a family repo with no file it writes, due only where the renderer named here is
 
 
@@ -122,6 +123,8 @@ VSCODE: Final = Renderer('vscodesettings', ('dev_lab.dev.vscodesettings', 'rende
 AUTODOORS: Final = Renderer(
     'autodoors', ('dev_lab.dev.autodoors', '--write'), inputs=(('shell_doors', '--shell-door'),)
 )
+#: The family Rust toolchain, where a repo carries one (it commits Rust: dev_lab.dev.lockcheck).
+RUST_TOOLCHAIN: Final = Renderer('rusttoolchain', ('dev_lab.dev.rusttoolchain', 'render'), present_only=True)
 #: The whole .claude/settings.json: hooks, the door allow rows (autodoors' source) and the env, plus the delta.
 CLAUDE_SETTINGS: Final = Renderer(
     'claudesettings', ('dev_lab.dev.claudesettings', 'render'), inputs=(('shell_doors', '--shell-door'),)
@@ -179,6 +182,11 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
             MANAGED,
             'vscodesettings renders the editor excludes; every other key is the user`s',
             renderer=VSCODE,
+        ),
+        _g(
+            'rust-toolchain.toml',
+            'rusttoolchain RENDERED: the family channel + components, plus [tool.dev_lab.rust]',
+            RUST_TOOLCHAIN,
         ),
         _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
@@ -246,6 +254,8 @@ def plan(root: Path) -> tuple[tuple[Renderer, str | None], ...]:
     def why(renderer: Renderer) -> str | None:
         if renderer in present:
             return None
+        if renderer.present_only:
+            return 'no file it writes is present (a repo committing Rust carries rust-toolchain.toml: lockcheck)'
         if not member:
             return 'not a family repo (no dev-lab dependency, no [tool.dev_lab.*] table) and no file it writes exists'
         if missing := sorted(renderer.required - set(declared)):
