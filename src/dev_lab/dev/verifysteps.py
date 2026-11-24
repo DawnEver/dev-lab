@@ -64,6 +64,7 @@ from dev_lab.dev.verifybox import (
 )
 
 __all__ = [
+    'CACHE_VARS',
     'COVERAGE_KIND',
     'LEDGER_PLUGIN',
     'LOG_KIND',
@@ -72,6 +73,7 @@ __all__ = [
     'PYTEST_ARGS',
     'RUFF_STEPS',
     'build_verdict',
+    'cache_env',
     'coverage_args',
     'coverage_env',
     'coverage_report',
@@ -182,6 +184,18 @@ def coverage_report(root: Path, log: Path) -> Path:
 def coverage_env(root: Path, log: Path) -> dict[str, str]:
     """The coverage DATA file of the run logged at *log*, beside its report, so no run writes ``.coverage`` here."""
     return {'COVERAGE_FILE': str(output_dir(root, COVERAGE_KIND) / f'{log.stem}.coverage')}
+
+
+#: THE TOOL CACHES (user ruling 2026-11-24): every cache lives under ``output/cache/<tool>/``, never at the root,
+#: so the family `.gitignore` need not name one. pytest's and ruff's go there through the family pyproject rows;
+#: these two have no pyproject key every repo shares (hypothesis has none at all), so the door that runs them sets
+#: the variable each tool reads.
+CACHE_VARS: Final[dict[str, str]] = {'HYPOTHESIS_STORAGE_DIRECTORY': 'hypothesis', 'MYPY_CACHE_DIR': 'mypy'}
+
+
+def cache_env(root: Path) -> dict[str, str]:
+    """Each :data:`CACHE_VARS` variable pointed at ``<root>/output/cache/<tool>``."""
+    return {var: str(root / 'output' / 'cache' / tool) for var, tool in CACHE_VARS.items()}
 
 
 def coverage_args(root: Path, log: Path, *, append: bool = False) -> tuple[str, ...]:
@@ -469,6 +483,7 @@ def run_verify(
                     durations.LEDGER_TREE_VAR: tree_address(root),
                     durations.LEDGER_ENV_VAR: verdict_env(root),
                     **coverage_env(root, path),
+                    **cache_env(root),
                 }
                 head = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *PLUGIN]
                 pytest = [*head, *pytest_args]

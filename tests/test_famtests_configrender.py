@@ -20,7 +20,6 @@ import pytest
 from dev_lab.dev.famconfig import (
     BASES,
     RENDERED,
-    REQUIRED,
     Base,
     Delta,
     artefact_base,
@@ -102,8 +101,8 @@ def test_a_freshly_rendered_tree_installs_and_one_hand_edit_reds(tmp_path: Path)
         )
 
     path = tmp_path / '.gitignore'
-    path.write_text(path.read_text(encoding='utf-8').replace('.mypy_cache/', '.mypy_cache.bak/'), encoding='utf-8')
-    with pytest.raises(AssertionError, match=re.escape('.mypy_cache/')):
+    path.write_text(path.read_text(encoding='utf-8').replace('/dist/', '/dist.bak/'), encoding='utf-8')
+    with pytest.raises(AssertionError, match=re.escape('/dist/')):
         assert_artefact_is_rendered(
             root=tmp_path, artefact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='make render'
         )
@@ -120,13 +119,6 @@ def test_the_remedy_is_the_one_the_caller_declared_and_the_mode_decides_which(tm
     with pytest.raises(AssertionError, match='the-declared-remedy'):
         assert_artefact_is_rendered(
             root=tmp_path, artefact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='the-declared-remedy'
-        )
-
-    makefile = next(name for name, base in BASES.items() if base.mode == REQUIRED)
-    (tmp_path / makefile).write_text('nothing:\n\t@true\n', encoding='utf-8')
-    with pytest.raises(AssertionError, match=re.escape('declare each as a Delta.dropped')):
-        assert_artefact_is_rendered(
-            root=tmp_path, artefact=makefile, deltas=deltas, repo=_REPO, rerender_hint='the-declared-remedy'
         )
 
 
@@ -217,9 +209,8 @@ def test_the_mode_each_artefact_is_judged_under_is_the_one_the_repo_agreed_to() 
     assert_modes_are_as_agreed(modes=agreed)
 
     flipped = dict(agreed)
-    required = next(name for name, mode in agreed.items() if mode == REQUIRED)
-    flipped[required] = RENDERED
-    with pytest.raises(AssertionError, match=re.escape(required)):
+    flipped['.gitignore'] = 'PRESENCE-ONLY'
+    with pytest.raises(AssertionError, match=re.escape('.gitignore')):
         assert_modes_are_as_agreed(modes=flipped)
 
 
@@ -248,9 +239,7 @@ def test_the_round_trip_control_passes_then_reds_on_one_edited_line(tmp_path: Pa
     deltas = _deltas(tmp_path)
     scratch = tmp_path / 'scratch'
     scratch.mkdir()
-    assert_render_round_trips(
-        artefact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('.mypy_cache/', 'x')
-    )
+    assert_render_round_trips(artefact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('/dist/', 'x'))
 
     with pytest.raises(AssertionError, match='no such line'):
         assert_render_round_trips(

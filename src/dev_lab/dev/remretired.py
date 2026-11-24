@@ -19,7 +19,7 @@ WHAT IS REFUSED, AND ITS DOOR:
   ``enabledPlugins`` switch, the ``env`` keys rem read (:data:`SETTINGS_ENV`), and Codex's ``rem@`` config tables
   and cache. The door is ``uninstall --apply``; the authority store under ``~/.claude/rem/`` is the user's data
   and stays. Until a machine runs it, every family repo's own settings turn rem off
-  (:data:`dev_lab.dev.plugin_settings.DISABLED_PLUGINS`).
+  (:data:`dev_lab.dev.claudesettings.DISABLED_PLUGINS`).
 
 The repo refusal is always on (:mod:`dev_lab.dev.famtests.alwayson`, :func:`check`); the ``SessionStart`` notice
 (``session-start``) names both doors where the session starts.

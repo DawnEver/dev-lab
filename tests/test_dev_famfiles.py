@@ -6,6 +6,7 @@ a throwaway repository in ``tmp_path`` so a green here is a measurement and not 
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -15,30 +16,29 @@ from typing import Final
 import pytest
 from _famconfig_delta import DELTAS, REPO
 
-from dev_lab.dev.devdocs import INDEX_REL, pointer_table, write_pointer_table
+from dev_lab.dev.agentsection import AGENTS_REL, BEGIN, END, render_section
 from dev_lab.dev.famconfig import BASES, RENDERED
 from dev_lab.dev.famfiles import (
     MANAGED,
     OWNED,
     PROJECT_FILES,
     RENDERERS,
-    _run,
+    RETIRED_PROJECT_FILES,
     due_renderers,
     is_member,
     main,
+    managed_sections,
     project_files_on_disk,
     render_agent_files,
     render_all,
     render_argv,
     render_repo,
-    whole_files,
+    unplaced_workflows,
 )
 from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
     assert_every_project_file_is_accounted_for,
 )
-from dev_lab.dev.principles import PAGE_REL
-from dev_lab.dev.principles import render as render_principles
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 DELTAS_FILE: Final = ROOT / 'tests' / '_famconfig_delta.py'
@@ -117,10 +117,10 @@ def test_one_render_writes_every_rendered_artefact_and_a_hand_edit_reds(repo: Pa
         f'{name}: current' for name in sorted(rendered)
     ]
     path = repo / '.gitignore'
-    path.write_text(path.read_text(encoding='utf-8').replace('htmlcov/\n', ''), encoding='utf-8')
+    path.write_text(path.read_text(encoding='utf-8').replace('/dist/\n', ''), encoding='utf-8')
     assert any(line.startswith('.gitignore: would render') for line in render_all(repo, rendered, write=False))
     render_all(repo, rendered, write=True)
-    assert 'htmlcov/\n' in path.read_text(encoding='utf-8')
+    assert '/dist/\n' in path.read_text(encoding='utf-8')
     assert 'scratch/' not in path.read_text(encoding='utf-8'), 'SCRATCH-IS-NEVER-COMMITTED: scratch stays visible'
 
 
@@ -132,21 +132,49 @@ def test_a_rendered_file_is_lf_on_every_os(tmp_path: Path) -> None:
         assert b'\r\n' not in (tmp_path / name).read_bytes(), name
 
 
-def test_famfiles_writes_the_principles_page_and_the_rem_config(tmp_path: Path) -> None:
-    """The project files hook_install used to write are famfiles' now: a name matches what the code does.
+def test_famfiles_writes_the_agents_section_and_keeps_the_repo_text(tmp_path: Path) -> None:
+    """The family section is spliced between its markers; the repo's own text around it is kept.
 
-    PLANTED CONTROL: a drifted page reads stale in check mode and current after one render.
+    PLANTED CONTROL: a hand edit inside the markers reads drifted in check mode and current after one render.
     """
-    root = tmp_path / 'repo'
-    root.mkdir()
-    _git('init', '-q', cwd=root)
-    assert render_agent_files(root, write=False) == (f'{PAGE_REL}: would render (absent)',)
-    assert render_agent_files(root, write=True) == (f'{PAGE_REL}: rendered',)
-    assert (root / PAGE_REL).read_text(encoding='utf-8') == render_principles()
-    (root / PAGE_REL).write_text('hand edit\n', encoding='utf-8')
-    assert render_agent_files(root, write=False)[0] == f'{PAGE_REL}: would render (drifted)'
-    render_agent_files(root, write=True)
-    assert render_agent_files(root, write=False) == (f'{PAGE_REL}: current',)
+    (tmp_path / AGENTS_REL).write_text('# repo\n\nOur own rules.\n', encoding='utf-8')
+    assert render_agent_files(tmp_path, write=False) == (f'{AGENTS_REL}: would render (drifted)',)
+    assert render_agent_files(tmp_path, write=True) == (f'{AGENTS_REL}: rendered',)
+    text = (tmp_path / AGENTS_REL).read_text(encoding='utf-8')
+    assert text.startswith('# repo\n\nOur own rules.\n')
+    assert render_section() in text
+    (tmp_path / AGENTS_REL).write_text(text.replace('## Family workflow', '## My workflow'), encoding='utf-8')
+    assert render_agent_files(tmp_path, write=False) == (f'{AGENTS_REL}: would render (drifted)',)
+    render_agent_files(tmp_path, write=True)
+    assert render_agent_files(tmp_path, write=False) == (f'{AGENTS_REL}: current',)
+    assert (tmp_path / AGENTS_REL).read_text(encoding='utf-8') == text
+
+
+#: Retired 2026-11-24 (user ruling): no family row, no renderer, no requirement -- each refused by name.
+_RETIRED: Final = ('.claude/rem.json', '.rgignore', 'ruff.toml')
+
+
+def test_the_retired_project_files_are_registered_and_have_no_row() -> None:
+    """RETIRED-NAMES-REGISTERED: a retired file is named with its reason, and no row or base still writes it."""
+    assert set(_RETIRED) <= set(RETIRED_PROJECT_FILES)
+    assert all(why.strip() for why in RETIRED_PROJECT_FILES.values())
+    assert not set(RETIRED_PROJECT_FILES) & set(PROJECT_FILES)
+    assert not set(RETIRED_PROJECT_FILES) & set(BASES)
+    assert PROJECT_FILES['Makefile'].kind == OWNED, 'the Makefile is the repo`s: no family contract any more'
+
+
+@pytest.mark.parametrize('path', _RETIRED)
+def test_a_tracked_retired_file_is_refused_by_name(repo: Path, path: str) -> None:
+    """PLANTED CONTROL: the retired file committed again reds with its reason, owned or not."""
+    assert_every_project_file_is_accounted_for(root=repo, owned_here={})
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text('{}\n', encoding='utf-8')
+    _git('add', '-f', path, cwd=repo)
+    with pytest.raises(AssertionError, match=f'{re.escape(path)}: RETIRED'):
+        assert_every_project_file_is_accounted_for(root=repo, owned_here={})
+
+
+# ------------------------------------------------------------------- the renderers, derived from the one list
 
 
 def test_the_renderers_are_derived_from_the_generated_rows() -> None:
@@ -156,7 +184,8 @@ def test_the_renderers_are_derived_from_the_generated_rows() -> None:
     those rows and from nowhere else.
     """
     assert {renderer.name for renderer in RENDERERS} == {
-        'agent_guard', 'autodoors', 'ciworkflows', 'devdocs', 'famfiles', 'hook_adoption',
+        'agent_guard', 'autodoors', 'ciworkflows', 'claudesettings', 'famfiles', 'hook_adoption', 'rusttoolchain',
+        'vscodesettings',
     }  # fmt: skip
     unrendered = {row.path for row in PROJECT_FILES.values() if row.generated and row.renderer is None}
     assert unrendered == {'uv.lock'}, 'the lock is the door`s, every other generated file names its renderer'
@@ -185,7 +214,7 @@ def test_a_renderers_command_reads_the_repos_render_table(tmp_path: Path) -> Non
     ]  # fmt: skip
 
 
-def test_a_repo_without_a_deltas_module_renders_its_whole_files_and_no_base(tmp_path: Path) -> None:
+def test_a_repo_without_a_deltas_module_renders_its_agents_section_and_no_base(tmp_path: Path) -> None:
     """2026-11-13: cc-market has no deltas module, so the one door refused it. No deltas = no per-file overrides.
 
     PLANTED CONTROL: the door without ``--files`` is still the one door, not this renderer.
@@ -197,7 +226,7 @@ def test_a_repo_without_a_deltas_module_renders_its_whole_files_and_no_base(tmp_
     (tmp_path / '.gitignore').write_text('mine', encoding='utf-8')
     assert main(['--files', '--repo', str(tmp_path)]) == 0
     assert (tmp_path / '.gitignore').read_text(encoding='utf-8') == 'mine', 'no delta: the base is not written'
-    assert all((tmp_path / rel).read_text(encoding='utf-8') == text for rel, text in whole_files())
+    assert all(text in (tmp_path / rel).read_text(encoding='utf-8') for rel, text in managed_sections())
     assert main(['--files', '--check', '--repo', str(tmp_path)]) == 0
     with pytest.raises(SystemExit):
         main(['--check', '--repo', str(tmp_path)])  # the door itself: --check reads one renderer
@@ -213,30 +242,8 @@ def test_a_due_renderer_missing_its_declared_input_is_refused_by_name(tmp_path: 
 # ------------------------------------------------------------------- the one door: every declared artefact
 
 
-_BASE: Final = '../../../lab-commons/docs-src/dev'
-
-
 def _declare(root: Path, table: str) -> None:
     (root / 'pyproject.toml').write_text(f'[tool.dev_lab.render]\n{table}', encoding='utf-8')
-
-
-def _index(root: Path, text: str) -> Path:
-    index = root / INDEX_REL
-    index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text(text, encoding='utf-8')
-    return index
-
-
-def test_a_declared_input_makes_its_renderer_due_and_an_omitted_one_does_not(tmp_path: Path) -> None:
-    """2026-11-13: nothing wrote the docs pointer table, so each repo pasted it by hand.
-
-    PLANTED CONTROL: a repo whose declaration omits ``docs_base`` does not get the table, even holding an index.
-    """
-    _index(tmp_path, '# Dev\n')
-    _declare(tmp_path, 'deltas = "d.py"\n')
-    assert 'devdocs' not in {renderer.name for renderer in due_renderers(tmp_path)}
-    _declare(tmp_path, f'docs_base = "{_BASE}"\n')
-    assert 'devdocs' in {renderer.name for renderer in due_renderers(tmp_path)}
 
 
 def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path: Path) -> None:
@@ -249,50 +256,20 @@ def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path:
     hooks.mkdir(parents=True)
     (hooks / 'deny-rules.json').write_text('{}\n', encoding='utf-8')
     (tmp_path / '.gitignore').write_text('x\n', encoding='utf-8')
-    _declare(tmp_path, f'deltas = "d.py"\nadoption = "scripts/deny_rules.py"\ndocs_base = "{_BASE}"\n')
+    _declare(tmp_path, 'deltas = "d.py"\nadoption = "scripts/deny_rules.py"\n')
     ran: list[list[str]] = []
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert [line.split(':')[0] for line in lines if line.endswith(': rendered')] == [
-        'famfiles', 'agent_guard', 'hook_adoption', 'autodoors', 'ciworkflows', 'devdocs',
+        'famfiles', 'claudesettings', 'agent_guard', 'hook_adoption', 'autodoors', 'vscodesettings', 'ciworkflows',
     ]  # fmt: skip
-    assert ran[2][-2:] == ['--adoption', 'scripts/deny_rules.py']
-    assert ran[5] == ['py', '-m', 'dev_lab.dev.devdocs', '--repo', str(tmp_path), '--base', _BASE]
+    assert ran[3][-2:] == ['--adoption', 'scripts/deny_rules.py']
     (hooks / 'deny-rules.json').unlink()
-    _declare(tmp_path, f'deltas = "d.py"\ndocs_base = "{_BASE}"\n')
+    _declare(tmp_path, 'deltas = "d.py"\n')
     assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in render_repo(
         tmp_path, 'py', lambda _argv, _root: 0
     )
     with pytest.raises(ValueError, match='the renderer famfiles exited 3'):
         render_repo(tmp_path, 'py', lambda _argv, _root: 3)
-
-
-def test_the_door_writes_the_pointer_table_end_to_end(tmp_path: Path) -> None:
-    """The real door in a real subprocess: the declared table lands in the index; an undeclared repo is untouched."""
-    index = _index(tmp_path, '# Dev\n')
-    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
-    assert main(['--repo', str(tmp_path)]) == 0
-    assert index.read_text(encoding='utf-8') == '# Dev\n', 'the control: no declaration, no table'
-    _declare(tmp_path, f'docs_base = "{_BASE}"\n')
-
-    def only_devdocs(argv: list[str], root: Path) -> int:
-        return _run(argv, root) if 'dev_lab.dev.devdocs' in argv else 0
-
-    assert 'devdocs: rendered' in render_repo(tmp_path, sys.executable, only_devdocs)
-    assert pointer_table(_BASE) in index.read_text(encoding='utf-8')
-
-
-def test_the_pointer_table_replaces_the_family_one_and_keeps_the_repos_own(tmp_path: Path) -> None:
-    own = '| page | what it covers |\n|---|---|\n| [Gate](gate.md) | this repo`s gate |'
-    stale = f'| page | what it covers |\n|---|---|\n| [Old]({_BASE}/old.md) | retired |'
-    index = _index(tmp_path, f'# Dev\n\n{stale}\n\nprose\n\n{own}\n')
-    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: rendered'
-    assert index.read_text(encoding='utf-8') == f'# Dev\n\n{pointer_table(_BASE)}\n\nprose\n\n{own}\n'
-    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: current'
-
-
-def test_an_index_without_a_family_table_gets_one_appended(tmp_path: Path) -> None:
-    assert write_pointer_table(tmp_path, _BASE) == f'{INDEX_REL}: rendered'
-    assert (tmp_path / INDEX_REL).read_text(encoding='utf-8').endswith(f'{pointer_table(_BASE)}\n')
 
 
 def test_a_family_repo_with_no_render_table_gets_its_workflows(tmp_path: Path) -> None:
@@ -304,13 +281,13 @@ def test_a_family_repo_with_no_render_table_gets_its_workflows(tmp_path: Path) -
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert ran == []
     assert len(lines) == len(RENDERERS)
-    assert all(': skipped -- not a family repo' in line or 'is not declared' in line for line in lines)
+    skipped = (': skipped -- not a family repo', 'is not declared', 'no file it writes is present')
+    assert all(any(why in line for why in skipped) for line in lines)
     (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.integrator]\nintegration = "main"\n', encoding='utf-8')
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert 'ciworkflows: rendered' in lines
     assert ['py', '-m', 'dev_lab.dev.ciworkflows', 'render', '--root', str(tmp_path)] in ran
     assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in lines
-    assert 'devdocs: skipped -- [tool.dev_lab.render] docs_base is not declared' in lines
 
 
 @pytest.mark.parametrize(
@@ -346,16 +323,45 @@ def test_the_module_door_runs_and_its_check_says_no_to_a_stale_file(tmp_path: Pa
 
     Every invocation -- the door, ``--files``, ``--check`` -- imported the module, printed nothing and exited 0.
 
-    PLANTED CONTROL: a stale principles page makes ``--check`` exit 1; after the render it exits 0.
+    PLANTED CONTROL: a stale family section makes ``--check`` exit 1; after the render it exits 0.
     """
     door = [sys.executable, '-m', 'dev_lab.dev.famfiles', '--files', '--repo', str(tmp_path)]
-    page = tmp_path / PAGE_REL
-    page.parent.mkdir(parents=True)
-    page.write_text('stale\n', encoding='utf-8')
+    page = tmp_path / AGENTS_REL
+    page.write_text(f'{BEGIN}\nstale\n{END}\n', encoding='utf-8')
     checked = subprocess.run([*door, '--check'], capture_output=True, text=True, encoding='utf-8', check=False)
     assert checked.returncode == 1
-    assert f'{PAGE_REL}: would render (drifted)' in checked.stdout
+    assert f'{AGENTS_REL}: would render (drifted)' in checked.stdout
     assert subprocess.run(door, capture_output=True, check=False).returncode == 0
-    assert page.read_text(encoding='utf-8') == render_principles()
+    assert page.read_text(encoding='utf-8') == render_section()
     again = subprocess.run([*door, '--check'], capture_output=True, text=True, encoding='utf-8', check=False)
-    assert (again.returncode, f'{PAGE_REL}: current' in again.stdout) == (0, True)
+    assert (again.returncode, f'{AGENTS_REL}: current' in again.stdout) == (0, True)
+
+
+def test_a_workflow_is_kept_only_where_the_ci_declaration_places_it(repo: Path) -> None:
+    """A workflow is kept only where the ci declaration places it (user ruling 2026-11-24, item 4).
+
+    A base workflow on the repo's forge is accounted; a hand-written one and
+    one placed for the other forge are refused by name. PLANTED CONTROL: the same name declared is accepted.
+    """
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    for name in ('ci.yml', 'hand.yml'):
+        (workflows / name).write_text('x\n', encoding='utf-8')
+    (repo / '.gitea' / 'workflows').mkdir(parents=True)
+    (repo / '.gitea' / 'workflows' / 'merge.yml').write_text('x\n', encoding='utf-8')
+    forge = '[project]\nname = "x"\n\n[tool.dev_lab.ci."ci.yml"]\nforge = "github"\n'
+    (repo / 'pyproject.toml').write_text(forge, encoding='utf-8')
+    _git('add', '.', cwd=repo)
+    assert unplaced_workflows(repo) == ('.gitea/workflows/merge.yml', '.github/workflows/hand.yml')
+    with pytest.raises(AssertionError, match=r'hand\.yml: a workflow no \[tool\.dev_lab\.ci\] table places'):
+        assert_every_project_file_is_accounted_for(root=repo, owned_here={})
+    (repo / 'pyproject.toml').write_text(f'{forge}\n[tool.dev_lab.ci."hand.yml"]\nforge = "github"\n', encoding='utf-8')
+    assert unplaced_workflows(repo) == ('.gitea/workflows/merge.yml',)
+
+
+def test_the_toolchain_renders_only_where_the_repo_carries_one(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a family repo without Rust gets no rust-toolchain.toml; one carrying it is re-rendered."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.render]\ndeltas = "d.py"\n', encoding='utf-8')
+    assert 'rusttoolchain' not in {renderer.name for renderer in due_renderers(tmp_path)}
+    (tmp_path / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.0.0"\n', encoding='utf-8')
+    assert 'rusttoolchain' in {renderer.name for renderer in due_renderers(tmp_path)}

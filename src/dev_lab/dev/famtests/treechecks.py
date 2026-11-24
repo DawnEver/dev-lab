@@ -3,7 +3,7 @@
 User ruling D42 (2026-11-17): every family check no repo ran is ADOPTED in each repo it applies to, and
 wired once rather than copied into ten. A body in :mod:`dev_lab.dev.famtests` takes its repo's facts as
 arguments with no default; the rows here have no fact left for a repo to name -- the tests tree is
-``tests/``, the rules pages are the tracked ``.claude/rules/**.md``, the remedies are the rendered
+``tests/``, the repo's rules are the part of ``AGENTS.md`` outside its family section, the remedies are the rendered
 :data:`dev_lab.dev.agent_wiring.RULES_REL` -- so a consumer file could only be a copy, or a place to forget
 it. Each row reads with its body's own PURE reader (``platform_skips``, ``host_node_uses``, ``restated``,
 ``relative_interpreters``).
@@ -26,6 +26,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.agent_wiring import RULES_REL
+from dev_lab.dev.agentsection import AGENTS_REL, repo_text
 from dev_lab.dev.family import declared_table
 from dev_lab.dev.famtests.hostnode import host_node_uses
 from dev_lab.dev.famtests.platformskips import platform_skips
@@ -43,7 +44,6 @@ __all__ = ['RESTATED_MAX_SHARED', 'RESTATED_N', 'TREE_CHECKS', 'TreeCheck', 'app
 RESTATED_N: Final = 6
 RESTATED_MAX_SHARED: Final = 2
 _TESTS: Final = 'tests/'
-_RULES: Final = '.claude/rules/'
 
 
 @dataclass(frozen=True)
@@ -59,6 +59,11 @@ class TreeCheck:
 def _tracked(root: Path, prefix: str, suffix: str) -> dict[str, str]:
     names = sorted(name for name in tracked_files(root) if name.startswith(prefix) and name.endswith(suffix))
     return {name: (root / name).read_text(encoding='utf-8') for name in names if (root / name).is_file()}
+
+
+def _agents_text(root: Path) -> dict[str, str]:
+    """The repo-written part of AGENTS.md: the family section quotes the registry by construction."""
+    return {AGENTS_REL: repo_text((root / AGENTS_REL).read_text(encoding='utf-8'))}
 
 
 def _deny_reasons(root: Path) -> dict[str, str]:
@@ -105,8 +110,8 @@ TREE_CHECKS: Final[dict[str, TreeCheck]] = {
         'run JS with dev_lab.dev.jsrun.run_js, the locked engine, never the host node (dev_lab.dev.famtests.hostnode)',
     ),
     'restatedrules': TreeCheck(
-        _has(_RULES),
-        partial(_tracked, prefix=_RULES, suffix='.md'),
+        _has(AGENTS_REL),
+        _agents_text,
         _restated,
         'cite the rule ID and keep only the local incident (dev_lab.dev.famtests.restatedrules)',
     ),

@@ -2,4 +2,4 @@
 # Hand edits RED. The base is data in dev_lab.dev._famconfig_rows;
 # this repo's own lines are its declared delta. Change one, re-render, commit.
 
-*.sh text eol=lf
+* text=auto eol=lf

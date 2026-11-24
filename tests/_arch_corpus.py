@@ -75,8 +75,8 @@ def suite_modules() -> tuple[Path, ...]:
 
 
 def rules_pages() -> tuple[Path, ...]:
-    """Every tracked markdown page under ``.claude/rules/`` -- this repo's always-loaded prose."""
-    return _existing(tuple(n for n in _tracked() if n.startswith('.claude/rules/') and n.endswith('.md')))
+    """The always-loaded prose of this repo: ``AGENTS.md``, the one agent entry (no ``.claude/rules/``)."""
+    return _existing(tuple(n for n in _tracked() if n == 'AGENTS.md'))
 
 
 def docs_pages() -> tuple[Path, ...]:

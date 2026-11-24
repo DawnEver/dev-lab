@@ -78,7 +78,7 @@ forge's job, not yours.
 
 ## No barrier: land each item when it is done
 
-- `no-barrier-fan-out` (`.claude/rules/principles.md`, user ruling 2026-11-13): split the work into items that
+- `no-barrier-fan-out` (the family section of `AGENTS.md`, user ruling 2026-11-13): split the work into items that
   stand alone, and land each one (commit, hand back, push) the moment it is green. A barrier makes every item
   wait for the slowest sibling, so the fan-out runs at the speed of its worst agent.
 - Do not use barrier-style orchestration -- a dynamic workflow, or any driver that spawns agents and joins on

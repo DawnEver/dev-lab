@@ -67,7 +67,11 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: a part status read as a (part, env, policy) fact; split from platformparts (2026-11-12).
     'partfacts',
     'partrefs',
-    'plugin_settings',
+    'claudesettings',
+    # ORIGINAL: nothing refused a credential value reaching a log line (ruling C, 2026-11-24).
+    'secretlog',
+    # ORIGINAL: each Rust repo pinned its own toolchain; the family fact had no source (2026-11-24).
+    'rusttoolchain',
     'cjk',
     'content',
     # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism
@@ -145,7 +149,9 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'mergeresolution',
     # ORIGINAL: the principles lived only as ai-lab reviewer data and one private CLAUDE.md; no repo rendered them.
     'principles',
-    'principlespage',
+    'agentsection',
+    # ORIGINAL: .claude/ was an open directory; nothing refused an undeclared entry (ruling 2026-11-24).
+    'claudelayout',
     # `scripts/hooks/with-retry.sh` is a REMEDY that resolves in one checkout on earth, which is why
     # `hooks` holds the statements and `hook_adoption` holds the pointer. Neither replaced it.
     'hooks',

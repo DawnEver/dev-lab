@@ -467,7 +467,7 @@ ruleset, `pull_request` on integration; Gitea: the break-glass login in the trun
 
 ## Resolving a conflict
 
-- Every resolution is decided by the family principles (`.claude/rules/principles.md`), not by one rule.
+- Every resolution is decided by the family principles (the family section of `AGENTS.md`), not by one rule.
   Each class applies one: `mergeresolution.GROUNDS` is the map, and `ungrounded()` refuses a principle placed
   nowhere. newer-structure is one class of seven, not the default; when upstream extracted or split a file,
   your edits go to the new home, and when the newer side is not the simpler one, `simpler-side` wins.

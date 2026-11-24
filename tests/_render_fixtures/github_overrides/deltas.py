@@ -6,5 +6,5 @@ from dev_lab.dev.famconfig import Delta
 
 DELTAS = {
     '.gitignore': Delta(repo='overrides', added=('/data/', '*.h5'), dropped={}, ceiling=2),
-    '.gitattributes': Delta(repo='overrides', added=('*.png binary',), dropped={}, ceiling=1),
+    '.gitattributes': Delta(repo='overrides', added=('*.h5 binary',), dropped={}, ceiling=1),
 }

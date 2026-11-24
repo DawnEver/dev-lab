@@ -34,6 +34,9 @@ from __future__ import annotations
 from typing import Final
 
 __all__ = [
+    'BUILD_SYSTEM',
+    'COVERAGE_HTML',
+    'HATCH_VERSION',
     'PROJECT',
     'PYPROJECT_DECLINED',
     'PYPROJECT_FILE',
@@ -51,6 +54,13 @@ PYPROJECT_FILE: Final = 'pyproject.toml'
 #: The two owned tables, each spelled once so a reader and a declaration cannot drift apart.
 PROJECT: Final = '[project]'
 PYTEST_INI: Final = '[tool.pytest.ini_options]'
+#: PROMOTED 2026-11-24 (user ruling: pyproject has two owners, dev-lab renders the family sections): the build
+#: backend and its version rule are the family's -- hatchling + hatch-vcs, the version from vcs. A repo still on
+#: another backend adopts in its own wave, named meanwhile in its ``[tool.dev_lab.pyproject] pending``.
+BUILD_SYSTEM: Final = '[build-system]'
+HATCH_VERSION: Final = '[tool.hatch.version]'
+#: The coverage HTML report under output/cache/coverage/ (every tool cache and report under output/).
+COVERAGE_HTML: Final = '[tool.coverage.html]'
 
 #: There is NO dedicated-file spelling for these tables, so the prefix a `SectionBase` strips is
 #: EMPTY. Stated rather than left out: `SectionBase.prefix` is what lets the ruff base read both
@@ -73,14 +83,18 @@ README_NAME: Final = 'README.md'
 #: distinct; ``filterwarnings``, ``minversion`` and the rest are recorded in `PYPROJECT_DECLINED`.
 PYPROJECT_SECTION_ROWS: Final[dict[str, tuple[tuple[str, ...], dict[str, object], dict[str, tuple[str, ...]]]]] = {
     PROJECT: (('project',), {'readme': README_NAME}, {'dynamic': ('version',)}),
-    PYTEST_INI: (('tool', 'pytest', 'ini_options'), {}, {'testpaths': ('tests',)}),
+    # cache_dir (user ruling 2026-11-24): every tool cache lives under output/cache/<tool>/, never at the root.
+    PYTEST_INI: (('tool', 'pytest', 'ini_options'), {'cache_dir': 'output/cache/pytest'}, {'testpaths': ('tests',)}),
+    BUILD_SYSTEM: (('build-system',), {'build-backend': 'hatchling.build'}, {'requires': ('hatch-vcs', 'hatchling')}),
+    HATCH_VERSION: (('tool', 'hatch', 'version'), {'source': 'vcs'}, {}),
+    COVERAGE_HTML: (('tool', 'coverage', 'html'), {'directory': 'output/cache/coverage/html'}, {}),
 }
 
 #: The floor under how many tables this file DECIDES. A registry of declines is only evidence that
 #: somebody looked if it is bigger than the handful anybody would name from memory, and the live
 #: measurement enumerated 39 tables across the four repos. SEVEN is the count of the decline ROWS
 #: below, each of which covers a table family; the suite asserts the rows against the live files.
-PYPROJECT_TABLE_FLOOR: Final = 7
+PYPROJECT_TABLE_FLOOR: Final = 6  # 2026-11-24: build-system left by PROMOTION, the one way out
 
 #: EVERY TABLE MEASURED AND NOT PROMOTED, with the number that decided it. Recorded rather than
 #: omitted: an absent table and a table nobody looked at read identically, and this family has
@@ -90,15 +104,6 @@ PYPROJECT_TABLE_FLOOR: Final = 7
 #: documents and refuse a row naming a table no repo declares -- a decline that outlives its subject
 #: is a decision nothing consults.
 PYPROJECT_DECLINED: Final[dict[tuple[str, ...], str]] = {
-    ('build-system',): (
-        'GENUINELY PER-REPO, and it is a 2-2 split rather than a near-miss. lab-commons and '
-        'consumer-a build with `hatchling` + `hatch-vcs`; consumer-b and consumer-c build with '
-        '`setuptools` + `setuptools-scm`. Neither `requires` nor `build-backend` has a value more '
-        'than two repos share, so there is no four-way agreement to promote and no majority that '
-        'would not be one pair legislating for the other. The build backend is also the one setting '
-        'that cannot be adopted by editing a table: it decides which of `[tool.hatch.*]` or '
-        '`[tool.setuptools*]` the rest of the file must speak.'
-    ),
     ('tool', 'commitizen'): (
         'THE CONSUMERS AGREE AND THE KIT HAS NO SUCH TABLE -- the `RUFF_QUOTE_STYLE` shape exactly. '
         'Six keys (`name`, `tag_format`, `version_scheme`, `version_provider`, '

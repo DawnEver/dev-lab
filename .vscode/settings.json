@@ -1,0 +1,18 @@
+{
+  "npm.autoDetect": "off",
+  "search.followSymlinks": false,
+  "search.exclude": {
+    "**/.claude/worktrees": true,
+    "**/.venv": true,
+    "**/.venvs": true,
+    "**/output": true,
+    "**/target": true
+  },
+  "files.watcherExclude": {
+    "**/.claude/worktrees/**": true,
+    "**/.venv/**": true,
+    "**/.venvs/**": true,
+    "**/output/**": true,
+    "**/target/**": true
+  }
+}

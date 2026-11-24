@@ -85,6 +85,7 @@ _IDS = frozenset(
         'MODULE-SIZE-ALARM',
         'NAMED-SETS-NOT-COUNTS',
         'NETWORK-RETRY-THEN-REPORT',
+        'NEVER-LOG-SECRETS',
         'NO-CJK-IN-TRACKED-SOURCE',
         'NO-LAZY-IMPORT',
         'NO-REFLECTION',

@@ -11,7 +11,7 @@ The concrete instance (hosts, accounts, addresses) is never written here ([topol
 
 First principles, no historical baggage, Occam's razor, single source of truth, layered decoupling, names match
 behaviour -- each in its place. Their statements live once in `dev_lab.dev.principles`; a repo renders them into
-its `.claude/rules/principles.md`.
+the family section of its `AGENTS.md`.
 
 ## Two kinds of repository
 

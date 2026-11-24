@@ -237,6 +237,7 @@ deltas = "tests/_famconfig_delta.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+cache_dir = "output/cache/pytest"
 # The per-test ceiling, below the verify wall: a wedge dies as its own named red (Windows: a `node down`
 # xdist names and restarts) instead of the wall killing the session unnamed (tests/test_a_hang_names_its_test.py).
 timeout = 600
@@ -246,6 +247,7 @@ markers = [
 
 [tool.ruff]
 line-length = 120
+cache-dir = "output/cache/ruff"
 # py312 AND NOT py313, against the consumers' identical py313 -- this is the one scalar where the
 # kit must differ, and the evidence is `requires-python = ">=3.12"` eleven lines above. This repo
 # SHIPS A WHEEL to the family; a py313 target lets the UP group rewrite shipped code into syntax a
@@ -349,3 +351,7 @@ judge_app = 5619495
 # NO-CJK-IN-TRACKED-SOURCE (D26): files still carrying CJK, a set that may only shrink.
 [tool.dev_lab.cjk]
 declared = []
+
+[tool.coverage.html]
+# Every tool cache and report under output/ (user ruling 2026-11-24): never htmlcov/ at the root.
+directory = "output/cache/coverage/html"

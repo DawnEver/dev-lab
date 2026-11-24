@@ -18,4 +18,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_outputcode.py', 'tests/test_dev_verifiedby.py'),
     ),
+    (
+        'NEVER-LOG-SECRETS',
+        (
+            # Why: moved from a consumer's invariants 2026-11-24 (user ruling): license keys, tokens, fingerprints.
+            'A log line, report or console message never carries a credential value -- a token, key, password or '
+            'fingerprint is written as its hash or not at all; an output sink interpolating a secret-named value '
+            'unwrapped is refused by a source scan.'
+        ),
+        ('tests/test_dev_secretlog.py',),
+    ),
 )

@@ -193,7 +193,7 @@ RUFF_SECTION_PREFIX: Final[tuple[str, ...]] = ('tool', 'ruff')
 #: ``(dotted path, EXACT scalars, SET-valued keys)``; what the machinery adds is the prefix rule, the
 #: comparison and the refusals, and this table owns WHICH tables and WHICH keys and nothing else.
 RUFF_SECTION_ROWS: Final[dict[str, tuple[tuple[str, ...], dict[str, object], dict[str, tuple[str, ...]]]]] = {
-    '[tool.ruff]': (('tool', 'ruff'), {'line-length': RUFF_LINE_LENGTH}, {}),
+    '[tool.ruff]': (('tool', 'ruff'), {'line-length': RUFF_LINE_LENGTH, 'cache-dir': 'output/cache/ruff'}, {}),
     '[tool.ruff.lint]': (('tool', 'ruff', 'lint'), {}, {'select': RUFF_SELECT, 'ignore': RUFF_IGNORE_CORE}),
     '[tool.ruff.format]': (('tool', 'ruff', 'format'), {'quote-style': RUFF_QUOTE_STYLE}, {}),
 }

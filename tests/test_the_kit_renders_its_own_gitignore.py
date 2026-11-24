@@ -87,34 +87,91 @@ def test_the_hatch_vcs_version_file_stays_ignored() -> None:
     assert done.returncode == 0, f'{VERSION_FILE} is not ignored; a build would commit it'
 
 
-#: Paths a family repo deliberately tracks under an ignored root, at any depth; the planted control is the
-#: generated index the same base must keep ignoring outside an archive. A `.claude/rules/MEMORY.md` is NOT
-#: ignored: nothing generates it any more (rem retired it and its migration deletes it), so a stale one
-#: shows in `git status` instead of loading on every turn unseen.
+#: THE PRINCIPLE (user ruling 2026-11-24): the base ignores only what legitimately exists untracked; a
+#: misplaced artefact is NOT ignored, so it shows in `git status`. Each list is the others' planted
+#: control: one base must say yes to one and no to the other.
 _TRACKED: Final = (
-    '.claude/rules/MEMORY.md',
-    '.claude/sharp-review.json',
-    'attic/old/.claude/rules/MEMORY.md',
-    'attic/old/.claude/meta/MEMORY.full.md',
-    'attic/old/.claude/memory/2026/06/01/_meta.json',
+    '.claude/settings.json',
+    '.claude/hooks/deny-commands.js',
+    '.claude/hooks/venv_resolver.js',
+    '.claude/hooks/py.js',
+    '.claude/hooks/deny-rules.json',
+    '.claude/hooks/native_session.json',
+    '.claude/memory/2026/06/01/a-finding.md',
+    '.codex/rules/family-doors.rules',
+    '.codex/rules/family-denies.rules',
+    '.vscode/settings.json',
 )
 _IGNORED: Final = (
-    '.claude/memory-index.md',
+    '.venv/Scripts/python.exe',
+    '.venvs/abc-20261124T000000Z/pyvenv.cfg',
+    'src/pkg/__pycache__/x.cpython-312.pyc',
+    'build/lib/x.py',
+    'dist/x-1.0-py3-none-any.whl',
+    'src/pkg/__version__.py',
+    'output/logs/26/11/24/verify/x.log',
+    'output/cache/pytest/v/cache/nodeids',
+    'config/x.toml',
+    'temp/x.txt',
+    'docs/.DS_Store',
+    '.claude/settings.local.json',
+    '.claude/automode.json',
+    '.claude/worktrees/lane/README.md',
+    '.codex/config.toml',
+    '.vscode/launch.json',
+    # Undeclared `.claude/` entries are ignored by the closed section -- git cannot track them by accident
+    # -- and REFUSED on disk by the closed inventory (dev_lab.dev.claudelayout), not by `git status`.
+    'src/pkg/.claude/settings.json',
+    '.claude/rem.json',
+    '.claude/sharp-review.json',
+    '.claude/rules/principles.md',
+    '.claude/hooks/stray.js',
+    '.claude/memory/_meta.json',
     '.claude/memory/2026/06/01/_meta.json',
-    'attic/old/__pycache__/x.pyc',
+    '.claude/memory-index.md',
+)
+#: MISPLACED ARTEFACTS: each was ignored by an older base and must now SHOW in `git status`.
+_VISIBLE: Final = (
+    '.pytest_cache/v/cache/nodeids',
+    '.ruff_cache/x',
+    '.mypy_cache/x',
+    '.coverage',
+    'htmlcov/index.html',
+    '.env',
+    'x.egg-info/PKG-INFO',
+    'log/x.log',
+    'scratch/probe.py',
+    'src/pkg/output/x.py',
+    'src/pkg/temp/x.py',
+    'src/pkg/x.c',
 )
 
 
-def _ignored(path: str) -> bool:
+def test_the_gitattributes_base_is_the_one_normalisation_line() -> None:
+    """User ruling 2026-11-24: the base is `* text=auto eol=lf` alone; per-type lines are a repo's delta."""
+    from dev_lab.dev._famconfig_rows import GITATTRIBUTES_BASE  # noqa: PLC0415
+
+    assert GITATTRIBUTES_BASE == ('* text=auto eol=lf',)
+
+
+def _ignored(repo: Path, path: str) -> bool:
     done = subprocess.run(
-        [shutil.which('git') or 'git', '-C', str(ROOT), 'check-ignore', '-q', '--no-index', path],
+        [shutil.which('git') or 'git', '-C', str(repo), 'check-ignore', '-q', '--no-index', path],
         check=False,
         timeout=60,
     )
     return done.returncode == 0
 
 
-def test_what_a_family_repo_tracks_under_an_ignored_root_is_trackable() -> None:
-    """The review ledger and an archived tree are tracked; the generated index and caches stay ignored."""
-    assert [path for path in _TRACKED if _ignored(path)] == []
-    assert [path for path in _IGNORED if not _ignored(path)] == []
+def test_only_legitimate_untracked_paths_are_ignored(tmp_path: Path) -> None:
+    """Every declared file is trackable, every legitimate artefact ignored, and every misplaced one VISIBLE.
+
+    Asked of a bare repo holding ONLY this checkout's `.gitignore`: a tool's own nested ignore file (pytest
+    and ruff write one into their cache) would otherwise answer for the base.
+    """
+    git = shutil.which('git') or 'git'
+    subprocess.run([git, 'init', '-q', str(tmp_path)], check=True, timeout=60)
+    shutil.copyfile(ROOT / GITIGNORE, tmp_path / GITIGNORE)
+    assert [path for path in _TRACKED if _ignored(tmp_path, path)] == []
+    assert [path for path in _IGNORED if not _ignored(tmp_path, path)] == []
+    assert [path for path in _VISIBLE if _ignored(tmp_path, path)] == []

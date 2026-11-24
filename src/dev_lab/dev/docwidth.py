@@ -26,8 +26,9 @@ whatever a repo currently contains.
 
 WHAT COUNTS AS AN "INJECTED DOCUMENT" IS DATA, NOT A HARDCODED GUESS ABOUT FOUR REPOS. The measured
 corpus above is one reasonable definition -- ``AGENTS.md`` and ``CLAUDE.md`` by basename anywhere in
-the tree, plus everything under ``.claude/rules/`` -- and it is exactly what :data:`INJECTED_BASENAMES`
-and :data:`INJECTED_PREFIXES` encode. But whether a given repo actually injects all of those, or
+the tree (``.claude/rules/`` retired 2026-11-24: AGENTS.md is the one agent entry) -- and it is
+exactly what :data:`INJECTED_BASENAMES` encodes; a prefix corpus is the ``prefixes`` parameter, empty
+by default. But whether a given repo actually injects all of those, or
 injects something else besides, is that repo's own business: :func:`is_injected_doc` takes the three
 sets as parameters with these as defaults, so a consumer with a different corpus (a ``docs-src/dev/``
 tree that is also always-loaded, say) overrides them rather than being guessed for. ``.claude/memory/``
@@ -55,7 +56,6 @@ from typing import Final, NamedTuple
 __all__ = [
     'INJECTED_BASENAMES',
     'INJECTED_EXEMPT_PREFIXES',
-    'INJECTED_PREFIXES',
     'WIDTH_CEILING',
     'Overwidth',
     'VacuousWidthScan',
@@ -77,7 +77,6 @@ WIDTH_CEILING: Final = 120
 #: consumer can widen or narrow exactly one of them without re-deriving the others. See the module
 #: docstring for the 2026-09-16 measurement that produced this default.
 INJECTED_BASENAMES: Final[frozenset[str]] = frozenset({'AGENTS.md', 'CLAUDE.md'})
-INJECTED_PREFIXES: Final[tuple[str, ...]] = ('.claude/rules/',)
 INJECTED_EXEMPT_PREFIXES: Final[tuple[str, ...]] = ('.claude/memory/',)
 
 
@@ -130,7 +129,7 @@ def is_injected_doc(
     name: str,
     *,
     basenames: Collection[str] = INJECTED_BASENAMES,
-    prefixes: Collection[str] = INJECTED_PREFIXES,
+    prefixes: Collection[str] = (),
     exempt_prefixes: Collection[str] = INJECTED_EXEMPT_PREFIXES,
 ) -> bool:
     """Whether *name* (a repo-relative POSIX path) is a document this family injects into an agent.
@@ -151,7 +150,7 @@ def injected_docs(
     paths: Iterable[str],
     *,
     basenames: Collection[str] = INJECTED_BASENAMES,
-    prefixes: Collection[str] = INJECTED_PREFIXES,
+    prefixes: Collection[str] = (),
     exempt_prefixes: Collection[str] = INJECTED_EXEMPT_PREFIXES,
 ) -> tuple[str, ...]:
     """*paths* (repo-relative POSIX strings, e.g. from ``tracked_files``) narrowed to injected docs."""

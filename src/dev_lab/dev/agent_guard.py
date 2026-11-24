@@ -58,7 +58,6 @@ from dev_lab.dev.agent_wiring import (
 )
 from dev_lab.dev.agenthooks import STAMP, engine_source
 from dev_lab.dev.launcherplan import launcher_plan
-from dev_lab.dev.plugin_settings import disable_plugins, live_disabled_plugins
 from dev_lab.dev.trackedrender import Kit, RenderRefused, check_render
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -268,7 +267,6 @@ def _inspect_wiring(path: Path, repo: Path) -> tuple[str, str]:
     if HOOK_COMMAND not in ours:
         return STALE, f'runs the engine with other arguments: {ours[0]!r}, not {HOOK_COMMAND!r}'
     stale = _drift_lines(settings, repo)
-    stale += [f'enabledPlugins does not turn off {", ".join(p)}' for p in [live_disabled_plugins(settings)] if p]
     if stale:
         return STALE, '; '.join(stale) + ' -- re-install to upgrade'
     return INSTALLED, f'PreToolUse {_MATCHER}: {HOOK_COMMAND}'
@@ -285,14 +283,14 @@ def guard_installation(repo: Path) -> GuardReport:
 
 
 def wire_settings(settings: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
-    """*settings* with the rendered rows wired, the family's disabled plugins off, and NOTHING ELSE MOVED.
+    """*settings* with the rendered rows wired and NOTHING ELSE MOVED (the whole file: dev_lab.dev.claudesettings).
 
     The rows are :func:`dev_lab.dev.agent_wiring.rows` of *root*: the family's and what the repo declares.
 
     THE RENDERER OWNS EVERY ROW THAT IS OURS -- the engine, and any launcher row running a ``dev_lab.dev`` module --
     so every such row is removed wherever it stands (a retired handler, a hand-wired copy, a partial shell matcher)
-    and the rendered rows are appended, one entry each. A repo's own hooks and ``enabledPlugins`` entries are kept;
-    :mod:`dev_lab.dev.plugin_settings` owns ours. Pure over its argument: the input is not mutated.
+    and the rendered rows are appended, one entry each. A repo's own hooks are kept.
+    Pure over its argument: the input is not mutated.
     """
     out = json.loads(json.dumps(settings))  # a deep copy through the same encoder that writes it
     hooks = out.setdefault('hooks', {})
@@ -309,7 +307,7 @@ def wire_settings(settings: dict[str, Any], root: Path | None = None) -> dict[st
         hook = {'type': 'command', 'command': row.command, 'timeout': row.timeout}
         entry = {'matcher': row.matcher, 'hooks': [hook]} if row.matcher else {'hooks': [hook]}
         hooks.setdefault(row.event, []).append(entry)
-    return disable_plugins(out)
+    return out
 
 
 def _ours(hook: object) -> bool:
