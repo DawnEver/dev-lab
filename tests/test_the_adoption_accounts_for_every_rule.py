@@ -87,6 +87,7 @@ _ENFORCED = {
         guard('tests/test_ops_breakglass.py'),
         guard('tests/test_dev_integrate.py'),
     ),
+    'PRIOR-ART-FIRST': (guard('tests/test_dev_priorart.py'),),
     # ENFORCED rather than declared absent, and the distinction is worth the line. This repo declares
     # no floating requirement -- it IS the kit -- so the cheap reading is "no subject here". But the
     # guard does not merely sit in this tree: it READS this manifest and these door files, so the day

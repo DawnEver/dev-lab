@@ -140,6 +140,7 @@ _IDS = frozenset(
         'PRS-TARGET-INTEGRATION',
         'DOWNSTREAM-SYNCS-INTEGRATION',
         'RED-INTEGRATION-MERGES',
+        'PRIOR-ART-FIRST',
     }
 )
 

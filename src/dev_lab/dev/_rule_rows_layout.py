@@ -31,4 +31,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_layout.py', 'tests/test_dev_nobackup.py'),
     ),
+    (
+        'PRIOR-ART-FIRST',
+        (
+            # Why: two sessions writing one concept twice under one name, neither having searched the tree first.
+            'Before new code, search the tree and memory for the capability. A NEW product-source module named like '
+            'a tracked one is refused at the write (`priorart`, the `codeplace` hook) until its own text cites each '
+            'such module by path or dotted name, saying how it differs; same concept, extend the existing one.'
+        ),
+        ('tests/test_dev_priorart.py',),
+    ),
 )
