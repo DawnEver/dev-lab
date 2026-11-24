@@ -1,21 +1,27 @@
 ---
-name: SUMMARY-2026-10
-description: dev-lab's October 2026 -- the repo is born from lab-commons' dev package (cut-over 1614022); its Plans section is the one catalogue of every plan, handoff and decision log of the month.
-metadata:
-  type: summary
-created: 2026-10-23
-accessed: 2026-10-23
+name: october-2026-plan-catalogue-moved-from-the-month-summary
+description: dev-lab's October 2026 plan catalogue (merge-audit, short robust toolchain, integrator autonomous day), moved here when month summaries were retired
 ---
 
-# October 2026
+# The October 2026 plan catalogue, moved from the retired month summary
 
-## Month
+Moved 2026-11-24 when the month summary files were retired (user ruling: no `SUMMARY-*.md`; plans live in
+the task ledger and dated entries). This is `2026/10/SUMMARY-2026-10.md` as it stood, below.
+`2026/11/SUMMARY-2026-11.md` was deleted, not moved: it only carried these three plans
+unchanged ("no change recorded this month"). Its one plan of its own,
+`forge-host-roles-are-one-configured-mechanism` (open), is its source entry,
+`.claude/memory/2026/11/03/PLAN-forge-host-roles-are-one-configured-mechanism.md`.
+Its evidence was `.claude/memory/2026/11/03/break-glass-records-the-key-and-locks-out-wrong-codes.md`.
+
+## October 2026 (as summarized)
+
+### Month
 
 dev-lab split out of lab-commons with history kept (P2 of the toolchain plan; cut-over merge 1614022 on
 lab-commons, relock 2235c51 here). The three memory files below exist byte-identical in both repos because
 of that history; dev-lab OWNS them (their subject is dev mechanics), lab-commons only references them.
 
-## Plans
+### Plans
 
 ### merge-audit-built-not-published
 - status: partial

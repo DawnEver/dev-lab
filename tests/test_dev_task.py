@@ -39,6 +39,18 @@ class _Forge:
         self.closed.append(url)
 
 
+class _NoBranches:
+    """No pr/<slug>/* head: the branch half of close is tests/test_dev_task_close_prunes.py."""
+
+    def unmerged(self, slug: str) -> list[str]:
+        del slug
+        return []
+
+    def prune(self, slug: str) -> list[str]:
+        del slug
+        return []
+
+
 @pytest.fixture
 def ledger(monkeypatch: pytest.MonkeyPatch) -> Path:
     for key, value in {'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@x', 'GIT_COMMITTER_NAME': 't',
@@ -172,18 +184,18 @@ def test_close_validates_everything_before_the_first_write(ledger: Path, tmp_pat
     checkout = on_branch(tmp_path / 'repo', 'main')
     before = (ledger / 'toolchain' / 'JOURNAL.md').read_text(encoding='utf-8')
     with pytest.raises(task.TaskRefused, match='O1 still open'):
-        task.close('toolchain', cwd=checkout, forge=forge)
+        task.close('toolchain', cwd=checkout, forge=forge, branches=_NoBranches())
     task.append('toolchain', 'close-item', 'done', item=1)
     with pytest.raises(task.TaskRefused, match='D1 not distilled'):
-        task.close('toolchain', cwd=checkout, forge=forge)
+        task.close('toolchain', cwd=checkout, forge=forge, branches=_NoBranches())
     with pytest.raises(taskauthority.AuthorityRefused):
-        task.close('toolchain', cwd=checkout, journal_only=[1], forge=forge)
+        task.close('toolchain', cwd=checkout, journal_only=[1], forge=forge, branches=_NoBranches())
     assert forge.closed == []
     assert before in (ledger / 'toolchain' / 'JOURNAL.md').read_text(encoding='utf-8')
     (checkout / '.claude' / 'memory').mkdir(parents=True)
     (checkout / '.claude' / 'memory' / 'm.md').write_text('from tasks/toolchain/JOURNAL.md#D1\n', encoding='utf-8')
     _grant(ledger, 'close', 'toolchain')
-    dest = task.close('toolchain', 'done', cwd=checkout, forge=forge, date=_DAY)
+    dest = task.close('toolchain', 'done', cwd=checkout, forge=forge, date=_DAY, branches=_NoBranches())
     assert dest == ledger / 'archive' / _DAY / 'toolchain'
     assert not (ledger / 'toolchain').exists()
     assert 'status: closed' in (dest / 'TASK.md').read_text(encoding='utf-8')

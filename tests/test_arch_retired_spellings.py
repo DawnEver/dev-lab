@@ -390,8 +390,15 @@ RETIRED_SPELLINGS: Final = {
             'user ruling 2026-11-23: the task ledger is one global repo and the binding store is cancelled',
         ),
     ),
+    **dict.fromkeys(
+        ('monthsummary', 'MONTHLY-PLANS-CARRIED', 'is_month_summary', 'MONTH_SUMMARY'),
+        (
+            'nothing: a plan lives in the task ledger (python -m dev_lab.dev.task) and dated memory entries',
+            'user ruling 2026-11-24: the month summary files are retired entirely',
+        ),
+    ),
     'taskguard': (
-        'dev_lab.dev.ledgerguard (LEDGER-WRITES-THROUGH-ITS-DOOR): one guard of the task files, both halves',
+        'dev_lab.dev.ledgerguard (LEDGER-WRITES-THROUGH-ITS-DOOR): one guard of the task files and ledger dir',
         '2026-11-24 fold: two guards of one ledger became one',
     ),
     'tick.RERENDER': (

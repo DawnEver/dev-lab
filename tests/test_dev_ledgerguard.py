@@ -48,6 +48,57 @@ def test_the_write_hook_denies_a_ledger_write() -> None:
     assert ledgerguard.RULE_ID in answer['permissionDecisionReason']
 
 
+@pytest.mark.parametrize('name', ['new-task/TASK.md', 'toolchain/NOTES.md', 'stray.txt', '.git/config'])
+def test_any_file_tool_write_inside_the_ledger_directory_is_refused(name: str) -> None:
+    """The guard KNOWS the ledger directory (the folded second guard): any file in it, not only the shape."""
+    said = ledgerguard.refuse_write(ledgerguard.ledger_dir() / name)
+    assert said is not None
+    assert said.startswith(ledgerguard.RULE_ID)
+
+
+def test_the_ledger_directory_is_the_one_the_task_door_resolves() -> None:
+    from lab_commons.home import part  # noqa: PLC0415
+
+    from dev_lab.dev.taskledger import LEDGER_DIR  # noqa: PLC0415
+
+    assert ledgerguard.ledger_dir() == part('repos') / LEDGER_DIR
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        'mkdir ~/m/repos/tasks/new-task',
+        'mkdir -p "C:\\m\\repos\\tasks\\archive\\2026-11-24"',
+        'New-Item -ItemType Directory C:\\m\\repos\\tasks\\x',
+        'rm -rf ~/m/repos/tasks/toolchain',
+        'rmdir /srv/m/repos/tasks/old',
+        'Remove-Item -Recurse C:\\m\\repos\\tasks\\toolchain',
+        'mv ~/m/repos/tasks/a ~/m/repos/tasks/archive/2026-11-24/a',
+        'mv draft ~/m/repos/tasks/new',
+        'Move-Item x C:\\m\\repos\\tasks\\y',
+        'rm ~/m/repos/tasks',
+    ],
+)
+def test_the_shell_row_refuses_mkdir_rm_mv_into_the_ledger(command: str) -> None:
+    """PLANTED CONTROL for the directory half: mkdir, rm and mv into the ledger directory are refused."""
+    assert re.search(str(ROW['pattern']), command), command
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        'ls ~/m/repos/tasks/toolchain',
+        'git -C ~/m/repos/tasks push',
+        'mkdir -p output/logs/26/11/24/tasks',
+        'rm -rf ~/m/repos/tasks-old',
+        'mv a b',
+        'python -m dev_lab.dev.task close toolchain',
+    ],
+)
+def test_the_shell_row_permits_what_does_not_write_the_ledger(command: str) -> None:
+    assert not re.search(str(ROW['pattern']), command), command
+
+
 def test_the_shell_row_refuses_and_permits_its_examples() -> None:
     pattern = re.compile(str(ROW['pattern']))
     assert [c for c in ROW['refuses'] if not pattern.search(c)] == []
