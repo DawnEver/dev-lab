@@ -31,7 +31,7 @@ import re
 import shutil
 import sys
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Final, Protocol
 
@@ -47,6 +47,7 @@ __all__ = [
     'ARCHIVE',
     'JOURNAL_VERBS',
     'VERBS',
+    'Branches',
     'Forge',
     'TaskRefused',
     'amend',
@@ -126,6 +127,35 @@ class _ForgeIssues:
     def close(self, url: str) -> None:
         if (number := re.search(r'/issues/(\d+)/?$', url)) is not None:
             self._client.issue_close(int(number[1]))
+
+
+class Branches(Protocol):
+    """A task's ``pr/<slug>/*`` heads: what blocks its close, and the prune once it is closed."""
+
+    def unmerged(self, slug: str) -> list[str]:
+        """One line per head integration does not contain; ``[]`` lets the close run."""
+        ...
+
+    def prune(self, slug: str) -> list[str]:
+        """Delete every merged head, origin's and local; the lines said."""
+        ...
+
+
+def _checkout_branches(cwd: Path) -> Branches:
+    """The default :class:`Branches`: *cwd*'s checkout, its forge client and the real fetch."""
+    import os  # noqa: PLC0415
+
+    from dev_lab.dev.branchdelete import TaskBranches  # noqa: PLC0415 -- the network client, only for close
+    from dev_lab.dev.forge import fetch_origin  # noqa: PLC0415
+    from dev_lab.dev.forgeclient import client_for  # noqa: PLC0415
+    from dev_lab.dev.labsession import ENV  # noqa: PLC0415
+
+    code, top = _git(Path(cwd), 'rev-parse', '--show-toplevel')
+    if code != 0:
+        msg = f'{Path(cwd).as_posix()} is no git checkout.\nDoor: run task close from the checkout holding pr/<slug>/*'
+        raise TaskRefused(msg)
+    root = Path(top.strip())
+    return TaskBranches(root, client=client_for(root), session=os.environ.get(ENV, ''), fetch=fetch_origin)
 
 
 def _today() -> str:
@@ -323,14 +353,25 @@ def _cited(cwd: Path, slug: str) -> set[int]:
 
 def close(
     slug: str, reason: str = '', *, cwd: Path, journal_only: Sequence[int] = (), forge: Forge | None = None,
-    date: str | None = None,
+    date: str | None = None, branches: Branches | None = None, say: Callable[[str], None] = emit,
 ) -> Path:  # fmt: skip
-    """Close task *slug*: EVERYTHING is validated before the first write, then archive it and commit."""
+    """Close task *slug*: EVERYTHING is validated before the first write, then archive it, commit, prune its branches.
+
+    An unmerged ``pr/<slug>/*`` head (local or on origin) refuses the close, each named with its doors (user ruling
+    2026-11-24); once closed, every merged head is deleted through LOSSLESS-DELETE, each deletion *say*-ed.
+    """
     root, day = ledger(), date or _today()
     with _locked(root):
         found = _open_record(root, slug)
         if found.open_items:
             msg = f'{", ".join(f"O{i.n}" for i in found.open_items)} still open: close or carry each item first'
+            raise TaskRefused(msg)
+        heads = branches or _checkout_branches(cwd)
+        if unmerged := heads.unmerged(slug):
+            from dev_lab.dev.branchdelete import DOOR, TASK_HEAD_DOORS  # noqa: PLC0415
+
+            listed = '\n'.join(f'  {line}' for line in unmerged)
+            msg = f'{len(unmerged)} pr/{slug}/* branch(es) not merged:\n{listed}\n{TASK_HEAD_DOORS.format(door=DOOR)}'
             raise TaskRefused(msg)
         missing = [n for n, _, _ in found.journal.decisions if n not in _cited(cwd, slug) and n not in journal_only]
         if missing:
@@ -359,6 +400,8 @@ def close(
         if _git(root, 'mv', slug, rel)[0] != 0:
             shutil.move(found.dir, root / rel)
         _commit(root, f'chore(tasks): close {slug}', slug, rel)
+    for line in heads.prune(slug):
+        say(line)
     return root / rel
 
 

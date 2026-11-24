@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -53,6 +54,8 @@ __all__ = [
     'DOOR',
     'MERGE_OR_LAND',
     'TAG_EVENT',
+    'TASK_HEAD_DOORS',
+    'TaskBranches',
     'delete',
     'delete_contained_tags',
     'delete_task',
@@ -252,6 +255,71 @@ def delete_task(
         + (f'; kept: {", ".join(kept)}' if kept else '')
     )
     return code
+
+
+#: The doors an unmerged ``pr/<slug>/*`` head that blocks ``task close`` is told (user ruling 2026-11-24).
+TASK_HEAD_DOORS: Final = (
+    'Door: MERGE each through a PR; or discard it -- a local one: python -m dev_lab.dev.branchset --discard <branch> '
+    '--approved "<the user\'s words>"; an origin one: LAND it with a declared `git merge -s ours` PR, then {door}'
+)
+
+
+def _task_refs(root: Path, slug: str) -> list[str]:
+    """Every ``pr/<slug>/*`` head of *root*: local (``refs/heads/``) and origin's (``refs/remotes/origin/``)."""
+    if not slug or any(c in slug for c in '/*?[\\ '):
+        msg = f'{slug!r} is not a task slug (one path segment, no glob characters)'
+        raise ValueError(msg)
+    listed = git_out(root, 'for-each-ref', '--format=%(refname)', f'refs/heads/pr/{slug}/', f'{ORIGIN}pr/{slug}/')
+    if listed is None:
+        msg = f'git could not list the branches of {root}; the task branches were not judged'
+        raise OSError(msg)
+    return sorted(listed.split())
+
+
+@dataclass(frozen=True)
+class TaskBranches:
+    """A task's ``pr/<slug>/*`` heads in one checkout, local and on origin: judged before a close, pruned after it.
+
+    ``task close`` (user ruling 2026-11-24) refuses while :meth:`unmerged` names any head, and once closed runs
+    :meth:`prune`: origin's heads through :func:`delete_task` (LOSSLESS-DELETE), the local ones by a pinned
+    ``update-ref -d`` when :func:`landed` and checked out nowhere.
+    """
+
+    root: Path
+    client: Client
+    session: str
+    fetch: Callable[[Path], None]
+    push: Callable[[Path, str, str], str] = _push_delete
+    alarm: Callable[[Alarm], object] = field(default=sound)
+
+    def unmerged(self, slug: str) -> list[str]:
+        """After a fresh fetch, one line per ``pr/<slug>/*`` head integration does not contain; ``[]`` when none."""
+        self.fetch(self.root)
+        refs = _task_refs(self.root, slug)
+        if not refs:
+            return []
+        policy = load_policy(self.root)
+        return [found.refused for ref in refs if (found := landed(self.root, policy, ref)).refused]
+
+    def prune(self, slug: str) -> list[str]:
+        """Delete every merged ``pr/<slug>/*`` head, origin's then the local ones; the lines said."""
+        said: list[str] = []
+        delete_task(self.root, slug, client=self.client, session=self.session, fetch=self.fetch, say=said.append,
+                    push=self.push, alarm=self.alarm)  # fmt: skip
+        policy, busy = load_policy(self.root), checked_out(self.root)
+        for ref in _task_refs(self.root, slug):
+            if not ref.startswith('refs/heads/'):
+                continue
+            name = ref.removeprefix('refs/heads/')
+            found = landed(self.root, policy, ref)
+            if found.refused or name in busy:
+                said.append(f'kept     local   {found.refused or f"{name}: checked out in a worktree"}')
+                continue
+            done = git_out(self.root, 'update-ref', '-d', ref, found.sha) is not None
+            said.append(
+                f'{"deleted " if done else "FAILED  "} local   {name}  ({found.sha[:10]}, held by {found.container})'
+            )
+        return said
 
 
 def _origin_branches(root: Path) -> list[str]:
