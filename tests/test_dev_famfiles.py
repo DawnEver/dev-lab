@@ -33,6 +33,7 @@ from dev_lab.dev.famfiles import (
     render_all,
     render_argv,
     render_repo,
+    unplaced_workflows,
 )
 from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
@@ -332,3 +333,23 @@ def test_the_module_door_runs_and_its_check_says_no_to_a_stale_file(tmp_path: Pa
     assert page.read_text(encoding='utf-8') == render_section()
     again = subprocess.run([*door, '--check'], capture_output=True, text=True, encoding='utf-8', check=False)
     assert (again.returncode, f'{AGENTS_REL}: current' in again.stdout) == (0, True)
+
+
+def test_a_workflow_is_kept_only_where_the_ci_declaration_places_it(repo: Path) -> None:
+    """A workflow is kept only where the ci declaration places it (user ruling 2026-11-24, item 4).
+
+    A base workflow on the repo's forge is accounted; a hand-written one and
+    one placed for the other forge are refused by name. PLANTED CONTROL: the same name declared is accepted.
+    """
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    for name in ('ci.yml', 'hand.yml'):
+        (workflows / name).write_text('x\n', encoding='utf-8')
+    (repo / '.gitea' / 'workflows').mkdir(parents=True)
+    (repo / '.gitea' / 'workflows' / 'merge.yml').write_text('x\n', encoding='utf-8')
+    _git('add', '.', cwd=repo)
+    assert unplaced_workflows(repo) == ('.gitea/workflows/merge.yml', '.github/workflows/hand.yml')
+    with pytest.raises(AssertionError, match=r'hand\.yml: a workflow no \[tool\.dev_lab\.ci\] table places'):
+        assert_every_project_file_is_accounted_for(root=repo, owned_here={})
+    (repo / 'pyproject.toml').write_text('[project]\nname = "x"\n\n[tool.dev_lab.ci.hand]\n', encoding='utf-8')
+    assert unplaced_workflows(repo) == ('.gitea/workflows/merge.yml',)

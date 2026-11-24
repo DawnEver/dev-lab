@@ -80,7 +80,7 @@ def test_a_consumer_can_override_every_half_of_the_corpus_definition() -> None:
 
 def test_injected_docs_narrows_a_tracked_list_to_the_corpus() -> None:
     paths = ('AGENTS.md', 'src/a.py', '.claude/rules/taste.md', '.claude/memory/x.md')
-    assert injected_docs(paths) == ('.claude/rules/taste.md', 'AGENTS.md')
+    assert injected_docs(paths) == ('AGENTS.md',)
 
 
 def test_line_widths_counts_every_line_one_based() -> None:

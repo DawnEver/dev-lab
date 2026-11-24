@@ -113,6 +113,7 @@ __all__ = [
     'WORKFLOW_DIRS',
     'base_names',
     'declared_forge',
+    'declared_paths',
     'drift',
     'follow_checks',
     'part_timeout_minutes',
@@ -218,6 +219,18 @@ def declared_forge(text: str, origin: str) -> str:
         raise ValueError(msg)
     (forge,) = forges
     return forge
+
+
+def declared_paths(root: Path) -> frozenset[str]:
+    """Every workflow path *root* may track: the base's and its ``[tool.dev_lab.ci]`` tables', on its own forge.
+
+    The static half of :func:`drift` -- no role binding is read -- so the project-file accounting can ask it of any
+    checkout. A workflow file outside this set is hand-written or placed for another forge.
+    """
+    forge = repo_forge(root)
+    _, tables = _declared(root)
+    names = base_names(forge) | {name for name, table in tables.items() if isinstance(table, dict)}
+    return frozenset((WORKFLOW_DIRS[forge] / name).as_posix() for name in names)
 
 
 def base_names(forge: str) -> set[str]:

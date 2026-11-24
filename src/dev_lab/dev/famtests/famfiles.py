@@ -18,7 +18,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dev_lab.dev.famconfig import BASES
-from dev_lab.dev.famfiles import PROJECT_FILES, RETIRED_PROJECT_FILES, project_files_on_disk, unaccounted
+from dev_lab.dev.famfiles import (
+    PROJECT_FILES,
+    RETIRED_PROJECT_FILES,
+    project_files_on_disk,
+    unaccounted,
+    unplaced_workflows,
+)
 from dev_lab.dev.famtests.configrender import (
     assert_artefact_is_rendered,
     assert_delta_is_not_a_fork,
@@ -56,6 +62,10 @@ def assert_every_project_file_is_accounted_for(*, root: Path, owned_here: Mappin
         f'{path}: RETIRED -- {RETIRED_PROJECT_FILES[path]}; git rm it (dev_lab.dev.famfiles.RETIRED_PROJECT_FILES)'
         for path in on_disk
         if path in RETIRED_PROJECT_FILES
+    ]
+    problems += [
+        f'{path}: a workflow no [tool.dev_lab.ci] table places on this repo`s forge -- declare it, or delete it'
+        for path in unplaced_workflows(root)
     ]
     problems += [f'{path}: owned here with no reason' for path, why in owned_here.items() if not why.strip()]
     problems += [f'{path}: owned here but not tracked in this repo' for path in owned_here if path not in on_disk]

@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import agentsection
+from dev_lab.dev import agentsection, ciworkflows
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
@@ -76,6 +76,7 @@ __all__ = [
     'render_repo',
     'unaccounted',
     'undeclared_inputs',
+    'unplaced_workflows',
 ]
 
 #: The one command a repo re-renders every family file with (its own deltas module named).
@@ -165,10 +166,6 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
         _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
         _g('.codex/rules/family-denies.rules', 'autodoors --write: the deny registry as Codex rules', AUTODOORS),
-        _g('.github/workflows/ci.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
-        _g('.github/workflows/review-again.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
-        _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
-        _g('.github/workflows/continue.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         ProjectFile(
             '.vscode/settings.json',
             MANAGED,
@@ -200,12 +197,22 @@ RETIRED_PROJECT_FILES: Final[dict[str, str]] = {
 }
 
 #: Every family file a mechanism writes whole: what a PR review never reads (:mod:`dev_lab.dev.forgereview_scope`).
-GENERATED: Final = frozenset(row.path for row in PROJECT_FILES.values() if row.generated)
+#: Every base workflow path on either forge (``ci_base.toml``): rendered whole by ciworkflows wherever placed.
+#: Not rows -- a repo keeps only the ones its ``[tool.dev_lab.ci]`` places (:func:`ciworkflows.declared_paths`).
+WORKFLOW_FILES: Final = frozenset(
+    (directory / name).as_posix()
+    for forge, directory in ciworkflows.WORKFLOW_DIRS.items()
+    for name in ciworkflows.base_names(forge)
+)
+
+GENERATED: Final = frozenset(row.path for row in PROJECT_FILES.values() if row.generated) | WORKFLOW_FILES
 
 #: Every renderer, read off :data:`PROJECT_FILES` in row order: the one list a relock re-runs (user ruling
 #: 2026-11-07: a relock that moved dev-lab left every generated file stale and the consumer red). NOT here:
 #: ``automode write``, whose file is machine-local and never committed, and the lock, which is the door's.
-RENDERERS: Final = tuple(dict.fromkeys(row.renderer for row in PROJECT_FILES.values() if row.renderer))
+RENDERERS: Final = tuple(
+    dict.fromkeys((*(row.renderer for row in PROJECT_FILES.values() if row.renderer), CIWORKFLOWS))
+)
 
 
 def due_renderers(root: Path) -> tuple[Renderer, ...]:
@@ -249,6 +256,8 @@ def _due(has: Callable[[str], bool]) -> tuple[Renderer, ...]:
         return has(row.path)
 
     present = {row.renderer for row in PROJECT_FILES.values() if due(row)}
+    if any(has(path) for path in WORKFLOW_FILES):
+        present.add(CIWORKFLOWS)
     return tuple(renderer for renderer in RENDERERS if renderer in present)
 
 
@@ -357,17 +366,26 @@ def project_files_on_disk(root: Path) -> tuple[str, ...]:
     return tuple(sorted(path for path in tracked if '/' not in path or path in nested or _is_workflow(path)))
 
 
-_WORKFLOWS: Final = '.github/workflows/'
-
-
 def _is_workflow(path: str) -> bool:
-    return path.startswith(_WORKFLOWS) and '/' not in path[len(_WORKFLOWS) :]
+    return any(
+        path.startswith(f'{directory.as_posix()}/') and path.count('/') == directory.as_posix().count('/') + 1
+        for directory in ciworkflows.WORKFLOW_DIRS.values()
+    )
 
 
 def unaccounted(root: Path, owned_here: Mapping[str, str]) -> tuple[str, ...]:
     """Project-level files in *root* that neither the family list nor the repo's own *owned_here* names."""
     known = {*PROJECT_FILES, *RETIRED_PROJECT_FILES, *owned_here}
-    return tuple(path for path in project_files_on_disk(root) if path not in known)
+    return tuple(path for path in project_files_on_disk(root) if path not in known and not _is_workflow(path))
+
+
+def unplaced_workflows(root: Path) -> tuple[str, ...]:
+    """Tracked workflow files of *root* its ``[tool.dev_lab.ci]`` does not place (``ciworkflows.declared_paths``)."""
+    on_disk = [path for path in project_files_on_disk(root) if _is_workflow(path)]
+    if not on_disk:
+        return ()
+    allowed = ciworkflows.declared_paths(root)
+    return tuple(path for path in on_disk if path not in allowed)
 
 
 def load_deltas(path: Path) -> Mapping[str, Delta]:
