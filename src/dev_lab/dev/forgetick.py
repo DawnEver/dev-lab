@@ -122,6 +122,7 @@ from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.layout import scan_refusal
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import derived, origin_url, parts_of
+from dev_lab.dev.testcost import read_budget
 from dev_lab.dev.unproduced import unproduced_waived
 
 __all__ = ['TickReport', 'main', 'tick']
@@ -276,6 +277,7 @@ def tick(
         authors=frozenset(request_authors() if authors is None else authors),
         store_why=probe(root) if serve.hpc else '', history=history,
         serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve, box=box,
+        test_budget=read_budget(section),
     )  # fmt: skip
     favoured = (priority or Priority.of(section(PRIORITY_TABLE))).matches
     mine = (declared(config_path(), origin_url(root)) if verify is None else tuple(verify)) if serve.hpc else ()

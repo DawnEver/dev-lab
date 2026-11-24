@@ -73,6 +73,7 @@ from dev_lab.dev.forgewait import Box, Outlook
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.partrows import needs_of_row
 from dev_lab.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
+from dev_lab.dev.testcost import Budget, beyond_budget, part_costs
 
 __all__ = ['ClaimPass', 'skips']
 
@@ -118,6 +119,10 @@ class ClaimPass:
     authors: frozenset[str] = frozenset()  # whose requests run here at any served sha (X1)
     reached: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why a git source is unreachable here
     serves: Serves = dataclasses.field(default_factory=Serves)  # [serve] parts: a skipped part waits for another host
+    #: This host's declared test budget (:func:`dev_lab.dev.testcost.read_budget`); None places nothing by cost.
+    test_budget: Budget | None = None
+    #: A part's measured seconds per test id (:func:`dev_lab.dev.testcost.part_costs`), injectable for a control.
+    part_costs: Callable[[str, str], Mapping[str, float]] = part_costs
     #: Takes a LOCAL part's box claim before it is claimed: its ledger row, or why the box refused (None: no box).
     reserve: Callable[[Work], int | str] | None = None
     #: This box as the pass sees it (None: a cluster seat): what tells a waiting part its outlook and protects it.
@@ -267,9 +272,16 @@ class ClaimPass:
             or self.defer(wanted)
             or behind(self.root, wanted, self.schedule, self.history, self.now)
             or over_budget(self.root, wanted, self.schedule, self.usage)
+            or self._beyond_test_budget(wanted)
             or self._admission(wanted, needed)
         )
         return why, needed
+
+    def _beyond_test_budget(self, wanted: Candidate) -> str:
+        """A part holding a test measured over this host's ``[test_budget]`` waits for a host that fits it (H1)."""
+        if wanted.kind == REQUEST:
+            return ''
+        return beyond_budget(self.part_costs(self.repo, wanted.platform), self.test_budget, part=wanted.platform)
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
         job, demand = self._job(wanted, needed), self.size(wanted, needed)

@@ -37,9 +37,11 @@ __all__ = [
     'BUDGET_TABLE',
     'DEADLINE_FACTOR',
     'DEADLINE_FLOOR_S',
+    'KILL_GRACE_S',
     'RETIRED_MARKERS',
     'Budget',
     'Plan',
+    'beyond_budget',
     'budget_of',
     'killed_at',
     'plan',
@@ -55,6 +57,10 @@ BUDGET_TABLE: Final = 'test_budget'
 DEADLINE_FACTOR: Final = 3.0
 #: The shortest deadline a measured test gets, in seconds: a 10 ms test's 30 ms would fire on scheduling noise.
 DEADLINE_FLOOR_S: Final = 10.0
+#: Seconds the per-test timeout fires AFTER the deadline: the ledger's deadline watchdog
+#: (:meth:`dev_lab.dev.durations.Recorder.pytest_runtest_logstart`) writes "cost >= deadline" first, since on
+#: Windows without workers the timeout ends the whole process and nothing after it runs.
+KILL_GRACE_S: Final = 5.0
 #: RETIRED-NAMES-REGISTERED: the hand-kept cost markers (T3, 2026-11-24), refused at collection by name.
 RETIRED_MARKERS: Final = ('slow', 'heavy', 'big_memory')
 
@@ -168,7 +174,38 @@ def schedule(config: pytest.Config, items: list[pytest.Item], *, budget: Budget 
     recorder = config.pluginmanager.get_plugin('lab-commons-durations')
     for item in items:
         if item.get_closest_marker('timeout') is None:
-            item.add_marker(pytest.mark.timeout(planned.deadlines[item.nodeid]))
+            item.add_marker(pytest.mark.timeout(planned.deadlines[item.nodeid] + KILL_GRACE_S))
     if recorder is not None:
         recorder.deadlines.update(planned.deadlines)
     return planned
+
+
+def beyond_budget(part_ids_seconds: Mapping[str, float], budget: Budget | None, *, part: str) -> str:
+    """FORGE PLACEMENT (H1): why THIS host must not claim *part*, ``''`` when its budget holds every measured test.
+
+    *part_ids_seconds* is the part's measured cost per test id (the learned table,
+    :func:`lab_commons.compute.learned.learned`). A part holding a test measured at or over this host's ``test_s``
+    would run here incomplete (:func:`schedule` hands that test), so it is left for a host whose budget fits it.
+    No declared budget places nothing here by cost.
+    """
+    if budget is None or not part_ids_seconds:
+        return ''
+    dear, seconds = max(part_ids_seconds.items(), key=lambda row: row[1])
+    if seconds < budget.test_s:
+        return ''
+    return (
+        f'over this host test budget: {part} holds {dear}, measured {seconds:g} s >= [{BUDGET_TABLE}] test_s '
+        f'{budget.test_s:g} s -- a host whose budget fits it claims it'
+    )
+
+
+def part_costs(repo_url: str, part: str) -> dict[str, float]:
+    """The measured seconds of *part*'s test ids from the learned table: the ids in the files the part last ran."""
+    from lab_commons.compute import learned  # noqa: PLC0415 -- read by the forge pass only
+    from lab_commons.compute.measured import Measured  # noqa: PLC0415
+
+    from dev_lab.dev.partrows import needs_of_row  # noqa: PLC0415
+
+    files = set(learned.part_files(repo_url, needs_of_row(part)))
+    durations = Measured.of(learned.learned(repo_url)).durations
+    return {node: float(value) for node, value in durations.items() if node.split('::', 1)[0] in files}

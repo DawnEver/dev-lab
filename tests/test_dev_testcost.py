@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from lab_commons.compute import learned
+from lab_commons.compute.model import REQUEST
 
 from dev_lab.dev import testcost
-from dev_lab.dev.durations import CRASH_MARKER, Recorder, Row, write
+from dev_lab.dev.durations import CRASH_MARKER, Recorder, Row, read, write
+from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.testcost import Budget, plan
 
 pytest_plugins = ['pytester']
@@ -105,3 +109,70 @@ def test_verify_runs_what_fits_and_hands_the_rest(pytester: pytest.Pytester, mon
     result = pytester.runpytest('-p', 'no:cacheprovider')
     result.assert_outcomes(passed=1, deselected=1)
     result.stdout.fnmatch_lines(['*handed to the forge: test_sched.py::test_dear*'])
+
+
+def test_a_host_whose_budget_a_part_exceeds_leaves_it_for_one_that_fits() -> None:
+    """FORGE PLACEMENT, both sides: the same part is left by a small host and claimable by a large one."""
+    costs = {'tests/test_a.py::test_long': 900.0, 'tests/test_a.py::test_short': 1.0}
+    small, large = Budget(test_s=600.0, cores=4, memory_gb=8.0), Budget(test_s=3600.0, cores=32, memory_gb=128.0)
+    why = testcost.beyond_budget(costs, small, part='base')
+    assert 'tests/test_a.py::test_long' in why
+    assert '600' in why
+    assert testcost.beyond_budget(costs, large, part='base') == ''
+    assert testcost.beyond_budget(costs, None, part='base') == ''
+
+
+def test_the_claim_pass_asks_the_budget_for_a_part_and_never_for_a_request() -> None:
+    asked: list[tuple[str, str]] = []
+
+    def costs(repo: str, part: str) -> dict[str, float]:
+        asked.append((repo, part))
+        return {'t::long': 900.0}
+
+    host = SimpleNamespace(repo='origin', part_costs=costs, test_budget=Budget(test_s=600.0, cores=4, memory_gb=8.0))
+    part = SimpleNamespace(kind='part', platform='base')
+    assert 'over this host test budget' in ClaimPass._beyond_test_budget(host, part)  # type: ignore[arg-type]
+    request = SimpleNamespace(kind=REQUEST, platform='base')
+    assert ClaimPass._beyond_test_budget(host, request) == ''  # type: ignore[arg-type]
+    assert asked == [('origin', 'base')]
+
+
+def test_part_costs_reads_the_ids_of_the_files_the_part_last_ran(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(learned, 'part_files', lambda _repo, _needs: ('tests/test_a.py',))
+    monkeypatch.setattr(
+        learned, 'learned', lambda _repo: {'durations': {'tests/test_a.py::t': 5.0, 'tests/test_b.py::t': 9.0}}
+    )
+    assert testcost.part_costs('origin', 'base') == {'tests/test_a.py::t': 5.0}
+
+
+def test_a_deadline_kill_without_workers_still_leaves_its_ledger_row(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The thread-method timeout ends the WHOLE process; the watchdog's row is written first -- cost >= deadline."""
+    root = pytester.path
+    pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
+    machine = root / 'machine.toml'
+    machine.write_text('[test_budget]\ntest_s = 1\ncores = 1\nmemory_gb = 1\n', encoding='utf-8')
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
+    pytester.makepyfile(test_hang='import time\ndef test_hang():\n    time.sleep(60)\n')
+    pytester.runpytest_subprocess(
+        '-p', 'no:cacheprovider', '-p', 'dev_lab.dev.durations', '-p', 'no:xdist', '-o', 'timeout_method=thread',
+        timeout=120,
+    )  # fmt: skip
+    seconds = read(root).seconds
+    assert seconds.get('test_hang.py::test_hang', 0.0) >= 1.0, f'no deadline row was written: {seconds}'
+
+
+def test_a_test_that_ends_inside_its_deadline_is_filed_at_what_it_took(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED CONTROL: the watchdog is disarmed by a test that finishes; its row is its real cost."""
+    root = pytester.path
+    pytester.makefile('.toml', pyproject='[tool.dev_lab.parts]\noutput = "out/logs"\n')
+    machine = root / 'machine.toml'
+    machine.write_text('[test_budget]\ntest_s = 30\ncores = 1\nmemory_gb = 1\n', encoding='utf-8')
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
+    pytester.makepyfile(test_quick='def test_quick():\n    pass\n')
+    result = pytester.runpytest_subprocess('-p', 'no:cacheprovider', '-p', 'dev_lab.dev.durations', '-p', 'no:xdist')
+    result.assert_outcomes(passed=1)
+    assert read(root).seconds['test_quick.py::test_quick'] < 30.0

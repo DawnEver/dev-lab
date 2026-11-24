@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -445,6 +446,10 @@ class Recorder:
     #: What verify is measuring, handed over through the environment; ``''`` outside verify.
     tree: str = field(default_factory=lambda: os.environ.get(LEDGER_TREE_VAR, ''))
     env: str = field(default_factory=lambda: os.environ.get(LEDGER_ENV_VAR, ''))
+    #: The worker this process is (``None``: the controller or a run without workers), bound at configure.
+    worker: str | None = None
+    #: The watchdog of the test now running, if it has a deadline (:meth:`pytest_runtest_logstart`).
+    _watch: threading.Timer | None = field(default=None, repr=False)
 
     def pytest_configure(self, config: RunConfig) -> None:
         """Bind the crash duration to THE WALL THE RUNNER IS ACTUALLY ENFORCING, never to a copy.
@@ -459,6 +464,41 @@ class Recorder:
         except ValueError:
             declared = None
         self.wall = float(declared or 0.0)
+        self.worker = config.workerinput.get('workerid') if isinstance(config, _WorkerConfig) else None
+
+    def pytest_runtest_logstart(self, nodeid: str, location: object) -> None:
+        """Arm the DEADLINE WATCHDOG of a test that has a deadline (:func:`dev_lab.dev.testcost.schedule`).
+
+        WINDOWS WITHOUT WORKERS: pytest-timeout's thread method ends the WHOLE PROCESS (``os._exit``), so no
+        report and no session finish ever record the kill. The watchdog fires at the deadline -- before the
+        timeout, which :data:`dev_lab.dev.testcost.KILL_GRACE_S` later ends the process -- and writes this
+        process's ledger with the test filed AT its deadline: "cost >= deadline", a measurement. A test that
+        finishes first disarms it (:meth:`pytest_runtest_logfinish`), and the session's own write supersedes it.
+        """
+        del location
+        if nodeid in self.deadlines:
+            self._watch = threading.Timer(self.deadlines[nodeid], self.deadline_reached, args=(nodeid,))
+            self._watch.daemon = True
+            self._watch.start()
+
+    def pytest_runtest_logfinish(self, nodeid: str, location: object) -> None:
+        """Disarm the watchdog: the test ended inside its deadline."""
+        del nodeid, location
+        if self._watch is not None:
+            self._watch.cancel()
+            self._watch = None
+
+    def deadline_reached(self, nodeid: str) -> Path:
+        """Write the ledger NOW with *nodeid* filed at its deadline, before the timeout ends the process."""
+        rows = {**self.seconds, nodeid: max(self.seconds.get(nodeid, 0.0), self.deadlines[nodeid])}
+        return write(
+            self.root,
+            (Row(nodeid=node, seconds=value) for node, value in rows.items()),
+            selector='deadline',
+            worker=self.worker,
+            tree=self.tree,
+            env=self.env,
+        )
 
     def pytest_runtest_logreport(self, report: PhaseReport) -> None:
         """Accumulate the wall-clock cost of every PHASE of every test, per nodeid.
