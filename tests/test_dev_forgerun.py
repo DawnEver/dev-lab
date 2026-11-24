@@ -431,13 +431,29 @@ def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Pat
     assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] == OPEN, 'claimable by any host again'
 
 
-SCHEMA_1 = Path(__file__).parent / '_hpc_fixtures' / 'forge-run-schema1-2026-10-17.jsonl'
+#: A live schema-1 run as Ada held it (2026-10-17, account sanitised): an in-code value, never a tracked data file (H2).
+SCHEMA_1: dict[str, Any] = {
+    'repo_url': 'https://forge.example/lab/consumer.git',
+    'sha': 'c4b6bfd37f235761a21c79390ff1cf218c88cf98',
+    'ref': 'feat/optimization',
+    'collect': 'tests',
+    'output': '/shared/home/alice/src/consumer/output/logs/26/10/17/parts/c4b6bfd37f235761a21c79390ff1cf218c88cf98',
+    'owner': 'claim machine=login1 login=alice until=2026-10-17T20:10:45Z hpc=site-ada/alice',
+    'phase': 'submitted',
+    'job_ids': ['7715287', '7716448'],
+    'record': '',
+    'platform': 'base',
+    'scope': 'full',
+    'outputs': [],
+    'artefact': '',
+    'schema': 1,
+    'progress': 'running 3/17 done 8/17',
+}
 
 
 def _plant_schema_1() -> dict[str, Any]:
     """A live schema-1 run as Ada held it (2026-10-17, account sanitised), planted in this home's forge-runs/."""
-    [line] = SCHEMA_1.read_text(encoding='utf-8').splitlines()
-    raw = json.loads(line)
+    raw = dict(SCHEMA_1)
     forgerunstate.directory().mkdir(parents=True, exist_ok=True)
     repo = hashlib.sha256(raw['repo_url'].encode('utf-8')).hexdigest()[:12]
     name = f'{repo}-{raw["sha"]}-{raw["platform"]}-{raw["scope"]}.json'

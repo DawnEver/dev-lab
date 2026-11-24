@@ -36,9 +36,12 @@ import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
-from typing import Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol
 
 from lab_commons.log import emit
+
+if TYPE_CHECKING:
+    from dev_lab.dev.reports import StepReport
 
 __all__ = [
     'CACHE',
@@ -56,7 +59,9 @@ __all__ = [
     'parse_lock',
     'put',
     'read_lock',
+    'refusals',
     'rewritten',
+    'step',
     'unquoted',
     'write_lock',
 ]
@@ -241,7 +246,8 @@ def _rows_at(root: Path, rev: str) -> list[Row]:
     return parse_lock(text, where=f'{rev}:{LOCK}')
 
 
-def _verify(root: Path, commit: str | None) -> list[str]:
+def refusals(root: Path, commit: str | None = None) -> list[str]:
+    """Every refusal ``verify`` names for *root* (and *commit*'s rewrites): malformed lock, tracked test data."""
     refusals = []
     try:
         read_lock(root / LOCK)
@@ -313,7 +319,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif parsed.verb == 'check-message':
             return _check_message(root, parsed.message_file.read_text(encoding='utf-8'))
         else:
-            refusals = _verify(root, parsed.commit)
+            refusals = globals()['refusals'](root, parsed.commit)
             for line in refusals:
                 emit(f'baselines: refused -- {line}', err=True)
             return 1 if refusals else 0
@@ -325,3 +331,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == '__main__':
     sys.exit(main())
+
+
+def step(root: Path) -> StepReport:
+    """``baselines verify`` as a verify step of its own: red by name on any refusal (:func:`refusals`)."""
+    from dev_lab.dev.reports import StepReport as Report  # noqa: PLC0415
+
+    name = 'baselines verify'
+    try:
+        found = refusals(root)
+    except (OSError, subprocess.CalledProcessError) as cannot:
+        return Report(name=name, truncated=(f'{name}: cannot read the checkout: {cannot}',))
+    for line in found:
+        emit(f'baselines: refused -- {line}', err=True)
+    return Report(name=name, reported=(name,), failures=(name,) if found else ())

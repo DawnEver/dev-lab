@@ -31,7 +31,7 @@ from lab_commons.box import POLL_S
 from lab_commons.log import emit
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import cargostep, durations
+from dev_lab.dev import baselines, cargostep, durations
 from dev_lab.dev._logdistil import distil_log
 from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
 from dev_lab.dev.content import ABSENT, content_address, file_digest
@@ -371,12 +371,16 @@ def script_step(root: Path, paths: tuple[str, ...], *, handle: IO[str]) -> StepR
 def _native_steps(
     root: Path, pytest_args: tuple[str, ...], scripts: tuple[str, ...], *, handle: IO[str], cargo: bool
 ) -> list[StepReport]:
-    """The steps beside pytest: the selected script tests, then each cargo workspace's own step.
+    """The steps beside pytest: script tests, then on an untargeted run ``baselines verify`` and cargo.
 
-    Cargo runs on an untargeted run only (:mod:`dev_lab.dev.cargostep`, T8: never wrapped in a pytest test).
+    ``baselines verify`` is H2's; each cargo workspace's own step (T8) runs only outside a producer, whose part
+    hands it to ``tests/cargo``.
     """
     steps = [script_step(root, scripts, handle=handle)] if scripts else []
-    if not cargo or is_targeted(root, pytest_args):  # a producer's part hands cargo to tests/cargo
+    if scripts or is_targeted(root, pytest_args):  # a selection (pytest or script) judges itself, not the tree
+        return steps
+    steps.append(baselines.step(root))
+    if not cargo:
         return steps
     tracked = _git_z(root, 'ls-files', '-z') or ()
     return [

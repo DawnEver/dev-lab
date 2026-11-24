@@ -178,3 +178,14 @@ def test_the_commit_msg_row_judges_the_staged_lock_before_the_commit_exists(
 def test_the_commit_msg_row_is_registered() -> None:
     base = (Path(baselines.__file__).parent / 'githooks' / 'base.toml').read_text(encoding='utf-8')
     assert 'run = ["python", "-m", "dev_lab.dev.baselines", "check-message"]' in base
+
+
+def test_baselines_verify_is_its_own_verify_step_red_by_name(tmp_path: Path) -> None:
+    """PLANTED CONTROL, both sides: a clean tree's step passes; a tracked test data file reds it by its name."""
+    _git(tmp_path, 'init', '-q')
+    _commit(tmp_path, [_row()], 'add the torque baseline')
+    clean = baselines.step(tmp_path)
+    assert (clean.reported, clean.failures) == (('baselines verify',), ())
+    (tmp_path / 'tests' / 'golden.csv').write_text('1\n', encoding='utf-8')
+    _git(tmp_path, 'add', 'tests/golden.csv')
+    assert baselines.step(tmp_path).failures == ('baselines verify',)
