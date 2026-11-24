@@ -1,0 +1,14 @@
+# Illustrative consumer declaration: the worked example of docs-src/dev/ir-schema.md.
+[project]
+name = "sample-pkg"
+
+[tool.dev_lab.ir_schema]
+version = "1.0.0"
+package = "sample_pkg"
+package_dir = "src/sample_pkg"
+quantities = "ir/quantities.toml"
+migrations = "sample_pkg.ir_migrations"
+
+[tool.dev_lab.ir_schema.modules]
+widgets = "ir/widgets.toml"
+samples = "ir/samples.toml"

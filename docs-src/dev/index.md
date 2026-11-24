@@ -37,7 +37,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [Submitting research from a workstation](./hpc-from-a-workstation.md) | A session's own cluster jobs: reach, grants, build, submit, gather, and which account takes them |
 | [Artefacts](./artefacts.md) | A run's declared outputs: the store, its layout and its retention |
 | [Storage kinds](./storage.md) | Where a checkout's output, venvs and caches live on a machine, bound in its machine file |
-| [IR schemas](./ir-schema.md) | DRAFT: one TOML declaration of an IR, its quantities catalogue, and the Python and Rust generated from it |
+| [IR schemas](./ir-schema.md) | One TOML declaration of an IR, its quantities catalogue, and the Python and Rust generated from it |
 | [Retirement](./retirement.md) | The archive keeps old code, the registry keeps a dead spelling dead |
 | [The docs pipeline](./docs-pipeline.md) | The three properties a docs builder holds, and why a skipped sub-site is announced |
 | [Translations](./translations.md) | How a `<stem>.zh.md` beside its `<stem>.md` passes the CJK guard, and the non-ASCII goal |

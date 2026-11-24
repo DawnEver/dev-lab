@@ -1,4 +1,4 @@
-# Illustrative quantities catalogue. dimension = exponents of M L T I Theta N J.
+# dimension = exponents of M L T I Theta N J.
 [quantity.mass]
 unit = "kg"
 dimension = "1 0 0 0 0 0 0"
@@ -11,6 +11,14 @@ dimension = "0 0 1 0 0 0 0"
 [quantity.temperature]
 unit = "K"
 dimension = "0 0 0 0 1 0 0"
+[quantity.pressure]
+unit = "Pa"
+dimension = "1 -1 -2 0 0 0 0"
+[quantity.sound_pressure]
+unit = "Pa"
+dimension = "1 -1 -2 0 0 0 0"
+db_reference = 2e-5
+db_scale = 20
 [quantity.force]
 unit = "N"
 dimension = "1 1 -2 0 0 0 0"
