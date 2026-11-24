@@ -14,16 +14,24 @@ remote, a forge token, a one-time code -- comes through :func:`value`:
 
 A code is a value whose shape is :data:`CODE_SHAPE`; :func:`code` takes it from an agent's argument as well (the
 code the user gave in chat), through the same check.
+
+Before either PROMPTS a person (the default reader, ``input``), the kit is judged current
+(:func:`dev_lab.dev.secretkit.refusal_here`, measured 2026-11-24: a kit from before this intake still asked hidden);
+a stale one is refused with its door and nothing is asked. A reader injected by a caller is a test or a pipe, not a
+person, and a code handed over is not a prompt.
 """
 
 from __future__ import annotations
 
+import builtins
 import re
 from collections.abc import Callable
 from typing import Final
 
-__all__ = ['CODE_SHAPE', 'PASTE_NOTE', 'AskRefused', 'code', 'judged', 'value']
+__all__ = ['CODE_SHAPE', 'PASTE_NOTE', 'RULE_ID', 'AskRefused', 'code', 'judged', 'value']
 
+#: The registry row this intake enforces (:mod:`dev_lab.dev.rules`); the refusals here and in its guards name it.
+RULE_ID: Final = 'TYPED-VALUES-ARE-SHOWN'
 #: A one-time consent / cluster / TOTP code: six digits.
 CODE_SHAPE: Final = r'[0-9]{6}'
 #: Said before a value: on Windows a console prompt does not take Ctrl+V (it inserts a control character).
@@ -32,6 +40,16 @@ PASTE_NOTE: Final = 'paste with a right-click (Ctrl+V does not paste in this pro
 
 class AskRefused(ValueError):
     """A typed value refused before anything was spent; the message names the cause and what to do."""
+
+
+def _prompt(ask: Callable[[str], str], prompt: str) -> str:
+    """*ask* for *prompt*; a person (``input``) is asked only by a current kit (:mod:`dev_lab.dev.secretkit`)."""
+    if ask is builtins.input:
+        from dev_lab.dev import secretkit  # noqa: PLC0415 -- git and the lock are read only when a person is asked
+
+        if why := secretkit.refusal_here():
+            raise AskRefused(why)
+    return ask(prompt)
 
 
 def judged(name: str, given: str, shape: str) -> tuple[str, str]:
@@ -52,7 +70,7 @@ def judged(name: str, given: str, shape: str) -> tuple[str, str]:
 
 
 def value(
-    name: str, *, hint: str = '', shape: str = '', ask: Callable[[str], str] = input,
+    name: str, *, hint: str = '', shape: str = '', ask: Callable[[str], str] | None = None,
     say: Callable[[str], None] = lambda _line: None,
 ) -> str:  # fmt: skip
     """Ask *name* shown as typed (with its declared *hint*), check it against *shape*, say the check line.
@@ -61,7 +79,7 @@ def value(
         AskRefused: empty, control characters or spaces, or not the declared shape -- before anything is spent.
 
     """
-    asked = ask(f'{name}{f" -- {hint}" if hint else ""}\n{name}: ')
+    asked = _prompt(ask or builtins.input, f'{name}{f" -- {hint}" if hint else ""}\n{name}: ')
     given = asked.strip('\r\n')
     line, why = judged(name, given, shape)
     say(line)
@@ -74,7 +92,7 @@ def code(
     given: str | None,
     *,
     what: str,
-    ask: Callable[[str], str] = input,
+    ask: Callable[[str], str] | None = None,
     say: Callable[[str], None] = lambda _l: None,
 ) -> str:
     """The user's one-time code for *what*: *given* (the code the user gave an agent) or asked shown as typed.
@@ -85,7 +103,10 @@ def code(
     """
     if given is None:
         try:
-            given = ask(f'cluster code -- the six-digit code your authenticator shows now, for {what}\ncode: ')
+            given = _prompt(
+                ask or builtins.input,
+                f'cluster code -- the six-digit code your authenticator shows now, for {what}\ncode: ',
+            )
         except EOFError:  # measured 2026-11-23: a headless agent's stdin ended and the door died in a traceback
             msg = 'could not be read: stdin ended with no terminal to ask on -- pass the code the user gave as --code'
             raise AskRefused(msg) from None

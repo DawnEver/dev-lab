@@ -250,10 +250,23 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_ciworkflows.py', 'tests/test_dev_depneeds.py'),
     ),
+    (
+        'TYPED-VALUES-ARE-SHOWN',
+        (
+            'Every value a person types -- a secret, a token, a one-time code -- comes through '
+            '`dev_lab.dev.ask` (`value()`/`code()`), shown as typed and checked against its declared shape before '
+            'anything is spent (D94); no tracked code in any family repo reads one hidden (`getpass`, a `msvcrt` '
+            'key loop, a silent shell `read`, echo switched off, a PowerShell secure string or intercepted key, a '
+            'JavaScript prompt hiding its echo). A kit that is not current -- its venv off its `uv.lock` pin, or '
+            'its checkout past the lag window behind its integration branch -- prompts nobody: it refuses naming '
+            'the pull and sync doors (`dev_lab.dev.secretkit`).'
+        ),
+        ('tests/test_famtests_hiddenintake.py', 'tests/test_dev_secretkit.py', 'tests/test_dev_ask.py'),
+    ),
 )
 
 
 #: Shared required checks; the execution owner also runs them for command/data family producers.
 #: Read by :mod:`dev_lab.dev.rules` into :attr:`Rule.always_on`; nothing else names them.
 #: MODULE-SIZE-ALARM is opt-in: a repo enables it once it declares [tool.dev_lab.layout] and its directories fit.
-ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE', 'REM-RETIRED'})
+ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE', 'REM-RETIRED', 'TYPED-VALUES-ARE-SHOWN'})
