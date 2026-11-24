@@ -112,7 +112,12 @@ def test_a_family_command_cannot_pass_with_a_malformed_layout_policy(tmp_path: P
     assert commandpart.main(['--root', str(tmp_path), 'base', '--', 'npm', 'test']) == ProducerExit.FAIL
     assert not any('test' in argv for argv in started), 'the external command must not run past a failed guard'
     assert posted
-    assert all(cell['status'] != 'ok' for record in posted for cell in record['cells'].values())
+    # An always-on family check that holds in this empty checkout (REM-RETIRED: no leftover) may pass;
+    # what must not pass is the malformed layout policy itself or anything past it.
+    cells = {name: cell for record in posted for name, cell in record['cells'].items()}
+    passed = {name for name, cell in cells.items() if cell['status'] == 'ok'}
+    assert passed <= {'::family::REM-RETIRED'}, cells
+    assert set(cells) - passed, cells
 
 
 @pytest.mark.parametrize('violation', ['directory-width', 'cjk'])
