@@ -350,6 +350,11 @@ ALLOWED: Final[dict[Site, str]] = {
         "WORDS: Final = ('mkdtemp', 'mkstemp', 'gettempdir', 'delete=False', '/tmp', ':\\\\', ':/')",
     ): "the reader's own pre-filter words: '/tmp' is the text it searches for, never a path it opens",
     (
+        'src/dev_lab/dev/strayleaks.py',
+        'PLC0415',
+        'import psutil',
+    ): 'psutil is transitive, not declared; its absence must keep every aged entry, not fail the sweep import',
+    (
         'tests/test_dev_tmpsweep.py',
         'PLC0415',
         'import _winapi',
