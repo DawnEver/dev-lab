@@ -73,11 +73,11 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`dev_lab.dev.docwidth` — the family's ONE per-line WIDTH ceiling for every document
   injected into an agent's context (user directive, 2026-09-16): a line-COUNT ratchet is blind to
   how long each line is, so this caps columns too, at 120 -- the ceiling every repo already uses for
-  code. The injected-document corpus (``AGENTS.md``/``CLAUDE.md`` by basename, ``.claude/rules/**``,
+  code. The injected-document corpus (``AGENTS.md``/``CLAUDE.md`` by basename,
   ``.claude/memory/`` excluded) is DATA a consumer may override, and the ratchet shape is the same
   named-set declaration as :mod:`dev_lab.dev.cjk`.
 * :mod:`dev_lab.dev.principles` — the family's engineering PRINCIPLES, one tuple (user ruling 2026-10-27):
-  rendered to ``.claude/rules/principles.md`` by :mod:`dev_lab.dev.famfiles` in every repo (pinned by
+  rendered into the family section of every repo's ``AGENTS.md`` by :mod:`dev_lab.dev.agentsection` (pinned by
   :mod:`dev_lab.dev.famtests.agentsection`), and handed to the review method as ``--principles <json>``.
 * :mod:`dev_lab.dev.reviewpolicy` — the family REVIEW POLICY resolved for one repo (``--json [--repo]``),
   read from the values the forge review runs on and exported for both triggers (user ruling D83).

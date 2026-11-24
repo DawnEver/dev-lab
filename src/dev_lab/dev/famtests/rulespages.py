@@ -1,6 +1,8 @@
 """The always-loaded rule pages, ratcheted PER PAGE and capped in TOTAL -- both, because each is blind.
 
-WHAT ``.claude/rules/**`` IS. Prose re-read on every turn, so every line is a cost paid on every
+WHAT AN ALWAYS-LOADED PAGE IS
+(``AGENTS.md`` since 2026-11-24, when ``.claude/rules/`` retired).
+Prose re-read on every turn, so every line is a cost paid on every
 request. Two constraints keep it honest and they are not the same constraint:
 
 * A PER-PAGE RATCHET is a NAMED SET, and it is the reading a total cannot give. A total says only
@@ -29,7 +31,7 @@ in the edit that freed it rather than banked as slack for the next arrival.
 WIDTH IS NOT MEASURED HERE, AND THAT IS A DECISION RATHER THAN AN OMISSION. A line-count pin is one
 unit per line no matter how long the line is, so a rewrite can double a page's width while LOWERING
 its count -- but :mod:`dev_lab.dev.docwidth` already owns exactly that dimension over exactly this
-corpus (``.claude/rules/`` is one of its :data:`~dev_lab.dev.docwidth.INJECTED_PREFIXES`), with
+corpus (``AGENTS.md`` is one of its :data:`~dev_lab.dev.docwidth.INJECTED_BASENAMES`), with
 its own ceiling, its own named set of over-width sites and its own floor. A second width scan here
 would be two statements of one rule, which is the drift a shared body exists to remove. A repo
 adopting this body wants the docwidth guard as well; it does not want it twice.

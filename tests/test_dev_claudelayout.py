@@ -113,9 +113,8 @@ def test_the_body_raises_with_every_stray_named(tmp_path: Path) -> None:
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        'RESIDUAL 2026-11-24: the kit still tracks .claude/rules/ (retired: the family section moves into '
-        'AGENTS.md) and the month summaries .claude/memory/<yyyy>/<mm>/SUMMARY-*.md, which the ruled list '
-        'does not declare -- awaiting the user`s call on the summaries'
+        'RESIDUAL 2026-11-24: the kit tracks the month summaries .claude/memory/<yyyy>/<mm>/SUMMARY-*.md, '
+        'which the ruled list does not declare -- awaiting the user`s call on the summaries'
     ),
 )
 def test_the_kit_holds_a_closed_claude_directory() -> None:

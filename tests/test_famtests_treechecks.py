@@ -52,7 +52,7 @@ def _rules_json(reason: str) -> str:
     [
         ('platformskips', {'tests/test_y.py': _SKIP}),
         ('hostnode', {'tests/test_y.py': _NODE}),
-        ('restatedrules', {'.claude/rules/r.md': f'# R\n\n{RULES[0].statement}\n'}),
+        ('restatedrules', {'AGENTS.md': f'# R\n\n{RULES[0].statement}\n'}),
         ('remedypaths', {RULES_REL: _rules_json('stop it: python -m dev_lab.dev.stoprun --pid 1')}),
     ],
 )
@@ -70,7 +70,7 @@ def test_a_clean_checkout_runs_every_row_green(pytester: pytest.Pytester, monkey
         pytester.path,
         {
             'tests/test_x.py': _TEST,
-            '.claude/rules/r.md': '# R\n\n- `XFAIL-NOT-SKIP`: earned here by a local incident.\n',
+            'AGENTS.md': '# R\n\n- `XFAIL-NOT-SKIP`: earned here by a local incident.\n',
             RULES_REL: _rules_json('stop it: {python} -m dev_lab.dev.stoprun --pid 1'),
         },
     )

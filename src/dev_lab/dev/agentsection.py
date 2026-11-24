@@ -18,7 +18,7 @@ from dev_lab.dev.rules import RULES
 if TYPE_CHECKING:
     from pathlib import Path
 
-__all__ = ['AGENTS_REL', 'BEGIN', 'END', 'WORKFLOW_RULES', 'held_section', 'render_section', 'splice']
+__all__ = ['AGENTS_REL', 'BEGIN', 'END', 'WORKFLOW_RULES', 'held_section', 'render_section', 'repo_text', 'splice']
 
 AGENTS_REL: Final = 'AGENTS.md'
 BEGIN: Final = '<!-- BEGIN dev-lab family section -->'
@@ -93,6 +93,13 @@ def held_section(text: str) -> str | None:
         msg = f'{AGENTS_REL} must hold exactly one {BEGIN} before one {END}; it holds {begins} and {ends}'
         raise ValueError(msg)
     return text[start : stop + len(END)] + '\n'
+
+
+def repo_text(text: str) -> str:
+    """*text* without its family section: the part the repo writes, which a restated-rule reading judges."""
+    if held_section(text) is None:
+        return text
+    return text[: text.find(BEGIN)] + text[text.find(END) + len(END) :]
 
 
 def splice(text: str) -> str:

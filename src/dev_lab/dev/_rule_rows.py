@@ -400,7 +400,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'INJECTED-DOC-WIDTH-CEILING',
         (
-            'Every document injected into an agent -- `AGENTS.md`/`CLAUDE.md`, `.claude/rules/**` -- is capped per '
+            'Every document injected into an agent -- `AGENTS.md`/`CLAUDE.md` -- is capped per '
             'LINE at 120 columns, the ceiling the family already uses for code, declared as the same shrink-only '
             'named set the CJK ratchet uses, because a line-COUNT ratchet is blind to line length and a rewrite '
             'can double a page width while lowering its line count and read as an improvement.'

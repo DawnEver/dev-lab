@@ -13,6 +13,59 @@ The family flow, stated once in [the integration branch](docs-src/dev/integratio
 
 The mechanisms are documented in `docs-src/dev/`; this repo declares its names in `pyproject.toml`.
 
+## Four repos install this one, and none of them can see this history
+
+`lab-commons` is the leaf: consumer-a, consumer-b and consumer-c import it, and nothing here
+imports them. Every constraint below follows from that one fact.
+
+- **A consumer inherits every runtime dependency**, including the ones it never uses. A new entry
+  in `[project].dependencies` is a decision typed into the named set in
+  `tests/test_arch_dependencies.py`, not a line that appears. Heavier or optional machinery ships
+  behind an extra and an opt-in subpackage, as `dev_lab.dev`, `lab_commons.em` and `lab_commons.viz` do.
+- **An upper bound here is a resolver constraint imposed on four trees.** A floor states what this
+  code needs; a ceiling is somebody's bad afternoon, inherited. Fix the incompatibility, or pin it
+  in the consumer that actually has the problem.
+- **Importing the top level must not drag in a tier it did not ask for.** `dev_lab.dev`,
+  `lab_commons.em` and `lab_commons.viz` are opt-in IMPORTS, each pinned against a fresh interpreter
+  (`test_dev_gate.py`, `test_viz_gate.py`) — a convenience re-export would silently repeal that.
+- **`__all__` is the contract, and there is no second place a consumer learns it was wrong.**
+  A public module declares its surface, and every declared name resolves.
+- **No `_legacy`/`_compat` alias, no deprecation shim, no dual entry point.** A caller that is not
+  made to move does not move; two spellings of one idea then drift in four trees at once. The
+  rename breaks, deliberately, at a point somebody chooses — and the consumers move WITH it.
+- **A behaviour a consumer's guard rests on is load-bearing even when it is private.**
+  `_detect_repo_root` is imported by name across the family: change what it returns and four
+  architecture suites change verdict, so the change is a breaking one whatever its underscore says.
+
+Cites, from the shared registry: `LATEST-DEPENDENCIES`, `PUBLIC-SURFACE-DECLARED`,
+`FIX-THE-CAUSE`, `NO-LAZY-IMPORT`.
+
+## A rule is shared; the thing that refuses one is not
+
+This repo AUTHORS the family's development rules (`dev_lab.dev.rules`). These are the
+constraints that come with owning that file. Universal rules are not restated here — they are
+cited by ID, and `tests/test_the_adoption_accounts_for_every_rule.py` is what makes the citation
+a check.
+
+- **A STATEMENT is universal; a MECHANISM is a path in ONE tree. Never conflate them.** A row in
+  `_rule_rows.py` carries the statement plus the EXISTENCE PROOF that the rule is enforceable at
+  all. It never grades another repo: an adopter supplies its own mechanisms through `Adoption`.
+  Measured 2026-09-15 — when all 70 mechanisms were one repo's paths, lab-commons refused its own
+  registry with 70 failures.
+- **A row with no mechanism may not exist**, and a rule this repo cannot yet refuse goes in the
+  ABSENT set BY NAME (`NAMED-SETS-NOT-COUNTS`).
+- **A rule is added to `_rule_rows.py` only after the NOUN TEST**: delete every domain noun; if
+  nothing constrains anything afterwards, the rule belongs to the repo that has that noun.
+- **Rows are never deleted to make something pass.** A mechanism that has gone is repointed or
+  restored — deleting the row is the one repair that turns a guarantee back into prose.
+- **A rule ID is a handle, not a display name.** Renaming one is a breaking change to every
+  adopter's rules page and its adoption test; rewording the STATEMENT is not.
+- **This repo may not be the worst adopter of its own registry.** A gap closed here deletes its
+  name from `_ABSENT` and lowers `_ABSENT_CEILING` in the same edit.
+
+Cites, from the shared registry: `NAMED-SETS-NOT-COUNTS`, `ESCAPE-HATCH-CEILING`,
+`DECLARATION-LIES`, `REGISTRY-OWNS-THE-DECISION`.
+
 <!-- BEGIN dev-lab family section -->
 
 ## Family principles
