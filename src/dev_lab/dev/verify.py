@@ -50,6 +50,8 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import depneeds, verifiedby
+from dev_lab.dev.changeselect import changed_paths, select
+from dev_lab.dev.footprint import Footprints
 from dev_lab.dev.forgeclaim import this_machine
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgerequest import offer_line
@@ -73,6 +75,7 @@ from dev_lab.dev.verdictstore import ContentKey, Found
 from dev_lab.dev.verifybox import (
     MEASURE_WAIT_S,
     WAIT_S,
+    serial_width,
 )
 from dev_lab.dev.verifysteps import run_verify, tree_address
 from dev_lab.dev.workstationverdict import after_run, before_run, head_tree, workstation_fields, workstation_refusal
@@ -175,6 +178,22 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument('--part', default='', help='produce this part (tests/<part>): exactly its need-set')
+    parser.add_argument(
+        '--changed',
+        nargs='?',
+        const='',
+        default=None,
+        metavar='RANGE',
+        help='select only the tests a change reaches (dev_lab.dev.changeselect): the working tree, or a git RANGE',
+    )
+    parser.add_argument(
+        '--serial', action='store_true', help='run with no workers (-n 0): a lost worker cannot hide which test hung'
+    )
+    parser.add_argument(
+        '--price',
+        action='store_true',
+        help='price every test: serial, no per-test timeout (--timeout=0) and every duration (--durations=0)',
+    )
     parser.add_argument('--rerun', action='store_true', help='run even when the run cache already judged this key')
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
     if retired := _retired(sys.argv[1:] if argv is None else argv):
@@ -182,7 +201,8 @@ def main(argv: list[str] | None = None) -> int:
         return ProducerExit.USAGE
     parsed = parser.parse_args(argv)
     root = project_root()
-    arguments = tuple(parsed.pytest_args)
+    chosen = () if parsed.changed is None else _changed_selection(root, parsed.changed)
+    arguments = (*(() if isinstance(chosen, int) else chosen), *parsed.pytest_args, *_mode_args(parsed))
     targeted = is_targeted(root, arguments)
     outside, workstation = _outside(root, parsed.part, arguments, targeted=targeted)
     missing = missing_paths(root, arguments)
@@ -196,7 +216,8 @@ def main(argv: list[str] | None = None) -> int:
         refused = refused or f'verify: refused -- {why}'
     refused = refused or _needs_refusal(root, parsed.part)
     refused = refused or scan_refusal(root)  # DECLARED-LAYOUT / NO-BACKUP-COPIES: the incremental scan, every run
-    if (early := _early(root, refused, producer=outside is None)) is not None:
+    early = chosen if isinstance(chosen, int) else _early(root, refused, producer=outside is None)
+    if early is not None:
         return early
     wait_s = parsed.lock_wait if parsed.lock_wait is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
     stale = lock_freshness(root)
@@ -313,6 +334,39 @@ def _early(root: Path, refused: str | None, *, producer: bool) -> int | None:
     except verifiedby.VerifyByRefused:
         consumers = None
     return None if consumers == () else verifiedby.main(root, producer=producer)
+
+
+def _mode_args(parsed: argparse.Namespace) -> tuple[str, ...]:
+    """The pytest arguments ``--serial`` / ``--price`` stand for, appended last so they win.
+
+    PRICING IS ALWAYS SERIAL: a duration measured while siblings compete for the box is a fact about the box,
+    not the test; and any finite ceiling censors the very duration being priced.
+    """
+    price = ('--timeout=0', '--durations=0') if parsed.price else ()
+    return (*price, *(serial_width() if parsed.serial or parsed.price else ()))
+
+
+def _changed_selection(root: Path, range_spec: str) -> tuple[str, ...] | int:
+    """The paths ``--changed`` selects, or the exit code when it selects nothing to run."""
+    try:
+        changed = changed_paths(root, range_spec)
+    except ValueError as why:
+        emit(f'verify: refused -- --changed: {why}', err=True)
+        return ProducerExit.USAGE
+    try:
+        footprints = Footprints.working(root)
+        picked = select(footprints, changed)
+    except ValueError as why:
+        emit(f'verify: refused -- --changed: {why}', err=True)
+        return ProducerExit.USAGE
+    if not picked:
+        emit(f'verify: --changed selects no test -- {len(changed)} changed path(s) reach none; nothing ran.')
+        return EXIT_CODES[Conclusion.PASS]
+    if len(picked) == len(footprints.tests()):
+        emit('verify: --changed reaches every test file: this is the whole suite, not a selection', err=True)
+        return ()
+    emit(f'verify: --changed selects {len(picked)} test file(s) from {len(changed)} change(s)')
+    return picked
 
 
 def _retired(argv: list[str]) -> str | None:

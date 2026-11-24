@@ -886,7 +886,7 @@ class TestThePlantedControl:
         (tmp_path / 'tests' / 'test_other.py').write_text('def test_a() -> None: ...\n', encoding='utf-8')
         commands = []
 
-        def recorded_step(command, *, cwd, handle, extra_env=None) -> int:
+        def recorded_step(command, *, cwd, handle, extra_env=None, **_where: object) -> int:
             assert cwd == tmp_path
             commands.append(tuple(command))
             if 'pytest' in command:
@@ -946,7 +946,7 @@ class TestThePlantedControl:
         )
         launched: list[tuple[str, ...]] = []
 
-        def recorded_step(command, *, cwd, handle, extra_env=None) -> int:
+        def recorded_step(command, *, cwd, handle, extra_env=None, **_where: object) -> int:
             assert cwd == tmp_path
             launched.append(tuple(command))
             if 'pytest' in command:
@@ -1975,7 +1975,7 @@ def test_the_pytest_step_writes_a_coverage_report_to_the_output_tree_and_never_g
     dated = f'out/logs/{"/".join(date_parts())}/coverage'
     launched: list[tuple[tuple[str, ...], dict[str, str]]] = []
 
-    def recorded_step(command, *, cwd, handle, extra_env=None) -> int:
+    def recorded_step(command, *, cwd, handle, extra_env=None, **_where: object) -> int:
         assert cwd == tmp_path
         launched.append((tuple(command), dict(extra_env or {})))
         if 'pytest' in command and extra_env and extra_env.get(serialpass.STAGE_ENV) == 'parallel':

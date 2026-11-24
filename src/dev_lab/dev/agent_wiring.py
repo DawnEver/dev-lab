@@ -232,6 +232,7 @@ _STOPS: Final = ('Stop', 'SubagentStop')
 #: scratch baseline stays inline: it must see the tree as the session found it.
 WIRING: Final = (
     Wire(('PreToolUse',), 'dev_lab.dev.codeplace', tools=WRITE_TOOLS, may_block=True),
+    Wire(('PreToolUse',), 'dev_lab.dev.docrules', tools=WRITE_TOOLS),
     Wire(('PostToolUse', 'PostToolUseFailure'), 'dev_lab.dev.walls', ('post-tool',), tools=SHELL_TOOLS),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.taskauthority', ('hook',)),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.hostalarm', ('hook',), detached=True),

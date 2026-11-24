@@ -41,6 +41,23 @@ are too unqualified to survive being flattened into a namespace this wide.
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
   reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.
 * :mod:`dev_lab.dev.verifysteps` — the steps verify runs under one root into one log, and the verdict they fold into.
+* :mod:`dev_lab.dev.changeselect` — which test files a change reaches, read off the working tree's footprints
+  (:mod:`dev_lab.dev.footprint`); ``verify --changed [RANGE]`` runs them.
+* :mod:`dev_lab.dev.stallwatch` — ends a pytest step silent AND idle for twice its declared per-test timeout.
+* :mod:`dev_lab.dev.worktreeseeds` — ``[tool.dev_lab.worktree] seeds``: gitignored inputs ``dep --bootstrap``
+  copies from the main checkout into a worktree that lacks them.
+* :mod:`dev_lab.dev.docrules` — the ``PreToolUse`` row re-injecting the family's doc rules, quoted from their one home,
+  before a document edit.
+* :mod:`dev_lab.dev.notices` — the third-party licence notice from the installed environment; the product is
+  ``[tool.dev_lab.notices]`` data, and an unidentified licence is refused by name.
+* :mod:`dev_lab.dev.cratefresh` — the Rust side of dependency freshness: a crate whose declared spec cannot reach
+  crates.io's newest release.
+* :mod:`dev_lab.dev.toolchain` — what a checkout needs on this host before its environment builds (git, uv, a
+  Python fitting its ``requires-python``, cargo, a linker), each gap with its remedy; ``dep --bootstrap`` prints it.
+* :mod:`dev_lab.dev.docrows` — a repo's documentation site as ``[tool.dev_lab.docsite]`` rows (pdoc, cargo, markdown,
+  notices) built through :mod:`dev_lab.dev.docsite`; no per-repo Python.
+* :mod:`dev_lab.dev.importedges` — the family's one static import-edge reader for architecture tests (every depth,
+  both spellings, never executing the module).
 * :mod:`dev_lab.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
   one measured caveat recorded in its docstring: ``resolve_home``'s auto-detection anchors on its
   own file, so a profile carries an ``anchor`` for the checkout it describes.

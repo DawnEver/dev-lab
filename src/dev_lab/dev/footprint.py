@@ -265,6 +265,24 @@ class Footprints:
             tracked, _blobs(root, sha, sorted(p for p in tracked if p.endswith('.py'))), everywhere, reads, pyproject
         )
 
+    @classmethod
+    def working(cls, root: Path) -> Footprints:
+        """The footprints of *root*'s WORKING TREE: tracked and untracked-not-ignored files, as they are on disk.
+
+        What ``verify --changed`` selects from (:mod:`dev_lab.dev.changeselect`): an uncommitted edit, or a new test
+        file, has no commit to be read at.
+        """
+        listed = _git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z').split('\0')
+        tracked = frozenset(path for path in listed if path and (root / path).is_file())
+        pyproject = (root / 'pyproject.toml').read_text(encoding='utf-8') if 'pyproject.toml' in tracked else ''
+        everywhere, reads = declared(pyproject)
+        texts = {
+            path: (root / path).read_text(encoding='utf-8', errors='replace')
+            for path in sorted(tracked)
+            if path.endswith('.py')
+        }
+        return cls(tracked, texts, everywhere, reads, pyproject)
+
     def tests(self) -> tuple[str, ...]:
         """The test files of this commit (:func:`test_files`)."""
         return test_files(self.pyproject, sorted(self.tracked))

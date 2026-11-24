@@ -147,3 +147,25 @@ def test_the_real_engine_refuses_a_declared_clone_and_passes_an_undeclared_one(
     assert refused.startswith(f'{familyrepos.RULE_ID}:'), refused
     other = agenthooks.decide('git clone https://forge.example/o/other.git', rules, cwd=session)
     assert other is None or not other.startswith(f'{familyrepos.RULE_ID}:')
+
+
+def test_clone_places_a_missing_repo_at_its_declared_path_and_never_touches_one_present(tmp_path: Path) -> None:
+    present = tmp_path / 'b'
+    present.mkdir()
+    live = {
+        'family_repos': {
+            'a': {'remote': 'https://forge/x/a.git', 'branch': 'integrate/main'},
+            'b': {'remote': 'https://forge/x/b.git', 'branch': 'main'},
+            'c': {'remote': 'https://forge/x/c.git', 'branch': 'main'},
+        },
+        'repos': {'a': str(tmp_path / 'a'), 'b': str(present)},
+    }
+    cloned: list[tuple[str, str, Path]] = []
+    booted: list[Path] = []
+    lines, ok = familyrepos.clone_missing(
+        live, net=lambda *where: cloned.append(where) or True, bootstrap=lambda dest: booted.append(dest) or True
+    )
+    assert cloned == [('https://forge/x/a.git', 'integrate/main', tmp_path / 'a')]
+    assert booted == [tmp_path / 'a']
+    assert not ok  # planted control: c has no declared place, so the run says no
+    assert any(line.startswith('family repo c: no [repos] path') for line in lines)
