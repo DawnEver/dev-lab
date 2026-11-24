@@ -1,6 +1,16 @@
 # Illustrative consumer declaration: the worked example of docs-src/dev/ir-schema.md.
+[build-system]
+requires = ["hatchling", "dev-lab"]
+build-backend = "hatchling.build"
+
 [project]
 name = "sample-pkg"
+version = "0.0.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sample_pkg"]
+
+[tool.hatch.build.hooks.ir-schema]
 
 [tool.dev_lab.ir_schema]
 version = "1.0.0"

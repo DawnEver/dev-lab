@@ -174,7 +174,7 @@ One byte sequence per value; `content_hash = sha256(canonical bytes)`, hex.
 ## Python output
 
 `python -m dev_lab.dev.irschema generate` refuses a bump below the change's class, then writes `<package_dir>/_ir_<module>.py` for each module. The
-files are git-ignored; `generate` regenerates them (a package-build hook is not wired yet). No Pydantic; the runtime needs `numpy` only, and
+files are git-ignored. No Pydantic; the runtime needs `numpy` only, and
 the codec needs `pint`.
 
 - Records are `@dataclass(frozen=True, slots=True, kw_only=True)`; `__post_init__` validates and
@@ -186,6 +186,20 @@ the codec needs `pint`.
   `load(path)`. Equality is equality of canonical bytes.
 - Beside the modules sit `_ir_runtime.py` (validation, canonical JSON, envelope, freshness; numpy only) and
   `_ir_codec.py` (the boundary; Pint), copied verbatim from `dev_lab.dev._ir_runtime` / `_ir_codec`.
+
+- Ids live in one shared `_ir_ids.py`, and a field names its record or enum target as text resolved through the
+  runtime's registry. Two modules may therefore reference each other: each imports the other only after
+  defining its own classes.
+- **At package build**, the hatchling hook `dev_lab.dev.irhatch` runs the same generation and ships the files
+  in the wheel. A consumer declares it:
+
+```toml
+[build-system]
+requires = ["hatchling", "dev-lab"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.ir-schema]
+```
 
 ### Freshness
 

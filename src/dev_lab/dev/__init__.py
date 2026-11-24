@@ -54,6 +54,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   its quantities catalogue as frozen values (``docs-src/dev/ir-schema.md``).
 * :mod:`dev_lab.dev.ircheck` — the IR checked across modules (references, quantities, keys, cycles); ``load``.
 * :mod:`dev_lab.dev.irpython` — the IR's generated Python: frozen dataclasses over a copied runtime and codec.
+* :mod:`dev_lab.dev.irhatch` — the IR build hook (hatch entry point ``ir-schema``): a wheel build generates and
+  ships the IR modules. Imports hatchling; loaded only by a build.
 * :mod:`dev_lab.dev.irrust` — the IR's generated Rust: one ``ir.rs`` a ``build.rs`` writes into ``OUT_DIR``.
 * :mod:`dev_lab.dev.irversion` — the class of an IR change (PATCH/MINOR/MAJOR) against a git revision, and the
   refusal of a declared bump below it.

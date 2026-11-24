@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import tomllib
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import NamedTuple, NoReturn
 
@@ -55,18 +56,35 @@ def refuse_read(message: str) -> NoReturn:
     raise IRReadError(message)
 
 
+#: Every generated record and enum class by its qualified name. A field names its target as text and is resolved
+#: here at use, so two modules may reference each other without an import cycle at definition time.
+REGISTRY: dict[str, type] = {}
+
+
+def target(spec: F) -> type:
+    """The class *spec* names."""
+    return REGISTRY[spec.target]
+
+
+def register(name: str, cls: type) -> type:
+    """Record *cls* in :data:`REGISTRY` under *name*."""
+    REGISTRY[name] = cls
+    return cls
+
+
 class F(NamedTuple):
     """One field of a record: everything validation, serialization and the codec need."""
 
     name: str
     kind: str  # bool int float complex str enum id record list array
     optional: bool = False
-    target: object = None  # the Enum or record class
+    target: str = ''  # 'module.Name' of the Enum or record class, resolved through REGISTRY
     item: F | None = None  # a list's element
     dtype: str = ''
     shape: tuple[int | str, ...] = ()
     unit: str = ''
     unique_by: str = ''
+    key: Callable[[object], object] | None = None  # reads unique_by off one listed record
     csr_values: str = ''
     gauge: str = ''
     db: tuple[float, int] | None = None
@@ -119,8 +137,9 @@ def _text(spec: F, value: object, path: str) -> str:
 
 
 def _instance(spec: F, value: object, path: str) -> object:
-    if not isinstance(value, spec.target):
-        fail(path, spec.target.__name__, _type_name(value))
+    cls = target(spec)
+    if not isinstance(value, cls):
+        fail(path, cls.__name__, _type_name(value))
     return value
 
 
@@ -200,15 +219,15 @@ def _item(spec: F, value: object, path: str, dims: dict, bounds: dict) -> object
     if spec.kind == 'array':
         return _array(spec, value, path, dims, bounds)
     if spec.kind == 'list':
-        if isinstance(value, (str, bytes)) or not hasattr(value, '__iter__'):
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
             fail(path, 'a sequence', _type_name(value))
         items = tuple(_item(spec.item, v, f'{path}[{i}]', dims, bounds) for i, v in enumerate(value))
         if spec.unique_by:
-            keys = [getattr(v, spec.unique_by) for v in items]
+            keys = [spec.key(v) for v in items]
             seen = {k for k in keys if keys.count(k) > 1}
             if seen:
                 fail(path, f'unique {spec.unique_by}', f'duplicate {min(seen)!r}')
-            items = tuple(sorted(items, key=lambda v: getattr(v, spec.unique_by)))
+            items = tuple(sorted(items, key=spec.key))
         return items
     value = _scalar(spec, value, path)
     if spec.kind == 'record':
@@ -217,23 +236,23 @@ def _item(spec: F, value: object, path: str, dims: dict, bounds: dict) -> object
 
 
 def post_init(record: object) -> None:
-    """Validate and normalize *record* in place; bind its tree's symbolic dims."""
+    """Validate and normalize *record* through its generated ``_ir_values``/``_ir_set``; bind its tree's dims."""
     cls = type(record)
     head = cls.__name__
     dims: dict[str, tuple[int, str]] = {}
-    for spec in cls._ir_fields:
-        value = getattr(record, spec.name)
+    values = {}
+    for spec, value in zip(cls._ir_fields, record._ir_values(), strict=True):  # noqa: SLF001 -- generated
         path = f'{head}.{spec.name}'
         if value is None:
             if not spec.optional:
                 fail(path, 'a value', 'None')
+            values[spec.name] = None
             continue
-        object.__setattr__(record, spec.name, _item(spec, value, path, dims, cls._ir_bounds))
+        values[spec.name] = _item(spec, value, path, dims, cls._ir_bounds)
     for spec in cls._ir_fields:
-        offsets = getattr(record, spec.name)
-        if spec.csr_values and offsets is not None:
-            _csr(offsets, getattr(record, spec.csr_values), f'{head}.{spec.name}')
-    object.__setattr__(record, '_ir_dims', dims)
+        if spec.csr_values and values[spec.name] is not None:
+            _csr(values[spec.name], values[spec.csr_values], f'{head}.{spec.name}')
+    record._ir_set(tuple(values.values()), dims)  # noqa: SLF001 -- generated
 
 
 def build(cls: type, kwargs: dict, path: str) -> object:
@@ -273,9 +292,9 @@ def _tree_of(spec: F, value: object) -> object:
 def to_tree(record: object) -> dict:
     """The JSON tree of *record*; absent optionals are omitted."""
     return {
-        spec.name: _tree_of(spec, getattr(record, spec.name))
-        for spec in type(record)._ir_fields  # noqa: SLF001 -- the runtime owns the table it reads
-        if getattr(record, spec.name) is not None
+        spec.name: _tree_of(spec, value)
+        for spec, value in zip(type(record)._ir_fields, record._ir_values(), strict=True)  # noqa: SLF001
+        if value is not None
     }
 
 
@@ -308,12 +327,12 @@ def _from_tree_item(spec: F, tree: object, path: str) -> object:
             fail(path, 'a list', _type_name(tree))
         return tuple(_from_tree_item(spec.item, v, f'{path}[{i}]') for i, v in enumerate(tree))
     if kind == 'record':
-        return from_tree(spec.target, tree, path)
+        return from_tree(target(spec), tree, path)
     if kind == 'enum':
         try:
-            return spec.target(tree)
+            return target(spec)(tree)
         except ValueError:
-            fail(path, f'one of {[m.value for m in spec.target]}', repr(tree))
+            fail(path, f'one of {[m.value for m in target(spec)]}', repr(tree))
     if kind == 'complex':
         if not (isinstance(tree, list) and len(tree) == len('ri')):
             fail(path, '[re, im]', repr(tree))

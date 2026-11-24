@@ -48,6 +48,8 @@ def migrate(ir: IR, path: Path) -> str | None:
             door = f'add MIGRATIONS[{major}] to {ir.declaration.migrations}'
             return _refusal(path, f'no step from MAJOR {major} to {major + 1}', door)
         value = steps[major](name, value)
-    cls = getattr(importlib.import_module(f'{ir.declaration.package}._ir_{module}'), record)
+    package = ir.declaration.package
+    importlib.import_module(f'{package}._ir_{module}')  # registers its classes
+    cls = importlib.import_module(f'{package}._ir_runtime').REGISTRY[name]
     cls.from_json(json.dumps(value).encode()).dump(path)
     return None

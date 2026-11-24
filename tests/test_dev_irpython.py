@@ -78,7 +78,7 @@ def test_every_generated_file_carries_its_fingerprint_and_is_ignored(repo: Path)
     ir = load(repo)
     written = irpython.write(ir)
     names = {p.name for p in written}
-    assert names == {'_ir_runtime.py', '_ir_codec.py', '_ir_widgets.py', '_ir_samples.py', '.gitignore'}
+    assert names == {'_ir_runtime.py', '_ir_codec.py', '_ir_ids.py', '_ir_widgets.py', '_ir_samples.py', '.gitignore'}
     first = (repo / 'src' / 'sample_pkg' / '_ir_widgets.py').read_text(encoding='utf-8').splitlines()[0]
     assert first == irpython.FINGERPRINT_PREFIX + irpython.fingerprint(ir, 'widgets')
     assert '_ir_*.py' in (repo / 'src' / 'sample_pkg' / '.gitignore').read_text(encoding='utf-8')
@@ -224,3 +224,44 @@ def test_an_edited_schema_makes_the_generated_module_refuse_to_import(ir: Simple
     _purge()
     with pytest.raises(ImportError, match='IR-STALE-GENERATED'):
         importlib.import_module('sample_pkg._ir_widgets')
+
+
+OWNER = """
+[record.Owner]
+doc = "Planted control: widgets holds a samples record by value and by id, while samples already holds widgets."
+[record.Owner.field.id]
+type = "id:Owner"
+[record.Owner.field.favourite]
+type = "id:samples.Tag"
+[record.Owner.field.batch]
+type = "record:samples.Batch"
+"""
+TAG = """
+[record.Tag]
+[record.Tag.field.id]
+type = "id:Tag"
+[record.Tag.field.owner]
+type = "id:widgets.Owner"
+"""
+
+
+def test_two_modules_referencing_each_other_import_without_a_cycle(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with (repo / 'ir' / 'widgets.toml').open('a', encoding='utf-8') as handle:
+        handle.write(OWNER)
+    with (repo / 'ir' / 'samples.toml').open('a', encoding='utf-8') as handle:
+        handle.write(TAG)
+    irpython.write(load(repo))
+    monkeypatch.syspath_prepend(str(repo / 'src'))
+    _purge()
+    try:
+        w = importlib.import_module('sample_pkg._ir_widgets')
+        s = importlib.import_module('sample_pkg._ir_samples')
+        batch = s.Batch(widgets=[], samples=[], hit_offsets=np.array([0], dtype=np.int64), hit_times=np.zeros(0))
+        owner = w.Owner(id='o-1', favourite='t-1', batch=batch)
+        tag = s.Tag(id='t-1', owner='o-1')
+        assert w.Owner.from_json(owner.to_json()) == owner
+        assert s.Tag.from_json(tag.to_json()) == tag
+        with pytest.raises(importlib.import_module('sample_pkg._ir_runtime').IRValidationError, match=r'Owner\.batch'):
+            w.Owner(id='o-1', favourite='t-1', batch=tag)
+    finally:
+        _purge()

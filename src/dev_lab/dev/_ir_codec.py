@@ -16,9 +16,10 @@ from typing import Any
 import numpy as np
 import pint
 
-from ._ir_runtime import IRValidationError, build, fail
+from ._ir_runtime import IRValidationError, build, fail, target
 
-UREG = pint.UnitRegistry()
+#: The process's one registry (pint's application registry), so a re-import never rebuilds it.
+UREG = pint.get_application_registry()
 _NUMBER_UNIT = re.compile(r'^\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*(.*?)\s*$')
 
 
@@ -57,11 +58,11 @@ def _float_in(spec: object, value: object, path: str) -> object:
 def _value_in(spec: object, value: object, path: str) -> object:
     kind = spec.kind
     if kind == 'record':
-        return from_boundary(spec.target, value, path)
+        return from_boundary(target(spec), value, path)
     if kind == 'list':
         return tuple(_value_in(spec.item, v, f'{path}[{i}]') for i, v in enumerate(value))
     if kind == 'enum':
-        return spec.target(value)
+        return target(spec)(value)
     if kind == 'complex' and isinstance(value, Mapping):
         both = complex(value['re'], value['im'])
         return complex(_to_si(spec, both, value.get('unit', ''), path))
@@ -114,12 +115,14 @@ def to_boundary(record: object, units: Mapping[str, str] | None = None, prefix: 
     """Render *record* for a reader: *units* maps a dotted field path to its display unit (SI otherwise)."""
     units = units or {}
     out: dict[str, Any] = {}
-    for spec in type(record)._ir_fields:  # noqa: SLF001 -- the generated table is the codec's input
-        value = getattr(record, spec.name)
+    fields = type(record)._ir_fields  # noqa: SLF001 -- the generated table is the codec's input
+    values = dict(zip((spec.name for spec in fields), record._ir_values(), strict=True))  # noqa: SLF001
+    for spec in fields:
+        value = values[spec.name]
         if value is None:
             continue
         if spec.gauge:
-            value = value - getattr(record, spec.gauge)
+            value = value - values[spec.gauge]
         out[spec.name] = _value_out(spec, value, units, f'{prefix}{spec.name}.')
     return out
 
