@@ -142,7 +142,7 @@ def test_planted_a_hand_edited_line_reds_as_drifted(tmp_path: Path) -> None:
     report = inspect_file(path, base, delta)
     assert report.status == DRIFTED, report.detail
     assert 'missing: /.venv/' in report.offending
-    assert 'unexpected: .venv-local' in report.offending
+    assert 'unexpected: /.venv-local/' in report.offending
 
 
 def test_planted_a_deleted_base_line_reds(tmp_path: Path) -> None:
