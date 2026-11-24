@@ -62,7 +62,7 @@ def _pattern(entry: str) -> re.Pattern[str]:
             parts.append(r'[^/]+\.md')
         else:
             parts.append(re.escape(segment))
-    tail = r'(?:/.*)?' if entry.endswith('/') else ''
+    tail = r'/.+' if entry.endswith('/') else ''  # a directory entry holds files; a same-named FILE is a stray
     return re.compile('/'.join(parts) + tail)
 
 

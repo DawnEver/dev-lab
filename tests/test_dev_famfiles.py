@@ -25,7 +25,6 @@ from dev_lab.dev.famfiles import (
     PROJECT_FILES,
     RENDERERS,
     RETIRED_PROJECT_FILES,
-    _run,
     due_renderers,
     is_member,
     main,
@@ -185,7 +184,7 @@ def test_the_renderers_are_derived_from_the_generated_rows() -> None:
     those rows and from nowhere else.
     """
     assert {renderer.name for renderer in RENDERERS} == {
-        'agent_guard', 'autodoors', 'ciworkflows', 'devdocs', 'famfiles', 'hook_adoption',
+        'agent_guard', 'autodoors', 'ciworkflows', 'famfiles', 'hook_adoption',
     }  # fmt: skip
     unrendered = {row.path for row in PROJECT_FILES.values() if row.generated and row.renderer is None}
     assert unrendered == {'uv.lock'}, 'the lock is the door`s, every other generated file names its renderer'
@@ -256,18 +255,6 @@ def _index(root: Path, text: str) -> Path:
     return index
 
 
-def test_a_declared_input_makes_its_renderer_due_and_an_omitted_one_does_not(tmp_path: Path) -> None:
-    """2026-11-13: nothing wrote the docs pointer table, so each repo pasted it by hand.
-
-    PLANTED CONTROL: a repo whose declaration omits ``docs_base`` does not get the table, even holding an index.
-    """
-    _index(tmp_path, '# Dev\n')
-    _declare(tmp_path, 'deltas = "d.py"\n')
-    assert 'devdocs' not in {renderer.name for renderer in due_renderers(tmp_path)}
-    _declare(tmp_path, f'docs_base = "{_BASE}"\n')
-    assert 'devdocs' in {renderer.name for renderer in due_renderers(tmp_path)}
-
-
 def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path: Path) -> None:
     """``famfiles`` without ``--deltas`` is the one door: every renderer due, its inputs from the render table.
 
@@ -282,10 +269,9 @@ def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path:
     ran: list[list[str]] = []
     lines = render_repo(tmp_path, 'py', lambda argv, _root: ran.append(argv) or 0)
     assert [line.split(':')[0] for line in lines if line.endswith(': rendered')] == [
-        'famfiles', 'agent_guard', 'hook_adoption', 'autodoors', 'ciworkflows', 'devdocs',
+        'famfiles', 'agent_guard', 'hook_adoption', 'autodoors', 'ciworkflows',
     ]  # fmt: skip
     assert ran[2][-2:] == ['--adoption', 'scripts/deny_rules.py']
-    assert ran[5] == ['py', '-m', 'dev_lab.dev.devdocs', '--repo', str(tmp_path), '--base', _BASE]
     (hooks / 'deny-rules.json').unlink()
     _declare(tmp_path, f'deltas = "d.py"\ndocs_base = "{_BASE}"\n')
     assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in render_repo(
@@ -293,21 +279,6 @@ def test_the_one_door_runs_every_due_renderer_with_its_declared_inputs(tmp_path:
     )
     with pytest.raises(ValueError, match='the renderer famfiles exited 3'):
         render_repo(tmp_path, 'py', lambda _argv, _root: 3)
-
-
-def test_the_door_writes_the_pointer_table_end_to_end(tmp_path: Path) -> None:
-    """The real door in a real subprocess: the declared table lands in the index; an undeclared repo is untouched."""
-    index = _index(tmp_path, '# Dev\n')
-    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
-    assert main(['--repo', str(tmp_path)]) == 0
-    assert index.read_text(encoding='utf-8') == '# Dev\n', 'the control: no declaration, no table'
-    _declare(tmp_path, f'docs_base = "{_BASE}"\n')
-
-    def only_devdocs(argv: list[str], root: Path) -> int:
-        return _run(argv, root) if 'dev_lab.dev.devdocs' in argv else 0
-
-    assert 'devdocs: rendered' in render_repo(tmp_path, sys.executable, only_devdocs)
-    assert pointer_table(_BASE) in index.read_text(encoding='utf-8')
 
 
 def test_the_pointer_table_replaces_the_family_one_and_keeps_the_repos_own(tmp_path: Path) -> None:
@@ -339,7 +310,6 @@ def test_a_family_repo_with_no_render_table_gets_its_workflows(tmp_path: Path) -
     assert 'ciworkflows: rendered' in lines
     assert ['py', '-m', 'dev_lab.dev.ciworkflows', 'render', '--root', str(tmp_path)] in ran
     assert 'hook_adoption: skipped -- [tool.dev_lab.render] adoption is not declared' in lines
-    assert 'devdocs: skipped -- [tool.dev_lab.render] docs_base is not declared' in lines
 
 
 @pytest.mark.parametrize(

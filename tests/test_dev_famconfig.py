@@ -138,10 +138,10 @@ def test_planted_a_hand_edited_line_reds_as_drifted(tmp_path: Path) -> None:
     """PLANTED: one base line rewritten in place -- exactly the edit the seam exists to catch."""
     base, delta = _base(), _delta()
     path = tmp_path / '.gitignore'
-    path.write_text(render(base, delta).replace('.venv*', '.venv-local'), encoding='utf-8')
+    path.write_text(render(base, delta).replace('/.venv/', '/.venv-local/'), encoding='utf-8')
     report = inspect_file(path, base, delta)
     assert report.status == DRIFTED, report.detail
-    assert 'missing: .venv*' in report.offending
+    assert 'missing: /.venv/' in report.offending
     assert 'unexpected: .venv-local' in report.offending
 
 
@@ -149,11 +149,11 @@ def test_planted_a_deleted_base_line_reds(tmp_path: Path) -> None:
     """THE RATCHET'S FIRST SIDE: a base line cannot leave a rendered file without a declared drop."""
     base, delta = _base(), _delta()
     path = tmp_path / '.gitignore'
-    kept = [line for line in render(base, delta).splitlines() if line != '.venv*']
+    kept = [line for line in render(base, delta).splitlines() if line != '/.venv/']
     path.write_text('\n'.join(kept) + '\n', encoding='utf-8')
     report = inspect_file(path, base, delta)
     assert report.status == DRIFTED, report.detail
-    assert 'missing: .venv*' in report.offending
+    assert 'missing: /.venv/' in report.offending
 
 
 def test_planted_an_unstamped_file_reds_as_foreign_rather_than_drifted(tmp_path: Path) -> None:
@@ -179,11 +179,11 @@ def test_a_missing_file_is_absent_rather_than_clean(tmp_path: Path) -> None:
 def test_a_declared_drop_renders_its_reason_and_still_installs(tmp_path: Path) -> None:
     """A REMOVAL IS VISIBLE IN THE FILE, which is what distinguishes it from a drift on disk."""
     base = _base()
-    delta = Delta(repo='planted-repo', added=(), dropped={'.mypy_cache/': 'this repo runs no mypy'}, ceiling=0)
+    delta = Delta(repo='planted-repo', added=(), dropped={'/dist/': 'this repo builds no wheel'}, ceiling=0)
     path = tmp_path / '.gitignore'
     text = render(base, delta)
     path.write_text(text, encoding='utf-8')
-    assert '# dropped from the base by planted-repo: .mypy_cache/ -- this repo runs no mypy' in text
+    assert '# dropped from the base by planted-repo: /dist/ -- this repo builds no wheel' in text
     assert inspect_file(path, base, delta).status == INSTALLED
 
 
@@ -198,14 +198,14 @@ def test_a_drop_naming_a_line_the_base_does_not_have_is_refused() -> None:
 
 def test_a_drop_with_an_empty_reason_is_refused() -> None:
     """A reasonless drop is a drift with a declaration pinned to it, and reads as a decision."""
-    delta = Delta(repo='planted-repo', added=(), dropped={'.mypy_cache/': '   '}, ceiling=0)
+    delta = Delta(repo='planted-repo', added=(), dropped={'/dist/': '   '}, ceiling=0)
     with pytest.raises(ForkedDelta, match='empty reason'):
         render(_base(), delta)
 
 
 def test_a_delta_that_restates_a_base_line_is_refused() -> None:
     """THE FORK SEED: the base copied into the delta, where re-rendering no longer guards it."""
-    delta = Delta(repo='planted-repo', added=('.mypy_cache/',), dropped={}, ceiling=4)
+    delta = Delta(repo='planted-repo', added=('/dist/',), dropped={}, ceiling=4)
     with pytest.raises(ForkedDelta, match='the base already has it'):
         render(_base(), delta)
 
@@ -500,7 +500,7 @@ def test_an_ordinary_line_is_still_promotable_into_the_same_base() -> None:
 def test_the_live_base_is_order_free_today_and_the_scan_was_not_empty() -> None:
     """THE FLOOR. Four floating rules here since 2026-10-03; a reading that found none subsumes nothing, vacuously."""
     floating = tuple(line for line in _SORTED if floating_subject(line))
-    assert floating == ('**/.DS_Store', '**/.env', '**/__pycache__/', '**/__version__.py'), floating
+    assert floating == ('**/.DS_Store', '**/__pycache__/'), floating
     assert positional_base_lines(Base('.gitignore', _SORTED, RENDERED), floating_floor=len(floating)) == ()
     assert_base_is_order_free(_base())
 
