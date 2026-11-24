@@ -1,29 +1,38 @@
-"""WRITES-STAY-IN-THE-TREE: an agent may not write into a write-prone root outside every checkout.
+"""WRITES-STAY-IN-THE-TREE: an agent writes only into the writable roots its machine ALLOWS (ruling R8, 2026-11-24).
 
-User requirement 2026-11-05: an agent session left scripts in the OS temp dir (Git Bash ``/tmp``). The roots are
-declared once (:func:`dev_lab.dev.writeroots.write_prone_roots`), injected here so no test touches the real temp
-dir. Planted controls on both halves: reading a root, writing into the harness ``claude/`` subtree and writing
-into a checkout outside every root are admitted; a checkout INSIDE a root is no exemption (user ruling 2026-11-06).
+The allowlist is ``[writeroots] allow`` (undeclared: the family checkouts of ``[repos]``), injected here so no test
+reads the real machine file or touches the real temp dir. Planted controls on every judgement: a checkout, its
+worktree and a declared place are admitted; its sibling, a drive root, the temp dir, OneDrive and the harness's
+temp subtree are refused. The census half (:func:`dev_lab.dev.writeroots.write_prone_roots`) is tested first.
 """
+
+# ruff: noqa: S108 -- /tmp and its kin are the SUBJECT: spelled paths a write must be refused into, never used
 
 from __future__ import annotations
 
 import io
 import json
+import re
 from pathlib import Path
 
 import pytest
+from lab_commons.storage import Storage
 from lab_commons.temp import TEMP_PREFIX
 
-from dev_lab.dev import agenthooks
+from dev_lab.dev import writeroots
+from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
 from dev_lab.dev.codeplace import main
 from dev_lab.dev.famtests import tempprefix
-from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.writeroots import (
+    Allowance,
     Root,
+    allow_defects,
+    allowed_roots,
     excluded_paths,
+    judge,
     owned_globs,
     refuse_outside_tree,
+    shell_targets,
     write_prone_roots,
 )
 
@@ -78,121 +87,210 @@ def test_the_harness_subtree_and_a_declared_cache_are_excluded(machine: dict[str
     assert cache in excluded
 
 
+@pytest.fixture
+def family(tmp_path: Path) -> dict[str, Path]:
+    """A planted machine: two family checkouts side by side, a sibling, a temp dir, a home and a OneDrive."""
+    base = tmp_path / 'work'
+    found = {
+        'repo': base / 'repo-a',
+        'other': base / 'repo-b',
+        'sibling': base / 'not-a-checkout',
+        'temp': tmp_path / 'temp',
+        'home': tmp_path / 'home',
+        'onedrive': tmp_path / 'home' / 'OneDrive - <org>',
+    }
+    for one in found.values():
+        one.mkdir(parents=True, exist_ok=True)
+    return found
+
+
+def _fallback(family: dict[str, Path]) -> Allowance:
+    return allowed_roots(machine={}, repos={'a': family['repo'], 'b': family['other']}, env={})
+
+
+def test_undeclared_the_allowlist_is_the_family_checkouts(family: dict[str, Path]) -> None:
+    allowed = _fallback(family)
+    assert allowed == Allowance((family['repo'], family['other']), 'fallback')
+
+
+def test_a_declared_allowlist_replaces_the_fallback_and_expands_its_tokens(family: dict[str, Path]) -> None:
+    """Spelled paths, never created: pytest's tmp_path lies under the OS temp, which no allowlist may name."""
+    extra = 'D:/Documents/lab'
+    allowed = allowed_roots(
+        machine={'allow': ['{repos}', '{lab_root}', extra]},
+        repos={'a': family['repo']},
+        env={'LAB_ROOT': str(family['other'])},
+    )
+    assert allowed == Allowance((family['repo'], family['other'], Path(extra)), 'declared')
+    only = allowed_roots(machine={'allow': [extra]}, repos={'a': family['repo']}, env={})
+    assert only.roots == (Path(extra),), 'a declaration without {repos} allows no checkout'
+
+
+@pytest.mark.parametrize(
+    'entry',
+    [
+        '/', 'C:/', 'D:\\', '/c/', '~', 'C:/Users/<user>', '/home/<user>', '/tmp', '/var/tmp/x', 'C:/temp',
+        'C:/Users/<user>/AppData/Local/Temp', '~/src', 'D:/src/old', 'D:/OneDrive - <org>/Sync', 'relative/dir',
+        '{nope}', '', 3,
+    ],
+)  # fmt: skip
+def test_an_allow_entry_no_machine_may_declare_is_refused_by_name(entry: object) -> None:
+    defects = allow_defects([entry])
+    assert len(defects) == 1, (entry, defects)
+    assert repr(entry) in defects[0]
+    with pytest.raises(ValueError, match=r'hosts/<machine>\.toml \[writeroots\] allow'):
+        allowed_roots(machine={'allow': [entry]}, repos={}, env={})
+
+
+def test_an_ordinary_root_and_the_tokens_are_accepted() -> None:
+    """The planted control of the refusals above."""
+    assert allow_defects(['{repos}', '{lab_root}', 'D:/Documents/lab', '/gpfs01/home/me/lab', '~/work']) == []
+    assert allow_defects('D:/lab') != []
+
+
 @pytest.mark.parametrize(
     ('where', 'rel', 'refused'),
     [
+        ('repo', 'src/x.py', False),
+        ('repo', '.claude/worktrees/lane/x.py', False),
+        ('other', 'scratch/26/11/24/probe/run.sh', False),
+        ('sibling', 'x.py', True),
         ('temp', 'probe.py', True),
-        ('temp', 'a/b/notes.md', True),
-        ('drive', 'tmp/x.sh', True),
-        ('drive', 'src/thing.py', True),
-        ('home', 'temp/x.txt', True),
-        ('home', 'loose.py', True),
-        ('home', '.bashrc', False),
-        ('home', 'Documents/x.txt', False),
-        ('temp', 'claude/abc/session/tasks/out.txt', False),
-        ('drive', 'work/x.py', False),
+        ('temp', 'claude/abc/session/tasks/out.txt', True),  # the harness's subtree: $CLAUDE_JOB_DIR/tmp lives there
+        ('home', 'loose.txt', True),
+        ('home', '.bashrc', True),
+        ('home', 'src/repo/x.py', True),
+        ('onedrive', 'Sync/x.csv', True),
     ],
 )
-def test_a_write_into_a_root_is_refused_and_its_near_misses_are_not(
-    machine: dict[str, Path], where: str, rel: str, *, refused: bool
+def test_a_write_outside_every_allowed_root_is_refused(
+    family: dict[str, Path], where: str, rel: str, *, refused: bool
 ) -> None:
-    roots = _roots(machine)
-    reason = refuse_outside_tree(machine[where] / rel, roots=roots, excluded=excluded_paths(roots, machine={}, env={}))
+    reason = refuse_outside_tree(family[where] / rel, allowed=_fallback(family), admitted=())
     assert (reason is not None) is refused, rel
     if refused:
         assert reason.startswith('WRITES-STAY-IN-THE-TREE: ')
+        assert 'the fallback' in reason
+        assert family['repo'].as_posix() in reason
+        assert 'hosts/<machine>.toml [writeroots] allow' in reason
         assert 'output/logs/<yy>/<mm>/<dd>/<kind>/' in reason
-        assert 'scratch/' in reason
 
 
-def test_a_checkout_inside_a_root_is_refused_too(machine: dict[str, Path]) -> None:
-    """User ruling 2026-11-06: a checkout under the home ``src`` is an abandoned old version; both halves refuse."""
-    repo = machine['home'] / 'src' / 'repo'
-    (repo / '.git').mkdir(parents=True)
-    reason = refuse_outside_tree(repo / 'x.py', roots=_roots(machine), excluded=())
+def test_a_drive_root_is_refused(family: dict[str, Path]) -> None:
+    anchor = Path(family['repo'].anchor)
+    assert refuse_outside_tree(anchor / 'x.txt', allowed=_fallback(family), admitted=()) is not None
+
+
+def test_a_declared_place_is_admitted_and_a_declared_list_names_itself(family: dict[str, Path]) -> None:
+    cache = family['temp'] / 'uv-cache'
+    assert refuse_outside_tree(cache / 'x', allowed=_fallback(family), admitted=(cache,)) is None
+    allowed = Allowance((family['sibling'],), 'declared')
+    reason = refuse_outside_tree(family['repo'] / 'x', allowed=allowed, admitted=())
     assert reason is not None
+    assert "this machine's [writeroots] allow" in reason
+
+
+def test_the_admitted_places_are_caches_storage_excluded_and_the_harness_plans(tmp_path: Path) -> None:
+    excluded, cache, config = tmp_path / 'vendor', tmp_path / 'uv', tmp_path / 'cfg'
+    found = writeroots.admitted_paths(
+        machine={'excluded': [str(excluded)]},
+        env={'UV_CACHE_DIR': str(cache), 'CLAUDE_CONFIG_DIR': str(config)},
+        storage=Storage(roots={}),
+    )
+    assert set(found) == {excluded, cache, config / 'plans'}
+
+
+def test_an_unusable_declaration_refuses_by_name(monkeypatch: pytest.MonkeyPatch, family: dict[str, Path]) -> None:
+    monkeypatch.setattr(writeroots, 'declared', lambda: {'allow': ['/tmp']})
+    reason = refuse_outside_tree(family['repo'] / 'x', admitted=())
+    assert reason is not None
+    assert "'/tmp' is refused" in reason
+
+
+@pytest.mark.parametrize(
+    ('command', 'targets'),
+    [
+        ('echo x > /tmp/a.py', [('/tmp/a.py', '')]),
+        ("cat <<'EOF' > /tmp/x\necho > not/a/target\nEOF", [('/tmp/x', '')]),
+        ('cat > "/tmp/my file" <<EOF\nhi\nEOF', [('/tmp/my file', '')]),
+        ('python a.py 2>> err.log 2>&1 | tee -a out.txt b.txt', [('err.log', ''), ('out.txt', ''), ('b.txt', '')]),
+        ('cp -r a b /tmp/', [('/tmp/', '')]),
+        ('cd /tmp && mkdir -p x y', [('x', '/tmp'), ('y', '/tmp')]),
+        ('cd /tmp; cd sub && touch f', [('f', '/tmp/sub')]),
+        ('dd if=a of=/c/x.bin', [('/c/x.bin', '')]),
+        ('Set-Content -Path D:\\x.txt -Value 1', [('D:\\x.txt', '')]),
+        ('New-Item -ItemType File D:\\var\\x.txt', [('D:\\var\\x.txt', '')]),
+        ('echo x 2>/dev/null > $null', []),
+        ('cat /tmp/a | grep b', []),
+    ],
+)
+def test_the_shell_targets_are_every_place_a_line_writes(command: str, targets: list[tuple[str, str]]) -> None:
+    assert shell_targets(command) == targets
+
+
+def _payload(command: str, cwd: Path) -> dict[str, object]:
+    return {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(cwd)}
+
+
+@pytest.mark.parametrize('command', WRITES_STAY_IN_THE_TREE['refuses'])
+def test_every_refusal_of_the_row_is_prefiltered_and_refused_by_the_judge(
+    family: dict[str, Path], monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """The row's ``refuses`` are its planted cases: the prefilter must pass each to the judge, which must refuse it."""
+    monkeypatch.delenv('CLAUDE_JOB_DIR', raising=False)
+    assert re.search(WRITES_STAY_IN_THE_TREE['pattern'], command), command
+    reason = judge(_payload(command, family['repo']), allowed=_fallback(family), admitted=())
+    assert reason is not None, command
     assert reason.startswith('WRITES-STAY-IN-THE-TREE: ')
 
 
-def test_the_write_hook_denies_a_write_into_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
-    """The Write/Edit/NotebookEdit half rides the ``codeplace`` write hook, which reads the real roots."""
-    temp = tmp_path / 'temp'
-    temp.mkdir()
-    monkeypatch.setenv('TEMP', str(temp))
-    monkeypatch.setenv('TMP', str(temp))
-    monkeypatch.setenv('TMPDIR', str(temp))
-    monkeypatch.setattr('tempfile.tempdir', str(temp))
-    home = tmp_path / 'home'
-    (home / 'src' / 'repo' / '.git').mkdir(parents=True)
-    monkeypatch.setenv('HOME', str(home))
-    monkeypatch.setenv('USERPROFILE', str(home))
+@pytest.mark.parametrize('command', WRITES_STAY_IN_THE_TREE['permits'])
+def test_every_permit_of_the_row_is_admitted(family: dict[str, Path], command: str) -> None:
+    assert judge(_payload(command, family['repo']), allowed=_fallback(family), admitted=()) is None, command
+
+
+def test_the_prefilter_starts_no_judge_on_a_write_below_the_cwd() -> None:
+    """The cheap half: a line writing only relative paths below its cwd spawns no interpreter."""
+    for command in ('echo x > scratch/a.sh', 'pytest -q > output/logs/x.log 2>&1', 'echo x 2>/dev/null'):
+        assert not re.search(WRITES_STAY_IN_THE_TREE['pattern'], command), command
+
+
+def test_a_set_job_dir_is_placed_and_still_refused(family: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """``$CLAUDE_JOB_DIR/tmp`` is refused whether the variable is unset (unplaceable) or set (outside every root)."""
+    monkeypatch.setenv('CLAUDE_JOB_DIR', str(family['temp'] / 'claude' / 'job'))
+    reason = judge(_payload('echo x > $CLAUDE_JOB_DIR/tmp/a', family['repo']), allowed=_fallback(family), admitted=())
+    assert reason is not None
+    assert 'is outside every writable root' in reason
+
+
+def test_the_judge_door_exits_one_with_the_refusal(family: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(writeroots, 'declared', dict)
+    monkeypatch.setattr(writeroots.machine_home, 'repos', lambda: {'a': family['repo']})
+    monkeypatch.setattr(writeroots, 'admitted_paths', lambda: ())
+    out = io.BytesIO()
+    bad = json.dumps(_payload(f'echo x > {family["sibling"].as_posix()}/a', family['repo'])).encode()
+    assert writeroots.main(['--admit'], stdin=io.BytesIO(bad), stdout=out) == 1
+    assert out.getvalue().decode().startswith('WRITES-STAY-IN-THE-TREE: ')
+    good = json.dumps(_payload(f'echo x > {family["repo"].as_posix()}/a', family['repo'])).encode()
+    assert writeroots.main(['--admit'], stdin=io.BytesIO(good), stdout=io.BytesIO()) == 0
+
+
+def test_the_write_hook_denies_a_write_outside_the_allowlist(
+    family: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The Write/Edit/NotebookEdit half rides the ``codeplace`` write hook."""
+    monkeypatch.setattr(writeroots, 'declared', dict)
+    monkeypatch.setattr(writeroots.machine_home, 'repos', lambda: {'a': family['repo']})
+    monkeypatch.setattr(writeroots, 'admitted_paths', lambda: ())
     for tool, key in (('Write', 'file_path'), ('NotebookEdit', 'notebook_path')):
-        bad = json.dumps({'tool_name': tool, 'tool_input': {key: str(temp / 'probe.ipynb')}})
+        bad = json.dumps({'tool_name': tool, 'tool_input': {key: str(family['sibling'] / 'probe.ipynb')}})
         assert main(stdin=io.StringIO(bad)) == 0
         decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']
         assert decision['permissionDecision'] == 'deny'
         assert 'WRITES-STAY-IN-THE-TREE' in decision['permissionDecisionReason']
-    old = json.dumps({'tool_name': 'Write', 'tool_input': {'file_path': str(home / 'src' / 'repo' / 'x.py')}})
-    assert main(stdin=io.StringIO(old)) == 0
-    decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']
-    assert 'WRITES-STAY-IN-THE-TREE' in decision['permissionDecisionReason']
-    harness = json.dumps({'tool_name': 'Write', 'tool_input': {'file_path': str(temp / 'claude' / 'x' / 'o.txt')}})
-    assert main(stdin=io.StringIO(harness)) == 0
-    assert capsys.readouterr().out == ''
-
-
-@pytest.fixture(scope='module')
-def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    path = tmp_path_factory.mktemp('rules') / 'deny-rules.json'
-    path.write_text(render(HookAdoption(app_name='suite', remedies={})), encoding='utf-8')
-    return path
-
-
-@pytest.mark.parametrize(
-    'command',
-    [
-        'echo x > /tmp/probe.py',
-        "cat > /tmp/run.sh <<'EOF'\necho hi\nEOF",
-        'python a.py 2>> /var/tmp/err.log',
-        'git log | tee -a $TEMP/log.txt',
-        'cp a.py /tmp/',
-        'mv out.csv "C:/tmp/out.csv"',
-        'mkdir -p /c/temp/probe',
-        'touch $HOME/src/x.py',
-        'touch $HOME/src/repo/x',
-        'touch ~/src/repo/x',
-        'echo x > D:/src/repo/a.txt',
-        'Get-Content a | Out-File -FilePath $env:TEMP\\x.txt',
-        'Set-Content -Path D:\\work\\AppData\\Local\\Temp\\x.ps1 -Value 1',
-        'New-Item -ItemType File D:\\var\\x.txt',
-        'Copy-Item a.py %TEMP%\\a.py',
-        'echo x > ~/loose.txt',
-    ],
-)
-def test_a_shell_write_into_a_root_is_refused(rules: Path, command: str) -> None:
-    reason = agenthooks.decide(command, rules)
-    assert reason is not None, command
-    assert 'WRITES-STAY-IN-THE-TREE' in reason
-    assert 'output/logs/<yy>/<mm>/<dd>/<kind>/' in reason
-
-
-@pytest.mark.parametrize(
-    'command',
-    [
-        'cat /tmp/probe.py',
-        'ls $TEMP',
-        'cp /tmp/x.csv output/logs/26/11/05/probe/x.csv',
-        'echo x > /tmp/claude/abc/tasks/out.txt',
-        'echo x > scratch/26/11/05/probe/run.sh',
-        'python -m pkg.run > output/logs/26/11/05/run/log.txt',
-        'echo x > ~/.bashrc',
-        'rm /tmp/probe.py',
-        'echo x 2>/dev/null',
-    ],
-)
-def test_reads_the_harness_dir_and_the_checkout_are_unaffected(rules: Path, command: str) -> None:
-    reason = agenthooks.decide(command, rules)
-    assert reason is None or 'WRITES-STAY-IN-THE-TREE' not in reason, (command, reason)
+    good = json.dumps({'tool_name': 'Write', 'tool_input': {'file_path': str(family['repo'] / 'notes.txt')}})
+    assert main(stdin=io.StringIO(good)) == 0
+    assert 'WRITES-STAY-IN-THE-TREE' not in capsys.readouterr().out
 
 
 #: Measured 2026-11-11: 492 ``.py`` files under ``src/``; set below it with room for ordinary deletion.

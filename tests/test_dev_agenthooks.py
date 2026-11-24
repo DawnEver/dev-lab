@@ -221,6 +221,21 @@ def test_a_line_row_reads_the_executed_text_never_a_sink_body(tmp_path: Path) ->
     assert agenthooks.decide("python - <<'PY'\nos.system('echo x > the/secret')\nPY", path) is not None
 
 
+@pytest.mark.parametrize('matches', ['line', 'argument'])
+def test_the_rest_of_a_heredoc_opening_line_is_shell_text(tmp_path: Path, matches: str) -> None:
+    """MEASURED 2026-11-24: ``cat > /tmp/x <<EOF`` was refused WRITES-STAY-IN-THE-TREE, ``cat <<EOF > /tmp/x`` was not.
+
+    The heredoc split kept the opening line only up to the ``<<EOF`` opener and resumed after the body, so a redirect
+    written AFTER the opener was never read. PLANTED CONTROL: the redirect before the opener, and a sink body.
+    """
+    path = tmp_path / 'rules.json'
+    path.write_text(json.dumps([{'name': 'PLANTED', 'pattern': r'>\s*\S*secret', 'matches': matches, 'reason': 'r'}]))
+    assert agenthooks.decide('cat <<EOF > the/secret\nhi\nEOF', path) is not None
+    assert agenthooks.decide("cat <<'EOF' >> the/secret && echo done\nhi\nEOF", path) is not None
+    assert agenthooks.decide('cat > the/secret <<EOF\nhi\nEOF', path) is not None
+    assert agenthooks.decide('cat <<EOF > notes.md\nnever echo x > the/secret\nEOF', path) is None
+
+
 def test_a_command_that_merely_contains_a_denied_word_is_not_denied(rules: Path) -> None:
     """THE MEASURED FALSE POSITIVE. These run grep, git-log and git-commit -- not the named verb."""
     for command in (
