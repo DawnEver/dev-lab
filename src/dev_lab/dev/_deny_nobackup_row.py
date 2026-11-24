@@ -66,7 +66,7 @@ NO_BACKUP_COPIES: dict[str, object] = {
         'cp -r output/logs/26/11/23/case .claude/memory/2026/11/23/attachments/',
         'mv .claude/worktrees/dead scratch/dead',
         'git diff --stat > output/logs/26/11/23/merge/stat.txt',
-        'git clone https://example.org/x.git ../x',
+        'git archive HEAD -o dist/x.zip',
         'robocopy output\\logs\\26 D:\\elsewhere /E',
     ),
 }

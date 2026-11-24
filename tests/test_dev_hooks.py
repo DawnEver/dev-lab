@@ -104,7 +104,10 @@ def test_every_row_lets_its_near_misses_through(rule: DenyRule) -> None:
     denied elsewhere is the sealed road, reached by a different street.
     """
     assert rule.permits, f'{rule.id} names no near-miss, so nothing says its pattern is not simply always true'
-    denied = {text: denies(DENY_RULES, text, _REMEDIES) for text in rule.permits}
+    # An asks row is skipped (this one too): here its prefilter reads as a refusal, while its judge (which needs a repo)
+    # admits these; the real engine, judges included, is test_dev_agenthooks' corpus.
+    rules = [other for other in DENY_RULES if other.asks is None]
+    denied = {text: denies(rules, text, _REMEDIES) for text in rule.permits}
     caught = {text: by for text, by in denied.items() if by is not None}
     assert caught == {}, f'{rule.id} declares these permitted and the registry refuses them: {caught}'
 
@@ -290,7 +293,11 @@ def test_an_unknown_severity_raises() -> None:
 
 
 #: The rows whose pattern only prefilters and a module judges, as a NAMED SET.
-ASKING_ROWS = {'TRACKED-CITES-NO-EPHEMERAL': 'dev_lab.dev.journaldoor'}
+ASKING_ROWS = {
+    'TRACKED-CITES-NO-EPHEMERAL': 'dev_lab.dev.journaldoor',
+    'USER-FROZEN-FILES': 'dev_lab.dev.frozen',
+    'WRITES-STAY-IN-THE-TREE': 'dev_lab.dev.writeroots',
+}
 
 
 def test_the_asking_rows_are_a_named_set_and_render_their_judge() -> None:

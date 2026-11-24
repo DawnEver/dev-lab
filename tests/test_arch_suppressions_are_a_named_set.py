@@ -774,6 +774,21 @@ ALLOWED: Final[dict[Site, str]] = {
             'spelled paths a write must be refused into, never used'
         ),
     ): 'the guard under test refuses host temp roots, so the module spells them as inputs; nothing writes there',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLC0415',
+        'from dev_lab.dev.branchdelete import DOOR, TASK_HEAD_DOORS',
+    ): 'branchdelete pulls the forge client; only a close that names its head doors pays for it',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLC0415',
+        'from dev_lab.dev.branchdelete import TaskBranches',
+    ): 'the branch prune and its network client load only on close',
+    (
+        'src/dev_lab/dev/task.py',
+        'PLC0415',
+        'from dev_lab.dev.forge import fetch_origin',
+    ): 'the forge CLI module is heavy; only close fetches origin',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

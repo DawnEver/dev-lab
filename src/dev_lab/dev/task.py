@@ -27,6 +27,7 @@ import argparse
 import contextlib
 import datetime as dt
 import hashlib
+import os
 import re
 import shutil
 import sys
@@ -40,6 +41,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev import taskauthority, taskjournal, taskledger
 from dev_lab.dev.cjk import find_cjk
+from dev_lab.dev.labsession import ENV
 from dev_lab.dev.taskjournal import LINE, Record
 from dev_lab.dev.taskledger import ledger
 
@@ -150,12 +152,9 @@ class Branches(Protocol):
 
 def _checkout_branches(cwd: Path) -> Branches:
     """The default :class:`Branches`: *cwd*'s checkout, its forge client and the real fetch."""
-    import os  # noqa: PLC0415
-
     from dev_lab.dev.branchdelete import TaskBranches  # noqa: PLC0415 -- the network client, only for close
     from dev_lab.dev.forge import fetch_origin  # noqa: PLC0415
     from dev_lab.dev.forgeclient import client_for  # noqa: PLC0415
-    from dev_lab.dev.labsession import ENV  # noqa: PLC0415
 
     code, top = _git(Path(cwd), 'rev-parse', '--show-toplevel')
     if code != 0:

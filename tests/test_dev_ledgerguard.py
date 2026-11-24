@@ -9,9 +9,11 @@ import re
 from pathlib import Path
 
 import pytest
+from lab_commons.home import part
 
 from dev_lab.dev import codeplace, ledgerguard
 from dev_lab.dev._deny_ledger_row import LEDGER_WRITES_THROUGH_ITS_DOOR as ROW
+from dev_lab.dev.taskledger import LEDGER_DIR
 from dev_lab.dev.venvpath import running_interpreter
 
 
@@ -57,9 +59,6 @@ def test_any_file_tool_write_inside_the_ledger_directory_is_refused(name: str) -
 
 
 def test_the_ledger_directory_is_the_one_the_task_door_resolves() -> None:
-    from lab_commons.home import part  # noqa: PLC0415
-
-    from dev_lab.dev.taskledger import LEDGER_DIR  # noqa: PLC0415
 
     assert ledgerguard.ledger_dir() == part('repos') / LEDGER_DIR
 
