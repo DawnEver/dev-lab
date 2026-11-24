@@ -2,8 +2,7 @@
 
 :mod:`dev_lab.dev.memoryadds` refuses every edit under ``.claude/memory/`` but these, each recognized
 whole by the predicates here (the rulings and the formats are stated in that module's docstring):
-the volatile-field migration (:func:`only_volatile_stripped`), rem's dated manual task list
-(:func:`only_manual_tasks_updated`), a privacy redaction (:func:`only_redacted`), an approved
+the volatile-field migration (:func:`only_volatile_stripped`), a privacy redaction (:func:`only_redacted`), an approved
 amendment (:func:`only_amended`) and an approved redacting rename
 (:func:`only_renamed_redacting`). An added entry must carry :data:`REQUIRED_KEYS`
 (:func:`shape_problems`) and a merged one must cite (:func:`merged_entry_problems`). Pure text: no git, no files.
@@ -12,7 +11,6 @@ amendment (:func:`only_amended`) and an approved redacting rename
 from __future__ import annotations
 
 import re
-from datetime import date
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
@@ -21,8 +19,6 @@ if TYPE_CHECKING:
 __all__ = [
     'AMENDMENT_NOTE',
     'FRONTMATTER',
-    'MANUAL_PATH',
-    'MANUAL_ROW',
     'MEMORY_DIR',
     'REDACTION_NOTE',
     'REDACTION_ROLES',
@@ -34,7 +30,6 @@ __all__ = [
     'merged_entry_problems',
     'missing_keys',
     'only_amended',
-    'only_manual_tasks_updated',
     'only_redacted',
     'only_renamed_redacting',
     'only_volatile_stripped',
@@ -82,8 +77,6 @@ AMENDMENT_NOTE: Final = 'Amended {day}: {reason} -- approved: "{approved}"'
 RENAME_PLACEHOLDER: Final = 'user'
 _RENAMED = re.compile(r'\brenamed\b', re.IGNORECASE)
 _AMEND_LINE = re.compile(r'> Amended \d{4}-\d{2}-\d{2}: \S.*? -- approved: "[^"]*\S[^"]*"(?: \(user, translated\))?')
-MANUAL_PATH = re.compile(r'(?:^|/)\.claude/memory/(\d{4})/(\d{2})/(\d{2})/manual\.md\Z')
-MANUAL_ROW = re.compile(r'- \[([ x])\] (MANUAL-(\d{8})-\d{3,}) \[(?:HIGH|MEDIUM|LOW)\] .+ \((\d{4}-\d{2}-\d{2})\)')
 
 
 def lf(text: str) -> str:
@@ -209,48 +202,6 @@ def only_renamed_redacting(old_path: str, new_path: str, old: str, new: str) -> 
     rest = [line for line in new_lines if line != added[0]]
     unchanged = [line for line in rest if line.strip()] == [line for line in old_lines if line.strip()]
     return unchanged or only_redacted(old, '\n'.join(rest)) or only_amended(old, new)
-
-
-def _manual_rows(path: str, text: str) -> list[tuple[str, str, str]] | None:
-    """Recognize rem task-engine's dedicated list, not a filename exemption for prose."""
-    match = MANUAL_PATH.search(path)
-    if match is None:
-        return None
-    day = '-'.join(match.groups())
-    try:
-        date.fromisoformat(day)
-    except ValueError:
-        return None
-    header = f'---\nname: manual-{day}\ndescription: Manual tasks created on {day}\nmetadata:\n  type: project\n---\n'
-    text = lf(text)
-    if not text.startswith(header):
-        return None
-    lines = [line for line in text[len(header) :].splitlines() if line]
-    if len(lines) % 2:
-        return None
-    rows = []
-    ids: set[str] = set()
-    for task, module in zip(lines[::2], lines[1::2], strict=True):
-        row = MANUAL_ROW.fullmatch(task)
-        if (
-            row is None
-            or row[2] in ids
-            or row[3] != day.replace('-', '')
-            or row[4] != day
-            or re.fullmatch(r' {6}module: \S.*', module) is None
-        ):
-            return None
-        ids.add(row[2])
-        rows.append((row[1], task[5:], module))
-    return rows
-
-
-def only_manual_tasks_updated(path: str, old: str, new: str) -> bool:
-    """Rem's manual list: tasks appended or checkboxes toggled, every existing row's text kept."""
-    before, after = _manual_rows(path, old), _manual_rows(path, new)
-    if before is None or after is None or len(after) < len(before):
-        return False
-    return all(a[1:] == b[1:] for a, b in zip(before, after[: len(before)], strict=True))
 
 
 def is_memory(path: str) -> bool:

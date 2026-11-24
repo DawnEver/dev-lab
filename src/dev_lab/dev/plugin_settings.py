@@ -3,8 +3,10 @@
 USER RULING 2026-11-05: the forge's PR review is the ONE review, so the ``sharp-review`` plugin's
 Stop-hook review must not fire in daily development. The plugin has no per-project off switch and the
 user-global settings enable it; a project ``enabledPlugins`` entry overrides the user's, so each repo's
-committed settings turn it off. :func:`dev_lab.dev.agent_guard.wire_settings` writes the entries, and
-the guard's wiring check reads a file that enables one -- or omits it -- as STALE.
+committed settings turn it off. USER RULING 2026-11-23: the rem plugin is retired
+(:mod:`dev_lab.dev.remretired`), so it is off in every repo even on a machine that has not run its uninstall
+door yet. :func:`dev_lab.dev.agent_guard.wire_settings` writes the entries, and the guard's wiring check
+reads a file that enables one -- or omits it -- as STALE.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from typing import Any, Final
 __all__ = ['DISABLED_PLUGINS', 'disable_plugins', 'live_disabled_plugins']
 
 #: Every plugin a family repo's settings must set to ``false``.
-DISABLED_PLUGINS: Final = ('sharp-review@cc-market',)
+DISABLED_PLUGINS: Final = ('sharp-review@cc-market', 'rem@cc-market')
 
 
 def live_disabled_plugins(settings: dict[str, Any]) -> list[str]:

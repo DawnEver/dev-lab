@@ -77,12 +77,12 @@ def test_update_writes_exactly_the_render_and_removes_a_stale_golden(tmp_path: P
     stale = tmp_path / f'x/a{rendergoldens.SEP}old{rendergoldens.SUFFIX}'
     stale.parent.mkdir()
     stale.write_text('old', encoding='utf-8')
-    assert rendergoldens.write({'x/.claude/rem.json': 'a\n'}, tmp_path) == [
-        'x/.claude/rem.json: new, no golden',
+    assert rendergoldens.write({'x/.claude/settings.json': 'a\n'}, tmp_path) == [
+        'x/.claude/settings.json: new, no golden',
         'x/a/old: gone, its golden is stale',
     ]
-    assert rendergoldens.read_goldens(tmp_path) == {'x/.claude/rem.json': 'a\n'}
-    assert (tmp_path / f'x/.claude{rendergoldens.SEP}rem.json{rendergoldens.SUFFIX}').is_file()
+    assert rendergoldens.read_goldens(tmp_path) == {'x/.claude/settings.json': 'a\n'}
+    assert (tmp_path / f'x/.claude{rendergoldens.SEP}settings.json{rendergoldens.SUFFIX}').is_file()
     assert not stale.exists()
 
 

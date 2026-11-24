@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {
-    "sharp-review@cc-market": false
+    "sharp-review@cc-market": false,
+    "rem@cc-market": false
   }
 }

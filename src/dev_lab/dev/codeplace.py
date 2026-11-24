@@ -55,6 +55,7 @@ from lab_commons.log import emit
 from dev_lab.dev import gitdirs
 from dev_lab.dev.consentguard import refuse_write as refuse_consent_write
 from dev_lab.dev.family import declared_table
+from dev_lab.dev.ledgerguard import refuse_write as refuse_ledger_write
 from dev_lab.dev.machineguard import refuse_write as refuse_machine_file_write
 from dev_lab.dev.outputcode import refuse_code_in_output
 from dev_lab.dev.reportplace import refuse_report
@@ -304,7 +305,8 @@ def refuse_write(path: Path) -> str | None:
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """The ``PreToolUse`` agent hook on Write/Edit/MultiEdit/NotebookEdit; the payload is *stdin*.
 
-    It refuses a report under ``output/`` and a write into a write-prone root, and hints a misplaced code file.
+    It refuses a report under ``output/``, a write into a write-prone root and a direct write onto a task ledger
+    file (:mod:`dev_lab.dev.ledgerguard`), and hints a misplaced code file.
     A payload naming no path is allowed: the hook judges a PATH, and such a payload names none. The stray
     census is :mod:`dev_lab.dev.strays`.
     """
@@ -325,6 +327,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3).
     refused = refuse_report(path) or refuse_machine_file_write(path) or refuse_code_in_output(path)
     refused = refused or refuse_outside_tree(path) or refuse_consent_write(path)
+    refused = refused or refuse_ledger_write(path)
     hint = refuse_write(path)
     if refused is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': refused}

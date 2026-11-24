@@ -61,7 +61,7 @@ class Selector(_SelectorValues):
 
     ``spec`` is what a human asked for (``'gate'``, ``'tests/unit/hamilton'``, a node id list) and
     ``node_ids`` is its EXPANSION, which is the thing a proof can be checked against -- a count
-    cannot say WHICH node went missing, which is the lesson `.claude/rules/rem/integration.md`
+    cannot say WHICH node went missing, which is the lesson `.claude/rules/integration.md`
     records from a pin that read "2" while the table delivered one.
     """
 

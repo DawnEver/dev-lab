@@ -254,4 +254,4 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
 #: Shared required checks; the execution owner also runs them for command/data family producers.
 #: Read by :mod:`dev_lab.dev.rules` into :attr:`Rule.always_on`; nothing else names them.
 #: MODULE-SIZE-ALARM is opt-in: a repo enables it once it declares [tool.dev_lab.layout] and its directories fit.
-ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE'})
+ALWAYS_ON: frozenset[str] = frozenset({'NO-CJK-IN-TRACKED-SOURCE', 'REM-RETIRED'})

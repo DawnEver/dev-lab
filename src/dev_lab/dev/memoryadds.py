@@ -3,25 +3,18 @@
 THE RULE (user rulings 2026-10-31, the four-layer plan). A memory entry is immutable once written: a
 correction is a NEW entry naming the old one in ``corrects:``, and a consolidation is a NEW entry naming
 its sources in ``merged_from:``. So a change touching ``**/.claude/memory/**`` may only ADD a file.
-Four shapes are not narrative edits:
+Three shapes are not narrative edits:
 
 * a task leaving the tasks layer -- ``git mv .claude/tasks/<slug> .claude/memory/...`` -- is how a
   closed task becomes history, and it is the one rename into memory;
 * the one-shot four-layer migration, which removes only the volatile frontmatter fields
   (:data:`dev_lab.dev.memoryentry.VOLATILE_FIELDS`) a reader used to rewrite on every read. A change
   whose ONLY difference is those lines is that migration and nothing else;
-* rem's dedicated dated manual task list: append tasks or toggle existing checkboxes, never
-  rewrite task text or turn narrative memory into a task list. Both versions must match the format;
 * an approved redacting rename (REDACTING-RENAME, user ruling 2026-11-14) -- the one move WITHIN memory: an
   account-like token leaves a published entry's file name, in the same directory, one run of the name's
   ``-`` tokens replaced by ``user`` or dropped, and the entry gains an amendment note whose reason says
   ``renamed`` (:func:`dev_lab.dev.memoryentry.only_renamed_redacting`). Git reads it as ``R`` or, when the
   text changed too, as ``D`` + ``A``; both are judged as the rename (:func:`_without_redacting_renames`).
-
-The task-list protocol is authored by rem 2.2.0, ``scripts/task-engine.js`` functions ``handleAdd``
-and ``handleMark``. This classifier recognizes that version's complete output, not arbitrary Markdown.
-If its producer changes format, update this boundary and its planted controls together; never
-broaden narrative-memory admission to make a malformed manual file pass.
 
 A MERGED ENTRY CITES. An added entry with ``merged_from:`` names sources that are memory files of its
 OWN scope existing at the base the change is judged against or added by that same change, and every
@@ -54,11 +47,9 @@ from lab_commons.log import emit
 from dev_lab.dev.lanepolicy import policy_at
 from dev_lab.dev.memoryentry import (
     AMENDMENT_NOTE,
-    MANUAL_PATH,
     is_memory,
     merged_entry_problems,
     only_amended,
-    only_manual_tasks_updated,
     only_redacted,
     only_renamed_redacting,
     only_volatile_stripped,
@@ -157,10 +148,7 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
         elif status == 'M' and is_memory(old):
             before, after = _git(root, 'show', f'{old_rev}:{old}'), _git(root, 'show', f'{new_rev}:{new}')
             if not (
-                only_volatile_stripped(before, after)
-                or only_manual_tasks_updated(old, before, after)
-                or only_redacted(before, after)
-                or only_amended(before, after)
+                only_volatile_stripped(before, after) or only_redacted(before, after) or only_amended(before, after)
             ):
                 remedy = (
                     'a memory entry is immutable -- write a new entry with `corrects:` instead; a line that is WRONG '
@@ -168,11 +156,6 @@ def _judge(root: Path, old_rev: str, new_rev: str, rows: list[tuple[str, str, st
                     + AMENDMENT_NOTE.format(day='<yyyy-mm-dd>', reason='<why>', approved="<the user's words>")
                     + '` and lines replaced one-for-one, or only the missing name/description frontmatter added'
                 )
-                if MANUAL_PATH.search(old):
-                    remedy += (
-                        '; rem 2.2.0 task-list format/operation check failed: append tasks or toggle checkboxes '
-                        'without changing existing task text, module or order'
-                    )
                 out.append(f'{old}: {remedy}')
         elif status in 'DRT' and is_memory(old):
             out.append(f'{old}: a memory entry is never deleted or moved ({status})')
