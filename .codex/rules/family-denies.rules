@@ -39,6 +39,12 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["git", "bundle", ["create"]],
+    decision = "forbidden",
+    justification = "ARCHIVE-IS-NO-STORE: a bundle parks unlanded work where nobody reads it again (ONLY-VERSION-TAGS). details: docs-src/dev/refusals.md#archive-is-no-store (dev-lab)",
+)
+
+prefix_rule(
     pattern = ["git", "stash", ["push", "pop", "apply", "drop", "clear", "save"]],
     decision = "forbidden",
     justification = "GIT-STASH: `refs/stash` is repo-wide, so a stash is popped by whoever pops next -- possibly another agent. details: docs-src/dev/refusals.md#git-stash (dev-lab)",
