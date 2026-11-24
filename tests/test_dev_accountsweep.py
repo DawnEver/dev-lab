@@ -217,3 +217,34 @@ def test_planted_control_two_separate_directories_are_two_lines(
         f'[retention] kept {second.as_posix()} -- cannot remove 3 entries: Operation not permitted',
     ]
     assert said[-1].endswith('; kept 6 entries that cannot be removed')
+
+
+def test_entries_another_account_owns_are_named_by_owner_and_never_chmodded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MEASURED 2026-11-23 (``look stuck``): the 206,412 kept entries were owned by five OTHER fleet accounts.
+
+    They sat in those accounts' ``drwxr-s---`` directories under this account's ``drwx------`` home -- chmod cannot
+    help (not the owner).
+    """
+    home, root, spec = _account(tmp_path)
+    theirs, mine = home / 'ci' / 'trees' / 'abc' / 'theirs', home / 'ci' / 'trees' / 'abc' / 'mine.log'
+    theirs.mkdir()
+    for n in range(3):
+        (theirs / f'locked-{n}.log').write_text('x', encoding='utf-8')
+    mine.write_text('x', encoding='utf-8')  # PLANTED CONTROL: this account's own file still goes
+    monkeypatch.setattr(accountsweep, 'owner', lambda path: 'ezaxl22' if 'theirs' in str(path) else '')
+    chmodded: list[str] = []
+    monkeypatch.setattr(Path, 'chmod', lambda self, _mode: chmodded.append(str(self)))
+    _locked(monkeypatch)
+    said = [line for line in _sweep(home, root, spec | {'apply': True}) if 'cannot remove' in line]
+    cause = 'owned by ezaxl22, not this account -- only ezaxl22 (through a traverse grant on this home) or an admin'
+    assert said == [f'[retention] kept {theirs.as_posix()} -- cannot remove 3 entries: {cause} can remove them']
+    assert not mine.exists()
+    assert not any('theirs' in one for one in chmodded)
+
+
+def test_planted_control_this_accounts_own_entries_are_never_called_foreign(tmp_path: Path) -> None:
+    probe = tmp_path / 'x'
+    probe.write_text('x', encoding='utf-8')
+    assert accountsweep.owner(probe) == ''
