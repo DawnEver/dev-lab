@@ -59,6 +59,7 @@ from dev_lab.dev.forgestatus import head_sha, verdict_commit
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
+from dev_lab.dev.irschema import changed_reach, stale_refusal
 from dev_lab.dev.layout import scan_refusal
 from dev_lab.dev.localpart import part_selection, post_cited, post_part
 from dev_lab.dev.lockpins import lock_freshness
@@ -216,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         refused = refused or f'verify: refused -- {why}'
     refused = refused or _needs_refusal(root, parsed.part)
     refused = refused or scan_refusal(root)  # DECLARED-LAYOUT / NO-BACKUP-COPIES: the incremental scan, every run
+    refused = refused or stale_refusal(root)  # IR-STALE-GENERATED / IR-VERSION-NOT-BUMPED (dev.irschema)
     early = chosen if isinstance(chosen, int) else _early(root, refused, producer=outside is None)
     if early is not None:
         return early
@@ -350,6 +352,7 @@ def _changed_selection(root: Path, range_spec: str) -> tuple[str, ...] | int:
     """The paths ``--changed`` selects, or the exit code when it selects nothing to run."""
     try:
         changed = changed_paths(root, range_spec)
+        changed = changed_reach(root, changed, range_spec)  # an IR change reaches by its class (dev.irschema)
     except ValueError as why:
         emit(f'verify: refused -- --changed: {why}', err=True)
         return ProducerExit.USAGE

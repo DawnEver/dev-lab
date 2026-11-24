@@ -50,6 +50,16 @@ are too unqualified to survive being flattened into a namespace this wide.
   before a document edit.
 * :mod:`dev_lab.dev.notices` — the third-party licence notice from the installed environment; the product is
   ``[tool.dev_lab.notices]`` data, and an unidentified licence is refused by name.
+* :mod:`dev_lab.dev.irmodel` — an IR schema, read: a repo's ``[tool.dev_lab.ir_schema]``, its schema modules and
+  its quantities catalogue as frozen values (``docs-src/dev/ir-schema.md``).
+* :mod:`dev_lab.dev.ircheck` — the IR checked across modules (references, quantities, keys, cycles); ``load``.
+* :mod:`dev_lab.dev.irpython` — the IR's generated Python: frozen dataclasses over a copied runtime and codec.
+* :mod:`dev_lab.dev.irrust` — the IR's generated Rust: one ``ir.rs`` a ``build.rs`` writes into ``OUT_DIR``.
+* :mod:`dev_lab.dev.irversion` — the class of an IR change (PATCH/MINOR/MAJOR) against a git revision, and the
+  refusal of a declared bump below it.
+* :mod:`dev_lab.dev.irmigrate` — the one migrate door: stored records rewritten once through the repo's steps.
+* :mod:`dev_lab.dev.irschema` — the IR door (``generate``, ``check``, ``rust``, ``migrate``, ``affected``) and what
+  ``verify`` runs of it.
 * :mod:`dev_lab.dev.cratefresh` — the Rust side of dependency freshness: a crate whose declared spec cannot reach
   crates.io's newest release.
 * :mod:`dev_lab.dev.toolchain` — what a checkout needs on this host before its environment builds (git, uv, a
