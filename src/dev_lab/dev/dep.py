@@ -79,7 +79,7 @@ with importing(entry=__name__ == '__main__'):
     from lab_commons.envkey import env_key, env_manifest
     from lab_commons.log import emit
 
-    from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent
+    from dev_lab.dev import _dep_cli, _dep_local, _dep_project, depneeds, venvcurrent, worktreeseeds
     from dev_lab.dev._dep_aftersync import after_sync, retire_anchors
     from dev_lab.dev._dep_components import changed
     from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
@@ -441,6 +441,9 @@ def _run(
     if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
         emit(f'REFUSED: {why}')
         return 1
+    if args.bootstrap is not None and not args.dry_run:
+        for line in worktreeseeds.seed(root):
+            emit(line)
     if locking:
         code = _dep_project.lock_upgrade(
             root, base, run=run, dry_run=args.dry_run, environment=environment, packages=args.upgrade_package

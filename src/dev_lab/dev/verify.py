@@ -73,6 +73,7 @@ from dev_lab.dev.verdictstore import ContentKey, Found
 from dev_lab.dev.verifybox import (
     MEASURE_WAIT_S,
     WAIT_S,
+    serial_width,
 )
 from dev_lab.dev.verifysteps import run_verify, tree_address
 from dev_lab.dev.workstationverdict import after_run, before_run, head_tree, workstation_fields, workstation_refusal
@@ -183,6 +184,14 @@ def main(argv: list[str] | None = None) -> int:
         metavar='RANGE',
         help='select only the tests a change reaches (dev_lab.dev.changeselect): the working tree, or a git RANGE',
     )
+    parser.add_argument(
+        '--serial', action='store_true', help='run with no workers (-n 0): a lost worker cannot hide which test hung'
+    )
+    parser.add_argument(
+        '--price',
+        action='store_true',
+        help='price every test: serial, no per-test timeout (--timeout=0) and every duration (--durations=0)',
+    )
     parser.add_argument('--rerun', action='store_true', help='run even when the run cache already judged this key')
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
     if retired := _retired(sys.argv[1:] if argv is None else argv):
@@ -191,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parser.parse_args(argv)
     root = project_root()
     chosen = () if parsed.changed is None else _changed_selection(root, parsed.changed)
-    arguments = (*(() if isinstance(chosen, int) else chosen), *parsed.pytest_args)
+    arguments = (*(() if isinstance(chosen, int) else chosen), *parsed.pytest_args, *_mode_args(parsed))
     targeted = is_targeted(root, arguments)
     outside, workstation = _outside(root, parsed.part, arguments, targeted=targeted)
     missing = missing_paths(root, arguments)
@@ -322,6 +331,16 @@ def _early(root: Path, refused: str | None, *, producer: bool) -> int | None:
     except verifiedby.VerifyByRefused:
         consumers = None
     return None if consumers == () else verifiedby.main(root, producer=producer)
+
+
+def _mode_args(parsed: argparse.Namespace) -> tuple[str, ...]:
+    """The pytest arguments ``--serial`` / ``--price`` stand for, appended last so they win.
+
+    PRICING IS ALWAYS SERIAL: a duration measured while siblings compete for the box is a fact about the box,
+    not the test; and any finite ceiling censors the very duration being priced.
+    """
+    price = ('--timeout=0', '--durations=0') if parsed.price else ()
+    return (*price, *(serial_width() if parsed.serial or parsed.price else ()))
 
 
 def _changed_selection(root: Path, range_spec: str) -> tuple[str, ...] | int:

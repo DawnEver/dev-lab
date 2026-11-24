@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,6 +45,7 @@ from dev_lab.dev.reports import StepReport, read_ruff, read_stages
 from dev_lab.dev.selection import census_scope, is_targeted
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
 from dev_lab.dev.skipallowance import declared_skips, stale_declarations, vanished_shortfall
+from dev_lab.dev.stallwatch import stall_window, watch_process
 from dev_lab.dev.test_outcomes import (
     OUTCOMES_DIR_VAR,
     OutcomeReadError,
@@ -213,7 +215,14 @@ OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'dev_lab.dev.test_outcomes')
 _PYTEST_BANNER: Final = '--- pytest ---\n'
 
 
-def _tee(command: list[str], *, cwd: Path, handle: IO[str], extra_env: dict[str, str] | None = None) -> int:
+def _tee(
+    command: list[str],
+    *,
+    cwd: Path,
+    handle: IO[str],
+    extra_env: dict[str, str] | None = None,
+    stall_s: float | None = None,
+) -> int:
     r"""Run *command*, streaming its merged output to *handle* AND to this process's stdout.
 
     STREAMED rather than captured and written afterwards, so a step that hangs still leaves in the
@@ -291,7 +300,12 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str], extra_env: dict[str,
         bufsize=1,
         env=env,
     ) as process:
+        watch = (
+            None if stall_s is None else watch_process(process, window_s=stall_s, handle=handle, clock=time.monotonic)
+        )
         for raw in process.stdout or ():
+            if watch is not None:
+                watch.wrote()
             line = strip_ansi(raw)
             handle.write(line)
             handle.flush()
@@ -487,6 +501,7 @@ def run_verify(
                             STAGE_ENV: 'parallel',
                             SEEN_ENV: str(seen),
                         },
+                        stall_s=stall_window(root, pytest_args),
                     )
                 ]
                 learn_ended(root, pytest, record)
@@ -506,6 +521,7 @@ def run_verify(
                                 OUTCOMES_DIR_VAR: str(live / 'serial'),
                                 STAGE_ENV: 'serial',
                             },
+                            stall_s=stall_window(root, pytest_args),
                         )
                     )
                     cut += ended_in_the_box(record)
