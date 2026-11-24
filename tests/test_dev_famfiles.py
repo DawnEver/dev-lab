@@ -118,10 +118,10 @@ def test_one_render_writes_every_rendered_artefact_and_a_hand_edit_reds(repo: Pa
         f'{name}: current' for name in sorted(rendered)
     ]
     path = repo / '.gitignore'
-    path.write_text(path.read_text(encoding='utf-8').replace('htmlcov/\n', ''), encoding='utf-8')
+    path.write_text(path.read_text(encoding='utf-8').replace('/dist/\n', ''), encoding='utf-8')
     assert any(line.startswith('.gitignore: would render') for line in render_all(repo, rendered, write=False))
     render_all(repo, rendered, write=True)
-    assert 'htmlcov/\n' in path.read_text(encoding='utf-8')
+    assert '/dist/\n' in path.read_text(encoding='utf-8')
     assert 'scratch/' not in path.read_text(encoding='utf-8'), 'SCRATCH-IS-NEVER-COMMITTED: scratch stays visible'
 
 

@@ -103,18 +103,18 @@ REPO_FLOOR: Final = 3
 GITIGNORE_CONSUMER_CORE: Final[tuple[str, ...]] = (
     '**/.env',
     '**/__pycache__/',
-    '**/log/*.log',
-    '**/log/*.log.error',
-    '**/temp/**',
-    '*.c',
     '*.egg-info/',
-    '*.spec',
-    '.coverage*',
     '.mypy_cache/',
     '.pytest_cache/',
     '.ruff_cache/',
     '.venv*',
+    # Root-anchored 2026-11-24: a source package named `temp` is source, not scratch.
+    '/temp/',
 )
+
+#: RETIRED 2026-11-24 (user ruling): `**/log/*.log(.error)`, `/dumps/`, `/report/`, `htmlcov/` and `.coverage*`
+#: (coverage data and reports go to output/ via verifysteps' COVERAGE_FILE), `**/ignore/`, `*.spec`, `*.c`,
+#: `**/_meta.json` and the `.claude` cache lines -- no family mechanism writes them in every checkout.
 
 #: THE LINES THE FAMILY MANDATES rather than measured, each with the mechanism that writes the path.
 #: Added 2026-10-03 on the user's ruling that every repo's `.gitignore` has ONE source here: a line
@@ -125,13 +125,9 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
     '**/__version__.py': 'the version file hatch-vcs / setuptools-scm write at build time, in every repo.',
     '/build/': 'the build backend`s staging directory, at the root of every repo that builds a wheel.',
     '/dist/': 'the built wheels and sdists, at the root of every repo that builds one.',
-    'htmlcov/': 'coverage`s HTML report -- `.coverage*` is already base; its report belongs with it.',
-    'output/': 'the dated artefact tree (dev_lab.dev.datedlog) every repo writes under output/.',
+    '/output/': 'the dated artefact tree (dev_lab.dev.datedlog) every repo writes under output/.',
     '**/.DS_Store': 'macOS Finder state; a platform artefact with no repo to belong to.',
     '/config/': 'the dev-mode in-repo config root two consumers generate from packaged defaults.',
-    '/dumps/': 'profiler and core dumps -- the reference repos both ignore them.',
-    '/report/': 'test and coverage reports -- the reference repos both ignore them.',
-    '**/ignore/': 'the conventional "never commit" directory the reference repos both carry.',
 }
 
 #: THE CLAUDE PROJECT STATE SECTION -- ONE ORDERED BLOCK, identical in every repo (user ruling
@@ -144,38 +140,18 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
 GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     '**/.claude/**',
     '!**/.claude/settings.json',
-    '!**/.claude/sharp-review.json',
-    # rem's committed config (dev_lab.dev.remconfig); the tasks layer is committed state like memory.
-    '!**/.claude/rem.json',
     *(
         line
-        for directory in (
-            'hooks',
-            'agents',
-            'skills',
-            'commands',
-            'workflows',
-            'rules',
-            'memory',
-            'tasks',
-            'output-styles',
-            'docs',
-        )
+        for directory in ('hooks', 'rules', 'memory')
         for line in (f'!**/.claude/{directory}/', f'!**/.claude/{directory}/**')
     ),
-    '**/_meta.json',
-    # An ARCHIVE is frozen source (user ruling 2026-10-21): nothing generates into `attic/`, so its index
-    # pages, `_meta.json` and `.claude/meta/` copies are tracked as archived. Above the cache lines.
-    '!**/attic/**',
-    '**/.claude/**/__pycache__/',
-    '**/.claude/**/*.py[cod]',
     # The auto-mode prose is MACHINE-LOCAL, derived from the synced fleet sources (dev_lab.dev.automode, user
     # ruling 2026-10-23): a committed copy would put fleet facts in history. Named so no re-inclusion tracks it.
-    # (`.claude/rules/MEMORY.md` is NOT here: rem retired it, so a stale one must show in `git status` -- see
-    # tests/test_the_kit_renders_its_own_gitignore.py. Nor is a session's task binding: it lives in the machine
-    # home, `state/sessions/`, outside every checkout -- D34.)
     '**/.claude/automode.json',
 )
+# The re-inclusions are exactly the tracked directories of the closed `.claude/` inventory
+# (dev_lab.dev.claudelayout.CLAUDE_ENTRIES). `!**/attic/**` left the base 2026-11-24: a repo holding an
+# archive declares it in its own delta.
 
 #: Lines NO `.gitignore` in the family may carry, base or delta -- as patterns, with the ruling. A
 #: scratch-like directory under any name but `scratch/` is a second place for temporary scripts, and

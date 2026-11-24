@@ -93,18 +93,57 @@ def test_the_hatch_vcs_version_file_stays_ignored() -> None:
 #: shows in `git status` instead of loading on every turn unseen.
 _TRACKED: Final = (
     '.claude/rules/MEMORY.md',
-    '.claude/sharp-review.json',
-    '.claude/rem.json',
-    '.claude/tasks/integrator/JOURNAL.md',
-    'attic/old/.claude/rules/MEMORY.md',
-    'attic/old/.claude/meta/MEMORY.full.md',
-    'attic/old/.claude/memory/2026/06/01/_meta.json',
+    '.claude/memory/2026/06/01/a-finding.md',
+    # Root-anchored since 2026-11-24: a source package NAMED `output` or `temp` is source, not artefact.
+    'src/pkg/output/x.py',
+    'src/pkg/temp/x.py',
 )
 _IGNORED: Final = (
     '.claude/memory-index.md',
-    '.claude/memory/2026/06/01/_meta.json',
+    '.claude/automode.json',
+    # Retired from the base 2026-11-24: no re-inclusion for these any more (backlog lives in the tasks repo).
+    '.claude/rem.json',
+    '.claude/sharp-review.json',
+    '.claude/tasks/integrator/JOURNAL.md',
+    '.claude/skills/x/SKILL.md',
+    'output/logs/x.log',
+    'temp/x.txt',
     'attic/old/__pycache__/x.pyc',
 )
+
+#: Lines retired from the base 2026-11-24 (no mechanism writes them in every checkout any more), and the
+#: one moved to the deltas of the repos that hold an archive. A base that regrew one reds here.
+_RETIRED_FROM_BASE: Final = (
+    '!**/.claude/rem.json',
+    '!**/.claude/sharp-review.json',
+    '!**/.claude/tasks/',
+    '!**/.claude/agents/',
+    '!**/.claude/skills/**',
+    '!**/.claude/docs/',
+    '**/_meta.json',
+    '**/.claude/**/__pycache__/',
+    '**/.claude/**/*.py[cod]',
+    '**/log/*.log',
+    '**/log/*.log.error',
+    '/dumps/',
+    '/report/',
+    'htmlcov/',
+    '.coverage*',
+    '**/ignore/',
+    '*.spec',
+    '*.c',
+    '!**/attic/**',
+    '**/temp/**',
+    'output/',
+)
+
+
+def test_the_retired_lines_are_out_of_the_base() -> None:
+    """PLANTED CONTROL is the list itself: every line here WAS base until 2026-11-24."""
+    from dev_lab.dev._famconfig_rows import GITIGNORE_BASE  # noqa: PLC0415
+
+    assert [line for line in _RETIRED_FROM_BASE if line in GITIGNORE_BASE] == []
+    assert {'/temp/', '/output/'} <= set(GITIGNORE_BASE)
 
 
 def _ignored(path: str) -> bool:

@@ -79,7 +79,7 @@ from dev_lab.dev.famconfig import (
 
 #: The measured three-way intersection, 2026-09-17. Pinned as a COUNT beside the named lines below
 #: rather than instead of them: the count says the table was not quietly halved, the names say which.
-GITIGNORE_LINES = 13
+GITIGNORE_LINES = 8  # trimmed 2026-11-24: the retired lines are named in _famconfig_rows
 
 #: How many artefacts the family declares. A floor -- a `BASES` that read empty would make every
 #: parametrized arm below pass over nothing at all.
@@ -219,11 +219,11 @@ def test_a_missing_file_is_absent_rather_than_clean(tmp_path: Path) -> None:
 def test_a_declared_drop_renders_its_reason_and_still_installs(tmp_path: Path) -> None:
     """A REMOVAL IS VISIBLE IN THE FILE, which is what distinguishes it from a drift on disk."""
     base = _base()
-    delta = Delta(repo='planted-repo', added=(), dropped={'*.c': 'this repo builds no Cython'}, ceiling=0)
+    delta = Delta(repo='planted-repo', added=(), dropped={'.mypy_cache/': 'this repo runs no mypy'}, ceiling=0)
     path = tmp_path / '.gitignore'
     text = render(base, delta)
     path.write_text(text, encoding='utf-8')
-    assert '# dropped from the base by planted-repo: *.c -- this repo builds no Cython' in text
+    assert '# dropped from the base by planted-repo: .mypy_cache/ -- this repo runs no mypy' in text
     assert inspect_file(path, base, delta).status == INSTALLED
 
 
@@ -238,7 +238,7 @@ def test_a_drop_naming_a_line_the_base_does_not_have_is_refused() -> None:
 
 def test_a_drop_with_an_empty_reason_is_refused() -> None:
     """A reasonless drop is a drift with a declaration pinned to it, and reads as a decision."""
-    delta = Delta(repo='planted-repo', added=(), dropped={'*.c': '   '}, ceiling=0)
+    delta = Delta(repo='planted-repo', added=(), dropped={'.mypy_cache/': '   '}, ceiling=0)
     with pytest.raises(ForkedDelta, match='empty reason'):
         render(_base(), delta)
 
@@ -596,7 +596,7 @@ def test_an_ordinary_line_is_still_promotable_into_the_same_base() -> None:
 def test_the_live_base_is_order_free_today_and_the_scan_was_not_empty() -> None:
     """THE FLOOR. Four floating rules here since 2026-10-03; a reading that found none subsumes nothing, vacuously."""
     floating = tuple(line for line in _SORTED if floating_subject(line))
-    assert floating == ('**/.DS_Store', '**/.env', '**/__pycache__/', '**/__version__.py', '**/ignore/'), floating
+    assert floating == ('**/.DS_Store', '**/.env', '**/__pycache__/', '**/__version__.py'), floating
     assert positional_base_lines(Base('.gitignore', _SORTED, RENDERED), floating_floor=len(floating)) == ()
     assert_base_is_order_free(_base())
 
@@ -630,9 +630,9 @@ def test_a_negation_in_a_sorted_base_is_defeated_by_the_sort_itself() -> None:
     into the SORTED base renders above the rule it was written to re-include and does nothing. This
     arm owns no guard; it exists so the refusal below is not a rule nobody can show a victim for.
     """
-    dead = '!**/log/keep.log'
+    dead = '!**/__pycache__/keep.pyc'
     lines = tuple(sorted((*_SORTED, dead)))
-    assert lines.index(dead) < lines.index('**/log/*.log'), lines
+    assert lines.index(dead) < lines.index('**/__pycache__/'), lines
     assert lines.index(dead) == 0, 'a negation sorts to the top of every base this table can hold'
 
 
