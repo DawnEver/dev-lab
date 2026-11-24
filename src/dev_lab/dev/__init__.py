@@ -256,6 +256,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE, PART_REFUSED), one source.
 * :mod:`dev_lab.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
 * :mod:`dev_lab.dev.depneeds` -- on-demand extras: a part's needs map to extras; a missing one is refused with its door.
+* :mod:`dev_lab.dev.needs` -- ONE need registry: ``@needs('jmag', 'os:windows', 'extra:x', 'data:s')`` on a test;
+  an unregistered need is refused at collection, a need missing on the host FAILS the test by name.
   STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a
   mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the
   stored anchors. It reads ``sys.prefix`` of the invoking interpreter, which is what makes the

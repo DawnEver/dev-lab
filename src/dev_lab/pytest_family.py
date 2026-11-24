@@ -16,7 +16,13 @@ import importlib
 
 import pytest
 
-__all__ = ['pytest_collection_modifyitems', 'pytest_configure', 'pytest_fixture_setup', 'pytest_sessionfinish']
+__all__ = [
+    'pytest_collection_modifyitems',
+    'pytest_configure',
+    'pytest_fixture_setup',
+    'pytest_runtest_call',
+    'pytest_sessionfinish',
+]
 
 #: The base temp entry this session made, which :func:`pytest_sessionfinish` reclaims.
 _MADE: pytest.StashKey[object] = pytest.StashKey()
@@ -26,6 +32,7 @@ _MADE: pytest.StashKey[object] = pytest.StashKey()
 def pytest_configure(config: pytest.Config) -> None:
     """Put pytest's base temp in a swept system-temp entry (:func:`dev_lab.dev.testtemp.configure`) first."""
     config.stash[_MADE] = importlib.import_module('dev_lab.dev.testtemp').configure(config)
+    config.addinivalue_line('markers', 'needs(*names): what the test needs (dev_lab.dev.needs); missing FAILS')
 
 
 @pytest.hookimpl(trylast=True)
@@ -50,5 +57,17 @@ def pytest_fixture_setup(fixturedef: pytest.FixtureDef[object]) -> object:
 
 @pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Append the always-on rows (:func:`dev_lab.dev.famtests.alwayson.append_rows`)."""
+    """Refuse an unregistered need (:mod:`dev_lab.dev.needs`), then append the always-on rows."""
+    importlib.import_module('dev_lab.dev.needs').refuse_unregistered(items, root=config.rootpath)
     importlib.import_module('dev_lab.dev.famtests.alwayson').append_rows(session, config, items)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_call(item: pytest.Item) -> None:
+    """A need declared on *item* and missing on this host FAILS it by name (:func:`dev_lab.dev.needs.judge`).
+
+    In the CALL phase, so the outcome is ``failed`` -- a red of the test, not a setup error of its fixtures.
+    """
+    if item.get_closest_marker('needs') is not None:
+        module = importlib.import_module('dev_lab.dev.needs')
+        module.judge(item, root=item.config.rootpath, host=module.Host.this())
