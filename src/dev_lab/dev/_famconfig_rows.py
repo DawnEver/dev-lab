@@ -191,21 +191,9 @@ GITIGNORE_FLOOR: Final = 10
 #: reason holds in all four. Repo-wide normalisation (`* text=auto eol=lf`) stays a repo's delta --
 #: adopting it renormalises every tracked file, which is a repo's decision, not the family's.
 #:
-#: WIDENED 2026-11-24 (user ruling): repo-wide LF normalisation is now the family's decision, so every
-#: consumer delta is empty. `*.bat`/`*.cmd` keep CRLF because cmd.exe misparses LF labels; the binary
-#: lines stop text normalisation from corrupting the artefact types the family commits.
-GITATTRIBUTES_BASE: Final[tuple[str, ...]] = (
-    '* text=auto eol=lf',
-    '*.bat text eol=crlf',
-    '*.cmd text eol=crlf',
-    '*.jpg binary',
-    '*.npz binary',
-    '*.pdf binary',
-    '*.png binary',
-    '*.sh text eol=lf',
-    '*.xlsx binary',
-    '*.zip binary',
-)
+#: SUPERSEDED 2026-11-24 (user ruling): the base is the ONE repo-wide normalisation line. `*.sh text eol=lf`,
+#: CRLF for `*.bat`/`*.cmd` and the binary lines are a repo's DELTA, declared only where it tracks such files.
+GITATTRIBUTES_BASE: Final[tuple[str, ...]] = ('* text=auto eol=lf',)
 
 #: Every base, by artefact. The render MODE is the machinery's word and is attached there; what this
 #: table owns is WHICH lines, and nothing else.

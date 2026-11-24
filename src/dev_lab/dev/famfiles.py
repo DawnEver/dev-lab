@@ -160,7 +160,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta', FAMFILES),
         _g(
             '.gitattributes',
-            'famconfig RENDERED: repo-wide LF, CRLF cmd scripts, declared binaries, plus the repo Delta',
+            'famconfig RENDERED: the one repo-wide LF line, plus the repo Delta',
             FAMFILES,
         ),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
