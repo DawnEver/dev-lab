@@ -855,3 +855,90 @@ def test_planted_a_journal_beside_no_task_md_of_kind_task_is_still_refused(repo:
     found = _push(repo, _commit(repo, 'no task', *paths))
     assert len(found) == 1, found
     assert _JOURNAL in found[0], found
+
+
+ATTACHMENT = '.claude/memory/2026/10/01/attachments/manifest.toml'
+_CITING = _HEAD + 'Its manifest: attachments/manifest.toml.\nBody.\n'
+_CITED = _HEAD + 'Its manifest: cases/x/manifest.toml@abc1234.\nBody.\n'
+
+
+def _deletion_note(names: str = '2026/10/01/attachments/manifest.toml', approved: str = 'delete the duplicate') -> str:
+    return _amend_note(reason=f'deleted {names}, a duplicate of a case file', approved=approved)
+
+
+def _published_attachment(repo: Path) -> str:
+    _write(repo, ENTRY, _CITING)
+    _write(repo, ATTACHMENT, "[case]\nname = 'x'\n")
+    _commit(repo, 'attach', ENTRY, ATTACHMENT)
+    _publish(repo)
+    return _lane(repo)
+
+
+def test_an_approved_attachment_deletion_passes(repo: Path) -> None:
+    """ATTACHMENT-DELETE (user ruling 2026-11-24): an entry's note names the deleted attachment and the approval."""
+    base = _published_attachment(repo)
+    _git(repo, 'rm', '-q', ATTACHMENT)
+    _write(repo, ENTRY, _CITED.replace(_HEAD, f'{_HEAD}{_deletion_note()}\n\n'))
+    _commit(repo, 'cite instead', ENTRY)
+    assert memoryadds.problems_between(repo, base, 'HEAD') == ()
+
+
+@pytest.mark.parametrize(
+    'note',
+    [
+        None,  # no note at all
+        'approved-empty',  # the reason without the user's words
+        'other-path',  # the note names a different attachment
+        'not-deleted',  # an amendment that does not say deleted
+        'published-note',  # a note the base already held approves nothing new
+    ],
+)
+def test_planted_an_attachment_deletion_without_its_approval_is_refused_by_name(repo: Path, note: str | None) -> None:
+    """PLANTED CONTROL: a deletion is refused, naming the attachment and its door, unless a NEW note approves it."""
+    if note == 'published-note':
+        _write(repo, ENTRY, _CITING.replace(_HEAD, f'{_HEAD}{_deletion_note()}\n\n'))
+        _write(repo, ATTACHMENT, "[case]\nname = 'x'\n")
+        _commit(repo, 'attach', ENTRY, ATTACHMENT)
+        _publish(repo)
+        base = _lane(repo)
+        _git(repo, 'rm', '-q', ATTACHMENT)
+        _git(repo, 'commit', '-q', '-m', 'drop')
+    else:
+        base = _published_attachment(repo)
+        _git(repo, 'rm', '-q', ATTACHMENT)
+        line = {
+            None: '',
+            'approved-empty': _deletion_note(approved=''),
+            'other-path': _deletion_note(names='2026/10/01/attachments/other.toml'),
+            'not-deleted': _amend_note(reason='2026/10/01/attachments/manifest.toml was cited'),
+        }[note]
+        _write(repo, ENTRY, _CITED.replace(_HEAD, f'{_HEAD}{line}\n\n' if line else _HEAD))
+        _commit(repo, 'cite instead', ENTRY)
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    refusal = [line for line in found if ATTACHMENT in line]
+    assert len(refusal) == 1, found
+    assert 'ATTACHMENT-DELETE' in refusal[0]
+    assert 'deleted <attachment>' in refusal[0]
+
+
+def test_planted_an_approval_note_never_admits_deleting_an_entry(repo: Path) -> None:
+    """PLANTED CONTROL: the door is for attachments -- an entry (``.md`` outside attachments/) stays undeletable."""
+    base = _lane(repo)
+    _git(repo, 'rm', '-q', SOURCES[0])
+    _write(repo, ENTRY, _HEAD + _deletion_note(names='2026/10/01/a.md') + '\n\nBody.\n')
+    _commit(repo, 'drop an entry', ENTRY)
+    found = memoryadds.problems_between(repo, base, 'HEAD')
+    assert any(SOURCES[0] in line and 'never deleted' in line for line in found), found
+
+
+@pytest.mark.parametrize(
+    ('path', 'attachment'),
+    [
+        ('.claude/memory/2026/10/01/attachments/INDEX.md', True),
+        ('.claude/memory/2026/10/01/probe.py', True),
+        ('.claude/memory/2026/10/01/an-entry.md', False),
+        ('docs/attachments/x.toml', False),
+    ],
+)
+def test_an_attachment_is_a_memory_file_that_is_not_an_entry(path: str, *, attachment: bool) -> None:
+    assert memoryentry.is_attachment(path) is attachment
