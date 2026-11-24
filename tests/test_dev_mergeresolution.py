@@ -223,3 +223,31 @@ def test_a_failure_to_compute_is_refused_under_its_own_header(
     err = capsys.readouterr().err
     assert 'could not compute' in err
     assert 'not declared' not in err
+
+
+def test_an_ours_merge_of_an_unrelated_history_is_judged_by_its_declaration(tmp_path: Path) -> None:
+    """A discard (``-s ours``) of a history with NO merge base is judged like any merge, never refused uncomputed.
+
+    With no base every file both roots hold with different content is git's own add/add conflict, so that is the
+    set the declaration answers; a file only the discarded side holds merges clean and is no conflict. Planted
+    control: the same merge undeclared is refused naming the file, and an over-claimed clean file is refused too.
+    """
+    _git(tmp_path, 'init', '-q', '-b', 'main')
+    _git(tmp_path, 'config', 'user.email', 't@t')
+    _git(tmp_path, 'config', 'user.name', 't')
+    _commit(tmp_path, {'src/a.py': 'X = 1\n', 'src/same.py': 'S = 1\n'}, 'restarted main')
+    _git(tmp_path, 'checkout', '-q', '--orphan', 'handover')
+    _git(tmp_path, 'rm', '-rq', '--cached', '.')
+    _commit(tmp_path, {'src/a.py': 'X = 0\n', 'src/same.py': 'S = 1\n', 'src/old.py': 'O = 1\n'}, 'pre-release')
+    _git(tmp_path, 'checkout', '-q', '-f', 'main')
+    base = _git(tmp_path, 'rev-parse', 'HEAD')
+    assert conflicted(tmp_path, ('main', 'handover')) == ('src/a.py',)
+    undeclared_msg = 'discard handover\n\nsrc/old.py: deleted-as-baggage -- retired on main'
+    _git(tmp_path, 'merge', '-q', '-s', 'ours', '--allow-unrelated-histories', '-m', undeclared_msg, 'handover')
+    ((_sha, problems),) = mergeresolution.unresolved(tmp_path, base, 'HEAD')
+    assert problems[0].startswith('src/a.py: not declared')
+    assert any(p.startswith('src/old.py: declared, but the parents do not conflict') for p in problems)
+    _git(tmp_path, 'reset', '-q', '--hard', base)
+    declared = 'discard handover\n\nsrc/a.py: deleted-as-baggage -- the pre-release X, superseded by main'
+    _git(tmp_path, 'merge', '-q', '-s', 'ours', '--allow-unrelated-histories', '-m', declared, 'handover')
+    assert mergeresolution.unresolved(tmp_path, base, 'HEAD') == ()

@@ -26,7 +26,8 @@ a file the parents do not conflict on is refused too. A clean merge needs no lin
 
 STRATEGY-BLIND ON PURPOSE. ``-s ours`` and ``-X ours|theirs`` stop on no conflict, yet the recomputation still
 finds the parents' one: a strategy that picks a side silently IS the unreviewed resolution this rule names, so
-it is declared like any other. The index cannot answer instead -- every stage is resolved by commit-msg time.
+it is declared like any other -- an unrelated history too, whose empty base makes every file both roots hold
+differently an add/add conflict. The index cannot answer instead -- every stage is resolved by commit-msg time.
 
 WHERE IT IS ENFORCED: on the FORGE, which no client can skip -- a PR into integration is not merged while a merge
 commit its head adds over integration leaves a conflicted file undeclared (:func:`unresolved`, asked by
@@ -105,12 +106,26 @@ _GIT: Final = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S: Final = 120
 _CONFLICTS_EXIT: Final = 1
 _PARENTS: Final = 2
+#: A discard (``-s ours``) of a history with no merge base is still a merge: with an empty base, a file both roots
+#: hold differently is git's own add/add conflict, so the declaration answers that set instead of an uncomputed one.
+_UNRELATED: Final = ('--allow-unrelated-histories',)
 
 
 def conflicted(root: Path, parents: Sequence[str]) -> tuple[str, ...]:
     """The files the two *parents* conflict on, sorted, as git's own three-way merge computes them."""
     done = _door.run(
-        [_GIT, '-C', str(root), 'merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', *parents],
+        [
+            _GIT,
+            '-C',
+            str(root),
+            'merge-tree',
+            '--write-tree',
+            '--name-only',
+            '--no-messages',
+            '-z',
+            *_UNRELATED,
+            *parents,
+        ],
         capture_output=True,
         check=False,
         timeout=_GIT_TIMEOUT_S,
