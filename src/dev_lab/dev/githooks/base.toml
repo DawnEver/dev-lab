@@ -72,6 +72,12 @@ run = ["python", "-m", "dev_lab.dev.privatemarkers", "--commit-msg-file"]
 
 # Warns on a malformed `Refs #N` / `Closes #N` / `Fixes #N` and never blocks (dev_lab.dev.issueref): `advisory`, so
 # the warning is shown although the row passes.
+# BASELINE-REWRITE-QUOTED (user ruling 2026-11-24, H2): a staged rewrite of a `tests/baselines.lock` row must quote
+# its old and new numbers in the message -- judged before the commit exists, while the message is still free to edit.
+[[commit-msg]]
+id = "baseline-rewrite-quoted"
+run = ["python", "-m", "dev_lab.dev.baselines", "check-message"]
+
 [[commit-msg]]
 id = "issue-ref"
 run = ["python", "-m", "dev_lab.dev.issueref"]

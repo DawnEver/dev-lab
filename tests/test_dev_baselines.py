@@ -156,3 +156,25 @@ def test_verify_refuses_an_unquoted_rewrite_and_passes_a_quoted_one(
         f'tests/golden.csv: a tracked data file under tests/ -- move it to the run store with {baselines.DOOR} put'
         in (capsys.readouterr().err)
     )
+
+
+def test_the_commit_msg_row_judges_the_staged_lock_before_the_commit_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """BASELINE-REWRITE-QUOTED at commit time: a staged rewrite is refused unquoted and admitted quoted."""
+    _git(tmp_path, 'init', '-q')
+    monkeypatch.chdir(tmp_path)
+    _commit(tmp_path, [_row(sha='a' * 64)], 'add the torque baseline')
+    baselines.write_lock(tmp_path / baselines.LOCK, [_row(sha='b' * 64)])
+    _git(tmp_path, 'add', '-A')
+    message = tmp_path / 'MSG'
+    message.write_text('refresh torque\n', encoding='utf-8')
+    assert baselines.main(['check-message', str(message)]) == 1
+    assert 'BASELINE-REWRITE-QUOTED: this commit rewrites baseline' in capsys.readouterr().err
+    message.write_text('refresh torque\n\nbaseline torque: old 0.0213 new 0.0108\n', encoding='utf-8')
+    assert baselines.main(['check-message', str(message)]) == 0
+
+
+def test_the_commit_msg_row_is_registered() -> None:
+    base = (Path(baselines.__file__).parent / 'githooks' / 'base.toml').read_text(encoding='utf-8')
+    assert 'run = ["python", "-m", "dev_lab.dev.baselines", "check-message"]' in base

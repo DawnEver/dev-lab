@@ -279,6 +279,11 @@ HINT: the hazard is minutes, not harm.
 - **Why it is refused.** a pushed marker is public for good: the forge has no denylist, so only this machine can refuse a machine, person, home path, chat id or a `~/.claude/private-markers` entry before it leaves. One scan (`dev_lab.dev.privatemarkers`) judges a staged line at commit, a commit message at push, and the typed text of every forge write -- `pr create` title and body, `pr close` reason, `issue create` title and body, `issue comment` body -- BEFORE its first forge call. A target the forge reports private passes (private names belong there); an unreadable visibility is scanned (fail closed). A hit is named by line and kind, never echoed. A forge write's refusal leads with `PRIVATE-MARKERS:`, puts its door on a line of its own and is recorded in the walls ledger (`dev_lab.dev.walls.refused_text`).
 - **The exit.** Rewrite the text neutrally -- a placeholder for each private name -- and re-run the same command.
 
+## BASELINE-REWRITE-QUOTED
+
+- **Why it is refused.** a baseline a test compares against lives in the run store, and the repo's `tests/baselines.lock` names it by hash (`dev_lab.dev.baselines`). A rewrite -- a locked name whose hash moved -- is a claim that the new data agrees better, and a claim without both numbers is unchecked. The commit-msg row `baseline-rewrite-quoted` judges the STAGED lock against `HEAD`'s before the commit exists; `python -m dev_lab.dev.baselines verify --commit <sha>` judges a landed one. An added row is no rewrite.
+- **The exit.** Add one line per rewritten name to the message -- `baseline <name>: old <number> new <number>` -- and commit again.
+
 ## DOWNSTREAM-SYNCS-INTEGRATION
 
 - **Why it is refused.** `forge sync` (`dev_lab.dev.forgesync`) updates a CHILD branch from its upstream set: integration first, then the refs its owner watches (the rule's statement is the registry row, `dev_lab.dev.rules`). A ref outside that set would bring another child's work in sideways; a detached HEAD, the trunk and the integration branch are not child branches (only the integrator moves integration, only `integrate promote` moves the trunk); a ref that names no commit cannot be trial-merged.

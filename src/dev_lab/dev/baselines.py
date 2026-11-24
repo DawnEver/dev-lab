@@ -46,6 +46,7 @@ __all__ = [
     'CODE_SUFFIXES',
     'DOOR',
     'LOCK',
+    'RULE',
     'LockRefused',
     'Row',
     'Store',
@@ -262,6 +263,23 @@ def _verify(root: Path, commit: str | None) -> list[str]:
     return refusals
 
 
+#: The rule a staged rewrite without its numbers breaks; its refusal leads with it (docs-src/dev/refusals.md).
+RULE: Final = 'BASELINE-REWRITE-QUOTED'
+
+
+def _check_message(root: Path, message: str) -> int:
+    """The commit-msg row: the STAGED lock against HEAD's, judged against *message* before the commit exists."""
+    missing = unquoted(rewritten(_rows_at(root, 'HEAD'), _rows_at(root, '')), message)
+    for name in missing:
+        emit(
+            f'{RULE}: this commit rewrites baseline {name!r} without quoting its numbers.\n'
+            f'add the line "baseline {name}: old <number> new <number>" to the message and commit again\n'
+            f'details: docs-src/dev/refusals.md#{RULE.lower()} (dev-lab)',
+            err=True,
+        )
+    return 1 if missing else 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m dev_lab.dev.baselines {get,put,verify}``; exit 0 done, 1 refused."""
     parser = argparse.ArgumentParser(prog=DOOR, description='Baselines in the run store, one lock in the repo.')
@@ -274,6 +292,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     store.add_argument('--test', required=True, help='the test id comparing against it')
     store.add_argument('--command', required=True, help='the command that produced it')
     store.add_argument('--source-sha', default='', help='the commit it was produced at (default: HEAD)')
+    hook = sub.add_parser('check-message', help='commit-msg row: refuse an unquoted staged rewrite')
+    hook.add_argument('message_file', type=Path)
     check = sub.add_parser('verify', help='refuse a malformed lock, tracked test data, an unquoted rewrite')
     check.add_argument('--commit', default=None, help='also judge this commit`s lock rewrites against its message')
     parsed = parser.parse_args(argv)
@@ -290,6 +310,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 store=_run_store(root),
             )  # fmt: skip
             emit(f'locked {row.name} = {row.sha256} in {LOCK}')
+        elif parsed.verb == 'check-message':
+            return _check_message(root, parsed.message_file.read_text(encoding='utf-8'))
         else:
             refusals = _verify(root, parsed.commit)
             for line in refusals:

@@ -85,6 +85,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'session-prs',
     }
     assert {hook.id for hook in table['commit-msg']} == {
+        'baseline-rewrite-quoted',
         'conventional-commit',
         'forge-host',
         'issue-ref',

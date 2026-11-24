@@ -42,6 +42,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_delete_row.py',),
     ),
     (
+        'BASELINE-REWRITE-QUOTED',
+        (
+            'A recorded baseline lives in the run store and its repo keeps one `tests/baselines.lock`; a commit '
+            'that REWRITES a locked baseline (its hash moves) quotes its old and new numbers in the message, one '
+            '`baseline <name>: old <number> new <number>` line per name, refused at commit-msg and by '
+            '`python -m dev_lab.dev.baselines verify --commit <sha>` (user ruling 2026-11-24, H2).'
+        ),
+        ('tests/test_dev_baselines.py',),
+    ),
+    (
         'MERGE-DEVIATIONS-NAMED',
         (
             'A merge may not lose or rewrite a test in silence: every test whose body in the merge differs from '
