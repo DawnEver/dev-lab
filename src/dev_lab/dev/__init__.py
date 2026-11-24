@@ -50,6 +50,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   before a document edit.
 * :mod:`dev_lab.dev.notices` — the third-party licence notice from the installed environment; the product is
   ``[tool.dev_lab.notices]`` data, and an unidentified licence is refused by name.
+* :mod:`dev_lab.dev.cratefresh` — the Rust side of dependency freshness: a crate whose declared spec cannot reach
+  crates.io's newest release.
 * :mod:`dev_lab.dev.importedges` — the family's one static import-edge reader (every depth, both spellings).
 * :mod:`dev_lab.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
   one measured caveat recorded in its docstring: ``resolve_home``'s auto-detection anchors on its
