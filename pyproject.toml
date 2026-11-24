@@ -106,6 +106,8 @@ extras = ["test", "ops"]
 code_roots = []
 # A worktree is a real second tree with its own src/, judged by the run inside it.
 pruned_paths = ['.claude/worktrees']
+# Every tool cache lives under output/cache/<tool>/, each tool NAMED (user ruling 2026-11-24): its files go unjudged.
+tool_caches = ['pytest', 'ruff', 'coverage', 'hypothesis', 'pyright']
 # SCRATCH-IS-NEVER-COMMITTED: the one-off sink, and when the SessionStart notice starts naming a one-off.
 scratch = 'scratch/'
 max_age_days = 3.0

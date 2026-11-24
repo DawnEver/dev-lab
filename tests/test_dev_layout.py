@@ -254,3 +254,49 @@ def test_the_hook_entry_denies_a_write_into_an_undeclared_directory(tmp_path, ca
     decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']
     assert decision['permissionDecision'] == 'deny'
     assert 'DECLARED-LAYOUT' in decision['permissionDecisionReason']
+
+
+# ---------------------------------------------------- read-only inputs and named tool caches (rulings 2026-11-24)
+
+_BARE = f"""[tool.dev_lab.placement]
+read_only = ['temp']
+tool_caches = ['pytest', 'ruff']
+[tool.dev_lab.placement.layout]
+{_HOMES}rust = ['.rs', '.toml']
+"""
+
+
+def test_a_read_only_path_is_never_format_checked_but_still_never_written(tmp_path) -> None:
+    """Ruling 5: ``temp/`` holds user input of any format, judged by no row; the write hook still refuses it.
+
+    PLANTED CONTROL: the same file in a directory that is not read_only is named as undeclared.
+    """
+    root = _checkout(tmp_path, _BARE)
+    _plant(root, 'temp/deep/input.weird')
+    assert layout_violations(root)[1] == []
+    _plant(root, 'notes/input.weird')
+    assert [line for line in layout_violations(root)[1] if 'notes' in line] != []
+    assert 'read_only' in (refuse_layout(root / 'temp' / 'new.txt') or '')
+
+
+def test_a_named_tool_cache_is_exempt_and_an_unnamed_one_is_judged(tmp_path) -> None:
+    """Ruling 4: ``output/cache/<tool>/`` of a NAMED tool holds whatever that tool writes; no other tool's does.
+
+    PLANTED CONTROL: ``output/cache/mypy/`` is not named, so its file is refused like any undeclared one.
+    """
+    root = _checkout(tmp_path, _BARE)
+    _plant(root, 'output/cache/pytest/v/cache/nodeids')
+    _plant(root, 'output/cache/ruff/0.9.0/12345')
+    assert layout_violations(root)[1] == []
+    assert refuse_layout(root / 'output' / 'cache' / 'pytest' / 'lastfailed') is None
+    _plant(root, 'output/cache/mypy/3.12/x.data.json')
+    assert [line for line in layout_violations(root)[1] if 'output/cache/mypy' in line] != []
+
+
+@pytest.mark.parametrize('entry', ['*', 'py*', 'pytest/v', '', '[pr]uff'])
+def test_a_tool_cache_entry_that_is_not_one_named_tool_is_refused(tmp_path, entry) -> None:
+    """Named tools only, never a wildcard: a glob, a path or an empty name reds at the declaration."""
+    body = _BARE.replace("tool_caches = ['pytest', 'ruff']", f"tool_caches = ['pytest', {entry!r}]")
+    root = _checkout(tmp_path, body)
+    with pytest.raises(LayoutNotDeclared, match='tool_caches'):
+        declared_layout(root)

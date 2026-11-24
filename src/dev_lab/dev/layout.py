@@ -10,7 +10,8 @@ root's own files), each value the list of what a file there may be -- a ``.suffi
 for a file with no suffix, or ``*`` for anything::
 
     [tool.dev_lab.placement]
-    read_only = ['temp']                      # user-maintained input: never written, never cleaned
+    read_only = ['temp']                      # user-maintained input: never written, never cleaned, never judged
+    tool_caches = ['pytest', 'ruff']          # output/cache/<tool>/ of each NAMED tool holds what the tool writes
     [tool.dev_lab.placement.layout]
     '.' = ['.toml', '.md', '.lock', '.gitignore']
     src = ['.py', '.typed']
@@ -27,6 +28,12 @@ THE FAMILY HOLDS THREE THINGS, NOT THE TREE (a repo's formats are its own): ever
 is refused whatever the table says -- a directory holding ``.git`` (a clone or worktree), a ``pyproject.toml``
 beside a ``src/`` (an exported tree), or a :data:`BACKUP_SUFFIXES` file (a bundle or patch parked as a backup).
 Its door is MERGE-OR-DELETE: land the work through its branch, or delete it.
+
+TWO EXEMPTIONS, BOTH NAMED (user rulings 2026-11-24). A ``read_only`` path is user input of whatever format the
+user keeps: the scan never judges or descends it, and the write hook refuses any write into it. A tool in
+``tool_caches`` owns ``output/cache/<tool>/`` (every tool cache lives there, never at the root): the scan and the
+hook leave its files unjudged. Each entry is ONE tool's name -- a glob, a path or an empty name is refused, so an
+unnamed tool's cache is judged like any undeclared directory.
 
 ONE TABLE, ONE PREDICATE, THREE CALLERS: the scan :func:`layout_violations`, the write hook's
 :func:`refuse_layout`, and the scan entry :func:`main` that ``verify`` and every forge tick run.
@@ -49,6 +56,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -91,6 +99,10 @@ BACKUP_SUFFIXES: Final = frozenset({'.bundle', '.patch', '.diff'})
 #: The family homes' top-level directories: every adopter declares each of them.
 REQUIRED: Final = frozenset(home.split('/', 1)[0] for home in FAMILY_HOMES.values())
 _ANY: Final = '*'
+#: Where a named tool's cache lives: ``output/cache/<tool>/`` (user ruling 2026-11-24).
+TOOL_CACHE_ROOT: Final = 'output/cache'
+#: One tool's name: a plain word, so an entry can never widen into a glob or a path.
+_TOOL: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
 #: Agent state lives once, at the checkout root (user ruling 2026-11-23): a scoped ``.claude/`` below it is refused.
 _SCOPED: Final = '.claude'
 _SCOPED_CAUSE: Final = (
@@ -117,12 +129,13 @@ class Layout:
     rows: dict[str, frozenset[str]]
     pruned_paths: tuple[str, ...] = ()
     read_only: tuple[str, ...] = ()
+    tool_caches: tuple[str, ...] = ()
 
     @property
     def digest(self) -> str:
         """The declaration's fingerprint: a changed table invalidates every journalled verdict."""
         rows = sorted((k, sorted(v)) for k, v in self.rows.items())
-        text = json.dumps([rows, self.pruned_paths, self.read_only])
+        text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches])
         return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
@@ -162,7 +175,10 @@ def declared_layout(root: Path) -> Layout:
             raise _refuse(manifest, f'{key} allows {bad}, which output/ never holds')
     pruned = tuple(p.strip('/') for p in placement.get('pruned_paths', []) if isinstance(p, str))
     read_only = tuple(p.strip('/') for p in placement.get('read_only', []) if isinstance(p, str))
-    return Layout(rows, pruned, read_only)
+    tools = placement.get('tool_caches', [])
+    if not isinstance(tools, list) or not all(isinstance(t, str) and _TOOL.fullmatch(t) for t in tools):
+        raise _refuse(manifest, f'tool_caches = {tools!r} must name tools one by one (no glob, path or empty name)')
+    return Layout(rows, pruned, read_only, tuple(tools))
 
 
 def _within(rel: str, prefixes: tuple[str, ...]) -> bool:
@@ -176,9 +192,15 @@ def _within(rel: str, prefixes: tuple[str, ...]) -> bool:
 
 
 def _skipped(rel_dir: str, layout: Layout) -> bool:
-    """A directory never judged: tool state by name, or a declared pruned path (another checkout's worktrees)."""
+    """A directory never judged: tool state by name, a pruned path, a read_only input, or a named tool cache."""
     parts = [] if rel_dir == '.' else rel_dir.split('/')
-    return bool(PRUNED_NAMES.intersection(parts)) or _within(rel_dir, layout.pruned_paths)
+    caches = tuple(f'{TOOL_CACHE_ROOT}/{tool}' for tool in layout.tool_caches)
+    return (
+        bool(PRUNED_NAMES.intersection(parts))
+        or _within(rel_dir, layout.pruned_paths)
+        or _within(rel_dir, layout.read_only)
+        or _within(rel_dir, caches)
+    )
 
 
 def _row_for(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | None:
