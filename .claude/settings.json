@@ -1,5 +1,218 @@
 {
   "enabledPlugins": {
     "rem@cc-market": false
+  },
+  "env": {
+    "MPLBACKEND": "Agg"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "e=\"$CLAUDE_PROJECT_DIR/.claude/hooks/deny-commands.js\"; r=\"$CLAUDE_PROJECT_DIR/.claude/hooks/deny-rules.json\"; i=$(cat); case \"$i\" in *\"agent_guard --install\"*) printf %s \"$i\" | node -e 'let s=\"\";process.stdin.on(\"data\",(d)=>s+=d).on(\"end\",()=>{let c=\"\";try{c=String(JSON.parse(s).tool_input.command||\"\")}catch{}process.exit(/^[^;&|<>`()\\n\\r]*-m dev_lab\\.dev\\.agent_guard --install( --force)?$/.test(c.trim())?0:1)})' && exit 0;; esac; [ -f \"$e\" ] && [ -f \"$r\" ] || { echo \"agent-guard: no engine at $e or no rules at $r -- refused (fail closed); repair: node \\\"$CLAUDE_PROJECT_DIR/.claude/hooks/py.js\\\" -m dev_lab.dev.agent_guard --install\" >&2; exit 2; }; printf %s \"$i\" | node \"$e\" \"$r\" || { echo \"agent-guard: the engine exited $? -- refused (fail closed)\" >&2; exit 2; }",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/py.js\" -m dev_lab.dev.hookdispatch PreToolUse",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/py.js\" -m dev_lab.dev.hookdispatch PostToolUse",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/py.js\" -m dev_lab.dev.hookdispatch PostToolUseFailure",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/py.js\" -m dev_lab.dev.hookdispatch UserPromptSubmit",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/py.js\" -m dev_lab.dev.hookdispatch Stop",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/py.js\" -m dev_lab.dev.hookdispatch SubagentStop",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/py.js\" -m dev_lab.dev.hookdispatch SessionStart",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.autodoors *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.branchprune delete *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.branchprune task *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.branchset *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.dep --bootstrap *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.famfiles *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.family check *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.family join *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge breakglass open *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge cancel-stuck *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge issue close *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge issue comment *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge issue create *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge issue label *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr breakglass *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr close *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr close-landed *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr close-superseded *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr continue *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr create *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr draft *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr hold *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr ready *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge pr release *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge queue *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge review again *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge review carry *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge review takeover *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge run show *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge security release *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge status list *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge sync *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.forge watch *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.hook_install --install *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.hpcaccount credential *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.hpcaccount deploy-fleet *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.hpcaccount drift *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.hpcaccount drift-fleet *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.hpcaccount forget *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.hpcaccount retention *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.integrate promote *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.netverb *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.opsserver *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.sshhold close *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.sshhold credential *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.sshhold open *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.sshhold run *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.sshhold status *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.stoprun *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.verify *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.dev.worktrees *)",
+      "Bash(.venv/Scripts/python.exe -m dev_lab.ops.consent grant *)",
+      "Bash(.venv/Scripts/python.exe -m lab_commons.desktop capture *)",
+      "Bash(.venv/Scripts/python.exe -m lab_commons.desktop controls *)",
+      "Bash(.venv/Scripts/python.exe -m lab_commons.desktop windows *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.autodoors *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.branchprune delete *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.branchprune task *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.branchset *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.dep --bootstrap *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.famfiles *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.family check *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.family join *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge breakglass open *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge cancel-stuck *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge issue close *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge issue comment *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge issue create *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge issue label *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr breakglass *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr close *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr close-landed *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr close-superseded *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr continue *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr create *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr draft *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr hold *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr ready *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge pr release *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge queue *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge review again *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge review carry *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge review takeover *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge run show *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge security release *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge status list *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge sync *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.forge watch *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.hook_install --install *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.hpcaccount credential *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.hpcaccount deploy-fleet *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.hpcaccount drift *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.hpcaccount drift-fleet *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.hpcaccount forget *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.hpcaccount retention *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.integrate promote *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.netverb *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.opsserver *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.sshhold close *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.sshhold credential *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.sshhold open *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.sshhold run *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.sshhold status *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.stoprun *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.verify *)",
+      "Bash(.venv/bin/python -m dev_lab.dev.worktrees *)",
+      "Bash(.venv/bin/python -m dev_lab.ops.consent grant *)",
+      "Bash(.venv/bin/python -m lab_commons.desktop capture *)",
+      "Bash(.venv/bin/python -m lab_commons.desktop controls *)",
+      "Bash(.venv/bin/python -m lab_commons.desktop windows *)",
+      "Bash(gh workflow disable *)",
+      "Bash(gh workflow enable *)",
+      "Bash(git -C * merge --ff-only *)",
+      "Bash(git merge --ff-only *)"
+    ]
   }
 }

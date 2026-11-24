@@ -150,6 +150,7 @@ prefix_rule(
 # MAIN-ONLY-DOOR: scoped to subagents; Codex execpolicy has no agent scope
 # HEAVY-IS-THE-MAIN-SESSIONS: scoped to subagents; Codex execpolicy has no agent scope
 # CONSENT-CODE-FROM-THE-USER: judged on the path it writes or removes, not on the command word
+# USER-FROZEN-FILES: judged on the path it writes or removes, not on the command word
 # REPORTS-LIVE-IN-MEMORY: judged on the path it writes or removes, not on the command word
 # OUTPUT-HOLDS-NO-CODE: judged on the path it writes or removes, not on the command word
 # WRITES-STAY-IN-THE-TREE: judged on the path it writes or removes, not on the command word
