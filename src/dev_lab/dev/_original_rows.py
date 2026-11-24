@@ -69,6 +69,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'partfacts',
     'partrefs',
     'claudesettings',
+    # ORIGINAL: nothing refused a credential value reaching a log line (ruling C, 2026-11-24).
+    'secretlog',
     'cjk',
     'content',
     # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism

@@ -99,8 +99,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError as exc:
         emit(f'issue-ref: could not read the commit message ({exc}); nothing checked', err=True)
         return 0
-    for token in malformed(text):
-        emit(f'issue-ref: WARNING malformed issue reference {token!r} -- {_HINT}. Not blocking.', err=True)
+    for ref in malformed(text):
+        emit(f'issue-ref: WARNING malformed issue reference {ref!r} -- {_HINT}. Not blocking.', err=True)
     return 0
 
 
