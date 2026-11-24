@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import principles
+from dev_lab.dev import agentsection
 from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
@@ -67,6 +67,7 @@ __all__ = [
     'is_member',
     'load_deltas',
     'main',
+    'managed_sections',
     'plan',
     'project_files_on_disk',
     'render_agent_files',
@@ -75,7 +76,6 @@ __all__ = [
     'render_repo',
     'unaccounted',
     'undeclared_inputs',
-    'whole_files',
 ]
 
 #: The one command a repo re-renders every family file with (its own deltas module named).
@@ -120,10 +120,6 @@ CIWORKFLOWS: Final = Renderer('ciworkflows', ('dev_lab.dev.ciworkflows', 'render
 AUTODOORS: Final = Renderer(
     'autodoors', ('dev_lab.dev.autodoors', '--write'), inputs=(('shell_doors', '--shell-door'),)
 )
-DEVDOCS: Final = Renderer(
-    'devdocs', ('dev_lab.dev.devdocs',), inputs=(('docs_base', '--base'),), required=frozenset({'docs_base'}),
-    declared_by='docs_base',
-)  # fmt: skip
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,7 +161,6 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
         _g('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte', AGENT_GUARD),
         _g('.claude/hooks/venv_resolver.js', 'agent_guard install: the one environment resolver', AGENT_GUARD),
-        _g('.claude/rules/principles.md', 'principles.render via famfiles: the family principles', FAMFILES),
         _g('.claude/hooks/deny-rules.json', 'hook_adoption: the deny registry plus the repo remedies', HOOK_ADOPTION),
         _g('.codex/rules/family-doors.rules', 'autodoors --write: the family doors plus the repo`s', AUTODOORS),
         _g('.codex/rules/family-denies.rules', 'autodoors --write: the deny registry as Codex rules', AUTODOORS),
@@ -174,18 +169,14 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _g('.github/workflows/merge-tick.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('.github/workflows/continue.yml', 'ciworkflows RENDERED: ci_base.toml + [tool.dev_lab.ci]', CIWORKFLOWS),
         _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
-        ProjectFile(
-            'docs-src/dev/index.md',
-            MANAGED,
-            'devdocs.write_pointer_table writes the family pointer table; the rest of the index is the repo`s',
-            renderer=DEVDOCS,
-        ),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
         _o('Makefile', 'its targets and recipes are the repo`s; the family contract retired 2026-11-24'),
-        _o(
+        ProjectFile(
             'AGENTS.md',
-            'its subject is the repo`s architecture; shared rules are cited by ID from dev_lab.dev.rules',
+            MANAGED,
+            'agentsection renders the family section between its markers via famfiles; the rest is the repo`s',
+            renderer=FAMFILES,
         ),
         _o('CLAUDE.md', 'a pointer to AGENTS.md; the shared rule pages arrive through famtests.rulespages'),
         _o('CHANGELOG.md', 'the repo`s release history'),
@@ -410,26 +401,14 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
     return tuple(out)
 
 
-def whole_files() -> tuple[tuple[str, str], ...]:
-    """The family files every repo carries whole, with no delta: (repo-relative path, its text)."""
-    return ((principles.PAGE_REL, principles.render()),)
+def managed_sections() -> tuple[tuple[str, str], ...]:
+    """The family sections every repo carries inside a file of its own: (repo-relative path, the section text)."""
+    return ((agentsection.AGENTS_REL, agentsection.render_section()),)
 
 
 def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
-    """The family files with no delta, re-rendered into *root*; one line per file. *write* false: the check mode."""
-    out: list[str] = []
-    for rel, text in whole_files():
-        path = root / rel
-        held = path.read_text(encoding='utf-8') if path.is_file() else None
-        if held == text:
-            out.append(f'{rel}: current')
-        elif write:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding='utf-8', newline='\n')
-            out.append(f'{rel}: rendered')
-        else:
-            out.append(f'{rel}: would render ({"absent" if held is None else "drifted"})')
-    return tuple(out)
+    """The family section of AGENTS.md, re-rendered into *root*; one line. *write* false: the check mode."""
+    return (agentsection.render_into(root, write=write),)
 
 
 def main(argv: list[str] | None = None) -> int:

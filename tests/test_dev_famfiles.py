@@ -16,6 +16,7 @@ from typing import Final
 import pytest
 from _famconfig_delta import DELTAS, REPO
 
+from dev_lab.dev.agentsection import AGENTS_REL, BEGIN, END, render_section
 from dev_lab.dev.devdocs import INDEX_REL, pointer_table, write_pointer_table
 from dev_lab.dev.famconfig import BASES, RENDERED
 from dev_lab.dev.famfiles import (
@@ -28,19 +29,17 @@ from dev_lab.dev.famfiles import (
     due_renderers,
     is_member,
     main,
+    managed_sections,
     project_files_on_disk,
     render_agent_files,
     render_all,
     render_argv,
     render_repo,
-    whole_files,
 )
 from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
     assert_every_project_file_is_accounted_for,
 )
-from dev_lab.dev.principles import PAGE_REL
-from dev_lab.dev.principles import render as render_principles
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 DELTAS_FILE: Final = ROOT / 'tests' / '_famconfig_delta.py'
@@ -134,18 +133,22 @@ def test_a_rendered_file_is_lf_on_every_os(tmp_path: Path) -> None:
         assert b'\r\n' not in (tmp_path / name).read_bytes(), name
 
 
-def test_famfiles_writes_the_principles_page(tmp_path: Path) -> None:
-    """The whole family files are famfiles'. PLANTED CONTROL: a drifted page reads stale, then current."""
-    root = tmp_path / 'repo'
-    root.mkdir()
-    _git('init', '-q', cwd=root)
-    assert render_agent_files(root, write=False) == (f'{PAGE_REL}: would render (absent)',)
-    assert render_agent_files(root, write=True) == (f'{PAGE_REL}: rendered',)
-    assert (root / PAGE_REL).read_text(encoding='utf-8') == render_principles()
-    (root / PAGE_REL).write_text('hand edit\n', encoding='utf-8')
-    assert render_agent_files(root, write=False)[0] == f'{PAGE_REL}: would render (drifted)'
-    render_agent_files(root, write=True)
-    assert render_agent_files(root, write=False) == (f'{PAGE_REL}: current',)
+def test_famfiles_writes_the_agents_section_and_keeps_the_repo_text(tmp_path: Path) -> None:
+    """The family section is spliced between its markers; the repo's own text around it is kept.
+
+    PLANTED CONTROL: a hand edit inside the markers reads drifted in check mode and current after one render.
+    """
+    (tmp_path / AGENTS_REL).write_text('# repo\n\nOur own rules.\n', encoding='utf-8')
+    assert render_agent_files(tmp_path, write=False) == (f'{AGENTS_REL}: would render (drifted)',)
+    assert render_agent_files(tmp_path, write=True) == (f'{AGENTS_REL}: rendered',)
+    text = (tmp_path / AGENTS_REL).read_text(encoding='utf-8')
+    assert text.startswith('# repo\n\nOur own rules.\n')
+    assert render_section() in text
+    (tmp_path / AGENTS_REL).write_text(text.replace('## Family workflow', '## My workflow'), encoding='utf-8')
+    assert render_agent_files(tmp_path, write=False) == (f'{AGENTS_REL}: would render (drifted)',)
+    render_agent_files(tmp_path, write=True)
+    assert render_agent_files(tmp_path, write=False) == (f'{AGENTS_REL}: current',)
+    assert (tmp_path / AGENTS_REL).read_text(encoding='utf-8') == text
 
 
 #: Retired 2026-11-24 (user ruling): no family row, no renderer, no requirement -- each refused by name.
@@ -211,7 +214,7 @@ def test_a_renderers_command_reads_the_repos_render_table(tmp_path: Path) -> Non
     ]  # fmt: skip
 
 
-def test_a_repo_without_a_deltas_module_renders_its_whole_files_and_no_base(tmp_path: Path) -> None:
+def test_a_repo_without_a_deltas_module_renders_its_agents_section_and_no_base(tmp_path: Path) -> None:
     """2026-11-13: cc-market has no deltas module, so the one door refused it. No deltas = no per-file overrides.
 
     PLANTED CONTROL: the door without ``--files`` is still the one door, not this renderer.
@@ -223,7 +226,7 @@ def test_a_repo_without_a_deltas_module_renders_its_whole_files_and_no_base(tmp_
     (tmp_path / '.gitignore').write_text('mine', encoding='utf-8')
     assert main(['--files', '--repo', str(tmp_path)]) == 0
     assert (tmp_path / '.gitignore').read_text(encoding='utf-8') == 'mine', 'no delta: the base is not written'
-    assert all((tmp_path / rel).read_text(encoding='utf-8') == text for rel, text in whole_files())
+    assert all(text in (tmp_path / rel).read_text(encoding='utf-8') for rel, text in managed_sections())
     assert main(['--files', '--check', '--repo', str(tmp_path)]) == 0
     with pytest.raises(SystemExit):
         main(['--check', '--repo', str(tmp_path)])  # the door itself: --check reads one renderer
@@ -372,16 +375,15 @@ def test_the_module_door_runs_and_its_check_says_no_to_a_stale_file(tmp_path: Pa
 
     Every invocation -- the door, ``--files``, ``--check`` -- imported the module, printed nothing and exited 0.
 
-    PLANTED CONTROL: a stale principles page makes ``--check`` exit 1; after the render it exits 0.
+    PLANTED CONTROL: a stale family section makes ``--check`` exit 1; after the render it exits 0.
     """
     door = [sys.executable, '-m', 'dev_lab.dev.famfiles', '--files', '--repo', str(tmp_path)]
-    page = tmp_path / PAGE_REL
-    page.parent.mkdir(parents=True)
-    page.write_text('stale\n', encoding='utf-8')
+    page = tmp_path / AGENTS_REL
+    page.write_text(f'{BEGIN}\nstale\n{END}\n', encoding='utf-8')
     checked = subprocess.run([*door, '--check'], capture_output=True, text=True, encoding='utf-8', check=False)
     assert checked.returncode == 1
-    assert f'{PAGE_REL}: would render (drifted)' in checked.stdout
+    assert f'{AGENTS_REL}: would render (drifted)' in checked.stdout
     assert subprocess.run(door, capture_output=True, check=False).returncode == 0
-    assert page.read_text(encoding='utf-8') == render_principles()
+    assert page.read_text(encoding='utf-8') == render_section()
     again = subprocess.run([*door, '--check'], capture_output=True, text=True, encoding='utf-8', check=False)
-    assert (again.returncode, f'{PAGE_REL}: current' in again.stdout) == (0, True)
+    assert (again.returncode, f'{AGENTS_REL}: current' in again.stdout) == (0, True)

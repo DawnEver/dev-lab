@@ -74,7 +74,7 @@ def render_fixture(text: str, deltas: Mapping[str, Delta], origin: str, roles: R
         for artefact, delta in deltas.items()
         if artefact_base(artefact).mode == RENDERED
     }
-    out.update(famfiles.whole_files())
+    out.update(famfiles.managed_sections())
     forge = ciworkflows.declared_forge(text, origin)
     for name, (directory, workflow) in ciworkflows.placed(text, origin, forge, roles).items():
         out[(directory / name).as_posix()] = ciworkflows.render(workflow)

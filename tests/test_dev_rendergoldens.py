@@ -52,17 +52,17 @@ def test_the_fixtures_are_the_named_set_and_cover_every_generator() -> None:
     assert {key.split('/', 1)[0] for key in rendered} == set(_FIXTURES)
     paths = {key.split('/', 1)[1] for key in rendered}
     assert {base for base, row in BASES.items() if row.mode == RENDERED} <= paths
-    assert {rel for rel, _ in famfiles.whole_files()} <= paths
+    assert {rel for rel, _ in famfiles.managed_sections()} <= paths
     for forge in set(_FIXTURES.values()):
         assert {(ciworkflows.WORKFLOW_DIRS[forge] / name).as_posix() for name in ciworkflows.base_names(forge)} <= paths
 
 
 def test_a_planted_generator_change_is_named_in_every_fixture_it_moves(monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED CONTROL: a moved base names each fixture rendering it, and leaves the others' renders unnamed."""
-    base = BASES['.rgignore']
-    monkeypatch.setitem(BASES, '.rgignore', dataclasses.replace(base, lines=(*base.lines, 'planted/')))
+    base = BASES['.gitattributes']
+    monkeypatch.setitem(BASES, '.gitattributes', dataclasses.replace(base, lines=(*base.lines, '*.planted binary')))
     moved = rendergoldens.compare(rendergoldens.render_fixtures(FIXTURES), rendergoldens.read_goldens(GOLDENS))
-    assert moved == ['gitea_review/.rgignore: changed', 'github_plain/.rgignore: changed']
+    assert moved == ['github_overrides/.gitattributes: changed', 'github_plain/.gitattributes: changed']
 
 
 def test_compare_names_a_changed_a_new_and_a_gone_render() -> None:
@@ -77,12 +77,12 @@ def test_update_writes_exactly_the_render_and_removes_a_stale_golden(tmp_path: P
     stale = tmp_path / f'x/a{rendergoldens.SEP}old{rendergoldens.SUFFIX}'
     stale.parent.mkdir()
     stale.write_text('old', encoding='utf-8')
-    assert rendergoldens.write({'x/.claude/rem.json': 'a\n'}, tmp_path) == [
-        'x/.claude/rem.json: new, no golden',
+    assert rendergoldens.write({'x/.codex/rules/a.rules': 'a\n'}, tmp_path) == [
+        'x/.codex/rules/a.rules: new, no golden',
         'x/a/old: gone, its golden is stale',
     ]
-    assert rendergoldens.read_goldens(tmp_path) == {'x/.claude/rem.json': 'a\n'}
-    assert (tmp_path / f'x/.claude{rendergoldens.SEP}rem.json{rendergoldens.SUFFIX}').is_file()
+    assert rendergoldens.read_goldens(tmp_path) == {'x/.codex/rules/a.rules': 'a\n'}
+    assert (tmp_path / f'x/.codex{rendergoldens.SEP}rules{rendergoldens.SEP}a.rules{rendergoldens.SUFFIX}').is_file()
     assert not stale.exists()
 
 
