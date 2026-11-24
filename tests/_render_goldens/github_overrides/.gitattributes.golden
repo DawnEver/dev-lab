@@ -2,7 +2,16 @@
 # Hand edits RED. The base is data in dev_lab.dev._famconfig_rows;
 # this repo's own lines are its declared delta. Change one, re-render, commit.
 
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.jpg binary
+*.npz binary
+*.pdf binary
+*.png binary
 *.sh text eol=lf
+*.xlsx binary
+*.zip binary
 
 # --- overrides delta, 1 of 1 allowed ---
-*.png binary
+*.h5 binary

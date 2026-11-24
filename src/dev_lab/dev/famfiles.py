@@ -155,7 +155,11 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
     row.path: row
     for row in (
         _g('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta', FAMFILES),
-        _g('.gitattributes', 'famconfig RENDERED: the shipped-shell-payload line, plus the repo Delta', FAMFILES),
+        _g(
+            '.gitattributes',
+            'famconfig RENDERED: repo-wide LF, CRLF cmd scripts, declared binaries, plus the repo Delta',
+            FAMFILES,
+        ),
         _g('.rgignore', 'famconfig RENDERED: what ripgrep and Grep skip (attic/), plus the repo Delta', FAMFILES),
         _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
         _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),

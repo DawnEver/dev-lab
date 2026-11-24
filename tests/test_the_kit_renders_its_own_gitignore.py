@@ -138,6 +138,15 @@ _RETIRED_FROM_BASE: Final = (
 )
 
 
+def test_the_gitattributes_base_normalises_the_whole_repo() -> None:
+    """User ruling 2026-11-24: LF everywhere, CRLF for cmd scripts, the committed binaries declared."""
+    from dev_lab.dev._famconfig_rows import GITATTRIBUTES_BASE  # noqa: PLC0415
+
+    assert GITATTRIBUTES_BASE[0] == '* text=auto eol=lf', 'the catch-all comes first so the rest override it'
+    assert {'*.bat text eol=crlf', '*.cmd text eol=crlf', '*.sh text eol=lf'} <= set(GITATTRIBUTES_BASE)
+    assert {f'*.{ext} binary' for ext in ('png', 'jpg', 'pdf', 'xlsx', 'zip', 'npz')} <= set(GITATTRIBUTES_BASE)
+
+
 def test_the_retired_lines_are_out_of_the_base() -> None:
     """PLANTED CONTROL is the list itself: every line here WAS base until 2026-11-24."""
     from dev_lab.dev._famconfig_rows import GITIGNORE_BASE  # noqa: PLC0415

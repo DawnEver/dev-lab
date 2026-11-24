@@ -308,7 +308,22 @@ MAKEFILE_RESIDUAL_SIGNALS: Final[tuple[str, ...]] = (
 #: Only two repos carried a `.gitattributes` and they shared no line; this is the one rule whose
 #: reason holds in all four. Repo-wide normalisation (`* text=auto eol=lf`) stays a repo's delta --
 #: adopting it renormalises every tracked file, which is a repo's decision, not the family's.
-GITATTRIBUTES_BASE: Final[tuple[str, ...]] = ('*.sh text eol=lf',)
+#:
+#: WIDENED 2026-11-24 (user ruling): repo-wide LF normalisation is now the family's decision, so every
+#: consumer delta is empty. `*.bat`/`*.cmd` keep CRLF because cmd.exe misparses LF labels; the binary
+#: lines stop text normalisation from corrupting the artefact types the family commits.
+GITATTRIBUTES_BASE: Final[tuple[str, ...]] = (
+    '* text=auto eol=lf',
+    '*.bat text eol=crlf',
+    '*.cmd text eol=crlf',
+    '*.jpg binary',
+    '*.npz binary',
+    '*.pdf binary',
+    '*.png binary',
+    '*.sh text eol=lf',
+    '*.xlsx binary',
+    '*.zip binary',
+)
 
 # ---------------------------------------------------------------------------- .rgignore
 
