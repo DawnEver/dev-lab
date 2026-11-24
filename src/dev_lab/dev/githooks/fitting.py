@@ -19,6 +19,8 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from dev_lab.dev import familyroot, venvpointer
 
+__all__ = ['bootstrap_interpreter', 'candidates', 'fits', 'probe', 'requires_python']
+
 #: Prints the interpreter's version only when it imports dev_lab (the door runs ``-m dev_lab.dev.dep``).
 _PROBE = 'import dev_lab, platform; print(platform.python_version())'
 

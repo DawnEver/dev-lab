@@ -83,7 +83,7 @@ from dev_lab.dev.forgedraft import WAITING
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgeheadgate import alarms_said
 from dev_lab.dev.forgehold import HELD, is_held
-from dev_lab.dev.forgemergewaits import hand_note, red_checks, status_waits
+from dev_lab.dev.forgemergewaits import hand_note, off_record, recorded_as_ran, red_checks, status_waits
 from dev_lab.dev.forgemessages import MESSAGES_NOT_DECLARED, message_row, message_wait
 from dev_lab.dev.forgereview_declared import load_review
 from dev_lab.dev.forgereview_gate import review_gate
@@ -160,12 +160,16 @@ def decide(
     statuses: Sequence[CommitStatus],
     reviewed: Reviewed,
     waiver: str | None = None,
+    record: str = '',
 ) -> Decision:
     """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing.
 
     *waiver* (:func:`dev_lab.dev.reviewcap.unreviewed_waiver`) waives the review condition alone, and the message and
-    the decision carry it.
+    the decision carry it. *record* is the PR body: a red test part it puts on record (``Red-On-Record:``) reads
+    as ran (RED-INTEGRATION-MERGES); every other red still waits, named with that door.
     """
+    unrecorded = off_record(statuses, record)
+    statuses = recorded_as_ran(statuses, record)
     into = policy.integration
     base = f'refs/remotes/origin/{into}'
     message = merge_message(branch, number, policy)
@@ -183,7 +187,7 @@ def decide(
         waits = status_waits(policy, head, statuses, tests=roles_at(root).kind(TESTS))
     except Unbound as undeclared:  # a malformed producer is named, never merged
         waits = [f'its producer: {undeclared}']
-    missing += waits
+    missing += waits + unrecorded
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)
@@ -268,10 +272,19 @@ def judged(root: Path, client: Client, policy: Policy, *, branch: str, number: i
             return f'the review gate cannot be read: {why}'
 
     waiver = unreviewed_waiver(client, number, base=policy.integration)
+    pull = client.pr_view(number)
     found = decide(
-        root, policy, branch=branch, number=number, head=head, statuses=statuses, reviewed=reviewed, waiver=waiver
+        root,
+        policy,
+        branch=branch,
+        number=number,
+        head=head,
+        statuses=statuses,
+        reviewed=reviewed,
+        waiver=waiver,
+        record=pull.body,
     )
-    pull, others = client.pr_view(number), found.others
+    others = found.others
     if (
         hidden := hidden_reds(lambda ref: fingerprints_at(client, ref), head, policy.integration, statuses)
     ) is not None:
