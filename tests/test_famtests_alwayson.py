@@ -116,6 +116,24 @@ def test_a_family_without_layout_policy_has_not_opted_into_the_layout_guard(
     assert 'MODULE-SIZE-ALARM' not in result.stdout.str()
 
 
+def test_a_declared_layers_table_opts_zero_core_change_in_and_a_core_to_application_import_reds(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ZERO-CORE-CHANGE's static half rides the family plugin only where declared; planted: core imports an app."""
+    _git_repo(
+        pytester.path,
+        {
+            'pyproject.toml': '[tool.dev_lab.layers]\ncore = ["src/pkg/core"]\napplications = "src/pkg/apps/*"\n',
+            'src/pkg/core/a.py': 'import pkg.apps.m\n',
+            'src/pkg/apps/m/__init__.py': '',
+            'test_x.py': 'def test_x():\n    pass\n',
+        },
+    )
+    result = _run(pytester, monkeypatch)
+    result.assert_outcomes(passed=1 + len(alwayson.rows()), failed=1)
+    result.stdout.fnmatch_lines(['*ZERO-CORE-CHANGE*src/pkg/core/a.py*'])
+
+
 @pytest.mark.parametrize(
     'policy',
     [
