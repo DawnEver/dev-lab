@@ -104,19 +104,19 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'branchprune',
     'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)
     'branchdelete',
-    'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
+    'deletejudge',  # LOSSLESS-DELETE's judgment, split from branchdelete for the pre-push row (2026-11-17)
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
-    'artefacts',
-    'artefactstores',
+    'artifacts',
+    'artifactstores',
     'largeobjects',
-    # ORIGINAL: the artefact member index, split out of `artefacts` inside the kit; no consumer held them.
-    'artefactpack',  # writes the member-indexed archive
-    'artefactindex',  # the member-index facts and their manifest record
-    'artefactscan',  # verifies an archive stream against its index
-    'artefactrestore',  # materializes selected members with a receipt
-    'artefactfolder',  # the folder store's verified publication
+    # ORIGINAL: the artifact member index, split out of `artifacts` inside the kit; no consumer held them.
+    'artifactpack',  # writes the member-indexed archive
+    'artifactindex',  # the member-index facts and their manifest record
+    'artifactscan',  # verifies an archive stream against its index
+    'artifactrestore',  # materializes selected members with a receipt
+    'artifactfolder',  # the folder store's verified publication
     'selection',
     'breakglass',
     'retention',
@@ -188,7 +188,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).
     'disclosure',
     'injectedtext',
-    # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
+    # ORIGINAL in code: generalizes a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun',
     # ORIGINAL: split from stoprun along its concepts (2026-11-15, module-size band); nothing else replaced.
     'stopsignatures',
@@ -288,7 +288,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # wait declares a ceiling; this reads DATA FLOW inside one body and asks whether an assertion can
     # fail at all. Measured the same day, the two surfaces share `take_scan` and nothing else, and
     # one is entirely about `subprocess` while the other never mentions it. NOT inside `citedtests`
-    # either, the nearest neighbour BY SUBJECT -- a declaration that lies -- which reads PROSE
+    # either, the nearest neighbor BY SUBJECT -- a declaration that lies -- which reads PROSE
     # against the whole tree where this cannot see across a single function boundary.
     'echoedtoken',
     # ORIGINAL in the kit: refuses consumer-local push-admission copies once `admission` exists.
@@ -308,7 +308,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'venvspelling',
     # ORIGINAL: no consumer holds a guard it would supersede; it refuses their re-declared settings.
     'sharedsettings',
-    # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
+    # ORIGINAL for the reason `venvspelling` states one row up: what it centralizes is a STRING,
     # not a forked file.
     'venvpath',
     # ORIGINAL (dev-lab #632): no consumer published an environment by pointer; the side-by-side layout is new.
@@ -376,7 +376,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',
-    'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrolment (2026-11-16)
+    'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrollment (2026-11-16)
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)

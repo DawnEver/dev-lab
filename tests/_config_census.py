@@ -6,7 +6,7 @@ module that checks it drifts away from what it describes, because the same edit 
 relax the check that would have refused it, and the diff looks like one change.
 
 WHAT A ROW IS, and it is the shape ``tests/architecture/layering/_placement_*.py`` in
-consumer-a already runs: a key (``<repo>::<artefact>``), a SIDE, and a REASON -- and the
+consumer-a already runs: a key (``<repo>::<artifact>``), a SIDE, and a REASON -- and the
 reason is the deliverable, not the label. A side with a one-line reason is a label wearing a
 table's clothes, so :class:`Placement` refuses one AT CONSTRUCTION.
 
@@ -79,7 +79,7 @@ SIDES: Final = (STAYS, MOVES, SPLITS)
 
 #: The shortest a REASON may be. Not a style rule: every side above demands a named fact and a
 #: stated consequence, and neither fits in a caption. MEASURED against the consumer-a roster this is
-#: modelled on -- its shortest live reason is well over this -- so the bar is a floor under prose,
+#: modeled on -- its shortest live reason is well over this -- so the bar is a floor under prose,
 #: not a pin on it.
 REASON_FLOOR: Final = 240
 
@@ -171,7 +171,7 @@ def names_at_head(root: Path, directory: str, suffix: str) -> frozenset[str]:
 
 @dataclass(frozen=True)
 class Placement:
-    """One artefact in one repo: which side it is on, and why -- checked at construction."""
+    """One artifact in one repo: which side it is on, and why -- checked at construction."""
 
     side: str
     why: str
@@ -184,7 +184,7 @@ class Placement:
             msg = (
                 f'a reason of {len(self.why)} characters, under the {REASON_FLOOR} floor. The REASON is '
                 f'the deliverable and the side is only its label; a caption cannot name the measured '
-                f'fact, the seam, or what breaks if the artefact moved.'
+                f'fact, the seam, or what breaks if the artifact moved.'
             )
             raise CensusError(msg)
 

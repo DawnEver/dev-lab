@@ -29,7 +29,7 @@ def _adjacent(values: list[str]) -> bool:
     return any(values[i : i + 2] == list(_PIECES) for i in range(len(values) - 1))
 
 
-def offences(source: str) -> list[str]:
+def offenses(source: str) -> list[str]:
     """Each place *source* spells the retired ledger: a literal holding it, or its two pieces adjacent."""
     found: list[str] = [f'line {line}' for line, text in enumerate(source.splitlines(), 1) if RETIRED in text]
     tree = ast.parse(source)
@@ -44,7 +44,7 @@ def offences(source: str) -> list[str]:
 def test_no_source_spells_the_retired_checkout_ledger() -> None:
     modules = source_modules()
     assert_floor(len(modules), SOURCE_FLOOR, 'retired checkout ledger')
-    found = {rel(path): hits for path in modules if (hits := offences(path.read_text(encoding='utf-8')))}
+    found = {rel(path): hits for path in modules if (hits := offenses(path.read_text(encoding='utf-8')))}
     assert found == {}, f'the retired in-checkout ledger, spelled in src (use {SUCCESSOR}): {found}'
 
 
@@ -54,5 +54,5 @@ def test_planted_violations_are_found() -> None:
     joined = f"from pathlib import Path\nx = Path('{_PIECES[0]}', '{_PIECES[1]}')\n"
     chain = f"from pathlib import Path\nx = Path('r') / '{_PIECES[0]}' / '{_PIECES[1]}' / 'slug'\n"
     for planted in (literal, joined, chain):
-        assert offences(planted), planted
-    assert offences("x = ledger() / 'slug'\ny = Path('.claude', 'memory')\n") == []
+        assert offenses(planted), planted
+    assert offenses("x = ledger() / 'slug'\ny = Path('.claude', 'memory')\n") == []

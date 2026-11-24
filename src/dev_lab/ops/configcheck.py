@@ -21,7 +21,7 @@ Five checks, each generic (the repository's own facts arrive as the files it hol
 - no development machine's host file declares a route (ssh jump, host key, endpoint) to another one
   (:func:`check_routes`, MACHINES-MEET-ONLY-THROUGH-THE-FORGE): they meet only through the forge;
 - a change NEEDS CONSENT when it touches a boundary key (:func:`dev_lab.ops.configdoor.boundary`): merging it
-  grants nothing, applying it still needs the user's ``ops.config`` consent, so the PR is labelled :data:`LABEL`.
+  grants nothing, applying it still needs the user's ``ops.config`` consent, so the PR is labeled :data:`LABEL`.
 
 Merging such a repository is not the security gate; ``config apply`` is.
 """

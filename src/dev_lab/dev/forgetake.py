@@ -103,7 +103,7 @@ class ClaimPass:
     supply: Supply
     size: Callable[[Candidate, frozenset[str]], Mapping[str, float]]
     taken: list[Mapping[str, float]] = dataclasses.field(default_factory=list)  # what runs, then each claim
-    store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
+    store_why: str = ''  # why the large artifact store is unusable here; '' when it is usable
     declarations: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its declaration is refused
     unservable: set[str] = dataclasses.field(default_factory=set)  # keys whose producer this host kind cannot build
     history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: ()  # every status of a sha, read once a tick

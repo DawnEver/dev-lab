@@ -58,8 +58,8 @@ INVESTIGATE: Final = 'Investigate -- see Details.'
 #: What Markdown (and the renderer here) would read as markup inside running text.
 _MARKUP: Final = re.compile(r'([\\`*_\[\]<>&~|])')
 
-#: The email's headline-bar colour per severity word.
-_COLOURS: Final = {'CRITICAL': '#c62828', 'WARNING': '#ef6c00', 'INFO': '#1565c0', 'TEST': '#6a1b9a'}
+#: The email's headline-bar color per severity word.
+_COLORS: Final = {'CRITICAL': '#c62828', 'WARNING': '#ef6c00', 'INFO': '#1565c0', 'TEST': '#6a1b9a'}
 
 
 @dataclass(frozen=True)
@@ -326,14 +326,14 @@ def telegram_html(notice: Notice, limit: int = TELEGRAM_LIMIT) -> str:
 
 
 def email_html(notice: Notice) -> str:
-    """The email's HTML part, rendered from :func:`markdown`: a coloured headline bar, then the same blocks."""
-    colour = _COLOURS[_severity(notice)]
+    """The email's HTML part, rendered from :func:`markdown`: a colored headline bar, then the same blocks."""
+    color = _COLORS[_severity(notice)]
     body = _html(
         markdown(notice),
         item='<li>{}</li>',
         paragraph='<p>{}</p>',
         code='<pre style="background:#f4f4f4;padding:8px">{}</pre>',
-        first=f'<h2 style="margin:0;padding:10px 14px;color:#fff;background:{colour}">{{}}</h2>',
+        first=f'<h2 style="margin:0;padding:10px 14px;color:#fff;background:{color}">{{}}</h2>',
         blank=None,
     )
     body = re.sub(r'((?:<li>.*</li>\n?)+)', lambda m: f'<ul>\n{m.group(1).rstrip()}\n</ul>\n', body).rstrip()

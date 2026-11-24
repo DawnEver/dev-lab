@@ -35,7 +35,7 @@ def test_a_missing_file_reads_as_a_fresh_state(tmp_path: Path) -> None:
     assert StateStore(tmp_path / 'absent.json').read() == new_state()
 
 
-def test_an_unparseable_file_reads_as_a_fresh_state_and_is_left_alone(tmp_path: Path) -> None:
+def test_an_unparsable_file_reads_as_a_fresh_state_and_is_left_alone(tmp_path: Path) -> None:
     """The bad file stays on disk for a human, but it does not stop the supervisor."""
     path = tmp_path / 'state.json'
     path.write_text('{ this is not json', encoding='utf-8')

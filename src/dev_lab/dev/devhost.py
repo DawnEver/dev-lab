@@ -67,7 +67,7 @@ from dev_lab.dev import (
     devschema,
     familyrepos,
     forgecredential,
-    forgeenrol,
+    forgeenroll,
     tomlleaves,
     vendordetect,
 )
@@ -244,7 +244,7 @@ def notice(live: Mapping[str, Any] | None = None) -> str | None:
     rest = [line for line in found if line not in first]
     lines = [f'HOST-CONFIG FIRST: {line}' for line in first] + bringup.stale_kit(live or machineconfig.machine())
     if host := devprofile.unmanaged(machineconfig.machine() if live is None else live):
-        lines.insert(0, f'HOST-CONFIG FIRST: {devprofile.enrolment(host)}')
+        lines.insert(0, f'HOST-CONFIG FIRST: {devprofile.enrollment(host)}')
     if rest:
         drifted = '; '.join(rest)
         lines.append(f'HOST-CONFIG: the machine file drifted from its render: {drifted}. Re-render: {RENDER_DOOR}')
@@ -299,7 +299,7 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
         emit(f'refused: {local}; {path} is unchanged', err=True)
         return 2
     if not (clone / host_file(host)).is_file():
-        emit(f'render: {devprofile.enrolment(host)}', err=True)
+        emit(f'render: {devprofile.enrollment(host)}', err=True)
     if names := unfilled(declared(clone / 'hosts' / f'{host}.toml', clone / 'family.toml')):
         emit(f'render: {fill_remedy(names)}', err=True)
     if not args.write:
@@ -366,7 +366,7 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    """The verbs: drift, render, detect, session-start, channels, use-store, enrol, admit, bringup (each its help)."""
+    """The verbs: drift, render, detect, session-start, channels, use-store, enroll, admit, bringup (each its help)."""
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.devhost', description=main.__doc__)
     parser.add_argument('--machine', type=Path, default=None, help='the machine file (default: this machine)')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -385,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
         '--backups', type=Path, default=None, help='where the backup goes (default: backedup.backups_dir)'
     )
     forgecredential.add_use_store(verbs)
-    forgeenrol.add_enrol(verbs)
+    forgeenroll.add_enroll(verbs)
     devhostadmit.add_admit(verbs)
     checking = verbs.add_parser('bringup', help='list every wall a new workstation hits, each with its door')
     checking.add_argument('--check', action='store_true', required=True, help='read only; exit 1 while a wall stands')
@@ -419,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
         'use-store': lambda: forgecredential.use_declared(declared_by(live.get(OWN_TABLE, {})), args.host),
         'bringup': lambda: bringup.main(live),
         'admit': lambda: devhostadmit.run(args, live, live.get(OWN_TABLE, {})),
-        'enrol': lambda: forgeenrol.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
+        'enroll': lambda: forgeenroll.run(args, live.get(OWN_TABLE, {}), declared_by(live.get(OWN_TABLE, {}))),
     }
     if args.verb in plain:
         return plain[args.verb]()

@@ -115,9 +115,9 @@ def _labels_admit(forge: Forge, pr: int) -> None:
         msg = f'#{pr} labels cannot be read, so it may touch a boundary key: {str(unread).splitlines()[0]}'
         raise ConsentWanted(msg) from unread
     if LABEL in carried:
-        msg = f'#{pr} is labelled {LABEL}: it touches a boundary key and lands only by its own consent'
+        msg = f'#{pr} is labeled {LABEL}: it touches a boundary key and lands only by its own consent'
         raise ConsentWanted(msg)
-    if is_held(carried):  # D48: break-glass honours the hold, as the merge tick does
+    if is_held(carried):  # D48: break-glass honors the hold, as the merge tick does
         msg = f'#{pr} is held (label `{HOLD_LABEL}`): release it with `{RELEASE_DOOR.format(n=pr)}` first'
         raise Held(msg)
 
@@ -251,7 +251,7 @@ class Server:
         """Parse, then judge and perform one request under the role lock.
 
         Refusals (a malformed request included) are audited, alerted and raised as :class:`BreakglassRefused`; an
-        internal failure is audited and alerted too, and re-raised as itself -- never relabelled.
+        internal failure is audited and alerted too, and re-raised as itself -- never relabeled.
         """
         try:
             parsed = requests.parse(line)

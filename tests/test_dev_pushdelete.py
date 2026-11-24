@@ -3,7 +3,7 @@
 MEASURED 2026-11-17: a session built its refspecs at run time (``refs=$(printf ':refs/heads/pr/%s ' ...)``, then
 ``git push origin $refs``) and deleted nine origin branches holding unlanded commits. The deny row
 ``PUSH-REMOTE-DELETE`` reads command TEXT, which held no ``:ref``; the pre-push hook never judged a delete. Now the
-base ``lossless-delete`` row judges every deleted branch on git's own ref lines with the judgement
+base ``lossless-delete`` row judges every deleted branch on git's own ref lines with the judgment
 ``branchprune delete`` makes (:func:`dev_lab.dev.deletejudge.judge`).
 
 Real git throughout: a bare ``origin``, a clone, and for the end-to-end cases a REAL ``git push`` whose pre-push hook
@@ -239,7 +239,7 @@ def test_run_stage_refuses_a_zero_sha_line_for_an_unlanded_sha(tmp_path: Path, m
     assert run_stage('pre-push', ['origin', str(bare)], root=work, stdin=_line('lane/done', landed), hooks=rows) == 0
 
 
-# ------------------------------------------------------------------------------------------- the judgement
+# ------------------------------------------------------------------------------------------- the judgment
 
 
 def test_branches_holding_only_each_others_commits_are_refused_when_deleted_together(tmp_path: Path) -> None:

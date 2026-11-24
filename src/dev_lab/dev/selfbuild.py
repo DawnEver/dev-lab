@@ -56,7 +56,7 @@ __all__ = [
     'NothingBuiltError',
     'declared_distributions',
     'install_self_build',
-    'normalise_distribution',
+    'normalize_distribution',
     'refuse_foreign_wheel',
     'wheel_distribution',
 ]
@@ -75,7 +75,7 @@ class NothingBuiltError(ForeignDistributionError):
     """
 
 
-def normalise_distribution(name: str) -> str:
+def normalize_distribution(name: str) -> str:
     """PEP 503-ish folding, so one project has one spelling.
 
     ``consumer-a-native`` and ``consumer_a_native`` are ONE project, and a comparison that says
@@ -100,7 +100,7 @@ def wheel_distribution(wheel: Path) -> str:
     install the wrong thing -- so the folding below exists for the MANIFEST side, where
     ``name = "consumer-a-native"`` is both legal and idiomatic.
     """
-    return normalise_distribution(wheel.name.split('-')[0])
+    return normalize_distribution(wheel.name.split('-')[0])
 
 
 def declared_distributions(manifests: Iterable[Path]) -> frozenset[str]:
@@ -118,7 +118,7 @@ def declared_distributions(manifests: Iterable[Path]) -> frozenset[str]:
         data = tomllib.loads(manifest.read_text(encoding='utf-8'))
         name = data.get('project', {}).get('name')
         if isinstance(name, str) and name:
-            names.add(normalise_distribution(name))
+            names.add(normalize_distribution(name))
     return frozenset(names)
 
 

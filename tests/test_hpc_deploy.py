@@ -488,7 +488,7 @@ def test_a_machine_file_with_an_hpc_table_but_no_grant_gains_the_grant_in_that_o
 
     The rendered file held ``[hpc] reach`` and no grant; the old append wrote a second
     ``[hpc]`` and every later read raised "Cannot declare ('hpc',) twice". The grant joins the ONE table, its keys kept.
-    PLANTED CONTROL: the pre-fix append made this file unparseable.
+    PLANTED CONTROL: the pre-fix append made this file unparsable.
     """
     box.machine.parent.mkdir(parents=True, exist_ok=True)
     box.machine.write_text('[other]\nkeep = 1\n\n[hpc]\nreach = ["research"]\n', encoding='utf-8')
@@ -631,7 +631,7 @@ if sys.argv[2] != 'present':
 
 
 @pytest.mark.parametrize('state', ['missing', 'present'])
-def test_a_repo_declaring_rclone_artefacts_has_its_remote_checked_and_a_missing_one_warns(
+def test_a_repo_declaring_rclone_artifacts_has_its_remote_checked_and_a_missing_one_warns(
     box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str], state: str
 ) -> None:
     """A missing remote WARNS with the recipe and the deploy still completes; PLANTED CONTROL: present is quiet."""
@@ -647,7 +647,7 @@ def test_a_repo_declaring_rclone_artefacts_has_its_remote_checked_and_a_missing_
     assert with_rclone.run() == 0, 'a missing remote is a warning, never a refusal'
     out, err = capsys.readouterr()
     assert 'rclone lsd hpc-data: --max-depth 1' in box.logged()
-    assert 'beta: no rclone artefact store declared' in out
+    assert 'beta: no rclone artifact store declared' in out
     if state == 'missing':
         assert 'alpha: WARNING' in err
         assert 'rclone authorize "onedrive"' in err

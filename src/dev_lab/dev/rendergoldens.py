@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import ciworkflows, famfiles
-from dev_lab.dev.famconfig import RENDERED, artefact_base, render
+from dev_lab.dev.famconfig import RENDERED, artifact_base, render
 from dev_lab.dev.roles import Roles
 
 if TYPE_CHECKING:
@@ -70,9 +70,9 @@ def _key(path: Path, goldens: Path) -> str:
 def render_fixture(text: str, deltas: Mapping[str, Delta], origin: str, roles: Roles) -> dict[str, str]:
     """Every family file one repo declaring pyproject *text* and *deltas*, under *roles*, renders, by path."""
     out = {
-        artefact: render(artefact_base(artefact), delta)
-        for artefact, delta in deltas.items()
-        if artefact_base(artefact).mode == RENDERED
+        artifact: render(artifact_base(artifact), delta)
+        for artifact, delta in deltas.items()
+        if artifact_base(artifact).mode == RENDERED
     }
     out.update(famfiles.managed_sections())
     forge = ciworkflows.declared_forge(text, origin)

@@ -2,7 +2,7 @@
 
 Planted refusals: a modified tracked file, a staged file, a landed tree with an untracked not-ignored file (D31:
 merged or cleaned, never parked), a HEAD on no remote branch (holding an untracked file:
-the CONTROL that it is the unlanded HEAD that keeps it). Planted removals: a tree with ignored artefacts (a cache,
+the CONTROL that it is the unlanded HEAD that keeps it). Planted removals: a tree with ignored artifacts (a cache,
 ``.venv``, a build-written ``__version__.py``), an unregistered directory holding files, an EMPTY one, and a landed
 tree with ``output/logs``, deleted with it: nothing moves home (NO-BACKUP-COPIES).
 """

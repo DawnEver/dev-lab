@@ -81,7 +81,7 @@ DELIVERY_NAMES: Final[frozenset[str]] = frozenset(member.name for member in Deli
 #: The shortest a row's REASON may be. A row's deliverable is why that file is a door of that repo
 #: and what its numbers mean; a caption cannot carry either, and a DECLINED row's caption is how a
 #: door gets dropped while still appearing to have been considered. Shorter than
-#: `_config_census.REASON_FLOOR` (240) on purpose: that census decides WHERE an artefact belongs and
+#: `_config_census.REASON_FLOOR` (240) on purpose: that census decides WHERE an artifact belongs and
 #: owes a seam and a consequence, this one records a measurement and owes the fact behind it.
 WHY_FLOOR: Final = 150
 

@@ -78,7 +78,7 @@ def test_calling_twice_is_idempotent_and_keeps_what_is_already_there(tmp_path: P
         '/var/gate.log',
     ],
 )
-def test_a_name_that_is_a_path_is_refused_rather_than_normalised(tmp_path: Path, name: str) -> None:
+def test_a_name_that_is_a_path_is_refused_rather_than_normalized(tmp_path: Path, name: str) -> None:
     """THE PLANTED CONTROL IN THE REFUSING DIRECTION -- including the two hatches that were removed.
 
     ``C:/var/gate.log`` is the absolute spelling the old ``is_absolute()`` hatch waved through, and

@@ -11,7 +11,7 @@ CARRIED to B (:func:`carried`) when B descends from A and no path in ``git diff 
 F's footprint at A -- a rename counts both its sides. A changed ``uv.lock`` is first resolved to the
 imports it reaches (:func:`~dev_lab.dev.lockreach.resolve_lock`, user ruling D48-2, 2026-11-01: a relock
 moving only the dev-lab pin had re-run a consumer's whole suite, ``ran=5471``, per push). Any doubt (no
-ancestry, an unreadable declaration) carries nothing: the carry is an optimisation, refusing it only
+ancestry, an unreadable declaration) carries nothing: the carry is an optimization, refusing it only
 costs the run it would have saved.
 
 APPLIED AT TWO GRAINS, both from that one rule:
@@ -161,7 +161,7 @@ def reached_tests(root: Path, integration: str, head: str) -> frozenset[str] | N
     """The test files at *head* its diff from the *integration* branch's merge-base reaches (module docstring).
 
     ``None`` on any doubt -- no tracking ref for *integration*, no merge-base, an unreadable declaration -- which
-    runs the full suite: the selection is an optimisation, refusing it only costs the run it would have saved.
+    runs the full suite: the selection is an optimization, refusing it only costs the run it would have saved.
     """
     found = _git(root, 'merge-base', f'{_TRACKING}{integration}', head)
     base = found.stdout.strip() if found.returncode == 0 else ''

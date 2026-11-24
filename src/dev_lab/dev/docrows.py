@@ -3,7 +3,7 @@
 :mod:`dev_lab.dev.docsite` is the driver (a requirement, a skip that is announced, a checked and bounded
 subprocess, the portal); it took :class:`~dev_lab.dev.docsite.SubSite` rows that each repo built in its own
 Python. Those builders were the same four everywhere -- pdoc over a package, rustdoc over a Cargo workspace, a
-markdown tree, the licence notice -- so they live here once, and a repo declares only ROWS::
+markdown tree, the license notice -- so they live here once, and a repo declares only ROWS::
 
     [tool.dev_lab.docsite]
     title = "Example"                              # the portal's title
@@ -186,7 +186,7 @@ def _row(root: Path, row: Mapping[str, Any], title: str) -> tuple[Requirement, C
         notices.build_notices(r, out, data)
 
     need = Exe('cargo') if data.cargo_manifest else Module('importlib.metadata')
-    return need, notice, 'the third-party licence notice'
+    return need, notice, 'the third-party license notice'
 
 
 def subsites(root: Path, data: SiteData) -> tuple[SubSite, ...]:

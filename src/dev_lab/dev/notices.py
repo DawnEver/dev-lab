@@ -1,13 +1,13 @@
-"""THE THIRD-PARTY LICENCE NOTICE, generated from the installed environment: ``python -m dev_lab.dev.notices``.
+"""THE THIRD-PARTY LICENSE NOTICE, generated from the installed environment: ``python -m dev_lab.dev.notices``.
 
-WHY THE ENVIRONMENT, NOT A LOCK. A lock carries names and versions but no licence text; the installed metadata does,
+WHY THE ENVIRONMENT, NOT A LOCK. A lock carries names and versions but no license text; the installed metadata does,
 and PEP 610 ``direct_url.json`` records where each distribution came from, including the transitive closure of git
 dependencies -- the installed environment IS the resolved graph whose notice is being built.
 
 WHY A BUILD PRODUCT, NOT A TRACKED FILE. A committed notice is only as current as the last regeneration, and a notice
 saying "we comply" while the graph moved is a declaration that lies in a document where the lie is a legal one.
 
-THE COMPLIANCE CHECK. A third-party licence that normalises to no SPDX expression is an ALARM:
+THE COMPLIANCE CHECK. A third-party license that normalizes to no SPDX expression is an ALARM:
 :func:`refuse_unknown` raises :class:`UnknownLicense` naming every such package, and the CLI exits non-zero.
 
 A REPO DECLARES ONLY DATA -- the product, never a mechanism::
@@ -16,7 +16,7 @@ A REPO DECLARES ONLY DATA -- the product, never a mechanism::
     entity = "Example Org"                 # the copyright holder
     product = "Example"                    # the product's name in the notice
     in_tree = ["example", "example_native"]  # own distributions, never listed as third party
-    cargo_manifest = "rust/Cargo.toml"     # optional: crate licences from `cargo metadata`
+    cargo_manifest = "rust/Cargo.toml"     # optional: crate licenses from `cargo metadata`
     out = "docs/notices"                   # optional: the default output directory
     [tool.dev_lab.notices.overrides]       # name -> curated SPDX, for metadata too broken to trust
     scipy = "BSD-3-Clause"
@@ -66,10 +66,10 @@ __all__ = [
 #: The generated notice's file name inside its output directory.
 NOTICE_BASENAME: Final = 'THIRD_PARTY_NOTICES.md'
 
-#: What an unidentifiable licence normalises to -- an alarm, never a footnote.
+#: What an unidentifiable license normalizes to -- an alarm, never a footnote.
 UNKNOWN: Final = 'UNKNOWN'
 
-#: Generic raw-licence-string -> SPDX, applied after the repo's overrides to the lowercased, space-collapsed string.
+#: Generic raw-license-string -> SPDX, applied after the repo's overrides to the lowercased, space-collapsed string.
 _RAW_TO_SPDX: Final[dict[str, str]] = {
     'mit': 'MIT',
     'mit license': 'MIT',
@@ -90,7 +90,7 @@ _RAW_TO_SPDX: Final[dict[str, str]] = {
     'gpl-2.0-only': 'GPL-2.0-only',
     'lgpl-3.0': 'LGPL-3.0',
     'lgpl-3.0-or-later': 'LGPL-3.0-or-later',
-    'mit/apache-2.0': 'MIT OR Apache-2.0',  # Cargo's pre-SPDX slash spelling of a dual licence
+    'mit/apache-2.0': 'MIT OR Apache-2.0',  # Cargo's pre-SPDX slash spelling of a dual license
 }
 _EXPRESSION: Final = re.compile(r'^[A-Za-z0-9.+-]+(?: (?:AND|OR|WITH) [A-Za-z0-9.+-]+)+$')
 _FULL_TEXT: Final = re.compile(r'^(copyright|permission is|license agreement|===)', re.IGNORECASE | re.MULTILINE)
@@ -102,7 +102,7 @@ _HEADINGS: Final = {
     'MIT': 'Software under the MIT License',
     'MPL': 'Software under the MPL 2.0 (Mozilla Public License)',
     'PSF': 'Software under the PSF (Python Software Foundation) Licenses',
-    'Other': 'Software under other licences',
+    'Other': 'Software under other licenses',
 }
 _DASH: Final = '—'
 _DIRECT_GIT: Final = re.compile(r'^([A-Za-z0-9_.-]+) @ git\+(\S+)$')
@@ -110,7 +110,7 @@ _CARGO_TIMEOUT_S: Final = 300
 
 
 class UnknownLicense(RuntimeError):
-    """A third-party dependency whose licence could not be identified."""
+    """A third-party dependency whose license could not be identified."""
 
 
 @dataclass(frozen=True)
@@ -187,7 +187,7 @@ def _metadata_url(md: PackageMetadata) -> str:
 
 
 def python_packages(*, in_tree: frozenset[str], overrides: Mapping[str, str]) -> list[dict[str, str]]:
-    """Every installed distribution outside *in_tree*, its licence normalised."""
+    """Every installed distribution outside *in_tree*, its license normalized."""
     rows = []
     for dist in imd.distributions():
         md = dist.metadata
@@ -209,12 +209,12 @@ def rust_crates(manifest: Path, *, overrides: Mapping[str, str]) -> list[dict[st
     """Third-party crates from ``cargo metadata`` (workspace members are the repo's own code).
 
     Raises:
-        UnknownLicense: cargo is not on PATH -- the crate licences cannot be read, and are never guessed.
+        UnknownLicense: cargo is not on PATH -- the crate licenses cannot be read, and are never guessed.
 
     """
     cargo = shutil.which('cargo')
     if cargo is None:
-        msg = f'cargo is not on PATH: the crate licences of {manifest} cannot be read -- install a Rust toolchain'
+        msg = f'cargo is not on PATH: the crate licenses of {manifest} cannot be read -- install a Rust toolchain'
         raise UnknownLicense(msg)
     done = _door.run(
         [cargo, 'metadata', '--format-version', '1', '--manifest-path', str(manifest)],
@@ -267,7 +267,7 @@ def _table(rows: Sequence[Mapping[str, str]]) -> str:
 
 
 def grouped(rows: Sequence[Mapping[str, str]]) -> str:
-    """One section per licence family, in a fixed order, empty families omitted."""
+    """One section per license family, in a fixed order, empty families omitted."""
     parts: list[str] = []
     for name in _FAMILIES:
         members = [r for r in rows if _family(r['license']) == name]
@@ -277,12 +277,12 @@ def grouped(rows: Sequence[Mapping[str, str]]) -> str:
 
 
 def refuse_unknown(rows: Sequence[Mapping[str, str]]) -> None:
-    """Raise :class:`UnknownLicense` naming every row whose licence is :data:`UNKNOWN`."""
+    """Raise :class:`UnknownLicense` naming every row whose license is :data:`UNKNOWN`."""
     unknown = sorted(r['name'] for r in rows if r['license'] == UNKNOWN)
     if unknown:
         msg = (
-            f'UNKNOWN licence metadata for: {", ".join(unknown)}. Curate each in [tool.dev_lab.notices.overrides] '
-            '-- a notice must not ship a licence it cannot identify.'
+            f'UNKNOWN license metadata for: {", ".join(unknown)}. Curate each in [tool.dev_lab.notices.overrides] '
+            '-- a notice must not ship a license it cannot identify.'
         )
         raise UnknownLicense(msg)
 
@@ -328,15 +328,15 @@ def notices_markdown(root: Path, data: NoticeData) -> str:
         sections += [
             '## In-house libraries',
             (
-                f'Developed by the organisation that owns {data.product}, so not third-party open source; their '
+                f'Developed by the organization that owns {data.product}, so not third-party open source; their '
                 'transitive dependencies appear in the tables above.'
             ),
             _table(in_house),
         ]
     return (
         f'# Legal Notices\n\n{data.product} is © {data.entity}. All Rights Reserved.\n\n'
-        f'This software uses code from open-source projects not owned by {data.entity}, summarised below; follow each '
-        "package's URL or read the licence text at https://spdx.org/licenses/.\n\n"
+        f'This software uses code from open-source projects not owned by {data.entity}, summarized below; follow each '
+        "package's URL or read the license text at https://spdx.org/licenses/.\n\n"
         'The tables cover the complete development environment, including build and test tooling.\n\n'
         + '\n\n'.join(sections)
         + '\n'
@@ -344,7 +344,7 @@ def notices_markdown(root: Path, data: NoticeData) -> str:
 
 
 def build_notices(root: Path, out_dir: Path, data: NoticeData) -> Path:
-    """Write the notice (markdown, the artefact of record) and an ``index.html`` wrapping it; the notice's path."""
+    """Write the notice (markdown, the artifact of record) and an ``index.html`` wrapping it; the notice's path."""
     text = notices_markdown(root, data)
     out_dir.mkdir(parents=True, exist_ok=True)
     notice = out_dir / NOTICE_BASENAME

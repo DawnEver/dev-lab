@@ -41,14 +41,14 @@ PUSH = _cand('lane/x', 'branch', origin='carol-gh')
 def test_a_matching_login_is_claimed_before_a_higher_score_non_matching_one() -> None:
     """PLANTED CONTROL: without the declaration the integration head outscores the lane."""
     assert _order(rank([PUSH, HEAD], SCHEDULES, NOW, cost_h={})) == ['integrate/main', 'lane/x']
-    favoured = rank([HEAD, PUSH], SCHEDULES, NOW, cost_h={}, priority=Priority(logins=frozenset({'carol-gh'})).matches)
-    assert [(item.candidate.ref, item.priority) for item in favoured] == [('lane/x', True), ('integrate/main', False)]
+    favored = rank([HEAD, PUSH], SCHEDULES, NOW, cost_h={}, priority=Priority(logins=frozenset({'carol-gh'})).matches)
+    assert [(item.candidate.ref, item.priority) for item in favored] == [('lane/x', True), ('integrate/main', False)]
 
 
 def test_within_each_class_the_score_order_stands() -> None:
     other = _cand('lane/y', 'integration', origin='carol-gh')
-    favoured = Priority(logins=frozenset({'carol-gh'})).matches
-    assert _order(rank([PUSH, HEAD, other], SCHEDULES, NOW, cost_h={}, priority=favoured)) == [
+    favored = Priority(logins=frozenset({'carol-gh'})).matches
+    assert _order(rank([PUSH, HEAD, other], SCHEDULES, NOW, cost_h={}, priority=favored)) == [
         'lane/y',
         'lane/x',
         'integrate/main',
@@ -102,15 +102,15 @@ def test_a_branch_heads_origin_is_the_login_the_forge_resolves(server) -> None:
     assert Recorder.received
 
 
-def test_a_card_carries_its_priority_and_the_queue_marks_the_rows_it_favours() -> None:
+def test_a_card_carries_its_priority_and_the_queue_marks_the_rows_it_favors() -> None:
     card = HostCard(
         'ada/carol', 'carol', 'linux', NOW.isoformat(), priority=Priority.of({'logins': ['carol-gh']}).row()
     )
     body = f'<!-- lab-commons:host:{card.host} -->\n{card.text()}'
     read = card_of(Comment(1, body, ''))
     assert read is not None
-    assert read.favours(PUSH)
-    assert not read.favours(HEAD)  # CONTROL
+    assert read.favors(PUSH)
+    assert not read.favors(HEAD)  # CONTROL
     assert 'priority: logins carol-gh' in card.text()
     row = {'priority': [read.host], 'candidate': PUSH.key, 'class': 'branch', 'blocked': ''}
     row |= {'value': 30.0, 'cost_h': 4.0, 'score': 7.5, 'wait_h': 0.0}

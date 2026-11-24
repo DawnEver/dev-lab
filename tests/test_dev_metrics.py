@@ -192,7 +192,7 @@ def integration(tmp_path: Path) -> Path:
     return root
 
 
-def test_landings_are_the_integration_branchs_named_merges_in_the_window(integration: Path) -> None:
+def test_landings_are_the_integration_branches_named_merges_in_the_window(integration: Path) -> None:
     """The integration branch's first-parent merges naming a branch, and its Break-Glass commits, with reasons."""
     found = landings(integration, 'int', since=SINCE, until=OCT_06)
     assert [(one.branch, one.break_glass, one.time.isoformat()) for one in found] == [

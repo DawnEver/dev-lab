@@ -60,7 +60,7 @@ RETIRED_KEYS: Final = {
     ),
 }
 #: One vendor install's keys.
-VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': str, 'licence_feature': str}
+VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'license_server': str, 'license_feature': str}
 #: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
 SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
@@ -263,7 +263,7 @@ def key_comment_defects(dev: Mapping[str, Any], where: str = '[dev]') -> list[st
     """Why a client key's comment is not ``<key_account>@<hostname>`` of *dev* (a host's merged ``[dev]``).
 
     A machine's key names who holds it and where: the comment is DERIVED from the declared account and host name,
-    so a key copied from another machine, or labelled by hand, is refused by name.
+    so a key copied from another machine, or labeled by hand, is refused by name.
     """
     keys, host, account = dev.get('client_keys'), dev.get('hostname'), dev.get('key_account')
     if not isinstance(keys, list) or clientkeys.defects(keys, f'{where}.client_keys'):

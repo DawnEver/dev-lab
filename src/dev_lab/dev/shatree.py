@@ -104,7 +104,7 @@ def open_tree(
         # exits 128 though the commit is fine (downstream #392), so the tree, not the repo's config, takes long paths
         add = [_GIT, '-C', str(root), '-c', 'core.longpaths=true', 'worktree', 'add', '--detach', str(tree), sha]
         _step(run, add, 'git worktree add')
-    # A commit's tree INCLUDES its submodules at their pinned commits: `dep --bootstrap` initialises them first,
+    # A commit's tree INCLUDES its submodules at their pinned commits: `dep --bootstrap` initializes them first,
     # through the network door and with a local-path submodule's transport opened (_dep_network.init_submodules).
     _step(run, [python, '-m', 'dev_lab.dev.dep', '--bootstrap', str(tree)], 'dep --bootstrap')
     try:

@@ -35,7 +35,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [Issues](./issues.md) | An issue is intent; its state is derived from refs and parts; claims and priority are labels and comments |
 | [HPC clusters](./hpc.md) | A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records |
 | [Submitting research from a workstation](./hpc-from-a-workstation.md) | A session's own cluster jobs: reach, grants, build, submit, gather, and which account takes them |
-| [Artefacts](./artefacts.md) | A run's declared outputs: the store, its layout and its retention |
+| [Artifacts](./artifacts.md) | A run's declared outputs: the store, its layout and its retention |
 | [Storage kinds](./storage.md) | Where a checkout's output, venvs and caches live on a machine, bound in its machine file |
 | [Retirement](./retirement.md) | The archive keeps old code, the registry keeps a dead spelling dead |
 | [The docs pipeline](./docs-pipeline.md) | The three properties a docs builder holds, and why a skipped sub-site is announced |

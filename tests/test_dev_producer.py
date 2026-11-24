@@ -17,7 +17,7 @@ from dev_lab.dev.producer import (
     box_release_reason,
     declared_outage,
     full_suite_refusal,
-    licence_outage,
+    license_outage,
     outage_env,
     owned,
     owner_of,
@@ -106,23 +106,23 @@ def test_every_owner_class_of_contract_6_is_one_enum() -> None:
         'code',
         'environment',
         'scheduling',
-        'vendor-licence',
+        'vendor-license',
         'network',
         'status-publishing',
         'part-refusal',
     }
 
 
-def test_a_licence_outage_is_class_vendor_licence_and_retried_not_a_fail(tmp_path, monkeypatch) -> None:
-    """PLANTED: the producer declares the licence outage; serve releases it RETRYABLE under its own class."""
+def test_a_license_outage_is_class_vendor_license_and_retried_not_a_fail(tmp_path, monkeypatch) -> None:
+    """PLANTED: the producer declares the license outage; serve releases it RETRYABLE under its own class."""
     record = tmp_path / 'run.outcome.json'
     monkeypatch.setenv(*next(iter(outage_env(record).items())))
-    assert licence_outage('JMAG: no seat free') == ProducerExit.UNREACHABLE
+    assert license_outage('JMAG: no seat free') == ProducerExit.UNREACHABLE
     said = declared_outage(record)
-    assert said is Owner.VENDOR_LICENCE
+    assert said is Owner.VENDOR_LICENSE
     released = release_reason(ProducerExit.UNREACHABLE, outage=said)
     assert released.startswith(RETRYABLE), 'retried next tick, never settled'
-    assert owner_of('error', released) is Owner.VENDOR_LICENCE
+    assert owner_of('error', released) is Owner.VENDOR_LICENSE
     assert owner_of('error', released) is not Owner.CODE, 'not the author red'
     control = release_reason(ProducerExit.UNREACHABLE, outage=Owner.NETWORK)
     assert owner_of('error', control) is Owner.NETWORK, 'CONTROL: a network outage keeps its own class'

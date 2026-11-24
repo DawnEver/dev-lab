@@ -1,7 +1,7 @@
 """LANDED-BRANCH-CONTINUES: a push onto a merged PR's branch is carried by a continuation PR the forge opens.
 
 User-approved design 2026-11-07: the merged PR is never reused. Both forges run :func:`continue_landed` -- Gitea in
-the serve tick's repo-wide pass, before any prune, GitHub in ``continue.yml`` -- and every behaviour has its planted
+the serve tick's repo-wide pass, before any prune, GitHub in ``continue.yml`` -- and every behavior has its planted
 control.
 """
 

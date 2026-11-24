@@ -420,8 +420,8 @@ def test_a_failed_lock_upgrade_syncs_nothing(tmp_path) -> None:
     assert {call[1] for call in calls} == {'lock'}, 'a failed lock (retried by netverb) must sync nothing'
 
 
-def test_a_bootstrap_initialises_the_submodules_its_path_dependencies_point_into(tmp_path, monkeypatch) -> None:
-    """A checkout cloned WITHOUT its submodules is synced only after they are initialised (plan C5).
+def test_a_bootstrap_initializes_the_submodules_its_path_dependencies_point_into(tmp_path, monkeypatch) -> None:
+    """A checkout cloned WITHOUT its submodules is synced only after they are initialized (plan C5).
 
     The sync's path dependency points into ``components/engine``; uv saw it as not existing until a
     manual ``git submodule update --init``. The fake sync records whether the engine is there when it runs.
@@ -452,7 +452,7 @@ def test_a_bootstrap_initialises_the_submodules_its_path_dependencies_point_into
     git_in(product, 'commit', '-qm', 'product')
     subprocess.run([git, 'clone', '-q', str(product), str(lane)], check=True, capture_output=True)
     mounted = lane / 'components/engine/pyproject.toml'
-    assert not mounted.exists(), 'PLANTED CONTROL: a plain clone leaves the submodule uninitialised'
+    assert not mounted.exists(), 'PLANTED CONTROL: a plain clone leaves the submodule uninitialized'
     seen = []
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
@@ -536,7 +536,7 @@ def test_every_sync_compiles_bytecode_so_the_first_hook_after_a_relock_is_warm(t
 
 
 def test_an_explicit_extra_still_selects_it(tmp_path) -> None:
-    """PLANTED CONTROL for the no-extras default: an explicit --extra (e.g. all) is honoured."""
+    """PLANTED CONTROL for the no-extras default: an explicit --extra (e.g. all) is honored."""
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\n[tool.dev_lab.dep]\nextras=[]\n[project.optional-dependencies]\ndev=[]\nall=[]\n',
         encoding='utf-8',

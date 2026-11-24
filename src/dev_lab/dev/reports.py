@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from lab_commons.hpc.testcells import TestCell
 
-__all__ = ['StepReport', 'read_pytest', 'read_ruff', 'read_stages']
+__all__ = ['StepReport', 'read_lint', 'read_pytest', 'read_stages']
 
 #: pytest's documented exit codes, and what each one means for a PROOF. 0 and 1 are the only two
 #: that describe a run which reached its tests; every other one is a reason the run was cut short,
@@ -80,11 +80,11 @@ class StepReport:
     truncated: tuple[str, ...] = ()
 
 
-def read_ruff(name: str, returncode: int) -> StepReport:
-    """The report for one ruff step, from its exit status alone.
+def read_lint(name: str, returncode: int) -> StepReport:
+    """The report for one lint step (ruff, or typos through :mod:`dev_lab.dev.spelling`), from its exit status alone.
 
-    Ruff's exit codes are a total answer and its output is advice: ``0`` clean, ``1`` violations
-    found (already printed, one per line), anything else an error IN ruff -- a config it could not
+    The exit codes are a total answer and the output is advice: ``0`` clean, ``1`` violations
+    found (already printed, one per line), anything else an error IN the checker -- a config it could not
     read, a path it could not walk. The third case must not read as ``1``: "your code is dirty" and
     "the checker did not run" are the same non-zero to a shell, and collapsing them is how a broken
     config passes for a clean tree once somebody stops reading the output.
@@ -95,7 +95,7 @@ def read_ruff(name: str, returncode: int) -> StepReport:
         return StepReport(name=name, reported=(name,), failures=(name,))
     return StepReport(
         name=name,
-        truncated=(f'{name} exited {returncode}, which is ruff erroring rather than ruff reporting',),
+        truncated=(f'{name} exited {returncode}, which is the checker erroring rather than reporting',),
     )
 
 
@@ -180,7 +180,7 @@ def read_pytest(
 
     * an ``Interrupted``/``KeyboardInterrupt`` banner, or ``N errors during collection``;
     * an ``INTERNALERROR``, which is pytest failing rather than the suite failing;
-    * no parsable summary line at all -- the empty-output case, where a crashed or signalled
+    * no parsable summary line at all -- the empty-output case, where a crashed or signaled
       process leaves a caller with nothing to read;
     * a summary naming errors, since an errored test never produced an outcome to attribute;
     * a summary whose ``failed`` count disagrees with the number of node ids the short summary

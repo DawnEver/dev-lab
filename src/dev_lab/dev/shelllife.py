@@ -7,13 +7,13 @@ The line carries its credential's id::
 
     DEV_LAB_LIFETIME_GRANT=<credential id> timeout <minutes>m <command>
 
-Two readers, one judgement:
+Two readers, one judgment:
 
 * :func:`admission` -- the ``BACKGROUND-SHELL-IS-BOUNDED`` row (:mod:`dev_lab.dev._deny_background_row`) asks it
   through ``--admit`` for every background Bash line: a line must START with ``timeout <n>``; above the default it
   needs a grant that verifies, names ``sha256(<command>)`` and covers ``<n>``. A refusal names the request to write
   and the door to grant it with, never a bare no;
-* :func:`granted_bound` -- the sweep (:mod:`dev_lab.dev.shellreaper`) honours a longer bound ONLY through it,
+* :func:`granted_bound` -- the sweep (:mod:`dev_lab.dev.shellreaper`) honors a longer bound ONLY through it,
   verified at the shell's launch, so an agent-written ``timeout 6h`` without a grant is stopped at fifty minutes.
 """
 

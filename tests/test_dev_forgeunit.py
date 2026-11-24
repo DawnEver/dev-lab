@@ -26,9 +26,9 @@ from lab_commons.compute.store import Nondeterministic, Record, Result, ResultSt
 from lab_commons.compute.unit import Engine, Unit, environment_here
 
 from dev_lab.dev import forgeunit
-from dev_lab.dev.artefactfolder import FolderStore
-from dev_lab.dev.artefacts import Config
-from dev_lab.dev.artefactstores import ATTACHMENT_LIMIT_MB, MB, Ref, ref_of_entry
+from dev_lab.dev.artifactfolder import FolderStore
+from dev_lab.dev.artifacts import Config
+from dev_lab.dev.artifactstores import ATTACHMENT_LIMIT_MB, MB, Ref, ref_of_entry
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm
 from dev_lab.dev.forgerecords import Attachment
 from dev_lab.dev.forgerequest import UNIT, UndeclaredRequest, declared_request
@@ -191,7 +191,7 @@ def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_bac
 ) -> None:
     repo = _repo(tmp_path)
     env = environment_here(repo)
-    folder = FolderStore(tmp_path / 'artefacts', 'r')
+    folder = FolderStore(tmp_path / 'artifacts', 'r')
     published: list[tuple[str, str, tuple[str, ...]]] = []
     monkeypatch.setattr(forgeunit, 'load_config', lambda _root: Config())
     monkeypatch.setattr(forgeunit, 'store_for', lambda *_a, **_k: folder)
@@ -248,7 +248,7 @@ def test_a_bundle_that_is_not_its_jobs_unit_is_refused(
 ) -> None:
     repo = _repo(tmp_path)
     env = environment_here(repo)
-    folder = FolderStore(tmp_path / 'artefacts', 'r')
+    folder = FolderStore(tmp_path / 'artifacts', 'r')
     published: list[tuple[str, ...]] = []
     monkeypatch.setattr(forgeunit, 'load_config', lambda _root: Config())
     monkeypatch.setattr(forgeunit, 'store_for', lambda *_a, **_k: folder)

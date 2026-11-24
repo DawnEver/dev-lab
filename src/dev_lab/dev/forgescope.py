@@ -26,7 +26,7 @@ def scope_of(kind: str, labels: Sequence[str]) -> str:
     User ruling 2026-11-07 (one PR's tests within an hour): the full suite runs only on the integration ref's
     tip; every other head runs only the test files its diff from the integration branch reaches
     (:func:`dev_lab.dev.forgecarry.reached_tests`), the rest standing on the integration tip's verdict. A head
-    labelled :data:`FULL_SUITE_LABEL` asks for the full suite; a request is always full.
+    labeled :data:`FULL_SUITE_LABEL` asks for the full suite; a request is always full.
     """
     if kind in {INTEGRATION, REQUEST} or FULL_SUITE_LABEL in labels:
         return FULL

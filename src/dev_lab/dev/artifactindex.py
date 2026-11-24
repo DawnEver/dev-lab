@@ -2,8 +2,8 @@
 
 A packed archive's members are measured from the bytes fed to tar (:class:`MemberFact`: path, logical
 bytes, sha256), so the record can say what an archive holds. The record carries them keyed by the
-archive's own sha256 under ``artefact_indexes`` (schema :data:`SCHEMA`) next to its unchanged four-field
-``artefacts`` Ref (:meth:`StoredOutputs.index`).
+archive's own sha256 under ``artifact_indexes`` (schema :data:`SCHEMA`) next to its unchanged four-field
+``artifacts`` Ref (:meth:`StoredOutputs.index`).
 
 EVERY INDEX IS BOUNDED, AND THE BOUNDS ARE DECLARED. ``max_members``, ``max_index_bytes`` (the exact
 record serialization of the ``{archive_sha: index}`` value, ``json.dumps(sort_keys=True,
@@ -26,7 +26,17 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev.artefactstores import FOLDER, FORGE, RCLONE, ArtefactRefused, OutputBudgetRefused, Ref, manifest_of
+from dev_lab.dev.artifactstores import (
+    FOLDER,
+    FORGE,
+    RCLONE,
+    RECORD_ARCHIVES,
+    RECORD_INDEXES,
+    ArtifactRefused,
+    OutputBudgetRefused,
+    Ref,
+    manifest_of,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -85,7 +95,7 @@ class StoredOutputs:
     members: tuple[MemberFact, ...]
 
     def index(self) -> dict[str, object]:
-        """The record's ``artefact_indexes`` value, keyed by the stored archive's sha256."""
+        """The record's ``artifact_indexes`` value, keyed by the stored archive's sha256."""
         return index_value(self.ref.sha256, self.members)
 
 
@@ -145,12 +155,12 @@ def validated_member(value: object, maximum: int) -> MemberFact:
         or _SHA256.fullmatch(value['sha256']) is None
     ):
         msg = 'catalogue has an invalid regular member identity'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     try:
         name = member_name(value['path'], maximum)
     except OutputBudgetRefused as error:
         msg = f'catalogue member path refused: {error}'
-        raise ArtefactRefused(msg) from error
+        raise ArtifactRefused(msg) from error
     return MemberFact(name, value['logical_bytes'], value['sha256'])
 
 
@@ -167,14 +177,14 @@ def validate_ref(ref: Ref) -> None:
         or _SHA256.fullmatch(ref.sha256) is None
     ):
         msg = 'requested Ref identity is invalid'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
 
 
 def _declared_index(record: dict[str, object], ref: Ref, max_members: int) -> list[object]:
-    declarations = record.get('artefacts', [])
+    declarations = record.get(RECORD_ARCHIVES, [])
     if not isinstance(declarations, list):
         msg = 'catalogue archive declarations must be a list'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     matches = [
         entry
         for entry in declarations
@@ -182,11 +192,11 @@ def _declared_index(record: dict[str, object], ref: Ref, max_members: int) -> li
     ]
     if len(matches) != 1 or matches[0] != manifest_of(ref) or type(matches[0]['bytes']) is not int:
         msg = 'catalogue requested exact Ref must occur once'
-        raise ArtefactRefused(msg)
-    indexes = record.get('artefact_indexes', {})
+        raise ArtifactRefused(msg)
+    indexes = record.get(RECORD_INDEXES, {})
     if not isinstance(indexes, dict) or ref.sha256 not in indexes:
         msg = 'catalogue is unindexed for the requested archive'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     index = indexes[ref.sha256]
     if (
         not isinstance(index, dict)
@@ -196,7 +206,7 @@ def _declared_index(record: dict[str, object], ref: Ref, max_members: int) -> li
         or len(index['members']) > max_members
     ):
         msg = 'catalogue index schema/member budget differs'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     return index['members']
 
 
@@ -214,27 +224,27 @@ def catalogue(
         members = tuple(validated_member(value, max_path_bytes) for value in _declared_index(record, ref, max_members))
         if len({member.path for member in members}) != len(members):
             msg = 'catalogue contains duplicate member paths'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         check_index_bytes(ref.sha256, members, max_index_bytes)
     except OutputBudgetRefused as error:
         msg = f'catalogue budget refused: {error}'
-        raise ArtefactRefused(msg) from error
+        raise ArtifactRefused(msg) from error
     return members
 
 
 def _validate_selection(members: tuple[MemberFact, ...], maximum: int) -> None:
     if type(maximum) is not int or maximum < 1:
         msg = 'selection requires a positive integer path byte budget'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     for member in members:
         if not isinstance(member, MemberFact):
             msg = 'selection requires complete MemberFact values'
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
         try:
             validated_member(member.manifest(), maximum)
-        except ArtefactRefused as error:
+        except ArtifactRefused as error:
             msg = f'selection member identity refused: {error}'
-            raise ArtefactRefused(msg) from error
+            raise ArtifactRefused(msg) from error
 
 
 def select_members(
@@ -256,12 +266,12 @@ def select_members(
         type(value) is not int or value < 0 for value in (max_entries, max_bytes)
     ):
         msg = 'selection requires boolean case policy and nonnegative integer budgets'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     _validate_selection(members, max_path_bytes)
     by_path = {member.path: member for member in members}
     if len(by_path) != len(members) or len(set(paths)) != len(paths) or any(path not in by_path for path in paths):
         msg = 'selection has duplicate/unknown paths or invalid catalogue'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     selected = tuple(by_path[path] for path in paths)
     entries: dict[str, tuple[str, str]] = {}
     for member in selected:
@@ -272,12 +282,12 @@ def select_members(
             key = name if case_sensitive else name.casefold()
             if key in entries and entries[key] != (name, kind):
                 msg = 'selection has case or file/directory collisions'
-                raise ArtefactRefused(msg)
+                raise ArtifactRefused(msg)
             if key not in entries and len(entries) >= max_entries:
                 msg = 'selection exceeds expanded entry budget'
-                raise ArtefactRefused(msg)
+                raise ArtifactRefused(msg)
             entries[key] = (name, kind)
     if sum(member.logical_bytes for member in selected) > max_bytes:
         msg = 'selection exceeds expanded byte budget'
-        raise ArtefactRefused(msg)
+        raise ArtifactRefused(msg)
     return selected

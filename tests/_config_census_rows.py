@@ -1,6 +1,6 @@
-r"""The CONFIG-layer placement census, FIRST half -- pure DATA, one row per artefact per repo.
+r"""The CONFIG-layer placement census, FIRST half -- pure DATA, one row per artifact per repo.
 
-A row is ``<repo>::<artefact> -> Placement(side, why)``, partitioned by REPO because a repo is what
+A row is ``<repo>::<artifact> -> Placement(side, why)``, partitioned by REPO because a repo is what
 a lane owns. The machinery that reads it, and the three sides it may use, are `_config_census.py`;
 this file computes nothing, exactly as `_rule_rows.py` computes nothing for `rules.py`.
 
@@ -31,7 +31,7 @@ THE TWO HEADLINE FINDINGS, both confirmed and both sharper than the line counts 
    never read. What the loser holds is exactly one key -- ``extend = 'ruff.toml'`` -- which names the
    winner and nothing else, so the loser contains nothing the winner does not. It is a dead
    declaration rather than a lying one, and the distinction is worth the row: deleting it changes no
-   behaviour, and leaving it invites the next reader to edit the file ruff does not read.
+   behavior, and leaving it invites the next reader to edit the file ruff does not read.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from __future__ import annotations
 from _config_census import MOVES, SPLITS, STAYS, Placement
 
 __all__ = [
-    'ARTEFACTS',
+    'ARTIFACTS',
     'CONSUMER_IGNORE_CORE',
     'CONSUMER_IGNORE_DELTA',
     'CONSUMER_SELECT',
@@ -75,10 +75,10 @@ REPO_PATHS: dict[str, str] = {
     'consumer-a': 'consumer-a',
 }
 
-#: The config artefacts under census. ``ruff-config`` is an ARTEFACT rather than a FILE on purpose:
+#: The config artifacts under census. ``ruff-config`` is an ARTIFACT rather than a FILE on purpose:
 #: three repos hold it inside `pyproject.toml` and one holds it in `ruff.toml`, and a census keyed by
 #: filename would score that difference as two unrelated rows instead of one relocation.
-ARTEFACTS: tuple[str, ...] = (
+ARTIFACTS: tuple[str, ...] = (
     'pyproject.toml',
     'ruff-config',
     '.gitignore',
@@ -343,7 +343,7 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
         'is the smallest of the four and the difference is not restraint -- it carries no `[tool.ruff]` '
         'exclude list, no pyright block and no Rust build, because this repo has none of those trees. '
         'What breaks if it moved: nothing installs. Only the lint block inside it is a shared question, '
-        'and that is the `ruff-config` row, which is why this census keys the artefact rather than '
+        'and that is the `ruff-config` row, which is why this census keys the artifact rather than '
         'the file.',
     ),
     'lab-commons::ruff-config': Placement(
@@ -464,11 +464,11 @@ ROWS_CONSUMER_B: dict[str, Placement] = {
 ROWS_CONSUMER_C: dict[str, Placement] = {
     'consumer-c::pyproject.toml': Placement(
         STAYS,
-        '225 LINES WHOSE SUBJECT IS THIS DISTRIBUTION: the package name, the optimiser dependencies and '
-        'the extras a consumer installs. A pyproject is the one artefact per repo that is repo-shaped '
+        '225 LINES WHOSE SUBJECT IS THIS DISTRIBUTION: the package name, the optimizer dependencies and '
+        'the extras a consumer installs. A pyproject is the one artifact per repo that is repo-shaped '
         'by construction rather than by habit -- two wheels cannot share a name, a version source or a '
         'dependency set. What breaks if it moved: nothing installs. Its `[tool.ruff]` block is the only '
-        'shared question inside it and is keyed as its own artefact, which is what lets this row be a '
+        'shared question inside it and is keyed as its own artifact, which is what lets this row be a '
         'clean STAYS instead of a SPLITS that never names its seam.',
     ),
     'consumer-c::ruff-config': Placement(
@@ -486,7 +486,7 @@ ROWS_CONSUMER_C: dict[str, Placement] = {
         SPLITS,
         'THIRTY LIVE PATTERNS, THE SMALLEST CONSUMER, AND 12 OF THEM ARE THE SHARED CORE -- so 40 per '
         'cent of this file is the family`s and the rest is this repo`s trees (`archived/`, `output/`, '
-        '`htmlcov/`, `usr/`). THE SEAM is the generated-artefact core: caches, `.venv*`, `.coverage*`, '
+        '`htmlcov/`, `usr/`). THE SEAM is the generated-artifact core: caches, `.venv*`, `.coverage*`, '
         '`uv.lock`, `**/.env`, `**/log/*.log`. What STAYS is `usr/`, which appears in no other repo at '
         'all, and the output trees the examples write into. What breaks if the trees moved into a '
         'shared file: it would have to name every directory any family repo might create, and a pattern '
@@ -551,7 +551,7 @@ ROWS_CONSUMER_A: dict[str, Placement] = {
         '73 LIVE PATTERNS, THE LARGEST, AND THE SHARED CORE IS THE SAME 12 the other consumers hold. '
         'THE SEAM is that core. What STAYS is everything that names a tree only this repo has: `attic/` '
         'partially, the Rust `target/`, `cases/*/output/`, the FEMM and JMAG scratch products, and '
-        '`.hypothesis/`. Those are not stylistic -- a solver writes large binary artefacts beside the '
+        '`.hypothesis/`. Those are not stylistic -- a solver writes large binary artifacts beside the '
         'case that produced them, and the patterns that catch them are derived from this repo`s '
         'directory layout. What breaks if they moved: a shared ignore file would carry vendor-specific '
         'suffixes three of the four repos have never seen, and nobody deleting one could tell whether '

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 __all__ = ['LABEL_COLOR', 'LabelMissing', 'add_label', 'ensure_labels', 'label_ids', 'relabel', 'remove_label']
 
-#: The colour a label this module creates gets (neutral grey).
+#: The color a label this module creates gets (neutral grey).
 LABEL_COLOR: Final = 'cccccc'
 #: Labels read per page.
 _PAGE: Final = 50

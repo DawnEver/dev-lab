@@ -8,7 +8,7 @@ ADMITTED by the one admission (:func:`lab_commons.compute.admission.admit`: its 
 free), claimed, leased, renewed and released by the one path (:mod:`dev_lab.dev.forgetake`,
 :mod:`dev_lab.dev.forgeproduce`).
 
-A REQUEST IS AN OPEN ISSUE labelled ``forge:request`` whose body names a producer and a sha::
+A REQUEST IS AN OPEN ISSUE labeled ``forge:request`` whose body names a producer and a sha::
 
     producer = "femm_goldens"
     sha = "<40-hex commit>"

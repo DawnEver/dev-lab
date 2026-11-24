@@ -5,7 +5,7 @@
   never a checkout's sibling, never temp). It is a clone of the family layer's ``[tasks] remote`` (the one place the
   remote is stated, rendered into the machine file). A task lives at ``<ledger>/<slug>/`` and a closed one under
   ``<ledger>/archive/<YYYY-MM-DD>/<slug>/`` (:mod:`dev_lab.dev.task` close moves it); its identity on the forge is
-  the issue labelled ``task:<slug>``. No checkout holds a ledger;
+  the issue labeled ``task:<slug>``. No checkout holds a ledger;
 * a task, :func:`task_in` -- ``<slug>/TASK.md`` there, frontmatter ``status: open`` and the ``authority`` the user's
   task-open minted. Its id is ``<slug>@<authority>``, so a task closed and reopened under the same slug is a new id;
 * the task a checkout works on, :func:`task_of` -- DERIVED FROM ITS BRANCH and nothing else: the current HEAD of

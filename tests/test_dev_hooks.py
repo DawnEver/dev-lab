@@ -128,7 +128,7 @@ def test_every_row_names_an_exit_and_renders_it(rule: DenyRule) -> None:
 def test_a_rule_that_needs_a_remedy_refuses_to_render_without_one() -> None:
     """A reason whose exit went missing reads exactly like one whose exit is a plain command."""
     needy = [rule for rule in DENY_RULES if rule.needs is not None]
-    assert needy, 'no row needs a repo artefact, so this control is checking nothing'
+    assert needy, 'no row needs a repo artifact, so this control is checking nothing'
     with pytest.raises(UnremediedRule, match='no exit to name'):
         needy[0].reason()
     with pytest.raises(UnremediedRule, match='answers a different question'):

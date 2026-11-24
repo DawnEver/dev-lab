@@ -42,7 +42,7 @@ WHAT THE GLOB COSTS, stated rather than waved at. ``.venv/*/python*`` also admit
 ``.venv/bin/python3.12`` and, in principle, a directory under ``.venv`` that is neither ``bin`` nor
 ``Scripts``. Every string it admits is still *an interpreter inside this project's venv*, which is
 exactly the road the row exists to permit, so the widening stays inside the row's own meaning. It is
-not a licence to widen further: the glob is a CONSTANT here, derived from :data:`VENV_LAYOUTS`, so a
+not a license to widen further: the glob is a CONSTANT here, derived from :data:`VENV_LAYOUTS`, so a
 third layout has to be added as data and cannot arrive as a looser pattern in one repo's settings.
 
 THE PLATFORM SIGNAL ARRIVES AS AN ARGUMENT WITH NO DEFAULT. That is not symmetry with
@@ -221,14 +221,14 @@ def unportable_row(entry: str) -> str | None:
     WORDING is not a second copy of this argument living in another module.
 
     A DECLARED allow row is the only door :func:`dev_lab.dev.allow_adoption.glob_for` cannot
-    reach: a derived row is normalised on the way out, a declared one is the repo's verbatim text.
+    reach: a derived row is normalized on the way out, a declared one is the repo's verbatim text.
     """
     spelled = hardcoded_spellings(entry)
     if not spelled:
         return None
     return (
         f'{entry}: spells the venv interpreter {spelled[0]!r} rather than globbing it. A DERIVED row is '
-        f'normalised by glob_for; a DECLARED row is verbatim, so this is the door normalisation cannot reach. '
+        f'normalized by glob_for; a DECLARED row is verbatim, so this is the door normalization cannot reach. '
         f'settings.json is TRACKED IN GIT and a one-platform row permits NOTHING on the other, silently. '
         f'Write {portable(entry)} instead.'
     )

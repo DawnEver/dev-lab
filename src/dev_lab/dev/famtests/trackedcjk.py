@@ -21,7 +21,7 @@ measured differences, not on taste:
   publishes 12 names and ``dev_lab.dev.docwidth`` publishes 14, and the intersection is EMPTY --
   ``scan_files``/``scan_widths``, ``ratchet``/``width_ratchet``, ``remedy``/``width_remedy``. They are
   deliberate parallels, not one surface with two entry points.
-* THE DECLARED SET IS KEYED DIFFERENTLY, which is a behaviour difference and not a spelling one. Here
+* THE DECLARED SET IS KEYED DIFFERENTLY, which is a behavior difference and not a spelling one. Here
   a waiver names a FILE; there it names a ``path:line`` SITE. A body taking the key as an argument
   would let a repo declare one guard's shape to the other, and the failure is silent in the direction
   that matters: every entry orphans, so the ratchet reds loudly for the wrong reason and the honest-
@@ -260,7 +260,7 @@ def assert_no_tracked_non_ascii(scan: cjk.NonAsciiScan, *, floor: int, what: str
     The floor comes first for the reason it does everywhere: an unread corpus has no non-ASCII either.
     The failure message IS :func:`dev_lab.dev.cjk.non_ascii_distance` -- total characters, file
     count, the per-class breakdown and the top offending files -- because the user asked for the gap
-    to be shown AS a test error, and a red that does not say how far is only a colour.
+    to be shown AS a test error, and a red that does not say how far is only a color.
 
     Raises:
         dev_lab.dev.floors.FloorUnmet: fewer files were read than *floor*.
@@ -277,7 +277,7 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, exempt_prefixes: Coll
     """THE PLANTED CONTROL, in BOTH directions, driving the REAL scanner over a REAL tree.
 
     Four files are planted at once, because each of the scanner's distinctions is only meaningful
-    against its neighbour: a dirty file must be NAMED at the right line and column; a clean ASCII file
+    against its neighbor: a dirty file must be NAMED at the right line and column; a clean ASCII file
     must not be; a file under an exempt prefix must be EXEMPTED rather than read; and a file spelling
     the character as a backslash-u ESCAPE must pass, because that escape is the remedy
     :func:`dev_lab.dev.cjk.remedy` recommends and a scanner convicting its own remedy is worse
@@ -300,7 +300,7 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, exempt_prefixes: Coll
             THIS repo declares. The first prefix is the one planted under.
 
     Raises:
-        AssertionError: the scanner missed the planted character, named an honest neighbour, read an
+        AssertionError: the scanner missed the planted character, named an honest neighbor, read an
             exempt file, or convicted the escape sequence it recommends.
 
     """
@@ -326,7 +326,7 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, exempt_prefixes: Coll
     if named != [('dirty.md', 2, 7)]:
         msg = (
             f'the scanner named {named} and the only planted offender is dirty.md line 2 column 7, both '
-            f'1-based. The ASCII neighbour must stay unnamed, the backslash-u ESCAPE must pass -- it is '
+            f'1-based. The ASCII neighbor must stay unnamed, the backslash-u ESCAPE must pass -- it is '
             f'the remedy this family recommends, and a scanner reading escape sequences would refuse it '
             f'-- and the exempt file must not be read at all.'
         )

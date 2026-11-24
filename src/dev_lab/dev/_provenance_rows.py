@@ -123,7 +123,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # answered this question used to sit in this repo's OWN test tree, which is a consumer of the kit
     # like any other -- the `approxfloors` row below already establishes that. Its rows half,
     # `tests/_collect_census_rows.py`, STAYED and is this repo's own row rather than any other
-    # repo's, so the row is not a licence to read that file as a consumer's.
+    # repo's, so the row is not a license to read that file as a consumer's.
     'collectcensus': ('supersedes', 'tests/_collect_census.py'),
     # 'original' until 2026-09-18, when the assertion-SHAPE reader landed here and took the whole
     # reading half of a consumer's vacuous-assert lint -- its `_called_name`, `_is_assertion`,

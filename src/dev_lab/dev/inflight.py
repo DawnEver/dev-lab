@@ -20,7 +20,7 @@ volume under the free-space floor) raises, named -- retried, it polled a hosted 
 THE RESULT DIRECTORY IS BOX-WIDE, NOT PER REPO: beside the ledger, outside every repository, because two
 worktrees whose trees hash alike ARE the same request.
 
-WHAT THE RESULT IS, is the caller's: an opaque string (a verify run serialises its verdict line, its
+WHAT THE RESULT IS, is the caller's: an opaque string (a verify run serializes its verdict line, its
 rendering and its exit code). This module only moves it from one leader to many readers.
 """
 

@@ -1,4 +1,4 @@
-"""``dev_lab.dev.profile`` — the parameterisation, and the substitution it has to be.
+"""``dev_lab.dev.profile`` — the parameterization, and the substitution it has to be.
 
 The root-resolution tests matter more than the rest because they are about the ONLY thing that
 decides whether adopting this kit costs a line or a rewrite: every guard in a consumer tree reaches
@@ -96,7 +96,7 @@ class TestTheLintConfigLocation:
         (checkout / 'ruff.toml').write_text('line-length = 120\n', encoding='utf-8')
         assert _profile(checkout, lint_config='ruff.toml').lint_config_path == checkout.resolve() / 'ruff.toml'
 
-    def test_an_absolute_override_is_honoured(self, checkout, tmp_path) -> None:
+    def test_an_absolute_override_is_honored(self, checkout, tmp_path) -> None:
         other = tmp_path.parent / 'shared-ruff.toml'
         assert _profile(checkout, lint_config=other).lint_config_path == other
 

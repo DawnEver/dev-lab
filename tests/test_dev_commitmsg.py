@@ -32,7 +32,7 @@ def test_a_conventional_message_passes(message: str) -> None:
     'message',
     [
         'data(femm): not a type',
-        'Feat: capitalised type',
+        'Feat: capitalized type',
         'feat:no space',
         'feat(): empty scope',
         'feat(a b): spaced scope',

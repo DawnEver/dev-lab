@@ -20,7 +20,7 @@ from dev_lab.dev import forgesecurity
 from dev_lab.dev._deny_status_row import STATUS_VIA_DOORS
 from dev_lab.dev.forgecli import NOUNS
 from dev_lab.dev.forgecontexts import SECURITY_CONTEXT
-from dev_lab.dev.forgesecurity import Declaration, DeclarationInvalid, Judgement, declared, judge, security_wait, step
+from dev_lab.dev.forgesecurity import Declaration, DeclarationInvalid, Judgment, declared, judge, security_wait, step
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import parts_of
@@ -49,7 +49,7 @@ _LOCK = (
 def test_a_clean_tree_is_success_and_says_what_was_answered(tmp_path: Path) -> None:
     tracked = _tree(tmp_path, {'src/a.py': 'X = 1\n', 'uv.lock': _LOCK})
     found = judge(tmp_path, tracked, Declaration(), lookup=_clean)
-    assert found == Judgement('success', 'ruff S, credentials and 1 locked pin(s): nothing found')
+    assert found == Judgment('success', 'ruff S, credentials and 1 locked pin(s): nothing found')
 
 
 def test_a_planted_shell_true_and_token_fail_named_by_line_and_digest_never_by_value(tmp_path: Path) -> None:
@@ -91,11 +91,11 @@ def test_an_unreachable_database_is_error_never_success(tmp_path: Path) -> None:
 
 def test_the_declaration_is_differences_with_reasons_and_nothing_else() -> None:
     text = (
-        '[tool.dev_lab.security]\nexclude = { attic = "archive" }\nignore = { S311 = "plot colours" }\n'
+        '[tool.dev_lab.security]\nexclude = { attic = "archive" }\nignore = { S311 = "plot colors" }\n'
         'allowed = { "sha256:0123456789ab" = "a fake" }\naccepted = { "GHSA-x" = "unused" }\n'
     )
     found = declared(text)
-    assert (dict(found.exclude), dict(found.ignore)) == ({'attic': 'archive'}, {'S311': 'plot colours'})
+    assert (dict(found.exclude), dict(found.ignore)) == ({'attic': 'archive'}, {'S311': 'plot colors'})
     assert (dict(found.allowed), dict(found.accepted)) == ({'sha256:0123456789ab': 'a fake'}, {'GHSA-x': 'unused'})
     assert declared('[project]\nname = "x"\n') == Declaration()
     with pytest.raises(DeclarationInvalid, match='keys are'):
@@ -137,9 +137,9 @@ def _step(monkeypatch: pytest.MonkeyPatch, posted: dict[str, list[CommitStatus]]
     monkeypatch.setattr(forgesecurity, 'status_post', post)
     judged: list = []
 
-    def fake(_root: Path, head: str, declaration: Declaration) -> Judgement:
+    def fake(_root: Path, head: str, declaration: Declaration) -> Judgment:
         judged.append((head, dict(declaration.accepted)))
-        return Judgement('success', 'nothing found')
+        return Judgment('success', 'nothing found')
 
     said: list[str] = []
     step(Path(), object(), say=said.append, judged=fake)
@@ -202,11 +202,11 @@ def _fake_forge(monkeypatch: pytest.MonkeyPatch, head_toml: bytes) -> tuple[dict
     return posted, comments
 
 
-def _s311_only(_root: Path, _head: str, declaration: Declaration) -> Judgement:
+def _s311_only(_root: Path, _head: str, declaration: Declaration) -> Judgment:
     """A head whose one finding is an S311 the head's own table ignores."""
     if 'S311' in declaration.ignore:
-        return Judgement('success', 'nothing found')
-    return Judgement('failure', '1 ruff S: src/a.py:3 S311')
+        return Judgment('success', 'nothing found')
+    return Judgment('failure', '1 ruff S: src/a.py:3 S311')
 
 
 def test_a_head_whose_own_new_exemptions_cover_its_findings_fails_naming_the_release_door(
@@ -246,7 +246,7 @@ def _unreadable_head(monkeypatch: pytest.MonkeyPatch) -> None:
 def _second_call_raises() -> object:
     calls: list[str] = []
 
-    def judged(root: Path, head: str, declaration: Declaration) -> Judgement:
+    def judged(root: Path, head: str, declaration: Declaration) -> Judgment:
         calls.append(head)
         if calls.count(head) == 2:
             raise subprocess.CalledProcessError(1, 'git archive')
@@ -295,7 +295,7 @@ def test_the_release_door_posts_success_with_its_reason_and_the_delta(monkeypatc
     [
         (_HEAD_TOML, 'meh', _s311_only, 'reason'),
         (_BASE_TOML, 'a reason long enough', _s311_only, 'does not change'),
-        (_HEAD_TOML, 'a reason long enough', lambda *_: Judgement('failure', '1 ruff S: b.py:1 S602'), 'S602'),
+        (_HEAD_TOML, 'a reason long enough', lambda *_: Judgment('failure', '1 ruff S: b.py:1 S602'), 'S602'),
     ],
 )
 def test_the_release_door_refuses_without_a_reason_an_unchanged_table_or_findings_left(
@@ -326,7 +326,7 @@ def test_a_raw_status_post_on_tests_security_is_refused_to_agents() -> None:
     assert not pattern.search('python -m dev_lab.dev.forge security release 7 --why "seeded samples only"')
 
 
-def test_a_workflow_job_judges_its_one_pr_through_the_step_s_judgement(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_workflow_job_judges_its_one_pr_through_the_step_s_judgment(monkeypatch: pytest.MonkeyPatch) -> None:
     """``forge security run --pr N``: the one PR judged once; a PR into another base is not (PLANTED control)."""
     posted: dict[str, list[CommitStatus]] = {}
     _step(monkeypatch, posted, [])  # the same fakes; the step judges only the integration head
@@ -336,8 +336,8 @@ def test_a_workflow_job_judges_its_one_pr_through_the_step_s_judgement(monkeypat
     }
     client = SimpleNamespace(pr_view=pulls.__getitem__)
 
-    def fake(_root: Path, _head: str, _declaration: Declaration) -> Judgement:
-        return Judgement('success', 'nothing found')
+    def fake(_root: Path, _head: str, _declaration: Declaration) -> Judgment:
+        return Judgment('success', 'nothing found')
 
     assert forgesecurity.run_pull(Path(), client, 1, judged=fake).startswith(f'#1 {"a" * 12} success')
     assert [one.state for one in posted['a' * 40]] == ['success']
@@ -373,9 +373,9 @@ def test_a_first_adoption_pr_is_judged_under_its_own_table(monkeypatch: pytest.M
     )
     seen: list[dict[str, str]] = []
 
-    def fake(_root: Path, _head: str, declaration: Declaration) -> Judgement:
+    def fake(_root: Path, _head: str, declaration: Declaration) -> Judgment:
         seen.append(dict(declaration.accepted))
-        return Judgement('success', 'nothing found')
+        return Judgment('success', 'nothing found')
 
     said = forgesecurity.run_pull(Path(), client, 1, judged=fake)
     if base == 'declared':

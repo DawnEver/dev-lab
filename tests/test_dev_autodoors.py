@@ -295,7 +295,7 @@ doors = [
 """
 
 
-def test_an_act_row_renders_for_both_clients_and_is_labelled_as_acting(tmp_path: Path) -> None:
+def test_an_act_row_renders_for_both_clients_and_is_labeled_as_acting(tmp_path: Path) -> None:
     """A repo declares a WRITING verb of its own CLI as a door, explicitly: ``act = true`` on the row.
 
     PLANTED CONTROLS: both literal interpreters render and never the ``.venv/*/python*`` glob; the read-only row's

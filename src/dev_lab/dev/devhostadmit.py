@@ -8,7 +8,7 @@ is that step, run by the agent of any machine the issuer already admits:
 
 1. it reads the machine's declared keys at the config source's main (none: the ``client-key`` wall comes first);
 2. it finds the issuer's host file in the config-source clone (the one host file declaring ``[ops.consent]``) and the
-   ``config apply *`` sudo line of its ``[ops.access]`` login (:func:`.forgeenrol.ops_door`);
+   ``config apply *`` sudo line of its ``[ops.access]`` login (:func:`.forgeenroll.ops_door`);
 3. it asks the issuer for the subject its host derives (the read-only ``subject`` verb, no code): the issuer's
    standing :data:`~dev_lab.ops.configdoor.UNCHANGED` means its live file already IS main -- nothing to admit, no
    plan; a subject other than the one derived HERE through the same function ``planrun`` checks
@@ -33,7 +33,7 @@ from lab_commons.log import emit
 
 # Modules, not names: planrunpreflight reads devhost, which wires this verb, so it may be mid-import here.
 from dev_lab.dev import devhost, planremote, planrunpreflight, planrunsteps
-from dev_lab.dev.forgeenrol import EnrolRefused, ops_door
+from dev_lab.dev.forgeenroll import EnrollRefused, ops_door
 from dev_lab.dev.venvpath import running_interpreter
 from dev_lab.ops import configdoor
 from dev_lab.ops.clientkeys import DEV_KEY
@@ -59,7 +59,7 @@ def _issuer_file(clone: Path) -> Path:
             continue
     if len(found) != 1:
         msg = f'{len(found)} host files under {clone / "hosts"} declare [ops.consent]; the issuer host must be one'
-        raise EnrolRefused(msg)
+        raise EnrollRefused(msg)
     return found[0]
 
 
@@ -69,7 +69,7 @@ def _keys(machine: str, source: str, readers: planrunpreflight.Readers) -> list[
     if not declared:
         msg = (f'{where} at main declares no [dev] {DEV_KEY}: on {machine}, `devhost bringup --check` names the line '
                'to propose (the client-key wall) -- merge it, then admit')  # fmt: skip
-        raise EnrolRefused(msg)
+        raise EnrollRefused(msg)
     return list(declared)
 
 
@@ -94,7 +94,7 @@ def offer(
             say(f'admit: refused, no code asked -- {dest} would refuse the apply as it stands: {standing}')
             return 2
         derived = planrunpreflight.config_subject(issuer.stem, readers.text, source, listed=readers.listed)
-    except (EnrolRefused, configdoor.ConfigRefused, *planrunpreflight.UNREAD) as refused:
+    except (EnrollRefused, configdoor.ConfigRefused, *planrunpreflight.UNREAD) as refused:
         say(f'admit: refused, no code asked -- {refused}')
         return 2
     if asked != derived:

@@ -89,6 +89,10 @@ complete part or the forge's acceptance gates.
   (`dev_lab.dev.inflight`).
 - A key the run cache already holds is cited without running (`dev_lab.dev.runcache`); `--rerun` overrides.
 - A measure waits at most `verifybox.MEASURE_WAIT_S` for the box and then refuses naming the holder.
+- Before pytest, the lint steps run unboxed (`verifysteps.LINT_STEPS`): ruff check, ruff format, and typos in
+  locale en-us (`dev_lab.dev.spelling`, US-SPELLING-IS-CHECKED, user ruling 2026-11-24) over every checked file,
+  configured by the one family file `dev_lab/dev/typos.toml`; dated memory before `spelling.MEMORY_CUTOFF` is
+  history and unchecked, and `python -m dev_lab.dev.spelling --write` fixes what is unambiguous.
 - A measure's pytest step runs in the box at its declared claim (`verifybox.selection_demand`: one core per
   worker its `-n` runs, from `verifybox.selection_workers` -- one when serial, else
   `verifybox.selection_width`: one worker a file, at most the box's free cores, narrowed by its free memory, unless the caller names a width -- the memory its files measured, `verifybox.selection_mem_gb`, and the wall `[tool.dev_lab.verify] wall_s` declares, else `SELECTION_WALL_S`) beside whatever else fits; a producer runs

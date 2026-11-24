@@ -67,7 +67,7 @@ NOT_OURS = ('stdout', 'stderr')
 #: RE-MEASURED 2026-10-08: the scan read 203 once ``lab_commons.hpc`` (and ``width``) became tracked,
 #: eight past the 195 this pair allowed. The new modules write through ``emit`` like every other;
 #: the floor is re-taken at the same ~80% and THE HEADROOM STAYS AT 45. 150 -> 160.
-#: Re-taken 2026-10-12 at 258: forge-schedule's split modules, artefacts/artefactstores, forgeship, selection.
+#: Re-taken 2026-10-12 at 258: forge-schedule's split modules, artifacts/artifactstores, forgeship, selection.
 #: Re-taken 2026-10-12 at 267 (serve-task, serve-lock, forge-produce, forge-provides, a retired hook): 220 -> 227.
 #: Re-taken 2026-10-13 at 273 (six modules since): 227 -> 232.
 #: Re-taken 2026-10-13 at 278-279 (compute.probe and two lease modules, merged): 232 -> 237.

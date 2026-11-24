@@ -36,7 +36,7 @@ def requires_python(root: Path) -> str | None:
 
 
 def fits(version: str, spec: str | None) -> bool:
-    """Whether Python *version* satisfies *spec* (no spec, or an unparseable one, bounds nothing)."""
+    """Whether Python *version* satisfies *spec* (no spec, or an unparsable one, bounds nothing)."""
     if not spec:
         return True
     try:

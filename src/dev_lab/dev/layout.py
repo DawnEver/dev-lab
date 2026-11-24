@@ -392,7 +392,7 @@ def refuse_layout(path: Path) -> str | None:
         return (
             f'{RULE_ID}: {rel} -- {rel.split("/", 1)[0]}/ is declared read_only in [tool.dev_lab.placement] of '
             f'{root.name}/pyproject.toml: user-maintained input, read freely, never written or cleaned. A '
-            f'derived artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/.\n{details_for(RULE_ID)}'
+            f'derived artifact goes to output/logs/<yy>/<mm>/<dd>/<kind>/.\n{details_for(RULE_ID)}'
         )
     cause = judge(rel, layout)
     if cause is None:

@@ -1,4 +1,4 @@
-# Artefacts
+# Artifacts
 
 Large results live in ONE shared SharePoint document library, the Teams team "HPC Data". Several HPC accounts,
 owned by different people, write to it, each through its OWN rclone remote; every run id carries the account
@@ -24,7 +24,7 @@ Open the team "HPC Data" in Teams, go to **Files**, and click **Sync**. Then poi
 synced folder:
 
 ```toml
-[artefacts]
+[artefacts]  # lab-commons owns this section name  # spelling-ignore-line
 folder = "~/<the synced HPC Data - Documents folder>"
 ```
 
@@ -36,7 +36,7 @@ folder = "~/<the synced HPC Data - Documents folder>"
 outputs = ["output/fields/*.h5"]       # globs or files, relative to the run's work tree
 ```
 
-- Only declared outputs are packed (`dev_lab.dev.artefactpack.collect`, `pack`). A declared output that
+- Only declared outputs are packed (`dev_lab.dev.artifactpack.collect`, `pack`). A declared output that
   matched nothing fails the run loudly, naming it. Nothing undeclared is uploaded.
 - The output budgets live in the same `[tool.lab_commons.artefacts]` table and are read once before packing:
 
@@ -57,13 +57,13 @@ outputs = ["output/fields/*.h5"]       # globs or files, relative to the run's w
 - An over-budget or missing `member_index_*` policy ends the run with an error and a named alarm
   (`OutputBudgetRefused`) and is never retried unchanged; a store or network failure is not reclassified and
   keeps its own recovery.
-- `pack` returns `PackedOutputs` (`dev_lab.dev.artefactindex`): the archive, its sha256 and bytes, and one
+- `pack` returns `PackedOutputs` (`dev_lab.dev.artifactindex`): the archive, its sha256 and bytes, and one
   `MemberFact(path, logical_bytes, sha256)` per member, hashed on the very stream fed to `tar.addfile`. A hard
   link becomes its own regular member. Member paths refuse traversal, backslashes, colons and control
   characters and allow Unicode -- not a promise that every target platform can materialize them.
 - `store_outputs` returns `StoredOutputs(ref, members)` and checks the stored Ref's sha256 and bytes against
   the sealed archive; a disagreement is `OutputIntegrityRefused`, its own terminal alarm, not a budget one.
-  The run record carries the unchanged four-field Ref in `artefacts` and, beside it, `artefact_indexes`:
+  The run record carries the unchanged four-field Ref in `artifacts` and, beside it, `artifact_indexes`:
   `{archive_sha: {"schema": "lab-commons-members-v1", "members": [...]}}`. The index byte budget measures
   that value with the record's own serializer (`json.dumps(sort_keys=True, ensure_ascii=True)`), not the
   whole record. File-descriptor checks catch ordinary source drift, not an adversary restoring every
@@ -83,12 +83,12 @@ retain_days = 3            # per writer
 cap_gb = 0                 # per writer; 0 = no cap
 ```
 
-- One interface, three backends (`ArtefactStore`): `forge` (a records-home attachment, up to the forge's
+- One interface, three backends (`ArtifactStore`): `forge` (a records-home attachment, up to the forge's
   100 MB limit), `rclone` (any rclone remote) and `folder` (a local path).
 - **The manifest entry is the reference**: `{backend, ref, bytes, sha256}` in the run record. Reading refuses
   bytes whose sha256 differs.
 - **Write-once**: an object is never rewritten; the same bytes again is the object already landed.
-- The `folder` writer (`dev_lab.dev.artefactfolder`) publishes the archive BEFORE its manifest. A put
+- The `folder` writer (`dev_lab.dev.artifactfolder`) publishes the archive BEFORE its manifest. A put
   interrupted between them is retried by verifying the existing archive's full sha256 and size before the
   missing manifest is committed; different bytes are never overwritten. An existing manifest is accepted only
   when its whole Ref matches and its archive still verifies. Concurrent identical writers are idempotent;
@@ -145,7 +145,7 @@ cap_gb = 0                 # per writer; 0 = no cap
 
 ## Reading a record's member index
 
-- `query_members(root, record_path, ref, paths, case_sensitive=...)` (`dev_lab.dev.artefacts`) reads the
+- `query_members(root, record_path, ref, paths, case_sensitive=...)` (`dev_lab.dev.artifacts`) reads the
   policy once from the trusted repo root BEFORE opening the record and needs all seven budgets:
   `record_max_compressed_bytes`, `record_max_decompressed_bytes`, the three `member_index_max_*` and both
   `expanded_output_max_*`. An omission is `OutputBudgetRefused`, never a default. It reads the record with
@@ -162,7 +162,7 @@ cap_gb = 0                 # per writer; 0 = no cap
 
 ## Verifying an archive against its index
 
-- `verify_newpack_stream` (`dev_lab.dev.artefactscan`) checks an already decompressed stream, writing nothing,
+- `verify_newpack_stream` (`dev_lab.dev.artifactscan`) checks an already decompressed stream, writing nothing,
   with every limit an explicit positive integer. It accepts only what `pack` emits -- regular payloads, each
   optionally preceded by ONE local PAX header of `path`, `size` and integer `mtime` -- and every payload must
   match the index's order, path, length and sha256, unselected ones too. A PAX header's size is checked before
@@ -178,7 +178,7 @@ cap_gb = 0                 # per writer; 0 = no cap
 ## Materializing a selection
 
 - `materialize_newpack_archive(path, ref, complete_expected, explicit_paths, destination_parent, ...)`
-  (`dev_lab.dev.artefactrestore`) needs an existing, trusted, non-alias parent and returns a newly claimed
+  (`dev_lab.dev.artifactrestore`) needs an existing, trusted, non-alias parent and returns a newly claimed
   unique directory under it. It reuses the verifier, not a second extractor: every payload is verified, and
   only selected regular files are opened create-new and written in bounded chunks.
 - The expanded budget counts the root, unique parents, selected files and ONE `materialization-complete.json`
@@ -192,11 +192,11 @@ cap_gb = 0                 # per writer; 0 = no cap
   durable; hostile ancestors, every Unicode alias, permissions/timestamps, legacy archives and resume are
   not handled.
 
-## What is not an artefact
+## What is not an artifact
 
 - A report a person or agent writes is a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry, never a file
   under `output/` (`REPORTS-LIVE-IN-MEMORY`). `output/` holds only what a program can regenerate.
-- A file outside every checkout is nobody's artefact: an agent writes into the checkout's
+- A file outside every checkout is nobody's artifact: an agent writes into the checkout's
   `output/logs/<yy>/<mm>/<dd>/<kind>/` or `scratch/`, never into a temp, `var` or `src` root -- not even into a
   checkout there, an abandoned old version (user ruling 2026-11-06) -- or loose into the home
   (`WRITES-STAY-IN-THE-TREE`, [refusals](refusals.md#writes-stay-in-the-tree)). `python -m dev_lab.dev.tmpsweep`

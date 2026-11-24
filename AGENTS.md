@@ -33,7 +33,7 @@ imports them. Every constraint below follows from that one fact.
 - **No `_legacy`/`_compat` alias, no deprecation shim, no dual entry point.** A caller that is not
   made to move does not move; two spellings of one idea then drift in four trees at once. The
   rename breaks, deliberately, at a point somebody chooses — and the consumers move WITH it.
-- **A behaviour a consumer's guard rests on is load-bearing even when it is private.**
+- **A behavior a consumer's guard rests on is load-bearing even when it is private.**
   `_detect_repo_root` is imported by name across the family: change what it returns and four
   architecture suites change verdict, so the change is a breaking one whatever its underscore says.
 
@@ -80,7 +80,7 @@ _Rendered by `dev_lab.dev.agentsection` from `dev_lab.dev.principles`; a hand ed
 - **Single source of truth** (`single-source-of-truth`): Each fact lives in one place; all else derives from it.
 - **Layered decoupling** (`layered-decoupling`): Depend one way through narrow interfaces; never into internals or
   upward.
-- **Names match what they do** (`names-match-behaviour`): A name says what the thing does now.
+- **Names match what they do** (`names-match-behavior`): A name says what the thing does now.
 - **No backward compatibility** (`no-backward-compatibility`): No shims, aliases or dual paths for old callers; callers
   move with the change.
 - **Progressive disclosure** (`progressive-disclosure`): An entry point states what is needed first and points to
@@ -134,8 +134,8 @@ _Each rule is cited by ID; its full statement and refusing mechanism live in `de
   machinery rather than by prose, so the refusal is identical in every repo that adopts it.
 - `NETWORK-RETRY-THEN-REPORT`: The forge is a REMOTE service: a network verb goes through the retry wrapper rather than
   being called directly, and a write that still fails is REPORTED with its diagnosis instead of hammered.
-- `PRODUCTION-ENTRY-POINT`: Reproduce a behaviour through the PRODUCTION entry point, never an ad-hoc script handed out
-  beside it, and treat a behaviour not reachable from there as a gap to FIX, the boundary being the SUBJECT, not the
-  tree the code happens to live in.
+- `PRODUCTION-ENTRY-POINT`: Reproduce a behavior through the PRODUCTION entry point, never an ad-hoc script handed out
+  beside it, and treat a behavior not reachable from there as a gap to FIX, the boundary being the SUBJECT, not the tree
+  the code happens to live in.
 
 <!-- END dev-lab family section -->

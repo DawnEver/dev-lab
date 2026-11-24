@@ -185,7 +185,7 @@ def test_the_production_verifier_reads_this_session(monkeypatch: pytest.MonkeyPa
     assert time.time() > 0
 
 
-def test_the_task_is_read_from_the_working_directorys_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_task_is_read_from_the_working_directory_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     task = _task_checkout(tmp_path / 'repo')
     on_branch(tmp_path / 'repo', 'main')
     assert taskledger.task_of(tmp_path / 'repo') is None, 'planted control: no task head yet'

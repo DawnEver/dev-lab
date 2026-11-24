@@ -55,7 +55,7 @@ def test_the_incidents_vendor_logs_in_the_root_are_strays_and_staged_ignored_scr
     for rel in (
         'job_node_10_0_0_1_2026-10-20T12_19_56_1.log',  # the planted control: the 2026-10-20 incident
         'rust/pybind/uv.lock',
-        'output/logs/26/10/20/jobsystem/status.txt',  # ignored: an artefact in its place
+        'output/logs/26/10/20/jobsystem/status.txt',  # ignored: an artifact in its place
         'scratch/probe.py',
         'data/drop.csv',  # a repo-declared stray root
         'lanes/x/junk.txt',  # a pruned path: another checkout, judged by its own run

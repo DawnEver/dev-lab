@@ -28,7 +28,7 @@ runs as it shows the plan. A refusal here spends no code: the user is never aske
   enrolled, a task identity changed after the request was written). :func:`fresh_receipts` is the read a Stop
   hook takes through ``python -m dev_lab.ops.consent receipts``.
 * :func:`reached` wraps a :data:`Send` so an ssh transport failure (255) is named by its cause and door -- an unknown
-  host key is ``devhost enrol`` -- never read as an old issuer. :func:`handshake` applies it itself, so every door
+  host key is ``devhost enroll`` -- never read as an old issuer. :func:`handshake` applies it itself, so every door
   that shakes hands (a lone preflight, a plan's offer, the bring-up wall) tells ssh from a version.
 
 :func:`endpoint_send` is the one JSON-line transport to an endpoint table (consent issuer, break-glass server):
@@ -180,7 +180,7 @@ def reached(send: Send, what: str = 'the consent issuer') -> Send:
 
     Raises:
         ConsentRefused: ssh exited 255 -- named as SSH with its last line: an unknown host key names ``devhost
-            enrol``, a refused key the bring-up check, anything else the endpoint and the network.
+            enroll``, a refused key the bring-up check, anything else the endpoint and the network.
 
     """
 
@@ -192,7 +192,7 @@ def reached(send: Send, what: str = 'the consent issuer') -> Send:
         last = said.strip().splitlines()[-1] if said.strip() else 'no output'
         if _HOST_KEY in said:
             door = ("this machine does not know the host's key (never enrolled): run `python -m dev_lab.dev.devhost "
-                    'enrol` here, then preflight again')  # fmt: skip
+                    'enroll` here, then preflight again')  # fmt: skip
         elif _KEY_REFUSED in said:
             door = ("that account does not admit this machine's ssh key: `python -m dev_lab.dev.devhost bringup "
                     '--check` names the wall (client-key, issuer) and its door, then preflight again')  # fmt: skip

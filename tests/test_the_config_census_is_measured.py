@@ -7,8 +7,8 @@ zero), and the other three whenever they are checked out beside it, NAMING any t
 
 WHAT IS CHECKED, and why each half exists:
 
-* COMPLETENESS, both sides -- every repo x artefact has a row, and no row names a repo or artefact
-  that is not declared. One side alone rots: without the first a new artefact arrives unjudged,
+* COMPLETENESS, both sides -- every repo x artifact has a row, and no row names a repo or artifact
+  that is not declared. One side alone rots: without the first a new artifact arrives unjudged,
   without the second a deleted one leaves a row that reads as current.
 * THE COMPOSER'S REFUSALS, PLANTED -- a duplicate key and a key in the wrong partition, driven
   through the REAL composer rather than a re-implementation that would agree with itself.
@@ -19,7 +19,7 @@ WHAT IS CHECKED, and why each half exists:
   config precedence in the one repo that carries two configs.
 
 NOTHING HERE MOVES A FILE. This is the DECLARATION and the check that keeps it honest; a migration
-is a later, separate lane, and what this buys that lane is that it cannot move an artefact without
+is a later, separate lane, and what this buys that lane is that it cannot move an artifact without
 saying which side it was on.
 """
 
@@ -42,7 +42,7 @@ from _config_census import (
     selector_covers,
 )
 from _config_census_rows import (
-    ARTEFACTS,
+    ARTIFACTS,
     CONSUMER_IGNORE_CORE,
     CONSUMER_SELECT,
     COUNTER_DIRECTION_CODES,
@@ -57,10 +57,10 @@ from _config_census_rows import (
 
 CENSUS = compose(PARTITIONS)
 
-#: The census's own floor: four repos times six artefacts. Stated as the product rather than as 24,
-#: because the product is the property -- a census that lost an artefact and a census that lost a
+#: The census's own floor: four repos times six artifacts. Stated as the product rather than as 24,
+#: because the product is the property -- a census that lost an artifact and a census that lost a
 #: repo are different failures and a bare integer cannot tell them apart.
-ROW_FLOOR = len(REPOS) * len(ARTEFACTS)
+ROW_FLOOR = len(REPOS) * len(ARTIFACTS)
 
 #: The consumers -- every repo that INSTALLS lab-commons rather than being it.
 CONSUMERS = tuple(repo for repo in REPOS if repo != 'lab-commons')
@@ -69,10 +69,10 @@ CONSUMERS = tuple(repo for repo in REPOS if repo != 'lab-commons')
 # --------------------------------------------------------------------------- the census's shape
 
 
-def test_every_repo_and_artefact_has_a_row_and_no_row_invents_one() -> None:
-    """COMPLETENESS, BOTH SIDES. A missing row lets an artefact go unjudged; an extra one lies."""
-    assert len(CENSUS) == ROW_FLOOR, f'{len(CENSUS)} rows against {len(REPOS)} repos x {len(ARTEFACTS)} artefacts'
-    expected = {f'{repo}::{artefact}' for repo in REPOS for artefact in ARTEFACTS}
+def test_every_repo_and_artifact_has_a_row_and_no_row_invents_one() -> None:
+    """COMPLETENESS, BOTH SIDES. A missing row lets an artifact go unjudged; an extra one lies."""
+    assert len(CENSUS) == ROW_FLOOR, f'{len(CENSUS)} rows against {len(REPOS)} repos x {len(ARTIFACTS)} artifacts'
+    expected = {f'{repo}::{artifact}' for repo in REPOS for artifact in ARTIFACTS}
     assert set(CENSUS) == expected, (
         f'missing: {sorted(expected - set(CENSUS))}; invented: {sorted(set(CENSUS) - expected)}'
     )
@@ -116,7 +116,7 @@ def test_a_caption_and_a_fourth_side_are_both_refused_at_construction() -> None:
         Placement(SPLITS, 'shared base, repo delta')
 
 
-def test_every_reason_names_its_artefact_side_obligation() -> None:
+def test_every_reason_names_its_artifact_side_obligation() -> None:
     """A STAYS says what breaks, a MOVES says what is lost, a SPLITS says where the seam is."""
     missing = [key for key, row in CENSUS.items() if not _states_its_obligation(row)]
     assert missing == [], (

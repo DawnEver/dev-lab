@@ -232,7 +232,7 @@ class StateStore:
         file is left where it is so a human can look at it.
 
         Returns:
-            The parsed state, or :func:`new_state` when it is missing, unparseable, or a version
+            The parsed state, or :func:`new_state` when it is missing, unparsable, or a version
             this build does not know.
 
         """

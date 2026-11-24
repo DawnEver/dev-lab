@@ -105,7 +105,7 @@ RECURSIVE_DELETE: dict[str, object] = {
         'rmdir empty-dir',
         'git worktree list',
         'git clean -n',
-        'git clean -nd',
+        'git clean -and',
         'git commit -m "refuse rm -rf"',
     ),
 }

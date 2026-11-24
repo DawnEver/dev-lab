@@ -236,7 +236,7 @@ class Registry:
         override table is keyed by anomaly KIND while a component section is keyed by component
         NAME, so one mapping could not hold both without a magic key -- and a magic key is what the
         first draft of this did, which silently dropped every override because the section filter
-        did not recognise it.
+        did not recognize it.
 
         Args:
             table: anomaly kind to a list of step tables.

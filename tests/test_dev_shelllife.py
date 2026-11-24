@@ -1,4 +1,4 @@
-"""A background shell lives longer only by the USER's grant (ruling 2026-11-15): the launch judgement's controls.
+"""A background shell lives longer only by the USER's grant (ruling 2026-11-15): the launch judgment's controls.
 
 Grants are planted as a ``(id, when) -> (subject, seconds)`` table; the real consent store is never read or written.
 """

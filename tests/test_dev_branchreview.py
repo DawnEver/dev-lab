@@ -4,7 +4,7 @@ User-approved design 2026-11-07. The record chains a branch's PRs and keeps ever
 the findings themselves stay in each PR's own review ledger. A continuation's review reads from the last landed
 head, hands its reviewer the carried findings, and holds ``tests/review`` at failure while one is open.
 
-Real git repositories and the stateful fake forge, as in ``test_dev_forgereview_scope.py``; every behaviour has its
+Real git repositories and the stateful fake forge, as in ``test_dev_forgereview_scope.py``; every behavior has its
 planted control.
 """
 

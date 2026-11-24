@@ -25,7 +25,7 @@ from typing import Any, Final
 
 __all__ = ['BASH', 'ROW', 'block_problems', 'live_bash_rows', 'merged_permissions', 'promised_command']
 
-#: A permission row's shape: a tool name and its parenthesised argument. Matched so a row that is
+#: A permission row's shape: a tool name and its parenthesized argument. Matched so a row that is
 #: not one is refused where it is authored rather than shipped into a file the agent client parses
 #: silently -- a line the client ignores, that a reader takes for a permission, is the lie.
 ROW: Final = re.compile(r'([A-Za-z]\w*)\((.*)\)', flags=re.DOTALL)
@@ -70,7 +70,7 @@ def merged_permissions(settings: Mapping[str, Any], entries: Sequence[str]) -> d
     Every other top-level key, and every other key inside ``permissions``, is carried through
     untouched -- ``hooks`` belongs to :func:`dev_lab.dev.agent_guard.wire_settings` and
     ``deny``/``ask`` belong to whoever wrote them. That is the whole reason the allow half is not a
-    :mod:`dev_lab.dev.famconfig` artefact: a WHOLE-FILE renderer keyed by filename would have to
+    :mod:`dev_lab.dev.famconfig` artifact: a WHOLE-FILE renderer keyed by filename would have to
     own the blocks it is not about, or clobber them, and it would open a JSON file with a comment.
 
     ``Bash`` rows are REPLACED rather than merged, because they are exactly the population this

@@ -14,7 +14,7 @@ actually has. None of that is re-implemented. What was forked is the six ARMS ar
 hand-rolled engine runner each repo wrote for itself.
 
 THE DENY ARM NAMES THE RULE IT EXPECTS, and this is the strongest thing in the module. A deny arm
-that asks only *"was this refused"* cannot tell a working rule from one a NEIGHBOUR is covering for:
+that asks only *"was this refused"* cannot tell a working rule from one a NEIGHBOR is covering for:
 MEASURED in one lab, ``NETWORK-VERB`` shipped, sat ahead of ``PUSH-FORCE`` and ``PUSH-NO-VERIFY``
 in registry order, and answered for every bare ``git push`` -- so both push rules could have stopped
 firing altogether with the suite still green. That is the count-pin failure in a different spelling,
@@ -93,7 +93,7 @@ class GuardNotLive(AssertionError):
 
 
 def _refuse(message: str) -> None:
-    """Raise the one refusal this module makes, so every arm fails in one recognisable way."""
+    """Raise the one refusal this module makes, so every arm fails in one recognizable way."""
     raise GuardNotLive(message)
 
 
@@ -125,7 +125,7 @@ def decision_for(*, root: Path, command: str) -> str | None:
 
     The engine and the rules are the repo's own files rather than the ones in this wheel -- see the
     module docstring for why that is the question. The engine fails OPEN by construction, so an
-    unparseable payload or a broken rule shows up as ``None``, which is the truthful answer: nothing
+    unparsable payload or a broken rule shows up as ``None``, which is the truthful answer: nothing
     was refused. It judges the SHAPE: ``when: 'live-run'`` rows see no live run, because the suite asking
     is itself one in *root* (``run_engine(live_run=False)``).
 

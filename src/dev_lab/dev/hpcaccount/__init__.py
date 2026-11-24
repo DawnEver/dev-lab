@@ -43,7 +43,7 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   in the account's kit: a placed secret re-proved with no secret and no consent code.
 * ``tick-status --account <user>`` / ``tick-stop --account <user> [--repo R]``
   (:mod:`~dev_lab.dev.hpcaccount.tickstop`) read every tick lock's holder, and stop a tick older than its wall --
-  verified a tick of that repo, this user's, before it is signalled; a younger one is refused by name.
+  verified a tick of that repo, this user's, before it is signaled; a younger one is refused by name.
 * Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
   session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
   naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.

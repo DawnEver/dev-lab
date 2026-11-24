@@ -1,4 +1,4 @@
-"""The notice door normalises licences, refuses an unknown one by name, and takes the product only as data."""
+"""The notice door normalizes licenses, refuses an unknown one by name, and takes the product only as data."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
         ('', UNKNOWN),
     ],
 )
-def test_a_raw_licence_normalises_to_spdx_or_unknown(raw: str, spdx: str) -> None:
+def test_a_raw_license_normalizes_to_spdx_or_unknown(raw: str, spdx: str) -> None:
     assert normalize_license('pkg', raw, overrides={}) == spdx
 
 
@@ -34,7 +34,7 @@ def test_an_override_outranks_the_metadata() -> None:
     assert normalize_license('pkg', 'Dual License', overrides={'pkg': 'MIT'}) == 'MIT'
 
 
-def test_an_unknown_licence_is_refused_by_name_and_a_known_set_is_not() -> None:
+def test_an_unknown_license_is_refused_by_name_and_a_known_set_is_not() -> None:
     refuse_unknown([{'name': 'a', 'license': 'MIT'}])
     with pytest.raises(UnknownLicense, match='b, c'):
         refuse_unknown(

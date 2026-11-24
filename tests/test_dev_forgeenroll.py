@@ -1,4 +1,4 @@
-"""``devhost enrol``: one plan mints every missing declared login; the user's code is the only input; no token shown."""
+"""``devhost enroll``: one plan mints every missing declared login; the user code is the only input; no token shown."""
 
 from __future__ import annotations
 
@@ -10,7 +10,16 @@ import pytest
 
 from dev_lab.dev.credstore import DeclaredForge
 from dev_lab.dev.forgecredential import STORE_ONLY
-from dev_lab.dev.forgeenrol import SCOPE, Enrolment, EnrolRefused, complete, load_enrolment, missing, ops_door, prepare
+from dev_lab.dev.forgeenroll import (
+    SCOPE,
+    Enrollment,
+    EnrollRefused,
+    complete,
+    load_enrollment,
+    missing,
+    ops_door,
+    prepare,
+)
 from dev_lab.dev.planrunsteps import stdout_path
 from dev_lab.ops.forgerequests import TokenRequest
 
@@ -33,7 +42,7 @@ def _store(tmp_path: Path, *lines: str) -> Path:
 
 def _prepare(
     tmp_path: Path, *lines: str, helpers: list[str] = STORE_ONLY, forge: DeclaredForge = _FORGE, rotate: bool = False
-) -> tuple[list[str], Enrolment | None, list[str]]:
+) -> tuple[list[str], Enrollment | None, list[str]]:
     fixed: list[str] = []
     said, plan = prepare(
         dev=_DEV, machine='WS9', forge=forge, door=ops_door(_forge_file(tmp_path)), dest_host='forgehost.example',
@@ -55,7 +64,7 @@ def test_the_ops_door_is_read_from_the_forge_hosts_sudo_line(tmp_path: Path) -> 
 
 
 def test_a_forge_host_without_a_forge_sudo_line_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(EnrolRefused, match='forge \\*'):
+    with pytest.raises(EnrollRefused, match='forge \\*'):
         ops_door(_forge_file(tmp_path, '[ops.access]\naccount = "ops"\ncommands = ["/usr/bin/systemctl reload *"]\n'))
 
 
@@ -96,7 +105,7 @@ def test_the_plan_mints_each_missing_login_named_after_the_machine(tmp_path: Pat
     assert steps['config'] == '/etc/x/supervise.toml'
     assert steps['steps'][0]['argv'] == ['forge', 'token', 'mint', '--login', 'dev-user', '--name', 'WS9',
                                          '--scope', SCOPE]  # fmt: skip
-    assert load_enrolment(plan.plan, plan.steps) == plan
+    assert load_enrollment(plan.plan, plan.steps) == plan
 
 
 def test_rotate_replaces_the_machines_token_the_forge_already_holds(tmp_path: Path) -> None:
@@ -113,7 +122,7 @@ def test_rotate_replaces_the_machines_token_the_forge_already_holds(tmp_path: Pa
 
 
 def test_a_login_the_forge_cannot_mint_is_refused_before_any_plan(tmp_path: Path) -> None:
-    with pytest.raises(EnrolRefused, match='cannot be minted'):
+    with pytest.raises(EnrollRefused, match='cannot be minted'):
         _prepare(tmp_path, forge=DeclaredForge(Path('f'), (_HOST,), {'other': ('team/repo',)}))
     assert not (tmp_path / 'consent').exists()
 

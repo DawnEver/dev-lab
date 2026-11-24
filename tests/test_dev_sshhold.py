@@ -96,7 +96,7 @@ def test_a_held_session_runs_commands_on_one_connection_and_closes(monkeypatch: 
 
 def test_a_wrong_code_fails_the_open_and_leaves_no_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('FAKESSH_CODE', CODE)
-    with pytest.raises(HoldRefused, match='authenticat'):
+    with pytest.raises(HoldRefused, match='authenticate'):
         sshhold.open_session('ops@fake', 1.0, '000000', ssh=FAKE)
     assert sshholdstate.read_session('ops@fake') is None
 
@@ -183,7 +183,7 @@ def test_a_bastion_that_refuses_the_code_fails_the_open(monkeypatch: pytest.Monk
     """Planted control: the host would accept the code but the bastion's secret differs, so nothing opens."""
     monkeypatch.setenv('FAKESSH_CODE', CODE)
     monkeypatch.setenv('FAKESSH_JUMP_CODE', '999999')
-    with pytest.raises(HoldRefused, match='authenticat'):
+    with pytest.raises(HoldRefused, match='authenticate'):
         sshhold.open_session('ops@inner', 1.0, CODE, ssh=(*FAKE, '-J', 'ops@bastion'))
     assert sshholdstate.read_session('ops@inner') is None
 

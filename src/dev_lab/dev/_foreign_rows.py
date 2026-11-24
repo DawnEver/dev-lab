@@ -167,7 +167,7 @@ SYNTHETIC: Final[dict[str, str]] = {
         '1 example lane note, `lanes/a-lane.md`, in the prose that explains the dated shape.'
     ),
     'src/dev_lab/dev/famtests/ephemeralrefs.py::path': (
-        'the planted tree`s files -- `scratch/probe.py`, `output/...` artefacts, `src/pkg/a.py` -- which '
+        'the planted tree`s files -- `scratch/probe.py`, `output/...` artifacts, `src/pkg/a.py` -- which '
         'the control writes into a tmp repo and convicts; they name no file in any checkout.'
     ),
     'src/dev_lab/dev/famfiles.py::path': (

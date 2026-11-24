@@ -24,7 +24,7 @@ measured differences are:
 * THE LAYOUTS ARE NOT THE SAME LAYOUT. ``dated_log`` builds ``<base>/<yy>/<mm>/<dd>/<kind>/<name>``:
   a TWO-DIGIT year from ``strftime('%y')``, a mandatory ``kind`` leaf, and a repo-chosen ``base``. A
   memory entry sits at ``<tree>/<YYYY>/<MM>/<DD>/<name>``: four digits, no kind, no base. The layout
-  these readers are about is one its neighbour CANNOT PRODUCE, and a reader shipped beside a
+  these readers are about is one its neighbor CANNOT PRODUCE, and a reader shipped beside a
   constructor that cannot write what it reads is a declaration that lies by adjacency.
 * THE REFUSALS ARE OPPOSITE IN KIND. ``dated_log`` RAISES on the first bad name, at construction, on
   one path -- a gate. These return, for the reason above.

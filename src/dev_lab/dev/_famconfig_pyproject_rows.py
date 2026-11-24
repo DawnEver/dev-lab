@@ -47,7 +47,7 @@ __all__ = [
     'README_NAME',
 ]
 
-#: The file every table below lives in, in all four repos. Unlike the ruff artefact there is no
+#: The file every table below lives in, in all four repos. Unlike the ruff artifact there is no
 #: second spelling: a ``pyproject.toml`` is the only place a ``[project]`` table can be.
 PYPROJECT_FILE: Final = 'pyproject.toml'
 
@@ -64,7 +64,7 @@ COVERAGE_HTML: Final = '[tool.coverage.html]'
 
 #: There is NO dedicated-file spelling for these tables, so the prefix a `SectionBase` strips is
 #: EMPTY. Stated rather than left out: `SectionBase.prefix` is what lets the ruff base read both
-#: ``pyproject.toml`` and ``ruff.toml``, and an empty prefix is the declaration that this artefact
+#: ``pyproject.toml`` and ``ruff.toml``, and an empty prefix is the declaration that this artifact
 #: has one home and the resolver's dedicated-file branch is not in play here.
 PYPROJECT_SECTION_PREFIX: Final[tuple[str, ...]] = ()
 

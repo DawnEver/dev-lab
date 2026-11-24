@@ -38,7 +38,7 @@ platform-blind spelling in one is a platform-blind spelling in every repo that a
 prose is exactly where a retired spelling survives longest. A ``Remedy.command`` is shown VERBATIM
 to a refused agent and so must stay CONCRETE for the box that is running; making the tracked
 ``permissions.allow`` row portable is a separate job and belongs to
-:func:`dev_lab.dev.allow_adoption.glob_for`, which normalises it.
+:func:`dev_lab.dev.allow_adoption.glob_for`, which normalizes it.
 
 The repo then commits that JSON and points a ``PreToolUse`` ``Bash|PowerShell`` matcher in `.claude/settings.json`
 at the engine with the file as ``argv[2]``. The rendered rows carry exactly the engine's own field
@@ -139,7 +139,7 @@ def waived(rules: Sequence[DenyRule], adoption: HookAdoption) -> tuple[str, ...]
 def deny_rules(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> tuple[dict[str, str], ...]:
     """The rows *adoption* can HONESTLY ship, in registry order.
 
-    A rule needing an artefact this repo does not supply is DROPPED, not softened -- see this
+    A rule needing an artifact this repo does not supply is DROPPED, not softened -- see this
     module's docstring for why that is the design rather than a shortcut.
 
     Raises:

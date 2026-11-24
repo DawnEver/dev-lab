@@ -256,7 +256,7 @@ def judge(root: Path, tokens: Collection[str]) -> dict[str, str]:
 
 
 def _judge_local(root: Path, local: Mapping[str, str]) -> dict[str, str]:
-    """``token -> why`` for the in-repo candidates (``token -> normalised path``) that are ephemeral."""
+    """``token -> why`` for the in-repo candidates (``token -> normalized path``) that are ephemeral."""
     tracked = tracked_files(root)
     lived = _tracked_dirs(tracked)
     strays = _stray_roots(root)

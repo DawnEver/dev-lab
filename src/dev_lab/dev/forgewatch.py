@@ -71,7 +71,7 @@ def env_superseded() -> str:
     return f'a newer environment is published beside {sys.prefix}: this watch exits so it can go; re-arm this watch'
 
 
-#: The default poll period, and the fastest ``--every-seconds`` honours. A verdict is claimed on a serve tick
+#: The default poll period, and the fastest ``--every-seconds`` honors. A verdict is claimed on a serve tick
 #: (5 minutes by default) and takes minutes more, so a faster read only re-reads an unchanged list: on
 #: 2026-11-04 one workstation's watches cost a 2-core Gitea host ~19 status reads a minute at 60 s.
 EVERY_S: Final = 120.0

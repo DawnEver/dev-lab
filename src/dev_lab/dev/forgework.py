@@ -280,7 +280,7 @@ class Client:
     def download(self, url: str) -> bytes:
         """The raw bytes at an attachment's download *url*, fetched with this client's credential.
 
-        The caller verifies what it got (:mod:`dev_lab.dev.artefacts` checks sha256). A redirect (GitHub's artifact
+        The caller verifies what it got (:mod:`dev_lab.dev.artifacts` checks sha256). A redirect (GitHub's artifact
         zip answers one, to a signed storage URL) is followed WITHOUT the credential, at most :data:`_REDIRECTS`
         times: the signed URL is its own authority, and the token never leaves the forge's API.
         """

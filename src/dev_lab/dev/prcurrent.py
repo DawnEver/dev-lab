@@ -2,7 +2,7 @@
 
 User ruling 2026-11-07, reversing part of toolchain plan P3 (``githooks/base.toml``): agents kept pushing stale
 branches, and the forge's later ``integration`` alarm and lock freshness status came after the harm. So ONE
-judgement (:func:`judge`) refuses a head when either holds:
+judgment (:func:`judge`) refuses a head when either holds:
 
 * BEHIND -- the head lacks a first-parent landing of ``origin/<integration>`` (fetched afresh, that one ref) older
   than :data:`~dev_lab.dev.locklag.LAG_WINDOW` (:func:`~dev_lab.dev.locklag.lag_of`). A fetch that fails refuses
@@ -18,12 +18,12 @@ The window is TIME, not commits (user ruling 2026-11-15): a sibling landing 70+ 
 window within hours, so stale pushes reached the forge and turned red later.
 
 THE PUSHING KIT (pre-push only, :func:`kit_stale`): the pushing interpreter's git-installed siblings must be the
-commits the pushed tip's lock pins (:mod:`dev_lab.dev.lockpins`, the one stale-environment judgement), else the
+commits the pushed tip's lock pins (:mod:`dev_lab.dev.lockpins`, the one stale-environment judgment), else the
 hooks that just judged this push ran an older family kit; the remedy is the repo's bootstrap door. The forge
 judges its own environment, so this is no status.
 
 Both name the one remedy, :data:`SYNC` (``forge sync`` merges integration and relocks the floated siblings in the
-same sync, :mod:`dev_lab.dev.forgesync`). The judgement is read at three doors: the forge's ``pr-current`` status on
+same sync, :mod:`dev_lab.dev.forgesync`). The judgment is read at three doors: the forge's ``pr-current`` status on
 every open PR head, an ALARM the merge never waits on (:mod:`dev_lab.dev.forgeheadgate`, W5 dev-lab#644: the
 trial merge at merge time decides mergeability), ``forge pr ready`` (:func:`ready_refusals`), and the
 ``pr-current`` pre-push row (:func:`main`, ``refs = '^refs/heads/pr/'``) -- a WARNING: the row is ``advisory``
@@ -92,7 +92,7 @@ Read = Callable[[str], tuple[str, ...]]
 
 #: What every warning here ends with: this hook is early feedback, and the forge's status is an alarm, not a gate.
 EARLY: Final = (
-    f'  (early feedback: the forge posts this judgement as the {HOOK_ID!r} status on the PR head, an alarm the '
+    f'  (early feedback: the forge posts this judgment as the {HOOK_ID!r} status on the PR head, an alarm the '
     'merge does not wait on; the push goes ahead)'
 )
 
@@ -249,7 +249,7 @@ def ready_refusals(
 
 def main(argv: Sequence[str] | None = None) -> int:
     """The pre-push row: git's ref lines on stdin; exit 1 names a stale head, which the ``advisory`` row shows."""
-    del argv  # the remote name and url; the judgement reads origin
+    del argv  # the remote name and url; the judgment reads origin
     top = _git(Path.cwd(), 'rev-parse', '--show-toplevel').stdout.strip()
     found = refusals(Path(top or Path.cwd()), '' if sys.stdin.isatty() else sys.stdin.read())
     if found:

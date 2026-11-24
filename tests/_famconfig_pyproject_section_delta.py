@@ -20,7 +20,7 @@ from dev_lab.dev.famconfig import SectionDelta
 
 __all__ = ['PYPROJECT_SECTION_DELTAS']
 
-#: The kit's delta against every owned table: ``repo -> artefact -> SectionDelta``.
+#: The kit's delta against every owned table: ``repo -> artifact -> SectionDelta``.
 PYPROJECT_SECTION_DELTAS: Final[dict[str, dict[str, SectionDelta]]] = {
     'lab-commons': {
         PROJECT: SectionDelta(repo='lab-commons', added={}, dropped={}, ceiling=0),

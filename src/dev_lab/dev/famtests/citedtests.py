@@ -299,7 +299,7 @@ def assert_the_readers_still_convict(
     """THE PLANTED CONTROL, in BOTH directions, driving the REAL readers over a REAL tree.
 
     A detector that never fires reports exactly what a clean tree reports, so every distinction the
-    readers exist to draw is planted at once and each offender sits beside an honest neighbour that
+    readers exist to draw is planted at once and each offender sits beside an honest neighbor that
     must NOT be named: a dangling path against a resolving one, a dangling name against a wrapped
     fragment of a real one, a citation in a DOCSTRING against the same path in ordinary CODE, and a
     dangling citation in a ROOT CONFIG, which is the file type the originating incident hid in.
@@ -317,7 +317,7 @@ def assert_the_readers_still_convict(
         not_citations: the consumer's own vocabulary set, for the same reason.
 
     Raises:
-        AssertionError: a reader failed to name a planted offender, or named an honest neighbour.
+        AssertionError: a reader failed to name a planted offender, or named an honest neighbor.
 
     """
     (plant_root / 'src').mkdir(parents=True)

@@ -15,7 +15,7 @@ Each family member is one repository with one role. The dependency arrow points 
 
 ```
 products (an application, its data libraries)
-   -> engines and libraries (numerics, optimisation, AI, documents, learning)
+   -> engines and libraries (numerics, optimization, AI, documents, learning)
         -> the dev kit (dev-lab: dev tooling, host ops, supervision)
              -> the leaf (lab-commons: logging, paths, config, launch, units)
 host configuration (private): data only, consumed by the dev kit's ops door on each host
@@ -25,7 +25,7 @@ host configuration (private): data only, consumed by the dev kit's ops door on e
 |---|---|---|
 | leaf | the shared runtime every member imports (`lab_commons`) | nothing in the family |
 | dev kit | `dev_lab.dev` (forge, integrator, hooks, refusals), `dev_lab.ops` (host roles), `dev_lab.supervise` | the leaf |
-| engine / library | a solver engine, an optimiser, an AI layer, a document or learning toolkit | the leaf; the dev kit as a `test` extra |
+| engine / library | a solver engine, an optimizer, an AI layer, a document or learning toolkit | the leaf; the dev kit as a `test` extra |
 | product | an application that mounts engines (as git dependencies or submodules, [components](components.md)) | engines, libraries, leaf, dev kit |
 | data library | a data-only repo pinned by its product as a data dependency; its PRs run the product's consumer tests (`dev_lab.dev.dataconsumers`) | -- |
 | host configuration | `hosts/<server>.toml` (each host's `supervise.toml`) and `family.toml` (the shared `[family]` layer) | read by `dev_lab.ops` |
@@ -246,7 +246,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 ### A new development workstation
 
 **Start and end with the one preflight:** `python -m dev_lab.dev.devhost bringup --check` (`dev_lab.dev.bringup`)
-lists every wall -- config-source clone, enrolment (`hosts/<machine>.toml`), the derived bridge interpreter, machine
+lists every wall -- config-source clone, enrollment (`hosts/<machine>.toml`), the derived bridge interpreter, machine
 file drift, the machine's ssh client key declared in its host file's `[dev] client_keys`, the consent issuer (host
 key, key admitted, version handshake), the forge credential -- each with its door, and names last the walls whose
 door spends a code. A code is asked only once every no-code wall is green.
@@ -277,7 +277,7 @@ the key files. No server lists a workstation key by hand.
 3. `python -m dev_lab.ops --config /etc/dev-lab/supervise.toml install` renders every unit, sudoers line, sshd
    block and PAM include, and prints the root `next_steps` (accounts, `systemctl daemon-reload`, sshd test and
    reload). It is idempotent (`dev_lab.ops.install`).
-4. Place the cluster's ONE TOTP secret: `consent enrol` on the cluster's first host only, `access adopt` on every
+4. Place the cluster's ONE TOTP secret: `consent enroll` on the cluster's first host only, `access adopt` on every
    other (the secret the user's Authenticator already holds); `consent keygen` makes the issuer key if absent.
 5. Place each declared secret: `python -m dev_lab.ops secret place --path <declared path> --credential <cred>`
    with the content on stdin (`dev_lab.ops.secretplace`: 0600, owned by the declared role's user, only a sha256

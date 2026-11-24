@@ -241,7 +241,7 @@ def _parsed(text: str) -> Raised | None:
 def raised_of(bodies: Iterable[str]) -> Raised | None:
     """The newest raise among *bodies*; ``None`` when the PR was never raised.
 
-    Only AUTHORISED records arrive here: :func:`~dev_lab.dev.forgereview_advice.trusted_bodies` admits a raise only
+    Only AUTHORIZED records arrive here: :func:`~dev_lab.dev.forgereview_advice.trusted_bodies` admits a raise only
     from the forge's own logins or from a raiser the forge records with write permission. Among those, newest wins.
     """
     found = None

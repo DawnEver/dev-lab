@@ -3,7 +3,7 @@
 ``status_paths`` is exercised against real ``git status`` output on real temporary repositories --
 tracked edits, untracked files, staged renames -- because the parsing is entirely about a format
 this code does not own, and a fixture that produced the format would be asserting the author's
-belief about it rather than git's behaviour.
+belief about it rather than git's behavior.
 
 ``verdict_dirt`` is pure over two readings, so its arms are tables: that is the half where every
 wrong answer is a policy mistake rather than a parsing one, and where the planted controls belong.
@@ -147,7 +147,7 @@ def test_the_SAME_path_DISQUALIFIES_when_the_caller_declared_nothing() -> None:
     assert got.kind is Kind.MOVED
 
 
-def test_a_neutral_PREFIX_does_not_neutralise_a_path_that_merely_contains_it() -> None:
+def test_a_neutral_PREFIX_does_not_neutralize_a_path_that_merely_contains_it() -> None:
     """A prefix is anchored at the start, or ``src/.claude/notes/`` would be waved through too."""
     got = verdict_dirt((), ('?? src/.claude/notes/t.json',), neutral_prefixes=('.claude/notes/',))
     assert got.kind is Kind.MOVED

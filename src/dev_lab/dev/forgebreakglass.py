@@ -4,7 +4,7 @@ The client half of :mod:`dev_lab.ops.breakglass`. A WAVE opens on a ``breakglass
 granted. ``open --code <code> --hours H --max-merges N`` grants it AND opens in ONE call (the code lives one 30-second
 TOTP step, so a second command would spend its window) -- and ONLY after ``open --preflight --hours H --max-merges N``
 was green: it proves, with no code, that the consent issuer and this server answer (a host key never enrolled is named
-with its ``devhost enrol`` door) and writes the receipt the ``--code`` call needs
+with its ``devhost enroll`` door) and writes the receipt the ``--code`` call needs
 (:func:`dev_lab.ops.consent.client.preflight`). ``open --credential <id>`` opens on one already granted
 (``python -m dev_lab.ops.consent grant <request.json>``) from the consent state directory. Inside the wave
 ``pr breakglass`` merges with no code -- the server sends ONE summary of what actually merged when the wave ends.

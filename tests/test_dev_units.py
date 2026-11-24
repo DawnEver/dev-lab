@@ -9,7 +9,7 @@ test here is one of three shapes, and the third is the one that makes the other 
   of the matching that would agree with itself by construction;
 * the OPPOSITE DIRECTION for each claim -- a clean tree reports nothing while still reporting its file
   count, a token inside a name is not a trailing segment, a comment is not a key;
-* the DECLARED GAPS, pinned as tests rather than left as prose: the excluded single letters (metre
+* the DECLARED GAPS, pinned as tests rather than left as prose: the excluded single letters (meter
   among them) carry their collisions, and a function-local name is out of scope on purpose.
 
 NOTHING HERE SCANS THIS REPOSITORY, and that is a measurement rather than a policy. A guard whose
@@ -233,7 +233,7 @@ def test_a_domain_repo_can_opt_into_a_single_letter(tmp_path: Path) -> None:
     """The escape the exclusions point at, driven rather than described.
 
     `_m` is excluded from the shared default because `Q_0A_per_m` in `lab_commons.em` carries a pint
-    Quantity in its value; a domain repo that wants metre adds the row, and the Scan reports it.
+    Quantity in its value; a domain repo that wants meter adds the row, and the Scan reports it.
     """
     (tmp_path / 'planted.py').write_text('PROBE_DEPTH_M = 0.001\n', encoding='utf-8')
 
@@ -252,7 +252,7 @@ def test_the_scan_reads_the_files_it_is_handed_and_no_others(tmp_path: Path) -> 
     scan = scan_files([tmp_path / 'handed_in.py'], root=tmp_path)
 
     assert scan.violations == ()
-    assert scan.files_read == 1, 'the neighbouring offender was never handed in, so it was never read'
+    assert scan.files_read == 1, 'the neighboring offender was never handed in, so it was never read'
 
 
 def test_only_the_last_segment_is_matched() -> None:
@@ -267,7 +267,7 @@ def test_only_the_last_segment_is_matched() -> None:
 
 def test_a_token_that_is_not_the_whole_segment_is_not_a_match() -> None:
     """Exact, not a substring: the family's `Q_1mm` constants hold pint Quantities and must not red."""
-    for name in ('Q_1mm', 'Q_0Nm', 'millimetre', 'mm2x', 'deltamm'):
+    for name in ('Q_1mm', 'Q_0Nm', 'millimeter', 'mm2x', 'deltamm'):
         assert trailing_token(name) is None, f'{name} spells no trailing unit segment'
     assert trailing_token('mm2') == 'mm2', 'a squared unit is written as its own segment'
     assert trailing_token('GAP_MM') == 'mm', 'a constant shouts its unit, and shouting is still spelling'
@@ -318,7 +318,7 @@ def test_a_local_and_a_prose_flag_are_declared_out_of_scope(tmp_path: Path) -> N
     names = {violation.name for violation in scan_files([tmp_path / 'planted.py'], root=tmp_path)}
 
     assert 'local_mm' not in names, 'a local is implementation, not interface'
-    assert 'slot_count' not in names, 'the clean neighbour is not rounded up with the offenders'
+    assert 'slot_count' not in names, 'the clean neighbor is not rounded up with the offenders'
     assert not any(name.startswith('--probe') for name in names), 'the docstring flag is prose'
 
 
@@ -457,15 +457,15 @@ def test_the_scanned_suffixes_are_declared(tmp_path: Path) -> None:
 
 
 def test_the_excluded_registry_is_not_vacuous() -> None:
-    """Every exclusion names a collision, and metre -- core's own unit -- is FINDABLE among them.
+    """Every exclusion names a collision, and meter -- core's own unit -- is FINDABLE among them.
 
-    A scan that silently omits metre reads exactly like a scan that found none, so the exclusion is a
+    A scan that silently omits meter reads exactly like a scan that found none, so the exclusion is a
     row with a reason a reader can argue with rather than an absence.
     """
     blank = sorted(token for token, reason in EXCLUDED_TOKENS.items() if not reason.strip())
     assert blank == [], f'exclusions with no recorded collision: {blank}'
-    assert 'm' in EXCLUDED_TOKENS, "metre is core's own unit; its omission must be declared"
-    assert 'metre' in EXCLUDED_TOKENS['m']
+    assert 'm' in EXCLUDED_TOKENS, "meter is core's own unit; its omission must be declared"
+    assert 'meter' in EXCLUDED_TOKENS['m']
     assert 's' in EXCLUDED_TOKENS
     assert 'second' in EXCLUDED_TOKENS['s']
     assert set(UNIT_TOKENS).isdisjoint(EXCLUDED_TOKENS), 'a token in both tables refuses and excuses itself'
@@ -519,8 +519,8 @@ def test_every_exclusion_records_a_measured_collision_rather_than_a_shrug() -> N
 
     planted = {
         'x': 'not a unit here',  # no count, no collision, too short -- filler on all three counts
-        'y': 'metre -- `_y` is something else entirely, and it is not a unit in this tree at all.',  # no count
-        'z': 'metre -- 4 rows measured, none of them the unit, and the cited spelling `gap_zz` does not '
+        'y': 'meter -- `_y` is something else entirely, and it is not a unit in this tree at all.',  # no count
+        'z': 'meter -- 4 rows measured, none of them the unit, and the cited spelling `gap_zz` does not '
         'end in the token it is filed under',  # a citation the machinery could never match
         'w': 'the identical sentence',  # the duplicate pair, and both members are named
         'v': 'the identical sentence',
@@ -534,17 +534,17 @@ def test_every_exclusion_records_a_measured_collision_rather_than_a_shrug() -> N
 #: directions, because an exclusion has two: the collision must be clean under the shared default, and
 #: the unit spelling must still be catchable by a repo that adds the row back.
 _MOVED_OUT: dict[str, tuple[str, str]] = {
-    'dm': ('gap_dm', 'cached_dm'),  # decimetre vs a DiscreteModel
+    'dm': ('gap_dm', 'cached_dm'),  # decimeter vs a DiscreteModel
     'ev': ('settle_ev', 't_ev'),  # electronvolt vs an event time
-    'fm': ('gap_fm', 'srdab_fm'),  # femtometre vs the frequency-modulated drive law
+    'fm': ('gap_fm', 'srdab_fm'),  # femtometer vs the frequency-modulated drive law
     'ft': ('length_ft', 'ft'),  # foot vs the tangential force component
     'hp': ('rated_hp', '_hp'),  # horsepower vs the BH-curve derivative
     'hr': ('standby_hr', 'r_hr'),  # hour vs an archived residual matrix
-    'km': ('distance_km', 'KM'),  # kilometre vs the motor constant
+    'km': ('distance_km', 'KM'),  # kilometer vs the motor constant
     'kw': ('load_kw', 'band_kw'),  # kilowatt vs keyword arguments
     'lb': ('mass_lb', 'radius_lb'),  # pound vs a lower bound
     'ng': ('mass_ng', 'tol_ng'),  # nanogram vs the ngspice side of a cross-check
-    'pm': ('gap_pm', 'flux_d_pm'),  # picometre vs a permanent magnet
+    'pm': ('gap_pm', 'flux_d_pm'),  # picometer vs a permanent magnet
     'ps': ('delay_ps', 'Simulink-PS'),  # picosecond vs the Simulink-PS converter block
     'psi': ('pressure_psi', '_PSI'),  # pounds per square inch vs flux linkage
     'sec': ('window_sec', 'n_sec'),  # second vs a sector count
@@ -610,7 +610,7 @@ def test_a_bad_registry_row_is_refused_at_the_seam() -> None:
     assert_registry_sane(UNIT_TOKENS, EXCLUDED_TOKENS)
 
     with pytest.raises(ValueError, match='BOTH tables'):
-        assert_registry_sane(('mm', 'gap'), {'mm': 'metre, and also millimetre'})
+        assert_registry_sane(('mm', 'gap'), {'mm': 'meter, and also millimeter'})
     with pytest.raises(ValueError, match='no reason'):
         assert_registry_sane(('mm',), {'m': '   '})
     with pytest.raises(ValueError, match='sorted'):
@@ -650,7 +650,7 @@ def _subtract_enclosing_scopes(text: str) -> tuple[units._Signature, ...]:
     that are function-local, then a second full ``ast.walk`` to yield. It is reproduced here rather
     than imported so the equivalence test below compares two INDEPENDENT answers. If it is ever
     edited to match a new ``_python_signatures``, this test stops proving anything -- it is the OLD
-    behaviour on purpose, and its cost (a nested function re-walked once per callable containing it)
+    behavior on purpose, and its cost (a nested function re-walked once per callable containing it)
     is the whole reason the new one exists.
     """
     tree = ast.parse(text)
@@ -807,7 +807,7 @@ def _search_per_name(lines: Sequence[str], names: Iterable[str], pattern: str) -
     name, and every one of them searched against every line -- quadratic in a file's key count, which
     is what put 3.96M ``re.search`` calls at the top of the scan's profile. It is reproduced here
     rather than imported so the equivalence test below compares two INDEPENDENT answers. It must
-    never be "fixed" to agree with the new one: it is the OLD behaviour on purpose, and the day it is
+    never be "fixed" to agree with the new one: it is the OLD behavior on purpose, and the day it is
     edited to match, this test stops proving anything.
     """
     patterns = [(name, re.compile(pattern.format(name=re.escape(name)))) for name in names]

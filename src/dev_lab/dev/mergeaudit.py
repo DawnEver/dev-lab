@@ -128,7 +128,7 @@ def _defined(path: str, source: bytes) -> list[tuple[str, str]]:
     try:
         module = ast.parse(source, filename=path)
     except (SyntaxError, ValueError) as error:
-        msg = f'{path}: unparseable ({error}) -- the audit refuses rather than read it as holding no test'
+        msg = f'{path}: unparsable ({error}) -- the audit refuses rather than read it as holding no test'
         raise MergeAuditError(msg) from error
     found: list[tuple[str, str]] = []
     for node in module.body:
@@ -348,7 +348,7 @@ def judge(
 ) -> tuple[str, ...]:
     """What *message* fails to name about *merged* (a commit or a tree) as the merge of *parents*.
 
-    The ONE judgement: the commit-msg hook (:func:`pending`), the forge's merge of a pull request
+    The ONE judgment: the commit-msg hook (:func:`pending`), the forge's merge of a pull request
     (:mod:`dev_lab.dev.forgemerge`) and the integration branch's push guard
     (:mod:`dev_lab.dev.sessionbranch`) all call it.
     """

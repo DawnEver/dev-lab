@@ -9,11 +9,11 @@ tick's integration step (:func:`take`) hands such a PR to the integrator, on the
   ``forge watch --session`` runs (:func:`dev_lab.dev.sessionprs.watching`). A new head, or a live owner, is
   never taken.
 * TAKEN -- the PR gets the label :data:`LABEL` and one comment naming why, carrying the head it was taken at in a
-  hidden marker. The label IS the idempotency key: a labelled PR is never commented again, and a second host's
+  hidden marker. The label IS the idempotency key: a labeled PR is never commented again, and a second host's
   tick writes nothing.
-* HANDED BACK -- liveness is per machine, so a session working elsewhere may look dead here. When a labelled
+* HANDED BACK -- liveness is per machine, so a session working elsewhere may look dead here. When a labeled
   PR's head moves past the head it was taken at, its owner pushed: the tick removes the label and says so once.
-* LISTED -- every open labelled PR is an ``integration`` alarm on the host card each tick (``forge queue``), and
+* LISTED -- every open labeled PR is an ``integration`` alarm on the host card each tick (``forge queue``), and
   ``python -m dev_lab.dev.forgeorphan`` (:func:`main`) prints the integrator's orphaned PRs. The integrator
   merges or closes it; removing the label hands it back.
 """
@@ -112,7 +112,7 @@ def _taken_at(client: Client, number: int) -> str | None:
 
 
 def release(client: Client, base: str) -> list[str]:
-    """Hand back every labelled PR into *base* whose head moved past the head it was taken at; one line each."""
+    """Hand back every labeled PR into *base* whose head moved past the head it was taken at; one line each."""
     lines = []
     for pull in pr_list(client):
         if pull.base != base or LABEL not in labels_of(client, pull.number):
@@ -131,7 +131,7 @@ def release(client: Client, base: str) -> list[str]:
 
 
 def taken(client: Client, base: str) -> list[PullRequest]:
-    """Every open PR into *base* the integrator holds (labelled :data:`LABEL`)."""
+    """Every open PR into *base* the integrator holds (labeled :data:`LABEL`)."""
     return [pull for pull in pr_list(client) if pull.base == base and LABEL in labels_of(client, pull.number)]
 
 
@@ -144,7 +144,7 @@ def alarms(root: Path, client: Client, base: str, repo: str, *, now: datetime) -
             INTEGRATION,
             repo,
             f'the integrator takes #{pull.number} {pull.head}: orphaned',
-            f'#{pull.number} ({pull.title}) by {pull.author} is labelled `{LABEL}`: merge it or close it.',
+            f'#{pull.number} ({pull.title}) by {pull.author} is labeled `{LABEL}`: merge it or close it.',
             context=pull_context(pull),
         )
         for pull in taken(client, base)

@@ -1,4 +1,4 @@
-r"""``RepoProfile`` -- the parameterisation every dev-time mechanism takes.
+r"""``RepoProfile`` -- the parameterization every dev-time mechanism takes.
 
 ADOPTION MUST BE A SUBSTITUTION, NOT A REWRITE, and that decides this module's whole shape. Every
 guard in the tree this kit is extracted from reaches its repo through a ``repo_root()`` that is a

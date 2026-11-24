@@ -74,7 +74,7 @@ def reflection_sites(source: str, filename: str) -> list[int]:
 
     Imports and simple assignments preserve callable origins; lexical bindings shadow builtins.
     Another owner's same-named API (e.g. monkeypatch.setattr or archive.getmembers) is not reflection.
-    This recognises declared AST spellings, not arbitrary runtime-generated Python.
+    This recognizes declared AST spellings, not arbitrary runtime-generated Python.
     """
     tree = ast.parse(source, filename=filename)
     found = _hook_lines(tree)

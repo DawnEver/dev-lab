@@ -10,7 +10,7 @@ be satisfied by two compensating mistakes.
 THE FOUR HOLES A REAL CONSUMER FOUND each get a plant that FIRES and a plant that proves the old
 correct answer did not move: provenance-as-data against a kit module that names nobody, an
 unreadable row against a shell script, a wrong `package` that must refuse rather than report a
-clean zero, and -- found 2026-09-18 by RE-MEASURING a row rather than re-labelling it -- a kit
+clean zero, and -- found 2026-09-18 by RE-MEASURING a row rather than re-labeling it -- a kit
 module no import form could NAME, which made the IMPORT detector blind to a whole sub-package.
 The third is this family's dominant defect inside the instrument built to find it; the fourth is
 the same defect one level down, and it is the one that cost six true positives their corroboration.

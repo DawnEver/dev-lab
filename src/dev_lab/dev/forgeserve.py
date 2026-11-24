@@ -14,7 +14,7 @@ in rank order while jobs admit), start each claimed cluster part as a run and ea
 as a producer of its own, and wait one tick period or until a producer ends; then advance every
 cluster run one step
 (:func:`dev_lab.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
-release -- whatever is due); on a cluster, clean the artefact stores (:func:`dev_lab.dev.forgeship.tidy`);
+release -- whatever is due); on a cluster, clean the artifact stores (:func:`dev_lab.dev.forgeship.tidy`);
 run the storage retention pass, every tick (:mod:`dev_lab.dev.retention`; still over quota raises a
 ``storage`` alarm); publish this host's card; then, ONLY ON THE REPO'S POLLER -- the host holding the poller
 lease (:func:`dev_lab.dev.forgepoller.polls`; measured 2026-10-24, every host polling every repo

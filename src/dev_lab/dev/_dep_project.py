@@ -191,7 +191,7 @@ def uv_command(
     """One target-addressed command; a sync re-resolves every declared floating Git requirement.
 
     A *frozen* sync builds exactly the committed ``uv.lock`` (``--frozen``) and re-resolves nothing: how a
-    commit's own environment is materialised, so two hosts on two days build the same revisions.
+    commit's own environment is materialized, so two hosts on two days build the same revisions.
     *reinstall_packages* are rebuilt from source whatever their version says (a component whose tree moved,
     :mod:`dev_lab.dev._dep_components`). Only a frozen sync with no environment yet -- a bootstrap -- builds
     one under the target's ``requires-python`` (:func:`bootstrap_python`); every other command

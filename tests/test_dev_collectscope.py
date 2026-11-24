@@ -338,7 +338,7 @@ class TestTheLocalNamePopulationIsTheCheckouts:
             local_modules(tmp_path)
 
 
-def test_an_unparseable_file_is_reported_rather_than_dropped() -> None:
+def test_an_unparsable_file_is_reported_rather_than_dropped() -> None:
     """Dropping it would shrink the population every count is taken over, silently."""
     reading = read_imports('tests/test_broken.py', 'import cv2\ndef (\n')
     assert reading.parse_error

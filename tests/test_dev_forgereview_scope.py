@@ -89,7 +89,7 @@ def _paths(work: Path, reviewed: str) -> list[str]:
 # --- the range ---------------------------------------------------------------------------------------
 
 
-def test_a_merge_of_the_integration_branch_is_not_the_branchs_own_change(tmp_path: Path) -> None:
+def test_a_merge_of_the_integration_branch_is_not_the_branches_own_change(tmp_path: Path) -> None:
     """PLANTED control: the branch's own file is read, the merged-in one is not."""
     _, work = clone_pair(tmp_path)
     advance(work, 'pr/x', 'own.py', 'mine\n')

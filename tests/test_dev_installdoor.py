@@ -89,7 +89,7 @@ def test_the_three_measured_doors_are_classified_as_they_behaved(command: str, e
 
 @pytest.mark.parametrize(('command', 'expected'), _PLANTED)
 def test_the_classifier_decides_every_planted_shape(command: str, expected: Delivery) -> None:
-    """One flag apart is a whole environment apart, so each neighbouring pair is planted."""
+    """One flag apart is a whole environment apart, so each neighboring pair is planted."""
     assert classify(_argv(command), _KIT) is expected
 
 

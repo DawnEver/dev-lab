@@ -249,7 +249,7 @@ def test_an_EMPTY_source_tree_refuses_instead_of_answering_a_hundred_percent(tmp
 
 
 def test_a_floor_of_zero_is_refused_because_a_floor_of_zero_is_not_a_floor(tmp_path: Path) -> None:
-    """The declaration is refused at the call, not quietly honoured -- zero is the vacuity written down."""
+    """The declaration is refused at the call, not quietly honored -- zero is the vacuity written down."""
     source = _library(tmp_path / 'src')
     target = _plant(tmp_path / 'dst', 'x.py', 'def landed() -> None:\n    """d."""\n').parent
     with pytest.raises(VacuousScanError, match='floor of 0'):

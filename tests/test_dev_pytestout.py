@@ -135,8 +135,8 @@ def test_a_nested_runs_summary_never_answers_for_the_outer_one() -> None:
 
 def test_a_cursor_motion_escape_is_stripped_and_a_bare_esc_survives() -> None:
     """BOTH SIDES OF THE ESCAPE GRAMMAR, and the narrow fork fails the first half."""
-    coloured = '\x1b[31mFAILED\x1b[0m tests/test_b.py::\x1b[1mtest_c\x1b[0m - assert 0'
-    assert strip_ansi(coloured) == 'FAILED tests/test_b.py::test_c - assert 0'
+    colored = '\x1b[31mFAILED\x1b[0m tests/test_b.py::\x1b[1mtest_c\x1b[0m - assert 0'
+    assert strip_ansi(colored) == 'FAILED tests/test_b.py::test_c - assert 0'
 
     erase_line = '\x1b[2Kcollected 5 items'
     assert strip_ansi(erase_line) == 'collected 5 items'
@@ -147,11 +147,11 @@ def test_a_cursor_motion_escape_is_stripped_and_a_bare_esc_survives() -> None:
     assert strip_ansi(lone) == lone
 
 
-def test_a_coloured_summary_rule_reads_as_no_summary_until_it_is_stripped() -> None:
+def test_a_colored_summary_rule_reads_as_no_summary_until_it_is_stripped() -> None:
     """Why the strip is a reader on this page and not the caller's business."""
-    coloured = '\x1b[32m===================== 3 passed in 1.00s =====================\x1b[0m\n'
-    assert summary_body(coloured) is None
-    assert summary_body(strip_ansi(coloured)) == '3 passed in 1.00s'
+    colored = '\x1b[32m===================== 3 passed in 1.00s =====================\x1b[0m\n'
+    assert summary_body(colored) is None
+    assert summary_body(strip_ansi(colored)) == '3 passed in 1.00s'
 
 
 def test_a_marker_a_TEST_printed_is_not_a_marker_the_RUN_reported() -> None:
@@ -171,7 +171,7 @@ def test_the_readers_are_pure_and_a_text_is_never_mutated() -> None:
 
 @pytest.mark.parametrize('flag', ['--color=yes', '--color=no'])
 def test_a_real_pytest_subprocess_is_read_by_every_reader(tmp_path: Path, flag: str) -> None:
-    """THE ONE ARM THAT IS NOT A STRING CONSTANT: real pytest, both colour modes, read end to end.
+    """THE ONE ARM THAT IS NOT A STRING CONSTANT: real pytest, both color modes, read end to end.
 
     A grammar checked only against fixtures its own author typed agrees with its author. This spawns
     a real interpreter over a real two-test file, one passing and one failing, and asserts the

@@ -2,7 +2,7 @@
 
 Split from :mod:`dev_lab.dev.stoprun` (2026-11-15, module-size band): the table, a subtree children
 first, the ancestor chain, whose session a pid descends from, and the pids no door may ever stop.
-Both the recognised-run door and the approved-controller door (:mod:`dev_lab.dev.stopapproved`) read it.
+Both the recognized-run door and the approved-controller door (:mod:`dev_lab.dev.stopapproved`) read it.
 """
 
 from __future__ import annotations

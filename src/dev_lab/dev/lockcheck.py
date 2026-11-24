@@ -168,10 +168,10 @@ def mount_submodules(root: Path, tree: Path) -> None:
             continue
         source, target = root / path, tree / path
         if not (source / '.git').exists():
-            msg = f'{path} is not initialised in {root}; run `git submodule update --init` there to resolve this sha'
+            msg = f'{path} is not initialized in {root}; run `git submodule update --init` there to resolve this sha'
             raise OSError(msg)
         if target.is_dir() and not any(target.iterdir()):
-            target.rmdir()  # git leaves an empty directory at an uninitialised submodule
+            target.rmdir()  # git leaves an empty directory at an uninitialized submodule
         bare = unlocated()
         code, _ = _git(root, 'clone', '--quiet', '--no-checkout', '--shared', str(source), str(target), env=bare)
         if code == 0:

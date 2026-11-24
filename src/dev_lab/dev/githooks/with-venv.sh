@@ -110,7 +110,7 @@ fi
 # errors, all of them "could not be resolved", against files that are clean on MAIN. Passing
 # `--pythonpath` takes the same file from 2 errors to 0.
 #
-# So the SOURCE analysed stays the caller's (a lane must check its own tree, that is the point);
+# So the SOURCE analyzed stays the caller's (a lane must check its own tree, that is the point);
 # only the environment is pinned to the one resolved above. The hook's own comment already CLAIMED
 # this trap was handled, which is why it survived: the declaration was there and nothing consulted it.
 if [ "${1:-}" = 'pyright' ]; then

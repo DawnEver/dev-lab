@@ -181,7 +181,7 @@ def test_the_cli_retires_through_the_forge_door(monkeypatch, capsys) -> None:
 # opaque stable host id. A private repo's card is unchanged.
 
 _SEAT = 'ada/zz9acct'
-_HOME = '/shared/home/zz9acct/artefacts'
+_HOME = '/shared/home/zz9acct/artifacts'
 
 
 def _identifying_card() -> HostCard:
@@ -193,7 +193,7 @@ def _identifying_card() -> HostCard:
         running=(f'{_SEAT} sweep (pid 7)',),
         waiting={'k': 'needs gpu'},
         alarms=({'kind': 'untagged', 'subject': f'3 untagged on {_SEAT}', 'body': _HOME},),
-        artefacts=f'cannot write {_HOME}',
+        artifacts=f'cannot write {_HOME}',
         tools={'jmag': {'present': True, 'evidence': [{'source': 'path', 'value': _HOME}]},
                'femm': {'present': False, 'evidence': [{'source': 'host', 'value': 'ada-login1'}]}},
         priority={'hosts': [_SEAT]},

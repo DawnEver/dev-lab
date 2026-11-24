@@ -1,7 +1,7 @@
 """WORKTREES-STAY-INSIDE, both halves: the deny row through the REAL engine, and the detector over a REAL repo.
 
 The row's own ``refuses``/``permits`` are already proved segment by segment in ``test_dev_hooks.py``.
-What only the engine can show is the WHOLE-LINE behaviour: an opening is tested against the entire
+What only the engine can show is the WHOLE-LINE behavior: an opening is tested against the entire
 command, so one good worktree must not open a second, misplaced one chained after it.
 
 The detector is driven over a throwaway repository in ``tmp_path`` with a worktree PLANTED outside it,
@@ -32,7 +32,7 @@ from dev_lab.dev.worktreeplace import (
 
 @pytest.fixture(scope='module')
 def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """The universal rows only -- this row needs no repo artefact, so an empty adoption ships it."""
+    """The universal rows only -- this row needs no repo artifact, so an empty adoption ships it."""
     path = tmp_path_factory.mktemp('rules') / 'deny-rules.json'
     path.write_text(render(HookAdoption(app_name='suite', remedies={})), encoding='utf-8')
     return path

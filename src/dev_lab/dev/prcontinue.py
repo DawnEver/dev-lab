@@ -9,7 +9,7 @@ A BRANCH IS CONTINUED (:func:`continuation`) when the newest PR of it into the i
 (:func:`~dev_lab.dev.forgepulls.pr_by_head`, one forge call) is MERGED and its head is not the branch's tip. Its
 PRs are chained in the branch's one review record (:func:`dev_lab.dev.branchreview.chained`): the continuation's
 review reads only the increment since the landed head, and carries the predecessors' findings
-(:mod:`dev_lab.dev.branchreview`), summarised in the body it opens with.
+(:mod:`dev_lab.dev.branchreview`), summarized in the body it opens with.
 
 WHO OPENS IT, the same function on both forges:
 

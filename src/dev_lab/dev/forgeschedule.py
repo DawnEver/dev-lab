@@ -107,7 +107,7 @@ __all__ = [
     'coalesced',
     'held',
     'host_weights',
-    'labelled_issues',
+    'labeled_issues',
     'load_schedule',
     'over_budget',
     'ref_usage',
@@ -246,7 +246,7 @@ def _tips(root: Path) -> dict[str, str]:
     return {ref.removeprefix(_TRACKING): sha for ref, sha in (line.split(' ') for line in listed.splitlines() if line)}
 
 
-def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
+def labeled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
     """Open issues carrying *label*, raw (pull requests excluded) -- every page, one call shape on both forges.
 
     A page shorter than :data:`ISSUE_PAGE` is the last: request #51 is as visible as request #1.
@@ -262,7 +262,7 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
         page += 1
 
 
-#: Issues read per page of :func:`labelled_issues`.
+#: Issues read per page of :func:`labeled_issues`.
 ISSUE_PAGE: Final = 50
 
 
@@ -319,7 +319,7 @@ def _requests(
     A request whose producer is undeclared is still listed (part ``''``): the claim pass refuses it by name.
     One naming no full sha is work at no commit: it is SKIPPED and said, one line naming the issue.
     """
-    issues = labelled_issues(client, schedule.request_label)
+    issues = labeled_issues(client, schedule.request_label)
     return request_candidates(root, issues, repo, now, late=NO_ROOM, say=say, declare=declare)
 
 

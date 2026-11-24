@@ -48,8 +48,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   copies from the main checkout into a worktree that lacks them.
 * :mod:`dev_lab.dev.docrules` — the ``PreToolUse`` row re-injecting the family's doc rules, quoted from their one home,
   before a document edit.
-* :mod:`dev_lab.dev.notices` — the third-party licence notice from the installed environment; the product is
-  ``[tool.dev_lab.notices]`` data, and an unidentified licence is refused by name.
+* :mod:`dev_lab.dev.notices` — the third-party license notice from the installed environment; the product is
+  ``[tool.dev_lab.notices]`` data, and an unidentified license is refused by name.
 * :mod:`dev_lab.dev.cratefresh` — the Rust side of dependency freshness: a crate whose declared spec cannot reach
   crates.io's newest release.
 * :mod:`dev_lab.dev.toolchain` — what a checkout needs on this host before its environment builds (git, uv, a
@@ -290,7 +290,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   answers. The kit holds only its own row; each consumer declares its rows and calls
   ``assert_reaches`` over its own checkout. Not re-exported below.
 * :mod:`dev_lab.dev.ruffwaivers` -- the two ruff waivers WIDER than an ignore, ``exclude`` and
-  ``per-file-ignores``, read across every spelling ruff honours from the config ruff RESOLVES, and
+  ``per-file-ignores``, read across every spelling ruff honors from the config ruff RESOLVES, and
   ``assert_waivers_declared``, which refuses an undeclared waiver and a stale row alike. A repo
   declares its own rows; the kit ships the reader and the refusal. Not re-exported below.
 * :mod:`dev_lab.dev.privatemarkers` -- the scan a PUBLISHED repo runs over every tracked file:
@@ -322,12 +322,12 @@ are too unqualified to survive being flattened into a namespace this wide.
   its sibling times CHILD PROCESSES. The difference is the failure modes, not the scale. There may
   be more than two arms; an arm may legitimately REFUSE an input its rivals accept, which is an
   ANSWER and is recorded rather than aborted on; and an arm may pay a one-time setup, which is
-  amortised over a recurrence count the CALLER measured, never over 1 and never over 0. A refused
+  amortized over a recurrence count the CALLER measured, never over 1 and never over 0. A refused
   arm reports no median at all, because a candidate timed only on the inputs it accepted has
   selected its own sample. Whether a seam can be DISPATCHED on at all is asked rather than assumed,
   and the pairs that forbid it are named. NOT RE-EXPORTED.
 * :mod:`dev_lab.dev.testfacts` -- what a test FILE declares about itself, and one assertion
-  SHAPE (a test whose assertions are ALL ``is not None``, which cannot fail behaviourally), read from
+  SHAPE (a test whose assertions are ALL ``is not None``, which cannot fail behaviorally), read from
   the AST and never by collecting: collection IMPORTS, and a census that collects starts MATLAB to
   find out whether a test starts MATLAB. Marks, ``timeout`` literals, ``test_``-prefixed functions
   and that shape are facts about PYTEST and are shared; which marks name a vendor, which paths a tier
@@ -343,9 +343,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   being read and says nothing at all about ``pip install ./somebody-elses.whl``. The set of
   distributions a workspace builds is READ from the manifests the caller hands in, never spelled in a
   guard, and an empty set refuses everything rather than comparing vacuously. Not re-exported below.
-* :mod:`dev_lab.dev.famconfig` -- the family's CONFIG artefacts as one BASE plus a named DELTA,
+* :mod:`dev_lab.dev.famconfig` -- the family's CONFIG artifacts as one BASE plus a named DELTA,
   rendered, with a guard that reds on a hand edit rather than letting it drift. A consumer therefore
-  has two states and no third: it reads the family artefact, or it declares its delta. The measured
+  has two states and no third: it reads the family artifact, or it declares its delta. The measured
   counts, why a DROP is a mapping-to-its-reason and never a set, why an addition may be ANCHORED
   inside a rendered block, why ``REQUIRED`` exists beside ``RENDERED``, and why `[tool.ruff]` is
   deliberately absent are all in that module's own docstring. Not re-exported below.
@@ -439,16 +439,16 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.retentionplan` -- what retention deletes: a tree or env once nothing in flight needs it.
 * :mod:`dev_lab.dev.retentionrust` -- the rust rules of retention: unpinned toolchains and stale extracted crates.
 * :mod:`dev_lab.dev.diskusage` -- an account's quota (`mmlsquota`) or a disk's usage, and what one path holds.
-* :mod:`dev_lab.dev.artefacts` -- the artefact store: declared outputs packed once, the backend
+* :mod:`dev_lab.dev.artifacts` -- the artifact store: declared outputs packed once, the backend
   chosen by size, one shared library whose every writer cleans only its own runs.
-* :mod:`dev_lab.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
+* :mod:`dev_lab.dev.artifactstores` -- the run-id and key rules, the ``Ref``, and the forge and
   rclone backends.
 * :mod:`dev_lab.dev.largeobjects` -- a content-addressed object store on an rclone remote, re-hashed on arrival.
-* :mod:`dev_lab.dev.artefactfolder` -- the folder backend: archive before manifest, idempotent, no aliases.
-* :mod:`dev_lab.dev.artefactpack` -- declared outputs collected under a footprint budget and packed indexed.
-* :mod:`dev_lab.dev.artefactindex` -- an archive's member facts in the record, its catalogue and selection.
-* :mod:`dev_lab.dev.artefactscan` -- a packed archive verified against its complete index, read-only.
-* :mod:`dev_lab.dev.artefactrestore` -- a selection materialized into a fresh owned root, its receipt last.
+* :mod:`dev_lab.dev.artifactfolder` -- the folder backend: archive before manifest, idempotent, no aliases.
+* :mod:`dev_lab.dev.artifactpack` -- declared outputs collected under a footprint budget and packed indexed.
+* :mod:`dev_lab.dev.artifactindex` -- an archive's member facts in the record, its catalogue and selection.
+* :mod:`dev_lab.dev.artifactscan` -- a packed archive verified against its complete index, read-only.
+* :mod:`dev_lab.dev.artifactrestore` -- a selection materialized into a fresh owned root, its receipt last.
 * :mod:`dev_lab.dev.forgeaffinity` -- HPC account affinity: verify accounts claim a verify part first.
 * :mod:`dev_lab.dev.forgeapp` -- a GitHub App as a forge identity: its JWT, installation token and client.
 * :mod:`dev_lab.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.
@@ -525,8 +525,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
 * :mod:`dev_lab.dev.pradmit` -- PR advice: ONE-SESSION-ONE-PR and NO-STACKED-PRS told at ``pr create``, never a refusal.
 * :mod:`dev_lab.dev.forgedraft` -- DRAFT-UNTIL-READY: ``pr create`` opens a draft; ``pr ready|draft <N>``; idle alarm.
-* :mod:`dev_lab.dev.forgehold` -- HOLD: ``pr hold|release <N>``, a label the merge tick honours (draft refused).
-* :mod:`dev_lab.dev.forgeorphan` -- an open PR still 24 h with no live owner is labelled ``owner:integrator``.
+* :mod:`dev_lab.dev.forgehold` -- HOLD: ``pr hold|release <N>``, a label the merge tick honors (draft refused).
+* :mod:`dev_lab.dev.forgeorphan` -- an open PR still 24 h with no live owner is labeled ``owner:integrator``.
 * :mod:`dev_lab.dev.forgebacklog` -- REVIEW-BACKLOG: a ready head unreviewed past ``backlog`` pages once.
 * :mod:`dev_lab.dev.escapes` -- the tick's census of writes that escaped every allowed root, alarmed once.
 * :mod:`dev_lab.dev.writeroots` -- WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, refused.
@@ -593,7 +593,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.branchdelete` -- LOSSLESS-DELETE and LANDED-BRANCHES-SWEPT: a branch is deleted only when
   its content is held elsewhere; ``sweep`` deletes every branch integration now contains (ancestry or content),
   after each integration move: the serve pass and GitHub's push job; a workstation's local half is reclaimrun.
-* :mod:`dev_lab.dev.deletejudge` -- LOSSLESS-DELETE's one judgement: whether deleting an origin branch at a sha
+* :mod:`dev_lab.dev.deletejudge` -- LOSSLESS-DELETE's one judgment: whether deleting an origin branch at a sha
   loses nothing (held by integration, another live branch or an open PR head, by content, or declared derived).
 * :mod:`dev_lab.dev.pushdelete` -- LOSSLESS-DELETE at pre-push: every branch a push deletes, however spelled, is
   judged on git's ref lines; refused naming ``branchprune delete``; an unreadable forge or origin refuses.
@@ -632,8 +632,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.planremote` -- the hosts a plan runs on: the held session, else key-only ssh.
 * :mod:`dev_lab.dev.shellreaper` -- the agent background-shell sweep: a shell past its bound is stopped, children first.
 * :mod:`dev_lab.dev.shelllife` -- a background shell's bound: the default, or the user's grant, judged at launch.
+* :mod:`dev_lab.dev.spelling` -- US-SPELLING-IS-CHECKED: typos (en-us) over a tree, a verify lint step.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
-* :mod:`dev_lab.dev.stopsignatures` -- what that door recognises: built-in and declared run signatures,
+* :mod:`dev_lab.dev.stopsignatures` -- what that door recognizes: built-in and declared run signatures,
   declared orphan roles, and a multiprocessing worker proven orphaned from the table.
 * :mod:`dev_lab.dev.stopapproved` -- an explicitly user-approved controller stopped by exact identity,
   controller first, its bounded original subtree rechecked before every stop.
@@ -667,7 +668,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   its doors.
 * :mod:`dev_lab.dev.familyrepos` -- FAMILY-REPO-IS-CHECKED-OUT: ``[repos]`` against the family's ``[family_repos]``:
   listed at SessionStart, census in ``devhost drift``, a clone of a checked-out family repo refused.
-* :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrolment door, ``[bridge]``.
+* :mod:`dev_lab.dev.devprofile` -- the default an undeclared machine renders, its enrollment door, ``[bridge]``.
 * :mod:`dev_lab.dev.devschema` -- the ``[dev]`` host-file table's keys and checks, and what they derive.
 * :mod:`dev_lab.dev.devdeclared` -- the effective ``[dev]`` of a host: the family's table under the host file's.
 * :mod:`dev_lab.dev.devcredential` -- a minted forge token placed in this machine's store for a declared login.
@@ -675,7 +676,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.devhostadmit` -- ``devhost admit``: one code admits a declared key, from any admitted machine.
 * :mod:`dev_lab.dev.msyspath` -- MSYS-PATH-REWRITE: a remote argv Git Bash rewrote is refused before it is sent.
 * :mod:`dev_lab.dev.forgetoken` -- a forge token's declared shape per kind (Gitea, GitHub), judged at every intake.
-* :mod:`dev_lab.dev.forgeenrol` -- ``devhost enrol``: one consent plan mints every declared login a machine lacks.
+* :mod:`dev_lab.dev.forgeenroll` -- ``devhost enroll``: one consent plan mints every declared login a machine lacks.
 * :mod:`dev_lab.dev.credstore` -- the shared core: stage one credential line, verify it, back up, replace.
 * :mod:`dev_lab.dev.venvfollow` -- VENV-FOLLOWS-THE-LOCK: one hash-and-stamp check; a moved lock re-bootstraps,
   after the checkout follows integration and before stale hooks are reinstalled.

@@ -33,12 +33,12 @@ DETECT where prevention is impossible (the key). An unenumerated spelling that d
 blocklist is still caught at verdict time by the key, so the blocklist stops being load-bearing for
 CORRECTNESS and becomes a signpost pointing here.
 
-RESOLUTION IS ALLOWED, AND THAT IS THE ONE PLACE THIS DIFFERS FROM THE PRIOR ART IT GENERALISES.
+RESOLUTION IS ALLOWED, AND THAT IS THE ONE PLACE THIS DIFFERS FROM THE PRIOR ART IT GENERALIZES.
 ``consumer-a``'s ``scripts/gate/native_install.py`` installs with ``--no-index --no-deps``,
 because its subject is "this must be OUR OWN wheel, built from this checkout, and not a dependency at
 all" -- there, resolving is the hazard. For genuine dependency work resolving is the entire POINT, so
-:attr:`Mode.RESOLVE` is the default and :attr:`Mode.PINNED` keeps the narrow behaviour available for
-a caller whose subject is a local artefact.
+:attr:`Mode.RESOLVE` is the default and :attr:`Mode.PINNED` keeps the narrow behavior available for
+a caller whose subject is a local artifact.
 
 THE PORT NAMES PROJECT-OWNED VERDICT ANCHORS. The exclusion is not a port answer: it is the TARGET
 environment's seat, keyed by its prefix, so a run holding another environment (or the machine's CPU
@@ -120,7 +120,7 @@ class Mode(Enum):
     """How the change is allowed to reach the index.
 
     ``RESOLVE`` is the default because a dependency change that cannot resolve is not a dependency
-    change. ``PINNED`` is the narrow mode whose subject is a LOCAL artefact -- there ``--no-index``
+    change. ``PINNED`` is the narrow mode whose subject is a LOCAL artifact -- there ``--no-index``
     makes "no network, no version resolution" a mechanical fact rather than a promise in a docstring.
     """
 
@@ -129,11 +129,11 @@ class Mode(Enum):
 
 
 class Version(Enum):
-    """Whether the artefact's VERSION is an IDENTITY for the bytes being installed.
+    """Whether the artifact's VERSION is an IDENTITY for the bytes being installed.
 
     THIS IS A SECOND AXIS AND NOT A SHADE OF :class:`Mode`, and conflating the two is what hid the
     defect. ``Mode`` says how the change may reach an index; this says whether pip's
-    already-satisfied shortcut is a correct answer for this artefact. They are independent: a pinned
+    already-satisfied shortcut is a correct answer for this artifact. They are independent: a pinned
     install of a third party's wheel is genuinely already satisfied, and a resolving install of a
     package whose version repeats would be just as blind.
 

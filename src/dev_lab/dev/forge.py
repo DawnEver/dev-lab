@@ -222,7 +222,7 @@ def forge_of_url(url: str) -> Forge:
 
 
 def _parse_remote(url: str, *, remote: str) -> Forge:
-    """Split a remote into host/owner/repo, refusing a partial parse rather than travelling with one."""
+    """Split a remote into host/owner/repo, refusing a partial parse rather than traveling with one."""
     host, path = '', ''
     if '://' in url:
         scheme, _, rest = url.partition('://')

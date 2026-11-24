@@ -1,7 +1,7 @@
 """A REVIEW THAT STANDS, OR IS ASKED AGAIN: what a PR's head gets from the forge's review with NO model call.
 
 :mod:`dev_lab.dev.forgereview` reviews a PR once; every later head gets the standing verdict (:func:`stands`). A
-session moves it by asking: ``forge review again <pr>`` (:func:`ask_again`, honoured by :func:`asked_again`)
+session moves it by asking: ``forge review again <pr>`` (:func:`ask_again`, honored by :func:`asked_again`)
 re-reviews a head, and ``forge review carry <pr>`` (:func:`carry`) disposes of a finding a continuation PR carries
 (LANDED-BRANCH-CONTINUES, :mod:`dev_lab.dev.branchreview`), which re-posts the held verdict (:func:`restands`).
 """
@@ -27,7 +27,7 @@ __all__ = ['ask_again', 'asked_again', 'carry', 'restands', 'stands']
 
 
 def ask_again(client: Client, number: int, head: str, who: str) -> str:
-    """Record *who*'s request to review PR *number* again at *head*; the forge's next review run honours it."""
+    """Record *who*'s request to review PR *number* again at *head*; the forge's next review run honors it."""
     comment_upsert(client, number, kind=Marker.REVIEW_AGAIN, key=head,
                    text=f'Review asked again at `{head[:12]}` by {who}.')  # fmt: skip
     return f'#{number} {head[:12]}: review asked again; the next review run reviews this head'

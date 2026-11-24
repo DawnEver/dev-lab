@@ -1,6 +1,6 @@
 """Is a long job still moving, and has it finished.
 
-A FINISHED JOB IS NOT AN ANOMALY, and the predecessor learned that the hard way: it modelled
+A FINISHED JOB IS NOT AN ANOMALY, and the predecessor learned that the hard way: it modeled
 completion as a warning, so a run that had succeeded reported `degraded` forever, stayed on the
 anomaly cadence, and could trip escalation on its own success. Completion is a first-class outcome
 here -- it makes the run `complete` rather than `degraded`, and it enters no remedy chain.
@@ -53,7 +53,7 @@ class ProgressTracker(Component):
         payload = _read(path)
         if payload is None:
             # NO READING IS NOT NO PROGRESS. `_read` answers None for a missing file and for an
-            # unparseable one, and its own docstring says so -- "both mean 'no reading', which is
+            # unparsable one, and its own docstring says so -- "both mean 'no reading', which is
             # not the same as 'no progress'". The caller then asserted `ops_done = 0.0` and said
             # nothing, and `data['status']` reaches no report: `report.summary` and `report.record`
             # read anomalies, completions, attempts and deliveries, and nothing else.
@@ -112,7 +112,7 @@ def _read(path: Path) -> dict[str, Any] | None:
         path: the file.
 
     Returns:
-        The parsed object, or None when it is missing or unparseable -- both mean "no reading",
+        The parsed object, or None when it is missing or unparsable -- both mean "no reading",
         which is not the same as "no progress".
 
     """

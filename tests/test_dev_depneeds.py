@@ -104,7 +104,7 @@ def test_a_malformed_needs_line_is_refused_by_name(tmp_path: Path) -> None:
         depneeds.task_needs(_ledger(tmp_path, 'simba windows'), 'work@abc')
 
 
-def test_dep_selects_the_branchs_task_extras_and_none_off_a_task_branch(tmp_path: Path) -> None:
+def test_dep_selects_the_branches_task_extras_and_none_off_a_task_branch(tmp_path: Path) -> None:
     """The dep door reads the task the checkout's branch names; on no task head it keeps the default (control)."""
     root = _root(tmp_path / 'work')
     open_task(plant_ledger(), 'work', extra='needs: [simba]\n')

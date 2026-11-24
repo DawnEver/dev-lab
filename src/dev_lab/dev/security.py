@@ -7,7 +7,7 @@ step and posts ``tests/security``. The FAMILY DEFAULT is declared once here; a r
 * :func:`code_findings` -- ruff's ``S`` (bandit) rules over the tracked Python, run ``--isolated`` so a repo's
   own ``ignore`` or ``per-file-ignores`` cannot switch a rule off. The rules off for the whole family are
   :data:`FAMILY_IGNORE`, each with its reason; the trees never scanned are :data:`FAMILY_EXCLUDE`. A
-  ``# noqa: Sxxx`` stays honoured: it is a per-site, reviewed declaration.
+  ``# noqa: Sxxx`` stays honored: it is a per-site, reviewed declaration.
 * :func:`secret_findings` -- every tracked text file against :data:`SECRET_PATTERNS`, plus any tracked
   ``.env`` file. A hit is reported as ``path:line: kind: sha256:<12 hex>`` and NEVER by value, so the
   record of the check cannot leak what it found.

@@ -1,7 +1,7 @@
 """``forge label create`` -- one label through the family door, against a REAL loopback server.
 
 The evidence is what the server recorded. Both forges share one table of cases: the verb and its answer are the
-same, only the colour spelling differs (Gitea takes ``#rrggbb``, GitHub ``rrggbb``).
+same, only the color spelling differs (Gitea takes ``#rrggbb``, GitHub ``rrggbb``).
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ CASES = (
 
 
 @pytest.mark.parametrize(('forge', 'root', 'page', 'color'), CASES)
-def test_a_new_label_is_created_in_the_forges_own_colour_spelling(server, forge, root, page, color) -> None:
+def test_a_new_label_is_created_in_the_forges_own_color_spelling(server, forge, root, page, color) -> None:
     _answer('GET', f'{root}/labels?{page}=100', (200, [{'name': 'bug', 'color': 'ee0701'}]))
     _answer('POST', f'{root}/labels', (201, {'name': 'needs-consent', 'color': color}))
     said = label_create(_client(forge, _Loopback(server)), 'needs-consent', '#D93F0B', 'apply needs consent')
@@ -54,13 +54,13 @@ def test_a_label_already_there_is_reported_present_and_nothing_is_written(server
 
 
 @pytest.mark.parametrize('bad', ['red', '#12345', 'gggggg', ''])
-def test_a_colour_that_is_not_six_hex_digits_is_refused_before_any_call(server, bad) -> None:
+def test_a_color_that_is_not_six_hex_digits_is_refused_before_any_call(server, bad) -> None:
     with pytest.raises(ValueError, match='six hex digits'):
         label_create(_client(Forge('github.com', 'o', 'r'), _Loopback(server)), 'x', bad, '')
     assert _Recorder.received == []
 
 
-def test_the_cli_door_routes_label_create_and_a_bad_colour_exits_nonzero(server, tmp_path: Path, capsys) -> None:
+def test_the_cli_door_routes_label_create_and_a_bad_color_exits_nonzero(server, tmp_path: Path, capsys) -> None:
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
     _answer('GET', '/api/v1/repos/o/r/labels?limit=100', (200, []))
     _answer('POST', '/api/v1/repos/o/r/labels', (201, {'name': 'n'}))

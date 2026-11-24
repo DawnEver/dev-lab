@@ -79,7 +79,7 @@ def test_the_pieces_COVER_the_whole_and_never_overlap(count: int) -> None:
 
 
 def test_the_pieces_are_BALANCED_to_within_one_member() -> None:
-    """Round-robin's reason for existing: no piece may be handed the whole expensive neighbourhood."""
+    """Round-robin's reason for existing: no piece may be handed the whole expensive neighborhood."""
     whole = tuple(f'test_{i:02d}.py' for i in range(17))
     sizes = {len(partition(whole, index, 5)) for index in range(5)}
     assert max(sizes) - min(sizes) <= 1
@@ -167,7 +167,7 @@ def test_a_set_holding_an_INCONCLUSIVE_and_no_FAIL_cannot_be_greener_than_it() -
     assert 'greener' in got.reason
 
 
-def test_the_composed_outcome_is_the_familys_enum_and_not_a_string() -> None:
+def test_the_composed_outcome_is_the_families_enum_and_not_a_string() -> None:
     """One three-state vocabulary in this family; a second spelling is a fourth state nobody declared."""
     assert isinstance(compose(_rows(Conclusion.PASS), 1).result, Conclusion)
 
@@ -228,7 +228,7 @@ def test_a_costed_partition_balances_COST_not_count() -> None:
     assert partition(whole, 1, 2, costs=costs) == ('b', 'c', 'd')
 
 
-def test_a_costed_partition_honours_together_and_still_covers_the_whole() -> None:
+def test_a_costed_partition_honors_together_and_still_covers_the_whole() -> None:
     whole = tuple(f'k{i}' for i in range(10))
     costs = dict.fromkeys(whole, 1.0)
     seats = frozenset({'k0', 'k9'})
