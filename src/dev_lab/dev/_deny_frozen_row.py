@@ -24,7 +24,7 @@ USER_FROZEN_FILES: dict[str, object] = {
     'needs': None,
     'refuses': (
         'echo x > .vscode/settings.json',
-        'rm freeze.toml',
+        'rm .vscode/settings.json',
         'Set-Content -Path .vscode/settings.json -Value x',
     ),
     'permits': (

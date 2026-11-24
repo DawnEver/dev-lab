@@ -120,5 +120,9 @@ ACTIONS: Final[Mapping[str, Action]] = MappingProxyType({
         # (a focus act's plan is ``{'act', 'plan'}``). Spent through :func:`dev_lab.ops.consent.client.verify_held`.
         Action('desktop.open', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=False),
         Action('desktop.focus', {}, SINGLE, 15 * _MINUTE, 15 * _MINUTE, boundary=False),
+        # One change of a repo's frozen set or tracked inventory (USER-FROZEN-FILES, user ruling 2026-11-24); subject =
+        # `<repo> <sha256 of the new freeze.toml>`. The credential is committed as the repo's receipt and verified
+        # offline at its issue time (dev_lab.dev.frozen), so the ttl is only the window to grant it.
+        Action('repo.freeze.change', {}, SINGLE, 15 * _MINUTE, 1 * _HOUR, boundary=False),
     )
 })  # fmt: skip
