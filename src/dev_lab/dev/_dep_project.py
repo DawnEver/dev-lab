@@ -1,12 +1,13 @@
 """Target project declarations and commands for the dependency door."""
 
 import os
+import re
 import shutil
 import sys
 import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons import extras
@@ -131,6 +132,47 @@ def own_interpreter(root: Path, python: str) -> str:
     raise ForeignEnvRefused(msg)
 
 
+def bootstrap_python(root: Path, *, running: tuple[int, ...] = tuple(sys.version_info[:3])) -> str:
+    """The interpreter a first environment of *root* is built with: the caller when it fits, else the target's spec.
+
+    MEASURED 2026-11-24: a repo requiring 3.13 was bootstrapped from a 3.12 caller and ``uv sync --python
+    <caller>`` refused it. The TARGET declares what it runs on: a caller fitting its ``requires-python`` (or a repo
+    declaring none) builds under the caller, as before; otherwise uv is handed the specifier and finds (or
+    fetches) a fitting interpreter.
+    """
+    manifest = root / 'pyproject.toml'
+    declared = tomllib.loads(manifest.read_text(encoding='utf-8')).get('project', {}) if manifest.is_file() else {}
+    spec = str(declared.get('requires-python') or '')
+    return sys.executable if not spec or _fits(running, spec) else spec
+
+
+#: One requires-python clause: an operator and a dotted release, optionally ``.*``.
+_CLAUSE: Final = re.compile(r'^(>=|<=|==|!=|~=|>|<)\s*(\d+(?:\.\d+)*(?:\.\*)?)$')
+
+
+def _fits(version: tuple[int, ...], spec: str) -> bool:
+    """Whether *version* satisfies every comma-separated PEP 440 clause of *spec* (release segments only)."""
+    for clause in filter(None, (part.strip() for part in spec.split(','))):
+        match = _CLAUSE.match(clause)
+        if match is None:
+            return False
+        op, text = match.groups()
+        bound = tuple(int(n) for n in text.removesuffix('.*').split('.'))
+        have = version[: len(bound)] if text.endswith('.*') or op in {'==', '!='} else version
+        ok = {
+            '>=': have >= bound,
+            '>': have > bound,
+            '<=': have <= bound,
+            '<': have < bound,
+            '==': have == bound,
+            '!=': have != bound,
+            '~=': version >= bound and version[: len(bound) - 1] == bound[:-1],
+        }[op]
+        if not ok:
+            return False
+    return True
+
+
 def follow_pin(uv: str, required: str) -> str:
     """Move the host's *uv* to *required* through its own installer; ``''`` once it is, else why it is not."""
     return follow(uv, required, version_of=installed_uv_version)
@@ -152,19 +194,22 @@ def uv_command(
     commit's own environment is materialised, so two hosts on two days build the same revisions.
     *reinstall_packages* are rebuilt from source whatever their version says (a component whose tree moved,
     :mod:`dev_lab.dev._dep_components`). Only a frozen sync with no environment yet -- a bootstrap -- builds
-    one under the invoking interpreter; every other command runs under the checkout's own (:func:`own_interpreter`).
+    one under the target's ``requires-python`` (:func:`bootstrap_python`); every other command
+    runs under the checkout's own (:func:`own_interpreter`).
     """
     uv = shutil.which('uv')
     if uv is None:
         msg = 'bootstrap/sync requires uv on PATH'
         raise FileNotFoundError(msg)
+    first = syncing and frozen and not Path(python).is_file()
+    interpreter = bootstrap_python(root) if first else own_interpreter(root, python)
     command = [
         uv,
         'sync' if syncing else 'lock',
         '--project',
         str(root),
         '--python',
-        sys.executable if syncing and frozen and not Path(python).is_file() else own_interpreter(root, python),
+        interpreter,
     ]
     if syncing:
         command.append('--compile-bytecode')  # D24: the first hook after a relock never compiles its imports
