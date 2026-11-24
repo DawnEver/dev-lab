@@ -23,8 +23,7 @@ from lab_commons.census import Process
 from dev_lab.dev import agenthooks
 from dev_lab.dev.famtests.visibility import plant_checkout
 from dev_lab.dev.hook_adoption import HookAdoption, render
-from dev_lab.dev.worktree_outputs import worktrees_door
-from dev_lab.dev.worktrees import main, remove
+from dev_lab.dev.worktrees import main, remove, worktrees_door
 
 _GIT = shutil.which('git') or 'git'
 

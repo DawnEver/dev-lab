@@ -313,3 +313,18 @@ def test_owned_globs_are_the_prefix_plus_the_declared_ones() -> None:
     assert owned_globs({'owned': ['pytest-of-*']}) == (f'{TEMP_PREFIX}*', 'pytest-of-*')
     with pytest.raises(ValueError, match='owned'):
         owned_globs({'owned': 'pytest-of-*'})
+
+
+def test_a_synced_folder_and_a_dir_beside_a_checkout_are_off_the_allowlist(tmp_path: Path) -> None:
+    """User requirement 2026-11-23 (OneDrive, ``../<repo>-copy``), enforced by R8's allowlist; the checkout stays."""
+    allowed = Allowance((tmp_path / 'repo',), 'declared')
+    for path in (tmp_path / 'OneDrive-Org' / 'meeting' / 'fig.png', tmp_path / 'repo-copy' / 'x.py'):
+        assert refuse_outside_tree(path, allowed=allowed, admitted=()) is not None
+    assert refuse_outside_tree(tmp_path / 'repo' / 'onedrive_notes.md', allowed=allowed, admitted=()) is None
+
+
+def test_the_job_temp_is_no_door(tmp_path: Path) -> None:
+    # User ruling 2026-11-23: $CLAUDE_JOB_DIR/tmp is forbidden too; planted, it must not be excluded.
+    job = tmp_path / 'jobs' / 'abc'
+    found = excluded_paths((), machine={}, env={'CLAUDE_JOB_DIR': str(job)})
+    assert job / 'tmp' not in found

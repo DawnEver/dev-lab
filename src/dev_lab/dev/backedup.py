@@ -11,7 +11,16 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-__all__ = ['replace_backed_up']
+__all__ = ['backups_dir', 'replace_backed_up']
+
+
+def backups_dir(home: Path | None = None) -> Path:
+    """Where a machine-file door keeps the previous file by default: the home's dated dev-lab cache.
+
+    Never a checkout's ``output/`` (NO-BACKUP-COPIES, user ruling 2026-11-23): the machine file is the machine's,
+    and a backup in a repo's regenerable tree is a copy nothing merges.
+    """
+    return (Path.home() if home is None else home) / '.cache' / 'dev-lab' / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
 
 
 def replace_backed_up(path: Path, text: str, backups: Path) -> Path:

@@ -80,8 +80,8 @@ __all__ = [
 RULE_ID: Final = 'WRITES-STAY-IN-THE-TREE'
 HAZARD: Final = 'outside every checkout nothing scans, ignores or cleans a file, so it outlives the session.'
 REMEDY: Final = (
-    "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/ and an "
-    'experiment to scratch/ of the checkout you work in.'
+    "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/, an "
+    'experiment to scratch/ of the checkout you work in (user ruling 2026-11-23: no job temp dir either).'
 )
 
 #: Directory names that are write-prone at a drive root and in the home, and the KIND each is.

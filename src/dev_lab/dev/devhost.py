@@ -53,7 +53,6 @@ import json
 import platform
 import tomllib
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -73,7 +72,7 @@ from dev_lab.dev import (
     vendordetect,
 )
 from dev_lab.dev._machinefile import dumps, merged
-from dev_lab.dev.backedup import replace_backed_up
+from dev_lab.dev.backedup import backups_dir, replace_backed_up
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.devdeclared import OWN_TABLE, declared, declared_by, layered, merge
 from dev_lab.dev.devschema import CHANNELS_TABLE, fill_remedy, hpc_reach, unfilled
@@ -311,7 +310,7 @@ def _render_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) 
     except tomllib.TOMLDecodeError as broken:
         emit(f'refused: the render of {host} is not TOML ({broken}); {path} is unchanged', err=True)
         return 2
-    backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
+    backups = args.backups or backups_dir()
     emit(f'rendered {path}; the previous file is {replace_backed_up(path, text, backups)}')
     return 0
 
@@ -360,7 +359,7 @@ def _local_verb(args: argparse.Namespace, path: Path, live: Mapping[str, Any]) -
         text = render(Path(own['source']), own['host'], changed)
     else:  # not a render: set the one key in the text, every other line kept
         text = merged(path.read_text(encoding='utf-8') if path.is_file() else '', {table: {key: value}})
-    backups = args.backups or Path('output/logs') / f'{datetime.now(UTC):%y/%m/%d}' / 'devhost'
+    backups = args.backups or backups_dir()
     backup = replace_backed_up(path, text, backups)
     emit(f'local: [{table}].{key}: {before!r} -> {value!r} in {path}; the previous file is {backup}')
     return 0
@@ -382,7 +381,9 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument('--host', default=None, help='the host name (default: the live [devhost] host, else this one)')
     making.add_argument('--from', dest='clone', type=Path, default=None, help='the config-source clone')
     making.add_argument('--write', action='store_true', help='back the live file up, then replace it')
-    making.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
+    making.add_argument(
+        '--backups', type=Path, default=None, help='where the backup goes (default: backedup.backups_dir)'
+    )
     forgecredential.add_use_store(verbs)
     forgeenrol.add_enrol(verbs)
     devhostadmit.add_admit(verbs)
@@ -396,7 +397,9 @@ def main(argv: list[str] | None = None) -> int:
     gone = local_verbs.add_parser('unset', help='remove <table>.<key>')
     gone.add_argument('key', help='<table>.<key>')
     for sub in (one, gone):
-        sub.add_argument('--backups', type=Path, default=None, help='where the backup goes (default: the output tree)')
+        sub.add_argument(
+            '--backups', type=Path, default=None, help='where the backup goes (default: backedup.backups_dir)'
+        )
     args = parser.parse_args(argv)
     path = args.machine or machineconfig.config_path()
     try:  # the render alone repairs the one old shape; every other verb names it and its door

@@ -16,7 +16,6 @@ from dev_lab.dev.reclaim import (
     _removed,
     _scrap_unsaved,
     declared_generated,
-    home_outputs,
     occupancy,
     repository_at,
 )
@@ -87,7 +86,6 @@ def discard(root: Path, name: str, *, home: Path | None = None, occupied: Callab
         or ('locked (git worktree unlock first)' if tree in locked else '')
         or _scrap_unsaved(tree, base, declared_generated(main))
         or (_LIVE if (occupied or occupancy())(tree) else '')
-        or home_outputs(main, tree)
     )
     if reason:
         return f'refused: {tree} ({reason})'

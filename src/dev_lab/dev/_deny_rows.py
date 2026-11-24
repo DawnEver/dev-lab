@@ -69,6 +69,7 @@ from dev_lab.dev._deny_journal_row import JOURNAL_CITES
 from dev_lab.dev._deny_ledger_row import LEDGER_WRITES_THROUGH_ITS_DOOR
 from dev_lab.dev._deny_liverun_row import LIVE_RUN
 from dev_lab.dev._deny_machinefile_row import MACHINE_FILE_IS_RENDERED
+from dev_lab.dev._deny_nobackup_row import NO_BACKUP_COPIES
 from dev_lab.dev._deny_outputcode_row import OUTPUT_HOLDS_NO_CODE
 from dev_lab.dev._deny_push_rows import PUSH_ROWS
 from dev_lab.dev._deny_remote_row import REMOTE_WRITE
@@ -367,6 +368,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     RECURSIVE_DELETE,
     REPORTS_LIVE_IN_MEMORY,
     OUTPUT_HOLDS_NO_CODE,
+    NO_BACKUP_COPIES,
     WRITES_STAY_IN_THE_TREE,
     STATUS_VIA_DOORS,
     CI_CRON_NEEDS_CONSENT,

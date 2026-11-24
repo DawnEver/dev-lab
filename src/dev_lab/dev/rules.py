@@ -66,6 +66,7 @@ from dev_lab.dev._rule_rows_citations import ROWS as _ROWS_CITATIONS
 from dev_lab.dev._rule_rows_feedback import ROWS as _ROWS_FEEDBACK
 from dev_lab.dev._rule_rows_hooks import ROWS as _ROWS_HOOKS
 from dev_lab.dev._rule_rows_hosts import ROWS as _ROWS_HOSTS
+from dev_lab.dev._rule_rows_layout import ROWS as _ROWS_LAYOUT
 from dev_lab.dev._rule_rows_memory import ROWS as _ROWS_MEMORY
 from dev_lab.dev._rule_rows_output import ROWS as _ROWS_OUTPUT
 from dev_lab.dev._rule_rows_pr_flow import ROWS as _ROWS_PR_FLOW
@@ -329,6 +330,7 @@ RULES: Final[tuple[Rule, ...]] = _build(
     + _ROWS_HOOKS
     + _ROWS_HOSTS
     + _ROWS_OUTPUT
+    + _ROWS_LAYOUT
 )
 
 #: The rules dev-lab enforces in EVERY repo through the ``pytest11`` plugin

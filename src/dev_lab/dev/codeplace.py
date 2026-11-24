@@ -42,12 +42,14 @@ THE CLI: ``python -m dev_lab.dev.codeplace`` is the write hook, its only mode.
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import json
 import os
 import sys
 import tomllib
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
+from types import ModuleType
 from typing import TextIO
 
 from lab_commons.log import emit
@@ -302,6 +304,11 @@ def refuse_write(path: Path) -> str | None:
     )
 
 
+def _layout() -> ModuleType:
+    """:mod:`dev_lab.dev.layout` (DECLARED-LAYOUT) reads this module`s family map, so it loads when the hook runs."""
+    return importlib.import_module('dev_lab.dev.layout')
+
+
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     """The ``PreToolUse`` agent hook on Write/Edit/MultiEdit/NotebookEdit; the payload is *stdin*.
 
@@ -327,7 +334,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3).
     refused = refuse_report(path) or refuse_machine_file_write(path) or refuse_code_in_output(path)
     refused = refused or refuse_outside_tree(path) or refuse_consent_write(path)
-    refused = refused or refuse_ledger_write(path)
+    refused = refused or refuse_ledger_write(path) or _layout().refuse_layout(path)
     hint = refuse_write(path)
     if refused is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': refused}

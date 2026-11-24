@@ -56,6 +56,9 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'echo x > ~/loose.txt',
         'echo x > $CLAUDE_JOB_DIR/tmp/a.txt',
         'echo x > ../sibling/a.txt',
+        'echo x > "D:/Sync/OneDrive - <org>/meeting/fig.png"',
+        'cp fig.png $OneDriveCommercial/share/',
+        'Set-Content -Path $env:OneDrive\notes.txt x',
     ),
     'permits': (
         'cat /tmp/probe.py',
@@ -64,5 +67,7 @@ WRITES_STAY_IN_THE_TREE: dict[str, object] = {
         'python -m pkg.run > output/logs/26/11/05/run/log.txt 2>&1',
         'rm /tmp/probe.py',
         'echo x 2>/dev/null',
+        'cat "D:/Sync/OneDrive - <org>/meeting/data.csv"',
+        'echo onedrive > output/logs/26/11/23/sync/note.txt',
     ),
 }

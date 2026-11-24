@@ -6,8 +6,8 @@ IGNORED files (a ``.venv``, run outputs: regenerable). D31 (user, 2026-11-17): a
 NOT-IGNORED file is kept, listed with its doors, and nothing of it is parked anywhere. A tree with a modified
 TRACKED file, an unlanded one, a pushed-but-unmerged one, a locked one, an occupied one and the main checkout
 stay, each with its
-reason, counted by reason on the summary line, and a kept tree is not touched. Run outputs of a reclaimable tree
-move home, verified, before it goes; a planted move failure keeps that tree whole and names the failure.
+reason, counted by reason on the summary line, and a kept tree is not touched. A reclaimable tree goes with its
+run outputs: nothing moves into the main checkout's output/ (NO-BACKUP-COPIES, user 2026-11-23).
 """
 
 from __future__ import annotations
@@ -146,31 +146,18 @@ def test_reclaim_removes_only_the_reclaimable_and_lists_the_rest(tmp_path: Path)
     assert {p.relative_to(work).parts[:2] for p in (work / 'output').rglob('*') if p.is_file()} <= {('output', 'logs')}
 
 
-def test_a_reclaimed_trees_run_outputs_move_home_verified_then_it_goes(tmp_path: Path) -> None:
-    """User ruling 2026-11-12: moving a landed tree's outputs home is the default, never a named exception."""
+def test_a_reclaimed_tree_goes_with_its_outputs_and_main_output_gains_nothing(tmp_path: Path) -> None:
+    """NO-BACKUP-COPIES (user 2026-11-23): removing a tree deletes its output/; nothing moves into main's."""
     work = _planted(tmp_path)
     home = work / '.claude' / 'worktrees'
+    before = sorted((work / 'output').rglob('*')) if (work / 'output').exists() else []
     lines = reclaim(work, _HOLDERS, occupied=_occupied) or ()
     for name in ('wrote', 'outputs'):
         assert not (home / name).exists(), lines
         assert any(line.startswith('removed') and name in line for line in lines), lines
-    assert (work / _LOG / 'n.txt').read_text(encoding='utf-8') == 'orphan result', 'the orphan output went home'
-    assert (work / _LOG / 'r.txt').read_text(encoding='utf-8') == 'result', 'the linked tree output went home'
+    after = sorted((work / 'output').rglob('*')) if (work / 'output').exists() else []
+    assert after == before, 'PLANTED CONTROL: two trees held run outputs, and main output/ gained none of them'
     assert not (home / 'notes').exists(), 'CONTROL: an empty output tree is deleted directly'
-
-
-def test_a_home_move_that_cannot_be_verified_keeps_the_tree_and_names_the_failure(tmp_path: Path) -> None:
-    """PLANTED FAILURE: ``output`` in the main checkout is a FILE, so no output can land home."""
-    work = _planted(tmp_path)
-    home = work / '.claude' / 'worktrees'
-    (work / 'output').write_text('in the way', encoding='utf-8')
-    lines = reclaim(work, _HOLDERS, occupied=_occupied) or ()
-    assert (home / 'wrote' / _LOG / 'n.txt').is_file(), 'wrote lost its output'
-    assert (home / 'outputs' / _LOG / 'r.txt').is_file(), 'nothing of a kept tree is deleted'
-    for name in ('wrote', 'outputs'):
-        assert any(line.startswith('kept') and name in line and 'not moved home' in line for line in lines), lines
-    assert not (home / 'landed').exists(), 'a tree with no outputs still goes: the failure is per tree'
-    assert 'outputs not moved home 2' in lines[-1], lines[-1]
 
 
 def test_the_summary_line_counts_every_kept_tree_by_reason(tmp_path: Path) -> None:

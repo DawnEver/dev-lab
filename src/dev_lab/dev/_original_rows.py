@@ -376,7 +376,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'metrics',
     'monthsummary',
     'prsuperseded',
-    'worktree_outputs',
     'metrics_compute',
     'metrics_report',
     'reviewcommand',

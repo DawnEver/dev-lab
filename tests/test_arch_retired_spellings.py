@@ -164,6 +164,16 @@ RETIRED_SPELLINGS: Final = {
         ),
     ),
     **dict.fromkeys(
+        ('worktree_outputs', 'home_outputs', 'archive-outputs', 'outputs not moved home'),
+        (
+            (
+                'a removed worktree is deleted with its output/ (reclaim, worktrees --remove); results of record '
+                'live in the run store'
+            ),
+            'NO-BACKUP-COPIES (user 2026-11-23): moving a tree outputs into the main checkout was a backup',
+        ),
+    ),
+    **dict.fromkeys(
         (
             'worktree_archive',
             'worktree-archive',
