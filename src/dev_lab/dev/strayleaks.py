@@ -7,7 +7,8 @@ stays until a host removes it, and that is this module: :data:`FAMILIES` is the 
 
 A FAMILY IS REMOVED ONLY WHEN ITS CONTENT PROVES IT OURS (:attr:`Family.ours`): a drive-root ``src/repos`` is a
 person's work unless every checkout in it was cloned from a ``file://`` url, as only a test fixture does; a
-family whose origin was never traced is NAMED and never removed. A link or junction is never followed or removed.
+tree with no traced producer goes only when it holds no file (``tmp_diag``); a :data:`SUSPECT` checkout only
+when :func:`unshared` proves no work of its own is in it. A link or junction is never followed or removed.
 A removed family's parents are removed too while they are left empty, up to the drive or home it was found under.
 
 A family may instead be an AGED SET (:attr:`Family.glob`): the entries matching a glob inside a directory a tool
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,8 +40,13 @@ __all__ = ['FAMILIES', 'Family', 'Found', 'find', 'remove']
 _OBJECT: Final = re.compile(r'^[0-9a-f]{2}/[0-9a-f]{64}$')
 _METRICS: Final = re.compile(r'^logs/\d{2}/\d{2}/\d{2}/metrics/[a-z_-]+\.jsonl$')
 _FILE_URL: Final = re.compile(r'^\s*url\s*=\s*file://', re.MULTILINE)
-_PYTEST_CACHE: Final = 'pytest cache directory'
-_UNTRACED: Final = 'origin never traced: named for a person to review, never removed'
+#: What pytest writes into its cache dir and nothing else does (user ruling 2026-11-24: cache content only).
+_PYTEST_CACHE: Final = re.compile(r'^(?:README\.md|\.gitignore|CACHEDIR\.TAG|v/cache/[A-Za-z_]+)$')
+#: Drive-relative checkouts a test fixture is suspected of having left (user ruling 2026-11-24). Each is removed
+#: only after :func:`unshared` proves it holds no commit missing from every remote it names and no change.
+SUSPECT: Final[tuple[str, ...]] = ('src/repos/product',)
+_GIT_TIMEOUT_S: Final = 60
+_GIT_EXE: Final = shutil.which('git') or 'git'
 
 
 def _linked(path: Path) -> bool:
@@ -77,14 +84,36 @@ def _file_clones(path: Path) -> str | None:
         config = child / '.git' / 'config'
         if _linked(child) or not config.is_file() or not _FILE_URL.search(config.read_text(encoding='utf-8')):
             return f'{child.name} is no checkout cloned from a file:// url: somebody may work in it'
+        if (why := unshared(child)) is not None:
+            return f'{child.name}: {why}'
     return None
 
 
-def _pytest_cache(path: Path) -> str | None:
-    readme = path / 'README.md'
-    if readme.is_file() and _PYTEST_CACHE in readme.read_text(encoding='utf-8', errors='replace'):
-        return None
-    return 'no pytest cache README: not a pytest cache'
+def _git(path: Path, *args: str) -> str:
+    done = subprocess.run(
+        [_GIT_EXE, '-C', str(path), *args], capture_output=True, text=True, timeout=_GIT_TIMEOUT_S, check=True
+    )
+    return done.stdout.strip()
+
+
+def unshared(path: Path) -> str | None:
+    """Why the checkout at *path* holds work only it has (a change, or a commit no remote it names has); else None."""
+    if not (path / '.git').exists():
+        return "not a git checkout: a suspect path holding anything else is somebody else's"
+    try:
+        if changed := _git(path, 'status', '--porcelain', '--untracked-files=all'):
+            return f'uncommitted change(s): {changed.splitlines()[0].strip()}'
+        if not _git(path, 'remote'):
+            return (
+                'it names no remote, so every commit in it is its own'
+                if _git(path, 'rev-list', '-n1', '--all')
+                else None
+            )
+        if own := _git(path, 'rev-list', '-n1', '--all', '--not', '--remotes'):
+            return f'commit {own[:12]} is on no remote it names'
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f'git cannot read it: {exc}'
+    return None
 
 
 def _newest(path: Path) -> float:
@@ -144,8 +173,10 @@ def _named(_path: Path) -> str | None:
     return None
 
 
-def _untraced(_path: Path) -> str | None:
-    return _UNTRACED
+def _no_files(path: Path) -> str | None:
+    """Ours when it holds no file at all (empty dirs only): anything else is somebody's."""
+    stray = next(_files(path), None)
+    return None if stray is None else f'{stray} is a file: only an empty tree is removed'
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,9 +206,10 @@ FAMILIES: Final[tuple[Family, ...]] = (
         _every_file(_OBJECT, 'a content-addressed <2hex>/<sha256> object'),
         "the fake rclone joined a rooted 'bucket:/results/..' spec onto its dir",
     ),
+    *(Family(f'suspect:{one}', 'drive', one, unshared, 'a test fixture is suspected') for one in SUSPECT),
     Family('deploy-src-clones', 'drive', 'src/repos', _file_clones, "an hpc deploy fixture's relative root 'src'"),
     Family('deploy-r-clones', 'drive', 'r/repos', _file_clones, "an hpc deploy fixture's rooted root '/r'"),
-    Family('tmp-diag', 'drive', 'tmp_diag', _untraced, 'a diagnostic run with a rooted path; no producer found'),
+    Family('tmp-diag', 'drive', 'tmp_diag', _no_files, 'a diagnostic run with a rooted path; no producer found'),
     Family(
         'home-metrics',
         'home',
@@ -185,7 +217,13 @@ FAMILIES: Final[tuple[Family, ...]] = (
         _every_file(_METRICS, 'a metrics line file'),
         'forgealarm recorded metrics at the cwd of a process started in the home dir',
     ),
-    Family('home-pytest-cache', 'home', '.pytest_cache', _pytest_cache, 'a pytest session rooted at the home dir'),
+    Family(
+        'home-pytest-cache',
+        'home',
+        '.pytest_cache',
+        _every_file(_PYTEST_CACHE, 'pytest cache content'),
+        'a pytest session rooted at the home dir',
+    ),
     Family(
         'jmag-designer-temp',
         'home',
@@ -260,6 +298,8 @@ def remove(found: Sequence[Found]) -> tuple[list[Path], list[tuple[Path, str]]]:
         if one.kept is not None:
             kept.append((one.path, one.kept))
             continue
+        if not one.path.exists():
+            continue  # inside a family removed just before it (a suspect checkout in src/repos)
         if one.family.glob and not _unlocked(one.path):
             kept.append((one.path, 'locked: a handle inside it is open'))
             continue
