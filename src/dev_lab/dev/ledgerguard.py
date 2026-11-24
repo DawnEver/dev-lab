@@ -21,6 +21,7 @@ import re
 from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.disclosure import details_for
+from dev_lab.dev.venvpath import running_interpreter
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,12 +29,11 @@ if TYPE_CHECKING:
 __all__ = ['DOOR', 'HAZARD', 'LEDGER_FILE', 'REMEDY', 'RULE_ID', 'refuse_write']
 
 RULE_ID: Final = 'LEDGER-WRITES-THROUGH-ITS-DOOR'
-DOOR: Final = 'python -m dev_lab.dev.task'
+DOOR: Final = '{python} -m dev_lab.dev.task'
 #: A ledger file, as the tail of a path (either separator): ``tasks/[archive/<date>/]<slug>/(TASK|JOURNAL).md``.
 LEDGER_FILE: Final = r'(?:^|[\\/])tasks[\\/](?:archive[\\/][^\\/\s]+[\\/])?[^\\/\s]+[\\/](?:TASK|JOURNAL)\.md'
 HAZARD: Final = (
-    'a task file is the user`s and the ledger`s: opening or closing a task is the user`s act and a journal is '
-    'append-only, so a direct write bypasses both.'
+    'opening or closing a task is the user`s act and a journal is append-only: a direct write bypasses both.'
 )
 REMEDY: Final = (
     f'write through the ledger CLI, `{DOOR}` (its verbs: `{DOOR} --help`), or propose the change to the user'
@@ -45,4 +45,5 @@ def refuse_write(path: Path) -> str | None:
     """The refusal for a file-tool write onto a ledger file; ``None`` for any other path."""
     if _FILE.search(path.as_posix()) is None:
         return None
-    return f'{RULE_ID}: {path} -- {HAZARD}\n{REMEDY}\n{details_for(RULE_ID)}'
+    remedy = REMEDY.replace('{python}', running_interpreter())
+    return f'{RULE_ID}: {path} -- {HAZARD}\n{remedy}\n{details_for(RULE_ID)}'

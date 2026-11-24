@@ -12,6 +12,7 @@ import pytest
 
 from dev_lab.dev import codeplace, ledgerguard
 from dev_lab.dev._deny_ledger_row import LEDGER_WRITES_THROUGH_ITS_DOOR as ROW
+from dev_lab.dev.venvpath import running_interpreter
 
 
 @pytest.mark.parametrize(
@@ -27,7 +28,8 @@ def test_a_ledger_file_is_refused_naming_the_door(path: str) -> None:
     said = ledgerguard.refuse_write(Path(path))
     assert said is not None
     assert said.startswith(ledgerguard.RULE_ID)
-    assert ledgerguard.DOOR in said
+    assert ledgerguard.DOOR.replace('{python}', running_interpreter()) in said
+    assert '{python}' not in said
 
 
 @pytest.mark.parametrize('path', ['docs/TASK.md', 'repos/tasks/t/NOTES.md', 'tasks/TASK.md', 'x/TASK.md.bak'])

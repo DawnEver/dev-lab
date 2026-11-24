@@ -15,9 +15,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'correction is a new entry naming it in `corrects:`, a consolidation one naming its sources in '
             '`merged_from:` -- so a change under `**/.claude/memory/**` may only ADD a file; the two moves are '
             'a task archived into memory and an approved redacting rename (`dev_lab.dev.memoryentry`). No '
-            '`accessed` field and no derived index: memory stays in each repo root and is searched by reading the '
-            'files (`python -m dev_lab.dev.memory search`), and written through the same door (`add`, `amend`, '
-            '`redact`, `rename`).'
+            '`accessed` field and no derived index: memory stays in each repo root, read and written through '
+            '`python -m dev_lab.dev.memory` (`search`, `add`, `amend`, `redact`, `rename`).'
         ),
         (
             'tests/architecture/repo/test_memory_lives_in_dated_directories.py',
