@@ -57,8 +57,18 @@ _PART_PREFIX: Final = 'tests/'
 
 
 def _ran_red(statuses: Sequence[CommitStatus]) -> dict[str, CommitStatus]:
+    """The hosted base parts that RAN and failed: a judged FAIL, or an error its own code caused (``class=code``).
+
+    Hand and requeued parts never hold a merge (:func:`red_checks` drops them), nor does ``tests/review``.
+    """
     latest = {status.context: status for status in statuses}
-    return {c: s for c, s in latest.items() if c.startswith(_PART_PREFIX) and s.state in RED}
+    return {
+        c: latest[c]
+        for c in red_checks(statuses)
+        if c.startswith(_PART_PREFIX)
+        and row_part(c.removeprefix(_PART_PREFIX)) == BASE
+        and (latest[c].state == 'failure' or 'class=code' in latest[c].description)
+    }
 
 
 def _recorded(record: str) -> frozenset[str]:

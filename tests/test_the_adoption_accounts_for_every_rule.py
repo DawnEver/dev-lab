@@ -90,6 +90,7 @@ _ENFORCED = {
         guard('tests/test_dev_integrate.py'),
     ),
     'PRIOR-ART-FIRST': (guard('tests/test_dev_priorart.py'),),
+    'ZERO-CORE-CHANGE': (guard('tests/test_dev_corechange.py'),),
     'MEASURE-BEFORE-PORTING': (guard('tests/test_dev_portmeasure.py'), guard('tests/test_dev_forgemerge.py')),
     'ONE-FORMAT-PER-NEED': (
         guard('tests/test_dev_layout.py'),

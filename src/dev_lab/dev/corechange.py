@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
 
 from dev_lab.dev import importedges, taskjournal
 from dev_lab.dev.family import declared_table
@@ -74,6 +75,10 @@ class Layers:
 
     core: tuple[str, ...]
     applications: str
+
+
+#: How many core paths a refusal names before it says how many more.
+_SHOWN: Final = 5
 
 
 def declared(root: Path) -> bool:
@@ -150,7 +155,7 @@ def change_set_problems(layers: Layers, paths: Iterable[str], messages: Sequence
     why = [f'{slug}#D{n}: {miss}' for slug, n in trailers if (miss := decision_missing(ledger, slug, n)) is not None]
     if trailers and not why:
         return []
-    shown = ', '.join(core[:5]) + (f' (+{len(core) - 5} more)' if len(core) > 5 else '')  # noqa: PLR2004
+    shown = ', '.join(core[:_SHOWN]) + (f' (+{len(core) - _SHOWN} more)' if len(core) > _SHOWN else '')
     named = f'; the named decision is not recorded: {"; ".join(why)}' if why else f'; no commit carries {TRAILER}'
     head = f'{RULE_ID}: the change set touches application root(s) {", ".join(apps)} AND the core ({shown}){named}'
     return [f'{head} -- {DOOR}\n{_DETAILS}']
@@ -272,24 +277,24 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     try:
         layers = declared_layers(root)
     except ValueError as exc:
-        print(f'{RULE_ID}: {exc}')  # noqa: T201 -- the hook's one line
+        emit(f'{RULE_ID}: {exc}')
         return 1
     if layers is None:
-        print(f'{RULE_ID}: not judged -- {root.name} declares no [tool.dev_lab.{_TABLE}] (opt-in)')  # noqa: T201
+        emit(f'{RULE_ID}: not judged -- {root.name} declares no [tool.dev_lab.{_TABLE}] (opt-in)')
         return 0
     if args == ['static']:
         from dev_lab.dev.rules import tracked_files  # noqa: PLC0415
 
         problems = static_problems(root, layers, (f for f in tracked_files(root) if (root / f).is_file()))
-    elif args[:1] == ['range'] and len(args) == 3:  # noqa: PLR2004 -- range <base> <head>
+    elif args[:1] == ['range'] and len(args) == len(('range', '<base>', '<head>')):
         problems = range_problems(root, layers, args[1], args[2], _ledger())
-    elif not args or (len(args) <= 2 and not args[0].startswith('-')):  # noqa: PLR2004 -- git's <remote> <url>
+    elif not args or (len(args) <= len(('<remote>', '<url>')) and not args[0].startswith('-')):
         problems = _pushed(root, layers, '' if sys.stdin.isatty() else sys.stdin.read())
     else:
-        print(f'{RULE_ID}: usage: python -m dev_lab.dev.corechange [range <base> <head>]')  # noqa: T201
+        emit(f'{RULE_ID}: usage: python -m dev_lab.dev.corechange [range <base> <head>]')
         return 2
     for problem in problems:
-        print(problem)  # noqa: T201
+        emit(problem)
     return 1 if problems else 0
 
 

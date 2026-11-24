@@ -789,6 +789,21 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev.forge import fetch_origin',
     ): 'the forge CLI module is heavy; only close fetches origin',
+    (
+        'src/dev_lab/dev/corechange.py',
+        'PLC0415',
+        'from dev_lab.dev.rules import tracked_files',
+    ): "the rules registry imports this module's row: a top-level import back is a cycle",
+    (
+        'src/dev_lab/dev/corechange.py',
+        'PLC0415',
+        'from dev_lab.dev.taskledger import ledger',
+    ): 'only a judged change set resolves the task ledger; an undeclared repo never pays',
+    (
+        'src/dev_lab/dev/corechange.py',
+        'PLC0415',
+        'from dev_lab.dev.lanepolicy import policy_at',
+    ): 'only a pushing repo reads its lane policy, in the pre-push row',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')
