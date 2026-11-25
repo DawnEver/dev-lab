@@ -117,6 +117,45 @@ def test_a_generated_module_importing_pint_is_refused(
     assert not (repo / 'src' / 'sample_pkg' / '_ir_codec.py').exists(), 'a refused generation writes nothing'
 
 
+@pytest.mark.parametrize(
+    ('source', 'named'),
+    [
+        ('def f(v, spec):\n    return v + values[spec.gauge]\n', 'gauge'),
+        ('def f(v, ref):\n    return 20 * np.log10(v / ref)\n', 'log10'),
+        ('def f(v, spec):\n    return spec.db[0] * np.power(10.0, v / 20)\n', 'power'),
+    ],
+)
+def test_a_generated_codec_doing_gauge_or_db_arithmetic_is_refused(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, named: str
+) -> None:
+    planted = tmp_path / '_ir_codec.py'
+    planted.write_text(source, encoding='utf-8')
+    monkeypatch.setitem(irpython._TEMPLATES, '_ir_codec.py', planted)
+    with pytest.raises(IRSchemaError, match=rf'IR-UNIT-LIBRARY: .*_ir_codec\.py.*{named}'):
+        irpython.write(load(repo))
+
+
+def test_the_codec_hands_gauge_and_db_references_to_the_boundary(
+    ir: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = []
+    boundary = importlib.import_module('sample_units')
+    real = boundary.to_si
+
+    def spy(magnitude: object, unit: str, si_unit: str, reference: object = None) -> object:
+        calls.append((unit, si_unit, reference))
+        return real(magnitude, unit, si_unit, reference=reference)
+
+    monkeypatch.setattr(boundary, 'to_si', spy)
+    widget = {'id': 'w-1', 'finish': 'painted', 'mass': 0.25, 'ambient_pressure': 101325.0, 'seal_pressure': '2 bar'}
+    ir.codec.from_boundary(ir.w.Widget, widget)
+    assert calls == [('bar', 'Pa', 101325.0)], 'the gauge reference is the converted absolute reference field'
+    calls.clear()
+    sample = {'widget': 'w-1', 'label': 'x', 'calibrated': False, 'count': 0, 'gain': 1.0, 'time': [0.0]}
+    ir.codec.from_boundary(ir.s.Sample, {**sample, 'position': [[0.0, 0.0, 0.0]], 'tags': [], 'level': '94 dB'})
+    assert calls == [('dB', 'Pa', (2e-5, 20))], 'the dB reference is the catalogue reference and scale'
+
+
 def test_a_declaration_without_a_unit_boundary_is_refused(repo: Path) -> None:
     pyproject = repo / 'pyproject.toml'
     text = pyproject.read_text(encoding='utf-8')

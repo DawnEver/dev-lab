@@ -107,17 +107,20 @@ flow = "<quantity>"                   # effort x flow must be a power ("1 2 -3 0
 - **The input codec** (`_ir_codec.from_boundary(Record, mapping)`) takes a number or a string with a unit (`"250 g"`,
   `"85 degC"`, `"94 dB"`).
 - It converts once, through the consumer's declared `boundary` module, to the catalogue unit. That module
-  is the only code that reads a unit: `to_si(magnitude, unit, si_unit)` returns the SI magnitude (and raises
-  when the unit does not convert, refused as `IR-BOUNDARY-UNIT`); `from_si(magnitude, si_unit, unit)` renders
+  is the only code that reads a unit, affine, gauge and logarithmic included:
+  `to_si(magnitude, unit, si_unit, reference=None)` returns the absolute SI magnitude (and raises when the unit
+  does not convert, refused as `IR-BOUNDARY-UNIT`); `from_si(magnitude, si_unit, unit, reference=None)` renders
   one back. A declaration without `boundary` is refused (`IR-NO-BOUNDARY`).
-- Affine temperatures convert as absolute. A `gauge_reference` field converts the gauge value and adds the
-  named field's absolute value.
-- `dB` uses the quantity's `db_reference` and `db_scale`. A quantity without them refuses dB.
+- The codec passes the `reference` it reads from the schema and computes nothing with it: for a
+  `gauge_reference` field, the named field's converted absolute value (the reference field converts first);
+  for a quantity with `db_reference`/`db_scale`, the pair `(db_reference, db_scale)`. Affine temperatures need
+  none. A bare number of a gauge field is gauge in the SI unit, and still crosses the boundary.
 - **Output rendering** (`_ir_codec.to_boundary(record, {"field.path": "unit"})`) converts back to a requested
-  display unit, gauge and dB included. Its output reads back through `from_boundary` unchanged.
-- Generated code holds SI values only and imports no unit library, the codec included: it walks the record
-  and delegates every conversion to `boundary`. The generator refuses its own output otherwise
-  (`IR-UNIT-LIBRARY`: a generated Python file importing `pint`, or an `ir.rs` naming a unit crate such as `uom`).
+  display unit through `from_si`, gauge and dB included. Its output reads back through `from_boundary` unchanged.
+- Generated code holds absolute SI values only, imports no unit library and does no unit arithmetic, the codec
+  included. The generator refuses its own output otherwise (`IR-UNIT-LIBRARY`: a generated Python file importing
+  `pint`, calling `log`/`log10`/`power`/`exp`, or doing arithmetic on a field's `gauge`/`db` reference; an
+  `ir.rs` naming a unit crate such as `uom`).
 
 ## Versioning
 

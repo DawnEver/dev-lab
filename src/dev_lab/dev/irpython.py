@@ -25,7 +25,7 @@ __all__ = [
     'expected_files',
     'fingerprint',
     'generator_version',
-    'refuse_unit_libraries',
+    'refuse_unit_handling',
     'render_module',
     'write',
 ]
@@ -39,6 +39,10 @@ _NEWLINE: Final = chr(10)
 _BOUNDARY_PLACEHOLDER: Final = 'import _ir_unit_boundary as _boundary'
 #: Unit libraries generated code never imports: a unit is read only at the consumer's declared boundary.
 UNIT_LIBRARIES: Final = frozenset({'pint'})
+#: Calls that convert a logarithmic (dB) value: the boundary's, never generated code's.
+_UNIT_ARITHMETIC_CALLS: Final = frozenset({'log', 'log10', 'log2', 'power', 'exp', 'exp2'})
+#: Field-spec references the boundary converts against: generated code passes them, never computes with them.
+_UNIT_REFERENCE_ATTRIBUTES: Final = frozenset({'gauge', 'db'})
 _SCALAR_HINTS: Final = {'bool': 'bool', 'int': 'int', 'float': 'float', 'complex': 'complex', 'str': 'str'}
 
 
@@ -240,21 +244,28 @@ def _template(ir: IR, source: Path) -> str:
     return text.replace(_BOUNDARY_PLACEHOLDER, f'import {ir.declaration.boundary} as _boundary')
 
 
-def _unit_imports(source: str) -> list[str]:
+def _unit_handling(source: str) -> list[str]:
+    """What in *source* reads a unit: a unit-library import, a log/power call, or arithmetic on a gauge/dB spec."""
     found = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
-            found += [alias.name for alias in node.names]
+            found += [f'imports {a.name}' for a in node.names if a.name.split('.')[0] in UNIT_LIBRARIES]
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            found.append(node.module)
-    return sorted(name for name in found if name.split('.')[0] in UNIT_LIBRARIES)
+            found += [f'imports {node.module}'] if node.module.split('.')[0] in UNIT_LIBRARIES else []
+        elif isinstance(node, ast.Call):
+            name = getattr(node.func, 'attr', getattr(node.func, 'id', ''))
+            found += [f'calls {name}'] if name in _UNIT_ARITHMETIC_CALLS else []
+        elif isinstance(node, ast.BinOp):
+            named = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)} & _UNIT_REFERENCE_ATTRIBUTES
+            found += [f'does arithmetic on spec.{n}' for n in sorted(named)]
+    return sorted(set(found))
 
 
-def refuse_unit_libraries(files: dict[Path, str]) -> None:
-    """Refuse (IR-UNIT-LIBRARY) a generated Python file importing a unit library: units cross only at the boundary."""
+def refuse_unit_handling(files: dict[Path, str]) -> None:
+    """Refuse (IR-UNIT-LIBRARY) a generated Python file that reads a unit: units cross only at the boundary."""
     for path, text in files.items():
-        if path.suffix == '.py' and (names := _unit_imports(text)):
-            refuse('IR-UNIT-LIBRARY', path.name, f'imports {", ".join(names)}')
+        if path.suffix == '.py' and (found := _unit_handling(text)):
+            refuse('IR-UNIT-LIBRARY', path.name, '; '.join(found))
 
 
 def expected_files(ir: IR) -> dict[Path, str]:
@@ -272,7 +283,7 @@ def expected_files(ir: IR) -> dict[Path, str]:
 def write(ir: IR) -> tuple[Path, ...]:
     """Write every generated file whose content differs; the paths written."""
     files = expected_files(ir)
-    refuse_unit_libraries(files)
+    refuse_unit_handling(files)
     written = []
     for path, content in files.items():
         if not path.is_file() or path.read_text(encoding='utf-8') != content:
