@@ -483,7 +483,11 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 - **Host cards** (`forgehosts`): each serving host edits one comment on the ONE `forge hosts` issue: who it
   is, its OS, its `supply` (what the tick admitted against), cluster facts (partitions, quota, QOS), its
   last tick, what it holds, what else `running` on it (each box ledger claim), and why each candidate it saw
-  waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
+  waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale.
+  A cluster seat's card (`<cluster>/<account>`) is read only where the family's roles binding binds a role of the
+  repo to that account's grant (`forgehosts.serving_cards`): any other seat -- a research account -- is no supply,
+  no fleet alarm and no admission, and the queue lists it under `unbound seats` with `forge hosts retire <host>`.
+  A box's card is judged by its tick alone. The issue is the OLDEST carrying
   the hidden `forge-hosts` marker (or the title), read off the issue cache in every state; a failed lookup, or a
   listing showing fewer open issues than the repository counts, refuses with an ALARM line and opens nothing.
 - **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge serve` on the repo's poller every tick): the rules and

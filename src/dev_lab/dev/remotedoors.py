@@ -39,6 +39,21 @@ REMOTE_DOORS: Final[tuple[Door, ...]] = (
         deny='HPC-THROUGH-THE-DOOR',
     ),
     Door(
+        module_argv('hpcaccount', 'archive'),
+        MAIN,
+        "Archiving one directory of a trusted cluster account to the family's declared run store as tar parts, each "
+        "read back from the store and its sha256 compared, under a manifest, through the grant's own login host; a "
+        'plan unless asked to apply (user ruling 2026-11-25).',
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
+        module_argv('hpcaccount', 'archive-clean'),
+        MAIN,
+        "Deleting one directory of a trusted cluster account through the cluster's clean door, only once its archive "
+        'on the run store is verified and the directory unchanged since; a dry run unless asked to apply.',
+        deny='HPC-THROUGH-THE-DOOR',
+    ),
+    Door(
         module_argv('hpcaccount', 'credential'),
         MAIN,
         'Placing one minted forge token of a declared login on a trusted cluster account, the token on standard '

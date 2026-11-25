@@ -140,7 +140,7 @@ from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgehosts import card_host, card_owners, read_cards, recording
+from dev_lab.dev.forgehosts import RETIRE, card_host, card_owners, read_cards, recording, serving_cards
 from dev_lab.dev.forgeintent import reattach
 from dev_lab.dev.forgememo import remembering
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
@@ -237,7 +237,9 @@ def serve(
         body = 'set $LC_HPC_SESSION for every submitter: an untagged job holds a share no session can be throttled by'
         alarm(Alarm(UNTAGGED, repo, f'{untagged} untagged job task(s) on {seat}', body, about=str(seat)))
     name = card_host(machine, seat)
-    cards = read_cards(client(root))
+    cards, unbound = serving_cards(root, read_cards(client(root)))  # a seat the family binds no role to never serves
+    for card in unbound:
+        say(f'[serve] {card.host} is bound to no role of this repo: its card is not read -- {RETIRE} {card.host}')
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
     beat_s = float(table.get('tick_minutes', 5)) * 60
     fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository

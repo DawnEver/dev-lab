@@ -102,7 +102,7 @@ VERBS: Final = (
     ('status', 'agent', '[<slug>]', 'the task in <= 2 KB'),
     ('list', 'agent', '', 'every open task: slug, open items, decisions, goal'),
     ('show', 'agent', '[<slug>]', 'TASK.md and the whole journal (an archived task too)'),
-    ('migrate', 'owner', '<checkout>... [--dry-run]', "the one-time move of checkouts' retired stores"),
+    ('migrate', 'owner', '<checkout>... [--dry-run]', 'the one-time move of retired stores; open tasks get issues'),
 )
 _CITE: Final = 'tasks/{slug}/JOURNAL.md#D'
 _DISTILL_HOMES: Final = (('.claude', 'memory'), ('.claude', 'rules'), ('docs-src',))

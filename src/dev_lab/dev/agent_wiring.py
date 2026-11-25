@@ -213,40 +213,46 @@ _STOPS: Final = ('Stop', 'SubagentStop')
 #: THE WIRING, ONE TABLE, AND EACH CHECK HAS ONE TRIGGER. Before every shell call: no handler -- a check judging a
 #: command is an engine deny row, so a shell call starts one interpreter (the journal door asks Python only on a
 #: match, ``_deny_journal_row``); before every write: the codeplace write hook (a report under output/, a write-prone
-#: root, a consent file refused; a misplaced code file hinted). After every shell call, succeeded or failed: the wall
-#: ledger's foreign-denial reader (WALLS-ARE-RECORDED). Each prompt: the host-pressure reminder (D54) and the PR inbox
-#: -- the ONE machine forge hearer (TASK-HEARS-ITS-FORGE-EVENTS) -- and, INLINE, the user's task grant: a prompt that IS
-#: ``/task open|close <slug>`` or ``approve <code>`` is recorded before the agent can spend it (:mod:`taskauthority`).
+#: root, a consent file refused; a misplaced code file hinted) and the scratch owner claim. After every shell call,
+#: succeeded or failed: the wall ledger's foreign-denial reader (WALLS-ARE-RECORDED) and the scratch owner claim of
+#: an entry the command names (one claim verb, its argv saying which payload field names the entry). Each prompt:
+#: the host-pressure reminder (D54) and the PR inbox -- the ONE machine forge hearer (TASK-HEARS-ITS-FORGE-EVENTS) --
+#: and, INLINE, the user's task grant: a prompt that IS ``/task open|close <slug>`` or ``approve <code>`` is recorded
+#: before the agent can spend it (:mod:`taskauthority`).
 #: Every stop, the main session's and each subagent's: the hand-back check and the wall ledger's stop; the main
-#: session's adds the stray census, the scratch census, the unfilled install home and the shell reaper -- Stop is the
+#: session's adds the stray census, the scratch census (this session's entries inline; the integrator's report of
+#: the entries no live session owns detached: proving the role imports the consent client), the unfilled install
+#: home and the shell reaper -- Stop is the
 #: one event that recurs inside a session, so it is the reaper's clock, and a session's first stop sweeps what an ended
 #: one left (measured 2026-11-16: 37 sweeps and both over-bound stops of the day fell in an 11-hour window with no
 #: session start). Session start: the ONE reclaim, the machine-file notice (once: drift cannot change within a turn),
-#: the venv follower, the forge-token notice, the scratch baseline, the classifier render, the PR watcher, the
-#: hard rules for a harness that does not load them itself (inline: they must be in the first context) and the
-#: retired-rem notice (REM-RETIRED: a repo's leftovers, a machine's install).
+#: the venv follower, the forge-token notice, the classifier render, the PR watcher, the hard rules for a harness
+#: that does not load them itself (inline: they must be in the first context) and the retired-rem notice
+#: (REM-RETIRED: a repo's leftovers, a machine's install).
 #: INLINE ONLY A GUARD OR A CHEAP READ (HOOK-UNDER-FIVE-SECONDS, D24; measured 2026-11-17: the prompt's two readers
 #: imported 0.5-0.8 s, the session start's rows took 10-20 s, the shell reaper 1-3 s). Every row reaching the
 #: network, git beyond one listing, a bootstrap, a process census, a render or a heavy import chain is ``detached``:
 #: it runs to completion in the background and its notice reaches the session at its next context event. The
-#: scratch baseline stays inline: it must see the tree as the session found it.
+#: scratch claims stay inline: an owner recorded later can lose the race to another session's.
 WIRING: Final = (
     Wire(('PreToolUse',), 'dev_lab.dev.codeplace', tools=WRITE_TOOLS, may_block=True),
     Wire(('PreToolUse',), 'dev_lab.dev.docrules', tools=WRITE_TOOLS),
+    Wire(('PreToolUse',), 'dev_lab.dev.scratch', ('claim', 'write'), tools=WRITE_TOOLS),
     Wire(('PostToolUse', 'PostToolUseFailure'), 'dev_lab.dev.walls', ('post-tool',), tools=SHELL_TOOLS),
+    Wire(('PostToolUse', 'PostToolUseFailure'), 'dev_lab.dev.scratch', ('claim', 'shell'), tools=SHELL_TOOLS),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.taskauthority', ('hook',)),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.hostalarm', ('hook',), detached=True),
     Wire(('UserPromptSubmit',), 'dev_lab.dev.forgefeed', ('inbox',), detached=True),
     Wire(('Stop',), 'dev_lab.dev.strays', ('hook',), may_block=True),
     Wire(_STOPS, 'dev_lab.dev.handback', may_block=True),
     Wire(('Stop',), 'dev_lab.dev.scratch', ('stop',), may_block=True),
+    Wire(('Stop',), 'dev_lab.dev.scratchorphans', detached=True),
     Wire(_STOPS, 'dev_lab.dev.walls', ('stop',), may_block=True),
     Wire(('Stop',), 'dev_lab.dev.shellreaper', ('--hook',), detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.reclaimrun', ('--session-start',), once=True, detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.devhost', ('session-start',), once=True, detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.venvfollow', ('--session-start',), detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.forgeauthnotice', ('--session-start',), once=True, detached=True),
-    Wire(('SessionStart',), 'dev_lab.dev.scratch', ('snapshot',), once=True),
     Wire(('SessionStart',), 'dev_lab.dev.automode', ('session-start',), detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.forgefeed', ('session-start',), detached=True),
     Wire(('SessionStart',), 'dev_lab.dev.remretired', ('session-start',), once=True, detached=True),

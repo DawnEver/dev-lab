@@ -7,13 +7,14 @@ HPC-served repo plants :data:`HPC_REPO` with :func:`carry`. Invented, never our 
 
 from __future__ import annotations
 
-from typing import Final
+import tomllib
+from typing import Any, Final
 
 import pytest
 
 from dev_lab.dev.roles import CI, HOST, HPC, ROLES_ENV, Roles
 
-__all__ = ['CI_REPO', 'EVERY_CI', 'HPC_REPO', 'HPC_REVIEWED', 'carry']
+__all__ = ['CI_REPO', 'EVERY_CI', 'HPC_REPO', 'HPC_REVIEWED', 'carry', 'seats_family']
 
 #: Every role on the forge's CI but review, which a judge host performs.
 CI_REPO: Final = Roles.of_kinds(tests=CI, review=HOST, merge=CI, promote=CI, prune=CI)
@@ -28,3 +29,36 @@ HPC_REVIEWED: Final = Roles.of_kinds(tests=HPC, review=HPC, merge=HPC, promote=H
 def carry(monkeypatch: pytest.MonkeyPatch, roles: Roles) -> None:
     """Make *roles* the kinds this test's process carries."""
     monkeypatch.setenv(ROLES_ENV, roles.env())
+
+
+#: A planted family layer (invented names): one cluster, the verification seat ``vera`` its gitea roles bind, and
+#: ``rhea``, whose grant role :func:`seats_family` names.
+_SEATS_FAMILY: Final = """
+[hpc.clusters.alpha]
+hosts = ["login.alpha.example"]
+slurm_accounts = { free = { billed = false } }
+
+[[hpc.grant]]
+user = "vera"
+cluster = "alpha"
+slurm_account = "free"
+role = "verification"
+
+[[hpc.grant]]
+user = "rhea"
+cluster = "alpha"
+slurm_account = "free"
+role = "{rhea}"
+
+[roles.gitea]
+tests = { hpc = "alpha", role = "verification" }
+review = { host = "judgehost" }
+merge = { hpc = "alpha", role = "verification" }
+promote = { host = "promotehost" }
+prune = { hpc = "alpha", role = "verification" }
+"""
+
+
+def seats_family(rhea: str = 'research') -> dict[str, Any]:
+    """The planted family layer, ``rhea`` holding a grant of role *rhea* (``research``: no role of a gitea repo)."""
+    return tomllib.loads(_SEATS_FAMILY.replace('{rhea}', rhea))

@@ -38,6 +38,13 @@ partitions, quota), what else runs, alarm texts, the artifact-store reason, tool
 is deleted on the first redacted tick. A ``Forge-Host`` trailer still names the raw host; a reader
 vouches it against either spelling (:func:`dev_lab.dev.forgeorigin.vouched`).
 
+A SEAT'S CARD IS READ ONLY WHERE THE FAMILY BINDS IT (:func:`serving_cards`, user ruling 2026-11-25). Which cluster
+seats serve a repo is the roles binding's one fact (:mod:`dev_lab.dev.roles`, D73): a seat (``<cluster>/<account>``)
+the binding names no role of the repo to -- a research account, ``serves = false`` -- stopped ticking when it stopped
+serving, and its last card is no supply, no fleet alarm and no admission; ``forge queue`` lists it once with
+``forge hosts retire <host>``. Live 2026-11-25: four research seats stale since 2026-11-06 kept "no host supplies
+femm" alarming on every verification tick. A box names no seat; its tick alone says whether it serves.
+
 A CARD OLDER THAN :data:`STALE_TICKS` OF ITS OWN TICK PERIOD IS STALE: the host is gone or wedged, and
 ``forge queue`` shows it so rather than counting it as serving. It is also how a REFUSED CREDENTIAL shows:
 a host whose token the forge refuses cannot publish anything, so its card simply stops moving.
@@ -50,7 +57,6 @@ import dataclasses
 import hashlib
 import json
 import re
-import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -80,11 +86,13 @@ from dev_lab.dev.forgepulls import (
 from dev_lab.dev.forgework import Client, Comment
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import origin_url
+from dev_lab.dev.roles import bound_accounts, machine_layer, roles_at
 
 __all__ = [
     'HOSTS_MARKER',
     'HOSTS_ORIGIN',
     'HOSTS_TITLE',
+    'RETIRE',
     'STALE_TICKS',
     'HostCard',
     'HostsIssueLost',
@@ -102,6 +110,7 @@ __all__ = [
     'read_cards',
     'recording',
     'retire',
+    'serving_cards',
     'this_host',
 ]
 
@@ -113,6 +122,9 @@ HOSTS_MARKER: Final = marker(Marker.HOSTS)
 
 #: The text every hosts issue this module opened carries, marker or not: how a machine-made one is told apart.
 HOSTS_ORIGIN: Final = '(dev_lab.dev.forgehosts)'
+
+#: The door that deletes a host's card (:func:`main`): the remedy every reader names for a card it does not count.
+RETIRE: Final = 'python -m dev_lab.dev.forge hosts retire'
 
 #: How many of its own tick periods a card may age before it is stale.
 STALE_TICKS: Final = 3
@@ -281,9 +293,7 @@ def publish(client: Client, card: HostCard) -> str:
 
     On a public repository the card is :meth:`HostCard.redacted` and a card left under the raw name is deleted.
     """
-    number = hosts_issue(client)
-    if number is None:
-        number = _open_hosts_issue(client)
+    number = hosts_issue(client) or _open_hosts_issue(client)  # an issue number is never 0
     if not is_private(client):
         _delete_card(client, number, card.host)
         card = card.redacted()
@@ -333,6 +343,29 @@ def read_cards(client: Client) -> tuple[HostCard, ...]:
     return tuple(card for comment in comment_list(client, number) if (card := card_of(comment)) is not None)
 
 
+def serving_cards(
+    root: Path, cards: Sequence[HostCard], *, layer: Mapping[str, Any] | None = None
+) -> tuple[tuple[HostCard, ...], tuple[HostCard, ...]]:
+    """``(read, unbound)``: the cards a reader counts, and each seat's card the family binds no role of the repo to.
+
+    A seat is named ``<cluster>/<account>`` (:func:`card_host`) with Slurm's cluster name, so it is matched by its
+    account, the grant's ``user`` (:func:`dev_lab.dev.roles.bound_accounts`), as a seat finds its own grant
+    (:mod:`dev_lab.dev.forgeslurm`). Only a seat's card reads the binding: *layer* (default: this machine's,
+    :func:`dev_lab.dev.roles.machine_layer`) is never read for boxes alone.
+
+    Raises:
+        Unbound: a seat's card is to be judged and the binding is unreadable; the message names the table.
+
+    """
+    seats = [card for card in cards if '/' in card.host]
+    if not seats:
+        return tuple(cards), ()
+    held = machine_layer() if layer is None else layer
+    users = bound_accounts(roles_at(root, layer=held), held)
+    unbound = tuple(card for card in seats if users is not None and card.host.rpartition('/')[2] not in users)
+    return tuple(card for card in cards if card not in unbound), unbound
+
+
 def card_of(comment: Comment) -> HostCard | None:
     """The host card *comment* carries, its login the comment's forge-recorded author; ``None`` when it carries none."""
     found = _BLOCK.search(comment.body) if Marker.HOST in marker_kinds(comment.body) else None
@@ -360,8 +393,7 @@ def this_host() -> str:
     The one name a tick here publishes its card under and the ``Forge-Host`` stamp writes
     (:mod:`dev_lab.dev.forgeorigin`), so a job made here names the card it came from.
     """
-    seat = this_seat()
-    return card_host(this_machine(), seat)
+    return card_host(this_machine(), this_seat())
 
 
 def recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:
@@ -447,7 +479,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge hosts', description=main.__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('retire', help='delete HOST card; it rejoins by ticking again').add_argument('host')
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    args = parser.parse_args(argv)
     try:
         outcome = retire(client_for(Path.cwd() if cwd is None else cwd), args.host)
     except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
