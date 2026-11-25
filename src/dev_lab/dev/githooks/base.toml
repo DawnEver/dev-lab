@@ -142,6 +142,14 @@ id = "zero-core-change"
 run = ["python", "-m", "dev_lab.dev.corechange"]
 always_run = true
 
+# ENV-IS-READ-ONCE, the ledger half (dev_lab.dev.envreads, family policy 2026-11-25): a pushed head adding a path to
+# [tool.dev_lab.env] pending since its merge-base with origin/<integration> is refused -- the census lands once, at
+# adoption (a base with no table), and from there the list only shrinks. The always-on family check is the tree half.
+[[pre-push]]
+id = "env-pending-shrinks"
+run = ["python", "-m", "dev_lab.dev.envreads"]
+always_run = true
+
 # The session-branch invariants at push, local reads only (dev_lab.dev.sessionbranch): a declared session branch
 # or the trunk is published from that very local branch (PUBLISH-IS-THE-LOCAL-REF), by fast-forward
 # (SESSION-HISTORY-ONLY-GROWS), and the integration branch by audited merges (INTEGRATION-IS-MERGES-ONLY);

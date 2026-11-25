@@ -581,6 +581,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   recorded architecture decision; the core never imports an application, and the applications are acyclic.
 * :mod:`dev_lab.dev.nativefirst` -- NATIVE-FIRST: no numeric loop or stage twin under a declared orchestration
   path, and no test comparing a native stage against its Python twin.
+* :mod:`dev_lab.dev.envreads` -- ENV-IS-READ-ONCE: the environment is read only in a repo's declared entry modules;
+  the pending ledger of existing reads only shrinks.
 * :mod:`dev_lab.dev.consentguard` -- CONSENT-CODE-FROM-THE-USER: where granted consent credentials live, and the
   refusal of an agent writing there (:mod:`dev_lab.ops.consent`).
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.

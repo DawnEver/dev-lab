@@ -130,7 +130,8 @@ def test_a_declared_layers_table_opts_zero_core_change_in_and_a_core_to_applicat
         },
     )
     result = _run(pytester, monkeypatch)
-    result.assert_outcomes(passed=1 + len(alwayson.rows()), failed=1)
+    # every other required row passes: a src/ tree also brings ENV-IS-READ-ONCE
+    result.assert_outcomes(passed=len(alwayson.required_ids(pytester.path)), failed=1)
     result.stdout.fnmatch_lines(['*ZERO-CORE-CHANGE*src/pkg/core/a.py*'])
 
 
@@ -191,7 +192,8 @@ def test_valid_explicit_policy_runs_the_required_guard_even_under_a_selected_inv
         },
     )
     result = _run(pytester, monkeypatch, '-k', 'test_x')
-    result.assert_outcomes(passed=2 + len(alwayson.rows()))
+    # test_x and every required row: the layout guard, and ENV-IS-READ-ONCE for the src/ tree
+    result.assert_outcomes(passed=1 + len(alwayson.required_ids(pytester.path)))
     result.stdout.fnmatch_lines(['*family*'])
 
 

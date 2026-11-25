@@ -62,6 +62,20 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_nativefirst.py',),
     ),
     (
+        'ENV-IS-READ-ONCE',
+        (
+            # Why: user-approved family policy 2026-11-25 (v1-migration D67/D68) -- env reads changed results unseen.
+            'A repo reads the process environment only in the entry module(s) it declares in `[tool.dev_lab.env] '
+            'entry = [...]`: a value that changes a result or behavior is configuration, a fact only the '
+            'environment offers is read there once and passed on as a typed record, and a test switch is a pytest '
+            'option. Existing reads are on record in `pending`, which only shrinks (a stale path reds; the '
+            '`env-pending-shrinks` pre-push row refuses an addition since the merge-base); `strict = true` judges '
+            'tests too. An AST read of Python `os.environ`/`getenv`/`putenv` and a scan of Rust `env::var` '
+            '(`dev_lab.dev.envreads`), every family checkout`s always-on check.'
+        ),
+        ('tests/test_dev_envreads.py',),
+    ),
+    (
         'ONE-FORMAT-PER-NEED',
         (
             # Why: user ruling R3 -- one format per need, so no reader ever parses a second shape of one fact.

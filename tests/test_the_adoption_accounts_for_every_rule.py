@@ -248,6 +248,8 @@ _ENFORCED = {
     'OUTPUT-HOLDS-NO-CODE': (guard('tests/test_dev_outputcode.py'),),
     # 2026-11-24 (user ruling, ruling C): a credential value never reaches an output sink; hashes only.
     'NEVER-LOG-SECRETS': (guard('tests/test_dev_secretlog.py'),),
+    # 2026-11-25 (family policy, v1-migration D67/D68): the environment is read in the declared entry only.
+    'ENV-IS-READ-ONCE': (guard('tests/test_dev_envreads.py'),),
     # 2026-11-23 (user ruling): origin holds only family version tags; pre-push refuses any other tag.
     'ONLY-VERSION-TAGS': (guard('tests/test_dev_milestonebase.py'),),
     # User 2026-11-20: a research deploy called crontab on a cluster forbidding it; steps derive from `serves`.
