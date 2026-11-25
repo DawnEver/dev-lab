@@ -19,7 +19,7 @@ import pytest
 from _box_fake import TEST_MACHINE, ended, quiet, record
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
-from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
+from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry, seats_family
 from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused, hold
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
@@ -201,10 +201,12 @@ def _serve(
     reviewed: list | None = None,
     elected: tuple[bool, str] = (True, 'G'),
     submit=None,
+    on_forge: tuple = (),
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
-    *seen* is what the FIRST tick was given; *ticks* collects what every tick was given.
+    *seen* is what the FIRST tick was given; *ticks* collects what every tick was given; *on_forge* is the host
+    cards the forge's hosts issue holds.
     """
     said: list[str] = []
     alarms: list = []
@@ -268,7 +270,7 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
-    monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
+    monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: on_forge)
     monkeypatch.setattr(forgepoller, 'elect', lambda _client, **_kw: elected)
     report = forgeserve.serve(
         tmp_path,
@@ -333,6 +335,27 @@ def test_the_producers_streamed_output_reaches_the_tree_closer(monkeypatch, tmp_
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1, ('collected 9', '1 failed'))}, trees=trees)
     assert trees.closed == [SHA]
     assert trees.logs == ['collected 9\n1 failed\n']
+
+
+def test_an_unbound_seats_stale_card_feeds_no_fleet_alarm_and_names_its_door(monkeypatch, tmp_path: Path) -> None:
+    """A research seat's card, stale since it stopped serving, is no dark platform or resource: it never serves.
+
+    Live 2026-11-25: "no host supplies femm" on every verification tick, fed by four research seats. PLANTED CONTROL:
+    the family grants the same seat a role its roles bind -- the same stale card makes linux and femm dark again.
+    """
+    run_git(tmp_path, 'remote', 'add', 'origin', 'https://f/o/r.git')
+    monkeypatch.setattr(forgehosts, 'machine_layer', seats_family)
+    stale = forgehosts.HostCard(
+        'ada/rhea', 'alice', 'linux', (NOW - timedelta(days=19)).isoformat(), tools={'femm': {'present': True}}
+    )
+    _report, said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), on_forge=(stale,))
+    assert not [one for one in alarms if one.kind == 'fleet'], alarms
+    assert any('ada/rhea' in line and 'forge hosts retire ada/rhea' in line for line in said), said
+    monkeypatch.setattr(forgehosts, 'machine_layer', lambda: seats_family('verification'))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), on_forge=(stale,))
+    subjects = {one.subject for one in alarms if one.kind == 'fleet'}
+    assert 'every linux host is stale: nothing serves linux work' in subjects
+    assert 'no host supplies femm: every host providing it is stale' in subjects
 
 
 def test_a_claimed_local_part_is_produced_inline_and_published(monkeypatch, tmp_path: Path) -> None:
