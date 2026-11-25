@@ -136,6 +136,11 @@ PAGES: Final[tuple[Page, ...]] = (
     ),
     Page('storage', 'Storage kinds', 'Where output, venvs, worktrees and caches live; one resolver, machine-bound'),
     Page(
+        'ir-schema',
+        'IR schemas',
+        'One TOML declaration of an IR, its quantities catalogue, and the Python and Rust generated from it',
+    ),
+    Page(
         'adding-a-workstation',
         'Adding a forge workstation',
         "The light role's template, the deploy step by step, verifying and retiring a host",
