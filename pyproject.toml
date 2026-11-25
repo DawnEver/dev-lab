@@ -31,6 +31,9 @@ dependencies = [
     # dev.forgeapp signs a GitHub App judge's RS256 JWT: the one maintained RSA, never our own. Base, not the ops
     # extra: the dev layer imports it, and dev never reaches up into an ops extra.
     "cryptography",
+    # dev.irschema's runtime and codec (_ir_runtime, _ir_codec) hold array fields as numpy arrays and its tests build
+    # them: dev imports numpy itself, so it names it rather than leaning on lab-commons[units] carrying it.
+    "numpy",
 ]
 
 # The IR build hook (dev_lab.dev.irhatch): a consumer declares [tool.hatch.build.hooks.ir-schema].
