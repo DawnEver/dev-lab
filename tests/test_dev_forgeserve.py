@@ -19,7 +19,7 @@ import pytest
 from _box_fake import TEST_MACHINE, ended, quiet, record
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
-from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry
+from _roles_fixtures import EVERY_CI, HPC_REVIEWED, carry, seats_family
 from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused, hold
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
@@ -201,10 +201,12 @@ def _serve(
     reviewed: list | None = None,
     elected: tuple[bool, str] = (True, 'G'),
     submit=None,
+    on_forge: tuple = (),
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
-    *seen* is what the FIRST tick was given; *ticks* collects what every tick was given.
+    *seen* is what the FIRST tick was given; *ticks* collects what every tick was given; *on_forge* is the host
+    cards the forge's hosts issue holds.
     """
     said: list[str] = []
     alarms: list = []
@@ -268,7 +270,7 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'security_step', lambda _root, _client, **_kw: None)  # its own tests
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
-    monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
+    monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: on_forge)
     monkeypatch.setattr(forgepoller, 'elect', lambda _client, **_kw: elected)
     report = forgeserve.serve(
         tmp_path,
@@ -333,6 +335,27 @@ def test_the_producers_streamed_output_reaches_the_tree_closer(monkeypatch, tmp_
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1, ('collected 9', '1 failed'))}, trees=trees)
     assert trees.closed == [SHA]
     assert trees.logs == ['collected 9\n1 failed\n']
+
+
+def test_an_unbound_seats_stale_card_feeds_no_fleet_alarm_and_names_its_door(monkeypatch, tmp_path: Path) -> None:
+    """A research seat's card, stale since it stopped serving, is no dark platform or resource: it never serves.
+
+    Live 2026-11-25: "no host supplies femm" on every verification tick, fed by four research seats. PLANTED CONTROL:
+    the family grants the same seat a role its roles bind -- the same stale card makes linux and femm dark again.
+    """
+    run_git(tmp_path, 'remote', 'add', 'origin', 'https://f/o/r.git')
+    monkeypatch.setattr(forgehosts, 'machine_layer', seats_family)
+    stale = forgehosts.HostCard(
+        'ada/rhea', 'alice', 'linux', (NOW - timedelta(days=19)).isoformat(), tools={'femm': {'present': True}}
+    )
+    _report, said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), on_forge=(stale,))
+    assert not [one for one in alarms if one.kind == 'fleet'], alarms
+    assert any('ada/rhea' in line and 'forge hosts retire ada/rhea' in line for line in said), said
+    monkeypatch.setattr(forgehosts, 'machine_layer', lambda: seats_family('verification'))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), on_forge=(stale,))
+    subjects = {one.subject for one in alarms if one.kind == 'fleet'}
+    assert 'every linux host is stale: nothing serves linux work' in subjects
+    assert 'no host supplies femm: every host providing it is stale' in subjects
 
 
 def test_a_claimed_local_part_is_produced_inline_and_published(monkeypatch, tmp_path: Path) -> None:
@@ -723,7 +746,7 @@ def test_the_alarms_a_tick_raises_ride_on_its_host_card(monkeypatch, tmp_path: P
 def test_an_account_idle_with_work_pending_alarms(monkeypatch, tmp_path: Path) -> None:
     """PLANTED CONTROL: the same pending request, claimed, raises nothing."""
     pending = Work('integrate/main', SHA, 'windows', OPEN)
-    why = 'tests/windows: not claimed -- its declared outputs could exceed threshold_mb'
+    why = 'tests/windows: not claimed -- its declared outputs could exceed threshold'
     idle = TickReport((pending,), (), ('tick',), (why,), pending=(pending,))
     _report, _said, alarms = _serve(monkeypatch, tmp_path, idle)
     assert [a.kind for a in alarms] == [IDLE]
@@ -976,7 +999,7 @@ def test_a_local_producer_whose_ref_moved_on_runs_to_its_end(monkeypatch, tmp_pa
     assert not [post for post in forge.posts if 'superseded' in post[2]]
 
 
-def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_alarms(
+def test_only_a_cluster_host_cleans_the_artifact_stores_and_a_failed_cleanup_alarms(
     monkeypatch, tmp_path: Path
 ) -> None:
     """PLANTED CONTROL: the same serve off a cluster (no seat) never cleans -- a workstation only reads."""
@@ -1210,27 +1233,27 @@ def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> 
 
 def test_a_finished_box_run_learns_its_peak_wall_and_measured_cpu(monkeypatch, tmp_path: Path) -> None:
     """The box half of the one demand table: the tree's peak and its MEASURED cpu-seconds, never wall x cores."""
-    learnt: list = []
+    learned: list = []
     gb, cpu = iter([2.0, None, 3.5, 1.0]), iter([10.0, None, 30.0, 45.0])
     ticks = iter(NOW + timedelta(seconds=s) for s in range(0, 1000, 10))
     _produce_one(
         monkeypatch, tmp_path, _Proc(0, beats=4, pid=4242), clock=lambda: next(ticks),
         sample=lambda _pid: next(gb), meter=lambda _pid: lambda: next(cpu),
-        learn=lambda *a, **k: learnt.append((a, k)),
+        learn=lambda *a, **k: learned.append((a, k)),
     )  # fmt: skip
-    ((root, done, run), how) = learnt[0]
+    ((root, done, run), how) = learned[0]
     assert (root, done.platform, run.peak_mem_gb, run.cpu_s, how) == (tmp_path, 'windows', 3.5, 45.0, {'ended': 'exit'})
     assert run.wall_s > 0
 
 
 def test_a_run_never_sampled_learns_nothing(monkeypatch, tmp_path: Path) -> None:
     """PLANTED CONTROL: no wake, no reading -- nothing is learned."""
-    learnt: list = []
+    learned: list = []
     _produce_one(
         monkeypatch, tmp_path, _Proc(0, beats=0, pid=4242), clock=lambda: NOW,
-        sample=lambda _pid: 1.0, meter=lambda _pid: lambda: 5.0, learn=lambda *a, **_k: learnt.append(a),
+        sample=lambda _pid: 1.0, meter=lambda _pid: lambda: 5.0, learn=lambda *a, **_k: learned.append(a),
     )  # fmt: skip
-    assert learnt == []
+    assert learned == []
 
 
 #: Windows' STATUS_NO_MEMORY: what a Job Object's memory limit leaves as the killed tree's exit code.
@@ -1253,10 +1276,10 @@ def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatc
     next tick claimed it at the same figure and the box killed it again. ``record_run`` grows the floor.
     """
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
-    learnt: list = []
-    _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learnt.append((a, k)))
+    learned: list = []
+    _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learned.append((a, k)))
     declared = forgeproduce.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
-    ((_root, _item, run), how) = learnt[0]
+    ((_root, _item, run), how) = learned[0]
     assert (run.peak_mem_gb, how) == (declared['mem_gb'], {'ended': 'memory'})
 
 
@@ -1277,34 +1300,34 @@ def test_a_part_the_box_refused_learns_nothing(monkeypatch, tmp_path: Path) -> N
     Measured on the real box: a refusal after a kill replaced the grown 6.03 GB floor with the waiting
     wrapper's 0.03 GB, and the next claim shrank back to the figure the box had killed.
     """
-    learnt: list = []
+    learned: list = []
     proc = _Proc(1, beats=2, pid=4242, box=Refused('no room'))
     _produce_one(
         monkeypatch, tmp_path, proc, clock=lambda: NOW, spawn=lambda argv, **_k: record(argv, proc.box) or proc,
-        sample=lambda _pid: 0.03, meter=lambda _pid: lambda: 0.4, learn=lambda *a, **_k: learnt.append(a),
+        sample=lambda _pid: 0.03, meter=lambda _pid: lambda: 0.4, learn=lambda *a, **_k: learned.append(a),
     )  # fmt: skip
-    assert learnt == []
+    assert learned == []
 
 
 def test_a_box_record_with_no_peak_and_no_sample_learns_nothing(monkeypatch, tmp_path: Path) -> None:
     """PLANTED CONTROL: an exit the box measured nothing of, and serve never sampled, invents no peak."""
-    learnt: list = []
+    learned: list = []
     proc = _Proc(0, beats=0, pid=4242)
     _produce_one(
         monkeypatch, tmp_path, proc, clock=lambda: NOW, spawn=lambda argv, **_k: record(argv, proc.box) or proc,
-        sample=lambda _pid: None, meter=lambda _pid: lambda: None, learn=lambda *a, **_k: learnt.append(a),
+        sample=lambda _pid: None, meter=lambda _pid: lambda: None, learn=lambda *a, **_k: learned.append(a),
     )  # fmt: skip
-    assert learnt == []
+    assert learned == []
 
 
 def test_a_run_with_no_cpu_reading_learns_nothing(monkeypatch, tmp_path: Path) -> None:
     """A tree whose cpu cannot be read records no demand: an unmeasured cpu is never invented."""
-    learnt: list = []
+    learned: list = []
     _produce_one(
         monkeypatch, tmp_path, _Proc(0, beats=2, pid=4242), clock=lambda: NOW,
-        sample=lambda _pid: 1.0, meter=lambda _pid: lambda: None, learn=lambda *a, **_k: learnt.append(a),
+        sample=lambda _pid: 1.0, meter=lambda _pid: lambda: None, learn=lambda *a, **_k: learned.append(a),
     )  # fmt: skip
-    assert learnt == []
+    assert learned == []
 
 
 def test_a_host_producing_one_part_claims_another_that_fits_while_it_runs(monkeypatch, tmp_path: Path) -> None:

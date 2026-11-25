@@ -11,10 +11,10 @@ go (files, directories, bytes); ``--apply`` removes it. EVERY REFUSAL NAMES ITS 
 * does not exist;
 * holds a TRACKED file (``git ls-files``) -- tracked work leaves through a commit, never a purge;
 * is not git-IGNORED (``git check-ignore``) -- untracked, unignored work is work in progress -- unless it lies in
-  the declared scratch (``[tool.dev_lab.placement] scratch``), which holds nothing tracked by declaration;
-* is, holds or lies under a ``read_only`` path the repo declares (``[tool.dev_lab.placement] read_only``,
+  the declared scratch (``scratch`` of ``layout.toml``), which holds nothing tracked by declaration;
+* is, holds or lies under a ``read_only`` path the repo declares (``read_only`` of ``layout.toml``,
   user-maintained input such as ``temp``, ``attic``);
-* is, holds or lies under a declared STORE (``[tool.dev_lab.placement] stores``: a content store, a cache a
+* is, holds or lies under a declared STORE (``stores`` of ``layout.toml``: a content store, a cache a
   run reads back) -- both keys are the repo's, read here, never hard-coded; a repo declaring neither is refused;
 * holds a bundle or patch (:data:`PARKED_SUFFIXES`) that no MERGE-CHECK RECORD classifies :data:`CLEARED`;
 * holds more than ``--limit`` entries (the removal is bounded).
@@ -39,7 +39,6 @@ import os
 import stat
 import subprocess
 import time
-import tomllib
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Final
@@ -48,7 +47,7 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev import datedlog
-from dev_lab.dev.family import declared_table
+from dev_lab.dev.codeplace import LAYOUT_FILE, PlacementNotDeclared, placement_table
 
 __all__ = [
     'CLEARED',
@@ -105,16 +104,18 @@ def _inside(rel: str, other: str) -> bool:
 
 
 def _declared(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """(read_only, stores) *root* declares under ``[tool.dev_lab.placement]``."""
-    manifest = root / 'pyproject.toml'
-    data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
-    placement = declared_table(data, 'placement', {})
+    """(read_only, stores) *root* declares in its ``layout.toml``."""
+    manifest = root / LAYOUT_FILE
+    try:
+        placement = placement_table(root) or {}
+    except PlacementNotDeclared as exc:
+        raise PurgeRefused(str(exc)) from exc
     found = {}
     for key in ('read_only', 'stores'):
         value = placement.get(key)
         if not isinstance(value, list) or not all(isinstance(v, str) and v for v in value):
             msg = (
-                f'{manifest} declares no [tool.dev_lab.placement] {key} (a list of checkout-relative paths, may be '
+                f'{manifest} declares no {key} (a list of checkout-relative paths, may be '
                 f'empty): a purge cannot tell what it must never touch. Door: declare read_only (user-maintained '
                 f'input, e.g. ["temp", "attic"]) and stores (every content store or cache a run reads back) there.'
             )
@@ -160,9 +161,7 @@ def _walk(top: Path, limit: int) -> Iterator[tuple[Path, bool]]:
 
 def _in_scratch(root: Path, rel: str) -> bool:
     """*rel* lies strictly below *root*'s declared scratch directory."""
-    manifest = root / 'pyproject.toml'
-    data = tomllib.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
-    scratch = declared_table(data, 'placement', {}).get('scratch')
+    scratch = (placement_table(root) or {}).get('scratch')
     return isinstance(scratch, str) and bool(scratch.strip('/')) and rel.startswith(scratch.strip('/') + '/')
 
 
@@ -196,7 +195,7 @@ def _refuse_declared(root: Path, rel: str) -> None:
     ):
         hit = [p for p in paths if _inside(rel, p) or _inside(p, rel)]
         if hit:
-            msg = f'{rel} is, holds or lies under the declared {what} path {hit[0]} ([tool.dev_lab.placement]). '
+            msg = f'{rel} is, holds or lies under the declared {what} path {hit[0]} (layout.toml). '
             msg += f'Door: {door}.'
             raise PurgeRefused(msg)
 

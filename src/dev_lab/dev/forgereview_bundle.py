@@ -132,7 +132,7 @@ def reviewed_by(client: Client, pull: PullRequest, login: str) -> bool:
 def _called_due(client: Client, head: str) -> bool:
     """Whether the merge decision called *head*'s review due (:mod:`dev_lab.dev.reviewturn`).
 
-    The one status the judge reads, and it only ever SKIPS work: a DUE someone else posted spends a judgement early,
+    The one status the judge reads, and it only ever SKIPS work: a DUE someone else posted spends a judgment early,
     never approves anything; the verdict is still the judge's own, read from the bundle.
     """
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)

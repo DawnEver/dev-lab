@@ -30,7 +30,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal
 
+from lab_commons import launch
+
 from dev_lab.dev.testtemp import writable_retry
+from dev_lab.supervise.reading import psutil_module
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -90,7 +93,7 @@ def _file_clones(path: Path) -> str | None:
 
 
 def _git(path: Path, *args: str) -> str:
-    done = subprocess.run(
+    done = launch.run(
         [_GIT_EXE, '-C', str(path), *args], capture_output=True, text=True, timeout=_GIT_TIMEOUT_S, check=True
     )
     return done.stdout.strip()
@@ -135,9 +138,8 @@ def held_paths(prefixes: Sequence[str]) -> list[Path] | str:
 
     A string instead names why that cannot be told (psutil absent, a holder's files unreadable): the caller keeps.
     """
-    try:
-        import psutil  # noqa: PLC0415 -- a transitive dependency; its absence keeps every aged entry
-    except ImportError:
+    psutil = psutil_module()
+    if psutil is None:
         return 'psutil is not installed, so a running holder cannot be ruled out'
     paths: list[Path] = []
     for proc in psutil.process_iter(['name']):

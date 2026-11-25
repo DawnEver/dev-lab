@@ -42,7 +42,7 @@ it died at as a floor that grows (:func:`~lab_commons.compute.learned.record_run
 larger -- a kill that learned nothing was re-claimed at the same figure and killed again, every tick.
 
 A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): an interactive
-run admitted beside it on the box ledger keeps the scheduler's favour.
+run admitted beside it on the box ledger keeps the scheduler's favor.
 """
 
 from __future__ import annotations
@@ -416,7 +416,7 @@ def _post(client: Client, item: Work, state: str, description: str, say: Callabl
         say(f'{run_tag(item.platform, item.sha)} {state}: {description}')
 
 
-#: The POSIX niceness a producer runs at: below normal, so an interactive run keeps the scheduler's favour.
+#: The POSIX niceness a producer runs at: below normal, so an interactive run keeps the scheduler's favor.
 BELOW_NORMAL_NICE: Final = 10
 
 

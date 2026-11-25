@@ -6,7 +6,7 @@ User ruling 2026-11-24. A repo OPTS IN in its ``pyproject.toml``::
     core = ["src/<pkg>/core", ...]          # repo-relative paths (directories or files)
     applications = "src/<pkg>/applications/*"  # one glob per segment; each match is ONE application root
 
-An undeclared repo is not judged, and every mode says so in its output. Two judgements read the one declaration:
+An undeclared repo is not judged, and every mode says so in its output. Two judgments read the one declaration:
 
 1. THE CHANGE SET (:func:`range_problems`): a change set touching ANY application root AND the core is refused
    unless a commit of the set carries ``Architecture-Decision: <task>#D<n>`` naming a decision RECORDED in that

@@ -8,7 +8,7 @@ appends them to the candidate as the DERIVED ``[ops.clients]`` table. :func:`dev
 to ``[ops.breakglass] keys`` and ``[ops.consent] keys`` (each keeps its own declared keys, e.g. a server's), and
 ``ops install`` writes the accounts' key files from the result.
 
-So a new or migrated workstation is authorised by ONE reviewed line in its own host file; the change reaches the
+So a new or migrated workstation is authorized by ONE reviewed line in its own host file; the change reaches the
 server as a boundary change (``ops.clients.keys`` is not routine), applied with an ``ops.config`` consent like any
 other key that decides who may log in. A host file that writes ``[ops.clients]`` itself is refused: the table is the
 door's output, never an input.

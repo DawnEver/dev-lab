@@ -280,7 +280,7 @@ def justified(density: Density, *, ceiling: int, minimum_pct: float) -> bool:
             that exclude each other's value.
         minimum_pct: the hit percentage a file above the ceiling must reach. NO DEFAULT for the same
             reason, even though all four rosters agree on 3.0: four independent measurements of a
-            number are evidence FOR the number, not a licence to stop measuring it.
+            number are evidence FOR the number, not a license to stop measuring it.
 
     Returns:
         ``True`` when the row is admitted.
@@ -290,7 +290,7 @@ def justified(density: Density, *, ceiling: int, minimum_pct: float) -> bool:
 
 
 def meter_readings(*, noun_witness: str, delegation_home: str) -> dict[str, Density]:
-    """PLANT the three shapes the meter exists to tell apart, and MEASURE them. No judgement.
+    """PLANT the three shapes the meter exists to tell apart, and MEASURE them. No judgment.
 
     Split from :func:`assert_the_meter_still_convicts` so the judging half can be driven over readings
     a test SUPPLIES. A control that can only ever be handed the shipped meter's own output cannot be

@@ -109,7 +109,7 @@ def test_a_session_branch_published_from_another_ref_is_refused(repo: Path, spec
     assert _remote(repo, spec.split(':')[1]) != _git(repo, 'rev-parse', 'HEAD')
 
 
-def test_a_detached_head_is_refused_and_the_branchs_own_ref_lands(repo: Path) -> None:
+def test_a_detached_head_is_refused_and_the_branches_own_ref_lands(repo: Path) -> None:
     _git(repo, 'checkout', 'feat/s')
     _git(repo, 'commit', '--allow-empty', '-m', 'feat: s')
     _git(repo, 'checkout', '--detach')

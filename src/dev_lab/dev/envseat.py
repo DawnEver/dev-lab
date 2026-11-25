@@ -27,7 +27,7 @@ SEAT_WALL_S: Final = 24 * 3600
 
 
 def environment_seat(prefix: Path | str) -> str:
-    """The seat of the environment at *prefix*: one per RESOLVED, case-normalised prefix."""
+    """The seat of the environment at *prefix*: one per RESOLVED, case-normalized prefix."""
     identity = os.path.normcase(str(Path(prefix).resolve()))
     return 'environment_' + hashlib.sha256(identity.encode()).hexdigest()[:32]
 

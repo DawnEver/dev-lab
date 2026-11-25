@@ -212,7 +212,7 @@ def test_on_github_a_red_decision_is_never_merged(tmp_path: Path) -> None:
     assert forge.merges == []
 
 
-def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_said(
+def test_on_github_a_head_moved_since_the_judgment_is_refused_by_the_forge_and_said(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     carry(monkeypatch, EVERY_CI)  # the job merges where merge is bound to ci
@@ -221,7 +221,7 @@ def test_on_github_a_head_moved_since_the_judgement_is_refused_by_the_forge_and_
 
     def moved(n: int) -> PullRequest:
         found = original(n)
-        forge.pulls[n]['head']['sha'] = 'f' * 40  # a push lands between the judgement and the merge
+        forge.pulls[n]['head']['sha'] = 'f' * 40  # a push lands between the judgment and the merge
         return found
 
     monkeypatch.setattr(forge, 'pr_view', moved)
@@ -331,7 +331,7 @@ def test_a_ready_pr_the_forge_refuses_to_merge_fails_the_tick_and_the_prs_after_
     assert 'NOT merged' in err
 
 
-def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_one_pr_whose_judgment_raises_never_stops_the_tick(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The second of three PRs raises: it is posted ``error`` naming why, the first and third are still judged."""
     work, forge, first, head = _pr(tmp_path)
     stuck = 'b' * 40
@@ -346,7 +346,7 @@ def test_one_pr_whose_judgement_raises_never_stops_the_tick(tmp_path: Path, monk
         return real(root, client, number)
 
     monkeypatch.setattr(forgemergeready, 'ready', flaky)
-    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 2, 'a failed judgement still fails the tick'
+    assert forgemergeready.main(['ready'], cwd=work, client=forge) == 2, 'a failed judgment still fails the tick'
     assert judged == [first, second, third]
     [said] = [one for one in status_list(forge, stuck) if one.context == MERGE_READY_CONTEXT]
     assert (said.state, said.description) == (

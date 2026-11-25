@@ -186,8 +186,8 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/dev_lab/dev/storage.py',
         'PLC0415',
-        'from dev_lab.dev.artefactstores import ArtefactRefused, check_rclone_config',
-    ): 'the forge journal and intent writers import storage.output_path, and artefactstores reaches them '
+        'from dev_lab.dev.artifactstores import ArtifactRefused, check_rclone_config',
+    ): 'the forge journal and intent writers import storage.output_path, and artifactstores reaches them '
     'through the forge layer, so a module-scope import here is a cycle; render() is a rare door',
     (
         'src/dev_lab/dev/storage.py',
@@ -336,7 +336,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'src/dev_lab/dev/forgemergeready.py',
         'BLE001',
         'except Exception as error:',
-    ): 'the merge tick judges every open PR in turn; one PR whose judgement raises (a git timeout, a forge '
+    ): 'the merge tick judges every open PR in turn; one PR whose judgment raises (a git timeout, a forge '
     'call, a corrupt tree) is an error status on that PR and must not end the tick for the PRs after it',
     (
         'src/dev_lab/dev/forgemergeready.py',
@@ -350,17 +350,12 @@ ALLOWED: Final[dict[Site, str]] = {
         "WORDS: Final = ('mkdtemp', 'mkstemp', 'gettempdir', 'delete=False', '/tmp', ':\\\\', ':/')",
     ): "the reader's own pre-filter words: '/tmp' is the text it searches for, never a path it opens",
     (
-        'src/dev_lab/dev/strayleaks.py',
-        'PLC0415',
-        'import psutil',
-    ): 'psutil is transitive, not declared; its absence must keep every aged entry, not fail the sweep import',
-    (
         'tests/test_dev_tmpsweep.py',
         'PLC0415',
         'import _winapi',
     ): '_winapi exists only on Windows; the junction helper imports it on the branch that runs there',
     (
-        'src/dev_lab/supervise/components/resources.py',
+        'src/dev_lab/supervise/reading.py',
         'PLC0415',
         'import psutil',
     ): 'psutil is optional on a supervised host; importing it inside the check turns its absence into a '
@@ -687,29 +682,24 @@ ALLOWED: Final[dict[Site, str]] = {
         'def _run(args: argparse.Namespace, cwd: Path) -> str:',
     ): 'same dispatch: one branch per verb',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.forgeclient import client_for',
     ): 'the network client loads only for open/close, never for a read verb',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.issuekind import create',
     ): 'same: the issue client loads only when an issue is opened',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.servelock import held',
     ): 'the serve lock is read only on the verb that needs it',
     (
         'src/dev_lab/dev/task.py',
-        'PLC0415',
-        'from dev_lab.dev.taskmigrate import migrate',
-    ): 'taskmigrate imports task at its use: a top-level import here is a cycle',
-    (
-        'src/dev_lab/dev/task.py',
         'arg-type',
-        'return _status(taskjournal.record(folder))',
+        'return status(taskjournal.record(folder))',
     ): 'record() returns Record | None and the branch above already proved the folder holds one',
     (
         'src/dev_lab/dev/taskauthority.py',
@@ -732,25 +722,15 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev import task as door',
     ): 'task imports taskgate: the door loads only when a PR or issue opened, and a top-level import is a cycle',
     (
-        'src/dev_lab/dev/taskmigrate.py',
-        'PLC0415',
-        'from dev_lab.dev.task import TaskRefused',
-    ): 'task imports this module lazily; a top-level import back is a cycle',
-    (
-        'src/dev_lab/dev/taskmigrate.py',
-        'PLC0415',
-        'from dev_lab.dev.task import _commit',
-    ): 'same cycle with task',
-    (
         'src/dev_lab/dev/writeroots.py',
         'S108',
         "if text == '/tmp' or text.startswith('/tmp/'):",
-    ): "Git Bash's /tmp spelling is recognised to translate it, never written to",
+    ): "Git Bash's /tmp spelling is recognized to translate it, never written to",
     (
         'tests/test_dev_frozen.py',
         'S607',
         "subprocess.run(['git', *args], cwd=root, check=True, capture_output=True)",
-    ): "a fixture repo's git on PATH, as every git-initialised fixture here",
+    ): "a fixture repo's git on PATH, as every git-initialized fixture here",
     (
         'tests/test_dev_frozen.py',
         'arg-type',
@@ -780,12 +760,12 @@ ALLOWED: Final[dict[Site, str]] = {
         'from dev_lab.dev.branchdelete import DOOR, TASK_HEAD_DOORS',
     ): 'branchdelete pulls the forge client; only a close that names its head doors pays for it',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.branchdelete import TaskBranches',
     ): 'the branch prune and its network client load only on close',
     (
-        'src/dev_lab/dev/task.py',
+        'src/dev_lab/dev/_task_io.py',
         'PLC0415',
         'from dev_lab.dev.forge import fetch_origin',
     ): 'the forge CLI module is heavy; only close fetches origin',
@@ -804,6 +784,76 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLC0415',
         'from dev_lab.dev.lanepolicy import policy_at',
     ): 'only a pushing repo reads its lane policy, in the pre-push row',
+    (
+        'src/dev_lab/dev/famfiles.py',
+        'PLC0415',
+        'from dev_lab.dev import agentsection',
+    ): 'the light merge job reaches famfiles; agentsection pulls the rules registry, which the light door lacks',
+    (
+        'src/dev_lab/dev/nativefirst.py',
+        'PLC0415',
+        'from dev_lab.dev.rules import tracked_files',
+    ): "the rules registry imports this module's row: a top-level import back is a cycle",
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'PLR0911',
+        'def _value_out(spec: object, value: object, units: Mapping[str, str], prefix: str) -> object:',
+    ): 'one return per IR field kind: a dispatch, split further it only scatters the table',
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'SLF001',
+        'fields = type(record)._ir_fields',
+    ): "the generated record's field table is the codec's input; the runtime and codec own that private slot",
+    (
+        'src/dev_lab/dev/_ir_codec.py',
+        'SLF001',
+        'values = dict(zip((spec.name for spec in fields), record._ir_values(), strict=True))',
+    ): "the generated record's value slot, read by the codec that owns the protocol",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        '_merge(dims, value._ir_dims, path, type(value).__name__)',
+    ): "the runtime owns the generated records' dims slot it merges",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'for spec, value in zip(cls._ir_fields, record._ir_values(), strict=True):',
+    ): "the runtime validates through the generated records' private protocol it defines",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'for spec, value in zip(type(record)._ir_fields, record._ir_values(), strict=True)',
+    ): "the runtime walks the generated records' private protocol it defines",
+    (
+        'src/dev_lab/dev/_ir_runtime.py',
+        'SLF001',
+        'record._ir_set(tuple(values.values()), dims)',
+    ): "the runtime sets the generated record's slots after validation; frozen records have no public setter",
+    (
+        'src/dev_lab/dev/ircheck.py',
+        'BLE001',
+        'except Exception:',
+    ): 'pint\'s unit refusals share no base class; any of them means "not a unit", the answer wanted',
+    (
+        'src/dev_lab/dev/irhatch.py',
+        'ARG002',
+        'def initialize(self, version: str, build_data: dict) -> None:',
+    ): "hatchling's build-hook signature; the hook uses neither argument",
+    (
+        'src/dev_lab/dev/irmodel.py',
+        'BLE001',
+        'except Exception:',
+    ): 'pint\'s refusals share no base class; every one means "not coherent SI"',
+    (
+        'src/dev_lab/dev/irrust.py',
+        'PLR0911',
+        'def _check(ir: IR, f: Field, ref: TypeRef, var: str, path: str) -> list[str]:',
+    ): 'one return per IR field kind: the Rust check emitter is a dispatch',
+    (
+        'src/dev_lab/dev/irrustpy.py',
+        'PLR0911',
+        'def _read(f: Field, ref: TypeRef, var: str, path: Path) -> str:',
+    ): 'one return per IR field kind: the pyo3 reader emitter is a dispatch',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

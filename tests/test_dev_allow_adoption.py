@@ -153,7 +153,7 @@ def test_the_glob_matches_the_row_two_repos_wrote_by_hand() -> None:
     correction rather than a drift. Both wrote `.venv/Scripts/python.exe`, a file macOS does not
     have, into a file that is TRACKED IN GIT -- so on half the fleet the row permitted nothing, and
     an allow row that matches no command is indistinguishable from one nobody needed. The
-    interpreter is normalised; everything either hand actually decided is preserved.
+    interpreter is normalized; everything either hand actually decided is preserved.
     """
     assert glob_for(VERIFY.command) == 'Bash(./.venv/*/python* -m dev_lab.dev.verify *)'
 
@@ -341,8 +341,8 @@ def test_an_adoption_with_no_app_name_cannot_report_which_repo_failed() -> None:
 def test_a_declared_row_may_not_spell_the_venv_interpreter_either() -> None:
     """THE DOOR `glob_for` CANNOT REACH, and it is live in a consuming repo today.
 
-    A DERIVED row is normalised on the way out. A DECLARED row is the repo's own text, VERBATIM, so
-    nothing normalises it -- and consumer-c's tracked settings file carries
+    A DERIVED row is normalized on the way out. A DECLARED row is the repo's own text, VERBATIM, so
+    nothing normalizes it -- and consumer-c's tracked settings file carries
     `Bash(./.venv/Scripts/python.exe scripts/dep.py *)`, which permits nothing at all on macOS. The
     refusal is at CONSTRUCTION rather than in a scan, because that is where the row is authored and
     where the repair costs one character.

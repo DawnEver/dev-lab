@@ -64,7 +64,7 @@
  * (anthropics/claude-code#79321) where the rewrite is silently dropped; a denied call with an
  * exact rewrite hint in the reason is the reliable shape.
  *
- * Fail-open by construction: unparseable stdin, a missing/invalid rules file, or a bad regex in
+ * Fail-open by construction: unparsable stdin, a missing/invalid rules file, or a bad regex in
  * one rule never blocks a tool call -- an engine that can error closed would turn a typo in the
  * data file into a locked session.
  */
@@ -95,6 +95,11 @@ const ENV_PREFIX = /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+)+/;
  */
 const WRAPPERS = /^(?:timeout|nohup|time|env|nice|ionice|stdbuf|command|exec|sudo|doas|xargs)$/i;
 
+/** Shell keywords that OPEN a command position: `for r in a b; do git merge x; done` runs `git` at the word after
+ * `do` (2026-11-25: every rule read `do git ...` as a command named `do`, and a loop body was never judged). */
+const KEYWORDS = /^(?:if|then|elif|else|do|while|until|!|\{)$/;
+const KEYWORD_PREFIX = /^(?:(?:if|then|elif|else|do|while|until|!|\{)\s+)+/;
+
 /**
  * `uv run <command>` is a wrapper too, but its verb is a SECOND token, so `WRAPPERS` cannot name
  * it: matching `uv` alone would also strip `uv sync`/`uv add`/`uv pip`, which are commands in their
@@ -118,7 +123,7 @@ const SHELLS = /(?:^|[/\\])(?:sh|bash|zsh|dash|ksh)(?:\.exe)?$/i;
  *
  * AN OPERATOR INSIDE QUOTES IS TEXT, and so is a backslash-escaped one. MEASURED 2026-10-03: a
  * naive split read `grep -rn "a\|uv run --no-sync" f` as a pipe into a `uv run` command and refused
- * a grep. `"..."` honours backslash escapes, `'...'` honours none -- the shell's own rules.
+ * a grep. `"..."` honors backslash escapes, `'...'` honors none -- the shell's own rules.
  */
 function segments(line) {
   const out = [];
@@ -205,7 +210,7 @@ function splitHeredocs(cmd) {
       if (consumers.some((word) => SHELLS.test(word))) shellBodies.push(body);
     }
 
-    // The WHOLE opening line is shell text: a redirect after the opener (`cat <<EOF > /tmp/x`) was dropped here
+    // The WHOLE opening line is shell text: a redirect after the opener (`cat <<EOF > <temp>/x`) was dropped here
     // until 2026-11-24, so the same write was refused before the opener and admitted after it.
     rest += cmd.slice(index, bodyStart);
     index = bodyEnd;
@@ -312,6 +317,7 @@ function commandPositions(segment) {
     let i;
     const uv = UV_RUN.exec(head);
     if (WRAPPERS.test(head)) i = 1;
+    else if (KEYWORDS.test(tokens[0])) i = 1;
     else if (uv && uv[1].toLowerCase() === 'uvx') i = 1; // `uvx <command>`: no verb of its own
     else if (uv && tokens[1] === 'run') i = 2; // `uv run <command>`; `uv sync` is NOT a wrapper
     else break;
@@ -340,10 +346,21 @@ function hostPath(word) {
 
 /** The directory one `git ...` / `uv ...` / dependency-door segment names for itself, or `null`: git's `-C X`
  * among its global options (`-c k=v` and the rest are skipped), uv's `--directory X` / `--project X` (or `=X`)
- * anywhere, the dependency door's `--bootstrap X` / `--lock-upgrade X`. */
+ * anywhere, the dependency door's `--bootstrap X` / `--lock-upgrade X`, the network door's `--cwd X` joined with
+ * whatever the command after its `--` names (`netverb --cwd A -- git -C b pull` acts in `A/b`). */
 function namedDir(words) {
   const program = (words[0] || '').replace(/\.exe$/i, '');
   const m = words.indexOf('-m');
+  if (/python[\w.]*$/i.test(program) && m > 0 && words[m + 1] === 'dev_lab.dev.netverb') {
+    const end = words.indexOf('--', m + 2);
+    const options = words.slice(m + 2, end === -1 ? words.length : end);
+    const at = options.indexOf('--cwd');
+    const eq = options.map((option) => /^--cwd=(.+)$/.exec(option)).find(Boolean);
+    const base = eq ? eq[1] : at !== -1 ? options[at + 1] || null : null;
+    const inner = end === -1 ? null : namedDir(words.slice(end + 1));
+    if (!inner) return base;
+    return base && !path.isAbsolute(hostPath(inner)) ? path.join(hostPath(base), hostPath(inner)) : inner;
+  }
   if (/python[\w.]*$/i.test(program) && m > 0 && /^(?:dev_lab|lab_commons)\.dev\.dep$/.test(words[m + 1] || '')) {
     for (let i = m + 2; i < words.length; i += 1) {
       const eq = /^--(?:bootstrap|lock-upgrade)=(.+)$/.exec(words[i]);
@@ -374,17 +391,32 @@ function namedDir(words) {
  * `-c` script is a command line of its own starting in its segment's dir, so its `cd`s move it (2026-11-17:
  * `timeout 50m bash -c 'cd B && ...'` from A, and a bounded `dep --bootstrap C`, were both judged against A). */
 function targetDir(cmd, cwd, acts = () => true) {
-  const found = targetIn(cmd, cwd, acts);
-  return found.hit ?? found.first ?? found.dir;
+  const found = targetIn(unrolled(cmd), cwd, acts);
+  return found.hits[0] ?? found.first ?? found.dir;
 }
 
-/** `targetDir`'s walk: {hit} the dir of the first acting segment, else {first, dir}. */
+/** A literal `for X in w1 w2; do BODY; done` as its body once per word, `$X` / `${X}` written out, so the tree each
+ * pass names is a path (2026-11-25: `for r in A B; do git -C "$r" merge ...; done` resolved `"$r"` against the
+ * session cwd and was judged by ITS live run). A word list the shell would expand (`$(...)`, a glob) stays a loop. */
+function unrolled(cmd) {
+  const loop = /\bfor\s+([A-Za-z_]\w*)\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b([\s\S]*?)[;\n]\s*done\b/g;
+  return cmd.replace(loop, (whole, name, list, body) => {
+    const words = list.match(/"[^"\n]*"|'[^'\n]*'|[^\s]+/g) || [];
+    if (!words.length || words.some((one) => /[$`*?[]/.test(one))) return whole;
+    const variable = new RegExp(String.raw`\$(?:\{${name}\}|${name}(?!\w))`, 'g');
+    return words.map((one) => body.replace(variable, () => hostPath(one))).join('\n');
+  });
+}
+
+/** `targetDir`'s walk: {hits} the dir of every acting segment in order, {first} of the first segment that is not
+ * a `cd`, {dir} the cwd the `cd`s leave. */
 function targetIn(cmd, cwd, acts) {
   let dir = cwd;
   let first = null;
+  const hits = [];
   const word = String.raw`("[^"\n]*"|'[^'\n]*'|[^\s;&|()]+)`;
   for (const segment of segments(splitHeredocs(cmd).rest)) {
-    const text = segment.replace(ENV_PREFIX, '').trim();
+    const text = segment.replace(ENV_PREFIX, '').trim().replace(KEYWORD_PREFIX, '');
     const cd = new RegExp(String.raw`^(?:cd|pushd)\s+${word}\s*$`).exec(text);
     if (cd) {
       dir = path.resolve(dir, hostPath(cd[1]));
@@ -394,27 +426,36 @@ function targetIn(cmd, cwd, acts) {
     const acting = positions.find((position) => acts(position));
     const named = namedDir((acting ?? positions[positions.length - 1] ?? text).match(new RegExp(word, 'g')) || []);
     const here = named ? path.resolve(dir, hostPath(named)) : dir;
-    if (acting !== undefined) return { hit: here };
-    if (positions.some((position) => SHELLS.test(commandWord(position)))) {
-      for (const script of inlineScripts(text)) {
-        const inner = targetIn(script, here, acts);
-        if (inner.hit) return inner;
-      }
+    if (acting !== undefined) hits.push(here);
+    else if (positions.some((position) => SHELLS.test(commandWord(position)))) {
+      for (const script of inlineScripts(text)) hits.push(...targetIn(script, here, acts).hits);
     }
     if (first === null && text) first = here;
   }
-  return { hit: null, first, dir };
+  return { hits, first, dir };
+}
+
+/** The pattern `rule` fires on at a command position, or null when it does not compile. */
+function ruleAt(rule) {
+  try {
+    return new RegExp(rule.matches === 'argument' ? rule.pattern : `^(?:${rule.pattern})`);
+  } catch {
+    return null;
+  }
 }
 
 /** The directory the segment `rule` fires on acts in (`targetDir`). */
 function ruleTarget(rule, cmd, cwd) {
-  let at;
-  try {
-    at = new RegExp(rule.matches === 'argument' ? rule.pattern : `^(?:${rule.pattern})`);
-  } catch {
-    return targetDir(cmd, cwd);
-  }
-  return targetDir(cmd, cwd, (text) => at.test(text));
+  const at = ruleAt(rule);
+  return at ? targetDir(cmd, cwd, (text) => at.test(text)) : targetDir(cmd, cwd);
+}
+
+/** EVERY directory a segment `rule` fires on acts in, each once: `git -C A merge && git -C B merge` mutates both. */
+function ruleTargets(rule, cmd, cwd) {
+  const at = ruleAt(rule);
+  const found = targetIn(unrolled(cmd), cwd, at ? (text) => at.test(text) : () => true);
+  const all = found.hits.length ? found.hits : [found.first ?? found.dir];
+  return all.filter((one, i) => all.findIndex((other) => samePath(other, one)) === i);
 }
 
 /** `dir` spelled for comparison: case-folded where the filesystem is (Windows), as Python's `os.path.normcase`. */
@@ -533,6 +574,15 @@ function carriesDevLab(python) {
   return sites.some((site) => listDir(path.join(site, 'site-packages')).some((name) => /^dev_lab-.*\.dist-info$/.test(name)));
 }
 
+/** The interpreter a declared `door` of `target` would run when it exists but lacks dev_lab, else null
+ * (2026-11-25: a refusal named `<target>/.venv/.../python -m dev_lab.dev.netverb` because the door checked only
+ * that the interpreter exists -- a venv without dev_lab, so a door that cannot run). */
+function barePython(door, target) {
+  if (!/\{python\}|<venv python>/.test(String(door))) return null;
+  const python = checkoutPython(target);
+  return python && !carriesDevLab(python) ? python : null;
+}
+
 /** The exit of a per-repo-door rule when `target` declares none (2026-11-17: a pytest in one repo was sent to the
  * session repo's `scripts/gate/runner.py`, absent there): the family verify door when the target's OWN
  * interpreter carries dev_lab, else the declaration to add -- never another repo's path. A need whose family door
@@ -592,6 +642,15 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   const details = reason.split('\n').filter((line) => line.startsWith('details: '));
   if (door) {
     const said = rule.severity === 'hint' ? 'advised' : 'refused';
+    const bare = barePython(doorsOf(target)[rule.name], target);
+    if (bare) {
+      return [
+        `${rule.name}: ${said}; ${shown} declares its own door for it, but ${bare} does not carry dev_lab; ` +
+          `bootstrap that checkout first: cd ${shown} && ${doorPython(target)} -m dev_lab.dev.dep --bootstrap ${shown}`,
+        `then: ${door}`,
+        ...details,
+      ].join('\n');
+    }
     return [`${rule.name}: ${said}; ${shown} declares its own door for it:`, door, ...details].join('\n');
   }
   if (rule.needs) return [reason.split('\n')[0], undeclaredDoor(rule, target, shown), ...details].join('\n');
@@ -616,8 +675,15 @@ function venvPython(sessionRoot) {
   return python && fs.existsSync(python) ? python : null;
 }
 
-function liveRunRefusal(target, sessionRoot) {
+function liveRunRefusal(target, sessionRoot, cwd) {
   if (!target || !sessionRoot) return '';
+  // A tree spelled through a variable the line never sets is unknown: the cwd is judged, and a refusal says why.
+  if (/\$/.test(target)) {
+    const said = cwd ? liveRunRefusal(cwd, sessionRoot) : '';
+    return said && `TREE-HAS-A-LIVE-RUN: the tree is spelled through a shell variable (${posix(target)}), which the ` +
+      `guard cannot resolve, so it judged the cwd -- spell each tree literally (git -C <path>, cd <path> &&, or ` +
+      `for r in <path> <path>; do git -C "$r" ...; done) and only those trees are judged:\n${said}`;
+  }
   const python = venvPython(sessionRoot);
   if (!python) return '';
   const done = spawnSync(python, ['-m', 'dev_lab.dev.liverun', '--tree', target], {
@@ -1033,7 +1099,9 @@ for (const rule of rules) {
     if (input.dev_lab_live_run_absent === true) continue;
     // The DIRECTORY, never its repoRoot: a worktree the line is about to create does not exist yet, and walking up
     // from it lands on the checkout holding it -- whose run is not this command's (2026-11-07). liverun resolves it.
-    liveReason = liveRunRefusal(input.cwd ? ruleTarget(rule, cmd, input.cwd) : null, sessionRoot);
+    // EVERY tree a mutating segment acts in, the session cwd only when the line names none (2026-11-25).
+    const targets = input.cwd ? ruleTargets(rule, cmd, input.cwd) : [];
+    liveReason = targets.map((target) => liveRunRefusal(target, sessionRoot, input.cwd)).find(Boolean) || '';
     hit = liveReason !== '';
   }
   if (hit && rule.when === 'declared-repo') {

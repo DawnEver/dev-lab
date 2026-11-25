@@ -23,7 +23,7 @@ One request is one JSON line with an ``action``:
 
 * ``open {credential}`` -- audited, never alerted (the user granted the credential); refused while a wave is open
   (never because an earlier audit is unacknowledged). The credential's params ``hours`` and ``max_merges`` may be
-  anything up to ``wave_hours_max`` / ``max_merges_max`` (``0`` = no ceiling) -- above a ceiling it is REFUSED naming
+  anything up to ``wave_ceiling`` / ``max_merges_max`` (``0`` = no ceiling) -- above a ceiling it is REFUSED naming
   it, never clamped, and before its use is registered, so it is not spent. Then it verifies offline and its ONE use
   is registered with the issuer (:func:`dev_lab.ops.consent.client.redeem`): an issuer that cannot be reached refuses;
 * ``merge {repo, pr, head, reason}`` (``repo`` is ``<host>/<owner>/<name>``) -- refused outside an open wave, past
@@ -115,9 +115,9 @@ def _labels_admit(forge: Forge, pr: int) -> None:
         msg = f'#{pr} labels cannot be read, so it may touch a boundary key: {str(unread).splitlines()[0]}'
         raise ConsentWanted(msg) from unread
     if LABEL in carried:
-        msg = f'#{pr} is labelled {LABEL}: it touches a boundary key and lands only by its own consent'
+        msg = f'#{pr} is labeled {LABEL}: it touches a boundary key and lands only by its own consent'
         raise ConsentWanted(msg)
-    if is_held(carried):  # D48: break-glass honours the hold, as the merge tick does
+    if is_held(carried):  # D48: break-glass honors the hold, as the merge tick does
         msg = f'#{pr} is held (label `{HOLD_LABEL}`): release it with `{RELEASE_DOOR.format(n=pr)}` first'
         raise Held(msg)
 
@@ -156,8 +156,8 @@ def _granted(credential: dict[str, Any], role: Breakglass) -> tuple[float, int]:
         msg = 'the credential carries no breakglass.wave params (hours, max_merges)'
         raise BreakglassRefused(msg)
     hours, cap = params['hours'], params['max_merges']
-    if isinstance(hours, bool) or not isinstance(hours, int | float) or not 0 < hours <= role.wave_hours_max:
-        msg = f'{hours!r} h is outside the ceiling (0, wave_hours_max = {role.wave_hours_max:g} h]'
+    if isinstance(hours, bool) or not isinstance(hours, int | float) or not 0 < hours * 3600 <= role.wave_ceiling:
+        msg = f'{hours!r} h is outside the ceiling (0, wave_ceiling = {role.wave_ceiling / 3600:g} h]'
         raise BreakglassRefused(msg)
     ceiling = role.max_merges_max or None
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0 or (ceiling and not 0 < cap <= ceiling):
@@ -251,7 +251,7 @@ class Server:
         """Parse, then judge and perform one request under the role lock.
 
         Refusals (a malformed request included) are audited, alerted and raised as :class:`BreakglassRefused`; an
-        internal failure is audited and alerted too, and re-raised as itself -- never relabelled.
+        internal failure is audited and alerted too, and re-raised as itself -- never relabeled.
         """
         try:
             parsed = requests.parse(line)

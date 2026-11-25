@@ -13,7 +13,7 @@ THREE PARTS, AND ALL THREE MUST BE LIVE. Any one of them missing makes the other
 each fails in its own way, so each is reported by name rather than collapsed into one boolean:
 
 ``engine``   ``.claude/hooks/deny-commands.js`` -- installed from :mod:`dev_lab.dev.agenthooks`
-             and recognised by its stamp, so a drifted copy is a finding rather than a fork.
+             and recognized by its stamp, so a drifted copy is a finding rather than a fork.
 ``rules``    ``.claude/hooks/deny-rules.json`` -- the repo's OWN rendered declaration. This module
              never writes it: which rules a repo can honestly ship is
              :mod:`dev_lab.dev.hook_adoption`'s question, answered from that repo's remedies, and
@@ -192,7 +192,7 @@ def _stamp_block(text: str) -> tuple[str, ...]:
 def _without_stamp(text: str) -> str:
     """*text* with its provenance block removed.
 
-    How an UNSTAMPED copy is recognised as the same engine. It is the difference between "somebody
+    How an UNSTAMPED copy is recognized as the same engine. It is the difference between "somebody
     wrote their own engine here" and "this copy predates the shipped payload", and those two need
     different remedies.
     """
@@ -349,17 +349,28 @@ def _text(text: str) -> bytes:
     return text.replace('\n', os.linesep).encode('utf-8')
 
 
+def _copy_plan(path: Path, shipped: Path) -> bytes | None:
+    """The bytes that write the shipped TEXT file *shipped* to *path*, or ``None`` when its text is there.
+
+    Compared as text: a checkout under ``core.autocrlf`` holds it in the ending git chose, which is no change.
+    """
+    text = shipped.read_text(encoding='utf-8')
+    if path.exists() and path.read_text(encoding='utf-8', errors='replace') == text:
+        return None
+    return _text(text)
+
+
 def _resolvers(dirs: set[Path]) -> tuple[dict[Path, bytes], list[str]]:
     """The ONE environment resolver into each of *dirs*: the launcher and the engine both require it."""
-    shipped = _LAUNCHER_SHIPPED.with_name(_RESOLVER).read_bytes()
     writes: dict[Path, bytes] = {}
     actions = []
     for beside in sorted(dirs):
         resolver = beside / _RESOLVER
-        if resolver.exists() and resolver.read_bytes() == shipped:
+        write = _copy_plan(resolver, _LAUNCHER_SHIPPED.with_name(_RESOLVER))
+        if write is None:
             actions.append(f'environment resolver already present: {resolver}')
         else:
-            writes[resolver] = shipped
+            writes[resolver] = write
             actions.append(f'environment resolver installed: {resolver}')
     return writes, actions
 
@@ -386,11 +397,11 @@ def _planned(repo: Path, *, force: bool) -> tuple[dict[Path, bytes], list[str]]:
     actions.append(action)
 
     catalog = launcher.with_name('native_session.json')
-    catalog_bytes = _LAUNCHER_SHIPPED.with_name('native_session.json').read_bytes()
-    if catalog.exists() and catalog.read_bytes() == catalog_bytes:
+    write = _copy_plan(catalog, _LAUNCHER_SHIPPED.with_name(catalog.name))
+    if write is None:
         actions.append(f'native session catalog already present: {catalog}')
     else:
-        writes[catalog] = catalog_bytes
+        writes[catalog] = write
         actions.append(f'native session catalog installed: {catalog}')
 
     resolvers, resolved = _resolvers({launcher.parent, engine.parent})

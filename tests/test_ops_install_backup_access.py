@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from dev_lab.ops.__main__ import main
-from dev_lab.ops.access import adopt, enrol, ensure_include, oath_users, secret_file
+from dev_lab.ops.access import adopt, enroll, ensure_include, oath_users, secret_file
 from dev_lab.ops.config import load
 from dev_lab.ops.consentrole import Access
 from dev_lab.ops.install import files, install
@@ -77,7 +77,7 @@ def test_the_pull_side_renders_its_timer_and_reads_the_offsite_table(tmp_path: P
     config = load(_config(tmp_path, _PULL), environ={})
     assert config.backup is not None
     assert config.backup.offsite is not None
-    assert config.backup.offsite.max_put_bytes == 5_000_000_000
+    assert config.backup.offsite.max_put == 5_000_000_000
     rendered = files(config)
     assert 'OnCalendar=*-*-* 03:30:00' in rendered['etc/systemd/system/dev-lab-ops-backup-pull.timer']
     assert 'User=backup' in rendered['etc/systemd/system/dev-lab-ops-backup-pull.service']
@@ -127,9 +127,9 @@ def _host(tmp_path: Path, tables: str = '') -> Path:
     return _config(tmp_path, f'{_ACCESS}totp = "{secret}"\noath = "{oath}"\n{tables}')
 
 
-def test_enrol_makes_the_one_secret_derives_the_users_file_and_returns_the_uri(tmp_path: Path) -> None:
+def test_enroll_makes_the_one_secret_derives_the_users_file_and_returns_the_uri(tmp_path: Path) -> None:
     config = load(_host(tmp_path), environ={})
-    said = enrol(config)
+    said = enroll(config)
     secret = (tmp_path / 'totp').read_text(encoding='utf-8').strip()
     line = (tmp_path / 'users.oath').read_text(encoding='utf-8')
     assert line == oath_users(Access(account='ops'), secret)
@@ -139,11 +139,11 @@ def test_enrol_makes_the_one_secret_derives_the_users_file_and_returns_the_uri(t
     assert f'secret={secret}' in said
 
 
-def test_enrol_refuses_when_the_host_already_holds_its_secret(tmp_path: Path) -> None:
+def test_enroll_refuses_when_the_host_already_holds_its_secret(tmp_path: Path) -> None:
     config = load(_host(tmp_path), environ={})
     (tmp_path / 'totp').write_text('JBSWY3DPEHPK3PXP\n', encoding='utf-8')
-    with pytest.raises(TotpRefused, match='existing enrolment is reused'):
-        enrol(config)
+    with pytest.raises(TotpRefused, match='existing enrollment is reused'):
+        enroll(config)
     assert (tmp_path / 'totp').read_text(encoding='utf-8') == 'JBSWY3DPEHPK3PXP\n'
     assert not (tmp_path / 'users.oath').exists()
 
@@ -187,11 +187,11 @@ def test_install_derives_the_users_file_from_the_one_secret(tmp_path: Path) -> N
         assert stat.S_IMODE(oath.stat().st_mode) == 0o600
 
 
-def test_install_without_a_secret_derives_nothing_and_names_enrol_or_adopt(tmp_path: Path) -> None:
+def test_install_without_a_secret_derives_nothing_and_names_enroll_or_adopt(tmp_path: Path) -> None:
     config = load(_host(tmp_path), environ={})
     done = install(config, _pam_root(tmp_path))
     assert not any(path.endswith('users.oath') for path in done.paths)
-    assert any('access enrol' in step and 'access adopt' in step for step in done.next_steps)
+    assert any('access enroll' in step and 'access adopt' in step for step in done.next_steps)
 
 
 def test_adopt_places_an_existing_secret_without_echoing_it(
@@ -290,18 +290,18 @@ def test_a_permit_open_target_that_is_not_host_port_is_refused(tmp_path: Path, t
         files(config)
 
 
-def test_access_enrol_draws_a_qr_on_stdout_and_uri_prints_only_the_uri(
+def test_access_enroll_draws_a_qr_on_stdout_and_uri_prints_only_the_uri(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = _host(tmp_path)
-    assert main(['--config', str(path), 'access', 'enrol']) == 0
+    assert main(['--config', str(path), 'access', 'enroll']) == 0
     drawn = capsys.readouterr()
     assert 'otpauth://' not in drawn.out
     assert '█' in drawn.out
     assert len(drawn.out.splitlines()) > 10
-    assert main(['--config', str(path), 'access', 'enrol']) == 2  # the secret exists: reused, not re-enrolled
+    assert main(['--config', str(path), 'access', 'enroll']) == 2  # the secret exists: reused, not re-enrolled
     assert 'reused' in capsys.readouterr().err
-    assert main(['--config', str(path), 'access', 'enrol', '--force', '--uri']) == 0
+    assert main(['--config', str(path), 'access', 'enroll', '--force', '--uri']) == 0
     assert capsys.readouterr().out.startswith('otpauth://totp/')
 
 
@@ -347,25 +347,25 @@ def test_write_private_narrows_before_a_byte_is_written(tmp_path: Path, monkeypa
 
 
 @pytest.mark.parametrize('role', ['access', 'consent'])
-def test_enrol_without_segno_prints_the_uri_and_still_enrols(
+def test_enroll_without_segno_prints_the_uri_and_still_enrolls(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, role: str
 ) -> None:
     monkeypatch.setitem(sys.modules, 'segno', None)
     issuer = _ISSUER.replace('/etc/consent/totp', (tmp_path / 'totp').as_posix())
     path = _host(tmp_path, issuer) if role == 'consent' else _host(tmp_path)
-    assert main(['--config', str(path), role, 'enrol']) == 0
+    assert main(['--config', str(path), role, 'enroll']) == 0
     said = capsys.readouterr()
     assert said.out.startswith('otpauth://totp/')
     assert 'dev-lab[ops]' in said.err
     assert (tmp_path / 'totp').read_text(encoding='utf-8').strip() in said.out
 
 
-def test_the_enrol_next_step_reads_the_secret_under_the_root(tmp_path: Path) -> None:
+def test_the_enroll_next_step_reads_the_secret_under_the_root(tmp_path: Path) -> None:
     root = _pam_root(tmp_path)
     config = load(_config(tmp_path, _ACCESS + 'totp = "/etc/dev-lab/ops/totp"\n'), environ={})
-    assert any('access enrol' in step for step in install(config, root).next_steps)
+    assert any('access enroll' in step for step in install(config, root).next_steps)
     (root / 'etc/dev-lab/ops/totp').write_text('JBSWY3DPEHPK3PXP\n', encoding='utf-8')
-    assert not any('access enrol' in step for step in install(config, root).next_steps)
+    assert not any('access enroll' in step for step in install(config, root).next_steps)
 
 
 def test_permit_open_accepts_the_highest_port(tmp_path: Path) -> None:

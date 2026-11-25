@@ -41,7 +41,7 @@ __all__ = [
 ]
 
 #: The smallest base that can carry a guarantee. ONE, because its subject is a table that read EMPTY:
-#: the per-artefact counts are pinned in the data module, and pinning them twice would red on every
+#: the per-artifact counts are pinned in the data module, and pinning them twice would red on every
 #: line the family agrees to share.
 MIN_BASE_LINES: Final = 1
 
@@ -63,9 +63,9 @@ def assert_base_floor(reached: int, floor: int, what: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class Base:
-    """One family artefact: its lines, how strictly they bind, and how a comment is spelled in it."""
+    """One family artifact: its lines, how strictly they bind, and how a comment is spelled in it."""
 
-    artefact: str
+    artifact: str
     lines: tuple[str, ...]
     mode: str
     comment: str = '#'
@@ -83,9 +83,9 @@ class Base:
 
     @property
     def stamp_lines(self) -> tuple[str, ...]:
-        """The provenance block, in this artefact's own comment syntax."""
+        """The provenance block, in this artifact's own comment syntax."""
         return (
-            f'{self.comment} {STAMP} from the family base for {self.artefact}.',
+            f'{self.comment} {STAMP} from the family base for {self.artifact}.',
             f'{self.comment} Hand edits RED. The base is data in dev_lab.dev._famconfig_rows;',
             f"{self.comment} this repo's own lines are its declared delta. Change one, re-render, commit.",
         )
@@ -169,7 +169,7 @@ def measured_delta(path: Path, base: Base, repo: str) -> Delta:
     itself -- a starting point, not a decision; stating one is the act that makes it a ceiling.
 
     It returns an APPENDING delta and never an anchored one, because where a measured line belongs is
-    a judgement about the artefact's grammar that reading the file cannot make. Deciding it is the
+    a judgment about the artifact's grammar that reading the file cannot make. Deciding it is the
     adoption commit's job, which is also why this returns a starting point rather than an answer.
     """
     live = meaningful_lines(path.read_text(encoding='utf-8'), base.comment) if path.is_file() else ()
@@ -202,7 +202,7 @@ def negated_base_lines(base: Base) -> tuple[str, ...]:
 
     THE OTHER HALF OF THE SORTED TABLE'S PROSE. `_famconfig_rows` justifies storing its `.gitignore`
     sorted with "order-insensitive apart from negations, AND THE BASE DECLARES NONE"; the re-ignore
-    arm mechanised the first clause and this one mechanises the second. A negation is meaningful only
+    arm mechanized the first clause and this one mechanizes the second. A negation is meaningful only
     BELOW the rule it re-includes from, and `!` sorts below every character a rule can start with, so
     a negation in this table renders above its own subject and does nothing -- and the anchor points
     one way, so no delta can move it down.
@@ -233,7 +233,7 @@ def positional_base_lines(base: Base, *, floating_floor: int) -> tuple[str, ...]
     and a scan that found none would report subsumption nowhere and read exactly like a clean table.
     """
     subjects = {line: subject for line in base.content_lines if (subject := floating_subject(line))}
-    assert_base_floor(len(subjects), floating_floor, f'{base.artefact} floating-rule')
+    assert_base_floor(len(subjects), floating_floor, f'{base.artifact} floating-rule')
     return tuple(
         line
         for line in base.content_lines

@@ -93,7 +93,7 @@ User ruling 2026-11-07: one PR's tests finish within an hour.
 
 - The full suite runs only on the integration tip. Any other head's cluster part runs at `incremental` scope: only
   the test files whose footprint meets `git diff <merge-base> <head>` (`forgecarry.reached_tests`); the rest
-  stands on the integration tip's verdict. A PR labelled `forge:full` runs the full suite.
+  stands on the integration tip's verdict. A PR labeled `forge:full` runs the full suite.
 - A head superseded by a newer head of its ref, or already contained in the integration tip, has its pending
   tasks withdrawn and its started ones drained to their deadline; its claim settles `error` `superseded by <sha>`,
   which no host retakes (`forgesupersede`).
@@ -183,7 +183,7 @@ overwritten.
 reviewed again: the standing review's verdict is posted on the new head, naming the head it reviewed. It is
 reviewed again only when the PR's own reviewable code has grown to `forgereview.REVIEW_AGAIN_GROWTH` (2) times what
 the review measured, or when a session asks: `python -m dev_lab.dev.forge review again <pr>` (on GitHub the
-comment it leaves starts the `review-again.yml` workflow; on Gitea the serve's next tick honours it).
+comment it leaves starts the `review-again.yml` workflow; on Gitea the serve's next tick honors it).
 
 **A landed branch continues; the merged PR is never reused** (LANDED-BRANCH-CONTINUES, user-approved design
 2026-11-07). A merged PR stays the record of what was reviewed and tested at its head. A push onto its branch is
@@ -210,7 +210,7 @@ head's review comment is its `review of commit <sha>` issue, numbered like a PR.
 **A review that did not run never holds the merge** (`dev_lab.dev.reviewcap`, user rulings 2026-11-05 and
 2026-11-06). A failed attempt on the serve tick is `error` `review attempt failed, retried once: ...`, and the next
 tick tries once more. A second failure, a failure in a review job, every reviewer unsupported, exhausted or
-unauthorised, no review key (a fork PR's job), or a reached dollar cap (`dev_lab.dev.reviewbudget`, raised by the
+unauthorized, no review key (a fork PR's job), or a reached dollar cap (`dev_lab.dev.reviewbudget`, raised by the
 integrator with `forge review cap <pr> --usd <n> --why`) is recorded on the PR (`review-capped`) with its cause,
 and `tests/review` is `pending` `not reviewed, merges unreviewed: ...`. The merge waives the review condition alone:
 the `tests/security` status, tests, conflicts, the audit, messages and draft still hold. The merge commit carries
@@ -231,7 +231,7 @@ slice, not whether a head is read at all:
   ignores, hooks and workflows) and the repo's `derived` globs (goldens, rendered blocks). Their generator is
   reviewed, not its output. A head of only generated files is `success`, nothing to review.
 - *In slices, one lens each.* The reviewable files are packed, a directory kept whole when it fits, into slices
-  of at most `max_diff_bytes`; each runs the command once with `{paths}` and `{lens}` -- `strict` for the
+  of at most `max_diff`; each runs the command once with `{paths}` and `{lens}` -- `strict` for the
   `strict` globs (hooks, rules, `tests/architecture`, contracts), `light` for the `light` ones (docs, memory,
   Markdown), `standard` for the rest. The outputs merge into one document (a finding once per id); a declared
   `synthesis` command then reads it (`{findings}`) over the whole range for what crosses slices.
@@ -239,7 +239,7 @@ slice, not whether a head is read at all:
 **It is not a part**: `integrate promote` and push admission never wait on `tests/review`. A head is NEVER
 held for its size, and NEVER reviewed without a diff (D123, user rulings 2026-10-31 and 2026-11-06): every slice
 names its paths, so every call is a diff review -- the one call mode the forge's headless run allows. Past
-`max_total_bytes`, slices are taken strictest lens first and the code left out is LISTED in the review comment
+`max_total`, slices are taken strictest lens first and the code left out is LISTED in the review comment
 (`Scope.unread`). `forge review plan <sha>` prints the slices and what is left out. A HOST that cannot run the
 review (a capability undeclared, the command absent or its module missing) posts `error` `not reviewed: cannot run
 on host <host>: <why>` once and leaves the head claimable by a capable host, or by itself once fixed.
@@ -261,8 +261,8 @@ naming `[runtimes.ai_lab]` refused until `workstation deploy` drops it (`dev_lab
 # command = [...]          # only a genuinely different method; placeholders {range} {paths} {lens} {model} {rules}
 model = "<id>"             # the default is forgereview_declared.FAMILY_MODEL
 synthesis = []             # optional: ["...", "--findings", "{findings}", "--range", "{range}"]
-max_diff_bytes = 400000    # one slice
-max_total_bytes = 800000   # one review: slices past it are listed, not read
+max_diff = "400 kB"        # one slice
+max_total = "800 kB"       # one review: slices past it are listed, not read
 derived = []               # generated-file globs beyond famfiles.GENERATED
 strict = ["**/hooks/**", "**/rules/**", "tests/architecture/**", "**/contracts/**"]  # the default
 light = ["docs-src/**", "**/.claude/memory/**", "**/*.md"]                          # the default
@@ -320,7 +320,7 @@ from the branch, or a new branch name); a forge that cannot be read refuses. A m
 continues it (LANDED-BRANCH-CONTINUES, above).
 
 The base row `lossless-delete` (`dev_lab.dev.pushdelete`) judges EVERY branch a push deletes, however the push was
-spelled, with the judgement `branchprune delete` makes (`dev_lab.dev.deletejudge`), after a fresh fetch and against
+spelled, with the judgment `branchprune delete` makes (`dev_lab.dev.deletejudge`), after a fresh fetch and against
 the open PR heads; an unreadable forge or origin refuses (`docs-src/dev/refusals.md#lossless-delete`). A tag holds
 nothing (D22). A machine branch its producer regenerates whole is declared DERIVED (D23) and goes whatever it carries:
 
@@ -333,7 +333,7 @@ The base row `pr-current` (`dev_lab.dev.prcurrent`, user ruling 2026-11-07) WARN
 lacks `origin/<integration>` (fetched afresh; a failed fetch is named) or whose lock lags a floated sibling's
 head, naming `forge sync`, and never refuses it (`advisory = true`, dev-lab #661): on the forge `pr-current` is an
 ALARM, never a merge condition (W5, dev-lab#644; the trial merge at merge time decides). `forge pr ready` refuses on
-the same judgement of the pushed head -- never on the local tree, so it works from any checkout (user ruling
+the same judgment of the pushed head -- never on the local tree, so it works from any checkout (user ruling
 2026-11-13).
 
 Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the
@@ -403,7 +403,7 @@ ready (`ready_for_review`, or on Gitea the serve's next tick after the title edi
 
 HOLD: where `pr draft` is refused (GitHub, a caller without convert rights), `forge pr hold <N>` puts the `hold`
 label on the PR and `forge pr release <N>` takes it off; merge-ready posts `pending` naming the release door and
-the merge decision never lands a held head. Break-glass honours it too (user ruling D48, 2026-11-17): a manual
+the merge decision never lands a held head. Break-glass honors it too (user ruling D48, 2026-11-17): a manual
 `forge pr breakglass` and a wave's sweep refuse a held PR, naming the release door. The mechanism is `dev_lab.dev.forgehold`'s docstring.
 
 ## The integration tick
@@ -475,7 +475,7 @@ ruleset, `pull_request` on integration; Gitea: the break-glass login in the trun
   conflicted file once, `<path>: <class> -- <why>`, the why being the first-principles derivation. The forge enforces it: a PR is not merged while a merge
   commit its head adds over integration leaves one undeclared (`forgemerge.decide`), whoever made that merge,
   client or web UI. A message cannot be amended, so the remedy is to redo that merge with the declaration. The
-  `merge-resolution` commit-msg hook makes the same judgement early, on the merge being committed.
+  `merge-resolution` commit-msg hook makes the same judgment early, on the merge being committed.
 - A shared count or pin that conflicts is arithmetic to redo on the merged tree, never a side to pick
   ([alignment](alignment.md)).
 - Price a batch before touching a tree: `git merge-tree --write-tree --name-only <integration> origin/<branch>`

@@ -17,7 +17,7 @@ THE RATCHET IS TESTED FROM BOTH SIDES, because a one-sided ratchet is the shape 
   `test_planted_a_re_ignore_promoted_into_the_base_is_refused_and_named` against
   `test_an_ordinary_line_is_still_promotable_into_the_same_base`. That pair is the one this file was
   missing: the anti-fork arm above argues FOR promoting a line every consumer holds, and for a
-  last-match-wins artefact that argument is sometimes wrong, so the two arms disagree on purpose and
+  last-match-wins artifact that argument is sometimes wrong, so the two arms disagree on purpose and
   both directions are planted.
 
 The floors are the third property. `assert_base_floor` and `fork_signals` each refuse a reading below
@@ -44,7 +44,7 @@ from dev_lab.dev.famconfig import (
     FOREIGN,
     GITIGNORE_FLOOR,
     INSTALLED,
-    ORDER_SENSITIVE_ARTEFACTS,
+    ORDER_SENSITIVE_ARTIFACTS,
     RENDERED,
     REPO_FLOOR,
     STAMP,
@@ -53,7 +53,7 @@ from dev_lab.dev.famconfig import (
     ForkedDelta,
     PositionalBase,
     VacuousBase,
-    artefact_base,
+    artifact_base,
     assert_base_floor,
     assert_base_is_order_free,
     delta_problems,
@@ -67,13 +67,13 @@ from dev_lab.dev.famconfig import (
     rendered_lines,
 )
 
-#: How many artefacts the family declares. A floor -- a `BASES` that read empty would make every
+#: How many artifacts the family declares. A floor -- a `BASES` that read empty would make every
 #: parametrized arm below pass over nothing at all.
-ARTEFACT_FLOOR = 2
+ARTIFACT_FLOOR = 2
 
 
 def _base() -> Base:
-    return artefact_base('.gitignore')
+    return artifact_base('.gitignore')
 
 
 def _delta(added: tuple[str, ...] = ('target/', 'coverage-html/'), ceiling: int = 4) -> Delta:
@@ -95,19 +95,19 @@ def test_the_gitignore_base_is_the_family_lines_then_the_closed_section() -> Non
     assert sorted(_SORTED) == list(_SORTED), 'sorted, so the measurement is re-derivable'
 
 
-def test_every_declared_artefact_is_rendered_from_a_non_empty_base() -> None:
+def test_every_declared_artifact_is_rendered_from_a_non_empty_base() -> None:
     """A base that read empty renders a file everything passes against; RENDERED is the one mode left."""
     assert len(BASES) >= 2
     for name, base in BASES.items():
-        assert base.artefact == name
+        assert base.artifact == name
         assert base.mode == RENDERED, f'{name} declares mode {base.mode!r}'
         assert_base_floor(len(base.lines), 1, name)
 
 
-def test_an_artefact_with_no_base_is_refused_by_name() -> None:
+def test_an_artifact_with_no_base_is_refused_by_name() -> None:
     """`[tool.ruff]` is deliberately not here, and asking for it says so rather than returning None."""
     with pytest.raises(ForkedDelta, match='no family base'):
-        artefact_base('ruff.toml')
+        artifact_base('ruff.toml')
 
 
 # ------------------------------------------------------------------------- render and inspect
@@ -167,7 +167,7 @@ def test_planted_an_unstamped_file_reds_as_foreign_rather_than_drifted(tmp_path:
 
 
 def test_a_missing_file_is_absent_rather_than_clean(tmp_path: Path) -> None:
-    """The third answer. An unwritten artefact guarantees nothing, which is not the same as passing."""
+    """The third answer. An unwritten artifact guarantees nothing, which is not the same as passing."""
     report = inspect_file(tmp_path / '.gitignore', _base(), _delta())
     assert report.status == ABSENT
     assert not report.ok
@@ -249,7 +249,7 @@ def test_a_fork_scan_below_its_floor_refuses() -> None:
     """Finding nothing across one delta is vacuous, so it raises instead of reporting agreement."""
     with pytest.raises(VacuousBase, match='below the'):
         fork_signals([Delta(repo='a', added=('x/',), dropped={}, ceiling=1)])
-    assert REPO_FLOOR >= ARTEFACT_FLOOR
+    assert REPO_FLOOR >= ARTIFACT_FLOOR
 
 
 def test_a_base_below_its_floor_refuses() -> None:
@@ -288,7 +288,7 @@ _ID_ANCHOR: Final = '      - id: check-added-large-files'
 _TW_ANCHOR: Final = '      - id: trailing-whitespace'
 
 
-#: A NESTED artefact: a block-structured base whose structural lines repeat, which is the shape
+#: A NESTED artifact: a block-structured base whose structural lines repeat, which is the shape
 #: `Delta.anchored` exists for (an addition INSIDE a block, where an append cannot reach).
 _NESTED_LINES: Final = (
     'fail_fast: false',
@@ -544,7 +544,7 @@ def test_planted_a_negation_promoted_into_the_base_is_refused_and_named() -> Non
     """THE SECOND PROMOTION HAZARD, and the half the prose still carried on 2026-09-18.
 
     The comment over `GITIGNORE_BASE` reads "order-insensitive apart from negations, AND THE BASE
-    DECLARES NONE". The re-ignore arm mechanised the first clause; the second stayed prose, and
+    DECLARES NONE". The re-ignore arm mechanized the first clause; the second stayed prose, and
     `positional_base_lines` cannot see a negation -- `floating_subject` answers ``None`` for anything
     not starting with `**/`, and a negation excludes no paths at all, so nothing subsumes it.
     """
@@ -571,9 +571,9 @@ def test_the_live_base_declares_no_negation_and_the_reading_saw_every_line() -> 
 
 def test_the_order_sensitive_set_is_named_rather_than_counted() -> None:
     """A base outside the map is DECLARED order-insensitive; adding one is a decision with a floor."""
-    assert set(ORDER_SENSITIVE_ARTEFACTS) == {'.gitignore'}, ORDER_SENSITIVE_ARTEFACTS
-    assert set(ORDER_SENSITIVE_ARTEFACTS) <= set(BASES), 'a declaration that outlived its subject'
-    assert all(floor >= 1 for floor in ORDER_SENSITIVE_ARTEFACTS.values()), 'a floor of zero is no floor'
+    assert set(ORDER_SENSITIVE_ARTIFACTS) == {'.gitignore'}, ORDER_SENSITIVE_ARTIFACTS
+    assert set(ORDER_SENSITIVE_ARTIFACTS) <= set(BASES), 'a declaration that outlived its subject'
+    assert all(floor >= 1 for floor in ORDER_SENSITIVE_ARTIFACTS.values()), 'a floor of zero is no floor'
 
 
 @pytest.mark.parametrize(

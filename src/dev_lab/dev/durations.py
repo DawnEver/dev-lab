@@ -325,7 +325,7 @@ def assert_the_ledger_is_evidence(*, ledger: Ledger, floor: int, headroom: int, 
     THE LEDGER IS ALWAYS THE PREVIOUS RUN'S: rows are written at session finish and a guard reading
     them is collected long before it, so a fresh worktree reads nothing. That is a missing reading,
     not a conviction (user directive 2026-10-05), so it is returned as one line naming the door; the
-    two judgements convict only on a reading. The SLACK side still raises, because it judges a
+    two judgments convict only on a reading. The SLACK side still raises, because it judges a
     ledger that does exist.
 
     Args:

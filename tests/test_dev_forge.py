@@ -385,7 +385,7 @@ def test_applying_over_an_existing_rule_PATCHES_it_and_does_not_send_the_branch_
 ) -> None:
     """A PATCH addresses the branch in its PATH.
 
-    Repeating it in the body is a second place to be wrong, and a forge that honoured it would
+    Repeating it in the body is a second place to be wrong, and a forge that honored it would
     rename the rule instead of amending it.
     """
     forge = _forge_at(server)

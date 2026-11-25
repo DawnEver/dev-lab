@@ -28,7 +28,7 @@
 #
 # WHAT A HOOK CAN DO is refuse to be judged by it. An incomplete set is not a configuration with a
 # missing piece -- git rejects it wholesale, so there is nothing to preserve. Dropping it restores
-# exactly the behaviour of a process that never set it, and the notice names what was dropped so the
+# exactly the behavior of a process that never set it, and the notice names what was dropped so the
 # repair can never be mistaken for "the environment was fine".
 #
 # A COMPLETE SET IS LEFT ALONE, and that half is as load-bearing as the repair: a caller that

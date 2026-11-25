@@ -26,7 +26,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Source code lives only under a root the repo DECLARES for code -- an allow-list walked over the '
             'filesystem rather than the index, so an untracked probe in an output or data directory is refused '
-            'instead of accumulating there -- with a fix in the function that owns the behaviour and a one-off in '
+            'instead of accumulating there -- with a fix in the function that owns the behavior and a one-off in '
             'scratch.'
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
@@ -46,7 +46,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'An untracked, non-ignored file outside the declared stray roots (scratch, plus what the repo '
             'declares) is a defect found the moment it appears, not at review: a file somebody meant is staged, '
-            'an artefact a program wrote goes to the dated output tree and the program is fixed to write there, '
+            'an artifact a program wrote goes to the dated output tree and the program is fixed to write there, '
             'a one-off goes to scratch, a file a known retirement declares gone is deleted through its door and '
             'never staged, and the census runs after every shell command, at the end of a turn '
             'and after every commit, naming each one with its remedy.'
@@ -58,12 +58,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'An agent never writes into a write-prone root -- the OS temp dir (Git Bash `/tmp` included), the drive '
             'root or home `tmp`, `temp`, `var` or `src`, or loose into the home -- because nothing scans, ignores or '
-            'cleans a file there: an artefact goes to the dated output tree, an experiment to scratch. The roots are '
+            'cleans a file there: an artifact goes to the dated output tree, an experiment to scratch. The roots are '
             'one declared set the machine file may extend; the write hook and the shell guard refuse, the Stop hook '
             'names what a session left, the sweep ages old temp entries out. A checkout under such a root is no '
-            'exemption (user ruling 2026-11-06: one there is an abandoned old version). A synced folder (OneDrive) and '
-            'a directory beside a checkout are refused the same way (2026-11-23); the job '
-            'temp `$CLAUDE_JOB_DIR/tmp` is no door either (user ruling 2026-11-23).'
+            'exemption (2026-11-06); OneDrive, a checkout`s siblings and `$CLAUDE_JOB_DIR/tmp` are refused '
+            'the same way (2026-11-23).'
         ),
         ('tests/test_dev_writeroots.py', 'tests/test_dev_tmpsweep.py'),
     ),

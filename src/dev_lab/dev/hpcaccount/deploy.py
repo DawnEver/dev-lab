@@ -36,7 +36,7 @@ make the login shell's PATH name the tick's user installs (one marked line in th
 once, the file backed up first); build each ``.venv`` with the repo's own ``[tool.lab_commons.hpc] install``
 (and its ``native`` build) -- exactly what its committed lock pins, nothing installed over it -- skipped when
 the key of its inputs (the lock's hash among them) is unchanged; warn, naming the recipe, when a repo declares an rclone
-artefact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone.probe`; parts with outputs
+artifact store this account's remote cannot reach (:func:`lab_commons.hpc.rclone.probe`; parts with outputs
 are then not claimed here); replace this tool's marked crontab lines (one per served repo and the kit, every
 ``[schedule] tick_minutes`` at a minute offset derived per account, each tick under its own lock and wall,
 :mod:`dev_lab.dev.hpcaccount.tickwall`)
@@ -227,7 +227,7 @@ def _tools(
 #: (cron) and what it alone needs -- the serve tick's git, a tick now. Rule ``SCHEDULER-ONLY-FOR-SERVING``.
 PHASES: Final = (
     'credentials', 'reader', 'grant', 'store', 'serve-git', 'headroom', 'checkouts', 'tools', 'login', 'venvs',
-    'artefacts', 'cron', 'tick',
+    'artifacts', 'cron', 'tick',
 )  # fmt: skip
 SERVING_PHASES: Final = frozenset({'serve-git', 'cron', 'tick'})
 
@@ -284,10 +284,10 @@ def _tick(
     return 0  # a red tick is reported, never a reason to undo the deployment
 
 
-def _artefacts(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
+def _artifacts(step: Step, spec: Deployment, _home: Path, repo: Repo) -> int:
     remote = declared_remote(checkout_of(spec, repo))
     if not remote:
-        emit(f'  {repo.name}: no rclone artefact store declared')
+        emit(f'  {repo.name}: no rclone artifact store declared')
         return 0
     why = probe(remote, rclone=step.tools.rclone)
     emit(f'  {repo.name}: ' + (f'WARNING {why}' if why else 'the rclone remote answers'), err=bool(why))
@@ -362,7 +362,7 @@ def deploy(
         return 2
     refused: Refused = {}
     setup: list[str] = []  # the grant's setup lines: every tick runs inside them
-    artefacts = '[artefacts] the rclone remote, where a repo declares one'
+    artifacts = '[artifacts] the rclone remote, where a repo declares one'
     every: dict[str, Callable[[], int]] = {
         'credentials': lambda: credentials(step, spec, home, api or auth_check, serves=serves),
         'reader': lambda: reader(spec, home, role or role_of, semantics=semantics),
@@ -377,7 +377,7 @@ def deploy(
             _each(step, spec, home, f'[venvs] python {spec.python} (uv-managed)', build, refused=refused)
             or prune_uv(step, spec)
         ),
-        'artefacts': lambda: _each(step, spec, home, artefacts, _artefacts, refused=refused),
+        'artifacts': lambda: _each(step, spec, home, artifacts, _artifacts, refused=refused),
         'cron': lambda: _cron(step, spec, home, refused, serves=serves, slurm=slurm, setup=setup),
         'tick': lambda: _each(
             step,

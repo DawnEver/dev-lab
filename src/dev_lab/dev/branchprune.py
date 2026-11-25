@@ -7,7 +7,7 @@ on its serve tick (:func:`serve_prune`), after the tick's ``git fetch --prune``.
 deletion is pinned to the judged sha, so two hosts racing delete once and the second finds it gone (a no-op).
 
 AN ORIGIN BRANCH IS A ROW of :func:`survey` when it is NOT declared (the branch set, the integration branch,
-the trunk) and its tip has sat idle -- its committer date -- for at least ``max_idle_hours``. Then:
+the trunk) and its tip has sat idle -- its committer date -- for at least ``max_idle``. Then:
 
 * MERGED (:data:`MERGED`): its tip is an ancestor of origin's integration branch or trunk, and no open pull
   request has it as head. Deleted (:data:`DELETE`) when the repo declares ``prune_merged = true``, else
@@ -49,7 +49,8 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev.branchdelete import DOOR, UNAPPROVED, delete, delete_contained_tags, delete_task, discard, sweep
+from dev_lab.dev._branch_tags import delete_contained_tags
+from dev_lab.dev.branchdelete import DOOR, UNAPPROVED, delete, delete_task, discard, sweep
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN
@@ -139,7 +140,7 @@ def survey(
         ref, sha, stamp = line.split('\t')
         name = ref.removeprefix(ORIGIN)
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
-        if name in keep or idle_h < branchset.max_idle_hours:
+        if name in keep or idle_h * _HOUR_S < branchset.max_idle:
             continue
         if branchset.is_ephemeral(name) and name in heads:
             continue  # its open PR owns it

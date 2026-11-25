@@ -31,7 +31,14 @@ dependencies = [
     # dev.forgeapp signs a GitHub App judge's RS256 JWT: the one maintained RSA, never our own. Base, not the ops
     # extra: the dev layer imports it, and dev never reaches up into an ops extra.
     "cryptography",
+    # dev.irschema's runtime and codec (_ir_runtime, _ir_codec) hold array fields as numpy arrays and its tests build
+    # them: dev imports numpy itself, so it names it rather than leaning on lab-commons[units] carrying it.
+    "numpy",
 ]
+
+# The IR build hook (dev_lab.dev.irhatch): a consumer declares [tool.hatch.build.hooks.ir-schema].
+[project.entry-points.hatch]
+ir-schema = "dev_lab.dev.irhatch"
 
 [project.optional-dependencies]
 # THE FAMILY'S ONE JS TEST RUNTIME (dev.jsrun): a pinned Node binary installed from the lock, so a test
@@ -43,7 +50,7 @@ dependencies = [
 # THE ONE TEST KIT (user ruling 2026-11-05): with the base install (pytest, pytest-xdist, pytest-cov, ruff) this
 # extra is the family's complete shared test/dev tool set, so a consumer declares `dev-lab[test]` and nothing
 # else of the kind. pytest-timeout: the per-test ceiling every gate relies on; hypothesis: property tests;
-# pyright: the type checker; pdoc: dev.docsite builds with it. NOT in it: maturin (a repo's own build tool)
+# pyright: the type checker; pdoc: dev.docsite builds with it; hatchling: the IR build hook's tests. NOT in it: maturin (a repo's own build tool)
 # and pytest-mock (unittest.mock and monkeypatch cover it).
 test = [
     "nodejs-wheel-binaries",
@@ -52,8 +59,11 @@ test = [
     "hypothesis",
     "pyright",
     "pdoc",
+    "typos",
+    # dev_lab.dev.irhatch is the IR build hook a consumer declares; its tests build through hatchling.
+    "hatchling",
 ]
-# A FORGE HOST'S extra (dev_lab.ops): `access enrol` / `consent enrol` draw the otpauth QR on the enrolling
+# A FORGE HOST'S extra (dev_lab.ops): `access enroll` / `consent enroll` draw the otpauth QR on the enrolling
 # terminal with segno (pure Python, no dependencies of its own). The test extra carries it so the QR is tested.
 ops = ["segno"]
 
@@ -102,48 +112,7 @@ lab-commons = { git = "https://github.com/DawnEver/lab-commons.git" }
 [tool.dev_lab.dep]
 extras = ["test", "ops"]
 
-[tool.dev_lab.placement]
-code_roots = []
-# A worktree is a real second tree with its own src/, judged by the run inside it.
-pruned_paths = ['.claude/worktrees']
-# Every tool cache lives under output/cache/<tool>/, each tool NAMED (user ruling 2026-11-24): its files go unjudged.
-tool_caches = ['pytest', 'ruff', 'coverage', 'hypothesis', 'pyright']
-# SCRATCH-IS-NEVER-COMMITTED: the one-off sink, and when the SessionStart notice starts naming a one-off.
-scratch = 'scratch/'
-max_age_days = 3.0
-# STRAY-FILE-REFUSED: files a tool this repo uses retired; a stray copy is named with its door, never `git add`.
-retired = [
-  { path = '.claude/rules/MEMORY.md', what = "rem's generated memory index; nothing rebuilds it", door = "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs <checkout> -- which removes every copy outside attic/" },
-]
-
-# DECLARED-LAYOUT (dev_lab.dev.layout): the WHOLE tree as an allow-list -- each directory pattern (one glob per
-# segment; the deepest matching row judges) and the formats a file there may be ('.suffix', an exact name, "" for
-# none, "*" for anything). Undeclared is refused. NO-BACKUP-COPIES: nothing under output/ or scratch/ is ever a
-# clone, worktree, exported tree, bundle or patch, whatever a row says.
-[tool.dev_lab.placement.layout]
-'.' = ['.md', '.toml', '.lock', '.gitattributes', '.gitignore', '.rgignore', 'license', 'makefile']
-'.claude' = ['.json']
-'.claude/memory' = ['.md']
-'.claude/rules' = ['.md']
-'.claude/tasks' = ['.md']
-'.codex' = []
-'.codex/rules' = ['.rules']
-'.github' = []
-'.github/workflows' = ['.yml']
-'.vscode' = ['.json']
-'docs-src' = ['.md']
-src = ['.py', '.sh', '.js', '.toml', '.json', '.typed']
-tests = ['.py', '.json', '.jsonl', '.toml', '.txt', '.golden', '.gitattributes']
-scripts = ['.py', '.sh']
-scratch = ['*']
-output = []
-'output/forge' = []
-'output/forge/*' = ['.json', '.tmp']
-'output/cache' = []
-'output/cache/runcache' = ['.jsonl']
-'output/logs' = []
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.log', '.jsonl', '.json', '.gz', '.coverage', '.txt', '.csv']
-'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/coverage' = ['.md', '.coverage']  # verify's coverage table
+# The placement and DECLARED-LAYOUT tables live in layout.toml (user ruling 2026-11-24).
 
 # The cluster builds this repo's env from [tool.dev_lab.dep] (lab_commons.extras, one reader), installing the
 # project itself: the venv must import lab_commons.envkey to report its env key.
@@ -218,11 +187,11 @@ always_run = true
 trunk = 'main'
 sessions = ['integrate/main']
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
-# merged undeclared origin branches idle >= max_idle_hours (dev_lab.dev.branchprune).
+# merged undeclared origin branches idle >= max_idle (dev_lab.dev.branchprune).
 prune_merged = true
 # Branch limits (user ruling 2026-11-20): land or retire a head past them (dev_lab.dev.branchpolicy).
 max_ahead = 10
-max_idle_hours = 12
+max_idle = "12 h"
 ephemeral = ['pr/*']
 
 [tool.dev_lab.doors]
@@ -313,7 +282,7 @@ ignore = [
                # every call it has. It carries no per-site information, so it cannot be acted on.
                # S607 is NOT waived: its one site carries a `# noqa` naming why PATH resolution is
                # deliberate there.
-    # -- ONE DEBT, NOT A JUDGEMENT, and it is labelled as such so it is not read as settled.
+    # -- ONE DEBT, NOT A JUDGMENT, and it is labeled as such so it is not read as settled.
     "N818",    # error-suffix-on-exception-name -- 16 classes (2026-09-17). This is the kit's PUBLIC
                # exception surface; seven of the sixteen are re-exported through
                # `dev_lab.dev.__init__`, so the rename is a cross-file, cross-repo move and

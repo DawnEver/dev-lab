@@ -87,7 +87,8 @@ def test_the_raw_git_removal_stays_refused_and_its_refusal_names_the_door(work: 
     assert 'dev_lab.dev.worktrees --remove <name>' in reason
 
 
-def test_a_clean_detached_tree_is_removed_its_outputs_home(work: Path) -> None:
+def test_a_clean_detached_tree_is_removed_with_its_outputs(work: Path) -> None:
+    """NO-BACKUP-COPIES (user 2026-11-23): a removed tree's output/ goes with it; nothing moves to the main tree."""
     tree = _tree(work, 'loose')
     log = tree / 'output' / 'logs' / 'run.txt'
     log.parent.mkdir(parents=True)
@@ -96,7 +97,7 @@ def test_a_clean_detached_tree_is_removed_its_outputs_home(work: Path) -> None:
     assert ok, line
     assert line.startswith('removed'), line
     assert not tree.exists()
-    assert (work / 'output' / 'logs' / 'run.txt').read_text(encoding='utf-8') == 'ignored run output'
+    assert not (work / 'output' / 'logs' / 'run.txt').exists(), 'outputs never move home'
     assert tree.as_posix() not in _registered(work).replace('\\', '/')
 
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons import config as machineconfig
+from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 from dev_lab.dev import remote
 from dev_lab.dev.venvpath import running_interpreter
@@ -19,7 +20,7 @@ from dev_lab.ops import clientkeys
 __all__ = [
     'BRIDGE',
     'BRIDGE_HPC',
-    'CADENCE_HOURS',
+    'CADENCE_BOUNDS',
     'CHANNELS_TABLE',
     'CPU_SHARES',
     'DETECT_DOOR',
@@ -29,6 +30,7 @@ __all__ = [
     'HOOK_MODES',
     'HOST_ONLY',
     'MACHINE_TABLES',
+    'RENAMED',
     'RESOURCES',
     'RETIRED_KEYS',
     'SCHEMA',
@@ -60,7 +62,7 @@ RETIRED_KEYS: Final = {
     ),
 }
 #: One vendor install's keys.
-VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'licence_server': str, 'licence_feature': str}
+VENDOR: Final = {'seats': int, 'version': str, 'home': str, 'license_server': str, 'license_feature': str}
 #: Every ``[dev]`` key and its type; ``vendors`` and ``forges`` are tables of named entries.
 SCHEMA: Final = {
     'hpc': list, 'ref': str, 'os': str, 'forges': dict, 'vendors': dict, 'resources': dict, 'detect': dict,
@@ -75,10 +77,12 @@ FORGE_REACH: Final = ('ssh', 'https')
 #: ``[dev] bridge``: what the session bridge runs on this machine -- ``hpc`` (:data:`BRIDGE_HPC`), the HPC usage
 #: collector for the agents dashboard, rendered as the machine file's ``[bridge.hpc]``.
 BRIDGE: Final = {'hpc': dict}
-#: ``[dev] bridge.hpc``: ``cadence_hours`` -- the read cadence (1..168; default 6).
-BRIDGE_HPC: Final = {'cadence_hours': int}
-#: ``cadence_hours`` bounds: an hourly read at most, a weekly one at least.
-CADENCE_HOURS: Final = (1, 168)
+#: ``[dev] bridge.hpc``: ``cadence`` -- the read cadence, a duration (``"6 h"``; 1 h..168 h; default 6 h).
+BRIDGE_HPC: Final = {'cadence': 'duration'}
+#: ``cadence`` bounds in seconds: an hourly read at most, a weekly one at least.
+CADENCE_BOUNDS: Final = (3600.0, 168 * 3600.0)
+#: The cadence an undeclared ``bridge.hpc`` reads at.
+CADENCE_DEFAULT: Final = '6 h'
 #: ``[dev] hooks``: ``enforce`` -- a firing hook row refuses; ``warn`` -- it only warns (an unmanaged machine).
 HOOK_MODES: Final = ('enforce', 'warn')
 #: ``[dev]`` keys only the family declares: ``default`` -- the profile an undeclared machine renders
@@ -103,9 +107,10 @@ CHANNELS_TABLE: Final = 'agent'
 #: ``~/.git-credentials`` (a narrowly scoped bot token), every other host keeps the machine's own helper.
 HELPERS: Final = ('store',)
 #: The box's hardware; a SHARED box also declares the part this user holds (``allotted_*``), read before the total.
+#: ``memory`` and ``allotted_memory`` are sizes in GiB (``memory = "32 GiB"``, :mod:`lab_commons.quantity`).
 RESOURCES: Final = {
-    'cpu': str, 'cores': int, 'logical_cores': int, 'memory_gb': (int, float), 'gpu': str, 'shared': bool,
-    'allotted_cores': int, 'allotted_memory_gb': (int, float), 'cpu_share': str,
+    'cpu': str, 'cores': int, 'logical_cores': int, 'memory': 'size', 'gpu': str, 'shared': bool,
+    'allotted_cores': int, 'allotted_memory': 'size', 'cpu_share': str,
 }  # fmt: skip
 #: How a shared box splits its CPU: ``session-fair`` -- evenly among the ACTIVE login sessions (all of it when alone).
 CPU_SHARES: Final = ('session-fair',)
@@ -122,17 +127,37 @@ MACHINE_TABLES: Final = ('capabilities', 'serve', 'reserve', 'workstation', 'sto
 #: :data:`SSH_HOLD`; ``host_keys`` -- endpoint host -> its ``"<type> <base64>"`` host key, the one key a declared
 #: endpoint (``[consent]``, ``[breakglass]``) is checked against (:data:`dev_lab.dev.remote.HOST_KEY_RULE`).
 SSH: Final = {'jump': dict, 'hold': dict, 'host_keys': dict}
-#: ``[ssh.hold]``: the session ceiling and the idle limit.
-SSH_HOLD: Final = {'max_hours': (int, float), 'idle_minutes': (int, float)}
+#: ``[ssh.hold]``: the session ceiling and the idle limit, each a duration (``ceiling = "24 h"``, ``idle = "30 min"``).
+SSH_HOLD: Final = {'ceiling': 'duration', 'idle': 'duration'}
+#: The unit-suffixed keys the 2026-11-25 ruling retired (a value carries its unit), per table, each refused with the
+#: line that replaces it (:func:`lab_commons.quantity.refuse_renamed`); never read.
+RENAMED: Final = {
+    'resources': {'memory_gb': Renamed('memory', 'GiB'), 'allotted_memory_gb': Renamed('allotted_memory', 'GiB')},
+    'bridge.hpc': {'cadence_hours': Renamed('cadence', 'h')},
+    'ssh.hold': {'max_hours': Renamed('ceiling', 'h'), 'idle_minutes': Renamed('idle', 'min')},
+}
 #: The door that finds this machine's vendor install homes.
 DETECT_DOOR: Final = f'{running_interpreter()} -m dev_lab.dev.devhost detect'
 
 
-def _typed(table: Mapping[str, Any], schema: Mapping[str, Any], where: str) -> list[str]:
+def _typed(
+    table: Mapping[str, Any], schema: Mapping[str, Any], where: str, renamed: Mapping[str, Renamed] | None = None
+) -> list[str]:
+    """Defects of *table* against *schema*: a type, or a dimension name read as a quantity (``'size'``)."""
     found = []
     for key, value in table.items():
-        if key not in schema:
+        if renamed and key in renamed:
+            try:
+                refuse_renamed(where, {key: value}, renamed)
+            except QuantityRefused as retired:
+                found.append(str(retired))
+        elif key not in schema:
             found.append(f'{where}.{key} is not a declared key')
+        elif isinstance(schema[key], str):
+            try:
+                parse(f'{where}.{key}', value, schema[key], positive=True)
+            except QuantityRefused as bad:
+                found.append(str(bad))
         elif not isinstance(value, schema[key]) or (isinstance(value, bool) and schema[key] is not bool):
             found.append(
                 f'{where}.{key} must be {schema[key].__name__ if isinstance(schema[key], type) else "a number"}'
@@ -155,7 +180,7 @@ def _resources(table: Mapping[str, Any], where: str) -> list[str]:
     resources = table['resources']
     if not isinstance(resources, dict):
         return [f'{where}.resources must be a table']
-    found = _typed(resources, RESOURCES, f'{where}.resources')
+    found = _typed(resources, RESOURCES, f'{where}.resources', RENAMED['resources'])
     if 'cpu_share' in resources and resources['cpu_share'] not in CPU_SHARES:
         found.append(f'{where}.resources.cpu_share {resources["cpu_share"]!r} is not one of {list(CPU_SHARES)}')
     return found
@@ -186,7 +211,7 @@ def ssh_defects(ssh: object, where: str = 'ssh') -> list[str]:
         ]
     hold = ssh.get('hold')
     if isinstance(hold, dict):
-        found += _typed(hold, SSH_HOLD, f'{where}.hold')
+        found += _typed(hold, SSH_HOLD, f'{where}.hold', RENAMED['ssh.hold'])
     keys = ssh.get('host_keys')
     if isinstance(keys, dict):
         found += [f'{where}.host_keys.{host!r}: {why}' for host in keys if (why := _host_key_defect(host, keys))]
@@ -211,12 +236,11 @@ def _bridge(table: Mapping[str, Any], where: str) -> list[str]:
     found = _typed(bridge, BRIDGE, f'{where}.bridge')
     hpc = bridge.get('hpc')
     if isinstance(hpc, dict):
-        found += _typed(hpc, BRIDGE_HPC, f'{where}.bridge.hpc')
-        hours = hpc.get('cadence_hours', 6)
-        if isinstance(hours, int) and not CADENCE_HOURS[0] <= hours <= CADENCE_HOURS[1]:
-            found.append(
-                f'{where}.bridge.hpc.cadence_hours must be {CADENCE_HOURS[0]}..{CADENCE_HOURS[1]}, not {hours}'
-            )
+        found += (defects := _typed(hpc, BRIDGE_HPC, f'{where}.bridge.hpc', RENAMED['bridge.hpc']))
+        if 'cadence' in hpc and not defects:
+            seconds = parse(f'{where}.bridge.hpc.cadence', hpc['cadence'], 'duration')
+            if not CADENCE_BOUNDS[0] <= seconds <= CADENCE_BOUNDS[1]:
+                found.append(f'{where}.bridge.hpc.cadence = "{hpc["cadence"]}" must be 1 h..168 h')
     return found
 
 
@@ -264,7 +288,7 @@ def key_comment_defects(dev: Mapping[str, Any], where: str = '[dev]') -> list[st
     """Why a client key's comment is not ``<key_account>@<hostname>`` of *dev* (a host's merged ``[dev]``).
 
     A machine's key names who holds it and where: the comment is DERIVED from the declared account and host name,
-    so a key copied from another machine, or labelled by hand, is refused by name.
+    so a key copied from another machine, or labeled by hand, is refused by name.
     """
     keys, host, account = dev.get('client_keys'), dev.get('hostname'), dev.get('key_account')
     if not isinstance(keys, list) or clientkeys.defects(keys, f'{where}.client_keys'):
@@ -342,16 +366,16 @@ def hpc_reach(dev: Mapping[str, Any]) -> list[str]:
     return list(dev.get('hpc', []))
 
 
-def usable(dev: Mapping[str, Any]) -> tuple[int | None, float | None]:
-    """The cores and memory (GB) this user may use: a shared box's fixed allotment, else the box's own.
+def usable(dev: Mapping[str, Any]) -> tuple[int | None, int | None]:
+    """The cores and memory (bytes) this user may use: a shared box's fixed allotment, else the box's own.
 
     ``None`` means SIZE FROM THE LIVE FIGURES at run time: a shared box with no fixed allotment (``cpu_share =
     "session-fair"``, memory shared without a cap) is never sized from its declared total.
     """
     resources = dev.get('resources', {})
-    if resources.get('shared'):
-        return resources.get('allotted_cores'), resources.get('allotted_memory_gb')
-    return resources.get('cores'), resources.get('memory_gb')
+    cores, memory = ('allotted_cores', 'allotted_memory') if resources.get('shared') else ('cores', 'memory')
+    size = resources.get(memory)
+    return resources.get(cores), None if size is None else int(parse(f'[dev.resources] {memory}', size, 'size'))
 
 
 def unfilled(dev: Mapping[str, Any]) -> list[str]:

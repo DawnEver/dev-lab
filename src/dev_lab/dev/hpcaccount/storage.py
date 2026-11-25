@@ -192,7 +192,7 @@ def sweep_spec(target: Target, *, apply: bool) -> dict[str, object]:
         'root': target.root, 'apply': apply,
         'strays_in_home': list(STRAYS_IN_HOME), 'strays_in_root': list(STRAYS_IN_ROOT),
         'retired_pointer': RETIRED_POINTER, 'pointer': POINTER, 'envs': ENVS_HOME,
-        'cargo_rule': RULE_REGISTRY, 'cargo_hours': quotawatch.declared_lines().min_age_hours,
+        'cargo_rule': RULE_REGISTRY, 'cargo_hours': quotawatch.declared_lines().min_age / 3600,
     }  # fmt: skip
 
 

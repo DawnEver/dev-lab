@@ -271,9 +271,20 @@ def test_a_missing_process_is_an_anomaly() -> None:
 def test_a_process_past_its_memory_ceiling_is_an_anomaly() -> None:
     """The number that matters on a box where memory is the constraint."""
     found = {'python -m webapp': (1, 700.0)}
-    large = _one_process({'name': 'webapp', 'match': 'webapp', 'max_rss_mb': 400}, found)
+    large = _one_process({'name': 'webapp', 'match': 'webapp', 'max_rss': '400 MiB'}, found)
     assert large[0].kind == 'webapp_large'
-    assert '700MB' in large[0].message
+    assert '700 MiB' in large[0].message
+    assert large[0].threshold == 400.0
+    assert _one_process({'name': 'webapp', 'match': 'webapp', 'max_rss': '1 GiB'}, found) == [], 'control: under it'
+
+
+def test_a_process_ceiling_carries_its_unit_and_the_old_key_is_refused_with_its_new_line() -> None:
+    """User ruling 2026-11-25: ``max_rss_mb = 400`` is never read; a bare number names its key."""
+    found = {'python -m webapp': (1, 700.0)}
+    with pytest.raises(ValueError, match=r'max_rss_mb = 400 is retired.*write max_rss = "400 MiB"'):
+        _one_process({'name': 'webapp', 'match': 'webapp', 'max_rss_mb': 400}, found)
+    with pytest.raises(ValueError, match=r'webapp max_rss = 400 is a bare number'):
+        _one_process({'name': 'webapp', 'match': 'webapp', 'max_rss': 400}, found)
 
 
 def test_the_system_ceiling_is_a_named_number() -> None:
@@ -335,7 +346,7 @@ def test_a_missing_log_directory_is_not_an_error(tmp_path: Path) -> None:
 
 
 def test_a_finished_job_is_a_completion_and_not_an_anomaly(tmp_path: Path) -> None:
-    """THE PREDECESSOR'S SCAR: modelling completion as a warning made every success read degraded."""
+    """THE PREDECESSOR'S SCAR: modeling completion as a warning made every success read degraded."""
     progress = tmp_path / 'progress.json'
     progress.write_text(json.dumps({'ops': 10, 'total_ops': 10}), encoding='utf-8')
     result = ProgressTracker().check(_ctx({'progress_file': str(progress), 'count_path': 'ops'}, project=tmp_path))

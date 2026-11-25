@@ -1,6 +1,6 @@
 """The shipped ENGINE, DRIVEN -- real command strings in, the real deny decision out.
 
-NOTHING HERE IS MOCKED, and that is the whole design of this file. The engine is the one artefact in
+NOTHING HERE IS MOCKED, and that is the whole design of this file. The engine is the one artifact in
 this family whose correctness cannot be argued from Python: it decides what a shell line will
 EXECUTE, and every defect it has had was a disagreement between that decision and a reader's belief
 about it. So each arm builds a real ``deny-rules.json`` out of the shared registry, feeds a real hook
@@ -55,7 +55,7 @@ from dev_lab.dev.metrics import REFUSAL, read
 
 # THE ENGINE RUNS ON THE LOCKED NODE (dev.jsrun), so this file needs no host resource and runs on every part.
 
-#: An adoption that remedies EVERY rule needing a repo artefact, so the rendered file carries the
+#: An adoption that remedies EVERY rule needing a repo artifact, so the rendered file carries the
 #: whole registry. The commands are this repo's own real ones where they exist; what matters to the
 #: engine is the reason text, and what matters here is that no row is silently dropped.
 ADOPTION = HookAdoption(
@@ -87,7 +87,7 @@ def test_the_package_ships_an_engine_and_it_carries_its_stamp() -> None:
     assert agenthooks.ENGINES, 'no engine ships in this package -- the registry would have nothing to run'
     for name in agenthooks.ENGINES:
         text = agenthooks.engine_path(name).read_text(encoding='utf-8')
-        assert agenthooks.STAMP in text, f'{name} ships unstamped; agent_guard could not recognise an installed copy'
+        assert agenthooks.STAMP in text, f'{name} ships unstamped; agent_guard could not recognize an installed copy'
 
 
 def test_a_plainly_denied_command_is_denied_with_its_remedy(rules: Path) -> None:
@@ -710,7 +710,7 @@ def test_a_subagent_is_refused_heavy_and_producer_requests(rules: Path, command:
     ],
 )
 def test_a_subagent_keeps_its_light_measure_and_near_misses(rules: Path, command: str) -> None:
-    """PLANTED CONTROL: the light measure and look-alikes are admitted to a subagent."""
+    """PLANTED CONTROL: the light measure and lookalikes are admitted to a subagent."""
     assert agenthooks.decide(command, rules, agent_id='a1') is None
 
 
@@ -771,7 +771,7 @@ def test_interpreter_code_is_read_without_its_string_literals(rules: Path) -> No
 def test_family_rules_are_the_rows_every_repo_ships_and_judge_without_any_repo(tmp_path: Path) -> None:
     """D99: the agent bridges guard an UNTRUSTED repo with the installed family rows, never the repo's copy.
 
-    Planted control: a row that needs a repo artefact is NOT in the family set, so the door cannot
+    Planted control: a row that needs a repo artifact is NOT in the family set, so the door cannot
     be a blind dump of the registry; and a plain command passes, so it is not a constant refusal.
     """
     proc = subprocess.run(

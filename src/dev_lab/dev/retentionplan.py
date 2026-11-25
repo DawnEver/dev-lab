@@ -1,6 +1,6 @@
 """WHAT RETENTION DELETES -- the policy, the one definition of IN FLIGHT, and the plan built from them.
 
-A FILE IS AN HPC RESOURCE (user ruling 2026-10-15: control the NUMBER of files intermediate artefacts make).
+A FILE IS AN HPC RESOURCE (user ruling 2026-10-15: control the NUMBER of files intermediate artifacts make).
 Measured 2026-10-15 on the cluster accounts the forge serves (GPFS file quota 2 M or 4 M each):
 ``trees`` held 0.85-2.05 M files per account (40-81 per-sha trees, ~22 k files each) and ``envs``
 0.54-1.32 M; everything else under 60 k. Trees and envs are the whole problem, so the rules for them are
@@ -34,7 +34,7 @@ derived from what each is FOR, not from what happens to name it:
 IN FLIGHT IS ONE FUNCTION, :func:`in_flight`, and every rule that keeps something for being in flight
 reads it: a sha a live run file names (``forge-runs/``), a sha a queued or running Slurm job of this
 account works under (``squeue --me -o %Z`` at or under ``runs/<sha>/tree`` or ``jobs/<sha>``,
-:func:`occupied_shas`), or a sha ACTIVE within ``min_age_hours`` -- its run state, its tree, its artifact,
+:func:`occupied_shas`), or a sha ACTIVE within ``min_age`` -- its run state, its tree, its artifact,
 or a stream directory under ``.lab-ci`` touched (being built, or a round ended and not yet gathered). An unreadable
 queue (``None``) keeps every tree. NOT "no record yet": measured 2026-10-15 on the served accounts, 9 run
 states in 10 had no record -- runs SUPERSEDED by a newer commit or released, which nobody will ever gather --
@@ -44,12 +44,12 @@ THE COLLECT CACHE (``collect/``, :mod:`lab_commons.hpc.collect`) is one ``<key>.
 and the key moves with every build key, so an old key is never read again. Its budget is ``collect_files``:
 the newest that many key files stay; anything else there -- an older key, a dead writer's ``.tmp``, a
 directory of the retired one-file-per-test layout (~0.75-1 M files per account, measured 2026-10-16) --
-goes as ``collect-over-budget`` once older than ``min_age_hours``.
+goes as ``collect-over-budget`` once older than ``min_age``.
 
 THE OTHER RULES. ``run-not-a-carry-source``: a recorded run of THIS serve's repo no origin branch tip
 carries from (:func:`carry_sources`, the carry's own selection) -- its state goes; the kept sources are
 the :attr:`Plan.harder` runs, removed oldest first only under quota pressure. ``run-abandoned``: no record,
-not in flight, untouched ``abandon_days`` (a state is a few files, and the carry reads it).
+not in flight, untouched ``abandon`` (a state is a few files, and the carry reads it).
 ``pack-not-in-flight``, ``slurm-out-finished``, ``log-over-size`` (rotated), and on a workstation
 ``forge-tree-stale``: a ``.claude/worktrees/forge-*``
 its producer (:mod:`dev_lab.dev.shatree`) failed to remove -- the same rule, since a producer's tree is
@@ -90,6 +90,7 @@ from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 from dev_lab.dev import retentionrust as _rust
 from dev_lab.dev.forgecarry import read_by
 from dev_lab.dev.storage import worktrees_root
+from dev_lab.dev.tablequantity import quantity, values
 
 __all__ = [
     'Doomed',
@@ -107,17 +108,23 @@ __all__ = [
 ]
 
 _MB: Final = 1024**2
+_HOUR: Final = 3600.0
+_DAY: Final = 86400.0
 _GIT: Final = shutil.which('git') or 'git'
 
 
 @dataclass(frozen=True)
 class Policy:
-    """The kit defaults; the machine file's ``[retention]`` overrides any key (module docstring)."""
+    """The kit defaults; the machine file's ``[retention]`` overrides any key (module docstring).
 
-    min_age_hours: float = 6.0
-    abandon_days: float = 7.0
-    log_max_mb: float = 20.0
-    slurm_out_days: float = 7.0
+    ``min_age``, ``abandon`` and ``slurm_out`` are durations and ``log_max`` a size, each declared with its unit
+    (``min_age = "6 h"``) and held here in seconds or bytes (:mod:`dev_lab.dev.tablequantity`).
+    """
+
+    min_age: float = quantity('duration', 6 * _HOUR, retired=('min_age_hours', 'h'))
+    abandon: float = quantity('duration', 7 * _DAY, retired=('abandon_days', 'd'))
+    log_max: float = quantity('size', 20 * _MB, retired=('log_max_mb', 'MiB'))
+    slurm_out: float = quantity('duration', 7 * _DAY, retired=('slurm_out_days', 'd'))
     uv_prune: bool = True
     pressure: float = 0.85  # the WARNING line too (dev_lab.dev.quotawatch): warned and trying harder are one fact
     refuse: float = 0.95  # the refuse-new-work line: no deploy build, tick refresh or claim at or past it
@@ -129,11 +136,12 @@ class Policy:
 def load_policy(table: Mapping[str, Any]) -> Policy:
     """:class:`Policy` with *table* (the ``[retention]`` section) over its defaults; an unknown key raises."""
     refuse_retired_keys('retention', table)
+    declared = values(Policy, table, '[retention]')
     known = {field.name for field in dataclasses.fields(Policy)}
-    if unknown := sorted(set(table) - known):
+    if unknown := sorted(set(declared) - known):
         msg = f'[retention] has no key {", ".join(unknown)}; the keys are {", ".join(sorted(known))}'
         raise ValueError(msg)
-    return Policy(**table)
+    return Policy(**declared)
 
 
 @dataclass(frozen=True)
@@ -214,8 +222,8 @@ def idle_for(tree: Path, now: datetime) -> timedelta:
 
 
 def in_flight(ci: Path, policy: Policy, *, now: datetime, live: Iterable[str], occupied: Iterable[str]) -> set[str]:
-    """THE shas in flight (module docstring): live, occupied, or active within ``min_age_hours``."""
-    young = timedelta(hours=policy.min_age_hours)
+    """THE shas in flight (module docstring): live, occupied, or active within ``min_age``."""
+    young = timedelta(seconds=policy.min_age)
     shas = set(live) | set(occupied) | {path.name for path, _, when in runs(ci) if now - when < young}
     shas |= {art.name.split('.')[0] for art in _entries(ci / 'artifacts') if _age(art, now) < young}
     return shas | {tree.parent.name for tree in _trees(ci) if idle_for(tree, now) < young}
@@ -283,7 +291,7 @@ def cluster_plan(
         if sha in flying:
             continue
         if 'record' not in state:
-            if now - when >= timedelta(days=policy.abandon_days):
+            if now - when >= timedelta(seconds=policy.abandon):
                 doomed += [Doomed(part, 'run-abandoned') for part in _parts(path)]
         elif state.get('repo') != repo:
             continue  # another repo's serve judges its own runs
@@ -298,7 +306,7 @@ def cluster_plan(
                 tree,
                 'tree-not-in-flight',
                 keep=_kept_streams(ci, tree.parent.name, unrecorded.get(tree.parent.name)),
-                idle_hours=policy.min_age_hours,
+                idle_hours=policy.min_age / _HOUR,
             )
             for tree in _trees(ci)
             if tree.parent.name not in flying
@@ -398,7 +406,7 @@ def _unreferenced_builds(ci: Path, builds: list[object], now: datetime, policy: 
     """Env and native directories none of *builds* names; nothing when one of them names none."""
     if not all(isinstance(b, dict) for b in builds):
         return []
-    young, out = timedelta(hours=policy.min_age_hours), []
+    young, out = timedelta(seconds=policy.min_age), []
     # ``cache/cargo/<native key>`` is lab_commons.hpc.builds.cargo_target, keyed like ``native/<key>``
     for kind, where, rule in (
         ('env', 'envs', 'env'),
@@ -415,10 +423,10 @@ def _unreferenced_builds(ci: Path, builds: list[object], now: datetime, policy: 
 
 
 def _collect_over_budget(store: Path, policy: Policy, now: datetime) -> list[Doomed]:
-    """Every entry of ``collect/`` but its newest ``collect_files`` key files, once past ``min_age_hours``."""
+    """Every entry of ``collect/`` but its newest ``collect_files`` key files, once past ``min_age``."""
     keys = sorted((e for e in _entries(store) if e.suffix == '.json' and e.is_file()), key=lambda e: e.stat().st_mtime)
     kept = set(keys[-policy.collect_files :] if policy.collect_files > 0 else [])
-    young = timedelta(hours=policy.min_age_hours)
+    young = timedelta(seconds=policy.min_age)
     return [Doomed(e, 'collect-over-budget') for e in _entries(store) if e not in kept and _age(e, now) >= young]
 
 
@@ -426,12 +434,12 @@ def _home_rules(home: Path, root: Path, policy: Policy, now: datetime) -> list[D
     out = [
         Doomed(p, 'slurm-out-finished')
         for p in sorted(home.glob('slurm-*.out'))
-        if _age(p, now) >= timedelta(days=policy.slurm_out_days)
+        if _age(p, now) >= timedelta(seconds=policy.slurm_out)
     ]
     out += [
         Doomed(p, 'log-over-size', rotate=True)
         for p in sorted((root / 'serve').glob('*.log'))
-        if p.stat().st_size > policy.log_max_mb * _MB
+        if p.stat().st_size > policy.log_max
     ]
     # uv's default cache is retired: every uv on the account shares ``<root>/cache/uv`` (spec.uv_cache), so a
     # default cache is a second copy of the same wheels, ~450 k files (census 2026-11-14). Migrated once.
@@ -446,7 +454,7 @@ def _rust_rules(
     trees = [_tree(root, sha) for sha in sorted(flying or ()) if _tree(root, sha).is_dir()]
     channels = None if flying is None else _rust.pinned_channels(home / '.rustup', [*trees, *checkouts])
     doomed = [Doomed(p, _rust.RULE_TOOLCHAIN) for p in _rust.unpinned_toolchains(home / '.rustup', channels)]
-    young = timedelta(hours=policy.min_age_hours)
+    young = timedelta(seconds=policy.min_age)
     return doomed + [Doomed(p, _rust.RULE_REGISTRY) for p in _rust.registry_sources(home / '.cargo', now, young)]
 
 
@@ -459,7 +467,7 @@ def _uv(policy: Policy, *caches: Path) -> list[tuple[str, ...]]:
 
 def workstation_plan(checkouts: Sequence[Path], policy: Policy, *, now: datetime) -> Plan:
     """The plan for a workstation: each checkout's stale ``forge-*`` trees, then ``git worktree prune``."""
-    young = timedelta(hours=policy.min_age_hours)
+    young = timedelta(seconds=policy.min_age)
     doomed: list[Doomed] = []
     commands: list[tuple[str, ...]] = []
     for checkout in checkouts:

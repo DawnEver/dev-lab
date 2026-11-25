@@ -9,6 +9,8 @@ nothing because the family binds no role of its ``[deploy]`` repos to it says so
 A RESOURCE GOES DARK THE SAME WAY (:func:`dark_resources`, user ruling 2026-10-28): two workstations stale for days
 still read ``jmag = 1`` in the queue while the platform itself stayed lit by another host. A stale card supplies
 nothing (:func:`dev_lab.dev.forgeprovides.supplied`), so a tool whose every provider is stale has no supply at all.
+The cards watched are the ones the serve READS (:func:`dev_lab.dev.forgehosts.serving_cards`): a seat the family binds
+no role to (a research account) stopped serving by ruling, and its last card never makes anything dark.
 
 ONE ALARM PER EPISODE: an episode starts when the condition first holds and ends when it no longer does (a host of
 the platform ticks again; the tick serves a repo). The open episodes live in ``forge-fleet.json`` beside the

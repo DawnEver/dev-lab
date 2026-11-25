@@ -1,4 +1,4 @@
-"""USER-FROZEN-FILES: the three layers over one judgement, each with its planted controls.
+"""USER-FROZEN-FILES: the three layers over one judgment, each with its planted controls.
 
 Every layer is shown saying NO on a planted violation -- a frozen file modified or deleted (blob id moved), a file
 changed inside a frozen directory (tree id moved), a missing, forged, foreign-digest or foreign-action receipt -- and
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import io
 import json
-import shutil
 import subprocess
 import time
 import uuid
@@ -24,8 +23,6 @@ from dev_lab.dev._deny_frozen_row import USER_FROZEN_FILES
 from dev_lab.dev.famtests import alwayson
 from dev_lab.ops.consent.actions import ACTIONS
 from dev_lab.ops.consent.credential import params_hash, sign
-
-pytestmark = pytest.mark.skipif(shutil.which('git') is None, reason='needs git')
 
 _SETTINGS = '.vscode/settings.json'
 _DOCS = 'docs/guide'
@@ -94,7 +91,7 @@ def _change_settings(root: Path) -> None:
     _git(root, 'add', _SETTINGS)
 
 
-# ---- the judgement --------------------------------------------------------------------------------------------------
+# ---- the judgment --------------------------------------------------------------------------------------------------
 
 
 def test_parse_refuses_a_freeze_file_that_does_not_freeze_itself() -> None:

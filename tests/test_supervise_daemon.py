@@ -104,7 +104,7 @@ def test_a_cycle_the_box_refuses_outright_is_not_called_a_held_seat(
 
     The machine here declares a free-space floor no volume keeps, which is the refusal the hosted runner gave.
     """
-    Path(os.environ[CONFIG_ENV]).write_text('[storage]\nfree_floor_gb = 1e12\n', encoding='utf-8')
+    Path(os.environ[CONFIG_ENV]).write_text('[storage]\nfree_floor = "1e12 GiB"\n', encoding='utf-8')
     probe = _Probe()
     assert _loop(tmp_path, probe).once(_CLOCK) is None
     said = capsys.readouterr().out
@@ -244,7 +244,7 @@ def test_a_definition_that_has_not_moved_does_not_end_the_loop(tmp_path: Path) -
     """The other side: an unchanged signature must never be a reason to stop.
 
     Driven one step and then closed rather than drained -- draining would sit in the loop's own
-    interval wait, which is the behaviour this test is NOT about.
+    interval wait, which is the behavior this test is NOT about.
     """
     loop = _loop(tmp_path, _Probe())
     loop.definition = lambda: 'unchanged'

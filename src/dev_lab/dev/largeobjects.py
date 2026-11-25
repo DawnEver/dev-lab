@@ -1,6 +1,6 @@
 """LARGE OBJECTS -- a content-addressed object store on an rclone remote (:class:`RcloneObjects`).
 
-The run-archive backends and the key rules it reuses live in :mod:`dev_lab.dev.artefactstores`; this module is the
+The run-archive backends and the key rules it reuses live in :mod:`dev_lab.dev.artifactstores`; this module is the
 one store a result too large for its record travels through, by :class:`~lab_commons.compute.store.Ref`.
 
 WHICH store a run uses is the family's fact (``[storage] runs = "<remote>:<path>"``, :mod:`lab_commons.storage`),
@@ -21,7 +21,7 @@ from lab_commons import launch as _door
 from lab_commons import storage as _storage
 from lab_commons.compute.store import ArrivalMismatch, Ref
 
-from dev_lab.dev.artefactstores import RCLONE, ArtefactRefused, RcloneStore, check_key, file_sha256
+from dev_lab.dev.artifactstores import RCLONE, ArtifactRefused, RcloneStore, check_key, file_sha256
 from dev_lab.dev.storage import DEFAULT_RCLONE, Run, check, rclone_exe
 
 __all__ = ['OBJECTS_PREFIX', 'RcloneObjects', 'StoreUnreached', 'run_objects']
@@ -56,7 +56,7 @@ class RcloneObjects:
             msg = (
                 f'large-object prefix {self.prefix!r} refused: scratch/ is aged out, a durable object never lives there'
             )
-            raise ArtefactRefused(msg)
+            raise ArtifactRefused(msg)
 
     def _store(self) -> RcloneStore:
         return RcloneStore(self.remote, self.prefix, self.rclone, self.backend)

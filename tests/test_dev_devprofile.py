@@ -19,7 +19,7 @@ FAMILY = """\
 [dev]
 ref = "integrate/main"
 forges = { "forge.example" = ["dev-user"] }
-bridge = { hpc = { cadence_hours = 6 } }
+bridge = { hpc = { cadence = "6 h" } }
 
 [dev.default]
 forges = {}
@@ -65,7 +65,7 @@ def test_a_declared_host_is_unaffected(tmp_path: Path) -> None:
     assert devprofile.refusal(rendered, 'an HPC action') is None
     assert devhost.notice({**rendered, 'devhost': {**rendered['devhost'], 'unmanaged': 'ws'}}).startswith(
         'HOST-CONFIG FIRST: this machine is UNMANAGED'
-    ), 'the session start names the enrolment door first on an unmanaged machine'
+    ), 'the session start names the enrollment door first on an unmanaged machine'
 
 
 def test_bridge_hpc_renders_on_every_dev_machine_from_the_family(
@@ -76,7 +76,7 @@ def test_bridge_hpc_renders_on_every_dev_machine_from_the_family(
     for host in ('ws', 'stranger'):
         hpc = tomllib.loads(devhost.render(clone, host, LIVE))['bridge']['hpc']
         assert hpc['command'] == [BRIDGE[host], *devprofile.HPC_READ_DOOR]
-        assert hpc['cadence_hours'] == 6
+        assert hpc['cadence'] == '6 h'
 
 
 def test_the_bridge_interpreter_is_derived_from_the_dev_lab_checkout_never_the_renderers(
@@ -116,7 +116,7 @@ def test_without_a_declared_default_an_unknown_host_is_refused_by_name(tmp_path:
         devhost.render(clone, 'stranger', LIVE)
 
 
-def test_the_unmanaged_machine_is_refused_write_and_hpc_naming_the_enrolment_door(
+def test_the_unmanaged_machine_is_refused_write_and_hpc_naming_the_enrollment_door(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     live = tomllib.loads(devhost.render(_clone(tmp_path), 'stranger', LIVE))
@@ -133,16 +133,20 @@ def test_the_family_default_and_bridge_are_checked(tmp_path: Path) -> None:
     clone = _clone(tmp_path)
     assert check_family(clone / 'family.toml') == []
     assert check_host(clone / 'hosts' / 'ws.toml', clone / 'family.toml') == []
-    bad = FAMILY.replace('hooks = "warn"', 'hooks = "off"').replace('cadence_hours = 6', 'cadence_hours = 0')
+    bad = FAMILY.replace('hooks = "warn"', 'hooks = "off"').replace('cadence = "6 h"', 'cadence = "30 min"')
     found = devschema.check_family(tomllib.loads(bad))
     assert any('default.hooks' in line for line in found), found
-    assert any('cadence_hours must be 1..168' in line for line in found), found
+    assert any('cadence = "30 min" must be 1 h..168 h' in line for line in found), found
+    bare = devschema.check_family(tomllib.loads(FAMILY.replace('cadence = "6 h"', 'cadence = 6')))
+    assert any('bridge.hpc.cadence = 6 is a bare number' in line for line in bare), bare
+    old = devschema.check_family(tomllib.loads(FAMILY.replace('cadence = "6 h"', 'cadence_hours = 6')))
+    assert any('cadence_hours = 6 is retired' in line and 'write cadence = "6 h"' in line for line in old), old
     assert devschema.check({'dev': {'default': {}}}, tomllib.loads(FAMILY)), 'a host may not declare the default'
 
 
-def test_the_enrolment_door_names_the_config_sources_own_checkout_loop() -> None:
+def test_the_enrollment_door_names_the_config_sources_own_checkout_loop() -> None:
     """#745: a proposal runs IN the config source's checkout, so its own hooks and forge judge it."""
-    text = devprofile.enrolment('WSX')
+    text = devprofile.enrollment('WSX')
     assert 'own checkout' in text
     assert 'worktree add' in text
     assert 'forge pr create` FROM that worktree' in text

@@ -132,7 +132,7 @@ class Rounds:
         """
         ticked = self.latest['ticked']
         publish_card(
-            self.root, ticked.queue, claimed, **self.carding, artefacts=ticked.artefacts,
+            self.root, ticked.queue, claimed, **self.carding, artifacts=ticked.artifacts,
             supply=self.latest['supply'], progress=progress,
             size=self.latest['box'].size() if self.latest.get('box') else {},
             running=(*(f'{run.sha[:12]} {run.platform}' for run in self.runs if forgerunstate.held(run)),

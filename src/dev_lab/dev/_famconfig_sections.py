@@ -1,7 +1,7 @@
 r"""A base whose subject is a TOML TABLE: it owns named keys and leaves the rest of the file alone.
 
 THE GAP THIS CLOSES, measured 2026-09-18 against the live kit. :mod:`dev_lab.dev.famconfig` is a
-WHOLE-FILE mechanism keyed by FILENAME -- ``artefact_base('[tool.ruff]')``, ``('ruff.toml')`` and
+WHOLE-FILE mechanism keyed by FILENAME -- ``artifact_base('[tool.ruff]')``, ``('ruff.toml')`` and
 ``('pyproject.toml')`` all raise `ForkedDelta` -- and ``[tool.ruff]`` is a SECTION. Pointing the
 whole-file base at ``pyproject.toml`` is not the workaround, because ``RENDERED`` would then demand
 the base own ``[build-system]``, ``[project]``, ``[tool.pytest.ini_options]`` and ``[tool.pyright]``
@@ -18,7 +18,7 @@ ITS STATUSES ARE ITS OWN, and that is a consequence rather than a duplication. `
 ``FOREIGN`` distinguishes "somebody's own file" from "ours, edited", which only a STAMP can answer
 and a section has none. What a section has instead is :data:`NO_TABLE` -- the file is there and
 declares no such table -- which has no whole-file analogue, because a missing file and a file
-missing a table are the same answer only when the file IS the artefact.
+missing a table are the same answer only when the file IS the artifact.
 
 EVERY KEY IS EXACT, and the two kinds differ only in how a delta may move them:
 
@@ -27,7 +27,7 @@ EVERY KEY IS EXACT, and the two kinds differ only in how a delta may move them:
   arm: an entry on disk that no declaration produced is named, and a base entry gone with no drop is
   named. Both directions, from one comparison.
 
-THE FILE IS NOT THE ARTEFACT, which is this arm's second decision. :func:`locate_section` resolves a
+THE FILE IS NOT THE ARTIFACT, which is this arm's second decision. :func:`locate_section` resolves a
 base's dotted path OR that path with its ``prefix`` stripped, so one base binds a table wherever a
 repo keeps it, and it refuses a file declaring both -- the dead-block shape where one spelling wins
 and the other is a decision nothing reads. Why keying by TABLE rather than by FILE was the cheap
@@ -72,7 +72,7 @@ __all__ = [
 #: STATUS. No file at the path -- the table is absent rather than conforming, and those differ.
 NO_FILE: Final = 'NO_FILE'
 #: STATUS. The file is there and declares no such table. It has no whole-file analogue: a missing
-#: file and a file missing a table are the same answer only when the file IS the artefact.
+#: file and a file missing a table are the same answer only when the file IS the artifact.
 NO_TABLE: Final = 'NO_TABLE'
 #: STATUS. Every key the base owns is exactly what the base and this repo's delta declare.
 OWNED: Final = 'OWNED'
@@ -98,7 +98,7 @@ class SectionBase:
     declarable.
     """
 
-    artefact: str
+    artifact: str
     table: tuple[str, ...]
     prefix: tuple[str, ...]
     scalars: Mapping[str, object]
@@ -139,7 +139,7 @@ class SectionDelta:
 class SectionReport:
     """One table in one file: where it is, what state it is in, and which keys say so."""
 
-    artefact: str
+    artifact: str
     path: Path
     status: str
     detail: str
@@ -155,9 +155,9 @@ class SectionReport:
 #: conforming, which is the vacuous green every floor in this package exists to refuse. ONE, because
 #: the ``[tool.ruff]`` and ``[tool.pytest.ini_options]`` rows each legitimately own a single key.
 #:
-#: IT IS NOT NAMED FOR ONE ARTEFACT, and that is why it lives here rather than in a rows module.
-#: `section_problems` binds it for EVERY base, so an artefact-shaped name on it would be a
-#: declaration that lies the moment a second artefact arrives -- which it now has.
+#: IT IS NOT NAMED FOR ONE ARTIFACT, and that is why it lives here rather than in a rows module.
+#: `section_problems` binds it for EVERY base, so an artifact-shaped name on it would be a
+#: declaration that lies the moment a second artifact arrives -- which it now has.
 SECTION_KEY_FLOOR: Final = 1
 
 
@@ -167,8 +167,8 @@ def _bases(
 ) -> dict[str, SectionBase]:
     """A rows table turned into bases, so WHICH tables and WHICH keys stay declared as data."""
     return {
-        artefact: SectionBase(artefact=artefact, table=table, prefix=prefix, scalars=scalars, sets=sets)
-        for artefact, (table, scalars, sets) in rows.items()
+        artifact: SectionBase(artifact=artifact, table=table, prefix=prefix, scalars=scalars, sets=sets)
+        for artifact, (table, scalars, sets) in rows.items()
     }
 
 
@@ -181,23 +181,23 @@ RUFF_SECTIONS: Final[dict[str, SectionBase]] = _bases(RUFF_SECTION_ROWS, RUFF_SE
 #: one case: the ruff bases exercise the dedicated-file branch and these exercise the other.
 PYPROJECT_SECTIONS: Final[dict[str, SectionBase]] = _bases(PYPROJECT_SECTION_ROWS, PYPROJECT_SECTION_PREFIX)
 
-#: ONE registry over both artefacts, so :func:`section_base` is one lookup rather than one per rows
+#: ONE registry over both artifacts, so :func:`section_base` is one lookup rather than one per rows
 #: module. The two names above stay as the SUBSETS each suite is a claim about; a second lookup
 #: function would be the dual entry point this codebase refuses.
 SECTION_BASES: Final[dict[str, SectionBase]] = {**RUFF_SECTIONS, **PYPROJECT_SECTIONS}
 
 
-def section_base(artefact: str) -> SectionBase:
-    """The base for *artefact*, or a refusal naming the ones that exist.
+def section_base(artifact: str) -> SectionBase:
+    """The base for *artifact*, or a refusal naming the ones that exist.
 
-    A lookup rather than an attribute, for the reason `famconfig.artefact_base` is one: a table this
+    A lookup rather than an attribute, for the reason `famconfig.artifact_base` is one: a table this
     package does not own fails HERE, with the set it could have meant, instead of at the point a
     caller indexes ``None``.
     """
-    base = SECTION_BASES.get(artefact)
+    base = SECTION_BASES.get(artifact)
     if base is None:
         msg = (
-            f'no family section base for {artefact!r}. Declared sections: {sorted(SECTION_BASES)}. A '
+            f'no family section base for {artifact!r}. Declared sections: {sorted(SECTION_BASES)}. A '
             f'config table with no base is not shared by default -- add the row to '
             f'dev_lab.dev._famconfig_ruff_rows or _famconfig_pyproject_rows with the measurement '
             f'that says it is, or record it in PYPROJECT_DECLINED with the number that declined it.'
@@ -243,7 +243,7 @@ def locate_section(document: Mapping[str, object], base: SectionBase) -> Mapping
     short = _walk(document, base.suffix) if base.suffix != base.table else None
     if not dedicated and base.suffix and short is not None:
         msg = (
-            f'{base.artefact} is declared under both spellings in one file: {list(base.table)} and '
+            f'{base.artifact} is declared under both spellings in one file: {list(base.table)} and '
             f'{list(base.suffix)}. Only one of the two is ever read, so the other is a decision '
             f'nothing consults. Delete the one this file does not resolve.'
         )
@@ -275,19 +275,19 @@ def expected_entries(base: SectionBase, delta: SectionDelta, key: str) -> frozen
 
 def section_problems(base: SectionBase, delta: SectionDelta) -> tuple[str, ...]:
     """Every way *delta* is not a delta of *base*. Pure, and it binds the base's key floor first."""
-    assert_base_floor(len(base.owned_keys), SECTION_KEY_FLOOR, f'{base.artefact} section')
+    assert_base_floor(len(base.owned_keys), SECTION_KEY_FLOOR, f'{base.artifact} section')
     out: list[str] = []
     out += _drop_problems(base, delta)
     out += _addition_problems(base, delta)
     added = sum(len(entries) for entries in delta.added.values())
     if added > delta.ceiling:
         out.append(
-            f'{delta.repo} adds {added} entr(ies) to {base.artefact}, past its ceiling of '
+            f'{delta.repo} adds {added} entr(ies) to {base.artifact}, past its ceiling of '
             f'{delta.ceiling}. Raise the ceiling with the reason, or move what is shared into the '
             f'base. A waiver list with no ceiling is an escape hatch nobody bounded.'
         )
     out += [
-        f'{delta.repo} drops {subject!r} from {base.artefact} with an empty reason. A removal and a '
+        f'{delta.repo} drops {subject!r} from {base.artifact} with an empty reason. A removal and a '
         f'drift are the same bytes on disk; the reason is the only thing that tells them apart.'
         for subject, reason in sorted(delta.dropped.items(), key=repr)
         if not reason.strip()
@@ -302,13 +302,13 @@ def _drop_problems(base: SectionBase, delta: SectionDelta) -> list[str]:
         if entry is None:
             if key not in base.scalars:
                 out.append(
-                    f'{delta.repo} drops the whole key {key!r} from {base.artefact}, and the base '
+                    f'{delta.repo} drops the whole key {key!r} from {base.artifact}, and the base '
                     f'owns no such scalar. Delete the drop in the edit that removed the key; a drop '
                     f'that outlives its subject reads as a decision and refuses nothing.'
                 )
         elif entry not in base.sets.get(key, ()):
             out.append(
-                f'{delta.repo} drops {entry!r} from {key!r} in {base.artefact}, and the base does not '
+                f'{delta.repo} drops {entry!r} from {key!r} in {base.artifact}, and the base does not '
                 f'have that entry. A drop dies with the entry it names -- delete it.'
             )
     return out
@@ -320,7 +320,7 @@ def _addition_problems(base: SectionBase, delta: SectionDelta) -> list[str]:
     for key, entries in sorted(delta.added.items()):
         if key not in base.sets:
             out.append(
-                f'{delta.repo} adds to {key!r} in {base.artefact}, and the base owns no such SET key. '
+                f'{delta.repo} adds to {key!r} in {base.artifact}, and the base owns no such SET key. '
                 f'A base owns named keys; a delta cannot legislate one that was never declared. '
                 "Either the key is the family's -- promote it into "
                 "dev_lab.dev._famconfig_ruff_rows with its measurement -- or it is this repo's "
@@ -329,11 +329,11 @@ def _addition_problems(base: SectionBase, delta: SectionDelta) -> list[str]:
             continue
         if not entries:
             out.append(
-                f'{delta.repo} adds no entries to {key!r} in {base.artefact}. An addition that adds '
+                f'{delta.repo} adds no entries to {key!r} in {base.artifact}. An addition that adds '
                 f'nothing is a waiver nothing uses -- delete the entry.'
             )
         out += [
-            f'{delta.repo} adds {entry!r} to {key!r} in {base.artefact}, and the base already has it. '
+            f'{delta.repo} adds {entry!r} to {key!r} in {base.artifact}, and the base already has it. '
             f'A delta that re-states the base is the base copied into a place re-checking does not '
             f'reach.'
             for entry in sorted(set(entries) & set(base.sets[key]))
@@ -353,25 +353,25 @@ def inspect_section(path: Path, base: SectionBase, delta: SectionDelta) -> Secti
     if problems:
         raise ForkedSectionDelta('\n'.join(problems))
     if not path.is_file():
-        detail = f'no {path.name} here -- {base.artefact} is absent rather than clean, and those differ'
-        return SectionReport(base.artefact, path, NO_FILE, detail, ())
+        detail = f'no {path.name} here -- {base.artifact} is absent rather than clean, and those differ'
+        return SectionReport(base.artifact, path, NO_FILE, detail, ())
     table = locate_section(tomllib.loads(path.read_text(encoding='utf-8')), base)
     if table is None:
         detail = (
-            f'{path.name} declares no {base.artefact}. Every key the base owns is unstated, which is '
+            f'{path.name} declares no {base.artifact}. Every key the base owns is unstated, which is '
             f'not the same as agreed: add the table, or declare this repo out of the family base.'
         )
-        return SectionReport(base.artefact, path, NO_TABLE, detail, ())
+        return SectionReport(base.artifact, path, NO_TABLE, detail, ())
     offending = _key_differences(base, delta, table)
     if not offending:
-        return SectionReport(base.artefact, path, OWNED, f'all {len(base.owned_keys)} owned key(s) as declared', ())
+        return SectionReport(base.artifact, path, OWNED, f'all {len(base.owned_keys)} owned key(s) as declared', ())
     detail = (
-        f'{len(offending)} owned key(s) of {base.artefact} in {path.name} disagree with the live base '
+        f'{len(offending)} owned key(s) of {base.artifact} in {path.name} disagree with the live base '
         f"and {delta.repo}'s delta. An entry the file holds and no declaration produced is an "
         f'undeclared local decision; a base entry gone with no drop is the base leaving through the '
         f'file instead of through the table that owns it.'
     )
-    return SectionReport(base.artefact, path, DIVERGED, detail, offending)
+    return SectionReport(base.artifact, path, DIVERGED, detail, offending)
 
 
 def _key_differences(base: SectionBase, delta: SectionDelta, table: Mapping[str, object]) -> tuple[str, ...]:

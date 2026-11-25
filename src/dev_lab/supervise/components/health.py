@@ -48,7 +48,7 @@ class HttpHealth(Component):
         """Take the transport, so a test can read the request rather than make it.
 
         Args:
-            transport: how a connection is made. Defaults to the one that honours the URL's
+            transport: how a connection is made. Defaults to the one that honors the URL's
                 scheme, because a probe against loopback is plain HTTP by design.
 
         """
@@ -359,7 +359,7 @@ class Heartbeat(Component):
             # answered "I could not measure" with silence -- indistinguishable from "the supervisor
             # is fine". `last_cycle` is empty on a state that was never written (missing file,
             # corrupt file, a schema version this build does not know -- see `StateStore.read`),
-            # and an unparseable stamp gives the same None.
+            # and an unparsable stamp gives the same None.
             #
             # Every other probe in this package treats unmeasurable as an anomaly: an endpoint that
             # answers nothing is CRITICAL, a disk that cannot be read is `disk_check_failed`, a

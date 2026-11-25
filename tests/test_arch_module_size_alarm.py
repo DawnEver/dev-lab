@@ -115,7 +115,7 @@ def test_the_debt_is_exactly_the_modules_that_are_over_the_band() -> None:
 
 
 def test_no_pinned_module_may_grow() -> None:
-    """The ratchet's forward side: a pin is a ceiling on that module, not a licence for it."""
+    """The ratchet's forward side: a pin is a ceiling on that module, not a license for it."""
     live = oversized(source_modules(), BAND)
     grew = {name: (live[name], DEBT[name]) for name in DEBT if live[name] > DEBT[name]}
     assert grew == {}, f'pinned modules grew past their measurement (now, pinned): {grew}'

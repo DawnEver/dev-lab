@@ -76,7 +76,7 @@ POLICY: Final[tuple[Door, ...]] = (
     Door(
         module_argv('worktrees'),
         SUBAGENT,
-        'The worktree census; pruning removes only a clean, pushed worktree, archiving moves its outputs home.',
+        'The worktree census; pruning removes only a clean, pushed worktree, removing deletes its output/ with it.',
     ),
     Door(module_argv('family', 'check'), SUBAGENT, "Read-only: every fact of this machine's family members, named."),
     Door(module_argv('family', 'join'), MAIN, 'Making a repo a family member: clone, record, protect, set its secret.'),
@@ -181,6 +181,12 @@ POLICY: Final[tuple[Door, ...]] = (
         _forge('pr', 'close'),
         MAIN,
         'Closing a pull request with its reason posted first; its branch is never deleted.',
+        _FORGE_WRITE,
+    ),
+    Door(
+        _forge('pr', 'edit'),
+        MAIN,
+        "Replacing a pull request's body from a file, or adding lines after it (a merge-ready Red-On-Record line).",
         _FORGE_WRITE,
     ),
     Door(

@@ -46,7 +46,7 @@ from dev_lab.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgecoalesce import behind
 from dev_lab.dev.forgefailure import BudgetSpent, ForgeCallFailed, within
-from dev_lab.dev.forgehosts import HostCard, read_cards
+from dev_lab.dev.forgehosts import RETIRE, HostCard, read_cards, serving_cards
 from dev_lab.dev.forgephases import FETCH, Phases
 from dev_lab.dev.forgeprovides import supplied, unserved
 from dev_lab.dev.forgerequest import Declared, UndeclaredRequest, declared_request, request_context
@@ -87,9 +87,9 @@ def _stale(host: Mapping[str, Any], now: str) -> str:
     return f'  tick held {age} in {held["phase"]} (pid {held["pid"]} since {held["since"]})'
 
 
-def _row(item: Ranked, favoured: Sequence[str] = ()) -> dict[str, Any]:
+def _row(item: Ranked, favored: Sequence[str] = ()) -> dict[str, Any]:
     return {
-        'priority': list(favoured),
+        'priority': list(favored),
         'candidate': item.candidate.key,
         'class': item.candidate.kind,
         'value': round(item.value, 2),
@@ -105,13 +105,13 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     schedule = load_schedule(root)  # the declared config refuses before any network call
     fetch(root)
     now = forge_now(client)
-    cards = read_cards(client)
+    cards, unbound = serving_cards(root, read_cards(client))
     ranked, in_flight = forge_queue(root, client, cards, now=now, schedule=schedule)
     repo = repo_name(client)
     live = [card for card in cards if not card.stale(now)]
 
     def row(item: Ranked) -> dict[str, Any]:
-        return _row(item, [card.host for card in live if card.favours(item.candidate)])
+        return _row(item, [card.host for card in live if card.favors(item.candidate)])
 
     try:
         branches = [dataclasses.asdict(row) for row in listing(root, client, now=now)]
@@ -133,6 +133,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
             for card in cards
         ],
         'starved': [row(item) for item in starved(ranked, {repo: schedule})],
+        'unbound': [card.host for card in unbound],
     }
 
 
@@ -316,6 +317,9 @@ def render(view_: Mapping[str, Any]) -> list[str]:
             *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
         )
     ] or ['  (no host has published a card)']
+    if view_.get('unbound'):
+        lines += ['', 'unbound seats (the family binds no role of this repo to them: their cards are not read):']
+        lines += [f'  {host} -- retire its card: {RETIRE} {host}' for host in view_['unbound']]
     lines += ['', 'origin branches (undeclared, idle past the grace):']
     lines += [
         f'  {b["action"]:<9} {b["ref"]}  {b["sha"][:12]}  {b["rule"]}, idle {b["idle_h"]:.0f} h'

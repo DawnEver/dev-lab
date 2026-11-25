@@ -75,7 +75,7 @@ WAIVED_CONSUMER_IGNORES: Final[dict[str, str]] = {
     ),
     'SIM113': (
         'THE CONSUMERS SHOULD STOP IGNORING IT. `enumerate` over a hand-incremented index is a '
-        'mechanical rewrite with no judgement in it, and it too sits in their TODO block.'
+        'mechanical rewrite with no judgment in it, and it too sits in their TODO block.'
     ),
     'RUF043': (
         'THE KIT SHOULD STOP ENFORCING IT -- pending. It fires on `match=` patterns containing regex '
@@ -104,8 +104,8 @@ REACH_FLOOR: Final[int] = 1
 #: already shared -- they were divergences while the kit selected only 12. Adopting the consumers'
 #: 58 without adopting their 62-code ignore list turned 48 more codes into the same relation: the
 #: kit now ENFORCES them and every consumer still drops them globally. That is the kit being
-#: STRICTER, which is the direction R1 wanted, so these are not eight more judgements -- they are one
-#: judgement held 48 times, and the row below says it once.
+#: STRICTER, which is the direction R1 wanted, so these are not eight more judgments -- they are one
+#: judgment held 48 times, and the row below says it once.
 #:
 #: WHY THE KIT DID NOT SIMPLY COPY THE 62. Twenty of them sit under a literal "TODO: remove these
 #: ignore rules" header in all three consumers, which is their own authors saying the list is debt.

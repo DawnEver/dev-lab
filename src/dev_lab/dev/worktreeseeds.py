@@ -1,6 +1,6 @@
 """THE GITIGNORED FILES A WORKTREE IS GATED WITH, declared as data and copied in by ``dep --bootstrap``.
 
-``git worktree add`` materialises TRACKED files and nothing else, so a new worktree lands without the
+``git worktree add`` materializes TRACKED files and nothing else, so a new worktree lands without the
 untracked inputs its main checkout runs with -- an untracked resolution lock (a ``Cargo.lock`` that,
 absent, re-resolves against today's index and silently changes the crate set) is the measured case.
 A gate reporting that absence as a failure measures its own harness, not the tree.

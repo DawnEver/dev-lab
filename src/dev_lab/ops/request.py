@@ -2,7 +2,7 @@
 
 A request is one JSON line ``{"action": ..., ...}`` (:mod:`dev_lab.ops.breakglass`). Everything a client could get
 wrong is refused HERE as :class:`Malformed`, so the role's own code never sees an unchecked field -- and an internal
-failure deeper down is never mistaken for, or relabelled as, a bad request.
+failure deeper down is never mistaken for, or relabeled as, a bad request.
 """
 
 from __future__ import annotations

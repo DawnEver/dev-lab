@@ -78,7 +78,7 @@ which is the METER -- it computes a reading and judges nothing. This is the only
 that asserts a SENTENCE agrees with a MEASUREMENT, and it needs both of those modules to do it.
 
 SCOPE, STATED SO A READER DOES NOT SUPPLY "EVERYTHING". This reads ``Placement.why`` prose and the
-labelled spellings a density reading is written in. It does NOT read the module-level CALIBRATION
+labeled spellings a density reading is written in. It does NOT read the module-level CALIBRATION
 comments (``ADMIT scripts/dep.py own= 22 repo=1``) that bound a roster's ceiling: those are dated
 readings of a bar's derivation, they are not attached to a row, and
 :func:`dev_lab.dev.famtests.placement.assert_ceiling_is_bounded` already makes the pair an
@@ -258,7 +258,7 @@ def assert_the_reader_still_convicts(*, spelling: str) -> None:
     than hidden.
 
     Args:
-        spelling: one labelled reading this repo's rows are written in, e.g. ``'own'``. NO DEFAULT:
+        spelling: one labeled reading this repo's rows are written in, e.g. ``'own'``. NO DEFAULT:
             the kit cannot plant a shape in a vocabulary it was not told, and a guessed key plants a
             row the reader cannot see and then reports the control passed.
 

@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
-from _roles_fixtures import HPC_REPO, carry
+from _roles_fixtures import HPC_REPO, carry, seats_family
 from lab_commons.compute.model import Candidate
 from lab_commons.hpc.shell import FULL
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import forgequeue, forgeschedule
+from dev_lab.dev import forgehosts, forgequeue, forgeschedule
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import Claim
 from dev_lab.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
@@ -230,6 +230,33 @@ def test_a_candidate_no_host_admits_names_each_host_and_what_it_lacks(server, tm
     assert next(row['blocked'] for row in again['queue'] if row['candidate'] == key) == 'not admitted: lacking cpu'
 
 
+def test_the_queue_reads_no_unbound_seat_and_names_the_door_that_retires_its_card(
+    server, tmp_path: Path, monkeypatch
+) -> None:
+    """A seat the family binds no role of this repo to (a research account) is no host and no supply, listed once.
+
+    The listing names the door that retires its card. PLANTED CONTROL: the family grants the same seat a role its
+    roles bind, and the same card is a host row again.
+    """
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    monkeypatch.setattr(forgehosts, 'machine_layer', seats_family)
+    repo, tips = _origin(tmp_path)
+    built = client(FORGE, Loopback(server))
+    seat = _card('ada/rhea', 'linux', NOW - timedelta(days=19), tools={'femm': {'present': True}})
+    _forge_of(tips, [_card('box-g', 'windows', NOW), seat])
+    seen = forgequeue.view(repo, built, fetch=lambda _root: None)
+    assert [h['host'] for h in seen['hosts']] == ['box-g']
+    assert seen['unbound'] == ['ada/rhea']
+    lines = forgequeue.render(seen)
+    assert '  ada/rhea -- retire its card: python -m dev_lab.dev.forge hosts retire ada/rhea' in lines
+    monkeypatch.setattr(forgehosts, 'machine_layer', lambda: seats_family('verification'))
+    _forge_of(tips, [_card('box-g', 'windows', NOW), seat])
+    again = forgequeue.view(repo, built, fetch=lambda _root: None)
+    assert [h['host'] for h in again['hosts']] == ['box-g', 'ada/rhea']
+    assert again['unbound'] == []
+    assert not any('hosts retire' in line for line in forgequeue.render(again))
+
+
 def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
     repo, tips = _origin(tmp_path)
@@ -239,15 +266,15 @@ def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) 
     )
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
-    assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'starved', 'branches'}
+    assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'starved', 'branches', 'unbound'}
     assert printed['queue'][0]['blocked'] == 'no host serves it'
 
 
-def test_a_card_states_why_its_host_cannot_write_the_artefact_store() -> None:
+def test_a_card_states_why_its_host_cannot_write_the_artifact_store() -> None:
     """PLANTED CONTROL: a card whose store works says nothing about it."""
     why = 'the rclone remote hpc-data: is missing or unusable'
-    assert f'artefacts: {why}' in _card('ada/alice', 'linux', NOW, artefacts=why).text()
-    assert 'artefacts:' not in _card('ada/alice', 'linux', NOW).text()
+    assert f'artifacts: {why}' in _card('ada/alice', 'linux', NOW, artifacts=why).text()
+    assert 'artifacts:' not in _card('ada/alice', 'linux', NOW).text()
 
 
 def test_the_queue_shows_the_origin_branches_a_human_may_delete() -> None:
@@ -455,7 +482,7 @@ def test_a_request_is_declared_once_per_queue_read(server, tmp_path: Path, monke
     _forge_of(tips, [])
     body = f'producer = "tests"\nsha = "{tips["feat/a"]}"\npaths = ["tests/test_x.py"]\n'
     issue = {**_issue(9, 'request'), 'body': body, 'created_at': NOW.isoformat(), 'labels': []}
-    monkeypatch.setattr(forgeschedule, 'labelled_issues', lambda _client, _label: (issue,))
+    monkeypatch.setattr(forgeschedule, 'labeled_issues', lambda _client, _label: (issue,))
     asked: list[tuple[str, str, tuple[str, ...]]] = []
 
     def declared(_root: Path, sha: str, producer: str, paths=()) -> object:

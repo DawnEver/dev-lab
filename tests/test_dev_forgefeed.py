@@ -177,13 +177,13 @@ def test_one_read_per_repository_whatever_the_number_of_subscribed_issues() -> N
     assert len(_alpha()) == len(rows)
 
 
-def test_a_labelled_thread_reaches_its_tasks_sessions_and_an_unlabelled_one_reaches_none() -> None:
+def test_a_labeled_thread_reaches_its_tasks_sessions_and_an_unlabeled_one_reaches_none() -> None:
     _hear(
         RepoForge([_row(3, '2026-11-18T10:00:00Z', ('task:alpha', 'bug')), _row(4, '2026-11-18T10:01:00Z', ('bug',))])
     )
     said = _alpha()
     assert any('#3 ' in line for line in said)
-    assert not any('#4 ' in line for line in said), 'PLANTED CONTROL: an unlabelled thread is routed nowhere'
+    assert not any('#4 ' in line for line in said), 'PLANTED CONTROL: an unlabeled thread is routed nowhere'
     assert forgefeed.take_task_unread('s2', 'beta') == [], 'PLANTED CONTROL: an unnamed task hears nothing'
 
 

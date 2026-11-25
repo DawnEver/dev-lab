@@ -16,7 +16,7 @@ wording, the capacity it prices the remedy arm at, the width it calls narrowed, 
 arm asserting that the two rule pages this file answers for are still on disk. Those are the keyword
 arguments below, with no defaults: a default is one repo's answer handed silently to another.
 
-WHY THIS IS NOT INSIDE :mod:`~dev_lab.dev.famtests.untimedwaits`, which is the nearest neighbour
+WHY THIS IS NOT INSIDE :mod:`~dev_lab.dev.famtests.untimedwaits`, which is the nearest neighbor
 and shares this module's subject word for word. They are the SCAN and the RUN, and the three measured
 differences are the same three that separated ``untimedwaits`` from ``bounded``, pointing the other
 way:
@@ -350,7 +350,7 @@ def assert_the_pool_vars_are_the_named_set() -> None:
 
     WHY AN EQUALITY AGAINST A DECLARED SET, WHEN THE SET IS THE KIT'S OWN CONSTANT. Because nothing
     in this tree DERIVES it. ``BLAS_THREAD_VARS`` is data no module reads at runtime -- the runtimes
-    behind it are native libraries whose honouring of the name is not observable in-process -- so there
+    behind it are native libraries whose honoring of the name is not observable in-process -- so there
     is no reading to compare against and a derivation here would be an invention wearing a
     measurement's clothes. What an equality buys is the thing a count cannot: the four names are
     written down twice, once where they are used and once here, and neither may move without the

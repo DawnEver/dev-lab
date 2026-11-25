@@ -45,7 +45,16 @@ from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.testcells import TestCell
 from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Record, Status
 
-from dev_lab.dev import forgerequest, localpart, platformparts, serialpass, verify, verifybox, verifysteps
+from dev_lab.dev import (
+    _verify_coverage,
+    forgerequest,
+    localpart,
+    platformparts,
+    serialpass,
+    verify,
+    verifybox,
+    verifysteps,
+)
 from dev_lab.dev.datedlog import UndeclaredOutput, date_parts
 from dev_lab.dev.famtests import alwayson
 from dev_lab.dev.inflight import RunKey, seat
@@ -53,7 +62,7 @@ from dev_lab.dev.lockwait import lock_wait
 from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
 from dev_lab.dev.platformparts import part_context, part_of
 from dev_lab.dev.producer import OUTCOME_VAR, PRODUCING_VAR, RETRYABLE, Owner, ProducerExit, producing, release_reason
-from dev_lab.dev.reports import StepReport, read_pytest, read_ruff, read_stages
+from dev_lab.dev.reports import StepReport, read_lint, read_pytest, read_stages
 from dev_lab.dev.runcache import CachedRun, record, runs
 from dev_lab.dev.skipallowance import SKIP_CEILING, MalformedAllowance, declared_skips, stale_declarations
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, outcomes_dir, read_cells
@@ -314,7 +323,7 @@ def test_live_verify_refuses_missing_corrupt_extra_flaky_or_contradictory_record
         return 0
 
     monkeypatch.setattr(verifysteps, 'boxed', _unboxed)
-    monkeypatch.setattr(verifysteps, 'RUFF_STEPS', ())
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
     monkeypatch.setattr(verifysteps, '_tee', step)
     verdict = verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
     assert verdict.result.outcome is Conclusion.INCONCLUSIVE, verdict.result
@@ -448,16 +457,16 @@ class TestReadingPytest:
 
 class TestReadingRuff:
     def test_a_clean_step_reports_itself(self) -> None:
-        assert read_ruff('ruff check .', 0) == StepReport(name='ruff check .', reported=('ruff check .',))
+        assert read_lint('ruff check .', 0) == StepReport(name='ruff check .', reported=('ruff check .',))
 
     def test_violations_are_a_named_failure(self) -> None:
-        assert read_ruff('ruff check .', 1).failures == ('ruff check .',)
+        assert read_lint('ruff check .', 1).failures == ('ruff check .',)
 
     def test_ruff_erroring_is_not_ruff_reporting(self) -> None:
         """A config ruff could not read is the same non-zero to a shell as a dirty tree. Not here."""
-        report = read_ruff('ruff check .', 2)
+        report = read_lint('ruff check .', 2)
         assert report.failures == ()
-        assert 'ruff erroring rather than ruff reporting' in ' | '.join(report.truncated)
+        assert 'the checker erroring rather than reporting' in ' | '.join(report.truncated)
 
 
 class TestTheSkipRatchet:
@@ -467,7 +476,7 @@ class TestTheSkipRatchet:
     unusable across four repos: a tool that answers INCONCLUSIVE on every invocation forever stops
     being read, and a refusal nobody reads is routed around rather than fixed. What makes the
     allowance a ratchet rather than a loophole is that BOTH sides refuse, and that declaring
-    nothing is exactly today's behaviour.
+    nothing is exactly today's behavior.
     """
 
     def test_pytest_is_always_asked_to_name_its_skips(self) -> None:
@@ -544,7 +553,7 @@ class TestTheSkipRatchet:
         r"""MEASURED 2026-09-16: the separator differs by platform.
 
         pytest prints ``tests\test_vendor.py`` on Windows and ``tests/...`` on Linux. One
-        declaration is committed for both, so the comparison normalises -- otherwise the same repo
+        declaration is committed for both, so the comparison normalizes -- otherwise the same repo
         settles on one box and truncates on the other, which is not a verdict.
         """
         windows = SKIPPING.replace('tests/test_vendor.py', 'tests\\test_vendor.py')
@@ -691,8 +700,8 @@ class TestTheDeclaration:
 class TestTheVerdict:
     def test_three_clean_steps_pass(self, log: Path) -> None:
         reports = (
-            read_ruff('ruff check .', 0),
-            read_ruff('ruff format --check .', 0),
+            read_lint('ruff check .', 0),
+            read_lint('ruff format --check .', 0),
             read_pytest(CLEAN, returncode=0),
         )
         verdict = _verdict(reports, log)
@@ -701,8 +710,8 @@ class TestTheVerdict:
 
     def test_a_failing_suite_fails_with_its_failures_named(self, log: Path) -> None:
         reports = (
-            read_ruff('ruff check .', 0),
-            read_ruff('ruff format --check .', 0),
+            read_lint('ruff check .', 0),
+            read_lint('ruff format --check .', 0),
             read_pytest(FAILING, returncode=1),
         )
         verdict = _verdict(reports, log)
@@ -713,8 +722,8 @@ class TestTheVerdict:
     def test_the_interrupted_suite_leaves_the_whole_verdict_inconclusive(self, log: Path) -> None:
         """Two green steps cannot promote a third that never ran -- and the exit code says so."""
         reports = (
-            read_ruff('ruff check .', 0),
-            read_ruff('ruff format --check .', 0),
+            read_lint('ruff check .', 0),
+            read_lint('ruff format --check .', 0),
             read_pytest(INTERRUPTED, returncode=2),
         )
         verdict = _verdict(reports, log)
@@ -726,7 +735,7 @@ class TestTheVerdict:
     def test_a_step_that_never_launched_is_silent_by_name(self, log: Path) -> None:
         """``selected`` comes from the step NAMES, which is the only way ``silent`` means anything."""
         reports = (
-            read_ruff('ruff check .', 0),
+            read_lint('ruff check .', 0),
             StepReport(name='ruff format --check .'),
             read_pytest(CLEAN, returncode=0),
         )
@@ -736,7 +745,7 @@ class TestTheVerdict:
 
     def test_the_verdict_stamps_a_log_a_later_reader_can_check(self, log: Path) -> None:
         """The stamp is the only artifact a reader who was not there gets, so it round-trips."""
-        verdict = _verdict((read_ruff('ruff check .', 0), read_pytest(CLEAN, returncode=0)), log)
+        verdict = _verdict((read_lint('ruff check .', 0), read_pytest(CLEAN, returncode=0)), log)
         verdict.stamp()
         citation = verify_log(log)
         assert citation.result == 'pass'
@@ -770,7 +779,7 @@ class TestTheTee:
         just as happily against the broken version -- both write everything eventually. So this test
         watches the log WHILE the step is still running, from a second thread. It plants a real
         subprocess rather than a fixture, because the defect was in the plumbing (``_tee``'s own
-        flushing and the child's own stdout buffering), not in anything that could be modelled as a
+        flushing and the child's own stdout buffering), not in anything that could be modeled as a
         string.
 
         THE ASSERTION IS AN ORDERING, NOT A DEADLINE, and that is deliberate. It used to be a 1.1s
@@ -881,7 +890,7 @@ class TestThePlantedControl:
         # THE DECLARED SUBJECT IS PLANTED, because `stale_declarations` refuses one whose file is gone
         # before any step launches -- and this control is about the SCOPE of the runtime ratchet, not
         # about a vanished subject. Left unplanted, every case below would truncate for the same
-        # unrelated reason and the parameterisation would stop distinguishing anything.
+        # unrelated reason and the parameterization would stop distinguishing anything.
         (tmp_path / 'tests').mkdir()
         (tmp_path / 'tests' / 'test_other.py').write_text('def test_a() -> None: ...\n', encoding='utf-8')
         commands = []
@@ -1021,7 +1030,7 @@ class TestThePlantedControl:
 
     def test_a_planted_uncovered_step_cannot_be_promoted(self, log: Path) -> None:
         """The other half of the control, at the verdict level rather than the parser level."""
-        clean = (read_ruff('ruff check .', 0), read_pytest(CLEAN, returncode=0))
+        clean = (read_lint('ruff check .', 0), read_pytest(CLEAN, returncode=0))
         assert _verdict(clean, log).result.outcome is Conclusion.PASS
         planted = (*clean, StepReport(name='a step that never launched'))
         assert _verdict(planted, log).result.outcome is Conclusion.INCONCLUSIVE
@@ -1057,18 +1066,18 @@ class TestTheTeeOnAConsoleThatCannotCarryTheCharacter:
         assert b'spinner ? done' in console.buffer.getvalue(), 'the view degrades, in the place it degraded'
 
 
-class TestTheTeeOnAColouredStep:
-    r"""THE WHOLE CHAIN, planted: a coloured FAIL must stay a FAIL, and nothing else may change.
+class TestTheTeeOnAColoredStep:
+    r"""THE WHOLE CHAIN, planted: a colored FAIL must stay a FAIL, and nothing else may change.
 
     THE REPRODUCTION, 2026-09-18, driven through the REAL reader. ``read_pytest`` over a short
     summary whose ``FAILED`` carries pytest's own ``--color=yes`` escapes answered
     ``truncated=('the summary names 1 failure(s) and the output names 0 node id(s)...',)`` -- a
     genuine red arriving as an INCONCLUSIVE, because ``_FAILED_NODE`` is anchored at ``^FAILED``
-    and ``\x1b[31mFAILED`` does not start there. That is every red in every repo which colours its
+    and ``\x1b[31mFAILED`` does not start there. That is every red in every repo which colors its
     output, and the direction is SAFE, which is why it went unnoticed. ``_tee`` now strips CSI, so
     the log, the console and the parser all read ONE text.
 
-    THREE DIRECTIONS, and the second and third are what make the first mean anything: the coloured
+    THREE DIRECTIONS, and the second and third are what make the first mean anything: the colored
     line must be caught, a PLAIN line must still come through byte for byte, and a line holding a
     literal ``ESC`` that is not a CSI sequence must not be mangled by a pattern that eats
     "anything after an ESC".
@@ -1077,35 +1086,35 @@ class TestTheTeeOnAColouredStep:
     #: The exact bytes pytest prints for a failure under ``--color=yes`` -- MEASURED 2026-09-18 with
     #: ``FORCE_COLOR=1`` on this box rather than hand-written. The node id is ITSELF wrapped, which is
     #: why loosening the anchor would have produced a FAIL naming a test that does not exist.
-    COLOURED = (
+    COLORED = (
         '\x1b[31mFAILED\x1b[0m test_c.py::\x1b[1mtest_a\x1b[0m - assert 0\n'
         '\x1b[31m==== \x1b[31m\x1b[1m1 failed\x1b[0m, \x1b[32m1 passed\x1b[0m\x1b[31m in 0.3s\x1b[0m ====\n'
     )
 
-    #: The same run with no colour at all: what the log has always held, and what must not move.
+    #: The same run with no color at all: what the log has always held, and what must not move.
     PLAIN = 'FAILED test_c.py::test_a - assert 0\n==== 1 failed, 1 passed in 0.3s ====\n'
 
     def _teed(self, tmp_path: Path, text: str) -> str:
         """Drive the REAL ``_tee`` over a real child printing *text*, and answer what the LOG holds."""
-        script = tmp_path / 'coloured_step.py'
+        script = tmp_path / 'colored_step.py'
         script.write_text(f'import sys\nsys.stdout.write({text!r})\n', encoding='utf-8')
         log = tmp_path / 'log.txt'
         with log.open('w', encoding='utf-8') as handle, contextlib.redirect_stdout(io.StringIO()):
             assert tee_step([sys.executable, str(script)], cwd=tmp_path, handle=handle) == 0
         return log.read_text(encoding='utf-8')
 
-    def test_the_parser_reads_a_raw_coloured_red_as_a_refusal(self) -> None:
+    def test_the_parser_reads_a_raw_colored_red_as_a_refusal(self) -> None:
         """THE FLOOR: the defect is real AT THE PARSER, so stripping upstream is not a no-op."""
         assert read_pytest(self.PLAIN, returncode=1).failures == ('test_c.py::test_a',)
-        assert read_pytest(self.COLOURED, returncode=1).truncated != (), (
-            'if the raw coloured text already parsed cleanly there would be nothing here to fix, and '
+        assert read_pytest(self.COLORED, returncode=1).truncated != (), (
+            'if the raw colored text already parsed cleanly there would be nothing here to fix, and '
             'every assertion below would pass for the wrong reason'
         )
 
-    def test_a_planted_coloured_failure_is_named_after_the_tee(self, tmp_path: Path) -> None:
+    def test_a_planted_colored_failure_is_named_after_the_tee(self, tmp_path: Path) -> None:
         """DIRECTION ONE: through the real plumbing the red is a red, and it NAMES its node id."""
-        report = read_pytest(self._teed(tmp_path, self.COLOURED), returncode=1)
-        assert report.truncated == (), f'a coloured red must settle as a FAIL, not truncate: {report.truncated}'
+        report = read_pytest(self._teed(tmp_path, self.COLORED), returncode=1)
+        assert report.truncated == (), f'a colored red must settle as a FAIL, not truncate: {report.truncated}'
         assert report.failures == ('test_c.py::test_a',), 'and the node id must be the one that failed, unwrapped'
 
     def test_a_plain_step_is_teed_byte_for_byte(self, tmp_path: Path) -> None:
@@ -1114,7 +1123,7 @@ class TestTheTeeOnAColouredStep:
         The log is the citable evidence. A fix that reached every line and changed ANY of them would
         rewrite what four repos' ``log=sha256:...@lines`` citations are re-read from.
         """
-        banner = f'$ {sys.executable} {tmp_path / "coloured_step.py"}\n'
+        banner = f'$ {sys.executable} {tmp_path / "colored_step.py"}\n'
         assert self._teed(tmp_path, self.PLAIN) == banner + self.PLAIN
 
     def test_a_literal_escape_in_legitimate_content_survives(self, tmp_path: Path) -> None:
@@ -1123,7 +1132,7 @@ class TestTheTeeOnAColouredStep:
         A test asserting on ``\x1b`` -- this repo has one for the console writer -- prints it, and a
         pattern eating "ESC and then whatever" would silently delete the rest of that line from the
         evidence. The carriage return is in the same plant: universal-newline translation splits it
-        into lines, which is ugly and never fatal, and that behaviour predates this fix.
+        into lines, which is ugly and never fatal, and that behavior predates this fix.
         """
         content = "FAILED t.py::test_esc - AssertionError: assert '\x1b' == '\x1bnot a csi'\n"
         assert self._teed(tmp_path, content).endswith(content), 'a lone ESC is not a CSI sequence and is not eaten'
@@ -1784,13 +1793,13 @@ def test_a_selection_declares_the_memory_its_files_measured_never_a_fixed_figure
 
 
 def test_a_declared_worker_peak_prices_a_worker_where_nothing_was_learned(tmp_path: Path) -> None:
-    """D101: a hosted runner has no learned table, so the repo's measured ``worker_mem_gb`` is the price.
+    """D101: a hosted runner has no learned table, so the repo's measured ``worker_mem`` is the price.
 
     PLANTED CONTROL: without the declaration the same unmeasured selection is priced at the 1 GB floor; with
     it each worker carries the declared peak x the box headroom, and a learned price above it still wins.
     """
     assert verifybox.declared_worker_gb(tmp_path) == 0.0, 'no pyproject declares nothing'
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem_gb = 4.0\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem = "4 GiB"\n', encoding='utf-8')
     declared = verifybox.declared_worker_gb(tmp_path)
     assert declared == 4.0
     assert verifybox.selection_mem_gb('https://g/hosted.git', ['tests/x.py'], 2) == 2.0
@@ -1800,8 +1809,11 @@ def test_a_declared_worker_peak_prices_a_worker_where_nothing_was_learned(tmp_pa
     assert (
         verifybox.selection_mem_gb('https://g/big.git', ['tests/x.py'], 1, declared_gb=1.0) == 8 * learned.BOX_HEADROOM
     )
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem_gb = "4"\n', encoding='utf-8')
-    with pytest.raises(ValueError, match='worker_mem_gb'):
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem = "4"\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='worker_mem = "4" is a bare number'):
+        verifybox.declared_worker_gb(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nworker_mem_gb = 3.5\n', encoding='utf-8')
+    with pytest.raises(ValueError, match=r'worker_mem_gb = 3.5 is retired.*write worker_mem = "3.5 GiB"'):
         verifybox.declared_worker_gb(tmp_path)
 
 
@@ -2064,8 +2076,8 @@ def test_the_coverage_total_is_read_from_the_markdown_report(tmp_path: Path) -> 
         '| **TOTAL** | **7** | **1** | **86%** |\n',
         encoding='utf-8',
     )
-    assert verifysteps.coverage_total(report) == '86%'
-    assert verifysteps.coverage_total(tmp_path / 'absent.md') is None  # PLANTED: no report, no number
+    assert _verify_coverage.coverage_total(report) == '86%'
+    assert _verify_coverage.coverage_total(tmp_path / 'absent.md') is None  # PLANTED: no report, no number
 
 
 def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> None:
@@ -2087,10 +2099,10 @@ def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> N
             '-p',
             'no:cacheprovider',
             *family_off,
-            *verifysteps.coverage_args(tmp_path, log),
+            *_verify_coverage.coverage_args(tmp_path, log),
         ],
         cwd=tmp_path,
-        env={**os.environ, **verifysteps.coverage_env(tmp_path, log)},
+        env={**os.environ, **_verify_coverage.coverage_env(tmp_path, log)},
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -2098,13 +2110,13 @@ def test_pytest_cov_REALLY_writes_the_report_the_door_names(tmp_path: Path) -> N
         check=False,
     )
     assert done.returncode == 0, done.stdout + done.stderr
-    assert verifysteps.coverage_total(verifysteps.coverage_report(tmp_path, log)) == '86%'
+    assert _verify_coverage.coverage_total(_verify_coverage.coverage_report(tmp_path, log)) == '86%'
 
 
 def test_planted_an_UNDECLARED_output_root_is_refused_naming_the_key(tmp_path: Path) -> None:
     """No default root: a repo that declares none is told the key, never handed another repo's answer."""
     with pytest.raises(UndeclaredOutput, match=r'\[tool\.dev_lab\.parts\] output'):
-        verifysteps.coverage_report(tmp_path, tmp_path / 'verify-x.log')
+        _verify_coverage.coverage_report(tmp_path, tmp_path / 'verify-x.log')
 
 
 def test_each_failed_step_in_the_summary_names_its_door_and_a_failed_test_its_log(tmp_path: Path) -> None:
@@ -2144,13 +2156,16 @@ def test_an_unstaged_edit_to_any_tracked_file_moves_the_run_key(tmp_path: Path) 
 def test_a_repo_declares_its_selection_wall_and_the_box_holds_the_selection_to_it(tmp_path: Path) -> None:
     """learn-lab's full selection outgrew the one hard-coded 3600 s wall and was killed every night (2026-11-18).
 
-    ``[tool.dev_lab.verify] wall_s`` is the repo's declared wall; undeclared is :data:`SELECTION_WALL_S`. A wall that
-    is not a positive number of seconds is refused naming the key. PLANTED CONTROL: undeclared stays the default.
+    ``[tool.dev_lab.verify] wall`` is the repo's declared wall; undeclared is :data:`SELECTION_WALL_S`. A wall that
+    is not a positive duration is refused naming the key. PLANTED CONTROL: undeclared stays the default.
     """
     assert verifybox.declared_wall_s(tmp_path) == verifybox.SELECTION_WALL_S, 'PLANTED CONTROL: undeclared'
-    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall_s = 7200\n', encoding='utf-8')
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall = "2 h"\n', encoding='utf-8')
     assert verifybox.declared_wall_s(tmp_path) == 7200
-    for bad in ('"2h"', '0', '-5', 'true', '1.5'):
-        (tmp_path / 'pyproject.toml').write_text(f'[tool.dev_lab.verify]\nwall_s = {bad}\n', encoding='utf-8')
-        with pytest.raises(ValueError, match='wall_s'):
+    for bad in ('"0 s"', '"-5 min"', 'true', '7200', '"7200"', '"2 GiB"'):
+        (tmp_path / 'pyproject.toml').write_text(f'[tool.dev_lab.verify]\nwall = {bad}\n', encoding='utf-8')
+        with pytest.raises(ValueError, match='wall = '):
             verifybox.declared_wall_s(tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('[tool.dev_lab.verify]\nwall_s = 7200\n', encoding='utf-8')
+    with pytest.raises(ValueError, match=r'wall_s = 7200 is retired.*write wall = "7200 s"'):
+        verifybox.declared_wall_s(tmp_path)

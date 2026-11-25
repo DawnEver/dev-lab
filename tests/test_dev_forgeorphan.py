@@ -1,4 +1,4 @@
-"""An orphaned PR goes to the integrator: labelled once, commented once, listed every tick (forgeorphan)."""
+"""An orphaned PR goes to the integrator: labeled once, commented once, listed every tick (forgeorphan)."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _nobody(_owners: object) -> bool:
     return False
 
 
-def test_a_still_pr_with_no_live_owner_is_taken_once_labelled_and_commented(tmp_path: Path, monkeypatch) -> None:
+def test_a_still_pr_with_no_live_owner_is_taken_once_labeled_and_commented(tmp_path: Path, monkeypatch) -> None:
     forge, number = _pull(monkeypatch, ORPHAN_AGE + timedelta(minutes=1))
     (line,) = take(tmp_path, forge, _BASE, now=_NOW, live=_nobody)
     assert f'#{number}' in line

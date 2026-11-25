@@ -82,6 +82,10 @@ from lab_commons.log import emit
 from dev_lab.dev import hostedjobs, hostedparts
 from dev_lab.dev._forgebackends import BACKENDS, JUDGE_HOST, backend_for, require_producer
 from dev_lab.dev.ciworkflowshape import (
+    BASE_PATH,
+    FORGE_KEY,
+    WORKFLOW_DIRS,
+    base_names,
     expand,
     measurement_isolated,
     merge,
@@ -96,10 +100,8 @@ from dev_lab.dev.roles import HOST, REVIEW, ROLES_ENV, Roles, roles_at
 from dev_lab.dev.verifybox import wall_of
 
 __all__ = [
-    'BASE_PATH',
     'BY_FORGE',
     'EXTRAS_PLACEHOLDER',
-    'FORGE_KEY',
     'INTEGRATION_PLACEHOLDER',
     'LIGHT',
     'PART_MARGIN_MIN',
@@ -110,8 +112,6 @@ __all__ = [
     'RUNNERS',
     'SHARED',
     'STAMP',
-    'WORKFLOW_DIRS',
-    'base_names',
     'declared_forge',
     'declared_paths',
     'drift',
@@ -125,8 +125,6 @@ __all__ = [
     'workflows',
     'write',
 ]  # fmt: skip
-
-BASE_PATH: Final = Path(__file__).resolve().parent / 'ci_base.toml'
 
 #: The top-level table of named step lists; never a workflow.
 SHARED: Final = '_steps'
@@ -145,11 +143,6 @@ EXTRAS_PLACEHOLDER: Final = '@extras@'
 PART_TIMEOUT_PLACEHOLDER: Final = '@part-timeout-minutes@'
 #: Minutes a part spends outside its selection wall: checkout, sync, posting and the log upload.
 PART_MARGIN_MIN: Final = 30
-#: The directory each forge's Actions runs its workflows from.
-WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('.gitea') / 'workflows'}
-
-#: The table key naming the forge a workflow is rendered for; a placement, never part of the rendered workflow.
-FORGE_KEY: Final = 'forge'
 #: The table key holding each forge's part of a workflow either may run; only the chosen forge's is merged in.
 BY_FORGE: Final = 'by-forge'
 RENDER_COMMAND: Final = 'python -m dev_lab.dev.ciworkflows render'
@@ -231,16 +224,6 @@ def declared_paths(root: Path) -> frozenset[str]:
     _, tables = _declared(root)
     names = base_names(forge) | {name for name, table in tables.items() if isinstance(table, dict)}
     return frozenset((WORKFLOW_DIRS[forge] / name).as_posix() for name in names)
-
-
-def base_names(forge: str) -> set[str]:
-    """Every base workflow placed on *forge*: what every repo hosted there renders, declared or not."""
-    base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
-    return {
-        name
-        for name, table in base.items()
-        if not name.startswith('_') and isinstance(table, dict) and table.get(FORGE_KEY, 'github') == forge
-    }
 
 
 def _placed(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:

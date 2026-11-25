@@ -1,16 +1,18 @@
 """The shapes a pressure reading is made of: one :class:`Finding`, and the kernel files' text parsed.
 
 Shared by :mod:`dev_lab.supervise.pressure` (host disk, PSI, psutil) and :mod:`dev_lab.supervise.cgroup` (a
-declared unit's cgroup), so neither imports the other's internals.
+declared unit's cgroup), so neither imports the other's internals. :func:`psutil_module` is the one door to the
+optional ``psutil`` a reading samples; this leaf imports no supervision machinery, so the hook path can use it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import ModuleType
 
 from dev_lab.supervise.consumers import Consumer
 
-__all__ = ['Finding', 'parse_events', 'parse_psi']
+__all__ = ['Finding', 'parse_events', 'parse_psi', 'psutil_module']
 
 
 @dataclass(frozen=True)
@@ -46,3 +48,12 @@ def parse_psi(text: str) -> dict[str, float]:
 def parse_events(text: str) -> dict[str, int]:
     """A cgroup ``memory.events`` or ``memory.stat`` file as ``{counter: count}``."""
     return {k: int(v) for k, v in (line.split() for line in text.splitlines() if line.strip())}
+
+
+def psutil_module() -> ModuleType | None:
+    """The ``psutil`` module, or ``None`` where the optional extra is not installed -- the one lazy import."""
+    try:
+        import psutil  # noqa: PLC0415
+    except ImportError:
+        return None
+    return psutil

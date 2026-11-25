@@ -35,7 +35,7 @@ from dev_lab.dev.forgerequest import (
     unserved,
 )
 from dev_lab.dev.forgerequesthost import DONE_LABEL, UNADMITTED
-from dev_lab.dev.forgeschedule import NOT_ADMITTED, labelled_issues
+from dev_lab.dev.forgeschedule import NOT_ADMITTED, labeled_issues
 from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.producer import Owner, owned
 
@@ -49,8 +49,8 @@ GOLDENS = (
     + 'argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]\n'
     + 'needs = ["femm", "windows"]\n'
     + 'cpu = 2\n'
-    + 'mem_gb = 3.5\n'
-    + 'wall_h = 72\n'
+    + 'mem = "3.5 GiB"\n'
+    + 'wall = "72 h"\n'
 )
 FEMM_HOST = Supply(
     'G', Resources(cpu=4.0, mem_gb=16.0, femm=1.0, windows=1.0), frozenset({'cpu', 'mem_gb', 'femm', 'windows'})
@@ -158,7 +158,7 @@ def test_an_undeclared_producer_name_is_refused_not_run(server, tmp_path: Path) 
 def test_a_request_is_admitted_at_the_size_its_row_declares_never_the_whole_host(server, tmp_path: Path) -> None:
     """S1 (live 2026-10-16): three requests each asked a host's WHOLE card and admitted nowhere busy.
 
-    No demand is injected: the tick sizes the request from its own row (``cpu``, ``mem_gb``).
+    No demand is injected: the tick sizes the request from its own row (``cpu``, ``mem``).
     """
     repo, tips = _origin(tmp_path)
     sha = _request(repo, tips, 'femm_goldens')
@@ -178,12 +178,23 @@ def test_an_unsized_request_row_is_refused_by_name(tmp_path: Path) -> None:
     unsized = _declare(repo, tips, GOLDENS.replace('cpu = 2\n', ''))
     with pytest.raises(UndeclaredRequest, match=r'unsized.*cpu'):
         declared_request(repo, unsized, 'femm_goldens')
-    zero = _declare(repo, tips, GOLDENS.replace('mem_gb = 3.5', 'mem_gb = 0'))
-    with pytest.raises(UndeclaredRequest, match=r'unsized.*mem_gb'):
+    zero = _declare(repo, tips, GOLDENS.replace('mem = "3.5 GiB"', 'mem = "0 GiB"'))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*mem'):
         declared_request(repo, zero, 'femm_goldens')
-    unbounded = _declare(repo, tips, GOLDENS.replace('wall_h = 72', ''))
-    with pytest.raises(UndeclaredRequest, match=r'unsized.*wall_h'):
+    bare = _declare(repo, tips, GOLDENS.replace('mem = "3.5 GiB"', 'mem = 3.5'))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*mem = 3.5 is a bare number'):
+        declared_request(repo, bare, 'femm_goldens')
+    unbounded = _declare(repo, tips, GOLDENS.replace('wall = "72 h"', ''))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*wall'):
         declared_request(repo, unbounded, 'femm_goldens')
+
+
+def test_a_unit_suffixed_request_row_is_refused_with_its_new_line(tmp_path: Path) -> None:
+    """FORMATS-MIGRATE-ONCE (user ruling 2026-11-25): ``mem_gb``/``wall_h`` are never read; the refusal is the line."""
+    repo, tips = _origin(tmp_path)
+    old = _declare(repo, tips, GOLDENS.replace('mem = "3.5 GiB"', 'mem_gb = 3.5'))
+    with pytest.raises(UndeclaredRequest, match=r'mem_gb = 3.5 is retired.*write mem = "3.5 GiB"'):
+        declared_request(repo, old, 'femm_goldens')
 
 
 def test_a_declaration_is_read_at_the_sha_and_refuses_a_malformed_row(tmp_path: Path) -> None:
@@ -250,13 +261,13 @@ DIGEST = 'ab' * 32
 def test_a_finished_request_says_where_its_record_is_and_closes(monkeypatch, tmp_path: Path) -> None:
     """O1-O3: the requester learns the host, the record path and each file's sha256.
 
-    A success is labelled done and CLOSED (user ruling 2026-11-19: issues never pile up as event records); the
+    A success is labeled done and CLOSED (user ruling 2026-11-19: issues never pile up as event records); the
     result stays on the closed issue and on the sha's status.
     """
     forge, comments = _produce(monkeypatch, tmp_path, 0)
     assert forge.posts[-1][:2] == ('request/9', 'success')
-    (kind, number, body), labelled, closed = comments
-    assert (kind, number, labelled, closed) == ('comment', 9, ('label', 9, DONE_LABEL), ('close', 9))
+    (kind, number, body), labeled, closed = comments
+    assert (kind, number, labeled, closed) == ('comment', 9, ('label', 9, DONE_LABEL), ('close', 9))
     assert 'regenerated 45 goldens' in body, 'the log travels with the result'
     assert f'record: `{KEPT}` on {ME.machine}' in body
     assert f'`{DIGEST}`  goldens.csv' in body
@@ -500,7 +511,7 @@ def test_a_request_is_published_only_when_a_host_could_reproduce_it(tmp_path: Pa
     assert forge.calls[-1] == ('POST', '/r/issues/9/labels', {'labels': [1]})
 
 
-def test_every_page_of_labelled_issues_is_read() -> None:
+def test_every_page_of_labeled_issues_is_read() -> None:
     """P1: only the first 50 open issues were read, so request #51 was invisible."""
     pages = {
         1: [{'number': n, 'labels': [{'name': 'forge:request'}]} for n in range(50)],
@@ -511,7 +522,7 @@ def test_every_page_of_labelled_issues_is_read() -> None:
         return pages.get(int(path.rsplit('page=', 1)[1]), [])
 
     client = SimpleNamespace(backend=GITEA, repo='/r', call=call)
-    assert [raw['number'] for raw in labelled_issues(client, 'forge:request')] == list(range(51))
+    assert [raw['number'] for raw in labeled_issues(client, 'forge:request')] == list(range(51))
 
 
 def test_a_host_pin_its_author_does_not_publish_is_refused_by_name(server, tmp_path: Path) -> None:

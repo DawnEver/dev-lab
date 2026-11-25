@@ -3,7 +3,7 @@
 # EVERY REPO RENDERS EVERY TABLE HERE PLACED ON ITS FORGE (`forge`, github when omitted; the repo's forge is
 # read from its origin) -- never an opt-in. A repo's `[tool.dev_lab.ci."<file>.yml"]` in its pyproject.toml is
 # deep-merged over the base (tables merge key by key, any other value replaces); it may also render another
-# forge's table, or declare a workflow the base does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
+# forge's table, or declare a workflow the base does not have. `.github/workflows/<file>.yml` is then a RENDERED artifact: never hand-edited, never
 # parsed back. Re-render with `python -m dev_lab.dev.ciworkflows render`.
 # `@integration@` in any string is the repo's declared integration branch ([tool.dev_lab.integrator] integration),
 # substituted at render (ciworkflows.INTEGRATION_PLACEHOLDER); a literal `integrate/main` is dev-lab's own line.
@@ -548,7 +548,7 @@ echo "REVIEW_PYTHON=$RUNNER_TEMP/review/bin/python" >> "$GITHUB_ENV"
 # GIT_CONFIG_* env, never a config write). The checkout is a `clone --shared` of it in the job's workspace,
 # disposable, re-pointed at the forge as its promisor; the PR head is fetched into the checkout alone.
 # Two jobs of one repository may overlap (the concurrency group is per PR, so a superseded run is cancelled and no
-# PR's pending run is dropped for another's): the flock serialises their mirror updates, and a --prune'd branch's
+# PR's pending run is dropped for another's): the flock serializes their mirror updates, and a --prune'd branch's
 # objects stay in the mirror's packs until a gc's prune expiry (two weeks), far beyond a job.
 # A JOB NEVER REPACKS THE WHOLE MIRROR (2026-11-06, forge-a1): the fetch's auto-gc ran `pack-objects --all` (360 MB)
 # inside the 1 GB light runner, which hit memory.high 3928 times. The fetch runs with gc.auto=0, and under the same
@@ -752,7 +752,7 @@ actions = "write"
 # <pr>` -- after a security finding is fixed -- leaves a comment carrying the review-again marker; `forge review carry
 # <pr>` -- a continuation's carried finding resolved or deferred -- one carrying the review-carry marker, on which the
 # run re-posts the standing verdict with no model call (LANDED-BRANCH-CONTINUES). That comment
-# triggers this job, which runs the PR's review as the job's own identity (forgereview.review_pull honours the
+# triggers this job, which runs the PR's review as the job's own identity (forgereview.review_pull honors the
 # request). A separate workflow, so a comment never runs the parts of ci.yml. GitHub runs an issue_comment workflow
 # from the default branch only, so the door is the trusted one.
 ["review-again.yml"]

@@ -11,11 +11,11 @@ declares its own excludes and per-file waivers, with real names, in its own test
 :func:`~dev_lab.dev.ruffwaivers.assert_waivers_declared`. What stays here is the MECHANISM, driven
 by planted controls, and the kit's own rows judged by the same call a consumer makes.
 
-THE AXIS THE CONTROLS ARE PARAMETRIZED OVER IS SPELLING, not repos: ruff honours ``lint.extend-ignore``
+THE AXIS THE CONTROLS ARE PARAMETRIZED OVER IS SPELLING, not repos: ruff honors ``lint.extend-ignore``
 and a deprecated top-level ``ignore`` as well, so a reader of one spelling would empty the reading the
 day an entry moved across spellings while changing nothing ruff does.
 
-THE RATCHET HAS TWO SIDES, mechanised rather than described: a row that is not declared reds NAMED,
+THE RATCHET HAS TWO SIDES, mechanized rather than described: a row that is not declared reds NAMED,
 and a declared row no live config needs reds too.
 """
 
@@ -89,7 +89,7 @@ def test_the_resolved_config_is_what_is_read_so_the_arms_do_not_care_which_file_
 # ------------------------------------------------------------------------------ planted controls
 
 
-#: Every row is a config ruff honours that a one-spelling reader would not see.
+#: Every row is a config ruff honors that a one-spelling reader would not see.
 _SPELLING_CONTROLS: Final[tuple[tuple[str, dict, str], ...]] = (
     ('ignore', {'lint': {'ignore': ['E501']}}, 'E501'),
     ('ignore', {'lint': {'extend-ignore': ['E501']}}, 'E501'),

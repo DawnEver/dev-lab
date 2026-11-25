@@ -326,11 +326,12 @@ _TEXT_WRITES = pytest.mark.parametrize(
         ['pr', 'create', '--title', '{text}', '--body', 'b', '--head', 'x', '--base', 'y'],
         ['pr', 'create', '--title', 't', '--body', '{text}', '--head', 'x', '--base', 'y'],
         ['pr', 'close', '9', '--reason', '{text}'],
+        ['pr', 'edit', '9', '--append-line', '{text}'],
         ['issue', 'create', '--title', '{text}', '--body', 'b', '--kind', 'need'],
         ['issue', 'create', '--title', 't', '--body', '{text}', '--kind', 'need'],
         ['issue', 'comment', '7', '--body', '{text}'],
     ],
-    ids=['pr-title', 'pr-body', 'pr-close-reason', 'issue-title', 'issue-body', 'comment'],
+    ids=['pr-title', 'pr-body', 'pr-close-reason', 'pr-edit-line', 'issue-title', 'issue-body', 'comment'],
 )
 
 

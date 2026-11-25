@@ -82,7 +82,7 @@ GROUNDS: Final[dict[str, tuple[str, ...]]] = {
     'simpler-side': ('occams-razor',),
     'one-source': ('single-source-of-truth',),
     'deleted-as-baggage': ('no-historical-baggage', 'no-backward-compatibility'),
-    'renamed-to-reality': ('names-match-behaviour',),
+    'renamed-to-reality': ('names-match-behavior',),
     'both-needed': ('first-principles',),
     'kept-capability': ('keep-valuable-options',),
 }
@@ -95,6 +95,7 @@ UNCLASSED: Final[dict[str, str]] = {
     'no-barrier-fan-out': 'a property of how work is scheduled, not a side; a merge resolves one lane at a time',
     'images-by-absolute-path': 'a property of what a turn hands the user, not a side; the Stop hook refuses one',
     'worktree-names-its-task': 'a property of where the work is done, not a side; the deny row refuses the name',
+    'native-first': 'a property of where a stage computes, not a side; NATIVE-FIRST refuses a Python twin',
 }
 
 CLASSES: Final = frozenset(GROUNDS)
@@ -224,7 +225,7 @@ def _retired_history(root: Path, base: str, merges: Sequence[tuple[str, Sequence
 
     A retire (``-s ours``) keeps its first parent's tree whole, so its second parent's commits reach the head as
     the retired branch's own past -- including any merge that branch made, whose message this PR cannot redo
-    without dropping the very sha the retire exists to contain. Recognised by CONTENT (tree equal to the first
+    without dropping the very sha the retire exists to contain. Recognized by CONTENT (tree equal to the first
     parent's), never by message; the retire merge itself is still judged like any other.
     """
     exempt: set[str] = set()

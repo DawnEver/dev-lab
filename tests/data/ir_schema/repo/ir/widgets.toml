@@ -1,0 +1,26 @@
+[enum.Finish]
+values = ["raw", "painted", "anodized"]
+
+[record.Widget]
+doc = "One manufactured widget."
+[record.Widget.field.id]
+type = "id:Widget"
+doc = "Stable identity of this widget."
+[record.Widget.field.finish]
+type = "enum:Finish"
+[record.Widget.field.mass]
+type = "float"
+quantity = "mass"
+[record.Widget.field.operating_temperature]
+type = "float"
+quantity = "temperature"
+optional = true
+doc = "Absent when the widget has no rated temperature."
+[record.Widget.field.ambient_pressure]
+type = "float"
+quantity = "pressure"
+[record.Widget.field.seal_pressure]
+type = "float"
+quantity = "pressure"
+gauge_reference = "ambient_pressure"
+doc = "Gauge at the boundary, absolute inside."

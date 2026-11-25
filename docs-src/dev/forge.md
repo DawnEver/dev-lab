@@ -105,7 +105,7 @@ What every host still reads, kept small:
   decides; no cron line of its own). Files are the binding HPC resource, so the rules follow what each thing is
   FOR. One function says what is IN FLIGHT (`retentionplan.in_flight`): a sha a live run file names, a tree a
   queued or running Slurm job of the account works in (`squeue --me -o %Z` at or under `trees/<sha>`), or a sha
-  whose run state, tree or `.lab-ci` round stream was touched within `min_age_hours` (being built, or a round
+  whose run state, tree or `.lab-ci` round stream was touched within `min_age` (being built, or a round
   ended and not yet gathered). "No record yet" is NOT in flight: a superseded or released run is never gathered.
   A round's items all append to ONE file `.lab-ci/<tag>.jsonl` (lines tagged `item`). A tree is kept only while
   its sha is in flight (`tree-not-in-flight`); an unrecorded run's round stream is kept as ONE file
@@ -188,7 +188,7 @@ heavy JMAG work is declared on the box's ledger (step 8), and a local run takes 
 
 **1. Prerequisites.**
 
-- Logged on as the user who works there: JMAG's COM classes and licence are theirs.
+- Logged on as the user who works there: JMAG's COM classes and license are theirs.
 - `git` (`winget install --id Git.Git -e`) and `uv`
   (`powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`) on `PATH`; with
   `workstation` declared also `node` and `codex`; with `jmag`, JMAG-Designer installed (its installer registers
@@ -348,7 +348,7 @@ newest commit lacks, or a request issue.
 - **Candidates** (`forgeschedule.candidates`), the same on every host: the integration branch
   (`integration`), every open PR into it (`pr`), every other origin branch the ONE CLASS RULE names
   (`classes_by_ref`, ordered, first match: `feat/*` and `fix/*` are `feature`, `lane/*` is `branch` by
-  default; a branch no pattern matches is not served), and every open issue labelled `forge:request`
+  default; a branch no pattern matches is not served), and every open issue labeled `forge:request`
   (`request`: a body naming `producer = "<name>"` and `sha = "<40-hex>"`; the producer is declared at that
   sha under `[tool.dev_lab.requests.<name>]` with `argv`, its need-set `needs` and its size `cpu`,
   `mem_gb`, `wall_h` (an unsized row is refused), admitted like a part and claimed on context `request/<n>`
@@ -356,7 +356,7 @@ newest commit lacks, or a request issue.
   a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
   branch and trunk only for a login its machine file lists in `[requests] authors`; it waits, named, while a
   git source of its lock or submodules is unreachable here, and is told once on its issue after
-  `request_unadmitted_hours`. A success is labelled `request:done` with its record path and sha256s, and
+  `request_unadmitted_hours`. A success is labeled `request:done` with its record path and sha256s, and
   closed (user ruling 2026-11-19); a failure stays open. A ref's tip is one candidate per
   part it needs (`base`, and every part its posted parts hand to). The same rule names those
   children ([the integration branch](integration.md)).
@@ -483,12 +483,16 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 - **Host cards** (`forgehosts`): each serving host edits one comment on the ONE `forge hosts` issue: who it
   is, its OS, its `supply` (what the tick admitted against), cluster facts (partitions, quota, QOS), its
   last tick, what it holds, what else `running` on it (each box ledger claim), and why each candidate it saw
-  waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
+  waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale.
+  A cluster seat's card (`<cluster>/<account>`) is read only where the family's roles binding binds a role of the
+  repo to that account's grant (`forgehosts.serving_cards`): any other seat -- a research account -- is no supply,
+  no fleet alarm and no admission, and the queue lists it under `unbound seats` with `forge hosts retire <host>`.
+  A box's card is judged by its tick alone. The issue is the OLDEST carrying
   the hidden `forge-hosts` marker (or the title), read off the issue cache in every state; a failed lookup, or a
   listing showing fewer open issues than the repository counts, refuses with an ALARM line and opens nothing.
 - **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge serve` on the repo's poller every tick): the rules and
   their defaults are in [issues](issues.md#issues-never-rot). It says so in ONE comment on the hosts issue.
-- `compute.model.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
+- `compute.model.rank` is the one pure ordering rule; an optimizer replaces it without touching I/O.
 
 ### Watching a sha, and cancelling its stuck tasks
 
@@ -546,7 +550,7 @@ identity. The mechanism is the module docstring of
   ([issues](issues.md#reds-are-area-issues)). `[tool.dev_lab.forge.owners]` maps an area name or a
   branch glob to gitea usernames (`jmag = ["alice"]`, `"lane/*" = ["bob"]`); each matching owner is
   @-mentioned in a `cc` line closing the issue body. No table, no mentions; a malformed name is refused.
-- A run's declared outputs travel separately, through [the artefact store](artefacts.md).
+- A run's declared outputs travel separately, through [the artifact store](artifacts.md).
 
 ## Issues and pull requests: the door
 
@@ -613,11 +617,11 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
 
   GitHub through `gh secret set` (stdin), Gitea through the forge door unjournaled -- a journaled write keeps its
   body on disk. Each line names the repo, the secret and the bundle's sha256 prefix only.
-- A Gitea Actions secret is writable ONLY by an owner of the organisation that owns the repo (or a site admin): a
+- A Gitea Actions secret is writable ONLY by an owner of the organization that owns the repo (or a site admin): a
   push-only credential is refused, and the settings pages (`/<owner>/<repo>/settings/actions/secrets`,
   `/org/<org>/settings/actions/secrets`) answer `404 Not Found`, not 403, to anyone else (measured 2026-11-05 on
   `org-x`). So on Gitea the bundle is set by the user in the web UI with the admin account, once at the
-  organisation level, where every repo of the organisation reads it; `secrets sync` sets the GitHub repos.
+  organization level, where every repo of the organization reads it; `secrets sync` sets the GitHub repos.
 
 ### A refused credential is preserved unless provider refresh is verified
 

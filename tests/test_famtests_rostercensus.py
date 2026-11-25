@@ -125,7 +125,7 @@ def test_a_module_floor_of_zero_is_refused_as_the_vacuity_written_down() -> None
 
 
 def test_a_flagged_row_on_the_moves_side_is_named_and_an_unflagged_one_is_not() -> None:
-    """THE CHECK, both directions: the duplicate is convicted and the honest neighbour is left alone."""
+    """THE CHECK, both directions: the duplicate is convicted and the honest neighbor is left alone."""
     taken = census(
         claim('scripts/repo/worktree_debris.py', side=MOVES, grade=supersede.SUPERSEDED),
         claim('scripts/repo/own.py', side=MOVES, grade=supersede.UNTOUCHED),

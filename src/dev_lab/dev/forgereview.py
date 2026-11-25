@@ -25,7 +25,7 @@ PR, on a finding carried from its branch's landed PRs and not yet resolved or de
 A review that DID NOT RUN
 never holds the merge (:mod:`dev_lab.dev.reviewcap`): a failed attempt on the serve tick is retried once
 (:data:`~dev_lab.dev.forgereview_claim.RETRYING`); a second failure, a failure in a review job, every reviewer
-unsupported, exhausted or unauthorised, no review key (a fork PR's job), or a reached dollar cap
+unsupported, exhausted or unauthorized, no review key (a fork PR's job), or a reached dollar cap
 (:mod:`dev_lab.dev.reviewbudget`) records its cause on the PR and posts ``pending``
 :data:`~dev_lab.dev.forgereview_claim.UNREVIEWED_STATUS` (:func:`unreviewed`): the PR merges ``Unreviewed:``.
 

@@ -10,7 +10,7 @@ disagreeing about a field name -- the defect the predecessor had in its state, w
 used two spellings of the same counter.
 
 WHAT IS REDACTED AND WHY. A delivery's detail is whatever a channel said back, and a channel that
-refuses an address tends to refuse it BY NAME. A report is the most-copied artefact a supervisor
+refuses an address tends to refuse it BY NAME. A report is the most-copied artifact a supervisor
 produces -- into a log, a chat, a ticket -- so an address or a bearer token is masked on the way in
 rather than trusted not to travel.
 """
@@ -86,7 +86,7 @@ def record(result: CycleResult, at: datetime) -> dict[str, Any]:
         at: when it ran.
 
     Returns:
-        A mapping of scalars, safe to serialise.
+        A mapping of scalars, safe to serialize.
 
     """
     return {

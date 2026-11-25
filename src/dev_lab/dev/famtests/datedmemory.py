@@ -184,7 +184,7 @@ def assert_the_readers_still_convict(plant_root: Path, *, non_entry_names: Colle
 
     A reader that never fires reports exactly what a clean tree reports, so the four shapes the
     readers exist to tell apart are planted at once: a fork under a literal directory, a loose file
-    at the root, a stale header, and a missing one -- each beside an honest neighbour that must NOT
+    at the root, a stale header, and a missing one -- each beside an honest neighbor that must NOT
     be named. The nested-below-the-date file and the agreeing entry are the arms that matter most:
     without them, a reader that named everything would pass every assertion above.
 
@@ -199,7 +199,7 @@ def assert_the_readers_still_convict(plant_root: Path, *, non_entry_names: Colle
             THIS repo declares rather than one this module chose.
 
     Raises:
-        AssertionError: a reader failed to name a planted offender, or named an honest neighbour.
+        AssertionError: a reader failed to name a planted offender, or named an honest neighbor.
 
     """
     day = plant_root / '2026' / '09' / '18'

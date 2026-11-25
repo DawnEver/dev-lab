@@ -72,7 +72,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'from the parents` trees, never trusted from the message; the FORGE enforces it, refusing to merge a PR '
             'whose head adds a merge commit that leaves one undeclared or declares one the parents do not '
             'conflict on (remedy: redo that merge, a message cannot be amended), and the commit-msg '
-            'hook makes the same judgement early on the merge being committed.'
+            'hook makes the same judgment early on the merge being committed.'
         ),
         ('tests/test_dev_mergeresolution.py',),
     ),
@@ -136,7 +136,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             '(fetched afresh) older than the TIME window `locklag.LAG_WINDOW` (a failed fetch refuses with its '
             'reason), whose lock pins a floated sibling past the lag window `lock/lag` reads '
             '(`locklag.within_window`), or with uncommitted tracked changes. A `pr/*` push is WARNED at pre-push on '
-            'the same judgement and when the pushing venv lacks what that lock pins (`prcurrent.kit_stale`, naming '
+            'the same judgment and when the pushing venv lacks what that lock pins (`prcurrent.kit_stale`, naming '
             'the bootstrap door): the forge status `pr-current` is an alarm, never a merge gate (dev-lab #661). Each '
             'names `forge sync`, which merges integration and relocks the floated siblings (user ruling 2026-11-07).'
         ),
@@ -212,7 +212,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Every new first-parent commit of the integration branch, from the declared `merges_only_since` '
             'forward, is a two-parent merge naming its branch in a `Merged-Branch:` trailer whose merge audit '
-            'passes (the same judgement the commit-msg hook makes), refused at pre-push, until `pr_merges_since` '
+            'passes (the same judgment the commit-msg hook makes), refused at pre-push, until `pr_merges_since` '
             'stands and INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge.'
         ),
         ('tests/test_dev_sessionbranch.py', 'tests/test_dev_integrate.py', 'tests/test_dev_hooks.py'),

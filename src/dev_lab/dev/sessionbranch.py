@@ -23,7 +23,7 @@ The invariants refused here by name, with NO network call beyond the push itself
   one; a forced non-fast-forward and a deletion are refused. ONE place: no other hook judges this.
 * ``INTEGRATION-IS-MERGES-ONLY`` (P4) -- every new first-parent commit of the integration branch is a
   two-parent merge naming its branch in a ``Merged-Branch:`` trailer, and the merge audit
-  (:func:`dev_lab.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
+  (:func:`dev_lab.dev.mergeaudit.judge`, the SAME judgment the commit-msg hook makes) passes on it.
   Judged from ``[tool.dev_lab.integrator] merges_only_since`` forward: no retroactive check.
 * ``INTEGRATION-TAKES-ONLY-FORGE-MERGES`` (P5) -- once ``[tool.dev_lab.integrator] pr_merges_since`` is
   declared, the integration branch moves ONLY by the forge's server-side merge of a pull request
@@ -119,7 +119,7 @@ _TRAILER: Final = re.compile(rf'^{MERGED_BRANCH}:\s*(\S+)\s*$', re.MULTILINE)
 
 #: What every refusal here ends with: this hook is early feedback, the forge's status is the gate.
 EARLY: Final = (
-    f'  (early feedback: the forge posts this judgement as the {HOOK_ID!r} status on the PR head, and the merge '
+    f'  (early feedback: the forge posts this judgment as the {HOOK_ID!r} status on the PR head, and the merge '
     'requires it)'
 )
 

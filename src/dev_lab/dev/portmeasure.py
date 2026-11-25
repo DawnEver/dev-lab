@@ -3,7 +3,7 @@
 WHY. "Rewrite it in Rust" implies an order of magnitude; where the Python hot path is already compiled code
 (numpy, scipy, matplotlib) a port is a codegen change and measures about 2x -- one family repo priced a port at
 10x and measured 2x. Interpreted per-element dispatch is the opposite case. Which one a path is must be MEASURED,
-never assumed, and a port worth doing on other grounds (FFI marshalling that disappears, ``rayon`` over an
+never assumed, and a port worth doing on other grounds (FFI marshaling that disappears, ``rayon`` over an
 embarrassingly parallel loop, owning the memory) states those grounds, still with the numbers measured.
 
 THE MECHANISM. A port arrives as a crate: a head that ADDS a ``Cargo.toml`` over its base must carry, in at least

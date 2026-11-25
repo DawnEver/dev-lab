@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from dev_lab.dev import ciworkflows, famfiles, rendergoldens
+from dev_lab.dev import ciworkflows, ciworkflowshape, famfiles, rendergoldens
 from dev_lab.dev.famconfig import BASES, RENDERED
 from dev_lab.dev.rules import ALWAYS_ON, RULES, enforced_ids
 
@@ -55,7 +55,9 @@ def test_the_fixtures_are_the_named_set_and_cover_every_generator() -> None:
     assert {base for base, row in BASES.items() if row.mode == RENDERED} <= paths
     assert {rel for rel, _ in famfiles.managed_sections()} <= paths
     for forge in set(_FIXTURES.values()):
-        assert {(ciworkflows.WORKFLOW_DIRS[forge] / name).as_posix() for name in ciworkflows.base_names(forge)} <= paths
+        assert {
+            (ciworkflowshape.WORKFLOW_DIRS[forge] / name).as_posix() for name in ciworkflowshape.base_names(forge)
+        } <= paths
 
 
 def test_a_planted_generator_change_is_named_in_every_fixture_it_moves(monkeypatch: pytest.MonkeyPatch) -> None:

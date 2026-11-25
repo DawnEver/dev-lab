@@ -1,4 +1,4 @@
-r"""The family CONFIG bases, as DATA -- one row per artefact, computed by nothing.
+r"""The family CONFIG bases, as DATA -- one row per artifact, computed by nothing.
 
 This file holds tables and no logic, exactly as `_rule_rows.py` does for `rules.py` and
 `_deny_rows.py` does for `hooks.py`. The machinery that renders a base, reads a repo's delta back off
@@ -15,9 +15,9 @@ and a claim about somebody else's tree ages fastest.
 GIT HOOKS ARE NOT HERE: they are TOML data (`dev_lab/dev/githooks/base.toml` plus each repo`s
 `[tool.dev_lab.hooks]`), run by `dev_lab.dev.githooks` and never rendered to a file.
 
-THE ARTEFACTS ARE NOT THE SAME KIND OF THING, AND THAT IS THE FINDING THIS FILE EXISTS TO
+THE ARTIFACTS ARE NOT THE SAME KIND OF THING, AND THAT IS THE FINDING THIS FILE EXISTS TO
 RECORD. Reading the census rows one would expect three tables of shared lines. Measured, only two of
-the three artefacts share LINES at all:
+the three artifacts share LINES at all:
 
 * `.gitignore` -- 14 shared patterns out of 61/30/73. A pattern is a whole statement, so the shared
   half renders verbatim. RENDERED.
@@ -29,9 +29,9 @@ the three artefacts share LINES at all:
   base here is a target CONTRACT (these names must exist) plus the one recipe that genuinely is the
   family's, `verify`, which `dev_lab.dev.verify` already ships as code. REQUIRED.
 
-`[tool.ruff]` IS DELIBERATELY ABSENT FROM THIS FILE. It is the fourth artefact the census names and
+`[tool.ruff]` IS DELIBERATELY ABSENT FROM THIS FILE. It is the fourth artifact the census names and
 it is owned by the stage that widens this repo's own select from 12 selectors to the consumers' 58;
-building a base for it here would put two renderers on one artefact while that stage is mid-sweep.
+building a base for it here would put two renderers on one artifact while that stage is mid-sweep.
 The absence is NAMED rather than silent, which is the whole point of writing it down.
 
 WHY `uv.lock` IS BANNED FROM EVERY `.gitignore` (PIN + FRESHNESS, user ruling 2026-10-17): every family repo
@@ -52,7 +52,7 @@ __all__ = [
     'GITIGNORE_FAMILY_LINES',
     'GITIGNORE_FLOOR',
     'ORDERED_SECTIONS',
-    'ORDER_SENSITIVE_ARTEFACTS',
+    'ORDER_SENSITIVE_ARTIFACTS',
     'REPO_FLOOR',
     'STAMP',
 ]
@@ -72,8 +72,8 @@ REPO_FLOOR: Final = 3
 
 #: THE PRINCIPLE (user ruling 2026-11-24, superseding the measured three-way intersection of 2026-09-17):
 #: a `.gitignore` lists ONLY paths that legitimately exist untracked in every checkout. A misplaced
-#: artefact is NOT ignored: it shows in `git status` and the closed inventory refuses it. So every line
-#: is root-anchored unless the artefact genuinely appears at any depth, and each names what writes it.
+#: artifact is NOT ignored: it shows in `git status` and the closed inventory refuses it. So every line
+#: is root-anchored unless the artifact genuinely appears at any depth, and each names what writes it.
 #: Tool caches (pytest, ruff, mypy, coverage, hypothesis) are not here: the family pyproject rows send
 #: them under `output/cache/<tool>/`. Retired with the old base, each for having no writer in every
 #: checkout: `**/.env`, the cache directories, `.coverage*`, `htmlcov/`, `*.egg-info/`, `*.spec`, `*.c`,
@@ -86,10 +86,10 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
     '/build/': 'the build backend`s staging directory, at the root of every repo that builds a wheel.',
     '/dist/': 'the built wheels and sdists, at the root of every repo that builds one.',
     '/src/**/__version__.py': 'the version file hatch-vcs / setuptools-scm write into the package at build time.',
-    '/output/': 'the dated artefact tree (dev_lab.dev.datedlog) and every redirected tool cache.',
+    '/output/': 'the dated artifact tree (dev_lab.dev.datedlog) and every redirected tool cache.',
     '/config/': 'the dev-mode in-repo config root a consumer generates from packaged defaults.',
     '/temp/': 'the root temporary directory a run may create; a source package named `temp` is not it.',
-    '**/.DS_Store': 'macOS Finder state; a platform artefact at any depth.',
+    '**/.DS_Store': 'macOS Finder state; a platform artifact at any depth.',
 }
 
 #: THE CLOSED AGENT/EDITOR SECTION -- ONE ORDERED BLOCK (last match wins), identical in every repo,
@@ -142,12 +142,12 @@ GITIGNORE_BASE: Final[tuple[str, ...]] = (
     *GITIGNORE_CLAUDE_SECTION,
 )
 
-#: Per artefact, the base lines that form ONE ORDERED block: rendered in the order written, and
+#: Per artifact, the base lines that form ONE ORDERED block: rendered in the order written, and
 #: exempt from :func:`dev_lab.dev.famconfig.assert_base_is_order_free`, whose refusal exists for
 #: lines whose order the sorted table cannot keep.
 ORDERED_SECTIONS: Final[dict[str, tuple[str, ...]]] = {'.gitignore': GITIGNORE_CLAUDE_SECTION}
 
-#: WHICH ARTEFACTS ARE LAST-MATCH-WINS, and the floating-rule floor each scan over one must reach.
+#: WHICH ARTIFACTS ARE LAST-MATCH-WINS, and the floating-rule floor each scan over one must reach.
 #:
 #: THE GAP THIS DECLARES, stated as a mechanism rather than as the sentence it replaces. A `Delta`
 #: maps a BASE line to delta lines rendered AFTER it (`Delta.anchored`); there is no expression for
@@ -156,7 +156,7 @@ ORDERED_SECTIONS: Final[dict[str, tuple[str, ...]]] = {'.gitignore': GITIGNORE_C
 #: cannot be a base line at all -- it would be promoted, rendered first, and silently defeated by the
 #: negation it was written to close.
 #:
-#: HOW SUCH A LINE IS RECOGNISED WITHOUT KNOWING THE DELTAS, which is what makes this checkable on the
+#: HOW SUCH A LINE IS RECOGNIZED WITHOUT KNOWING THE DELTAS, which is what makes this checkable on the
 #: base ALONE and therefore on every future promotion from a repo nobody surveyed: a rule whose entire
 #: value is its position is a rule that is otherwise REDUNDANT. `**/.claude/**/__pycache__/` excludes
 #: a strict subset of what `**/__pycache__/` already excludes, so as a set of paths it adds nothing;
@@ -164,11 +164,11 @@ ORDERED_SECTIONS: Final[dict[str, tuple[str, ...]]] = {'.gitignore': GITIGNORE_C
 #: floating sibling is promotable as normal -- `**/.DS_Store` matches nothing another base line
 #: matches, so it means the same wherever it renders.
 #:
-#: THE FLOOR IS PER ARTEFACT because it is a fact about that base: two floating rules here,
+#: THE FLOOR IS PER ARTIFACT because it is a fact about that base: two floating rules here,
 #: `**/__pycache__/` and `**/.env`, and a scan that found none would report what a base with no
 #: shared rules reports. The map is a NAMED SET rather than a flag on `Base`, so extending the check
-#: to a second artefact is a decision somebody typed here with its own floor.
-ORDER_SENSITIVE_ARTEFACTS: Final[dict[str, int]] = {'.gitignore': 2}
+#: to a second artifact is a decision somebody typed here with its own floor.
+ORDER_SENSITIVE_ARTIFACTS: Final[dict[str, int]] = {'.gitignore': 2}
 
 #: The floor under the gitignore base: a scan or a render over an EMPTY base is indistinguishable
 #: from one over a clean tree. Set below the measured 14 on purpose -- a floor refuses an unread
@@ -188,14 +188,14 @@ GITIGNORE_FLOOR: Final = 10
 #: Windows defaults to `core.autocrlf=true`: a CRLF checkout makes bash read `#!/usr/bin/env bash\r`
 #: as a missing interpreter and `then\r` as a syntax error, and the failure lands in the CONSUMER.
 #: Only two repos carried a `.gitattributes` and they shared no line; this is the one rule whose
-#: reason holds in all four. Repo-wide normalisation (`* text=auto eol=lf`) stays a repo's delta --
-#: adopting it renormalises every tracked file, which is a repo's decision, not the family's.
+#: reason holds in all four. Repo-wide normalization (`* text=auto eol=lf`) stays a repo's delta --
+#: adopting it renormalizes every tracked file, which is a repo's decision, not the family's.
 #:
-#: SUPERSEDED 2026-11-24 (user ruling): the base is the ONE repo-wide normalisation line. `*.sh text eol=lf`,
+#: SUPERSEDED 2026-11-24 (user ruling): the base is the ONE repo-wide normalization line. `*.sh text eol=lf`,
 #: CRLF for `*.bat`/`*.cmd` and the binary lines are a repo's DELTA, declared only where it tracks such files.
 GITATTRIBUTES_BASE: Final[tuple[str, ...]] = ('* text=auto eol=lf',)
 
-#: Every base, by artefact. The render MODE is the machinery's word and is attached there; what this
+#: Every base, by artifact. The render MODE is the machinery's word and is attached there; what this
 #: table owns is WHICH lines, and nothing else.
 BASES: Final[dict[str, tuple[str, ...]]] = {
     '.gitignore': GITIGNORE_BASE,

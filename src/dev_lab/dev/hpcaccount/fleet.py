@@ -279,7 +279,8 @@ def grant_slice(grant: Grant) -> dict[str, Any]:
     """*grant* as the ``[hpc]`` slice its account's own machine file holds: its cluster, its grant, its role reached."""
     account: dict[str, Any] = {'billed': grant.billed}
     if grant.budget is not None:
-        account['budget'] = {'core_hours': grant.budget.core_hours, 'since': grant.budget.since}
+        hours = grant.budget.core_time / 3600
+        account['budget'] = {'core_time': f'{hours:g} h', 'since': grant.budget.since, 'until': grant.budget.until}
     cluster: dict[str, Any] = {'hosts': list(grant.hosts), 'slurm_accounts': {grant.slurm_account: account}}
     optional = {
         'partitions': list(grant.partitions), 'qos': dict(grant.qos), 'setup': list(grant.setup),

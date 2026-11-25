@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, run_git
+from lab_commons.box import GB
 
 from dev_lab.dev.forgehosts import HostCard
 from dev_lab.dev.forgerequest import (
@@ -76,7 +77,7 @@ def _card(host: str, platform: str, *, cpu: float, mem_gb: float, ticked: dateti
 
 
 def test_room_admits_a_fresh_host_and_names_why_every_other_card_does_not() -> None:
-    wanted = Declared(TESTS, (), frozenset({'linux'}), 2.0, 4.0, 1.0)
+    wanted = Declared(TESTS, (), frozenset({'linux'}), 2.0, 4.0 * GB, 3600.0)
     cards = (
         _card('box-a', 'linux', cpu=8, mem_gb=32),
         _card('box-old', 'linux', cpu=8, mem_gb=32, ticked=NOW - timedelta(days=1)),
@@ -94,7 +95,7 @@ def test_room_admits_a_fresh_host_and_names_why_every_other_card_does_not() -> N
 
 
 def test_a_jmag_try_needs_a_windows_card_with_jmag() -> None:
-    wanted = Declared(TESTS, (), frozenset({'jmag', 'windows'}), 1.0, 2.0, 1.0)
+    wanted = Declared(TESTS, (), frozenset({'jmag', 'windows'}), 1.0, 2.0 * GB, 3600.0)
     fits, _ = room(
         (_card('g', 'windows', cpu=8, mem_gb=32, jmag=2), _card('w', 'windows', cpu=8, mem_gb=32)), wanted, NOW
     )

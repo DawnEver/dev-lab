@@ -10,13 +10,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'DECLARED-LAYOUT',
         (
             # Why: user rulings 2026-11-23 -- the WHOLE directory and subdirectory tree is declared with its formats.
-            'A checkout`s whole tree is an ALLOW-LIST in `[tool.dev_lab.placement.layout]` of its pyproject: each '
-            'directory pattern (one glob per segment; the deepest matching row judges) lists the formats a file '
-            'there may be, and anything undeclared is refused. Every family home is declared; `output/` never '
-            'allows code or `*`; a `read_only` path (user-maintained input) is never written; a `.claude/` below '
+            'A checkout`s whole tree is an ALLOW-LIST in `[layout]` of its root `layout.toml`: EVERY directory matches '
+            'a row of its own (no inheritance; explicit beats glob, then fewer wildcards; a tie is ambiguous) '
+            'listing the formats a file there may be; anything undeclared is refused. Every family home is '
+            'declared; `output/` never allows code or `*`; a `read_only` path is never written; a `.claude/` below '
             'the root is refused. The write hook refuses a Write/Edit, every `verify` and forge tick runs the '
-            'INCREMENTAL scan (a journal of directory mtimes in the git dir), and every adopter`s architecture '
-            'suite walks the filesystem under a floor (`dev_lab.dev.famtests.layout`).'
+            'INCREMENTAL scan, and every adopter`s architecture suite walks the filesystem under a floor '
+            '(`dev_lab.dev.famtests.layout`).'
         ),
         ('tests/test_dev_layout.py', 'tests/test_arch_code_placement.py'),
     ),
@@ -45,6 +45,21 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             '(`dev_lab.dev.corechange`).'
         ),
         ('tests/test_dev_corechange.py',),
+    ),
+    (
+        'NATIVE-FIRST',
+        (
+            # Why: user ruling 2026-11-25 (principle `native-first`) -- Python orchestrates, Rust computes.
+            'In a repo declaring `[tool.dev_lab.native] orchestration = [...]` and `[tool.dev_lab.native.stages] '
+            '<stage> = "<native module>"` (opt-in; undeclared is not judged), an AST read refuses, '
+            'under an orchestration path, an index loop (`range`/`ndindex`/counted `while`) that stores, '
+            'updates or computes on an element or calls `math` per element, and a module named for a native-owned '
+            'stage that never imports its native module; anywhere, a test importing both a stage`s native module '
+            'and a same-named Python module. No types: a dict index loop reads as an array one; direct '
+            'iteration, comprehensions and a renamed twin are not seen. The `native-first` pre-commit row and the '
+            'always-on check (`dev_lab.dev.nativefirst`).'
+        ),
+        ('tests/test_dev_nativefirst.py',),
     ),
     (
         'ONE-FORMAT-PER-NEED',

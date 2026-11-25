@@ -3,7 +3,7 @@
 ``STRAY-FILE-REFUSED`` (:mod:`dev_lab.dev.strays`) names a stray copy of a retired file with the door that
 deletes it, never ``git add`` (2026-11-17: twelve stale indexes a tool had retired, eleven under ``src/``, were
 told to be staged). WHICH files are retired is a fact of the checkout that used the retiring tool, so the rows
-live in its own ``[tool.dev_lab.placement]`` and arrive here as an argument::
+live in its own ``layout.toml`` and arrive here as an argument::
 
     retired = [
         { path = '<path every copy ends with>', what = '<what it was>', door = '<how to delete it>' },

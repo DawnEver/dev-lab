@@ -7,7 +7,7 @@ that refuse a violation, repo-relative to the adopting tree, in the same shape
 ``tests/architecture/docs/test_enforced_registry.py`` already uses: a path string, or a
 ``('ruff', CODE)`` pair.
 
-WHICH RULES ARE HERE, and the test is mechanical rather than a judgement call: **delete every domain
+WHICH RULES ARE HERE, and the test is mechanical rather than a judgment call: **delete every domain
 noun from the rule -- if it still constrains anything, it is universal.** The rows below survived
 that test. What did not stay home: the reference ladder (one vendor first, a second vendor second),
 the cross-solver declaration rule, the resource-search-path rule, the adapter's clean-full-model
@@ -301,8 +301,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PRODUCTION-ENTRY-POINT',
         (
-            'Reproduce a behaviour through the PRODUCTION entry point, never an ad-hoc script handed out beside '
-            'it, and treat a behaviour not reachable from there as a gap to FIX, the boundary being the SUBJECT, '
+            'Reproduce a behavior through the PRODUCTION entry point, never an ad-hoc script handed out beside '
+            'it, and treat a behavior not reachable from there as a gap to FIX, the boundary being the SUBJECT, '
             'not the tree the code happens to live in.'
         ),
         (
@@ -360,7 +360,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'TOLERANCE-CARRIES-A-UNIT',
         (
             'A relative tolerance is free and an absolute one is not (`epsilon = 1e-10 * L` is a statement about '
-            'the unit its inputs are in, so the same call in metres tightens a test by 1000x): sweep for absolute '
+            'the unit its inputs are in, so the same call in meters tightens a test by 1000x): sweep for absolute '
             'tolerances BEFORE a rewrite, state the unit a golden was generated in, and never write a `rel=` '
             'without the `abs=` floor it is combined with.'
         ),
@@ -385,6 +385,21 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             # halves are one rule.
             'tests/test_dev_quantity_values.py',
         ),
+    ),
+    (
+        'CONFIG-VALUES-CARRY-UNITS',
+        (
+            # Why: user ruling 2026-11-25 -- `memory_gb = 32` puts the unit in the key and leaves the number bare,
+            # so nothing checks it; machine memory is written in GiB.
+            'A config key never spells a size, duration or percentage unit (`memory_gb`, `max_idle_hours`, '
+            '`wall_s`): its VALUE is a quantity string (`memory = "32 GiB"`, `max_idle = "12 h"`) that every '
+            'reader parses ONCE through `lab_commons.quantity.parse`, which refuses a bare number, another '
+            'dimension or an unknown unit by key. A retired unit-suffixed key is never read: its reader refuses it '
+            'by name with the replacement line written from its own value (`refuse_renamed`). The architecture '
+            'suite scans every tracked TOML file, every documented `toml` block and every declared schema '
+            '(`dev_lab.dev.configkeys`).'
+        ),
+        ('tests/test_dev_configkeys.py', 'tests/test_config_keys_carry_no_unit.py'),
     ),
     (
         'NO-CJK-IN-TRACKED-SOURCE',

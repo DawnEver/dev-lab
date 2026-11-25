@@ -1,6 +1,6 @@
 """``dev_lab.dev.famtests.agentguard`` -- driven against a REAL engine on a REAL repository.
 
-NOTHING HERE IS MODELLED. Each case builds a temporary git repository, installs the shipped engine
+NOTHING HERE IS MODELED. Each case builds a temporary git repository, installs the shipped engine
 into it with :func:`dev_lab.dev.agent_guard.install_guard`, writes a rules file RENDERED from a
 real :class:`~dev_lab.dev.hook_adoption.HookAdoption` over real
 :class:`~dev_lab.dev.hooks.DenyRule` rows, and then runs ``node`` over the pair. The decision
@@ -161,7 +161,7 @@ def test_the_committed_rules_match_the_rendered_ones_and_a_hand_edit_reds(tmp_pa
 
 
 def test_every_rule_is_accounted_for_and_a_silent_gap_is_refused(tmp_path: Path) -> None:
-    """A rule needing a repo artefact, neither remedied nor declared absent, is the silent case."""
+    """A rule needing a repo artifact, neither remedied nor declared absent, is the silent case."""
     needs_an_exit = DenyRule(
         id='BARE-TEST-INVOCATION',
         pattern=r'\bpytest\b',
@@ -217,7 +217,7 @@ def test_a_forbidden_shape_is_refused_by_the_rule_that_owns_it(tmp_path: Path) -
 
 
 def test_a_templated_remedy_is_judged_as_the_engine_prints_it(tmp_path: Path) -> None:
-    """A ``{python}`` remedy is compared as the engine PRINTS it, so its own rule is recognised.
+    """A ``{python}`` remedy is compared as the engine PRINTS it, so its own rule is recognized.
 
     The rules file carries the template; the engine prints the absolute interpreter (it read "NOT by").
     """

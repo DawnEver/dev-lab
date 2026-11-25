@@ -68,14 +68,14 @@ The one status command: every candidate with its score and why it waits, every r
 and progress, every host card, every starved candidate. It posts nothing. `forge status list <sha>` reads one
 commit's parts. Details: [the forge](forge.md#the-queue).
 
-### 5. Issue labels -- ask for priority, keep artefacts
+### 5. Issue labels -- ask for priority, keep artifacts
 
 | label | on | effect |
 |---|---|---|
 | `priority:user` | a PR or issue | adds the declared boost to its value in the queue |
 | `priority:<n>` | a PR or issue | adds `n` |
 | `forge:request` | an issue | makes the issue a queued request (`producer` and `sha` in the body; the producer declared under `[tool.dev_lab.requests.<name>]`) |
-| `keep` | a PR or issue | pins its sha's artefacts past retention |
+| `keep` | a PR or issue | pins its sha's artifacts past retention |
 | `area:<name>` | an issue, written by `forge route` | one open list of reds per area; fix them on your branch |
 
 Write issues and comments only through `python -m dev_lab.dev.forge issue ...`. Details: [issues](issues.md).
@@ -139,7 +139,7 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
 
    A marker belongs in `resources` when some host may lack what it names. A marker whose tests run on every
    host (a solver built on every OS) is no resource: leave it out and its tests are `base`. Mark the TOOL a
-   test drives, never the OS the tool runs on; mark an OS only for a test that proves that OS's behaviour.
+   test drives, never the OS the tool runs on; mark an OS only for a test that proves that OS's behavior.
 3. **Markers**: every name in `resources` stays registered in `[tool.pytest.ini_options] markers`, and every
    test needing it carries it (module `pytestmark` or a conftest hook). Nothing else in the suite changes.
 4. **A repo's own producer door** (not `verify`) takes the part name, selects with
@@ -209,8 +209,8 @@ Upgrading lab-commons brings two changes to every repo that opts into the base h
 [tool.dev_lab.branchset]
 trunk = 'main'
 sessions = ['integrate/main']  # every long-lived branch: exactly what the pre-push hook allows
-prune_merged = true            # every serving host deletes (idempotently) merged branches idle >= max_idle_hours
-max_idle_hours = 24
+prune_merged = true            # every serving host deletes (idempotently) merged branches idle >= max_idle
+max_idle = "24 h"
 
 [tool.dev_lab.integrator]
 merges_only_since = '<the integration tip sha when you adopt>'

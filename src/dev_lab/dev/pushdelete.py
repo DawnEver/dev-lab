@@ -7,7 +7,7 @@ early refusal, and text cannot be the guarantee. Git's own pre-push ref lines ca
 sha is all zeros, whatever spelled it.
 
 So the base ``lossless-delete`` row (``githooks/base.toml``) judges each deleted ``refs/heads/`` line with the one
-judgement the door makes (:func:`dev_lab.dev.deletejudge.judge`), of the sha the line names as the remote's -- after
+judgment the door makes (:func:`dev_lab.dev.deletejudge.judge`), of the sha the line names as the remote's -- after
 ``git fetch --prune origin``, so a branch origin no longer holds holds nothing, and against the open PR heads the
 forge lists. Branches the same push deletes hold nothing for each other. A refused branch is refused under
 :data:`RULE` naming the door, ``branchprune delete <branch>``; that door pushes its delete through this same hook and
@@ -124,7 +124,7 @@ def refusals(
 
 def main(argv: Sequence[str] | None = None) -> int:
     """The pre-push hook: git's ref lines on stdin; exit 1 refuses, 0 publishes."""
-    del argv  # the runner hands git's remote url as an env variable; the judgement is origin's
+    del argv  # the runner hands git's remote url as an env variable; the judgment is origin's
     top = _door.run(
         [_GIT, 'rev-parse', '--show-toplevel'],
         capture_output=True,

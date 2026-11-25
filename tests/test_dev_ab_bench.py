@@ -23,7 +23,7 @@ from dev_lab.dev.ab_bench import (
     MIN_CROSSOVER_POINTS,
     ArmSamples,
     Trials,
-    amortised,
+    amortized,
     crossover,
     interleave,
     ratio,
@@ -206,21 +206,21 @@ class TestRatio:
             assert got == pytest.approx(expected, abs=0.0)
 
 
-class TestAmortised:
+class TestAmortized:
     def test_a_setup_reused_many_times_costs_less_per_call_than_one_reused_once(self) -> None:
-        """Both directions of the amortisation, so a function ignoring ``over`` would red."""
+        """Both directions of the amortization, so a function ignoring ``over`` would red."""
         # abs=0.0 on both: EXACT, and each for its own reason. 1.0/100 rounds to float(0.01), and
         # float(0.01) + float(0.01) is a doubling, which binary floating point never rounds -- the
         # sum IS float(0.02). The over=1 row is the one that had to be measured rather than argued:
         # float(0.01) + 1.0 rounds to float(1.01), residual 0.0 against an ulp of 2.2e-16 at that
         # magnitude. Both checked on this repo's CPython 3.12 on 2026-09-17.
-        assert amortised(0.01, 1.0, over=100) == pytest.approx(0.02, abs=0.0)
-        assert amortised(0.01, 1.0, over=1) == pytest.approx(1.01, abs=0.0)
+        assert amortized(0.01, 1.0, over=100) == pytest.approx(0.02, abs=0.0)
+        assert amortized(0.01, 1.0, over=1) == pytest.approx(1.01, abs=0.0)
 
     @pytest.mark.parametrize('over', [0, -5])
     def test_a_non_positive_reuse_count_refuses_rather_than_making_the_setup_free(self, over) -> None:
         with pytest.raises(ValueError, match='not free'):
-            amortised(0.01, 1.0, over=over)
+            amortized(0.01, 1.0, over=over)
 
 
 class TestCrossover:

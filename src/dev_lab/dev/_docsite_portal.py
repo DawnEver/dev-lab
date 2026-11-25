@@ -5,7 +5,7 @@ comes to first: what a requirement is and what a skip MEANS is policy; this file
 
 A SKIPPED SUB-SITE IS RENDERED, NEVER OMITTED. Omission would make "not built here" and "does not
 exist" read identically, so the reader cannot tell a hole from a boundary -- the defect the whole
-docsite module is organised against. Everything interpolated is ESCAPED: a reason is prose written
+docsite module is organized against. Everything interpolated is ESCAPED: a reason is prose written
 by a person, and an unescaped ``<`` or ``&`` breaks the very page that was meant to explain the gap.
 """
 
@@ -64,7 +64,7 @@ def _card(site: SubSite, report: BuildReport) -> str:
     """One portal card -- a link when the sub-site was built, plain text with its reason when not.
 
     A skipped sub-site is RENDERED and not omitted. Omission would make "not built here" and "does
-    not exist" read identically, which is the defect this whole module is organised against.
+    not exist" read identically, which is the defect this whole module is organized against.
     Everything interpolated is escaped: a reason is prose written by a person, and an unescaped
     ``<`` or ``&`` breaks the page.
     """

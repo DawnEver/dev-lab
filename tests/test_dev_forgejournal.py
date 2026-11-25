@@ -162,7 +162,7 @@ def test_a_torn_entry_is_skipped_never_replayed(tmp_path: Path) -> None:
     assert journal.pending() == ()
 
 
-def test_the_door_every_verb_builds_journals_into_the_repositorys_outbox(tmp_path: Path) -> None:
+def test_the_door_every_verb_builds_journals_into_the_repositories_outbox(tmp_path: Path) -> None:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
     built = client_for(repo, env=credential_env(tmp_path))
     assert built.journal == journal_for(repo)

@@ -21,7 +21,7 @@ WHAT A ROW HOLDS, and every field is load-bearing:
               over several months on a `uv` rule that named no alternative. Where the exit is a file
               in the consuming repo, the text carries the ``{remedy}`` placeholder and the row also
               names ``needs``; the rule is then NOT SHIPPED to a repo that supplies no such file.
-``needs``     the KIND of repo artefact the remedy requires, or ``None`` when the remedy is a plain
+``needs``     the KIND of repo artifact the remedy requires, or ``None`` when the remedy is a plain
               command every checkout already has (git's own verbs). This is the ID-plus-mechanism
               split `dev_lab.dev.rules` already uses: the statement is universal, the thing that
               resolves it lives in one tree.
@@ -33,8 +33,8 @@ WHAT A ROW HOLDS, and every field is load-bearing:
               are proof carried by the row, so a row cannot arrive without a control -- and a
               ``permits`` entry may not lean on any repo's remedy, because this file has no repo.
 
-WHAT IS NOT HERE, AND WHY -- the judgement this file records. A shape whose HAZARD TEXT WOULD BE
-FALSE in another repo stays in the repo that has the hazard, however tempting the generalisation:
+WHAT IS NOT HERE, AND WHY -- the judgment this file records. A shape whose HAZARD TEXT WOULD BE
+FALSE in another repo stays in the repo that has the hazard, however tempting the generalization:
 
 * repo-specific dependency mutation rules (``uv sync``, ``pip install``). Each checkout owns its
   ``.venv``; the hazard is bypassing that repo's checked dependency door, not borrowing a shared
@@ -172,7 +172,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         # `needs` is None after checking what a repo could possibly supply, and the answer is nothing:
         # `git commit` and `git log` exist in every checkout, and a follow-up convention is prose
         # rather than a file. Giving this row a `needs` would DROP it from every repo that has no
-        # such artefact -- which is all four -- so a universal hazard would ship to nobody.
+        # such artifact -- which is all four -- so a universal hazard would ship to nobody.
         'needs': None,
         # NO `allow`, and that is a decision rather than an omission. The opening would have to say
         # "this branch is reachable by nobody else", and the engine reads TEXT: whether HEAD is
@@ -269,7 +269,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     *PUSH_ROWS,
     {
         'id': 'NETWORK-VERB',
-        # Every verb `dev_lab.dev.netverb.is_network_verb` recognises, git's `-C`/`-c` options included.
+        # Every verb `dev_lab.dev.netverb.is_network_verb` recognizes, git's `-C`/`-c` options included.
         'pattern': NETWORK_VERB_PATTERN,
         'matches': 'command',
         'hazard': 'one transient forge failure on a network verb reads as '

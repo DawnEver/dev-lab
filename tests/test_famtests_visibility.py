@@ -65,7 +65,7 @@ def test_the_planted_checkout_is_a_real_clone_of_a_real_bare_origin(tmp_path: Pa
     assert 'refs/heads/main' in listed, listed
 
 
-def test_the_planted_checkout_honours_the_trunk_it_is_given(tmp_path: Path) -> None:
+def test_the_planted_checkout_honors_the_trunk_it_is_given(tmp_path: Path) -> None:
     """The fixture takes the trunk too: a control hard-coding ``main`` cannot test a repo without one."""
     planted = plant_checkout(tmp_path, trunk='trunk')
     head = subprocess.run(

@@ -69,7 +69,7 @@ __all__ = [
     'tick',
 ]
 
-#: The one bump lane: its existence IS the serialisation.
+#: The one bump lane: its existence IS the serialization.
 LANE: Final = 'pr/components-bump'
 
 OPENED: Final = 'opened'  #: a bump lane was opened

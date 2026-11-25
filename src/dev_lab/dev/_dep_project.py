@@ -59,7 +59,13 @@ def target_root(root: Path | None, cwd: Path) -> Path:
     target = (cwd / root).resolve() if root is not None else current[0] if current else cwd.resolve()
     checkout = _checkout(target, git_binary)
     if checkout is not None and target == checkout[1].parent and (current is None or current[0] != target):
-        msg = f'a worktree may not mutate main at {target}; bootstrap its own environment'
+        if current is not None and current[1] == checkout[1]:
+            msg = f'a worktree may not mutate main at {target}; bootstrap its own environment'
+        else:
+            msg = (
+                f"{target} is another primary checkout, and a primary checkout's environment moves only from that "
+                f'checkout: cd {target} && {sys.executable} -m dev_lab.dev.dep --bootstrap {target}'
+            )
         raise ValueError(msg)
     return target
 
@@ -191,7 +197,7 @@ def uv_command(
     """One target-addressed command; a sync re-resolves every declared floating Git requirement.
 
     A *frozen* sync builds exactly the committed ``uv.lock`` (``--frozen``) and re-resolves nothing: how a
-    commit's own environment is materialised, so two hosts on two days build the same revisions.
+    commit's own environment is materialized, so two hosts on two days build the same revisions.
     *reinstall_packages* are rebuilt from source whatever their version says (a component whose tree moved,
     :mod:`dev_lab.dev._dep_components`). Only a frozen sync with no environment yet -- a bootstrap -- builds
     one under the target's ``requires-python`` (:func:`bootstrap_python`); every other command

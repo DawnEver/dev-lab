@@ -278,7 +278,7 @@ def migration_conflicts(unconverted: Collection[str], declared: Collection[str])
     disjoint.
 
     The opposite direction -- a key in NEITHER set -- is deliberately not checked here: the name
-    scan already reds an unconverted name nobody declared, and duplicating that judgement in two
+    scan already reds an unconverted name nobody declared, and duplicating that judgment in two
     places is how two registries start disagreeing about the same tree.
     """
     both = set(unconverted) & set(declared)

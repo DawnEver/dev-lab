@@ -1,17 +1,18 @@
-"""A machine the config source does not declare yet renders ONE safe default; the doors it may not use say how to enrol.
+"""A machine the config source does not declare yet renders ONE safe default; its refused doors say how to enroll.
 
 The family file declares the default ONCE, as ``[dev.default]`` (user ruling 2026-11-16, issue 638): no forge
 write account (``forges = {}``), no HPC roles (``hpc = []``), no vendor seats, hooks warn-only (``hooks =
 "warn"``). ``devhost render`` reads it for a host with no ``hosts/<name>.toml`` and stamps the machine file's
-``[devhost] unmanaged = "<name>"``; every door refusing a write or HPC action there names :func:`enrolment`.
+``[devhost] unmanaged = "<name>"``; every door refusing a write or HPC action there names :func:`enrollment`.
 
 ``[dev] bridge.hpc`` (user ruling 2026-11-16: on EVERY development machine, so the family declares it) renders as
 the machine file's ``[bridge.hpc]``: the HPC usage read door the session bridge runs for the agents dashboard
-(``command``, an argv) and its cadence (``cadence_hours``). The command's interpreter is DERIVED, never declared or
-invented (#782, D96): the ``.venv`` pointer of the machine's dev-lab checkout (``[repos] dev-lab``, the local fact
-``devhost local set repos.dev-lab`` sets), spelled by the declared ``[dev] os``, else this platform
-(:func:`bridge_python`). That pointer is the checkout's single current environment, outside every worktree and
-kept on the lock by the venv follow, so the path never moves and two renders from different envs agree byte for byte.
+(``command``, an argv) and its cadence (``cadence``, a duration such as ``"6 h"``). The command's interpreter is
+DERIVED, never declared or invented (#782, D96): the ``.venv`` pointer of the machine's dev-lab checkout
+(``[repos] dev-lab``, the local fact ``devhost local set repos.dev-lab`` sets), spelled by the declared
+``[dev] os``, else this platform (:func:`bridge_python`). That pointer is the checkout's single current
+environment, outside every worktree and kept on the lock by the venv follow, so the path never moves and two renders
+from different envs agree byte for byte.
 """
 
 from __future__ import annotations
@@ -21,10 +22,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
+from dev_lab.dev.devschema import CADENCE_DEFAULT
 from dev_lab.dev.venvpath import current_os_name, running_interpreter, venv_interpreter
 
 __all__ = [
-    'BRIDGE_CHECKOUT', 'DEFAULT_TABLE', 'HPC_READ_DOOR', 'UNMANAGED', 'bridge_python', 'bridge_tables', 'enrolment',
+    'BRIDGE_CHECKOUT', 'DEFAULT_TABLE', 'HPC_READ_DOOR', 'UNMANAGED', 'bridge_python', 'bridge_tables', 'enrollment',
     'family_dev', 'host_declaration', 'refusal', 'unmanaged',
 ]  # fmt: skip
 
@@ -79,10 +81,10 @@ PROPOSE: Final = (
 )
 
 
-def enrolment(host: str) -> str:
-    """The one enrolment door for unmanaged *host*."""
+def enrollment(host: str) -> str:
+    """The one enrollment door for unmanaged *host*."""
     return (
-        f'this machine is UNMANAGED ({host!r} renders the family default): enrol it -- declare hosts/{host}.toml in '
+        f'this machine is UNMANAGED ({host!r} renders the family default): enroll it -- declare hosts/{host}.toml in '
         f'the config source from family.toml [dev.{DEFAULT_TABLE}] through a pull request ({PROPOSE}), then '
         f'{running_interpreter()} -m dev_lab.dev.devhost render --host {host} --write'
     )
@@ -94,9 +96,9 @@ def unmanaged(live: Mapping[str, Any]) -> str | None:
 
 
 def refusal(live: Mapping[str, Any], action: str) -> str | None:
-    """Why *action* (a write or HPC door) is refused on this machine, naming the enrolment door; ``None`` if managed."""
+    """Why *action* (a write or HPC door) is refused on this machine, naming the enrollment door; None if managed."""
     host = unmanaged(live)
-    return f'{action} refused: {enrolment(host)}' if host else None
+    return f'{action} refused: {enrollment(host)}' if host else None
 
 
 def bridge_python(live: Mapping[str, Any], os: str) -> str:
@@ -134,4 +136,4 @@ def bridge_tables(dev: Mapping[str, Any], live: Mapping[str, Any]) -> dict[str, 
     if not isinstance(hpc, Mapping):
         return {}
     command = [bridge_python(live, str(dev.get('os', ''))), *HPC_READ_DOOR]
-    return {'bridge': {'hpc': {'command': command, 'cadence_hours': hpc.get('cadence_hours', 6)}}}
+    return {'bridge': {'hpc': {'command': command, 'cadence': hpc.get('cadence', CADENCE_DEFAULT)}}}

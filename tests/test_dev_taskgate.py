@@ -167,7 +167,7 @@ def test_every_refusal_puts_its_door_on_a_line_of_its_own(tmp_path: Path, ledger
     assert {name for name, text in said.items() if walls.has_remedy(' '.join((text or '').splitlines()))} == set()
 
 
-def test_an_opened_pr_is_appended_through_the_task_door_to_the_branchs_task(
+def test_an_opened_pr_is_appended_through_the_task_door_to_the_branches_task(
     tmp_path: Path, ledger: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     for key in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL'):

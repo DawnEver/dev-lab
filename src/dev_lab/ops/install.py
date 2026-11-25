@@ -137,7 +137,7 @@ def _https_door(config: OpsConfig, name: str, role: HttpsDoor, account: str) -> 
     relay = shlex.join([
         config.python, '-m', 'dev_lab.ops.httpsdoor', '--port', str(role.https_port), '--role', name,
         '--keys', keys_file(account), '--attempts', str(role.https_attempts),
-        '--window-minutes', f'{role.https_window_minutes:g}', '--lock-minutes', f'{role.https_lock_minutes:g}',
+        '--window-minutes', f'{role.https_window / 60:g}', '--lock-minutes', f'{role.https_lock / 60:g}',
         '--', 'sudo', '-n', *shlex.split(door(config, name, 'serve')),
     ])  # fmt: skip
     unit = (
@@ -219,7 +219,7 @@ def _consent_steps(config: OpsConfig, root: Path) -> list[str]:
     if not under(root, issuer.key).is_file():
         steps.append(door(config, 'consent', 'keygen'))
     if not under(root, issuer.totp).is_file():
-        steps.append(door(config, 'consent', 'enrol'))
+        steps.append(door(config, 'consent', 'enroll'))
     return steps
 
 
@@ -252,7 +252,7 @@ def _steps(config: OpsConfig, root: Path, prepared: list[str], access: Prepared 
                   'sshd -t && systemctl reload ssh']  # fmt: skip
         if access is not None and access.needs_secret:
             steps.append(
-                f'{door(config, "access", "enrol")}  (first-ever; a phone already holding the host '
+                f'{door(config, "access", "enroll")}  (first-ever; a phone already holding the host '
                 f'secret: {door(config, "access", "adopt", "--secret-file", "-")})'
             )
     if (role := config.supervise) is not None:

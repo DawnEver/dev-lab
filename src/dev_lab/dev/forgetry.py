@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.box import GB
 from lab_commons.compute.admission import Admission
 from lab_commons.log import emit
 from lab_commons.resources import admits
@@ -54,7 +55,7 @@ def _admits(card: HostCard, declared: Declared, demand: dict[str, float]) -> Adm
 
 def room(cards: Sequence[HostCard], declared: Declared, now: datetime) -> tuple[list[str], list[str]]:
     """``(hosts with room, why each other card has none)`` for *declared* on *cards* as of *now*."""
-    demand = {'cpu': declared.cpu, 'mem_gb': declared.mem_gb}
+    demand = {'cpu': declared.cpu, 'mem_gb': declared.mem / GB}
     fits, why = [], []
     for card in cards:
         if card.stale(now):
@@ -99,7 +100,8 @@ def main(
         now = clock()
         fits, why = room(read_cards(client), declared, now)
         if not fits:
-            emit(f'[try] no room for {declared.part} ({declared.cpu:g} cpu, {declared.mem_gb:g} GB); nothing published')
+            size = f'{declared.cpu:g} cpu, {declared.mem / GB:g} GiB'
+            emit(f'[try] no room for {declared.part} ({size}); nothing published')
             for line in why:
                 emit(f'  {line}')
             return NO_ROOM_EXIT

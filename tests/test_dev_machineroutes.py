@@ -20,7 +20,7 @@ def test_a_machine_is_known_by_its_stem_hostname_and_client_key_hosts() -> None:
 
 def test_a_route_to_a_server_or_to_itself_is_no_defect() -> None:
     """PLANTED CONTROL for the refusals below: the same tables pointing at a forge server pass."""
-    a = {**_A, 'ssh': {'jump': {'ops@10.0.0.2': 'ops@server'}, 'host_keys': {'server': 'k'}}}
+    a = {**_A, 'ssh': {'jump': {'ops@192.0.2.2': 'ops@server'}, 'host_keys': {'server': 'k'}}}
     a['consent'] = {'endpoint': 'consent@server'}
     assert route_defects({'A': a, 'B': _B, 'server': _SERVER}) == []
     assert route_defects({'A': {**_A, 'ssh': {'host_keys': {'alpha-box': 'k'}}}, 'B': _B}) == []
@@ -29,7 +29,7 @@ def test_a_route_to_a_server_or_to_itself_is_no_defect() -> None:
 def test_every_route_kind_to_another_development_machine_is_refused_naming_both() -> None:
     cases = {
         'jump destination': {'jump': {'me@beta-box.lab.example.org': 'ops@server'}},
-        'jump bastion': {'jump': {'ops@10.0.0.2': 'me@B'}},
+        'jump bastion': {'jump': {'ops@192.0.2.2': 'me@B'}},
         'host key': {'host_keys': {'BETA-BOX': 'k'}},
     }
     for kind, ssh in cases.items():

@@ -12,10 +12,10 @@ that reason and was right to.
 
 WHY THE ENGINE STAYS JAVASCRIPT. It is not a language preference: the tool that runs a ``PreToolUse``
 hook executes a command line and reads a JSON decision from its stdout, and the shipped engine is the
-one whose behaviour has been MEASURED against real evasions (see its own header). Re-implementing
+one whose behavior has been MEASURED against real evasions (see its own header). Re-implementing
 "what will this shell line actually execute" in Python would be a second implementation of the one
 decision this family most needs a single answer to -- the fork these modules exist to remove. So the
-engine moves VERBATIM, minus a provenance stamp, and nothing about its behaviour is re-decided here.
+engine moves VERBATIM, minus a provenance stamp, and nothing about its behavior is re-decided here.
 
 WHY A PAYLOAD SUBPACKAGE -- the shape :mod:`dev_lab.dev.githooks` already proved. A data file
 inside a package directory travels in the wheel; a loose script beside ``src/`` does not. And
@@ -72,7 +72,7 @@ __all__ = [
 ENGINE_SUFFIX: Final = '.js'
 
 #: The provenance line every shipped engine carries, and the ONE string an installed copy is
-#: recognised by. Its absence in an occupied slot means somebody else's engine is there -- a
+#: recognized by. Its absence in an occupied slot means somebody else's engine is there -- a
 #: DIFFERENT finding from "stale", because re-installing would DELETE a hand-written file rather
 #: than refresh a managed one. The same distinction :mod:`dev_lab.dev.hook_install` draws from
 #: pre-commit's own marker, for the same reason.
@@ -143,7 +143,7 @@ def run_engine(
 ) -> str | None:
     """THE ONE RUNNER. Drive the engine AT *engine* over one Bash command; the reason, or ``None``.
 
-    THE ENGINE IS DRIVEN, NEVER MODELLED. This feeds the real hook payload on stdin exactly as the
+    THE ENGINE IS DRIVEN, NEVER MODELED. This feeds the real hook payload on stdin exactly as the
     tool does and reads the real decision off stdout, so a test built on it is testing a file that
     will really run rather than a Python restatement of what it is believed to do. It runs on the
     LOCKED Node (:func:`dev_lab.dev.jsrun.node_path`), so any host with the dev install can judge an
@@ -183,7 +183,7 @@ def run_engine(
     Returns:
         The ``permissionDecisionReason`` when the engine denies (with *hint*, the ``additionalContext`` it
         speaks without denying), else ``None``. The engine fails OPEN
-        by construction -- unparseable input or a bad rule prints nothing -- and that shows up here
+        by construction -- unparsable input or a bad rule prints nothing -- and that shows up here
         as ``None``, which is the truthful answer: nothing was refused.
 
     Raises:
@@ -289,7 +289,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         '--family-rules',
         action='store_true',
-        help='print the rows every family repo ships (no repo artefact needed): what an agent bridge '
+        help='print the rows every family repo ships (no repo artifact needed): what an agent bridge '
         'enforces in a repo it does not trust, from this install and never from the repo (D99)',
     )
     parsed = parser.parse_args(argv)

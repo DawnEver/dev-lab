@@ -11,10 +11,10 @@ import time
 from datetime import UTC, datetime
 
 from dev_lab.supervise.component import CheckContext, Component
-from dev_lab.supervise.components.resources import psutil_module
 from dev_lab.supervise.hostalarms import AGENTS, SUPERVISE, memo, notice, record, rows
 from dev_lab.supervise.notice import headline, host_label
 from dev_lab.supervise.pressure import THRESHOLDS, Declared, measure
+from dev_lab.supervise.reading import psutil_module
 from dev_lab.supervise.verdict import Anomaly, CheckResult
 
 __all__ = ['HostPressure']
@@ -33,6 +33,7 @@ class HostPressure(Component):
         psi_memory_some_avg60 = 10
         cgroup_refault_anon_rise = 0     # anon pages thrashed back in: warning
         cgroup_psi_memory_some_avg10 = 10
+        disk_free_floor = "10 GiB"       # a size or a duration carries its unit
         # cgroup_high_rise = 1000        # opt-in; default never: `high` alone is routine cache reclaim
 
     """
@@ -47,8 +48,8 @@ class HostPressure(Component):
         advances only when :func:`record` wrote it, so a reading that missed the lock is seen again next cycle.
         """
         result = CheckResult()
-        cadence = ctx.shared.get('cycle', {}).get('interval', THRESHOLDS['interval_s'])  # supervision's own
-        declared = Declared.of({'interval_s': cadence, **ctx.config})
+        cadence = ctx.shared.get('cycle', {}).get('interval', THRESHOLDS['interval'])  # supervision's own
+        declared = Declared.of(ctx.config, interval=float(cadence))
         measured = measure(declared, memo(SUPERVISE), now=time.time(), psutil=psutil_module)
         owner, host = str(ctx.config.get('owner', AGENTS)), host_label()
         state = record(measured, host=host, owner=owner, source=SUPERVISE)

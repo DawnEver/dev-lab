@@ -15,7 +15,7 @@ Each family member is one repository with one role. The dependency arrow points 
 
 ```
 products (an application, its data libraries)
-   -> engines and libraries (numerics, optimisation, AI, documents, learning)
+   -> engines and libraries (numerics, optimization, AI, documents, learning)
         -> the dev kit (dev-lab: dev tooling, host ops, supervision)
              -> the leaf (lab-commons: logging, paths, config, launch, units)
 host configuration (private): data only, consumed by the dev kit's ops door on each host
@@ -25,7 +25,7 @@ host configuration (private): data only, consumed by the dev kit's ops door on e
 |---|---|---|
 | leaf | the shared runtime every member imports (`lab_commons`) | nothing in the family |
 | dev kit | `dev_lab.dev` (forge, integrator, hooks, refusals), `dev_lab.ops` (host roles), `dev_lab.supervise` | the leaf |
-| engine / library | a solver engine, an optimiser, an AI layer, a document or learning toolkit | the leaf; the dev kit as a `test` extra |
+| engine / library | a solver engine, an optimizer, an AI layer, a document or learning toolkit | the leaf; the dev kit as a `test` extra |
 | product | an application that mounts engines (as git dependencies or submodules, [components](components.md)) | engines, libraries, leaf, dev kit |
 | data library | a data-only repo pinned by its product as a data dependency; its PRs run the product's consumer tests (`dev_lab.dev.dataconsumers`) | -- |
 | host configuration | `hosts/<server>.toml` (each host's `supervise.toml`) and `family.toml` (the shared `[family]` layer) | read by `dev_lab.ops` |
@@ -215,7 +215,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
   Its merge ASKS the forge to override the branch's unmet required checks: Gitea does so only on `force_merge` from
   a login the protection admits (`dev_lab.dev.forgemergecall.merge`, `force`); GitHub's ruleset names the actor.
 - It runs only inside a WAVE the user opened with a `breakglass.wave` credential whose params are the window
-  (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_hours_max` / `max_merges_max`
+  (`hours`) and the cap (`max_merges`), each up to the host's `[ops.breakglass] wave_ceiling` / `max_merges_max`
   -- above a ceiling it is refused, never clamped. The merge that reaches the cap ends the wave.
 - While a wave is open, the host's `tick` sweeps it: each green, non-draft PR (`pr-current` is an alarm, never a condition) in
   `[ops.breakglass] repos` lands; a refused one is skipped with its reason (`dev_lab.ops.wavesweep`).
@@ -227,7 +227,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 
 | file | where | owns | reader |
 |---|---|---|---|
-| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`max_hours`, `idle_minutes`); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
+| machine file | `lab_commons.home.config_path()`, under the machine home | `[repos]`, `[serve]` (a cluster account's only), `[capabilities.*]`, `[workstation]`, `[ssh.hold]` (`ceiling`, `idle`: durations); the session bridge's interpreter is DERIVED from `[repos] dev-lab` (its `.venv` pointer, `devprofile.bridge_python`), never set | `lab_commons.config`, `lab_commons.home` |
 | family layer | `family.toml` in the host-configuration repo | `[[hpc.grant]]`, AI spend caps, the review month -- a machine file restating a key is refused | `lab_commons.config` `[family]` |
 | repo declarations | each `pyproject.toml` | `[tool.dev_lab.integrator]`, `.review`, `.protection`, `.ci` | `dev_lab.dev.lanepolicy`, `forgeprotect`, `ciworkflows` |
 | host file | `/etc/dev-lab/supervise.toml`, reviewed as `hosts/<server>.toml` | `[ops.*]`, `[components.*]`, `[alerts]`, `[cycle]` | `dev_lab.ops.config`, `dev_lab.supervise.config` |
@@ -246,7 +246,7 @@ credential verifies OFFLINE on any host holding the issuer's public key (its use
 ### A new development workstation
 
 **Start and end with the one preflight:** `python -m dev_lab.dev.devhost bringup --check` (`dev_lab.dev.bringup`)
-lists every wall -- config-source clone, enrolment (`hosts/<machine>.toml`), the derived bridge interpreter, machine
+lists every wall -- config-source clone, enrollment (`hosts/<machine>.toml`), the derived bridge interpreter, machine
 file drift, the machine's ssh client key declared in its host file's `[dev] client_keys`, the consent issuer (host
 key, key admitted, version handshake), the forge credential -- each with its door, and names last the walls whose
 door spends a code. A code is asked only once every no-code wall is green.
@@ -266,7 +266,7 @@ the key files. No server lists a workstation key by hand.
 5. Install the hooks: `python -m dev_lab.dev.hook_install --install`.
 6. To declare its capabilities: `python -m dev_lab.dev.workstation template --role light`, then the deploy
    ([adding a workstation](adding-a-workstation.md)). A workstation never serves a merge's parts.
-7. For hosts behind a TOTP: optionally set `[ssh.hold] max_hours` / `idle_minutes` in the machine file.
+7. For hosts behind a TOTP: optionally set `[ssh.hold] ceiling` / `idle` (durations, `"24 h"` / `"30 min"`) in the machine file.
 
 ### A forge host
 
@@ -277,7 +277,7 @@ the key files. No server lists a workstation key by hand.
 3. `python -m dev_lab.ops --config /etc/dev-lab/supervise.toml install` renders every unit, sudoers line, sshd
    block and PAM include, and prints the root `next_steps` (accounts, `systemctl daemon-reload`, sshd test and
    reload). It is idempotent (`dev_lab.ops.install`).
-4. Place the cluster's ONE TOTP secret: `consent enrol` on the cluster's first host only, `access adopt` on every
+4. Place the cluster's ONE TOTP secret: `consent enroll` on the cluster's first host only, `access adopt` on every
    other (the secret the user's Authenticator already holds); `consent keygen` makes the issuer key if absent.
 5. Place each declared secret: `python -m dev_lab.ops secret place --path <declared path> --credential <cred>`
    with the content on stdin (`dev_lab.ops.secretplace`: 0600, owned by the declared role's user, only a sha256

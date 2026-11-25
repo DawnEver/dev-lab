@@ -11,9 +11,9 @@ so an untracked one-off shows in ``git status``; it is anchored by one tracked :
 stating the two exits, and nothing else under it is ever committed. It is the stray census's declared
 sink (:func:`dev_lab.dev.strays.stray_files`), so a one-off there is never a stray.
 
-ONE DECLARATION, read off the repo's ``[tool.dev_lab.placement]`` by
+ONE DECLARATION, read off the repo's ``layout.toml`` by
 :func:`dev_lab.dev.codeplace.declared_placement`: ``scratch`` (the directory, the family's
-``scratch/`` when omitted), ``max_age_days`` (when the notice starts naming a one-off) and
+``scratch/`` when omitted), ``max_age`` (a duration: when the notice starts naming a one-off) and
 ``scratch_anchor`` (default true: the tracked README anchors it; false, user ruling 2026-11-17 "scratch
 should hold nothing": no README, and the tracked set under scratch is EMPTY).
 
@@ -24,23 +24,27 @@ declares it as a row of its own, naming both exits through :func:`staged_scratch
 * the forge body :func:`assert_scratch_never_committed` holds the TRACKED set to exactly the README
   (empty when unanchored),
   so a commit made with hooks off still reds on the forge;
-* the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age_days`` and prints
+* the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age`` and prints
   NOTHING when there are none -- a reminder that never blocks and costs no tokens when clean.
 
-THE CLI, so a consumer needs no ``scripts/`` adopter: ``list`` (every untracked top-level entry, its size
-and age, oldest first), ``discard <paths>`` (delete one-off files; anything outside scratch, or its README,
-is refused and nothing is deleted) and ``clear [NAME ...] [--keep NAME ...] --yes`` -- THE door for emptying
-scratch, named by RECURSIVE-DELETE: it deletes the named UNTRACKED top-level entries (this session's when none
-is named), never a tracked file and never outside scratch, refuses the whole clear when a link or junction
-inside an entry points out of scratch, and clears the read-only/hidden attributes Windows sets so a nested
-``.git`` deletes. It works on a main checkout: git decides what is deletable, not the kind of checkout.
+THE CLI, so a consumer needs no ``scripts/`` adopter: ``list`` (every untracked top-level entry, its size, age
+and owner, oldest first), ``discard <paths>`` (delete one-off files; anything outside scratch, or its README, is
+refused and nothing is deleted) and ``clear [NAME ...] [--keep NAME ...] [--approved WORDS] --yes`` -- THE door for
+emptying scratch, named by RECURSIVE-DELETE: it deletes the named UNTRACKED top-level entries (this session's when
+none is named), never a tracked file and never outside scratch, refuses the whole clear when a link or junction
+inside an entry points out of scratch, and clears the read-only/hidden attributes Windows sets so a nested ``.git``
+deletes. It works on a main checkout: git decides what is deletable, not the kind of checkout.
 
-THIS SESSION'S LEFTOVERS ONLY (``snapshot`` at SessionStart, ``stop`` at Stop, both wired by
-:mod:`dev_lab.dev.agent_wiring`): the start records the checkout's untracked entries under the machine-local
-state, keyed by session id; the stop blocks once on an entry new since then -- nothing else ever cleared one,
-so they piled up across sessions -- and never on one that predates the session or another session made.
-``clear --keep NAME`` acknowledges one; ``clear`` with no names takes this session's entries
-(the canonical native harness identity), anything else only by name.
+EVERY ENTRY CARRIES THE SESSION THAT MADE IT (:mod:`dev_lab.dev._scratch_owners`; 2026-11-25: a start-snapshot diff
+named a live agent's entry as the stopping session's own, and ``clear`` deleted files a running agent used). The
+``claim`` rows, wired by :mod:`dev_lab.dev.agent_wiring`, record it where the entry is made: before a write tool
+writes under scratch, and after a shell command that spells ``<scratch>/<name>`` of a freshly born entry. So:
+
+* ``stop`` blocks on the entries THIS session made and does not keep -- never on another session's; the integrator
+  is told of the entries no live session owns, once quiet, by a detached row (:mod:`dev_lab.dev.scratchorphans`);
+* ``clear`` refuses, by name and naming the owner, an entry another LIVE session owns, or one not this session's
+  touched within the last half hour; the user's approval (``--approved "<the user's words>"``) is the door past it;
+* ``clear --keep NAME`` marks an entry left on purpose (adopting a gone session's), so no stop names it again.
 """
 
 from __future__ import annotations
@@ -58,16 +62,19 @@ from dev_lab.dev._scratch_clear import (
     _SECONDS_PER_DAY,
     _SHOWN,
     SCRATCH_README,
-    SESSION_DIR,
     ScratchEscape,
+    ScratchInUse,
     _clear,
     _hook,
     clear_scratch,
-    session_entries,
-    snapshot,
+    in_use,
+    own_entries,
+    owner_label,
     untracked_scratch,
 )
+from dev_lab.dev._scratch_owners import owners
 from dev_lab.dev.codeplace import PRUNED_NAMES, PlacementNotDeclared, checkout_root, declared_placement
+from dev_lab.dev.native_session import session_of
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -75,23 +82,23 @@ if TYPE_CHECKING:
 
 __all__ = [
     'SCRATCH_README',
-    'SESSION_DIR',
     'ScratchCommitted',
     'ScratchEscape',
+    'ScratchInUse',
     'assert_scratch_never_committed',
     'clear_scratch',
     'discard_scratch',
+    'in_use',
     'main',
     'overdue_scratch',
+    'own_entries',
     'pending_scratch',
     'scratch_reminder',
-    'session_entries',
-    'snapshot',
     'staged_scratch',
     'untracked_scratch',
 ]
 
-_VERBS = frozenset({'list', 'discard', 'clear', 'remind', 'check', 'snapshot', 'stop'})
+_VERBS = frozenset({'list', 'discard', 'clear', 'remind', 'check', 'claim', 'stop'})
 #: The two exits, spelled once for every refusal and notice that names them.
 _EXITS = (
     'PROMOTE it into src/ with tests, or DELETE it (python -m dev_lab.dev.scratch discard <path>); '
@@ -156,9 +163,9 @@ def assert_scratch_never_committed(root: Path) -> None:
         return
     door = (
         f'git rm --cached each one-off (then {_EXITS}); a missing README: commit {readme}, or declare '
-        f'scratch_anchor = false in [tool.dev_lab.placement] so scratch holds nothing tracked'
+        f'scratch_anchor = false in layout.toml so scratch holds nothing tracked'
         if placement.scratch_anchor
-        else f'scratch_anchor = false in [tool.dev_lab.placement] declares no README: git rm --cached each '
+        else f'scratch_anchor = false in layout.toml declares no README: git rm --cached each '
         f'(a README too), then {_EXITS}'
     )
     msg = (
@@ -174,11 +181,11 @@ def scratch_reminder(root: Path) -> str | None:
         placement = declared_placement(root)
     except PlacementNotDeclared:
         return None
-    late = overdue_scratch(root / placement.scratch, root=root, max_age_days=placement.max_age_days)
+    late = overdue_scratch(root / placement.scratch, root=root, max_age_days=placement.max_age / 86400)
     if not late:
         return None
     return (
-        f'SCRATCH-IS-NEVER-COMMITTED: {len(late)} one-off(s) older than {placement.max_age_days:g} days: '
+        f'SCRATCH-IS-NEVER-COMMITTED: {len(late)} one-off(s) older than {placement.max_age / 86400:g} days: '
         f'{", ".join(late[:_SHOWN])}{" ..." if len(late) > _SHOWN else ""}. For each: {_EXITS}'
     )
 
@@ -233,8 +240,9 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
             emit(f'SCRATCH-IS-NEVER-COMMITTED: {", ".join(found)} staged; unstage (git restore --staged). {_EXITS}')
         return 1 if found else 0
     if mode == 'list':
+        records, session, now = owners(root), session_of(), time.time()
         for rel, size, age in untracked_scratch(root):
-            emit(f'{size:>14,}  {age:7.1f}d  {rel}')
+            emit(f'{size:>14,}  {age:7.1f}d  {owner_label(records, rel, session, now=now):<12}  {rel}')
     if mode in {'list', 'clear'}:
         return _clear(rest, root) if mode == 'clear' else 0
     try:
@@ -247,17 +255,17 @@ def _verb(mode: str, rest: list[str], root: Path) -> int:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """``python -m dev_lab.dev.scratch {list | discard | clear | remind | check | stop}``.
+    """``python -m dev_lab.dev.scratch {list | discard | clear | remind | check | claim | stop}``.
 
-    Exit 0 on success and from ``remind`` and ``stop`` always; 1 from ``check`` on a staged one-off; 2 on a
+    Exit 0 on success and from ``remind``, ``claim`` and ``stop`` always; 1 from ``check`` on a staged one-off; 2 on a
     usage error, a refused ``discard`` or ``clear``, or a ``clear`` without ``--yes``.
     """
     mode, *rest = argv or [None]
     if mode not in _VERBS:
         emit(f'usage: python -m dev_lab.dev.scratch {{{" | ".join(sorted(_VERBS))}}} [args]')
         return 2
-    if mode in {'snapshot', 'stop'}:
-        return _hook(mode, stdin)
+    if mode in {'claim', 'stop'}:
+        return _hook(mode, rest, stdin)
     return _remind(stdin) if mode == 'remind' else _verb(mode, rest, Path.cwd())
 
 

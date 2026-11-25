@@ -43,7 +43,7 @@ def test_the_marker_splits_the_output_from_the_status() -> None:
 
 def test_hours_above_the_ceiling_are_refused_never_clamped() -> None:
     sshhold.check_hours(2.0, 2.0)
-    with pytest.raises(HoldRefused, match=r'max_hours'):
+    with pytest.raises(HoldRefused, match=r'\[ssh.hold\] ceiling'):
         sshhold.check_hours(2.5, 2.0)
     with pytest.raises(HoldRefused):
         sshhold.check_hours(0.0, 2.0)
@@ -51,7 +51,18 @@ def test_hours_above_the_ceiling_are_refused_never_clamped() -> None:
 
 def test_the_ceiling_reads_the_machine_file_and_defaults_to_the_ruled_four_hours() -> None:
     assert sshhold.ceiling({}) == sshhold.DEFAULT_MAX_HOURS == 4.0  # user ruling 2026-11-09
-    assert sshhold.ceiling({'max_hours': 6}) == 6.0
+    assert sshhold.ceiling({'ceiling': '6 h'}) == pytest.approx(6.0, abs=1e-9)
+    assert sshhold.ceiling({'ceiling': '1 d'}) == pytest.approx(24.0, abs=1e-9)
+
+
+def test_the_hold_durations_carry_their_unit_and_the_old_keys_are_refused_with_their_lines() -> None:
+    """User ruling 2026-11-25: a bare number and the unit-suffixed keys are refused, each naming its fix."""
+    with pytest.raises(HoldRefused, match=r'\[ssh.hold\] ceiling = 6 is a bare number.*"6 min"'):
+        sshhold.ceiling({'ceiling': 6})
+    with pytest.raises(HoldRefused, match=r'max_hours = 6 is retired.*write ceiling = "6 h"'):
+        sshhold.ceiling({'max_hours': 6})
+    with pytest.raises(HoldRefused, match=r'idle_minutes = 45 is retired.*write idle = "45 min"'):
+        sshhold.idle_s({'idle_minutes': 45})
 
 
 def test_the_state_file_round_trips_and_names_the_dest_safely() -> None:
@@ -96,7 +107,7 @@ def test_a_held_session_runs_commands_on_one_connection_and_closes(monkeypatch: 
 
 def test_a_wrong_code_fails_the_open_and_leaves_no_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('FAKESSH_CODE', CODE)
-    with pytest.raises(HoldRefused, match='authenticat'):
+    with pytest.raises(HoldRefused, match='authenticate'):
         sshhold.open_session('ops@fake', 1.0, '000000', ssh=FAKE)
     assert sshholdstate.read_session('ops@fake') is None
 
@@ -118,7 +129,7 @@ def test_a_dead_holder_is_reported_and_its_state_removed() -> None:
 
 def test_the_cli_refuses_hours_above_the_ceiling(capsys: pytest.CaptureFixture[str]) -> None:
     assert sshhold.main(['open', 'ops@x', '--hours', '99', '--code', '1']) == 2
-    assert 'max_hours' in capsys.readouterr().err
+    assert '[ssh.hold] ceiling' in capsys.readouterr().err
 
 
 def test_forgetting_a_session_the_other_side_is_deleting_is_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,12 +160,12 @@ def test_a_quiet_session_lives_to_its_ceiling_and_the_ceiling_still_ends_it() ->
     """MEASURED 2026-11-10: ``open --hours 4`` expired 1800 s after the last ``run`` -- a default idle limit.
 
     No idle limit unless the machine file names one. PLANTED CONTROLS: the ceiling ends a session; a configured
-    ``idle_minutes`` still ends a quiet one.
+    ``idle`` still ends a quiet one.
     """
     assert sshhold.idle_s({}) is None
     assert not sshhold.session_over(now=100.0, expires=200.0, quiet_s=31 * 60, idle=sshhold.idle_s({}))
     assert sshhold.session_over(now=200.0, expires=200.0, quiet_s=0, idle=None), 'PLANTED CONTROL: the ceiling'
-    idle = sshhold.idle_s({'idle_minutes': 45})
+    idle = sshhold.idle_s({'idle': '45 min'})
     assert idle == 45 * 60
     assert sshhold.session_over(now=100.0, expires=200.0, quiet_s=46 * 60, idle=idle), 'a configured idle ends it'
     assert not sshhold.session_over(now=100.0, expires=200.0, quiet_s=44 * 60, idle=idle)
@@ -183,7 +194,7 @@ def test_a_bastion_that_refuses_the_code_fails_the_open(monkeypatch: pytest.Monk
     """Planted control: the host would accept the code but the bastion's secret differs, so nothing opens."""
     monkeypatch.setenv('FAKESSH_CODE', CODE)
     monkeypatch.setenv('FAKESSH_JUMP_CODE', '999999')
-    with pytest.raises(HoldRefused, match='authenticat'):
+    with pytest.raises(HoldRefused, match='authenticate'):
         sshhold.open_session('ops@inner', 1.0, CODE, ssh=(*FAKE, '-J', 'ops@bastion'))
     assert sshholdstate.read_session('ops@inner') is None
 

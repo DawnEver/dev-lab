@@ -15,7 +15,7 @@ from dev_lab.dev.content import content_address, file_digest
 
 @pytest.fixture
 def tree(tmp_path) -> Path:
-    """A plantable checkout: two measured modules, one unmeasured doc, one cached artefact."""
+    """A plantable checkout: two measured modules, one unmeasured doc, one cached artifact."""
     (tmp_path / 'src' / 'pkg').mkdir(parents=True)
     (tmp_path / 'src' / 'pkg' / '__init__.py').write_text('A = 1\n', encoding='utf-8')
     (tmp_path / 'src' / 'pkg' / 'core.py').write_text('B = 2\n', encoding='utf-8')

@@ -15,8 +15,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'frontmatter (`name`, `description`) and is never edited, deleted or moved once written -- a '
             'correction is a new entry naming it in `corrects:`, a merge naming its sources in '
             '`merged_from:` -- so a change under `**/.claude/memory/**` may only ADD a file; the one move is '
-            'an approved redacting rename (`dev_lab.dev.memoryentry`), and nothing moves into memory. No '
-            '`accessed` field and no derived index: memory stays in each repo root, read and written through '
+            'an approved redacting rename (`dev_lab.dev.memoryentry`); nothing moves into memory. No '
+            '`accessed` field, no derived index: memory stays in each repo root, read and written through '
             '`python -m dev_lab.dev.memory` (`search`, `add`, `amend`, `redact`, `rename`).'
         ),
         (

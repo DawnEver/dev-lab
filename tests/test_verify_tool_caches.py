@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from dev_lab.dev.verifysteps import CACHE_VARS, cache_env
+from dev_lab.dev._verify_coverage import CACHE_VARS, cache_env
 
 ROOT = Path(__file__).resolve().parents[1]
 

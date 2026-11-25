@@ -1,7 +1,7 @@
 """WRITES-STAY-IN-THE-TREE: an agent writes only into the writable roots its machine ALLOWS (ruling R8, 2026-11-24).
 
 The allowlist is ``[writeroots] allow`` (undeclared: the family checkouts of ``[repos]``), injected here so no test
-reads the real machine file or touches the real temp dir. Planted controls on every judgement: a checkout, its
+reads the real machine file or touches the real temp dir. Planted controls on every judgment: a checkout, its
 worktree and a declared place are admitted; its sibling, a drive root, the temp dir, OneDrive and the harness's
 temp subtree are refused. The census half (:func:`dev_lab.dev.writeroots.write_prone_roots`) is tested first.
 """
@@ -21,6 +21,7 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import writeroots
 from dev_lab.dev._deny_writeroots_row import WRITES_STAY_IN_THE_TREE
+from dev_lab.dev._writeroots_shell import shell_targets
 from dev_lab.dev.codeplace import main
 from dev_lab.dev.famtests import tempprefix
 from dev_lab.dev.writeroots import (
@@ -32,7 +33,6 @@ from dev_lab.dev.writeroots import (
     judge,
     owned_globs,
     refuse_outside_tree,
-    shell_targets,
     write_prone_roots,
 )
 
@@ -156,7 +156,7 @@ def test_an_ordinary_root_and_the_tokens_are_accepted() -> None:
         ('other', 'scratch/26/11/24/probe/run.sh', False),
         ('sibling', 'x.py', True),
         ('temp', 'probe.py', True),
-        ('temp', 'claude/abc/session/tasks/out.txt', True),  # the harness's subtree: $CLAUDE_JOB_DIR/tmp lives there
+        ('temp', 'claude/abc/session/tasks/out.txt', True),  # the harness's subtree: <job-dir>/tmp lives there
         ('home', 'loose.txt', True),
         ('home', '.bashrc', True),
         ('home', 'src/repo/x.py', True),
@@ -226,6 +226,15 @@ def test_an_unusable_declaration_refuses_by_name(monkeypatch: pytest.MonkeyPatch
 )
 def test_the_shell_targets_are_every_place_a_line_writes(command: str, targets: list[tuple[str, str]]) -> None:
     assert shell_targets(command) == targets
+
+
+@pytest.mark.parametrize('target', ['D:/var/x.txt', 'C:\\tmp\\out.csv'])
+def test_a_drive_spelled_target_is_absolute_on_every_os(tmp_path: Path, target: str) -> None:
+    """A drive letter names a root outside the call's cwd even where the OS has no drives (CI's POSIX runner)."""
+    placed = writeroots.place(target, '', tmp_path)
+    assert placed is not None
+    assert placed.is_absolute()
+    assert not placed.is_relative_to(tmp_path)
 
 
 def _payload(command: str, cwd: Path) -> dict[str, object]:
@@ -298,7 +307,7 @@ _SRC_FLOOR = 400
 
 
 def test_every_temp_entry_the_family_creates_carries_the_one_prefix() -> None:
-    """ONLY OUR OWN IS SWEPT, so every temp entry we make must be recognisable as ours."""
+    """ONLY OUR OWN IS SWEPT, so every temp entry we make must be recognizable as ours."""
     root = Path(__file__).resolve().parents[1]
     tempprefix.assert_every_temp_entry_carries_the_prefix(base=root, roots=[root / 'src'], floor=_SRC_FLOOR)
 
@@ -324,7 +333,7 @@ def test_a_synced_folder_and_a_dir_beside_a_checkout_are_off_the_allowlist(tmp_p
 
 
 def test_the_job_temp_is_no_door(tmp_path: Path) -> None:
-    # User ruling 2026-11-23: $CLAUDE_JOB_DIR/tmp is forbidden too; planted, it must not be excluded.
+    # User ruling 2026-11-23: <job-dir>/tmp (CLAUDE_JOB_DIR) is forbidden too; planted, it must not be excluded.
     job = tmp_path / 'jobs' / 'abc'
     found = excluded_paths((), machine={}, env={'CLAUDE_JOB_DIR': str(job)})
     assert job / 'tmp' not in found

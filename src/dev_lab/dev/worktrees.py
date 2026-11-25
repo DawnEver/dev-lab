@@ -9,6 +9,10 @@ move home, verified, before it goes.
 2026-11-17: ``branchset --discard`` takes a branch): it removes a tree holding nothing unlanded, its outputs moved
 home first, and refuses one holding work with that work's doors. D31 (user, 2026-11-17) retired ``--archive``,
 which saved a tree's work aside: a worktree's work is MERGED or the tree CLEANED, never parked.
+``--salvage NAME`` (user ruling 2026-11-24, :mod:`dev_lab.dev.salvage`) records a dirty tree's work as a commit on
+``salvage/<name>`` by plumbing, no hook judging it; ``--remove`` then takes a tree whose content IS that record
+without the quiet wait. ``--reap-orphans`` removes a home directory git lists nowhere whose gitdir vanished, once
+every file in it is reachable.
 
 A THROWAWAY CHECKOUT (2026-11-10, a consumer, three times in one day: a detached base tree made to diff tests
 against was kept by reclaim as ``not landed`` and refused to ``git worktree remove``, so each needed the user):
@@ -57,9 +61,10 @@ from lab_commons.log import emit
 from dev_lab.dev import reclaimrun
 from dev_lab.dev.backgroundrun import repo_main
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, declared_branchset, holders
-from dev_lab.dev.checkout import authority_for, git_out, worktrees
+from dev_lab.dev.checkout import authority_for, git_out, linked, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
 from dev_lab.dev.reclaim import QUIET_S, blockers, reclaim, removed_approved, unlanded_work
+from dev_lab.dev.salvage import reap_orphans, salvage, salvaged
 from dev_lab.dev.scratchtree import discard, scratch
 from dev_lab.dev.venvpath import running_interpreter
 
@@ -83,15 +88,6 @@ def unheld_head(tree: Path) -> str:
         msg = f'git could not say which refs contain {head} in {tree}'
         raise RuntimeError(msg)
     return '' if holders.strip() else head
-
-
-def linked(main: Path, name: str) -> Path | str:
-    """The one LINKED worktree of *main* named *name* (never the main checkout), resolved; else why not."""
-    registered = worktrees(main)
-    if registered is None:
-        return f'git could not list the worktrees of {main}'
-    found = [path.resolve() for path, _ in registered[1:] if path.name == name]
-    return found[0] if len(found) == 1 else f'{len(found)} linked worktrees of {main} are named {name!r}'
 
 
 #: RETIRED-NAMES-REGISTERED: the flag D31 retired, refused by name with its doors, never parsed as unknown.
@@ -175,9 +171,10 @@ def remove(root: Path, name: str, *, census: Census = processes, quiet_s: float 
         return False, f'refused  {name}: the tree is live; nothing was removed\n{describe(live)}'
     if head := unheld_head(tree):
         return False, f'refused  {name}: detached {head} -- no ref contains it; branch it and land it through a PR'
-    if work := unlanded_work(tree):
+    recorded = salvaged(tree, name)
+    if not recorded and (work := unlanded_work(tree)):
         return False, f'refused  {name}: {work}; nothing was removed'
-    if why := removed_approved(main, tree, quiet_s=quiet_s):
+    if why := removed_approved(main, tree, quiet_s=0 if recorded else quiet_s):
         wait = f'; re-run once it has been quiet {quiet_s / 60:g} min' if why.startswith('index changed') else ''
         return False, f'refused  {name}: {why}{wait}'
     return True, f'removed  {tree}  (it held nothing unlanded; a branch it held stays for branchset --apply)'
@@ -206,6 +203,24 @@ def hook_payload(stdin: TextIO, *, wait_s: float = HOOK_READ_S) -> dict[str, obj
     except ValueError:
         return None
     return payload if isinstance(payload, dict) and 'hook_event_name' in payload else None
+
+
+def _named(args: argparse.Namespace) -> int | None:
+    """Run the doors that act on named trees or orphans; their exit code, or ``None`` when none was asked."""
+    if args.scratch or args.discard:
+        made = [scratch(args.root.resolve(), *args.scratch)] if args.scratch else []
+        lines = made + [discard(args.root.resolve(), name) for name in args.discard]
+        for line in lines:
+            emit(line)
+        return 1 if any(not line.startswith(('made', 'removed')) for line in lines) else 0
+    if not (args.salvage or args.reap_orphans or args.remove):
+        return None
+    done = [salvage(args.root, name) for name in args.salvage or ()]
+    reaped = reap_orphans(args.root, salvage=args.salvage is not None) if args.reap_orphans else ()
+    done += [remove(args.root, name) for name in args.remove]
+    for line in (*(line for _, line in done), *reaped):
+        emit(line)
+    return 0 if all(ok for ok, _ in done) and not any(line.startswith('FAILED') for line in reaped) else 1
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
@@ -245,22 +260,28 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
         metavar='NAME',
         help='remove the disposable worktree NAME now (made by --scratch; refused with tracked work or a process)',
     )
+    parser.add_argument(
+        '--salvage',
+        action='extend',
+        nargs='*',
+        default=None,
+        metavar='NAME',
+        help="record worktree NAME's work (tracked + untracked, ignored excluded) as a commit on salvage/NAME; "
+        "no hook, nothing pushed, the tree untouched. Bare, with --reap-orphans: record each orphan's "
+        'unreachable files on salvage/<dir> first, then reap it',
+    )
+    parser.add_argument(
+        '--reap-orphans',
+        action='store_true',
+        help='remove home directories git lists nowhere whose gitdir vanished, once every file is reachable',
+    )
     words = list(sys.argv[1:] if argv is None else argv)
     if any(word.partition('=')[0] == '--archive' for word in words):
         emit(RETIRED_ARCHIVE, err=True)
         return 2
     args = parser.parse_args(words)
-    if args.scratch or args.discard:
-        made = [scratch(args.root.resolve(), *args.scratch)] if args.scratch else []
-        lines = made + [discard(args.root.resolve(), name) for name in args.discard]
-        for line in lines:
-            emit(line)
-        return 1 if any(not line.startswith(('made', 'removed')) for line in lines) else 0
-    if args.remove:
-        removed = [remove(args.root, name) for name in args.remove]
-        for _, line in removed:
-            emit(line)
-        return 0 if all(ok for ok, _ in removed) else 1
+    if (code := _named(args)) is not None:
+        return code
     if args.prune and (payload := hook_payload(stdin or sys.stdin)) is not None:
         root = repo_main(Path(str(payload.get('cwd') or args.root)))
         with contextlib.suppress(OSError):  # a hook never blocks or fails the session it serves

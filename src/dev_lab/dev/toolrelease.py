@@ -2,7 +2,7 @@
 
 ``python -m dev_lab.dev.toolrelease install <tool> [--dry-run]`` and ``where <tool>``.
 
-WHY. A tool the toolchain drives itself (rclone, for the artefact and large-file stores) must be present on every
+WHY. A tool the toolchain drives itself (rclone, for the artifact and large-file stores) must be present on every
 host that runs the toolchain, and a host's setup must put it there without a person: the cluster account deploy
 (:data:`dev_lab.dev.hpcaccount.checks.INSTALLERS`) and the workstation deploy (:mod:`dev_lab.dev.workstation`) both
 install every :data:`RELEASES` tool they cannot resolve, through this one door.

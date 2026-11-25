@@ -1,0 +1,62 @@
+# THE PLACEMENT (dev_lab.dev.codeplace) and DECLARED-LAYOUT (dev_lab.dev.layout) of this checkout: the one file
+# dev-lab reads them from (user ruling 2026-11-24).
+code_roots = []
+# A worktree is a real second tree with its own src/, judged by the run inside it.
+pruned_paths = ['.claude/worktrees']
+# Every tool cache lives under output/cache/<tool>/, each tool NAMED (user ruling 2026-11-24): its files go unjudged.
+tool_caches = ['pytest', 'ruff', 'coverage', 'hypothesis', 'pyright']
+# SCRATCH-IS-NEVER-COMMITTED: the one-off sink, and when the SessionStart notice starts naming a one-off.
+scratch = 'scratch/'
+max_age = "3 d"
+# STRAY-FILE-REFUSED: files a tool this repo uses retired; a stray copy is named with its door, never `git add`.
+retired = [
+  { path = '.claude/rules/MEMORY.md', what = "rem's generated memory index; nothing rebuilds it", door = "delete them through rem's migration -- the /migrate skill, or node <rem plugin>/migrations/migrate.mjs <checkout> -- which removes every copy outside attic/" },
+]
+
+# DECLARED-LAYOUT (dev_lab.dev.layout): the WHOLE tree as an allow-list -- each directory pattern (one glob per
+# segment; EVERY directory matches a row of its own, no inheritance) and the formats a file there may be
+# ('.suffix', an exact name, "" for none, "*" for anything). Undeclared is refused. NO-BACKUP-COPIES: nothing under output/ or scratch/ is ever a
+# clone, worktree, exported tree, bundle or patch, whatever a row says.
+[layout]
+'.' = ['.md', '.toml', '.lock', '.gitattributes', '.gitignore', '.rgignore', 'license', 'makefile']
+'.claude' = ['.json']
+'.claude/memory' = ['.md']
+'.claude/memory/[0-9][0-9][0-9][0-9]' = ['.md']
+'.claude/memory/[0-9][0-9][0-9][0-9]/[0-9][0-9]' = ['.md']
+'.claude/memory/[0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]' = ['.md']
+'.claude/rules' = ['.md']
+'.claude/tasks' = ['.md']
+'.codex' = []
+'.codex/rules' = ['.rules']
+'.github' = []
+'.github/workflows' = ['.yml']
+'.vscode' = ['.json']
+'docs-src' = ['.md']
+'docs-src/dev' = ['.md']
+src = []
+'src/dev_lab' = ['.py', '.typed']
+'src/dev_lab/*' = ['.py', '.sh', '.js', '.toml', '.json']
+'src/dev_lab/*/*' = ['.py', '.sh', '.js', '.toml', '.json']
+'src/dev_lab/*/*/*' = ['.py', '.sh', '.js', '.toml', '.json']
+tests = ['.py', '.json', '.jsonl', '.toml', '.txt', '.golden', '.gitattributes']
+'tests/_*' = ['.py', '.json', '.jsonl', '.toml', '.txt', '.golden', '.gitattributes']
+'tests/_*/*' = ['.py', '.json', '.jsonl', '.toml', '.txt', '.golden', '.gitattributes']
+# The IR schema fixture repo (docs-src/dev/ir-schema.md): a consumer's declaration, schema and catalogue.
+'tests/data' = []
+'tests/data/ir_schema' = []
+'tests/data/ir_schema/repo' = ['.toml']
+'tests/data/ir_schema/repo/ir' = ['.toml']
+scratch = ['*']
+output = []
+'output/forge' = []
+'output/forge/*' = ['.json', '.tmp']
+'output/cache' = []
+'output/cache/runcache' = ['.jsonl']
+'output/logs' = []
+'output/logs/[0-9][0-9]' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.log', '.jsonl', '.json', '.gz', '.coverage', '.txt', '.csv']
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/verify/*.outcomes' = []
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/verify/*.outcomes/*' = ['.jsonl']
+'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/coverage' = ['.md', '.coverage']  # verify's coverage table

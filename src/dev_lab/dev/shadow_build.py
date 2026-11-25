@@ -134,7 +134,7 @@ def build_wheel(
         manifest: the crate's ``Cargo.toml``.
         out_dir: where the wheel goes. Refused if inside the active environment.
         wall_s: the child's ceiling -- a hang detector, see :data:`DEFAULT_CHILD_WALL_S`.
-        release: build with optimisations. A debug build measured as if it were a release one is the
+        release: build with optimizations. A debug build measured as if it were a release one is the
             most common way this harness has been observed to produce a meaningless ratio.
         python: the interpreter to run ``maturin`` under. Defaults to the invoking one, so the wheel
             is built for the environment it will be measured against rather than for whichever

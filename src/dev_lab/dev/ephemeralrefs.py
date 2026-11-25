@@ -3,7 +3,7 @@
 EPHEMERAL MEANS UNTRACKED CONTENT IN A PLACE GIT NEVER KEEPS (user ruling 2026-10-28). Two places,
 both derived, neither listed here: what the repo's own ignore rules ignore (``git check-ignore
 --no-index --stdin``, so a repo that ignores a new cache directory is covered the moment it says so),
-and the declared stray roots (``[tool.dev_lab.placement]``, the family's ``scratch/``), which are
+and the declared stray roots (``layout.toml``, the family's ``scratch/``), which are
 NEVER ignored -- a one-off there must show in ``git status`` -- and never committed beyond their
 README, so ``git check-ignore`` alone let every ``scratch/`` probe through. A path in either place
 passes only when it is TRACKED (a re-included lock file, the scratch README). What git cannot judge
@@ -84,7 +84,7 @@ RULE: Final = 'TRACKED-CITES-NO-EPHEMERAL'
 #: A dated memory entry, ``.claude/memory/<yyyy>/<mm>/<dd>/...`` at any depth: an immutable record of what
 #: happened (MEMORY-SHAPE; integrator ruling 2026-11-02), so a path it cites existed THEN and is a true
 #: statement about the past. THIS scan alone skips it, beside archived code; the memory index files and
-#: ``.claude/rules`` stay judged, and no other family scan inherits the exemption.
+#: ``<repo>/.claude/rules`` stay judged, and no other family scan inherits the exemption.
 DATED_MEMORY: Final = re.compile(r'(?:^|/)\.claude/memory/\d{4}/\d{2}/\d{2}/')
 #: The remedy every refusal prints.
 REMEDY: Final = 'cite a tracked source or a <placeholder> shape, or declare an escape in [tool.dev_lab.ephemeral_refs]'
@@ -256,7 +256,7 @@ def judge(root: Path, tokens: Collection[str]) -> dict[str, str]:
 
 
 def _judge_local(root: Path, local: Mapping[str, str]) -> dict[str, str]:
-    """``token -> why`` for the in-repo candidates (``token -> normalised path``) that are ephemeral."""
+    """``token -> why`` for the in-repo candidates (``token -> normalized path``) that are ephemeral."""
     tracked = tracked_files(root)
     lived = _tracked_dirs(tracked)
     strays = _stray_roots(root)

@@ -94,14 +94,14 @@ def mismatches(installed: Iterable[Installed], pins: Mapping[str, str]) -> tuple
 
 
 def sync_door(root: Path) -> str:
-    """The command *root* offers for a dependency change, from ``[tool.dev_lab.doors]``, else the shared one."""
+    """The command *root* offers for a dependency change: ``[tool.dev_lab.doors]``, else the shared one, on *root*."""
     manifest = root / 'pyproject.toml'
     if manifest.is_file():
         doors = declared_table(tomllib.loads(manifest.read_text(encoding='utf-8')), 'doors', {})
         door = doors.get(_DOOR_KEY)
         if isinstance(door, str) and door:
             return door
-    return DEFAULT_DOOR
+    return f'{DEFAULT_DOOR} {root.as_posix()}'  # --bootstrap takes the checkout it re-syncs
 
 
 def refusal(stale: Iterable[tuple[Installed, str]], *, door: str) -> str | None:

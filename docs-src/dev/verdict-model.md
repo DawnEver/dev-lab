@@ -89,12 +89,16 @@ complete part or the forge's acceptance gates.
   (`dev_lab.dev.inflight`).
 - A key the run cache already holds is cited without running (`dev_lab.dev.runcache`); `--rerun` overrides.
 - A measure waits at most `verifybox.MEASURE_WAIT_S` for the box and then refuses naming the holder.
+- Before pytest, the lint steps run unboxed (`verifysteps.LINT_STEPS`): ruff check, ruff format, and typos in
+  locale en-us (`dev_lab.dev.spelling`, US-SPELLING-IS-CHECKED, user ruling 2026-11-24) over every checked file,
+  configured by the one family file `dev_lab/dev/typos.toml`; dated memory before `spelling.MEMORY_CUTOFF` is
+  history and unchecked, and `python -m dev_lab.dev.spelling --write` fixes what is unambiguous.
 - A measure's pytest step runs in the box at its declared claim (`verifybox.selection_demand`: one core per
   worker its `-n` runs, from `verifybox.selection_workers` -- one when serial, else
   `verifybox.selection_width`: one worker a file, at most the box's free cores, narrowed by its free memory, unless the caller names a width -- the memory its files measured, `verifybox.selection_mem_gb`, and the wall `[tool.dev_lab.verify] wall_s` declares, else `SELECTION_WALL_S`) beside whatever else fits; a producer runs
   at the demand serve admitted it at ([box resources](box-resources.md)).
 - Where nothing was learned (a hosted runner: the table lives beside the machine config, not in the checkout) a
-  worker is priced at `[tool.dev_lab.verify] worker_mem_gb`, the peak the repo's last run measured, times the box
+  worker is priced at `[tool.dev_lab.verify] worker_mem` (a size), the peak the repo's last run measured, times the box
   headroom (`verifybox.declared_worker_gb`); a learned price above it still wins.
 - A test marked `serial` (`dev_lab.dev.serialpass`, the family's one marker for a bar that cannot shrink) is
   deselected from that step and runs after it in a second boxed step at `-n 0`, alone; the two halves of the log
@@ -113,7 +117,7 @@ complete part or the forge's acceptance gates.
 - The verdict line is written at the end of the run's own log; the full log is the evidence.
 - The tree stamp carries its dirty bit on a measurement too; it records which tree the counts are about.
 - Numerical regression uses tolerances, never hashes.
-- **Every pytest step writes a coverage REPORT, never a gate** (`verifysteps.coverage_args`): pytest-cov
+- **Every pytest step writes a coverage REPORT, never a gate** (`_verify_coverage.coverage_args`): pytest-cov
   writes `<output>/<yy>/<mm>/<dd>/coverage/<log stem>.coverage.md` (`datedlog.output_dir`), its data file beside
   it, and verify prints the TOTAL line. A serial stage appends to the parallel stage's data, so the report covers the whole run.
   There is no `--cov-fail-under`: a coverage number never moves a verdict. `--cov` names no source, so a

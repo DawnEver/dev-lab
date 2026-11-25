@@ -11,7 +11,7 @@ and read by :func:`declared_branchset`::
     ephemeral = ['pr/*']           # the DEFAULT, so omit it; PR-head globs, deleted once the PR goes; [] opts out
     task_heads = 'pr/<task>/<feature>'  # the DEFAULT: the head an agent session bound to a task pushes; '' opts out
     prune_merged = true            # the ``prune`` role's executor DELETES merged idle origin branches (idempotent)
-    max_idle_hours = 24            # how long a branch's tip sits idle before it is pruned (merged) or STALE (unmerged)
+    max_idle = "24 h"              # how long a branch's tip sits idle before it is pruned (merged) or STALE (unmerged)
     max_ahead = 10                 # how many unlanded commits a branch may hold before it is OVER_AHEAD
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
@@ -46,6 +46,7 @@ from typing import Final
 from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
+from lab_commons.quantity import QuantityRefused, Renamed, parse, refuse_renamed
 
 from dev_lab.dev.branchfate import discard, settle
 from dev_lab.dev.checkout import authority_for, git_out, origin_branches
@@ -77,9 +78,13 @@ __all__ = [
 ]
 
 _TABLE = '[tool.dev_lab.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'max_idle_hours', 'max_ahead', 'task_heads'})
+_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'max_idle', 'max_ahead', 'task_heads'})
 #: RETIRED-NAMES-REGISTERED: a key this module renamed, refused by name with its replacement (D46, 2026-11-19).
-_RENAMED: Final = {'grace_hours': 'renamed max_idle_hours (one idle bound for prune and STALE, D46)'}
+_RENAMED: Final = {'grace_hours': 'renamed max_idle (one idle bound for prune and STALE, D46)'}
+#: Unit-suffixed keys retired by the 2026-11-25 ruling (a value carries its unit), refused with their new line.
+_UNIT_RENAMED: Final = {'max_idle_hours': Renamed('max_idle', 'h')}
+#: The idle bound when undeclared, in seconds.
+DEFAULT_MAX_IDLE: Final = 24 * 3600.0
 
 #: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
 #: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
@@ -122,8 +127,8 @@ class BranchSet:
     sessions: frozenset[str]
     #: Whether the ``prune`` role's executor deletes merged, idle origin branches; off, it only lists them.
     prune_merged: bool = False
-    #: How long a branch tip sits idle before it is pruned (merged) or STALE (unmerged).
-    max_idle_hours: float = 24.0
+    #: How long a branch tip sits idle, in seconds, before it is pruned (merged) or STALE (unmerged).
+    max_idle: float = DEFAULT_MAX_IDLE
     #: How many commits a branch may hold that integration lacks before it is OVER_AHEAD; ``None``: unjudged.
     max_ahead: int | None = None
     #: Glob namespaces (``pr/*``) of SHORT-LIVED branches: pushable undeclared, each the head of one pull
@@ -220,6 +225,10 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     if not isinstance(sessions, list) or not all(isinstance(name, str) and name for name in sessions):
         msg = f'{_TABLE} sessions in {manifest} is {sessions!r}; it must be a list of branch names'
         raise BranchSetNotDeclared(msg)
+    try:
+        refuse_renamed(f'{_TABLE} in {manifest}:', table, _UNIT_RENAMED)
+    except QuantityRefused as retired_unit:
+        raise BranchSetKeyRetired(str(retired_unit)) from retired_unit
     if retired := [
         f'{key} is retired: {RETIRED[f"branchset.{key}"]}' for key in table if f'branchset.{key}' in RETIRED
     ] + [f'{key} is retired: {_RENAMED[key]}' for key in table if key in _RENAMED]:
@@ -249,7 +258,7 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
         trunk,
         frozenset(sessions),
         prune_merged=prune,
-        max_idle_hours=idle,
+        max_idle=idle,
         max_ahead=ahead,
         ephemeral=tuple(ephemeral),
         task_heads=heads,
@@ -257,13 +266,19 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
 
 
 def _bounds(table: dict, manifest: str) -> tuple[bool, float, int | None]:
-    """``prune_merged``, ``max_idle_hours`` and ``max_ahead`` of *table*, each refused by name when malformed."""
+    """``prune_merged``, ``max_idle`` (seconds) and ``max_ahead`` of *table*, each refused by name when malformed."""
     if not isinstance(prune := table.get('prune_merged', False), bool):
         msg = f'{_TABLE} prune_merged in {manifest} is {prune!r}; it must be true or false'
         raise BranchSetNotDeclared(msg)
-    if isinstance(idle := table.get('max_idle_hours', 24.0), bool) or not isinstance(idle, int | float) or idle < 0:
-        msg = f'{_TABLE} max_idle_hours in {manifest} is {idle!r}; it must be a non-negative number of hours'
-        raise BranchSetNotDeclared(msg)
+    idle = DEFAULT_MAX_IDLE
+    if 'max_idle' in table:
+        try:
+            idle = parse(f'{_TABLE} in {manifest}: max_idle', table['max_idle'], 'duration')
+        except QuantityRefused as bad:
+            raise BranchSetNotDeclared(str(bad)) from bad
+        if idle < 0:
+            msg = f'{_TABLE} max_idle in {manifest} is {table["max_idle"]!r}; it must be a non-negative duration'
+            raise BranchSetNotDeclared(msg)
     if (ahead := table.get('max_ahead')) is not None and (
         isinstance(ahead, bool) or not isinstance(ahead, int) or ahead < 0
     ):

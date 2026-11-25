@@ -56,7 +56,7 @@ class Fleet(Host):
 
 def _host(tmp_path, pulls: list[Pull], by_head: dict[str, tuple[CommitStatus, ...]] | None = None,
           *, glass: tuple[str, ...] = GLASS) -> Fleet:  # fmt: skip
-    return Fleet(config(tmp_path, [], extra='wave_hours_max = 4.0', glass=glass),
+    return Fleet(config(tmp_path, [], extra='wave_ceiling = "4 h"', glass=glass),
                  forge=ListingForge(pulls=pulls, by_head=by_head or {}))  # fmt: skip
 
 
@@ -138,7 +138,7 @@ class RefusingForge(ListingForge):
 
 def test_a_refused_merge_is_skipped_and_the_next_pr_still_merges(tmp_path) -> None:  # PLANTED CONTROL
     pulls = [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)]
-    host = Fleet(config(tmp_path, [], extra='wave_hours_max = 4.0', glass=GLASS),
+    host = Fleet(config(tmp_path, [], extra='wave_ceiling = "4 h"', glass=GLASS),
                  forge=RefusingForge(pulls=pulls, refuses=7))  # fmt: skip
     host.open(max_merges=5)
     host.server.tick()
@@ -169,27 +169,27 @@ def test_a_green_pr_that_is_not_current_still_lands(tmp_path) -> None:
 
 def _consent_host(tmp_path, **forge: object) -> Fleet:
     pulls = [Pull(7, 'integrate/main', HEAD, draft=False), Pull(8, 'integrate/main', 'b' * 40, draft=False)]
-    return Fleet(config(tmp_path, [], extra='wave_hours_max = 4.0', glass=GLASS),
+    return Fleet(config(tmp_path, [], extra='wave_ceiling = "4 h"', glass=GLASS),
                  forge=ListingForge(pulls=pulls, **forge))  # fmt: skip
 
 
 def test_the_same_pr_without_the_label_is_landed(tmp_path) -> None:  # PLANTED CONTROL
-    host = _consent_host(tmp_path, labelled={7: ('enhancement',)})
+    host = _consent_host(tmp_path, labeled={7: ('enhancement',)})
     host.open(max_merges=5)
     host.server.tick()
     assert _merged(host) == [7, 8]
 
 
 def test_a_needs_consent_pr_is_skipped_and_spends_no_merge(tmp_path, capsys) -> None:
-    host = _consent_host(tmp_path, labelled={7: (LABEL,)})
+    host = _consent_host(tmp_path, labeled={7: (LABEL,)})
     host.open(max_merges=1)
     host.server.tick()
     assert _merged(host) == [8], 'a skipped PR does not count toward max_merges'
-    assert f'labelled {LABEL}: it touches a boundary key and lands only by its own consent' in capsys.readouterr().err
+    assert f'labeled {LABEL}: it touches a boundary key and lands only by its own consent' in capsys.readouterr().err
 
 
 def test_a_held_back_pr_is_logged_once_per_wave_not_every_tick(tmp_path, capsys) -> None:
-    host = _consent_host(tmp_path, labelled={7: (LABEL,), 8: (LABEL,)})
+    host = _consent_host(tmp_path, labeled={7: (LABEL,), 8: (LABEL,)})
     host.open(max_merges=5)
     host.server.tick()
     host.server.tick()
@@ -199,7 +199,7 @@ def test_a_held_back_pr_is_logged_once_per_wave_not_every_tick(tmp_path, capsys)
 
 
 def test_a_held_pr_is_skipped_by_the_sweep_naming_the_release_door(tmp_path, capsys) -> None:
-    host = _consent_host(tmp_path, labelled={7: (HOLD_LABEL,)})
+    host = _consent_host(tmp_path, labeled={7: (HOLD_LABEL,)})
     host.open(max_merges=1)
     host.server.tick()
     assert _merged(host) == [8], 'a held PR does not count toward max_merges'

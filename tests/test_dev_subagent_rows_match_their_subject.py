@@ -22,7 +22,7 @@ _PUSH, _DOOR = 'SUBAGENT-NO-PUSH', 'MAIN-ONLY-DOOR'
 
 @pytest.fixture(scope='module')
 def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """The rows that need no repo artefact, rendered as a repo ships them: both subagent rows are among them."""
+    """The rows that need no repo artifact, rendered as a repo ships them: both subagent rows are among them."""
     path = tmp_path_factory.mktemp('rules') / 'deny-rules.json'
     path.write_text(render(HookAdoption(app_name='subagent rows (suite)')), encoding='utf-8')
     return path
@@ -38,6 +38,7 @@ def _row(reason: str | None) -> str | None:
         f'{_PY} -m dev_lab.dev.sshhold status',
         f'{_PY} -m dev_lab.dev.hpcaccount deploy-fleet --account A --dry-run',
         f'{_PY} -m dev_lab.dev.hpcaccount drift-fleet',
+        f'{_PY} -m dev_lab.dev.hpcaccount look --account A inventory work',
     ],
 )
 def test_a_read_only_verb_is_a_subagents_own(rules: Path, command: str) -> None:
@@ -52,6 +53,10 @@ def test_a_read_only_verb_is_a_subagents_own(rules: Path, command: str) -> None:
         f'{_PY} -m dev_lab.dev.hpcaccount deploy-fleet --account A',
         f'{_PY} -m dev_lab.dev.hpcaccount deploy-fleet --account A; echo --dry-run',
         f'{_PY} -m dev_lab.dev.hpcaccount forget --repo u --row k --fleet --dry-run',
+        # MEASURED 2026-11-25: a subagent's census was answered with the push remedy by a consumer's stale render.
+        f'{_PY} -m dev_lab.dev.hpcaccount retention --account A --census',
+        f'{_PY} -m dev_lab.dev.hpcaccount archive --account A work/data --apply',
+        f'{_PY} -m dev_lab.dev.hpcaccount archive-clean --account A work/data',
         f'{_PY} -m dev_lab.dev.sshhold open alice@hpclogin01.example.org --hours 2 --code 123456',
         f'{_PY} -m dev_lab.dev.opsserver status',
     ],

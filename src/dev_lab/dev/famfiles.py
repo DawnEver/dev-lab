@@ -10,7 +10,7 @@ one place that says, for each file, which mechanism owns it -- or that the repo 
 :data:`PROJECT_FILES` IS THAT LIST. A tracked project-level file in any repo of the family is either a
 row here, or a row in the repo's own ``owned_here`` mapping with a reason; anything else is a file
 drifting with nobody saying so, and :mod:`dev_lab.dev.famtests.famfiles` refuses it. ONE command,
-:func:`render_all` (``python -m dev_lab.dev.famfiles``), writes every RENDERED artefact a repo
+:func:`render_all` (``python -m dev_lab.dev.famfiles``), writes every RENDERED artifact a repo
 declares a delta for, so a base edit here reaches a repo by one re-render rather than one per file.
 
 THE ONE DOOR (2026-11-13). ``python -m dev_lab.dev.famfiles`` WITHOUT ``--files`` runs every renderer due in
@@ -24,7 +24,7 @@ is due only where its input is declared. The door prints one line per renderer: 
 
 THE TWO KINDS, and the line between them is the noun test the rules registry uses: a file whose
 CONTENT is about the family's toolchain is managed; a file whose content is about the repo (its
-licence, its architecture, its release history) is owned, and the row says which noun made it so.
+license, its architecture, its release history) is owned, and the row says which noun made it so.
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import re
-import shutil
 import sys
 import tomllib
 from collections.abc import Callable
@@ -43,8 +42,8 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev import agentsection, ciworkflows
-from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
+from dev_lab.dev import ciworkflowshape
+from dev_lab.dev.famconfig import BASES, INSTALLED, RENDERED, artifact_base, inspect_file, render
 from dev_lab.dev.trackedrender import Kit, RenderRefused, guard_render, interpreter_kit
 
 if TYPE_CHECKING:
@@ -69,14 +68,11 @@ __all__ = [
     'main',
     'managed_sections',
     'plan',
-    'project_files_on_disk',
     'render_agent_files',
     'render_all',
     'render_argv',
     'render_repo',
-    'unaccounted',
     'undeclared_inputs',
-    'unplaced_workflows',
 ]
 
 #: The one command a repo re-renders every family file with (its own deltas module named).
@@ -189,7 +185,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
             RUST_TOOLCHAIN,
         ),
         _g('uv.lock', 'famtests.lockpin pins it; forge relock and forge sync freshen it (PIN + FRESHNESS)', None),
-        _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
+        _o('LICENSE', 'the license is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
         _o('Makefile', 'its targets and recipes are the repo`s; the family contract retired 2026-11-24'),
         ProjectFile(
@@ -199,6 +195,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
             renderer=FAMFILES,
         ),
         _o('CLAUDE.md', 'a pointer to AGENTS.md; the shared rule pages arrive through famtests.rulespages'),
+        _o('layout.toml', 'its placement and DECLARED-LAYOUT tables (dev_lab.dev.layout): the tree is the repo`s'),
         _o('CHANGELOG.md', 'the repo`s release history'),
     )
 }
@@ -217,8 +214,8 @@ RETIRED_PROJECT_FILES: Final[dict[str, str]] = {
 #: Not rows -- a repo keeps only the ones its ``[tool.dev_lab.ci]`` places (:func:`ciworkflows.declared_paths`).
 WORKFLOW_FILES: Final = frozenset(
     (directory / name).as_posix()
-    for forge, directory in ciworkflows.WORKFLOW_DIRS.items()
-    for name in ciworkflows.base_names(forge)
+    for forge, directory in ciworkflowshape.WORKFLOW_DIRS.items()
+    for name in ciworkflowshape.base_names(forge)
 )
 
 GENERATED: Final = frozenset(row.path for row in PROJECT_FILES.values() if row.generated) | WORKFLOW_FILES
@@ -362,50 +359,6 @@ def _run(argv: list[str], root: Path) -> int:
     return _door.run(argv, cwd=root, check=False).returncode
 
 
-def _git_lines(root: Path, *args: str) -> tuple[str, ...]:
-    done = _door.run(
-        [shutil.which('git') or 'git', '-C', str(root), *args],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=False,
-        timeout=60,
-    )
-    if done.returncode != 0:
-        msg = f'git {" ".join(args)} failed in {root}: {done.stderr.strip()}'
-        raise RuntimeError(msg)
-    return tuple(line for line in done.stdout.splitlines() if line)
-
-
-def project_files_on_disk(root: Path) -> tuple[str, ...]:
-    """The tracked project-level files of *root*: every top-level FILE, plus the registry's nested paths."""
-    tracked = _git_lines(root, 'ls-files')
-    nested = {path for path in (*PROJECT_FILES, *RETIRED_PROJECT_FILES) if '/' in path}
-    return tuple(sorted(path for path in tracked if '/' not in path or path in nested or _is_workflow(path)))
-
-
-def _is_workflow(path: str) -> bool:
-    return any(
-        path.startswith(f'{directory.as_posix()}/') and path.count('/') == directory.as_posix().count('/') + 1
-        for directory in ciworkflows.WORKFLOW_DIRS.values()
-    )
-
-
-def unaccounted(root: Path, owned_here: Mapping[str, str]) -> tuple[str, ...]:
-    """Project-level files in *root* that neither the family list nor the repo's own *owned_here* names."""
-    known = {*PROJECT_FILES, *RETIRED_PROJECT_FILES, *owned_here}
-    return tuple(path for path in project_files_on_disk(root) if path not in known and not _is_workflow(path))
-
-
-def unplaced_workflows(root: Path) -> tuple[str, ...]:
-    """Tracked workflow files of *root* its ``[tool.dev_lab.ci]`` does not place (``ciworkflows.declared_paths``)."""
-    on_disk = [path for path in project_files_on_disk(root) if _is_workflow(path)]
-    if not on_disk:
-        return ()
-    allowed = ciworkflows.declared_paths(root)
-    return tuple(path for path in on_disk if path not in allowed)
-
-
 def load_deltas(path: Path) -> Mapping[str, Delta]:
     """The ``DELTAS`` mapping a repo declares, read from the module file at *path* (its own convention)."""
     spec = importlib.util.spec_from_file_location(path.stem, path)
@@ -419,36 +372,40 @@ def load_deltas(path: Path) -> Mapping[str, Delta]:
 
 
 def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple[str, ...]:
-    """Every RENDERED base this repo declares, re-rendered into *root*; one line per artefact, what happened.
+    """Every RENDERED base this repo declares, re-rendered into *root*; one line per artifact, what happened.
 
     With *write* false nothing is written and the lines say what WOULD change: the check mode.
     """
     out: list[str] = []
-    for artefact in sorted(deltas):
-        base = artefact_base(artefact)
-        path = root / artefact
-        report = inspect_file(path, base, deltas[artefact])
+    for artifact in sorted(deltas):
+        base = artifact_base(artifact)
+        path = root / artifact
+        report = inspect_file(path, base, deltas[artifact])
         if report.status == INSTALLED:
-            out.append(f'{artefact}: current')
+            out.append(f'{artifact}: current')
         elif base.mode != RENDERED:
-            out.append(f'{artefact}: {report.status} ({base.mode}, not written) -- {report.detail}')
+            out.append(f'{artifact}: {report.status} ({base.mode}, not written) -- {report.detail}')
         elif write:
-            path.write_bytes(render(base, deltas[artefact]).encode('utf-8'))
-            out.append(f'{artefact}: rendered (was {report.status})')
+            path.write_bytes(render(base, deltas[artifact]).encode('utf-8'))
+            out.append(f'{artifact}: rendered (was {report.status})')
         else:
-            out.append(f'{artefact}: would render (is {report.status})')
+            out.append(f'{artifact}: would render (is {report.status})')
     undeclared = sorted(set(BASES) - set(deltas))
-    out += [f'{artefact}: NO DELTA DECLARED -- this repo has not adopted the family base' for artefact in undeclared]
+    out += [f'{artifact}: NO DELTA DECLARED -- this repo has not adopted the family base' for artifact in undeclared]
     return tuple(out)
 
 
 def managed_sections() -> tuple[tuple[str, str], ...]:
     """The family sections every repo carries inside a file of its own: (repo-relative path, the section text)."""
+    from dev_lab.dev import agentsection  # noqa: PLC0415 -- the light merge job imports famfiles
+
     return ((agentsection.AGENTS_REL, agentsection.render_section()),)
 
 
 def render_agent_files(root: Path, *, write: bool) -> tuple[str, ...]:
     """The family section of AGENTS.md, re-rendered into *root*; one line. *write* false: the check mode."""
+    from dev_lab.dev import agentsection  # noqa: PLC0415 -- the light merge job imports famfiles
+
     return (agentsection.render_into(root, write=write),)
 
 
@@ -459,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     names the repo's module (no deltas: no per-file overrides, no base written); exit 0 when every one is current
     (after writing, unless --check), else 1. ``--deltas`` implies ``--files``.
     """
-    parser = argparse.ArgumentParser(description='Render every family artefact a repo declares (the one door).')
+    parser = argparse.ArgumentParser(description='Render every family artifact a repo declares (the one door).')
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--files', action='store_true', help='only the famfiles renderer: whole + base/delta files')
     parser.add_argument('--deltas', type=Path, help='the repo DELTAS module; implies --files')

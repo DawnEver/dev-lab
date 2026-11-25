@@ -27,16 +27,13 @@ from lab_commons.compute.model import Demand
 
 from dev_lab.dev import dep as dep_module
 from dev_lab.dev import liverun
-from dev_lab.dev._dep_pip import has_pip
+from dev_lab.dev._dep_pip import Mode, Version, has_pip, pip_argv
 from dev_lab.dev.dep import (
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
-    Mode,
     Port,
-    Version,
     current_env_key,
     mutate,
-    pip_argv,
 )
 from dev_lab.dev.envseat import EnvironmentSeat
 

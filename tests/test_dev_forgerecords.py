@@ -349,7 +349,7 @@ def test_a_records_home_past_the_page_bound_is_listed_whole(server) -> None:
 def test_a_forge_that_ignores_paging_is_refused_not_read_forever(server) -> None:
     """PLANTED CONTROL: a full page answered again for the next page is a forge ignoring ``page``, not more records.
 
-    The forge HONOURS the page size (asked for one item it answers one), so the page it repeats is a truncated one.
+    The forge HONORS the page size (asked for one item it answers one), so the page it repeats is a truncated one.
     """
     answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
     same = [_asset(i, f'run-{i:040x}-linux-r1.json.gz') for i in range(1, 51)]

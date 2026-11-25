@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import venv
 from pathlib import Path
@@ -481,6 +482,40 @@ def test_a_stale_venv_missing_a_verb_names_its_fix_and_lets_the_prompt_through(t
     assert same.returncode == 0, 'dev-lab #639: a current venv lacking the verb is a wiring fault, never a block'
     assert 'behind' not in same.stderr
     assert 'agent_guard --install' in same.stderr, 'a current venv is told to re-render the wiring'
+
+
+def _walls(root: Path) -> list[dict[str, object]]:
+    return [
+        json.loads(raw)
+        for path in root.glob('output/logs/*/*/*/walls/walls.jsonl')
+        for raw in path.read_text(encoding='utf-8').splitlines()
+    ]
+
+
+def test_a_venv_carrying_no_dev_lab_is_named_and_sent_to_a_bootstrap_that_can_run(tmp_path: Path) -> None:
+    """A venv with no dev_lab at all is named (VENV-CARRIES-DEV-LAB) with a bootstrap that can run, and recorded.
+
+    2026-11-25: such a venv failed ``No module named dev_lab`` and was told to run THAT venv's ``python -m
+    dev_lab.dev.dep --bootstrap`` -- a door that cannot run; only a present-but-behind version was named. PLANTED
+    CONTROL: a venv carrying dev_lab behind its lock is still told it is behind, never that it carries none.
+    """
+    env = _venv_with_dev_lab_at(tmp_path, 'a' * 40, 'b' * 40)
+    shutil.rmtree(next((tmp_path / '.venv').glob('**/site-packages/dev_lab-0.dist-info')))
+    done = _bind(env)
+    assert done.returncode == 0, done.stderr
+    [line] = done.stderr.splitlines()
+    assert 'carries no dev_lab' in line, line
+    assert 'VENV-CARRIES-DEV-LAB' in line, line
+    assert f'cd {tmp_path} && ' in line, line
+    assert f'-m dev_lab.dev.dep --bootstrap {tmp_path}' in line, line
+    assert 'behind' not in line, line
+    [wall] = _walls(tmp_path)
+    assert (wall['rule'], wall['remedy_present']) == ('VENV-CARRIES-DEV-LAB', True)
+    behind = tmp_path / 'behind'
+    stale = _bind(_venv_with_dev_lab_at(behind, 'a' * 40, 'b' * 40))
+    assert 'aaaaaaaaaa is behind' in stale.stderr, stale.stderr
+    assert 'carries no dev_lab' not in stale.stderr, stale.stderr
+    assert [wall['rule'] for wall in _walls(behind)] == ['VENV-FOLLOWS-THE-LOCK']
 
 
 def test_the_stale_python_launcher_keeps_the_native_codex_wall_identity(tmp_path: Path) -> None:

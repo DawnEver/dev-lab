@@ -4,23 +4,31 @@ User rulings 2026-11-23: "There must be no copied checkouts! Strictly lay out th
 architecture and the file formats each directory allows" and "Forbid backing up content into output and scratch!
 Everything is either cleaned or merged, no backup."
 
-THE DECLARATION IS THE REPO'S, ONCE, in ``[tool.dev_lab.placement.layout]`` of its ``pyproject.toml``: each key
-is a directory PATTERN (repo-relative POSIX, one :func:`fnmatch.fnmatchcase` glob per segment, ``.`` for the
-root's own files), each value the list of what a file there may be -- a ``.suffix``, an exact file name, ``""``
-for a file with no suffix, or ``*`` for anything::
+THE DECLARATION IS THE REPO'S, ONCE, in ``[layout]`` of its root ``layout.toml`` (user ruling 2026-11-24; the
+retired ``[tool.dev_lab.placement]`` of ``pyproject.toml`` is refused by name by ``placement_table``):
+each key is a directory PATTERN (repo-relative POSIX, one :func:`fnmatch.fnmatchcase` glob per segment, ``.`` for
+the root's own files), each value the list of what a file there may be -- a ``.suffix``, an exact file name,
+``""`` for a file with no suffix, or ``*`` for anything::
 
-    [tool.dev_lab.placement]
+    # layout.toml
     read_only = ['temp']                      # user-maintained input: never written, never cleaned, never judged
     tool_caches = ['pytest', 'ruff']          # output/cache/<tool>/ of each NAMED tool holds what the tool writes
-    [tool.dev_lab.placement.layout]
+    [layout]
     '.' = ['.toml', '.md', '.lock', '.gitignore']
     src = ['.py', '.typed']
+    'src/*' = ['.py']                         # an open level is an explicit glob row
     output = []                               # nothing loose at the top of output/
     'output/logs/[0-9][0-9]/[0-9][0-9]/[0-9][0-9]/*' = ['.json', '.csv', '.log']
 
-A file is judged by the DEEPEST pattern matching a prefix of its directory; a file no pattern reaches is
-undeclared. So every subdirectory inherits its nearest declared ancestor, and a subtree that matters declares its
-own row. Nothing is allowed by default: a new directory or format is refused until it is declared on purpose.
+NO INHERITANCE (user ruling 2026-11-24): EVERY directory matches a row of its own depth, exact or globbed; a
+directory no row matches is refused by name (and not descended), and a file is judged only by its own directory's
+row. A MIRROR row ``'tests/unit' = { mirror = 'src/pkg', allow = ['.py'], extra = ['verification'] }`` declares
+a directory below it iff its twin under the mirrored root is declared (a mirror of a mirror follows the chain;
+``extra`` names directories with no twin; ``depth = N`` binds the twin requirement to the first N levels below the
+row only, deeper ones being judged by the ordinary rows -- recursive by default). Among the rows matching one
+directory, a row with no glob character beats a globbed one, then the row with fewer wildcards wins, and rows still
+tied are refused by name as ambiguous.
+Nothing is allowed by default: a new directory or format is refused until it is declared on purpose.
 
 THE FAMILY HOLDS THREE THINGS, NOT THE TREE (a repo's formats are its own): every family home
 (:data:`dev_lab.dev.codeplace.FAMILY_HOMES`) must be declared; ``output`` may never allow a
@@ -51,38 +59,28 @@ any, 2 when the checkout declares no layout.
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import fnmatch
-import hashlib
 import json
 import os
 import re
 import sys
-import tomllib
 from pathlib import Path
 from typing import Final
 
 from lab_commons.log import emit
 
 from dev_lab.dev import floors, gitdirs
-from dev_lab.dev._deny_outputcode_row import CODE_SUFFIXES
-from dev_lab.dev.codeplace import FAMILY_HOMES, PRUNED_NAMES
+from dev_lab.dev._layout_table import ANY, RULE_ID, TABLE, TOOL_CACHE_ROOT, Layout, LayoutNotDeclared, declared_layout
+from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PRUNED_NAMES
 from dev_lab.dev.disclosure import details_for
-from dev_lab.dev.family import declared_table
 
 __all__ = [
     'BACKUP_SUFFIXES',
     'COPY_DOOR',
     'COPY_RULE_ID',
     'NO_COPY_ROOTS',
-    'OTHER_CONFIG_SUFFIXES',
-    'REQUIRED',
-    'RULE_ID',
-    'Layout',
-    'LayoutNotDeclared',
     'allowed',
     'copy_marker',
-    'declared_layout',
     'judge',
     'layout_violations',
     'main',
@@ -90,25 +88,15 @@ __all__ = [
     'scan_refusal',
 ]
 
-RULE_ID: Final = 'DECLARED-LAYOUT'
 COPY_RULE_ID: Final = 'NO-BACKUP-COPIES'
-_TABLE: Final = '[tool.dev_lab.placement.layout]'
 #: Where nothing is ever a copy or a backup: what a program regenerates, and the one-off sink.
 NO_COPY_ROOTS: Final = ('output', 'scratch')
 #: A file that is a parked copy of work rather than a product: a git bundle, a patch, a diff.
 BACKUP_SUFFIXES: Final = frozenset({'.bundle', '.patch', '.diff'})
-#: The family homes' top-level directories: every adopter declares each of them.
-REQUIRED: Final = frozenset(home.split('/', 1)[0] for home in FAMILY_HOMES.values())
-_ANY: Final = '*'
-#: Where a named tool's cache lives: ``output/cache/<tool>/`` (user ruling 2026-11-24).
-TOOL_CACHE_ROOT: Final = 'output/cache'
-#: One tool's name: a plain word, so an entry can never widen into a glob or a path.
-_TOOL: Final = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')
-#: ONE-FORMAT-PER-NEED: configuration is TOML, so a second configuration format is never declared -- except where a
-#: forge dictates its own (its workflow directories) and in ``output/``, which holds what a program writes.
-OTHER_CONFIG_SUFFIXES: Final = frozenset({'.yaml', '.yml', '.ini', '.cfg'})
-_FORMAT_RULE: Final = 'ONE-FORMAT-PER-NEED'
-_FORGE_DIRS: Final = frozenset({'.github', '.gitea', 'output'})
+#: What makes a pattern segment a glob (:func:`fnmatch.fnmatchcase`): each match is one wildcard.
+_GLOB: Final = re.compile(r'[*?]|\[[^]]*\]')
+#: How many mirror hops a twin lookup follows (a mirror of a mirror is two); a cycle stops here, undeclared.
+_MIRROR_HOPS: Final = 8
 #: Agent state lives once, at the checkout root (user ruling 2026-11-23): a scoped ``.claude/`` below it is refused.
 _SCOPED: Final = '.claude'
 _SCOPED_CAUSE: Final = (
@@ -122,77 +110,6 @@ COPY_DOOR: Final = (
     'The door is MERGE-OR-DELETE: commit the work on its branch and land it through a PR, or delete it; a second '
     'tree of this repo is <repo>/.claude/worktrees/<name>, never a copy or backup under output/ or scratch/.'
 )
-
-
-class LayoutNotDeclared(LookupError):
-    """A repo's ``[tool.dev_lab.placement.layout]`` is absent or not the declared shape."""
-
-
-@dataclasses.dataclass(frozen=True)
-class Layout:
-    """A checkout's declared tree: pattern -> what a file there may be, the paths never judged, the read-only ones."""
-
-    rows: dict[str, frozenset[str]]
-    pruned_paths: tuple[str, ...] = ()
-    read_only: tuple[str, ...] = ()
-    tool_caches: tuple[str, ...] = ()
-
-    @property
-    def digest(self) -> str:
-        """The declaration's fingerprint: a changed table invalidates every journalled verdict."""
-        rows = sorted((k, sorted(v)) for k, v in self.rows.items())
-        text = json.dumps([rows, self.pruned_paths, self.read_only, self.tool_caches])
-        return hashlib.sha256(text.encode()).hexdigest()[:16]
-
-
-def _refuse(manifest: Path, what: str) -> LayoutNotDeclared:
-    return LayoutNotDeclared(f'{_TABLE} in {manifest}: {what} ({RULE_ID})')
-
-
-def declared_layout(root: Path) -> Layout:
-    """The layout *root* declares.
-
-    Raises:
-        LayoutNotDeclared: no readable manifest or table, a row that is not a list of strings, a family home left
-            undeclared, ``output`` allowing code or anything, or a second configuration format
-            (:data:`OTHER_CONFIG_SUFFIXES`) outside a forge's own directories -- an adopter's test calls this, so it
-            reds.
-
-    """
-    manifest = root / 'pyproject.toml'
-    try:
-        data = tomllib.loads(manifest.read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        msg = f'{manifest} is not a readable TOML manifest: {exc}'
-        raise LayoutNotDeclared(msg) from exc
-    placement = declared_table(data, 'placement')
-    table = placement.get('layout') if isinstance(placement, dict) else None
-    if not isinstance(table, dict):
-        msg = f'{manifest} declares no {_TABLE}; declare the whole tree there ({RULE_ID})'
-        raise LayoutNotDeclared(msg)
-    rows: dict[str, frozenset[str]] = {}
-    for pattern, allows in table.items():
-        if not isinstance(allows, list) or not all(isinstance(s, str) for s in allows):
-            raise _refuse(manifest, f'{pattern} = {allows!r} is not a list of ".suffix", file-name or "*" strings')
-        rows[pattern.strip('/') or '.'] = frozenset(s.lower() for s in allows)
-    missing = sorted(REQUIRED - set(rows))
-    if missing:
-        raise _refuse(manifest, f'the family home(s) {missing} are not declared')
-    for key, allows in rows.items():
-        if key.split('/', 1)[0] == 'output' and (bad := sorted(allows & {*CODE_SUFFIXES, _ANY})):
-            raise _refuse(manifest, f'{key} allows {bad}, which output/ never holds')
-        if key.split('/', 1)[0] not in _FORGE_DIRS and (bad := sorted(allows & OTHER_CONFIG_SUFFIXES)):
-            raise _refuse(
-                manifest,
-                f'{key} allows {bad}: configuration is TOML ({_FORMAT_RULE}), so a second config format is declared '
-                f'only where a forge dictates it (.github/, .gitea/); move that config into pyproject.toml or a .toml',
-            )
-    pruned = tuple(p.strip('/') for p in placement.get('pruned_paths', []) if isinstance(p, str))
-    read_only = tuple(p.strip('/') for p in placement.get('read_only', []) if isinstance(p, str))
-    tools = placement.get('tool_caches', [])
-    if not isinstance(tools, list) or not all(isinstance(t, str) and _TOOL.fullmatch(t) for t in tools):
-        raise _refuse(manifest, f'tool_caches = {tools!r} must name tools one by one (no glob, path or empty name)')
-    return Layout(rows, pruned, read_only, tuple(tools))
 
 
 def _within(rel: str, prefixes: tuple[str, ...]) -> bool:
@@ -217,25 +134,71 @@ def _skipped(rel_dir: str, layout: Layout) -> bool:
     )
 
 
-def _row_for(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | None:
-    """The deepest declared pattern matching a prefix of *rel_dir* (``.`` is the root), with what it allows."""
+class _AmbiguousRowError(ValueError):
+    """Two or more rows judge one directory with equal precedence: the table must say which."""
+
+
+def _precedence(pattern: str) -> tuple[bool, int]:
+    """Among the rows of one depth: an explicit (unglobbed) row wins, then fewer wildcards win."""
+    wildcards = len(_GLOB.findall(pattern))
+    return (wildcards == 0, -wildcards)
+
+
+def _mirrored(parts: list[str], pattern: str, layout: Layout, hops: int) -> bool:
+    """Whether MIRROR row *pattern* declares the directory *parts*: an extra name, or a declared twin."""
+    segs = pattern.split('/')
+    if len(segs) >= len(parts) or not all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False)):
+        return False
+    target, extra, depth = layout.mirrors[pattern]
+    if depth is not None and len(parts) - len(segs) > depth:
+        return False  # below the twinned levels: the ordinary rows judge it
+    rel = '/'.join(parts[len(segs) :])
+    if rel in extra:
+        return True
+    if hops >= _MIRROR_HOPS:
+        return False
+    try:
+        return _row_for(f'{target}/{rel}', layout, hops + 1) is not None
+    except _AmbiguousRowError:
+        return True  # the twin is declared; its own files are named ambiguous
+
+
+def _row_for(rel_dir: str, layout: Layout, hops: int = 0) -> tuple[str, frozenset[str]] | None:
+    """The row of *rel_dir* ITSELF (``.`` is the root) by :func:`_precedence`, with what it allows; no inheritance.
+
+    A directory no row of its own depth matches is declared by a MIRROR row above it whose twin is declared.
+
+    Raises:
+        _AmbiguousRowError: rows tied on precedence, named.
+
+    """
     if rel_dir == '.':
         return ('.', layout.rows['.']) if '.' in layout.rows else None
     parts = rel_dir.split('/')
-    best: tuple[int, str] | None = None
-    for pattern in layout.rows:
-        segs = pattern.split('/')
-        if pattern == '.' or len(segs) > len(parts):
-            continue
-        if all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False)):
-            best = max(best or (0, ''), (len(segs), pattern))
-    return None if best is None else (best[1], layout.rows[best[1]])
+    matching = [
+        pattern
+        for pattern in layout.rows
+        if pattern != '.'
+        and len(segs := pattern.split('/')) == len(parts)
+        and all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False))
+    ] or [pattern for pattern in layout.mirrors if _mirrored(parts, pattern, layout, hops)]
+    if not matching:
+        return None
+    top = max(map(_precedence, matching))
+    best = sorted(p for p in matching if _precedence(p) == top)
+    if len(best) > 1:
+        msg = (
+            f'rows {best} judge {rel_dir} equally (same depth, same wildcard count): ambiguous; declare an explicit '
+            f'row for it or make one pattern narrower'
+        )
+        raise _AmbiguousRowError(msg)
+    return best[0], layout.rows[best[0]]
 
 
 def allowed(name: str, allows: frozenset[str]) -> bool:
     """Whether file *name* is one of *allows*: ``*``, its exact (lower-cased) name, or its suffix (``""``: none)."""
     lower = name.lower()
-    return _ANY in allows or lower in allows or Path(lower).suffix in allows
+    return ANY in allows or lower in allows or Path(lower).suffix in allows
 
 
 def copy_marker(rel_dir: str, files: set[str], dirs: set[str]) -> str | None:
@@ -261,13 +224,23 @@ def judge(rel: str, layout: Layout) -> str | None:
         return f'{_SCOPED_CAUSE} ({rel_dir.split(f"/{_SCOPED}", 1)[0]}/{_SCOPED}/)'
     if top in NO_COPY_ROOTS and suffix in BACKUP_SUFFIXES:
         return f'{COPY_RULE_ID}: a {suffix} under {top}/ is a parked backup'
-    row = _row_for(rel_dir, layout)
+    return _row_verdict(rel_dir, name, layout)
+
+
+def _row_verdict(rel_dir: str, name: str, layout: Layout) -> str | None:
+    """Why the row judging *rel_dir* refuses file *name*: undeclared, ambiguous, or a format it does not allow."""
+    try:
+        row = _row_for(rel_dir, layout)
+    except _AmbiguousRowError as exc:
+        return str(exc)
     if row is None:
-        return f'{rel_dir}/ is not declared (no row of {_TABLE} reaches it)'
+        return _undeclared(rel_dir)
     pattern, allows = row
-    if not allowed(name, allows):
-        return f'{suffix or name} is not allowed under {pattern} (allowed: {sorted(allows) or "nothing"})'
-    return None
+    if allowed(name, allows):
+        return None
+    return (
+        f'{Path(name.lower()).suffix or name} is not allowed under {pattern} (allowed: {sorted(allows) or "nothing"})'
+    )
 
 
 def _dir_verdicts(rel_dir: str, files: list[str], layout: Layout) -> list[str]:
@@ -323,6 +296,13 @@ def _listing(folder: Path) -> tuple[list[str], list[str]]:
     return sorted(files), sorted(dirs)
 
 
+def _undeclared(rel_dir: str) -> str:
+    return (
+        f'{rel_dir}/ is not declared: no row of {TABLE} matches it (no inheritance -- every directory declares '
+        f'its own row; an open level is an explicit glob row)'
+    )
+
+
 def _scan_dir(rel_dir: str, folder: Path, layout: Layout) -> tuple[list[str], list[str]]:
     """``(subdirectories to descend, violations)`` of one directory: a copy is named whole and not descended."""
     files, dirs = _listing(folder)
@@ -332,15 +312,24 @@ def _scan_dir(rel_dir: str, folder: Path, layout: Layout) -> tuple[list[str], li
     if rel_dir != '.' and _SCOPED in dirs:
         lines.append(f'{rel_dir}/{_SCOPED}/: {_SCOPED_CAUSE}')
         dirs = [d for d in dirs if d != _SCOPED]
+    for name in dirs:
+        child = name if rel_dir == '.' else f'{rel_dir}/{name}'
+        if not _skipped(child, layout) and _declared_row(child, layout) is None:
+            lines.append(f'{child}/: {_undeclared(child)}')
     return dirs, lines
 
 
+def _declared_row(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | bool | None:
+    """The row of *rel_dir*, ``True`` when its rows tie (its files are each named ambiguous), else ``None``."""
+    try:
+        return _row_for(rel_dir, layout)
+    except _AmbiguousRowError:
+        return True
+
+
 def _descends(child: str, layout: Layout) -> bool:
-    """Whether the walk enters *child*: never a pruned one, nor a ``*`` row outside the no-copy roots."""
-    if _skipped(child, layout):
-        return False
-    row = _row_for(child, layout)
-    return row is None or _ANY not in row[1] or child.split('/', 1)[0] in NO_COPY_ROOTS
+    """Whether the walk enters *child*: never a pruned one, nor an undeclared one (named whole by its parent)."""
+    return not _skipped(child, layout) and _declared_row(child, layout) is not None
 
 
 def layout_violations(root: Path, layout: Layout | None = None, *, incremental: bool = False) -> tuple[int, list[str]]:
@@ -390,9 +379,9 @@ def refuse_layout(path: Path) -> str | None:
     rel = target.relative_to(root).as_posix()
     if _within(rel, layout.read_only):
         return (
-            f'{RULE_ID}: {rel} -- {rel.split("/", 1)[0]}/ is declared read_only in [tool.dev_lab.placement] of '
-            f'{root.name}/pyproject.toml: user-maintained input, read freely, never written or cleaned. A '
-            f'derived artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/.\n{details_for(RULE_ID)}'
+            f'{RULE_ID}: {rel} -- {rel.split("/", 1)[0]}/ is declared read_only in '
+            f'{root.name}/{LAYOUT_FILE}: user-maintained input, read freely, never written or cleaned. A '
+            f'derived artifact goes to output/logs/<yy>/<mm>/<dd>/<kind>/.\n{details_for(RULE_ID)}'
         )
     cause = judge(rel, layout)
     if cause is None:
@@ -402,7 +391,7 @@ def refuse_layout(path: Path) -> str | None:
     homes = ', '.join(f'{kind} -> {home}' for kind, home in FAMILY_HOMES.items())
     return (
         f'{RULE_ID}: {rel} -- {cause}. Write it under its home ({homes}); a new directory or format is declared '
-        f'first in {_TABLE} of {root.name}/pyproject.toml, in its own reviewed commit.\n{details_for(RULE_ID)}'
+        f'first in {TABLE} ({root.name}/{LAYOUT_FILE}), in its own reviewed commit.\n{details_for(RULE_ID)}'
     )
 
 
@@ -422,7 +411,7 @@ def scan_refusal(root: Path) -> str | None:
     return (
         f'{RULE_ID}/{COPY_RULE_ID}: {len(found)} violation(s) in {root.as_posix()}:\n{shown}{more}\nMove each '
         f'file home or delete it; a copy or backup is merged or deleted ({COPY_DOOR}); a new directory or format '
-        f'is declared in {_TABLE} first.\n{details_for(RULE_ID)}'
+        f'is declared in {TABLE} first.\n{details_for(RULE_ID)}'
     )
 
 

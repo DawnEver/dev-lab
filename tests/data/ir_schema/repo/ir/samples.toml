@@ -1,0 +1,53 @@
+[dim.n]
+min = 1
+
+[record.Sample]
+doc = "A measured trace taken from one widget."
+[record.Sample.field.widget]
+type = "id:widgets.Widget"
+[record.Sample.field.label]
+type = "str"
+[record.Sample.field.calibrated]
+type = "bool"
+[record.Sample.field.count]
+type = "int"
+[record.Sample.field.gain]
+type = "complex"
+[record.Sample.field.time]
+type = "array"
+dtype = "float64"
+shape = ["n"]
+quantity = "time"
+[record.Sample.field.position]
+type = "array"
+dtype = "float64"
+shape = ["n", 3]
+quantity = "length"
+doc = "Cartesian position at each time step."
+[record.Sample.field.tags]
+type = "list:str"
+[record.Sample.field.level]
+type = "float"
+quantity = "sound_pressure"
+optional = true
+[record.Sample.field.source]
+type = "record:widgets.Widget"
+optional = true
+
+[record.Batch]
+doc = "Samples and the widgets they came from; hits per sample in CSR form."
+[record.Batch.field.widgets]
+type = "list:record:widgets.Widget"
+unique_by = "id"
+[record.Batch.field.samples]
+type = "list:record:Sample"
+[record.Batch.field.hit_offsets]
+type = "array"
+dtype = "int64"
+shape = ["m"]
+csr_values = "hit_times"
+[record.Batch.field.hit_times]
+type = "array"
+dtype = "float64"
+shape = ["k"]
+quantity = "time"

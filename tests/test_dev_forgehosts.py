@@ -10,15 +10,19 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from _ops_fixtures import git
+from _roles_fixtures import EVERY_CI, HPC_REPO, carry, seats_family
 from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import forgeclaim, forgehosts
 from dev_lab.dev.forgefailure import ForgeCallFailed
 from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE, HostCard, publish, read_cards
 from dev_lab.dev.forgework import is_pull
+from dev_lab.dev.roles import Unbound
 from tests._forge_state import StateForge
 
 if TYPE_CHECKING:
@@ -192,7 +196,7 @@ def test_the_cli_retires_through_the_forge_door(monkeypatch, capsys) -> None:
 # opaque stable host id. A private repo's card is unchanged.
 
 _SEAT = 'ada/zz9acct'
-_HOME = '/shared/home/zz9acct/artefacts'
+_HOME = '/shared/home/zz9acct/artifacts'
 
 
 def _identifying_card() -> HostCard:
@@ -204,7 +208,7 @@ def _identifying_card() -> HostCard:
         running=(f'{_SEAT} sweep (pid 7)',),
         waiting={'k': 'needs gpu'},
         alarms=({'kind': 'untagged', 'subject': f'3 untagged on {_SEAT}', 'body': _HOME},),
-        artefacts=f'cannot write {_HOME}',
+        artifacts=f'cannot write {_HOME}',
         tools={'jmag': {'present': True, 'evidence': [{'source': 'path', 'value': _HOME}]},
                'femm': {'present': False, 'evidence': [{'source': 'host', 'value': 'ada-login1'}]}},
         priority={'hosts': [_SEAT]},
@@ -282,3 +286,51 @@ def test_the_claim_machine_and_the_card_host_are_one_name(monkeypatch: pytest.Mo
     assert _claim_on('login2.ada', monkeypatch).machine == 'login2'
     monkeypatch.setattr(forgehosts, 'this_seat', lambda: seat)
     assert forgehosts.this_host() == 'ada/alice'
+
+
+# -- which cards are read: the family's roles binding decides each cluster seat's (D73) ------------------------------
+
+
+def _checkout(tmp_path: Path) -> Path:
+    git(tmp_path, 'init', '-q')
+    git(tmp_path, 'remote', 'add', 'origin', 'https://forge.example/team/app.git')
+    return tmp_path
+
+
+def test_a_seat_the_family_binds_no_role_to_is_not_read(tmp_path: Path) -> None:
+    """A research seat (``serves = false``) still holds the card it published while it served: never supply again.
+
+    Live 2026-11-25: four research seats, stale since 2026-11-06, kept "no host supplies femm" and "every windows host
+    is stale" alarming on every verification tick. The seat is named as Slurm spells its cluster; the grant's user is
+    the account (:func:`dev_lab.dev.forgeslurm` reads a seat's grant the same way). A box is no seat: its tick decides.
+    """
+    vera, rhea, box = _card('slurm-alpha/vera'), _card('slurm-alpha/rhea'), _card('box-g')
+    read, unbound = forgehosts.serving_cards(_checkout(tmp_path), (vera, rhea, box), layer=seats_family())
+    assert read == (vera, box)
+    assert unbound == (rhea,)
+
+
+def test_planted_control_a_seat_rebound_to_a_served_role_is_read_again(tmp_path: Path) -> None:
+    """The same card, its seat now a verification grant: read. The binding decides, not the card."""
+    cards = (_card('slurm-alpha/vera'), _card('slurm-alpha/rhea'))
+    assert forgehosts.serving_cards(_checkout(tmp_path), cards, layer=seats_family('verification')) == (cards, ())
+
+
+def test_a_carried_binding_reads_every_seat_of_an_hpc_role_and_none_of_a_ci_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no family layer the render's carried kinds name no grant: an hpc role binds every seat, CI none."""
+    seat, box = _card('alpha/vera'), _card('box-g')
+    carry(monkeypatch, HPC_REPO)
+    assert forgehosts.serving_cards(tmp_path, (seat, box), layer={}) == ((seat, box), ())
+    carry(monkeypatch, EVERY_CI)
+    assert forgehosts.serving_cards(tmp_path, (seat, box), layer={}) == ((box,), (seat,))
+
+
+def test_cards_naming_no_seat_never_read_the_binding(tmp_path: Path) -> None:
+    """Only a seat's card asks the binding, so a box-only read never refuses. PLANTED CONTROL: one seat card does."""
+    broken = {'roles': {'gitea': {}}, 'hpc': {}}  # every role unbound: reading it refuses
+    box, root = _card('box-g'), _checkout(tmp_path)
+    assert forgehosts.serving_cards(root, (box,), layer=broken) == ((box,), ())
+    with pytest.raises(Unbound, match='unbound'):
+        forgehosts.serving_cards(root, (box, _card('alpha/vera')), layer=broken)

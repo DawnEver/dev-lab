@@ -19,7 +19,7 @@ to its line's current head through the dependency door (:func:`relock_floating`)
 the lock in the same sync (:func:`relock`) together with every generated file the new pin renders -- each
 renderer the repo's files call for (:data:`dev_lab.dev.famfiles.RENDERERS`), run with the tree's re-synced
 environment (:func:`dev_lab.dev.relock.rerender`) -- so ONE push of the result is current for the ``pr-current``
-judgement (:mod:`dev_lab.dev.prcurrent`), which names a ``pr/*`` head that lacks integration's tip or lags a sibling.
+judgment (:mod:`dev_lab.dev.prcurrent`), which names a ``pr/*`` head that lacks integration's tip or lags a sibling.
 
 THE OWNER'S CHECKOUT, THE OWNER'S PUSH. Run by the owner's agent in develop mode on a clean tree.
 It merges locally and stops: the owner runs their tests and pushes. It never pushes, and it refuses on

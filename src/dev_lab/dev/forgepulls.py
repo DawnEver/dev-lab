@@ -72,7 +72,7 @@ def pages(client: Client, path: str, query: Mapping[str, str], *, bound: int | N
     repeating the one before it is never read again -- and what it means is DECIDED BY THE FORGE'S ANSWER, never
     assumed (:func:`_unpaged`): an endpoint that pages nothing answered its whole listing both times, a complete
     read (gitea's issue assets, measured 2026-11-22: a records home past one page killed every tick); one that
-    honours the page size and ignores ``page`` answered a truncated first page, and is refused.
+    honors the page size and ignores ``page`` answered a truncated first page, and is refused.
     """
     found: list[Any] = []
     previous: list[Any] | None = None

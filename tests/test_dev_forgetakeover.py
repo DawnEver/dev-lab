@@ -20,7 +20,7 @@ from dev_lab.dev.labsession import ENV as SESSION_ENV
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
 from dev_lab.dev.reviewgate import RERUN
 
-_SLICED = Review(command=('reviewer', '--range', RANGE_FIELD, '--paths', PATHS_FIELD), max_diff_bytes=10)
+_SLICED = Review(command=('reviewer', '--range', RANGE_FIELD, '--paths', PATHS_FIELD), max_diff=10)
 _WHOLE = Review(command=('reviewer', '--range', RANGE_FIELD))
 
 
@@ -76,7 +76,7 @@ def test_the_door_plans_and_runs_the_takeover(tmp_path: Path, capsys: pytest.Cap
         .read_text(encoding='utf-8')
         .replace(
             "command = ['reviewer', '--range', '{range}', '--model', 'm']",
-            "command = ['reviewer', '--range', '{range}', '--paths', '{paths}']\nmax_diff_bytes = 10",
+            "command = ['reviewer', '--range', '{range}', '--paths', '{paths}']\nmax_diff = '10 B'",
         )
     )
     advance(work, 'integrate/main', 'pyproject.toml', sliced)  # a takeover acts on the base's review (review_at)

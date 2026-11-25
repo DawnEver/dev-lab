@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev.forgedraft import READY_ONLY
@@ -16,8 +18,15 @@ from dev_lab.dev.roles import CI, ROLES
 if TYPE_CHECKING:
     from dev_lab.dev.roles import Roles
 
-__all__ = ['BY_KEY', 'PR_EVENTS', 'ROLE_KEY', 'USE_STEPS', 'expand', 'measurement_isolated', 'merge', 'needs',
-           'ready_only', 'role_jobs']  # fmt: skip
+__all__ = ['BASE_PATH', 'BY_KEY', 'FORGE_KEY', 'PR_EVENTS', 'ROLE_KEY', 'USE_STEPS', 'WORKFLOW_DIRS', 'base_names',
+           'expand', 'measurement_isolated', 'merge', 'needs', 'ready_only', 'role_jobs']  # fmt: skip
+
+#: The family's base workflows: every repo renders the ones placed on its forge.
+BASE_PATH: Final = Path(__file__).resolve().parent / 'ci_base.toml'
+#: The directory each forge's Actions runs its workflows from.
+WORKFLOW_DIRS: Final = {'github': Path('.github') / 'workflows', 'gitea': Path('.gitea') / 'workflows'}
+#: The table key naming the forge a workflow is rendered for; a placement, never part of the rendered workflow.
+FORGE_KEY: Final = 'forge'
 
 #: The key of a step that stands for a named list of :data:`SHARED`.
 USE_STEPS: Final = 'use-steps'
@@ -25,6 +34,16 @@ USE_STEPS: Final = 'use-steps'
 ROLE_KEY: Final = 'role'
 #: A job key, never rendered: the executor kind the job works for (``ci`` when omitted).
 BY_KEY: Final = 'by'
+
+
+def base_names(forge: str) -> set[str]:
+    """Every base workflow placed on *forge*: what every repo hosted there renders, declared or not."""
+    base = tomllib.loads(BASE_PATH.read_text(encoding='utf-8'))
+    return {
+        name
+        for name, table in base.items()
+        if not name.startswith('_') and isinstance(table, dict) and table.get(FORGE_KEY, 'github') == forge
+    }
 
 
 def merge(base: dict[str, Any], layer: dict[str, Any]) -> dict[str, Any]:

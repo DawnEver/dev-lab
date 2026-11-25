@@ -3,7 +3,7 @@
 User ruling 2026-11-13: a forge host should not need a consent code per dev-lab upgrade. The DECLARATION is the
 authorization: ``follow`` is a boundary key (:mod:`dev_lab.ops.configdoor`), so it is set only by a consented
 ``config apply``, and from then on the ``schedule`` timer (rendered by :mod:`dev_lab.ops.install`) runs this verb.
-No ``follow`` -- today's behaviour: upgrades are the consented plan step or the operator's bare verb only.
+No ``follow`` -- today's behavior: upgrades are the consented plan step or the operator's bare verb only.
 
 One tick reads the branch into a persistent bare cache (``<home>/upgrade-follow/source.git``, so a tick fetches
 only what moved) and judges the step from the installed sha to the branch tip:

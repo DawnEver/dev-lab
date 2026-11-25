@@ -169,9 +169,9 @@ class DenyRule:
     *id* is the handle every adopter cites and is stable by contract: renaming one silently
     un-adopts it in every repo that supplied a remedy under the old spelling.
 
-    *needs* names the KIND of repo artefact the remedy requires, or is ``None`` when the exit is a
+    *needs* names the KIND of repo artifact the remedy requires, or is ``None`` when the exit is a
     plain command every checkout already has. The two cases are checked against the ``{remedy}``
-    placeholder in BOTH directions: a rule that needs an artefact and leaves nowhere to put it would
+    placeholder in BOTH directions: a rule that needs an artifact and leaves nowhere to put it would
     ship a reason describing an exit it never names, and a rule that leaves the placeholder with
     nothing to fill it would ship the literal token to a reader.
     """
@@ -257,7 +257,7 @@ class DenyRule:
         Each on its own line, so the budget in :mod:`dev_lab.dev.disclosure` can count them.
 
         Raises:
-            UnremediedRule: the rule needs an artefact and *remedy* is absent or answers a different
+            UnremediedRule: the rule needs an artifact and *remedy* is absent or answers a different
                 kind. Refused rather than rendered with a gap, because a reason whose exit went
                 missing reads exactly like one whose exit is a plain command.
 

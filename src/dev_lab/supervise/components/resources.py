@@ -17,15 +17,22 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
 
+from lab_commons.quantity import Renamed, parse, refuse_renamed
+
 from dev_lab.supervise.component import CheckContext, Component
 from dev_lab.supervise.pressure import RAM_CRITICAL
+from dev_lab.supervise.reading import psutil_module
 from dev_lab.supervise.verdict import Anomaly, CheckResult, Severity, condition_digest
 
-__all__ = ['RAM_CRITICAL', 'DiskUsage', 'LogScanner', 'ProcessMonitor', 'psutil_module']
+__all__ = ['RAM_CRITICAL', 'DiskUsage', 'LogScanner', 'ProcessMonitor']
 
 #: How much of a matched log line is kept. A line long enough to be interesting is usually JSON,
 #: and the first two hundred characters of it name the failure.
 LINE_KEPT: Final = 200
+
+_MIB: Final = 1024**2
+#: A process's unit-suffixed key retired by the 2026-11-25 ruling, refused with its new line; never read.
+_RENAMED: Final = {'max_rss_mb': Renamed('max_rss', 'MiB')}
 
 #: The default patterns a log scan convicts on. Deliberately few and blunt: a scanner tuned to
 #: somebody's log format is a scanner that stops matching the day the format changes.
@@ -122,7 +129,7 @@ class ProcessMonitor(Component):
         name = "webapp"
         match = "webapp"
         min_count = 1
-        max_rss_mb = 400
+        max_rss = "400 MiB"              # a size with its unit (lab_commons.quantity)
 
     """
 
@@ -155,15 +162,6 @@ class ProcessMonitor(Component):
         for wanted in ctx.config.get('processes', []):
             result.anomalies.extend(_one_process(wanted, found))
         return result if not ctx.config.get('track_system') else _with_system(psutil, result)
-
-
-def psutil_module() -> ModuleType | None:
-    """The ``psutil`` module, or ``None`` where the optional extra is not installed -- the one lazy import."""
-    try:
-        import psutil  # noqa: PLC0415
-    except ImportError:
-        return None
-    return psutil
 
 
 def _running(psutil: ModuleType) -> dict[str, tuple[int, float]]:
@@ -242,15 +240,18 @@ def _one_process(wanted: dict[str, Any], found: dict[str, tuple[int, float]]) ->
                 signature=f'{name}:missing',
             )
         )
-    limit = wanted.get('max_rss_mb')
-    if limit is not None and resident > float(limit):
+    where = f'[[components.process_monitor.processes]] {name}'
+    refuse_renamed(where, wanted, _RENAMED)
+    declared = wanted.get('max_rss')
+    limit = None if declared is None else parse(f'{where} max_rss', declared, 'size', positive=True) / _MIB
+    if limit is not None and resident > limit:
         anomalies.append(
             Anomaly(
                 kind=f'{name}_large',
                 severity=Severity.CRITICAL,
-                message=f'{name} is using {resident:.0f}MB, past its {limit}MB ceiling',
+                message=f'{name} is using {resident:.0f} MiB, past its {limit:g} MiB ceiling',
                 value=round(resident, 1),
-                threshold=float(limit),
+                threshold=limit,
                 signature=f'{name}:large',
             )
         )

@@ -1,6 +1,6 @@
 """``dev_lab.dev.liverun`` -- a checkout whose run is live refuses edits, merges and re-syncs; an idle one does not.
 
-TWO KINDS OF CONTROL. The judgement (which process is a run of which tree, what is the tree) is driven over a
+TWO KINDS OF CONTROL. The judgment (which process is a run of which tree, what is the tree) is driven over a
 PLANTED census, both directions, at full speed. Then the whole chain is driven for real once: a real venv in
 a throwaway checkout, a real sleeper executing from it, the real census, the real JS engine and the real
 Edit hook -- refusing while the sleeper lives and naming its pid, silent for an idle checkout.
@@ -410,7 +410,7 @@ def test_the_real_engine_refuses_a_merge_into_a_live_tree_and_allows_an_idle_one
     assert agenthooks.decide(f'git -C {root.as_posix()} status', rules, cwd=session) is None
 
 
-#: Every row needing a repo artefact, declared absent so the planted adoption renders without remedies.
+#: Every row needing a repo artifact, declared absent so the planted adoption renders without remedies.
 _NEEDING = {rule.id for rule in DENY_RULES if rule.needs is not None}
 
 
@@ -474,6 +474,39 @@ def test_the_live_run_target_is_the_tree_the_matching_segment_acts_in(tmp_path: 
     assert said is not None
     assert said.startswith('TREE-HAS-A-LIVE-RUN: could not confirm'), said
     assert str(tree) in said or tree.as_posix() in said, said
+
+
+@pytest.mark.parametrize(
+    'spelling',
+    [
+        'git -C {tree} merge --ff-only origin/main',
+        'git -C "{tree}" merge --ff-only origin/main 2>&1 | tail -3',
+        'git -C {tree} fetch origin && git -C {tree} merge --ff-only origin/main',
+        'cd {tree}; git merge --ff-only origin/main',
+        'for r in {tree} {other}; do git -C "$r" merge --ff-only origin/main; done',
+        'for r in {tree}; do git -C $r merge --ff-only origin/main || exit 1; done',
+        'for r in {tree}; do\n  git -C "${{r}}" merge --ff-only origin/main\ndone',
+        'for r in {tree}; do cd "$r" && git merge --ff-only origin/main; done',
+        'python -m dev_lab.dev.netverb --cwd {tree} -- git pull --ff-only',
+    ],
+)
+def test_the_live_run_target_is_never_the_session_cwd_when_the_command_names_another_tree(
+    tmp_path: Path, spelling: str
+) -> None:
+    """The judged tree is the one the command names -- ``git -C``, ``cd X``, a ``for`` loop's words, ``--cwd``.
+
+    MEASURED 2026-11-25: a loop merging sibling repos was refused for the SESSION cwd's live run, although the
+    command touched only the sibling trees.
+    """
+    session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
+    tree, other = _checkout(tmp_path / 'tree'), _checkout(tmp_path / 'other')
+    rules = session / '.claude' / 'hooks' / 'deny-rules.json'
+    said = agenthooks.decide(spelling.format(tree=tree.as_posix(), other=other.as_posix()), rules, cwd=session)
+    assert said is not None
+    assert said.startswith('TREE-HAS-A-LIVE-RUN: could not confirm'), said
+    assert str(tree) in said or tree.as_posix() in said, said
+    assert f'{session} (' not in said, said
+    assert f'{session.as_posix()} (' not in said, said
 
 
 def test_a_session_venv_without_the_kit_is_no_refusal(tmp_path: Path) -> None:
@@ -648,3 +681,65 @@ def test_a_removal_never_counts_its_own_launcher_but_still_counts_its_kin(tmp_pa
     assert liverun.removal_holders(tree, census=lambda: [session, me], me=11) == (session,)
     stranger = Process(20, 1, str(exe), line, 5.0, str(tree))
     assert liverun.removal_holders(tree, census=lambda: [launcher, me, stranger], me=11) == (stranger,)
+
+
+def test_the_real_engine_judges_the_trees_a_command_names_not_the_live_session_cwd(
+    live_tree: tuple[Path, int], tmp_path: Path
+) -> None:
+    """Every tree a mutating segment names is judged, and only those -- never the live session cwd.
+
+    MEASURED 2026-11-25: from a session cwd holding a live run, a loop merging sibling repos was refused for THAT
+    run. PLANTED CONTROL: the same loop with the live tree among its words -- second, so only an all-targets judge
+    sees it -- is refused and names the run.
+    """
+    root, pid = live_tree
+    session = _checkout(tmp_path / 'session')
+    _junction(session / '.venv', Path(sys.prefix))
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    rules = hooks / 'deny-rules.json'
+    rules.write_text(render(HookAdoption(app_name='s', declared_absent=frozenset(_NEEDING))), encoding='utf-8')
+    one, two = _checkout(tmp_path / 'one').as_posix(), _checkout(tmp_path / 'two').as_posix()
+    free = (
+        f'for r in {one} {two}; do git -C "$r" merge --ff-only origin/main; done',
+        f'for r in {one} {two}; do\n  git -C "${{r}}" merge --ff-only origin/main || exit 1\ndone',
+        f'git -C {one} merge --ff-only origin/main && git -C {two} merge --ff-only origin/main',
+        f'python -m dev_lab.dev.netverb --cwd {one} -- git pull --ff-only',
+    )
+    for line in free:
+        assert agenthooks.decide(line, rules, cwd=root) is None, line
+    live = root.as_posix()
+    refused = (
+        f'for r in {one} {live}; do git -C "$r" merge --ff-only origin/main; done',
+        f'git -C {one} merge --ff-only origin/main && git -C {live} merge --ff-only origin/main',
+        f'python -m dev_lab.dev.netverb --cwd {live} -- git pull --ff-only',
+        f'for r in {one}; do cd {live} && git merge --ff-only origin/main; done',
+    )
+    for line in refused:
+        said = agenthooks.decide(line, rules, cwd=tmp_path)
+        assert said is not None, line
+        assert said.startswith('TREE-HAS-A-LIVE-RUN:'), said
+        assert f'pid {pid}' in said, said
+
+
+def test_a_tree_spelled_through_an_unset_variable_is_judged_by_the_cwd_and_says_so(
+    live_tree: tuple[Path, int], tmp_path: Path
+) -> None:
+    """The guard cannot resolve ``"$TARGET"``: the cwd is judged, and a refusal names the variable and the door.
+
+    The door is spelling the tree literally. PLANTED CONTROL: from an idle cwd the same line is free.
+    """
+    root, pid = live_tree
+    session = _checkout(tmp_path / 'session')
+    _junction(session / '.venv', Path(sys.prefix))
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    rules = hooks / 'deny-rules.json'
+    rules.write_text(render(HookAdoption(app_name='s', declared_absent=frozenset(_NEEDING))), encoding='utf-8')
+    line = 'git -C "$TARGET" merge --ff-only origin/main'
+    said = agenthooks.decide(line, rules, cwd=root)
+    assert said is not None
+    assert said.startswith('TREE-HAS-A-LIVE-RUN: the tree is spelled through a shell variable'), said
+    assert 'spell each tree literally' in said, said
+    assert f'pid {pid}' in said, said
+    assert agenthooks.decide(line, rules, cwd=_checkout(tmp_path / 'idle')) is None

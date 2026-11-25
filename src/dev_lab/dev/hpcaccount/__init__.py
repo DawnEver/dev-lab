@@ -34,8 +34,14 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   (:mod:`~dev_lab.dev.hpcaccount.credential`) places one minted forge token in the account's ``~/.git-credentials``
   (a role's named ``config_reader``: in its own ``~/.git-credentials.reader``) and confirms the forge answers as
   that login.
-* ``look --account <user> {processes|ticks|log <repo>|crontab}`` (:mod:`~dev_lab.dev.hpcaccount.look`) is a
-  READ-ONLY look at one account through its rate-limited key ssh: a closed set of reads, no free-form command.
+* ``look --account <user> {processes|ticks|log <repo>|crontab|stuck <path>|inventory <path>}``
+  (:mod:`~dev_lab.dev.hpcaccount.look`) is a READ-ONLY look at one account through its rate-limited key ssh: a closed
+  set of reads, no free-form command; ``inventory`` judges every git checkout under a path pushed or NOT PUSHED
+  (:mod:`~dev_lab.dev.hpcaccount.inventory`).
+* ``archive --account <user> <path> [--as <name>] [--apply]`` / ``archive-clean ...``
+  (:mod:`~dev_lab.dev.hpcaccount.archive`) send ``~/<path>`` to the family's run store as tar parts, each read back
+  and its sha256 compared, under a manifest; then delete it through ``lab_commons.hpc clean`` only once that
+  archive is proved and the tree unchanged.
 * ``reclaim-foreign --account <user> <home-relative path> [--apply]`` (:mod:`~dev_lab.dev.hpcaccount.reclaim`)
   removes the entries OTHER declared fleet accounts own under one account's home: grants each owner traverse,
   has each owner delete its own, removes the rest, revokes and re-reads every grant; without ``--apply`` the plan.
@@ -43,7 +49,7 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   in the account's kit: a placed secret re-proved with no secret and no consent code.
 * ``tick-status --account <user>`` / ``tick-stop --account <user> [--repo R]``
   (:mod:`~dev_lab.dev.hpcaccount.tickstop`) read every tick lock's holder, and stop a tick older than its wall --
-  verified a tick of that repo, this user's, before it is signalled; a younger one is refused by name.
+  verified a tick of that repo, this user's, before it is signaled; a younger one is refused by name.
 * Every remote step above goes through ONE transport, :mod:`~dev_lab.dev.hpcaccount.transport`: the dest's held
   session (:mod:`dev_lab.dev.sshhold`) when one is live, else key-only ssh; a second-factor host with none is refused
   naming ``python -m dev_lab.dev.sshhold open <dest> --hours H``.
@@ -77,6 +83,7 @@ _USAGE = (
     'usage: python -m dev_lab.dev.hpcaccount '
     '{deploy [...] | deploy-fleet [...] | drift[-fleet] [...] | ci-pause[-fleet] [...] | '
     'ci-resume[-fleet] [...] | forget [...] | retention [...] | credential [...] | keys [...] | look [...] | '
+    'archive [...] | archive-clean [...] | '
     'reclaim-foreign [...] | storage-check [...] | '
     'tick-status [...] | tick-stop [...] | '
     'tick <repo>... [--lock <path> --wall-minutes <m>] | allocate [...]}'
@@ -88,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     from dev_lab.dev.hpcaccount import (  # noqa: PLC0415 -- the package imports no verb
         accountset,
         allocate,
+        archive,
         cipause,
         credential,
         deploy,
@@ -118,6 +126,8 @@ def main(argv: list[str] | None = None) -> int:
         'credential': credential.main,
         'keys': keys.main,
         'look': look.main,
+        'archive': archive.main,
+        'archive-clean': lambda rest: archive.main(rest, verb='archive-clean'),
         'reclaim-foreign': reclaim.main,
         'tick-status': tickstop.main_status,
         'tick-stop': tickstop.main_stop,

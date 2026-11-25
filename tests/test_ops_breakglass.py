@@ -61,7 +61,7 @@ class FakeForge:
     #: (``main``) declares nothing, as a member's old data commit did: only the PR's base may be read.
     manifests: dict[str, str] = field(default_factory=lambda: {'integrate/main': DECLARED})
     #: Each PR's labels (none by default); a PR in ``unreadable`` plants a forge that cannot answer for them.
-    labelled: dict[int, tuple[str, ...]] = field(default_factory=dict)
+    labeled: dict[int, tuple[str, ...]] = field(default_factory=dict)
     unreadable: frozenset[int] = frozenset()
     #: Each ref's failure fingerprints (none by default: a green head reads no record).
     prints: dict[str, Fingerprints] = field(default_factory=dict)
@@ -71,7 +71,7 @@ class FakeForge:
     def labels(self, number: int) -> tuple[str, ...]:
         if number in self.unreadable:
             raise ForgeCallFailed(Report(f'GET /pulls/{number}', (), 1))
-        return self.labelled.get(number, ())
+        return self.labeled.get(number, ())
 
     def declaration(self, ref: str) -> str:
         if ref not in self.manifests:
@@ -174,7 +174,7 @@ class Host:
 
 @pytest.fixture
 def host(tmp_path: Path) -> Host:
-    return Host(config(tmp_path, [], extra='wave_hours_max = 4.0'))
+    return Host(config(tmp_path, [], extra='wave_ceiling = "4 h"'))
 
 
 def test_a_wave_merges_without_a_code_and_summarizes_on_close(host: Host) -> None:
@@ -233,22 +233,22 @@ def test_a_merge_outside_a_wave_is_refused(host: Host) -> None:
 
 def test_a_manual_merge_of_a_needs_consent_pr_is_refused(host: Host) -> None:
     host.open()
-    host.forge.labelled[7] = (LABEL,)
-    with pytest.raises(BreakglassRefused, match=f'labelled {LABEL}: .* lands only by its own consent'):
+    host.forge.labeled[7] = (LABEL,)
+    with pytest.raises(BreakglassRefused, match=f'labeled {LABEL}: .* lands only by its own consent'):
         host.merge()
     assert host.forge.calls == []
-    host.forge.labelled[7] = ()  # PLANTED CONTROL: the same PR without the label merges
+    host.forge.labeled[7] = ()  # PLANTED CONTROL: the same PR without the label merges
     assert 'merged' in host.merge()
 
 
 def test_a_held_pr_is_refused_naming_the_release_door_and_merges_after_release(host: Host) -> None:
-    """User ruling D48 (2026-11-17): break-glass honours the hold label too."""
+    """User ruling D48 (2026-11-17): break-glass honors the hold label too."""
     host.open()
-    host.forge.labelled[7] = (HOLD_LABEL,)
+    host.forge.labeled[7] = (HOLD_LABEL,)
     with pytest.raises(BreakglassRefused, match=re.escape(RELEASE_DOOR.format(n=7))):
         host.merge()
     assert host.forge.calls == []
-    host.forge.labelled[7] = ()  # PLANTED CONTROL: released, the same PR merges
+    host.forge.labeled[7] = ()  # PLANTED CONTROL: released, the same PR merges
     assert 'merged' in host.merge()
 
 
@@ -271,7 +271,7 @@ def test_a_merge_after_expiry_is_refused_and_the_expiry_closes_the_wave(host: Ho
 
 @pytest.fixture
 def roomy(tmp_path: Path) -> Host:
-    bounds = 'wave_hours_max = 24.0\nmax_merges_max = 10'
+    bounds = 'wave_ceiling = "24 h"\nmax_merges_max = 10'
     return Host(config(tmp_path, [], extra=bounds))
 
 
@@ -284,7 +284,7 @@ def test_a_request_may_ask_up_to_the_ceiling(roomy: Host) -> None:
 
 
 @pytest.mark.parametrize(
-    ('fields', 'ceiling'), [({'hours': 24.5}, 'wave_hours_max = 24 h'), ({'max_merges': 11}, 'max_merges_max = 10')]
+    ('fields', 'ceiling'), [({'hours': 24.5}, 'wave_ceiling = 24 h'), ({'max_merges': 11}, 'max_merges_max = 10')]
 )
 def test_a_request_above_a_ceiling_is_refused_naming_it(roomy: Host, fields: dict[str, float], ceiling: str) -> None:
     with pytest.raises(BreakglassRefused, match=ceiling):
@@ -445,7 +445,7 @@ def test_a_malformed_merge_is_refused_by_the_parser(host: Host, fields: dict[str
     assert host.forge.calls == []
 
 
-def test_an_internal_failure_is_not_relabelled_malformed(host: Host) -> None:
+def test_an_internal_failure_is_not_relabeled_malformed(host: Host) -> None:
     host.open()
 
     def boom(_root: Path) -> FakeForge:
@@ -498,8 +498,8 @@ def test_break_glass_serves_its_own_repos_not_the_promoted_ones(tmp_path: Path) 
         ({'tokens': {'gitea.example': 't', 'gitlab.example': 'l'}}, 'gitlab.example'),  # unused
         ({'repos': (*GLASS, 'https://gitea.example/owner/alpha')}, 'twice'),  # the exact same identity again
         ({'repos': ()}, 'serves no repo'),
-        ({'wave_hours_max': 0.0}, 'must be positive'),
-        ({'wave_hours_max': float('nan')}, 'must be positive'),
+        ({'wave_ceiling': 0.0}, 'must be positive'),
+        ({'wave_ceiling': float('nan')}, 'must be positive'),
         ({'max_merges_max': -1}, 'must not be negative'),
     ],
 )
@@ -965,3 +965,16 @@ def test_fast_forward_pushes_an_integration_commit_and_refuses_one_off_it_or_not
     later = advance(work, 'integrate/main', 'i2.txt', 'i2\n')
     with pytest.raises(NotFastForward, match='cannot fast-forward'):
         fast_forward(url, '', 'main', 'integrate/main', later)
+
+
+@pytest.mark.parametrize(
+    ('extra', 'why'),
+    [
+        ('wave_hours_max = 4.0', r'wave_hours_max = 4.0 is retired.*write wave_ceiling = "4 h"'),
+        ('wave_ceiling = 4', r'wave_ceiling = 4 is a bare number'),
+    ],
+)
+def test_the_wave_ceiling_carries_its_unit(tmp_path: Path, extra: str, why: str) -> None:
+    """User ruling 2026-11-25: a duration is declared with its unit; the unit-suffixed key is refused with its line."""
+    with pytest.raises(ValueError, match=why):
+        config(tmp_path, [], extra=extra)

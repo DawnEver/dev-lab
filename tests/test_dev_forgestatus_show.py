@@ -121,7 +121,7 @@ class _Pair(_Client):
         return super().download(url)
 
 
-def test_against_the_integration_tip_each_red_is_labelled_inherited_or_new() -> None:
+def test_against_the_integration_tip_each_red_is_labeled_inherited_or_new() -> None:
     """2026-11-13: an agent could not tell the reds it inherited from the ones it made. PLANTED: one of each."""
     head = {'cells': _cells(**{'tests/test_a.py::test_a': 'error', 'tests/test_b.py::test_b': 'error'})}
     base = {'cells': _cells(**{'tests/test_a.py::test_a': 'error', 'tests/test_b.py::test_b': 'ok'})}

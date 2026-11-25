@@ -19,6 +19,7 @@ from _forge_state import StateForge
 from _task_ledger import plant_ledger
 
 from dev_lab.dev import task, taskauthority
+from dev_lab.dev._task_io import TaskRefused
 from dev_lab.dev.branchdelete import TaskBranches
 from dev_lab.dev.forge import fetch_origin
 
@@ -93,7 +94,7 @@ def test_an_unmerged_head_blocks_the_close_and_is_listed(ledger: Path, tmp_path:
     run_git(work, 'checkout', '-q', 'main')
     before = _heads(work)
     _grant('close', 'alpha')
-    with pytest.raises(task.TaskRefused) as refused:
+    with pytest.raises(TaskRefused) as refused:
         _close(work, [])
     said = str(refused.value)
     assert 'pr/alpha/wip' in said

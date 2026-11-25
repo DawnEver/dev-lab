@@ -1,8 +1,8 @@
 r"""The SECTION-scoped family base: it owns one TOML table and leaves the rest of the file alone.
 
 WHY THIS FILE EXISTS RATHER THAN A ROW IN `test_dev_famconfig.py`. `famconfig`'s base is a WHOLE
-FILE keyed by FILENAME, and MEASURED 2026-09-18 against the live kit `artefact_base('[tool.ruff]')`,
-`artefact_base('ruff.toml')` and `artefact_base('pyproject.toml')` all raise `ForkedDelta`. Pointing
+FILE keyed by FILENAME, and MEASURED 2026-09-18 against the live kit `artifact_base('[tool.ruff]')`,
+`artifact_base('ruff.toml')` and `artifact_base('pyproject.toml')` all raise `ForkedDelta`. Pointing
 the whole-file mechanism at `pyproject.toml` is not the workaround either: `RENDERED` would then
 demand the base own `[build-system]`, `[project]` and every other table in that file. So the ruff arm
 needs a base whose SUBJECT is a table.
@@ -18,7 +18,7 @@ asserts PRESENCE, so it is blind in both directions that matter here:
 Both drive `inspect_section` over a planted file, and the clean control beside them
 (`test_a_declared_delta_is_owned`) proves the same function can still pass, so neither is vacuous.
 
-THE FILE IS NOT THE ARTEFACT, which is the second decision this arm carries. consumer-a keeps its
+THE FILE IS NOT THE ARTIFACT, which is the second decision this arm carries. consumer-a keeps its
 rules in `ruff.toml`; the other three keep `[tool.ruff]*` inside `pyproject.toml`. A base keyed by
 filename cannot serve both, and the kit already declared that the PATH is per-repo data twice --
 `dev_lab.dev.profile.DEFAULT_LINT_CONFIG` and `dev_lab.dev.rules.lint_selection`, which reads
@@ -69,7 +69,7 @@ KIT_DELTA: Final = SectionDelta(repo='lab-commons', added={}, dropped={}, ceilin
 #: A planted lint section: the smallest base that can carry both controls. Two set-valued keys and
 #: one scalar, which is the shape of the real `[tool.ruff.lint]` without its 58 rows.
 PLANTED: Final = SectionBase(
-    artefact='[tool.plant.lint]',
+    artifact='[tool.plant.lint]',
     table=('tool', 'plant', 'lint'),
     prefix=('tool', 'plant'),
     scalars={'line-length': 120},
@@ -283,7 +283,7 @@ def test_a_refused_delta_raises_rather_than_reporting_a_status(tmp_path: Path) -
 
 def test_an_empty_section_base_is_refused() -> None:
     """A base that owns no key reports every file OWNED, which is the vacuous green a floor refuses."""
-    hollow = SectionBase(artefact='[tool.void]', table=('tool', 'void'), prefix=('tool',), scalars={}, sets={})
+    hollow = SectionBase(artifact='[tool.void]', table=('tool', 'void'), prefix=('tool',), scalars={}, sets={})
     with pytest.raises(VacuousBase):
         section_problems(hollow, SectionDelta(repo='planted', added={}, dropped={}, ceiling=0))
 
@@ -307,7 +307,7 @@ def test_the_ruff_base_is_the_measured_fifty_eight_and_the_ten_code_core() -> No
 
 
 def test_an_unknown_section_names_the_ones_that_exist() -> None:
-    """The lookup refuses HERE with the set it could have meant, as `artefact_base` does one layer up."""
+    """The lookup refuses HERE with the set it could have meant, as `artifact_base` does one layer up."""
     with pytest.raises(ForkedSectionDelta, match=r'\[tool\.ruff\.lint\]'):
         section_base('[tool.ruff.isort]')
 
@@ -317,9 +317,9 @@ def test_the_kit_is_owned_by_the_ruff_base_with_an_empty_delta() -> None:
     root = Path(__file__).resolve().parents[1]
     path = ruff_config_path(root)
     assert path.name == 'pyproject.toml', path
-    for artefact in ('[tool.ruff]', '[tool.ruff.lint]'):
-        report = inspect_section(path, section_base(artefact), KIT_DELTA)
-        assert report.status == OWNED, f'{artefact}: {report.detail}\n  ' + '\n  '.join(report.offending)
+    for artifact in ('[tool.ruff]', '[tool.ruff.lint]'):
+        report = inspect_section(path, section_base(artifact), KIT_DELTA)
+        assert report.status == OWNED, f'{artifact}: {report.detail}\n  ' + '\n  '.join(report.offending)
 
 
 def test_locate_and_expected_entries_are_pure_and_drive_the_report() -> None:

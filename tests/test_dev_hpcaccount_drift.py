@@ -58,7 +58,7 @@ def test_drift_reports_three_lists_and_writes_nothing(tmp_path: Path, capsys: py
     assert before == after, 'drift wrote on the account'
 
 
-def test_a_secret_value_is_never_printed_but_its_planted_neighbour_is(
+def test_a_secret_value_is_never_printed_but_its_planted_neighbor_is(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     extra = f'\n[user]\nshell = "zsh"\nmirror = "{TOKEN}"\npassword = "{HIDDEN}"\n'

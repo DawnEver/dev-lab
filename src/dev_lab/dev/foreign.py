@@ -106,7 +106,7 @@ class Finding:
 
     The module path is REPO-RELATIVE with POSIX separators, so a handle means the same thing on
     every box: an absolute path would name one checkout, and a waiver keyed by one checkout is a
-    waiver nobody else can honour.
+    waiver nobody else can honor.
     """
 
     module: str

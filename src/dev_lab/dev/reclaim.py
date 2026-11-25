@@ -400,7 +400,7 @@ def _taken(root: Path, tree: Path, label: str) -> tuple[str, str]:
 def removed_approved(root: Path, tree: Path, *, quiet_s: float = QUIET_S) -> str:
     """Remove ONE linked worktree a user approved discarding, unlanded work included; ``''`` when gone, else why not.
 
-    The approval replaces only the landed-and-clean judgement: the main checkout or a repository, a live session
+    The approval replaces only the landed-and-clean judgment: the main checkout or a repository, a live session
     (an index changed within *quiet_s*) still refuse, and the delete is
     the same all-or-nothing :func:`_removed`.
     """

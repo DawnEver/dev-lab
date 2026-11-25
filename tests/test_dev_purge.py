@@ -19,7 +19,8 @@ from dev_lab.dev import purge
 _PYPROJECT = """
 [tool.dev_lab.parts]
 output = "output/logs"
-[tool.dev_lab.placement]
+"""
+_LAYOUT = """
 read_only = ["temp", "attic"]
 stores = ["output/cas"]
 scratch = "scratch/"
@@ -44,10 +45,11 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root.mkdir()
     _git(root, 'init', '-q')
     _write(root / 'pyproject.toml', _PYPROJECT)
+    _write(root / 'layout.toml', _LAYOUT)
     _write(root / '.gitignore', 'output/\ntemp/\nwip-ignored/\n')
     _write(root / 'attic' / 'old.py')
     _write(root / 'output' / 'tracked.txt')
-    _git(root, 'add', 'pyproject.toml', '.gitignore', 'attic/old.py')
+    _git(root, 'add', 'pyproject.toml', 'layout.toml', '.gitignore', 'attic/old.py')
     _git(root, 'add', '-f', 'output/tracked.txt')
     _git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'init')
     _write(root / 'output' / 'copy' / 'a' / 'b.txt', 'hello')
@@ -107,7 +109,7 @@ def test_a_parent_of_a_store_is_refused(repo: Path) -> None:
 
 
 def test_an_undeclared_placement_is_refused(repo: Path) -> None:
-    _write(repo / 'pyproject.toml', '[tool.dev_lab.parts]\noutput = "output/logs"\n')
+    _write(repo / 'layout.toml', '')
     with pytest.raises(purge.PurgeRefused, match='declares no'):
         purge.plan(repo, 'output/copy')
 

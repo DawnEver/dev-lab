@@ -12,7 +12,7 @@ one toolchain is 45-65 k files, so each toolchain no commit asks for is a quarte
   sha with no tree, an unreadable queue) keeps every toolchain: an unprovable reference is a reference.
 * EXTRACTED CRATE SOURCES (``~/.cargo/registry/src/<index>/<crate>``) are a cache of a cache: cargo re-extracts each
   from its ``registry/cache/<index>/<crate>.crate`` on the next build that needs it, with no network. They go as
-  ``cargo-registry-src`` once untouched for ``min_age_hours`` (a build extracting now keeps them); the ``.crate``
+  ``cargo-registry-src`` once untouched for ``min_age`` (a build extracting now keeps them); the ``.crate``
   files stay.
 """
 

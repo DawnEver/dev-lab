@@ -1,4 +1,4 @@
-"""``ops consent serve|enrol|keygen|ready``: the consent issuer's verbs, and the readiness every verifier answers.
+"""``ops consent serve|enroll|keygen|ready``: the consent issuer's verbs, and the readiness every verifier answers.
 
 Split out of :mod:`dev_lab.ops.__main__` (2026-11-11, MODULE-SIZE-ALARM), as :mod:`dev_lab.ops.configverbs` was:
 the issuer's rules live in :mod:`dev_lab.ops.consent`; this module builds the issuer from a host's ``[ops.consent]``
@@ -33,7 +33,7 @@ from dev_lab.ops.consentrole import Consent
 __all__ = ['VERBS', 'issuer', 'ready', 'run', 'visible']
 
 #: Every ``ops consent`` verb.
-VERBS = ('serve', 'enrol', 'keygen', 'ready')
+VERBS = ('serve', 'enroll', 'keygen', 'ready')
 
 #: Raise one alert ``(title, detail)`` through the host's channels.
 type Alert = Callable[[str, str], object]
@@ -47,7 +47,7 @@ def issuer(role: Consent, *, alert: Alert) -> Issuer:
         alert('consent LOCKED OUT', f'{role.lockout_after} wrong codes; every code refused until {when}')
 
     return Issuer(Path(role.totp), Path(role.key), Path(role.state), role.issuer, time.time,
-                  role.lockout_after, role.lockout_minutes, locked, role.max_grants)  # fmt: skip
+                  role.lockout_after, role.lockout / 60, locked, role.max_grants)  # fmt: skip
 
 
 def ends(config: OpsConfig, *, alert: Alert) -> tuple[Ed25519PublicKey, Register]:
@@ -141,7 +141,7 @@ def _derive(config: OpsConfig, argv: Sequence[str]) -> tuple[int, str]:
 
 
 def run(config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callable[[str], None]) -> int:
-    """Route one verb of :data:`VERBS`; *show* displays an enrolment's otpauth URI (as a QR or the bare URI)."""
+    """Route one verb of :data:`VERBS`; *show* displays an enrollment's otpauth URI (as a QR or the bare URI)."""
     if verb == 'ready':
         return ready(config, alert=alert)
     role = config.consent
@@ -149,8 +149,8 @@ def run(config: OpsConfig, verb: str, *, force: bool, alert: Alert, show: Callab
         emit(f'[ops] {config.path} enables no [ops.consent]', err=True)
         return 2
     try:
-        if verb == 'enrol':
-            show(totp.uri(totp.enrol(Path(role.totp), force=force), issuer=role.issuer, account=role.account))
+        if verb == 'enroll':
+            show(totp.uri(totp.enroll(Path(role.totp), force=force), issuer=role.issuer, account=role.account))
         elif verb == 'keygen':  # the PUBLIC key goes to every verifier: [consent] public_key, or the package
             emit(public_text(keygen(Path(role.key), force=force).public_key()))
         else:

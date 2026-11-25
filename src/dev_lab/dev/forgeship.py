@@ -1,7 +1,7 @@
 """DECLARED OUTPUTS ON THE SERVE PATH -- what a cluster run stores, and the cleanup its host owns.
 
 :func:`store_outputs` packs a run's declared outputs from its work tree and puts the archive in the
-store its size selects (:func:`dev_lab.dev.artefacts.store_for`); :func:`tidy` cleans, in every store
+store its size selects (:func:`dev_lab.dev.artifacts.store_for`); :func:`tidy` cleans, in every store
 this repo writes, the runs of THIS host's cluster account only -- several accounts write one shared
 library, and each cleans its own (:mod:`dev_lab.dev.forgerun`, :mod:`dev_lab.dev.forgeserve`).
 """
@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dev_lab.dev.artefactindex import StoredOutputs
-from dev_lab.dev.artefactpack import collect, pack
-from dev_lab.dev.artefacts import (
+from dev_lab.dev.artifactindex import StoredOutputs
+from dev_lab.dev.artifactpack import collect, pack
+from dev_lab.dev.artifacts import (
     ARCHIVE,
-    ArtefactStore,
+    ArtifactStore,
     ForgeStore,
     OutputBudgetRefused,
     clean,
@@ -23,7 +23,7 @@ from dev_lab.dev.artefacts import (
     pinned,
     store_for,
 )
-from dev_lab.dev.artefactstores import OutputIntegrityRefused, ref_of
+from dev_lab.dev.artifactstores import OutputIntegrityRefused, ref_of
 from dev_lab.dev.forge import forge_from_remote
 from dev_lab.dev.forgeclaim import forge_now
 
@@ -50,15 +50,13 @@ def store_outputs(
     config = load_config(root)
     members, index_bytes, path_bytes = (
         config.member_index_max_members,
-        config.member_index_max_bytes,
-        config.member_index_max_path_bytes,
+        config.member_index_max,
+        config.member_index_max_path,
     )
     if members is None or index_bytes is None or path_bytes is None:
         msg = 'output index budget refused: all three member_index limits must be explicitly declared'
         raise OutputBudgetRefused(msg)
-    files = collect(
-        tree, outputs, max_entries=config.expanded_output_max_entries, max_bytes=config.expanded_output_max_bytes
-    )
+    files = collect(tree, outputs, max_entries=config.expanded_output_max_entries, max_bytes=config.expanded_output_max)
     packed = pack(
         tree,
         files,
@@ -84,16 +82,17 @@ def store_outputs(
 
 
 def tidy(root: Path, client: Client, *, account: str, say: Callable[[str], None]) -> tuple[str, ...]:
-    """Clean *account*'s runs in every store this repo writes: past ``retain_days``, then down to ``cap_gb``."""
+    """Clean *account*'s runs in every store this repo writes: past ``retain``, then down to ``cap``."""
     config = load_config(root)
-    stores: list[ArtefactStore] = [ForgeStore(client)]
+    stores: list[ArtifactStore] = [ForgeStore(client)]
     large = large_store(config, forge_from_remote(root).repo)
     stores += [large] if large is not None else []
     keep, now = pinned(client, say=say), forge_now(client)
     gone = []
     for store in stores:
-        cap = config.cap_bytes if store is large else 0
-        for ref in clean(store, account=account, now=now, retain_days=config.retain_days, cap_bytes=cap, pinned=keep):
+        cap = config.cap if store is large else 0
+        retain_days = config.retain / 86400
+        for ref in clean(store, account=account, now=now, retain_days=retain_days, cap_bytes=cap, pinned=keep):
             gone.append(f'{ref.backend}:{ref.ref}')
-            say(f'[artefacts] deleted {ref.backend}:{ref.ref}')
+            say(f'[artifacts] deleted {ref.backend}:{ref.ref}')
     return tuple(gone)

@@ -1,11 +1,11 @@
 """THE ECHOED-TOKEN SCANNER, driven on this repo's own trees and on a planted one.
 
 WHAT THIS FILE IS FOR, AND IT IS NOT A CONSUMER'S ARM. It asserts that the SHARED BODY behaves --
-that the scanner names the echo, leaves its three honest neighbours alone, and refuses a walk that
+that the scanner names the echo, leaves its three honest neighbors alone, and refuses a walk that
 read nothing -- and then it turns the scanner on THIS repo, which is where the shape was found.
 
 THE CONTROLS RUN IN BOTH DIRECTIONS AT EVERY SEAM. A scanner that only ever fires is deleted rather
-than obeyed, so every distinction it draws is planted beside an honest neighbour; the floor is
+than obeyed, so every distinction it draws is planted beside an honest neighbor; the floor is
 driven from both sides, since a floor that has stopped binding is a waiver nothing uses; and the
 whole-tree arm names a POPULATION rather than a verdict, because finding nothing is vacuous.
 
@@ -106,7 +106,7 @@ def test_an_offender_is_refused_and_the_refusal_names_the_site() -> None:
         echoedtoken.assert_no_clause_checks_its_own_echo(dirty, floor=FUNCTION_FLOOR, headroom=HEADROOM)
 
 
-def test_the_scanner_names_the_planted_echo_and_none_of_its_honest_neighbours(tmp_path: Path) -> None:
+def test_the_scanner_names_the_planted_echo_and_none_of_its_honest_neighbors(tmp_path: Path) -> None:
     """BOTH DIRECTIONS, THROUGH THE SHIPPED SCANNER, over a real tree it walks itself."""
     echoedtoken.assert_the_scanner_still_convicts(tmp_path, roots=ROOTS)
 

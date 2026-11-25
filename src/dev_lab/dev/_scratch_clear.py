@@ -1,12 +1,14 @@
-"""The CLEAR half of :mod:`dev_lab.dev.scratch`: untracked entries, the door that deletes them, the session baseline.
+"""The CLEAR half of :mod:`dev_lab.dev.scratch`: untracked entries, their owners, the door that deletes them, the hooks.
 
 Split out of :mod:`dev_lab.dev.scratch` by size; that module's docstring states the contract and is the one entry
-point (``python -m dev_lab.dev.scratch``). Its constants live here because this is the lower module.
+point (``python -m dev_lab.dev.scratch``). Its constants live here because this is the lower module; who made each
+entry is :mod:`dev_lab.dev._scratch_owners`.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import shutil
 import stat
@@ -15,30 +17,47 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from lab_commons import home as _home
 from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev import walls
+from dev_lab.dev._scratch_owners import (
+    CLAIM_WINDOW_S,
+    RECENT_S,
+    Owner,
+    beat,
+    born,
+    claim,
+    heard,
+    live,
+    named,
+    owners,
+    record,
+    release,
+    touched,
+)
 from dev_lab.dev.codeplace import PlacementNotDeclared, checkout_root, declared_placement
 from dev_lab.dev.native_session import session_of, valid
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping
     from typing import TextIO
 
 _SECONDS_PER_DAY = 86400.0
 RULE: Final = 'SCRATCH-IS-NEVER-COMMITTED'
 #: How many one-offs the notice names before it elides the rest.
 _SHOWN = 20
-#: The directory, under the machine-local state, holding each session's scratch baseline.
-SESSION_DIR = 'scratch-sessions'
 #: The ONE tracked file under scratch: it anchors the directory and states the two exits.
 SCRATCH_README = 'README.md'
+DOOR: Final = 'python -m dev_lab.dev.scratch clear'
 
 
 class ScratchEscape(ValueError):
     """A link or junction inside a scratch entry points outside scratch: nothing is cleared."""
+
+
+class ScratchInUse(ValueError):
+    """A named entry belongs to another live session or was touched within the hour's half: nothing is cleared."""
 
 
 def _is_link(path: Path) -> bool:
@@ -106,14 +125,41 @@ def _name(entry: str) -> str:
     return entry.strip('/\\').replace('\\', '/').split('/')[-1]
 
 
-def clear_scratch(root: Path, names: Iterable[str]) -> list[str]:
+def minutes(seconds: float) -> str:
+    return f'{seconds / 60:.0f} min'
+
+
+def in_use(root: Path, rel: str, session: str, records: Mapping[str, Owner], *, now: float) -> str | None:
+    """Why *session* may not clear entry *rel* without the user's approval; ``None`` when it may.
+
+    Its own entry it always may. Another LIVE session's never; anyone else's (a gone session's, or one no session
+    claimed) once it has been quiet :data:`RECENT_S` -- a fresh one is somebody's work in progress.
+    """
+    owner = records.get(_name(rel))
+    if owner is not None and owner.session == session:
+        return None
+    if owner is not None and live(owner.session, now=now):
+        return (
+            f'{rel} belongs to live session {owner.session} (heard {minutes(now - (heard(owner.session) or now))} ago)'
+        )
+    quiet = now - touched(root / rel)
+    if quiet < RECENT_S:
+        return f'{rel} was touched {minutes(quiet)} ago, so it is in use (quiet {minutes(RECENT_S)} frees it)'
+    return None
+
+
+def clear_scratch(
+    root: Path, names: Iterable[str], *, session: str = '', approved: str = '', now: float | None = None
+) -> list[str]:
     """Delete the untracked top-level scratch entries of *root* named in *names*; return them root-relative.
 
-    A link or junction entry is unlinked, never followed. Nothing is deleted when a link inside an entry
-    escapes scratch, or when a name is no untracked entry (a tracked file never is one).
+    A link or junction entry is unlinked, never followed. Nothing is deleted when a name is no untracked entry (a
+    tracked file never is one), when a link inside an entry escapes scratch, or -- unless the user *approved* it, in
+    their words -- when an entry is in use by anyone but *session* (:func:`in_use`).
 
     Raises:
         ScratchEscape: a name is no untracked entry, or a link inside an entry points outside scratch.
+        ScratchInUse: an entry is another live session's, or freshly touched, and no approval names the user's words.
 
     """
     scratch = (root / declared_placement(root).scratch).resolve()
@@ -122,6 +168,17 @@ def clear_scratch(root: Path, names: Iterable[str]) -> list[str]:
     if missing := [name for name in wanted if name not in entries]:
         msg = f'{missing}: not an untracked entry of scratch (tracked, or absent); nothing cleared'
         raise ScratchEscape(msg)
+    records = owners(root)
+    stamp = time.time() if now is None else now
+    if not approved.strip() and (
+        busy := [why for name in wanted if (why := in_use(root, entries[name], session, records, now=stamp))]
+    ):
+        msg = (
+            f'{RULE}: nothing cleared -- {"; ".join(busy)}. Leave it to its owner (its own Stop names it), or wait '
+            f'until it has been quiet {minutes(RECENT_S)}; if the user approves removing it, re-run naming it with '
+            f'--approved "<the user\'s words>"'
+        )
+        raise ScratchInUse(msg)
     doomed = [(entries[name], root / entries[name]) for name in wanted]
     if escaping := [link for _, path in doomed for link in _escapes(path, scratch)]:
         shown = ', '.join(link.relative_to(root).as_posix() for link in escaping)
@@ -137,105 +194,156 @@ def clear_scratch(root: Path, names: Iterable[str]) -> list[str]:
             path.unlink()
         else:
             shutil.rmtree(path, onexc=_writable)
+    release(root, wanted)
     return [rel for rel, _ in doomed]
 
 
-def _session_file(session: str) -> Path | None:
-    """Where *session*'s scratch baselines live, under the machine-local state; ``None`` for an invalid id."""
-    return _home.part('state') / SESSION_DIR / f'{session}.json' if valid(session) else None
+def by_owner(root: Path, session: str, *, now: float) -> tuple[list[str], list[tuple[str, Owner | None]]]:
+    """*root*'s untracked entries *session* made and does not keep, and those no live session owns or keeps."""
+    records = owners(root)
+    mine: list[str] = []
+    loose: list[tuple[str, Owner | None]] = []
+    for rel, _, _ in untracked_scratch(root):
+        owner = records.get(_name(rel))
+        if owner is not None and owner.session == session:
+            mine += [] if owner.kept else [rel]
+        elif owner is None or not (owner.kept or live(owner.session, now=now)):
+            loose.append((rel, owner))
+    return mine, loose
 
 
-def _read(session: str) -> dict:
-    path = _session_file(session)
-    try:
-        data = json.loads(path.read_text(encoding='utf-8')) if path else {}
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+def own_entries(root: Path, session: str) -> list[str]:
+    """The untracked entries of *root*'s scratch *session* made and does not keep, oldest first."""
+    return by_owner(root, session, now=time.time())[0]
 
 
-def _write(session: str, data: dict) -> None:
-    path = _session_file(session)
-    if path is not None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=1, sort_keys=True), encoding='utf-8')
+def shown(rels: list[str]) -> str:
+    """*rels* joined, eliding past the first :data:`_SHOWN`."""
+    return ', '.join(rels[:_SHOWN]) + (' ...' if len(rels) > _SHOWN else '')
 
 
-def snapshot(root: Path, session: str) -> None:
-    """Record *root*'s untracked scratch entries as *session*'s baseline, once; a later call keeps the first."""
-    data = _read(session)
-    if str(root) not in data:
-        data[str(root)] = {'before': sorted(_name(rel) for rel, _, _ in untracked_scratch(root)), 'kept': []}
-        _write(session, data)
+def plural(rels: list) -> str:
+    """``N untracked scratch entr(y|ies)``."""
+    return f'{len(rels)} untracked scratch entr{"y" if len(rels) == 1 else "ies"}'
 
 
-def session_entries(root: Path, session: str) -> list[str] | None:
-    """The untracked entries *session* left in *root*'s scratch and did not keep; ``None`` with no baseline."""
-    seen = _read(session).get(str(root))
-    if not isinstance(seen, dict):
+def root_of(path: Path) -> tuple[Path, str] | None:
+    """The checkout holding *path* and its declared scratch; ``None`` outside one or with no placement."""
+    root = path if (path / '.git').exists() else checkout_root(path)
+    if root is None:
         return None
-    old = set(seen.get('before', ())) | set(seen.get('kept', ()))
-    return [rel for rel, _, _ in untracked_scratch(root) if _name(rel) not in old]
+    try:
+        return root, declared_placement(root).scratch.strip('/')
+    except PlacementNotDeclared:
+        return None
 
 
-def _keep(root: Path, session: str, names: Iterable[str]) -> None:
-    """Acknowledge *names* as entries *session* leaves in *root*'s scratch on purpose."""
-    data = _read(session)
-    seen = data.setdefault(str(root), {'before': [], 'kept': []})
-    seen['kept'] = sorted({*seen.get('kept', ()), *(_name(name) for name in names)})
-    _write(session, data)
+def _claim(kind: str, payload: dict, session: str) -> None:
+    """Claim for *session* the scratch entries its tool call names: a write by path, a shell command by spelling."""
+    tool = payload.get('tool_input') or {}
+    now = time.time()
+    if kind == 'shell':
+        found = root_of(Path(payload.get('cwd') or Path.cwd()).resolve())
+        if found is None:
+            return
+        root, rel = found
+        names = named(str(tool.get('command') or ''), rel)
+    else:
+        raw = tool.get('file_path') or tool.get('notebook_path')
+        if not raw:
+            return
+        target = Path(raw) if Path(raw).is_absolute() else Path(payload.get('cwd') or Path.cwd()) / raw
+        found = root_of(target.resolve().parent)
+        if found is None:
+            return
+        root, rel = found
+        inside = target.resolve().relative_to(root.resolve()).parts
+        prefix = tuple(rel.split('/'))
+        names = {inside[len(prefix)]} if len(inside) > len(prefix) and inside[: len(prefix)] == prefix else set()
+    for name in names - {SCRATCH_README}:
+        path = root / rel / name
+        if not (path.exists() or path.is_symlink()):
+            if kind == 'write':  # before the write: it is about to make the entry
+                claim(root, name, session, now=now)
+        elif now - (made := born(path)) <= CLAIM_WINDOW_S:
+            claim(root, name, session, born_at=made, now=now)
 
 
-def _clear_hint(rels: list[str]) -> str:
-    """The ``Stop`` block naming this session's untracked entries and the door that empties them."""
-    shown = ', '.join(rels[:_SHOWN]) + (' ...' if len(rels) > _SHOWN else '')
-    return (
-        f'{RULE}: this session left {len(rels)} untracked scratch entr'
-        f'{"y" if len(rels) == 1 else "ies"}: {shown}.\nPromote what is useful into src/ with tests (a finding '
-        'into memory), then python -m dev_lab.dev.scratch clear [--keep NAME ...] --yes'
-    )
-
-
-def _hooked(stdin: TextIO | None) -> tuple[Path, str] | None:
-    """The checkout and session a hook payload names; ``None`` when it names neither or declares no placement."""
+def hook_payload(stdin: TextIO | None) -> dict | None:
+    """The hook payload on *stdin*; ``None`` when it is no object or names no valid session."""
     try:
         payload = json.load(stdin or sys.stdin)
     except ValueError:
         return None
-    if not isinstance(payload, dict) or payload.get('stop_hook_active') or not valid(str(payload.get('session_id'))):
+    if not isinstance(payload, dict) or not valid(str(payload.get('session_id'))):
         return None
-    cwd = Path(payload.get('cwd') or Path.cwd()).resolve()
-    root = cwd if (cwd / '.git').exists() else checkout_root(cwd)
-    if root is None:
-        return None
-    try:
-        declared_placement(root)
-    except PlacementNotDeclared:
-        return None
-    return root, str(payload['session_id'])
+    return payload
 
 
-def _hook(mode: str, stdin: TextIO | None) -> int:
-    """``snapshot`` (SessionStart) records the baseline; ``stop`` blocks once on what this session left."""
-    hooked = _hooked(stdin)
-    if hooked is None:
+def _hook(mode: str, rest: list[str], stdin: TextIO | None) -> int:
+    """``claim write|shell`` records who made an entry; ``stop`` blocks on what this session made."""
+    payload = hook_payload(stdin)
+    if payload is None:
         return 0
-    root, session = hooked
-    left = session_entries(root, session) if mode == 'stop' else None
-    if left is None:
-        snapshot(root, session)  # a session with no baseline yet is judged from now on
-    elif left:
-        hint = _clear_hint(left)
+    session = str(payload['session_id'])
+    beat(session)
+    if mode == 'claim':
+        # a claim is bookkeeping: an unreadable path or placement leaves the entry ownerless, never a fault
+        with contextlib.suppress(OSError, ValueError):
+            _claim(rest[0] if rest else '', payload, session)
+        return 0
+    found = None if payload.get('stop_hook_active') else root_of(Path(payload.get('cwd') or Path.cwd()).resolve())
+    if found is None:
+        return 0
+    root = found[0]
+    if mine := own_entries(root, session):
+        hint = (
+            f'{RULE}: this session left {plural(mine)}: {shown(mine)}.\nPromote what is useful into src/ with tests '
+            f'(a finding into memory), then {DOOR} [--keep NAME ...] --yes'
+        )
         walls.refused_text(root, hint, reason='stop', rule=RULE, session=session)
         emit(json.dumps({'decision': 'block', 'reason': hint}))
     return 0
 
 
+def _keep(root: Path, session: str, names: Iterable[str]) -> str | None:
+    """Mark *names* as entries *session* leaves on purpose, adopting a gone one's; the refusal, else ``None``."""
+    entries = {_name(rel) for rel, _, _ in untracked_scratch(root)}
+    records, now = owners(root), time.time()
+    wanted = [_name(name) for name in names]
+    if missing := [name for name in wanted if name not in entries]:
+        return f'{missing}: not an untracked entry of scratch (tracked, or absent); nothing kept'
+    theirs = [
+        f'{name} ({o.session})'
+        for name in wanted
+        if (o := records.get(name)) and o.session != session and live(o.session, now=now)
+    ]
+    if theirs:
+        return f'{RULE}: {", ".join(theirs)} belong to another live session, whose own Stop names them; nothing kept'
+    for name in wanted:
+        record(root, name, Owner(session, now, kept=True))
+    return None
+
+
+def _kept_or_refused(args: argparse.Namespace, root: Path, session: str) -> str | None:
+    """Record ``--keep``; the refusal of the whole verb, else ``None``."""
+    if args.approved is not None and not args.approved.strip():
+        return "--approved takes the user's own words approving the removal; an empty approval approves nothing"
+    if args.keep and not session:
+        return 'no native session: --keep records which session keeps an entry'
+    if args.keep:
+        return _keep(root, session, args.keep)
+    if not args.names and not session:
+        return "no native session, so no entry is this session's: name the entries to clear"
+    return None
+
+
 def _clear(rest: list[str], root: Path) -> int:
-    """``clear [NAME ...] [--keep NAME ...] [--yes]``: the names, else this session's entries; ``--yes`` deletes."""
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.scratch clear', exit_on_error=False)
+    """``clear [NAME ...] [--keep NAME ...] [--approved WORDS] [--yes]``: the names, else this session's entries."""
+    parser = argparse.ArgumentParser(prog=DOOR, exit_on_error=False)
     parser.add_argument('names', nargs='*', metavar='NAME')
     parser.add_argument('--keep', nargs='+', action='extend', default=[], metavar='NAME')
+    parser.add_argument('--approved', default=None, metavar='WORDS', help="the user's words approving the removal")
     parser.add_argument('--yes', action='store_true')
     try:
         args = parser.parse_args(rest)
@@ -243,21 +351,32 @@ def _clear(rest: list[str], root: Path) -> int:
         emit(str(exc))
         return 2
     session = session_of()
-    if args.keep and session:
-        _keep(root, session, args.keep)
-    left = args.names or (session_entries(root, session) if session else None)
-    if left is None:
-        emit('no scratch snapshot for this native session: name the entries to clear')
+    if session:
+        beat(session)
+    if refused := _kept_or_refused(args, root, session):
+        emit(refused)
         return 2
+    left = args.names or own_entries(root, session)
     kept = {_name(name) for name in args.keep}
     names = [name for name in left if _name(name) not in kept]
     if names and not args.yes:
         emit(f'would clear: {", ".join(names)}; re-run with --yes to delete them')
         return 2
     try:
-        for rel in clear_scratch(root, names):
-            emit(f'cleared {rel}')
-    except ScratchEscape as exc:
+        for rel in clear_scratch(root, names, session=session, approved=args.approved or ''):
+            emit(f'cleared {rel}' + (f' (approved: {args.approved})' if args.approved else ''))
+    except (ScratchEscape, ScratchInUse) as exc:
         emit(str(exc))
         return 2
     return 0
+
+
+def owner_label(records: Mapping[str, Owner], rel: str, session: str, *, now: float) -> str:
+    """Whose entry *rel* is, for ``list``: ``this``, ``live <id>``, ``gone <id>`` (``+kept``), or ``-``."""
+    owner = records.get(_name(rel))
+    if owner is None:
+        return '-'
+    who = (
+        'this' if owner.session == session else f'{"live" if live(owner.session, now=now) else "gone"} {owner.session}'
+    )
+    return who + (' +kept' if owner.kept else '')

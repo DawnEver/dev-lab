@@ -162,7 +162,7 @@ _MODES = {HOME: '700', f'{HOME}/ci': '700', f'{HOME}/ci/experiments': '700', f'{
 
 
 class _Gpfs(_Fleet):
-    """MEASURED 2026-11-24: GPFS refuses ``setfacl`` -- ``Operation not supported``; modes are what it honours."""
+    """MEASURED 2026-11-24: GPFS refuses ``setfacl`` -- ``Operation not supported``; modes are what it honors."""
 
     def __init__(
         self,

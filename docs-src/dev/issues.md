@@ -69,8 +69,8 @@ issues only through `python -m dev_lab.dev.forge issue ...` ([the forge](forge.m
 [tool.dev_lab.forge.issue_hygiene]
 host_duplicates = true       # DELETE every machine-made `forge hosts` issue but the oldest (the one home)
 green_areas = true           # close an `area:*` issue with no `- [ ]` row
-request_max_age_days = 14    # close a `forge:request` issue older than this
-work_max_idle_days = 14      # close a WORK issue not updated for longer than this
+request_max_age = "14 d"     # close a `forge:request` issue older than this
+work_max_idle = "14 d"       # close a WORK issue not updated for longer than this
 ```
 
 - A WORK issue is one no machinery keeps: not the hosts issue, not `area:*`, not a request, and with no hidden marker in
@@ -93,6 +93,6 @@ work_max_idle_days = 14      # close a WORK issue not updated for longer than th
 | `priority:<n>` | the scheduler | adds `n` |
 | `forge:request` | the scheduler | makes the issue a queued request (`producer = "<declared name>"` and `sha = "<40-hex>"` in its body) |
 | `request:done` | serve | a request whose producer exited 0; the host closes it as it labels it |
-| `keep` | the artefact store | pins its sha's artefacts past retention ([artefacts](artefacts.md)) |
+| `keep` | the artifact store | pins its sha's artifacts past retention ([artifacts](artifacts.md)) |
 
 No other label carries state.

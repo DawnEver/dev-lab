@@ -13,7 +13,7 @@ declares is not installed.
 
 THE POLARITY IS INHERITED, NOT RE-DECIDED. A run starts INCONCLUSIVE and is PROMOTED only on
 proof. The measured case that motivates it is in that module's own docstring, and the parser that
-catches it lives in :mod:`dev_lab.dev.reports` -- which is where every judgement about what a
+catches it lives in :mod:`dev_lab.dev.reports` -- which is where every judgment about what a
 step's output MEANS lives, so that this module can be about processes, logs and exit codes and
 nothing else.
 
@@ -50,6 +50,7 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import cargostep, depneeds, verifiedby
+from dev_lab.dev._verify_address import tree_address
 from dev_lab.dev.changeselect import changed_paths, select
 from dev_lab.dev.footprint import Footprints
 from dev_lab.dev.forgeclaim import this_machine
@@ -59,6 +60,7 @@ from dev_lab.dev.forgestatus import head_sha, verdict_commit
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND
 from dev_lab.dev.inflight import RunKey, box_directory, run_once
+from dev_lab.dev.irschema import changed_reach, stale_refusal
 from dev_lab.dev.layout import scan_refusal
 from dev_lab.dev.localpart import part_selection, post_cited, post_part
 from dev_lab.dev.lockpins import lock_freshness
@@ -77,7 +79,7 @@ from dev_lab.dev.verifybox import (
     WAIT_S,
     serial_width,
 )
-from dev_lab.dev.verifysteps import run_verify, tree_address
+from dev_lab.dev.verifysteps import run_verify
 from dev_lab.dev.workstationverdict import after_run, before_run, head_tree, workstation_fields, workstation_refusal
 
 __all__ = [
@@ -164,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog='python -m dev_lab.dev.verify',
-        description='Run ruff check, ruff format --check and pytest, and print a citable verdict.',
+        description='Run ruff check, ruff format --check, typos and pytest, and print a citable verdict.',
         epilog='Exit codes: 0 pass, 1 fail (failures named), 2 refused argv, 3 inconclusive (the run cannot say).',
     )
     parser.add_argument(
@@ -219,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         refused = refused or f'verify: refused -- {why}'
     refused = refused or _needs_refusal(root, parsed.part)
     refused = refused or scan_refusal(root)  # DECLARED-LAYOUT / NO-BACKUP-COPIES: the incremental scan, every run
+    refused = refused or stale_refusal(root)  # IR-STALE-GENERATED / IR-VERSION-NOT-BUMPED (dev.irschema)
     if parsed.part == cargostep.PART:  # T8: the Rust suite is its own part, produced natively beside pytest
         early: int | None = cargostep.produce(root)
     else:
@@ -356,6 +359,7 @@ def _changed_selection(root: Path, range_spec: str) -> tuple[str, ...] | int:
     """The paths ``--changed`` selects, or the exit code when it selects nothing to run."""
     try:
         changed = changed_paths(root, range_spec)
+        changed = changed_reach(root, changed, range_spec)  # an IR change reaches by its class (dev.irschema)
     except ValueError as why:
         emit(f'verify: refused -- --changed: {why}', err=True)
         return ProducerExit.USAGE
@@ -401,6 +405,7 @@ STEP_REMEDIES: Final = {
     HOOKS_STEP: f'no live hook shim in this checkout -- run: {INSTALL_COMMAND}',
     'ruff check .': 'lint findings -- run: ruff check --fix . (then fix what it cannot)',
     'ruff format --check .': 'unformatted files -- run: ruff format .',
+    'typos': 'non-US or misspelled words -- run: python -m dev_lab.dev.spelling --write (then fix what it cannot)',
 }
 
 

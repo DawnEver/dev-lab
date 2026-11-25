@@ -25,7 +25,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'roles',  # the forge roles each repo's work is bound to, read from the family layer (D73; replaced producers)
     'disposable',  # a throwaway worktree's lease: scratch and discard without a landing (split from reclaim)
     'scratchtree',  # the scratch worktree door, --scratch and --discard (split from reclaim)
-    'forgetask',  # the forge task verbs, split from forgecli to keep it under the module bound
+    'scratchorphans',  # scratch entries no live session owns, read for the integrator (2026-11-25)
     'tomlleaves',  # the TOML leaf reader devhost renders through, split from devhost
     'vendordetect',  # detect installed vendor tools for the machine file, split from devhost
     'devsource',  # the config source's forge URL, split from devhost at the module-size band (2026-11-21)
@@ -97,26 +97,25 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'integrate',
     'trialmerge',
     'labsession',
-    'pradmit',
     'components',
     'componentbump',
     'shatree',
     'branchprune',
     'branchpolicy',  # ORIGINAL: the branch policy observed and the prune role's one duty (D46, 2026-11-19)
     'branchdelete',
-    'deletejudge',  # LOSSLESS-DELETE's judgement, split from branchdelete for the pre-push row (2026-11-17)
+    'deletejudge',  # LOSSLESS-DELETE's judgment, split from branchdelete for the pre-push row (2026-11-17)
     'pushdelete',  # the pre-push row judging every branch delete however spelled (toolchain O22, 2026-11-17)
     'partrows',
     'slurmkilled',
-    'artefacts',
-    'artefactstores',
+    'artifacts',
+    'artifactstores',
     'largeobjects',
-    # ORIGINAL: the artefact member index, split out of `artefacts` inside the kit; no consumer held them.
-    'artefactpack',  # writes the member-indexed archive
-    'artefactindex',  # the member-index facts and their manifest record
-    'artefactscan',  # verifies an archive stream against its index
-    'artefactrestore',  # materializes selected members with a receipt
-    'artefactfolder',  # the folder store's verified publication
+    # ORIGINAL: the artifact member index, split out of `artifacts` inside the kit; no consumer held them.
+    'artifactpack',  # writes the member-indexed archive
+    'artifactindex',  # the member-index facts and their manifest record
+    'artifactscan',  # verifies an archive stream against its index
+    'artifactrestore',  # materializes selected members with a receipt
+    'artifactfolder',  # the folder store's verified publication
     'selection',
     'breakglass',
     'retention',
@@ -124,9 +123,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no rule kept a rust toolchain by its pins; 135 k files per account sat in unpinned ones.
     'retentionrust',
     'diskusage',
-    # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
-    'pushgate',
-    'prlanded',
     'issueref',
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator',
@@ -137,10 +133,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'closedpush',
     # ORIGINAL: no push read the milestone tags before the 2026-11-13 ruling.
     'milestonebase',
-    'prcontinue',
     'branchreview',
-    # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
-    'prcurrent',
     # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).
     'locklag',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
@@ -163,7 +156,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'doorcensus',
     # ORIGINAL, and the row is worth its comment because the thing it measures is THIS package. No
     # prior mechanism asked whether the LEAF carries a consumer's data: the README's tier-1 rule and
-    # `.claude/rules/statement-and-mechanism.md` both stated it, both were read on every turn, and
+    # `<repo>/.claude/rules/statement-and-mechanism.md` both stated it, both were read on every turn, and
     # the `dev` layer absorbed 38 executable values, 153 unresolvable paths and 181 prose mentions
     # anyway. There is no path to name because prose was the only prior mechanism, and it lost.
     'foreign',
@@ -188,7 +181,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).
     'disclosure',
     'injectedtext',
-    # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
+    # ORIGINAL in code: generalizes a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun',
     # ORIGINAL: split from stoprun along its concepts (2026-11-15, module-size band); nothing else replaced.
     'stopsignatures',
@@ -279,7 +272,8 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # Node-free (2026-10-28) and a downstream repo's review JS tests were found to call shutil.which('node').
     'hostnode',
     # ORIGINAL: no consumer file refused a test's unowned temp entry or host-root literal; the need arose when
-    # one workstation held 8.9 GB of suite leftovers in %TEMP% and trees at C:/var/tmp, C:/results (2026-11-24).
+    # one workstation held 8.9 GB of suite leftovers in %TEMP% and trees at <drive>:/var/tmp, <drive>:/results
+    # (2026-11-24).
     'testleaks',
     # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
     # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was
@@ -288,7 +282,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # wait declares a ceiling; this reads DATA FLOW inside one body and asks whether an assertion can
     # fail at all. Measured the same day, the two surfaces share `take_scan` and nothing else, and
     # one is entirely about `subprocess` while the other never mentions it. NOT inside `citedtests`
-    # either, the nearest neighbour BY SUBJECT -- a declaration that lies -- which reads PROSE
+    # either, the nearest neighbor BY SUBJECT -- a declaration that lies -- which reads PROSE
     # against the whole tree where this cannot see across a single function boundary.
     'echoedtoken',
     # ORIGINAL in the kit: refuses consumer-local push-admission copies once `admission` exists.
@@ -308,7 +302,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'venvspelling',
     # ORIGINAL: no consumer holds a guard it would supersede; it refuses their re-declared settings.
     'sharedsettings',
-    # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
+    # ORIGINAL for the reason `venvspelling` states one row up: what it centralizes is a STRING,
     # not a forked file.
     'venvpath',
     # ORIGINAL (dev-lab #632): no consumer published an environment by pointer; the side-by-side layout is new.
@@ -349,7 +343,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hostedparts',  # ORIGINAL: split from jobparts: the hosted-part declaration reader (2026-11-17)
     # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
     'jobmeasure',
-    'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
     'native_session',  # ORIGINAL: one validated native harness identity, apart from worktree provenance (2026-11-15)
     'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
@@ -362,11 +355,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sshholdwire',  # ORIGINAL: split from sshhold: the client half of the holder's protocol (2026-11-13)
     'walls',  # ORIGINAL: every refusal is one ledger line (2026-11-13)
     'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
-    'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
-    'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
-    'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
-    'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
-    'forgewaves',  # ORIGINAL: an unacknowledged break-glass wave reaches each session once (ruling 2026-11-19)
     'venvfollow',
     'oldcopies',  # ORIGINAL: the old layout's copies, one list drift reports and retention deletes (2026-11-22)
     'quotawatch',  # ORIGINAL: an account's quota judged against the two declared lines, before it fills (2026-11-22)
@@ -376,7 +364,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'accounthost',  # ORIGINAL: an HPC account is the third host kind, rendered over its family grant (2026-11-15)
     'devhost',  # ORIGINAL: a development machine is declared, its machine file a render (2026-11-12)
     'devschema',
-    'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrolment (2026-11-16)
+    'devprofile',  # ORIGINAL: an undeclared machine renders the family default; its doors name enrollment (2026-11-16)
     'checkoutfollow',  # ORIGINAL: a clean primary checkout follows its integration branch (2026-11-12)
     'liverun',
     'codexdeny',  # ORIGINAL: the deny registry rendered as Codex execpolicy rules, and its gaps (2026-11-16)
@@ -384,7 +372,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'retiredfiles',  # ORIGINAL: split from codeplace: a checkout's own declared retired-file rows (2026-11-17)
     'strays',  # ORIGINAL: split from codeplace: the STRAY-FILE-REFUSED census and its hooks (2026-11-17)
     'metrics',
-    'prsuperseded',
     'metrics_compute',
     'metrics_report',
     'reviewcommand',
@@ -401,6 +388,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'consentguard',  # CONSENT-CODE-FROM-THE-USER: the consent state dir and the planted-credential refusal, new here
     'frozen',  # USER-FROZEN-FILES: the user's frozen files and closed tracked inventory (2026-11-24), new here
     'corechange',  # ZERO-CORE-CHANGE: application work leaves the core, else a recorded decision (2026-11-24), new here
+    'nativefirst',  # NATIVE-FIRST: Python orchestrates, the native stage computes (2026-11-25), new here
     'machineguard',  # MACHINE-FILE-IS-RENDERED: the machine file is written by its doors alone, new here
     'familyrepos',  # FAMILY-REPO-IS-CHECKED-OUT: [repos] against the family's repos, listed and enforced, new here
     'writeroots',  # WRITES-STAY-IN-THE-TREE: the write-prone roots outside every checkout, new here
@@ -446,4 +434,23 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'uvrelease',
     # ORIGINAL: 2026-11-23, the holder record beside a cluster tick's lock: who holds it and in which phase.
     'tickholder',
+    'fitting',  # ORIGINAL: 2026-11-23, the interpreter a bootstrap door names imports dev_lab and fits requires-python
+    'layout',  # ORIGINAL: 2026-11-23, DECLARED-LAYOUT and NO-BACKUP-COPIES, a checkout's tree as an allow-list
+    'changeselect',  # ORIGINAL: 2026-11-24, the tests a change reaches, run by verify --changed
+    'importedges',  # ORIGINAL: 2026-11-24, the family's one static import-edge reader for architecture tests
+    'stallwatch',  # ORIGINAL: 2026-11-24, a test run ends when it is dead, not when the wall says so
+    'worktreeseeds',  # ORIGINAL: 2026-11-24, the gitignored files a worktree is gated with, as data
+    'cratefresh',  # ORIGINAL: 2026-11-24, the Rust side of dependency freshness
+    'toolchain',  # ORIGINAL: 2026-11-24, what a checkout needs on this host before its environment can build
+    'docrows',  # ORIGINAL: 2026-11-24, a repo's documentation site built from data
+    'docrules',  # ORIGINAL: 2026-11-24, the family doc rules re-injected before a document is edited
+    'hiddenintake',  # ORIGINAL: 2026-11-24, TYPED-VALUES-ARE-SHOWN over every family repo's tracked code
+    'secretkit',  # ORIGINAL: 2026-11-24, TYPED-VALUES-ARE-SHOWN, the kit half: a stale kit never prompts
+    'machineroutes',  # ORIGINAL: 2026-11-24, MACHINES-MEET-ONLY-THROUGH-THE-FORGE
+    'notices',  # ORIGINAL: 2026-11-24, the third-party license notice generated from the environment
+    'portmeasure',  # ORIGINAL: 2026-11-24, MEASURE-BEFORE-PORTING, a new native crate carries its measured reason
+    'priorart',  # ORIGINAL: 2026-11-24, PRIOR-ART-FIRST, a new product module named like an existing one cites it
+    'spelling',  # ORIGINAL: 2026-11-24, US-SPELLING-IS-CHECKED, typos in locale en-us
+    'salvage',  # ORIGINAL: 2026-11-24, worktrees --salvage and --reap-orphans record a tree's work first
+    'branchlocal',  # ORIGINAL: 2026-11-25, branchdelete --local deletes local branches their content landed
 )

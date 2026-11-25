@@ -8,14 +8,14 @@ you are standing in is the opposite case in every respect:
 
 * it is not a dependency change at all -- the source is in this tree at this sha, so "a human step
   (pyproject plus a deliberate reinstall)" is an argument about somebody else's package;
-* it must not resolve ANYTHING. :attr:`~dev_lab.dev.dep.Mode.PINNED` makes that mechanical --
+* it must not resolve ANYTHING. :attr:`~dev_lab.dev._dep_pip.Mode.PINNED` makes that mechanical --
   pip cannot reach an index it is forbidden to consult -- so no transitive dependency can move under
   another lane even in principle;
 * and its VERSION IS NOT AN IDENTITY. A crate taking ``dynamic = ["version"]`` out of its
   ``Cargo.toml`` carries the same number across two builds of different source, and pip skips a
   local wheel already installed at the same version -- logging the remedy, and exiting ZERO. That
   turns "installed" into a no-op that ``env_key`` truthfully reports as no movement, so this module
-  declares :attr:`~dev_lab.dev.dep.Version.REPEATS` and the argv carries ``--force-reinstall``;
+  declares :attr:`~dev_lab.dev._dep_pip.Version.REPEATS` and the argv carries ``--force-reinstall``;
 * and the wheel must be OURS. Without that check ``Mode.PINNED`` is a loaded gun with the safety on:
   it stops an index being read, and does nothing at all about ``pip install ./scipy-*.whl`` arriving
   through the one door the blocklist was told to allow.
@@ -48,7 +48,8 @@ from typing import Any
 import lab_commons.launch as _door
 from lab_commons.census import processes
 
-from dev_lab.dev.dep import CHILD_WALL_S, Mode, Port, Report, Version, mutate
+from dev_lab.dev._dep_pip import Mode, Version
+from dev_lab.dev.dep import CHILD_WALL_S, Port, Report, mutate
 from dev_lab.dev.liverun import Census
 
 __all__ = [
@@ -56,7 +57,7 @@ __all__ = [
     'NothingBuiltError',
     'declared_distributions',
     'install_self_build',
-    'normalise_distribution',
+    'normalize_distribution',
     'refuse_foreign_wheel',
     'wheel_distribution',
 ]
@@ -75,7 +76,7 @@ class NothingBuiltError(ForeignDistributionError):
     """
 
 
-def normalise_distribution(name: str) -> str:
+def normalize_distribution(name: str) -> str:
     """PEP 503-ish folding, so one project has one spelling.
 
     ``consumer-a-native`` and ``consumer_a_native`` are ONE project, and a comparison that says
@@ -100,7 +101,7 @@ def wheel_distribution(wheel: Path) -> str:
     install the wrong thing -- so the folding below exists for the MANIFEST side, where
     ``name = "consumer-a-native"`` is both legal and idiomatic.
     """
-    return normalise_distribution(wheel.name.split('-')[0])
+    return normalize_distribution(wheel.name.split('-')[0])
 
 
 def declared_distributions(manifests: Iterable[Path]) -> frozenset[str]:
@@ -118,7 +119,7 @@ def declared_distributions(manifests: Iterable[Path]) -> frozenset[str]:
         data = tomllib.loads(manifest.read_text(encoding='utf-8'))
         name = data.get('project', {}).get('name')
         if isinstance(name, str) and name:
-            names.add(normalise_distribution(name))
+            names.add(normalize_distribution(name))
     return frozenset(names)
 
 

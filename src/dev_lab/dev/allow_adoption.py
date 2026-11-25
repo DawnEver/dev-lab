@@ -29,13 +29,13 @@ The first two were hand-written in two repos by two hands and were CHARACTER-IDE
 the evidence the derivation rule is read off the data rather than imposed on it.
 
 THEY ARE NO LONGER CHARACTER-IDENTICAL: both hands spelled a Windows-only interpreter into a file
-that is TRACKED IN GIT, so :func:`glob_for` normalises it and BOTH spellings derive one row. This is
+that is TRACKED IN GIT, so :func:`glob_for` normalizes it and BOTH spellings derive one row. This is
 THE ONE SANCTIONED WIDENING -- ``.venv/*/python*`` admits more than the remedy spells, because the
 alternative is a row FALSE on one platform -- bounded as DATA in
 :data:`dev_lab.dev.venvpath.VENV_LAYOUTS`, which holds the argument.
 
-WHAT MAKES A ROW DERIVABLE IS A PROPERTY OF THE REGISTRY, not a judgement. A rule with ``needs``
-names a repo artefact and the repo answers it with a :class:`dev_lab.dev.hooks.Remedy`, whose
+WHAT MAKES A ROW DERIVABLE IS A PROPERTY OF THE REGISTRY, not a judgment. A rule with ``needs``
+names a repo artifact and the repo answers it with a :class:`dev_lab.dev.hooks.Remedy`, whose
 ``command`` is MACHINE-READABLE by contract -- it is the text shown verbatim to the refused agent. A
 rule with ``needs=None`` has no ``Remedy`` at all; its exit is ENGLISH PROSE ("Do not rewrite a
 shared ref: land the change FORWARD as a new commit..."), and a glob extracted from prose would be a
@@ -60,7 +60,7 @@ CANONICAL spelling and not a widened one: ``stop_sweep.py --pid <root-pid>`` ren
 DECLARED row somebody argues for, not a free rider on the derivation.
 
 WHY THIS IS NOT :mod:`dev_lab.dev.famconfig`, which is the mechanism a reader will reach for
-first. ``famconfig`` is a WHOLE-FILE, LINE-ORIENTED renderer keyed by artefact filename, and it
+first. ``famconfig`` is a WHOLE-FILE, LINE-ORIENTED renderer keyed by artifact filename, and it
 opens every file it writes with a comment STAMP. ``.claude/settings.json`` is JSON: it has no
 comment syntax, so the stamp alone is fatal; and its two blocks have two owners --
 :func:`dev_lab.dev.agent_guard.wire_settings` writes ``hooks``, this module writes

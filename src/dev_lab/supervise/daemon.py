@@ -68,7 +68,7 @@ __all__ = [
     'watchdog_seconds',
 ]
 
-#: The shortest interval a loop will honour. Anything smaller is a supervisor competing with the
+#: The shortest interval a loop will honor. Anything smaller is a supervisor competing with the
 #: service it supervises, which on a two-core host is the service losing.
 MIN_INTERVAL: Final = 5
 
@@ -96,7 +96,7 @@ Watcher = Callable[[CycleResult, datetime], None]
 Definition = Callable[[], str]
 
 #: The distribution this module is published in. Named rather than derived from ``__package__``
-#: because the point is to compare the process against the INSTALLED artefact, and a source tree
+#: because the point is to compare the process against the INSTALLED artifact, and a source tree
 #: that was never installed has no version to compare at all.
 _DISTRIBUTION: Final = 'dev-lab'
 

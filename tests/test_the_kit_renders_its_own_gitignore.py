@@ -24,7 +24,7 @@ from _famconfig_delta import DELTAS, GITIGNORE, REPO
 from dev_lab.dev._famconfig_rows import GITATTRIBUTES_BASE
 from dev_lab.dev.famconfig import RENDERED
 from dev_lab.dev.famtests.configrender import (
-    assert_artefact_is_rendered,
+    assert_artifact_is_rendered,
     assert_delta_is_not_a_fork,
     assert_every_base_is_accounted_for,
     assert_modes_are_as_agreed,
@@ -38,8 +38,8 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 RERENDER: Final = (
     "python -c \"import sys, pathlib; sys.path.insert(0, 'tests'); "
     'from _famconfig_delta import DELTAS, GITIGNORE; '
-    'from dev_lab.dev.famconfig import artefact_base, render; '
-    "pathlib.Path(GITIGNORE).write_text(render(artefact_base(GITIGNORE), DELTAS[GITIGNORE]), encoding='utf-8')\""
+    'from dev_lab.dev.famconfig import artifact_base, render; '
+    "pathlib.Path(GITIGNORE).write_text(render(artifact_base(GITIGNORE), DELTAS[GITIGNORE]), encoding='utf-8')\""
 )
 
 #: The file hatch-vcs writes at build time. It must be ignored here, through whichever base line reaches it.
@@ -48,17 +48,17 @@ VERSION_FILE: Final = 'src/lab_commons/__version__.py'
 
 def test_the_declaration_is_a_delta_of_the_base_and_not_a_fork() -> None:
     """A delta restating a base line is refused here, before the bytes are compared."""
-    assert_delta_is_not_a_fork(artefact=GITIGNORE, deltas=DELTAS, repo=REPO)
+    assert_delta_is_not_a_fork(artifact=GITIGNORE, deltas=DELTAS, repo=REPO)
 
 
 def test_the_file_on_disk_is_what_the_live_base_and_this_delta_render() -> None:
     """THE PROPERTY. Re-rendered from the LIVE base, so an upstream base edit moves this verdict."""
-    assert_artefact_is_rendered(root=ROOT, artefact=GITIGNORE, deltas=DELTAS, repo=REPO, rerender_hint=RERENDER)
+    assert_artifact_is_rendered(root=ROOT, artifact=GITIGNORE, deltas=DELTAS, repo=REPO, rerender_hint=RERENDER)
 
 
 def test_no_base_line_left_the_file_without_a_declared_drop() -> None:
     """The survey's route in, which does not go through the bytes."""
-    assert_no_base_line_left_undeclared(root=ROOT, artefact=GITIGNORE, repo=REPO)
+    assert_no_base_line_left_undeclared(root=ROOT, artifact=GITIGNORE, repo=REPO)
 
 
 def test_the_gitignore_is_judged_rendered_and_every_base_is_accounted_for() -> None:
@@ -70,7 +70,7 @@ def test_the_gitignore_is_judged_rendered_and_every_base_is_accounted_for() -> N
 def test_a_planted_hand_edit_is_refused(tmp_path: Path) -> None:
     """PLANTED CONTROL: un-floating the cache rule -- the spelling this file carried before adoption."""
     assert_render_round_trips(
-        artefact=GITIGNORE,
+        artifact=GITIGNORE,
         deltas=DELTAS,
         repo=REPO,
         scratch=tmp_path,
@@ -89,7 +89,7 @@ def test_the_hatch_vcs_version_file_stays_ignored() -> None:
 
 
 #: THE PRINCIPLE (user ruling 2026-11-24): the base ignores only what legitimately exists untracked; a
-#: misplaced artefact is NOT ignored, so it shows in `git status`. Each list is the others' planted
+#: misplaced artifact is NOT ignored, so it shows in `git status`. Each list is the others' planted
 #: control: one base must say yes to one and no to the other.
 _TRACKED: Final = (
     '.claude/settings.json',
@@ -131,7 +131,7 @@ _IGNORED: Final = (
     '.claude/memory/2026/06/01/_meta.json',
     '.claude/memory-index.md',
 )
-#: MISPLACED ARTEFACTS: each was ignored by an older base and must now SHOW in `git status`.
+#: MISPLACED ARTIFACTS: each was ignored by an older base and must now SHOW in `git status`.
 _VISIBLE: Final = (
     '.pytest_cache/v/cache/nodeids',
     '.ruff_cache/x',
@@ -148,7 +148,7 @@ _VISIBLE: Final = (
 )
 
 
-def test_the_gitattributes_base_is_the_one_normalisation_line() -> None:
+def test_the_gitattributes_base_is_the_one_normalization_line() -> None:
     """User ruling 2026-11-24: the base is `* text=auto eol=lf` alone; per-type lines are a repo's delta."""
     assert GITATTRIBUTES_BASE == ('* text=auto eol=lf',)
 
@@ -163,7 +163,7 @@ def _ignored(repo: Path, path: str) -> bool:
 
 
 def test_only_legitimate_untracked_paths_are_ignored(tmp_path: Path) -> None:
-    """Every declared file is trackable, every legitimate artefact ignored, and every misplaced one VISIBLE.
+    """Every declared file is trackable, every legitimate artifact ignored, and every misplaced one VISIBLE.
 
     Asked of a bare repo holding ONLY this checkout's `.gitignore`: a tool's own nested ignore file (pytest
     and ruff write one into their cache) would otherwise answer for the base.

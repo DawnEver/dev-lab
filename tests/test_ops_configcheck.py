@@ -72,7 +72,7 @@ def test_check_host_refuses_an_undeclared_table_or_key_by_name(tmp_path: Path, e
 
 def test_a_misspelt_ops_scalar_is_refused_at_load(tmp_path: Path) -> None:
     host = _write(tmp_path, 'h.toml', HOST.replace('[ops]\n', '[ops]\npyhton = "x"\n', 1))
-    with pytest.raises(ValueError, match='pyhton'):
+    with pytest.raises(ValueError, match='python'):
         opsconfig.load(host, environ={}, as_root=False, structure_only=True)
 
 
@@ -113,7 +113,7 @@ def test_needs_consent_names_the_boundary_keys_a_change_touches() -> None:
 
 
 DEV_HOST = '[dev]\nhpc = []\nref = "integrate/main"\n'
-SSH_ROUTES = '[ssh.jump]\n"node.example" = "bastion.example"\n\n[ssh.hold]\nmax_hours = 8\nidle_minutes = 30\n'
+SSH_ROUTES = '[ssh.jump]\n"node.example" = "bastion.example"\n\n[ssh.hold]\nceiling = "8 h"\nidle = "30 min"\n'
 
 
 def test_a_dev_host_file_declares_its_ssh_routes(tmp_path: Path) -> None:
@@ -128,7 +128,8 @@ def test_a_dev_host_file_declares_its_ssh_routes(tmp_path: Path) -> None:
         ('[ssh.jump]\n"node.example" = 22\n', 'ssh.jump'),
         ('[ssh.jump]\n"node.example" = ""\n', 'ssh.jump'),
         ('[ssh]\njump = "bastion.example"\n', 'ssh.jump'),
-        ('[ssh.hold]\nmax_hours = "8"\n', 'ssh.hold.max_hours'),
+        ('[ssh.hold]\nceiling = "8"\n', 'ssh.hold.ceiling = "8" is a bare number'),
+        ('[ssh.hold]\nmax_hours = 8\n', 'max_hours = 8 is retired'),
     ],
 )
 def test_an_ssh_key_or_value_off_the_schema_is_refused(tmp_path: Path, extra: str, named: str) -> None:

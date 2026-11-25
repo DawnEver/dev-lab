@@ -1,7 +1,7 @@
 """RFC 6238 TOTP: the per-use authorization of a break-glass merge, verified on the host that holds the secret.
 
-THE SECRET NEVER LEAVES THE HOST except once, as the enrolment URI the user scans into an Authenticator app
-(:func:`enrol`). A code is accepted at most once: :func:`accept` persists the time-step it matched and refuses any
+THE SECRET NEVER LEAVES THE HOST except once, as the enrollment URI the user scans into an Authenticator app
+(:func:`enroll`). A code is accepted at most once: :func:`accept` persists the time-step it matched and refuses any
 step at or before it, so a code read off a screen or a log cannot be replayed, even inside its own window. The read
 and the write of that step are one critical section only under the role lock its caller holds
 (:func:`dev_lab.ops.statelock.exclusive`, taken by every break-glass request).
@@ -29,7 +29,7 @@ __all__ = [
     'accept',
     'adopt',
     'code_at',
-    'enrol',
+    'enroll',
     'qr',
     'uri',
     'write_private',
@@ -67,7 +67,7 @@ def _read_secret(path: Path) -> str:
     except FileNotFoundError:
         secret = ''
     if not secret:
-        msg = f'no TOTP secret at {path}: enrol first (python -m dev_lab.ops --config <toml> consent enrol)'
+        msg = f'no TOTP secret at {path}: enroll first (python -m dev_lab.ops --config <toml> consent enroll)'
         raise TotpRefused(msg)
     return secret
 
@@ -109,10 +109,10 @@ def uri(secret: str, *, issuer: str, account: str) -> str:
 
 
 def qr(text: str) -> str | None:
-    """*text* as a QR code drawn in half-block characters, light modules as blocks (a dark terminal's colours).
+    """*text* as a QR code drawn in half-block characters, light modules as blocks (a dark terminal's colors).
 
     Needs the ``dev-lab[ops]`` extra (segno); without it, ``None`` -- the caller prints the URI instead, so an
-    enrolment never dies over its picture. Shown ONLY on the terminal that enrolled: it carries the secret, so it is
+    enrollment never dies over its picture. Shown ONLY on the terminal that enrolled: it carries the secret, so it is
     returned for stdout, never logged.
     """
     try:
@@ -125,7 +125,7 @@ def qr(text: str) -> str | None:
     return out.getvalue()
 
 
-def enrol(secret_file: Path, *, force: bool = False) -> str:
+def enroll(secret_file: Path, *, force: bool = False) -> str:
     """Generate a 160-bit secret into *secret_file* (mode 600) and return it; refuse to replace one unless *force*."""
     if secret_file.is_file() and secret_file.read_text(encoding='utf-8').strip() and not force:
         msg = f'{secret_file} already holds a secret; --force replaces it (the old Authenticator entry stops working)'

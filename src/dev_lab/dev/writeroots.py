@@ -1,12 +1,13 @@
 """WRITES-STAY-IN-THE-TREE: an agent writes only into the roots its machine ALLOWS; everything else is refused.
 
 User requirement 2026-11-05: an agent session left scripts in the OS temp dir (Git Bash ``/tmp`` is the same directory
-on Windows). A program's artefact goes to ``output/logs/<yy>/<mm>/<dd>/<kind>/``, an experiment to ``scratch/``;
+on Windows). A program's artifact goes to ``output/logs/<yy>/<mm>/<dd>/<kind>/``, an experiment to ``scratch/``;
 outside a checkout nothing scans, ignores or cleans it.
 
 THE ALLOWLIST (ruling R8, 2026-11-24): the writable roots are a per-machine allowlist, declared in the config source
 (``hosts/<machine>.toml`` ``[writeroots] allow``, rendered into the machine file), and EVERY other path is refused --
-drive roots, ``~/src``, ``/tmp``, ``%TEMP%``, ``$CLAUDE_JOB_DIR/tmp``, OneDrive and a checkout's siblings above all.
+drive roots, ``<home>/src``, ``/tmp``, ``%TEMP%``, ``$CLAUDE_JOB_DIR/tmp``, OneDrive and a checkout's siblings
+above all.
 An entry is an absolute path or a token (:data:`ALLOW_TOKENS`: ``{repos}`` -- every family checkout the machine
 file's ``[repos]`` maps, its ``.claude/worktrees`` inside it; ``{lab_root}`` -- an HPC account's declared root).
 UNDECLARED, the allowlist is ``{repos}`` alone, and the refusal says so. An entry no machine may allow (a drive root,
@@ -16,7 +17,8 @@ excluded`` and the harness's own plan files (:func:`admitted_paths`).
 
 Two callers judge a write: the ``codeplace`` write hook (Write/Edit/MultiEdit/NotebookEdit) calls
 :func:`refuse_outside_tree`, and the shell deny row :mod:`dev_lab.dev._deny_writeroots_row` prefilters a write whose
-target may leave the tree and asks :func:`main` (``--admit``), which places each target (:func:`shell_targets`).
+target may leave the tree and asks :func:`main` (``--admit``), which places each target
+(:func:`dev_lab.dev._writeroots_shell.shell_targets`).
 
 THE CENSUS is the other half: :func:`write_prone_roots` (the OS temp, POSIX ``/tmp`` ``/var/tmp``, each drive's and the
 home's ``tmp``, ``temp``, ``var``, ``src``, the bare home, extended by ``[writeroots]`` ``temp``/``census``) is where
@@ -50,6 +52,7 @@ from lab_commons.hpc.layout import ROOT_VAR as LAB_ROOT_VAR
 from lab_commons.storage import Storage
 from lab_commons.temp import TEMP_PREFIX
 
+from dev_lab.dev._writeroots_shell import shell_targets
 from dev_lab.dev.disclosure import details_for
 
 __all__ = [
@@ -73,14 +76,13 @@ __all__ = [
     'owned_globs',
     'place',
     'refuse_outside_tree',
-    'shell_targets',
     'write_prone_roots',
 ]
 
 RULE_ID: Final = 'WRITES-STAY-IN-THE-TREE'
 HAZARD: Final = 'outside every checkout nothing scans, ignores or cleans a file, so it outlives the session.'
 REMEDY: Final = (
-    "No door: write in the checkout. A program's artefact goes to output/logs/<yy>/<mm>/<dd>/<kind>/, an "
+    "No door: write in the checkout. A program's artifact goes to output/logs/<yy>/<mm>/<dd>/<kind>/, an "
     'experiment to scratch/ of the checkout you work in (user ruling 2026-11-23: no job temp dir either).'
 )
 
@@ -352,96 +354,6 @@ def refuse_outside_tree(
     )
 
 
-# ---------------------------------------------------------------- THE SHELL HALF: place each target a line writes
-
-_TOKEN: Final = re.compile(r"""\d?>>?|&>>?|\|\||&&|[|;&\n]|<<?|(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s|;&<>"'])+""")
-_HEREDOC: Final = re.compile(r"""<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\1""")
-_REDIRECT: Final = re.compile(r'\d?>>?|&>>?')
-_SEPARATORS: Final = frozenset({'|', '||', '&&', ';', '&', '\n'})
-_DISCARDS: Final = frozenset({'/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty', 'nul', '$null'})
-_CD: Final = frozenset({'cd', 'pushd', 'set-location', 'sl', 'chdir'})
-_EACH_OPERAND: Final = frozenset({'mkdir', 'touch', 'tee'})
-_LAST_OPERAND: Final = frozenset({'cp', 'mv', 'copy', 'move', 'rsync', 'install', 'copy-item', 'move-item'})
-_PS_WRITERS: Final = frozenset({'new-item', 'ni', 'out-file', 'set-content', 'add-content'})
-_PS_PATH: Final = frozenset({'-path', '-filepath', '-literalpath', '-destination'})
-#: PowerShell writer options that take a value, which is no target.
-_PS_VALUED: Final = frozenset({'-itemtype', '-type', '-value', '-encoding', '-inputobject', '-name'})
-
-
-def _without_heredoc_bodies(command: str) -> str:
-    """*command* without its heredoc BODIES; the opening line stays whole, a redirect after ``<<EOF`` included."""
-    out, index = '', 0
-    for match in _HEREDOC.finditer(command):
-        if match.start() < index:
-            continue
-        body = command.find('\n', match.end())
-        if body == -1:
-            break
-        closer = re.compile(rf'^[ \t]*{re.escape(match.group(2))}[ \t]*$', re.MULTILINE)
-        end = closer.search(command, body + 1)
-        out += command[index:body] + '\n'
-        index = len(command) if end is None else end.end()
-    return out + command[index:]
-
-
-def _unquote(token: str) -> str:
-    return ''.join(
-        part[1:-1] if part[:1] in '"\'' else part for part in re.findall(r'"[^"]*"|\'[^\']*\'|[^"\']+', token)
-    )
-
-
-def _absolute(text: str) -> bool:
-    return bool(re.match(r'^(?:[A-Za-z]:[\\/]|[\\/]|~|\$|%)', text))
-
-
-def _segment_targets(words: list[str], cwd: str, found: list[tuple[str, str]]) -> str:
-    """Append the targets one command segment (*words*) writes to *found*; return the cwd after it."""
-    if not words:
-        return cwd
-    verb = words[0].replace('\\', '/').rsplit('/', 1)[-1].casefold()
-    operands = [one for one in words[1:] if not one.startswith('-')]
-    if verb in _CD and operands:
-        return operands[0] if not cwd or _absolute(operands[0]) else f'{cwd}/{operands[0]}'
-    if verb in _EACH_OPERAND:
-        found.extend((one, cwd) for one in operands)
-    elif verb in _LAST_OPERAND and len(operands) > 1:
-        found.append((operands[-1], cwd))
-    elif verb == 'dd':
-        found.extend((one[3:], cwd) for one in words[1:] if one.startswith('of='))
-    elif verb in _PS_WRITERS:
-        named = [words[i + 1] for i, one in enumerate(words[:-1]) if one.casefold() in _PS_PATH]
-        valued = {i + 1 for i, one in enumerate(words) if one.casefold() in _PS_VALUED}
-        positional = [one for i, one in enumerate(words) if i and i not in valued and not one.startswith('-')]
-        found.extend((one, cwd) for one in (named or positional[:1]))
-    return cwd
-
-
-def shell_targets(command: str) -> list[tuple[str, str]]:
-    """Each (target, the cwd it is relative to -- ``''`` for the call's own) a shell line writes, as spelled.
-
-    Read: a redirect (``>``, ``>>``, ``2>``, ``&>``), ``tee``/``mkdir``/``touch`` operands, the last operand of a
-    copy or move, ``dd of=``, a PowerShell writer's ``-Path``/``-FilePath``/``-Destination`` or first operand; a
-    ``cd``/``pushd``/``Set-Location`` moves the cwd later targets are relative to. A discard (``/dev/null``) is none.
-    """
-    found: list[tuple[str, str]] = []
-    cwd = ''
-    segment: list[str] = []
-    redirect = False
-    for token in [*_TOKEN.findall(_without_heredoc_bodies(command)), '\n']:
-        if redirect:
-            redirect = False
-            if not token.startswith('&'):
-                found.append((_unquote(token), cwd))
-        elif _REDIRECT.fullmatch(token):
-            redirect = True
-        elif token in _SEPARATORS:
-            cwd = _segment_targets([_unquote(one) for one in segment], cwd, found)
-            segment = []
-        elif token not in ('<', '<<'):
-            segment.append(token)
-    return [(target, where) for target, where in found if target and target.casefold() not in _DISCARDS]
-
-
 def place(target: str, cwd: str, base: Path, *, env: Mapping[str, str] | None = None) -> Path | None:
     """The path *target* names (relative to *cwd* as spelled, itself relative to *base*); ``None`` if unplaceable.
 
@@ -472,6 +384,8 @@ def place(target: str, cwd: str, base: Path, *, env: Mapping[str, str] | None = 
     if where is None or spelled is None:
         return None
     path = Path(spelled).expanduser()
+    if os.name != 'nt' and re.match(r'^[A-Za-z]:/', spelled):
+        return Path('/', spelled)  # a drive root this OS lacks: absolute, and below no root it can allow
     if path.is_absolute():
         return path
     return base / Path(where).expanduser() / path if where else base / path

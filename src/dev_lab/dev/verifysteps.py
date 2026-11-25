@@ -1,6 +1,7 @@
 """THE VERIFY STEPS, run under one root into one log and folded into one verdict.
 
-:func:`run_verify` runs ruff check, ruff format --check and pytest (in the box, :mod:`dev_lab.dev.verifybox`),
+:func:`run_verify` runs ruff check, ruff format --check, typos (:mod:`dev_lab.dev.spelling`) and pytest (in
+the box, :mod:`dev_lab.dev.verifybox`),
 each streamed through :func:`_tee` into a fresh log, and :func:`build_verdict` folds their reports. The command
 around it -- the run cache, the box-wide single run, the producer's post -- is :mod:`dev_lab.dev.verify`.
 
@@ -14,7 +15,6 @@ drag the verdict to INCONCLUSIVE, so all three run and the verdict names the one
 from __future__ import annotations
 
 import functools
-import hashlib
 import os
 import shutil
 import subprocess
@@ -33,15 +33,16 @@ from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev import baselines, cargostep, durations
 from dev_lab.dev._logdistil import distil_log
+from dev_lab.dev._verify_address import _git_z, tree_address
+from dev_lab.dev._verify_coverage import cache_env, coverage_args, coverage_env, coverage_report, coverage_total
 from dev_lab.dev.commandtests import declared_command, script_paths, selected_command
-from dev_lab.dev.content import ABSENT, content_address, file_digest
 from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.jsrun import NoEngine, node_path
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
-from dev_lab.dev.reports import StepReport, read_ruff, read_stages
+from dev_lab.dev.reports import StepReport, read_lint, read_stages
 from dev_lab.dev.selection import census_scope, is_targeted
 from dev_lab.dev.serialpass import PLUGIN, SEEN_ENV, SERIAL_BANNER, STAGE_ENV
 from dev_lab.dev.skipallowance import declared_skips, stale_declarations, vanished_shortfall
@@ -66,73 +67,29 @@ from dev_lab.dev.verifybox import (
 )
 
 __all__ = [
-    'CACHE_VARS',
-    'COVERAGE_KIND',
     'LEDGER_PLUGIN',
+    'LINT_STEPS',
     'LOG_KIND',
-    'MEASURED_TARGETS',
     'OUTCOME_PLUGIN',
     'PYTEST_ARGS',
-    'RUFF_STEPS',
     'build_verdict',
-    'cache_env',
-    'coverage_args',
-    'coverage_env',
-    'coverage_report',
-    'coverage_total',
     'run_verify',
-    'tree_address',
 ]
-
-#: What the tree address covers, for EVERY repo in the family. A fixed tuple rather than a
-#: per-repo list: :func:`~dev_lab.dev.content.content_address` records a target that is not
-#: there as ``absent``, so a repo without one of these addresses differently instead of needing a
-#: branch here -- and a repo that ACQUIRES one changes its address, which is correct.
-MEASURED_TARGETS: Final[tuple[str, ...]] = ('src', 'tests', 'pyproject.toml')
-
-_GIT: Final = shutil.which('git') or 'git'
-
-
-def _git_z(root: Path, *args: str) -> tuple[str, ...] | None:
-    """NUL-separated output of ``git -C root <args>``; ``None`` when *root* is not a git work tree."""
-    done = _door.run(
-        [_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=False, timeout=120
-    )
-    return tuple(part for part in done.stdout.split('\0') if part) if done.returncode == 0 else None
-
-
-def tree_address(root: Path) -> str:
-    """The address a verdict names: :data:`MEASURED_TARGETS` by content, plus every TRACKED file as it is on disk.
-
-    2026-11-13: a cited FAIL was reused for "the same tree" while a tracked file outside the targets held unstaged
-    edits. The tracked half is the index (``git ls-files -s``: path and blob sha, content-addressed) with each file
-    the working tree differs from it on (``git diff --name-only``, the stat-cached check) hashed from its bytes, or
-    ``absent`` -- so every tracked byte is covered without reading every tracked file. Outside git: the targets only.
-    """
-    base = content_address(root, MEASURED_TARGETS)
-    index = _git_z(root, 'ls-files', '-s', '-z')
-    changed = _git_z(root, 'diff', '--name-only', '-z')
-    if index is None or changed is None:
-        return base
-    digest = hashlib.sha256('\n'.join(index).encode('utf-8'))
-    for rel in sorted(changed):
-        path = root / rel
-        digest.update(f'\n{rel}\0{file_digest(path) if path.is_file() else ABSENT}'.encode())
-    return f'{base}+tracked:{digest.hexdigest()[:16]}'
-
 
 #: The output-tree kind the run log and its records live under: ``<output>/<yy>/<mm>/<dd>/verify/``
 #: (:func:`dev_lab.dev.datedlog.output_dir`; user ruling 2026-11-05, ``.verify/`` retired). Inside the
 #: checkout rather than a platform cache dir, because the log IS the evidence a verdict cites.
 LOG_KIND: Final = 'verify'
 
-#: The two lint steps, in order, as ``(name, module args)``. Both run through ``sys.executable -m``
-#: so the ruff that judges is the ruff installed in the interpreter that will run the suite -- a
-#: bare ``ruff`` on ``PATH`` can be a different version from the one the ``dev`` extra resolved,
-#: and a verdict carrying an env key must have been earned under that env.
-RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+#: The lint steps, in order, as ``(name, module args)``. Each runs through ``sys.executable -m``
+#: so the checker that judges is the one installed in the interpreter that will run the suite -- a
+#: bare ``ruff`` on ``PATH`` can be a different version from the one the ``test`` extra resolved,
+#: and a verdict carrying an env key must have been earned under that env. ``typos`` is the
+#: US-SPELLING-IS-CHECKED step (user ruling 2026-11-24).
+LINT_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ('ruff check .', ('ruff', 'check', '.')),
     ('ruff format --check .', ('ruff', 'format', '--check', '.')),
+    ('typos', ('dev_lab.dev.spelling',)),
 )
 
 #: What pytest is always given, before anything the caller forwards. None of these three letters is
@@ -166,55 +123,6 @@ RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 #: checkout read INCONCLUSIVE. ``--no-fold-skipped`` selects pytest's other skip summary --
 #: ``SKIPPED <node id> - <reason>``, one line per skip -- and a node id is the name of the test.
 PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
-
-#: THE COVERAGE REPORT (user ruling 2026-11-05): every pytest step measures coverage with pytest-cov and writes it
-#: as Markdown to ``<output>/<yy>/<mm>/<dd>/coverage/`` (:func:`dev_lab.dev.datedlog.output_dir`), named by its
-#: log. A REPORT, NEVER A GATE -- no ``--cov-fail-under``, so a coverage number cannot move a verdict.
-#: ``--cov`` names no source, so a repo's own ``[tool.coverage.run]`` decides what is measured.
-_COVERAGE_TOTAL: Final = '| **TOTAL**'
-
-
-#: The output-tree kind the coverage report and its data file go to (user ruling 2026-11-05).
-COVERAGE_KIND: Final = 'coverage'
-
-
-def coverage_report(root: Path, log: Path) -> Path:
-    """The Markdown coverage report of the run logged at *log*: ``<log stem>.coverage.md`` in today's coverage dir."""
-    return output_dir(root, COVERAGE_KIND) / f'{log.stem}.coverage.md'
-
-
-def coverage_env(root: Path, log: Path) -> dict[str, str]:
-    """The coverage DATA file of the run logged at *log*, beside its report, so no run writes ``.coverage`` here."""
-    return {'COVERAGE_FILE': str(output_dir(root, COVERAGE_KIND) / f'{log.stem}.coverage')}
-
-
-#: THE TOOL CACHES (user ruling 2026-11-24): every cache lives under ``output/cache/<tool>/``, never at the root,
-#: so the family `.gitignore` need not name one. pytest's and ruff's go there through the family pyproject rows;
-#: these two have no pyproject key every repo shares (hypothesis has none at all), so the door that runs them sets
-#: the variable each tool reads.
-CACHE_VARS: Final[dict[str, str]] = {'HYPOTHESIS_STORAGE_DIRECTORY': 'hypothesis', 'MYPY_CACHE_DIR': 'mypy'}
-
-
-def cache_env(root: Path) -> dict[str, str]:
-    """Each :data:`CACHE_VARS` variable pointed at ``<root>/output/cache/<tool>``."""
-    return {var: str(root / 'output' / 'cache' / tool) for var, tool in CACHE_VARS.items()}
-
-
-def coverage_args(root: Path, log: Path, *, append: bool = False) -> tuple[str, ...]:
-    """pytest-cov's arguments for the run logged at *log* under *root*; *append* adds to the stage before it."""
-    report = coverage_report(root, log).relative_to(root).as_posix()  # relative: a drive colon would split the option
-    return ('--cov', f'--cov-report=markdown:{report}', *(('--cov-append',) if append else ()))
-
-
-def coverage_total(report: Path) -> str | None:
-    """The TOTAL percentage *report* states, or ``None`` when there is no report to read."""
-    if not report.is_file():
-        return None
-    for line in report.read_text(encoding='utf-8').splitlines():
-        if line.startswith(_COVERAGE_TOTAL):
-            return line.rstrip(' |').rsplit('|', 1)[-1].strip(' *')
-    return None
-
 
 #: The durations ledger, loaded as a plugin so EVERY verify run records what it executed -- targeted
 #: or full, whichever conftest the selected tests sit under (:func:`dev_lab.dev.durations.pytest_configure`).
@@ -270,14 +178,14 @@ def _tee(
     INTERLEAVED -- a separated stderr puts every ruff diagnostic after every line of pytest output,
     in an order that never occurred.
 
-    ANSI COLOUR IS STRIPPED HERE, AT THE ONE POINT WHERE THE THREE READERS HAVE NOT YET DIVERGED,
+    ANSI COLOR IS STRIPPED HERE, AT THE ONE POINT WHERE THE THREE READERS HAVE NOT YET DIVERGED,
     and that placement is the decision rather than the regex. MEASURED 2026-09-18: pytest under
     ``--color=yes`` (or ``FORCE_COLOR`` in a repo's ``addopts``) prints
     ``'\x1b[31mFAILED\x1b[0m test_c.py::\x1b[1mtest_a\x1b[0m - assert 0'``, and
     :data:`~dev_lab.dev.reports._FAILED_NODE` is anchored at ``^(?:FAILED|ERROR)`` -- so a
     genuine red came back ``the summary names 1 failure(s) and the output names 0 node id(s)``, an
     INCONCLUSIVE nobody can act on. The direction was safe, which is exactly why it went unnoticed;
-    the cost is that no red is diagnosable in any repo that colours its output.
+    the cost is that no red is diagnosable in any repo that colors its output.
 
     LOOSENING THE ANCHOR WOULD NOT HAVE FIXED IT. The node id in that line is itself wrapped
     (``test_c.py::\x1b[1mtest_a\x1b[0m``), so ``(\S+)`` would have captured a node id with escapes
@@ -479,7 +387,7 @@ def run_verify(
     is the one side of the ratchet a selected invocation can still judge.
 
     THE SEAT IS TAKEN AFTER :func:`~dev_lab.dev.skipallowance.declared_skips` AND NOT BEFORE: an
-    unparseable declaration is refused against a tree that has not yet queued for anything.
+    unparsable declaration is refused against a tree that has not yet queued for anything.
 
     THE LOG IS READ BACK STREAMED AND IS NEVER RESIDENT, which is why the last two lines go through
     :mod:`dev_lab.dev._logdistil` rather than ``path.read_text()``. MEASURED 2026-09-18: a
@@ -516,8 +424,8 @@ def run_verify(
         with seat.held(), path.open('w', encoding='utf-8') as handle:
             if hooks:
                 reports.append(read_hooks(root, handle=handle))
-            for name, arguments in RUFF_STEPS:
-                reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
+            for name, arguments in LINT_STEPS:
+                reports.append(read_lint(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
             reports.extend(_native_steps(root, pytest_args, scripts, handle=handle, cargo=cargo))
             if not only_scripts:
                 handle.write(_PYTEST_BANNER)

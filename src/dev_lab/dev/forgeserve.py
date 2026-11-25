@@ -14,7 +14,7 @@ in rank order while jobs admit), start each claimed cluster part as a run and ea
 as a producer of its own, and wait one tick period or until a producer ends; then advance every
 cluster run one step
 (:func:`dev_lab.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
-release -- whatever is due); on a cluster, clean the artefact stores (:func:`dev_lab.dev.forgeship.tidy`);
+release -- whatever is due); on a cluster, clean the artifact stores (:func:`dev_lab.dev.forgeship.tidy`);
 run the storage retention pass, every tick (:mod:`dev_lab.dev.retention`; still over quota raises a
 ``storage`` alarm); publish this host's card; then, ONLY ON THE REPO'S POLLER -- the host holding the poller
 lease (:func:`dev_lab.dev.forgepoller.polls`; measured 2026-10-24, every host polling every repo
@@ -107,11 +107,9 @@ and per integration head, a condition every forge merge waits on.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import functools
 import json
 import os
-import signal
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -127,7 +125,7 @@ from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
-from dev_lab.dev import forgerun, forgerunstate, forgesubmit, metrics, retention
+from dev_lab.dev import forgerun, forgerunstate, forgesubmit, retention
 from dev_lab.dev._forgebackends import FORGE_SERVE, NotWired, require_producer
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, forge_transport
 from dev_lab.dev.forgealarm import (
@@ -142,7 +140,7 @@ from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgedemand import part_demand
 from dev_lab.dev.forgefailure import ForgeCallFailed
-from dev_lab.dev.forgehosts import card_host, card_owners, read_cards, recording
+from dev_lab.dev.forgehosts import RETIRE, card_host, card_owners, read_cards, recording, serving_cards
 from dev_lab.dev.forgeintent import reattach
 from dev_lab.dev.forgememo import remembering
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
@@ -156,6 +154,8 @@ from dev_lab.dev.forgeservesteps import (
     cancel_strays,
     demote_unreachable,
     every_host,
+    exit_on_sigterm,
+    host_failure,
     pressed,
     repo_wide,
     retain_storage,
@@ -238,7 +238,9 @@ def serve(
         body = 'set $LC_HPC_SESSION for every submitter: an untagged job holds a share no session can be throttled by'
         alarm(Alarm(UNTAGGED, repo, f'{untagged} untagged job task(s) on {seat}', body, about=str(seat)))
     name = card_host(machine, seat)
-    cards = read_cards(client(root))
+    cards, unbound = serving_cards(root, read_cards(client(root)))  # a seat the family binds no role to never serves
+    for card in unbound:
+        say(f'[serve] {card.host} is bound to no role of this repo: its card is not read -- {RETIRE} {card.host}')
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
     beat_s = float(table.get('tick_minutes', 5)) * 60
     fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository
@@ -374,25 +376,6 @@ def _advance(
     return left
 
 
-def _terminated(signum: int, _frame: object) -> None:
-    """SIGTERM (a tick at its wall, or ``tick-stop``) runs every ``finally``: producers joined, claims let go."""
-    raise SystemExit(128 + signum)
-
-
-def _exit_on_sigterm() -> None:
-    """Install :func:`_terminated` (POSIX; only the main thread sets a handler, a thread's serve keeps none)."""
-    if os.name != 'nt':
-        with contextlib.suppress(ValueError):
-            signal.signal(signal.SIGTERM, _terminated)
-
-
-def _host_failure(root: Path, failure: BaseException) -> None:
-    """A serve that failed before it posted anything reached nobody as a PR status: one ``host_failure`` line."""
-    metrics.record(
-        metrics.HOST_FAILURE, root=root, repo=metrics.repo_of(root), rule='serve', reason=type(failure).__name__
-    )
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -416,7 +399,7 @@ def main(
         require_producer(built.backend, FORGE_SERVE, f'forge serve of {here}')  # GitHub: Actions alone (2026-11-11)
         return built
 
-    _exit_on_sigterm()
+    exit_on_sigterm()
     seat = seat_of()
     machine = this_machine()
     if args.submit:
@@ -442,11 +425,11 @@ def main(
         emit(f'[serve] {missing}', err=True)
         return 1
     except (DeclarationRefused, ForgeCallFailed, PostFailed, NotWired, forgerunstate.ForeignSchema, OSError) as failed:
-        _host_failure(root, failed)
+        host_failure(root, failed)
         emit(f'[serve] {failed}', err=True)
         return (1, ProducerExit.USAGE)[isinstance(failed, DeclarationRefused)]
     except Exception as defect:
-        _host_failure(root, defect)
+        host_failure(root, defect)
         raise
     if args.json:
         emit(json.dumps(asdict(report), indent=2))

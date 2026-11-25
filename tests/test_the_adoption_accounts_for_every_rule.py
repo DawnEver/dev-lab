@@ -91,6 +91,7 @@ _ENFORCED = {
     ),
     'PRIOR-ART-FIRST': (guard('tests/test_dev_priorart.py'),),
     'ZERO-CORE-CHANGE': (guard('tests/test_dev_corechange.py'),),
+    'NATIVE-FIRST': (guard('tests/test_dev_nativefirst.py'),),
     'MEASURE-BEFORE-PORTING': (guard('tests/test_dev_portmeasure.py'), guard('tests/test_dev_forgemerge.py')),
     'ONE-FORMAT-PER-NEED': (
         guard('tests/test_dev_layout.py'),
@@ -232,6 +233,10 @@ _ENFORCED = {
     'UNITS-GO-THROUGH-PINT': (
         guard('tests/test_dev_units.py'),
         guard('tests/test_no_name_carries_a_unit.py'),
+    ),
+    'CONFIG-VALUES-CARRY-UNITS': (
+        guard('tests/test_dev_configkeys.py'),
+        guard('tests/test_config_keys_carry_no_unit.py'),
     ),
     'VERDICT-BAR-IS-THE-INCREMENT': (guard('tests/test_dev_verdict.py'),),
     'XFAIL-NOT-SKIP': (guard('tests/test_arch_skips_are_a_named_set.py'),),

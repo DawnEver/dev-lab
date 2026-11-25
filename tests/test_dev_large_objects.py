@@ -24,7 +24,7 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.storage import Storage, declared
 
 from dev_lab.dev import forgeunit
-from dev_lab.dev.artefactstores import ArtefactRefused, RcloneStore
+from dev_lab.dev.artifactstores import ArtifactRefused, RcloneStore
 from dev_lab.dev.largeobjects import OBJECTS_PREFIX, RcloneObjects, StoreUnreached, run_objects
 
 UNIT = 'ab' + 'e' * 62
@@ -172,7 +172,7 @@ def test_a_tampered_object_is_a_miss_never_a_value(tmp_path: Path, cloud: tuple[
 
 def test_a_scratch_prefix_is_refused_and_a_durable_one_is_not() -> None:
     """The bucket ages scratch/ out, so no durable object is ever keyed there; any other prefix is admitted."""
-    with pytest.raises(ArtefactRefused, match='scratch'):
+    with pytest.raises(ArtifactRefused, match='scratch'):
         RcloneObjects('bucket:', 'scratch/results')
     assert RcloneObjects('bucket:', 'vendor/scratch-free').prefix == 'vendor/scratch-free'
 

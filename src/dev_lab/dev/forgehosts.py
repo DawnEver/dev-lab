@@ -18,7 +18,7 @@ platform it serves, its TOOLS as probed -- each present or not with the evidence
 (:func:`lab_commons.compute.probe.inventory`), never a declaration -- its SUPPLY as the tick admitted
 against it and the cluster facts it read locally (partitions, quota), when it last ticked (the forge's
 clock), what it holds with live progress, what else RUNS on it (every claim on its box ledger, a
-cluster run in flight), why each candidate it saw waits, why it cannot write the large artefact store
+cluster run in flight), why each candidate it saw waits, why it cannot write the large artifact store
 when it cannot, and EVERY ALARM the tick raised (:mod:`dev_lab.dev.forgealarm`): an alarm on an
 unattended host is read here, from any machine, not from a cron log nobody opens.
 
@@ -33,10 +33,17 @@ flag (:func:`is_private`, one field on both gitea and GitHub; an answer without 
 public repo gets :meth:`HostCard.redacted`: the host under an opaque stable id (:func:`host_id`, a short
 hash -- never the raw ``<cluster>/<account>`` or machine), and only what scheduling reads -- platform,
 supply, tools present, parts served, holds, waits, alarm kinds and the tick. Facts (storage paths,
-partitions, quota), what else runs, alarm texts, the artefact-store reason, tool evidence and the
+partitions, quota), what else runs, alarm texts, the artifact-store reason, tool evidence and the
 ``[priority]`` subjects are dropped. A card published under the raw name before the repo turned public
 is deleted on the first redacted tick. A ``Forge-Host`` trailer still names the raw host; a reader
 vouches it against either spelling (:func:`dev_lab.dev.forgeorigin.vouched`).
+
+A SEAT'S CARD IS READ ONLY WHERE THE FAMILY BINDS IT (:func:`serving_cards`, user ruling 2026-11-25). Which cluster
+seats serve a repo is the roles binding's one fact (:mod:`dev_lab.dev.roles`, D73): a seat (``<cluster>/<account>``)
+the binding names no role of the repo to -- a research account, ``serves = false`` -- stopped ticking when it stopped
+serving, and its last card is no supply, no fleet alarm and no admission; ``forge queue`` lists it once with
+``forge hosts retire <host>``. Live 2026-11-25: four research seats stale since 2026-11-06 kept "no host supplies
+femm" alarming on every verification tick. A box names no seat; its tick alone says whether it serves.
 
 A CARD OLDER THAN :data:`STALE_TICKS` OF ITS OWN TICK PERIOD IS STALE: the host is gone or wedged, and
 ``forge queue`` shows it so rather than counting it as serving. It is also how a REFUSED CREDENTIAL shows:
@@ -50,7 +57,6 @@ import dataclasses
 import hashlib
 import json
 import re
-import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -80,11 +86,13 @@ from dev_lab.dev.forgepulls import (
 from dev_lab.dev.forgework import Client, Comment
 from dev_lab.dev.partrows import this_platform
 from dev_lab.dev.platformparts import origin_url
+from dev_lab.dev.roles import bound_accounts, machine_layer, roles_at
 
 __all__ = [
     'HOSTS_MARKER',
     'HOSTS_ORIGIN',
     'HOSTS_TITLE',
+    'RETIRE',
     'STALE_TICKS',
     'HostCard',
     'HostsIssueLost',
@@ -102,6 +110,7 @@ __all__ = [
     'read_cards',
     'recording',
     'retire',
+    'serving_cards',
     'this_host',
 ]
 
@@ -113,6 +122,9 @@ HOSTS_MARKER: Final = marker(Marker.HOSTS)
 
 #: The text every hosts issue this module opened carries, marker or not: how a machine-made one is told apart.
 HOSTS_ORIGIN: Final = '(dev_lab.dev.forgehosts)'
+
+#: The door that deletes a host's card (:func:`main`): the remedy every reader names for a card it does not count.
+RETIRE: Final = 'python -m dev_lab.dev.forge hosts retire'
 
 #: How many of its own tick periods a card may age before it is stale.
 STALE_TICKS: Final = 3
@@ -135,7 +147,7 @@ class HostCard:
     running: tuple[str, ...] = ()  # what else runs here: a box ledger claim, a cluster run in flight
     waiting: Mapping[str, str] = field(default_factory=dict)
     alarms: tuple[Mapping[str, str], ...] = ()  # this tick's: {kind, subject, body}
-    artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
+    artifacts: str = ''  # why this host cannot write the large artifact store; '' when it can
     tools: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # tool -> {present, evidence}, as probed
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
     serves: str = EVERY  # machine-file [serve] parts: which parts this host claims
@@ -146,7 +158,7 @@ class HostCard:
     held: Mapping[str, Any] = field(default_factory=dict)  # a cron tick found its lock held: the holder (mark_held)
     test_s: float = 0.0  # [test_budget] test_s, seconds (dev_lab.dev.testcost); 0: none declared, every test runs
 
-    def favours(self, candidate: Candidate) -> bool:
+    def favors(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
         return Priority.of(self.priority).matches(candidate)
 
@@ -166,7 +178,7 @@ class HostCard:
             facts={},
             running=(),
             alarms=tuple({'kind': a['kind'], 'subject': '', 'body': ''} for a in self.alarms),
-            artefacts='',
+            artifacts='',
             tools={name: {'present': bool(row.get('present'))} for name, row in self.tools.items()},
             priority={},
         )
@@ -176,7 +188,7 @@ class HostCard:
         holds = ', '.join(self.holds) or 'nothing'
         engines = ''.join(f' + `{name}`' for name in sorted(self.tools_present()))
         head = f'**{self.host}** serves `{self.platform}`{engines} as {self.login}; ticked {self.ticked}; holds {holds}'
-        head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
+        head += f'\n\nartifacts: {self.artifacts}' if self.artifacts else ''
         head += f'\n\nstorage: {self.facts["storage"]}' if 'storage' in self.facts else ''
         head += f'\n\n{usage}' if (usage := hpcusage.table(self.facts.get('usage'))) else ''
         head += f'\n\nrunning: {", ".join(self.running)}' if self.running else ''
@@ -283,9 +295,7 @@ def publish(client: Client, card: HostCard) -> str:
 
     On a public repository the card is :meth:`HostCard.redacted` and a card left under the raw name is deleted.
     """
-    number = hosts_issue(client)
-    if number is None:
-        number = _open_hosts_issue(client)
+    number = hosts_issue(client) or _open_hosts_issue(client)  # an issue number is never 0
     if not is_private(client):
         _delete_card(client, number, card.host)
         card = card.redacted()
@@ -335,6 +345,29 @@ def read_cards(client: Client) -> tuple[HostCard, ...]:
     return tuple(card for comment in comment_list(client, number) if (card := card_of(comment)) is not None)
 
 
+def serving_cards(
+    root: Path, cards: Sequence[HostCard], *, layer: Mapping[str, Any] | None = None
+) -> tuple[tuple[HostCard, ...], tuple[HostCard, ...]]:
+    """``(read, unbound)``: the cards a reader counts, and each seat's card the family binds no role of the repo to.
+
+    A seat is named ``<cluster>/<account>`` (:func:`card_host`) with Slurm's cluster name, so it is matched by its
+    account, the grant's ``user`` (:func:`dev_lab.dev.roles.bound_accounts`), as a seat finds its own grant
+    (:mod:`dev_lab.dev.forgeslurm`). Only a seat's card reads the binding: *layer* (default: this machine's,
+    :func:`dev_lab.dev.roles.machine_layer`) is never read for boxes alone.
+
+    Raises:
+        Unbound: a seat's card is to be judged and the binding is unreadable; the message names the table.
+
+    """
+    seats = [card for card in cards if '/' in card.host]
+    if not seats:
+        return tuple(cards), ()
+    held = machine_layer() if layer is None else layer
+    users = bound_accounts(roles_at(root, layer=held), held)
+    unbound = tuple(card for card in seats if users is not None and card.host.rpartition('/')[2] not in users)
+    return tuple(card for card in cards if card not in unbound), unbound
+
+
 def card_of(comment: Comment) -> HostCard | None:
     """The host card *comment* carries, its login the comment's forge-recorded author; ``None`` when it carries none."""
     found = _BLOCK.search(comment.body) if Marker.HOST in marker_kinds(comment.body) else None
@@ -362,8 +395,7 @@ def this_host() -> str:
     The one name a tick here publishes its card under and the ``Forge-Host`` stamp writes
     (:mod:`dev_lab.dev.forgeorigin`), so a job made here names the card it came from.
     """
-    seat = this_seat()
-    return card_host(this_machine(), seat)
+    return card_host(this_machine(), this_seat())
 
 
 def recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:
@@ -389,7 +421,7 @@ def publish_card(
     table: Mapping[str, Any],
     say: Callable[[str], None],
     alarms: Sequence[Alarm] = (),
-    artefacts: str = '',
+    artifacts: str = '',
     tools: Mapping[str, Mapping[str, Any]] | None = None,
     progress: Mapping[tuple[str, str], str] | None = None,
     supply: Supply | None = None,
@@ -432,7 +464,7 @@ def publish_card(
             running=tuple(running),
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
             alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
-            artefacts=artefacts,
+            artifacts=artifacts,
             tools=dict(tools or {}),
             priority=dict(priority or {}),
             serves=serves,
@@ -452,7 +484,7 @@ def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
     parser = argparse.ArgumentParser(prog='dev_lab.dev.forge hosts', description=main.__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
     verbs.add_parser('retire', help='delete HOST card; it rejoins by ticking again').add_argument('host')
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    args = parser.parse_args(argv)
     try:
         outcome = retire(client_for(Path.cwd() if cwd is None else cwd), args.host)
     except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
