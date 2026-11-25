@@ -40,6 +40,7 @@ from dev_lab.dev.datedlog import output_dir
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.hook_install import read_hooks
 from dev_lab.dev.jsrun import NoEngine, node_path
+from dev_lab.dev.lanepolicy import declares_no_test_roots
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.pytestout import strip_ansi
 from dev_lab.dev.reports import StepReport, read_lint, read_stages
@@ -388,7 +389,10 @@ def run_verify(
     """
     selection = pytest_args
     pytest_args, scripts = script_paths(root, pytest_args)
-    only_scripts = bool(scripts) and not is_targeted(root, pytest_args)
+    # No pytest step for a script-only selection, nor in a repo declaring no Python test tree (`test_roots = []`):
+    # there an empty collection is the declaration, not a shortfall. A repo WITH test roots collecting none stays
+    # INCONCLUSIVE.
+    no_pytest = (bool(scripts) and not is_targeted(root, pytest_args)) or declares_no_test_roots(root)
     allowed = declared_skips(root)
     vanished = vanished_shortfall(stale_declarations(root, allowed))
     path = output_dir(root, LOG_KIND) / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
@@ -406,7 +410,7 @@ def run_verify(
                 reports.append(read_lint(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
             if scripts:
                 reports.append(script_step(root, scripts, handle=handle))
-            if not only_scripts:
+            if not no_pytest:
                 handle.write(_PYTEST_BANNER)
                 stamp = {
                     durations.LEDGER_TREE_VAR: tree_address(root),
@@ -457,7 +461,7 @@ def run_verify(
                     cut += ended_in_the_box(record)
     finally:
         _land(live, outcomes_dir(path))
-    if only_scripts:
+    if no_pytest:
         return build_verdict(
             tuple(reports),
             tree=tree_address(root),

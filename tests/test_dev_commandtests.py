@@ -110,3 +110,50 @@ def test_a_mixed_selection_runs_both_and_either_red_fails_it(tmp_path: Path, mon
     assert any(path in command for command in ran), ran
     assert verdict.result.outcome is Conclusion.FAIL, verdict.result
     assert verdict.result.failures == (path,)
+
+
+_INTEGRATOR = '[tool.dev_lab.integrator]\nintegration = "integrate/main"\n'
+
+
+def _recording_tee(monkeypatch: pytest.MonkeyPatch, *, pytest_exit: int) -> list[list[str]]:
+    """Record each step's command; a script step runs for real, pytest reports nothing ran and exits *pytest_exit*."""
+    real, ran = verifysteps._tee, []
+
+    def step(command: list[str], *, handle, extra_env=None, **where: object) -> int:
+        ran.append(command)
+        if 'pytest' not in command:
+            return real(command, handle=handle, extra_env=extra_env, **where)
+        handle.write('no tests ran in 0.01s\n')
+        return pytest_exit
+
+    monkeypatch.setattr(verifysteps, 'boxed', lambda _root, argv, **_k: (argv, None))
+    monkeypatch.setattr(verifysteps, '_tee', step)
+    return ran
+
+
+def test_a_repo_declaring_no_python_test_tree_has_no_pytest_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``test_roots = []`` declares no Python tests: a non-script path selects no pytest run to come back empty."""
+    path = _repo(tmp_path, monkeypatch, _PASSING)
+    with (tmp_path / 'pyproject.toml').open('a', encoding='utf-8') as handle:
+        handle.write(_INTEGRATOR + 'test_roots = []\n')
+    ran = _recording_tee(monkeypatch, pytest_exit=5)
+    verdict = verifysteps.run_verify(tmp_path, (path, 'pyproject.toml'), hooks=False)
+    assert not any('pytest' in command for command in ran), ran
+    assert verdict.result.outcome is Conclusion.PASS, verdict.result
+
+
+@pytest.mark.parametrize('roots', ['', 'test_roots = ["tests"]\n'], ids=['default-roots', 'declared-roots'])
+def test_a_python_repo_that_collects_no_test_is_still_inconclusive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, roots: str
+) -> None:
+    """THE PLANTED CONTROL: only the empty declaration drops pytest; a Python repo collecting nothing proves nothing."""
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'pyproject.toml').write_text(_pyproject(None) + _INTEGRATOR + roots, 'utf-8')
+    monkeypatch.setattr(verifysteps, 'LINT_STEPS', ())
+    ran = _recording_tee(monkeypatch, pytest_exit=5)
+    verdict = verifysteps.run_verify(tmp_path, ('tests',), hooks=False)
+    assert any('pytest' in command for command in ran), ran
+    assert verdict.result.outcome is Conclusion.INCONCLUSIVE, verdict.result
+    assert 'NO TESTS WERE COLLECTED' in str(verdict.result)
