@@ -13,8 +13,10 @@ the tracked tree (nothing is imported or run) and refuses, naming the file, the 
   ``<package>_native.<crate>`` imported by an owner that neither owns the crate (``[python.native]``) nor lists its
   owner, a crate no row names, or the bare native module; a third-party or family name no ``[python.packages]`` row
   names, or one used outside its row's paths; a restricted ``[python.stdlib]`` name used outside its paths. A child
-  package with no row, and a row or holder path naming nothing in the tree, are refused too. Repo-local names
-  (``tests``, a sibling module) are not judged.
+  package with no row is refused, and so is every dependencies.toml path no layout.toml row declares (layout.toml is
+  the one source of which directories may exist; a declared owner not created yet passes, and whether a path exists
+  is DECLARED-LAYOUT's to judge). A test file is judged like any other, ``tests`` or ``tests/unit`` naming it as a
+  path; an import of a repo-local name (``tests``, a sibling module) is not judged.
 * RUST: :mod:`dev_lab.dev.rustdeps` (Cargo dependencies and std paths).
 
 WHAT IT CANNOT SEE: a dynamic import, a name rebound locally, an attribute reached through an assignment.
@@ -33,6 +35,7 @@ from typing import TYPE_CHECKING, Final
 from lab_commons.log import emit
 
 from dev_lab.dev import deptable, pyfacts, rustdeps
+from dev_lab.dev._layout_table import Layout, LayoutNotDeclared, declared_layout, declares
 from dev_lab.dev.deptable import ALL, Declared, DependenciesError, Grant, edge_to
 from dev_lab.dev.rules import tracked_files
 
@@ -62,6 +65,8 @@ DOOR: Final = (
     'a cycle or a sibling import is broken by moving what both need down to their parent'
 )
 _DETAILS: Final = 'details: docs-src/dev/refusals.md#owner-dag (dev-lab)'
+_FILE: Final = deptable.FILE
+_UNDECLARED: Final = 'which no layout.toml row declares'
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +138,7 @@ class _Scope:
     decl: Declared
     tree: PythonTree
     tops: frozenset[str]
-
+    layout: Layout | None
     local: dict[tuple[Path, str], bool] = field(default_factory=dict)
 
     def beside(self, rel: str, top: str) -> bool:
@@ -143,9 +148,22 @@ class _Scope:
             self.local[folder, top] = (folder / f'{top}.py').is_file() or (folder / top).is_dir()
         return self.local[folder, top]
 
+    def declared(self, rel: str) -> bool:
+        """Whether layout.toml declares the repo path *rel* (never the disk: a declared path may not exist yet)."""
+        return self.layout is not None and declares(rel, self.layout)
+
     def in_package(self, path: str) -> bool:
-        base = self.root / self.tree.directory
-        return (base / path).exists() or (base / f'{path}.py').is_file()
+        """Whether *path* names a package a row declares under the package, or a module that exists there.
+
+        A row declares directories and formats, never one module, so a module path is known by its file.
+        """
+        base = f'{self.tree.directory}/{path}'
+        package = self.declared(base) if self.layout is not None else (self.root / base).is_dir()
+        return package or (self.root / f'{base}.py').is_file()
+
+    def importer(self, entry: str) -> str:
+        """The repo path an importer entry names: under the package when it is there, else itself (``tests/unit``)."""
+        return f'{self.tree.directory}/{entry}' if self.in_package(entry) else entry
 
 
 def _maximal(names: frozenset[str]) -> list[str]:
@@ -166,7 +184,7 @@ def _importers(scope: _Scope, rel: str, name: str) -> str | None:
     if not keys or owner_of_path(scope.tree, rel) == (key := max(keys, key=len)).split('/')[0]:
         return None
     who = scope.decl.importers[key]
-    if holds([f'{scope.tree.directory}/{w}' if scope.in_package(w) else w for w in who], rel):
+    if holds([scope.importer(w) for w in who], rel):
         return None
     return f'imports {name}, but [python.importers] "{key}" allows only {", ".join(who)}'
 
@@ -231,7 +249,7 @@ def _local_tops(files: Iterable[str], tree: PythonTree) -> frozenset[str]:
     return frozenset(tops - {'src'}) | {tree.package, tree.native}
 
 
-def _python_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
+def _python_problems(root: Path, decl: Declared, files: list[str], layout: Layout | None) -> list[str]:
     if not (decl.owners or decl.native or decl.packages or decl.stdlib or decl.importers):
         return []
     tree = python_tree(root)
@@ -242,7 +260,7 @@ def _python_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
                 f'<name> (read: {_project_name(root)!r} -> src/{_project_name(root)})'
             )
         ]
-    scope = _Scope(root, decl, tree, _local_tops(files, tree))
+    scope = _Scope(root, decl, tree, _local_tops(files, tree), layout)
     out = _stale_rows(scope, files)
     for rel, one in sorted(pyfacts.facts(root, (f for f in files if f.endswith('.py'))).items()):
         if one.error is not None:
@@ -252,38 +270,35 @@ def _python_problems(root: Path, decl: Declared, files: list[str]) -> list[str]:
 
 
 def _stale_rows(scope: _Scope, files: list[str]) -> list[str]:
-    """Rows against the tree: a child package with no owner row, and a row or path naming nothing there."""
-    root, decl, tree = scope.root, scope.decl, scope.tree
-    under = f'{tree.directory}/'
+    """Rows against layout.toml (never the disk), and a child package in the tree no owner row names."""
+    decl, under = scope.decl, f'{scope.tree.directory}/'
     out = [
-        f'{p} is an owner no [python.owners] row names' for p in _children(tree, files) if p not in _rows(tree, decl)
+        f'{p} is an owner no [python.owners] row names'
+        for p in _children(scope.tree, files)
+        if p not in _rows(scope.tree, decl)
     ]
-    out += [f'[python.owners] {o} names no package {under}{o}' for o in decl.owners if not (root / under / o).is_dir()]
+    if scope.layout is None:
+        return out
+    named: list[tuple[str, str, bool]] = [
+        (f'[python.owners] {o}', f'{under}{o}', scope.declared(f'{under}{o}')) for o in decl.owners
+    ]
     for parent, rows in decl.siblings.items():
-        if not (root / under / parent).is_dir():
-            out.append(f'[python.siblings."{parent}"] names no package {under}{parent}')
-            continue
-        names = {n for child, edges in rows.items() for n in (child, *(e.name for e in edges))} - {ALL}
-        out += [
-            f'[python.siblings."{parent}"] names {c}, which is no child package of {under}{parent}'
-            for c in sorted(names)
-            if not (root / under / parent / c).is_dir()
-        ]
+        named.append((f'[python.siblings."{parent}"]', f'{under}{parent}', scope.declared(f'{under}{parent}')))
+        if named[-1][2]:
+            children = sorted({n for child, edges in rows.items() for n in (child, *(e.name for e in edges))} - {ALL})
+            path = f'{under}{parent}/'
+            named += [(f'[python.siblings."{parent}"]', f'{path}{c}', scope.declared(f'{path}{c}')) for c in children]
     for key, who in decl.importers.items():
-        out += [] if scope.in_package(key) else [f'[python.importers] "{key}" names no path under {under}']
-        out += [
-            f'[python.importers] "{key}" names importer {w}, which is no path in the tree'
-            for w in who
-            if not scope.in_package(w) and not (root / w).exists()
-        ]
-    for table, rows in (('packages', decl.packages), ('stdlib', decl.stdlib)):
-        out += [
-            f'[python.{table}] {key} names {h}, which is no path in the tree'
-            for key, grant in rows.items()
+        named.append((f'[python.importers] "{key}"', f'{under}{key}', scope.in_package(key)))
+        named += [(f'[python.importers] "{key}"', f'importer {w}', scope.declared(scope.importer(w))) for w in who]
+    for table, grants in (('packages', decl.packages), ('stdlib', decl.stdlib)):
+        named += [
+            (f'[python.{table}] {key}', h, scope.declared(h))
+            for key, grant in grants.items()
             for h in grant.holders
-            if h != ALL and not (root / h).exists()
+            if h != ALL
         ]
-    return out
+    return out + [f'{_FILE} {row} names {path}, {_UNDECLARED}' for row, path, ok in named if not ok]
 
 
 def _project_name(root: Path) -> str:
@@ -306,7 +321,12 @@ def _rows(tree: PythonTree, decl: Declared) -> set[str]:
 def problems(root: Path, decl: Declared, files: Iterable[str]) -> list[str]:
     """Every OWNER-DAG refusal over the repo-relative *files* (Python, then Rust), each naming file, name and row."""
     files = sorted(files)
-    return _python_problems(root, decl, files) + rustdeps.problems(root, decl, files)
+    try:
+        layout, out = declared_layout(root), []
+    except LayoutNotDeclared as exc:
+        layout = None
+        out = [f'{_FILE} paths are layout.toml rows, but {root.name} declares no usable layout.toml ({exc})']
+    return out + _python_problems(root, decl, files, layout) + rustdeps.problems(root, decl, files, layout=layout)
 
 
 def judged(root: Path, judge: Callable[[Path, Declared, Iterable[str]], list[str]]) -> list[str] | None:

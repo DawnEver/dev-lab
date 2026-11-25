@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from dev_lab.dev import deptable, rustdeps
+from dev_lab.dev._layout_table import Layout, declared_layout
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,6 +29,11 @@ serde_json = { crates = ["*"], kind = "dev", features = ["float_roundtrip"], rea
 "std::env" = { crates = [], reason = "explicit configuration only" }
 unsafe = { crates = ["middle"], reason = "the FFI" }
 """
+LAYOUT = (
+    '[layout]\n"." = [".toml"]\n"src" = []\n"tests" = []\n"scratch" = []\n".claude" = []\n'
+    '"docs-src" = []\n"output" = []\n"rust" = ["Cargo.toml"]\n"rust/crates" = []\n'
+    '"rust/crates/planned" = ["Cargo.toml"]\n'
+)
 WORKSPACE = '[workspace]\nmembers = ["crates/*"]\n[workspace.dependencies]\nserde_json = { version = "1" }\n'
 
 
@@ -53,14 +59,16 @@ BASE = {
 }
 
 
-def _problems(root: Path, extra: dict[str, str] | None = None, declared: str = DECLARED) -> list[str]:
+def _problems(
+    root: Path, extra: dict[str, str] | None = None, declared: str = DECLARED, layout: Layout | None = None
+) -> list[str]:
     files = {**BASE, deptable.FILE: declared, **(extra or {})}
     for rel, text in files.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(text, encoding='utf-8')
     decl = deptable.load(root)
     assert decl is not None
-    return rustdeps.problems(root, decl, files)
+    return rustdeps.problems(root, decl, files, layout=layout)
 
 
 def test_the_declared_workspace_passes(tmp_path: Path) -> None:
@@ -126,8 +134,18 @@ def test_a_row_or_holder_naming_no_crate_is_refused(tmp_path: Path) -> None:
         'crates = ["middle"], reason = "data', 'crates = ["gone"], reason = "data'
     )
     found = _problems(tmp_path, declared=stale)
-    assert '[rust.crates] ghost names no crate in the tree' in found
-    assert '[rust.external] rayon names crate gone, which is no crate in the tree' in found
+    nowhere = 'which is no crate in the tree and which no layout.toml <crate>/Cargo.toml row declares'
+    assert f'dependencies.toml [rust.crates] ghost names crate ghost, {nowhere}' in found
+    assert f'dependencies.toml [rust.external] rayon names crate gone, {nowhere}' in found
+
+
+def test_a_crate_layout_toml_declares_but_the_tree_lacks_is_allowed(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a crate not created yet passes when layout.toml declares its Cargo.toml; a ghost is refused."""
+    planned = DECLARED.replace('binding = [', 'planned = []\nghost = []\nbinding = [')
+    (tmp_path / 'layout.toml').write_text(LAYOUT, encoding='utf-8')
+    found = _problems(tmp_path, declared=planned, layout=declared_layout(tmp_path))
+    assert not any('planned' in line for line in found)
+    assert any('[rust.crates] ghost names crate ghost' in line for line in found)
 
 
 def test_no_rust_table_means_rust_is_not_judged(tmp_path: Path) -> None:

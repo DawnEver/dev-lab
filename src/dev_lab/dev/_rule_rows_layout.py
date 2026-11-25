@@ -70,8 +70,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'every level, default none), `[python.importers]` (the only importers of a path), `[python.native]`, '
             '`[python.packages]`/`[python.stdlib]` (a package no row names is refused; std is restricted by row), '
             '`[rust.crates]`/`[rust.external]`/`[rust.std]` (Cargo dependencies by kind and feature, std paths and '
-            'tokens). A cycle, an undeclared edge and a row naming nothing in the tree are refused by name. The '
-            'always-on check and every `verify` (`dev_lab.dev.ownerdag`, `dev_lab.dev.rustdeps`).'
+            'tokens). A cycle, an undeclared edge and a path no layout.toml row declares (rows, never the disk) are '
+            'refused by name; test files are judged too. The always-on check and every `verify` '
+            '(`dev_lab.dev.ownerdag`, `dev_lab.dev.rustdeps`).'
         ),
         ('tests/test_dev_ownerdag.py', 'tests/test_dev_rustdeps.py', 'tests/test_dev_deptable.py'),
     ),

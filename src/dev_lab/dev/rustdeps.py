@@ -13,7 +13,8 @@ manifest and name:
 * in the crate's ``src/`` (``#[cfg(test)]`` items, ``tests/``, ``benches/`` and ``build.rs`` are not judged), a
   restricted ``[rust.std]`` path -- ``use`` trees expanded, ``core``/``alloc`` read as ``std``, the longest row
   wins -- or token (``unsafe``, ``extern "C"``) outside the row's crates;
-* a crate with no ``[rust.crates]`` row, and a row or holder naming no crate in the tree.
+* a crate with no ``[rust.crates]`` row, and a row or holder naming a crate neither in the tree nor declared by
+  a layout.toml ``<crate>/Cargo.toml`` row (a crate not created yet is allowed).
 
 Source reading is :mod:`dev_lab.dev.rustsource`'s.
 """
@@ -26,11 +27,14 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Final
 
 from dev_lab.dev import rustsource
+from dev_lab.dev._layout_table import allowed
 from dev_lab.dev.deptable import ALL, Declared, Grant, edge_to
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
     from pathlib import Path
+
+    from dev_lab.dev._layout_table import Layout
 
 __all__ = ['Crate', 'crates', 'problems']
 
@@ -148,8 +152,33 @@ def _std_problems(root: Path, decl: Declared, crate: Crate, files: Iterable[str]
     return out
 
 
-def problems(root: Path, decl: Declared, files: Iterable[str]) -> list[str]:
-    """Every Rust refusal over the repo-relative *files*; nothing when no ``[rust.*]`` table is declared."""
+def _stale_rows(decl: Declared, found: Mapping[str, Crate], layout: Layout | None) -> list[str]:
+    """Rows naming a crate neither in the tree nor declared by a layout.toml ``<crate>/Cargo.toml`` row."""
+    planned = {
+        pattern.rpartition('/')[2]
+        for pattern, allows in (layout.rows.items() if layout is not None else ())
+        if allowed(_MANIFEST, allows)
+    }
+    nowhere = 'which is no crate in the tree and which no layout.toml <crate>/Cargo.toml row declares'
+    named = [('crates', name, name) for name in decl.crates]
+    named += [
+        (t, k, h)
+        for t, rows in (('external', decl.external), ('std', decl.std))
+        for k, g in rows.items()
+        for h in g.holders
+    ]
+    return [
+        f'dependencies.toml [rust.{table}] {key} names crate {name}, {nowhere}'
+        for table, key, name in named
+        if name != ALL and name not in found and name not in planned
+    ]
+
+
+def problems(root: Path, decl: Declared, files: Iterable[str], *, layout: Layout | None = None) -> list[str]:
+    """Every Rust refusal over the repo-relative *files*; nothing when no ``[rust.*]`` table is declared.
+
+    A row may name a crate not created yet when *layout* (the repo's layout.toml) declares its ``Cargo.toml``.
+    """
     if not (decl.crates or decl.external or decl.std):
         return []
     files = sorted(files)
@@ -164,14 +193,7 @@ def problems(root: Path, decl: Declared, files: Iterable[str]) -> list[str]:
         for c in found.values()
         if c.name not in decl.crates
     ]
-    out += [f'[rust.crates] {name} names no crate in the tree' for name in decl.crates if name not in found]
-    for table, rows in (('external', decl.external), ('std', decl.std)):
-        out += [
-            f'[rust.{table}] {key} names crate {h}, which is no crate in the tree'
-            for key, grant in rows.items()
-            for h in grant.holders
-            if h != ALL and h not in found
-        ]
+    out += _stale_rows(decl, found, layout)
     for crate in sorted(found.values(), key=lambda c: c.name):
         for kind, key, spec in _dependencies(crate.manifest):
             real = _real_name(key, spec, workspace)

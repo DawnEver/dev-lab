@@ -62,7 +62,6 @@ import argparse
 import fnmatch
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Final
@@ -70,7 +69,17 @@ from typing import Final
 from lab_commons.log import emit
 
 from dev_lab.dev import floors, gitdirs
-from dev_lab.dev._layout_table import ANY, RULE_ID, TABLE, TOOL_CACHE_ROOT, Layout, LayoutNotDeclared, declared_layout
+from dev_lab.dev._layout_table import (
+    RULE_ID,
+    TABLE,
+    TOOL_CACHE_ROOT,
+    AmbiguousRowError,
+    Layout,
+    LayoutNotDeclared,
+    allowed,
+    declared_layout,
+    row_for,
+)
 from dev_lab.dev.codeplace import FAMILY_HOMES, LAYOUT_FILE, PRUNED_NAMES
 from dev_lab.dev.disclosure import details_for
 
@@ -79,7 +88,6 @@ __all__ = [
     'COPY_DOOR',
     'COPY_RULE_ID',
     'NO_COPY_ROOTS',
-    'allowed',
     'copy_marker',
     'judge',
     'layout_violations',
@@ -93,10 +101,6 @@ COPY_RULE_ID: Final = 'NO-BACKUP-COPIES'
 NO_COPY_ROOTS: Final = ('output', 'scratch')
 #: A file that is a parked copy of work rather than a product: a git bundle, a patch, a diff.
 BACKUP_SUFFIXES: Final = frozenset({'.bundle', '.patch', '.diff'})
-#: What makes a pattern segment a glob (:func:`fnmatch.fnmatchcase`): each match is one wildcard.
-_GLOB: Final = re.compile(r'[*?]|\[[^]]*\]')
-#: How many mirror hops a twin lookup follows (a mirror of a mirror is two); a cycle stops here, undeclared.
-_MIRROR_HOPS: Final = 8
 #: Agent state lives once, at the checkout root (user ruling 2026-11-23): a scoped ``.claude/`` below it is refused.
 _SCOPED: Final = '.claude'
 _SCOPED_CAUSE: Final = (
@@ -134,73 +138,6 @@ def _skipped(rel_dir: str, layout: Layout) -> bool:
     )
 
 
-class _AmbiguousRowError(ValueError):
-    """Two or more rows judge one directory with equal precedence: the table must say which."""
-
-
-def _precedence(pattern: str) -> tuple[bool, int]:
-    """Among the rows of one depth: an explicit (unglobbed) row wins, then fewer wildcards win."""
-    wildcards = len(_GLOB.findall(pattern))
-    return (wildcards == 0, -wildcards)
-
-
-def _mirrored(parts: list[str], pattern: str, layout: Layout, hops: int) -> bool:
-    """Whether MIRROR row *pattern* declares the directory *parts*: an extra name, or a declared twin."""
-    segs = pattern.split('/')
-    if len(segs) >= len(parts) or not all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False)):
-        return False
-    target, extra, depth = layout.mirrors[pattern]
-    if depth is not None and len(parts) - len(segs) > depth:
-        return False  # below the twinned levels: the ordinary rows judge it
-    rel = '/'.join(parts[len(segs) :])
-    if rel in extra:
-        return True
-    if hops >= _MIRROR_HOPS:
-        return False
-    try:
-        return _row_for(f'{target}/{rel}', layout, hops + 1) is not None
-    except _AmbiguousRowError:
-        return True  # the twin is declared; its own files are named ambiguous
-
-
-def _row_for(rel_dir: str, layout: Layout, hops: int = 0) -> tuple[str, frozenset[str]] | None:
-    """The row of *rel_dir* ITSELF (``.`` is the root) by :func:`_precedence`, with what it allows; no inheritance.
-
-    A directory no row of its own depth matches is declared by a MIRROR row above it whose twin is declared.
-
-    Raises:
-        _AmbiguousRowError: rows tied on precedence, named.
-
-    """
-    if rel_dir == '.':
-        return ('.', layout.rows['.']) if '.' in layout.rows else None
-    parts = rel_dir.split('/')
-    matching = [
-        pattern
-        for pattern in layout.rows
-        if pattern != '.'
-        and len(segs := pattern.split('/')) == len(parts)
-        and all(fnmatch.fnmatchcase(p, s) for p, s in zip(parts, segs, strict=False))
-    ] or [pattern for pattern in layout.mirrors if _mirrored(parts, pattern, layout, hops)]
-    if not matching:
-        return None
-    top = max(map(_precedence, matching))
-    best = sorted(p for p in matching if _precedence(p) == top)
-    if len(best) > 1:
-        msg = (
-            f'rows {best} judge {rel_dir} equally (same depth, same wildcard count): ambiguous; declare an explicit '
-            f'row for it or make one pattern narrower'
-        )
-        raise _AmbiguousRowError(msg)
-    return best[0], layout.rows[best[0]]
-
-
-def allowed(name: str, allows: frozenset[str]) -> bool:
-    """Whether file *name* is one of *allows*: ``*``, its exact (lower-cased) name, or its suffix (``""``: none)."""
-    lower = name.lower()
-    return ANY in allows or lower in allows or Path(lower).suffix in allows
-
-
 def copy_marker(rel_dir: str, files: set[str], dirs: set[str]) -> str | None:
     """Why the directory *rel_dir* (holding *files* and *dirs*) is a copied checkout under a no-copy root, or None."""
     if rel_dir.split('/', 1)[0] not in NO_COPY_ROOTS:
@@ -230,8 +167,8 @@ def judge(rel: str, layout: Layout) -> str | None:
 def _row_verdict(rel_dir: str, name: str, layout: Layout) -> str | None:
     """Why the row judging *rel_dir* refuses file *name*: undeclared, ambiguous, or a format it does not allow."""
     try:
-        row = _row_for(rel_dir, layout)
-    except _AmbiguousRowError as exc:
+        row = row_for(rel_dir, layout)
+    except AmbiguousRowError as exc:
         return str(exc)
     if row is None:
         return _undeclared(rel_dir)
@@ -322,8 +259,8 @@ def _scan_dir(rel_dir: str, folder: Path, layout: Layout) -> tuple[list[str], li
 def _declared_row(rel_dir: str, layout: Layout) -> tuple[str, frozenset[str]] | bool | None:
     """The row of *rel_dir*, ``True`` when its rows tie (its files are each named ambiguous), else ``None``."""
     try:
-        return _row_for(rel_dir, layout)
-    except _AmbiguousRowError:
+        return row_for(rel_dir, layout)
+    except AmbiguousRowError:
         return True
 
 
