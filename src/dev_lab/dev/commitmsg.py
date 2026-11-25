@@ -17,6 +17,12 @@ REV...``, so git's own ``--remotes`` (every remote-tracking ref) is a valid *REV
 it is first published; one already published is history. That -- not a name or sha list -- is what keeps an
 off-format commit published long ago from blocking every later push that merges it.
 
+A MERGED BRANCH'S HISTORY IS ITS OWN: a range is walked ``--first-parent``, so only the pushed branch's own
+chain is judged. A commit reached only through a merge's SECOND parent belongs to the merged branch and is
+judged at that branch's own push; judging it again would make a merge re-litigate history it never wrote
+(user, 2026-11-25: archived and salvage lanes merged into one landing lane). The merge commit itself is on the
+chain and is judged.
+
 ONE NAMED LANE'S HISTORY, the one exception (user ruling 2026-11-10): a repo may declare
 ``[tool.dev_lab.commitmsg] history = [{ head = "pr/<lane>", through = "<sha>" }]`` for a lane that predates
 the 11-05 rule and was never published. Every commit reachable from *through* counts as published, in both
@@ -100,7 +106,7 @@ def refusal(message: str) -> str | None:
 def _range(spec: str, published: Sequence[str]) -> list[tuple[str, str]]:
     history = ['--not', *published] if published else []
     out = _door.run(
-        ['git', 'log', '--reverse', '--format=%H%x00%B%x1e', spec, *history],
+        ['git', 'log', '--first-parent', '--reverse', '--format=%H%x00%B%x1e', spec, *history],
         capture_output=True,
         text=True,
         encoding='utf-8',
