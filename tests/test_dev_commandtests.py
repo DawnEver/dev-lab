@@ -157,3 +157,24 @@ def test_a_python_repo_that_collects_no_test_is_still_inconclusive(
     assert any('pytest' in command for command in ran), ran
     assert verdict.result.outcome is Conclusion.INCONCLUSIVE, verdict.result
     assert 'NO TESTS WERE COLLECTED' in str(verdict.result)
+
+
+def test_a_node_runner_script_cut_to_several_files_runs_every_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A suite declared as ``node <runner>`` (no ``--test``) cut to a selection runs EACH file under ``node --test``.
+
+    PLANTED CONTROL: the second selected file fails. Plain ``node p1 p2`` would run p1 and hand p2 to it as argv,
+    so the selection would pass without p2 ever running.
+    """
+    first = _repo(tmp_path, monkeypatch, _PASSING)
+    (tmp_path / 't' / 'two.test.mjs').write_text(_FAILING, 'utf-8')
+    (tmp_path / 'pyproject.toml').write_text(_pyproject(('node', 't/run.mjs')), 'utf-8')
+    assert selected_command(tmp_path, ('node', 't/run.mjs'), (first, 't/two.test.mjs')) == (
+        'node',
+        '--test',
+        first,
+        't/two.test.mjs',
+    )
+    verdict = verifysteps.run_verify(tmp_path, (first, 't/two.test.mjs'), hooks=False)
+    assert verdict.result.outcome is Conclusion.FAIL, verdict.result
