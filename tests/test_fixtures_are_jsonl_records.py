@@ -14,7 +14,9 @@ import pytest
 
 _TESTS = Path(__file__).parent
 _ROLES = 'cd73598d73f042b8d6b055cff4c51e4c38cbd7072d4e9689c4da3032f22503c5'
-_SCHEMA_1 = '7e86b304981eb9412157f224005a2b4d2e627b876950e761a10db3dc668fdf42'
+#: Re-pinned 2026-11-25: the en-us migration (US-SPELLING-IS-CHECKED) renamed the record's empty ``artefact`` key
+#: to ``artifact``; no other value moved.
+_SCHEMA_1 = '7395698dd4367a314f0f92b21847af00a68ae90ec54aa128fe4d15ce8c4fadae'
 _PINS = {
     '_hpc_fixtures/forge-run-schema1-2026-10-17.jsonl': _SCHEMA_1,
     '_render_fixtures/gitea_review/roles.jsonl': _ROLES,
