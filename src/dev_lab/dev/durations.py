@@ -477,7 +477,7 @@ class Recorder:
         """
         del location
         if nodeid in self.deadlines:
-            self._watch = threading.Timer(self.deadlines[nodeid], self.deadline_reached, args=(nodeid,))
+            self._watch = threading.Timer(self.deadlines[nodeid], self.file_at_deadline, args=(nodeid,))
             self._watch.daemon = True
             self._watch.start()
 
@@ -488,7 +488,7 @@ class Recorder:
             self._watch.cancel()
             self._watch = None
 
-    def deadline_reached(self, nodeid: str) -> Path:
+    def file_at_deadline(self, nodeid: str) -> Path:
         """Write the ledger NOW with *nodeid* filed at its deadline, before the timeout ends the process."""
         rows = {**self.seconds, nodeid: max(self.seconds.get(nodeid, 0.0), self.deadlines[nodeid])}
         return write(
