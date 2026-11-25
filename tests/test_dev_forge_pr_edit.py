@@ -19,7 +19,8 @@ from _forge_fake import credential_env, serve
 from _forge_fake import make_repo as _repo
 
 from dev_lab.dev.forge import Forge
-from dev_lab.dev.forgecli import issue_and_pr, pr_edit
+from dev_lab.dev.forgecli import issue_and_pr
+from dev_lab.dev.forgepr import pr_edit
 
 CASES = (
     pytest.param(Forge('forge.example.org', 'o', 'r'), 'forge.example.org', '/api/v1/repos/o/r', id='gitea'),

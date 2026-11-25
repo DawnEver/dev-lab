@@ -13,15 +13,19 @@ This one touches LOCAL refs only and nothing else:
 
 from __future__ import annotations
 
+import argparse
+import sys
 from collections.abc import Sequence
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Final
 
+from lab_commons.log import emit
+
 from dev_lab.dev.branchset import checked_out
 from dev_lab.dev.checkout import git_out
 
-__all__ = ['ALWAYS_KEPT', 'INTEGRATION', 'sweep_local']
+__all__ = ['ALWAYS_KEPT', 'INTEGRATION', 'main', 'sweep_local']
 
 #: The origin integration ref every family repo lands on.
 INTEGRATION: Final = 'refs/remotes/origin/integrate/main'
@@ -71,3 +75,22 @@ def sweep_local(
             verdict, why = ('deleted', reason) if gone else ('kept', f'moved since judged; {reason}')
         lines.append(f'{verdict:<9} {branch}  {sha[:10]}  ({why})')
     return tuple(lines)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m dev_lab.dev.branchdelete --local [--apply] [--keep GLOB]... [--contained-in REF]...``.
+
+    The LOCAL door, entered through :mod:`dev_lab.dev.branchdelete`; origin deletes stay ``branchprune``.
+    """
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.branchdelete', description=main.__doc__)
+    parser.add_argument('--local', action='store_true', required=True, help='local branches only (required)')
+    parser.add_argument('--root', type=Path, default=Path.cwd())
+    parser.add_argument('--apply', action='store_true', help='delete; without it the door only lists')
+    parser.add_argument('--keep', action='append', default=[], metavar='GLOB', help='never delete a match')
+    parser.add_argument(
+        '--contained-in', action='append', default=[], metavar='REF', help='also a holder, beside origin'
+    )
+    args = parser.parse_args(sys.argv[1:] if argv is None else list(argv))
+    for line in sweep_local(args.root, keep=args.keep, contained_in=args.contained_in, apply=args.apply):
+        emit(line)
+    return 0

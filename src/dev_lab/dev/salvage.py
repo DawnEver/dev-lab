@@ -26,6 +26,7 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.census import processes
+from lab_commons.temp import TEMP_PREFIX
 
 from dev_lab.dev.checkout import linked, worktrees
 from dev_lab.dev.liverun import Census, describe, removal_holders
@@ -68,7 +69,7 @@ def snapshot(tree: Path) -> str | None:
 
     Built in a temporary index so the tree's own index is never touched; a submodule records its checked-out sha.
     """
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}salvage-') as scratch:
         index = Path(scratch) / 'index'
         if _git(tree, 'read-tree', 'HEAD', index=index) is None:
             return None
@@ -151,7 +152,7 @@ def _where(main: Path, directory: Path) -> tuple[str, str]:
 
 def _unheld_files(main: Path, directory: Path, reachable: frozenset[str]) -> list[tuple[str, str]] | None:
     """Every not-ignored ``(path, blob)`` of *directory* no reachable blob holds; ``None``: unread."""
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}salvage-') as scratch:
         index = Path(scratch) / 'index'
         listed = _git(
             directory, *_where(main, directory), 'ls-files', '--others', '--exclude-standard', '-z', index=index
@@ -180,7 +181,7 @@ def _salvaged_orphan(main: Path, directory: Path, unheld: list[tuple[str, str]])
     if _git(directory, *where, 'hash-object', '-w', '--stdin-paths', stdin=paths) is None:
         return ''
     base = _rev(main, f'{INTEGRATION}^{{commit}}')
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(prefix=f'{TEMP_PREFIX}salvage-') as scratch:
         index = Path(scratch) / 'index'
         if base and _git(main, 'read-tree', base, index=index) is None:
             return ''

@@ -18,8 +18,7 @@ from pathlib import Path
 import pytest
 
 import dev_lab.dev.branchlocal as module
-from dev_lab.dev.branchdelete import main
-from dev_lab.dev.branchlocal import sweep_local
+from dev_lab.dev.branchlocal import main, sweep_local
 
 _GIT = shutil.which('git') or 'git'
 _ID = ('-c', 'user.name=t', '-c', 'user.email=t@t')

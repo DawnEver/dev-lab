@@ -387,6 +387,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeprotect` -- ``forge protect plan|check|apply``: ``[tool.dev_lab.protection]`` rendered as a
   GitHub ruleset or a Gitea branch protection per branch role, contexts derived from the rendered workflows.
 * :mod:`dev_lab.dev.forgefailure` -- how a forge answer reads: an answer, transient, a refused call or credential.
+* :mod:`dev_lab.dev.forgepr` -- ``forge pr close|edit``: one PR's state or body written, a reason or text required.
 * :mod:`dev_lab.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``.
 * :mod:`dev_lab.dev.forgeclient` -- the one place a forge ``Client`` is built (``client_for``, ``stored_client``).
 * :mod:`dev_lab.dev.forgestamp` -- the ``HARNESS_*`` provenance line a created body opens with.
@@ -611,6 +612,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.branchdelete` -- LOSSLESS-DELETE and LANDED-BRANCHES-SWEPT: a branch is deleted only when
   its content is held elsewhere; ``sweep`` deletes every branch integration now contains (ancestry or content),
   after each integration move: the serve pass and GitHub's push job; a workstation's local half is reclaimrun.
+* :mod:`dev_lab.dev.branchlocal` -- the LOCAL branch delete door (``branchdelete --local``): a local branch goes
+  only when origin integration, a ``pr/*`` head or a declared ref contains it, never a checked-out or kept one.
 * :mod:`dev_lab.dev.deletejudge` -- LOSSLESS-DELETE's one judgment: whether deleting an origin branch at a sha
   loses nothing (held by integration, another live branch or an open PR head, by content, or declared derived).
 * :mod:`dev_lab.dev.pushdelete` -- LOSSLESS-DELETE at pre-push: every branch a push deletes, however spelled, is
@@ -632,6 +635,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: reclaim clean, landed, unoccupied trees; list the rest.
+* :mod:`dev_lab.dev.salvage` -- ``worktrees --salvage`` and ``--reap-orphans``: a tree's unreachable work is
+  recorded on a salvage commit before anything is reclaimed.
 * :mod:`dev_lab.dev.disposable` -- the DISPOSABLE declaration of a throwaway worktree, in its git admin directory.
 * :mod:`dev_lab.dev.reclaim` -- WORKTREE LEASES: a tree goes once its content is landed and it holds nothing else.
 * :mod:`dev_lab.dev.boxmigrate` -- LEDGER-MIGRATES-ON-INSTALL: each lab-commons install door migrates the box ledger.

@@ -35,18 +35,14 @@ their own names this door (:func:`second_root`).
 
 from __future__ import annotations
 
-import argparse
 import json
-import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.log import emit
-
 from dev_lab.dev.backgroundrun import held
-from dev_lab.dev.branchlocal import sweep_local
+from dev_lab.dev.branchlocal import main
 from dev_lab.dev.branchset import BranchSetNotDeclared, apply_local, checked_out, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.deletejudge import ORIGIN, Verdict, grant, judge, unlanded
@@ -421,25 +417,6 @@ def serve_sweep(root: Path, client: Client, *, say: Callable[[str], None], alarm
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         alarm(Alarm(PRUNED, client.forge.repo, 'the landed-branch sweep failed', str(failed)))
         return 2
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m dev_lab.dev.branchdelete --local [--apply] [--keep GLOB]... [--contained-in REF]...``.
-
-    The LOCAL door (:mod:`dev_lab.dev.branchlocal`); origin deletes stay ``python -m dev_lab.dev.branchprune``.
-    """
-    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.branchdelete', description=main.__doc__)
-    parser.add_argument('--local', action='store_true', required=True, help='local branches only (required)')
-    parser.add_argument('--root', type=Path, default=Path.cwd())
-    parser.add_argument('--apply', action='store_true', help='delete; without it the door only lists')
-    parser.add_argument('--keep', action='append', default=[], metavar='GLOB', help='never delete a match')
-    parser.add_argument(
-        '--contained-in', action='append', default=[], metavar='REF', help='also a holder, beside origin'
-    )
-    args = parser.parse_args(sys.argv[1:] if argv is None else list(argv))
-    for line in sweep_local(args.root, keep=args.keep, contained_in=args.contained_in, apply=args.apply):
-        emit(line)
-    return 0
 
 
 if __name__ == '__main__':

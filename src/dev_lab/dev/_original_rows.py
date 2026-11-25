@@ -25,7 +25,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'roles',  # the forge roles each repo's work is bound to, read from the family layer (D73; replaced producers)
     'disposable',  # a throwaway worktree's lease: scratch and discard without a landing (split from reclaim)
     'scratchtree',  # the scratch worktree door, --scratch and --discard (split from reclaim)
-    'forgetask',  # the forge task verbs, split from forgecli to keep it under the module bound
     'tomlleaves',  # the TOML leaf reader devhost renders through, split from devhost
     'vendordetect',  # detect installed vendor tools for the machine file, split from devhost
     'devsource',  # the config source's forge URL, split from devhost at the module-size band (2026-11-21)
@@ -97,7 +96,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'integrate',
     'trialmerge',
     'labsession',
-    'pradmit',
     'components',
     'componentbump',
     'shatree',
@@ -124,9 +122,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     # ORIGINAL: no rule kept a rust toolchain by its pins; 135 k files per account sat in unpinned ones.
     'retentionrust',
     'diskusage',
-    # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
-    'pushgate',
-    'prlanded',
     'issueref',
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator',
@@ -137,10 +132,7 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'closedpush',
     # ORIGINAL: no push read the milestone tags before the 2026-11-13 ruling.
     'milestonebase',
-    'prcontinue',
     'branchreview',
-    # ORIGINAL: a stale pr/* head was caught only after the push, by the forge's alarm (2026-11-07).
-    'prcurrent',
     # ORIGINAL: how far a floated sibling's pin lags its line was never read; split from relock (2026-11-07).
     'locklag',
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
@@ -350,7 +342,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'hostedparts',  # ORIGINAL: split from jobparts: the hosted-part declaration reader (2026-11-17)
     # ORIGINAL: no prior mechanism measured a pinned selection on hosted runners without producing a part (2026-11-15).
     'jobmeasure',
-    'forgepages',  # ORIGINAL: split from forgework: a listing read page by page (2026-11-15)
     'native_session',  # ORIGINAL: one validated native harness identity, apart from worktree provenance (2026-11-15)
     'planrun',  # ORIGINAL: a consent plan's preflight and ordered run (2026-11-11)
     'planremote',  # ORIGINAL: split from planrun: the hosts a consent plan runs on (2026-11-11)
@@ -363,11 +354,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'sshholdwire',  # ORIGINAL: split from sshhold: the client half of the holder's protocol (2026-11-13)
     'walls',  # ORIGINAL: every refusal is one ledger line (2026-11-13)
     'pushwatch',  # push-line parsing and the heard line a push door prints (2026-11-16: its hook deleted)
-    'sessionprs',  # ORIGINAL: a session's PRs in every repo, read by `forge watch --session` (2026-11-11)
-    'sessionpoll',  # ORIGINAL: split from forgewatch: one read of a session's PRs, shared by both watchers (2026-11-15)
-    'forgefeed',  # ORIGINAL: one machine hearer reads declared repos' updated issues into task inboxes (D79, D81)
-    'forgethreads',  # the threads read, cursor and own comments, split from forgefeed (module-size band)
-    'forgewaves',  # ORIGINAL: an unacknowledged break-glass wave reaches each session once (ruling 2026-11-19)
     'venvfollow',
     'oldcopies',  # ORIGINAL: the old layout's copies, one list drift reports and retention deletes (2026-11-22)
     'quotawatch',  # ORIGINAL: an account's quota judged against the two declared lines, before it fills (2026-11-22)
@@ -385,7 +371,6 @@ ORIGINAL_MODULES: Final[tuple[str, ...]] = (
     'retiredfiles',  # ORIGINAL: split from codeplace: a checkout's own declared retired-file rows (2026-11-17)
     'strays',  # ORIGINAL: split from codeplace: the STRAY-FILE-REFUSED census and its hooks (2026-11-17)
     'metrics',
-    'prsuperseded',
     'metrics_compute',
     'metrics_report',
     'reviewcommand',

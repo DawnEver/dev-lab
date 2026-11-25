@@ -48,6 +48,7 @@ from dev_lab.dev import (
     forgemergeready,
     forgenotice,
     forgeoutbox,
+    forgepr,
     forgeprotect,
     forgepublish,
     forgequeue,
@@ -79,7 +80,6 @@ from dev_lab.dev import (
     servelock,
     walls,
 )
-from dev_lab.dev._forge_records import pull_of
 from dev_lab.dev.forge import Transport, forge_transport
 from dev_lab.dev.forgeclient import client_for
 from dev_lab.dev.forgefailure import ForgeCallFailed
@@ -228,37 +228,6 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def pr_close(client: Client, number: int, reason: str) -> PullRequest:
-    """Close pull request *number*, commenting *reason* first so the record says why; its branch stays.
-
-    An empty *reason* is refused before any call: a close nobody can explain is not a record.
-    """
-    if not reason.strip():
-        said = f'pr close {number}: a reason is required (--reason "<why>")'
-        raise ValueError(said)
-    client.issue_comment(number, f'closed: {reason.strip()}')
-    return pull_of(client.call('PATCH', f'{client.repo}/pulls/{number}', {'state': 'closed'}))
-
-
-def pr_edit(client: Client, number: int, *, body: str | None = None, append: Sequence[str] = ()) -> PullRequest:
-    """Set pull request *number*'s body to *body*, or add the *append* lines after the body the forge holds.
-
-    The body is READ before an append, so another writer's text stays; asking for neither is refused before any call.
-    """
-    if (body is None) == (not append):
-        said = f'pr edit {number}: give exactly one of a body (--body-file F) or lines to add (--append-line L)'
-        raise ValueError(said)
-    if body is None:
-        held = client.pr_view(number).body.rstrip('\n')
-        body = '\n'.join([*([held] if held else []), *append]) + '\n'
-    return pull_of(client.call('PATCH', f'{client.repo}/pulls/{number}', {'body': body}))
-
-
-def _edit_text(args: argparse.Namespace) -> str:
-    """The text ``pr edit`` publishes: the body file's, or the lines it adds."""
-    return Path(args.body_file).read_text(encoding='utf-8') if args.body_file else '\n'.join(args.append_line)
-
-
 def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
     verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
         ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit, labels=args.label),
@@ -271,9 +240,9 @@ def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest |
             args.title, _declared_body(args), head=args.head, base=args.base, draft=not args.ready
         ),
         ('pr', 'view'): lambda: client.pr_view(args.number),
-        ('pr', 'close'): lambda: pr_close(client, args.number, args.reason),
-        ('pr', 'edit'): lambda: pr_edit(
-            client, args.number, body=_edit_text(args) if args.body_file else None, append=args.append_line
+        ('pr', 'close'): lambda: forgepr.pr_close(client, args.number, args.reason),
+        ('pr', 'edit'): lambda: forgepr.pr_edit(
+            client, args.number, body=forgepr.edit_text(args) if args.body_file else None, append=args.append_line
         ),
     }
     return verbs[args.noun, args.verb]()
@@ -330,7 +299,7 @@ def _refused(
 _PUBLISHED_TEXT: dict[tuple[str, str], tuple[str, Callable[[argparse.Namespace], tuple[str, ...]]]] = {
     ('pr', 'create'): ('PR title or body', lambda a: (a.title, a.body)),
     ('pr', 'close'): ('close reason', lambda a: (a.reason,)),
-    ('pr', 'edit'): ('PR body', lambda a: (_edit_text(a),)),
+    ('pr', 'edit'): ('PR body', lambda a: (forgepr.edit_text(a),)),
     ('issue', 'create'): ('issue title or body', lambda a: (a.title, a.body)),
     ('issue', 'comment'): ('comment body', lambda a: (a.body,)),
     ('issue', 'label'): ('label names', lambda a: (*a.add, *a.remove)),
